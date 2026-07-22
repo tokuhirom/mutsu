@@ -1,0 +1,77 @@
+# doc-diff-harness report
+# stats: match=7  mismatch=0  mutsu-crash=1  no-oracle=4  raku-drift=3  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] raku-drift-from-doc  raku-doc/doc/Type/BagHash.rakudoc:58
+--- program ---
+my $n = BagHash.new: "a", "b", "c", "c";
+say $n.raku;             # OUTPUT: «("b"=>1,"a"=>1,"c"=>2).BagHash␤»
+say $n.keys.raku;        # OUTPUT: «("b", "a", "c").Seq␤»
+say $n.values.raku;      # OUTPUT: «(1, 1, 2).Seq␤»
+--- raku stdout ---
+("b"=>1,"c"=>2,"a"=>1).BagHash
+("b", "c", "a").Seq
+(1, 2, 1).Seq
+--- mutsu stdout (exit 0) ---
+("a"=>1,"b"=>1,"c"=>2).BagHash
+("c", "a", "b").Seq
+(2, 1, 1).Seq
+
+==============================================================================
+[2] raku-drift-from-doc  raku-doc/doc/Type/BagHash.rakudoc:78
+--- program ---
+my $m = ("a", "b", "c", "c").BagHash;
+my $n = ("a" => 0, "b" => 1, "c" => 2, "c" => 2).BagHash;
+say $m.raku;             # OUTPUT: «("b"=>1,"a"=>1,"c"=>2).BagHash␤»
+say $n.raku;             # OUTPUT: «("b"=>1,"c"=>4).BagHash␤»
+--- raku stdout ---
+("a"=>1,"b"=>1,"c"=>2).BagHash
+("c"=>4,"b"=>1).BagHash
+--- mutsu stdout (exit 0) ---
+("a"=>1,"b"=>1,"c"=>2).BagHash
+("b"=>1,"c"=>4).BagHash
+
+==============================================================================
+[3] mutsu-error  raku-doc/doc/Type/BagHash.rakudoc:112
+--- program ---
+my $n = BagHash.new: "a", "b", "c", "c";
+say $n.raku;             # OUTPUT: «("b"=>1,"a"=>1,"c"=>2).BagHash␤»
+$n.add('c');
+say $n.raku;             # OUTPUT: «("b"=>1,"c"=>3,"a"=>1).BagHash␤»
+$n.remove(('b', 'a'),);
+say $n.raku;             # OUTPUT: «("c"=>3).BagHash␤»
+$n.remove('c');
+say $n.raku;             # OUTPUT: «("c"=>2).BagHash␤»
+--- raku stdout ---
+("c"=>2,"b"=>1,"a"=>1).BagHash
+("c"=>3,"b"=>1,"a"=>1).BagHash
+("c"=>3).BagHash
+("c"=>2).BagHash
+--- mutsu stdout (exit 1) ---
+("a"=>1,"b"=>1,"c"=>2).BagHash
+--- mutsu stderr ---
+No such method 'add' for invocant of type 'BagHash'
+  in block <unit> at tmp/ddh/prog-3373527.raku line 3
+
+==============================================================================
+[4] raku-drift-from-doc  raku-doc/doc/Type/BagHash.rakudoc:129
+--- program ---
+my $n = BagHash.new: "a", "b", "c", "c";
+say $n.raku;             # OUTPUT: «("b"=>1,"a"=>1,"c"=>2).BagHash␤»
+$n<c>++;
+say $n.raku;             # OUTPUT: «("b"=>1,"c"=>3,"a"=>1).BagHash␤»
+$n<b> -= 1;
+say $n.raku;             # OUTPUT: «("a"=>1,"c"=>3).BagHash␤»
+$n{'a'} = 0;
+say $n.raku;             # OUTPUT: «("c"=>3).BagHash␤»
+--- raku stdout ---
+("c"=>2,"a"=>1,"b"=>1).BagHash
+("c"=>3,"a"=>1,"b"=>1).BagHash
+("c"=>3,"a"=>1).BagHash
+("c"=>3).BagHash
+--- mutsu stdout (exit 0) ---
+("a"=>1,"b"=>1,"c"=>2).BagHash
+("a"=>1,"b"=>1,"c"=>3).BagHash
+("a"=>1,"c"=>3).BagHash
+("c"=>3).BagHash
+

@@ -1,0 +1,302 @@
+# doc-diff-harness report
+# stats: match=21  mismatch=7  mutsu-crash=1  no-oracle=72  raku-drift=1  skipped-marker=1  skipped-nondet=6
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/IO/Path.rakudoc:522
+--- program ---
+my @stack = '.'.IO;
+my $raku-files = gather while @stack {
+    with @stack.pop {
+        when :d { @stack.append: .dir }
+        .take when .extension.lc eq 'raku'
+    }
+}
+.put for $raku-files[^3];
+--- raku stdout ---
+docs/probes/pool-spawn.raku
+docs/probes/pool-non-repro-controls.raku
+docs/probes/pool-idle-cue.raku
+--- mutsu stdout (exit 0) ---
+
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Type/IO/Path.rakudoc:711
+--- program ---
+my %dict := bag 'my-file.txt'.IO.words;
+say "Most common words: ", %dict.sort(-*.value).head: 5;
+--- raku stdout ---
+Most common words: (3 => 1 Raku!I => 1 5 => 1 count: => 1 7 => 1)
+--- mutsu stdout (exit 0) ---
+Most common words: (I => 1 Raku!I => 1 5 => 1 7 => 1 ♥ => 1)
+
+==============================================================================
+[3] output-mismatch  raku-doc/doc/Type/IO/Path.rakudoc:128
+--- program ---
+IO::Path::Win32.new('//server/share').basename.say; # OUTPUT: «\␤»
+--- raku stdout ---
+\
+--- mutsu stdout (exit 0) ---
+/
+
+==============================================================================
+[4] output-mismatch  raku-doc/doc/Type/IO/Path.rakudoc:290
+--- program ---
+say IO::Path::Win32.new("C:/rakudo/raku.bat").parts.raku;
+# OUTPUT: «IO::Path::Parts.new("C:","/rakudo","raku.bat")␤»
+--- raku stdout ---
+IO::Path::Parts.new("C:","/rakudo","raku.bat")
+--- mutsu stdout (exit 0) ---
+IO::Path::Parts.new
+
+==============================================================================
+[5] output-mismatch  raku-doc/doc/Type/IO/Path.rakudoc:322
+--- program ---
+say "foo/bar".IO;                       # OUTPUT: «"foo/bar".IO␤»
+say IO::Path::Win32.new: ｢C:\foo/bar\｣; # OUTPUT: «"C:\foo/bar\".IO␤»
+--- raku stdout ---
+"foo/bar".IO
+"C:\foo/bar\".IO
+--- mutsu stdout (exit 0) ---
+"foo/bar".IO
+"C:\foo\bar".IO
+
+==============================================================================
+[6] output-mismatch  raku-doc/doc/Type/IO/Path.rakudoc:423
+--- program ---
+'/etc/foo'.IO.parent.say; # OUTPUT: «"/etc".IO␤»
+'/etc/..' .IO.parent.say; # OUTPUT: «"/etc".IO␤»
+'/etc/../'.IO.parent.say; # OUTPUT: «"/etc".IO␤»
+'./'      .IO.parent.say; # OUTPUT: «"..".IO␤»
+'foo'     .IO.parent.say; # OUTPUT: «".".IO␤»
+'/'       .IO.parent.say; # OUTPUT: «"/".IO␤»
+IO::Path::Win32.new('C:/').parent.say; # OUTPUT: «"C:/".IO␤»
+--- raku stdout ---
+"/etc".IO
+"/etc".IO
+"/etc".IO
+"..".IO
+".".IO
+"/".IO
+"C:/".IO
+--- mutsu stdout (exit 0) ---
+"/etc".IO
+"/etc".IO
+"/etc".IO
+"..".IO
+".".IO
+"/".IO
+"C:\".IO
+
+==============================================================================
+[7] mutsu-error  raku-doc/doc/Type/IO/Path.rakudoc:509
+--- program ---
+sub MAIN($dir = '.') {
+    my @todo = $dir.IO;
+    while @todo {
+        for @todo.pop.dir -> $path {
+            say $path.Str;
+            @todo.push: $path if $path.d;
+        }
+    }
+}
+--- raku stdout ---
+t
+my-file.txt
+foo
+Cargo.lock
+proc-async-bind-out.txt
+.mise.toml
+roast
+mise.toml
+HISTORY-pass.svg
+tempfile_rebindstdhandles.3233490.827
+testfile
+ls.err
+--my arbitrary filename
+Cargo.toml
+.claude
+proc-async-bind-in.txt
+Dockerfile
+proc-async-bind-err.txt
+target
+tempfile_rebindstdhandles.393798.916
+foo bar
+scripts
+vendor
+foo.bak
+.github
+tmp
+file1
+HISTORY.tsv
+file2
+.dockerignore
+vendor.lock
+tests
+wasm-demo
+hello
+AGENTS.md
+.git
+PERFORMANCE.md
+lefthook.yml
+file3
+arbitrary
+raku-doc
+.gitignore
+--my
+CHANGELOG.md
+ls-lR.gz
+tools
+old-design-docs
+README.md
+ls.out
+filename
+test-file
+.codex
+news
+src
+todo
+.tagpr
+Makefile
+TODO_dist
+roast-whitelist.txt
+ANALYSIS.md
+CLAUDE.md
+benchmarks
+PLAN.md
+bar
+docs
+TODO_roast
+test
+TODO_roast/raku-baseline.tsv
+TODO_roast/BLOCKERS.md
+TODO_roast/raku-baseline.md
+docs/treewalk-method-removal-plan.md
+docs/hashdata-migration-plan.md
+docs/vm-interpreter-dedup.md
+docs/nanbox-3b0-api-wall.md
+docs/vm-interpreter-fallback-ledger.md
+docs/maintenance.md
+docs/parser-overview.md
+docs/s17-scheduler-supply-drive-model.md
+docs/seq-single-pass-consumption.md
+docs/parser-improvement-plan.md
+docs/vm-state-ownership.md
+docs/callframe-introspection-plan.md
+docs/vm-output-ownership.md
+docs/mzef-install-pipeline.md
+docs/grammar-parse-gc-churn.md
+docs/lazy-arrays.md
+docs/adr
+docs/vm-single-store.md
+docs/element-element-bind-plan.md
+docs/gc-contents-mut-inventory.md
+docs/user-guide.md
+docs/dist-compat-sweep.md
+docs/opcode-design-review.md
+docs/container-identity.md
+docs/scalar-array-sharing.md
+docs/vm-dual-store.md
+docs/vm-registry-ownership.md
+docs/perf-callpath-scouting.md
+docs/nanbox-3b1-step-b-design.md
+docs/whatever-xz-currying-plan.md
+docs/doc-diff-backlog.md
+docs/slotref-removal-plan.md
+docs/parser-opportunities-audit.md
+docs/lexical-scope-slot-campaign.md
+docs/ecosystem-guts-dependency-survey.md
+docs/is-rw-shared-cell-plan.md
+docs/probes
+docs/qa-doc-diff-harness.md
+docs/vm-decoupling.md
+docs/gc-level1-detailed-design.md
+docs/slice-f-reverse-sync-deps.txt
+docs/captured-outer-cell-sharing.md
+docs/gc-post-3a-roadmap.md
+docs/vm-io-ownership.md
+docs/vendoring.md
+docs/env-locals-coherence.md
+docs/worker-pool-probes.md
+docs/probes/pool-nested-await.raku
+docs/probes/pool-recursive-start.raku
+docs/probes/pool-blocking.raku
+docs/probes/pool-idle-cue.raku
+docs/probes/pool-non-repro-controls.raku
+docs/probes/pool-spawn.raku
+docs/adr/0008-push-based-supply-event-delivery.md
+docs/adr/0012-libffi-macos-arm64-vendored-bump.md
+docs/adr/0010-cross-thread-lexical-sharing-scope.md
+docs/adr/0011-rakuast-model-layer-and-phasing.md
+docs/adr/0004-jit-strategy.md
+docs/adr/0005-nanbox-representation-encoding.md
+docs/adr/0006-baseline-interpreter-optimizations.md
+docs/adr/0003-default-on-gc-trigger.md
+docs/adr/README.md
+docs/adr/0002-phase-a-gate-reassessment.md
+docs/adr/0007-grammar-parse-trail-matcher.md
+docs/adr/0009-regex-code-assertion-execution-model.md
+docs/adr/0013-container-interior-mutability-cellvalue.md
+docs/adr/0001-gc-strategy-and-phasing.md
+bar/archive.tar
+benchmarks/int-arith.raku
+benchmarks/run-benchmarks.sh
+benchmarks/debug-guard.raku
+benchmarks/method-call.raku
+benchmarks/bench-mandelbrot.raku
+benchmarks/array-ops.raku
+benchmarks/bench-array.raku
+benchmarks/bench-hash.raku
+benchmarks/bench-class.raku
+benchmarks/bench-tak.raku
+benchmarks/run-all.sh
+benchmarks/bench-grammar-parse-deep.raku
+benchmarks/bench-fib.raku
+benchmarks/bench-startup.raku
+benchmarks/bench-string.raku
+benchmarks/word-count.raku
+benchmarks/string-concat.raku
+benchmarks/time-parts.raku
+benchmarks/fib.raku
+benchmarks/hash-access.raku
+benchmarks/bench-grammar-parse.raku
+benchmarks/num-arith.raku
+benchmarks/poly-call.raku
+benchmarks/bench-ctor.raku
+TODO_dist/TICKETS.md
+todo/S02-bits.md
+todo/S24-testing.md
+todo/S04-control.md
+todo/S14-roles.md
+todo/S10-packages.md
+todo/S13-overloading.md
+todo/S06-routines.md
+todo/S11-modules.md
+todo/S12-objects.md
+todo/S17-concurrency.md
+todo/S08-capture.md
+todo/S29-functions.md
+todo/S15-unicode.md
+todo/S03-operators.md
+todo/S09-data.md
+todo/README.md
+todo/S16-io.md
+todo/S19-commandline.md
+todo/S05-regex.md
+todo/S07-lists.md
+todo/S28-special-names.md
+src/ast.rs
+src/trace.rs
+src/symbol.rs
+src/repl_core.rs
+src/bin
+src/doc_mode.rs
+src/main.rs
+src/token_kind.rs
+src/env.rs
+src/vm.rs
+src/builtins
+src/opcode.rs
+src/interpreter.rs
+src/parser
+
+... [report truncated at 300 lines — 67546 total; a doc example produced a very large diff (usually a filesystem listing). Re-run the harness on this file for the full output.]

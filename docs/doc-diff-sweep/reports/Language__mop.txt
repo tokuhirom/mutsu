@@ -1,0 +1,117 @@
+# doc-diff-harness report
+# stats: match=2  mismatch=4  mutsu-crash=2  no-oracle=2  raku-drift=0  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Language/mop.rakudoc:141
+--- program ---
+class Foo {
+    method ^bar( Mu \foo) {
+        foo.^set_name( foo.^name ~ "[þ]" );
+    }
+}
+my $foo = Foo.new();
+say $foo.^name; # OUTPUT: «Foo␤»
+Foo.^bar();
+say $foo.^name; # OUTPUT: «Foo[þ]␤»
+--- raku stdout ---
+Foo
+Foo[þ]
+--- mutsu stdout (exit 0) ---
+Foo
+Foo
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Language/mop.rakudoc:162
+--- program ---
+class Foo {
+    method ^bar( Mu \foo, Str $addenda) {
+        foo.^set_name( foo.^name ~ $addenda );
+    }
+}
+Foo.new().^bar(  "[baz]" );
+my $foo = Foo.new();
+say $foo.^name;  # OUTPUT: «Foo[baz]␤»
+--- raku stdout ---
+Foo[baz]
+--- mutsu stdout (exit 0) ---
+Foo
+
+==============================================================================
+[3] mutsu-error  raku-doc/doc/Language/mop.rakudoc:329
+--- program ---
+grammar Bot::Grammar {
+    token TOP { <topic> || .+ }
+
+    proto token topic {*}
+    multi token topic:sym<command> { <command> <.ws> <command-args> }
+
+    token command      { '$' <!ws>+ }
+    token command-args { <!ws>+ % <.ws> }
+
+    method ^parameterize(::?CLASS:U $this is raw, +roles) {
+        my Str:D $name   = self.name: $this;
+        my Mu    $mixin := $this.^mixin: |roles;
+        $mixin.^set_name: [~] $name, '[', roles.map(*.^name).join(','), ']';
+        $mixin
+    }
+}
+
+role Greetings[Str:D $name] {
+    multi token topic:sym<greeting> { ^ [ 'hi' | 'hello' | 'hey' | 'sup' ] <.ws> $name }
+}
+
+my constant GreetBot = Bot::Grammar[Greetings['GreetBot']];
+GreetBot.parse: 'sup GreetBot';
+say ~$/; # OUTPUT: «sup GreetBot␤»
+--- raku stdout ---
+sup GreetBot
+--- mutsu stdout (exit 124) ---
+
+
+==============================================================================
+[4] mutsu-error  raku-doc/doc/Language/mop.rakudoc:34
+--- program ---
+constant A := Metamodel::ClassHOW.new_type( name => 'A' );  # class A {
+A.^add_method('x', my method x(A:) { say 42 });             #   method x()
+A.^compose;                                                 # }
+
+A.x();
+--- raku stdout ---
+42
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Cannot modify an immutable 'A' type object
+  in block <unit> at tmp/ddh/prog-3344771.raku line 1
+
+==============================================================================
+[5] output-mismatch  raku-doc/doc/Language/mop.rakudoc:93
+--- program ---
+say (%).HOW.^name # OUTPUT: «Perl6::Metamodel::ClassHOW+{<anon>}␤»
+--- raku stdout ---
+Perl6::Metamodel::ClassHOW+{<anon>}
+--- mutsu stdout (exit 0) ---
+Perl6::Metamodel::ClassHOW
+
+==============================================================================
+[6] output-mismatch  raku-doc/doc/Language/mop.rakudoc:120
+--- program ---
+.say for (1, 2, 3);           # OUTPUT: «1␤2␤3␤», not itemized
+.say for $(1, 2, 3);          # OUTPUT: «(1 2 3)␤», itemized
+say (1, 2, 3).VAR ~~ Scalar;  # OUTPUT: «False␤»
+say $(1, 2, 3).VAR ~~ Scalar; # OUTPUT: «True␤»
+--- raku stdout ---
+1
+2
+3
+(1 2 3)
+False
+True
+--- mutsu stdout (exit 0) ---
+1
+2
+3
+(1 2 3)
+False
+False
+

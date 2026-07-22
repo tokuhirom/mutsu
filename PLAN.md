@@ -1097,11 +1097,22 @@ the backlog.
       high-signal divergences (18.5%)**, genuine and clustering by root cause. The premise holds; the
       campaign is justified.
 - [x] Reusable substrate for 8.2 / 8.3 / 8.4 — the harness is parallel-safe (per-PID scratch file) and
-      `scripts/doc-diff-sweep.sh` fans the whole corpus out across worker processes. **First full-corpus
-      sweep landed (2026-07-21): 443 files, 156 with signal — 335 output-mismatch + 202 mutsu-crash +
-      134 raku-drift.** The ranked, tracked backlog is [docs/doc-diff-backlog.md](docs/doc-diff-backlog.md)
-      (the QA analogue of BLOCKERS.md; re-sweep to refresh). Still TODO: a real-module corpus, and growing
-      the non-determinism / error-example skip heuristics as new noise shows up.
+      `scripts/doc-diff-sweep.sh` fans the whole corpus out across worker processes. **Latest full-corpus
+      sweep (2026-07-22, main ≈ `ecaee240`): 444 files, 130 with signal — 228 output-mismatch +
+      133 mutsu-crash + 133 raku-drift** (down from the 2026-07-21 scan's 271/179 as the operator/regex/
+      numeric slices and the big-FatRat split #5238 landed). The ranked, tracked backlog is
+      [docs/doc-diff-backlog.md](docs/doc-diff-backlog.md) (the QA analogue of BLOCKERS.md), and the **raw
+      per-file minimal-repro reports for this scan are committed under
+      [docs/doc-diff-sweep/](docs/doc-diff-sweep/)** so a future session can read them without re-running
+      the ~15-minute sweep. Both tools (`scripts/doc-diff-harness.raku`, `scripts/doc-diff-sweep.sh`) are
+      in-repo and runnable directly. Still TODO: a real-module corpus, and growing the non-determinism /
+      error-example skip heuristics as new noise shows up.
+- **Top of the ranked backlog (2026-07-22 scan, high-signal `mism`/`crash` first):** `regexes` (12/3),
+      `traps` (9/2), `variables` (8/2), `control` (4/6), `list` (6/3), `IO/Path` (7/1), `Any` (4/3),
+      `objects` (4/3), `Iterator` (2/5), `typesystem` (5/1), `IO/Handle` (5/1). Full ranked table +
+      per-file repros in [docs/doc-diff-backlog.md](docs/doc-diff-backlog.md) / [docs/doc-diff-sweep/](docs/doc-diff-sweep/).
+      What dominates these files is analysed in the "Campaign status" bullet below (deep buckets, not
+      one-liners).
 - [ ] **Leftover from the first backlog batch (re-verified 2026-07-22):** the sequence/lazy
       argument truncation (`@foo.prepend: 1,3...11`, `600.polymod(lazy …)`), `.Slip` hole
       rendering, empty-`Array` `pop` → `X::Cannot::Empty`, and lazy `.elems` → `X::Cannot::Lazy`

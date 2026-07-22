@@ -1,0 +1,132 @@
+# doc-diff-harness report
+# stats: match=53  mismatch=3  mutsu-crash=1  no-oracle=22  raku-drift=1  skipped-marker=4  skipped-nondet=4
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Language/functions.rakudoc:67
+--- program ---
+sub escape($str) {
+    # Puts a slash before non-alphanumeric characters
+    S:g[<-alpha -digit>] = "\\$/" given $str
+}
+
+say escape 'foo#bar?'; # OUTPUT: «foo\#bar\?␤»
+
+{
+    sub escape($str) {
+        # Writes each non-alphanumeric character in its hexadecimal escape
+        S:g[<-alpha -digit>] = "\\x[{ $/.ord.base(16) }]" given $str
+    }
+
+    say escape 'foo#bar?' # OUTPUT: «foo\x[23]bar\x[3F]␤»
+}
+
+# Back to original escape function
+say escape 'foo#bar?'; # OUTPUT: «foo\#bar\?␤»
+--- raku stdout ---
+foo\#bar\?
+foo\x[23]bar\x[3F]
+foo\#bar\?
+--- mutsu stdout (exit 0) ---
+foo$/bar$/
+foobar
+foo$/bar$/
+
+==============================================================================
+[2] raku-drift-from-doc  raku-doc/doc/Language/functions.rakudoc:1127
+--- program ---
+proto how-many(|) {*}
+
+multi how-many( Associative $a ) {
+    say "Associative $a ";
+    my $calling = callwith( 1 => $a );
+    return $calling;
+}
+
+multi how-many( Pair $a ) {
+    say "Pair $a ";
+    return "There is $a "
+
+}
+
+multi how-many( Hash $a ) {
+    say "Hash $a";
+    return "Hashing $a";
+}
+
+my $little-piggy = little => 'piggy';
+say $little-piggy.^name;        # OUTPUT: «Pair␤»
+say &how-many.cando( \( $little-piggy ));
+# OUTPUT: «(sub how-many (Pair $a) { #`(Sub|68970512) ... } sub how-many (Associative $a) { #`(Sub|68970664) ... })␤»
+say how-many( $little-piggy  ); # OUTPUT: «Pair little     piggy␤There is little piggy␤»
+--- raku stdout ---
+Pair
+(&how-many &how-many)
+Pair little	piggy 
+There is little	piggy
+--- mutsu stdout (exit 0) ---
+Pair
+(how-many how-many how-many how-many)
+Pair little	piggy 
+There is little	piggy
+
+==============================================================================
+[3] output-mismatch  raku-doc/doc/Language/functions.rakudoc:1291
+--- program ---
+class LoggedVersion is Version {
+    method new(|c) {
+        note "New version object created with arguments " ~ c.raku;
+        nextsame;
+    }
+}
+
+say LoggedVersion.new('1.0.2');
+
+# OUTPUT:
+# New version object created with arguments \("1.0.2")
+# v1.0.2
+--- raku stdout ---
+v1.0.2
+--- mutsu stdout (exit 0) ---
+Nil
+
+==============================================================================
+[4] mutsu-error  raku-doc/doc/Language/functions.rakudoc:356
+--- program ---
+class Congrats {
+    multi method congratulate($reason, $name) {
+        say "Hooray for your $reason, $name";
+    }
+}
+
+role BirthdayCongrats {
+    multi method congratulate('birthday', $name) {
+        say "Happy birthday, $name";
+    }
+    multi method congratulate('birthday', $name, $age) {
+        say "Happy {$age}th birthday, $name";
+    }
+}
+
+my $congrats = Congrats.new does BirthdayCongrats;
+
+$congrats.congratulate('promotion','Cindy'); # OUTPUT: «Hooray for your promotion, Cindy␤»
+$congrats.congratulate('birthday','Bob');    # OUTPUT: «Happy birthday, Bob␤»
+--- raku stdout ---
+Hooray for your promotion, Cindy
+Happy birthday, Bob
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+No matching candidates for method: congratulate
+  in block <unit> at tmp/ddh/prog-3335853.raku line 18
+
+==============================================================================
+[5] output-mismatch  raku-doc/doc/Language/functions.rakudoc:720
+--- program ---
+my $XX := &infix:<XX>; say $XX( [1,(2,3)] , [(4,5),6]  );
+# OUTPUT: «(((1 (4 5))) ((1 6)) (((2 3) (4 5))) (((2 3) 6)))␤»
+--- raku stdout ---
+(((1 (4 5))) ((1 6)) (((2 3) (4 5))) (((2 3) 6)))
+--- mutsu stdout (exit 0) ---
+(((1 4) (1 5)) ((1 6)) ((2 4) (2 5) (3 4) (3 5)) ((2 6) (3 6)))
+

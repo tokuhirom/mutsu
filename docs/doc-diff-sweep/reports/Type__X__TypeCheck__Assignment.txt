@@ -1,0 +1,14 @@
+# doc-diff-harness report
+# stats: match=0  mismatch=1  mutsu-crash=0  no-oracle=1  raku-drift=0  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/X/TypeCheck/Assignment.rakudoc:13
+--- program ---
+my Int $x = "foo";
+CATCH { default { put .^name, ': ', .Str } };
+# OUTPUT: «X::TypeCheck::Assignment: Type check failed in assignment to $x; expected Int but got Str ("foo")␤»
+--- raku stdout ---
+X::TypeCheck::Assignment: Type check failed in assignment to $x; expected Int but got Str ("foo")
+--- mutsu stdout (exit 0) ---
+X::TypeCheck::Assignment: Type check failed in assignment to $x; expected Int, got Str
+

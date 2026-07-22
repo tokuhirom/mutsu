@@ -1,0 +1,55 @@
+# doc-diff-harness report
+# stats: match=12  mismatch=3  mutsu-crash=0  no-oracle=20  raku-drift=1  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/Map.rakudoc:62
+--- program ---
+my %h = Map.new('a', 1, 'b', 2);
+
+# WRONG: :b(2) interpreted as named argument
+say Map.new('a', 1, :b(2)).keys; # OUTPUT: «(a)␤»
+
+# RIGHT: :b(2) interpreted as Pair because of extra parentheses
+say Map.new( ('a', 1, :b(2)) ).keys.sort; # OUTPUT: «(a b)␤»
+
+# RIGHT: 'b' => 2 always creates a Pair
+say Map.new('a', 1, 'b' => 2).keys.sort; # OUTPUT: «(a b)␤»
+--- raku stdout ---
+(a)
+(a b)
+(a b)
+--- mutsu stdout (exit 0) ---
+(a b)
+(a b)
+(a b)
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Type/Map.rakudoc:122
+--- program ---
+my $m = Map.new('a' => (2, 3), 'b' => 17);
+say $m.keys; # OUTPUT: «(a b)␤»
+--- raku stdout ---
+(a b)
+--- mutsu stdout (exit 0) ---
+(b a)
+
+==============================================================================
+[3] raku-drift-from-doc  raku-doc/doc/Type/Map.rakudoc:165
+--- program ---
+my $m = Map.new('a' => (2, 3), 'b' => 17);
+say $m.invert;                          # OUTPUT: «(2 => a 3 => a 17 => b)␤»
+--- raku stdout ---
+(17 => b 2 => a 3 => a)
+--- mutsu stdout (exit 0) ---
+(2 => a 3 => a 17 => b)
+
+==============================================================================
+[4] output-mismatch  raku-doc/doc/Type/Map.rakudoc:182
+--- program ---
+my $m = Map.new('a' => (2, 3), 'b' => 17);
+say $m.list;                            # OUTPUT: «(b => 17 a => (2 3))␤»
+--- raku stdout ---
+(b => 17 a => (2 3))
+--- mutsu stdout (exit 0) ---
+(a => (2 3) b => 17)
+

@@ -1,0 +1,40 @@
+# doc-diff-harness report
+# stats: match=2  mismatch=1  mutsu-crash=0  no-oracle=17  raku-drift=0  skipped-marker=0  skipped-nondet=1
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/Real.rakudoc:31
+--- program ---
+class Temperature is Real {
+    has Str:D  $.unit  is required where any <K F C>;
+    has Real:D $.value is required;
+    method new ($value, :$unit = 'K') { self.bless :$value :$unit }
+    # Note: implementing .new() that handles $value of type Temperature is left as an exercise
+
+    method Bridge {
+        when $!unit eq 'F' { ($!value + 459.67) × 5/9 }
+        when $!unit eq 'C' {  $!value + 273.15 }
+        $!value
+    }
+    method gist { self.Str }
+    method Str  { "$!value degrees $!unit" }
+}
+
+sub postfix:<℃> { Temperature.new: $^value, :unit<C> }
+sub postfix:<℉> { Temperature.new: $^value, :unit<F> }
+sub postfix:<K> { Temperature.new: $^value, :unit<K> }
+
+my $human := 36.6℃;
+my $book  := 451℉;
+my $sun   := 5778K;
+say $human;                # OUTPUT: «36.6 degrees C␤»
+say $human + $book + $sun; # OUTPUT: «6593.677777777778␤»
+say 123K + 456K;           # OUTPUT: «579␤»
+--- raku stdout ---
+36.6 degrees C
+6593.677777777778
+579
+--- mutsu stdout (exit 0) ---
+36.6 degrees C
+6265.6
+579
+

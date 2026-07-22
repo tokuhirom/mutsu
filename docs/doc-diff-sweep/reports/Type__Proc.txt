@@ -1,0 +1,39 @@
+# doc-diff-harness report
+# stats: match=3  mismatch=1  mutsu-crash=0  no-oracle=12  raku-drift=0  skipped-marker=1  skipped-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/Proc.rakudoc:140
+--- program ---
+my $p-name = "/tmp/program.raku";
+my $program = Q:to/END/;
+    #!/usr/bin/env raku
+
+    $*OUT.say( qq/\t$*PROGRAM: This goes to standard output/ );
+END
+
+spurt $p-name, $program;
+
+$*OUT.put: "1. standard output before doing anything weird";
+
+{
+    temp $*OUT = open '/tmp/out.txt', :w;
+    $*OUT.put: "2. temp redefine standard output before this message";
+    shell( "raku $p-name" ).so;
+}
+
+$*OUT.put: "3. everything should be back to normal";
+# OUTPUT
+# 1. standard output before doing anything weird
+#     /tmp/program.raku: This goes to standard output
+# 3. everything should be back to normal
+
+# /tmp/out.txt will contain:
+# 2. temp redefine standard output before this message
+--- raku stdout ---
+1. standard output before doing anything weird
+	/tmp/program.raku: This goes to standard output
+3. everything should be back to normal
+--- mutsu stdout (exit 0) ---
+1. standard output before doing anything weird
+3. everything should be back to normal
+

@@ -1,0 +1,21 @@
+# doc-diff-harness report
+# stats: match=33  mismatch=1  mutsu-crash=0  no-oracle=11  raku-drift=0  skipped-marker=11  skipped-nondet=1
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Language/quoting.rakudoc:368
+--- program ---
+say <42/10>.^name;   # OUTPUT: «Rat␤»
+say <1+42i>.^name;   # OUTPUT: «Complex␤»
+say < 42/10 >.^name; # OUTPUT: «RatStr␤»
+say < 1+42i >.^name; # OUTPUT: «ComplexStr␤»
+--- raku stdout ---
+Rat
+Complex
+RatStr
+ComplexStr
+--- mutsu stdout (exit 0) ---
+Rat
+Complex
+Rat
+ComplexStr
+

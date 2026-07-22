@@ -1,0 +1,177 @@
+# doc-diff-harness report
+# stats: match=1  mismatch=0  mutsu-crash=5  no-oracle=6  raku-drift=0  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] mutsu-error  raku-doc/doc/Language/experimental.rakudoc:32
+--- program ---
+use experimental :pack;
+say pack("H*", "414243").contents;#  OUTPUT: «(65 66 67)␤»
+--- raku stdout ---
+(65 66 67)
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+No such method 'contents' for invocant of type 'Buf'
+  in block <unit> at tmp/ddh/prog-3335314.raku line 2
+
+==============================================================================
+[2] mutsu-error  raku-doc/doc/Language/experimental.rakudoc:78
+--- program ---
+use experimental :macros;
+macro is-mighty( $who ) {
+    quasi { "$who is mighty!"}
+};
+say is-mighty "Freija"; # OUTPUT: « "Freija" is mighty!␤»
+--- raku stdout ---
+ "Freija" is mighty!
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Two terms in a row
+  in block <unit> at tmp/ddh/prog-3335314.raku line 2
+
+==============================================================================
+[3] mutsu-error  raku-doc/doc/Language/experimental.rakudoc:93
+--- program ---
+use experimental :macros;
+macro is-mighty( $who ) {
+    quasi { {{{$who}}} ~ " is mighty!"}
+};
+say is-mighty "Freija";  # OUTPUT: «Freija is mighty!␤»
+--- raku stdout ---
+Freija is mighty!
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Useless use of $who in sink context (line 1)
+  in block <unit> at tmp/ddh/prog-3335314.raku line 1
+Useless use of "~" in expression "~ is mighty!" in sink context (line 1)
+  in block <unit> at tmp/ddh/prog-3335314.raku line 1
+Two terms in a row
+  in block <unit> at tmp/ddh/prog-3335314.raku line 2
+
+==============================================================================
+[4] mutsu-error  raku-doc/doc/Language/experimental.rakudoc:104
+--- program ---
+use experimental :macros;
+my $called;
+macro called() {
+    $called++;
+    quasi { "Called" }
+};
+say called() ~ " $called times";
+say called() ~ " $called times"; # OUTPUT: «Called 2 times␤Called 2 times␤»
+--- raku stdout ---
+Called 2 times
+Called 2 times
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Useless use of constant string "Called" in sink context (line 1)
+  in block <unit> at tmp/ddh/prog-3335314.raku line 1
+Two terms in a row
+  in block <unit> at tmp/ddh/prog-3335314.raku line 3
+
+==============================================================================
+[5] mutsu-error  raku-doc/doc/Language/experimental.rakudoc:144
+--- program ---
+use experimental :cached;
+
+sub aliquot-parts( $number ) is cached {
+    (^$number).grep: $number %% *;
+}
+
+sub infix:<amic>( $m, $n ) {
+    $m == aliquot-parts($n).sum &&
+    $n == aliquot-parts($m).sum;
+}
+
+# Taken from https://en.wikipedia.org/wiki/Amicable_numbers
+my @numbers = [2620, 2924, 5020, 5564, 6232, 6368, 66928, 66992];
+
+say "Aliquot parts of $_ are ", aliquot-parts $_ for @numbers;
+
+for @numbers X @numbers -> @pair {
+    say "@pair[0] and @pair[1] are ",
+        @pair[0] amic @pair[1]??" "!!"not ", "amicable";
+}
+--- raku stdout ---
+Aliquot parts of 2620 are (1 2 4 5 10 20 131 262 524 655 1310)
+Aliquot parts of 2924 are (1 2 4 17 34 43 68 86 172 731 1462)
+Aliquot parts of 5020 are (1 2 4 5 10 20 251 502 1004 1255 2510)
+Aliquot parts of 5564 are (1 2 4 13 26 52 107 214 428 1391 2782)
+Aliquot parts of 6232 are (1 2 4 8 19 38 41 76 82 152 164 328 779 1558 3116)
+Aliquot parts of 6368 are (1 2 4 8 16 32 199 398 796 1592 3184)
+Aliquot parts of 66928 are (1 2 4 8 16 47 89 94 178 188 356 376 712 752 1424 4183 8366 16732 33464)
+Aliquot parts of 66992 are (1 2 4 8 16 53 79 106 158 212 316 424 632 848 1264 4187 8374 16748 33496)
+2620 and 2620 are not amicable
+2620 and 2924 are  amicable
+2620 and 5020 are not amicable
+2620 and 5564 are not amicable
+2620 and 6232 are not amicable
+2620 and 6368 are not amicable
+2620 and 66928 are not amicable
+2620 and 66992 are not amicable
+2924 and 2620 are  amicable
+2924 and 2924 are not amicable
+2924 and 5020 are not amicable
+2924 and 5564 are not amicable
+2924 and 6232 are not amicable
+2924 and 6368 are not amicable
+2924 and 66928 are not amicable
+2924 and 66992 are not amicable
+5020 and 2620 are not amicable
+5020 and 2924 are not amicable
+5020 and 5020 are not amicable
+5020 and 5564 are  amicable
+5020 and 6232 are not amicable
+5020 and 6368 are not amicable
+5020 and 66928 are not amicable
+5020 and 66992 are not amicable
+5564 and 2620 are not amicable
+5564 and 2924 are not amicable
+5564 and 5020 are  amicable
+5564 and 5564 are not amicable
+5564 and 6232 are not amicable
+5564 and 6368 are not amicable
+5564 and 66928 are not amicable
+5564 and 66992 are not amicable
+6232 and 2620 are not amicable
+6232 and 2924 are not amicable
+6232 and 5020 are not amicable
+6232 and 5564 are not amicable
+6232 and 6232 are not amicable
+6232 and 6368 are  amicable
+6232 and 66928 are not amicable
+6232 and 66992 are not amicable
+6368 and 2620 are not amicable
+6368 and 2924 are not amicable
+6368 and 5020 are not amicable
+6368 and 5564 are not amicable
+6368 and 6232 are  amicable
+6368 and 6368 are not amicable
+6368 and 66928 are not amicable
+6368 and 66992 are not amicable
+66928 and 2620 are not amicable
+66928 and 2924 are not amicable
+66928 and 5020 are not amicable
+66928 and 5564 are not amicable
+66928 and 6232 are not amicable
+66928 and 6368 are not amicable
+66928 and 66928 are not amicable
+66928 and 66992 are  amicable
+66992 and 2620 are not amicable
+66992 and 2924 are not amicable
+66992 and 5020 are not amicable
+66992 and 5564 are not amicable
+66992 and 6232 are not amicable
+66992 and 6368 are not amicable
+66992 and 66928 are  amicable
+66992 and 66992 are not amicable
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Attempt to divide 2620 by zero using infix:<%%>
+  in sub aliquot-parts at tmp/ddh/prog-3335314.raku line 4
+  in block <unit> at tmp/ddh/prog-3335314.raku line 15
+

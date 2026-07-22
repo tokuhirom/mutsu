@@ -1,0 +1,18 @@
+# doc-diff-harness report
+# stats: match=0  mismatch=0  mutsu-crash=1  no-oracle=0  raku-drift=0  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] mutsu-error  raku-doc/doc/Language/newline.rakudoc:40
+--- program ---
+my $crlf-out = open(IO::Special.new('<STDOUT>'), :nl-out("\\\n\r"));
+$*OUT.say: 1;     # OUTPUT: «1␤»
+$crlf-out.say: 1; # OUTPUT: «1\␤␍»
+--- raku stdout ---
+1
+1\
+--- mutsu stdout (exit 1) ---
+1
+--- mutsu stderr ---
+Failed to open '/home/tokuhirom/work/mutsu-codex/IO::Special()': No such file or directory (os error 2)
+  in block <unit> at tmp/ddh/prog-3345154.raku line 3
+

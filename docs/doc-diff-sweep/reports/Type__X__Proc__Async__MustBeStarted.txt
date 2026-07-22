@@ -1,0 +1,14 @@
+# doc-diff-harness report
+# stats: match=0  mismatch=1  mutsu-crash=0  no-oracle=2  raku-drift=0  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/X/Proc/Async/MustBeStarted.rakudoc:14
+--- program ---
+Proc::Async.new('echo', :w).say(42);
+CATCH { default { put .^name, ': ', .Str } };
+# OUTPUT: «X::Proc::Async::MustBeStarted: Process must be started first before calling 'say'␤»
+--- raku stdout ---
+X::Proc::Async::MustBeStarted: Process must be started first before calling 'say'
+--- mutsu stdout (exit 0) ---
+X::Proc::Async::MustBeStarted: X::Proc::Async::MustBeStarted
+

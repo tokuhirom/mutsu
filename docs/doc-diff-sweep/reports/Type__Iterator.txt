@@ -1,0 +1,181 @@
+# doc-diff-harness report
+# stats: match=5  mismatch=2  mutsu-crash=5  no-oracle=15  raku-drift=2  skipped-marker=1  skipped-nondet=3
+
+==============================================================================
+[1] mutsu-error  raku-doc/doc/Type/Iterator.rakudoc:37
+--- program ---
+class SkippingArray is Array {
+    # skip all undefined values while iterating
+    method iterator {
+        class :: does Iterator {
+            has $.index is rw = 0;
+            has $.array is required;
+            method pull-one {
+                $.index++ while !$.array.AT-POS($.index).defined && $.array.elems > $.index;
+                $.array.elems > $.index ?? $.array.AT-POS($.index++) !! IterationEnd
+            }
+        }.new(array => self)
+    }
+}
+
+my @a := SkippingArray.new;
+
+@a.append: 1, Any, 3, Int, 5, Mu, 7;
+
+for @a -> $a, $b {
+    say [$a, $b];
+}
+
+# OUTPUT: «[1 3]␤[5 7]␤»
+--- raku stdout ---
+[1 3]
+[5 7]
+--- mutsu stdout (exit 1) ---
+[1 (Any)]
+[3 (Int)]
+[5 (Mu)]
+--- mutsu stderr ---
+Too few positionals passed; expected 2 arguments but got 1
+  in block <unit> at tmp/ddh/prog-3412499.raku line 19
+
+==============================================================================
+[2] raku-drift-from-doc  raku-doc/doc/Type/Iterator.rakudoc:69
+--- program ---
+.say for ["foo",IterationEnd, "baz"]; # OUTPUT: «foo␤»
+say ["foo",IterationEnd, "baz"].map: "«" ~ * ~ "»";
+# OUTPUT: «(«foo» «IterationEnd» «baz»)␤»
+--- raku stdout ---
+foo
+(«foo» «IterationEnd» «baz»)
+--- mutsu stdout (exit 0) ---
+foo
+IterationEnd
+baz
+(«foo» «IterationEnd» «baz»)
+
+==============================================================================
+[3] output-mismatch  raku-doc/doc/Type/Iterator.rakudoc:88
+--- program ---
+my $it = (1,2).iterator;
+$it.pull-one for ^2;
+my $is-it-the-end = $it.pull-one;
+say $is-it-the-end =:= IterationEnd; # OUTPUT: «False␤»
+--- raku stdout ---
+False
+--- mutsu stdout (exit 0) ---
+True
+
+==============================================================================
+[4] raku-drift-from-doc  raku-doc/doc/Type/Iterator.rakudoc:277
+--- program ---
+class DNA does Iterable does Iterator {
+    has $.chain;
+    has Int $!index = 0;
+
+    method new ($chain where {
+                       $chain ~~ /^^ <[ACGT]>+ $$ / and
+                       $chain.chars %% 3 } ) {
+        self.bless( :$chain );
+    }
+
+    method iterator( ){ self }
+    method pull-one( --> Mu){
+      if $!index < $.chain.chars {
+         my $codon = $.chain.comb.rotor(3)[$!index div 3];
+         $!index += 3;
+         return $codon;
+      } else {
+        return IterationEnd;
+      }
+    }
+
+    method push-all(Iterator:D: $target) {
+        for $.chain.comb.rotor(3) -> $codon {
+            $target.push: $codon;
+        }
+    }
+
+};
+
+my $b := DNA.new("AAGCCT");
+my @dna-array = $b;
+say @dna-array; # OUTPUT: «[(A A G) (C C T)]␤»
+--- raku stdout ---
+[(A A G) (C C T) (A A G) (C C T)]
+--- mutsu stdout (exit 0) ---
+[DNA.new(chain => "AAGCCT")]
+
+==============================================================================
+[5] output-mismatch  raku-doc/doc/Type/Iterator.rakudoc:115
+--- program ---
+my $i = (1 .. 3).iterator;
+say $i.pull-one;       # OUTPUT: «1␤»
+say $i.pull-one;       # OUTPUT: «2␤»
+say $i.pull-one;       # OUTPUT: «3␤»
+say $i.pull-one.raku;  # OUTPUT: «IterationEnd␤»
+--- raku stdout ---
+1
+2
+3
+IterationEnd
+--- mutsu stdout (exit 0) ---
+1
+2
+3
+"IterationEnd"
+
+==============================================================================
+[6] mutsu-error  raku-doc/doc/Type/Iterator.rakudoc:179
+--- program ---
+my @array;
+say (1 .. ∞).iterator.push-exactly(@array, 3); # OUTPUT: «3␤»
+say @array; # OUTPUT: «[1 2 3]␤»
+--- raku stdout ---
+3
+[1 2 3]
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+No such method 'push-exactly' for invocant of type 'Iterator'
+  in block <unit> at tmp/ddh/prog-3412499.raku line 2
+
+==============================================================================
+[7] mutsu-error  raku-doc/doc/Type/Iterator.rakudoc:252
+--- program ---
+my @array;
+say (1 .. ∞).iterator.push-at-least(@array, 10); # OUTPUT: «10␤»
+say @array; # OUTPUT: «[1 2 3 4 5 6 7 8 9 10]␤»
+--- raku stdout ---
+10
+[1 2 3 4 5 6 7 8 9 10]
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+No such method 'push-at-least' for invocant of type 'Iterator'
+  in block <unit> at tmp/ddh/prog-3412499.raku line 2
+
+==============================================================================
+[8] mutsu-error  raku-doc/doc/Type/Iterator.rakudoc:269
+--- program ---
+my @array;
+say (1 .. 1000).iterator.push-all(@array); # All 1000 values are pushed
+--- raku stdout ---
+IterationEnd
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+No such method 'push-all' for invocant of type 'Iterator'
+  in block <unit> at tmp/ddh/prog-3412499.raku line 2
+
+==============================================================================
+[9] mutsu-error  raku-doc/doc/Type/Iterator.rakudoc:388
+--- program ---
+say (1 .. 1000).iterator.sink-all;  # OUTPUT: «IterationEnd␤»
+--- raku stdout ---
+IterationEnd
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+No such method 'sink-all' for invocant of type 'Iterator'
+  in block <unit> at tmp/ddh/prog-3412499.raku line 1
+

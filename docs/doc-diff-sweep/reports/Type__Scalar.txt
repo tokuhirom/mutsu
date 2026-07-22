@@ -1,0 +1,75 @@
+# doc-diff-harness report
+# stats: match=10  mismatch=2  mutsu-crash=0  no-oracle=17  raku-drift=1  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/Scalar.rakudoc:43
+--- program ---
+my $a = 1;
+$a.^name.say;     # OUTPUT: «Int␤»
+$a.VAR.^name.say; # OUTPUT: «Scalar␤»
+my $b := 1;
+$b.^name.say;     # OUTPUT: «Int␤»
+$b.VAR.^name.say; # OUTPUT: «Int␤»
+--- raku stdout ---
+Int
+Scalar
+Int
+Int
+--- mutsu stdout (exit 0) ---
+Int
+Scalar
+Int
+Scalar
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Type/Scalar.rakudoc:53
+--- program ---
+my @a = 1, 2, 3;
+@a[0].^name.say;            # OUTPUT: «Int␤»
+@a[0].VAR.^name.say;        # OUTPUT: «Scalar␤»
+[1, 2, 3][0].^name.say;     # OUTPUT: «Int␤»
+[1, 2, 3][0].VAR.^name.say; # OUTPUT: «Scalar␤»
+(1, 2, 3)[0].^name.say;     # OUTPUT: «Int␤»
+(1, 2, 3)[0].VAR.^name.say; # OUTPUT: «Int␤»
+--- raku stdout ---
+Int
+Scalar
+Int
+Scalar
+Int
+Int
+--- mutsu stdout (exit 0) ---
+Int
+Scalar
+Int
+Int
+Int
+Int
+
+==============================================================================
+[3] raku-drift-from-doc  raku-doc/doc/Type/Scalar.rakudoc:89
+--- program ---
+my \c = 1;
+c.^name.say;             # OUTPUT: «Int␤»
+c.VAR.^name.say;         # OUTPUT: «Int␤»
+my $a = 1;
+my \d = $a;              # just "my \d = $ = 1" works, too
+d.^name.say;             # OUTPUT: «Int␤»
+d.VAR.^name.say;         # OUTPUT: «Scalar␤»
+d = 2;                   # ok
+c = 2;                   # fails
+CATCH { default { put .^name, ': ', .Str } };
+# OUTPUT: «X::Assignment::RO: Cannot modify an immutable Int␤»
+--- raku stdout ---
+Int
+Int
+Int
+Scalar
+X::Assignment::RO: Cannot modify an immutable Int (1)
+--- mutsu stdout (exit 0) ---
+Int
+Int
+Int
+Int
+X::Assignment::RO: Cannot modify an immutable value (d)
+

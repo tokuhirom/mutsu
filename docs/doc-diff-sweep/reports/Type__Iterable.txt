@@ -1,0 +1,34 @@
+# doc-diff-harness report
+# stats: match=6  mismatch=2  mutsu-crash=0  no-oracle=6  raku-drift=0  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/Iterable.rakudoc:19
+--- program ---
+class DNA does Iterable {
+    has $.chain;
+    method new ($chain where { $chain ~~ /^^ <[ACGT]>+ $$ / } ) {
+        self.bless( :$chain );
+    }
+
+    method iterator(DNA:D:) {
+        $!chain.comb.rotor(3).iterator;
+    }
+}
+
+my $a := DNA.new('GAATCC');
+.say for $a; # OUTPUT: «(G A A)␤(T C C)␤»
+--- raku stdout ---
+(G A A)
+(T C C)
+--- mutsu stdout (exit 0) ---
+DNA.new(chain => "GAATCC")
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Type/Iterable.rakudoc:52
+--- program ---
+say (1..10).iterator;
+--- raku stdout ---
+Rakudo::Iterator::IntRange.new
+--- mutsu stdout (exit 0) ---
+Iterator.new
+

@@ -1,0 +1,137 @@
+# doc-diff-harness report
+# stats: match=89  mismatch=1  mutsu-crash=2  no-oracle=96  raku-drift=5  skipped-marker=0  skipped-nondet=4
+
+==============================================================================
+[1] raku-drift-from-doc  raku-doc/doc/Type/Cool.rakudoc:1293
+--- program ---
+my $original = 16;
+my @roots = $original.roots(4);
+say @roots;
+
+for @roots -> $r {
+    say abs($r ** 4 - $original);
+}
+
+# OUTPUT:«2+0i 1.22464679914735e-16+2i -2+2.44929359829471e-16i -3.67394039744206e-16-2i␤»
+# OUTPUT:«1.77635683940025e-15␤»
+# OUTPUT:«4.30267170434156e-15␤»
+# OUTPUT:«8.03651692704705e-15␤»
+# OUTPUT:«1.04441561648202e-14␤»
+--- raku stdout ---
+[2+0i 1.2246467991473532e-16+2i -2+2.4492935982947064e-16i -3.6739403974420594e-16-2i]
+0
+3.91886975727153e-15
+7.83773951454306e-15
+1.175660927181459e-14
+--- mutsu stdout (exit 0) ---
+[2 0.00000000000000012246467991473532+2i -2 -0.00000000000000036739403974420594-2i]
+0
+3.91886975727153e-15
+0
+1.175660927181459e-14
+
+==============================================================================
+[2] raku-drift-from-doc  raku-doc/doc/Type/Cool.rakudoc:422
+--- program ---
+say tanh(0.5);              # OUTPUT: «0.46211715726001␤»
+say tanh(atanh(0.5));       # OUTPUT: «0.5␤»
+--- raku stdout ---
+0.46211715726000974
+0.5000000000000001
+--- mutsu stdout (exit 0) ---
+0.46211715726000974
+0.49999999999999994
+
+==============================================================================
+[3] raku-drift-from-doc  raku-doc/doc/Type/Cool.rakudoc:433
+--- program ---
+say atanh(0.5);             # OUTPUT: «0.549306144334055␤»
+--- raku stdout ---
+0.5493061443340549
+--- mutsu stdout (exit 0) ---
+0.5493061443340548
+
+==============================================================================
+[4] raku-drift-from-doc  raku-doc/doc/Type/Cool.rakudoc:535
+--- program ---
+say log10(1001);            # OUTPUT: «3.00043407747932␤»
+--- raku stdout ---
+3.0004340774793183
+--- mutsu stdout (exit 0) ---
+3.000434077479319
+
+==============================================================================
+[5] raku-drift-from-doc  raku-doc/doc/Type/Cool.rakudoc:737
+--- program ---
+say ‘ã̷̠̬̊’.uniprops(‘Grapheme_Cluster_Break’); # OUTPUT: «(Other Extend Extend Extend Extend)␤»
+say ‘👨‍👩‍👧‍👦🏿’.uniprops(‘Grapheme_Cluster_Break’); # OUTPUT: «(E_Base_GAZ ZWJ E_Base_GAZ ZWJ E_Base_GAZ ZWJ E_Base_GAZ E_Modifier)␤»
+--- raku stdout ---
+(Other Extend Extend Extend Extend)
+(Other ZWJ Other ZWJ Other ZWJ Other Extend)
+--- mutsu stdout (exit 0) ---
+(Other Extend Extend Extend Extend)
+(Other ZWJ Other ZWJ Other ZWJ Other Other)
+
+==============================================================================
+[6] mutsu-error  raku-doc/doc/Type/Cool.rakudoc:932
+--- program ---
+# Camelia in Unicode
+say ‘»ö«’.uniname;
+# OUTPUT: «RIGHT-POINTING DOUBLE ANGLE QUOTATION MARK␤»
+say "Ḍ̇".uniname; # Note, doesn't show "COMBINING DOT ABOVE"
+# OUTPUT: «LATIN CAPITAL LETTER D WITH DOT BELOW␤»
+
+# Find the char with the longest Unicode name.
+say (0..0x1FFFF).sort(*.uniname.chars)[*-1].chr.uniname;
+# OUTPUT: «BOX DRAWINGS LIGHT DIAGONAL UPPER CENTRE TO MIDDLE RIGHT AND MIDDLE LEFT TO LOWER CENTRE␤»
+--- raku stdout ---
+RIGHT-POINTING DOUBLE ANGLE QUOTATION MARK
+LATIN CAPITAL LETTER D WITH DOT BELOW
+BOX DRAWINGS LIGHT DIAGONAL UPPER CENTRE TO MIDDLE RIGHT AND MIDDLE LEFT TO LOWER CENTRE
+--- mutsu stdout (exit 124) ---
+RIGHT-POINTING DOUBLE ANGLE QUOTATION MARK
+LATIN CAPITAL LETTER D WITH DOT BELOW
+
+==============================================================================
+[7] output-mismatch  raku-doc/doc/Type/Cool.rakudoc:1416
+--- program ---
+say 1+0i.Rat;                             # OUTPUT: «1␤»
+say 2e1.Rat;                              # OUTPUT: «20␤»
+say (-4/3).Rat;                           # OUTPUT: «-1.333333␤»
+say "foo".Rat.^name;                      # OUTPUT: «Failure␤»
+say (.numerator, .denominator) for π.Rat; # OUTPUT: «(355 113)␤»
+--- raku stdout ---
+1
+20
+-1.333333
+Failure
+(355 113)
+--- mutsu stdout (exit 0) ---
+1
+20
+-1.333333
+Rat
+(355 113)
+
+==============================================================================
+[8] mutsu-error  raku-doc/doc/Type/Cool.rakudoc:1444
+--- program ---
+say 1+0i.UInt;            # OUTPUT: «1␤»
+say 2e1.UInt;             # OUTPUT: «20␤»
+say 1.3.UInt;             # OUTPUT: «1␤»
+say (-4/3).UInt.^name;    # OUTPUT: «Failure␤»
+say "foo".UInt.^name;     # OUTPUT: «Failure␤»
+--- raku stdout ---
+1
+20
+1
+Failure
+Failure
+--- mutsu stdout (exit 1) ---
+1
+20
+1
+--- mutsu stderr ---
+Coercion to UInt out of range. Is: -1, should be in 0..^Inf
+  in block <unit> at tmp/ddh/prog-3385144.raku line 4
+

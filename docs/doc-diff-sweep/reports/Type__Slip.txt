@@ -1,0 +1,17 @@
+# doc-diff-harness report
+# stats: match=5  mismatch=1  mutsu-crash=0  no-oracle=4  raku-drift=0  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/Slip.rakudoc:57
+--- program ---
+my \l = gather for 1..10 -> $a, $b { take |($a, $b) }; say l.raku;
+# OUTPUT: «((1, 2), (3, 4), (5, 6), (7, 8), (9, 10)).Seq␤»
+my \m= gather for 1..10 -> $a, $b { take ($a, $b).Slip }; say m.raku;
+# OUTPUT: «(1, 2, 3, 4, 5, 6, 7, 8, 9, 10).Seq␤»
+--- raku stdout ---
+((1, 2), (3, 4), (5, 6), (7, 8), (9, 10)).Seq
+(1, 2, 3, 4, 5, 6, 7, 8, 9, 10).Seq
+--- mutsu stdout (exit 0) ---
+(1, 2, 3, 4, 5, 6, 7, 8, 9, 10).Seq
+(1, 2, 3, 4, 5, 6, 7, 8, 9, 10).Seq
+

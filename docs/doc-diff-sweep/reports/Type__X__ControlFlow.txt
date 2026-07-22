@@ -1,0 +1,16 @@
+# doc-diff-harness report
+# stats: match=0  mismatch=0  mutsu-crash=1  no-oracle=3  raku-drift=0  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] mutsu-error  raku-doc/doc/Type/X/ControlFlow.rakudoc:15
+--- program ---
+last;
+CATCH { default { put .^name, ': ', .Str } };
+# OUTPUT: «X::ControlFlow: last without loop construct␤»
+--- raku stdout ---
+X::ControlFlow: last without loop construct
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Runtime error: X::ControlFlow
+

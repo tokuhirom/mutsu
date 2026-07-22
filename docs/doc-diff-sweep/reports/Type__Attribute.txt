@@ -1,0 +1,77 @@
+# doc-diff-harness report
+# stats: match=14  mismatch=1  mutsu-crash=1  no-oracle=27  raku-drift=1  skipped-marker=1  skipped-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/Attribute.rakudoc:58
+--- program ---
+class C {
+    has $.a is default(42) is rw = 666
+}
+my $c = C.new;
+say $c;
+$c.a = Nil;
+say $c;
+# OUTPUT: «C.new(a => 666)␤C.new(a => 42)␤»
+class Foo {
+    has @.bar is default(42) is rw
+};
+my $foo = Foo.new( bar => <a b c> );
+$foo.bar =Nil;
+say $foo; # OUTPUT: «Foo.new(bar => [42])␤»
+--- raku stdout ---
+C.new(a => 666)
+C.new(a => 42)
+Foo.new(bar => [42])
+--- mutsu stdout (exit 0) ---
+C.new(a => 666)
+C.new(a => 42)
+Foo.new(bar => [Any])
+
+==============================================================================
+[2] mutsu-error  raku-doc/doc/Type/Attribute.rakudoc:186
+--- program ---
+class Foo {
+    has $!bar is built; # same as `is built(True)`
+    has $.baz is built(False);
+    has $!qux is built(:bind);
+
+    method bar(::?CLASS:D:) { $!bar }
+    method qux(::?CLASS:D:) { $!qux }
+}
+
+my Foo:D $foo .= new: :bar[], :baz[], :qux[];
+say $foo.bar.raku; # OUTPUT: «$[]␤»
+say $foo.baz.raku; # OUTPUT: «Any␤»
+say $foo.qux.raku; # OUTPUT: «[]␤»
+--- raku stdout ---
+$[]
+Any
+[]
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+X::Method::NotFound: Unknown method value dispatch (fallback disabled): new on Foo:D
+  in block <unit> at tmp/ddh/prog-3370508.raku line 10
+
+==============================================================================
+[3] raku-drift-from-doc  raku-doc/doc/Type/Attribute.rakudoc:418
+--- program ---
+class Hangout {
+    has $.table;
+    has $.bar is DEPRECATED("the patio");
+}
+my $attr-table = Hangout.^attributes(:local)[0];
+my $attr-bar = Hangout.^attributes(:local)[1];
+with $attr-table.?DEPRECATED -> $text {     # does not trigger
+    say "Table is deprecated with '$text'";
+    # OUTPUT:
+}
+with $attr-bar.?DEPRECATED -> $text {
+    say "Bar is deprecated with '$text'";
+    # OUTPUT: «Bar is deprecated with 'the patio'"␤»
+}
+--- raku stdout ---
+Bar is deprecated with 'the patio'
+--- mutsu stdout (exit 0) ---
+
+

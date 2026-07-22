@@ -1,0 +1,233 @@
+# doc-diff-harness report
+# stats: match=8  mismatch=3  mutsu-crash=2  no-oracle=20  raku-drift=2  skipped-marker=5  skipped-nondet=1
+
+==============================================================================
+[1] mutsu-error  raku-doc/doc/Language/grammars.rakudoc:387
+--- program ---
+grammar HTTPRequest {
+    has Bool $.invalid;
+
+    token TOP {
+        <type> <.ns> <path> <.ns> 'HTTP/1.1' <.crlf>
+        [ <field> <.crlf> ]+
+        <.crlf>
+        $<body>=.*
+    }
+
+    token type {
+        | [ GET | POST | OPTIONS | HEAD | PUT | DELETE | TRACE | CONNECT ] <.accept>
+        | <-[\/]>+ <.error>
+    }
+
+    token path {
+        | '/' [[\w+]+ % \/] [\.\w+]? <.accept>
+        | '*' <.accept>
+        | \S+ <.error>
+    }
+
+    token field {
+        | $<name>=\w+ <.ns> ':' <.ns> $<value>=<-crlf>* <.accept>
+        | <-crlf>+ <.error>
+    }
+
+    method error(--> ::?CLASS:D) {
+        $!invalid = True;
+        self;
+    }
+
+    method accept(--> ::?CLASS:D) {
+        $!invalid = False;
+        self;
+    }
+
+    token crlf { # network new line (usually seen as "\r\n")
+        # Several internet protocols (such as HTTP, RF 2616) mandate
+        # the use of ASCII CR+LF (0x0D 0x0A) to terminate lines at
+        # the protocol level (even though, in practice, some applications
+        # tolerate a single LF).
+        # Raku, Raku grammars and strings (Str) adhere to Unicode
+        # conformance. Thus, CR+LF cannot be expressed unambiguously
+        # as \r\n in in Raku grammars or strings (Str), as Unicode
+        # conformance requires \r\n to be interpreted as \n alone.
+        \x[0d] \x[0a]
+    }
+    token ns { # network space
+        # <ws> would consume, e.g., newlines, and \h (and \s) would accept
+        # more codepoints than just ASCII single space and the tab character.
+        [ ' ' | <[\t]> ]*
+    }
+}
+
+my $crlf = "\x[0d]\x[0a]";
+my $header = "GOT /index.html HTTP/1.1{$crlf}Host: docs.raku.org{$crlf}{$crlf}body";
+my $m = HTTPRequest.parse($header);
+say "type(\"$m.<type>\")={$m.<type>.invalid}";
+# OUTPUT: type("GOT ")=True
+say "path(\"$m.<path>\")={$m.<path>.invalid}";
+# OUTPUT: path("/index.html")=False
+say "field(\"$m.<field>[0]\")={$m.<field>[0].invalid}";
+# OUTPUT: field("Host: docs.raku.org")=False
+--- raku stdout ---
+type("GOT ")=True
+path("/index.html")=False
+field("Host: docs.raku.org")=False
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Cannot look up attributes in a HTTPRequest type object. Did you forget a '.new'?
+  in block <unit> at tmp/ddh/prog-3337172.raku line 57
+
+==============================================================================
+[2] raku-drift-from-doc  raku-doc/doc/Language/grammars.rakudoc:485
+--- program ---
+grammar demonstrate-arguments-again {
+    rule TOP ($word) {
+    <phrase-stem><added-word($word)>
+    }
+
+    rule phrase-stem {
+       "I like"
+    }
+
+    rule added-word($passed-word) {
+       $passed-word
+    }
+}
+
+say demonstrate-arguments-again.parse("I like vegetables", :args(("vegetables",)));
+# OUTPUT: ｢I like vegetables｣␤»
+# OUTPUT:  «phrase-stem => ｢I like ｣␤»
+# OUTPUT:  «added-word => ｢vegetables｣␤»
+--- raku stdout ---
+｢I like vegetables｣
+ phrase-stem => ｢I like ｣
+ added-word => ｢vegetables｣
+--- mutsu stdout (exit 0) ---
+Nil
+
+==============================================================================
+[3] raku-drift-from-doc  raku-doc/doc/Language/grammars.rakudoc:509
+--- program ---
+grammar demonstrate-arguments-dynamic {
+   rule TOP ($*word, $*extra) {
+      <phrase-stem><added-words>
+   }
+   rule phrase-stem {
+      "I like"
+   }
+   rule added-words {
+      $*word $*extra
+   }
+}
+
+say demonstrate-arguments-dynamic.parse("I like everything else",
+  :args(("everything", "else")));
+# OUTPUT: «｢I like everything else｣␤»
+# OUTPUT:  «phrase-stem => ｢I like ｣␤»
+# OUTPUT:  «added-words => ｢everything else｣␤»
+--- raku stdout ---
+｢I like everything else｣
+ phrase-stem => ｢I like ｣
+ added-words => ｢everything else｣
+--- mutsu stdout (exit 0) ---
+Nil
+
+==============================================================================
+[4] output-mismatch  raku-doc/doc/Language/grammars.rakudoc:112
+--- program ---
+grammar Calculator {
+    token TOP { [ <add> | <sub> ] }
+    rule  add { <num> '+' <num> }
+    rule  sub { <num> '-' <num> }
+    token num { \d+ }
+}
+
+class Calculations {
+    method TOP ($/) { make $<add> ?? $<add>.made !! $<sub>.made; }
+    method add ($/) { make [+] $<num>; }
+    method sub ($/) { make [-] $<num>; }
+}
+
+say Calculator.parse('2 + 3', actions => Calculations).made;
+
+# OUTPUT: «5␤»
+--- raku stdout ---
+5
+--- mutsu stdout (exit 0) ---
+0
+
+==============================================================================
+[5] output-mismatch  raku-doc/doc/Language/grammars.rakudoc:132
+--- program ---
+grammar Calculator {
+    token TOP { <calc-op> }
+
+    proto rule calc-op          {*}
+          rule calc-op:sym<add> { <num> '+' <num> }
+          rule calc-op:sym<sub> { <num> '-' <num> }
+
+    token num { \d+ }
+}
+
+class Calculations {
+    method TOP              ($/) { make $<calc-op>.made; }
+    method calc-op:sym<add> ($/) { make [+] $<num>; }
+    method calc-op:sym<sub> ($/) { make [-] $<num>; }
+}
+
+say Calculator.parse('2 + 3', actions => Calculations).made;
+
+# OUTPUT: «5␤»
+--- raku stdout ---
+5
+--- mutsu stdout (exit 0) ---
+0
+
+==============================================================================
+[6] output-mismatch  raku-doc/doc/Language/grammars.rakudoc:260
+--- program ---
+grammar Foo {
+    token TOP { <letter>+ }
+    proto token letter {*}
+          token letter:sym<R> { <sym> }
+          token letter:sym<a> { <sym> }
+          token letter:sym<k> { <sym> }
+          token letter:sym<u> { <sym> }
+          token letter:sym<*> {   .   }
+}.parse("I ♥ Raku", actions => class {
+    method TOP($/) { make $<letter>.grep(*.<sym>).join }
+}).made.say; # OUTPUT: «Raku␤»
+--- raku stdout ---
+Raku
+--- mutsu stdout (exit 0) ---
+
+
+==============================================================================
+[7] mutsu-error  raku-doc/doc/Language/grammars.rakudoc:289
+--- program ---
+grammar Digifier {
+    rule TOP {
+        [ <.succ> <digit>+ ]+
+    }
+    token succ   { <?> }
+    token digit { <[0..9]> }
+}
+
+class Devanagari {
+    has @!numbers;
+    method digit ($/) { @!numbers.tail ~= <०  १  २  ३  ४  ५  ६  ७  ८  ९>[$/] }
+    method succ  ($)  { @!numbers.push: ''     }
+    method TOP   ($/) { make @!numbers[^(*-1)] }
+}
+
+say Digifier.parse('255 435 777', actions => Devanagari.new).made;
+# OUTPUT: «(२५५ ४३५ ७७७)␤»
+--- raku stdout ---
+(२५५ ४३५ ७७७)
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+X::Assignment::RO: cannot assign through .tail on non-instance
+  in sub digit at tmp/ddh/prog-3337172.raku line 11
+  in block <unit> at tmp/ddh/prog-3337172.raku line 16
+

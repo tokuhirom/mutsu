@@ -1,0 +1,302 @@
+# doc-diff-harness report
+# stats: match=44  mismatch=8  mutsu-crash=2  no-oracle=33  raku-drift=5  skipped-marker=13  skipped-nondet=4
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Language/variables.rakudoc:255
+--- program ---
+my $lexical   = 1;
+my $*dynamic1 = 10;
+my $*dynamic2 = 100;
+
+sub say-all() {
+    say "$lexical, $*dynamic1, $*dynamic2";
+}
+
+say-all();    # OUTPUT: 1, 10, 100
+
+{
+    my $lexical   = 2;
+    my $*dynamic1 = 11;
+    $*dynamic2    = 101;
+
+    say-all(); # OUTPUT: 1, 11, 101
+}
+
+say-all();  # OUTPUT: 1, 10, 101
+--- raku stdout ---
+1, 10, 100
+1, 11, 101
+1, 10, 101
+--- mutsu stdout (exit 0) ---
+1, 10, 100
+2, 11, 101
+1, 10, 100
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Language/variables.rakudoc:907
+--- program ---
+sub foo () {
+    my $x := $;
+    $x++;
+    say $x;
+    $x = $x + 1;
+}
+
+foo() for ^3; # OUTPUT: «1␤3␤5␤»
+--- raku stdout ---
+1
+3
+5
+--- mutsu stdout (exit 0) ---
+1
+1
+3
+
+==============================================================================
+[3] mutsu-error  raku-doc/doc/Language/variables.rakudoc:1551
+--- program ---
+for '.' {
+    .Str.say when !.IO.d;
+    .IO.dir()».&?BLOCK when .IO.d # lets recurse a little!
+}
+--- raku stdout ---
+t/role-multi-qclass.t
+t/qualified-role-multi-concretization.t
+t/angle-subscript-ascii.t
+t/native-quanthash-coerce.t
+t/nested-index-method-no-writeback.t
+t/augment-nosuchtype.t
+t/complex-round-scale.t
+t/hyper-meta-assign-list.t
+t/my-decl-dotted-postcircumfix.t
+t/uri-query-misc-fixes.t
+t/placeholder-in-parens.t
+t/use-bareword-import-undeclared.t
+t/pod-abbreviated.t
+t/block-call-topic-restore.t
+t/regex-charclass-token-fold.t
+t/supply-delayed.t
+t/chained-dotassign-writeback.t
+t/regex-precedence-climb-perf.t
+t/keep-undo.t
+t/if-pointy-topic-under-given.t
+t/cas-typed-constraint.t
+t/uniprop-bidi-class-en.t
+t/rakuast-eval-infix.t
+t/lazy-array-elems.t
+t/sethash-baghash-mixhash-coerce-fn.t
+t/backtrace-object.t
+t/timer-heap-threads.t
+t/require.t
+t/hyper-array-mutators.t
+t/closure-parameter-signature.t
+t/native-build-construct.t
+t/attr-trait-role-mixin.t
+t/flat-shaped-native-array.t
+t/buf-splice-count.t
+t/classhow-parents-exclude-roles.t
+t/gate-b-closure-capture-cluster.t
+t/hyper-postfix-slice.t
+t/atomic-functions.t
+t/list-assign-greedy-slurp.t
+t/shaped-array-rat-shape.t
+t/batch-elems-named.t
+t/list-assign-existing.t
+t/typed-array-bound-cell-writethrough.t
+t/index-needle-list.t
+t/rakuast-eval-typed-param.t
+t/typed-bind-recursion.t
+t/native-lock-ctor.t
+t/anon-package-expr.t
+t/anon-class.t
+t/enum-paren-bareword-undeclared.t
+t/group-of.t
+t/range-minmax-adverbs.t
+t/method-redispatch-compiled.t
+t/use-colon-ver-selector.t
+t/index-assign-shadow-slot.t
+t/proto-method-rw-redispatch.t
+t/phantom-entry-bind.t
+t/for-quanthash-values-rw-writeback.t
+t/supply-live-grep-map-react-order.t
+t/rakuast-eval-bare-for.t
+t/coercion-type-regressions.t
+t/exporthow-invalid-directive.t
+t/syntax-noself.t
+t/uniprop-decomposition-type-super-font.t
+t/mixin-private-method-self-dispatch.t
+t/no-such-symbol.t
+t/multi-method-invocant-definedness.t
+t/hyper-race-panic-boundary.t
+t/syntax-missing.t
+t/new-on-instance.t
+t/fat-arrow-associativity.t
+t/raku-string-escape.t
+t/scalar-param-container-share-method.t
+t/const-fold.t
+t/encode-error-message.t
+t/say-gist.t
+t/sign-complex.t
+t/regex-p5-capture-offsets.t
+t/uni-normalization-gist.t
+t/io-handle-stdout-stderr-native.t
+t/callable-set-subset-operators.t
+t/class-basic.t
+t/native-array-mut.t
+t/whatever-xz-currying.t
+t/hyper-nested-itemize.t
+t/statement-modifiers.t
+t/method-say-out-override-writeback.t
+t/routine-value-dispatch.t
+t/aliased-container-mutation.t
+t/signature-placeholder.t
+t/thread-deep-stack.t
+t/test-isa-can-does-messages.t
+t/shared-array-push.t
+t/backtrace-block-frames.t
+t/react-supplier-done.t
+t/chained-method-lvalue-assign.t
+t/start-block-tap-output-order.t
+t/obsolete-diamond.t
+t/supply-collate.t
+t/block-final-stmt-modifier.t
+t/enum-enums-method.t
+t/hyper-metaop-writeback.t
+t/listop-arg-sequence-precedence.t
+t/attr-handles-angle-word.t
+t/grammar-builtin-override.t
+t/modifier-cond-ending-in-block.t
+t/exception-message-fidelity.t
+t/enum-member-nested-module-load.t
+t/native-map-hash-coerce.t
+t/pseudo-stash.t
+t/kv-general.t
+t/promise-scheduler.t
+t/labeled-loop.t
+t/malformed-my-sigilless.t
+t/loop-bind-closure-capture.t
+t/use-dist-selectors.t
+t/str-trans-errors.t
+t/classify-pair-iteration.t
+t/native-rat-pair-construct.t
+t/reduction-fat-arrow.t
+t/rakuast-eval-whatever.t
+t/constant-hash-coerce-once.t
+t/exception-message-materialize.t
+t/first-loop-control.t
+t/subset-where-sub-return.t
+t/dynamic-var.t
+t/enum-does-enumeration.t
+t/x-pseudo-package-in-declaration.t
+t/native-ctor-typed-attrs.t
+t/hyperwhatever-and-lazy-slice-bind.t
+t/ternary-type-branch.t
+t/nested-angle-subscript-key.t
+t/operators-extra.t
+t/map.t
+t/export-nameclash.t
+t/role-does-sibling-in-unit-module.t
+t/value-dynamic-adverb.t
+t/map-subtype-and-hash-ternary.t
+t/tight-and-ternary-precedence.t
+t/shadow-slot-env-broadcast.t
+t/hyper-map-fresh-captured-lexical.t
+t/given-when-tail-assign-value.t
+t/json-tiny-compat.t
+t/eval-carrier-scalar-writeback-coherence.t
+t/subst-method-call-interp.t
+t/json-jsonc.t
+t/bind-saved-locals-slot-leak.t
+t/repo-need.t
+t/doesnt-warn.t
+t/block-scope-recursion-decl-leak.t
+t/do-given-for-slice-no-writeback.t
+t/require-top-level-class-file.t
+t/bool-but-bool-stringify.t
+t/capture-element-writethrough.t
+t/grep-cell-read-deref.t
+t/junction-gist-in-list.t
+t/test-assertion-line-number.t
+t/with-given-pointy-alias.t
+t/native-encode-decode.t
+t/geometric-sequence-bigint-overflow.t
+t/regex-unspace.t
+t/io-handle-getc-readchars-native.t
+t/spec/S22-package-format/local-file-src/.precomp/CACHEDIR.TAG
+t/spec/S22-package-format/local-file-src/.precomp/AF50A328AB74BE48ACBF2B65E07E64E53E5A7E10/AC/ACD70A722E3412C57201B7456ABE49AC631A8DAE.repo-id
+t/spec/S22-package-format/local-file-src/.precomp/AF50A328AB74BE48ACBF2B65E07E64E53E5A7E10/AC/ACD70A722E3412C57201B7456ABE49AC631A8DAE.lock
+t/spec/S22-package-format/local-file-src/.precomp/AF50A328AB74BE48ACBF2B65E07E64E53E5A7E10/AC/ACD70A722E3412C57201B7456ABE49AC631A8DAE
+t/spec/S22-package-format/local-file-src/.precomp/814E72E31E807CCF9470F3F2C89C9BCF03060745/AC/ACD70A722E3412C57201B7456ABE49AC631A8DAE.repo-id
+t/spec/S22-package-format/local-file-src/.precomp/814E72E31E807CCF9470F3F2C89C9BCF03060745/AC/ACD70A722E3412C57201B7456ABE49AC631A8DAE.lock
+t/spec/S22-package-format/local-file-src/.precomp/814E72E31E807CCF9470F3F2C89C9BCF03060745/AC/ACD70A722E3412C57201B7456ABE49AC631A8DAE
+t/unicode-yada-ellipsis.t
+t/caller-not-dynamic.t
+t/multidim-splat-lazy.t
+t/typecheck-expected-nil.t
+t/io-path-add-relative.t
+t/trusts-undeclared.t
+t/range-gist.t
+t/rakuast-eval-subscript.t
+t/package-block-my-sub-hoist.t
+t/parameter-invalidtype.t
+t/role-conflict.t
+t/rakuast-leaf-accessors.t
+t/multi-method-subset-dispatch.t
+t/call-me-not-found.t
+t/whole-container-bind.t
+t/bool-raku-repr.t
+t/slurpy-lazy-source.t
+t/native-isbuilt-construct.t
+t/test-default-descriptions.t
+t/regex-pos-continue-value.t
+t/bless-hash-attr-coercion.t
+t/dynamic-codevar-chdir.t
+t/distribution.t
+t/multi-where-optional-param.t
+t/gate-b-subst-and-phaser-fold.t
+t/version.t
+t/if-my-destructure-condition.t
+t/supply-cold-whenever-nonreact-drive.t
+t/regex-lookaround.t
+t/note-gist-and-dynamic-handle.t
+t/jit-tier-b-infix-override.t
+t/typecheck-binding-vs-argument.t
+t/pointy-param-typed-sigilless.t
+t/generics-nominalizable-class.t
+t/for-hash-values-topic-writeback.t
+t/is-deeply-diagnostics.t
+t/attribute-defaults-and-set-build.t
+t/sub-immediate-call.t
+t/map-nested-call-rw-writeback-slot.t
+t/class-attr-mutation.t
+t/coercion-types.t
+t/grep-flattens-seq.t
+t/cross-metaop-thunk-captured-writeback-coherence.t
+t/sprintf-numeric-coerce.t
+t/list-cache-no-args.t
+t/nativecall-module-compat.t
+t/colon-call-trailing-comma.t
+t/package-block-lexical-capture.t
+t/for-lazy-multi-param.t
+t/rakuast-list-infix.t
+t/code-variable.t
+t/proc-start-cwd-env.t
+t/angle-bracket-hyphen.t
+t/named-array-destructure-absent-key.t
+t/multidim-slice-scalar-leaf.t
+t/backtrace.t
+t/ss-substitution.t
+t/proto-vm-dispatch.t
+t/shaped-array-list-coerce.t
+t/array-assign-setbagmix-flatten.t
+t/itemized-array-keys-values.t
+t/named-sub-literal-expression.t
+t/quoted-pseudo-method-and-anon-enum-name.t
+t/multi-required-vs-optional-dispatch.t
+t/pointy-string-literal-param.t
+t/hash-odd-number.t
+t/typecheck-assignment-got.t
+t/native-array-splice.t
+t/qualified-mu-coercion.t
+
+... [report truncated at 300 lines — 49444 total; a doc example produced a very large diff (usually a filesystem listing). Re-run the harness on this file for the full output.]

@@ -1,0 +1,33 @@
+# doc-diff-harness report
+# stats: match=0  mismatch=0  mutsu-crash=2  no-oracle=3  raku-drift=0  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] mutsu-error  raku-doc/doc/Type/Unicode.rakudoc:27
+--- program ---
+say Unicode.version; # OUTPUT: «v15.0␤»
+--- raku stdout ---
+v17.0
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+No such method 'version' for invocant of type 'Str'
+  in block <unit> at tmp/ddh/prog-3432789.raku line 1
+
+==============================================================================
+[2] mutsu-error  raku-doc/doc/Type/Unicode.rakudoc:37
+--- program ---
+# on MoarVM
+say Unicode.NFG; # OUTPUT: «True␤»
+
+# on JVM
+say Unicode.NFG; # OUTPUT: «False␤»
+--- raku stdout ---
+True
+True
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+No such method 'NFG' for invocant of type 'Str'
+Did you mean 'NFC'?
+  in block <unit> at tmp/ddh/prog-3432789.raku line 2
+

@@ -1,0 +1,113 @@
+# doc-diff-harness report
+# stats: match=25  mismatch=3  mutsu-crash=0  no-oracle=15  raku-drift=3  skipped-marker=0  skipped-nondet=1
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/Hash.rakudoc:65
+--- program ---
+given 3 { say WHAT {3 => 4, :b}  };     # OUTPUT: «(Hash)␤»
+given 3 { say WHAT {3 => 4, :b($_)} };  # OUTPUT: «(Block)␤»
+given 3 { say WHAT {3 => 4, :b(.Num)} };# OUTPUT: «(Block)␤»
+say { 'a',:b(3), 'c' }.^name;           # OUTPUT: «Block␤»
+--- raku stdout ---
+(Hash)
+(Block)
+(Block)
+Block
+--- mutsu stdout (exit 0) ---
+WHAT
+WHAT
+WHAT
+Block
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Type/Hash.rakudoc:21
+--- program ---
+# initialization with pairs:
+my %capitals = Spain => 'Madrid', 'United States' => 'Washington DC';
+
+# adding another pair:
+%capitals{'Zimbabwe'} = 'Harare';
+
+# accessing a value by key:
+my $country = 'Spain';
+say "The capital of $country is %capitals{$country}";
+
+# getting all keys:
+say "I know the capitals of these countries: ", %capitals.keys.sort.join(', ');
+
+# check if a key is in a hash:
+if %capitals{'Europe'}:exists {
+    # not executed
+}
+
+# iterating over keys and values (unordered):
+for %capitals.kv -> $country, $capital {
+    say "$capital is the capital of $country";
+}
+--- raku stdout ---
+The capital of Spain is Madrid
+I know the capitals of these countries: Spain, United States, Zimbabwe
+Madrid is the capital of Spain
+Washington DC is the capital of United States
+Harare is the capital of Zimbabwe
+--- mutsu stdout (exit 0) ---
+The capital of Spain is Madrid
+I know the capitals of these countries: Spain, United States, Zimbabwe
+Madrid is the capital of Spain
+Harare is the capital of Zimbabwe
+Washington DC is the capital of United States
+
+==============================================================================
+[3] output-mismatch  raku-doc/doc/Type/Hash.rakudoc:336
+--- program ---
+my %h .= push(e => 6);
+say %h.raku; # OUTPUT: «{}␤»
+--- raku stdout ---
+{}
+--- mutsu stdout (exit 0) ---
+{:e(6)}
+
+==============================================================================
+[4] raku-drift-from-doc  raku-doc/doc/Type/Hash.rakudoc:342
+--- program ---
+push my %h, f => 7;
+CATCH { default { put .message } };
+# OUTPUT: «Unexpected named argument 'f' passed␤»
+--- raku stdout ---
+Cannot resolve caller push(Hash:D, :f(Int)); none of these signatures matches:
+    (\a, \b)
+    (\a, **@b is raw)
+--- mutsu stdout (exit 0) ---
+Unknown call: push
+
+==============================================================================
+[5] raku-drift-from-doc  raku-doc/doc/Type/Hash.rakudoc:350
+--- program ---
+my %wc = 'hash' => 323, 'pair' => 322, 'pipe' => 323;
+(my %inv).push: %wc.invert;
+say %inv;                     # OUTPUT: «{322 => pair, 323 => [pipe hash]}␤»
+--- raku stdout ---
+{322 => pair, 323 => [hash pipe]}
+--- mutsu stdout (exit 0) ---
+{322 => pair, 323 => [pipe hash]}
+
+==============================================================================
+[6] raku-drift-from-doc  raku-doc/doc/Type/Hash.rakudoc:528
+--- program ---
+my %h1 = a => 1;
+my %h2 = a => 1, b => 2;
+say %h1<>:k; # OUTPUT: «(a)␤»
+say %h1<>:v; # OUTPUT: «(1)␤»
+say %h2<>:k; # OUTPUT: «(a b)␤»
+say %h2<>:v; # OUTPUT: «(1 2)␤»
+--- raku stdout ---
+(a)
+(1)
+(b a)
+(2 1)
+--- mutsu stdout (exit 0) ---
+(a)
+(1)
+(a b)
+(1 2)
+

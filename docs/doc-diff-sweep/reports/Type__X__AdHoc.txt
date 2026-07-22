@@ -1,0 +1,34 @@
+# doc-diff-harness report
+# stats: match=0  mismatch=1  mutsu-crash=1  no-oracle=3  raku-drift=0  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] mutsu-error  raku-doc/doc/Type/X/AdHoc.rakudoc:56
+--- program ---
+try {
+    X::AdHoc.from-slurpy( 3, False, "Not here" ).throw
+};
+print $!.payload.^name; # OUTPUT: «Capture+{X::AdHoc::SlurpySentry}»
+print $!.message;       # OUTPUT: «3FalseNot here»
+--- raku stdout ---
+Capture+{X::AdHoc::SlurpySentry}3FalseNot here
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+No such method 'payload' for invocant of type 'X::Method::NotFound'
+  in block <unit> at tmp/ddh/prog-3433572.raku line 4
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Type/X/AdHoc.rakudoc:20
+--- program ---
+try {
+    die [404, 'File not found']; # throw non-exception object
+}
+print "Got HTTP code ",
+    $!.payload[0],          # 404
+    " and backtrace ",
+    $!.backtrace.Str;
+--- raku stdout ---
+Got HTTP code 404 and backtrace   in block <unit> at tmp/ddh/prog-3433572.raku line 2
+--- mutsu stdout (exit 0) ---
+Got HTTP code 404 and backtrace   in block <unit> at tmp/ddh/prog-3433572.raku line 1
+

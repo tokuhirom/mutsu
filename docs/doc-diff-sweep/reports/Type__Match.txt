@@ -1,0 +1,68 @@
+# doc-diff-harness report
+# stats: match=7  mismatch=5  mutsu-crash=0  no-oracle=22  raku-drift=0  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/Match.rakudoc:45
+--- program ---
+'123' ~~ / (\d) { say $/; say $¢; } \d+ /; # OUTPUT: «｢1｣␤ 0 => ｢1｣␤｢1｣␤ 0 => ｢1｣␤»
+say "¢ → ", $¢, "/ is $/"; ; # OUTPUT: «¢ → Nil/ is 123␤»
+--- raku stdout ---
+｢1｣
+ 0 => ｢1｣
+｢1｣
+ 0 => ｢1｣
+¢ → Nil/ is 123
+--- mutsu stdout (exit 0) ---
+｢1｣
+｢1｣
+¢ → ｢1｣/ is 123
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Type/Match.rakudoc:20
+--- program ---
+my $c;
+'abc' ~~ /.$${ $c = $¢ }/;
+say $c; # OUTPUT: «｢c｣␤»
+--- raku stdout ---
+｢c｣
+--- mutsu stdout (exit 0) ---
+Nil
+
+==============================================================================
+[3] output-mismatch  raku-doc/doc/Type/Match.rakudoc:40
+--- program ---
+'123' ~~ / (\d) { say $0; say $/; } \d+ /; # OUTPUT: «｢1｣␤｢1｣␤ 0 => ｢1｣␤»
+--- raku stdout ---
+｢1｣
+｢1｣
+ 0 => ｢1｣
+--- mutsu stdout (exit 0) ---
+｢1｣
+｢1｣
+
+==============================================================================
+[4] output-mismatch  raku-doc/doc/Type/Match.rakudoc:74
+--- program ---
+my $a = 'abcdef';
+$a ~~ /b. {say $/.pos }../;     # OUTPUT: «3␤»
+--- raku stdout ---
+3
+--- mutsu stdout (exit 0) ---
+2
+
+==============================================================================
+[5] output-mismatch  raku-doc/doc/Type/Match.rakudoc:200
+--- program ---
+say ('12345' ~~ /234/).Int;       # OUTPUT: «234␤»
+say ('12345' ~~ /234/).Int.^name; # OUTPUT: «Int␤»
+# the next line produces a warning about using Nil (result of a no match) in numeric context
+say ('one-two' ~~ /234/).Int;     # OUTPUT: «0␤» # because Nil.Int returns 0
+--- raku stdout ---
+234
+Int
+0
+--- mutsu stdout (exit 0) ---
+234
+Int
+(Int)
+

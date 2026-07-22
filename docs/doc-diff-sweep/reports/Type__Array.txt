@@ -1,0 +1,45 @@
+# doc-diff-harness report
+# stats: match=17  mismatch=3  mutsu-crash=0  no-oracle=19  raku-drift=0  skipped-marker=1  skipped-nondet=1
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/Array.rakudoc:367
+--- program ---
+my @array= [1];
+@array[3]=3;
+say @array.List;       # OUTPUT: «(1 Nil Nil 3)␤»
+--- raku stdout ---
+(1 Nil Nil 3)
+--- mutsu stdout (exit 0) ---
+(1 (Any) (Any) 3)
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Type/Array.rakudoc:44
+--- program ---
+my @foo = <a b>; # a b
+@foo.pop;        # b
+pop @foo;        # a
+pop @foo;
+CATCH { default { put .^name, ': ', .Str } };
+# OUTPUT: «X::Cannot::Empty: Cannot pop from an empty Array␤»
+--- raku stdout ---
+X::Cannot::Empty: Cannot pop from an empty Array
+--- mutsu stdout (exit 0) ---
+
+
+==============================================================================
+[3] output-mismatch  raku-doc/doc/Type/Array.rakudoc:123
+--- program ---
+say [<foo bar ber>] .elems; # OUTPUT: «3␤»
+say (my @a[42;3;70]).elems; # OUTPUT: «42␤»
+
+try [-∞...∞].elems;
+say $!.^name;               # OUTPUT: «X::Cannot::Lazy␤»
+--- raku stdout ---
+3
+42
+X::Cannot::Lazy
+--- mutsu stdout (exit 0) ---
+3
+42
+Any
+

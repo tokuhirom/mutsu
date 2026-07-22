@@ -1,0 +1,289 @@
+# doc-diff-harness report
+# stats: match=109  mismatch=12  mutsu-crash=3  no-oracle=115  raku-drift=3  skipped-marker=19  skipped-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Language/regexes.rakudoc:1331
+--- program ---
+say '333' ~~ m/^^ <?alnum> \d+ /;          # OUTPUT: «｢333｣␤»
+say '333' ~~ m/^^ <?:Nd> \d+ /;            # OUTPUT: «｢333｣␤»
+say '333' ~~ m/^^ <!:L> \d+ /;             # OUTPUT: «｢333｣␤»
+say '333' ~~ m/^^ \d+ <!:Script<Tamil>> /; # OUTPUT: «｢33｣␤»
+--- raku stdout ---
+｢333｣
+｢333｣
+｢333｣
+｢33｣
+--- mutsu stdout (exit 0) ---
+｢333｣
+｢333｣
+｢333｣
+｢333｣
+
+==============================================================================
+[2] mutsu-error  raku-doc/doc/Language/regexes.rakudoc:1349
+--- program ---
+say '123345' ~~ m/ <same>\d+ /;          # OUTPUT: «｢345｣␤ same => ｢｣␤»
+say 'aa11' ~~ m/ <alpha><same><digit> /; # OUTPUT: «False␤»
+--- raku stdout ---
+｢345｣
+ same => ｢｣
+False
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+No such method 'same' for invocant of type 'Match'
+  in block <unit> at tmp/ddh/prog-3352424.raku line 1
+
+==============================================================================
+[3] raku-drift-from-doc  raku-doc/doc/Language/regexes.rakudoc:1568
+--- program ---
+# CORRECT: $0 is saved into a variable outside the second capture
+# before it is used inside
+say "11" ~~ /(\d) {} :my $c = $0; ($c)/; # OUTPUT: «｢11｣␤ 0 => ｢1｣␤ 1 => ｢1｣␤»
+say "Matched $c"; # OUTPUT: «␤Matched 1␤»
+--- raku stdout ---
+｢11｣
+ 0 => ｢1｣
+ 1 => ｢1｣
+Matched 1
+--- mutsu stdout (exit 0) ---
+Nil
+Matched
+
+==============================================================================
+[4] mutsu-error  raku-doc/doc/Language/regexes.rakudoc:1595
+--- program ---
+"aba" ~~ / (a) b {} :my $c = $/; /;
+say $c; # OUTPUT: «｢ab｣␤ 0 => ｢a｣␤»
+--- raku stdout ---
+｢ab｣
+ 0 => ｢a｣
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+===SORRY!=== Error while compiling tmp/ddh/prog-3352424.raku
+Confused. expected statement: expected use statement or import statement or no statement or need statement or unit statement or ...
+at tmp/ddh/prog-3352424.raku:1
+------>"aba" ~~ / (a) b {} :my $c = $/; /;
+                                        ^
+
+==============================================================================
+[5] output-mismatch  raku-doc/doc/Language/regexes.rakudoc:1602
+--- program ---
+"aba" ~~ / (a) {say "Check so far ", ~$/} b :my $c = ~$0; /;
+# OUTPUT: «Check so far a␤»
+say "Capture $c"; # OUTPUT: «Capture a␤»
+--- raku stdout ---
+Check so far a
+Capture a
+--- mutsu stdout (exit 0) ---
+Check so far a
+Capture
+
+==============================================================================
+[6] output-mismatch  raku-doc/doc/Language/regexes.rakudoc:1966
+--- program ---
+my regex demo ($param) {
+    foo             # First match 'foo'
+    { say $param }  # Then show the value that was passed in
+    bar             # Then match 'bar'
+}
+
+'foobar' ~~ / <demo: { key => <v a l> }> /  # say prints: {key => (v a l)}
+--- raku stdout ---
+{key => (v a l)}
+--- mutsu stdout (exit 0) ---
+Nil
+
+==============================================================================
+[7] raku-drift-from-doc  raku-doc/doc/Language/regexes.rakudoc:1028
+--- program ---
+say "abc" ~~ /ab | a.* /;                 # OUTPUT: «⌜abc⌟␤»
+say "abc" ~~ /ab | a {} .* /;             # OUTPUT: «⌜ab⌟␤»
+say "if else" ~~ / if | if <.ws> else /;  # OUTPUT: «｢if｣␤»
+say "if else" ~~ / if | if \s+   else /;  # OUTPUT: «｢if else｣␤»
+--- raku stdout ---
+｢abc｣
+｢ab｣
+｢if｣
+｢if else｣
+--- mutsu stdout (exit 0) ---
+｢abc｣
+｢abc｣
+｢if else｣
+｢if else｣
+
+==============================================================================
+[8] output-mismatch  raku-doc/doc/Language/regexes.rakudoc:1041
+--- program ---
+say "abc" ~~ /a. | ab { print "win" } /;  # OUTPUT: «win｢ab｣␤»
+--- raku stdout ---
+win｢ab｣
+--- mutsu stdout (exit 0) ---
+｢ab｣
+
+==============================================================================
+[9] output-mismatch  raku-doc/doc/Language/regexes.rakudoc:1543
+--- program ---
+if 'abcd' ~~ / a [ b (.) || (x) (y) ] (.) / {
+    #                 $0     $0  $1    $2
+    say ~$2;            # OUTPUT: «d␤»
+}
+--- raku stdout ---
+d
+--- mutsu stdout (exit 0) ---
+
+
+==============================================================================
+[10] output-mismatch  raku-doc/doc/Language/regexes.rakudoc:1587
+--- program ---
+my $paragraph="line\nline2\nline3";
+$paragraph ~~ rx| :my $counter = 0; ( \V* { ++$counter } ) *%% \n |;
+say "Matched $counter lines"; # OUTPUT: «Matched 3 lines␤»
+--- raku stdout ---
+Matched 3 lines
+--- mutsu stdout (exit 0) ---
+Matched  lines
+
+==============================================================================
+[11] raku-drift-from-doc  raku-doc/doc/Language/regexes.rakudoc:1658
+--- program ---
+if 'count=23' ~~ / $<variable>=\w+ '=' $<value>=\w+ / {
+    my %h = $/.hash;
+    say %h.keys.sort.join: ', ';        # OUTPUT: «value, variable␤»
+    say %h.values.sort.join: ', ';      # OUTPUT: «23, count␤»
+    for %h.kv -> $k, $v {
+        say "Found value '$v' with key '$k'";
+        # outputs two lines:
+        #   Found value 'count' with key 'variable'
+        #   Found value '23' with key 'value'
+    }
+}
+--- raku stdout ---
+value, variable
+23, count
+Found value '23' with key 'value'
+Found value 'count' with key 'variable'
+--- mutsu stdout (exit 0) ---
+value, variable
+23, count
+Found value 'count' with key 'variable'
+Found value '23' with key 'value'
+
+==============================================================================
+[12] output-mismatch  raku-doc/doc/Language/regexes.rakudoc:1816
+--- program ---
+$_ = '2016-01-23 18:09:00';
+s/ $<y>=(\d+)\-$<m>=(\d+)\-$<d>=(\d+) /$<m>-$<d>-$<y>/;
+.say;                                 # OUTPUT: «01-23-2016 18:09:00␤»
+--- raku stdout ---
+01-23-2016 18:09:00
+--- mutsu stdout (exit 0) ---
+$<m>-$<d>-$<y> 18:09:00
+
+==============================================================================
+[13] output-mismatch  raku-doc/doc/Language/regexes.rakudoc:1823
+--- program ---
+$_ = '18:38';
+s/(\d+)\:(\d+)/{$0 % 12}\:$1 {$0 < 12 ?? 'AM' !! 'PM'}/;
+.say;                                 # OUTPUT: «6:38 PM␤»
+--- raku stdout ---
+6:38 PM
+--- mutsu stdout (exit 0) ---
+6\:38 PM
+
+==============================================================================
+[14] output-mismatch  raku-doc/doc/Language/regexes.rakudoc:2290
+--- program ---
+my %h = a => 1, b => 2;
+my @a = %h.keys;
+say S:g/@(%h.keys)/%h{$/}/ given 'abc';    # OUTPUT: «12c␤»
+say S:g/@a/%h{$/}/ given 'abc';            # OUTPUT: «12c␤»
+--- raku stdout ---
+12c
+12c
+--- mutsu stdout (exit 0) ---
+%ha%hbc
+%ha%hbc
+
+==============================================================================
+[15] output-mismatch  raku-doc/doc/Language/regexes.rakudoc:2623
+--- program ---
+grammar Demo {
+    token ws {
+        <!ww>       # only match when not within a word
+        \h*         # only match horizontal whitespace
+    }
+    rule TOP {      # called by Demo.parse;
+        a b '.'
+    }
+}
+
+# doesn't parse, whitespace required between a and b
+say so Demo.parse("ab.");                 # OUTPUT: «False␤»
+say so Demo.parse("a b.");                # OUTPUT: «True␤»
+say so Demo.parse("a\tb .");              # OUTPUT: «True␤»
+
+# \n is vertical whitespace, so no match
+say so Demo.parse("a\tb\n.");             # OUTPUT: «False␤»
+--- raku stdout ---
+False
+True
+True
+False
+--- mutsu stdout (exit 0) ---
+False
+False
+False
+False
+
+==============================================================================
+[16] mutsu-error  raku-doc/doc/Language/regexes.rakudoc:2684
+--- program ---
+my $data = "f fo foo fooo foooo fooooo foooooo";
+say $data ~~ m:st(1|8)/fo+/;  # OUTPUT: «True␤»
+--- raku stdout ---
+True
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Runtime error: Unsupported regex adverb :st
+
+==============================================================================
+[17] output-mismatch  raku-doc/doc/Language/regexes.rakudoc:2892
+--- program ---
+grammar A { token TOP { '[' ~ ']' \w+  };
+            method FAILGOAL($goal) {
+                die "Cannot find $goal near position {self.pos}"
+            }
+}
+
+say A.parse: '[good]';  # OUTPUT: «｢[good]｣␤»
+A.parse: '[bad';        # will throw FAILGOAL exception
+CATCH { default { put .^name, ': ', .Str } };
+# OUTPUT: «X::AdHoc: Cannot find ']'  near position 4␤»
+--- raku stdout ---
+｢[good]｣
+X::AdHoc: Cannot find ']'  near position 4
+--- mutsu stdout (exit 0) ---
+｢[good]｣
+
+==============================================================================
+[18] output-mismatch  raku-doc/doc/Language/regexes.rakudoc:2935
+--- program ---
+my $paren = rx/ '(' <-[()]>* ')' || '('[ <-[()]>* <~~> <-[()]>* ]* ')' /;
+say 'text' ~~ $paren;                            # OUTPUT: «Nil␤»
+say '(1 + 1) = 2' ~~ $paren;                     # OUTPUT: «｢(1 + 1)｣␤»
+say '(1 + (2 × 3)) = 7' ~~ $paren;               # OUTPUT: «｢(1 + (2 × 3))｣␤»
+say '((5 + 2) × 6) = 42 (the answer)' ~~ $paren  # OUTPUT: «｢((5 + 2) × 6)｣␤»
+--- raku stdout ---
+Nil
+｢(1 + 1)｣
+｢(1 + (2 × 3))｣
+｢((5 + 2) × 6)｣
+--- mutsu stdout (exit 0) ---
+Nil
+｢(1 + 1)｣
+｢(2 × 3)｣
+｢(5 + 2)｣
+

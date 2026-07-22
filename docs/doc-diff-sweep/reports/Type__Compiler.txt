@@ -1,0 +1,238 @@
+# doc-diff-harness report
+# stats: match=0  mismatch=0  mutsu-crash=1  no-oracle=5  raku-drift=1  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] raku-drift-from-doc  raku-doc/doc/Type/Compiler.rakudoc:13
+--- program ---
+say $*RAKU.compiler; # OUTPUT: «rakudo (2020.02.16.g.28.bd.4247.a)␤»
+--- raku stdout ---
+rakudo (2026.06)
+--- mutsu stdout (exit 0) ---
+mutsu (0.1.0)
+
+==============================================================================
+[2] mutsu-error  raku-doc/doc/Type/Compiler.rakudoc:58
+--- program ---
+say $*RAKU.compiler.verbose-config; # OUTPUT: «distro::auth=https://www.opensuse.org/␤distro::desc=2018-05-06T09:19:17.571307+02:00␤» ... And the rest of the configuration
+--- raku stdout ---
+Raku::can-language-versions=1 2 2.PREVIEW 2.TEST 2.TESTDEPR 3 3.PREVIEW
+Raku::codename=
+Raku::implementation=Rakudo
+Raku::language-revision=2
+Raku::language-revisions=1	mods	
+2	mods	PREVIEW	
+TEST	
+TESTDEPR	deprecate	1
+3	mods	PREVIEW	require	1
+require	PREVIEW
+Raku::prefix=/__w/1/source/rakudo-2026.06/install
+Raku::prev-setting-name=CORE.c	CORE.c
+CORE.d	CORE.d
+CORE.e	CORE.e
+NULL.c	NULL.c
+NULL.d	CORE.c
+NULL.e	CORE.d
+Raku::release-number=
+Raku::source-digest=96f6aab57e2e4e76cec9e5f7e54b4b19b1c0c976
+Raku::static-nqp-home=
+Raku::static-rakudo-home=
+Raku::version=2026.06
+distro::auth=https://pop.system76.com
+distro::desc=Pop!_OS 24.04 LTS
+distro::is-win=False
+distro::name=pop
+distro::path-sep=:
+distro::release=24.04
+distro::signature=
+distro::version=24.04.LTS
+kernel::arch=x86_64
+kernel::archname=x86_64-linux
+kernel::auth=unknown
+kernel::bits=64
+kernel::desc=
+kernel::hardware=x86_64
+kernel::name=linux
+kernel::release=6.18.7-76061807-generic
+kernel::signature=
+kernel::version=202601231045.1769703228.24.04.cb.87.b.5.b.SMP.PREEMPT_DYNAMIC.Thu.J
+moar::ar=ar
+moar::arflags=rcs
+moar::arout=
+moar::as=as
+moar::asm=.s
+moar::asmout=-o 
+moar::asmswitch=-S
+moar::auxclean=@:
+moar::be=0
+moar::bindir=/__w/1/source/rakudo-2026.06/install/bin
+moar::booltype=_Bool
+moar::can_specific_werror=1
+moar::can_unaligned_int32=1
+moar::can_unaligned_int64=1
+moar::can_unaligned_num64=1
+moar::cancgoto=1
+moar::cat=cat
+moar::cc=gcc
+moar::ccdebugflags=-g3
+moar::ccdef=-D
+moar::ccdefflags=-D_REENTRANT -D_FILE_OFFSET_BITS=64
+moar::ccinc=-I
+moar::ccincsystem=-isystem
+moar::ccjitflags=
+moar::ccmiscflags=-std=gnu99 -Wextra -Wall -Wno-unused-parameter -Wno-unused-function -Wno-missing-braces -Werror=pointer-arith
+moar::ccoptiflags=-O3 -DNDEBUG
+moar::ccout=-o 
+moar::ccshared=-fPIC
+moar::ccswitch=-c
+moar::ccwarnflags=
+moar::cflags=-fwrapv -std=gnu99 -Wextra -Wall -Wno-unused-parameter -Wno-unused-function -Wno-missing-braces -Werror=pointer-arith -O3 -DNDEBUG  -D_REENTRANT -D_FILE_OFFSET_BITS=64 -fPIC -DMVM_HEAPSNAPSHOT_FORMAT=2 -D_GNU_SOURCE
+moar::cincludes=
+moar::cmpclean=cd 3rdparty/cmp && $(RM) libcmp.a && $(RM) cmp.lib && $(RM) cmp.obj && $(MAKE) clean
+moar::cmplib=3rdparty/cmp/libcmp.a
+moar::cmpobjects=3rdparty/cmp/cmp.o
+moar::cmprule=$(AR) $(ARFLAGS) $@ 3rdparty/cmp/*.o
+moar::config=--toolchain=gnu --optimize --relocatable --prefix=/__w/1/source/rakudo-2026.06/install --make-install
+moar::cppout=> 
+moar::cppswitch=-E
+moar::crossconf=
+moar::dasm_flags=-D POSIX=1
+moar::dcbclean=$(RM) 3rdparty/dyncall/dyncallback/libdyncallback_s.a
+moar::dcblib=3rdparty/dyncall/dyncallback/libdyncallback_s.a
+moar::dcbobjects=
+moar::dcbrule=@:
+moar::dcclean=cd 3rdparty/dyncall && $(MAKE) -f Makefile clean
+moar::dclib=3rdparty/dyncall/dyncall/libdyncall_s.a
+moar::dcobjects=
+moar::dcrule=cd 3rdparty/dyncall &&  ./configure && CC='$(CC)' CFLAGS='-fPIC' $(MAKE) -f Makefile 
+moar::defs[0]=_REENTRANT
+moar::defs[1]=_FILE_OFFSET_BITS=64
+moar::dlclean=$(RM) 3rdparty/dyncall/dynload/libdynload_s.a
+moar::dll=lib%s.so
+moar::dllexport=__attribute__ ((visibility ("default")))
+moar::dllib=3rdparty/dyncall/dynload/libdynload_s.a
+moar::dllimport=__attribute__ ((visibility ("default")))
+moar::dlllocal=__attribute__ ((visibility ("hidden")))
+moar::dlobjects=
+moar::dlrule=@:
+moar::do_pty_ourself=0
+moar::exe=
+moar::expect_condition=__builtin_expect((condition), (expection))
+moar::expect_likely=__builtin_expect(!!(condition), 1)
+moar::expect_unlikely=__builtin_expect(!!(condition), 0)
+moar::fallthrough=__attribute__ ((fallthrough));
+moar::formatattribute=__attribute__((format(X, Y, Z)))
+moar::has_booltype=1
+moar::has_fn_malloc_trim=1
+moar::has_isinf=1
+moar::has_isnan=1
+moar::has_libuv_pty=1
+moar::has_pthread_setname_np=1
+moar::has_pthread_yield=0
+moar::has_rdtscp=1
+moar::has_signbit=1
+moar::has_stdatomic=1
+moar::has_substandard_acos=0
+moar::has_substandard_asin=0
+moar::has_substandard_log10=0
+moar::has_substandard_log=0
+moar::has_substandard_pow=0
+moar::has_thread_local=1
+moar::heapsnapformat=2
+moar::hllincludes=moar libuv libtommath dyncall mimalloc
+moar::impinst=
+moar::install=	$(MKPATH) "$(DESTDIR)$(PREFIX)/include/libuv"	$(MKPATH) "$(DESTDIR)$(PREFIX)/include/libuv/uv"	$(CP) 3rdparty/libuv/include/*.h "$(DESTDIR)$(PREFIX)/include/libuv"	$(CP) 3rdparty/libuv/include/uv/*.h "$(DESTDIR)$(PREFIX)/include/libuv/uv"	$(MKPATH) "$(DESTDIR)$(PREFIX)/include/libtommath"	$(CP) 3rdparty/libtommath/*.h "$(DESTDIR)$(PREFIX)/include/libtommath"	$(MKPATH) "$(DESTDIR)$(PREFIX)/include/dyncall"	$(CP) 3rdparty/dyncall/dynload/*.h "$(DESTDIR)$(PREFIX)/include/dyncall"	$(CP) 3rdparty/dyncall/dyncall/*.h "$(DESTDIR)$(PREFIX)/include/dyncall"	$(CP) 3rdparty/dyncall/dyncallback/*.h "$(DESTDIR)$(PREFIX)/include/dyncall"	$(MKPATH) "$(DESTDIR)$(PREFIX)/include/mimalloc"	$(CP) 3rdparty/mimalloc/include/*.h "$(DESTDIR)$(PREFIX)/include/mimalloc"
+moar::jit_arch=MVM_JIT_ARCH_X64
+moar::jit_obj=$(JIT_OBJECTS) $(JIT_ARCH_X64)
+moar::jit_platform=MVM_JIT_PLATFORM_POSIX
+moar::laoclean=@:
+moar::laolib=__lao__
+moar::laoobjects=
+moar::laorule=@:
+moar::ld=gcc
+moar::lddebugflags=-g3
+moar::lddir=-L
+moar::ldflags= -O3 -DNDEBUG -Wl,-z,origin,-rpath,'$$ORIGIN/../lib'
+moar::ldimp=
+moar::ldinstflags=
+moar::ldlibs= -lm -lpthread -lrt -ldl
+moar::ldmiscflags=
+moar::ldoptiflags=-O3 -DNDEBUG
+moar::ldout=-o 
+moar::ldrpath=-Wl,-rpath,"//__w/1/source/rakudo-2026.06/install/lib"
+moar::ldrpath_relocatable=-Wl,-z,origin,-rpath,'$$ORIGIN/../lib'
+moar::ldshared=-shared -fPIC
+moar::ldsys=-l%s
+moar::ldusr=-l%s
+moar::lib=lib%s.a
+moar::libdir=/__w/1/source/rakudo-2026.06/install/lib
+moar::lincludes=
+moar::mainflags=-DMVM_SHARED
+moar::mainlibs=-L. -lmoar
+moar::make=make
+moar::mastdir=/__w/1/source/rakudo-2026.06/install/share/nqp/lib/MAST
+moar::mimalloc_include=-isystem3rdparty/mimalloc
+moar::mimalloc_object=3rdparty/mimalloc/src/static.o
+moar::mkflags=
+moar::mknoisy=ifneq ($(NOISY), 1)MSG = @echoCMD = @NOOUT = > /dev/nullNOERR = 2> /dev/nullendif
+moar::moar=libmoar.so
+moar::moar_cincludes= -I3rdparty/libuv/include -I3rdparty/libuv/src -I3rdparty/libtommath -I3rdparty/dyncall/dynload -I3rdparty/dyncall/dyncall -I3rdparty/dyncall/dyncallback -I3rdparty/mimalloc/include -I3rdparty/mimalloc/src
+moar::moardll=libmoar.so
+moar::moarlib=libmoar.a
+moar::moarshared=
+moar::moarshared_norelocatable=
+moar::moarshared_relocatable=
+moar::name=moar
+moar::nativecall_backend=dyncall
+moar::noreturnattribute=__attribute__((noreturn))
+moar::noreturnspecifier=
+moar::nul=/dev/null
+moar::obj=.o
+moar::objflags=-DMVM_BUILD_SHARED -fPIC
+moar::objout=-o 
+moar::os=linux
+moar::osname=linux
+moar::osvers=3.16.0
+moar::perl=/usr/bin/perl
+moar::pkgconfig=/usr/bin/pkg-config
+moar::platform=$(PLATFORM_POSIX)
+moar::prefix=/__w/1/source/rakudo-2026.06/install
+moar::ptr_size=8
+moar::rm=rm -f
+moar::sh=/bin/sh
+moar::shaclean=$(RM) 3rdparty/sha1/libsha1.a 3rdparty/sha1/*.o
+moar::shaincludedir=3rdparty/sha1
+moar::shalib=3rdparty/sha1/libsha1.a
+moar::shaobjects=3rdparty/sha1/sha1.o
+moar::sharedlib=
+moar::sharule=$(AR) $(ARFLAGS) $@ 3rdparty/sha1/*.o
+moar::static_inline=static __inline__
+moar::staticlib=
+moar::syslibs[0]=m
+moar::syslibs[1]=pthread
+moar::syslibs[2]=rt
+moar::syslibs[3]=dl
+moar::thirdpartylibs=3rdparty/cmp/libcmp.a 3rdparty/dyncall/dyncall/libdyncall_s.a 3rdparty/dyncall/dyncallback/libdyncallback_s.a 3rdparty/dyncall/dynload/libdynload_s.a 3rdparty/sha1/libsha1.a 3rdparty/libtommath/libtommath.a 3rdparty/libuv/libuv.a
+moar::thread_local=_Thread_local
+moar::tomclean=$(RM) 3rdparty/libtommath/libtommath.a 3rdparty/libtommath/*.o
+moar::tomlib=3rdparty/libtommath/libtommath.a
+moar::tomobjects=3rdparty/libtommath/bn_cutoffs.o 3rdparty/libtommath/bn_deprecated.o 3rdparty/libtommath/bn_mp_2expt.o 3rdparty/libtommath/bn_mp_abs.o 3rdparty/libtommath/bn_mp_add.o 3rdparty/libtommath/bn_mp_add_d.o 3rdparty/libtommath/bn_mp_addmod.o 3rdparty/libtommath/bn_mp_and.o 3rdparty/libtommath/bn_mp_clamp.o 3rdparty/libtommath/bn_mp_clear.o 3rdparty/libtommath/bn_mp_clear_multi.o 3rdparty/libtommath/bn_mp_cmp.o 3rdparty/libtommath/bn_mp_cmp_d.o 3rdparty/libtommath/bn_mp_cmp_mag.o 3rdparty/libtommath/bn_mp_cnt_lsb.o 3rdparty/libtommath/bn_mp_complement.o 3rdparty/libtommath/bn_mp_copy.o 3rdparty/libtommath/bn_mp_count_bits.o 3rdparty/libtommath/bn_mp_decr.o 3rdparty/libtommath/bn_mp_div.o 3rdparty/libtommath/bn_mp_div_2.o 3rdparty/libtommath/bn_mp_div_2d.o 3rdparty/libtommath/bn_mp_div_d.o 3rdparty/libtommath/bn_mp_dr_is_modulus.o 3rdparty/libtommath/bn_mp_dr_reduce.o 3rdparty/libtommath/bn_mp_dr_setup.o 3rdparty/libtommath/bn_mp_error_to_string.o 3rdparty/libtommath/bn_mp_exch.o 3rdparty/libtommath/bn_mp_expt_n.o 3rdparty/libtommath/bn_mp_exptmod.o 3rdparty/libtommath/bn_mp_exteuclid.o 3rdparty/libtommath/bn_mp_fread.o 3rdparty/libtommath/bn_mp_from_sbin.o 3rdparty/libtommath/bn_mp_from_ubin.o 3rdparty/libtommath/bn_mp_fwrite.o 3rdparty/libtommath/bn_mp_gcd.o 3rdparty/libtommath/bn_mp_get_double.o 3rdparty/libtommath/bn_mp_get_i32.o 3rdparty/libtommath/bn_mp_get_i64.o 3rdparty/libtommath/bn_mp_get_l.o 3rdparty/libtommath/bn_mp_get_mag_u32.o 3rdparty/libtommath/bn_mp_get_mag_u64.o 3rdparty/libtommath/bn_mp_get_mag_ul.o 3rdparty/libtommath/bn_mp_grow.o 3rdparty/libtommath/bn_mp_incr.o 3rdparty/libtommath/bn_mp_init.o 3rdparty/libtommath/bn_mp_init_copy.o 3rdparty/libtommath/bn_mp_init_i32.o 3rdparty/libtommath/bn_mp_init_i64.o 3rdparty/libtommath/bn_mp_init_l.o 3rdparty/libtommath/bn_mp_init_multi.o 3rdparty/libtommath/bn_mp_init_set.o 3rdparty/libtommath/bn_mp_init_size.o 3rdparty/libtommath/bn_mp_init_u32.o 3rdparty/libtommath/bn_mp_init_u64.o 3rdparty/lib…[line truncated]
+moar::tomrule=$(AR) $(ARFLAGS) $@ 3rdparty/libtommath/*.o
+moar::translate_newline_output=0
+moar::use_c11_atomics=1
+moar::use_mimalloc=1
+moar::uvclean=$(RM) 3rdparty/libuv/libuv.a $(UV_LINUX)
+moar::uvlib=3rdparty/libuv/libuv.a
+moar::uvobjects=$(UV_LINUX)
+moar::uvrule=$(AR) $(ARFLAGS) $@ $(UV_LINUX)
+moar::vectorizerspecifier=
+moar::version=2026.06
+moar::versionmajor=2026
+moar::versionminor=06
+moar::versionpatch=0
+repo::chain=inst#/home/tokuhirom/.raku inst#/home/tokuhirom/.local/share/mise/installs/raku/2026.06/share/perl6/site inst#/home/tokuhirom/.local/share/mise/installs/raku/2026.06/share/perl6/vendor inst#/home/tokuhirom/.local/share/mise/installs/raku/2026.06/share/perl6/core ap# nqp# perl5#
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+No such method 'verbose-config' for invocant of type 'Compiler'
+  in block <unit> at tmp/ddh/prog-3379844.raku line 1
+

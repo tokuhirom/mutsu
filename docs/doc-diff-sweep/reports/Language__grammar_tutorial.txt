@@ -1,0 +1,32 @@
+# doc-diff-harness report
+# stats: match=4  mismatch=1  mutsu-crash=0  no-oracle=60  raku-drift=0  skipped-marker=7  skipped-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Language/grammar_tutorial.rakudoc:679
+--- program ---
+grammar G {
+  rule TOP { <function-define> }
+  rule function-define {
+    'sub' <identifier>
+    {
+      say "func " ~ $<identifier>.made;
+      make $<identifier>.made;
+    }
+    '(' <parameter> ')' '{' '}'
+    { say "end " ~ $/.made; }
+  }
+  token identifier { \w+ { make ~$/; } }
+  token parameter { \w+ { say "param " ~ $/; } }
+}
+
+G.parse('sub f ( a ) { }');
+# OUTPUT: «func f␤param a␤end f␤»
+--- raku stdout ---
+func f
+param a
+end f
+--- mutsu stdout (exit 0) ---
+func f
+param a
+end
+

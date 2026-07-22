@@ -1,0 +1,31 @@
+# doc-diff-harness report
+# stats: match=0  mismatch=0  mutsu-crash=1  no-oracle=2  raku-drift=0  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] mutsu-error  raku-doc/doc/Type/IO/Notification/Change.rakudoc:18
+--- program ---
+my $finish = Promise.new;
+my $count = 0;
+IO::Notification.watch-path($*CWD).act( -> $change {
+    $count++ if $change.event ~~ FileChanged;
+    say "($count) $change.path(): $change.event()";
+    $finish.keep if $count >= 10;
+});
+await $finish;
+--- raku stdout ---
+(1) /home/tokuhirom/work/mutsu-codex/foo: FileChanged
+(2) /home/tokuhirom/work/mutsu-codex/foo: FileChanged
+(3) /home/tokuhirom/work/mutsu-codex/foo: FileChanged
+(4) /home/tokuhirom/work/mutsu-codex/foo: FileChanged
+(5) /home/tokuhirom/work/mutsu-codex/foo: FileChanged
+(6) /home/tokuhirom/work/mutsu-codex/foo: FileChanged
+(7) /home/tokuhirom/work/mutsu-codex/foo: FileChanged
+(8) /home/tokuhirom/work/mutsu-codex/foo: FileChanged
+(9) /home/tokuhirom/work/mutsu-codex/foo: FileChanged
+(10) /home/tokuhirom/work/mutsu-codex/foo: FileChanged
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+No such method 'watch-path' for invocant of type 'IO::Notification'
+  in block <unit> at tmp/ddh/prog-3402398.raku line 3
+

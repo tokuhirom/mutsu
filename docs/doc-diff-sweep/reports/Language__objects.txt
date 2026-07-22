@@ -1,0 +1,287 @@
+# doc-diff-harness report
+# stats: match=32  mismatch=4  mutsu-crash=3  no-oracle=29  raku-drift=3  skipped-marker=4  skipped-nondet=3
+
+==============================================================================
+[1] raku-drift-from-doc  raku-doc/doc/Language/objects.rakudoc:505
+--- program ---
+class Pizza {
+    has $!radius = 42;
+    has @.ingredients;
+
+    # class method: construct from a list of ingredients
+    method from-ingredients(::?CLASS:U $pizza: @ingredients) {
+        $pizza.new( ingredients => @ingredients );
+    }
+
+    # instance method
+    method get-radius(::?CLASS:D:) { $!radius }
+}
+my $p = Pizza.from-ingredients: <cheese pepperoni vegetables>;
+say $p.ingredients;     # OUTPUT: «[cheese pepperoni vegetables]␤»
+say $p.get-radius;      # OUTPUT: «42␤»
+say Pizza.get-radius;   # This will fail.
+CATCH { default { put .^name ~ ":\n" ~ .Str } };
+# OUTPUT: «X::Parameter::InvalidConcreteness:␤
+#          Invocant of method 'get-radius' must be
+#          an object instance of type 'Pizza',
+#          not a type object of type 'Pizza'.
+#          Did you forget a '.new'?»
+--- raku stdout ---
+[cheese pepperoni vegetables]
+42
+X::Parameter::InvalidConcreteness:
+Invocant of method 'get-radius' must be an object instance of type
+'Pizza', not a type object of type 'Pizza'. Did you forget a '.new'?
+--- mutsu stdout (exit 0) ---
+[cheese pepperoni vegetables]
+42
+X::Parameter::InvalidConcreteness:
+Invocant of method 'get-radius' must be an object instance of type
+'Pizza', not a type object of type 'Pizza'.  Did you forget a '.new'?
+
+==============================================================================
+[2] raku-drift-from-doc  raku-doc/doc/Language/objects.rakudoc:561
+--- program ---
+class C {
+    method g()            { 42     }
+    method f(::?CLASS:U:) { self.g }
+    method d(::?CLASS:D:) { self.f }
+}
+C.f;        # OUTPUT: «42␤»
+C.new.d;    # This will fail.
+CATCH { default { put .^name ~ ":\n" ~ .Str } };
+# OUTPUT: «X::Parameter::InvalidConcreteness:␤
+#          Invocant of method 'f' must be a type object of type 'C',
+#          not an object instance of type 'C'.  Did you forget a 'multi'?»
+--- raku stdout ---
+X::Parameter::InvalidConcreteness:
+Invocant of method 'f' must be a type object of type 'C', not an object
+instance of type 'C'. Did you forget a 'multi'?
+--- mutsu stdout (exit 0) ---
+X::Parameter::InvalidConcreteness:
+Invocant of method 'f' must be a type object of type
+'C', not an object instance of type 'C'.  Did you forget a '.new'?
+
+==============================================================================
+[3] raku-drift-from-doc  raku-doc/doc/Language/objects.rakudoc:1038
+--- program ---
+class Vector {
+    has $.x;
+    has $.y;
+    has $.length;
+    method new($x, $y) {
+        self.bless(:$x, :$y, length => sqrt($x**2 * $y**2));
+    }
+}
+
+class NamedVector is Vector {
+    has $.name;
+    method new($name, $x, $y) {
+        self.bless(:$name, :$x, :$y);
+    }
+}
+
+my $v = Vector.new: 3, 4;
+say $v.length; # OUTPUT: «5␤»
+
+my $f = NamedVector.new: 'Francis', 5, 12;
+say $f.length; # OUTPUT: «(Any)␤»
+--- raku stdout ---
+12
+(Any)
+--- mutsu stdout (exit 0) ---
+12
+Nil
+
+==============================================================================
+[4] output-mismatch  raku-doc/doc/Language/objects.rakudoc:1067
+--- program ---
+class Str-with-ID is Str {
+    my $counter = 0;
+    has Int $.ID  is rw = 0;
+
+    multi method new( $str ) {
+        self.bless( value => $str );
+    }
+    submethod BUILD( :$!ID = $counter++ ) {}
+}
+
+say Str-with-ID.new("1.1,2e2").ID;                  # OUTPUT: «0␤»
+my $enriched-str = Str-with-ID.new("3,4");
+say "$enriched-str, {$enriched-str.^name}, {$enriched-str.ID}";
+# OUTPUT: «3,4, Str-with-ID, 1␤»
+--- raku stdout ---
+0
+3,4, Str-with-ID, 1
+--- mutsu stdout (exit 0) ---
+0
+Str-with-ID(), Str-with-ID, 1
+
+==============================================================================
+[5] output-mismatch  raku-doc/doc/Language/objects.rakudoc:1132
+--- program ---
+constant ⲧ = " " xx 4; #Just a ⲧab
+role Notable {
+    has Str $.notes is rw;
+
+    multi method notes() { "$!notes\n" };
+    multi method notes( Str $note ) { $!notes ~= "$note\n" ~ ⲧ };
+
+}
+
+class Journey does Notable {
+    has $.origin;
+    has $.destination;
+    has @.travelers;
+
+    method Str { "⤷ $!origin\n" ~ ⲧ ~ self.notes() ~ "$!destination ⤶\n" };
+}
+
+my $trip = Journey.new( :origin<Here>, :destination<There>,
+                        travelers => <þor Freya> );
+
+$trip.notes("First steps");
+notes $trip: "Almost there";
+print $trip;
+# OUTPUT:
+#⤷ Here
+#       First steps
+#       Almost there
+#
+#There ⤶
+--- raku stdout ---
+⤷ Here
+       First steps
+       Almost there
+       
+There ⤶
+--- mutsu stdout (exit 0) ---
+⤷ Here
+       First steps
+       Almost there
+       There ⤶
+
+==============================================================================
+[6] output-mismatch  raku-doc/doc/Language/objects.rakudoc:1185
+--- program ---
+class Bull {
+    has Bool $.castrated = False;
+    method steer {
+        # Turn your bull into a steer
+        $!castrated = True;
+        return self;
+    }
+}
+class Automobile {
+    has $.direction;
+    method steer($!direction) { }
+}
+class Taurus is Bull is Automobile { }
+
+my $t = Taurus.new;
+say $t.steer;
+# OUTPUT: «Taurus.new(castrated => Bool::True, direction => Any)␤»
+--- raku stdout ---
+Taurus.new(castrated => Bool::True, direction => Any)
+--- mutsu stdout (exit 0) ---
+Taurus.new(direction => Nil, castrated => Bool::True)
+
+==============================================================================
+[7] mutsu-error  raku-doc/doc/Language/objects.rakudoc:1397
+--- program ---
+role BinaryTree[::Type] {
+    has BinaryTree[Type] $.left;
+    has BinaryTree[Type] $.right;
+    has Type $.node;
+
+    method visit-preorder(&cb) {
+        cb $.node;
+        for $.left, $.right -> $branch {
+            $branch.visit-preorder(&cb) if defined $branch;
+        }
+    }
+    method visit-postorder(&cb) {
+        for $.left, $.right -> $branch {
+            $branch.visit-postorder(&cb) if defined $branch;
+        }
+        cb $.node;
+    }
+    method new-from-list(::?CLASS:U: *@el) {
+        my $middle-index = @el.elems div 2;
+        my @left         = @el[0 .. $middle-index - 1];
+        my $middle       = @el[$middle-index];
+        my @right        = @el[$middle-index + 1 .. *];
+        self.new(
+            node    => $middle,
+            left    => @left  ?? self.new-from-list(@left)  !! self,
+            right   => @right ?? self.new-from-list(@right) !! self,
+        );
+    }
+}
+
+my $t = BinaryTree[Int].new-from-list(4, 5, 6);
+$t.visit-preorder(&say);    # OUTPUT: «5␤4␤6␤»
+$t.visit-postorder(&say);   # OUTPUT: «4␤6␤5␤»
+--- raku stdout ---
+5
+4
+6
+4
+6
+5
+--- mutsu stdout (exit 124) ---
+
+
+==============================================================================
+[8] mutsu-error  raku-doc/doc/Language/objects.rakudoc:1457
+--- program ---
+role R { method Str() {'hidden!'} };
+my $i = 2 but R;
+sub f(\bound){ put bound };
+f($i); # OUTPUT: «hidden!␤»
+my @positional := <a b> but R;
+say @positional.^name; # OUTPUT: «List+{R}␤»
+--- raku stdout ---
+hidden!
+List+{R}
+--- mutsu stdout (exit 1) ---
+hidden!
+--- mutsu stderr ---
+Type check failed in binding; expected Positional but got List
+  in block <unit> at tmp/ddh/prog-3345872.raku line 4
+
+==============================================================================
+[9] output-mismatch  raku-doc/doc/Language/objects.rakudoc:1526
+--- program ---
+my %seen of Int is default(0 but role :: { method Str() {'NULL'} });
+say %seen<not-there>;          # OUTPUT: «NULL␤»
+say %seen<not-there>.defined;  # OUTPUT: «True␤» (0 may be False but is well defined)
+say Int.new(%seen<not-there>); # OUTPUT: «0␤»
+--- raku stdout ---
+NULL
+True
+0
+--- mutsu stdout (exit 0) ---
+0
+True
+0
+
+==============================================================================
+[10] mutsu-error  raku-doc/doc/Language/objects.rakudoc:65
+--- program ---
+say 4.log:   ; # OUTPUT: «1.38629436111989␤» ( natural logarithm of 4 )
+say 4.log: +2; # OUTPUT: «2␤» ( base-2 logarithm of 4 )
+say 4.log  +2; # OUTPUT: «3.38629436111989␤» ( natural logarithm of 4, plus 2 )
+--- raku stdout ---
+1.3862943611198906
+2
+3.386294361119891
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+===SORRY!=== Error while compiling tmp/ddh/prog-3345872.raku
+Confused. expected statement: expected '.' or digits or generic radix literal or unicode numeric literal or declared term symbol or ...
+at tmp/ddh/prog-3345872.raku:1
+------>say 4.log:   ; # OUTPUT: «1.38629436111989␤» ( natural logarithm of 4 )
+       ^
+

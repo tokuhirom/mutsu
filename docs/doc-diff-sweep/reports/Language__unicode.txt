@@ -1,0 +1,74 @@
+# doc-diff-harness report
+# stats: match=10  mismatch=4  mutsu-crash=0  no-oracle=0  raku-drift=1  skipped-marker=2  skipped-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Language/unicode.rakudoc:83
+--- program ---
+say Buf.new(ord('A'), 0xFE, ord('Z')).decode('utf8-c8');
+#  OUTPUT: «A􏿽xFEZ␤»
+--- raku stdout ---
+A􏿽xFEZ
+--- mutsu stdout (exit 0) ---
+A󰃾Z
+
+==============================================================================
+[2] raku-drift-from-doc  raku-doc/doc/Language/unicode.rakudoc:90
+--- program ---
+my $test-file = "/tmp/test";
+given open($test-file, :w, :bin) {
+  .write: Buf.new(ord('A'), 0xFA, ord('B'), 0xFB, 0xFC, ord('C'), 0xFD);
+  .close;
+}
+
+say slurp($test-file, enc => 'utf8-c8');
+# OUTPUT: «(65 250 66 251 252 67 253)␤»
+--- raku stdout ---
+A􏿽xFAB􏿽xFB􏿽xFCC􏿽xFD
+--- mutsu stdout (exit 0) ---
+A󰃺B󰃻󰃼C󰃽
+
+==============================================================================
+[3] output-mismatch  raku-doc/doc/Language/unicode.rakudoc:190
+--- program ---
+#   Correct name as input:
+say                     "\c[LATIN CAPITAL LETTER GHA]"; # OUTPUT: «Ƣ␤»
+#   Original, erroneous name as output:
+say "Ƣ".uniname; # OUTPUT: «LATIN CAPITAL LETTER OI␤»
+
+# This one is a spelling mistake that was corrected in a Name Alias:
+#   Correct name as input:
+say    "\c[PRESENTATION FORM FOR VERTICAL RIGHT WHITE LENTICULAR BRACKET]".uniname;
+#   Original, erroneous name as output:
+# OUTPUT: «PRESENTATION FORM FOR VERTICAL RIGHT WHITE LENTICULAR BRAKCET␤»
+--- raku stdout ---
+Ƣ
+LATIN CAPITAL LETTER OI
+PRESENTATION FORM FOR VERTICAL RIGHT WHITE LENTICULAR BRAKCET
+--- mutsu stdout (exit 0) ---
+
+LATIN CAPITAL LETTER OI
+Nil
+
+==============================================================================
+[4] output-mismatch  raku-doc/doc/Language/unicode.rakudoc:212
+--- program ---
+say "\c[LATIN CAPITAL LETTER E WITH VERTICAL LINE BELOW AND ACUTE]";      # OUTPUT: «É̩␤»
+say "\c[LATIN CAPITAL LETTER E WITH VERTICAL LINE BELOW AND ACUTE]".ords; # OUTPUT: «(201 809)␤»
+--- raku stdout ---
+É̩
+(201 809)
+--- mutsu stdout (exit 0) ---
+
+()
+
+==============================================================================
+[5] output-mismatch  raku-doc/doc/Language/unicode.rakudoc:224
+--- program ---
+say "\c[woman gesturing OK]";         # OUTPUT: «🙆‍♀️␤»
+say "\c[family: man woman girl boy]"; # OUTPUT: «👨‍👩‍👧‍👦␤»
+--- raku stdout ---
+🙆‍♀️
+👨‍👩‍👧‍👦
+--- mutsu stdout (exit 0) ---
+🙆‍♀️
+

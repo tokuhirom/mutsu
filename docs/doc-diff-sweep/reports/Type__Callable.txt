@@ -1,0 +1,19 @@
+# doc-diff-harness report
+# stats: match=1  mismatch=0  mutsu-crash=1  no-oracle=4  raku-drift=0  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] mutsu-error  raku-doc/doc/Type/Callable.rakudoc:39
+--- program ---
+class A does Callable {
+    submethod CALL-ME(|c){ 'called' }
+}
+my &a = A;
+say a(); # OUTPUT: «called␤»
+--- raku stdout ---
+called
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Unknown function: a
+  in block <unit> at tmp/ddh/prog-3376581.raku line 5
+

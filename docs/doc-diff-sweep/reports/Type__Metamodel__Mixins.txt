@@ -1,0 +1,113 @@
+# doc-diff-harness report
+# stats: match=0  mismatch=0  mutsu-crash=3  no-oracle=9  raku-drift=0  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] mutsu-error  raku-doc/doc/Type/Metamodel/Mixins.rakudoc:18
+--- program ---
+class Billboard {
+    has Str:D $.advertisement is required;
+
+    method vandalism(::?CLASS:D: --> Str:D) { ... }
+
+    multi method Str(::?CLASS:D: --> Str:D) { $!advertisement }
+
+    role Vandalized[Str:D :$vandalism] {
+        method vandalism(::?CLASS:D: --> Str:D) { $vandalism }
+
+        multi method Str(::?CLASS:D: --> Str:D) { $vandalism }
+    }
+}
+
+my Str:D $advertisement = Q:to/ADVERTISEMENT/.chomp;
+Brilliant Solutions: sane and knowledgeable consultants.
+We have been providing excellent services since 1972!
+ADVERTISEMENT
+my Str:D $vandalism = Q:to/VANDALISM/.chomp;
+          S       s  s ne     k          l   o   l     .
+We    e  ee            e  e  e    e    e      e     !
+VANDALISM
+
+my Billboard:D $billboard .= new: :$advertisement;
+say $billboard eq $advertisement; # OUTPUT: «True␤»
+
+my Billboard:D $draft = $billboard but Billboard::Vandalized[:$vandalism];
+say $draft eq $vandalism; # OUTPUT: «True␤»
+
+$billboard does Billboard::Vandalized[:$vandalism];
+say $billboard eq $vandalism; # OUTPUT: «True␤»
+--- raku stdout ---
+True
+True
+True
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+X::Method::NotFound: Unknown method value dispatch (fallback disabled): new on Billboard:D
+  in block <unit> at tmp/ddh/prog-3419689.raku line 24
+
+==============================================================================
+[2] mutsu-error  raku-doc/doc/Type/Metamodel/Mixins.rakudoc:63
+--- program ---
+class Billboard {
+    has Str:D $.advertisement is required;
+
+    method vandalism(::?CLASS:D: --> Str:D) { ... }
+
+    multi method Str(::?CLASS:D: --> Str:D) { $!advertisement }
+
+    role Vandalized {
+        has Str:D $.vandalism is required is rw;
+
+        multi method Str(::?CLASS:D: --> Str:D) { $!vandalism }
+    }
+}
+
+my Str:D $advertisement = Q:to/ADVERTISEMENT/.chomp;
+Brilliant Solutions: sane and knowledgeable consultants.
+We have been providing excellent services since 1972!
+ADVERTISEMENT
+my Str:D $vandalism = Q:to/VANDALISM/.chomp;
+          S       s  s ne     k          l   o   l     .
+We    e  ee            e  e  e    e    e      e     !
+VANDALISM
+my Str:D $false-alarm = Qs:to/FALSE-ALARM/.chomp;
+$vandalism
+⬆️ This is just one of our namesakes we at Brilliant Solutions have been
+helping people like you create since 1972!
+FALSE-ALARM
+
+my Billboard:D $billboard .= new: :$advertisement;
+say $billboard eq $advertisement; # OUTPUT: «True␤»
+
+$billboard does Billboard::Vandalized :value($vandalism);
+say $billboard eq $vandalism; # OUTPUT: «True␤»
+
+$billboard.vandalism = $false-alarm;
+say $billboard eq $false-alarm; # OUTPUT: «True␤»
+--- raku stdout ---
+True
+True
+True
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+X::Method::NotFound: Unknown method value dispatch (fallback disabled): new on Billboard:D
+  in block <unit> at tmp/ddh/prog-3419689.raku line 29
+
+==============================================================================
+[3] mutsu-error  raku-doc/doc/Type/Metamodel/Mixins.rakudoc:112
+--- program ---
+class Foo { }
+role Bar { }
+
+say Foo.new but Bar;     # OUTPUT: «Foo+{Bar}.new␤»
+say Foo.new.^mixin(Bar); # OUTPUT: «Foo+{Bar}.new␤»
+--- raku stdout ---
+Foo+{Bar}.new
+Foo+{Bar}.new
+--- mutsu stdout (exit 1) ---
+Foo.new
+--- mutsu stderr ---
+No such method 'mixin' for invocant of type 'Perl6::Metamodel::ClassHOW'
+  in block <unit> at tmp/ddh/prog-3419689.raku line 5
+

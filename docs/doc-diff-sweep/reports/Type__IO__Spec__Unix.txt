@@ -1,0 +1,145 @@
+# doc-diff-harness report
+# stats: match=11  mismatch=3  mutsu-crash=0  no-oracle=22  raku-drift=2  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] raku-drift-from-doc  raku-doc/doc/Type/IO/Spec/Unix.rakudoc:99
+--- program ---
+say $*SPEC.curupdir;
+# OUTPUT: «-> str $dir { #`(Block|65335808) ... }␤»
+
+my @dirs = <. foo .. bar>;
+say @dirs.grep: { $_ ~~ $*SPEC.curupdir };
+# OUTPUT: «(foo bar)␤»
+--- raku stdout ---
+-> str $dir { #`(Block|4723566720928) ... }
+(foo bar)
+--- mutsu stdout (exit 0) ---
+(CurUpDir)
+()
+
+==============================================================================
+[2] raku-drift-from-doc  raku-doc/doc/Type/IO/Spec/Unix.rakudoc:201
+--- program ---
+say $*CWD;                                  # OUTPUT: «"/home/camelia".IO␤»
+
+say IO::Spec::Unix.rel2abs: 'foo';          # OUTPUT: «/home/camelia/foo␤»
+say IO::Spec::Unix.rel2abs: './';           # OUTPUT: «/home/camelia␤»
+say IO::Spec::Unix.rel2abs: 'foo/../../';   # OUTPUT: «/home/camelia/foo/../..␤»
+say IO::Spec::Unix.rel2abs: '/foo/';        # OUTPUT: «/foo␤»
+
+say IO::Spec::Unix.rel2abs: 'foo', 'bar';   # OUTPUT: «/home/camelia/bar/foo␤»
+say IO::Spec::Unix.rel2abs: './', '/bar';   # OUTPUT: «/bar␤»
+say IO::Spec::Unix.rel2abs: '/foo/', 'bar'; # OUTPUT: «/foo␤»
+
+say IO::Spec::Unix.rel2abs: 'foo/../../', 'bar';
+# OUTPUT: «/home/camelia/bar/foo/../..␤»
+--- raku stdout ---
+"/home/tokuhirom/work/mutsu-codex".IO
+/home/tokuhirom/work/mutsu-codex/foo
+/home/tokuhirom/work/mutsu-codex
+/home/tokuhirom/work/mutsu-codex/foo/../..
+/foo
+/home/tokuhirom/work/mutsu-codex/bar/foo
+/bar
+/foo
+/home/tokuhirom/work/mutsu-codex/bar/foo/../..
+--- mutsu stdout (exit 0) ---
+"/home/tokuhirom/work/mutsu-codex".IO
+/home/tokuhirom/work/mutsu-codex/foo
+/home/tokuhirom/work/mutsu-codex
+/home/tokuhirom/work/mutsu-codex/foo/../..
+/foo/
+bar/foo
+/bar
+/foo/
+bar/foo/../..
+
+==============================================================================
+[3] output-mismatch  raku-doc/doc/Type/IO/Spec/Unix.rakudoc:230
+--- program ---
+IO::Spec::Unix.split('C:/foo/bar.txt').raku.say;
+# OUTPUT: «IO::Path::Parts.new("","C:/foo","bar.txt")␤»
+
+IO::Spec::Unix.split('/foo/').raku.say;
+# OUTPUT: «IO::Path::Parts.new("","/","foo")␤»
+
+IO::Spec::Unix.split('///').raku.say;
+# OUTPUT: «IO::Path::Parts.new("","/","/")␤»
+
+IO::Spec::Unix.split('./').raku.say;
+# OUTPUT: «IO::Path::Parts.new("",".",".")␤»
+
+IO::Spec::Unix.split('.').raku.say;
+# OUTPUT: «IO::Path::Parts.new("",".",".")␤»
+
+IO::Spec::Unix.split('').raku.say;
+# OUTPUT: «IO::Path::Parts.new("","","")␤»
+--- raku stdout ---
+IO::Path::Parts.new("","C:/foo","bar.txt")
+IO::Path::Parts.new("","/","foo")
+IO::Path::Parts.new("","/","/")
+IO::Path::Parts.new("",".",".")
+IO::Path::Parts.new("",".",".")
+IO::Path::Parts.new("","","")
+--- mutsu stdout (exit 0) ---
+IO::Path::Parts.new
+IO::Path::Parts.new
+IO::Path::Parts.new
+IO::Path::Parts.new
+IO::Path::Parts.new
+IO::Path::Parts.new
+
+==============================================================================
+[4] output-mismatch  raku-doc/doc/Type/IO/Spec/Unix.rakudoc:291
+--- program ---
+IO::Spec::Unix.splitpath('C:\foo/bar.txt').raku.say;
+# OUTPUT: «("", "C:\\foo/", "bar.txt")␤»
+
+IO::Spec::Unix.splitpath('C:\foo/bar.txt', :nofile).raku.say;
+# OUTPUT: «("", "C:\\foo/bar.txt", "")␤»
+
+IO::Spec::Unix.splitpath('/foo/').raku.say;
+# OUTPUT: «("", "/foo/", "")␤»
+
+IO::Spec::Unix.splitpath('/foo/', :nofile).raku.say;
+# OUTPUT: «("", "/foo/", "")␤»
+
+IO::Spec::Unix.splitpath('///').raku.say;
+# OUTPUT: «("", "///", "")␤»
+
+IO::Spec::Unix.splitpath('./').raku.say;
+# OUTPUT: «("", "./", "")␤»
+
+IO::Spec::Unix.splitpath('.').raku.say;
+# OUTPUT: «("", "", ".")␤»
+
+IO::Spec::Unix.splitpath('').raku.say;
+# OUTPUT: «("", "", "")␤»
+--- raku stdout ---
+("", "C:\\foo/", "bar.txt")
+("", "C:\\foo/bar.txt", "")
+("", "/foo/", "")
+("", "/foo/", "")
+("", "///", "")
+("", "./", "")
+("", "", ".")
+("", "", "")
+--- mutsu stdout (exit 0) ---
+("", "C:\\foo/", "bar.txt")
+("", "C:\\foo/bar.txt", "")
+("", "/foo/", "")
+("", "/foo/", "")
+("", "///", "")
+("", "./", "")
+("", ".", "")
+("", "", "")
+
+==============================================================================
+[5] output-mismatch  raku-doc/doc/Type/IO/Spec/Unix.rakudoc:62
+--- program ---
+IO::Spec::Unix.catdir(<foo/bar ber raku>).say; # OUTPUT: «foo/bar/ber/raku␤»
+--- raku stdout ---
+foo/bar/ber/raku
+--- mutsu stdout (exit 0) ---
+foo/bar ber raku
+

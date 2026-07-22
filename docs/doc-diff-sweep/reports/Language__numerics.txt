@@ -1,0 +1,111 @@
+# doc-diff-harness report
+# stats: match=28  mismatch=2  mutsu-crash=0  no-oracle=13  raku-drift=2  skipped-marker=0  skipped-nondet=2
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Language/numerics.rakudoc:353
+--- program ---
+say <42>.^name;                 # OUTPUT: «IntStr␤»
+say <42e0>.^name;               # OUTPUT: «NumStr␤»
+say < 42+42i>.^name;            # OUTPUT: «ComplexStr␤»
+say < 1/2>.^name;               # OUTPUT: «RatStr␤»
+say <0.5>.^name;                # OUTPUT: «RatStr␤»
+
+@*ARGS = "42";
+sub MAIN($x) { say $x.^name }   # OUTPUT: «IntStr␤»
+
+say IntStr.new(42, "42").^name; # OUTPUT: «IntStr␤»
+--- raku stdout ---
+IntStr
+NumStr
+ComplexStr
+RatStr
+RatStr
+IntStr
+IntStr
+--- mutsu stdout (exit 0) ---
+IntStr
+NumStr
+ComplexStr
+Rat
+RatStr
+IntStr
+Str
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Language/numerics.rakudoc:458
+--- program ---
+# "42" shows up twice in the result: 42 and <42> are different objects:
+say unique 1, 1, 1, 42, <42>; # OUTPUT: «(1 42 42)␤»
+# Use a different operator to `unique` with:
+say unique :with(&[==]), 1, 1, 1, 42, <42>; # OUTPUT: «(1 42)␤»
+# Or coerce the input instead (faster than using a different `unique` operator):
+say unique :as(*.Int), 1, 1, 1, 42, <42>; # OUTPUT: «(1 42)␤»
+say unique +«(1, 1, 1, 42, <42>);         # OUTPUT: «(1 42)␤»
+
+# Parameterized Hash with `Any` keys does not stringify them; our key is of type `Int`:
+my %h{Any} = 42 => "foo";
+# But we use the allomorphic key of type `IntStr`, which is not in the Hash:
+say %h<42>:exists;           # OUTPUT: «False␤»
+# Must use curly braces to avoid the allomorph:
+say %h{42}:exists;           # OUTPUT: «True␤»
+
+# We are using a set operator to look up an `Int` object in a list of `IntStr` objects:
+say 42 ∈ <42 100 200>; # OUTPUT: «False␤»
+# Convert it to an allomorph:
+say <42> ∈ <42 100 200>; # OUTPUT: «True␤»
+# Or convert the items in the list to plain `Int` objects:
+say 42 ∈ +«<42 100 200>; # OUTPUT: «True␤»
+--- raku stdout ---
+(1 42 42)
+(1 42)
+(1 42)
+(1 42)
+False
+True
+False
+True
+True
+--- mutsu stdout (exit 0) ---
+(1 42 42)
+(1 42)
+(1 42)
+(1 42)
+True
+True
+False
+True
+True
+
+==============================================================================
+[3] raku-drift-from-doc  raku-doc/doc/Language/numerics.rakudoc:595
+--- program ---
+my int $x = 2⁶³-1;
+say $x;             # OUTPUT: «9223372036854775807␤»
+say ++$x;           # OUTPUT: «-9223372036854775808␤»
+
+my uint8 $x;
+say $x;             # OUTPUT: «0␤»
+say $x -= 100;      # OUTPUT: «156␤»
+--- raku stdout ---
+9223372036854775807
+-9223372036854775808
+-9223372036854775808
+9223372036854775708
+--- mutsu stdout (exit 0) ---
+9223372036854775807
+9223372036854775808
+0
+-100
+
+==============================================================================
+[4] raku-drift-from-doc  raku-doc/doc/Language/numerics.rakudoc:609
+--- program ---
+say Buf.new(1000, 2000, 3000).List; # OUTPUT: «(232 208 184)␤»
+say my uint8 @a = 1000, 2000, 3000; # OUTPUT: «232 208 184␤»
+--- raku stdout ---
+(232 208 184)
+[232 208 184]
+--- mutsu stdout (exit 0) ---
+(232 208 184)
+[1000 2000 3000]
+

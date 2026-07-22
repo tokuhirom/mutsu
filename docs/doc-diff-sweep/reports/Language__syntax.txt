@@ -1,0 +1,92 @@
+# doc-diff-harness report
+# stats: match=36  mismatch=3  mutsu-crash=2  no-oracle=37  raku-drift=1  skipped-marker=21  skipped-nondet=3
+
+==============================================================================
+[1] mutsu-error  raku-doc/doc/Language/syntax.rakudoc:354
+--- program ---
+my $foo:bar<baz> = 'quux';
+say $foo:bar«baz»;                               # OUTPUT: «quux␤»
+my $take-me:<home> = 'Where the glory has no end';
+say $take-me:['home'];                           # OUTPUT: «Where [...]␤»
+my $foo:bar<2> = 5;
+say $foo:bar(1+1);                               # OUTPUT: «5␤»
+--- raku stdout ---
+quux
+Where the glory has no end
+5
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+===SORRY!=== Error while compiling tmp/ddh/prog-3355673.raku
+Confused. expected statement: expected use statement or import statement or no statement or need statement or unit statement or ...
+at tmp/ddh/prog-3355673.raku:3
+------>my $take-me:<home> = 'Where the glory has no end';
+                  ^
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Language/syntax.rakudoc:384
+--- program ---
+constant $c = 42;  # Constant binds to Int; $-sigil enables interpolation
+my $a:foo<42> = "answer";
+say $a:foo«$c»;    # OUTPUT: «answer␤»
+--- raku stdout ---
+answer
+--- mutsu stdout (exit 0) ---
+Nil
+
+==============================================================================
+[3] mutsu-error  raku-doc/doc/Language/syntax.rakudoc:429
+--- program ---
+my $foo::bar = 1;
+say OUR::.keys;           # OUTPUT: «(foo)␤»
+say OUR::foo.HOW          # OUTPUT: «Perl6::Metamodel::PackageHOW.new␤»
+--- raku stdout ---
+(foo)
+Perl6::Metamodel::PackageHOW.new
+--- mutsu stdout (exit 1) ---
+()
+--- mutsu stderr ---
+Could not find symbol '&foo' in 'OUR'
+  in block <unit> at tmp/ddh/prog-3355673.raku line 2
+
+==============================================================================
+[4] output-mismatch  raku-doc/doc/Language/syntax.rakudoc:1091
+--- program ---
+my $band = 'Foo Fighters';
+say $band.substr( 0, 3 ).uc; # OUTPUT: «FOO␤»
+say $band.substr: 0, 3  .uc; # OUTPUT: «Foo␤»
+
+--- raku stdout ---
+FOO
+Foo
+--- mutsu stdout (exit 0) ---
+FOO
+Foo Fighters
+
+==============================================================================
+[5] raku-drift-from-doc  raku-doc/doc/Language/syntax.rakudoc:763
+--- program ---
+say %( a => 3, b => 23, :foo, :dog<cat>, "french", "fries" );
+# OUTPUT: «a => 3, b => 23, dog => cat, foo => True, french => fries␤»
+
+say %(a => 73, foo => "fish").keys.join(" ");   # OUTPUT: «a foo␤»
+#   ^^^^^^^^^^^^^^^^^^^^^^^^^ Hash constructor
+--- raku stdout ---
+{a => 3, b => 23, dog => cat, foo => True, french => fries}
+a foo
+--- mutsu stdout (exit 0) ---
+{a => 3, b => 23, dog => cat, foo => True, french => fries}
+foo a
+
+==============================================================================
+[6] output-mismatch  raku-doc/doc/Language/syntax.rakudoc:782
+--- program ---
+say :{ -1 => 41, 0 => 42, 1 => 43 }<0>;  # OUTPUT: «(Any)␤»
+say :{ -1 => 41, 0 => 42, 1 => 43 }{0};  # OUTPUT: «42␤»
+--- raku stdout ---
+(Any)
+42
+--- mutsu stdout (exit 0) ---
+42
+42
+

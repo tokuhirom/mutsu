@@ -1,0 +1,103 @@
+# doc-diff-harness report
+# stats: match=32  mismatch=2  mutsu-crash=1  no-oracle=10  raku-drift=0  skipped-marker=31  skipped-nondet=5
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Language/js-nutshell.rakudoc:384
+--- program ---
+# Using the `is default` trait here forces this subroutine to be chosen first,
+# so long as the signature of the subroutine matches.
+multi prefix:<++>($a) is default { $a - 1 }
+
+my $foo = 1;
+say ++$foo; # OUTPUT: 0
+--- raku stdout ---
+2
+--- mutsu stdout (exit 0) ---
+0
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Language/js-nutshell.rakudoc:562
+--- program ---
+my Str %letters{Str};
+%letters{$_} = .uc for 'a'..'z';
+.say for %letters.values;
+# OUTPUT:
+# A
+# B
+# C
+# etc.
+--- raku stdout ---
+N
+T
+V
+O
+Q
+J
+L
+R
+H
+I
+B
+Y
+X
+U
+Z
+C
+E
+S
+A
+K
+M
+P
+W
+G
+D
+F
+--- mutsu stdout (exit 0) ---
+E
+H
+Q
+F
+D
+I
+J
+B
+C
+L
+M
+O
+P
+R
+T
+X
+Y
+K
+Z
+N
+A
+W
+G
+S
+U
+V
+
+==============================================================================
+[3] mutsu-error  raku-doc/doc/Language/js-nutshell.rakudoc:613
+--- program ---
+my %primes is SetHash;
+my Int $i = 2;
+
+OUTSIDE:
+repeat {
+    next OUTSIDE if $i %% $_ for %primes.keys;
+    %primes{$i}++;
+} while ++$i < 20;
+
+say %primes; # OUTPUT: SetHash(11 13 17 19 2 3 5 7)
+--- raku stdout ---
+SetHash(11 13 17 19 2 3 5 7)
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Runtime error: X::ControlFlow
+

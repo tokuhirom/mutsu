@@ -1,0 +1,130 @@
+# doc-diff-harness report
+# stats: match=11  mismatch=4  mutsu-crash=1  no-oracle=14  raku-drift=1  skipped-marker=0  skipped-nondet=18
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Language/concurrency.rakudoc:49
+--- program ---
+my $p1 = Promise.new;
+say $p1.status;         # OUTPUT: «Planned␤»
+$p1.keep('Result');
+say $p1.status;         # OUTPUT: «Kept␤»
+say $p1.result;         # OUTPUT: «Result␤»
+                        # (since it has been kept, a result is available!)
+
+my $p2 = Promise.new;
+$p2.break('oh no');
+say $p2.status;         # OUTPUT: «Broken␤»
+say $p2.result;         # dies, because the promise has been broken
+CATCH { default { say .^name, ': ', .Str } };
+# OUTPUT: «X::AdHoc+{X::Promise::Broken}: oh no␤»
+--- raku stdout ---
+Planned
+Kept
+Result
+Broken
+X::AdHoc+{X::Promise::Broken}: oh no
+--- mutsu stdout (exit 0) ---
+Planned
+Kept
+Result
+Broken
+X::AdHoc: oh no
+
+==============================================================================
+[2] raku-drift-from-doc  raku-doc/doc/Language/concurrency.rakudoc:85
+--- program ---
+my $promise1 = Promise.new();
+my $promise2 = $promise1.then(-> $v { say "Handled but : "; say $v.result});
+$promise1.break("First Result");
+try $promise2.result;
+say $promise2.cause;        # OUTPUT: «Handled but : ␤First Result␤»
+--- raku stdout ---
+Handled but : 
+Tried to get the result of a broken Promise
+  in block  at tmp/ddh/prog-3332812.raku line 2
+
+Original exception:
+    First Result
+      in block  at tmp/ddh/prog-3332812.raku line 2
+--- mutsu stdout (exit 0) ---
+Handled but : 
+First Result
+  in block <unit>
+
+==============================================================================
+[3] output-mismatch  raku-doc/doc/Language/concurrency.rakudoc:124
+--- program ---
+my $promise = Promise.start({ die "Broken Promise" });
+try $promise.result;
+say $promise.cause;
+--- raku stdout ---
+Broken Promise
+  in block  at tmp/ddh/prog-3332812.raku line 1
+--- mutsu stdout (exit 0) ---
+Broken Promise
+  in block <unit> at tmp/ddh/prog-3332812.raku line 1
+  in block <unit> at tmp/ddh/prog-3332812.raku line 1
+
+==============================================================================
+[4] output-mismatch  raku-doc/doc/Language/concurrency.rakudoc:213
+--- program ---
+sub get_promise {
+    my $promise = Promise.new;
+    my $vow = $promise.vow;
+    Promise.in(10).then({$vow.keep});
+    $promise;
+}
+
+my $promise = get_promise();
+
+# Will throw an exception
+# "Access denied to keep/break this Promise; already vowed"
+$promise.keep;
+CATCH { default { say .^name, ': ', .Str } };
+# OUTPUT: «X::Promise::Vowed: Access denied to keep/break this Promise; already vowed␤»
+--- raku stdout ---
+X::Promise::Vowed: Access denied to keep/break this Promise; already vowed
+--- mutsu stdout (exit 0) ---
+
+
+==============================================================================
+[5] mutsu-error  raku-doc/doc/Language/concurrency.rakudoc:703
+--- program ---
+my $thread = Thread.new(code => { for  1 .. 10  -> $v { say $v }});
+# ...
+$thread.run;
+--- raku stdout ---
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+No such method 'run' for invocant of type 'Thread'
+  in block <unit> at tmp/ddh/prog-3332812.raku line 3
+
+==============================================================================
+[6] output-mismatch  raku-doc/doc/Language/concurrency.rakudoc:709
+--- program ---
+my $thread = Thread.start({ for  1 .. 10  -> $v { say $v }});
+--- raku stdout ---
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+--- mutsu stdout (exit 0) ---
+1
+

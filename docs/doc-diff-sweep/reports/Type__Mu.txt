@@ -1,0 +1,139 @@
+# doc-diff-harness report
+# stats: match=25  mismatch=4  mutsu-crash=1  no-oracle=34  raku-drift=2  skipped-marker=0  skipped-nondet=2
+
+==============================================================================
+[1] raku-drift-from-doc  raku-doc/doc/Type/Mu.rakudoc:238
+--- program ---
+class Foo {
+    has $.foo is rw = 42;
+    has &.boo is rw = { say "Hi" };
+    has @.bar       = <a b>;
+    has %.baz       = <a b c d>;
+}
+
+my $o1 = Foo.new;
+with my $o2 = $o1.clone {
+    .foo = 70;
+    .bar = <Z Y>;
+    .baz = <Z Y X W>;
+    .boo = { say "Bye" };
+}
+
+# Hash and Array attribute modifications in clone appear in original as well:
+say $o1;
+# OUTPUT: «Foo.new(foo => 42, bar => ["Z", "Y"], baz => {:X("W"), :Z("Y")}, …␤»
+say $o2;
+# OUTPUT: «Foo.new(foo => 70, bar => ["Z", "Y"], baz => {:X("W"), :Z("Y")}, …␤»
+$o1.boo.(); # OUTPUT: «Hi␤»
+$o2.boo.(); # OUTPUT: «Bye␤»
+--- raku stdout ---
+Foo.new(foo => 42, boo => -> ;; $_? is raw = OUTER::<$_> { #`(Block|3589053875840) ... }, bar => ["Z", "Y"], baz => {:X("W"), :Z("Y")})
+Foo.new(foo => 70, boo => -> ;; $_? is raw = OUTER::<$_> { #`(Block|3589053878648) ... }, bar => ["Z", "Y"], baz => {:X("W"), :Z("Y")})
+Hi
+Bye
+--- mutsu stdout (exit 0) ---
+Foo.new(foo => 42, boo => -> ($$_?) { #`(Block|26) ... }, bar => ["a", "b"], baz => ("a", "b", "c", "d"))
+Foo.new(foo => 70, boo => -> ($$_?) { #`(Block|31) ... }, bar => ["Z", "Y"], baz => ["Z", "Y", "X", "W"])
+Hi
+Bye
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Type/Mu.rakudoc:267
+--- program ---
+class Bar {
+    has $.quux;
+    has @.foo = <a b>;
+    has %.bar = <a b c d>;
+    method clone { nextwith :foo(@!foo.clone), :bar(%!bar.clone), |%_  }
+}
+
+my $o1 = Bar.new( :42quux );
+with my $o2 = $o1.clone {
+    .foo = <Z Y>;
+    .bar = <Z Y X W>;
+}
+
+# Hash and Array attribute modifications in clone do not affect original:
+say $o1;
+# OUTPUT: «Bar.new(quux => 42, foo => ["a", "b"], bar => {:a("b"), :c("d")})␤»
+say $o2;
+# OUTPUT: «Bar.new(quux => 42, foo => ["Z", "Y"], bar => {:X("W"), :Z("Y")})␤»
+--- raku stdout ---
+Bar.new(quux => 42, foo => ["a", "b"], bar => {:a("b"), :c("d")})
+Bar.new(quux => 42, foo => ["Z", "Y"], bar => {:X("W"), :Z("Y")})
+--- mutsu stdout (exit 0) ---
+Bar.new(quux => 42, foo => ["a", "b"], bar => ("a", "b", "c", "d"))
+Nil
+
+==============================================================================
+[3] output-mismatch  raku-doc/doc/Type/Mu.rakudoc:435
+--- program ---
+class Spell {};sub do-raw-magic(Spell) {};
+#| Initiate a specified spell normally
+sub cast(Spell $s) {
+  do-raw-magic($s);
+}
+#= (do not use for class 7 spells)
+say &cast.WHY;
+# OUTPUT: «Initiate a specified spell normally␤(do not use for class 7 spells)␤»
+--- raku stdout ---
+Initiate a specified spell normally
+(do not use for class 7 spells)
+--- mutsu stdout (exit 0) ---
+Pod::Block::Declarator.new
+
+==============================================================================
+[4] output-mismatch  raku-doc/doc/Type/Mu.rakudoc:119
+--- program ---
+class Foo {
+    has $.foo = 42;
+    has $.bar = 70;
+    method bar { 'something else' }
+}.new.Capture.say; # OUTPUT: «\(:bar("something else"), :foo(42))␤»
+--- raku stdout ---
+\(:bar("something else"), :foo(42))
+--- mutsu stdout (exit 0) ---
+\(:bar(70), :foo(42))
+
+==============================================================================
+[5] raku-drift-from-doc  raku-doc/doc/Type/Mu.rakudoc:176
+--- program ---
+say (1..3).Set.raku;  # OUTPUT: «Set.new(1,2,3)␤»
+--- raku stdout ---
+Set.new(3,1,2)
+--- mutsu stdout (exit 0) ---
+Set.new(1,2,3)
+
+==============================================================================
+[6] output-mismatch  raku-doc/doc/Type/Mu.rakudoc:515
+--- program ---
+sub insert($sep, +@list) {
+    gather for @list {
+        FIRST .take, next;
+        take slip $sep, .item
+    }
+}
+
+say insert ':', <a b c>;
+# OUTPUT: «(a : b : c)␤»
+--- raku stdout ---
+(a : b : c)
+--- mutsu stdout (exit 0) ---
+(a b c)
+
+==============================================================================
+[7] mutsu-error  raku-doc/doc/Type/Mu.rakudoc:531
+--- program ---
+my @a = 1...3;
+sub f(@list){ gather for @list { take-rw $_ } };
+for f(@a) { $_++ };
+say @a;
+# OUTPUT: «[2 3 4]␤»
+--- raku stdout ---
+[2 3 4]
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Cannot resolve caller postfix:<++>(_); the parameter requires mutable arguments
+  in block <unit> at tmp/ddh/prog-3421511.raku line 2
+

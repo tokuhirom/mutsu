@@ -1,0 +1,49 @@
+# doc-diff-harness report
+# stats: match=7  mismatch=2  mutsu-crash=0  no-oracle=17  raku-drift=0  skipped-marker=1  skipped-nondet=1
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Language/perl-func.rakudoc:2281
+--- program ---
+sub prettylist(*@origlist) {
+    @origlist but role {
+        method Str { self.join("<") }
+    }
+}
+print prettylist(1, 2, 3);            # OUTPUT: «1<2<3»
+print join(">", prettylist(3, 2, 1)); # OUTPUT: «3>2>1»
+--- raku stdout ---
+1<2<33>2>1
+--- mutsu stdout (exit 0) ---
+1<2<33 2 1
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Language/perl-func.rakudoc:2310
+--- program ---
+multi increment($b is rw) {
+    ($b + 1) does role { method sink { $b++ } }
+}
+multi increment($b) {
+    $b + 1
+}
+my $a = 1;
+increment($a);
+say $a;                 # OUTPUT: «2␤»
+my $b = increment($a);
+say "$a $b";            # OUTPUT: «2 3␤»
+# ...users will just have to be aware that they should not accidentally
+# sink a stored value later, though this requires some effort to
+# actually do:
+sub identity($c is rw) { $c };
+$a = 1;
+$b = increment($a);
+identity($b);
+$a.say;                 # OUTPUT: «2␤»
+--- raku stdout ---
+2
+2 3
+2
+--- mutsu stdout (exit 0) ---
+1
+1 2
+1
+

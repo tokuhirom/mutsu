@@ -1,0 +1,61 @@
+# doc-diff-harness report
+# stats: match=65  mismatch=1  mutsu-crash=2  no-oracle=75  raku-drift=0  skipped-marker=0  skipped-nondet=1
+
+==============================================================================
+[1] mutsu-error  raku-doc/doc/Type/Str.rakudoc:647
+--- program ---
+say "abc".comb.raku;                 # OUTPUT: «("a", "b", "c").Seq␤»
+say "abc".comb(:match).raku;         # OUTPUT: «(｢a｣ ｢b｣ ｢c｣)␤»
+say 'abcdefghijk'.comb(3).raku;      # OUTPUT: «("abc", "def", "ghi", "jk").Seq␤»
+say 'abcdefghijk'.comb(3, 2).raku;   # OUTPUT: «("abc", "def").Seq␤»
+say comb(/\w/, "a;b;c").raku;        # OUTPUT: «("a", "b", "c").Seq␤»
+say comb(/\N/, "a;b;c").raku;        # OUTPUT: «("a", ";", "b", ";", "c").Seq␤»
+say comb(/\w/, "a;b;c", 2).raku;     # OUTPUT: «("a", "b").Seq␤»
+say comb(/\w\;\w/, "a;b;c", 2).raku; # OUTPUT: «("a;b",).Seq␤»
+say comb(/.<(.)>/, "<>[]()").raku;   # OUTPUT: «(">", "]", ")").Seq␤»
+--- raku stdout ---
+("a", "b", "c").Seq
+("a", "b", "c").Seq
+("abc", "def", "ghi", "jk").Seq
+("abc", "def").Seq
+("a", "b", "c").Seq
+("a", ";", "b", ";", "c").Seq
+("a", "b").Seq
+("a;b",).Seq
+(">", "]", ")").Seq
+--- mutsu stdout (exit 1) ---
+("a", "b", "c").Seq
+--- mutsu stderr ---
+No such method 'comb' for invocant of type 'Str'
+Did you mean 'chomp'?
+  in block <unit> at tmp/ddh/prog-3431478.raku line 2
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Type/Str.rakudoc:1045
+--- program ---
+my $string = "abc";
+substr-rw($string, 1, 1) = "z";
+$string.say;                          # OUTPUT: «azc␤»
+substr-rw($string, 2, 0) = "-Zorro-";
+$string.say;                          # OUTPUT: «az-Zorro-c␤»
+--- raku stdout ---
+azc
+az-Zorro-c
+--- mutsu stdout (exit 0) ---
+abc
+abc
+
+==============================================================================
+[3] mutsu-error  raku-doc/doc/Type/Str.rakudoc:1354
+--- program ---
+sub f(Version(Str) $want-version) { say $want-version.^name };
+f "1.2.3";  # OUTPUT: «Version␤»
+--- raku stdout ---
+Version
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Calling f(Str) will never work with declared signature (Version(Str) $want-version)
+  Impossible coercion from 'Str' into 'Version': no acceptable coercion method found
+  in block <unit> at tmp/ddh/prog-3431478.raku line 2
+

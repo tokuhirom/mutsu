@@ -1,0 +1,90 @@
+# doc-diff-harness report
+# stats: match=22  mismatch=3  mutsu-crash=1  no-oracle=14  raku-drift=0  skipped-marker=31  skipped-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Language/py-nutshell.rakudoc:211
+--- program ---
+my \x = 10;
+for 1, 2, 3 -> \x {
+    # do nothing
+}
+say x;
+# x is 10
+--- raku stdout ---
+10
+--- mutsu stdout (exit 0) ---
+3
+
+==============================================================================
+[2] mutsu-error  raku-doc/doc/Language/py-nutshell.rakudoc:257
+--- program ---
+my \squares = [];
+for ^5 -> \x {
+    squares.append({ x² });
+}
+say squares[2]();
+say squares[4]();
+# 4, 16 since each loop iteration has a lexically scoped x,
+--- raku stdout ---
+4
+16
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Cannot convert string to number: base-10 number must begin with valid digits or '.' in '⏏x' (indicated by ⏏)
+  in block <unit> at tmp/ddh/prog-3350677.raku line 5
+  in block <unit> at tmp/ddh/prog-3350677.raku line 5
+
+==============================================================================
+[3] output-mismatch  raku-doc/doc/Language/py-nutshell.rakudoc:387
+--- program ---
+my @elems = <neutronium hydrogen helium lithium>;
+for @elems.kv -> $i, $e {
+    say "Elem no. $i is $e"
+}
+
+my @symbols = <n H He Li>;
+my %elem-for-symbol;
+%elem-for-symbol{@symbols} = @elems;
+
+# Note that the iteration order will differ from Python
+for %elem-for-symbol.kv -> $symbol, $element {
+    say "Symbol '$symbol' stands for $element";
+}
+--- raku stdout ---
+Elem no. 0 is neutronium
+Elem no. 1 is hydrogen
+Elem no. 2 is helium
+Elem no. 3 is lithium
+Symbol 'n' stands for neutronium
+Symbol 'He' stands for helium
+Symbol 'Li' stands for lithium
+Symbol 'H' stands for hydrogen
+--- mutsu stdout (exit 0) ---
+Elem no. 0 is neutronium
+Elem no. 1 is hydrogen
+Elem no. 2 is helium
+Elem no. 3 is lithium
+Symbol 'He' stands for helium
+Symbol 'H' stands for hydrogen
+Symbol 'Li' stands for lithium
+Symbol 'n' stands for neutronium
+
+==============================================================================
+[4] output-mismatch  raku-doc/doc/Language/py-nutshell.rakudoc:541
+--- program ---
+say ( { $_[0] + $_[1] } for (3,9) X (2,10) );      # OUTPUT: «(5 13 11 19)␤»
+say ( -> (\i, \j) { i + j } for (3,9) X (2,10) );  # OUTPUT: «(5 13 11 19)␤»
+say ( -> ($i, $j) { $i + $j } for (3,9) X (2,10) );# OUTPUT: «(5 13 11 19)␤»
+say ( { $^a[0] + $^a[1] } for (3,9) X (2,10) );    # OUTPUT: «(5 13 11 19)␤»
+--- raku stdout ---
+(5 13 11 19)
+(5 13 11 19)
+(5 13 11 19)
+(5 13 11 19)
+--- mutsu stdout (exit 0) ---
+(   )
+(2+1i 10+1i 2+1i 10+1i)
+(5 13 11 19)
+(5 13 11 19)
+

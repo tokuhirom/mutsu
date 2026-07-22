@@ -1,0 +1,86 @@
+# doc-diff-harness report
+# stats: match=6  mismatch=0  mutsu-crash=3  no-oracle=15  raku-drift=3  skipped-marker=0  skipped-nondet=2
+
+==============================================================================
+[1] raku-drift-from-doc  raku-doc/doc/Type/Code.rakudoc:195
+--- program ---
+class Food { has $.ingredients; method eat {};}
+say Food.^lookup('eat').line;          # OUTPUT: «4␤»
+say Food.^lookup('ingredients').line;  # OUTPUT: «1␤»
+--- raku stdout ---
+1
+1
+--- mutsu stdout (exit 0) ---
+Nil
+Nil
+
+==============================================================================
+[2] mutsu-error  raku-doc/doc/Type/Code.rakudoc:81
+--- program ---
+sub foo { say "$^a $^b $:foo $:bar" }
+&foo.assuming(13, foo => 42)(24, bar => 72); # OUTPUT: «13 24 42 72␤»
+--- raku stdout ---
+13 24 42 72
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Runtime error: Non-variable $ must be backslashed
+
+==============================================================================
+[3] raku-drift-from-doc  raku-doc/doc/Type/Code.rakudoc:140
+--- program ---
+my $single = \'a';         # a single argument Capture
+my $plural = \('a', 42);   # a two argument Capture
+my &block = { say $^a };   # a Block object, that is a subclass of Code, taking one argument
+say &block.cando($single); # OUTPUT: «(-> $a { #`(Block|94212856419136) ... })␤»
+say &block.cando($plural); # OUTPUT: «()␤»
+--- raku stdout ---
+(-> $a { #`(Block|5949746019720) ... })
+()
+--- mutsu stdout (exit 0) ---
+()
+()
+
+==============================================================================
+[4] raku-drift-from-doc  raku-doc/doc/Type/Code.rakudoc:153
+--- program ---
+sub marine() { }
+say ~&marine;
+# OUTPUT: «Sub object coerced to string (please use .gist or .raku to do that)␤marine␤»
+say &marine.Str;
+# OUTPUT: «Sub object coerced to string (please use .gist or .raku to do that)␤marine␤»
+say &marine.raku; # OUTPUT: «sub marine { #`(Sub|94280758332168) ... }␤»
+--- raku stdout ---
+marine
+marine
+sub marine { #`(Sub|2990248920672) ... }
+--- mutsu stdout (exit 0) ---
+marine
+marine
+sub marine () { #`(Sub|29) ... }
+
+==============================================================================
+[5] mutsu-error  raku-doc/doc/Type/Code.rakudoc:166
+--- program ---
+say &infix:<+>.file;   # OUTPUT: «SETTING::src/core.c/Numeric.rakumod␤»
+--- raku stdout ---
+SETTING::src/core.c/Numeric.rakumod
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+No such method 'file' for invocant of type 'Routine'
+  in block <unit> at tmp/ddh/prog-3378355.raku line 1
+
+==============================================================================
+[6] mutsu-error  raku-doc/doc/Type/Code.rakudoc:175
+--- program ---
+say &infix:<+>.line;   # OUTPUT: «208␤»
+--- raku stdout ---
+209
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+No such method 'line' for invocant of type 'Routine'
+Did you mean 'clone'?
+  in block <unit> at tmp/ddh/prog-3378355.raku line 1
+

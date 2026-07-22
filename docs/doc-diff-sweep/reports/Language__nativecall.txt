@@ -1,0 +1,302 @@
+# doc-diff-harness report
+# stats: match=0  mismatch=1  mutsu-crash=4  no-oracle=34  raku-drift=0  skipped-marker=25  skipped-nondet=2
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Language/nativecall.rakudoc:377
+--- program ---
+use NativeCall;
+
+my $native-array = CArray[int32].new( 1, 2, 3, 4, 5 );
+say 'Number of elements: ' ~ $native-array.elems;
+
+# walk the array
+for $native-array.list -> $elem {
+    say "Current element is: $elem";
+}
+
+# get every element by its index-based position
+for 0..$native-array.elems - 1 -> $position {
+    say "Element at position $position is "
+          ~ $native-array[ $position ];
+}
+--- raku stdout ---
+Number of elements: 5
+Current element is: 1
+Current element is: 2
+Current element is: 3
+Current element is: 4
+Current element is: 5
+Element at position 0 is 1
+Element at position 1 is 2
+Element at position 2 is 3
+Element at position 3 is 4
+Element at position 4 is 5
+--- mutsu stdout (exit 0) ---
+Number of elements: 1
+Current element is: 
+Element at position 0 is
+
+==============================================================================
+[2] mutsu-error  raku-doc/doc/Language/nativecall.rakudoc:482
+--- program ---
+use NativeCall;
+
+class MyUnion is repr('CUnion') {
+    has int32 $.flags32;
+    has int64 $.flags64;
+}
+
+say nativesizeof(MyUnion.new);  # OUTPUT: «8␤»
+                                # ie. max(sizeof(MyUnion.flags32), sizeof(MyUnion.flags64))
+--- raku stdout ---
+8
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Unknown function: nativesizeof
+  in block <unit> at tmp/ddh/prog-3344813.raku line 8
+
+==============================================================================
+[3] mutsu-error  raku-doc/doc/Language/nativecall.rakudoc:598
+--- program ---
+use NativeCall;
+sub strdup(Str $s --> Pointer[Str]) is native { * }
+my Pointer[Str] $p = strdup("Success!");
+say $p.deref;
+--- raku stdout ---
+Success!
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Type check failed for return value; expected Pointer[Str] but got Whatever (*)
+  in block <unit> at tmp/ddh/prog-3344813.raku line 3
+
+==============================================================================
+[4] mutsu-error  raku-doc/doc/Language/nativecall.rakudoc:1186
+--- program ---
+#!/usr/bin/env raku
+
+use v6;
+use NativeCall;
+
+constant \INET_ADDRSTRLEN = 16;
+constant \INET6_ADDRSTRLEN = 46;
+
+enum AddrInfo-Family (
+    AF_UNSPEC                   => 0;
+    AF_INET                     => 2;
+    AF_INET6                    => 10;
+);
+
+enum AddrInfo-Socktype (
+    SOCK_STREAM                 => 1;
+    SOCK_DGRAM                  => 2;
+    SOCK_RAW                    => 3;
+    SOCK_RDM                    => 4;
+    SOCK_SEQPACKET              => 5;
+    SOCK_DCCP                   => 6;
+    SOCK_PACKET                 => 10;
+);
+
+enum AddrInfo-Flags (
+    AI_PASSIVE                  => 0x0001;
+    AI_CANONNAME                => 0x0002;
+    AI_NUMERICHOST              => 0x0004;
+    AI_V4MAPPED                 => 0x0008;
+    AI_ALL                      => 0x0010;
+    AI_ADDRCONFIG               => 0x0020;
+    AI_IDN                      => 0x0040;
+    AI_CANONIDN                 => 0x0080;
+    AI_IDN_ALLOW_UNASSIGNED     => 0x0100;
+    AI_IDN_USE_STD3_ASCII_RULES => 0x0200;
+    AI_NUMERICSERV              => 0x0400;
+);
+
+sub inet_ntop(int32, Pointer, Blob, int32 --> Str)
+    is native {}
+
+class SockAddr is repr('CStruct') {
+    has uint16 $.sa_family;
+}
+
+class SockAddr-in is repr('CStruct') {
+    has int16 $.sin_family;
+    has uint16 $.sin_port;
+    has uint32 $.sin_addr;
+
+    method address {
+        my $buf = buf8.allocate(INET_ADDRSTRLEN);
+        inet_ntop(AF_INET, Pointer.new(nativecast(Pointer,self)+4),
+            $buf, INET_ADDRSTRLEN)
+    }
+}
+
+class SockAddr-in6 is repr('CStruct') {
+    has uint16 $.sin6_family;
+    has uint16 $.sin6_port;
+    has uint32 $.sin6_flowinfo;
+    has uint64 $.sin6_addr0;
+    has uint64 $.sin6_addr1;
+    has uint32 $.sin6_scope_id;
+
+    method address {
+        my $buf = buf8.allocate(INET6_ADDRSTRLEN);
+        inet_ntop(AF_INET6, Pointer.new(nativecast(Pointer,self)+8),
+            $buf, INET6_ADDRSTRLEN)
+    }
+}
+
+class Addrinfo is repr('CStruct') {
+    has int32 $.ai_flags;
+    has int32 $.ai_family;
+    has int32 $.ai_socktype;
+    has int32 $.ai_protocol;
+    has uint32 $.ai_addrNativeCalllen;
+    has SockAddr $.ai_addr is rw;
+    has Str $.ai_cannonname is rw;
+    has Addrinfo $.ai_next is rw;
+
+    method flags {
+        do for AddrInfo-Flags.enums { .key if $!ai_flags +& .value }
+    }
+
+    method family {
+        AddrInfo-Family($!ai_family)
+    }
+
+    method socktype {
+        AddrInfo-Socktype($!ai_socktype)
+    }
+
+    method address {
+        given $.family {
+            when AF_INET {
+                nativecast(SockAddr-in, $!ai_addr).address
+            }
+            when AF_INET6 {
+                nativecast(SockAddr-in6, $!ai_addr).address
+            }
+        }
+    }
+}
+
+sub getaddrinfo(Str $node, Str $service, Addrinfo $hints,
+                Pointer $res is rw --> int32)
+    is native {};
+
+sub freeaddrinfo(Pointer)
+    is native {}
+
+sub MAIN() {
+    my Addrinfo $hint .= new(:ai_flags(AI_CANONNAME));
+    my Pointer $res .= new;
+    my $rv = getaddrinfo("google.com", Str, $hint, $res);
+    say "return val: $rv";
+    if ( ! $rv ) {
+        my $addr = nativecast(Addrinfo, $res);
+        while $addr {
+            with $addr {
+                say "Name: ", $_ with .ai_cannonname;
+                say .family, ' ', .socktype;
+                say .address;
+                $addr = .ai_next;
+            }
+        }
+    }
+    freeaddrinfo($res);
+}
+--- raku stdout ---
+return val: 0
+Name: google.com
+AF_INET SOCK_STREAM
+142.251.23.102
+AF_INET SOCK_DGRAM
+142.251.23.102
+AF_INET SOCK_RAW
+142.251.23.102
+AF_INET SOCK_STREAM
+142.251.23.101
+AF_INET SOCK_DGRAM
+142.251.23.101
+AF_INET SOCK_RAW
+142.251.23.101
+AF_INET SOCK_STREAM
+142.251.23.113
+AF_INET SOCK_DGRAM
+142.251.23.113
+AF_INET SOCK_RAW
+142.251.23.113
+AF_INET SOCK_STREAM
+142.251.23.100
+AF_INET SOCK_DGRAM
+142.251.23.100
+AF_INET SOCK_RAW
+142.251.23.100
+AF_INET SOCK_STREAM
+142.251.23.139
+AF_INET SOCK_DGRAM
+142.251.23.139
+AF_INET SOCK_RAW
+142.251.23.139
+AF_INET SOCK_STREAM
+142.251.23.138
+AF_INET SOCK_DGRAM
+142.251.23.138
+AF_INET SOCK_RAW
+142.251.23.138
+AF_INET6 SOCK_STREAM
+2404:6800:400b:c00c::8a
+AF_INET6 SOCK_DGRAM
+2404:6800:400b:c00c::8a
+AF_INET6 SOCK_RAW
+2404:6800:400b:c00c::8a
+AF_INET6 SOCK_STREAM
+2404:6800:400b:c00c::66
+AF_INET6 SOCK_DGRAM
+2404:6800:400b:c00c::66
+AF_INET6 SOCK_RAW
+2404:6800:400b:c00c::66
+AF_INET6 SOCK_STREAM
+2404:6800:400b:c00c::65
+AF_INET6 SOCK_DGRAM
+2404:6800:400b:c00c::65
+AF_INET6 SOCK_RAW
+2404:6800:400b:c00c::65
+AF_INET6 SOCK_STREAM
+2404:6800:400b:c00c::8b
+AF_INET6 SOCK_DGRAM
+2404:6800:400b:c00c::8b
+AF_INET6 SOCK_RAW
+2404:6800:400b:c00c::8b
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Unknown function: AddrInfo-Family
+  in block <unit> at tmp/ddh/prog-3344813.raku line 9
+
+==============================================================================
+[5] mutsu-error  raku-doc/doc/Language/nativecall.rakudoc:870
+--- program ---
+use NativeCall;
+my class PwStruct is repr('CStruct') {
+    has Str $.pw_name;
+    has Str $.pw_passwd;
+    has uint32 $.pw_uid;
+    has uint32 $.pw_gid;
+    has Str $.pw_gecos;
+    has Str $.pw_dir;
+    has Str $.pw_shell;
+}
+sub getuid()              returns uint32   is native { * };
+sub getpwuid(uint32 $uid) returns PwStruct is native { * };
+
+say getpwuid(getuid()).pw_dir;
+--- raku stdout ---
+/home/tokuhirom
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Type check failed for return value; expected PwStruct but got Whatever (*)
+  in block <unit> at tmp/ddh/prog-3344813.raku line 14
+
+... [report truncated at 300 lines — 301 total; a doc example produced a very large diff (usually a filesystem listing). Re-run the harness on this file for the full output.]

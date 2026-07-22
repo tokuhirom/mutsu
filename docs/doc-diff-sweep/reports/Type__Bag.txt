@@ -1,0 +1,35 @@
+# doc-diff-harness report
+# stats: match=6  mismatch=1  mutsu-crash=0  no-oracle=4  raku-drift=1  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] raku-drift-from-doc  raku-doc/doc/Type/Bag.rakudoc:53
+--- program ---
+my $n = bag "a" => 0, "b" => 1, "c" => 2, "c" => 2;
+say $n.keys.raku;        # OUTPUT: «(:c(2), :b(1), :a(0)).Seq␤»
+say $n.keys.map(&WHAT);  # OUTPUT: «((Pair) (Pair) (Pair))␤»
+say $n.values.raku;      # OUTPUT: «(2, 1, 1).Seq␤»
+--- raku stdout ---
+(:a(0), :b(1), :c(2)).Seq
+((Pair) (Pair) (Pair))
+(1, 1, 2).Seq
+--- mutsu stdout (exit 0) ---
+(:c(2), :b(1), :a(0)).Seq
+((Pair) (Pair) (Pair))
+(2, 1, 1).Seq
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Type/Bag.rakudoc:66
+--- program ---
+my $n = ("a" => 0, "b" => 1, "c" => 2, "c" => 2).Bag;
+say $n.keys.raku;        # OUTPUT: «("b", "c").Seq␤»
+say $n.keys.map(&WHAT);  # OUTPUT: «((Str) (Str))␤»
+say $n.values.raku;      # OUTPUT: «(1, 4).Seq␤»
+--- raku stdout ---
+("b", "c").Seq
+((Str) (Str))
+(1, 4).Seq
+--- mutsu stdout (exit 0) ---
+("c", "b").Seq
+((Str) (Str))
+(4, 1).Seq
+

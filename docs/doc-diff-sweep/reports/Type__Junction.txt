@@ -1,0 +1,84 @@
+# doc-diff-harness report
+# stats: match=17  mismatch=2  mutsu-crash=0  no-oracle=12  raku-drift=3  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/Junction.rakudoc:266
+--- program ---
+my $n = Junction.new( "one", 1..6 );
+say $n.Bool;                         # OUTPUT: «False␤»
+--- raku stdout ---
+False
+--- mutsu stdout (exit 0) ---
+True
+
+==============================================================================
+[2] raku-drift-from-doc  raku-doc/doc/Type/Junction.rakudoc:325
+--- program ---
+my $odd  = 1|3|5;
+my $even = 2|4|6;
+
+my $merged = $odd ~ $even;
+say $merged; # OUTPUT: «any(12, 14, 16, 32, 34, 36, 52, 54, 56)␤»
+
+say "Found 34!" if 34 == $merged; # OUTPUT: «Found 34!␤»
+my $prefixed = "0" ~ $odd;
+say "Found 03" if "03" == $prefixed; # OUTPUT: «Found 03!␤»
+
+my $postfixed = $odd ~ "1";
+say "Found 11" if 11 == $postfixed; # OUTPUT: «Found 11!␤»
+--- raku stdout ---
+any(12, 14, 16, 32, 34, 36, 52, 54, 56)
+Found 34!
+Found 03
+Found 11
+--- mutsu stdout (exit 0) ---
+any(any(12, 14, 16), any(32, 34, 36), any(52, 54, 56))
+Found 34!
+Found 03
+Found 11
+
+==============================================================================
+[3] raku-drift-from-doc  raku-doc/doc/Type/Junction.rakudoc:64
+--- program ---
+my %h = :42foo, :70bar;
+say    %h{one <foo meow>}:exists; # OUTPUT: «one(True, False)␤»
+say so %h{one <foo meow>}:exists; # OUTPUT: «True␤»
+say    %h{one <foo  bar>}:exists; # OUTPUT: «one(True, True)␤»
+say so %h{one <foo  bar>}:exists; # OUTPUT: «False␤»
+--- raku stdout ---
+True
+True
+False
+False
+--- mutsu stdout (exit 0) ---
+False
+False
+False
+False
+
+==============================================================================
+[4] raku-drift-from-doc  raku-doc/doc/Type/Junction.rakudoc:164
+--- program ---
+my $j = +any "not a number", "42", "2.1";
+my @list = gather for $j -> $e {
+    take $e if $e.defined;
+}
+@list.say; # OUTPUT: «[42 2.1]␤»
+--- raku stdout ---
+[any((HANDLED) Cannot convert string to number: base-10 number must begin with valid digits or '.' in '<HERE>not a number' (indicated by <HERE>)
+, 42, 2.1)]
+--- mutsu stdout (exit 0) ---
+[any(Failure(), 42, 2.1)]
+
+==============================================================================
+[5] output-mismatch  raku-doc/doc/Type/Junction.rakudoc:205
+--- program ---
+sub calc ($_) { die when 13 }
+my $j = any 1..42;
+$j = any (gather $j».take).grep: {Nil !=== try calc $_};
+say so $j == 42; # OUTPUT: «True␤»
+--- raku stdout ---
+True
+--- mutsu stdout (exit 0) ---
+False
+
