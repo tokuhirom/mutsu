@@ -1,0 +1,55 @@
+use v6;
+use Test;
+
+# Raku's list-infix operators (Z, X, the Z+/X* meta-ops, and minmax) are LOOSER
+# than the comma that separates listop arguments (operators.rakudoc precedence
+# table: "Comma operator" is tighter than "List infix"). So in `say a, b Zop c, d`
+# the whole comma list on each side is one operand: `say((a, b) Zop (c, d))`.
+# mutsu previously bound the meta-op tighter than comma, giving `say(a, (b Zop c), d)`.
+
+plan 12;
+
+# Capture what a `say`/`print` statement actually emits, so we test the
+# unparenthesized listop statement path (not the parenthesized-list path).
+class Cap {
+    has @.out;
+    method print(*@a) { @.out.append(@a) }
+}
+sub captured(&code) {
+    my $c = Cap.new;
+    {
+        my $*OUT = $c;
+        code();
+    }
+    $c.out.join;
+}
+
+is captured({ say 100, 200 Z+ 42, 23 }), "(142 223)\n",
+    'say: (100,200) Z+ (42,23)';
+is captured({ say 1, 2 Z 3, 4 }), "((1 3) (2 4))\n",
+    'say: (1,2) Z (3,4)';
+is captured({ say 1, 2, 3 X* 10, 100 }), "(10 100 20 200 30 300)\n",
+    'say: (1,2,3) X* (10,100)';
+is captured({ say "a", 1, 2 Z 3, 4 }), "((a 3) (1 4))\n",
+    'say: a leading non-numeric arg joins the left operand';
+is captured({ say 0, 1, 2 Z 3, 4 }), "((0 3) (1 4))\n",
+    'say: all leading args join the left operand';
+is captured({ say 1, 2 Z 3, 4, 5 }), "((1 3) (2 4))\n",
+    'say: Z stops at the shorter side (5 dropped)';
+is captured({ say 1, 2 X 3, 4 }), "((1 3) (1 4) (2 3) (2 4))\n",
+    'say: full cross of both comma lists';
+is captured({ say 1, 2 Z+ 3, 4 Z+ 5, 6 }), "(9 12)\n",
+    'say: chained Z+ is list-associative across the whole level';
+is captured({ say 1, 5 minmax 3, 0 }), "0..5\n",
+    'say: minmax is list-infix — (1,5) minmax (3,0)';
+is captured({ say 1, 2 min 3, 0 }), "120\n",
+    'say: min is NOT list-infix (tighter than comma) — 1, (2 min 3), 0';
+
+my $x = 5;
+is captured({ say $x, 10 Z+ 1, 2 }), "(6 12)\n",
+    'say: a scalar variable joins the left comma operand';
+
+# Array assignment RHS already absorbed the whole comma level; keep it pinned.
+my @a = 1, 2 Z 3, 4;
+is-deeply @a, [(1, 3), (2, 4)],
+    'array assignment RHS absorbs the whole comma level';

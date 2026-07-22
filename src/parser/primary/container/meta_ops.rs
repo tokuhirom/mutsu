@@ -31,6 +31,37 @@ pub(crate) fn finalize_paren_list(items: Vec<Expr>) -> Expr {
     Expr::ArrayLiteral(lifted)
 }
 
+/// Lift a top-level list-infix meta-op (`Z`/`X`) or `minmax` across an
+/// unparenthesized listop argument list. Raku's list-infix operators are LOOSER
+/// than the comma separating listop arguments, so `say 100, 200 Z+ 42, 23` is
+/// `say((100, 200) Z+ (42, 23))` — the whole comma level is one operand — not
+/// `say(100, (200 Z+ (42, 23)))`. The per-argument parse leaves the meta-op with
+/// only its immediately-preceding element as its left operand (and the comma
+/// tail absorbed on the right); this reuses the same columnar lift the
+/// parenthesized-list finalizer applies (`finalize_paren_list`) to pull the
+/// leading arguments into the left operand.
+///
+/// Analogous to [`try_parse_sequence_arg_list`], which does the same absorption
+/// for the sequence operator (`...`). Returns an ordinary comma list untouched
+/// (no top-level meta-op/minmax), so the caller keeps its per-argument handling.
+pub(crate) fn lift_list_infix_in_arg_list(items: Vec<Expr>) -> Vec<Expr> {
+    let has_metaop = items.iter().any(|e| matches!(e, Expr::MetaOp { .. }));
+    if !has_metaop && lift_minmax_in_paren_list(&items).is_none() {
+        return items;
+    }
+    let lifted = lift_meta_ops_in_paren_list(items);
+    if let Some(expr) = lift_minmax_in_paren_list(&lifted) {
+        return vec![expr];
+    }
+    // Match the paren finalizer's Whatever-curry of a lone lifted meta-op
+    // (`say * X+ *, 5`), leaving multi-argument lists (no lift happened)
+    // element-for-element intact.
+    if lifted.len() == 1 && matches!(&lifted[0], Expr::MetaOp { .. }) {
+        return vec![maybe_curry_xz_metaop(lifted.into_iter().next().unwrap())];
+    }
+    lifted
+}
+
 /// Whatever-curry an X/Z meta-op when (and only when) a *standalone* `*` operand
 /// makes it a WhateverCode. A `*` that is merely the trailing element of a
 /// comma-list operand is a list *extender* (zip/cross repeats the last element),
