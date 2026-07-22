@@ -513,8 +513,13 @@ impl Interpreter {
         let (lr, li) = complex_parts(&left);
         let (rr, ri) = complex_parts(&right);
         let approx_f64 = |a: f64, b: f64| -> bool {
-            // Equal values (including Inf == Inf, -Inf == -Inf) are always approximately equal
-            if a == b {
+            // Two identical infinities (Inf == Inf, -Inf == -Inf) are approximately
+            // equal regardless of tolerance — the relative-difference formula below
+            // would compute Inf/Inf = NaN. Finite equal values are NOT short-circuited:
+            // with `$*TOLERANCE = 0` even `1 ≅ 1` must be False (per the spec, a zero
+            // tolerance makes every comparison fail), so they fall through to the
+            // strict `<` test below.
+            if a == b && a.is_infinite() {
                 return true;
             }
             // NaN is never approximately equal to anything
@@ -522,15 +527,21 @@ impl Interpreter {
                 return false;
             }
             let diff = (a - b).abs();
-            // Per Raku spec: if either side is zero, use absolute tolerance;
-            // otherwise use relative percentage difference.
+            // Per Raku spec: the difference must be strictly LESS than the tolerance
+            // (`$*TOLERANCE = 0` fails all comparisons). If either side is zero, use
+            // the absolute difference; otherwise the relative percentage difference.
             if a == 0.0 || b == 0.0 {
                 return diff < tolerance;
             }
             let max_abs = a.abs().max(b.abs());
-            diff / max_abs <= tolerance
+            diff < tolerance * max_abs
         };
-        let result = approx_f64(lr, rr) && approx_f64(li, ri);
+        // For two pure reals the imaginary parts are both exactly 0 and must not be
+        // subjected to the tolerance test (`$*TOLERANCE = 0` would otherwise make
+        // `0 < 0` false and wrongly reject every real comparison); only compare the
+        // imaginary parts when at least one operand is genuinely Complex.
+        let im_ok = (li == 0.0 && ri == 0.0) || approx_f64(li, ri);
+        let result = approx_f64(lr, rr) && im_ok;
         Ok(Value::truth(result))
     }
 }

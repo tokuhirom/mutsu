@@ -861,8 +861,13 @@ impl Compiler {
                     self.emit_dynamic_package_error(name);
                     return;
                 }
-                // X::Dynamic::Postdeclaration: dynamic variable used before declaration
-                if name.starts_with('*') && self.accessed_dynamic_vars.contains(name) {
+                // X::Dynamic::Postdeclaration: dynamic variable used before declaration.
+                // Built-in dynamics ($*OUT, $*TOLERANCE, ...) are always declared by
+                // the runtime, so reading one then `my`-shadowing it is legal.
+                if name.starts_with('*')
+                    && self.accessed_dynamic_vars.contains(name)
+                    && !Self::is_builtin_dynamic_var(name)
+                {
                     let symbol = Self::dynamic_var_symbol(name);
                     let mut attrs = std::collections::HashMap::new();
                     attrs.insert("symbol".to_string(), Value::str(symbol));
