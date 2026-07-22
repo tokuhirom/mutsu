@@ -124,35 +124,56 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 - file: DONE — runtime/registration_role.rs, runtime/undeclared_routines.rs;
   remaining — nqp op support (large, separate)
 
-### T-029 — test_die [POFile]  [impact: 1 dist]  — INVESTIGATED, root-caused, deferred
+### T-029 — test_die [POFile]  [impact: 1 dist]  — TWO ROOT CAUSES FIXED (#5219, #5224); 3 residual failures
 - dists: POFile (raku passes ALL tests — the sweep's "raku partly fails" was stale)
-- **Root cause:** a grammar **action method** in a *loaded module* cannot resolve a
-  plain module-lexical `sub` (a `sub foo` that is NOT `our` and NOT `is export`).
-  POFile's `PO::Actions.TOP` calls `po-unquote(...)` (a `sub po-unquote` defined
-  later in POFile.rakumod); mutsu dies "Unknown function: po-unquote".
-- **Self-contained minimal repro** (a module + a driver; raku → `H-hello`, mutsu →
-  "Unknown function: helper"):
-  ```
-  # lib/PMod.rakumod
-  grammar PMod::Parser { token TOP { \w+ } }
-  class PMod::Actions { method TOP($/) { make helper(~$/) } }
-  class PMod { method parse(Str $i) { PMod::Parser.parse($i, actions => PMod::Actions).made } }
-  sub helper($x) { "H-" ~ $x }          # plain lexical sub — the trigger
-  # driver:  use PMod; say PMod.parse("hello")
-  ```
-- **Narrowing:** `our sub helper` works; `is export` + import works; a NORMAL method
-  of the same module calling the plain sub works (`class A { method m { helper() } }`);
-  a single-SCRIPT (non-module) grammar action calling the sub works. Only the
-  combination *loaded module* + *grammar action method* + *plain lexical sub* fails.
-- **Mechanism:** during `.parse`, `methods_grammar.rs` sets `current_package` to the
-  GRAMMAR's package (`PMod::Parser`, line 249) and keeps it through action dispatch.
-  `resolve_function` (resolution.rs:58) only looks up `{current_package}::name` and
-  `GLOBAL::name`; a module-lexical `sub` is registered in the module's lexical scope
-  (not `GLOBAL`, not the grammar package), so it is invisible. A normal method
-  restores its own captured lexical scope; the grammar-action invocation path does not.
-- file: `src/runtime/methods_grammar.rs` (action invocation `current_package`/lexical
-  scope) + `src/runtime/resolution.rs` (module-lexical sub visibility). Deferred:
-  needs the grammar-action path to expose the action class's module lexical subs.
+- **Fixed #1 — hidden tagged export invisible to the module's own code (#5219).**
+  The earlier "plain module-lexical sub" narrowing was wrong: the real trigger is a
+  **tagged** `is export(:tag)`. A plain `sub foo` and a DEFAULT `is export` both leak
+  into `GLOBAL::foo` (so a grammar action / method found them by accident), but a
+  tagged export the importer does not request is hidden by renaming `GLOBAL::foo` →
+  `MOD::foo`. POFile's `po-unquote`/`po-quote` are `is export(:quoting)`, so
+  `PO::Actions.TOP` (grammar action), `POFile::Entry.Str` (instance method), and
+  `POFile::Entry.parse` (type-object method) all died "Unknown function". Fix:
+  `resolve_function` miss-path walks up the enclosing namespace of the running code —
+  `current_package` (grammar package during action dispatch) and `self`'s class
+  (Instance or Package type object) — and resolves `MOD::foo` for any ancestor
+  namespace that is a loaded module owning that export (`module_owned_exports`).
+  Pin: `t/module-tagged-export-internal-visibility.t`.
+- **Fixed #2 — `:sym<...>` adverb whitespace not word-quoted (#5224).** POFile's
+  grammar declares `token comment:sym<format-directive >` (trailing space) but the
+  action is `method comment:sym<format-directive>`. mutsu kept the space in the
+  candidate name, so the action never fired and every `#, ` / `#| ` comment silently
+  dropped its value → cascading parse failures across format-directive/plural/fuzzy.
+  Fix: trim the word-quoted `:sym<...>`/`«...»`/`<<...>>` content in both name parsers
+  (`token_body.rs`, `sub_name.rs`). Pin: `t/grammar-sym-adverb-whitespace.t`.
+- **Status:** POFile `01-basic` 49/51, `02-deletion` 9/10, `03`/`04` pass (was 2/44).
+- **Residual (separate root causes — not this ticket):**
+  1. **POFile's `<.error(...)>` path is THREE nested bugs — must be fixed together.**
+     `01-basic` test 51 / the whole error path. POFile's
+     `token TOP { ... [ $ || <.error('unrecognied syntax')> ] }` calls a grammar method
+     that reports a typed `X::…`/`POFile::CannotParse` on parse failure. Three problems,
+     each masked by the next:
+     - (a) **`<.method(args)>` (parametrized method subrule) is not invoked.**
+       `try_regex_subrule_as_method` (regex_match_atom.rs, the `!spec.arg_exprs.is_empty()`
+       bail) drops any arg subrule; the caller already computes `arg_values`, so the fix is
+       to thread it in and call `call_method_with_values(invocant, name, arg_values)`. Minimal
+       repro: `grammar G { token TOP { \w+ <.oops('bad')> }; method oops($m) { die $m } }`
+       (raku dies, mutsu returns a failed match). **This one-line fix alone REGRESSES POFile
+       49/51 → 2/43**, because it un-masks (b) and (c):
+     - (b) **No Cursor-`self`.** The method runs with `self` = the grammar *type object*, so
+       POFile's `error` (`self.orig.substr(0, self.pos)…`) dies "No such method 'orig'". Needs
+       a real Match cursor (orig + pos) as invocant (the "deeper feature" the code comment
+       defers). `chars`/`pos` are in scope at the dispatch site.
+     - (c) **`$` end-anchor fails on valid input.** mutsu reaches `<.error>` even for a VALID
+       .po (raku does not), so error() fires on good input; today it no-ops (masking), but
+       once (a)+(b) land it would throw `CannotParse` on valid input. The parse extracts
+       correct data (tests 2–50 pass) but leaves the cursor short of end (likely the trailing
+       `%% "\n"*` / final newline), so `$` fails. Fix the end-anchor/separator handling too.
+  2. `02-deletion` test 8/9 — `$result[*-10]:delete` / `[10]:delete` on a custom
+     `does Positional` object does not surface the `die POFile::IncorrectIndex` from
+     `DELETE-POS` as that type (custom-Positional `[idx]:delete` routing).
+  3. `01-basic` test 50 "List-based iteration works" — `.list` positional iteration
+     count is wrong (expected 3).
 
 ### T-031 — test_die [URI]  [impact: 1 dist]
 - dists: URI
