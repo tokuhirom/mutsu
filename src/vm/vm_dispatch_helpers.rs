@@ -77,7 +77,9 @@ impl Interpreter {
                 tuple.push(right_list[i].clone());
                 results.push(Value::array(tuple));
             }
-            return Ok(Value::array(results));
+            // Like the plain `Z` infix, the reduction yields a Seq (raku:
+            // `([Z] ...).WHAT` is `(Seq)`, `.raku` shows the `.Seq` suffix).
+            return Ok(Value::seq_arc(std::sync::Arc::new(results)));
         }
         // Z-prefixed meta-operator: zip two lists element-wise with the inner op.
         if let Some(inner_op) = op.strip_prefix('Z')
