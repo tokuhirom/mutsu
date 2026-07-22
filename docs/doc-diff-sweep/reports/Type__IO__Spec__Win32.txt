@@ -1,0 +1,160 @@
+# doc-diff-harness report
+# stats: match=7  mismatch=3  mutsu-crash=0  no-oracle=17  raku-drift=2  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] raku-drift-from-doc  raku-doc/doc/Type/IO/Spec/Win32.rakudoc:162
+--- program ---
+say $*CWD;                                   # OUTPUT: «"C:\Users\camelia".IO␤»
+
+say IO::Spec::Win32.rel2abs: 'foo';          # OUTPUT: «C:\Users\camelia\foo␤»
+say IO::Spec::Win32.rel2abs: './';           # OUTPUT: «C:\Users\camelia␤»
+say IO::Spec::Win32.rel2abs: 'foo/../../';   # OUTPUT: «C:\Users\camelia\foo\..\..␤»
+say IO::Spec::Win32.rel2abs: '/foo/';        # OUTPUT: «C:\foo␤»
+
+say IO::Spec::Win32.rel2abs: 'foo', 'bar';   # OUTPUT: «C:\Users\camelia\bar\foo␤»
+say IO::Spec::Win32.rel2abs: './', '/bar';   # OUTPUT: «\bar␤»
+say IO::Spec::Win32.rel2abs: '/foo/', 'bar'; # OUTPUT: «C:\foo␤»
+
+say IO::Spec::Win32.rel2abs: 'foo/../../', 'bar';
+# OUTPUT: «C:\Users\camelia\bar\foo\..\..␤»
+--- raku stdout ---
+"/home/tokuhirom/work/mutsu-codex".IO
+\home\tokuhirom\work\mutsu-codex\foo
+\home\tokuhirom\work\mutsu-codex
+\home\tokuhirom\work\mutsu-codex\foo\..\..
+\foo
+\home\tokuhirom\work\mutsu-codex\bar\foo
+\bar
+\foo
+\home\tokuhirom\work\mutsu-codex\bar\foo\..\..
+--- mutsu stdout (exit 0) ---
+"/home/tokuhirom/work/mutsu-codex".IO
+\home\tokuhirom\work\mutsu-codex\foo
+\home\tokuhirom\work\mutsu-codex
+\home\tokuhirom\work\mutsu-codex\foo\..\..
+\foo
+bar\foo
+\bar
+\foo
+bar\foo\..\..
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Type/IO/Spec/Win32.rakudoc:190
+--- program ---
+IO::Spec::Win32.split('C:/foo/bar.txt').raku.say;
+# OUTPUT: «IO::Path::Parts.new("C:","/foo","bar.txt")␤»
+
+IO::Spec::Win32.split('/foo/').raku.say;
+# OUTPUT: «IO::Path::Parts.new("","/","foo")␤»
+
+IO::Spec::Win32.split('///').raku.say;
+# OUTPUT: «IO::Path::Parts.new("","/","\\")␤»
+
+IO::Spec::Win32.split('./').raku.say;
+# OUTPUT: «IO::Path::Parts.new("",".",".")␤»
+
+IO::Spec::Win32.split('.').raku.say;
+# OUTPUT: «IO::Path::Parts.new("",".",".")␤»
+
+IO::Spec::Win32.split('').raku.say;
+# OUTPUT: «IO::Path::Parts.new("","","")␤»
+--- raku stdout ---
+IO::Path::Parts.new("C:","/foo","bar.txt")
+IO::Path::Parts.new("","/","foo")
+IO::Path::Parts.new("","/","\\")
+IO::Path::Parts.new("",".",".")
+IO::Path::Parts.new("",".",".")
+IO::Path::Parts.new("","","")
+--- mutsu stdout (exit 0) ---
+IO::Path::Parts.new
+IO::Path::Parts.new
+IO::Path::Parts.new
+IO::Path::Parts.new
+IO::Path::Parts.new
+IO::Path::Parts.new
+
+==============================================================================
+[3] output-mismatch  raku-doc/doc/Type/IO/Spec/Win32.rakudoc:251
+--- program ---
+IO::Spec::Win32.splitpath('C:\foo/bar.txt').raku.say;
+# OUTPUT: «("C:", "\\foo/", "bar.txt")␤»
+
+IO::Spec::Win32.splitpath('C:\foo/bar.txt', :nofile).raku.say;
+# OUTPUT: «("C:", "\\foo/bar.txt", "")␤»
+
+IO::Spec::Win32.splitpath('/foo/').raku.say;
+# OUTPUT: «("", "/foo/", "")␤»
+
+IO::Spec::Win32.splitpath('/foo/', :nofile).raku.say;
+# OUTPUT: «("", "/foo/", "")␤»
+
+IO::Spec::Win32.splitpath('///').raku.say;
+# OUTPUT: «("", "///", "")␤»
+
+IO::Spec::Win32.splitpath('./').raku.say;
+# OUTPUT: «("", "./", "")␤»
+
+IO::Spec::Win32.splitpath('.').raku.say;
+# OUTPUT: «("", "", ".")␤»
+
+IO::Spec::Win32.splitpath('').raku.say;
+# OUTPUT: «("", "", "")␤»
+--- raku stdout ---
+("C:", "\\foo/", "bar.txt")
+("C:", "\\foo/bar.txt", "")
+("", "/foo/", "")
+("", "/foo/", "")
+("", "///", "")
+("", "./", "")
+("", "", ".")
+("", "", "")
+--- mutsu stdout (exit 0) ---
+("C:", "\\foo/", "bar.txt")
+("C:", "\\foo/bar.txt", "")
+("", "/foo/", "")
+("", "/foo/", "")
+("", "///", "")
+("", "./", "")
+("", ".", "")
+("", "", "")
+
+==============================================================================
+[4] output-mismatch  raku-doc/doc/Type/IO/Spec/Win32.rakudoc:54
+--- program ---
+IO::Spec::Win32.catdir(<foo/bar ber raku>).say;
+# OUTPUT: «foo\bar\ber\raku␤»
+--- raku stdout ---
+foo\bar\ber\raku
+--- mutsu stdout (exit 0) ---
+foo\bar ber raku
+
+==============================================================================
+[5] raku-drift-from-doc  raku-doc/doc/Type/IO/Spec/Win32.rakudoc:126
+--- program ---
+IO::Spec::Win32.join('C:', '/some/dir', 'foo.txt').say;
+# OUTPUT: «C:/some/dir\and/more␤»
+
+IO::Spec::Win32.join('C:', '.', 'foo.txt').say;
+# OUTPUT: «C:foo.txt␤»
+
+IO::Spec::Win32.join('C:', ｢\｣, '/').say;
+# OUTPUT: «C:\␤»
+
+IO::Spec::Win32.join('//server/share', ｢\｣, '/').say;
+# OUTPUT: «//server/share␤»
+
+IO::Spec::Win32.join('E:', '', 'foo.txt').say;
+# OUTPUT: «E:foo.txt␤»
+--- raku stdout ---
+C:/some/dir\foo.txt
+C:foo.txt
+C:\
+//server/share
+E:foo.txt
+--- mutsu stdout (exit 0) ---
+C:/some/dir\foo.txt
+C:foo.txt
+C:\
+//server/share\
+E:foo.txt
+

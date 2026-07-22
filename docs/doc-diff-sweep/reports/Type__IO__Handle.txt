@@ -1,0 +1,144 @@
+# doc-diff-harness report
+# stats: match=8  mismatch=5  mutsu-crash=1  no-oracle=54  raku-drift=1  skipped-marker=5  skipped-nondet=2
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/IO/Handle.rakudoc:169
+--- program ---
+$*IN.get.say;              # Read one line from the standard input
+
+my $fh = open 'filename';
+$fh.get.say;               # Read one line from a file
+$fh.close;
+
+say get;                   # Read one line from $*ARGFILES
+--- raku stdout ---
+Nil
+Nil
+Nil
+--- mutsu stdout (exit 0) ---
+get
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Type/IO/Handle.rakudoc:231
+--- program ---
+say IO::Handle.new; # IO::Handle<(Any)>(closed)
+say "foo".IO.open;  # IO::Handle<"foo".IO>(opened)
+--- raku stdout ---
+IO::Handle<(IO)>(closed)
+IO::Handle<"foo".IO>(opened)
+--- mutsu stdout (exit 0) ---
+IO::Handle<>(closed)
+IO::Handle<"/home/tokuhirom/work/mutsu-codex/foo">(opened)
+
+==============================================================================
+[3] raku-drift-from-doc  raku-doc/doc/Type/IO/Handle.rakudoc:385
+--- program ---
+say lines( "/proc/$*PID/statm".IO ); # OUTPUT: «(58455 31863 8304 2 0 29705 0)␤»
+--- raku stdout ---
+(299815 37098 12417 2 0 264552 0)
+--- mutsu stdout (exit 0) ---
+(/proc/3403481/statm)
+
+==============================================================================
+[4] output-mismatch  raku-doc/doc/Type/IO/Handle.rakudoc:455
+--- program ---
+my %dict := bag $*IN.words;
+say "Most common words: ", %dict.sort(-*.value).head: 5;
+--- raku stdout ---
+Most common words: ()
+--- mutsu stdout (exit 0) ---
+Most common words: ((...) => 1)
+
+==============================================================================
+[5] output-mismatch  raku-doc/doc/Type/IO/Handle.rakudoc:761
+--- program ---
+say "foo".IO.open.Str; # OUTPUT: «foo␤»
+--- raku stdout ---
+foo
+--- mutsu stdout (exit 0) ---
+/home/tokuhirom/work/mutsu-codex/foo
+
+==============================================================================
+[6] output-mismatch  raku-doc/doc/Type/IO/Handle.rakudoc:959
+--- program ---
+class IO::Store is IO::Handle {
+    has @.lines = [];
+
+    submethod TWEAK {
+        self.encoding: 'utf8'; # set up encoder/decoder
+    }
+
+    method WRITE(IO::Handle:D: Blob:D \data --> Bool:D) {
+        @!lines.push: data.decode();
+        True;
+    }
+
+    method gist() {
+        return @!lines.join("\n" );
+    }
+}
+my $store = IO::Store.new();
+my $output = $PROCESS::OUT;
+$PROCESS::OUT = $store;
+.say for <one two three>;
+$PROCESS::OUT = $output;
+say $store.lines(); # OUTPUT: «[one␤ two␤ three␤]»
+--- raku stdout ---
+[one
+ two
+ three
+]
+--- mutsu stdout (exit 0) ---
+one
+two
+three
+[]
+
+==============================================================================
+[7] mutsu-error  raku-doc/doc/Type/IO/Handle.rakudoc:1013
+--- program ---
+class IO::Store is IO::Handle {
+    has @.lines = [];
+
+    submethod TWEAK {
+      self.encoding: 'utf8'; # set up encoder/decoder
+    }
+
+    method WRITE(IO::Handle:D: Blob:D \data --> Bool:D) {
+      @!lines.push: data;
+      True;
+    }
+
+    method whole() {
+      my Buf $everything = Buf.new();
+      for @!lines -> $b {
+        $everything ~= $b;
+      }
+      return $everything;
+    }
+
+    method READ(IO::Handle:D: Int:D \bytes --> Buf:D) {
+      my Buf $everything := self.whole();
+      return $everything;
+    }
+
+    method EOF {
+      my $everything = self.whole();
+      !$everything;
+    }
+}
+
+my $store := IO::Store.new();
+
+$store.print( $_ ) for <one two three>;
+say $store.read(3).decode; # OUTPUT: «one␤»
+say $store.read(3).decode; # OUTPUT: «two␤»
+--- raku stdout ---
+one
+two
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+X::TypeCheck::Binding::Parameter: Type check failed for data: expected Blob:D, got Package
+  in block <unit> at tmp/ddh/prog-3401045.raku line 34
+

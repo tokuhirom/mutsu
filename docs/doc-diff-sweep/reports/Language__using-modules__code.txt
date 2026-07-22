@@ -1,0 +1,17 @@
+# doc-diff-harness report
+# stats: match=0  mismatch=0  mutsu-crash=1  no-oracle=38  raku-drift=0  skipped-marker=13  skipped-nondet=1
+
+==============================================================================
+[1] mutsu-error  raku-doc/doc/Language/using-modules/code.rakudoc:95
+--- program ---
+require ::("Test");
+my &mmk = ::("Test::EXPORT::DEFAULT::&ok");
+mmk('oi‽'); # OUTPUT: «ok 1 - ␤»
+--- raku stdout ---
+ok 1 -
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Unknown function: mmk
+  in block <unit> at tmp/ddh/prog-3364086.raku line 3
+

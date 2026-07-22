@@ -1,0 +1,46 @@
+# doc-diff-harness report
+# stats: match=8  mismatch=1  mutsu-crash=0  no-oracle=16  raku-drift=1  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/Seq.rakudoc:31
+--- program ---
+# The Seq created by gather ... take is consumed on the spot here.
+my @a = gather do { say 'consuming...'; take 'one' };  # OUTPUT: «consuming...␤»
+
+# The Seq here is only consumed as we iterate over @a later.
+my @a = lazy gather do { say 'consuming...'; take 'one' };  # outputs nothing.
+.say for @a;  # OUTPUT: «consuming...␤one␤»
+--- raku stdout ---
+consuming...
+consuming...
+one
+--- mutsu stdout (exit 0) ---
+consuming...
+consuming...
+(one)
+
+==============================================================================
+[2] raku-drift-from-doc  raku-doc/doc/Type/Seq.rakudoc:55
+--- program ---
+my @a = 1, 2, 3;
+my @b = <a b c>;
+my \c = @a Z=> @b;
+.say for c;
+.say for c; # fails
+CATCH { default { put .^name, ': ', .Str } };
+# OUTPUT: «X::Seq::Consumed: This Seq has already been iterated, and its values consumed
+# (you might solve this by adding .cache on usages of the Seq, or
+# by assigning the Seq into an array)»
+--- raku stdout ---
+1 => a
+2 => b
+3 => c
+X::Seq::Consumed: The iterator of this Seq is already in use/consumed by another Seq (you
+might solve this by adding .cache on usages of the Seq, or by assigning
+the Seq into an array)
+--- mutsu stdout (exit 0) ---
+1 => a
+2 => b
+3 => c
+X::Seq::Consumed: The iterator of this Seq is already in use/consumed by another Seq (you might solve this by adding .cache on usages of the Seq, or by assigning the Seq into an array)
+

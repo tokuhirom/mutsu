@@ -1,0 +1,51 @@
+# doc-diff-harness report
+# stats: match=8  mismatch=1  mutsu-crash=1  no-oracle=4  raku-drift=1  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] raku-drift-from-doc  raku-doc/doc/Type/SetHash.rakudoc:61
+--- program ---
+my $fruits = <peach apple orange>.SetHash;
+
+$fruits<apple kiwi> = False, True;
+say $fruits.keys.sort;  # OUTPUT: «kiwi orange peach␤»
+--- raku stdout ---
+(kiwi orange peach)
+--- mutsu stdout (exit 0) ---
+(apple kiwi)
+
+==============================================================================
+[2] mutsu-error  raku-doc/doc/Type/SetHash.rakudoc:71
+--- program ---
+my SetHash $fruits .= new;
+say $fruits<cherry>;      # OUTPUT: «False␤»
+$fruits<cherry>++;
+say $fruits<cherry>;      # OUTPUT: «True␤»
+$fruits<apple banana kiwi>»++; # Add multiple elements
+
+$fruits<cherry>--;
+say $fruits<cherry>;      # OUTPUT: «False␤»
+$fruits<banana kiwi>»--; # Remove multiple elements
+--- raku stdout ---
+False
+True
+False
+--- mutsu stdout (exit 1) ---
+False
+True
+--- mutsu stderr ---
+Type check failed for an element of $fruits; expected SetHash but got Int (1)
+  in block <unit> at tmp/ddh/prog-3429747.raku line 5
+
+==============================================================================
+[3] output-mismatch  raku-doc/doc/Type/SetHash.rakudoc:88
+--- program ---
+my $n = SetHash.new: "zero" => 0, "one" => 1, "two" => 2;
+say $n.keys.raku;        # OUTPUT: «(:two(2), :zero(0), :one(1)).Seq␤»
+say $n.keys.map(&WHAT);  # OUTPUT: «((Pair) (Pair) (Pair))␤»
+--- raku stdout ---
+(:two(2), :zero(0), :one(1)).Seq
+((Pair) (Pair) (Pair))
+--- mutsu stdout (exit 0) ---
+(:zero(0), :one(1), :two(2)).Seq
+((Pair) (Pair) (Pair))
+

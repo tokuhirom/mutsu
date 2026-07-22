@@ -1,0 +1,14 @@
+# doc-diff-harness report
+# stats: match=0  mismatch=1  mutsu-crash=0  no-oracle=2  raku-drift=0  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/X/Str/Match/x.rakudoc:15
+--- program ---
+say "foobar".match("o",:x<hello>);
+CATCH { default { put .^name, ': ', .Str } };
+# OUTPUT: «X::Str::Match::x: in Str.match, got invalid value of type Str for :x, must be Int or Range␤»
+--- raku stdout ---
+X::Str::Match::x: in Str.match, got invalid value of type Str for :x, must be Int or Range
+--- mutsu stdout (exit 0) ---
+｢o｣
+

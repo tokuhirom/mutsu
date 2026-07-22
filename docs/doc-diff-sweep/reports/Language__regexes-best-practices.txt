@@ -1,0 +1,35 @@
+# doc-diff-harness report
+# stats: match=0  mismatch=1  mutsu-crash=0  no-oracle=16  raku-drift=0  skipped-marker=2  skipped-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Language/regexes-best-practices.rakudoc:163
+--- program ---
+grammar IniFormat {
+    token ws { <!ww> \h* }
+    rule header { \s* '[' (\w+) ']' \n+ }
+    token identifier  { \w+ }
+    rule kvpair { \s* <key=identifier> '=' <value=identifier> \n+ }
+    token section {
+        <header>
+        <kvpair>*
+    }
+
+    token TOP {
+        <section>*
+    }
+}
+
+my $contents = q:to/EOI/;
+    [passwords]
+        jack = password1
+        joy = muchmoresecure123
+    [quotas]
+        jack = 123
+        joy = 42
+EOI
+say so IniFormat.parse($contents);
+--- raku stdout ---
+True
+--- mutsu stdout (exit 0) ---
+False
+

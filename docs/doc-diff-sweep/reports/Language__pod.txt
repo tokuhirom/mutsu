@@ -1,0 +1,60 @@
+# doc-diff-harness report
+# stats: match=1  mismatch=1  mutsu-crash=1  no-oracle=3  raku-drift=0  skipped-marker=49  skipped-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Language/pod.rakudoc:170
+--- program ---
+#| Base class for magicians
+class Magician {
+  has Int $.level;
+  has Str @.spells;
+}
+
+#| Fight mechanics
+sub duel(Magician $a, Magician $b) {
+}
+#= Magicians only, no mortals.
+
+say Magician.WHY; # OUTPUT: «Base class for magicians␤»
+say &duel.WHY.leading; # OUTPUT: «Fight mechanics␤»
+say &duel.WHY.trailing; # OUTPUT: «Magicians only, no mortals.␤»
+--- raku stdout ---
+Base class for magicians
+Fight mechanics
+Magicians only, no mortals.
+--- mutsu stdout (exit 0) ---
+Pod::Block::Declarator.new
+Fight mechanics
+Nil
+
+==============================================================================
+[2] mutsu-error  raku-doc/doc/Language/pod.rakudoc:908
+--- program ---
+=begin pod
+
+=head1 This is a head1 title
+
+This is a paragraph.
+
+=head2 Subsection
+
+Here some text for the subsection.
+
+=end pod
+
+for $=pod -> $pod-item {
+    for $pod-item.contents -> $pod-block {
+      $pod-block.raku.say;
+    }
+}
+--- raku stdout ---
+Pod::Heading.new(level => 1, config => {}, contents => [Pod::Block::Para.new(config => {}, contents => ["This is a head1 title"])])
+Pod::Block::Para.new(config => {}, contents => ["This is a paragraph."])
+Pod::Heading.new(level => 2, config => {}, contents => [Pod::Block::Para.new(config => {}, contents => ["Subsection"])])
+Pod::Block::Para.new(config => {}, contents => ["Here some text for the subsection."])
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+No such method 'contents' for invocant of type 'List'
+  in block <unit> at tmp/ddh/prog-3349950.raku line 14
+

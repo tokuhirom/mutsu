@@ -1,0 +1,219 @@
+# doc-diff-harness report
+# stats: match=64  mismatch=4  mutsu-crash=6  no-oracle=17  raku-drift=1  skipped-marker=9  skipped-nondet=10
+
+==============================================================================
+[1] mutsu-error  raku-doc/doc/Language/control.rakudoc:48
+--- program ---
+say "We get here";
+{ say "then here." };
+{ say "not here"; 0; } or die;
+--- raku stdout ---
+We get here
+then here.
+--- mutsu stdout (exit 1) ---
+We get here
+then here.
+not here
+--- mutsu stderr ---
+Useless use of constant integer 0 in sink context (line 1)
+  in block <unit> at tmp/ddh/prog-3333046.raku line 1
+Died
+  in block <unit> at tmp/ddh/prog-3333046.raku line 3
+
+==============================================================================
+[2] mutsu-error  raku-doc/doc/Language/control.rakudoc:526
+--- program ---
+$_ = True;
+my $a;
+{
+    $a = do when .so { "foo" }
+};
+say $a; # OUTPUT: «(Any)␤»
+--- raku stdout ---
+(Any)
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Runtime error:
+
+==============================================================================
+[3] output-mismatch  raku-doc/doc/Language/control.rakudoc:537
+--- program ---
+$_ = False;
+my $a;
+{
+    $a = do when .so { "foo" }
+};
+say $a; # OUTPUT: «False␤»
+--- raku stdout ---
+False
+--- mutsu stdout (exit 0) ---
+(Any)
+
+==============================================================================
+[4] output-mismatch  raku-doc/doc/Language/control.rakudoc:717
+--- program ---
+my $primes_r = race for ^10_000 -> $number { $number if $number.is-prime };
+say $primes_r.elems; # OUTPUT: «1229␤»
+--- raku stdout ---
+1229
+--- mutsu stdout (exit 0) ---
+1
+
+==============================================================================
+[5] mutsu-error  raku-doc/doc/Language/control.rakudoc:263
+--- program ---
+say (1, (42 if True) , 2); # says "(1 42 2)"
+say (1, (42 if False), 2); # says "(1 2)"
+say (1,  42 if False , 2); # says "(1 42)" because "if False, 2" is true
+--- raku stdout ---
+(1 42 2)
+(1 2)
+(1 42)
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+===SORRY!=== Error while compiling tmp/ddh/prog-3333046.raku
+Confused. expected statement: expected '.' or digits or generic radix literal or unicode numeric literal or declared term symbol or ...
+at tmp/ddh/prog-3333046.raku:3
+------>say (1,  42 if False , 2); # says "(1 42)" because "if False, 2" is true
+       ^
+
+==============================================================================
+[6] mutsu-error  raku-doc/doc/Language/control.rakudoc:388
+--- program ---
+unless 42.say and 1 { 43.say } ; # says "42" but does not say "43"
+43.say unless 42.say and 0;      # says "42" and then says "43"
+43.say unless 42.say and 1;      # says "42" but does not say "43"
+
+$_ = 1; unless 0 { $_.say }           ; # says "1"
+$_ = 1; unless 0 -> $_ { $_.say }     ; # says "0"
+$_ = 1; unless False -> $a { $a.say } ; # says "False"
+
+my $c = 0; say (1, (unless 0 { $c += 42; 2; }), 3, $c); # says "(1 2 3 42)"
+my $d = 0; say (1, (unless 1 { $d += 42; 2; }), 3, $d); # says "(1 3 0)"
+--- raku stdout ---
+42
+42
+43
+42
+1
+0
+False
+(1 2 3 42)
+(1 3 0)
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+===SORRY!=== Error while compiling tmp/ddh/prog-3333046.raku
+Confused. expected statement: expected '{' or expression statement
+at tmp/ddh/prog-3333046.raku:6
+------>$_ = 1; unless 0 -> $_ { $_.say }     ; # says "0"
+               ^
+
+==============================================================================
+[7] raku-drift-from-doc  raku-doc/doc/Language/control.rakudoc:570
+--- program ---
+my @foo = 1..3;
+for @foo.kv -> $idx, $val { say "$idx: $val" }
+my %hash = <a b c> Z=> 1,2,3;
+for %hash.kv -> $key, $val { say "$key => $val" }
+for 1, 1.1, 2, 2.1 { say "$^x < $^y" }  # OUTPUT: «1 < 1.1␤2 < 2.1␤»
+--- raku stdout ---
+0: 1
+1: 2
+2: 3
+c => 3
+b => 2
+a => 1
+1 < 1.1
+2 < 2.1
+--- mutsu stdout (exit 0) ---
+0: 1
+1: 2
+2: 3
+b => 2
+a => 1
+c => 3
+1 < 1.1
+2 < 2.1
+
+==============================================================================
+[8] mutsu-error  raku-doc/doc/Language/control.rakudoc:854
+--- program ---
+given 42 {
+    "This says".say;
+    $_ == 42 and ( default { "This says, too".say; 43; } );
+    "This never says".say;
+}
+# The above block evaluates to 43
+--- raku stdout ---
+This says
+This says, too
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Runtime error: Unexpected block in infix position (missing statement control word before the expression?)
+
+==============================================================================
+[9] output-mismatch  raku-doc/doc/Language/control.rakudoc:973
+--- program ---
+given 42 {
+    { say "This says" } when Int;
+    "This says too".say;
+    when * > 41 {
+       { "And this says".say; proceed } when * > 41;
+       "This never says".say;
+    }
+    "This also says".say;
+}
+# OUTPUT: «This says␤This says too␤And this says␤This also says␤»
+--- raku stdout ---
+This says
+This says too
+And this says
+This also says
+--- mutsu stdout (exit 0) ---
+This says
+This says too
+And this says
+This never says
+
+==============================================================================
+[10] output-mismatch  raku-doc/doc/Language/control.rakudoc:1368
+--- program ---
+sub s(){ my $a = 41; return $a };
+say ++s();
+CATCH { default { say .^name, ': ', .Str } };
+# OUTPUT: «X::Multi::NoMatch.new(dispatcher …
+--- raku stdout ---
+X::Multi::NoMatch: Cannot resolve caller prefix:<++>(Int:D); the following candidates
+match the type but require mutable arguments:
+    (Mu:D $a is rw)
+    (Int:D $a is rw --> Int:D)
+    (int $a is rw --> int)
+    (uint $a is rw --> uint)
+    (num $a is rw --> num)
+
+The following do not match for other reasons:
+    (Bool $a is rw)
+    (Mu:U $a is rw)
+    (Num:D $a is rw)
+    (Num:U $a is rw)
+--- mutsu stdout (exit 0) ---
+X::Multi::NoMatch: Cannot resolve caller prefix:<++>(...); the parameter requires mutable arguments
+
+==============================================================================
+[11] mutsu-error  raku-doc/doc/Language/control.rakudoc:1375
+--- program ---
+sub s(){ my $a = 41; return-rw $a };
+say ++s();
+# OUTPUT: «42␤»
+--- raku stdout ---
+42
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Cannot resolve caller prefix:<++>(...); the parameter requires mutable arguments
+  in block <unit> at tmp/ddh/prog-3333046.raku line 2
+

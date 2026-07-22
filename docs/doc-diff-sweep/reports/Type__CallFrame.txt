@@ -1,0 +1,35 @@
+# doc-diff-harness report
+# stats: match=5  mismatch=1  mutsu-crash=0  no-oracle=7  raku-drift=1  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/CallFrame.rakudoc:76
+--- program ---
+my $frame;
+for ^3 { FIRST $frame = callframe; say $_ * 3 };
+say $frame.code()
+--- raku stdout ---
+0
+3
+6
+Code.new
+--- mutsu stdout (exit 0) ---
+0
+3
+6
+(Block)
+
+==============================================================================
+[2] raku-drift-from-doc  raku-doc/doc/Type/CallFrame.rakudoc:122
+--- program ---
+sub some-value {
+    my $the-answer = 42;
+    callframe(0);
+}
+
+my $frame = some-value();
+say $frame.my<$the-answer>; # OUTPUT: «42␤»
+--- raku stdout ---
+(LoweredAwayLexical)
+--- mutsu stdout (exit 0) ---
+(Any)
+

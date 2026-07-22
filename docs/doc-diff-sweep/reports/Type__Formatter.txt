@@ -1,0 +1,33 @@
+# doc-diff-harness report
+# stats: match=0  mismatch=0  mutsu-crash=2  no-oracle=4  raku-drift=0  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] mutsu-error  raku-doc/doc/Type/Formatter.rakudoc:16
+--- program ---
+use v6.e.PREVIEW;
+my &handle = Formatter.new("'%5s'");
+say handle("foo");              # OUTPUT: «'  foo'␤»
+--- raku stdout ---
+'  foo'
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Undeclared name:
+    Formatter used at line 1
+  in block <unit> at tmp/ddh/prog-3396680.raku line 2
+
+==============================================================================
+[2] mutsu-error  raku-doc/doc/Type/Formatter.rakudoc:32
+--- program ---
+use v6.e.PREVIEW;
+my &zero5 = Formatter.new("%05d");
+say zero5(42);                  # OUTPUT: «00042␤»
+--- raku stdout ---
+00042
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Undeclared name:
+    Formatter used at line 1
+  in block <unit> at tmp/ddh/prog-3396680.raku line 2
+

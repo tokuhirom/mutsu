@@ -1,0 +1,230 @@
+# doc-diff-harness report
+# stats: match=37  mismatch=1  mutsu-crash=2  no-oracle=42  raku-drift=7  skipped-marker=7  skipped-nondet=3
+
+==============================================================================
+[1] raku-drift-from-doc  raku-doc/doc/Language/signatures.rakudoc:262
+--- program ---
+sub f(*@a where {$_.all ~~ Int}) { say @a };
+f(42);
+f(<a>);
+CATCH { default { say .^name, ' ==> ', .Str }  }
+# OUTPUT: «[42]␤Constraint type check failed in binding to parameter '@a' ...»
+--- raku stdout ---
+[42]
+X::TypeCheck::Binding::Parameter ==> Constraint type check failed in binding to parameter '@a'; expected anonymous constraint to be met but got Array (["a"])
+--- mutsu stdout (exit 0) ---
+[42]
+X::TypeCheck::Binding::Parameter ==> Calling f(Str) will never work with declared signature (@a)
+  X::TypeCheck::Binding::Parameter: where constraint failed for parameter '@a'
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Language/signatures.rakudoc:849
+--- program ---
+sub zipi( +zape ) {
+    zape.^name => zape
+};
+say zipi( "Hey "); # OUTPUT: «List => (Hey )␤»
+say zipi( 1...* ); # OUTPUT: «Seq => (...)␤»
+--- raku stdout ---
+List => (Hey )
+Seq => (...)
+--- mutsu stdout (exit 0) ---
+Array => [Hey ]
+Array => [(...)]
+
+==============================================================================
+[3] raku-drift-from-doc  raku-doc/doc/Language/signatures.rakudoc:35
+--- program ---
+sub f(&c:(Int)) { }
+sub will-work(Int) { }
+sub won't-work(Str) { }
+f(&will-work);
+
+f(&won't-work);
+CATCH { default { put .^name, ': ', .Str } };
+# OUTPUT: «X::TypeCheck::Binding::Parameter: Constraint type check failed in binding to parameter '&c'␤»
+
+f(-> Int { 'this works too' } );
+--- raku stdout ---
+X::TypeCheck::Binding::Parameter: Signature constraint check failed in binding to parameter '&c'; expected :(Int $) but got :(Str $)
+--- mutsu stdout (exit 0) ---
+X::TypeCheck::Binding::Parameter: Calling f(Sub) will never work with declared signature (&c)
+  X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '&c'; expected Callable with matching signature, got Sub
+
+==============================================================================
+[4] raku-drift-from-doc  raku-doc/doc/Language/signatures.rakudoc:274
+--- program ---
+sub f(Int :$i){};
+f :i<forty-two>;
+CATCH { default { say .^name, ' ==> ', .Str }  }
+# OUTPUT: «X::TypeCheck::Binding::Parameter ==> Type check failed in
+# binding to parameter '$i'; expected Int but got Str ("forty-two")␤»
+--- raku stdout ---
+X::TypeCheck::Binding::Parameter ==> Type check failed in binding to parameter '$i'; expected Int but got Str ("forty-two")
+--- mutsu stdout (exit 0) ---
+
+
+==============================================================================
+[5] raku-drift-from-doc  raku-doc/doc/Language/signatures.rakudoc:299
+--- program ---
+sub limit-lines(Str $s, Int $limit) {
+    my @lines = $s.lines;
+    @lines[0 .. min @lines.elems, $limit].join("\n")
+}
+say (limit-lines "a \n b \n c \n d \n", 3).raku; # "a \n b \n c \n d "
+say limit-lines Str, 3;
+CATCH { default { put .^name, ': ', .Str } };
+# OUTPUT: «X::Multi::NoMatch: Cannot resolve caller lines(Str: );
+# none of these signatures match:
+#     (Str:D $: :$count!, *%_)
+#     (Str:D $: $limit, *%_)
+#     (Str:D $: *%_)»
+say limit-lines "a \n b", Int; # Always returns the max number of lines
+--- raku stdout ---
+"a \n b \n c \n d "
+X::Multi::NoMatch: Cannot resolve caller lines(Str:U: ); none of these signatures matches:
+    (Cool:D $:: *%_)
+    (Cool:D $:: :$count!, *%_)
+    (Cool:D $:: $limit, *%_)
+    (Str:D $:: :$count!, *%_ --> Int:D)
+    (Str:D $:: $limit, *%_ --> Seq:D)
+    (Str:D $:: $limit, Bool :$chomp!, *%_ --> Seq:D)
+    (Str:D $:: *%_ --> Seq:D)
+    (Str:D $:: Bool :$chomp!, *%_ --> Seq:D)
+--- mutsu stdout (exit 0) ---
+"a \n b \n c \n d "
+X::TypeCheck::Argument: Type check failed in binding $s: expected Str, got Package
+
+==============================================================================
+[6] raku-drift-from-doc  raku-doc/doc/Language/signatures.rakudoc:329
+--- program ---
+sub limit-lines(Str:D $s, Int $limit) { };
+say limit-lines Str, 3;
+CATCH { default { put .^name ~ '--' ~ .Str } };
+# OUTPUT: «Parameter '$s' of routine 'limit-lines' must be an object instance of type 'Str',
+#          not a type object of type 'Str'.  Did you forget a '.new'?»
+--- raku stdout ---
+X::Parameter::InvalidConcreteness--Parameter '$s' of routine 'limit-lines' must be an object instance of
+type 'Str', not a type object of type 'Str'. Did you forget a '.new'?
+--- mutsu stdout (exit 0) ---
+X::Parameter::InvalidConcreteness--Calling limit-lines(Package, Int) will never work with declared signature (Str:D $s, Int $limit)
+  Invocant of method 'limit-lines' must be an object instance of type
+'Str', not a type object of type 'Str'.  Did you forget a '.new'?
+
+==============================================================================
+[7] raku-drift-from-doc  raku-doc/doc/Language/signatures.rakudoc:375
+--- program ---
+# Checking a type object
+say Int ~~ Any:D;    # OUTPUT: «False␤»
+say Int ~~ Any:U;    # OUTPUT: «True␤»
+say Int ~~ Any:_;    # OUTPUT: «True␤»
+
+# Checking a subset
+subset Even of Int where * %% 2;
+say 3 ~~ Even:D;     # OUTPUT: «False␤»
+say 3 ~~ Even:U;     # OUTPUT: «False␤»
+say Int ~~ Even:U;   # OUTPUT: «Use of uninitialized value of type Int in numeric context␤...␤True␤»
+
+# Checking an object instance
+say 42 ~~ Any:D;     # OUTPUT: «True␤»
+say 42 ~~ Any:U;     # OUTPUT: «False␤»
+say 42 ~~ Any:_;     # OUTPUT: «True␤»
+
+# Checking a user-supplied class
+class Foo {};
+say Foo ~~ Any:D;    # OUTPUT: «False␤»
+say Foo ~~ Any:U;    # OUTPUT: «True␤»
+say Foo ~~ Any:_;    # OUTPUT: «True␤»
+
+# Checking an instance of a class
+my $f = Foo.new;
+say $f  ~~ Any:D;    # OUTPUT: «True␤»
+say $f  ~~ Any:U;    # OUTPUT: «False␤»
+say $f  ~~ Any:_;    # OUTPUT: «True␤»
+--- raku stdout ---
+False
+True
+True
+False
+False
+True
+True
+False
+True
+False
+True
+True
+True
+False
+True
+--- mutsu stdout (exit 0) ---
+True
+True
+True
+False
+False
+True
+True
+True
+True
+True
+True
+True
+True
+True
+True
+
+==============================================================================
+[8] raku-drift-from-doc  raku-doc/doc/Language/signatures.rakudoc:1130
+--- program ---
+my %hhgttu = (:40life, :41universe, :42everything);
+for %hhgttu -> (:$key, :$value) {
+  say "$key → $value";
+}
+# OUTPUT: «universe → 41␤life → 40␤everything → 42␤»
+--- raku stdout ---
+everything → 42
+life → 40
+universe → 41
+--- mutsu stdout (exit 0) ---
+life → 40
+universe → 41
+everything → 42
+
+==============================================================================
+[9] mutsu-error  raku-doc/doc/Language/signatures.rakudoc:1151
+--- program ---
+sub foo(\p(Int, Str)){
+   put "called with {p.raku}"
+};
+foo((42, "answer"));
+# OUTPUT: «called with (42, "answer")␤»
+--- raku stdout ---
+called with (42, "answer")
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+===SORRY!=== Error while compiling tmp/ddh/prog-3353799.raku
+Confused. expected statement: expected ')' or expression statement or anonymous sub parameter list/body
+at tmp/ddh/prog-3353799.raku:1
+------>sub foo(\p(Int, Str)){
+       ^
+
+==============================================================================
+[10] mutsu-error  raku-doc/doc/Language/signatures.rakudoc:1159
+--- program ---
+sub bar(\p(Int $y where * > 5, Str $s?, *%h)) { put p.raku; put $s // "undefined"; }
+bar((42, life => 40, universe => 41));
+# OUTPUT: «(42, :life(40), :universe(41))␤undefined␤»
+--- raku stdout ---
+(42, :life(40), :universe(41))
+undefined
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+===SORRY!=== Error while compiling tmp/ddh/prog-3353799.raku
+Confused. expected statement: expected ')' or expression statement or anonymous sub parameter list/body
+at tmp/ddh/prog-3353799.raku:1
+------>sub bar(\p(Int $y where * > 5, Str $s?, *%h)) { put p.raku; put $s // "undefined"; }
+       ^
+

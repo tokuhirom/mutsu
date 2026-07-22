@@ -1,0 +1,19 @@
+# doc-diff-harness report
+# stats: match=0  mismatch=0  mutsu-crash=1  no-oracle=2  raku-drift=0  skipped-marker=2  skipped-nondet=0
+
+==============================================================================
+[1] mutsu-error  raku-doc/doc/Type/X/TypeCheck/Splice.rakudoc:30
+--- program ---
+use experimental :macros;
+macro an-ast {
+    quasi { 'yes AST' }
+}
+say an-ast;              # OUTPUT: «yes AST␤»
+--- raku stdout ---
+yes AST
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Two terms in a row
+  in block <unit> at tmp/ddh/prog-3437964.raku line 2
+

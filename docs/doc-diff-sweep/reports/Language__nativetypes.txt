@@ -1,0 +1,56 @@
+# doc-diff-harness report
+# stats: match=7  mismatch=0  mutsu-crash=3  no-oracle=4  raku-drift=0  skipped-marker=0  skipped-nondet=1
+
+==============================================================================
+[1] mutsu-error  raku-doc/doc/Language/nativetypes.rakudoc:172
+--- program ---
+use NativeCall;
+sub malloc( int32 $size --> Pointer[void] ) is native { * };
+my Pointer[void] $for-malloc = malloc( 32 );
+say $for-malloc.raku;
+--- raku stdout ---
+NativeCall::Types::Pointer[NativeCall::Types::void].new(302714544)
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Type check failed for return value; expected Pointer[void] but got Whatever (*)
+  in block <unit> at tmp/ddh/prog-3345058.raku line 3
+
+==============================================================================
+[2] mutsu-error  raku-doc/doc/Language/nativetypes.rakudoc:229
+--- program ---
+use NativeCall;
+
+my $just-an-array = CArray[int32].new( 1, 2, 3, 4, 5 );
+
+loop ( my size_t $i = 0; $i < $just-an-array.elems; $i++ ) {
+    say $just-an-array[$i];
+}
+--- raku stdout ---
+1
+2
+3
+4
+5
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Type 'size_t' is not declared.
+Malformed my
+  in block <unit> at tmp/ddh/prog-3345058.raku line 5
+
+==============================================================================
+[3] mutsu-error  raku-doc/doc/Language/nativetypes.rakudoc:161
+--- program ---
+use NativeCall;
+my void $nothing;
+say $nothing.raku; # OUTPUT: «NativeCall::Types::void␤»
+--- raku stdout ---
+NativeCall::Types::void
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Type 'void' is not declared.
+Malformed my
+  in block <unit> at tmp/ddh/prog-3345058.raku line 2
+

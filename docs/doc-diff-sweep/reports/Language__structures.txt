@@ -1,0 +1,137 @@
+# doc-diff-harness report
+# stats: match=15  mismatch=4  mutsu-crash=2  no-oracle=8  raku-drift=3  skipped-marker=0  skipped-nondet=2
+
+==============================================================================
+[1] mutsu-error  raku-doc/doc/Language/structures.rakudoc:233
+--- program ---
+my $Logger::logs = sub ( $a ) { $a }
+my $typer = -> $thing { $thing.^name ~ ' → ' ~ $thing };
+my $Logger::withtype = $Logger::logs ∘ $typer;
+$Logger::withtype( Pair.new( 'left', 'right' ) );
+$Logger::withtype( ¾ );
+say $Logger::get( "2018-05-28" );
+# OUTPUT: «(Pair → left right Rat → 0.75)␤»
+--- raku stdout ---
+2018-05-28
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+No such method 'CALL-ME' for invocant of type 'Any'
+  in block <unit> at tmp/ddh/prog-3354739.raku line 6
+
+==============================================================================
+[2] mutsu-error  raku-doc/doc/Language/structures.rakudoc:258
+--- program ---
+my %not-scalar := %(2 => 3) but Associative[Int, Int];
+say %not-scalar.^name; # OUTPUT: «Hash+{Associative[Int, Int]}␤»
+say %not-scalar.of;    # OUTPUT: «Associative[Int, Int]␤»
+%not-scalar{3} = 4;
+%not-scalar<thing> = 3;
+say %not-scalar;       # OUTPUT: «{2 => 3, 3 => 4, thing => 3}␤»
+--- raku stdout ---
+Hash+{Associative[Int,Int]}
+(Int)
+{2 => 3, 3 => 4, thing => 3}
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Cannot mix in non-composable type Associative[Int,Int] into object of type Hash
+  in block <unit> at tmp/ddh/prog-3354739.raku line 1
+
+==============================================================================
+[3] output-mismatch  raku-doc/doc/Language/structures.rakudoc:281
+--- program ---
+role Lastable {
+  method last() {
+    self.sort.reverse[0]
+  }
+}
+my %hash-plus := %( 3 => 33, 4 => 44) but Lastable;
+say %hash-plus.sort[0]; # OUTPUT: «3 => 33␤»
+say %hash-plus.last;    # OUTPUT: «4 => 44␤»
+--- raku stdout ---
+3 => 33
+4 => 44
+--- mutsu stdout (exit 0) ---
+{3 => 33, 4 => 44}
+{3 => 33, 4 => 44}
+
+==============================================================================
+[4] output-mismatch  raku-doc/doc/Language/structures.rakudoc:26
+--- program ---
+(1, 2, 3, $(4, 5))[3].VAR.^name.say; # OUTPUT: «Scalar␤»
+--- raku stdout ---
+Scalar
+--- mutsu stdout (exit 0) ---
+List
+
+==============================================================================
+[5] raku-drift-from-doc  raku-doc/doc/Language/structures.rakudoc:36
+--- program ---
+for ^2 {
+     my @list = (1, 1);
+     say @list.WHICH;
+} # OUTPUT: «Array|93947995146096␤Array|93947995700032␤»
+--- raku stdout ---
+Array|6230666125824
+Array|6230666280552
+--- mutsu stdout (exit 0) ---
+Array|0x761c20057a90
+Array|0x761c20054c00
+
+==============================================================================
+[6] raku-drift-from-doc  raku-doc/doc/Language/structures.rakudoc:45
+--- program ---
+for ^2 {
+  my $list = (1, 1);
+  say $list.WHICH;
+} # OUTPUT: «List|94674814008432␤List|94674814008432␤»
+--- raku stdout ---
+List|3913822262784
+List|3913822262784
+--- mutsu stdout (exit 0) ---
+Array|0x787a700519e0
+Array|0x787a70057dd0
+
+==============================================================================
+[7] raku-drift-from-doc  raku-doc/doc/Language/structures.rakudoc:95
+--- program ---
+say %( first => [1, 2], second => [3,4] ).list[0];
+# OUTPUT: «second => [3 4]␤»
+--- raku stdout ---
+first => [1 2]
+--- mutsu stdout (exit 0) ---
+second => [3 4]
+
+==============================================================================
+[8] output-mismatch  raku-doc/doc/Language/structures.rakudoc:123
+--- program ---
+class SortedArray is Array {
+  method iterator() {
+    self.sort.iterator
+  }
+};
+my @thing := SortedArray.new([3,2,1,4]);
+.say for @thing; # OUTPUT: «1␤2␤3␤4␤»
+--- raku stdout ---
+1
+2
+3
+4
+--- mutsu stdout (exit 0) ---
+[3 2 1 4]
+
+==============================================================================
+[9] output-mismatch  raku-doc/doc/Language/structures.rakudoc:458
+--- program ---
+my $any-object = "random object";
+my $metadata = $any-object.HOW;
+say $metadata.^mro;                   # OUTPUT: «((ClassHOW) (Any) (Mu))␤»
+say $metadata.can( $metadata, "uc" ); # OUTPUT: «(uc uc)␤»
+--- raku stdout ---
+((ClassHOW) (Any) (Mu))
+(uc uc)
+--- mutsu stdout (exit 0) ---
+((ClassHOW) (Any) (Mu))
+(Perl6::Metamodel::ClassHOW::uc)
+

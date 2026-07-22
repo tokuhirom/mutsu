@@ -1,0 +1,102 @@
+# doc-diff-harness report
+# stats: match=2  mismatch=3  mutsu-crash=2  no-oracle=27  raku-drift=0  skipped-marker=3  skipped-nondet=5
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/Proc/Async.rakudoc:102
+--- program ---
+my $prog = Proc::Async.new(:w, 'hexdump', '-C');
+my $promise = $prog.start;
+await $prog.write(Buf.new(12, 42));
+$prog.close-stdin;
+await $promise;
+--- raku stdout ---
+00000000  0c 2a                                             |.*|
+00000002
+--- mutsu stdout (exit 0) ---
+
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Type/Proc/Async.rakudoc:110
+--- program ---
+my $proc-echo = Proc::Async.new: 'echo', 'Hello, world';
+my $proc-cat = Proc::Async.new: 'cat', '-n';
+$proc-cat.bind-stdin: $proc-echo.stdout;
+await $proc-echo.start, $proc-cat.start;
+--- raku stdout ---
+     1	Hello, world
+--- mutsu stdout (exit 0) ---
+
+
+==============================================================================
+[3] mutsu-error  raku-doc/doc/Type/Proc/Async.rakudoc:172
+--- program ---
+my $proc = Proc::Async.new(:r, 'echo', 'Raku');
+$proc.stdout.tap( -> $str {
+    say "Got output '$str' from the external program";
+});
+my $promise = $proc.start;
+await $promise;
+--- raku stdout ---
+Got output 'Raku
+' from the external program
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Failed to spawn 'r	True': No such file or directory (os error 2)
+  in block <unit> at tmp/ddh/prog-3425149.raku line 6
+
+==============================================================================
+[4] mutsu-error  raku-doc/doc/Type/Proc/Async.rakudoc:203
+--- program ---
+my $proc = Proc::Async.new(:r, 'echo', 'Raku');
+$proc.stderr.tap( -> $str {
+    say "Got error '$str' from the external program";
+});
+my $promise = $proc.start;
+await $promise;
+--- raku stdout ---
+Raku
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Failed to spawn 'r	True': No such file or directory (os error 2)
+  in block <unit> at tmp/ddh/prog-3425149.raku line 6
+
+==============================================================================
+[5] output-mismatch  raku-doc/doc/Type/Proc/Async.rakudoc:233
+--- program ---
+my $p = Proc::Async.new("cat", :in);
+my $h = "/etc/profile".IO.open;
+$p.bind-stdin($h);
+$p.start;
+--- raku stdout ---
+# /etc/profile: system-wide .profile file for the Bourne shell (sh(1))
+# and Bourne compatible shells (bash(1), ksh(1), ash(1), ...).
+
+if [ "${PS1-}" ]; then
+  if [ "${BASH-}" ] && [ "$BASH" != "/bin/sh" ]; then
+    # The file bash.bashrc already sets the default PS1.
+    # PS1='\h:\w\$ '
+    if [ -f /etc/bash.bashrc ]; then
+      . /etc/bash.bashrc
+    fi
+  else
+    if [ "$(id -u)" -eq 0 ]; then
+      PS1='# '
+    else
+      PS1='$ '
+    fi
+  fi
+fi
+
+if [ -d /etc/profile.d ]; then
+  for i in /etc/profile.d/*.sh; do
+    if [ -r $i ]; then
+      . $i
+    fi
+  done
+  unset i
+fi
+--- mutsu stdout (exit 0) ---
+
+

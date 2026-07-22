@@ -1,0 +1,75 @@
+# doc-diff-harness report
+# stats: match=0  mismatch=0  mutsu-crash=2  no-oracle=11  raku-drift=0  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] mutsu-error  raku-doc/doc/Type/Lock/Async.rakudoc:162
+--- program ---
+my Lock::Async $lock .= new;
+my Int         $count = 0;
+
+# The lock is unlocked, so the code runs instantly.
+$lock.protect-or-queue-on-recursion({
+    $count++
+});
+
+# Here, we have caller recursion. The outer call only returns a Promise
+# because the inner one does. If we try to await the inner call's Promise
+# from the outer call, the two calls will block forever since the inner
+# caller's Promise return value is just the outer's with a then block.
+$lock.protect-or-queue-on-recursion({
+    $lock.protect-or-queue-on-recursion({
+        $count++
+    }).then({
+        $count++
+    })
+});
+
+# Here, the lock is locked, but not by anything else on the caller chain.
+# This behaves just like calling protect would in this scenario.
+for 0..^2 {
+    $lock.protect-or-queue-on-recursion({
+        $count++;
+    });
+}
+
+say $count; # OUTPUT: 5
+--- raku stdout ---
+4
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+No such method 'protect-or-queue-on-recursion' for invocant of type 'Lock::Async'
+  in block <unit> at tmp/ddh/prog-3414935.raku line 5
+
+==============================================================================
+[2] mutsu-error  raku-doc/doc/Type/Lock/Async.rakudoc:202
+--- program ---
+my Lock::Async $lock .= new;
+my Int         $count = 0;
+
+$lock.protect-or-queue-on-recursion({
+    my Int $count = 0;
+
+    # Runs instantly.
+    $lock.with-lock-hidden-from-recursion-check({
+        $count++;
+    });
+
+    # Runs after the outer caller's protect-or-queue-on-recursion call has
+    # finished running.
+    $lock.protect-or-queue-on-recursion({
+        $count++;
+    }).then({
+        say $count; # OUTPUT: 2
+    });
+
+    say $count; # OUTPUT: 1
+});
+--- raku stdout ---
+1
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+No such method 'protect-or-queue-on-recursion' for invocant of type 'Lock::Async'
+  in block <unit> at tmp/ddh/prog-3414935.raku line 4
+

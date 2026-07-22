@@ -1,0 +1,28 @@
+# doc-diff-harness report
+# stats: match=1  mismatch=0  mutsu-crash=1  no-oracle=2  raku-drift=0  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] mutsu-error  raku-doc/doc/Type/Metamodel/Stashing.rakudoc:45
+--- program ---
+class WithStashHOW
+    does Metamodel::Naming
+    does Metamodel::Stashing
+{
+    method new_type(WithStashHOW:_: Str:D :$name! --> Mu) {
+        my WithStashHOW:D $meta := self.new;
+        my Mu             $type := Metamodel::Primitives.create_type: $meta, 'Uninstantiable';
+        $meta.set_name: $type, $name;
+        self.add_stash: $type
+    }
+}
+
+my Mu constant WithStash = WithStashHOW.new_type: :name<WithStash>;
+say WithStash.WHO; # OUTPUT: «WithStash␤»
+--- raku stdout ---
+WithStash
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+X::InvalidType: Invalid typename 'Metamodel::Naming'
+  in block <unit> at tmp/ddh/prog-3420809.raku line 1
+

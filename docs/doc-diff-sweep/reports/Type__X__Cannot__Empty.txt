@@ -1,0 +1,39 @@
+# doc-diff-harness report
+# stats: match=0  mismatch=1  mutsu-crash=0  no-oracle=3  raku-drift=0  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/X/Cannot/Empty.rakudoc:15
+--- program ---
+class Stack {
+    my class Node {
+        has $.value;
+        has Node $.next;
+    }
+    has Node $!next;
+
+    method push($value) {
+        $!next .= new(:$value, :$!next);
+        self;
+    }
+
+    method pop() {
+        fail X::Cannot::Empty.new(:action<pop>, :what(self.^name))
+         unless $!next;
+
+        my $value = $!next.value;
+        $!next .= next;
+        $value;
+    }
+}
+
+my $stack = Stack.new.push(42);
+say $stack.pop; # OUTPUT: «42␤»
+try $stack.pop;
+say $!.message; # OUTPUT: «Cannot pop from an empty Stack␤»
+--- raku stdout ---
+42
+Cannot pop from an empty Stack
+--- mutsu stdout (exit 0) ---
+42
+X::Method::NotFound: Unknown method value dispatch (fallback disabled): new on X::Cannot::Empty
+

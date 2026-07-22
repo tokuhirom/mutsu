@@ -1,0 +1,171 @@
+# doc-diff-harness report
+# stats: match=37  mismatch=5  mutsu-crash=1  no-oracle=16  raku-drift=2  skipped-marker=4  skipped-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Language/typesystem.rakudoc:657
+--- program ---
+role Unitish[$unit = fail('Please provide a SI unit quantifier as a parameter to the role Unitish')] {
+    has $.SI-unit-symbol = $unit;
+    method gist {
+        given self {
+            # ...
+            when * < 1 { return self * 1000 ~ 'm' ~ $.SI-unit-symbol }
+            when * < 1000 { return self ~ $.SI-unit-symbol }
+            when * < 1_000_000 { return self / 1_000 ~ 'k' ~ $.SI-unit-symbol }
+            # ...
+        }
+    }
+}
+
+role SI-second   does Unitish[<s>] {}
+role SI-meter    does Unitish[<m>] {}
+role SI-kilogram does Unitish[<g>] {}
+
+sub postfix:<s>(Numeric $num) { ($num) does SI-second }
+sub postfix:<m>(Numeric $num) { ($num) does SI-meter }
+sub postfix:<g>(Numeric $num) { ($num) does SI-kilogram }
+sub postfix:<kg>(Numeric $num){ ($num * 1000) does SI-kilogram }
+
+constant g = 9.806_65;
+
+role SI-Newton does Unitish[<N>] {}
+
+multi N(SI-kilogram $kg, SI-meter $m, SI-second $s --> SI-Newton ){ ($kg * ($m / $s²)) does SI-Newton }
+multi N(SI-kilogram $kg --> SI-Newton)                            { ($kg * g) does SI-Newton }
+
+say [75kg, N(75kg)];
+# OUTPUT: «[75kg 735.49875kN]␤»
+say [(75kg).^name, N(75kg).^name];
+# OUTPUT: «[Int+{SI-kilogram} Rat+{SI-Newton}]␤»
+--- raku stdout ---
+[75kg 735.49875kN]
+[Int+{SI-kilogram} Rat+{SI-Newton}]
+--- mutsu stdout (exit 0) ---
+[75000 735498.75]
+[Int+{SI-kilogram} Rat+{SI-Newton}]
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Language/typesystem.rakudoc:846
+--- program ---
+role BitmaskEnumeration {
+    multi method ACCEPTS(::?CLASS:D: Int:D $value --> Bool:D) {
+        so $value +& self.value
+    }
+}
+
+enum Flags does BitmaskEnumeration (
+    FLAG_FOO => 0b001,
+    FLAG_BAR => 0b010,
+    FLAG_BAZ => 0b100,
+);
+
+say 0b111 ~~ FLAG_FOO & FLAG_BAR & FLAG_BAZ; # OUTPUT: «True␤»
+--- raku stdout ---
+True
+--- mutsu stdout (exit 0) ---
+False
+
+==============================================================================
+[3] output-mismatch  raku-doc/doc/Language/typesystem.rakudoc:539
+--- program ---
+use MONKEY; augment class Str {
+    method mark(Any :$set){
+        state $mark //= $set; $mark
+    }
+};
+my $s = "42";
+$s.mark(set => "answer");
+say $s.mark
+# OUTPUT: «answer␤»
+--- raku stdout ---
+answer
+--- mutsu stdout (exit 0) ---
+(Any)
+
+==============================================================================
+[4] raku-drift-from-doc  raku-doc/doc/Language/typesystem.rakudoc:564
+--- program ---
+role Serialize {
+    method to-string { self.Str }
+    method to-number { self.Num }
+}
+
+class A does Serialize {}
+class B does Serialize {}
+
+my Serialize @list;
+@list.push: A.new;
+@list.push: B.new;
+
+say @list».to-string;
+# OUTPUT: «[A<57192848> B<57192880>]␤»
+--- raku stdout ---
+(A<2266763599936> B<2266763600608>)
+--- mutsu stdout (exit 0) ---
+[A() B()]
+
+==============================================================================
+[5] output-mismatch  raku-doc/doc/Language/typesystem.rakudoc:594
+--- program ---
+role R { method m { say 'oi‽' } };
+R.new.^mro.say;
+# OUTPUT: «((R) (Any) (Mu))␤»
+say R.new.^mro[0].HOW.^name;
+# OUTPUT: «Perl6::Metamodel::ClassHOW␤»
+say R.new ~~ R;
+# OUTPUT: «True␤»
+--- raku stdout ---
+((R) (Any) (Mu))
+Perl6::Metamodel::ClassHOW
+True
+--- mutsu stdout (exit 0) ---
+((Any) (Mu))
+Perl6::Metamodel::ClassHOW
+True
+
+==============================================================================
+[6] mutsu-error  raku-doc/doc/Language/typesystem.rakudoc:611
+--- program ---
+role R2 {...};
+role R1 does R2 {};
+role R2 {};
+class C does R1 {};
+
+say [C ~~ R1, C ~~ R2];
+# OUTPUT: «[True True]␤»
+--- raku stdout ---
+[True True]
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+No matching candidate found for the parametric role
+  in block <unit> at tmp/ddh/prog-3360596.raku line 2
+
+==============================================================================
+[7] raku-drift-from-doc  raku-doc/doc/Language/typesystem.rakudoc:644
+--- program ---
+role R[$p = fail("Please provide a parameter to role R")] {};
+my $i = 1 does R;
+CATCH { default { say .^name, ': ', .Str} }
+# OUTPUT: «X::AdHoc: Could not instantiate role 'R':␤Please provide a parameter to role R␤»
+--- raku stdout ---
+X::Role::Instantiation: Could not instantiate role 'R' because it died with X::AdHoc; exception details:
+
+    Please provide a parameter to role R
+      in sub  at tmp/ddh/prog-3360596.raku line 1
+      in block <unit> at tmp/ddh/prog-3360596.raku line 2
+--- mutsu stdout (exit 0) ---
+
+
+==============================================================================
+[8] output-mismatch  raku-doc/doc/Language/typesystem.rakudoc:790
+--- program ---
+enum E <one two>;
+my @keys = E::.values;
+say @keys.map: *.raku;
+# OUTPUT: «(E::one E::two)␤» or «(E::two E::one)␤»
+--- raku stdout ---
+(E::one E::two)
+--- mutsu stdout (exit 0) ---
+(E::two E::one)
+

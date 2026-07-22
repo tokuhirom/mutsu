@@ -1,0 +1,25 @@
+# doc-diff-harness report
+# stats: match=2  mismatch=1  mutsu-crash=0  no-oracle=12  raku-drift=0  skipped-marker=2  skipped-nondet=3
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Language/pragmas.rakudoc:154
+--- program ---
+try {
+    my $x = +"a";
+    say $x.^name;
+    CATCH { default { say "Caught {.^name}" } }
+} # OUTPUT: «Caught X::Str::Numeric␤»
+
+try {
+    no fatal;
+    my $x = +"a";
+    say $x.^name;
+    CATCH { default { say "Caught {.^name}" } }
+} # OUTPUT: «Failure␤»
+--- raku stdout ---
+Caught X::Str::Numeric
+Failure
+--- mutsu stdout (exit 0) ---
+Failure
+Failure
+

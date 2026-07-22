@@ -1,0 +1,43 @@
+# doc-diff-harness report
+# stats: match=8  mismatch=1  mutsu-crash=1  no-oracle=25  raku-drift=0  skipped-marker=8  skipped-nondet=0
+
+==============================================================================
+[1] mutsu-error  raku-doc/doc/Language/classtut.rakudoc:538
+--- program ---
+my $in_destructor = 0;
+
+class Foo {
+    submethod DESTROY { $in_destructor++ }
+}
+
+my $foo;
+for 1 .. 6000 {
+    $foo = Foo.new();
+}
+
+say "DESTROY called $in_destructor times";
+--- raku stdout ---
+DESTROY called 0 times
+--- mutsu stdout (exit 124) ---
+
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Language/classtut.rakudoc:805
+--- program ---
+class Programmer {}; class Employee {}; class GeekCook {}
+my Programmer $o .= new;
+if $o ~~ Employee { say "It's an employee" };
+say $o ~~ GeekCook ?? "It's a geeky cook" !! "Not a geeky cook";
+say $o.^name;
+say $o.raku;
+say $o.^methods(:local)».name.join(', ');
+--- raku stdout ---
+Not a geeky cook
+Programmer
+Programmer.new
+POPULATE
+--- mutsu stdout (exit 0) ---
+Not a geeky cook
+Programmer
+Programmer.new
+

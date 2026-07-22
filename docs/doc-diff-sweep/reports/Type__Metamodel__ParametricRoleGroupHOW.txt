@@ -1,0 +1,31 @@
+# doc-diff-harness report
+# stats: match=0  mismatch=1  mutsu-crash=1  no-oracle=1  raku-drift=0  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] mutsu-error  raku-doc/doc/Type/Metamodel/ParametricRoleGroupHOW.rakudoc:21
+--- program ---
+(role Zape[::T] {}).HOW.say; # OUTPUT: «Perl6::Metamodel::ParametricRoleHOW.new␤»
+Zape.HOW.say ; # OUTPUT: «Perl6::Metamodel::ParametricRoleGroupHOW.new␤»
+--- raku stdout ---
+Perl6::Metamodel::ParametricRoleHOW.new
+Perl6::Metamodel::ParametricRoleGroupHOW.new
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+===SORRY!=== Error while compiling tmp/ddh/prog-3420355.raku
+Confused. expected statement: expected use statement or import statement or no statement or need statement or unit statement or ...
+at tmp/ddh/prog-3420355.raku:1
+------>(role Zape[::T] {}).HOW.say; # OUTPUT: «Perl6::Metamodel::ParametricRoleHOW.new␤»
+       ^
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Type/Metamodel/ParametricRoleGroupHOW.rakudoc:27
+--- program ---
+my \zape := Metamodel::ParametricRoleGroupHOW.new_type( name => "zape");
+my \zipi := Metamodel::ParametricRoleHOW.new_type( name => "zipi", group => zape);
+say zipi.HOW; # OUTPUT: «Perl6::Metamodel::ParametricRoleHOW.new␤»
+--- raku stdout ---
+Perl6::Metamodel::ParametricRoleHOW.new
+--- mutsu stdout (exit 0) ---
+Perl6::Metamodel::ClassHOW.new
+

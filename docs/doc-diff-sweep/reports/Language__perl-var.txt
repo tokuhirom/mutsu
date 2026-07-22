@@ -1,0 +1,80 @@
+# doc-diff-harness report
+# stats: match=1  mismatch=3  mutsu-crash=0  no-oracle=3  raku-drift=0  skipped-marker=3  skipped-nondet=1
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Language/perl-var.rakudoc:198
+--- program ---
+for $*KERNEL, $*DISTRO, $*VM -> $what {
+    say $what.^name;
+    say 'release '  ~ $what.version
+        ~ ' named ' ~ $what.name
+        ~ ' by '    ~ $what.auth;
+}
+
+# Kernel
+# release 4.10.0.42.generic named linux by unknown
+# Distro
+# release 17.04.Zesty.Zapus named ubuntu by https://www.ubuntu.com/
+# VM
+# release 2017.11 named moar by The MoarVM Team
+--- raku stdout ---
+Kernel
+release 202601231045.1769703228.24.04.cb.87.b.5.b.SMP.PREEMPT_DYNAMIC.Thu.J named linux by unknown
+Distro
+release 24.04.LTS named pop by https://pop.system76.com
+VM
+release 2026.06 named moar by The MoarVM Team
+--- mutsu stdout (exit 0) ---
+Kernel
+release 6.18 named linux by unknown
+Distro
+release 6.18 named linux by unknown
+VM
+release 0.1.0 named mutsu by github.com/tokuhirom
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Language/perl-var.rakudoc:453
+--- program ---
+try {
+    fail "Boooh";
+    CATCH {
+        # within the catch block
+        # the exception is placed into $_
+        say 'within the catch:';
+        say $_.^name ~ ' : ' ~ $_.message;
+        $_.resume; # do not abort
+    }
+}
+
+# outside the catch block the exception is placed
+# into $!
+say 'outside the catch:';
+say $!.^name ~ ' : ' ~ $!.message;
+--- raku stdout ---
+within the catch:
+X::AdHoc : Boooh
+outside the catch:
+Nil :
+--- mutsu stdout (exit 0) ---
+within the catch:
+X::AdHoc : Boooh
+outside the catch:
+Any :
+
+==============================================================================
+[3] output-mismatch  raku-doc/doc/Language/perl-var.rakudoc:154
+--- program ---
+# Print out a list of compunit repositories
+.say for $*REPO.repo-chain;
+--- raku stdout ---
+inst#/home/tokuhirom/.raku
+inst#/home/tokuhirom/.local/share/mise/installs/raku/2026.06/share/perl6/site
+inst#/home/tokuhirom/.local/share/mise/installs/raku/2026.06/share/perl6/vendor
+inst#/home/tokuhirom/.local/share/mise/installs/raku/2026.06/share/perl6/core
+ap#
+nqp#
+perl5#
+--- mutsu stdout (exit 0) ---
+CompUnit::Repository::FileSystem.new
+CompUnit::Repository::Installation.new
+

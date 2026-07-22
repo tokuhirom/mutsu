@@ -1,0 +1,26 @@
+# doc-diff-harness report
+# stats: match=1  mismatch=0  mutsu-crash=1  no-oracle=32  raku-drift=0  skipped-marker=25  skipped-nondet=0
+
+==============================================================================
+[1] mutsu-error  raku-doc/doc/Language/unicode_entry.rakudoc:532
+--- program ---
+say ｢What?!｣;
+say ”Whoa!“;
+say „This works too!”;
+say „There are just too many ways“;
+say “here: “no problem” at all!”; # You can nest them!
+--- raku stdout ---
+What?!
+Whoa!
+This works too!
+There are just too many ways
+here: “no problem” at all!
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+===SORRY!=== Error while compiling tmp/ddh/prog-3361420.raku
+Confused. expected statement: expected expression after infix operator or listop argument expression or FATAL:Unable to parse expression in curly double quotes; couldn't find final '”' (corresponding starter was) or expression statement
+at tmp/ddh/prog-3361420.raku:5
+------>say “here: “no problem” at all!”; # You can nest them!
+       ^
+

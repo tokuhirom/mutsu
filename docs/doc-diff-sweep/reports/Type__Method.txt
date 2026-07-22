@@ -1,0 +1,26 @@
+# doc-diff-harness report
+# stats: match=2  mismatch=0  mutsu-crash=1  no-oracle=3  raku-drift=0  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] mutsu-error  raku-doc/doc/Type/Method.rakudoc:18
+--- program ---
+my $m = method ($invocant: $param) {
+    say "$invocant: '$param'";
+}
+"greeting".$m("hello");  # OUTPUT: «greeting: 'hello'␤»
+
+<a b c>.&(my method (List:D:) { say self.raku; self }).say;
+# OUTPUT: «("a", "b", "c")␤(a b c)␤»
+--- raku stdout ---
+greeting: 'hello'
+("a", "b", "c")
+(a b c)
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+===SORRY!=== Error while compiling tmp/ddh/prog-3421250.raku
+Confused. expected statement: expected expression statement or ')'
+at tmp/ddh/prog-3421250.raku:6
+------><a b c>.&(my method (List:D:) { say self.raku; self }).say;
+       ^
+

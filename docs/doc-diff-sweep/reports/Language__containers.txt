@@ -1,0 +1,114 @@
+# doc-diff-harness report
+# stats: match=17  mismatch=3  mutsu-crash=0  no-oracle=9  raku-drift=4  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] raku-drift-from-doc  raku-doc/doc/Language/containers.rakudoc:99
+--- program ---
+sub f($x is rw) { say $x };
+f 42;
+CATCH { default { say .^name, ': ', .Str } };
+# OUTPUT: «X::Parameter::RW: Parameter '$x' expected a writable container, but got Int value␤»
+--- raku stdout ---
+X::Parameter::RW: Parameter '$x' expects a writable container (variable) as an argument,
+but got '42' (Int) as a value without a container.
+--- mutsu stdout (exit 0) ---
+X::AdHoc: Calling f(Int) will never work with declared signature ($x)
+  X::Parameter::RW: 'x' expects a writable variable argument
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Language/containers.rakudoc:137
+--- program ---
+my $x := 42;
+$x = 23;
+CATCH { default { say .^name, ': ', .Str } };
+# OUTPUT: «X::AdHoc: Cannot assign to an immutable value␤»
+--- raku stdout ---
+X::AdHoc: Cannot assign to an immutable value
+--- mutsu stdout (exit 0) ---
+X::Assignment::RO: Cannot assign to a readonly variable (x) or a value
+
+==============================================================================
+[3] output-mismatch  raku-doc/doc/Language/containers.rakudoc:161
+--- program ---
+my $a = 42;
+my \b = $a;
+b++;
+say $a;         # OUTPUT: «43␤»
+
+sub f($c is raw) { $c++ }
+f($a);
+say $a;         # OUTPUT: «44␤»
+--- raku stdout ---
+43
+44
+--- mutsu stdout (exit 0) ---
+42
+43
+
+==============================================================================
+[4] raku-drift-from-doc  raku-doc/doc/Language/containers.rakudoc:182
+--- program ---
+my $x = 42;
+($x, 1, 2)[0] = 23;
+say $x;                 # OUTPUT: «23␤»
+($x, 1, 2)[1] = 23;     # Cannot modify an immutable value
+CATCH { default { say .^name, ': ', .Str } };
+# OUTPUT: «X::Assignment::RO: Cannot modify an immutable Int␤»
+--- raku stdout ---
+23
+X::Assignment::RO: Cannot modify an immutable List ((23 1 2))
+--- mutsu stdout (exit 0) ---
+23
+
+==============================================================================
+[5] output-mismatch  raku-doc/doc/Language/containers.rakudoc:292
+--- program ---
+my @l := 1, 2, (3, 4, (5, 6)), [7, 8, (9, 10)];
+say (|@l, 11, 12);    # OUTPUT: «(1 2 (3 4 (5 6)) [7 8 (9 10)] 11 12)␤»
+say (flat @l, 11, 12) # OUTPUT: «(1 2 3 4 5 6 7 8 (9 10) 11 12)␤»
+--- raku stdout ---
+(1 2 (3 4 (5 6)) [7 8 (9 10)] 11 12)
+(1 2 3 4 5 6 7 8 (9 10) 11 12)
+--- mutsu stdout (exit 0) ---
+(1 2 (3 4 (5 6)) [7 8 (9 10)] 11 12)
+(1 2 3 4 5 6 7 8 9 10 11 12)
+
+==============================================================================
+[6] raku-drift-from-doc  raku-doc/doc/Language/containers.rakudoc:333
+--- program ---
+my @a;
+@a[0] = @a;
+put @a.raku;
+# OUTPUT: «((my @Array_75093712) = [@Array_75093712,])␤»
+--- raku stdout ---
+((my @Array_3907122595712) = [@Array_3907122595712,])
+--- mutsu stdout (exit 0) ---
+[[]]
+
+==============================================================================
+[7] raku-drift-from-doc  raku-doc/doc/Language/containers.rakudoc:397
+--- program ---
+sub lucky(::T $type) {
+    my T $c-value; # closure variable
+    return-rw Proxy.new(
+        FETCH => method () { $c-value },
+        STORE => method (T $new-value) {
+            X::OutOfRange.new(what => 'number', got => '13', range => '-∞..12, 14..∞').throw
+                if $new-value == 13;
+            $c-value = $new-value;
+        }
+    );
+}
+
+my Int $a := lucky(Int);
+say $a = 12;    # OUTPUT: «12␤»
+say $a = 'FOO'; # X::TypeCheck::Binding
+say $a = 13;    # X::OutOfRange
+CATCH { default { say .^name, ': ', .Str } };
+--- raku stdout ---
+12
+X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '$new-value'; expected Int but got Str ("FOO")
+--- mutsu stdout (exit 0) ---
+12
+X::TypeCheck::Assignment: Type check failed in assignment to $a; expected Int but got Str ("FOO")
+

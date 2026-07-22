@@ -1,0 +1,162 @@
+# doc-diff-harness report
+# stats: match=27  mismatch=1  mutsu-crash=5  no-oracle=79  raku-drift=2  skipped-marker=5  skipped-nondet=9
+
+==============================================================================
+[1] raku-drift-from-doc  raku-doc/doc/Type/independent-routines.rakudoc:110
+--- program ---
+use MONKEY-SEE-NO-EVAL;
+EVAL 'say $?FILE';                              # OUTPUT: «/tmp/EVAL_0␤»
+EVAL 'say $?FILE', filename => '/my-eval-code'; # OUTPUT: «/my-eval-code␤»
+--- raku stdout ---
+/home/tokuhirom/work/mutsu-codex/EVAL_0
+/my-eval-code
+--- mutsu stdout (exit 0) ---
+tmp/ddh/prog-3398211.raku
+tmp/ddh/prog-3398211.raku
+
+==============================================================================
+[2] mutsu-error  raku-doc/doc/Type/independent-routines.rakudoc:148
+--- program ---
+my $name = "Alice";
+
+say "Hello, $name";
+
+repl();
+
+say "Goodbye, $name"
+--- raku stdout ---
+Hello, Alice
+No line editor found.
+
+You may want to exit first and `zef install Readline`, `zef install
+Linenoise`, or `zef install Terminal::LineEditor` or install `rlwrap`
+for a line editor before entering the REPL again.
+
+Type 'exit' to leave
+[0] > Goodbye, Alice
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+===SORRY!=== Error while compiling tmp/ddh/prog-3398211.raku
+Undeclared routine:
+    repl used
+at tmp/ddh/prog-3398211.raku:5
+------>repl();
+       ^
+
+==============================================================================
+[3] mutsu-error  raku-doc/doc/Type/independent-routines.rakudoc:473
+--- program ---
+my $fh = open :w, '/tmp/some-file.txt';
+$fh.say: 'I ♥ writing Raku code';
+$fh.close;
+
+$fh = open '/tmp/some-file.txt';
+print $fh.readchars: 4;
+$fh.seek: 7, SeekFromCurrent;
+say $fh.readchars: 4;
+$fh.close;
+
+# OUTPUT: «I ♥ Raku␤»
+--- raku stdout ---
+I ♥ Raku
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Failed to open '/home/tokuhirom/work/mutsu-codex/w	True': No such file or directory (os error 2)
+  in block <unit> at tmp/ddh/prog-3398211.raku line 2
+
+==============================================================================
+[4] output-mismatch  raku-doc/doc/Type/independent-routines.rakudoc:1497
+--- program ---
+my $supply = supply {
+    for 1 .. 3 {
+        emit($_);
+    }
+    done 42;  # same as: emit 42; done
+}
+$supply.tap: -> $v { say "Val: $v" }, done => { say "No more" }
+# OUTPUT: OUTPUT: «Val: 1␤Val: 2␤Val: 3␤Val: 42␤No More␤»
+--- raku stdout ---
+Val: 1
+Val: 2
+Val: 3
+Val: 42
+No more
+--- mutsu stdout (exit 0) ---
+Val: 1
+Val: 2
+Val: 3
+No more
+
+==============================================================================
+[5] raku-drift-from-doc  raku-doc/doc/Type/independent-routines.rakudoc:312
+--- program ---
+say indir("/tmp", {
+    gather { take ".".IO }
+})».CWD; # OUTPUT: «(/home/camelia)␤»
+
+say indir("/tmp", {
+    eager gather { take ".".IO }
+})».CWD; # OUTPUT: «(/tmp)␤»
+
+say indir("/tmp", {
+    my $cwd = $*CWD;
+    gather { temp $*CWD = $cwd; take ".".IO }
+})».CWD; # OUTPUT: «(/tmp)␤»
+--- raku stdout ---
+(/home/tokuhirom/work/mutsu-codex)
+(/tmp)
+(/tmp)
+--- mutsu stdout (exit 0) ---
+()
+(/tmp)
+()
+
+==============================================================================
+[6] mutsu-error  raku-doc/doc/Type/independent-routines.rakudoc:687
+--- program ---
+"%s is %s".printf("þor", "mighty");    # OUTPUT: «þor is mighty»
+printf( "%s is %s", "þor", "mighty");  # OUTPUT: «þor is mighty»
+--- raku stdout ---
+þor is mightyþor is mighty
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+No such method 'printf' for invocant of type 'Str'
+Did you mean 'print'?
+  in block <unit> at tmp/ddh/prog-3398211.raku line 1
+
+==============================================================================
+[7] mutsu-error  raku-doc/doc/Type/independent-routines.rakudoc:692
+--- program ---
+printf( "%.2f ", ⅓ | ¼ | ¾ ); # OUTPUT: «0.33 0.25 0.75 »
+--- raku stdout ---
+0.33 0.25 0.75
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Directive %f not applicable for type Junction
+  in block <unit> at tmp/ddh/prog-3398211.raku line 1
+
+==============================================================================
+[8] mutsu-error  raku-doc/doc/Type/independent-routines.rakudoc:1429
+--- program ---
+my %h = i => 0;
+append %h, i => (1, 42);
+CATCH { default { put .message } };
+# OUTPUT: «Unexpected named argument 'i' passed␤»
+--- raku stdout ---
+Cannot resolve caller append(Hash:D, :i(List)); none of these signatures matches:
+    (\a, \b)
+    (\a, **@b is raw)
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+===SORRY!=== Error while compiling tmp/ddh/prog-3398211.raku
+Undeclared routine:
+    append used
+at tmp/ddh/prog-3398211.raku:2
+------>append %h, i => (1, 42);
+       ^
+

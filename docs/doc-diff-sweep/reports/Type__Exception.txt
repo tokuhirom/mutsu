@@ -1,0 +1,19 @@
+# doc-diff-harness report
+# stats: match=5  mismatch=1  mutsu-crash=0  no-oracle=17  raku-drift=0  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/Exception.rakudoc:78
+--- program ---
+sub f() { die 'Bad' };
+sub g() { f; CATCH { default { .rethrow } } };
+g;
+CATCH { default { say .backtrace.full } };
+--- raku stdout ---
+  in method throw at SETTING::src/core.c/Exception.rakumod line 65
+  in sub die at SETTING::src/core.c/control.rakumod line 253
+  in sub f at tmp/ddh/prog-3392318.raku line 1
+  in sub g at tmp/ddh/prog-3392318.raku line 2
+  in block <unit> at tmp/ddh/prog-3392318.raku line 3
+--- mutsu stdout (exit 0) ---
+  in sub f at tmp/ddh/prog-3392318.raku line 1  in sub g at tmp/ddh/prog-3392318.raku line 2  in block <unit> at tmp/ddh/prog-3392318.raku line 3
+

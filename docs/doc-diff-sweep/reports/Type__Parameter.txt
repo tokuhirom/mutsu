@@ -1,0 +1,123 @@
+# doc-diff-harness report
+# stats: match=14  mismatch=1  mutsu-crash=5  no-oracle=25  raku-drift=1  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] mutsu-error  raku-doc/doc/Type/Parameter.rakudoc:59
+--- program ---
+my Signature $sig = :(Str $x, Str @*l, Bool);
+say $sig.params[0].usage-name;           # OUTPUT: «x␤»
+say $sig.params[1].usage-name;           # OUTPUT: «l␤»
+say $sig.params[2].usage-name;           # OUTPUT: «␤»
+--- raku stdout ---
+x
+l
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+No such method 'usage-name' for invocant of type 'Parameter'
+  in block <unit> at tmp/ddh/prog-3423367.raku line 2
+
+==============================================================================
+[2] mutsu-error  raku-doc/doc/Type/Parameter.rakudoc:283
+--- program ---
+my $sig = :($a, $b = 12);
+say $sig.params[0].default;        # OUTPUT: «(Code)␤»
+say $sig.params[1].default.();     # OUTPUT: «12␤»
+--- raku stdout ---
+(Code)
+12
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+No such method 'default' for invocant of type 'Parameter'
+  in block <unit> at tmp/ddh/prog-3423367.raku line 2
+
+==============================================================================
+[3] output-mismatch  raku-doc/doc/Type/Parameter.rakudoc:306
+--- program ---
+sub c(::T $x, T $y, $z) { my T $zz = $z };
+c(4, 5, 6);          # OK
+
+try c(4, 5, "six");
+given $! { .message.say };
+# OUTPUT: «Type check failed in assignment to $zz; expected Int but got Str ("six")␤»
+
+try c("four", 5, "six");
+given $! { .message.say };
+# OUTPUT: «Type check failed in binding to parameter '$y'; expected Str but got Int (5)␤»
+--- raku stdout ---
+Type check failed in assignment to $zz; expected Int but got Str ("six")
+Type check failed in binding to parameter '$y'; expected Str but got Int (5)
+--- mutsu stdout (exit 0) ---
+Type check failed in assignment to $zz; expected T, got Str
+Calling c(Str, Int, Str) will never work with declared signature (::T $x, T $y, $z)
+  X::TypeCheck::Binding::Parameter: Type check failed for y: expected Str, got Int
+
+==============================================================================
+[4] mutsu-error  raku-doc/doc/Type/Parameter.rakudoc:347
+--- program ---
+my Signature $sig = :(@array ($first, *@rest), @other);
+say $sig.params[0].sub_signature;     # OUTPUT:«($first, *@rest)␤»
+say $sig.params[1].sub_signature;     # OUTPUT:«(Signature)␤»
+--- raku stdout ---
+($first, *@rest)
+(Signature)
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+No such method 'sub_signature' for invocant of type 'Parameter'
+  in block <unit> at tmp/ddh/prog-3423367.raku line 2
+
+==============================================================================
+[5] raku-drift-from-doc  raku-doc/doc/Type/Parameter.rakudoc:176
+--- program ---
+sub f(\x) {
+    x = 5;
+}
+f(my $x);   # works
+f(42);      # dies
+CATCH { default { put .^name, ': ', .Str } };
+# OUTPUT: «X::Assignment::RO: Cannot modify an immutable Int␤»
+--- raku stdout ---
+X::Assignment::RO: Cannot modify an immutable Int (42)
+--- mutsu stdout (exit 0) ---
+X::Assignment::RO: Cannot modify an immutable value (x)
+
+==============================================================================
+[6] mutsu-error  raku-doc/doc/Type/Parameter.rakudoc:197
+--- program ---
+my @types is List = Mu, Any;
+say -> *@l { @l }(@types)[0] =:= @types[0];        # OUTPUT: «False␤»
+say -> +@l { @l }(@types)[0] =:= @types[0];        # OUTPUT: «False␤»
+say -> +l { l }(@types)[0] =:= @types[0];          # OUTPUT: «True␤»
+say -> *@l is raw { @l }(@types)[0] =:= @types[0]; # OUTPUT: «True␤»
+--- raku stdout ---
+False
+False
+True
+True
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+===SORRY!=== Error while compiling tmp/ddh/prog-3423367.raku
+Confused. expected statement: expected '.' or digits or generic radix literal or unicode numeric literal or declared term symbol or ...
+at tmp/ddh/prog-3423367.raku:4
+------>say -> +l { l }(@types)[0] =:= @types[0];          # OUTPUT: «True␤»
+       ^
+
+==============================================================================
+[7] mutsu-error  raku-doc/doc/Type/Parameter.rakudoc:395
+--- program ---
+my Signature $sig = :(Str:U $a, UInt:D $b, $c);
+say $sig.params[0].modifier; # OUTPUT: «:U␤»
+say $sig.params[1].modifier; # OUTPUT: «:D␤»
+say $sig.params[2].modifier; # OUTPUT: «␤»
+--- raku stdout ---
+:U
+:D
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+No such method 'modifier' for invocant of type 'Parameter'
+  in block <unit> at tmp/ddh/prog-3423367.raku line 2
+

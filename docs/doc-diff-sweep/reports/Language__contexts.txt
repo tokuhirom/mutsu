@@ -1,0 +1,26 @@
+# doc-diff-harness report
+# stats: match=18  mismatch=2  mutsu-crash=0  no-oracle=3  raku-drift=0  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Language/contexts.rakudoc:45
+--- program ---
+sub foo {
+    return [<a b c>] does role {
+        method sink { say "sink called" }
+    }
+}
+foo; # OUTPUT: «sink called␤»
+--- raku stdout ---
+sink called
+--- mutsu stdout (exit 0) ---
+
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Language/contexts.rakudoc:130
+--- program ---
+say [~] [ 3, 5+6i, Set(<a b c>), [1,2,3] ]; # OUTPUT: «35+6ic a b1 2 3␤»
+--- raku stdout ---
+35+6ic a b1 2 3
+--- mutsu stdout (exit 0) ---
+35+6ia b c1 2 3
+

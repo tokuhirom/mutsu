@@ -1,0 +1,14 @@
+# doc-diff-harness report
+# stats: match=0  mismatch=1  mutsu-crash=0  no-oracle=2  raku-drift=0  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/X/Method/InvalidQualifier.rakudoc:14
+--- program ---
+1.Str::split(/a/);
+CATCH { default { put .^name, ': ', .Str } };
+# OUTPUT: «X::Method::InvalidQualifier: Cannot dispatch to method split on Str because it is not inherited or done by Int␤»
+--- raku stdout ---
+X::Method::InvalidQualifier: Cannot dispatch to method split on Str because it is not inherited or done by Int
+--- mutsu stdout (exit 0) ---
+X::AdHoc: X::Method::InvalidQualifier: Cannot dispatch to a method on Str because it is not inherited or done by Int
+

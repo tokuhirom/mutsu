@@ -1,0 +1,13 @@
+# doc-diff-harness report
+# stats: match=3  mismatch=1  mutsu-crash=0  no-oracle=48  raku-drift=0  skipped-marker=58  skipped-nondet=1
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Language/rb-nutshell.rakudoc:355
+--- program ---
+sub foo(*@args) { say @args.raku }
+foo([1, [2, 3], 4], 5, [6, 7]);   # [1, [2, 3], 4, 5, 6, 7]
+--- raku stdout ---
+[1, [2, 3], 4, 5, 6, 7]
+--- mutsu stdout (exit 0) ---
+[1, 2, 3, 4, 5, 6, 7]
+

@@ -1,0 +1,14 @@
+# doc-diff-harness report
+# stats: match=2  mismatch=1  mutsu-crash=0  no-oracle=10  raku-drift=0  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/Associative.rakudoc:53
+--- program ---
+class DateHash is Hash does Associative[Cool,DateTime] {};
+my %date-hash := DateHash.new;
+say %date-hash.of; # OUTPUT: «(Cool)␤»
+--- raku stdout ---
+(Cool)
+--- mutsu stdout (exit 0) ---
+(Mu)
+

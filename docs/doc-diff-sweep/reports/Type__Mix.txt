@@ -1,0 +1,68 @@
+# doc-diff-harness report
+# stats: match=4  mismatch=1  mutsu-crash=0  no-oracle=6  raku-drift=3  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] raku-drift-from-doc  raku-doc/doc/Type/Mix.rakudoc:20
+--- program ---
+my $recipe = (butter => 0.22, sugar => 0.1,
+              flour => 0.275, sugar => 0.02).Mix;
+
+say $recipe.elems;      # OUTPUT: «3␤»
+say $recipe.keys.sort;  # OUTPUT: «butter flour sugar␤»
+say $recipe.pairs.sort; # OUTPUT: «"butter" => 0.22 "flour" => 0.275 "sugar" => 0.12␤»
+say $recipe.total;      # OUTPUT: «0.615␤»
+--- raku stdout ---
+3
+(butter flour sugar)
+(butter => 0.22 flour => 0.275 sugar => 0.12)
+0.615
+--- mutsu stdout (exit 0) ---
+3
+(butter flour sugar)
+(butter => 0.22 flour => 0.275 sugar => 0.12000000000000001)
+0.615
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Type/Mix.rakudoc:38
+--- program ---
+my $recipe = (butter => 0.22, sugar => 0.1,
+              flour => 0.275, sugar => 0.02).Mix;
+say $recipe<butter>;     # OUTPUT: «0.22␤»
+say $recipe<sugar>;      # OUTPUT: «0.12␤»
+say $recipe<chocolate>;  # OUTPUT: «0␤»
+--- raku stdout ---
+0.22
+0.12
+0
+--- mutsu stdout (exit 0) ---
+0.22
+0.12000000000000001
+0
+
+==============================================================================
+[3] raku-drift-from-doc  raku-doc/doc/Type/Mix.rakudoc:51
+--- program ---
+my $n = mix "a", "a", "b" => 0, 3.14, π, π; # The Pair is a single element
+say $n.keys.map: *.^name; # OUTPUT: «(Rat Pair Num Str)␤»
+say $n.pairs;
+# OUTPUT: «(3.14 => 1 (b => 0) => 1 3.141592653589793 => 2 a => 2)␤»
+--- raku stdout ---
+(Num Str Pair Rat)
+(3.141592653589793 => 2 a => 2 (b => 0) => 1 3.14 => 1)
+--- mutsu stdout (exit 0) ---
+(Rat Str Pair Num)
+(3.14 => 1 a => 2 b	0 => 1 3.141592653589793 => 2)
+
+==============================================================================
+[4] raku-drift-from-doc  raku-doc/doc/Type/Mix.rakudoc:64
+--- program ---
+my $n = ("a", "a", "b" => 0, "c" => 3.14).Mix;
+say $n.keys.map(&WHAT);  # OUTPUT: «((Str) (Str))␤»
+say $n.pairs;            # OUTPUT: «(a => 2 c => 3.14)␤»
+--- raku stdout ---
+((Str) (Str))
+(c => 3.14 a => 2)
+--- mutsu stdout (exit 0) ---
+((Str) (Str))
+(a => 2 c => 3.14)
+

@@ -1,0 +1,26 @@
+# doc-diff-harness report
+# stats: match=8  mismatch=2  mutsu-crash=0  no-oracle=19  raku-drift=0  skipped-marker=1  skipped-nondet=1
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Language/glossary.rakudoc:98
+--- program ---
+# anonymous, but knows its own name
+my $s = anon sub triple($x) { 3 * $x }
+say $s.name;        # OUTPUT: «triple␤»
+--- raku stdout ---
+triple
+--- mutsu stdout (exit 0) ---
+
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Language/glossary.rakudoc:1024
+--- program ---
+=begin pod
+C<foo>
+=end pod
+say $=pod[0].contents[0].contents.raku;
+--- raku stdout ---
+[Pod::FormattingCode.new(type => "C", meta => [], config => {}, contents => ["foo"])]
+--- mutsu stdout (exit 0) ---
+(Pod::FormattingCode.new,)
+

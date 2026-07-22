@@ -1,0 +1,39 @@
+# doc-diff-harness report
+# stats: match=2  mismatch=1  mutsu-crash=2  no-oracle=17  raku-drift=0  skipped-marker=1  skipped-nondet=0
+
+==============================================================================
+[1] mutsu-error  raku-doc/doc/Type/Metamodel/EnumHOW.rakudoc:139
+--- program ---
+enum Numbers <10 20>;
+say Numbers.^enum_values;                   # OUTPUT: {10 => 0, 20 => 1}
+--- raku stdout ---
+{10 => 0, 20 => 1}
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+No such method 'enum_values' for invocant of type 'Perl6::Metamodel::EnumHOW'
+  in block <unit> at tmp/ddh/prog-3418978.raku line 2
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Type/Metamodel/EnumHOW.rakudoc:148
+--- program ---
+enum Numbers <10 20>;
+say Numbers.^elems;                         # OUTPUT: 2
+--- raku stdout ---
+2
+--- mutsu stdout (exit 0) ---
+
+
+==============================================================================
+[3] mutsu-error  raku-doc/doc/Type/Metamodel/EnumHOW.rakudoc:157
+--- program ---
+enum Numbers <10 20>;
+say Numbers.^enum_from_value(0);            # OUTPUT: 10
+--- raku stdout ---
+10
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+No such method 'enum_from_value' for invocant of type 'Perl6::Metamodel::EnumHOW'
+  in block <unit> at tmp/ddh/prog-3418978.raku line 2
+

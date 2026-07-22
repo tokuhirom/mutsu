@@ -1,0 +1,32 @@
+# doc-diff-harness report
+# stats: match=24  mismatch=2  mutsu-crash=0  no-oracle=26  raku-drift=1  skipped-marker=0  skipped-nondet=10
+
+==============================================================================
+[1] raku-drift-from-doc  raku-doc/doc/Type/DateTime.rakudoc:137
+--- program ---
+say DateTime.new("2012-02-29T12:34:56Z").clone(year => 2015);
+CATCH { default { put .^name, ': ', .Str } };
+# OUTPUT: «X::OutOfRange: Day out of range. Is: 29, should be in 1..28␤»
+--- raku stdout ---
+X::Temporal::OutOfRange: Day out of range. Is: 29, should be in 1..28
+--- mutsu stdout (exit 0) ---
+X::AdHoc: X::OutOfRange: Day out of range. Is: 29, should be in 1..28
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Type/DateTime.rakudoc:281
+--- program ---
+say DateTime.new('2021-12-24T12:23:00.43Z').julian-date; # OUTPUT: «2459573.0159772␤»
+--- raku stdout ---
+2459573.0159772
+--- mutsu stdout (exit 0) ---
+2459573.015977199
+
+==============================================================================
+[3] output-mismatch  raku-doc/doc/Type/DateTime.rakudoc:302
+--- program ---
+say DateTime.new('2021-12-24T12:23:00.43Z').modified-julian-date; # OUTPUT: «59572.5159772␤»
+--- raku stdout ---
+59572.5159772
+--- mutsu stdout (exit 0) ---
+59572.51597719907
+

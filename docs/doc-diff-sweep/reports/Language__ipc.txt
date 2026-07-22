@@ -1,0 +1,19 @@
+# doc-diff-harness report
+# stats: match=3  mismatch=1  mutsu-crash=0  no-oracle=6  raku-drift=0  skipped-marker=0  skipped-nondet=1
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Language/ipc.rakudoc:14
+--- program ---
+run 'git', 'status';
+--- raku stdout ---
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	foo.bak
+
+nothing added to commit but untracked files present (use "git add" to track)
+--- mutsu stdout (exit 0) ---
+
+

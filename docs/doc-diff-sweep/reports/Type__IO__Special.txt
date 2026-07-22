@@ -1,0 +1,18 @@
+# doc-diff-harness report
+# stats: match=1  mismatch=0  mutsu-crash=1  no-oracle=14  raku-drift=0  skipped-marker=1  skipped-nondet=3
+
+==============================================================================
+[1] mutsu-error  raku-doc/doc/Type/IO/Special.rakudoc:56
+--- program ---
+say $*IN.path.IO.what;  # OUTPUT: «<STDIN>␤»
+say $*IN.path.what;     # OUTPUT: «<STDIN>␤»
+--- raku stdout ---
+<STDIN>
+<STDIN>
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+No such method 'what' for invocant of type 'IO::Path'
+Did you mean 'flat'?
+  in block <unit> at tmp/ddh/prog-3411384.raku line 1
+

@@ -1,0 +1,42 @@
+# doc-diff-harness report
+# stats: match=0  mismatch=0  mutsu-crash=2  no-oracle=5  raku-drift=0  skipped-marker=0  skipped-nondet=0
+
+==============================================================================
+[1] mutsu-error  raku-doc/doc/Type/Metamodel/Trusting.rakudoc:18
+--- program ---
+class A {
+    my class B {
+        trusts A;   # that's where Metamodel::Trusting comes in
+        method !private_method() {
+            say "Private method in B";
+        }
+    }
+    method build-and-poke {
+        # call a private method from B
+        # disallowed if A doesn't trust B
+        B.new()!B::private_method();
+    }
+};
+
+A.build-and-poke;   # Private method in B
+--- raku stdout ---
+Private method in B
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Cannot call private method without permission
+  in block <unit> at tmp/ddh/prog-3420831.raku line 1
+
+==============================================================================
+[2] mutsu-error  raku-doc/doc/Type/Metamodel/Trusting.rakudoc:54
+--- program ---
+class A { trusts Int; };
+say .^name for A.^trusts;       # Int
+--- raku stdout ---
+Int
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+No such method 'trusts' for invocant of type 'Perl6::Metamodel::ClassHOW'
+  in block <unit> at tmp/ddh/prog-3420831.raku line 2
+

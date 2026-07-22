@@ -1,0 +1,107 @@
+# doc-diff-harness report
+# stats: match=14  mismatch=3  mutsu-crash=0  no-oracle=24  raku-drift=3  skipped-marker=0  skipped-nondet=3
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/Baggy.rakudoc:21
+--- program ---
+say Mix.new-from-pairs: 'butter' => 0.22, 'sugar' => 0.1, 'sugar' => 0.02;
+# OUTPUT: «Mix(butter(0.22) sugar(0.12))␤»
+--- raku stdout ---
+Mix(butter(0.22) sugar(0.12))
+--- mutsu stdout (exit 0) ---
+Mix(butter(0.22) sugar(0.12000000000000001))
+
+==============================================================================
+[2] raku-drift-from-doc  raku-doc/doc/Type/Baggy.rakudoc:43
+--- program ---
+my $cars = ('Ford' => 2, 'Rover' => 3).BagHash;
+say $cars.grab;                                   # OUTPUT: «Ford␤»
+say $cars.grab(2);                                # OUTPUT: «(Rover Rover)␤»
+say $cars.grab(*);                                # OUTPUT: «(Rover Ford)␤»
+
+my $breakfast = ('eggs' => 2, 'bacon' => 3).Bag;
+say $breakfast.grab;
+CATCH { default { put .^name, ': ', .Str } };
+# OUTPUT: «X::Immutable: Cannot call 'grab' on an immutable 'Bag'␤»
+--- raku stdout ---
+Rover
+(Rover Ford)
+(Ford Rover)
+X::Immutable: Cannot call 'grab' on an immutable 'Bag'
+--- mutsu stdout (exit 0) ---
+Ford
+(Rover Rover)
+(Rover Ford)
+X::Immutable: Cannot call 'grab' on an immutable 'Bag'
+
+==============================================================================
+[3] raku-drift-from-doc  raku-doc/doc/Type/Baggy.rakudoc:69
+--- program ---
+my $breakfast = (eggs => 2, bacon => 3).BagHash;
+say $breakfast.grabpairs;                         # OUTPUT: «bacon => 3␤»
+say $breakfast;                                   # OUTPUT: «BagHash.new(eggs(2))␤»
+say $breakfast.grabpairs(1);                      # OUTPUT: «(eggs => 2)␤»
+say $breakfast.grabpairs(*);                      # OUTPUT: «()␤»
+
+my $diet = ('eggs' => 2, 'bacon' => 3).Bag;
+say $diet.grabpairs;
+CATCH { default { put .^name, ': ', .Str } };
+# OUTPUT: «X::Immutable: Cannot call 'grabpairs' on an immutable 'Bag'␤»
+--- raku stdout ---
+bacon => 3
+BagHash(eggs(2))
+(eggs => 2)
+()
+X::Immutable: Cannot call 'grabpairs' on an immutable 'Bag'
+--- mutsu stdout (exit 0) ---
+eggs => 2
+BagHash(bacon(3))
+(bacon => 3)
+()
+X::Immutable: Cannot call 'grabpairs' on an immutable 'Bag'
+
+==============================================================================
+[4] output-mismatch  raku-doc/doc/Type/Baggy.rakudoc:197
+--- program ---
+say BagHash.new.classify-list: { $_ %% 2 ?? 'even' !! 'odd' }, ^10;
+# OUTPUT: BagHash(even(5) odd(5))
+
+my @mapper = <zero one two three four five>;
+say MixHash.new.classify-list: @mapper, 1, 2, 3, 4, 4, 6;
+# OUTPUT: MixHash((Any) two three four(2) one)
+--- raku stdout ---
+BagHash(even(5) odd(5))
+MixHash((Any) four(2) one three two)
+--- mutsu stdout (exit 0) ---
+BagHash(even(5) odd(5))
+MixHash( four(2) one three two)
+
+==============================================================================
+[5] output-mismatch  raku-doc/doc/Type/Baggy.rakudoc:293
+--- program ---
+my $breakfast = bag <eggs spam spam spam>;
+say $breakfast.kv;                                # OUTPUT: «(spam 3 eggs 1)␤»
+
+my $n = ("a" => 5, "b" => 2, "a" => 1).BagHash;
+say $n.kv;                                        # OUTPUT: «(a 6 b 2)␤»
+--- raku stdout ---
+(spam 3 eggs 1)
+(a 6 b 2)
+--- mutsu stdout (exit 0) ---
+(eggs 1 spam 3)
+(a 6 b 2)
+
+==============================================================================
+[6] raku-drift-from-doc  raku-doc/doc/Type/Baggy.rakudoc:355
+--- program ---
+my $breakfast = bag <eggs bacon bacon>;
+my $h = $breakfast.hash;
+say $h.^name;                    # OUTPUT: «Hash[Any,Any]␤»
+say $h;                          # OUTPUT: «{bacon => 2, eggs => 1}␤»
+--- raku stdout ---
+Hash[UInt,Mu,Any]
+{bacon => 2, eggs => 1}
+--- mutsu stdout (exit 0) ---
+Hash
+{bacon => 2, eggs => 1}
+

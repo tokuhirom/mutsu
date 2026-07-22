@@ -1,0 +1,40 @@
+# doc-diff-harness report
+# stats: match=1  mismatch=2  mutsu-crash=0  no-oracle=2  raku-drift=0  skipped-marker=12  skipped-nondet=5
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Language/phasers.rakudoc:84
+--- program ---
+END say my $accumulator;
+--- raku stdout ---
+(Any)
+--- mutsu stdout (exit 0) ---
+Nil
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Language/phasers.rakudoc:401
+--- program ---
+say elems gather {
+    CONTROL {
+        when CX::Warn { say "WARNING!!! $_"; .resume }
+        when CX::Take { say "Don't take my stuff"; .resume }
+        when CX::Done { say "Done"; .resume }
+    }
+    warn 'people take stuff here';
+    take 'keys';
+    done;
+}
+# OUTPUT:
+# WARNING!!! people take stuff here
+# Don't take my stuff
+# Done
+# 0
+--- raku stdout ---
+WARNING!!! people take stuff here
+Don't take my stuff
+Done
+0
+--- mutsu stdout (exit 0) ---
+WARNING!!! people take stuff here
+Done
+1
+
