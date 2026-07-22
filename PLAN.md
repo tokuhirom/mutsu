@@ -1179,6 +1179,38 @@ the backlog.
       differently (raku returns `Stash`/`ClassHOW`/`Bool`) — investigate separately, do not lump in.
       Blast radius is every `>>.` call site, so land it alone and let roast verify.
 
+### 8.7 Bound-element immutability (deferred deep item — ADR-worthy; found 2026-07-22 by the Hash::Agnostic dist)
+
+- [ ] **A hash/array element bound to an immutable value must become read-only.**
+      `%h<i> := 137; %h<i> = 666` must throw (raku: `X::Assignment::RO` for a tied hash,
+      `X::AdHoc` for a plain hash) and leave the value `137`; mutsu silently overwrites to
+      `666`. This is **general, NOT tied-specific** — a plain `my %h; %h<i> := 137; %h<i> = 666`
+      also fails to die in mutsu. It blocks Hash::Agnostic dist `t/01-basic.rakutest`
+      subtests 4/5/6 (they cascade: 4's `dies-ok { %h<i> = 666 }` corrupts the post-deletion
+      state that 5 & 6 then read).
+- **Mechanism gap (pinpointed).** mutsu's read-only tracking is **NAME-based** —
+      `mark_readonly(bare_name)` / `is_readonly(name)` over a `readonly_vars: ReadonlySet`.
+      A *scalar* bind to a literal works (`src/vm/vm_var_assign_set_local.rs:358-373` marks the
+      variable name read-only for Int/Str/Num/Bool/Rat/Complex RHS). But a bound **element**
+      (`@a[0]` / `%h<k>`) has **no variable name**, so there is **no per-element read-only
+      mechanism**: `:=` just wraps the literal in a mutable `Scalar` cell (`%h<i>.VAR.^name` is
+      `Scalar` in mutsu vs `Int` in raku), and the element-assign path
+      (`src/vm/vm_var_assign_index_named.rs`) has container-level immutability checks
+      (Map/List/Range) but nothing for a bound-immutable element.
+- **Fix options (ADR-worthy — element read-only representation, touches every element op):**
+      (a) a value-level read-only flag on the Scalar/element cell, checked in the element-assign
+      path; or (b) a per-container "bound-immutable keys/indices" side set. Not a quick slice —
+      high blast radius; do it as a focused, careful session. The value-slice fix (#5141) is a
+      prerequisite for subtest 6 once this lands.
+- **Also blocked in the same dist:** `.kv` on a Hash::Agnostic role returns `()` (raku yields the
+      flattened k/v list). Root cause is a *separate* pre-existing gap — the role's
+      `method kv { Seq.new(KV.new(:backend(self), :iterator(self.keys.iterator))) }` uses a custom
+      `KV` iterator instance, and mutsu's `Seq.new(<custom Iterator instance>)` does not pull from
+      it (same family as the `from-iterator` gap fixed in #5132). Investigate independently of the
+      bound-element work.
+- Entry: `git checkout -b feat-bound-element-ro origin/main`. Related: §3 (substrate),
+      [ADR-0001] container-repr, [ADR-0013] element cell provenance.
+
 ---
 
 ## Metrics
