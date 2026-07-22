@@ -367,6 +367,14 @@ pub(super) fn dispatch(
                 ValueView::Bool(b) => format!("Bool|{}", if b { 1 } else { 0 }),
                 ValueView::Rat(n, d) => format!("Rat|{}/{}", n, d),
                 ValueView::FatRat(n, d) => format!("FatRat|{}/{}", n, d),
+                ValueView::BigRat(n, d) => {
+                    let flavour = if target.is_bigfatrat() {
+                        "FatRat"
+                    } else {
+                        "Rat"
+                    };
+                    format!("{}|{}/{}", flavour, n, d)
+                }
                 ValueView::Complex(r, i) => format!("Complex|{}+{}i", r, i),
                 // An enum value's identity is `{EnumType}|{ordinal}` (raku:
                 // `Bob.WHICH` is `Names|0`, using the position in the enum, not

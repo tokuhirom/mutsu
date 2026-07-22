@@ -498,6 +498,14 @@ pub(crate) fn native_method_0arg(
                 ValueView::Num(n) => format!("Num|{}", n),
                 ValueView::Rat(n, d) => format!("Rat|{}/{}", n, d),
                 ValueView::FatRat(n, d) => format!("FatRat|{}/{}", n, d),
+                ValueView::BigRat(n, d) => {
+                    let flavour = if inner.as_ref().is_bigfatrat() {
+                        "FatRat"
+                    } else {
+                        "Rat"
+                    };
+                    format!("{}|{}/{}", flavour, n, d)
+                }
                 ValueView::Complex(r, i) => format!("Complex|{}+{}i", r, i),
                 _ => format!("{:?}", inner),
             };

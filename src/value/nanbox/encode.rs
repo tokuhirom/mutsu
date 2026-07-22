@@ -37,7 +37,9 @@ impl NanBox {
             }
             ValueRepr::Rat(n, d) => pack_arc(Kind::Rat, Arc::new(I64Pair(n, d))),
             ValueRepr::FatRat(n, d) => pack_arc(Kind::FatRat, Arc::new(I64Pair(n, d))),
-            ValueRepr::BigRat(n, d) => pack_arc(Kind::BigRat, Arc::new(BigRatBox(*n, *d))),
+            ValueRepr::BigRat(n, d, is_fat) => {
+                pack_arc(Kind::BigRat, Arc::new(BigRatBox(*n, *d, is_fat)))
+            }
             ValueRepr::Complex(re, im) => pack_arc(Kind::Complex, Arc::new(F64Pair(re, im))),
             ValueRepr::GenericRange {
                 start,

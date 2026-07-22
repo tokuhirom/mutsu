@@ -34,7 +34,7 @@ enum SerValue {
     Hash(HashMap<String, SerValue>),
     Rat(i64, i64),
     FatRat(i64, i64),
-    BigRat(NumBigInt, NumBigInt),
+    BigRat(NumBigInt, NumBigInt, bool),
     Complex(f64, f64),
     Set(HashSet<String>),
     Bag(HashMap<String, NumBigInt>),
@@ -159,7 +159,7 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
         }
         ValueView::Rat(n, d) => Ok(SerValue::Rat(n, d)),
         ValueView::FatRat(n, d) => Ok(SerValue::FatRat(n, d)),
-        ValueView::BigRat(n, d) => Ok(SerValue::BigRat(n.clone(), d.clone())),
+        ValueView::BigRat(n, d) => Ok(SerValue::BigRat(n.clone(), d.clone(), v.is_bigfatrat())),
         ValueView::Complex(r, i) => Ok(SerValue::Complex(r, i)),
         ValueView::Set(s, _) => Ok(SerValue::Set(s.elements.clone())),
         ValueView::Bag(b, _) => Ok(SerValue::Bag(b.counts.clone())),
@@ -342,7 +342,13 @@ fn ser_to_value(sv: SerValue) -> Value {
         ),
         SerValue::Rat(n, d) => Value::Rat(n, d),
         SerValue::FatRat(n, d) => Value::FatRat(n, d),
-        SerValue::BigRat(n, d) => Value::bigrat(n, d),
+        SerValue::BigRat(n, d, is_fat) => {
+            if is_fat {
+                Value::bigfatrat(n, d)
+            } else {
+                Value::bigrat(n, d)
+            }
+        }
         SerValue::Complex(r, i) => Value::Complex(r, i),
         SerValue::Set(s) => Value::set(s),
         SerValue::Bag(b) => Value::bag_big(b),

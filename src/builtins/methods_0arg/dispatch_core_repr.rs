@@ -145,6 +145,8 @@ pub(super) fn dispatch(
                 ))))
             } else if method == "gist" {
                 Some(Ok(Value::str(target.to_string_value())))
+            } else if target.is_bigfatrat() {
+                Some(Ok(Value::str(format!("FatRat.new({}, {})", n, d))))
             } else {
                 Some(Ok(Value::str(raku_value(target))))
             }

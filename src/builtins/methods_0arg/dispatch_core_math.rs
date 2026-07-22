@@ -3,7 +3,7 @@
 /// NFC/NFD/NFKC/NFKD
 use crate::runtime;
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value, ValueView, make_big_rat, make_rat};
+use crate::value::{RuntimeError, Value, ValueView, make_big_fat_rat, make_rat};
 use num_traits::ToPrimitive;
 
 use super::complex_math::complex_trig;
@@ -378,6 +378,10 @@ pub(super) fn dispatch(
         }
         "Rat" => Some(match target.view() {
             ValueView::Rat(_, _) => Some(Ok(target.clone())),
+            // A big FatRat coerces to a big Rat: drop the FatRat flag.
+            ValueView::BigRat(n, d) if target.is_bigfatrat() => {
+                Some(Ok(Value::bigrat(n.clone(), d.clone())))
+            }
             ValueView::BigRat(_, _) => Some(Ok(target.clone())),
             ValueView::Int(i) => Some(Ok(make_rat(i, 1))),
             ValueView::Num(f) => {
@@ -477,11 +481,14 @@ pub(super) fn dispatch(
         "FatRat" => Some(match target.view() {
             ValueView::FatRat(_, _) => Some(Ok(target.clone())),
             ValueView::Rat(n, d) => Some(Ok(Value::fat_rat_raw(n, d))),
-            ValueView::BigRat(_, _) => Some(Ok(target.clone())),
+            // A big FatRat stays as-is; a big Rat gains the FatRat flag.
+            ValueView::BigRat(_, _) if target.is_bigfatrat() => Some(Ok(target.clone())),
+            ValueView::BigRat(n, d) => Some(Ok(Value::bigfatrat(n.clone(), d.clone()))),
             ValueView::Int(i) => Some(Ok(Value::fat_rat_raw(i, 1))),
-            ValueView::BigInt(i) => {
-                Some(Ok(make_big_rat((**i).clone(), num_bigint::BigInt::from(1))))
-            }
+            ValueView::BigInt(i) => Some(Ok(make_big_fat_rat(
+                (**i).clone(),
+                num_bigint::BigInt::from(1),
+            ))),
             ValueView::Num(f) => {
                 if f.is_nan() {
                     Some(Ok(Value::fat_rat_raw(0, 0)))

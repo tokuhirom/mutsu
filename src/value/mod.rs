@@ -902,9 +902,11 @@ pub fn make_big_fat_rat(num: NumBigInt, den: NumBigInt) -> Value {
         d = -d;
     }
     if let (Some(n_i64), Some(d_i64)) = (n.to_i64(), d.to_i64()) {
-        Value::Rat(n_i64, d_i64)
+        // A FatRat that reduces into i64 range stays a FatRat (its identity is
+        // not lost just because the current value is small).
+        Value::FatRat(n_i64, d_i64)
     } else {
-        Value::bigrat(n, d)
+        Value::bigfatrat(n, d)
     }
 }
 
@@ -1161,7 +1163,15 @@ pub(in crate::value) enum ValueRepr {
     Hash(Gc<HashData>, bool),
     Rat(i64, i64),
     FatRat(i64, i64),
-    BigRat(Box<NumBigInt>, Box<NumBigInt>),
+    /// A rational whose numerator or denominator overflows i64, stored as
+    /// big integers. The `bool` is the FatRat flag: `true` when this is a
+    /// (raku) `FatRat` (unlimited precision, full `.Str` expansion,
+    /// `FatRat.new(..)` `.raku`), `false` for a plain big `Rat` (rounded
+    /// `.Str` digit budget). Both flavours share this one variant because
+    /// they must behave identically for arithmetic and value equality — only
+    /// display, `.^name`, `.raku`, `.WHICH`, and eqv consult the flag. Read
+    /// it via `Value::is_bigfatrat()`.
+    BigRat(Box<NumBigInt>, Box<NumBigInt>, bool),
     Complex(f64, f64),
     /// Set (immutable) or SetHash (mutable). The bool is `true` for mutable (SetHash).
     Set(crate::gc::Gc<SetData>, bool),
@@ -1448,8 +1458,8 @@ impl Value {
         Value::from_repr(ValueRepr::FatRat(n, d))
     }
     #[inline]
-    pub(in crate::value) fn BigRat(n: Box<NumBigInt>, d: Box<NumBigInt>) -> Value {
-        Value::from_repr(ValueRepr::BigRat(n, d))
+    pub(in crate::value) fn BigRat(n: Box<NumBigInt>, d: Box<NumBigInt>, is_fat: bool) -> Value {
+        Value::from_repr(ValueRepr::BigRat(n, d, is_fat))
     }
     #[inline]
     pub(in crate::value) fn Complex(re: f64, im: f64) -> Value {
