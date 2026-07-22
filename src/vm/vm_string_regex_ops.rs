@@ -462,6 +462,13 @@ pub(super) fn normalize_subst_replacement(template: &str) -> String {
         };
         match next {
             '\\' => {
+                // Keep the escaped backslash INTACT (both chars). The downstream
+                // interpolation pass (`interpolate_subst_replacement_with_closures`,
+                // run once per match) performs the single `\\` → `\` collapse.
+                // Collapsing it here as well double-unescaped it: `\\$0` became
+                // `\$0`, and interpolation then read the `\$` as an escaped `$` and
+                // dropped the backslash entirely (`S:g/(x)/\\$0/` lost its `\`).
+                out.push('\\');
                 out.push('\\');
                 chars.next();
             }

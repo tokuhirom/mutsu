@@ -625,11 +625,27 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
   and fix sketch are in §8.16.
 - file: `src/value/value_methods_c.rs` (Match builder), regex capture-commit path
 
-### T-056 — test_fail: Codepoint [P5quotemeta]  [impact: 1 dist]
-- dists: P5quotemeta
-- e.g. base=1 pass=0 fail=1 die=0 | t/01-basic.rakutest: Codepoint 0 [0]
-- repro: _(fill in — quotemeta over codepoints; check baseline first)_
-- file: _(suspected parser/runtime file)_
+### T-056 — test_fail: Codepoint [P5quotemeta]  [impact: 1 dist]  — ONE ROOT CAUSE FIXED (PR `fix-subst-replacement-double-backslash`); one deferred
+- dists: P5quotemeta (5756 tests: raku 5756/5756)
+- The module is `S:g/ ( <[ …\x[…] ]> ) /\\$0/` — escape each matched char with a
+  backslash. TWO root causes; the test alternates a direct-arg and a `# using $_` form.
+- **ROOT CAUSE 1 — FIXED: `\\$0` replacement dropped the backslash.** `S:g/(x)/\\$0/`
+  yielded `x`, not `\x`. The replacement was double-unescaped: `normalize_subst_replacement`
+  collapsed `\\`→`\`, then `interpolate_subst_replacement_with_closures` read the resulting
+  `\$` as an escaped `$` and dropped the backslash. Fix: normalize keeps `\\` intact and
+  lets the single interpolation pass do the `\\`→`\` collapse (also fixes `\\n`, `\\\\`,
+  and any `\\`-before-sigil). This halves the failures (5756 → 2879) — the direct-arg
+  cases now pass. Pin: `t/subst-replacement-escaped-backslash.t`.
+  File: `src/vm/vm_string_regex_ops.rs::normalize_subst_replacement`.
+- **ROOT CAUSE 2 — DEFERRED (deep, optimizer-dependent, poor ROI): `CALLER::LEXICAL::<$_>`
+  topic access.** The no-arg `multi sub quotemeta(--> Str:D) { quotemeta CALLER::LEXICAL::<$_> }`
+  reads the caller's topic; mutsu returns `Nil`/empty, so every `# using $_` subtest fails.
+  mutsu has no `CALLER::LEXICAL::<…>` resolution (returns Nil for any name). This is fragile
+  even in raku: a same-file/`-I lib` repro returns `Rakudo::Internals::LoweredAwayLexical`
+  (raku lowers the caller `$_` away); only the *precompiled/installed* module boundary keeps
+  it live, which is what makes the real test pass. Implementing a general
+  `CALLER::LEXICAL::<$var>` that walks the dynamic caller frame is a distinct, deep feature.
+- file: DONE (root cause 1) — src/vm/vm_string_regex_ops.rs; remaining — `CALLER::LEXICAL::<>`.
 
 ### T-057 — test_die batch (seed-555, un-triaged)  [impact: several dists]
 - dists (each its own root cause; triage individually before claiming, confirm the
