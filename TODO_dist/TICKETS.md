@@ -67,11 +67,13 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
   `Data::MessagePack`. These are dependency-resolution/install issues, not parse bugs.
 - file: DONE (parse) — parser/primary/regex/lit.rs; remaining — external deps
 
-### T-009 — parse_error: Runtime error: Failed to parse module 'X': X::Syntax::Confused: Strange text after block (missing semicolon or comma?)  [impact: 1 dist]
+### T-009 — parse_error [XML::Canonical]  [impact: 1 dist]  — STALE (parse fixed; blocked on missing dep `XML`, same as raku)
 - dists: XML::Canonical
-- e.g. `XML::Canonical`: XML::Canonical: Runtime error: Failed to parse module 'XML::Canonical': X::Syntax::Confused: Strange text after block (missing semicolon or comma?)
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
+- **STALE:** the "Strange text after block" parse error no longer reproduces — mutsu
+  parses `lib/XML/Canonical.rakumod` cleanly. Neither mutsu nor raku can *load* it in
+  the sweep environment because its dependency `XML` is not installed (both fail
+  identically with "Could not find XML in: (module repositories)"). Not a mutsu bug;
+  low ROI until `XML` is available. Verified 2026-07-22 with the current binary.
 
 ### T-012 — parse_error: expected statement: expected expected statement: expected expected statement: expected expected statement: expected use   [impact: 1 dist]
 - dists: App::IRC::Log
