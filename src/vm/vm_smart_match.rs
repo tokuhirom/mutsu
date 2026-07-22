@@ -92,8 +92,9 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
     }
 
     match (left.view(), right.view()) {
-        // Whatever on RHS always matches
-        (_, ValueView::Whatever) => Some(true),
+        // Whatever / HyperWhatever on RHS always matches (`$x ~~ (**)` is True for
+        // any value — a bare `**` pattern matches everything, like `*`).
+        (_, ValueView::Whatever | ValueView::HyperWhatever) => Some(true),
 
         // Junction ~~ Junction/Mu type: a Junction IS a Junction, don't autothread
         (ValueView::Junction { .. }, ValueView::Package(name))
