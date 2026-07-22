@@ -20,7 +20,7 @@ pub(crate) use attr_checks::{
 // Shared token / braced-body helpers used across submodules.
 pub(crate) use token_body::{
     consume_raw_braced_body, inject_implicit_rule_ws, inject_separator_ws, normalize_token_pattern,
-    parse_raw_braced_regex_body, parse_token_like_name,
+    parse_raw_braced_regex_body, parse_token_like_name, sym_adverb_inner,
 };
 
 // Shared declarator helpers used across submodules.
