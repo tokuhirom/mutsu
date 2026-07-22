@@ -495,6 +495,21 @@ impl Interpreter {
             return Ok(value);
         }
 
+        // A lazy value (a `gather`/`take` coroutine, a lazy map/grep pipeline)
+        // must be reified before an *eager-container* coercion reads its elements:
+        // `sub f(--> Array(Seq)) { gather { take 2; take 3 } }` returns `[2, 3]`,
+        // not `[]`. Force it into an eager Seq (still `.WHAT` Seq, so an already-
+        // passed `(Seq)` source constraint stays satisfied). Only for Array/List
+        // targets — a `Seq(...)`/plain `--> Seq` coercion keeps its laziness (the
+        // no-paren case returns early above and never reaches here).
+        let value = if matches!(base_target, "Array" | "List")
+            && let ValueView::LazyList(list) = value.view()
+        {
+            Value::seq(self.force_lazy_list_bridge(&list)?)
+        } else {
+            value
+        };
+
         // Try to coerce the value
         let coerced = self.try_coerce_value_for_return(base_target, value.clone())?;
 
