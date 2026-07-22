@@ -160,15 +160,26 @@ impl Interpreter {
                 } else {
                     let mut result = Vec::with_capacity(args.len());
                     for arg in &args {
-                        let idx = match arg.view() {
-                            ValueView::Int(i) => Some(i as usize),
-                            ValueView::Num(n) => Some(n as usize),
-                            _ => None,
+                        // Expand each argument to zero or more 0-based indices, in
+                        // order: a plain number is a single index, while a Range
+                        // (`3..6`) contributes every index it spans, so
+                        // `.slice(0, 3..6, 8)` gathers indices 0,3,4,5,6,8.
+                        let indices: Vec<usize> = match arg.view() {
+                            ValueView::Int(i) if i >= 0 => vec![i as usize],
+                            ValueView::Num(n) if n >= 0.0 => vec![n as usize],
+                            _ if arg.is_range() => crate::runtime::utils::value_to_list(arg)
+                                .iter()
+                                .filter_map(|v| match v.view() {
+                                    ValueView::Int(i) if i >= 0 => Some(i as usize),
+                                    _ => None,
+                                })
+                                .collect(),
+                            _ => Vec::new(),
                         };
-                        if let Some(i) = idx
-                            && i < items.len()
-                        {
-                            result.push(items[i].clone());
+                        for i in indices {
+                            if i < items.len() {
+                                result.push(items[i].clone());
+                            }
                         }
                     }
                     Some(Ok(Value::seq_arc(std::sync::Arc::new(result))))
