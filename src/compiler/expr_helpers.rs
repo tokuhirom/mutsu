@@ -587,8 +587,15 @@ impl Compiler {
             self.emit_outer_var_access(bare_name, depth);
             return;
         }
-        // $DYNAMIC:: variable access
-        if let Some(bare_name) = name.strip_prefix("DYNAMIC::") {
+        // $DYNAMIC:: variable access. Strip every leading DYNAMIC:: layer — a
+        // repeated chain (`$DYNAMIC::DYNAMIC::...::x`) still names the dynamic var
+        // `x`; going too high just yields an undefined value (roast pseudo-6c
+        // "no guts spillage"), never a lookup for the whole chained string.
+        if name.starts_with("DYNAMIC::") {
+            let mut bare_name = name;
+            while let Some(rest) = bare_name.strip_prefix("DYNAMIC::") {
+                bare_name = rest;
+            }
             let name_idx = self.code.add_constant(Value::str(bare_name.to_string()));
             self.code.emit(OpCode::GetDynamicVar(name_idx));
             return;

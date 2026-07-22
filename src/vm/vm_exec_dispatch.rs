@@ -4436,7 +4436,10 @@ impl Interpreter {
             }
             OpCode::GetDynamicVar(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
-                let val = loan_env!(self, get_dynamic_var(name))?;
+                // An unfound dynamic via the DYNAMIC:: pseudo-package is undefined,
+                // not an error (roast pseudo-6c: `!defined($DYNAMIC::x82)`, and the
+                // "no guts spillage" deep-chain lookup must eval-live).
+                let val = loan_env!(self, get_dynamic_var(name)).unwrap_or(Value::NIL);
                 self.stack.push(val);
                 *ip += 1;
             }
