@@ -1166,45 +1166,17 @@ the backlog.
       rendering. Reasonable to keep deferring vs the §1/§6 frontier. Related: §6 (dual-store / lexical
       slot), [`array-hole-tracking-embedded`], [ADR-0001] container-repr.
 
-### 8.6 `>>.` sweep leftovers
+### 8.6 `.WHO`/`.HOW` render without their metamodel detail
 
-- Both halves of the original item are **done** (2026-07-22): the *nodality* fix (the coercers
-      `Str`, `gist`, `raku`, `perl`, `so`, `Bool`, `Numeric`, `Int`, `Rat`, `Real`, `defined`,
-      `item`, `sink`, `cache`, `lazy` were removed from `is_nodal_list_method`, so they descend to
-      the leaves and preserve the `Array` container), and the *metaobject introspectors*
-      (`.WHAT`/`.WHO`/`.HOW`/`.DEFINITE`/`.WHERE` are no longer hyper-dispatched at all — they
-      apply to the target, like Rakudo's special forms). Pin: `t/hyper-nodality.t` (24 tests).
-      See `news/2026-07.md`.
-- The `.reverse`/`.rotate` leftovers are also **done** (2026-07-22): `Any.reverse` is
-      `self.list.reverse`, so a non-Iterable reverses to a one-element Seq (`"abc".reverse` is
-      `("abc",).Seq`, not the `.flip`ped `"cba"` mutsu used to return, and `42.reverse` no longer
-      errors), while `.rotate` — which Rakudo does *not* define on `Any` — throws
-      `X::Method::NotFound` instead of returning a silent `Nil`. (`.batch` was already correct.)
-      Pin: `t/any-reverse-rotate.t`.
-- `.tree` is **done** (2026-07-22): it itemizes every node it descends into, so `(1, 2).tree`
-      is `$((1, 2).Seq)` and `.tree(n)` itemizes exactly the `n` levels it treed — which is what
-      makes `.tree(*)` identical to `.tree` (roast `S02-lists/tree.t` test 12, previously passing
-      only because *both* sides were un-itemized). Pin: `t/tree-itemization.t`.
-- [ ] Last leftover: `Supply`/`Slip`/`QuantHash` `.raku` rendering differs cosmetically
-      (`Supply()` vs `Supply.new`, `slip(3)` vs `slip(3,)`).
+- [ ] **A Stash renders as a plain `Hash`, and a `ClassHOW` without its mixin roles.**
+      `(@a>>.WHO).WHAT` is `(Hash)` where raku gives `(Stash)`, `Array.WHO` is `{}` where raku
+      lists `{:Element(Array::Element), :Shaped(Array::Shaped), ...}`, and `Array.HOW.raku` is
+      `Perl6::Metamodel::ClassHOW.new` where raku has `ClassHOW+{<anon>}+{<anon>}.new`. A
+      metamodel-fidelity gap, not a dispatch bug — surfaced by the `>>.` sweep only because the
+      introspectors happened to be in it. Low user impact; sized as its own slice.
 
-### 8.7 Bound-element immutability (mostly LANDED 2026-07-22; only `.kv` remains)
+### 8.7 `.kv` on a Hash::Agnostic role returns `()`
 
-- [x] **A hash/array element bound to an immutable value is now read-only.**
-      `%h<i> := 137; %h<i> = 666` throws (`X::AdHoc` "Cannot assign to an immutable value" for a
-      plain hash/array; `X::Assignment::RO` "Cannot modify an immutable Int (137)" for a tied
-      hash) and leaves the value `137`. Implemented via **option (b): a per-variable
-      `__mutsu_ro_index::{var}` side set** (parallel to `__mutsu_bound_index`,
-      `src/vm/vm_var_index_tracking.rs`; gated by `elem_index_meta_possible()`). A `:=` bind to an
-      immutable scalar literal (Int/BigInt/Num/Str/Bool/Rat/Complex, no named source) marks the
-      element; the element-assign chokepoints consult it and throw. Covers the plain path
-      (`exec_index_assign_expr_named_op_inner` + the `try_fast_hash_element_assign` fast path) and
-      the tied path (the instance-dispatch that routes through `ASSIGN-KEY`/`BIND-KEY`, plus the
-      tied delegation where the literal-ness is otherwise lost). Whole-container reassign and
-      `:delete` clear the markers so the element becomes writable again. Also fixed: tied
-      multi-element slice `:delete` (`%h<d e f>:delete`) now deletes each key instead of passing
-      the whole slice array as one key. Pins: `t/bound-element-readonly.t`,
-      `t/tied-hash-bound-element.t`. Clears Hash::Agnostic dist subtests 4/5/6 (dist now 21/22).
 - [ ] **`.kv` on a Hash::Agnostic role returns `()`** (raku yields the flattened k/v list) — the
       last Hash::Agnostic dist gap (subtest 13). Separate pre-existing issue: the role's
       `method kv { Seq.new(KV.new(:backend(self), :iterator(self.keys.iterator))) }` uses a custom
@@ -1320,6 +1292,36 @@ the backlog.
 - Entry: `git checkout -b feat-which-keyed-quanthash origin/main`. Files: `src/value/mod.rs`
       (`HashData`), `src/value/value_collections.rs`, `src/value/value_methods_a.rs`
       (`hash_insert_through`), `src/runtime/methods_quanthash_ctor.rs`, the `∈`/`(elem)` set-op path.
+
+### 8.11 A user instance *nested inside a container* renders as `Foo()` for `.raku` (found 2026-07-22 by the nodality sweep re-run)
+
+- [ ] **`[Foo.new].raku` is `[Foo()]`; raku gives `[Foo.new(x => 1)]`.** The instance's *own*
+      `.raku` is correct (`Foo.new(x => 1)`) — only the nested case is wrong, and it is wrong for
+      every container (`(…)`, `[…]`, `%…`, Seq, Pair value, …) and for built-in instance types too
+      (`(1.Supply, 2.Supply).raku` → mutsu `(Supply(), Supply())`, raku `(Supply.new, Supply.new)`).
+- **Root.** Container `.raku` recurses through the *pure* helper
+      `builtins::methods_0arg::raku_repr::raku_value`, which has no interpreter and therefore cannot
+      reach the class registry / `collect_public_raku_attrs`; its `_ =>` arm falls back to
+      `to_string_value()`, i.e. the gist-ish `Foo()`. The correct instance rendering lives in
+      `runtime::methods_instance_ops` (`format!("{}.new({})", …)`) and needs `&mut self`.
+      `builtin_dd` already works around exactly this by special-casing a top-level `Instance` and
+      dispatching the method (`src/runtime/builtins_eval_misc.rs:330`, comment: "would render `F()`").
+- **Fix shape — mirror `.gist`, which already solves exactly this.**
+      `src/runtime/methods_call_dispatch.rs` (~2202, `if method == "gist" && args.is_empty()`) has
+      an interpreter-side recursive renderer `gist_item(interp, value)`, gated by a
+      `collection_contains_instance(value)` predicate so any subtree with no dispatch-needing
+      element still takes the pure fast path (`runtime::gist_value`). It walks
+      Array/Seq/Slip/HyperSeq/RaceSeq/Hash/Pair/ValuePair preserving each container's bracket
+      style and dispatches `.gist` on the instance leaves — which is why `[Foo.new].gist` is
+      already correct while `.raku` is not. Do the same for `.raku` rather than the
+      thread-local-hook idea: same gating, same walk, `.raku` on the leaves. `builtin_dd`'s
+      hand-rolled top-level workaround should then collapse into it.
+- **Verify** all containers (`[Foo.new]`, `(Foo.new,)`, `%(a => Foo.new)`, `(a => Foo.new)`) and
+      the built-in instance types (`(1.Supply, 2.Supply).raku`). Medium blast radius (every
+      `.raku` of a container holding an instance changes output), so it wants its own PR with a
+      full `make roast`. Pin candidate: `t/nested-instance-raku.t`.
+- Entry: `git checkout -b fix-nested-instance-raku origin/main`. Queued for the next session
+      (agreed with the user 2026-07-22).
 
 ---
 

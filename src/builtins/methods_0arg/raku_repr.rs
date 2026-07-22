@@ -476,8 +476,16 @@ pub fn raku_value(v: &Value) -> String {
             }
         }
         ValueView::Slip(items) => {
+            if items.is_empty() {
+                return "Empty".to_string();
+            }
             let inner = items.iter().map(raku_value).collect::<Vec<_>>().join(", ");
-            format!("slip({})", inner)
+            // A one-element slip keeps the list's trailing comma: `slip(3,)`.
+            if items.len() == 1 {
+                format!("slip({},)", inner)
+            } else {
+                format!("slip({})", inner)
+            }
         }
         ValueView::Str(s) => escape_raku_str(&s),
         ValueView::Int(i) => i.to_string(),

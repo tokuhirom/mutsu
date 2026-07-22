@@ -700,7 +700,12 @@ pub(super) fn dispatch(
                 Some(Ok(Value::str_from("Empty")))
             } else {
                 let inner = items.iter().map(raku_value).collect::<Vec<_>>().join(", ");
-                Some(Ok(Value::str(format!("slip({})", inner))))
+                // A one-element slip keeps the list's trailing comma: `slip(3,)`.
+                if items.len() == 1 {
+                    Some(Ok(Value::str(format!("slip({},)", inner))))
+                } else {
+                    Some(Ok(Value::str(format!("slip({})", inner))))
+                }
             }
         }
         ValueView::Junction { .. } if method == "raku" || method == "perl" => None,
