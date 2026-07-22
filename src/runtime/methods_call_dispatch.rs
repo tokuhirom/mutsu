@@ -131,6 +131,57 @@ impl Interpreter {
             let deconted = Value::array_with_kind(items.clone(), kind.decontainerize());
             return self.call_method_with_values(deconted, method, args);
         }
+        // `List.from-iterator($it)` / `Slip`/`Array`/`Seq`: build the named
+        // container by draining a Raku Iterator. Used by custom `does Iterable`
+        // types (Hash::Agnostic's `method List { List.from-iterator(self.iterator) }`).
+        //
+        // mutsu's `.iterator` yields a materialized `Iterator` instance whose
+        // `items`/`index` attributes hold the remaining elements; `pull-one`
+        // advances by writing the bumped index back to the ITERATOR'S VARIABLE, so
+        // driving `pull-one` on this temporary (unnamed) value would never advance
+        // and would loop forever. Read the elements straight out of the instance
+        // instead; fall back to the generic list coercion for any other shape.
+        if method == "from-iterator"
+            && args.len() == 1
+            && let ValueView::Package(name) = target.view()
+            && matches!(name.resolve().as_str(), "List" | "Slip" | "Array" | "Seq")
+        {
+            let container = name.resolve();
+            let iterator = args.into_iter().next().unwrap();
+            let items: Vec<Value> = if let ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } = iterator.view()
+                && class_name == "Iterator"
+            {
+                let map = attributes.as_map();
+                let all = match map.get("items").map(|v| v.view()) {
+                    Some(ValueView::Array(values, ..)) => values.to_vec(),
+                    _ => Vec::new(),
+                };
+                let index = match map.get("index").map(|v| v.view()) {
+                    Some(ValueView::Int(i)) if i >= 0 => (i as usize).min(all.len()),
+                    _ => 0,
+                };
+                all[index..].to_vec()
+            } else {
+                crate::runtime::utils::value_to_list(&iterator)
+            };
+            return Ok(match container.as_str() {
+                "Slip" => Value::slip_arc(std::sync::Arc::new(items)),
+                "Seq" => Value::seq_arc(std::sync::Arc::new(items)),
+                "Array" => Value::array_with_kind(
+                    crate::gc::Gc::new(crate::value::ArrayData::new(items)),
+                    crate::value::ArrayKind::Array,
+                ),
+                // "List" and any fallthrough
+                _ => Value::array_with_kind(
+                    crate::gc::Gc::new(crate::value::ArrayData::new(items)),
+                    crate::value::ArrayKind::List,
+                ),
+            });
+        }
         // `Rakudo::Internals::JSON.from-json` / `.to-json`: a core Rakudo class
         // routed to the native JSON implementation (used by OpenSSL, JSON::JWT).
         if let Some(result) = self.try_rakudo_internals_json_method(&target, method, &args) {
