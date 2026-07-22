@@ -1306,12 +1306,22 @@ the backlog.
       `runtime::methods_instance_ops` (`format!("{}.new({})", …)`) and needs `&mut self`.
       `builtin_dd` already works around exactly this by special-casing a top-level `Instance` and
       dispatching the method (`src/runtime/builtins_eval_misc.rs:330`, comment: "would render `F()`").
-- **Fix shape.** Give `raku_value` a way to call back into the interpreter for `Instance` elements
-      — a scoped hook (thread-local set for the duration of a `.raku` dispatch) is the least
-      invasive; the alternative is to make container `.raku` an interpreter-side recursive walk.
-      Medium blast radius (every `.raku` of a container holding an instance changes output), so it
-      wants its own PR with a `make roast` pass. Pin candidate: `t/nested-instance-raku.t`.
-- Entry: `git checkout -b fix-nested-instance-raku origin/main`.
+- **Fix shape — mirror `.gist`, which already solves exactly this.**
+      `src/runtime/methods_call_dispatch.rs` (~2202, `if method == "gist" && args.is_empty()`) has
+      an interpreter-side recursive renderer `gist_item(interp, value)`, gated by a
+      `collection_contains_instance(value)` predicate so any subtree with no dispatch-needing
+      element still takes the pure fast path (`runtime::gist_value`). It walks
+      Array/Seq/Slip/HyperSeq/RaceSeq/Hash/Pair/ValuePair preserving each container's bracket
+      style and dispatches `.gist` on the instance leaves — which is why `[Foo.new].gist` is
+      already correct while `.raku` is not. Do the same for `.raku` rather than the
+      thread-local-hook idea: same gating, same walk, `.raku` on the leaves. `builtin_dd`'s
+      hand-rolled top-level workaround should then collapse into it.
+- **Verify** all containers (`[Foo.new]`, `(Foo.new,)`, `%(a => Foo.new)`, `(a => Foo.new)`) and
+      the built-in instance types (`(1.Supply, 2.Supply).raku`). Medium blast radius (every
+      `.raku` of a container holding an instance changes output), so it wants its own PR with a
+      full `make roast`. Pin candidate: `t/nested-instance-raku.t`.
+- Entry: `git checkout -b fix-nested-instance-raku origin/main`. Queued for the next session
+      (agreed with the user 2026-07-22).
 
 ---
 
