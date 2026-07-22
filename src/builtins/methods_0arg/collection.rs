@@ -129,6 +129,24 @@ fn extend_inverted_pairs(out: &mut Vec<Value>, key: Value, value: &Value) {
     }
 }
 
+/// Invert one list element for `.invert`: a `Pair`/`ValuePair` contributes its
+/// `value => key` entries (a list value expands to one entry per member).
+/// Returns `false` for a non-pair element so the caller can reject the whole
+/// list (raku throws `X::TypeCheck` for `(1, 2).invert`).
+fn extend_inverted_pairs_from_element(out: &mut Vec<Value>, item: &Value) -> bool {
+    match item.view() {
+        ValueView::Pair(key, value) => {
+            extend_inverted_pairs(out, Value::str(key.clone()), &value.clone());
+            true
+        }
+        ValueView::ValuePair(key, value) => {
+            extend_inverted_pairs(out, key.clone(), &value.clone());
+            true
+        }
+        _ => false,
+    }
+}
+
 fn invert_value(target: &Value) -> Option<Value> {
     let mut result = Vec::new();
     match target.view() {
@@ -172,20 +190,23 @@ fn invert_value(target: &Value) -> Option<Value> {
         ValueView::ValuePair(key, value) => {
             extend_inverted_pairs(&mut result, key.clone(), value);
         }
-        ValueView::Array(_, _) | ValueView::Seq(_) | ValueView::Slip(_) => {
+        ValueView::Array(items, _) => {
+            // Iterate the array's own elements directly, NOT via `value_to_list`:
+            // a List held in a `$` scalar (`my $l = List.new(...)`; the documented
+            // `.invert` example) is an *itemized* Array, and `value_to_list` treats
+            // an itemized array as a single element — which made `$l.invert` see one
+            // `Array`, not its `Pair`s, and throw `X::TypeCheck`. Its elements are
+            // still the pairs regardless of the itemization flag.
+            for item in items.iter() {
+                if !extend_inverted_pairs_from_element(&mut result, item) {
+                    return None;
+                }
+            }
+        }
+        ValueView::Seq(_) | ValueView::Slip(_) => {
             for item in crate::runtime::utils::value_to_list(target) {
-                match item.view() {
-                    ValueView::Pair(key, value) => {
-                        let key = key.clone();
-                        let value = value.clone();
-                        extend_inverted_pairs(&mut result, Value::str(key), &value);
-                    }
-                    ValueView::ValuePair(key, value) => {
-                        let key = key.clone();
-                        let value = value.clone();
-                        extend_inverted_pairs(&mut result, key, &value);
-                    }
-                    _ => return None,
+                if !extend_inverted_pairs_from_element(&mut result, &item) {
+                    return None;
                 }
             }
         }
@@ -803,7 +824,15 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     target.view(),
                     ValueView::Array(..) | ValueView::Seq(..) | ValueView::Slip(..)
                 ) {
-                    let got_val = crate::runtime::utils::value_to_list(target)
+                    // Report the first non-pair element's type. Iterate an Array's
+                    // own elements (an itemized `$`-held list would otherwise report
+                    // the whole `Array` here instead of the offending `Int`).
+                    let elements = if let ValueView::Array(items, _) = target.view() {
+                        items.iter().cloned().collect::<Vec<_>>()
+                    } else {
+                        crate::runtime::utils::value_to_list(target)
+                    };
+                    let got_val = elements
                         .into_iter()
                         .find(|item| {
                             !matches!(item.view(), ValueView::Pair(..) | ValueView::ValuePair(..))
