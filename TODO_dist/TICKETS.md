@@ -267,10 +267,16 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
   block whose final statement is an assignment/bind yielded Nil instead of the assigned value (the
   two-phase `pull-one { with $!k {...} else { $!k := ... } }` KV shape). Pins:
   `t/seq-new-user-iterator.t`, `t/given-when-tail-assign-value.t`. **`t/01-basic.rakutest` now exits 0.**
-- **REMAINING (02-minimal):** `my %h is MinimalHash = @pairs` where MinimalHash has a
-  `submethod TWEAK` and a minimal STORE (only AT-KEY/keys, no BIND-KEY) dies with
-  "Too many positionals passed; expected 0 arguments but got 1 in sub new" — a tied-hash
-  default-STORE + TWEAK constructor-dispatch blocker, unrelated to the `.kv`/Seq work.
+- **02-minimal FIXED (PR `fix-double-slurpy-implicit-named`).** The
+  "Too many positionals passed; expected 0 arguments but got 1 in sub new" die was NOT a
+  tied-STORE issue: `has_explicit_named_slurpy` (`src/runtime/registration.rs`) wrongly
+  treated a `**@values` (double-star slurpy POSITIONAL, `@` sigil) as a NAMED slurpy, so the
+  implicit `*%_` every method gets was suppressed and `%_` stayed `Any` instead of `{}`.
+  Hash::Agnostic's `method new(::?CLASS:U: **@values is raw) { self.bless(|%_) }` then splatted
+  a stray `Any` positional into `submethod TWEAK`. Fix = a named slurpy is `%`-sigiled only
+  (dropped the `|| pd.double_slurpy` clause). Pin: `t/double-slurpy-implicit-named.t`.
+  **Both `t/01-basic.rakutest` (22/22) and `t/02-minimal.rakutest` (11/11) now pass — T-051
+  DONE once this PR merges.**
 - NOTE: a "tied hash" feature (`my %h is CustomAssociativeClass`). Decomposes into three
   independent gaps, each fixable on its own:
   1. **tied-hash backing** — `my %h is Foo` (Foo `does Associative`) must back the variable

@@ -21,9 +21,15 @@ impl Interpreter {
     }
 
     fn has_explicit_named_slurpy(param_defs: &[ParamDef]) -> bool {
+        // A *named* slurpy is always `%`-sigiled (`*%foo` or `**%foo`). A
+        // double-star slurpy on an `@`-sigiled param (`**@values`) is a
+        // slip-preserving slurpy POSITIONAL, not a named one, so it must NOT
+        // suppress the implicit `*%_` every method otherwise gets — else `%_`
+        // stays `Any` and `self.bless(|%_)` splats a stray `Any` positional
+        // into `TWEAK`/`BUILD` (raku: `%_` is always an empty Hash here).
         param_defs
             .iter()
-            .any(|pd| pd.slurpy && (pd.name.starts_with('%') || pd.double_slurpy))
+            .any(|pd| pd.slurpy && pd.name.starts_with('%'))
     }
 
     fn implicit_method_named_slurpy_param() -> ParamDef {
