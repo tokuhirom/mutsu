@@ -473,8 +473,8 @@ impl Interpreter {
                     sigil,
                     where_constraint,
                     is_alias: _,
-                    is_our: _,
-                    is_my: _,
+                    is_our,
+                    is_my,
                     is_default,
                     is_type,
                     deprecated_message: _,
@@ -482,6 +482,18 @@ impl Interpreter {
                     unknown_traits: _,
                 } => {
                     let attr_name_str = attr_name.resolve();
+                    // A class-level (`my $.x` / `our $.x`) role attribute is NOT a
+                    // per-instance attribute: it becomes a class-level attribute on the
+                    // consuming class (accessor on the type object, `C.x`) — exactly
+                    // like `class C { my $.x }`. Record its default expr keyed by
+                    // (role, attr) and skip the per-instance attribute registration, so
+                    // no per-instance accessor shadows the class-level fallback.
+                    if *is_my || *is_our {
+                        self.registry_mut()
+                            .role_class_level_attrs
+                            .insert((name.to_string(), attr_name_str.clone()), default.clone());
+                        continue;
+                    }
                     role_def.own_attribute_names.insert(attr_name_str.clone());
                     // Carry an `is Type` container trait (`has @.a is G::A`) so it
                     // can be transferred to the consuming class at composition and
