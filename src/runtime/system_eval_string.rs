@@ -290,7 +290,10 @@ impl Interpreter {
                 .filter(|k| k.starts_with('&')),
         );
         self.env.insert("__mutsu_in_eval".to_string(), Value::TRUE);
-        self.collect_pod_blocks(trimmed);
+        // A `:key<>` colonpair (empty angle brackets) in the EVAL'd source's Pod
+        // is a fatal compile error in Raku; short-circuit before evaluating.
+        let pod_err = self.collect_pod_blocks(trimmed).err();
+        let pod_failed = pod_err.is_some();
         // Collect operator sub names so the parser recognizes them in EVAL context
         let op_names = self.collect_operator_sub_names();
         let op_assoc = self.collect_operator_assoc_map();
@@ -298,7 +301,9 @@ impl Interpreter {
         let bracketed_stmt_inner = unwrap_bracketed_statements(trimmed)
             .filter(|inner| looks_like_bracketed_statement_list(inner));
         // General case: parse and evaluate as Raku code
-        let mut result = if let Some(inner) = bracketed_stmt_inner {
+        let mut result = if let Some(err) = pod_err {
+            Err(err)
+        } else if let Some(inner) = bracketed_stmt_inner {
             // EVAL q[[ ... ]] can yield one wrapper [] around statement lists.
             self.parse_and_eval_with_operators(inner, &op_names, &op_assoc, &imported_names)
                 .or_else(|_| {
@@ -317,7 +322,8 @@ impl Interpreter {
         }
         // Fallback: parser still rejects forms like `~< foo bar >`.
         // Rewrite to an equivalent parenthesized form and try again.
-        if result.is_err()
+        if !pod_failed
+            && result.is_err()
             && let Some(rewritten) = rewrite_prefixed_angle_list(trimmed)
         {
             result = self.parse_and_eval_with_operators(
@@ -328,14 +334,16 @@ impl Interpreter {
             );
         }
         // Accept parenthesized statement lists like `(6;)` in EVAL.
-        if result.is_err()
+        if !pod_failed
+            && result.is_err()
             && let Some(inner) = unwrap_parenthesized_statements(trimmed)
         {
             result =
                 self.parse_and_eval_with_operators(inner, &op_names, &op_assoc, &imported_names);
         }
         // EVAL q[[ ... ]] sometimes carries one outer statement-list bracket pair.
-        if result.is_err()
+        if !pod_failed
+            && result.is_err()
             && bracketed_stmt_inner.is_none()
             && let Some(inner) = unwrap_bracketed_statements(trimmed)
         {
@@ -344,7 +352,8 @@ impl Interpreter {
         }
         // EVAL should accept routine declarations in snippet context.
         // If unit-scope parsing rejects a declaration, retry inside an implicit block.
-        if result.is_err()
+        if !pod_failed
+            && result.is_err()
             && trimmed.contains("sub ")
             && let Some(err) = result.as_ref().err()
             && err.message.contains("X::UnitScope::Invalid")

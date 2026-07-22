@@ -359,11 +359,23 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
   checks `&term:<G>.defined`, which now works.
 - file: `src/runtime/runtime_module.rs`, `src/runtime/runtime_module_exports.rs`
 
-### T-043 — test_fail: bad pod string  [impact: 1 dist]
-- dists: RakupodObject
-- e.g. `RakupodObject`: base=1 pass=0 fail=1 die=0 | t/1-critical.t: bad pod string
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
+### T-043 — test_fail: bad pod string  [impact: 1 dist]  — FIXED (PR `fix-pod-block-named-empty-config`)
+- dists: RakupodObject (t/1-critical.t: 6/10 → 10/10)
+- Two general bugs behind the RakupodObject failures:
+  1. **`=begin pod ... =end pod` produced a bare `Pod::Block`** instead of a
+     `Pod::Block::Named` named `"pod"` (raku: `$=pod[0].^name eq 'Pod::Block::Named'`,
+     `.name eq 'pod'`). `isa-ok $good, Pod::Block::Named` failed. Fixed in
+     `io_pod_entries.rs` / `io_pod_blocks.rs`: the `target == "pod"` arm now calls
+     `make_pod_named_with_config("pod", contents, config)` (config parsed from the
+     directive tail), so `=begin pod :attr<x>` carries config too.
+  2. **`:key<>` (empty angle brackets) in Pod config was silently accepted** as an
+     empty string; raku treats it as a fatal compile error
+     ("Invalid key (K) / colonpair (:K<>) combo in pod config string"), so
+     `dies-ok { extract-rakupod-object $bad-pod }` failed. `parse_pod_config`
+     (`io_pod_config.rs`) now records the offending colonpair in a thread-local;
+     `collect_pod_blocks` returns `Result` and surfaces it — `run.rs` propagates it
+     (top-level SORRY) and `system_eval_string.rs` short-circuits EVAL. `:key< >`
+     (a space) stays valid. Pin: `t/pod-block-named-and-empty-config.t`.
 
 ### T-044 — test_fail: can we access existing key (N)  [impact: 1 dist]
 - dists: Hash::str
