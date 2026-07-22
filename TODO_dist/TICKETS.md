@@ -66,12 +66,6 @@ _34 open tickets._
 - repro: _(fill in a minimal repro + raku baseline before fixing)_
 - file: _(suspected parser/runtime file)_
 
-### T-023 — runtime_error: multiple candidates for required method X  [impact: 1 dist]
-- dists: UpRooted
-- e.g. `UpRooted`: UpRooted::Reader::MySQL: X::Role::Composition::Conflict: multiple candidates for required method 'quote-constant'
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
-
 ### T-024 — test_die [Adverb::Eject]  [impact: 1 dist]
 - dists: Adverb::Eject
 - e.g. `Adverb::Eject`: base=1 pass=0 fail=0 die=1 | t/01-basic.rakutest: 
@@ -272,6 +266,17 @@ _(move tickets here with `[claim: <branch>]` when you start)_
 
 ## Done
 
+- **T-023** (#5117) — a role composition *diamond*: a stubbed (required) role
+  method (`method !quote-constant { !!! }` in `Quoter`, reached via `FQN`) and its
+  concrete implementation (in `DBIConnection`) both flowed through one shared
+  intermediate role (`DBISelect`) into the class, so the same `MethodDef`,
+  re-tagged with each intermediate's `role_origin`, was counted twice and wrongly
+  raised `X::Role::Composition::Conflict: multiple candidates for required method`.
+  `resolve_class_stub_requirements` now deduplicates candidates by their `body`
+  Arc pointer + positional signature, collapsing a diamond duplicate while keeping
+  genuinely-distinct candidates (two `multi method f(Int)`, `::?ROLE:U:` vs `:D:`,
+  a parametric role composed at two type args). **UpRooted::Reader::MySQL /
+  ::PostgreSQL now load**, matching raku. Pin: t/role-diamond-stub-concrete.t.
 - **T-030** (#PENDING) — Sys::Hostname's `hostname` sub is
   `nqp::gethostname.subst(...)`, but mutsu had no `nqp::gethostname` op, so it
   died with "Could not find symbol '&gethostname' in 'nqp'". Added the op (via the

@@ -78,6 +78,33 @@ impl Interpreter {
         Self::is_stub_routine_body(&def.body)
     }
 
+    /// Remove duplicate method candidates that are the *same* underlying
+    /// definition reaching a class through multiple composition paths (a role
+    /// diamond). Identity is the method's deepest source role (`original_role`,
+    /// falling back to `role_origin`) plus its positional signature; keeping the
+    /// first occurrence. Methods with distinct source roles are preserved, so a
+    /// genuine same-name-different-role conflict is still detected.
+    fn dedup_method_candidates(defs: &mut Vec<MethodDef>) {
+        // A method reaching the class through multiple composition paths (a role
+        // diamond) is the *same* `MethodDef` cloned once per path, so all its
+        // clones share the same `body` Arc allocation. Deduplicate by that
+        // pointer identity, paired with the positional signature: two
+        // genuinely-distinct definitions own separate allocations and survive
+        // (`multi method f(Int)` twice, or `::?ROLE:U:` vs `:D:` differing only by
+        // invocant), and the same parametric role composed at two different type
+        // arguments (`does R[Str] does R[Int]`) shares the body Arc but keeps a
+        // distinct signature, so it survives too -- only a true diamond duplicate
+        // (same body *and* same signature) is collapsed.
+        let mut seen: std::collections::HashSet<(*const Vec<Stmt>, Vec<String>)> =
+            std::collections::HashSet::new();
+        defs.retain(|def| {
+            seen.insert((
+                std::sync::Arc::as_ptr(&def.body),
+                Self::method_positional_signature(def),
+            ))
+        });
+    }
+
     pub(super) fn method_positional_signature(def: &MethodDef) -> Vec<String> {
         def.param_defs
             .iter()
@@ -182,6 +209,17 @@ impl Interpreter {
                     concrete.push(def);
                 }
             }
+            // A method can reach the class through multiple composition paths (a
+            // diamond: `class does Selector` where `Selector does DBIConn`, and
+            // DBIConn's method is also pulled in directly). The *same* underlying
+            // definition then appears several times, each tagged with a different
+            // intermediate `role_origin`. Deduplicate candidates by the method's
+            // deepest source role (`original_role`, falling back to `role_origin`)
+            // plus its positional signature, so a diamond-shared method counts
+            // once -- while genuinely distinct same-named methods from different
+            // roles still collide.
+            Self::dedup_method_candidates(&mut stubs);
+            Self::dedup_method_candidates(&mut concrete);
             if !stubs.is_empty() {
                 for required in &stubs {
                     let matching: Vec<&MethodDef> = concrete
