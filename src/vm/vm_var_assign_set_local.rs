@@ -1095,16 +1095,15 @@ impl Interpreter {
             // aliases the array element). The type constraint applies to the
             // *contained* value, so deref the cell before matching -- otherwise the
             // check inspects the container itself and reports the bogus "got Any".
-            let check_val = if is_bind {
-                val.deref_container()
-            } else {
-                val.clone()
-            };
-            if !check_val.is_nil() && !self.type_matches_value(&constraint, &check_val) {
+            // Only the (rare) bind path derefs; the common assignment path borrows
+            // `val` directly with no clone.
+            let bind_derefed = is_bind.then(|| val.deref_container());
+            let check_val = bind_derefed.as_ref().unwrap_or(&val);
+            if !check_val.is_nil() && !self.type_matches_value(&constraint, check_val) {
                 return Err(runtime::utils::type_check_assignment_typed_error(
                     name,
                     &constraint,
-                    &check_val,
+                    check_val,
                 ));
             }
             if !val.is_nil() {
