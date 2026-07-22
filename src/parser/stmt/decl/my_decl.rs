@@ -1,6 +1,7 @@
 use super::super::super::expr::expression;
 use super::super::super::helpers::{ws, ws1};
 use super::super::super::parse_result::{PError, PResult};
+use super::super::idents::qualified_ident;
 use super::super::{ident, keyword, var_name};
 use super::destructure::parse_destructuring_decl;
 use super::helpers::{
@@ -438,7 +439,10 @@ fn parse_variable_traits<'a>(
         let mut r = input;
         while let Some(after_is) = keyword("is", r) {
             let (r2, _) = ws1(after_is)?;
-            let (r2, trait_name) = ident(r2)?;
+            // Use a `::`-aware parser so a qualified class trait like
+            // `my %h is Hash::str` keeps its full name (plain `ident` would
+            // truncate it to `Hash`, breaking tied-hash backing).
+            let (r2, trait_name) = qualified_ident(r2)?;
             if trait_name == "readonly" {
                 return Err(PError::fatal(
                     "X::Comp::Trait::Unknown: Unknown variable trait 'is readonly'".to_string(),
