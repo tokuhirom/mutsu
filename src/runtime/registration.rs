@@ -80,10 +80,10 @@ impl Interpreter {
 
     /// Remove duplicate method candidates that are the *same* underlying
     /// definition reaching a class through multiple composition paths (a role
-    /// diamond). Identity is the method's deepest source role (`original_role`,
-    /// falling back to `role_origin`) plus its positional signature; keeping the
-    /// first occurrence. Methods with distinct source roles are preserved, so a
-    /// genuine same-name-different-role conflict is still detected.
+    /// diamond). Identity is the method body's `Arc` pointer plus its positional
+    /// signature (see the body comment for why), keeping the first occurrence.
+    /// Genuinely-distinct definitions own separate allocations and are preserved,
+    /// so a same-name-different-role conflict is still detected.
     fn dedup_method_candidates(defs: &mut Vec<MethodDef>) {
         // A method reaching the class through multiple composition paths (a role
         // diamond) is the *same* `MethodDef` cloned once per path, so all its
@@ -213,11 +213,10 @@ impl Interpreter {
             // diamond: `class does Selector` where `Selector does DBIConn`, and
             // DBIConn's method is also pulled in directly). The *same* underlying
             // definition then appears several times, each tagged with a different
-            // intermediate `role_origin`. Deduplicate candidates by the method's
-            // deepest source role (`original_role`, falling back to `role_origin`)
-            // plus its positional signature, so a diamond-shared method counts
-            // once -- while genuinely distinct same-named methods from different
-            // roles still collide.
+            // intermediate `role_origin`. `dedup_method_candidates` collapses those
+            // by the shared body `Arc` pointer + positional signature, so a
+            // diamond-shared method counts once -- while genuinely distinct
+            // same-named methods from different roles still collide.
             Self::dedup_method_candidates(&mut stubs);
             Self::dedup_method_candidates(&mut concrete);
             if !stubs.is_empty() {
