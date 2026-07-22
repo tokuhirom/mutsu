@@ -2136,23 +2136,23 @@ impl Interpreter {
 
             // -- Bitwise --
             OpCode::BitAnd => {
-                self.exec_bit_and_op();
+                self.exec_bit_and_op()?;
                 *ip += 1;
             }
             OpCode::BitOr => {
-                self.exec_bit_or_op();
+                self.exec_bit_or_op()?;
                 *ip += 1;
             }
             OpCode::BitXor => {
-                self.exec_bit_xor_op();
+                self.exec_bit_xor_op()?;
                 *ip += 1;
             }
             OpCode::BitShiftLeft => {
-                self.exec_bit_shift_left_op();
+                self.exec_bit_shift_left_op()?;
                 *ip += 1;
             }
             OpCode::BitShiftRight => {
-                self.exec_bit_shift_right_op();
+                self.exec_bit_shift_right_op()?;
                 *ip += 1;
             }
             OpCode::BoolBitOr => {

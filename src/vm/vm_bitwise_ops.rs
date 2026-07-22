@@ -3,9 +3,13 @@ use super::*;
 use num_traits::ToPrimitive;
 
 impl Interpreter {
-    pub(super) fn exec_bit_and_op(&mut self) {
+    pub(super) fn exec_bit_and_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // A Failure operand (e.g. `"A".Int` inside `$n +& ...`) must throw its
+        // contained exception, not be silently coerced to 0.
+        Self::throw_if_failure(&left)?;
+        Self::throw_if_failure(&right)?;
         let (l, r) = runtime::coerce_numeric(left, right);
         let result = match (l.view(), r.view()) {
             (ValueView::Int(a), ValueView::Int(b)) => Value::int(a & b),
@@ -19,11 +23,14 @@ impl Interpreter {
             _ => Value::int(0),
         };
         self.stack.push(result);
+        Ok(())
     }
 
-    pub(super) fn exec_bit_or_op(&mut self) {
+    pub(super) fn exec_bit_or_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        Self::throw_if_failure(&left)?;
+        Self::throw_if_failure(&right)?;
         let (l, r) = runtime::coerce_numeric(left, right);
         let result = match (l.view(), r.view()) {
             (ValueView::Int(a), ValueView::Int(b)) => Value::int(a | b),
@@ -37,11 +44,14 @@ impl Interpreter {
             _ => Value::int(0),
         };
         self.stack.push(result);
+        Ok(())
     }
 
-    pub(super) fn exec_bit_xor_op(&mut self) {
+    pub(super) fn exec_bit_xor_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        Self::throw_if_failure(&left)?;
+        Self::throw_if_failure(&right)?;
         let (l, r) = runtime::coerce_numeric(left, right);
         let result = match (l.view(), r.view()) {
             (ValueView::Int(a), ValueView::Int(b)) => Value::int(a ^ b),
@@ -55,9 +65,10 @@ impl Interpreter {
             _ => Value::int(0),
         };
         self.stack.push(result);
+        Ok(())
     }
 
-    pub(super) fn exec_bit_shift_left_op(&mut self) {
+    pub(super) fn exec_bit_shift_left_op(&mut self) -> Result<(), RuntimeError> {
         fn shift_left_i64(a: i64, b: i64) -> Value {
             if b < 0 {
                 let shift = b.unsigned_abs();
@@ -86,6 +97,8 @@ impl Interpreter {
 
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        Self::throw_if_failure(&left)?;
+        Self::throw_if_failure(&right)?;
         let (l, r) = runtime::coerce_numeric(left, right);
         let result = match (l.view(), r.view()) {
             (ValueView::Int(a), ValueView::Int(b)) => shift_left_i64(a, b),
@@ -103,9 +116,10 @@ impl Interpreter {
             }
         };
         self.stack.push(result);
+        Ok(())
     }
 
-    pub(super) fn exec_bit_shift_right_op(&mut self) {
+    pub(super) fn exec_bit_shift_right_op(&mut self) -> Result<(), RuntimeError> {
         fn shift_right_i64(a: i64, b: i64) -> Value {
             if b < 0 {
                 let shift = b.unsigned_abs();
@@ -138,6 +152,8 @@ impl Interpreter {
 
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        Self::throw_if_failure(&left)?;
+        Self::throw_if_failure(&right)?;
         let (l, r) = runtime::coerce_numeric(left, right);
         let result = match (l.view(), r.view()) {
             (ValueView::Int(a), ValueView::Int(b)) => shift_right_i64(a, b),
@@ -155,6 +171,7 @@ impl Interpreter {
             }
         };
         self.stack.push(result);
+        Ok(())
     }
 
     pub(super) fn exec_bool_bit_or_op(&mut self) {
