@@ -67,11 +67,22 @@ impl Interpreter {
         // `Instance`/`Supply` keep their interpreter semantics -> fall back. The
         // arg parsing, shape dispatch, and orchestration are then the single
         // shared `sort_value_generic` (same code the interpreter runs).
+        //
+        // Set/Bag/Mix belong here too: `sort_value_generic` decomposes them into
+        // `key => weight` pairs and re-enters, so they are as "plain eager" as a
+        // Hash. Leaving them out sent them to the interpreter's `InterpCaller`,
+        // which cannot invoke a compiled `WhateverCode` mapper — every key came
+        // back `Nil`, all elements compared equal, and `.sort(-*.value)` returned
+        // the container's (unordered) iteration order. Pinned by
+        // `t/sort-setty-whatever.t`.
         match target.view() {
             ValueView::Array(_, ArrayKind::Array | ArrayKind::List)
             | ValueView::Seq(_)
             | ValueView::Slip(_)
             | ValueView::Hash(_)
+            | ValueView::Set(..)
+            | ValueView::Bag(..)
+            | ValueView::Mix(..)
             | ValueView::Range(..)
             | ValueView::RangeExcl(..)
             | ValueView::RangeExclStart(..)

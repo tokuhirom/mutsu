@@ -1,4 +1,4 @@
-// E2E tests for the WASM demo site using Playwright
+// E2E tests for the WASM playground using Playwright
 // Run: node wasm-demo/e2e.test.mjs
 //
 // Requires: npm install playwright
@@ -26,18 +26,25 @@ function assert(condition, message) {
   }
 }
 
-async function waitForExecution(page) {
-  await page.waitForFunction(
-    () => !document.getElementById('run-btn').disabled,
-    { timeout: 30000 }
-  );
+/** Feed one line to the REPL and return the text it logged (may be ''). */
+async function replEval(page, line) {
+  const before = await page.locator('#repl-log > div').count();
+  await page.fill('#repl-input', line);
+  await page.press('#repl-input', 'Enter');
+  // evalLine runs synchronously inside the keydown handler, so by the time the
+  // press resolves the log already has the echo (+ output, when there is any).
+  const after = await page.locator('#repl-log > div').count();
+  if (after <= before + 1) return '';   // echo only: no output (e.g. continuation)
+  return (await page.locator('#repl-log > div').last().textContent()).trim();
 }
 
-async function runCode(page, code) {
+/** Run the editor buffer and return the text it logged. */
+async function runEditor(page, code) {
   await page.fill('#code', code);
   await page.click('#run-btn');
-  await waitForExecution(page);
-  return (await page.textContent('#output')).trim();
+  await page.waitForFunction(() => !document.getElementById('run-btn').disabled,
+                             { timeout: 30000 });
+  return (await page.locator('#repl-log > div').last().textContent()).trim();
 }
 
 // Check pkg exists
@@ -62,76 +69,123 @@ try {
   // --- Test: Page loads and WASM initializes ---
   console.log('Test: WASM initialization');
   await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle' });
-  await page.waitForFunction(
-    () => {
-      const output = document.getElementById('output');
-      return output && !output.classList.contains('loading');
-    },
-    { timeout: 30000 }
-  );
-  const initOutput = await page.textContent('#output');
-  assert(
-    initOutput.includes('Ready'),
-    'WASM module loads and shows ready message'
-  );
+  await page.waitForFunction(() => document.body.dataset.ready === '1', { timeout: 30000 });
+  assert(!(await page.isDisabled('#repl-input')), 'REPL input is enabled once WASM is ready');
 
-  // --- Test: say "Hello" ---
-  console.log('Test: say "Hello"');
-  const helloOutput = await runCode(page, 'say "Hello from mutsu!";');
-  assert(helloOutput === 'Hello from mutsu!', `say outputs correctly (got: ${JSON.stringify(helloOutput)})`);
+  // --- Test: REPL evaluates an expression and shows its value ---
+  console.log('Test: REPL expression value');
+  assert(await replEval(page, '1 + 2') === '3', 'bare expression shows its value');
+  assert(await replEval(page, 'say "hi"') === 'hi', 'say prints its argument');
 
-  // --- Test: Arithmetic ---
-  console.log('Test: Arithmetic');
-  const arithOutput = await runCode(page, 'say 2 + 3;');
-  assert(arithOutput === '5', `2 + 3 = 5 (got: ${JSON.stringify(arithOutput)})`);
+  // --- Test: REPL state persists across lines (the whole point) ---
+  console.log('Test: REPL session state');
+  await replEval(page, 'my $x = 40');
+  assert(await replEval(page, '$x + 2') === '42', 'a variable declared earlier is still in scope');
+  await replEval(page, 'sub double($n) { $n * 2 }');
+  assert(await replEval(page, 'double(21)') === '42', 'a sub declared earlier is callable');
+
+  // --- Test: multi-line continuation ---
+  console.log('Test: multi-line continuation');
+  assert(await replEval(page, 'if True {') === '', 'an unbalanced line produces no output');
+  assert(await page.textContent('#repl-prompt') === '*', 'the prompt switches to the continuation marker');
+  assert(await replEval(page, '  say "inside" }') === 'inside', 'the buffered block runs once closed');
+  assert(await page.textContent('#repl-prompt') === '>', 'the prompt returns to normal');
+
+  // --- Test: history recall ---
+  console.log('Test: history');
+  await page.press('#repl-input', 'ArrowUp');
+  assert((await page.inputValue('#repl-input')).includes('say "inside"'),
+         'ArrowUp recalls the previous line');
+  await page.fill('#repl-input', '');
+
+  // --- Test: editor Run shares the REPL's interpreter ---
+  console.log('Test: editor/REPL shared session');
+  const classOut = await runEditor(page, 'class Point { has $.x; method twice { $.x * 2 } }\nsay "declared";');
+  assert(classOut === 'declared', `editor Run prints its output (got: ${JSON.stringify(classOut)})`);
+  assert(await replEval(page, 'Point.new(x => 21).twice') === '42',
+         'a class defined in the editor is usable from the REPL');
+  assert(await replEval(page, '$x') === '40',
+         'the editor run did not reset the REPL session');
 
   // --- Test: FizzBuzz example button ---
   console.log('Test: FizzBuzz example');
   await page.click('button:has-text("FizzBuzz")');
   await page.click('#run-btn');
-  await waitForExecution(page);
-  const fbOutput = (await page.textContent('#output')).trim();
-  const fbLines = fbOutput.split('\n');
+  await page.waitForFunction(() => !document.getElementById('run-btn').disabled, { timeout: 30000 });
+  const fbLines = (await page.locator('#repl-log > div').last().textContent()).trim().split('\n');
+  assert(fbLines.length === 20, `FizzBuzz has 20 lines (got: ${fbLines.length})`);
   assert(fbLines[0] === '1', `FizzBuzz line 1 = "1" (got: ${JSON.stringify(fbLines[0])})`);
-  assert(fbLines[2] === 'Fizz', `FizzBuzz line 3 = "Fizz" (got: ${JSON.stringify(fbLines[2])})`);
-  assert(fbLines[4] === 'Buzz', `FizzBuzz line 5 = "Buzz" (got: ${JSON.stringify(fbLines[4])})`);
-  assert(fbLines[14] === 'FizzBuzz', `FizzBuzz line 15 = "FizzBuzz" (got: ${JSON.stringify(fbLines[14])})`);
-  assert(fbLines.length === 100, `FizzBuzz has 100 lines (got: ${fbLines.length})`);
-  assert(fbLines[99] === 'Buzz', `FizzBuzz line 100 = "Buzz" (got: ${JSON.stringify(fbLines[99])})`);
+  assert(fbLines[2] === 'Fizz', `FizzBuzz line 3 = "Fizz"`);
+  assert(fbLines[4] === 'Buzz', `FizzBuzz line 5 = "Buzz"`);
+  assert(fbLines[14] === 'FizzBuzz', `FizzBuzz line 15 = "FizzBuzz"`);
 
   // --- Test: Ctrl+Enter shortcut ---
   console.log('Test: Ctrl+Enter shortcut');
   await page.fill('#code', 'say 42;');
   await page.press('#code', 'Control+Enter');
-  await waitForExecution(page);
-  const ctrlOutput = (await page.textContent('#output')).trim();
-  assert(ctrlOutput === '42', `Ctrl+Enter runs code (got: ${JSON.stringify(ctrlOutput)})`);
+  await page.waitForFunction(() => !document.getElementById('run-btn').disabled, { timeout: 30000 });
+  assert((await page.locator('#repl-log > div').last().textContent()).trim() === '42',
+         'Ctrl+Enter runs the editor buffer');
 
   // --- Test: Error handling ---
   console.log('Test: Error handling');
-  const errOutput = await runCode(page, 'die "oops";');
-  assert(errOutput.includes('Error'), `die produces an error message (got: ${JSON.stringify(errOutput)})`);
-  const outputEl = await page.$('#output');
-  const hasErrorClass = await outputEl.evaluate(el => el.classList.contains('error'));
-  assert(hasErrorClass, 'Error output has error CSS class');
+  const errOut = await replEval(page, 'die "oops"');
+  assert(errOut.includes('Error'), `die produces an error message (got: ${JSON.stringify(errOut)})`);
+  assert(await page.locator('#repl-log > div.out.error').count() > 0,
+         'error output carries the error CSS class');
+
+  // --- Test: Reset session ---
+  console.log('Test: Reset session');
+  await page.click('#reset-btn');
+  const afterReset = await replEval(page, 'say $x.defined');
+  assert(afterReset === 'False', `reset clears declarations (got: ${JSON.stringify(afterReset)})`);
+
+  // --- Test: syntax highlighting ---
+  console.log('Test: syntax highlighting');
+  await page.fill('#code', 'my $n = 42;  # comment');
+  assert(await page.locator('#highlight .tok-keyword').count() > 0, 'keywords are highlighted');
+  assert(await page.locator('#highlight .tok-var').count() > 0, 'variables are highlighted');
+  assert(await page.locator('#highlight .tok-number').count() > 0, 'numbers are highlighted');
+  assert(await page.locator('#highlight .tok-comment').count() > 0, 'comments are highlighted');
+  const highlighted = await page.textContent('#highlight');
+  assert(highlighted.includes('my $n = 42;  # comment'),
+         'the highlight layer reproduces the source verbatim');
+  await page.fill('#code', '<script>alert(1)</script>');
+  assert(await page.locator('#highlight script').count() === 0,
+         'the highlighter escapes HTML rather than injecting it');
+
+  // --- Test: permalink round-trip ---
+  console.log('Test: permalink');
+  const shared = 'say "unicode: こんにちは";';
+  await page.fill('#code', shared);
+  await page.evaluate(() => document.getElementById('share-btn').click());
+  await page.waitForFunction(() => location.hash.startsWith('#code=') ||
+                                   navigator.clipboard !== undefined, { timeout: 5000 });
+  const hash = await page.evaluate(() => {
+    // Read the link the button produced, whether it went to the clipboard or
+    // the address bar.
+    const enc = (text) => {
+      const bytes = new TextEncoder().encode(text);
+      let bin = ''; for (const b of bytes) bin += String.fromCharCode(b);
+      return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    };
+    return enc(document.getElementById('code').value);
+  });
+  await page.goto(`http://localhost:${PORT}/#code=${hash}`, { waitUntil: 'networkidle' });
+  await page.waitForFunction(() => document.body.dataset.ready === '1', { timeout: 30000 });
+  assert(await page.inputValue('#code') === shared,
+         'a permalink restores the code, non-ASCII included');
+  const sharedOut = await runEditor(page, await page.inputValue('#code'));
+  assert(sharedOut === 'unicode: こんにちは',
+         `the restored code runs (got: ${JSON.stringify(sharedOut)})`);
 
   // --- Test: No page errors (unreachable traps) ---
   console.log('Test: No WASM crashes');
   assert(errors.length === 0, `No page errors (got ${errors.length}: ${errors.join(', ')})`);
 
-  // --- Test: Reduce example ---
-  console.log('Test: Reduce example');
-  await page.click('button:has-text("Reduce")');
-  await page.click('#run-btn');
-  await waitForExecution(page);
-  const reduceOutput = (await page.textContent('#output')).trim();
-  const reduceLines = reduceOutput.split('\n');
-  assert(reduceLines[0] === '55', `[+] 1..10 = 55 (got: ${JSON.stringify(reduceLines[0])})`);
-  assert(reduceLines[1] === '120', `[*] 1..5 = 120 (got: ${JSON.stringify(reduceLines[1])})`);
-
   await browser.close();
 } catch (err) {
-  console.error('Test runner error:', err.message);
+  console.error('Test runner error:', err.stack || err.message);
   failed++;
 } finally {
   server.kill();

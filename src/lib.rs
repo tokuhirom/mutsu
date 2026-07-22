@@ -13,6 +13,7 @@ pub(crate) mod precomp;
 mod rakuast;
 #[cfg(feature = "native")]
 pub mod repl;
+pub(crate) mod repl_core;
 mod runtime;
 pub mod symbol;
 mod token_kind;
@@ -99,4 +100,101 @@ pub fn evaluate(code: &str) -> String {
         Ok(output) => output,
         Err(err) => format!("Error: {}", err.message),
     }
+}
+
+/// A stateful REPL session for the WASM playground.
+///
+/// Unlike [`evaluate`], which spins up a fresh [`Interpreter`] per call, a
+/// `Repl` keeps one interpreter alive so declarations persist across lines —
+/// and the editor pane shares that same interpreter, so you can define a class
+/// in the editor and poke at it from the prompt.
+///
+/// Line handling (bracket-continuation, last-value gist display) is delegated
+/// to [`repl_core::process_line`], the same core the CLI REPL drives.
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub struct Repl {
+    interpreter: Interpreter,
+    accumulated: String,
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+impl Repl {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Repl {
+        console_error_panic_hook::set_once();
+        let mut interpreter = Interpreter::new();
+        interpreter.set_program_path("<repl>");
+        Repl {
+            interpreter,
+            accumulated: String::new(),
+        }
+    }
+
+    /// Feed one line to the session.
+    ///
+    /// Returns a JSON object string: `{"output": String, "incomplete": bool}`.
+    /// When `incomplete` is true the line was buffered (unbalanced brackets)
+    /// and the caller should show a continuation prompt.
+    #[wasm_bindgen(js_name = evalLine)]
+    pub fn eval_line(&mut self, line: &str) -> String {
+        let (result, display) =
+            repl_core::process_line(&mut self.interpreter, &mut self.accumulated, line);
+        let incomplete = matches!(result, repl_core::LineResult::Continue);
+        json_result(&display.unwrap_or_default(), incomplete)
+    }
+
+    /// Run a whole script against the session's interpreter (the editor pane's
+    /// Run button). Returns the same JSON shape as [`Repl::eval_line`], with
+    /// `incomplete` always false.
+    #[wasm_bindgen(js_name = evalBlock)]
+    pub fn eval_block(&mut self, code: &str) -> String {
+        self.accumulated.clear();
+        self.interpreter.clear_output();
+        let out = match self.interpreter.run(code) {
+            Ok(_) => {
+                let output = self.interpreter.output().to_string();
+                self.interpreter.clear_output();
+                self.interpreter.last_value.take();
+                output
+            }
+            Err(err) => {
+                let partial = self.interpreter.output().to_string();
+                self.interpreter.clear_output();
+                format!("{}Error: {}\n", partial, err.message)
+            }
+        };
+        json_result(&out, false)
+    }
+
+    /// Drop all session state and start over with a fresh interpreter.
+    pub fn reset(&mut self) {
+        *self = Repl::new();
+    }
+
+    /// True when a previous line is still buffered awaiting its closing
+    /// bracket (used to pick the `>` vs `*` prompt).
+    #[wasm_bindgen(js_name = isPending)]
+    pub fn is_pending(&self) -> bool {
+        !self.accumulated.is_empty()
+    }
+}
+
+#[cfg(feature = "wasm")]
+impl Default for Repl {
+    fn default() -> Self {
+        Repl::new()
+    }
+}
+
+/// Serialize a REPL step as `{"output": ..., "incomplete": ...}`. Hand-rolled
+/// to keep the wasm bundle free of a serde derive for two fields.
+#[cfg(feature = "wasm")]
+fn json_result(output: &str, incomplete: bool) -> String {
+    format!(
+        "{{\"output\":{},\"incomplete\":{}}}",
+        serde_json::Value::String(output.to_string()),
+        incomplete
+    )
 }

@@ -1,0 +1,255 @@
+//! I/O-free core of the REPL loop.
+//!
+//! This lives outside the `native` feature gate so that both the rustyline
+//! CLI REPL (`crate::repl`) and the WASM playground (`crate::WasmRepl`) drive
+//! the exact same line-accumulation and value-display semantics.
+
+use crate::Interpreter;
+use crate::builtins::native_method_0arg;
+
+/// Check if the input has unbalanced brackets, suggesting more input is needed.
+pub(crate) fn is_incomplete(input: &str) -> bool {
+    let mut depth_brace = 0i32;
+    let mut depth_paren = 0i32;
+    let mut depth_bracket = 0i32;
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut prev = '\0';
+
+    for ch in input.chars() {
+        if in_single_quote {
+            if ch == '\'' && prev != '\\' {
+                in_single_quote = false;
+            }
+            prev = ch;
+            continue;
+        }
+        if in_double_quote {
+            if ch == '"' && prev != '\\' {
+                in_double_quote = false;
+            }
+            prev = ch;
+            continue;
+        }
+        match ch {
+            '\'' => in_single_quote = true,
+            '"' => in_double_quote = true,
+            '{' => depth_brace += 1,
+            '}' => depth_brace -= 1,
+            '(' => depth_paren += 1,
+            ')' => depth_paren -= 1,
+            '[' => depth_bracket += 1,
+            ']' => depth_bracket -= 1,
+            _ => {}
+        }
+        prev = ch;
+    }
+
+    depth_brace > 0 || depth_paren > 0 || depth_bracket > 0
+}
+
+/// Result of processing a single REPL line.
+pub(crate) enum LineResult {
+    /// Need more input (incomplete expression).
+    Continue,
+    /// Line was processed (output may have been produced).
+    Done,
+}
+
+/// Process a single line of REPL input. Returns the display string (if any)
+/// and whether more input is needed.
+///
+/// This function is the testable core of the REPL loop — it has no I/O
+/// dependencies beyond the `Interpreter`.
+pub(crate) fn process_line(
+    interpreter: &mut Interpreter,
+    accumulated: &mut String,
+    line: &str,
+) -> (LineResult, Option<String>) {
+    if accumulated.is_empty() {
+        *accumulated = line.to_string();
+    } else {
+        accumulated.push('\n');
+        accumulated.push_str(line);
+    }
+
+    if is_incomplete(accumulated) {
+        return (LineResult::Continue, None);
+    }
+
+    // Skip empty or whitespace-only input
+    if accumulated.trim().is_empty() {
+        accumulated.clear();
+        return (LineResult::Done, None);
+    }
+
+    interpreter.clear_output();
+    // Drop any value left over from the previous line. `run` reports a line's
+    // value as "top of stack, else the last topic set" (`run_inner`), and both
+    // survive between REPL lines — so a statement that pushes nothing and sets
+    // no topic (`sub f { 1 }`, `class C { }`, `my regex r { ... }`) used to
+    // re-display the *previous* line's result as if the declaration had
+    // returned it. Only the REPL re-enters `run` on one interpreter, so this
+    // reset belongs here rather than in `run` itself.
+    interpreter.last_value.take();
+    interpreter.last_topic_value.take();
+    let display = match interpreter.run(accumulated) {
+        Ok(_) => {
+            let output = interpreter.output().to_string();
+            let had_output = interpreter.has_output_emitted();
+            let display = if !output.is_empty() {
+                Some(output)
+            } else if !had_output
+                && let Some(value) = interpreter.last_value.take()
+                && !value.is_nil()
+            {
+                let text = if let Some(Ok(gist)) =
+                    native_method_0arg(&value, crate::symbol::Symbol::intern("gist"))
+                {
+                    format!("{}\n", gist.to_string_value())
+                } else {
+                    format!("{}\n", value.to_string_value())
+                };
+                Some(text)
+            } else {
+                None
+            };
+            interpreter.clear_output();
+            display
+        }
+        Err(err) => {
+            // If it looks like incomplete input (parse error), try accumulating
+            if err.code().is_some_and(|c| c.is_parse()) && is_incomplete(accumulated) {
+                return (LineResult::Continue, None);
+            }
+            Some(format!("Error: {}\n", err.message))
+        }
+    };
+
+    accumulated.clear();
+    (LineResult::Done, display)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Helper: feed lines into the REPL core and collect all display output.
+    fn repl_session(lines: &[&str]) -> Vec<String> {
+        let mut interpreter = Interpreter::new();
+        interpreter.set_program_path("<repl-test>");
+        let mut accumulated = String::new();
+        let mut outputs = Vec::new();
+
+        for line in lines {
+            let (_result, display) = process_line(&mut interpreter, &mut accumulated, line);
+            if let Some(text) = display {
+                outputs.push(text);
+            }
+        }
+        outputs
+    }
+
+    #[test]
+    fn test_say_prints_once() {
+        let out = repl_session(&["say 'hello'"]);
+        assert_eq!(out, vec!["hello\n"]);
+    }
+
+    #[test]
+    fn test_say_does_not_repeat_on_next_input() {
+        let out = repl_session(&["say 'hello'", "3"]);
+        assert_eq!(out, vec!["hello\n", "3\n"]);
+    }
+
+    #[test]
+    fn test_empty_line_produces_no_output() {
+        let out = repl_session(&["say 'hello'", "", "say 'world'"]);
+        assert_eq!(out, vec!["hello\n", "world\n"]);
+    }
+
+    #[test]
+    fn test_expression_shows_value() {
+        let out = repl_session(&["1 + 2"]);
+        assert_eq!(out, vec!["3\n"]);
+    }
+
+    #[test]
+    fn test_variable_persists_across_lines() {
+        let out = repl_session(&["my $x = 42", "say $x + 1"]);
+        // Variable declared in one line is accessible in the next
+        assert!(out.iter().any(|s| s.contains("43")));
+    }
+
+    #[test]
+    fn test_multiline_block() {
+        let out = repl_session(&["if True {", "  say 'yes'", "}"]);
+        assert_eq!(out, vec!["yes\n"]);
+    }
+
+    /// Helper: same as repl_session but with immediate_stdout enabled
+    /// (matches actual REPL behavior). Display strings only include
+    /// last_value output; say/print goes directly to stdout.
+    fn repl_session_immediate(lines: &[&str]) -> Vec<String> {
+        let mut interpreter = Interpreter::new();
+        interpreter.set_program_path("<repl-test>");
+        interpreter.set_immediate_stdout(true);
+        let mut accumulated = String::new();
+        let mut outputs = Vec::new();
+
+        for line in lines {
+            let (_result, display) = process_line(&mut interpreter, &mut accumulated, line);
+            if let Some(text) = display {
+                outputs.push(text);
+            }
+        }
+        outputs
+    }
+
+    #[test]
+    fn test_for_loop_then_expression() {
+        // After a for loop with say, a bare expression should still show
+        let out = repl_session_immediate(&["for 1..3 { .say }", "3"]);
+        assert_eq!(out, vec!["3\n"]);
+    }
+
+    #[test]
+    fn test_for_loop_no_extra_return_value() {
+        // for loop with say should not display return value (matches Rakudo)
+        let out = repl_session(&["for 1..3 { .say }"]);
+        assert_eq!(out, vec!["1\n2\n3\n"]);
+    }
+
+    #[test]
+    fn test_say_then_expression_immediate() {
+        // say output + subsequent expression, both with immediate_stdout
+        let out = repl_session_immediate(&["say 'hi'", "1+2"]);
+        assert_eq!(out, vec!["3\n"]);
+    }
+
+    #[test]
+    fn test_whitespace_only_line_ignored() {
+        let out = repl_session(&["   ", "  \t  "]);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn test_declaration_does_not_replay_previous_value() {
+        // `sub`/`class`/`my regex` produce no value; the REPL must not echo the
+        // value the *previous* line produced.
+        let out = repl_session(&[
+            "my $b = 7",
+            "sub f { 1 }",
+            "class C { }",
+            "my regex r { \\d+ }",
+            "42",
+        ]);
+        assert_eq!(out, vec!["7\n", "42\n"]);
+    }
+
+    #[test]
+    fn test_multiline_paren_continuation() {
+        let out = repl_session(&["say (1,", "2).elems"]);
+        assert_eq!(out, vec!["2\n"]);
+    }
+}

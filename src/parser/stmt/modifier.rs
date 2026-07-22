@@ -210,6 +210,13 @@ fn stmt_ends_with_block(stmt: &Stmt) -> bool {
     match stmt {
         Stmt::Expr(e) => expr_ends_with_block(e),
         Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => expr_ends_with_block(expr),
+        // `my regex/token/rule NAME { ... }` is a block-form declaration, so it
+        // ends the statement. Without this, the next line's `if` was absorbed as
+        // a statement modifier and the declaration was re-parented into the
+        // conditional's then-branch — meaning the rule was not yet declared when
+        // the condition's own regex referenced it (`<NAME>` then fell back to a
+        // method call on Match). Pinned by `t/regex-decl-stmt-terminator.t`.
+        Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. } => true,
         _ => false,
     }
 }
