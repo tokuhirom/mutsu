@@ -33,6 +33,11 @@ impl Interpreter {
     ///
     /// Note: `Package` is NOT included because type objects are singletons —
     /// two variables holding the same Package should be considered `=:=`.
+    /// `Nil` IS included: two *variable/element reads* both yielding Nil are
+    /// distinct containers (uninitialized scalars store Nil pre-PLAN-8.5-step-3),
+    /// so they must not compare identical. The `X =:= Nil` literal form is
+    /// compiled with `flags == 0` instead (see `compile_binary`'s `=:=` arm),
+    /// which routes to `values_identical` where Nil == Nil holds.
     fn is_value_non_reference(left: &Value, right: &Value) -> bool {
         fn is_non_ref(v: &Value) -> bool {
             matches!(

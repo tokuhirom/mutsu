@@ -1196,9 +1196,18 @@ the backlog.
       `roast/S02-types/nil.t` — 67 tests, whitelisted, the authoritative spec; **always run it with
       `MUTSU_FUDGE=1`** or its `#?rakudo todo` tests false-fail) are recorded in the memory note
       `project-nil-any-identity-knot`. Read it before any re-attempt; do **not** re-attempt as a small slice.
-- **Cost/benefit: LOW-value, HIGH-cost.** The doc-diff payoff is only niche uninitialized-value
-      rendering. Reasonable to keep deferring vs the §1/§6 frontier. Related: §6 (dual-store / lexical
-      slot), [`array-hole-tracking-embedded`], [ADR-0001] container-repr.
+- **Campaign step 1 landed 2026-07-23** (branch `nil-any-campaign`): `.List` materializes array
+      holes as literal `Nil` (via the new canonical `ArrayData::hole_at` predicate; `is default` does
+      not change `.List` — only `.Slip`), argless `.head` reads the store raw (hole → `Nil`), and
+      `Nil` was dropped from the `=:=` fresh-container short-circuit so a List element holding
+      literal `Nil` satisfies `=:= Nil`. This decouples `roast/S32-array/delete.t` subtest 33 from
+      the eqv crutch (it now passes on real Nils). Pin: `t/nil-list-holes.t` (16 assertions,
+      raku-verified). Remaining steps: 2 (store `Any` at every "stored Nil should be Any" site),
+      3 (uninit `my $x` = Any — the compiler/closure-cell knot), 4 (remove the eqv crutch LAST),
+      5 (`(my $x = Nil)` yields the container value Any).
+- **Cost/benefit: LOW-value, HIGH-cost** (for the remaining steps 2-5). The doc-diff payoff is only
+      niche uninitialized-value rendering. Related: §6 (dual-store / lexical slot),
+      [`array-hole-tracking-embedded`], [ADR-0001] container-repr.
 
 ### 8.6 `.WHO`/`.HOW` render without their metamodel detail — mostly done; internals leftover
 

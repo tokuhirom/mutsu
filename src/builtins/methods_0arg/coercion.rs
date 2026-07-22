@@ -250,13 +250,25 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 let vec: Vec<Value> = if let Some(def) = items.default.as_deref() {
                     items
                         .iter()
-                        .map(|v| match v.view() {
-                            ValueView::Package(n) if n == "Any" => def.clone(),
-                            _ => v.clone(),
+                        .enumerate()
+                        .map(|(i, v)| {
+                            if items.hole_at(i) {
+                                def.clone()
+                            } else {
+                                v.clone()
+                            }
                         })
                         .collect()
                 } else {
-                    items.to_vec()
+                    // No custom default: holes read as `Any`. A deleted slot
+                    // stores literal `Nil`, which must still surface as `Any`.
+                    items
+                        .iter()
+                        .map(|v| match v.view() {
+                            ValueView::Nil => Value::package(crate::symbol::Symbol::intern("Any")),
+                            _ => v.clone(),
+                        })
+                        .collect()
                 };
                 Some(Ok(Value::slip_arc(std::sync::Arc::new(vec))))
             }
@@ -339,7 +351,23 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             // A shaped array falls through to the slow path, which flattens all
             // dimensions and replaces Nil slots with the type-default.
             ValueView::Array(..) if crate::runtime::utils::is_shaped_array(target) => None,
-            ValueView::Array(items, _) => Some(Ok(Value::array(items.to_vec()))),
+            ValueView::Array(items, _) => {
+                // `.List` materializes array holes as literal `Nil` — even when
+                // the array has an `is default(...)` value (Rakudo semantics:
+                // only `.Slip` substitutes the default).
+                let vec: Vec<Value> = items
+                    .iter()
+                    .enumerate()
+                    .map(|(i, v)| {
+                        if items.hole_at(i) {
+                            Value::NIL
+                        } else {
+                            v.clone()
+                        }
+                    })
+                    .collect();
+                Some(Ok(Value::array(vec)))
+            }
             ValueView::GenericRange {
                 start,
                 end,

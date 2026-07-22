@@ -164,6 +164,25 @@ impl ArrayData {
     pub fn has_type_meta(&self) -> bool {
         self.value_type.is_some() || self.key_type.is_some() || self.declared_type.is_some()
     }
+
+    /// Whether index `i` is a hole (a deleted slot or an autovivification
+    /// gap), as opposed to an explicitly-assigned element. The canonical
+    /// predicate mirrored by `:exists`/`:k`/`:p`: a literal `Nil` slot is a
+    /// deleted hole; a type-object slot (`Any`, or the element type of a
+    /// typed array) is a gap unless the embedded `initialized` set records
+    /// an explicit assignment (`None` means bulk-constructed — no gaps).
+    pub fn hole_at(&self, i: usize) -> bool {
+        match self.items.get(i).map(Value::view) {
+            None => true,
+            Some(crate::value::ValueView::Nil) => true,
+            Some(crate::value::ValueView::Package(name)) => {
+                let is_gap_marker =
+                    name == "Any" || self.value_type.as_deref().is_some_and(|t| name == t);
+                is_gap_marker && self.initialized.as_ref().is_some_and(|s| !s.contains(&i))
+            }
+            Some(_) => false,
+        }
+    }
 }
 
 impl std::ops::Deref for ArrayData {

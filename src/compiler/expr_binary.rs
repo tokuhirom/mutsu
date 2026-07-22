@@ -496,6 +496,20 @@ impl Compiler {
 
         // Special-case: =:= (container identity)
         if matches!(op, TokenKind::Ident(name) if name == "=:=") {
+            // A literal `Nil` operand (`$x =:= Nil`, `@list[$i] =:= Nil`):
+            // Nil is a singleton, never a container, so this is a pure value
+            // identity check — a read that yields literal Nil (e.g. a `.List`
+            // hole element) IS Nil. Emit with no fresh-container flags so the
+            // VM falls through to `values_identical`. Two *reads* that both
+            // happen to yield Nil stay non-identical via the fresh flags below.
+            let left_lit_nil = matches!(left, Expr::Literal(lit) if lit.is_nil());
+            let right_lit_nil = matches!(right, Expr::Literal(lit) if lit.is_nil());
+            if left_lit_nil || right_lit_nil {
+                self.compile_expr(left);
+                self.compile_expr(right);
+                self.code.emit(OpCode::ContainerEq(0));
+                return;
+            }
             // Resolve variable names from both sides, including through
             // list-indexing patterns like ($foo, "x")[0] which preserves
             // the container of $foo.

@@ -86,7 +86,14 @@ pub(super) fn dispatch(
             // method — defer to runtime dispatch so the user accessor wins
             // over the list-like fallback.
             ValueView::Instance { .. } => return None,
-            ValueView::Array(items, ..) => Some(Ok(items.first().cloned().unwrap_or(Value::NIL))),
+            // Argless `.head` reads the backing store raw (Rakudo's Array.head
+            // candidate): a hole at index 0 yields `Nil`, not the vivified
+            // `Any` that iteration (`for @a`, `.head(n)`) would produce.
+            ValueView::Array(items, ..) => Some(Ok(if items.hole_at(0) {
+                Value::NIL
+            } else {
+                items.first().cloned().unwrap_or(Value::NIL)
+            })),
             ValueView::Range(start, end) => {
                 if start > end {
                     Some(Ok(Value::NIL))
