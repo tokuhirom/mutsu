@@ -1102,12 +1102,13 @@ the backlog.
       134 raku-drift.** The ranked, tracked backlog is [docs/doc-diff-backlog.md](docs/doc-diff-backlog.md)
       (the QA analogue of BLOCKERS.md; re-sweep to refresh). Still TODO: a real-module corpus, and growing
       the non-determinism / error-example skip heuristics as new noise shows up.
-- [ ] **First backlog item from the run: sequence/lazy argument truncation** — `1, 3 ... 11` (and lazy
-      `gather`/`Seq`) passed as a routine/method argument is materialised to only its first two
-      elements (`@foo.prepend: 1,3...11` → `[1 3 …]`; `600.polymod(lazy …)` → `(600)`). One root cause,
-      several doc examples. Other confirmed findings: autoviv-hole `.List`/`.Slip` renders `(Any)`
-      instead of `Nil`; empty-`Array` `pop` does not throw `X::Cannot::Empty`; lazy `.elems` does not
-      throw `X::Cannot::Lazy`.
+- [ ] **Leftover from the first backlog batch (re-verified 2026-07-22):** the sequence/lazy
+      argument truncation (`@foo.prepend: 1,3...11`, `600.polymod(lazy …)`), `.Slip` hole
+      rendering, empty-`Array` `pop` → `X::Cannot::Empty`, and lazy `.elems` → `X::Cannot::Lazy`
+      all match raku now. The one remaining divergence: **autoviv-hole `.List` renders `(Any)`
+      where raku gives `Nil`** (`my @a; @a[2]=5; @a.List` → raku `(Nil Nil 5)`; `@a.head` → raku
+      `Nil`). Needs per-element hole tracking through the List view — same territory as §8.5 /
+      [`array-hole-tracking-embedded`]; do not chase as a display-only patch.
 - **Campaign status (paused 2026-07-22).** After many slice sessions the *shallow,
       interp-shaped* wins (missing method aliases, single-behaviour mismatches) are largely
       **exhausted**. A fresh full-corpus re-sweep on the current `main` is the first step to resume —
@@ -1181,14 +1182,18 @@ the backlog.
       rendering. Reasonable to keep deferring vs the §1/§6 frontier. Related: §6 (dual-store / lexical
       slot), [`array-hole-tracking-embedded`], [ADR-0001] container-repr.
 
-### 8.6 `.WHO`/`.HOW` render without their metamodel detail
+### 8.6 `.WHO`/`.HOW` render without their metamodel detail — mostly done; internals leftover
 
-- [ ] **A Stash renders as a plain `Hash`, and a `ClassHOW` without its mixin roles.**
-      `(@a>>.WHO).WHAT` is `(Hash)` where raku gives `(Stash)`, `Array.WHO` is `{}` where raku
-      lists `{:Element(Array::Element), :Shaped(Array::Shaped), ...}`, and `Array.HOW.raku` is
-      `Perl6::Metamodel::ClassHOW.new` where raku has `ClassHOW+{<anon>}+{<anon>}.new`. A
-      metamodel-fidelity gap, not a dispatch bug — surfaced by the `>>.` sweep only because the
-      introspectors happened to be in it. Low user impact; sized as its own slice.
+- The dispatch half landed 2026-07-22: `.WHO` on a *builtin value* (`42.WHO`, `@a.WHO`) now
+      returns the type's `Stash` (was a plain `Hash`, so `(@a>>.WHO).WHAT` was `(Hash)`), and
+      `Stash.raku` renders the symbols hash literal (`{:Bar(Foo::Bar)}`, `{}`) instead of
+      `Stash.new`. Pin: `t/who-stash.t`.
+- [ ] **Leftover (Rakudo-metamodel-internal, cosmetic):** the *content* of a builtin type's
+      stash — raku's `Array.WHO` lists implementation subclasses
+      `{:Element(Array::Element), :Shaped(Array::Shaped), ...}` that do not exist in mutsu —
+      and `Array.HOW.raku`'s anonymous-mixin rendering (`ClassHOW+{<anon>}+{<anon>}.new`).
+      Faking either means hardcoding Rakudo internals; only worth doing if a real program is
+      ever found to introspect them.
 
 ### 8.7 `.kv` on a Hash::Agnostic role returns `()`
 

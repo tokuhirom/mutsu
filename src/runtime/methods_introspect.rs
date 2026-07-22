@@ -347,7 +347,9 @@ impl Interpreter {
         if let ValueView::CustomType(c) = target.view() {
             return Ok(self.package_stash_value(&c.name.resolve()));
         }
-        Ok(Value::hash_with_data(Value::hash_arc(HashMap::new())))
+        // Builtin values (Int, Str, Array, ...) also answer .WHO with their
+        // type's Stash, same as the type object (raku: 42.WHO.^name is Stash).
+        Ok(self.package_stash_value(value_type_name(target)))
     }
 
     /// Dispatch .WHY method — returns a Pod::Block::Declarator instance

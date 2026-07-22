@@ -1005,6 +1005,20 @@ impl Interpreter {
                             "Supplier.new(taplist => Supplier::TapList.new)".to_string(),
                         ));
                     }
+                    // A Stash is a Hash subclass in Rakudo: its .raku is the
+                    // symbols hash literal (`{:Bar(Foo::Bar)}`), not `Stash.new`.
+                    // (.gist/.Str — the package name — are handled on the fast
+                    // path in dispatch_core_repr.)
+                    "Stash" if method == "raku" || method == "perl" => {
+                        let symbols = attributes
+                            .as_map()
+                            .get("symbols")
+                            .cloned()
+                            .unwrap_or_else(|| Value::hash(HashMap::new()));
+                        return Ok(Value::str(
+                            crate::builtins::methods_0arg::raku_repr::raku_value(&symbols),
+                        ));
+                    }
                     _ => {}
                 }
                 // Collect public attributes for .raku representation. Mark this
