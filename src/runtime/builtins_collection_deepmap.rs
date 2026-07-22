@@ -68,7 +68,20 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn builtin_roundrobin(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+    pub(super) fn builtin_roundrobin(&self, raw_args: &[Value]) -> Result<Value, RuntimeError> {
+        // Split off the `:slip` adverb (a `slip => Bool` named arg); the rest are
+        // the lists-of-lists streams. With `:slip`, the tuples are concatenated
+        // into one flat Seq instead of a Seq of tuples.
+        let mut slip = false;
+        let mut positional: Vec<Value> = Vec::with_capacity(raw_args.len());
+        for a in raw_args {
+            match a.view() {
+                ValueView::Pair(k, v) if k == "slip" => slip = v.truthy(),
+                ValueView::ValuePair(k, v) if k.to_string_value() == "slip" => slip = v.truthy(),
+                _ => positional.push(a.clone()),
+            }
+        }
+        let args = &positional[..];
         if args.is_empty() {
             return Ok(Value::seq(Vec::new()));
         }
@@ -126,6 +139,16 @@ impl Interpreter {
             rounds.push(Value::array(tuple));
         }
 
+        if slip {
+            let flat: Vec<Value> = rounds
+                .iter()
+                .flat_map(|r| match r.view() {
+                    ValueView::Array(items, _) => items.iter().cloned().collect::<Vec<_>>(),
+                    _ => vec![r.clone()],
+                })
+                .collect();
+            return Ok(Value::seq(flat));
+        }
         Ok(Value::seq(rounds))
     }
 
