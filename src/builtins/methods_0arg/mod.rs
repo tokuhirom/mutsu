@@ -11,7 +11,7 @@ pub(crate) mod collection;
 pub(crate) mod complex_math;
 mod dispatch_core_coerce;
 mod dispatch_core_list;
-mod dispatch_core_math;
+pub(crate) mod dispatch_core_math;
 mod dispatch_core_numeric;
 pub(crate) mod dispatch_core_range;
 mod dispatch_core_repr;

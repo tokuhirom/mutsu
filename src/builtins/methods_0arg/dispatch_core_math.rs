@@ -82,14 +82,33 @@ fn str_to_rat(s: &str) -> Value {
 }
 
 /// Recursively apply `.tree` to nested arrays.
-fn tree_recursive(items: &[Value]) -> Vec<Value> {
-    items
+/// `.tree` on an Iterable is `$(self.map(*.tree).Seq)`: every node it descends
+/// into becomes an *itemized* Seq, so `(1, (2, 3)).tree.raku` is
+/// `$((1, $((2, 3).Seq)).Seq)`. A non-Iterable is its own tree.
+///
+/// `depth` is how many levels still get treed — `.tree(1)` itemizes only the
+/// top node and leaves its children as they are, `.tree(0)` is the identity,
+/// and `.tree` / `.tree(*)` are `usize::MAX`. Shared with the `.tree(...)`
+/// argument forms in `runtime::…::dispatch_tree`.
+pub(crate) fn tree_to_depth(v: &Value, depth: usize) -> Value {
+    if depth == 0 {
+        return v.clone();
+    }
+    let children = match v.view() {
+        ValueView::Array(inner, ..) => inner.to_vec(),
+        ValueView::Seq(inner) | ValueView::Slip(inner) => inner.to_vec(),
+        ValueView::Hash(_)
+        | ValueView::Range(..)
+        | ValueView::RangeExcl(..)
+        | ValueView::RangeExclStart(..)
+        | ValueView::RangeExclBoth(..) => crate::runtime::utils::value_to_list(v),
+        _ => return v.clone(),
+    };
+    let treed = children
         .iter()
-        .map(|v| match v.view() {
-            ValueView::Array(inner, ..) => Value::array(tree_recursive(&inner)),
-            _ => v.clone(),
-        })
-        .collect()
+        .map(|c| tree_to_depth(c, depth - 1))
+        .collect();
+    Value::scalar(Value::seq(treed))
 }
 
 /// Levenshtein edit distance between two strings (by Unicode scalar), used for
@@ -576,10 +595,7 @@ pub(super) fn dispatch(
                 }
             }
         }),
-        "tree" => Some(match target.view() {
-            ValueView::Array(items, ..) => Some(Ok(Value::array(tree_recursive(&items)))),
-            _ => Some(Ok(target.clone())),
-        }),
+        "tree" => Some(Some(Ok(tree_to_depth(target, usize::MAX)))),
         "encode" => {
             let s = target.to_string_value();
             let bytes: Vec<Value> = s.as_bytes().iter().map(|&b| Value::int(b as i64)).collect();
