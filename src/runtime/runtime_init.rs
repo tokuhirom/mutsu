@@ -2117,6 +2117,8 @@ impl Interpreter {
             encoding_registry: Self::builtin_encodings(),
             skip_pseudo_method_native: None,
             dispatch_ambiguous: false,
+            rakuseen_active: Vec::new(),
+            rakuseen_cycle_hit: std::collections::HashSet::new(),
             pending_proxy_subclass_attr: None,
             multi_dispatch_stack: Vec::new(),
             method_dispatch_stack: Vec::new(),

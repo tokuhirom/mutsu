@@ -1202,6 +1202,16 @@ pub struct Interpreter {
     /// specific (an ambiguous dispatch). Consumed by the caller to raise an
     /// `X::Multi::Ambiguous` error instead of silently picking one.
     pub(crate) dispatch_ambiguous: bool,
+    /// Ids currently being rendered by `Mu.rakuseen($id, &code)` — the
+    /// cyclic-structure guard for `.raku`/`.gist`. A repeated id means a cycle:
+    /// `rakuseen` returns a backreference name instead of re-running `&code`
+    /// (which would recurse forever), and the first (outer) occurrence wraps its
+    /// result in `(my \NAME = ...)`.
+    pub(crate) rakuseen_active: Vec<String>,
+    /// Ids for which a cycle backreference was emitted during the current render;
+    /// the outer `rakuseen` for that id consumes the flag to add the `(my \NAME =
+    /// ...)` binding wrapper.
+    pub(crate) rakuseen_cycle_hit: std::collections::HashSet<String>,
     /// Pending Proxy subclass attribute reference for writeback on mutating methods.
     /// Set when reading a Proxy subclass attribute; consumed by subsequent .push/.pop etc.
     pub(crate) pending_proxy_subclass_attr: Option<(crate::value::ProxySubclassAttrs, String)>,
