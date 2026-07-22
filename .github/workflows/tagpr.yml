@@ -1,9 +1,21 @@
 name: tagpr
 
+# tagpr has no knob to throttle how often it refreshes the release PR: on a
+# `push: main` trigger it rewrites `tagpr-from-v*` after every single merge.
+# This repo lands many small PRs per hour, so that meant a tagpr job (and,
+# before the `tagpr-from-` skip in ci.yml, a full CI run) per merge, all to
+# restate the same pending CHANGELOG. Run it on a schedule instead — the
+# release PR is only ever consumed at release time, so being up to an hour
+# behind costs nothing.
+#
+# NOTE: tagpr also creates the tag/GitHub Release when the release PR is
+# merged, and it can only notice that on its next run. After merging a release
+# PR, kick it immediately rather than waiting for the hour:
+#     gh workflow run tagpr.yml
 on:
-  push:
-    branches:
-      - main
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
 
 permissions:
   contents: write
