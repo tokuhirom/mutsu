@@ -91,7 +91,10 @@ impl Interpreter {
             err.message = format!("Failed to parse module '{}': {}", file, err.message);
             err
         })?;
-        Ok(Self::merge_unit_class(stmts))
+        // `unit class`/`unit role`/`unit grammar` bodies are already merged at
+        // parse time (see `parser::stmt::stmtlist` unit-capture), so the parsed
+        // statements need no post-parse surgery.
+        Ok(stmts)
     }
 
     fn require_load_from_file(
