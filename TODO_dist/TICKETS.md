@@ -12,12 +12,25 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 
 ## Open
 
-### T-003 — runtime_error: No such method X for invocant of type 'X'  [impact: 2 dists]
-- dists: Injector, hyperize
-- e.g. `Injector`: Injector: No such method 'loaded' for invocant of type 'CompUnit::Repository::FileSystem'
-- e.g. `hyperize`: hyperize: No such method 'configuration' for invocant of type 'List'
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
+### T-003 — runtime_error: No such method X for invocant of type 'X'  [impact: 1 dist remaining]
+- dists: ~~hyperize~~ (FIXED, PR pending), Injector (remaining)
+- hyperize — **FIXED**: died at `Iterable.hyper.configuration` ("No such method
+  'configuration' for invocant of type 'List'" — the HyperSeq delegated the unknown
+  method to its inner List). Added `HyperSeq`/`RaceSeq` `.configuration`, returning a
+  `HyperConfiguration` whose `.batch`/`.degree` report the `:batch`/`:degree` the
+  sequence was hyperized with. The batch/degree are recorded in a side registry
+  (`hyper_config_set`/`_get` in value/mod.rs, keyed by the inner element `Arc`) since
+  the HyperSeq value itself does not carry the config. **Trap:** there are FOUR
+  `.hyper`/`.race` creation sites (`vm_call_method_ops`, TWO in
+  `vm_call_method_mut_ops`, `methods_call_dispatch`, plus a 0-arg native path); a
+  `.hyper(:named)` with only named args routes through the *second*
+  `vm_call_method_mut_ops` block (line ~1157), so config_set must be added there.
+  hyperize passes 8/8. Pin: t/hyper-seq-configuration.t.
+- Injector (remaining) — `CompUnit::Repository::FileSystem.loaded` (module-repository
+  introspection: list the compunits loaded from a path-based repo). Separate, deeper
+  root cause; not addressed by the hyperize fix.
+- file: DONE — value/mod.rs, runtime/methods_call_dispatch.rs, vm/vm_call_method_ops.rs,
+  vm/vm_call_method_mut_ops.rs; remaining — CompUnit::Repository introspection (Injector)
 
 ### T-004 — runtime_error: Runtime error: An exception occurred while evaluating a CHECK  [impact: 2 dists]
 - dists: ML::TriesWithFrequencies, Rakudo::Version

@@ -29,12 +29,42 @@ impl Interpreter {
         format!("{}_backref", sanitized)
     }
 
+    /// Build a `HyperConfiguration` instance carrying `.batch`/`.degree`. A
+    /// `None` reports the core default (batch 64; degree = available CPU cores).
+    pub(crate) fn make_hyper_configuration(batch: Option<i64>, degree: Option<i64>) -> Value {
+        let default_degree = std::thread::available_parallelism()
+            .map(|n| n.get() as i64)
+            .unwrap_or(4);
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("batch".to_string(), Value::int(batch.unwrap_or(64)));
+        attrs.insert(
+            "degree".to_string(),
+            Value::int(degree.unwrap_or(default_degree)),
+        );
+        Value::make_instance(crate::symbol::Symbol::intern("HyperConfiguration"), attrs)
+    }
+
     pub(crate) fn call_method_with_values(
         &mut self,
         target: Value,
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // `HyperConfiguration.batch`/`.degree` — read the stored attribute. The
+        // instance is minted by `HyperSeq.configuration` (used by the `hyperize`
+        // dist); it has no user-defined accessors, so answer them directly.
+        if matches!(method, "batch" | "degree")
+            && args.is_empty()
+            && let ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } = target.view()
+            && class_name == "HyperConfiguration"
+            && let Some(v) = attributes.as_map().get(method)
+        {
+            return Ok(v.clone());
+        }
         // .emit on any value: push to the supply emit buffer if inside a
         // supply block, otherwise raise CX::Emit like the `emit` sub.
         if method == "emit"
@@ -3205,6 +3235,9 @@ impl Interpreter {
             }
             let items = value_to_list(&target);
             let arc = std::sync::Arc::new(items);
+            // Remember the requested batch/degree so `.configuration` can report
+            // them (the HyperSeq/RaceSeq value itself does not carry the config).
+            crate::value::hyper_config_set(&arc, batch_val, degree_val);
             return Ok(if method == "hyper" {
                 Value::hyper_seq_arc(arc)
             } else {
@@ -3225,6 +3258,14 @@ impl Interpreter {
             match method {
                 "hyper" => return Ok(Value::hyper_seq_arc(items)),
                 "race" => return Ok(Value::race_seq_arc(items)),
+                "configuration" if args.is_empty() => {
+                    // `HyperSeq.configuration` — a HyperConfiguration exposing the
+                    // `.batch`/`.degree` the sequence was hyperized with (or the
+                    // core defaults when unspecified). Used by the `hyperize` dist.
+                    let (batch, degree) =
+                        crate::value::hyper_config_get(&items).unwrap_or((None, None));
+                    return Ok(Self::make_hyper_configuration(batch, degree));
+                }
                 "is-lazy" => return Ok(Value::FALSE),
                 "iterator" if args.is_empty() => {
                     // A HyperSeq/RaceSeq allows only a single iterator (rakudo #4413):
