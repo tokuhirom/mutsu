@@ -374,11 +374,13 @@ impl Interpreter {
         for warning in crate::parser::take_parse_warnings() {
             self.write_warn_to_stderr(&warning);
         }
-        let stmts = result.map(|(stmts, _)| stmts).map_err(|mut err| {
+        // `unit class`/`unit role`/`unit grammar` bodies are already merged at
+        // parse time by the statement-list unit-capture (see
+        // `parser::stmt::stmtlist`), so no post-parse surgery is needed here.
+        let mut stmts = result.map(|(stmts, _)| stmts).map_err(|mut err| {
             err.message = format!("Failed to parse module '{}': {}", module, err.message);
             err
         })?;
-        let mut stmts = Self::merge_unit_class(stmts);
         // A module that uses NativeCall and references `Pointer` needs the
         // builtin `Pointer` prelude class too — the main-program injection only
         // sees the main source, so a NativeCall binding distributed as a module

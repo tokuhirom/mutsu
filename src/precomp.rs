@@ -46,8 +46,8 @@ const CACHE_MAGIC: &[u8; 4] = b"MTS2";
 /// and the running executable's modification time.
 ///
 /// The executable mtime is essential: the cache stores the AST *after* compile-
-/// time transforms (`merge_unit_class`, the NativeCall `Pointer` / `Rational`
-/// prelude injection, roast-directive preprocessing). Those transforms live in
+/// time transforms (the NativeCall `Pointer` / `Rational` prelude injection,
+/// roast-directive preprocessing). Those transforms live in
 /// the binary, not the source, so a rebuilt mutsu that changes any of them must
 /// not reuse a cache produced by an older build. The crate version is a fixed
 /// "0.1.0" across every dev build and CACHE_FORMAT_VERSION only tracks enum
