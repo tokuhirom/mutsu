@@ -203,6 +203,17 @@ pub(crate) fn needs_raku_dispatch(v: &Value) -> bool {
     }
 }
 
+/// The `.raku` (and default `.gist`) text of a Promise. Rakudo renders the
+/// two public attributes: the scheduler (whose own `.raku` only shows its
+/// `uncaught_handler`, `Callable` when unset — mutsu promises always run on
+/// the global pool with no handler) and the `PromiseStatus` enum constant.
+pub(crate) fn promise_raku_repr(status: &str) -> String {
+    format!(
+        "Promise.new(scheduler => ThreadPoolScheduler.new(uncaught_handler => Callable), status => PromiseStatus::{})",
+        status
+    )
+}
+
 /// Whether a string key may be rendered in the adverbial pair form
 /// `:key(value)`. Mirrors Raku's `<.ident>`: the key must start with a letter
 /// or `_`, continue with word chars, and may contain `-`/`'` only when each is
@@ -540,6 +551,7 @@ pub fn raku_value(v: &Value) -> String {
         }
         ValueView::Str(s) => escape_raku_str(&s),
         ValueView::Int(i) => i.to_string(),
+        ValueView::Promise(p) => promise_raku_repr(&p.status()),
         ValueView::Rat(n, d) => {
             if d == 0 {
                 if n == 0 {

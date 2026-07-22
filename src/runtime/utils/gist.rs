@@ -102,6 +102,10 @@ pub(crate) fn gist_value(value: &Value) -> String {
         // A `:=`-bound element holds a `ContainerRef` cell; render the held
         // value so a bound element gists like a plain one (Phase 5 leak).
         ValueView::ContainerRef(cell) => gist_value(&cell.lock().unwrap()),
+        // Promise has no custom gist, so it gists in the default `.raku` form.
+        ValueView::Promise(p) => {
+            crate::builtins::methods_0arg::raku_repr::promise_raku_repr(&p.status())
+        }
         ValueView::Rat(_, _) | ValueView::FatRat(_, _) | ValueView::BigRat(_, _) => {
             // Rat.gist is identical to Rat.Str in Raku
             value.to_string_value()

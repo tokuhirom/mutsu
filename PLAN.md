@@ -1293,19 +1293,6 @@ the backlog.
       (`HashData`), `src/value/value_collections.rs`, `src/value/value_methods_a.rs`
       (`hash_insert_through`), `src/runtime/methods_quanthash_ctor.rs`, the `∈`/`(elem)` set-op path.
 
-### 8.11 Two small `.raku` residues left by the nested-instance fix (found 2026-07-22)
-
-Both are *bare* (not nested) reprs, so the §8.11 leaf-dispatch walk renders whatever these
-produce — fixing them fixes the nested case for free. Small, independent, unclaimed:
-
-- [ ] **`Promise.new.raku` is `Promise(Planned)`**; raku gives
-      `Promise.new(scheduler => ThreadPoolScheduler.new(uncaught_handler => Callable), status =>
-      PromiseStatus::Planned)`. The Promise repr never got a `.raku` form distinct from its gist.
-- [ ] **`$/.WHICH` names the wrong object.** `"abc" ~~ /b/; say $/.WHICH.raku` → mutsu
-      `ValueObjAt.new("Str|b")`, raku `ObjAt.new("Match|…")`: `.WHICH` on a Match takes the
-      *matched string*'s identity instead of the Match object's, so it is also a `ValueObjAt`
-      (value identity) where raku has an `ObjAt` (object identity).
-
 ### 8.12 `.produce` with `last`, and `.reduce` with a destructuring signature (deferred — found 2026-07-22 by the List.rakudoc doc-diff sweep)
 
 Two leftover `Type/List.rakudoc` reduce/produce findings after the batch of fixes on 2026-07-22
