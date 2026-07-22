@@ -185,6 +185,13 @@ pub(super) fn dispatch(
             }
             Some(Some(Ok(target.clone())))
         }
+        "serial" => {
+            // Any ordinary value is already its own serial (non-parallel) form,
+            // so `.serial` returns the invocant unchanged (like `.self`). Only a
+            // hyper/race pipeline has a distinct serial form, which mutsu's hyper
+            // method dispatch handles before reaching here.
+            Some(Some(Ok(target.clone())))
+        }
         "clone" => {
             match target.view() {
                 ValueView::Package(_) | ValueView::Nil => Some(Some(Ok(target.clone()))),
