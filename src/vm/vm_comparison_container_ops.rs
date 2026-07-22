@@ -29,14 +29,15 @@ impl Interpreter {
 
     /// Returns `true` when **both** values are simple, non-reference
     /// types where stack copies can never carry container identity
-    /// (Int, Str, Bool, Rat, …).
+    /// (Int, Str, Bool, Nil, Rat, …).
     ///
     /// Note: `Package` is NOT included because type objects are singletons —
     /// two variables holding the same Package should be considered `=:=`.
-    /// `Nil` is NOT included either: Nil is a singleton that no container
-    /// ever holds (assignment resets to the default), so an expression
-    /// yielding Nil — e.g. a `.List` hole element — IS the Nil singleton
-    /// and `=:= Nil` must be True even through a "fresh container" read.
+    /// `Nil` IS included: two *variable/element reads* both yielding Nil are
+    /// distinct containers (uninitialized scalars store Nil pre-PLAN-8.5-step-3),
+    /// so they must not compare identical. The `X =:= Nil` literal form is
+    /// compiled with `flags == 0` instead (see `compile_binary`'s `=:=` arm),
+    /// which routes to `values_identical` where Nil == Nil holds.
     fn is_value_non_reference(left: &Value, right: &Value) -> bool {
         fn is_non_ref(v: &Value) -> bool {
             matches!(
@@ -46,6 +47,7 @@ impl Interpreter {
                     | ValueView::Num(_)
                     | ValueView::Str(_)
                     | ValueView::Bool(_)
+                    | ValueView::Nil
                     | ValueView::Rat(..)
                     | ValueView::FatRat(..)
                     | ValueView::BigRat(..)
