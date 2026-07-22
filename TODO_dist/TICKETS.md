@@ -105,11 +105,29 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 - file: DONE — runtime/registration_role.rs, runtime/undeclared_routines.rs;
   remaining — nqp op support (large, separate)
 
-### T-028 — test_die [P5reset]  [impact: 1 dist]
+### T-028 — test_die [P5reset] (pre-triaged: ternary false-branch precedence)  [impact: 1 dist]
 - dists: P5reset
 - e.g. `P5reset`: base=1 pass=0 fail=0 die=1 | t/01-basic.rakutest: 
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
+- repro (minimal, confirmed 2026-07-22):
+  `my $l; False ?? 9 !! $l ~= "x"; say $l` — raku: `x`, mutsu: "Cannot modify an
+  immutable value". With explicit parens `!! ($l ~= "x")` mutsu works, so the
+  `!!` false-branch stops at `$l` and drops the trailing `~= "x"`, then applies
+  `~=` to the (immutable) ternary result. Raku parses each ternary branch at
+  item-assignment precedence, so `!! $l ~= X` == `!! ($l ~= X)`.
+- root cause: the ternary parser's false-branch (and true-branch) must parse an
+  assignment-level expression, not stop at the bare term.
+- P5reset's `reset()` body is `$ch eq '-' ?? (...) !! $l ~= $start ?? ... !! $ch`;
+  it may also need writable `CALLER::OUR::.kv` iteration + sigilless `\value`
+  writeback — recheck after the ternary fix.
+- file: `src/parser/**/ternary.rs` (branch precedence). Pin the repro above.
+
+### T-034 — test_die: No such private method X (STALE — passes on current main)  [impact: 1 dist]
+- dists: IdClass
+- e.g. `IdClass`: base=6 pass=0 fail=0 die=6 | t/01-basic.rakutest: No such private method 'gen-rest' for invocant of type 'UserId'
+- STALE: verified 2026-07-22 — IdClass t/01..t/06 ALL pass under the current
+  debug binary (raku and mutsu agree). The sweep TSV predates the intervening
+  role/dispatch fixes. Re-run the sweep to drop it; no work needed.
+- file: n/a (already passing)
 
 ### T-029 — test_die [POFile]  [impact: 1 dist]
 - dists: POFile
@@ -132,12 +150,6 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 ### T-033 — test_die [vCard::Parser]  [impact: 1 dist]
 - dists: vCard::Parser
 - e.g. `vCard::Parser`: base=2 pass=1 fail=0 die=1 | t/02-grammar.rakutest: 
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
-
-### T-034 — test_die: No such private method X for invocant of type 'X'  [impact: 1 dist]
-- dists: IdClass
-- e.g. `IdClass`: base=6 pass=0 fail=0 die=6 | t/01-basic.rakutest: No such private method 'gen-rest' for invocant of type 'UserId'
 - repro: _(fill in a minimal repro + raku baseline before fixing)_
 - file: _(suspected parser/runtime file)_
 
