@@ -353,6 +353,19 @@ impl Interpreter {
         if cf.code.is_routine && !self.no_readonly_vars() {
             self.unmark_readonly("_");
         }
+        // Raku: a routine gets its own `$_` = `(Any)`, not the caller's topic.
+        // Shadow the caller's topic with Any before the body reads it (gated on
+        // `reads_topic` so a topic-free routine pays nothing). See vm_call_light.
+        if cf.code.reads_topic
+            && cf.code.is_routine
+            && !cf.param_defs.iter().any(|pd| pd.name == "_")
+        {
+            let any_val = Value::package(crate::symbol::Symbol::intern("Any"));
+            if let Some(slot) = cf.code.locals.iter().position(|n| n == "_") {
+                self.locals[slot] = any_val.clone();
+            }
+            self.env_mut().insert("_".to_string(), any_val);
+        }
         for (i, pd) in cf.param_defs.iter().enumerate() {
             if !pd.name.is_empty()
                 && !pd.sigilless

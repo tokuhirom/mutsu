@@ -1730,6 +1730,13 @@ pub(crate) struct CompiledCode {
     /// only at routine boundaries, allowing pointy-block returns to propagate
     /// up to the enclosing routine.
     pub(crate) is_routine: bool,
+    /// Whether the body references the topic `$_` (its constant pool contains
+    /// the name `"_"`, emitted by any read/write of `$_`). A routine gets a
+    /// fresh `$_` (Any), so a positional-light call must shadow the caller's
+    /// topic with Any before running such a body — but only when it is actually
+    /// read, so a topic-free hot loop (`fib`) skips the shadowing write and
+    /// keeps the frame-reuse fast path. Computed once in `compute_needs_env_sync`.
+    pub(crate) reads_topic: bool,
     /// Source line number (1-based) where this closure/block was defined.
     pub(crate) source_line: Option<i64>,
     /// Whether this compiled code represents a pointy block (`-> { }` / `<-> { }`).
@@ -2109,6 +2116,7 @@ impl CompiledCode {
             named_arg_specs: Vec::new(),
             closure_escapes: Vec::new(),
             is_routine: false,
+            reads_topic: false,
             has_once: false,
             source_line: None,
             is_pointy_block: false,
@@ -2328,6 +2336,16 @@ impl CompiledCode {
         // compile-time scaffolding (ADR-0006 §2.4). A constant added afterwards
         // (a runtime-built chunk being patched) simply takes a fresh slot.
         self.const_index = rustc_hash::FxHashMap::default();
+        // Does the body touch the topic `$_`? Any read/write of `$_` interns the
+        // name `"_"` into the constant pool (GetGlobal/SetGlobal name), so a
+        // pool scan is a sound (never-miss) over-approximation — a stray string
+        // literal `"_"` only costs a harmless extra topic-shadow write on that
+        // routine's calls. A topic-free routine (e.g. `fib`) has no `"_"`
+        // constant, so its hot-loop calls skip the shadow write entirely.
+        self.reads_topic = self
+            .constants
+            .iter()
+            .any(|c| matches!(c.view(), crate::value::ValueView::Str(s) if s.as_str() == "_"));
         self.compute_locals_sym();
         self.compute_free_vars();
         // Collect env-only `my` declarations so the method-dispatch return merge
