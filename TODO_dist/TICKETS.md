@@ -313,11 +313,16 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 - repro: _(fill in a minimal repro + raku baseline before fixing)_
 - file: _(suspected parser/runtime file)_
 
-### T-038 — test_fail: .text  [impact: 1 dist]
-- dists: PDF::Extract
-- e.g. `PDF::Extract`: base=1 pass=0 fail=1 die=0 | t/01-san.rakutest: .text
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
+### T-038 — test_fail: .text  [impact: 1 dist]  — FIXED (PR `fix-qqx-closure-interpolation`)
+- dists: PDF::Extract (t/01-san.rakutest 0/1 → 1/1)
+- Root cause: **`qqx` / backtick command quoting did not interpolate `{ EXPR }`
+  closure blocks**, only `$var`. PDF::Extract's `.text` builds its command line as
+  ``qqx`pdftotext -f {$!first} -l {$!last} '{$.file}' -` `` — mutsu left the braces
+  literal (`-f {1} -l {0} '{...}' -`), so pdftotext got no file arg and printed its
+  usage. `qx_string`/`backtick_qx_string` used `interpolate_string_content`
+  (closures off); now they pass closures on (unless the qqx delimiter is a brace,
+  where `{`/`}` are the delimiters). Pin: `t/qqx-closure-interpolation.t`.
+- file: `src/parser/primary/string/qx.rs`
 
 ### T-039 — test_fail: An object of type 'X' can do the method X  [impact: 1 dist]
 - dists: Chemistry::Elements
