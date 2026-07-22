@@ -1,8 +1,22 @@
 name: Deploy WASM Demo to GitHub Pages
 
 on:
+  # A deploy is a full `wasm-pack build` — ~3 min to compile plus ~9 min of
+  # `wasm-opt` on the 17 MB artifact. Running that on every main push costs
+  # ~12 min of CI per merge to republish a byte-identical page, so the push
+  # trigger is narrowed to the files the deployed site is actually built from.
+  #
+  # Deliberately NOT listed: `src/**`. Nearly every commit touches it, which
+  # would restore the every-merge build. The consequence is that the playground
+  # runs the interpreter from the last deploy, not from HEAD — when you want it
+  # to pick up interpreter changes, trigger this workflow by hand
+  # (`gh workflow run pages.yml`, or the "Run workflow" button).
   push:
     branches: [main]
+    paths:
+      - 'wasm-demo/**'
+      - 'scripts/bench-visualize.py'   # renders bench-trend.html
+      - '.github/workflows/pages.yml'
   workflow_dispatch:
 
 permissions:
