@@ -100,6 +100,37 @@ pub(crate) fn seq_has_deferred_iter(arc_ptr: &Arc<Vec<Value>>) -> bool {
     map.contains_key(&key)
 }
 
+/// Whether a method call on a `Seq.new($iterator)` (deferred-iterator) Seq must
+/// pull every element from the iterator FIRST (reify), or leave the Seq lazy.
+///
+/// The listed methods are non-consuming: introspection and laziness-preserving
+/// coercions that have a correct native impl reading no elements. `sink` is
+/// excluded because the interpreter's `call_method_with_values` has a dedicated
+/// deferred-`sink` handler (pull for an uncached Seq, no pull for a cached one)
+/// that the blanket reify would bypass. Everything else (`.List`/`.elems`/`.sort`
+/// /`.map`/`for`/...) reads the elements and so must reify first. This is the
+/// shared exemption used by the VM fast-path reify guards (native/mut/interpret).
+pub(crate) fn seq_deferred_method_keeps_lazy(method: &str) -> bool {
+    matches!(
+        method,
+        "cache"
+            | "raku"
+            | "perl"
+            | "is-lazy"
+            | "iterator"
+            | "sink"
+            | "lazy"
+            | "WHAT"
+            | "WHICH"
+            | "WHERE"
+            | "HOW"
+            | "WHY"
+            | "VAR"
+            | "DEFINITE"
+            | "defined"
+    )
+}
+
 /// Mark a LazyList (from gather) as consumed.
 pub(crate) fn lazylist_consume(gc_ptr: &crate::gc::Gc<LazyList>) -> bool {
     let mut list = consumed_lazylists().lock().unwrap();

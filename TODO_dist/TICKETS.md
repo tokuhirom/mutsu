@@ -232,8 +232,21 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 
 ### T-051 — test_fail: test basic stuff after initialization  [impact: 1 dist]
 - dists: Hash::Agnostic
-- e.g. `Hash::Agnostic`: base=2 pass=0 fail=2 die=0 | t/01-basic.rakutest: test basic stuff after initialization
+- e.g. `Hash::Agnostic`: base=2 | **t/01-basic.rakutest now PASSES 22/22** (deferred-Seq
+  reification, see below) | t/02-minimal.rakutest still test_die
 - repro: `class MyHash does Hash::Agnostic {...}; my %h is MyHash = @pairs; say %h.^name` — raku: `MyHash`, mutsu: `Hash`
+- **2026-07-22 UPDATE — subtest 13 `.kv` gap LANDED (deferred-Seq reification, PR `feat-deferred-seq-reify`).**
+  `Seq.new($user-Iterator)` / `List|Slip|Array.from-iterator($it)` are lazy but the consumers
+  (`.List`/`.elems`/`.sort`/`for`/`@a=$seq`/mut-path methods) never drove `pull-one` — reification
+  is now universal via a shared `seq_deferred_method_keeps_lazy` exemption (introspection +
+  laziness-preserving methods stay lazy; everything else reifies). Also fixed: a bare `given`/`when`
+  block whose final statement is an assignment/bind yielded Nil instead of the assigned value (the
+  two-phase `pull-one { with $!k {...} else { $!k := ... } }` KV shape). Pins:
+  `t/seq-new-user-iterator.t`, `t/given-when-tail-assign-value.t`. **`t/01-basic.rakutest` now exits 0.**
+- **REMAINING (02-minimal):** `my %h is MinimalHash = @pairs` where MinimalHash has a
+  `submethod TWEAK` and a minimal STORE (only AT-KEY/keys, no BIND-KEY) dies with
+  "Too many positionals passed; expected 0 arguments but got 1 in sub new" — a tied-hash
+  default-STORE + TWEAK constructor-dispatch blocker, unrelated to the `.kv`/Seq work.
 - NOTE: a "tied hash" feature (`my %h is CustomAssociativeClass`). Decomposes into three
   independent gaps, each fixable on its own:
   1. **tied-hash backing** — `my %h is Foo` (Foo `does Associative`) must back the variable

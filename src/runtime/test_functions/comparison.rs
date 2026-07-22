@@ -317,6 +317,13 @@ impl Interpreter {
 
     fn seq_to_list(&mut self, v: &Value) -> Value {
         match v.view() {
+            // A `Seq.new($iterator)` stores its iterator deferred (empty backing
+            // vec). Pull every element before comparing, else it compares as the
+            // empty list (`is-deeply Seq.new($user-iter), (...)`).
+            ValueView::Seq(items) if crate::value::seq_has_deferred_iter(&items) => {
+                let pulled = self.materialize_deferred_seq(&items);
+                Value::array_with_kind(crate::value::Value::array_arc(pulled), ArrayKind::List)
+            }
             ValueView::Seq(items) => Value::array_with_kind(
                 crate::value::Value::array_arc(items.clone().to_vec()),
                 ArrayKind::List,

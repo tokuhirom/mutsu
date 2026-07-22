@@ -194,6 +194,8 @@ impl Interpreter {
         {
             let container = name.resolve();
             let iterator = args.into_iter().next().unwrap();
+            let user_iterator = matches!(iterator.view(), ValueView::Instance { class_name, .. }
+                if class_name != "Iterator" && self.class_does_role(&class_name.resolve(), "Iterator"));
             let items: Vec<Value> = if let ValueView::Instance {
                 class_name,
                 attributes,
@@ -211,6 +213,23 @@ impl Interpreter {
                     _ => 0,
                 };
                 all[index..].to_vec()
+            } else if user_iterator {
+                // A user-defined `does Iterator` instance: drive its `pull-one`
+                // until IterationEnd. Unlike the built-in `Iterator` (whose index
+                // write-back needs a named variable), a user iterator persists its
+                // own attribute mutations across `pull-one` calls, so driving the
+                // temporary directly reifies the elements the class produces.
+                let mut pulled = Vec::new();
+                loop {
+                    let val = self.call_method_with_values(iterator.clone(), "pull-one", vec![])?;
+                    if matches!(val.view(), ValueView::Str(s) if s.as_str() == "IterationEnd")
+                        || matches!(val.view(), ValueView::Package(n) if n == Symbol::intern("IterationEnd"))
+                    {
+                        break;
+                    }
+                    pulled.push(val);
+                }
+                pulled
             } else {
                 crate::runtime::utils::value_to_list(&iterator)
             };

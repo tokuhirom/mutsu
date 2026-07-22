@@ -20,7 +20,7 @@ impl Interpreter {
     /// `Seq.new($iterator)`), driving the iterator's `pull-one` until
     /// `IterationEnd`. Works for both built-in and user-defined `Iterator`
     /// classes. The deferred iterator is removed and the Seq is marked consumed.
-    pub(super) fn materialize_deferred_seq(&mut self, items_arc: &Arc<Vec<Value>>) -> Vec<Value> {
+    pub(crate) fn materialize_deferred_seq(&mut self, items_arc: &Arc<Vec<Value>>) -> Vec<Value> {
         let Some(iterator) = crate::value::seq_take_deferred_iter(items_arc) else {
             return (**items_arc).clone();
         };

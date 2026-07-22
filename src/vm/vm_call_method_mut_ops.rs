@@ -447,6 +447,20 @@ impl Interpreter {
         } else {
             target
         };
+        // A `Seq.new($iterator)` stores its iterator deferred (empty backing vec).
+        // Mut-path list methods (`.sort`, comparator `.map`/`.grep`, ...) read that
+        // empty vec directly, so pull every element from the iterator first. The
+        // non-mut path reifies via `try_native_method`'s deferred-Seq bail; this is
+        // the mut-path twin. `cache`/`raku`/`perl` keep the Seq lazy.
+        let target = if let ValueView::Seq(arc) = target.view()
+            && crate::value::seq_has_deferred_iter(&arc)
+            && !crate::value::seq_deferred_method_keeps_lazy(method.as_str())
+        {
+            let pulled = self.materialize_deferred_seq(&arc);
+            Value::seq_arc(std::sync::Arc::new(pulled))
+        } else {
+            target
+        };
         // Mutating a lazy `@`-array (infinite source). raku rejects operations
         // that touch the (non-existent) end — push/pop/append — with
         // `X::Cannot::Lazy`, but allows front operations (unshift/prepend/shift/

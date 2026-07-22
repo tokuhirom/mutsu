@@ -158,10 +158,10 @@ impl Interpreter {
     /// VM-native construction for `Seq.new($iterator?)`. Construction reads and
     /// writes only VM-owned state: a `PredictiveIterator` argument is stashed in
     /// the `predictive_seq_iters` carrier table (plus an `__mutsu_*` env side
-    /// table so the association survives sub/block returns), a materialized
-    /// `items`/`stuff` instance is copied eagerly, any other iterator is
-    /// registered as a deferred (lazy) iterator keyed off the new Seq's own Arc,
-    /// and the no-arg form yields a pre-consumed Seq. No FS / process / user
+    /// table so the association survives sub/block returns), any other iterator
+    /// (built-in or user-defined `does Iterator`) is registered as a deferred
+    /// (lazy) iterator keyed off the new Seq's own Arc — pulled only when the Seq
+    /// is consumed — and the no-arg form yields a pre-consumed Seq. No FS / process / user
     /// code — pulling from the iterator happens later, on consumption. The
     /// interpreter's `dispatch_new` arm delegates here, so the native VM fast
     /// path is byte-identical (one struct, one `self`).
@@ -184,7 +184,20 @@ impl Interpreter {
                 }
                 return seq;
             }
-            if let ValueView::Instance { attributes, .. } = iterator.view() {
+            // mutsu's OWN built-in `Iterator` (from `.iterator`) is an eager
+            // representation: its `items` attribute already holds the full
+            // materialized contents, so return them directly. This shortcut is
+            // keyed strictly on the built-in `Iterator` class — a user
+            // `does Iterator` class must NOT hit it (its `pull-one` is the source
+            // of truth and may transform/generate elements the way raku expects),
+            // so those fall through to the deferred-pull path below.
+            if let ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } = iterator.view()
+                && class_name == "Iterator"
+            {
                 let map = attributes.as_map();
                 if let Some(ValueView::Array(items, ..)) = map
                     .get("items")

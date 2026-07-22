@@ -133,7 +133,7 @@ impl Interpreter {
             self.reset_state_locals_in_range(code, *ip + 1, spec.body_end as usize);
         }
 
-        let iterable = self.stack.pop().unwrap();
+        let mut iterable = self.stack.pop().unwrap();
 
         // Handle lazy IO lines: iterate by pulling one line at a time
         // so that $fh.tell reflects the current read position.
@@ -214,6 +214,16 @@ impl Interpreter {
         // re-iterable, so a `for @$s` loop must NOT consume it — otherwise a
         // second `for @$s` would spuriously throw (surfaced by Zef::Pluggable
         // iterating `@$backend` across two calls).
+        // A `Seq.new($iterator)` (including user-defined `Iterator` classes) stores
+        // its iterator deferred (empty backing vec). Pull every element from the
+        // iterator before the loop reads the items, else `for Seq.new($iter)`
+        // iterates nothing. Mirrors the slip/`.eager` reification path.
+        if let ValueView::Seq(arc) = iterable.view()
+            && crate::value::seq_has_deferred_iter(&arc)
+        {
+            let pulled = self.materialize_deferred_seq(&arc);
+            iterable = Value::seq_arc(std::sync::Arc::new(pulled));
+        }
         if let ValueView::Seq(arc) = iterable.view()
             && !crate::value::seq_is_cached(&arc)
         {

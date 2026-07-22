@@ -328,6 +328,24 @@ impl Interpreter {
         self.explicit_initializer_context = false;
         self.vardecl_context = false;
         self.shaped_decl_context = false;
+        // A `Seq.new($iterator)` stores its iterator deferred (empty backing vec).
+        // Assigning it to an `@`/`%` container reifies the Seq (raku list
+        // semantics), so pull every element from the iterator first — the array/
+        // hash coercion below (`value_to_list`/`build_hash_from_items`) reads the
+        // items directly and would otherwise store nothing. A `$` scalar target
+        // keeps the Seq lazy, and a `:=` bind must not consume it, so both are
+        // excluded.
+        if !is_bind
+            && !is_rebind
+            && let ValueView::Seq(arc) = raw_popped.view()
+            && crate::value::seq_has_deferred_iter(&arc)
+        {
+            let name = &code.locals[idx];
+            if name.starts_with('@') || name.starts_with('%') {
+                let pulled = self.materialize_deferred_seq(&arc);
+                raw_popped = Value::seq_arc(std::sync::Arc::new(pulled));
+            }
+        }
         // Slice 2a/2b: `$scalar = @arr` / `$scalar = %hash` / chained `$r = $q`
         // promotes the source container to a shared `ContainerRef` cell (raku
         // reference semantics). Handled before the decont marker and fast/slow
