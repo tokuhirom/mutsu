@@ -192,6 +192,12 @@ impl Interpreter {
                 } else {
                     args.get(i).cloned().map(unwrap_varref_value)
                 };
+                // Whether an actual argument was passed for this param (vs. an
+                // unsupplied optional filled with its type object below). An
+                // unsupplied optional's `where` must NOT reject the candidate
+                // during dispatch — raku checks it at bind time against the
+                // default value, not the bare type object.
+                let arg_was_supplied = arg_for_checks.is_some();
                 if arg_for_checks.is_none()
                     && !pd.required
                     && !pd.name.is_empty()
@@ -400,7 +406,9 @@ impl Interpreter {
                         return false;
                     }
                 }
-                if let Some(where_expr) = &pd.where_constraint {
+                if let Some(where_expr) = &pd.where_constraint
+                    && (arg_was_supplied || !(pd.default.is_some() || pd.optional_marker))
+                {
                     let Some(arg) = arg_for_checks.as_ref() else {
                         return false;
                     };

@@ -291,14 +291,16 @@ pub(crate) fn native_function_2arg(
             }
         }
         "exp" => {
-            // exp($x, $base) = $base ** $x
-            // Fast path for real args
+            // exp($x, $base) = $base ** $x — delegate to the `**` operator so
+            // integer bases/exponents stay exact (raku: `exp(72, 10)` is the Int
+            // 10**72, not the Num 1e72), while non-integer args still yield a Num.
             if !matches!(arg1.view(), ValueView::Complex(..))
                 && !matches!(arg2.view(), ValueView::Complex(..))
             {
-                let x = runtime::to_float_value(arg1).unwrap_or(f64::NAN);
-                let base = runtime::to_float_value(arg2).unwrap_or(f64::NAN);
-                return Some(Ok(Value::num(base.powf(x))));
+                return Some(Ok(crate::builtins::arith::arith_pow(
+                    arg2.clone(),
+                    arg1.clone(),
+                )));
             }
             let (base_r, base_i) = match arg2.view() {
                 ValueView::Int(i) => (i as f64, 0.0),
