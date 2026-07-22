@@ -123,12 +123,17 @@ impl Interpreter {
                     // walk up with `..` (raku returns e.g. `../A/x`), and the old
                     // fall-through to the absolute path corrupted zef's extract
                     // paths (it uses `$archive.relative($tmp)` to build `-C`).
+                    // `.relative`'s default base is `$*CWD` (`cwd_path`), NOT the
+                    // receiver's own `.CWD` attribute — unlike `.absolute`, which
+                    // defaults to `$.CWD`. So `.resolve` (which stamps `:CWD("/")`)
+                    // followed by no-arg `.relative` still relativizes against the
+                    // process cwd: `"foo/bar".IO.resolve.relative` is `foo/bar`, and
+                    // `IO::Path.new("b/c", :CWD("/a")).relative` is `../../..a/b/c`
+                    // relative to `$*CWD`, not `b/c`. The receiver's `.CWD` is only
+                    // used to make the *target* path absolute (`path_buf`, above).
                     let base_buf = match args.first().map(|v| v.to_string_value()) {
                         Some(base) => self.resolve_path(&base),
-                        None => instance_cwd
-                            .as_ref()
-                            .map(|c| self.resolve_path(c))
-                            .unwrap_or_else(|| cwd_path.clone()),
+                        None => cwd_path.clone(),
                     };
                     let rel = Self::lexical_abs2rel(&path_buf, &base_buf);
                     Ok(Value::str(rel))
