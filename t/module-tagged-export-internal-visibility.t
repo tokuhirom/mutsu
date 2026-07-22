@@ -11,7 +11,7 @@ use TaggedExportUser;
 # "Unknown function". (POFile's `PO::Actions.TOP` -> `po-unquote`, and
 # `POFile::Entry.Str` -> `po-quote`.)
 
-plan 4;
+plan 5;
 
 # The tagged export is NOT imported into this program (no :helpers tag).
 ok !MY::<&decorate>.defined, 'tagged export is not imported without its tag';
@@ -23,6 +23,12 @@ is TaggedExportUser.parse('hello'), '<hello>',
 # An ordinary method of the module can call the tagged export.
 is TaggedExportUser::Widget.new(name => 'x').rendered, '<x>',
     'ordinary method resolves module tagged export';
+
+# A method invoked on the TYPE OBJECT (not an instance) also resolves it:
+# `self` is the type object, whose class still names the module namespace.
+# (POFile: `POFile::Entry.parse` -> `po-unquote`.)
+is TaggedExportUser::Widget.render-type, '<type>',
+    'type-object method resolves module tagged export';
 
 # Importing WITH the tag makes the sub available to the caller too.
 {

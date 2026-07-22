@@ -17,6 +17,10 @@ class TaggedExportUser::Actions {
 class TaggedExportUser::Widget {
     has $.name;
     method rendered() { decorate($!name) } # tagged export from an ordinary method
+    method render-type()                    # tagged export from a TYPE-OBJECT method
+    {
+        decorate('type')
+    }
 }
 
 class TaggedExportUser {

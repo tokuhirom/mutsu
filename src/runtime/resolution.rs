@@ -91,13 +91,18 @@ impl Interpreter {
             if let Some(def) = self.resolve_hidden_owned_export(&cur_pkg, name) {
                 return Some(def);
             }
-            if let Some(ValueView::Instance { class_name, .. }) =
-                self.env.get("self").map(Value::view)
+            // `self`'s class names the enclosing module namespace. It is an
+            // `Instance` for a method called on an object and a `Package` type
+            // object for one called on the type itself (`POFile::Entry.parse`).
+            let self_class = self.env.get("self").and_then(|v| match v.view() {
+                ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+                ValueView::Package(sym) => Some(sym.resolve()),
+                _ => None,
+            });
+            if let Some(cn) = self_class
+                && let Some(def) = self.resolve_hidden_owned_export(&cn, name)
             {
-                let cn = class_name.resolve();
-                if let Some(def) = self.resolve_hidden_owned_export(&cn, name) {
-                    return Some(def);
-                }
+                return Some(def);
             }
         }
         None
