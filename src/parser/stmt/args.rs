@@ -14,21 +14,28 @@ fn regroup_assign_expr_metaop_rhs(expr: Expr) -> Expr {
     if let Expr::Grouped(inner) = expr {
         return Expr::Grouped(Box::new(regroup_assign_expr_metaop_rhs(*inner)));
     }
-    let Expr::AssignExpr { name, expr, .. } = expr else {
+    // Preserve the original `is_bind`: a `:=` inside a list-op argument
+    // (`isa-ok (%qh := $t.new), $t`) must stay a bind, not silently become `=`.
+    let Expr::AssignExpr {
+        name,
+        expr,
+        is_bind,
+    } = expr
+    else {
         return expr;
     };
     let Expr::ArrayLiteral(mut items) = *expr else {
         return Expr::AssignExpr {
             name,
             expr,
-            is_bind: false,
+            is_bind,
         };
     };
     let Some(last) = items.pop() else {
         return Expr::AssignExpr {
             name,
             expr: Box::new(Expr::ArrayLiteral(items)),
-            is_bind: false,
+            is_bind,
         };
     };
     match last {
@@ -47,7 +54,7 @@ fn regroup_assign_expr_metaop_rhs(expr: Expr) -> Expr {
                     left: Box::new(Expr::ArrayLiteral(items)),
                     right,
                 }),
-                is_bind: false,
+                is_bind,
             }
         }
         other => {
@@ -55,7 +62,7 @@ fn regroup_assign_expr_metaop_rhs(expr: Expr) -> Expr {
             Expr::AssignExpr {
                 name,
                 expr: Box::new(Expr::ArrayLiteral(items)),
-                is_bind: false,
+                is_bind,
             }
         }
     }
@@ -63,13 +70,17 @@ fn regroup_assign_expr_metaop_rhs(expr: Expr) -> Expr {
 
 fn split_assignment_rhs_call_args(expr: Expr) -> (Expr, Vec<Expr>) {
     match expr {
-        Expr::AssignExpr { name, expr, .. } => {
+        Expr::AssignExpr {
+            name,
+            expr,
+            is_bind,
+        } => {
             let (rhs, extras) = split_assignment_rhs_call_args(*expr);
             (
                 Expr::AssignExpr {
                     name,
                     expr: Box::new(rhs),
-                    is_bind: false,
+                    is_bind,
                 },
                 extras,
             )

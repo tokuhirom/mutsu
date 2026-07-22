@@ -24,6 +24,96 @@ impl Interpreter {
         )
     }
 
+    /// Flatten `.new` positional args into the element list a QuantHash counts:
+    /// a lone QuantHash argument is a single opaque element, any other single
+    /// argument is iterated, and multiple arguments are each one element.
+    fn quanthash_flatten_items(args: &[Value]) -> Vec<Value> {
+        if args.len() == 1 {
+            let arg = &args[0];
+            if matches!(
+                arg.view(),
+                ValueView::Set(_, _) | ValueView::Bag(_, _) | ValueView::Mix(_, _)
+            ) {
+                vec![arg.clone()]
+            } else {
+                Self::value_to_list(arg)
+            }
+        } else {
+            args.to_vec()
+        }
+    }
+
+    /// Apply a parameterized QuantHash's element type to its flattened element
+    /// list. A coercion parameter (`Int()`, `Date()`) coerces each element,
+    /// propagating the coercion's own exception on failure (`X::Str::Numeric`,
+    /// `X::Temporal::InvalidFormat`, ...); a plain nominal parameter type-checks
+    /// each element and throws `X::TypeCheck::Binding` on a mismatch. `Any`/`Mu`
+    /// and lowercase (type-capture) parameters are no-ops. `unwrap_pair` checks a
+    /// `Pair` element by its value (Set semantics) rather than as a whole.
+    fn apply_quanthash_element_param(
+        &mut self,
+        type_args: &Option<Vec<String>>,
+        items: Vec<Value>,
+        unwrap_pair: bool,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        let Some(constraint) = type_args.as_ref().and_then(|ta| ta.first()) else {
+            return Ok(items);
+        };
+        if !constraint.starts_with(char::is_uppercase) || constraint == "Any" || constraint == "Mu"
+        {
+            return Ok(items);
+        }
+        if let Some((target, _source)) = crate::runtime::types::parse_coercion_type(constraint) {
+            // A coercion parameter `T(...)` coerces each element with `.T`, the
+            // same as `T($x)`. Using the coercion *method* (not the lenient
+            // internal `coerce_value`) makes a bad element throw the coercion's
+            // own exception — `X::Str::Numeric` for `Int()`, `X::Temporal::
+            // InvalidFormat` for `Date()` — instead of silently yielding a
+            // fallback value.
+            let target = target.to_string();
+            let mut out = Vec::with_capacity(items.len());
+            for item in items {
+                let coerced = self.call_method_with_values(item, &target, vec![])?;
+                // A soft-failing coercion (e.g. `"a".Int`) returns a Failure; in
+                // the `.new` construction context it must throw its wrapped
+                // exception, so sink it into an Err.
+                out.push(Self::sink_failure_to_error(coerced)?);
+            }
+            return Ok(out);
+        }
+        for item in &items {
+            let check_val = if unwrap_pair {
+                match item.view() {
+                    ValueView::Pair(_, v) => v.clone(),
+                    _ => item.clone(),
+                }
+            } else {
+                item.clone()
+            };
+            if !self.type_matches_value(constraint, &check_val) {
+                let got_type = crate::value::what_type_name(&check_val);
+                let got_repr = check_val.to_string_value();
+                let msg = format!(
+                    "Type check failed in binding; expected {} but got {} (\"{}\")",
+                    constraint, got_type, got_repr,
+                );
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("message".to_string(), Value::str(msg.clone()));
+                attrs.insert("operation".to_string(), Value::str_from("bind"));
+                attrs.insert("got".to_string(), check_val.clone());
+                attrs.insert(
+                    "expected".to_string(),
+                    Value::package(Symbol::intern(constraint)),
+                );
+                let ex = Value::make_instance(Symbol::intern("X::TypeCheck::Binding"), attrs);
+                let mut err = RuntimeError::new(msg);
+                err.exception = Some(Box::new(ex));
+                return Err(err);
+            }
+        }
+        Ok(items)
+    }
+
     /// VM `.new` fast-path entry: if `class_name` (parametric name stripped to
     /// its base) is a QuantHash type, construct it natively and return
     /// `Some(result)`; otherwise return `None` so the caller falls through
@@ -74,6 +164,10 @@ impl Interpreter {
                 // (does NOT decompose Pairs like the .Set/.SetHash coercion does).
                 // Single arg: if QuantHash, treat as single element; otherwise iterate.
                 // Multiple args: each is a single element.
+                // Flatten the elements, then apply the parameterized element
+                // type (coercion or nominal check) before counting.
+                let items = Self::quanthash_flatten_items(&args);
+                let items = self.apply_quanthash_element_param(&type_args, items, true)?;
                 let mut elems = HashSet::new();
                 let mut original_keys: HashMap<String, Value> = HashMap::new();
                 let mut has_non_str_keys = false;
@@ -90,74 +184,8 @@ impl Interpreter {
                     }
                     elems.insert(str_key);
                 };
-                if args.len() == 1 {
-                    let arg = &args[0];
-                    // QuantHash types are always single elements
-                    if matches!(
-                        arg.view(),
-                        ValueView::Set(_, _) | ValueView::Bag(_, _) | ValueView::Mix(_, _)
-                    ) {
-                        add_item(&mut elems, &mut original_keys, &mut has_non_str_keys, arg);
-                    } else {
-                        for item in Self::value_to_list(arg) {
-                            add_item(&mut elems, &mut original_keys, &mut has_non_str_keys, &item);
-                        }
-                    }
-                } else {
-                    for arg in &args {
-                        add_item(&mut elems, &mut original_keys, &mut has_non_str_keys, arg);
-                    }
-                }
-                // Type check for parameterized Set/SetHash (e.g. SetHash[Int].new(<a b c>))
-                if let Some(ref ta) = type_args
-                    && let Some(constraint) = ta.first()
-                    && constraint.starts_with(char::is_uppercase)
-                    && constraint != "Any"
-                    && constraint != "Mu"
-                {
-                    // Collect the items that will actually be added, for type checking
-                    let items_to_check: Vec<Value> = if args.len() == 1 {
-                        let arg = &args[0];
-                        if matches!(
-                            arg.view(),
-                            ValueView::Set(_, _) | ValueView::Bag(_, _) | ValueView::Mix(_, _)
-                        ) {
-                            vec![arg.clone()]
-                        } else {
-                            Self::value_to_list(arg)
-                        }
-                    } else {
-                        args.clone()
-                    };
-                    for item in &items_to_check {
-                        let check_val = match item.view() {
-                            ValueView::Pair(_, v) => v,
-                            _ => item,
-                        };
-                        if !self.type_matches_value(constraint, check_val) {
-                            let got_type = crate::value::what_type_name(check_val);
-                            let got_repr = check_val.to_string_value();
-                            let msg = format!(
-                                "Type check failed in binding; expected {} but got {} (\"{}\")",
-                                constraint, got_type, got_repr,
-                            );
-                            let mut attrs = std::collections::HashMap::new();
-                            attrs.insert("message".to_string(), Value::str(msg.clone()));
-                            attrs.insert("operation".to_string(), Value::str_from("bind"));
-                            attrs.insert("got".to_string(), check_val.clone());
-                            attrs.insert(
-                                "expected".to_string(),
-                                Value::package(Symbol::intern(constraint)),
-                            );
-                            let ex = Value::make_instance(
-                                Symbol::intern("X::TypeCheck::Binding"),
-                                attrs,
-                            );
-                            let mut err = RuntimeError::new(msg);
-                            err.exception = Some(Box::new(ex));
-                            return Err(err);
-                        }
-                    }
+                for item in &items {
+                    add_item(&mut elems, &mut original_keys, &mut has_non_str_keys, item);
                 }
                 let is_mutable = base_class_name == "SetHash";
                 let result = if has_non_str_keys {
@@ -198,22 +226,6 @@ impl Interpreter {
                 // - Single arg: iterate over it (flatten lists/arrays/hashes,
                 //   but NOT QuantHash types which are single elements)
                 // - Multiple args: each arg is a single element (no flattening)
-                let mut counts: HashMap<String, i64> = HashMap::new();
-                let mut original_keys: HashMap<String, Value> = HashMap::new();
-                let mut has_non_str_keys = false;
-                let add_item = |counts: &mut HashMap<String, i64>,
-                                original_keys: &mut HashMap<String, Value>,
-                                has_non_str: &mut bool,
-                                item: &Value| {
-                    let str_key = item.to_string_value();
-                    if !matches!(item.view(), ValueView::Str(_)) {
-                        *has_non_str = true;
-                        original_keys
-                            .entry(str_key.clone())
-                            .or_insert_with(|| item.clone());
-                    }
-                    *counts.entry(str_key).or_insert(0) += 1;
-                };
                 // Check for lazy/infinite arguments
                 let is_lazy_arg = |v: &Value| -> bool {
                     match v.view() {
@@ -243,74 +255,27 @@ impl Interpreter {
                     attrs.insert("what".to_string(), Value::str(base_class_name.to_string()));
                     return Err(RuntimeError::typed("X::Cannot::Lazy", attrs));
                 }
-                if args.len() == 1 {
-                    let arg = &args[0];
-                    // QuantHash types are always single elements
-                    if matches!(
-                        arg.view(),
-                        ValueView::Set(_, _) | ValueView::Bag(_, _) | ValueView::Mix(_, _)
-                    ) {
-                        add_item(&mut counts, &mut original_keys, &mut has_non_str_keys, arg);
-                    } else {
-                        for item in Self::value_to_list(arg) {
-                            add_item(
-                                &mut counts,
-                                &mut original_keys,
-                                &mut has_non_str_keys,
-                                &item,
-                            );
-                        }
+                // Flatten the elements, then apply the parameterized element type.
+                let items = Self::quanthash_flatten_items(&args);
+                let items = self.apply_quanthash_element_param(&type_args, items, false)?;
+                let mut counts: HashMap<String, i64> = HashMap::new();
+                let mut original_keys: HashMap<String, Value> = HashMap::new();
+                let mut has_non_str_keys = false;
+                let add_item = |counts: &mut HashMap<String, i64>,
+                                original_keys: &mut HashMap<String, Value>,
+                                has_non_str: &mut bool,
+                                item: &Value| {
+                    let str_key = item.to_string_value();
+                    if !matches!(item.view(), ValueView::Str(_)) {
+                        *has_non_str = true;
+                        original_keys
+                            .entry(str_key.clone())
+                            .or_insert_with(|| item.clone());
                     }
-                } else {
-                    for arg in &args {
-                        add_item(&mut counts, &mut original_keys, &mut has_non_str_keys, arg);
-                    }
-                }
-                // Type check for parameterized Bag/BagHash (e.g. Bag[Int].new(<a b c>))
-                if let Some(ref ta) = type_args
-                    && let Some(constraint) = ta.first()
-                    && constraint.starts_with(char::is_uppercase)
-                    && constraint != "Any"
-                    && constraint != "Mu"
-                {
-                    let items_to_check: Vec<Value> = if args.len() == 1 {
-                        let arg = &args[0];
-                        if matches!(
-                            arg.view(),
-                            ValueView::Set(_, _) | ValueView::Bag(_, _) | ValueView::Mix(_, _)
-                        ) {
-                            vec![arg.clone()]
-                        } else {
-                            Self::value_to_list(arg)
-                        }
-                    } else {
-                        args.clone()
-                    };
-                    for item in &items_to_check {
-                        if !self.type_matches_value(constraint, item) {
-                            let got_type = crate::value::what_type_name(item);
-                            let got_repr = item.to_string_value();
-                            let msg = format!(
-                                "Type check failed in binding; expected {} but got {} (\"{}\")",
-                                constraint, got_type, got_repr,
-                            );
-                            let mut attrs = std::collections::HashMap::new();
-                            attrs.insert("message".to_string(), Value::str(msg.clone()));
-                            attrs.insert("operation".to_string(), Value::str_from("bind"));
-                            attrs.insert("got".to_string(), item.clone());
-                            attrs.insert(
-                                "expected".to_string(),
-                                Value::package(Symbol::intern(constraint)),
-                            );
-                            let ex = Value::make_instance(
-                                Symbol::intern("X::TypeCheck::Binding"),
-                                attrs,
-                            );
-                            let mut err = RuntimeError::new(msg);
-                            err.exception = Some(Box::new(ex));
-                            return Err(err);
-                        }
-                    }
+                    *counts.entry(str_key).or_insert(0) += 1;
+                };
+                for item in &items {
+                    add_item(&mut counts, &mut original_keys, &mut has_non_str_keys, item);
                 }
                 let result = if has_non_str_keys {
                     if base_class_name == "BagHash" {
@@ -347,6 +312,15 @@ impl Interpreter {
                 // Only .MixHash coercion decomposes pairs.
                 // QuantHash types (Set, Bag, Mix) are treated as single
                 // elements, not flattened.
+                // Check for lazy iterables
+                for arg in &args {
+                    if Self::is_lazy_for_set_ops(arg) {
+                        return Err(RuntimeError::cannot_lazy_what(base_class_name));
+                    }
+                }
+                // Flatten the elements, then apply the parameterized element type.
+                let items = Self::quanthash_flatten_items(&args);
+                let items = self.apply_quanthash_element_param(&type_args, items, false)?;
                 let mut weights: HashMap<String, f64> = HashMap::new();
                 let mut original_keys: HashMap<String, Value> = HashMap::new();
                 let mut has_non_str_keys = false;
@@ -363,81 +337,13 @@ impl Interpreter {
                     }
                     *weights.entry(str_key).or_insert(0.0) += 1.0;
                 };
-                // Check for lazy iterables
-                for arg in &args {
-                    if Self::is_lazy_for_set_ops(arg) {
-                        return Err(RuntimeError::cannot_lazy_what(base_class_name));
-                    }
-                }
-                if args.len() == 1 {
-                    let arg = &args[0];
-                    // Single arg: QuantHash types are single elements, others flatten
-                    if matches!(
-                        arg.view(),
-                        ValueView::Set(_, _) | ValueView::Bag(_, _) | ValueView::Mix(_, _)
-                    ) {
-                        add_item(&mut weights, &mut original_keys, &mut has_non_str_keys, arg);
-                    } else {
-                        for item in Self::value_to_list(arg) {
-                            add_item(
-                                &mut weights,
-                                &mut original_keys,
-                                &mut has_non_str_keys,
-                                &item,
-                            );
-                        }
-                    }
-                } else {
-                    // Multiple args: each arg is a single element (capture semantics)
-                    for arg in &args {
-                        add_item(&mut weights, &mut original_keys, &mut has_non_str_keys, arg);
-                    }
-                }
-                // Type check for parameterized Mix/MixHash (e.g. Mix[Int].new(<a b c>))
-                if let Some(ref ta) = type_args
-                    && let Some(constraint) = ta.first()
-                    && constraint.starts_with(char::is_uppercase)
-                    && constraint != "Any"
-                    && constraint != "Mu"
-                {
-                    let items_to_check: Vec<Value> = if args.len() == 1 {
-                        let arg = &args[0];
-                        if matches!(
-                            arg.view(),
-                            ValueView::Set(_, _) | ValueView::Bag(_, _) | ValueView::Mix(_, _)
-                        ) {
-                            vec![arg.clone()]
-                        } else {
-                            Self::value_to_list(arg)
-                        }
-                    } else {
-                        args.clone()
-                    };
-                    for item in &items_to_check {
-                        if !self.type_matches_value(constraint, item) {
-                            let got_type = crate::value::what_type_name(item);
-                            let got_repr = item.to_string_value();
-                            let msg = format!(
-                                "Type check failed in binding; expected {} but got {} (\"{}\")",
-                                constraint, got_type, got_repr,
-                            );
-                            let mut attrs = std::collections::HashMap::new();
-                            attrs.insert("message".to_string(), Value::str(msg.clone()));
-                            attrs.insert("operation".to_string(), Value::str_from("bind"));
-                            attrs.insert("got".to_string(), item.clone());
-                            attrs.insert(
-                                "expected".to_string(),
-                                Value::package(Symbol::intern(constraint)),
-                            );
-                            let ex = Value::make_instance(
-                                Symbol::intern("X::TypeCheck::Binding"),
-                                attrs,
-                            );
-                            let mut err = RuntimeError::new(msg);
-                            err.exception = Some(Box::new(ex));
-                            return Err(err);
-                        }
-                    }
+                for item in &items {
+                    add_item(
+                        &mut weights,
+                        &mut original_keys,
+                        &mut has_non_str_keys,
+                        item,
+                    );
                 }
                 // Use `base_class_name` (not `class_name.resolve()`) so a
                 // parameterized `MixHash[T]` is still recognized as the mutable

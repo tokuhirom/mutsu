@@ -589,6 +589,45 @@ impl Interpreter {
                     }
                     return false;
                 }
+                "Set" | "SetHash" | "Bag" | "BagHash" | "Mix" | "MixHash" => {
+                    // Parameterized QuantHash (`Set[Str]`, `Bag[Int]`, ...). The
+                    // element type lives in the container's `key_type` metadata
+                    // (see `methods_quanthash_ctor`); the base name pins the exact
+                    // mutable/immutable variant.
+                    let kind_ok = match value.view() {
+                        ValueView::Set(_, m) => (base == "Set" && !m) || (base == "SetHash" && m),
+                        ValueView::Bag(_, m) => (base == "Bag" && !m) || (base == "BagHash" && m),
+                        ValueView::Mix(_, m) => (base == "Mix" && !m) || (base == "MixHash" && m),
+                        _ => false,
+                    };
+                    if !kind_ok {
+                        return false;
+                    }
+                    let (inner_base, _) = strip_type_smiley(inner);
+                    if inner_base == "Mu" || inner_base == "Any" {
+                        return true;
+                    }
+                    if let Some(metadata) = self.container_type_metadata(value)
+                        && let Some(ref kt) = metadata.key_type
+                    {
+                        let (kt_base, _) = strip_type_smiley(kt);
+                        // Compare the nominal element type, folding a coercion
+                        // element type (`Int()`) to its target (`Int`) on both
+                        // sides so `Set[Int()]` matches its own instances.
+                        let fold = |t: &str| -> String {
+                            parse_coercion_type(t)
+                                .map(|(target, _)| target.to_string())
+                                .unwrap_or_else(|| t.to_string())
+                        };
+                        let (want, have) = (fold(inner_base), fold(kt_base));
+                        return want == have
+                            || Self::type_matches(&want, &have)
+                            || Self::type_matches(&have, &want);
+                    }
+                    // An unparameterized container does not satisfy a
+                    // parameterized constraint (Any/Mu handled above).
+                    return false;
+                }
                 _ => {}
             }
         }

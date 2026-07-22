@@ -1590,8 +1590,17 @@ impl Interpreter {
         // When binding a typed hash/array to a variable, propagate the container's
         // type constraints to the variable so that subsequent element assignments
         // are type-checked (e.g. `my %h := Hash[Int].new; %h<a> = "b"` should die).
+        // QuantHash values (Set/Bag/Mix) are excluded: their element typing is
+        // enforced through the container's own metadata and the ctor's key
+        // coercion, not an `Associative[ValueType]` variable constraint. Recording
+        // a Set's element type as the variable's constraint would wrongly make an
+        // untyped `my %qh` typed and block a later rebind (`%qh := Set[Int].new`).
         if is_bind
             && (name.starts_with('%') || name.starts_with('@'))
+            && !matches!(
+                val.view(),
+                ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..)
+            )
             && let Some(info) = self.container_type_metadata(&val)
             && !info.value_type.is_empty()
         {

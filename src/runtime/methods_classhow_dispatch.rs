@@ -441,6 +441,33 @@ impl Interpreter {
                     .classhow_find_method(invocant, &method_name)
                     .unwrap_or(Value::NIL))
             }
+            "parameterize" if args.len() >= 2 => {
+                // `$type.^parameterize($T, ...)` — the metamodel form of the
+                // `Type[$T]` postcircumfix parameterization. Build the same
+                // `Base[Arg,...]` package name that `vm_var_index_ops.rs` produces
+                // for the `[ ]` syntax, so `Set.^parameterize(Str)` and `Set[Str]`
+                // yield an identical parameterized type object.
+                let base = match args[0].view() {
+                    ValueView::Package(name) => name.resolve(),
+                    _ => value_type_name(&args[0]).to_string(),
+                };
+                let param_args = args[1..]
+                    .iter()
+                    .filter(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+                    .map(|v| match v.view() {
+                        ValueView::Package(name) => name.resolve(),
+                        _ => {
+                            let s = v.to_string_value();
+                            s.trim_start_matches('(').trim_end_matches(')').to_string()
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",");
+                Ok(Value::package(Symbol::intern(&format!(
+                    "{}[{}]",
+                    base, param_args
+                ))))
+            }
             "coerce" if args.len() >= 2 => {
                 let target_constraint = match args[0].view() {
                     ValueView::Package(name) => name.resolve(),

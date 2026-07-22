@@ -48,6 +48,7 @@ impl Interpreter {
                 | "curried_role"
                 | "enum_value_list"
                 | "coerce"
+                | "parameterize"
                 | "pun"
                 | "language-revision"
                 | "submethod_table"
