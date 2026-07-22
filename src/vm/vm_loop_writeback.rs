@@ -55,6 +55,7 @@ impl Interpreter {
         code: &CompiledCode,
         src: &(String, Value, bool),
         pointy_param: &Option<String>,
+        orig: Option<&Value>,
     ) {
         let (container, index, _positional) = src;
         // For a pointy block, write back the bound parameter's final value;
@@ -66,6 +67,17 @@ impl Interpreter {
         let Some(current) = current else {
             return;
         };
+        // If the body never changed the topic from the value bound on entry, the
+        // writeback is a no-op. Skip it: assigning the same value back into a
+        // read-only aggregate element (a grammar Match subcapture — `given
+        // $cc<scheme>`, whose `$cc` is a `Match`, not a mutable Hash) would
+        // autovivify a fresh Hash and destroy the whole `$cc`. `given %h<k>`
+        // still writes back whenever `$_` was actually reassigned.
+        if let Some(orig) = orig
+            && Self::loop_var_unchanged(&current, orig)
+        {
+            return;
+        }
         let key = match index.view() {
             ValueView::Int(i) => i.to_string(),
             ValueView::Str(s) => s.as_ref().clone(),
@@ -74,12 +86,38 @@ impl Interpreter {
         let Some(mut cval) = self.get_env_with_main_alias(container) else {
             return;
         };
+        // Only a genuine mutable Array/Hash (or a cell wrapping one) is a
+        // writable element target here. A read-only aggregate — a grammar Match
+        // subcapture, `given $cc<scheme>` / `given $cc[0]` where `$cc` is a
+        // `Match` (a `ValueView::Instance`, not an Array/Hash) — is NOT: the
+        // no-op `assign_into_nested_container` leaves `cval` untouched, but the
+        // unconditional `set_env` re-store below still clobbered `$cc` (via the
+        // element/topic scope bookkeeping). Skip the whole writeback for such a
+        // container; its elements were never assignable in the first place.
+        if !Self::is_writable_element_container(&cval) {
+            return;
+        }
         // The element index here is an already-resolved existing slot (loop
         // aliasing), so the autoviv reservation cannot realistically fail; this
         // writeback teardown has no error channel, so discard the Result.
         let _ = Self::assign_into_nested_container(&mut cval, &key, current);
         self.set_env_with_main_alias(container, cval.clone());
         self.update_local_if_exists(code, container, &cval);
+    }
+
+    /// Whether `v` is a container whose element can be assigned through the
+    /// `given $x<k>` / `given @a[i]` element-source writeback: a plain mutable
+    /// Array or Hash, or a `ContainerRef` cell wrapping one. A Match subcapture,
+    /// a type object, or any other `Instance` is read-only here.
+    fn is_writable_element_container(v: &Value) -> bool {
+        match v.view() {
+            ValueView::Array(..) | ValueView::Hash(..) => true,
+            ValueView::ContainerRef(cell) => {
+                let inner = cell.lock().unwrap().clone();
+                Self::is_writable_element_container(&inner)
+            }
+            _ => false,
+        }
     }
 
     /// Whether the loop variable still holds the same binding as the source
