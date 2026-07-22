@@ -727,6 +727,57 @@ impl Interpreter {
         {
             return None;
         }
+        // A qualified call on a *type object* (`Foo.Bar::baz`) dispatches to the
+        // method defined in the qualifier class `Bar` — NOT the most-derived
+        // override on `Foo` — provided `Bar` is `Foo` or an ancestor/role of it.
+        // `value_type_name` on a type object reports "Package" (its meta-type),
+        // which fails the inheritance check below; resolve against the package's
+        // own name instead and run the qualifier-class method on the type object.
+        if let ValueView::Package(pkg) = target.view() {
+            let pkg_name = pkg.resolve().to_string();
+            // Mirror the instance path: the qualifier must be reachable through the
+            // type's MRO (or a composed role), using the same `class_mro` lookup
+            // rather than `type_inherits` (which does not resolve the hierarchy the
+            // same way for a bare type object).
+            let mro = self.class_mro(&pkg_name);
+            let in_mro = qualifier == pkg_name || mro.iter().any(|c| c.as_str() == qualifier);
+            let in_composed_roles = !in_mro
+                && mro.iter().any(|c| {
+                    self.registry()
+                        .class_composed_roles
+                        .get(c.as_str())
+                        .is_some_and(|roles| {
+                            roles.iter().any(|r| {
+                                r == qualifier
+                                    || r.starts_with(qualifier)
+                                        && r[qualifier.len()..].starts_with('[')
+                            })
+                        })
+                });
+            if !in_mro && !in_composed_roles {
+                return Some(Err(RuntimeError::new(format!(
+                    "X::Method::InvalidQualifier: Cannot dispatch to method {} on {} because it is not inherited or done by {}",
+                    actual_method, qualifier, pkg_name
+                ))));
+            }
+            if let Some((_owner, def)) =
+                self.resolve_method_with_owner(qualifier, actual_method, &args)
+            {
+                let res = self.run_resolved_method_compiled_or_treewalk(
+                    &pkg_name,
+                    qualifier,
+                    actual_method,
+                    def,
+                    AttrMap::new(),
+                    args,
+                    Some(target.clone()),
+                );
+                return Some(res.map(|(result, _updated)| result));
+            }
+            // No user method in the qualifier class (e.g. a builtin like
+            // `Int::abs`): fall back to ordinary unqualified dispatch.
+            return Some(self.call_method_with_values(target.clone(), actual_method, args));
+        }
         let type_name = super::utils::value_type_name(target);
         let type_matches = qualifier == type_name || Self::type_inherits(type_name, qualifier);
         if type_matches {
