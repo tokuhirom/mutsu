@@ -1894,6 +1894,20 @@ impl Interpreter {
                 self.metamodel_primitives_dispatch(method, args)
             }
             _ => {
+                // `.yada` on a Code is True when the routine body is nothing but a
+                // yada stub (`...`/`!!!`/`???`), which parses to a lone
+                // `__mutsu_stub_die`/`__mutsu_stub_warn` call. Handle it before the
+                // callable-compose fallback so it isn't turned into a method-chain.
+                if method == "yada" && args.is_empty() {
+                    let body = match target.view() {
+                        ValueView::Sub(data) => Some(data.body.clone()),
+                        ValueView::WeakSub(weak) => weak.upgrade().map(|d| d.body.clone()),
+                        _ => None,
+                    };
+                    if let Some(body) = body {
+                        return Ok(Value::truth(Self::sub_body_is_yada_stub(&body)));
+                    }
+                }
                 // Method calls on callables compose by applying the method to the
                 // callable's return value, e.g. `(*-*).abs`.
                 if matches!(target.view(), ValueView::Sub(_) | ValueView::WeakSub(_)) {
@@ -2343,6 +2357,21 @@ impl Interpreter {
             }
         }
         parts
+    }
+
+    /// Whether a routine body is exactly a yada stub (`...`/`!!!`/`???`), which
+    /// parses to a single `__mutsu_stub_die`/`__mutsu_stub_warn` call. `SetLine`
+    /// annotations don't count; anything beyond the lone stub makes it non-yada
+    /// (`sub f { ...; 2 }` is not a stub).
+    fn sub_body_is_yada_stub(body: &[crate::ast::Stmt]) -> bool {
+        use crate::ast::{Expr, Stmt};
+        let meaningful: Vec<&Stmt> = body
+            .iter()
+            .filter(|s| !matches!(s, Stmt::SetLine(_)))
+            .collect();
+        meaningful.len() == 1
+            && matches!(meaningful[0], Stmt::Expr(Expr::Call { name, .. })
+                if *name == "__mutsu_stub_die" || *name == "__mutsu_stub_warn")
     }
 }
 
