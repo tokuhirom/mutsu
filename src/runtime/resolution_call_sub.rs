@@ -62,15 +62,6 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("Promise"), attrs)
     }
 
-    pub(super) fn make_supply_instance(&self) -> Value {
-        let sid = super::native_methods::next_supply_id();
-        let mut attrs = HashMap::new();
-        attrs.insert("values".to_string(), Value::array(Vec::new()));
-        attrs.insert("taps".to_string(), Value::array(Vec::new()));
-        attrs.insert("supply_id".to_string(), Value::int(sid as i64));
-        Value::make_instance(Symbol::intern("Supply"), attrs)
-    }
-
     pub(crate) fn call_sub_value(
         &mut self,
         func: Value,

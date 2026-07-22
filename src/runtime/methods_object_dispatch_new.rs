@@ -692,7 +692,12 @@ impl Interpreter {
                         HashMap::new(),
                     ));
                 }
-                "Supply" => return Ok(self.make_supply_instance()),
+                // A Supply cannot be constructed directly (Rakudo throws
+                // X::Supply::New); live supplies come from a Supplier, on-demand
+                // ones from `Supply.on-demand` / `supply { }`. Internal builders
+                // (1.Supply, Supplier.Supply, Proc streams, ...) assemble their
+                // Supply instances directly.
+                "Supply" => return Err(RuntimeError::supply_new()),
                 "Supplier" | "Supplier::Preserving" => {
                     // Shared with the VM's native fast path
                     // (`try_native_builtin_construct`).

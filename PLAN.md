@@ -1400,8 +1400,6 @@ item also showed `[:a].raku` renders `[:a]` where raku spells `[:a(Bool::True)]`
       likewise attribute-less (`Proc.new`).
 - [ ] **`IO::Spec::Unix.new.raku` renders the type-object form `IO::Spec::Unix`** and its
       gist is `(Unix)`; raku renders `IO::Spec::Unix.new` for both.
-- [ ] **`Supply.new` should die** ("Cannot directly create a Supply. You might want: ...");
-      mutsu constructs a bare `Supply.new` silently. Behavior divergence beyond repr.
 
 ---
 

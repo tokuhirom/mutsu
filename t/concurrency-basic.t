@@ -19,9 +19,10 @@ is $c.receive, 2, 'channel receive second';
 $c.close;
 ok $c.closed, 'channel closed';
 
-my $s = Supply.new();
+my $sup = Supplier.new;
+my $s = $sup.Supply;
 my $sum = 0;
 $s.tap(-> $x { $sum += $x });
-$s.emit(2);
-$s.emit(3);
+$sup.emit(2);
+$sup.emit(3);
 is $sum, 5, 'supply tap receives emitted values';
