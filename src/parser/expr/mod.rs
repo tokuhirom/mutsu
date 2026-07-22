@@ -82,10 +82,21 @@ pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
             // A qualified name (`Bool::True`, `Foo::Bar`) is NOT autoquoted — it is
             // evaluated to its value, so `Bool::True => "a"` has the Bool *value*
             // as its (positional) key, matching raku.
-            let is_bareword = matches!(&expr, Expr::BareWord(name) if !name.contains("::"));
+            //
+            // A leading-`::` pseudo-package form (`::V`) is the same: it is a symbol
+            // lookup that must be evaluated to its value (`my constant V = 'x';
+            // ::V => 42` keys on 'x', not "V"). The `::` prefix is stripped during
+            // term parsing, so `::V` reaches here as `BareWord("V")` — the AST alone
+            // cannot distinguish it from a plain `V`. Detect it from the raw LHS
+            // source text instead.
+            let leading_colons = consumed.trim_start().starts_with("::");
+            let is_bareword =
+                !leading_colons && matches!(&expr, Expr::BareWord(name) if !name.contains("::"));
             let left = match expr {
                 Expr::BareWord(ref name)
-                    if !consumed.trim_start().starts_with('(') && !name.contains("::") =>
+                    if !consumed.trim_start().starts_with('(')
+                        && !leading_colons
+                        && !name.contains("::") =>
                 {
                     Expr::Literal(Value::str(name.clone()))
                 }
@@ -144,10 +155,16 @@ pub(in crate::parser) fn expression_no_assign(input: &str) -> PResult<'_, Expr> 
         let (r, _) = ws(r)?;
         let (r, value) = parse_fat_arrow_value(r)?;
         let consumed = &input[..input.len() - rest.len()];
-        let is_bareword = matches!(&expr, Expr::BareWord(name) if !name.contains("::"));
+        // A leading-`::` pseudo-package form (`::V`) is a symbol lookup evaluated to
+        // its value, not autoquoted (see the note in `expression`).
+        let leading_colons = consumed.trim_start().starts_with("::");
+        let is_bareword =
+            !leading_colons && matches!(&expr, Expr::BareWord(name) if !name.contains("::"));
         let left = match expr {
             Expr::BareWord(ref name)
-                if !consumed.trim_start().starts_with('(') && !name.contains("::") =>
+                if !consumed.trim_start().starts_with('(')
+                    && !leading_colons
+                    && !name.contains("::") =>
             {
                 Expr::Literal(Value::str(name.clone()))
             }
@@ -194,10 +211,16 @@ pub(in crate::parser) fn expression_no_sequence(input: &str) -> PResult<'_, Expr
         let (r, _) = ws(r)?;
         let (r, value) = parse_fat_arrow_value(r)?;
         let consumed = &input[..input.len() - rest.len()];
-        let is_bareword = matches!(&expr, Expr::BareWord(name) if !name.contains("::"));
+        // A leading-`::` pseudo-package form (`::V`) is a symbol lookup evaluated to
+        // its value, not autoquoted (see the note in `expression`).
+        let leading_colons = consumed.trim_start().starts_with("::");
+        let is_bareword =
+            !leading_colons && matches!(&expr, Expr::BareWord(name) if !name.contains("::"));
         let left = match expr {
             Expr::BareWord(ref name)
-                if !consumed.trim_start().starts_with('(') && !name.contains("::") =>
+                if !consumed.trim_start().starts_with('(')
+                    && !leading_colons
+                    && !name.contains("::") =>
             {
                 Expr::Literal(Value::str(name.clone()))
             }
@@ -248,10 +271,16 @@ pub(in crate::parser) fn listop_arg_expr(input: &str) -> PResult<'_, Expr> {
         let (r, _) = ws(r)?;
         let (r, value) = parse_fat_arrow_value(r)?;
         let consumed = &input[..input.len() - rest.len()];
-        let is_bareword = matches!(&expr, Expr::BareWord(name) if !name.contains("::"));
+        // A leading-`::` pseudo-package form (`::V`) is a symbol lookup evaluated to
+        // its value, not autoquoted (see the note in `expression`).
+        let leading_colons = consumed.trim_start().starts_with("::");
+        let is_bareword =
+            !leading_colons && matches!(&expr, Expr::BareWord(name) if !name.contains("::"));
         let left = match expr {
             Expr::BareWord(ref name)
-                if !consumed.trim_start().starts_with('(') && !name.contains("::") =>
+                if !consumed.trim_start().starts_with('(')
+                    && !leading_colons
+                    && !name.contains("::") =>
             {
                 Expr::Literal(Value::str(name.clone()))
             }
@@ -310,10 +339,16 @@ pub(in crate::parser) fn call_arg_expr(input: &str) -> PResult<'_, Expr> {
         let (r, _) = ws(r)?;
         let (r, value) = parse_fat_arrow_value(r)?;
         let consumed = &input[..input.len() - rest.len()];
-        let is_bareword = matches!(&expr, Expr::BareWord(name) if !name.contains("::"));
+        // A leading-`::` pseudo-package form (`::V`) is a symbol lookup evaluated to
+        // its value, not autoquoted (see the note in `expression`).
+        let leading_colons = consumed.trim_start().starts_with("::");
+        let is_bareword =
+            !leading_colons && matches!(&expr, Expr::BareWord(name) if !name.contains("::"));
         let left = match expr {
             Expr::BareWord(ref name)
-                if !consumed.trim_start().starts_with('(') && !name.contains("::") =>
+                if !consumed.trim_start().starts_with('(')
+                    && !leading_colons
+                    && !name.contains("::") =>
             {
                 Expr::Literal(Value::str(name.clone()))
             }
