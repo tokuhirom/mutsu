@@ -138,12 +138,20 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
   Fix: trim the word-quoted `:sym<...>`/`«...»`/`<<...>>` content in both name parsers
   (`token_body.rs`, `sub_name.rs`). Pin: `t/grammar-sym-adverb-whitespace.t`.
 - **Status:** POFile `01-basic` 49/51, `02-deletion` 9/10, `03`/`04` pass (was 2/44).
-- **Residual (3 failures, separate root causes — not this ticket):**
-  1. `01-basic` test 50 "List-based iteration works" — `.list` / positional
-     iteration count is wrong (expected 3).
-  2. `01-basic` test 51 + `02-deletion` test 8 — a custom `throws-like`/exception-type
-     check does not see the thrown `POFile::CannotParse` / `POFile::IncorrectIndex` as
-     the right type (custom `is Exception` class typing in a `throws-like`-style probe).
+- **Residual (separate root causes — not this ticket):**
+  1. **Grammar `<.method(args)>` (parametrized method subrule) is not invoked.**
+     `01-basic` test 51: POFile's `token TOP { ... [ $ || <.error('unrecognied syntax')> ] }`
+     — mutsu never calls `error` (the no-arg form `<.error>` works; the *argument* form
+     does not), so a bad parse silently returns a failed match and `.made` on `Any` throws
+     `X::Method::NotFound` instead of the grammar's `die POFile::CannotParse`. Minimal repro:
+     `grammar G { token TOP { \w+ <.oops('bad')> }; method oops($m) { die $m } }` — raku
+     dies with the message, mutsu returns a failed match. General grammar bug (any
+     parametrized method assertion); lives in the regex-engine subrule dispatch.
+  2. `02-deletion` test 8/9 — `$result[*-10]:delete` / `[10]:delete` on a custom
+     `does Positional` object does not surface the `die POFile::IncorrectIndex` from
+     `DELETE-POS` as that type (custom-Positional `[idx]:delete` routing).
+  3. `01-basic` test 50 "List-based iteration works" — `.list` positional iteration
+     count is wrong (expected 3).
 
 ### T-031 — test_die [URI]  [impact: 1 dist]
 - dists: URI
