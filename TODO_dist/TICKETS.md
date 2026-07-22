@@ -88,11 +88,22 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 - file: DONE parts — builtins/functions/dispatch_1arg.rs, builtins/arith/rat.rs;
   remaining — value/nanbox + value/display.rs (BigFatRat variant, PLAN.md §8.8)
 
-### T-027 — test_die [ObjectCache]  [impact: 1 dist]
+### T-027 — test_die [ObjectCache] (partial: block-callable role arg fixed; nqp-blocked)  [impact: 1 dist]
 - dists: ObjectCache
 - e.g. `ObjectCache`: base=1 pass=0 fail=0 die=1 | t/01-basic.rakutest: 
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
+- FIXED (#5172): the test does `class Article does ObjectCache[{ .<id> // die }]` — a
+  bare block bound to the role's `&args2str` callable type parameter. Three bugs:
+  (a) the block arg was eval'd as a statement (executed, not passed as a Block),
+  (b) the role body's `args2str(%_)` call was flagged "Undeclared routine",
+  (c) the `&`-sigil param resolved to Nil at runtime. Repro:
+  `role R[&f] { method m { f() } }; class A does R[{ 42 }] {}; say A.new.m` → now 42.
+- REMAINING (nqp — out of scope, poor ROI): the role body is written in raw
+  `nqp::` ops (`nqp::hash`, `nqp::atkey`, `nqp::bindkey`, `nqp::box_s`, `ObjAt`, …)
+  that mutsu does not implement, so `ObjectCache` still dies with
+  `Could not find symbol '&hash' in 'nqp'`. This is an nqp-dependent dist (Cro-class);
+  full load needs a batch of nqp builtins.
+- file: DONE — runtime/registration_role.rs, runtime/undeclared_routines.rs;
+  remaining — nqp op support (large, separate)
 
 ### T-028 — test_die [P5reset]  [impact: 1 dist]
 - dists: P5reset
