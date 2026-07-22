@@ -168,6 +168,32 @@ impl Interpreter {
                 t
             }
         };
+        // A blessed Associative object (`my %h is Foo`, Foo `does Associative`)
+        // has no native Hash storage, so the `:v`/`:k`/`:kv`/`:p` slice adverbs
+        // must dispatch through its subscript protocol. Snapshot its current
+        // contents (keys + AT-KEY) into a plain Hash and run the ordinary Hash
+        // path on that; a companion `:delete` is routed back through DELETE-KEY on
+        // the instance (the snapshot is a copy). `:exists` is handled on the
+        // instance elsewhere and never reaches here.
+        let assoc_instance: Option<Value> = if matches!(target.view(), ValueView::Instance { class_name, .. }
+            if self.has_user_method(&class_name.resolve(), "AT-KEY"))
+        {
+            Some(target.clone())
+        } else {
+            None
+        };
+        let target = if let Some(inst) = assoc_instance.as_ref() {
+            let keys_val = self.call_method_with_values(inst.clone(), "keys", vec![])?;
+            let mut map = std::collections::HashMap::new();
+            for key in crate::runtime::utils::value_to_list(&keys_val) {
+                let value =
+                    self.call_method_with_values(inst.clone(), "AT-KEY", vec![key.clone()])?;
+                map.insert(key.to_string_value(), value);
+            }
+            Value::hash(map)
+        } else {
+            target
+        };
         let index = args[1].clone();
         let mode = args[2].to_string_value();
         let var_name = args
@@ -459,7 +485,13 @@ impl Interpreter {
         }
 
         // Hash `:delete` companion (arrays handled in the positional path above).
-        if delete_after
+        // A blessed Associative instance deletes through its DELETE-KEY protocol
+        // (its storage is not the snapshot Hash built above).
+        if delete_after && let Some(inst) = assoc_instance.as_ref() {
+            for idx in &indices {
+                self.call_method_with_values(inst.clone(), "DELETE-KEY", vec![idx.clone()])?;
+            }
+        } else if delete_after
             && let Some(var_name) = var_name.as_ref()
             && let Some(entry) = self.env.get_mut(var_name)
         {
