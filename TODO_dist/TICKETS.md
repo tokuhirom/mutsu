@@ -104,9 +104,39 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 
 ### T-031 — test_die [URI]  [impact: 1 dist]
 - dists: URI
-- e.g. `URI`: base=14 pass=4 fail=2 die=8 | t/01.rakutest: 
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
+- e.g. `URI`: base=14 pass=4 fail=2 die=8 | t/01.rakutest:
+- **INVESTIGATED (2026-07-22), root-caused, deferred (deep dual-store / topic bug).**
+  URI's `parse` method dies at `Path.new($comp_container, :$!scheme)` with
+  "Default constructor for 'URI::Path' only takes named arguments" — the positional
+  `$comp_container` (a grammar-match subcapture) arrives as an undefined type object
+  instead of `Match:D`, so no user `multi method new(URI::Path:U: Match:D $comp, ...)`
+  candidate matches and it falls to the default constructor.
+- **Root cause:** a `with $var<key>` statement modifier, in a *nested* sub/method
+  scope, corrupts the enclosing `$var` to `Any` when `$var` is itself a **grammar-parse
+  subcapture** (a nested Match from `Grammar.parse(...)<x>`). The corruption is
+  deterministic (not a Heisenbug in the minimal case).
+- **Self-contained minimal repro** (mutsu: dies "recv(Package)…got Package"; raku: `RECV defined=True`):
+  ```
+  grammar G { token TOP { <uri> }; token uri { <scheme> '://' <hier-part> };
+              token scheme { \w+ }; token hier-part { \S+ } }
+  sub recv(Match:D $c) { say "RECV defined=" ~ $c.defined; }
+  sub parse($str) {
+      my $cc = G.parse($str)<uri>;
+      my $scheme = '';
+      $scheme = .lc with $cc<scheme>;   # topic bound to a subcapture of $cc
+      recv($cc<hier-part>);             # $cc is now Any → subcapture is a Package
+  }
+  parse('http://example.com/a');
+  ```
+  Narrowing: top-level scope does NOT corrupt (only nested sub/method); `with 42`
+  (literal topic) does NOT corrupt; a plain **regex** Match (`$/<a>`) does NOT corrupt
+  — only a grammar-parse subcapture as the `with` topic does. `if $cc<scheme>.defined`
+  instead of the `with` modifier works. AST is correct (`$cc<hier-part>` compiles to a
+  proper associative Index), so this is a runtime value bug, not a parse bug.
+- file: likely the `with`/topic statement-modifier lowering + dual-store (locals/env)
+  handling of a captured Match variable (Slice-F territory). Suspects:
+  `src/parser/stmt/modifier.rs` (with-modifier topic binding) and the VM topic/`$_`
+  scope handling; the grammar-subcapture storage may reify differently from a regex Match.
 
 ### T-032 — test_die [ValueTypeCache] (same nqp cluster as T-027)  [impact: 1 dist]
 - dists: ValueTypeCache
