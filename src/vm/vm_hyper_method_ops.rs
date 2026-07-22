@@ -29,6 +29,111 @@ fn hyper_subscript_index_is_slice(v: &Value) -> bool {
     }
 }
 
+/// Whether a method/routine name is *nodal* — natively defined on the list type
+/// so a hyper applies it at the node level instead of descending to the leaves.
+/// Raku marks these routines `is nodal`; this is mutsu's approximation of that
+/// set, shared by the method-hyper path and the `>>.&nodal-builtin` path.
+fn is_nodal_list_method(name: &str) -> bool {
+    matches!(
+        name,
+        "join"
+            | "elems"
+            | "end"
+            | "sort"
+            | "reverse"
+            | "unique"
+            | "squish"
+            | "pick"
+            | "roll"
+            | "head"
+            | "tail"
+            | "first"
+            | "min"
+            | "max"
+            | "minmax"
+            | "sum"
+            | "flat"
+            | "lazy"
+            | "sink"
+            | "cache"
+            | "List"
+            | "Array"
+            | "Seq"
+            | "Slip"
+            | "Supply"
+            | "Set"
+            | "SetHash"
+            | "Bag"
+            | "BagHash"
+            | "Mix"
+            | "MixHash"
+            | "Str"
+            | "gist"
+            | "raku"
+            | "perl"
+            | "WHAT"
+            | "WHO"
+            | "HOW"
+            | "so"
+            | "Bool"
+            | "Numeric"
+            | "Int"
+            | "Rat"
+            | "Real"
+            | "hash"
+            | "Hash"
+            | "kv"
+            | "keys"
+            | "values"
+            | "tree"
+            | "pairs"
+            | "antipairs"
+            | "classify"
+            | "categorize"
+            | "map"
+            | "grep"
+            | "reduce"
+            | "produce"
+            | "combinations"
+            | "permutations"
+            | "rotate"
+            | "batch"
+            | "rotor"
+            | "repeated"
+            | "snip"
+            | "defined"
+            | "DEFINITE"
+            | "item"
+            | "list"
+            | "AT-POS"
+            | "AT-KEY"
+            | "EXISTS-POS"
+            | "EXISTS-KEY"
+            | "DELETE-POS"
+            | "DELETE-KEY"
+            | "ASSIGN-POS"
+            | "ASSIGN-KEY"
+            | "BIND-POS"
+            | "BIND-KEY"
+            | "push"
+            | "pop"
+            | "shift"
+            | "unshift"
+            | "append"
+            | "prepend"
+            | "splice"
+            | "all"
+            | "any"
+            | "one"
+            | "none"
+            | "duckmap"
+            | "deepmap"
+            | "nodemap"
+            | "flatmap"
+            | "pairup"
+    )
+}
+
 fn itemize_if_descended(source: &Value, result: Value) -> Value {
     if !matches!(
         source.view(),
@@ -436,104 +541,7 @@ impl Interpreter {
                     // plain list-native method once the owner prefix is
                     // stripped, so nodality is decided on the unqualified tail.
                     let unqualified_method = method.rsplit("::").next().unwrap_or(&method);
-                    let is_list_native_method = matches!(
-                        unqualified_method,
-                        "join"
-                            | "elems"
-                            | "end"
-                            | "sort"
-                            | "reverse"
-                            | "unique"
-                            | "squish"
-                            | "pick"
-                            | "roll"
-                            | "head"
-                            | "tail"
-                            | "first"
-                            | "min"
-                            | "max"
-                            | "minmax"
-                            | "sum"
-                            | "flat"
-                            | "lazy"
-                            | "sink"
-                            | "cache"
-                            | "List"
-                            | "Array"
-                            | "Seq"
-                            | "Slip"
-                            | "Supply"
-                            | "Set"
-                            | "SetHash"
-                            | "Bag"
-                            | "BagHash"
-                            | "Mix"
-                            | "MixHash"
-                            | "Str"
-                            | "gist"
-                            | "raku"
-                            | "perl"
-                            | "WHAT"
-                            | "WHO"
-                            | "HOW"
-                            | "so"
-                            | "Bool"
-                            | "Numeric"
-                            | "Int"
-                            | "Rat"
-                            | "Real"
-                            | "hash"
-                            | "Hash"
-                            | "kv"
-                            | "keys"
-                            | "values"
-                            | "tree"
-                            | "pairs"
-                            | "antipairs"
-                            | "classify"
-                            | "categorize"
-                            | "map"
-                            | "grep"
-                            | "reduce"
-                            | "produce"
-                            | "combinations"
-                            | "permutations"
-                            | "rotate"
-                            | "batch"
-                            | "rotor"
-                            | "repeated"
-                            | "snip"
-                            | "defined"
-                            | "DEFINITE"
-                            | "item"
-                            | "list"
-                            | "AT-POS"
-                            | "AT-KEY"
-                            | "EXISTS-POS"
-                            | "EXISTS-KEY"
-                            | "DELETE-POS"
-                            | "DELETE-KEY"
-                            | "ASSIGN-POS"
-                            | "ASSIGN-KEY"
-                            | "BIND-POS"
-                            | "BIND-KEY"
-                            | "push"
-                            | "pop"
-                            | "shift"
-                            | "unshift"
-                            | "append"
-                            | "prepend"
-                            | "splice"
-                            | "all"
-                            | "any"
-                            | "one"
-                            | "none"
-                            | "duckmap"
-                            | "deepmap"
-                            | "nodemap"
-                            | "flatmap"
-                            | "pairup"
-                    );
+                    let is_list_native_method = is_nodal_list_method(unqualified_method);
                     if is_list_native_method {
                         method_is_nodal = true;
                     }
@@ -866,6 +874,73 @@ impl Interpreter {
         }
     }
 
+    /// Recursively apply a *callable* (`>>.&sub` / `>>.&{block}`) to a value,
+    /// descending into nested Iterables and Hash values down to the leaves. A
+    /// callable hyper is never nodal, so — unlike a method hyper — it always
+    /// recurses. Mirrors `hyper_method_apply_recursive`'s descend/itemize rules.
+    fn hyper_sub_apply_recursive(
+        &mut self,
+        callable: &Value,
+        item: &Value,
+        extra_args: &[Value],
+        modifier: Option<&str>,
+    ) -> Result<Value, RuntimeError> {
+        match item.view() {
+            ValueView::Array(elems, kind) => {
+                let mut results = Vec::with_capacity(elems.len());
+                for sub in elems.iter() {
+                    let r = self.hyper_sub_apply_recursive(callable, sub, extra_args, modifier)?;
+                    results.push(itemize_if_descended(sub, r));
+                }
+                Ok(Value::array_with_kind(
+                    crate::gc::Gc::new(crate::value::ArrayData::new(results)),
+                    kind,
+                ))
+            }
+            ValueView::Seq(elems) | ValueView::Slip(elems) => {
+                let mut results = Vec::with_capacity(elems.len());
+                for sub in elems.iter() {
+                    let r = self.hyper_sub_apply_recursive(callable, sub, extra_args, modifier)?;
+                    results.push(itemize_if_descended(sub, r));
+                }
+                Ok(Value::array_with_kind(
+                    crate::gc::Gc::new(crate::value::ArrayData::new(results)),
+                    ArrayKind::List,
+                ))
+            }
+            ValueView::Hash(map) => {
+                let keys: Vec<String> = map.keys().cloned().collect();
+                let mut res_map = std::collections::HashMap::with_capacity(keys.len());
+                for k in keys {
+                    let v = map.get(&k).cloned().unwrap_or(Value::NIL);
+                    let r = self.hyper_sub_apply_recursive(callable, &v, extra_args, modifier)?;
+                    res_map.insert(k, itemize_if_descended(&v, r));
+                }
+                Ok(Value::hash_with_data(Value::hash_arc(res_map)))
+            }
+            _ => {
+                // Leaf: invoke the callable with the element as the first argument.
+                let mut call_args = Vec::with_capacity(extra_args.len() + 1);
+                call_args.push(item.clone());
+                call_args.extend_from_slice(extra_args);
+                match modifier {
+                    Some("?") => Ok(self
+                        .vm_call_on_value(callable.clone(), call_args, None)
+                        .unwrap_or_else(|_| Value::package(Symbol::intern("Any")))),
+                    Some("+") => {
+                        let val = self.vm_call_on_value(callable.clone(), call_args, None)?;
+                        Ok(Value::array(vec![val]))
+                    }
+                    Some("*") => match self.vm_call_on_value(callable.clone(), call_args, None) {
+                        Ok(v) => Ok(Value::array(vec![v])),
+                        Err(_) => Ok(Value::array(vec![])),
+                    },
+                    _ => self.vm_call_on_value(callable.clone(), call_args, None),
+                }
+            }
+        }
+    }
+
     pub(super) fn exec_hyper_method_call_dynamic_op(
         &mut self,
         code: &CompiledCode,
@@ -887,7 +962,20 @@ impl Interpreter {
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("Interpreter stack underflow in HyperMethodCallDynamic target")
         })?;
-        let mut items = crate::runtime::value_to_list(&target);
+        // Hyper on a Hash applies to each *value*, preserving the keys, and
+        // yields a Hash (mirrors the non-dynamic `exec_hyper_method_call_op`).
+        let hash_keys: Option<Vec<String>> = if let ValueView::Hash(map) = target.view() {
+            Some(map.keys().cloned().collect())
+        } else {
+            None
+        };
+        let mut items = if let (Some(keys), ValueView::Hash(map)) = (&hash_keys, target.view()) {
+            keys.iter()
+                .map(|k| map.get(k).cloned().unwrap_or(Value::NIL))
+                .collect()
+        } else {
+            crate::runtime::value_to_list(&target)
+        };
         let mut results = Vec::with_capacity(items.len());
         let method = (!matches!(
             name_val.view(),
@@ -903,28 +991,54 @@ impl Interpreter {
                 name_val.view(),
                 ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
             ) {
-                let mut call_args = Vec::with_capacity(item_args.len() + 1);
-                call_args.push(item.clone());
-                call_args.extend(item_args);
-                match modifier {
-                    Some("?") => {
-                        results.push(
-                            self.vm_call_on_value(name_val.clone(), call_args, None)
-                                .unwrap_or(Value::package(Symbol::intern("Any"))),
-                        );
+                // A `>>.&callable` hyper descends to the leaves (deepmap) UNLESS the
+                // callable is *nodal* (`>>.&elems`, `>>.&reverse`, ...), which applies
+                // at the node level like `>>.elems`. A block or a plain sub is not
+                // nodal and always descends. Nodality follows Raku's `is nodal` trait;
+                // mutsu does not yet store that trait on a user `Sub` (it is parsed
+                // and discarded), so we approximate it by name: a callable whose name
+                // is in the nodal built-in set is treated as nodal. This gets the
+                // built-in routines and the `sub elems is nodal` shadow right; an
+                // anonymous block has an empty name and always descends.
+                // TODO: store the `is nodal` trait on SubData and read it here, so a
+                // plain `sub foo` never counts as nodal and a custom `sub bar is
+                // nodal` (non-builtin name) does.
+                let callable_name = match name_val.view() {
+                    ValueView::Sub(data) => data.name.resolve(),
+                    ValueView::WeakSub(weak) => {
+                        weak.upgrade().map(|d| d.name.resolve()).unwrap_or_default()
                     }
-                    Some("+") => {
-                        let val = self.vm_call_on_value(name_val.clone(), call_args, None)?;
-                        results.push(Value::array(vec![val]));
-                    }
-                    Some("*") => match self.vm_call_on_value(name_val.clone(), call_args, None) {
-                        Ok(v) => results.push(Value::array(vec![v])),
-                        Err(_) => results.push(Value::array(vec![])),
-                    },
-                    _ => {
-                        results.push(self.vm_call_on_value(name_val.clone(), call_args, None)?);
-                    }
+                    ValueView::Routine { name, .. } => name.resolve(),
+                    _ => String::new(),
+                };
+                let callable_is_nodal = is_nodal_list_method(&callable_name);
+                if callable_is_nodal {
+                    // Node level: apply the callable to each top-level element.
+                    let mut call_args = Vec::with_capacity(item_args.len() + 1);
+                    call_args.push(item.clone());
+                    call_args.extend(item_args);
+                    let val = match modifier {
+                        Some("?") => self
+                            .vm_call_on_value(name_val.clone(), call_args, None)
+                            .unwrap_or_else(|_| Value::package(Symbol::intern("Any"))),
+                        Some("+") => Value::array(vec![self.vm_call_on_value(
+                            name_val.clone(),
+                            call_args,
+                            None,
+                        )?]),
+                        Some("*") => {
+                            match self.vm_call_on_value(name_val.clone(), call_args, None) {
+                                Ok(v) => Value::array(vec![v]),
+                                Err(_) => Value::array(vec![]),
+                            }
+                        }
+                        _ => self.vm_call_on_value(name_val.clone(), call_args, None)?,
+                    };
+                    results.push(val);
+                    continue;
                 }
+                let r = self.hyper_sub_apply_recursive(&name_val, item, &item_args, modifier)?;
+                results.push(itemize_if_descended(item, r));
                 continue;
             }
             let method = method
@@ -1080,6 +1194,15 @@ impl Interpreter {
                 return Ok(());
             }
             _ => {}
+        }
+        // A Hash target reassembles into a Hash, pairing each key with its result.
+        if let Some(keys) = hash_keys {
+            let mut map = std::collections::HashMap::with_capacity(keys.len());
+            for (key, value) in keys.into_iter().zip(results) {
+                map.insert(key, value);
+            }
+            self.stack.push(Value::hash_with_data(Value::hash_arc(map)));
+            return Ok(());
         }
         // Preserve the container type of the target: Array->Array, List->List
         let result_kind = match target.view() {
