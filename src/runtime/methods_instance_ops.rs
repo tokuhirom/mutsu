@@ -82,9 +82,12 @@ impl Interpreter {
                 // X::Method::Private::Unqualified rather than the Permission
                 // error used for a qualified-but-untrusted call.
                 let was_qualified = private_rest.contains("::");
-                // Resolve: owner-qualified (!Owner::method) or unqualified (!method)
+                // Resolve: owner-qualified (!Owner::method) or unqualified (!method).
+                // Split at the LAST `::` — the owner class may itself be a nested
+                // name (`$c!Jar::Cookie::secret` is owner `Jar::Cookie`, method
+                // `secret`, NOT owner `Jar`, method `Cookie::secret`).
                 let (pm_name, resolved) =
-                    if let Some((owner_class, pm_name)) = private_rest.split_once("::") {
+                    if let Some((owner_class, pm_name)) = private_rest.rsplit_once("::") {
                         let caller_allowed = caller_class.as_deref() == Some(owner_class)
                             || self.registry().class_trusts.get(owner_class).is_some_and(
                                 |trusted| {
@@ -1388,8 +1391,11 @@ impl Interpreter {
                     .last()
                     .cloned()
                     .or_else(|| Some(self.current_package().to_string()));
+                // Split at the LAST `::` so a nested owner class name
+                // (`$c!Jar::Cookie::secret` → owner `Jar::Cookie`, method `secret`)
+                // resolves correctly.
                 let (pm_name, resolved) = if let Some((owner_class, pm_name)) =
-                    private_rest.split_once("::")
+                    private_rest.rsplit_once("::")
                 {
                     let caller_allowed =
                         caller_class.as_deref() == Some(owner_class)

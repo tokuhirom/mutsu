@@ -18,8 +18,9 @@ impl Interpreter {
         ) {
             return None;
         }
-        // Owner-qualified: !Owner::method
-        if let Some((owner_class, private_name)) = private_rest.split_once("::") {
+        // Owner-qualified: !Owner::method. Split at the LAST `::` so a nested owner
+        // class name (`$x!Jar::Cookie::secret`) keeps its full qualifier.
+        if let Some((owner_class, private_name)) = private_rest.rsplit_once("::") {
             let caller_class = self
                 .method_class_stack
                 .last()

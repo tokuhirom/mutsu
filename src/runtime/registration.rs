@@ -450,7 +450,10 @@ impl Interpreter {
                     self.validate_private_access_in_expr(caller_class, arg)?;
                 }
                 if *modifier == Some('!')
-                    && let Some((owner_class, _)) = name.resolve().split_once("::")
+                    // Split at the LAST `::`: the owner class of a qualified private
+                    // call may itself be a nested name (`$c!Cookie::Jar::Cookie::match`
+                    // is owner `Cookie::Jar::Cookie`, not `Cookie::Jar`).
+                    && let Some((owner_class, _)) = name.resolve().rsplit_once("::")
                     && owner_class != caller_class
                     && !self
                         .registry()
