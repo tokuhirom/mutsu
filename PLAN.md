@@ -1179,35 +1179,39 @@ the backlog.
       differently (raku returns `Stash`/`ClassHOW`/`Bool`) — investigate separately, do not lump in.
       Blast radius is every `>>.` call site, so land it alone and let roast verify.
 
-### 8.7 Bound-element immutability (deferred deep item — ADR-worthy; found 2026-07-22 by the Hash::Agnostic dist)
+### 8.7 Bound-element immutability (READY-TO-IMPLEMENT — de-risked 2026-07-22; found by the Hash::Agnostic dist)
 
 - [ ] **A hash/array element bound to an immutable value must become read-only.**
-      `%h<i> := 137; %h<i> = 666` must throw (raku: `X::Assignment::RO` for a tied hash,
-      `X::AdHoc` for a plain hash) and leave the value `137`; mutsu silently overwrites to
-      `666`. This is **general, NOT tied-specific** — a plain `my %h; %h<i> := 137; %h<i> = 666`
-      also fails to die in mutsu. It blocks Hash::Agnostic dist `t/01-basic.rakutest`
-      subtests 4/5/6 (they cascade: 4's `dies-ok { %h<i> = 666 }` corrupts the post-deletion
-      state that 5 & 6 then read).
-- **Mechanism gap (pinpointed).** mutsu's read-only tracking is **NAME-based** —
-      `mark_readonly(bare_name)` / `is_readonly(name)` over a `readonly_vars: ReadonlySet`.
-      A *scalar* bind to a literal works (`src/vm/vm_var_assign_set_local.rs:358-373` marks the
-      variable name read-only for Int/Str/Num/Bool/Rat/Complex RHS). But a bound **element**
-      (`@a[0]` / `%h<k>`) has **no variable name**, so there is **no per-element read-only
-      mechanism**: `:=` just wraps the literal in a mutable `Scalar` cell (`%h<i>.VAR.^name` is
-      `Scalar` in mutsu vs `Int` in raku), and the element-assign path
-      (`src/vm/vm_var_assign_index_named.rs`) has container-level immutability checks
-      (Map/List/Range) but nothing for a bound-immutable element.
-- **Fix options (ADR-worthy — element read-only representation, touches every element op):**
-      (a) a value-level read-only flag on the Scalar/element cell, checked in the element-assign
-      path; or (b) a per-container "bound-immutable keys/indices" side set. Not a quick slice —
-      high blast radius; do it as a focused, careful session. The value-slice fix (#5141) is a
-      prerequisite for subtest 6 once this lands.
-- **Also blocked in the same dist:** `.kv` on a Hash::Agnostic role returns `()` (raku yields the
-      flattened k/v list). Root cause is a *separate* pre-existing gap — the role's
-      `method kv { Seq.new(KV.new(:backend(self), :iterator(self.keys.iterator))) }` uses a custom
-      `KV` iterator instance, and mutsu's `Seq.new(<custom Iterator instance>)` does not pull from
-      it (same family as the `from-iterator` gap fixed in #5132). Investigate independently of the
-      bound-element work.
+      `%h<i> := 137; %h<i> = 666` must throw and leave the value `137`; mutsu silently overwrites
+      to `666`. Exact exceptions (confirmed vs raku): plain hash/array element → **`X::AdHoc`
+      "Cannot assign to an immutable value"**; tied hash → **`X::Assignment::RO` "Cannot modify an
+      immutable Int (137)"**. General, NOT tied-specific — a plain `my %h; %h<i> := 137; %h<i> = 666`
+      also fails to die in mutsu. Blocks Hash::Agnostic dist `t/01-basic.rakutest` subtests 4/5/6.
+- **ONE fix clears 4, 5 AND 6.** Verified: value slices already work in isolation (#5141), so 5 & 6
+      fail *only* as a cascade from subtest 4 corrupting `%h<i>` (its `dies-ok { %h<i> = 666 }`
+      silently succeeds → the later `:delete` returns 666 not 137, and elems counts drift).
+- **Mechanism gap.** mutsu's read-only tracking is NAME-based (`mark_readonly`/`is_readonly` over
+      `readonly_vars`); scalar bind-to-literal works via it (`vm_var_assign_set_local.rs:358-369`,
+      allowlist Int/BigInt/Num/Str/Bool/Rat/Complex + `bind_source.is_none()`). A bound *element* has
+      no variable name → no per-element RO. (The `.VAR.^name` cosmetic — mutsu `Scalar` vs raku `Int`
+      — is a SEPARATE deeper value-repr issue; the subtests need only the throw + value-preservation.)
+- **NOT the ADR-scale change first feared — option (b)'s side-set already exists.**
+      `src/vm/vm_var_index_tracking.rs` has `mark_bound_index`/`is_bound_index`/`remove_bound_index`
+      over an env key `__mutsu_bound_index::{var}` (a Hash side-set gated by
+      `env::elem_index_meta_possible()`), and the `:=` element bind already calls `mark_bound_index`
+      (`vm_var_assign_index_named.rs:1081` hash, `:1851` array). Plan: (1) add a parallel
+      `__mutsu_ro_index::{var}` trio (register the prefix in `src/env.rs:233`); (2) at the two bind
+      mark sites ALSO `mark_ro_index` when the bound value matches the immutable-literal allowlist;
+      (3) in the element-ASSIGN path near the `is_bound_index` check (`vm_var_assign_index_named.rs:796`,
+      + the multidim path `vm_var_multidim_ops.rs:792`) throw `X::Assignment::RO` (when the var holds a
+      tied `Instance` — reuse `instance_is_tied`) else `X::AdHoc`; (4) `remove_ro_index` on `:delete` /
+      whole-container reassign / splice, mirroring every `remove_bound_index` call site. Pin plain+tied,
+      hash+array. Element write path is hot — the `elem_index_meta_possible()` gate keeps it zero-cost
+      when no `:=` element bind exists.
+- **Then dist is 21/22; last = `.kv`:** returns `()` (raku yields the flattened k/v list). SEPARATE
+      pre-existing gap — the role's `method kv { Seq.new(KV.new(:backend(self), :iterator(...))) }` uses
+      a custom `KV` iterator instance and mutsu's `Seq.new(<custom Iterator instance>)` does not pull
+      from it (same family as the `from-iterator` gap fixed in #5132). Investigate independently.
 - Entry: `git checkout -b feat-bound-element-ro origin/main`. Related: §3 (substrate),
       [ADR-0001] container-repr, [ADR-0013] element cell provenance.
 
