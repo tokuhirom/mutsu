@@ -1380,6 +1380,39 @@ radix strings, `zip`/`roundrobin` listop parsing, `.invert` on a scalar-held Lis
       (`scoped_state_key` / `load_state_locals` / `sync_state_locals`). Pin candidate:
       `t/state-var-per-block-in-feed-map.t`.
 
+### 8.15 Built-in object types with missing/wrong reprs, and `[ident]` mis-parsed as reduction (found 2026-07-22 by the repr oracle sweep)
+
+A repr-focused oracle sweep (`.raku`/`.gist` of built-in object constructors, bare and
+nested — recipe in the sweep memory; script was `tmp/repr-sweep.sh`) surfaced this batch.
+The nested-leaf residues it also found (enum qualification, Uni constructor form, Version
+gist `v` prefix) were fixed in the same PR that recorded this entry.
+
+- [ ] **`[red]` / `[RaceSeq]` parse as a reduction metaop for ANY identifier.** mutsu's
+      parser turns `[ident]` into `Reduction { op: "ident" }` even when `ident` is not an
+      infix operator (raku: only infix ops reduce; `[red]` is a one-element array). At
+      runtime the unknown-op reduction yields `Nil`, so `say [red].raku` prints `Nil`.
+      Fix in the parser: only take the reduction path for known/declared infix operators.
+- [ ] **A one-element array holding an Iterable renders without the trailing comma:**
+      `[HyperSeq].raku` → mutsu `[HyperSeq]`, raku `[HyperSeq,]` (disambiguates from
+      flattening). Applies to Iterable type objects and likely itemized list elements.
+- [ ] **`Channel.new.raku`/`.gist` render as the bare type name `Channel`** (raku:
+      `Channel.new`). The Channel value has no repr arm and its `to_string_value` looks
+      like a type object.
+- [ ] **`Supplier.new.raku` misses its attribute**: raku renders
+      `Supplier.new(taplist => Supplier::TapList.new)`.
+- [ ] **`Proc.new.gist` is `-1`** — Proc's gist/Str delegate to its `.Numeric` (exitcode
+      -1 when not run) instead of the default instance form; raku renders
+      `Proc.new(in => IO::Pipe, out => IO::Pipe, err => IO::Pipe, os-error => Str,
+      exitcode => Nil, signal => Any, pid => Nil, command => [])`. `Proc.new.raku` is
+      likewise attribute-less (`Proc.new`).
+- [ ] **`ThreadPoolScheduler.new` / `CurrentThreadScheduler.new` reprs miss
+      `uncaught_handler => Callable`** (their only raku-visible attribute; the Promise
+      repr fixed in #5217 hardcodes the same text and could then compose it).
+- [ ] **`IO::Spec::Unix.new.raku` renders the type-object form `IO::Spec::Unix`** and its
+      gist is `(Unix)`; raku renders `IO::Spec::Unix.new` for both.
+- [ ] **`Supply.new` should die** ("Cannot directly create a Supply. You might want: ...");
+      mutsu constructs a bare `Supply.new` silently. Behavior divergence beyond repr.
+
 ---
 
 ## Metrics

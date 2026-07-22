@@ -638,21 +638,7 @@ pub(crate) fn native_method_0arg(
                 return Some(Ok(Value::int(text.chars().count() as i64)));
             }
             "raku" | "perl" => {
-                let codepoints: Vec<String> = text
-                    .chars()
-                    .map(|c| format!("0x{:04X}", c as u32))
-                    .collect();
-                // A normalization form appends the form, e.g. Uni.new(...).NFKC
-                let suffix = if u.form.is_empty() {
-                    String::new()
-                } else {
-                    format!(".{}", u.form)
-                };
-                return Some(Ok(Value::str(format!(
-                    "Uni.new({}){}",
-                    codepoints.join(", "),
-                    suffix
-                ))));
+                return Some(Ok(Value::str(raku_repr::uni_raku_repr(text, &u.form))));
             }
             "gist" => {
                 let codepoints: Vec<String> =

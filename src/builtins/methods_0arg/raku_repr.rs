@@ -214,6 +214,38 @@ pub(crate) fn promise_raku_repr(status: &str) -> String {
     )
 }
 
+/// The `.raku` text of an enum value: `Order::Less`, or the quoted form
+/// `Color::<r-g>` when the key is not a plain identifier.
+pub(crate) fn enum_raku_repr(enum_type: &str, key: &str) -> String {
+    let is_ident = key
+        .chars()
+        .next()
+        .is_some_and(|c| c == '_' || (c.is_alphabetic() && !c.is_numeric()))
+        && key
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '\'');
+    if is_ident {
+        format!("{}::{}", enum_type, key)
+    } else {
+        format!("{}::<{}>", enum_type, key)
+    }
+}
+
+/// The `.raku` text of a Uni / normalization form: `Uni.new(0x0061)`, with the
+/// form appended when set (`Uni.new(0x0061).NFC`).
+pub(crate) fn uni_raku_repr(text: &str, form: &str) -> String {
+    let codepoints: Vec<String> = text
+        .chars()
+        .map(|c| format!("0x{:04X}", c as u32))
+        .collect();
+    let suffix = if form.is_empty() {
+        String::new()
+    } else {
+        format!(".{}", form)
+    };
+    format!("Uni.new({}){}", codepoints.join(", "), suffix)
+}
+
 /// Whether a string key may be rendered in the adverbial pair form
 /// `:key(value)`. Mirrors Raku's `<.ident>`: the key must start with a letter
 /// or `_`, continue with word chars, and may contain `-`/`'` only when each is
@@ -822,6 +854,14 @@ pub fn raku_value(v: &Value) -> String {
         // A Version renders as its `v`-prefixed literal (`v1.2`, `v1.2+`) —
         // `.Str` drops the `v`, `.raku` keeps it.
         ValueView::Version { .. } => format!("v{}", v.to_string_value()),
+        // An enum value renders qualified (`Order::Less`); without this arm a
+        // nested enum fell through to its bare string value (`Less`).
+        ValueView::Enum { enum_type, key, .. } => {
+            enum_raku_repr(&enum_type.resolve(), &key.resolve())
+        }
+        // A Uni / normalization form nested in a container keeps its
+        // constructor form (`Uni.new(0x0061).NFC`), not its decoded text.
+        ValueView::Uni(u) => uni_raku_repr(&u.text, &u.form),
         ValueView::Package(name) => name.resolve().to_string(),
         // A parameterized role type object renders as `Cup[EggNog]`.
         ValueView::ParametricRole {
