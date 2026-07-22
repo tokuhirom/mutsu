@@ -138,7 +138,21 @@ pub(super) fn dispatch(
                     Some(Ok(Value::seq(reversed)))
                 }
             }
-            ValueView::Str(s) => Some(Ok(Value::str(s.chars().rev().collect()))),
+            // `Any.reverse` is `self.list.reverse`, so a non-Iterable is a
+            // one-element list and reverses to itself: `"abc".reverse` is
+            // `("abc",).Seq`, NOT `"cba"` (that is `.flip`). The `reverse(...)`
+            // *function* form already did this; the method form did not.
+            ValueView::Str(_)
+            | ValueView::Int(_)
+            | ValueView::BigInt(_)
+            | ValueView::Num(_)
+            | ValueView::Bool(_)
+            | ValueView::Rat(..)
+            | ValueView::FatRat(..)
+            | ValueView::BigRat(..)
+            | ValueView::Complex(..)
+            | ValueView::Pair(..)
+            | ValueView::ValuePair(..) => Some(Ok(Value::seq(vec![target.clone()]))),
             ValueView::Seq(items) | ValueView::Slip(items) => {
                 // A non-lazy Seq/Slip reverses its materialized elements. (Lazy
                 // Seqs are deferred-materialized by the slow path before reaching
