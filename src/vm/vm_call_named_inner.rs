@@ -221,6 +221,14 @@ impl Interpreter {
         }
 
         let let_mark = self.let_saves_len();
+        // A routine body is its own topicalizer for a bare `when`/`default`: a
+        // matching `when` sets the global `when_matched` flag, which must not
+        // leak to an enclosing `given`/`with` body (see vm_call_light.rs for the
+        // full rationale). Reset for the body; restore the caller's value below.
+        let saved_when_matched = self.when_matched();
+        if cf.code.is_routine {
+            self.set_when_matched(false);
+        }
         // Body-internal env_dirty (from nested calls) concerns the callee env,
         // which the return merge reconciles; reset so the post-merge value
         // reflects only what was actually written back to the caller.
@@ -304,6 +312,12 @@ impl Interpreter {
             if self.is_halted() {
                 break;
             }
+        }
+
+        // Restore the caller's `when_matched` — a bare `when` inside this
+        // routine body must not leak its match state to an enclosing given/with.
+        if cf.code.is_routine {
+            self.set_when_matched(saved_when_matched);
         }
 
         // Natural fall-through completion (no explicit return / fail / error

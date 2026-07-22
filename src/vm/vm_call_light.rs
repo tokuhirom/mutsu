@@ -194,6 +194,19 @@ impl Interpreter {
         // package). Restored after the env merge below.
         let saved_package = self.enter_routine_package(cf);
 
+        // A routine (sub/method) body is its own topicalizer for a bare
+        // `when`/`default`: a matching `when` sets the global `when_matched`
+        // flag (and returns via the succeed signal, caught by the
+        // `return_value.is_some()` arm below). That flag must not leak to the
+        // caller — otherwise a routine with a bare `when`, called from inside an
+        // enclosing `given`/`with` body, would leave `when_matched` true and the
+        // enclosing block would break early, skipping the rest of its statements
+        // (e.g. `given $x { $r = f(); say $r }` never runs the `say`). Reset it
+        // for the routine body and restore the caller's value on exit.
+        let saved_when_matched = self.when_matched();
+        if cf.code.is_routine {
+            self.set_when_matched(false);
+        }
         let mut ip = 0;
         let mut result = Ok(());
         let mut explicit_return: Option<Value> = None;
@@ -249,6 +262,12 @@ impl Interpreter {
             if self.is_halted() {
                 break;
             }
+        }
+
+        // Restore the caller's `when_matched` — a bare `when` inside this
+        // routine body must not leak its match state to an enclosing given/with.
+        if cf.code.is_routine {
+            self.set_when_matched(saved_when_matched);
         }
 
         // Natural fall-through completion (no explicit return / fail / error
