@@ -300,113 +300,46 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
         }
     }
 
-    let (rest, else_branch) = if keyword("orwith", rest).is_some() {
-        let r = keyword("orwith", rest).unwrap();
-        let (r, _) = ws1(r)?;
-        let (r, orwith_cond_expr) = condition_expr(r)?;
-        let (r, _) = ws(r)?;
-
-        // Check for optional pointy block on orwith: orwith EXPR -> $param { ... }
-        // The bound variable may use any sigil (e.g. `-> &edit { ... }`), not
-        // just `$`. VarDecl names strip a leading `$` but keep `&`/`@`/`%`.
-        let (r, orwith_param_name) = if let Some(r2) = r.strip_prefix("->") {
-            let (r2, _) = ws(r2)?;
-            let sigil = r2.chars().next();
-            if let Some(sig) = sigil.filter(|&c| c == '$' || c == '&' || c == '@' || c == '%') {
-                let r_after_sigil = &r2[sig.len_utf8()..];
-                let end = r_after_sigil
-                    .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
-                    .unwrap_or(r_after_sigil.len());
-                let name = &r_after_sigil[..end];
-                let r2 = &r_after_sigil[end..];
-                let (r2, _) = ws(r2)?;
-                let decl_name = if sig == '$' {
-                    name.to_string()
-                } else {
-                    format!("{sig}{name}")
-                };
-                (r2, Some(decl_name))
-            } else if let Some(r_after_backslash) = r2.strip_prefix('\\') {
-                let end = r_after_backslash
-                    .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
-                    .unwrap_or(r_after_backslash.len());
-                let name = &r_after_backslash[..end];
-                let r2 = &r_after_backslash[end..];
-                let (r2, _) = ws(r2)?;
-                (r2, Some(name.to_string()))
-            } else {
-                (r, None)
-            }
-        } else {
-            (r, None)
-        };
-
-        let (r, orwith_body) = block(r)?;
-
-        // Run the body under `given <orwith_cond>` so `$_` is topicalized via the
-        // `given` opcode (which establishes a fresh topic scope) rather than a plain
-        // `$_ = <orwith_cond>` assignment. The latter would throw X::Assignment::RO
-        // when the `orwith` is nested in a `for ^N { }` whose `$_` is read-only.
-        let mut orwith_given_body = Vec::new();
-        if let Some(ref pname) = orwith_param_name {
-            orwith_given_body.push(Stmt::VarDecl {
-                name: pname.clone(),
-                expr: orwith_cond_expr.clone(),
-                type_constraint: None,
-                is_state: false,
-                is_our: false,
-                is_dynamic: false,
-                is_export: false,
-                export_tags: Vec::new(),
-                custom_traits: Vec::new(),
-                where_constraint: None,
-            });
-        }
-        orwith_given_body.extend(orwith_body);
-        let orwith_with_body = vec![Stmt::Given {
-            topic: orwith_cond_expr.clone(),
-            body: orwith_given_body,
-        }];
-
-        let orwith_cond_expr_clone = orwith_cond_expr.clone();
-        let orwith_cond = Expr::MethodCall {
-            target: Box::new(orwith_cond_expr),
-            name: Symbol::intern("defined"),
-            args: Vec::new(),
-            modifier: None,
-            quoted: false,
-        };
-        let r_before_else_ws = r;
-        let (r, _) = ws(r)?;
-        let (r, orwith_else) = if keyword("else", r).is_some() {
-            let r2 = keyword("else", r).unwrap();
-            let (r2, _) = ws(r2)?;
+    let (rest, else_branch) =
+        if keyword("orwith", rest).is_some() || keyword("elsif", rest).is_some() {
+            // Delegate the whole `orwith`/`elsif` continuation — including *multiple*
+            // `orwith` clauses and a trailing `else` — to the shared if-chain parser.
+            // It loops over every `orwith`/`elsif` (the old hand-rolled branch here
+            // consumed only a single `orwith`, so `with … orwith … orwith … else …`
+            // left the second `orwith` as an "Undeclared routine") and already
+            // topicalizes each `orwith` body / the `else` via `given`.
+            let (r, (chain_clauses, else_clause)) = parse_elsif_chain(rest)?;
+            let chain_stmt = lower_if_chain(chain_clauses, else_clause);
+            (r, vec![chain_stmt])
+        } else if keyword("else", rest).is_some() {
+            let r = keyword("else", rest).unwrap();
+            let (r, _) = ws(r)?;
             // Check for optional pointy block on else: else -> $param { ... }
-            let (r2, else_param) = if let Some(r3) = r2.strip_prefix("->") {
-                let (r3, _) = ws(r3)?;
-                if let Some(r_after_sigil) = r3.strip_prefix('$') {
+            let (r, else_param) = if let Some(r2) = r.strip_prefix("->") {
+                let (r2, _) = ws(r2)?;
+                if let Some(r_after_sigil) = r2.strip_prefix('$') {
                     let end = r_after_sigil
                         .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
                         .unwrap_or(r_after_sigil.len());
                     let name = &r_after_sigil[..end];
-                    let r3 = &r_after_sigil[end..];
-                    let (r3, _) = ws(r3)?;
-                    (r3, Some(name.to_string()))
+                    let r2 = &r_after_sigil[end..];
+                    let (r2, _) = ws(r2)?;
+                    (r2, Some(name.to_string()))
                 } else {
-                    (r2, None)
+                    (r, None)
                 }
             } else {
-                (r2, None)
+                (r, None)
             };
-            let (r2, else_body) = block(r2)?;
-            // Topicalize $_ in else branch to the orwith condition, via `given` so
-            // the fresh topic scope is not blocked by an enclosing `for`'s read-only
-            // `$_` (see the orwith branch above).
+            let (r, else_body) = block(r)?;
+            // Topicalize $_ in else branch to the with/without condition, via `given`
+            // (a fresh topic scope) so it is not blocked by an enclosing `for`'s
+            // read-only `$_` (see the orwith branch above).
             let mut else_given_body = Vec::new();
             if let Some(ref pname) = else_param {
                 else_given_body.push(Stmt::VarDecl {
                     name: pname.clone(),
-                    expr: orwith_cond_expr_clone.clone(),
+                    expr: tmp_var.clone(),
                     type_constraint: None,
                     is_state: false,
                     is_our: false,
@@ -419,78 +352,16 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
             }
             else_given_body.extend(else_body);
             let else_with_topic = vec![Stmt::Given {
-                topic: orwith_cond_expr_clone.clone(),
+                topic: tmp_var.clone(),
                 body: else_given_body,
             }];
-            (r2, else_with_topic)
+            (r, else_with_topic)
         } else {
-            (r_before_else_ws, Vec::new())
+            // No orwith/else found — don't consume whitespace/newlines past the
+            // closing brace, so the caller sees the statement boundary correctly
+            // (e.g. `do with X { ... }\nsay ...` should not absorb `say`).
+            (rest_before_ws, Vec::new())
         };
-        (
-            r,
-            vec![Stmt::If {
-                cond: orwith_cond,
-                then_branch: orwith_with_body,
-                else_branch: orwith_else,
-                binding_var: None,
-            }],
-        )
-    } else if keyword("elsif", rest).is_some() {
-        // Handle elsif/else chains (reuse if-chain infrastructure)
-        let (r, (elsif_clauses, else_clause)) = parse_elsif_chain(rest)?;
-        let elsif_stmt = lower_if_chain(elsif_clauses, else_clause);
-        (r, vec![elsif_stmt])
-    } else if keyword("else", rest).is_some() {
-        let r = keyword("else", rest).unwrap();
-        let (r, _) = ws(r)?;
-        // Check for optional pointy block on else: else -> $param { ... }
-        let (r, else_param) = if let Some(r2) = r.strip_prefix("->") {
-            let (r2, _) = ws(r2)?;
-            if let Some(r_after_sigil) = r2.strip_prefix('$') {
-                let end = r_after_sigil
-                    .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
-                    .unwrap_or(r_after_sigil.len());
-                let name = &r_after_sigil[..end];
-                let r2 = &r_after_sigil[end..];
-                let (r2, _) = ws(r2)?;
-                (r2, Some(name.to_string()))
-            } else {
-                (r, None)
-            }
-        } else {
-            (r, None)
-        };
-        let (r, else_body) = block(r)?;
-        // Topicalize $_ in else branch to the with/without condition, via `given`
-        // (a fresh topic scope) so it is not blocked by an enclosing `for`'s
-        // read-only `$_` (see the orwith branch above).
-        let mut else_given_body = Vec::new();
-        if let Some(ref pname) = else_param {
-            else_given_body.push(Stmt::VarDecl {
-                name: pname.clone(),
-                expr: tmp_var.clone(),
-                type_constraint: None,
-                is_state: false,
-                is_our: false,
-                is_dynamic: false,
-                is_export: false,
-                export_tags: Vec::new(),
-                custom_traits: Vec::new(),
-                where_constraint: None,
-            });
-        }
-        else_given_body.extend(else_body);
-        let else_with_topic = vec![Stmt::Given {
-            topic: tmp_var.clone(),
-            body: else_given_body,
-        }];
-        (r, else_with_topic)
-    } else {
-        // No orwith/else found — don't consume whitespace/newlines past the
-        // closing brace, so the caller sees the statement boundary correctly
-        // (e.g. `do with X { ... }\nsay ...` should not absorb `say`).
-        (rest_before_ws, Vec::new())
-    };
 
     Ok((
         rest,
