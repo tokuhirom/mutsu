@@ -147,6 +147,14 @@ fn flatten_bracket_op(s: &str) -> String {
 /// Check if the given op (after flattening) is a valid reduction operator.
 /// Handles R/Z/X meta-prefix chains by stripping them to find the base op.
 fn is_valid_reduction_op(op: &str) -> bool {
+    // A user-declared infix matches as a whole BEFORE meta-prefix stripping —
+    // the greedy R/Z/X strip below would mangle a declared op that happens to
+    // start with a meta letter (`infix:<Xyz>` must not become meta X + "yz").
+    if let Some((_, len)) = crate::parser::stmt::simple::match_user_declared_infix_symbol_op(op)
+        && len == op.len()
+    {
+        return true;
+    }
     let mut s = op;
     // Strip meta prefixes while keeping bare operators like `X` intact.
     while s.len() > 1 {
@@ -244,23 +252,13 @@ fn is_custom_reduction_op(op: &str) -> bool {
         // Also accept the symbol as a prefix of op (shouldn't happen for reduction, but be safe)
         let _ = symbol;
     }
-    // A bareword that is not a declared infix operator: accept it as a custom
-    // reduction op ONLY if it looks like an operator name (lowercase/`_`-initial).
-    // An uppercase-initial identifier is a type name or class (`[Any]`, `[Int]`,
-    // `[Exception]`), so `[Type]` must parse as an array literal, not a reduction
-    // (`[Any].raku` is `[Any]` array literal's `.raku`, NOT a reduction with op
-    // "Any"). User-declared uppercase infixes are already matched above by
-    // `match_user_declared_infix_symbol_op`.
-    if !op
-        .chars()
-        .next()
-        .is_some_and(|c| c.is_lowercase() || c == '_')
-    {
-        return false;
-    }
-    if let Ok((rest, _)) = parse_ident_with_hyphens(op) {
-        return rest.is_empty();
-    }
+    // A bareword that is NOT a declared infix operator is not a reduction op:
+    // `[red]` / `[Any]` are one-element array literals (raku only reduces with
+    // infix operators). Accepting any identifier here turned `say [red].raku`
+    // into a reduction over the unknown op "red", which evaluated to Nil.
+    // Word-form built-in infixes (`min`, `max`, `lcm`, ...) are listed in
+    // `REDUCTION_OPS`; user-declared infixes (word or symbol, any case) are
+    // matched by `match_user_declared_infix_symbol_op` above.
     false
 }
 

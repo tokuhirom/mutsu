@@ -1385,13 +1385,11 @@ radix strings, `zip`/`roundrobin` listop parsing, `.invert` on a scalar-held Lis
 A repr-focused oracle sweep (`.raku`/`.gist` of built-in object constructors, bare and
 nested — recipe in the sweep memory; script was `tmp/repr-sweep.sh`) surfaced this batch.
 The nested-leaf residues it also found (enum qualification, Uni constructor form, Version
-gist `v` prefix) were fixed in the same PR that recorded this entry.
+gist `v` prefix) were fixed in the same PR that recorded this entry, and the `[ident]`
+mis-parse (any identifier taken as a reduction metaop, so `say [red].raku` printed `Nil`)
+was fixed right after (`t/bareword-array-not-reduction.t`). Probing the trailing-comma
+item also showed `[:a].raku` renders `[:a]` where raku spells `[:a(Bool::True)]`.
 
-- [ ] **`[red]` / `[RaceSeq]` parse as a reduction metaop for ANY identifier.** mutsu's
-      parser turns `[ident]` into `Reduction { op: "ident" }` even when `ident` is not an
-      infix operator (raku: only infix ops reduce; `[red]` is a one-element array). At
-      runtime the unknown-op reduction yields `Nil`, so `say [red].raku` prints `Nil`.
-      Fix in the parser: only take the reduction path for known/declared infix operators.
 - [ ] **A one-element array holding an Iterable renders without the trailing comma:**
       `[HyperSeq].raku` → mutsu `[HyperSeq]`, raku `[HyperSeq,]` (disambiguates from
       flattening). Applies to Iterable type objects and likely itemized list elements.
