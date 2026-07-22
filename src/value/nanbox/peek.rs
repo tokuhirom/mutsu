@@ -59,6 +59,18 @@ impl NanBox {
         }
     }
 
+    /// True iff this is a big-integer-backed rational tagged as a FatRat.
+    #[inline]
+    pub(in crate::value) fn is_bigfatrat(&self) -> bool {
+        let bits = self.0.get();
+        if let Classified::Kind(Kind::BigRat) = classify(bits) {
+            // SAFETY: BigRat words carry an Arc<BigRatBox>.
+            unsafe { peek_arc::<BigRatBox>(bits) }.2
+        } else {
+            false
+        }
+    }
+
     /// The payload if this is an `Int` (inline or boxed). No coercion.
     #[inline]
     pub(in crate::value) fn as_int(&self) -> Option<i64> {

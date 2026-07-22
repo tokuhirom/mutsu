@@ -95,7 +95,10 @@ pub(crate) fn needs_bigrat_path(l: &Value, r: &Value) -> bool {
 pub(crate) fn is_fat_rat_like(v: &Value) -> bool {
     match v.view() {
         ValueView::FatRat(_, _) => true,
-        ValueView::BigRat(_, d) => d.to_u64().is_none(),
+        // The FatRat flag is authoritative; the big-denominator check is a
+        // safety fallback (a plain Rat degrades to Num past u64, so any
+        // big-denominator rational must be a FatRat).
+        ValueView::BigRat(_, d) => v.is_bigfatrat() || d.to_u64().is_none(),
         _ => false,
     }
 }

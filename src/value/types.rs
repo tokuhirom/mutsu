@@ -7,6 +7,7 @@ pub(crate) fn what_type_name(val: &Value) -> String {
         ValueView::Num(_) => "Num".to_string(),
         ValueView::Str(_) => "Str".to_string(),
         ValueView::Bool(_) => "Bool".to_string(),
+        ValueView::BigRat(_, _) if val.is_bigfatrat() => "FatRat".to_string(),
         ValueView::Rat(_, _) | ValueView::BigRat(_, _) => "Rat".to_string(),
         ValueView::FatRat(_, _) => "FatRat".to_string(),
         ValueView::Complex(_, _) => "Complex".to_string(),

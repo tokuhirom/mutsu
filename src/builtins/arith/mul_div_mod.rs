@@ -307,14 +307,9 @@ pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError
         let den = &ad * &bd;
         let has_fat_rat = is_fat_rat_like(&l) || is_fat_rat_like(&r);
         return Ok(if has_fat_rat {
-            // FatRat % ... stays a FatRat. make_big_fat_rat normalizes small
-            // results down to Rat, so re-tag those as FatRat.
-            let tmp = crate::value::make_big_fat_rat(num, den);
-            if let ValueView::Rat(n, d) = tmp.view() {
-                Value::fat_rat_raw(n, d)
-            } else {
-                tmp
-            }
+            // FatRat % ... stays a FatRat; make_big_fat_rat preserves the flavour
+            // whether the result reduces into i64 range or needs big integers.
+            crate::value::make_big_fat_rat(num, den)
         } else {
             crate::value::make_big_rat_arith(num, den)
         });

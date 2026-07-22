@@ -24,7 +24,13 @@ impl Value {
             ValueView::Bool(_) => "Bool",
             ValueView::Rat(_, _) => "Rat",
             ValueView::FatRat(_, _) => "FatRat",
-            ValueView::BigRat(_, _) => "Rat",
+            ValueView::BigRat(_, _) => {
+                if self.is_bigfatrat() {
+                    "FatRat"
+                } else {
+                    "Rat"
+                }
+            }
             ValueView::Complex(_, _) => "Complex",
             ValueView::Array(..) | ValueView::LazyList(_) => "Array",
             ValueView::Seq(_) => "Seq",
@@ -253,10 +259,10 @@ impl Value {
                 self.view(),
                 ValueView::Instance { class_name, .. } if class_name == "Date" || class_name == "DateTime"
             ),
-            "FatRat" => matches!(
-                self.view(),
-                ValueView::FatRat(_, _) | ValueView::BigRat(_, _)
-            ),
+            "FatRat" => {
+                matches!(self.view(), ValueView::FatRat(_, _))
+                    || (matches!(self.view(), ValueView::BigRat(_, _)) && self.is_bigfatrat())
+            }
             "Int" => matches!(self.view(), ValueView::Bool(_)),
             "Stringy" => matches!(self.view(), ValueView::Str(_)),
             "Block" | "Routine" | "Code" | "Callable" => {

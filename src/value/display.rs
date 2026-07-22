@@ -1,6 +1,6 @@
 use super::*;
 use num_bigint::BigInt as NumBigInt;
-use num_traits::{Signed, ToPrimitive, Zero};
+use num_traits::{Signed, Zero};
 
 pub(crate) fn is_internal_anon_type_name(name: &str) -> bool {
     name.starts_with("__ANON_") && name.ends_with("__")
@@ -256,102 +256,6 @@ fn format_rat_str_bigint(numer: &NumBigInt, denom: &NumBigInt, is_fatrat: bool) 
     }
 }
 
-// BigRat stringification helpers. mutsu stores a Rat or FatRat whose numerator
-// or denominator overflows i64 as a single `BigRat` variant, so it cannot tell a
-// (raku) Rat from a (raku) FatRat once either component is big. The two use
-// different Str digit budgets in Rakudo, so we keep the historical
-// exact-expansion behaviour for BigRat rather than guess wrong; the faithful
-// `format_rat_str_bigint` above is used only for the i64-backed Rat/FatRat
-// variants. Distinguishing big Rats from big FatRats needs a dedicated
-// `BigFatRat` representation (TODO).
-fn format_ratio_bigint_decimal(
-    numer: &NumBigInt,
-    denom: &NumBigInt,
-    append_dot_zero_for_integer: bool,
-    max_fraction_digits: Option<usize>,
-) -> String {
-    if denom.is_zero() {
-        if numer.is_zero() {
-            return "NaN".to_string();
-        }
-        return if numer.is_positive() {
-            "Inf".to_string()
-        } else {
-            "-Inf".to_string()
-        };
-    }
-
-    let sign = numer.is_negative() ^ denom.is_negative();
-    let n = numer.abs();
-    let d = denom.abs();
-    let int_part = &n / &d;
-    let mut rem = n % &d;
-
-    if rem.is_zero() {
-        if append_dot_zero_for_integer {
-            return format!("{}{}.0", if sign { "-" } else { "" }, int_part);
-        }
-        return format!("{}{}", if sign { "-" } else { "" }, int_part);
-    }
-
-    let mut frac = String::new();
-    while !rem.is_zero() {
-        if max_fraction_digits.is_some_and(|limit| frac.len() >= limit) {
-            break;
-        }
-        rem *= 10u8;
-        let digit = &rem / &d;
-        rem %= &d;
-        let ch = digit.to_u8().unwrap_or(0);
-        frac.push(char::from(b'0' + ch));
-    }
-
-    format!("{}{}.{}", if sign { "-" } else { "" }, int_part, frac)
-}
-
-/// Compute digits for BigInt denominator (non-terminating): max(6, chars).
-fn rat_nonterminating_digits_bigint(denom: &NumBigInt) -> usize {
-    if denom.is_zero() {
-        return 6;
-    }
-    let digits = denom.abs().to_string().len();
-    digits.max(6)
-}
-
-/// Format a non-terminating BigRat as decimal with proper digit count and trailing zero stripping.
-fn format_nonterminating_ratio_bigint(numer: &NumBigInt, denom: &NumBigInt) -> String {
-    let digits = rat_nonterminating_digits_bigint(denom);
-    format_ratio_bigint_decimal(numer, denom, false, Some(digits))
-}
-
-/// Strip trailing zeros from a decimal string (but keep at least one digit after the decimal point).
-fn strip_trailing_zeros(s: &str) -> String {
-    if s.contains('.') {
-        let trimmed = s.trim_end_matches('0');
-        if let Some(stripped) = trimmed.strip_suffix('.') {
-            stripped.to_string()
-        } else {
-            trimmed.to_string()
-        }
-    } else {
-        s.to_string()
-    }
-}
-
-fn has_terminating_decimal_bigint(denom: &NumBigInt) -> bool {
-    if denom.is_zero() {
-        return false;
-    }
-    let mut dd = denom.abs();
-    while (&dd % 2u8).is_zero() {
-        dd /= 2u8;
-    }
-    while (&dd % 5u8).is_zero() {
-        dd /= 5u8;
-    }
-    dd == NumBigInt::from(1u8)
-}
-
 impl Value {
     pub(crate) fn to_string_value(&self) -> String {
         match self.view() {
@@ -592,17 +496,26 @@ impl Value {
                     }
                 } else if (n % d).is_zero() {
                     format!("{}", n / d)
+                } else if self.is_bigfatrat() {
+                    // A FatRat has unlimited precision: apply the FatRat digit
+                    // budget over the full big-integer expansion (`format_rat_str_bigint`
+                    // computes the decimal directly, so a huge denominator never
+                    // produces `Inf`, unlike an f64 fallback).
+                    format_rat_str_bigint(n, d, true)
                 } else if d.abs().to_string().len() > 20 {
-                    // For BigRats with very large denominators (beyond uint64 range),
-                    // fall back to Num-based formatting like Raku does for standard Rats.
+                    // A plain Rat with an astronomically large denominator (beyond
+                    // ~u64 range) is a degenerate Rat: raku stringifies it via its
+                    // Num value, so a vanishingly small ratio prints as `0` rather
+                    // than a thousand-digit fraction. A denominator that merely
+                    // overflows i64 but stays around u64 range still uses the exact
+                    // budget below (e.g. `<1/99999999999999999999>`).
                     let val = crate::value::bigrat_to_f64(n, d);
-                    // Use the Num Str formatting
                     Value::Num(val).to_string_value()
-                } else if has_terminating_decimal_bigint(d) {
-                    format_ratio_bigint_decimal(n, d, false, None)
                 } else {
-                    let s = format_nonterminating_ratio_bigint(n, d);
-                    strip_trailing_zeros(&s)
+                    // A big Rat with an in-range denominator follows raku's fixed
+                    // digit-budget rounding (`Rational.Str`): `|denom| < 100_000 ?
+                    // 6 : chars(|denom|) + 1`. Mirrors the i64 Rat arm above.
+                    format_rat_str_bigint(n, d, false)
                 }
             }
             ValueView::Complex(r, i) => format_complex(r, i),

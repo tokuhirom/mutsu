@@ -59,6 +59,7 @@ impl Interpreter {
             ValueView::Hash(_) => "Hash",
             ValueView::Rat(_, _) => "Rat",
             ValueView::FatRat(_, _) => "FatRat",
+            ValueView::BigRat(_, _) if target.is_bigfatrat() => "FatRat",
             ValueView::BigRat(_, _) => "Rat",
             ValueView::Complex(_, _) => "Complex",
             ValueView::Set(_, false) => "Set",

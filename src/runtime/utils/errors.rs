@@ -30,6 +30,7 @@ pub(crate) fn value_short_repr(val: &Value) -> String {
         ValueView::Num(n) => format!("({})", n),
         ValueView::Bool(b) => format!("({})", if b { "True" } else { "False" }),
         ValueView::Rat(n, d) => format!("({}/{})", n, d),
+        ValueView::BigRat(n, d) if val.is_bigfatrat() => format!("(FatRat.new({}, {}))", n, d),
         ValueView::BigRat(n, d) => format!("({}/{})", n, d),
         ValueView::FatRat(n, d) => format!("(FatRat.new({}, {}))", n, d),
         ValueView::Nil => "(Nil)".to_string(),
@@ -199,7 +200,14 @@ pub(crate) fn value_which_key(value: &Value) -> String {
         ValueView::Bool(b) => format!("Bool|{}", if b { 1 } else { 0 }),
         ValueView::Rat(n, d) => format!("Rat|{}/{}", n, d),
         ValueView::FatRat(n, d) => format!("FatRat|{}/{}", n, d),
-        ValueView::BigRat(n, d) => format!("Rat|{}/{}", n, d),
+        ValueView::BigRat(n, d) => {
+            let flavour = if value.is_bigfatrat() {
+                "FatRat"
+            } else {
+                "Rat"
+            };
+            format!("{}|{}/{}", flavour, n, d)
+        }
         ValueView::Complex(r, i) => format!("Complex|{}+{}i", r, i),
         ValueView::Nil => format!("Nil|U{}", Symbol::intern("Nil").id()),
         ValueView::Package(name) => format!("{}|U{}", name.resolve(), name.id()),

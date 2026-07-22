@@ -27,7 +27,13 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         ValueView::Pair(_, _) | ValueView::ValuePair(_, _) => "Pair",
         ValueView::Rat(_, _) => "Rat",
         ValueView::FatRat(_, _) => "FatRat",
-        ValueView::BigRat(_, _) => "Rat",
+        ValueView::BigRat(_, _) => {
+            if value.is_bigfatrat() {
+                "FatRat"
+            } else {
+                "Rat"
+            }
+        }
         ValueView::Complex(_, _) => "Complex",
         ValueView::Set(_, is_mutable) => {
             if is_mutable {

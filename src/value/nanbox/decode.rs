@@ -93,7 +93,7 @@ unsafe fn decode_kind(kind: Kind, bits: u64) -> ValueRepr {
         }
         Kind::BigRat => {
             let b = Arc::unwrap_or_clone(unsafe { take_arc::<BigRatBox>(bits) });
-            ValueRepr::BigRat(Box::new(b.0), Box::new(b.1))
+            ValueRepr::BigRat(Box::new(b.0), Box::new(b.1), b.2)
         }
         Kind::Complex => {
             let p = Arc::unwrap_or_clone(unsafe { take_arc::<F64Pair>(bits) });

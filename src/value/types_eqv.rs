@@ -161,10 +161,14 @@ impl Value {
             // comparison is delegated to PartialEq, which ignores the flag.
             (ValueView::Bag(a, a_mut), ValueView::Bag(b, b_mut)) => a_mut == b_mut && *a == *b,
             (ValueView::Mix(a, a_mut), ValueView::Mix(b, b_mut)) => a_mut == b_mut && *a == *b,
+            // Two big rationals are eqv only when they share the FatRat flag
+            // (a big Rat is never eqv to a big FatRat, even with equal value).
+            (ValueView::BigRat(_, _), ValueView::BigRat(_, _)) => {
+                self.is_bigfatrat() == other.is_bigfatrat() && self == other
+            }
             (ValueView::Int(_), ValueView::Int(_))
             | (ValueView::Str(_), ValueView::Str(_))
             | (ValueView::Bool(_), ValueView::Bool(_))
-            | (ValueView::BigRat(_, _), ValueView::BigRat(_, _))
             | (ValueView::Enum { .. }, ValueView::Enum { .. })
             | (ValueView::Regex(_), ValueView::Regex(_))
             | (ValueView::RegexWithAdverbs { .. }, ValueView::RegexWithAdverbs { .. })

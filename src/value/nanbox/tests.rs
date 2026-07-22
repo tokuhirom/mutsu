@@ -363,6 +363,12 @@ fn every_variant_roundtrips_losslessly() {
         ValueRepr::BigRat(
             Box::new(NumBigInt::from(10).pow(25)),
             Box::new(NumBigInt::from(3)),
+            false,
+        ),
+        ValueRepr::BigRat(
+            Box::new(NumBigInt::from(10).pow(25)),
+            Box::new(NumBigInt::from(7)),
+            true,
         ),
         ValueRepr::Complex(1.5, -2.5),
         ValueRepr::Set(

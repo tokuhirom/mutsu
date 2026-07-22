@@ -19,8 +19,12 @@ is ~$huge, '111111111111111111111111111111111111111111111', 'exact BigInt divisi
 is ~$huge.FatRat, '111111111111111111111111111111111111111111111', 'BigInt .FatRat keeps full string';
 
 my $pow-rat = 4.5 ** 60;
-my $pow-rat-str = '1558657976916843360832062017400788597510.058834953945635510598466400011830046423710882663726806640625';
-is ~$pow-rat, $pow-rat-str, 'Rat ** Int keeps arbitrary precision stringification';
-is $pow-rat.raku, $pow-rat-str, 'Rat ** Int .raku keeps terminating decimal precision';
-is ~$pow-rat.FatRat, $pow-rat-str, 'Rat ** Int .FatRat keeps arbitrary precision stringification';
-is $pow-rat.FatRat.Str, $pow-rat-str, 'Rat ** Int .FatRat.Str keeps arbitrary precision stringification';
+# A big Rat's .Str follows Rakudo's fixed digit-budget rounding (Rational.Str),
+# while .raku keeps the full exact terminating expansion. A big FatRat keeps the
+# full expansion for both (unlimited precision).
+my $pow-rat-full = '1558657976916843360832062017400788597510.058834953945635510598466400011830046423710882663726806640625';
+my $pow-rat-str  = '1558657976916843360832062017400788597510.0588349539456355106';
+is ~$pow-rat, $pow-rat-str, 'big Rat .Str rounds to the Rational.Str digit budget';
+is $pow-rat.raku, $pow-rat-full, 'big Rat .raku keeps the full terminating decimal';
+is ~$pow-rat.FatRat, $pow-rat-full, 'big FatRat .Str keeps arbitrary precision stringification';
+is $pow-rat.FatRat.Str, $pow-rat-full, 'big FatRat .Str keeps arbitrary precision stringification';

@@ -83,10 +83,21 @@ impl Value {
             _ => self,
         }
     }
-    /// Create a BigRat value. The numerator/denominator are boxed (the variant
-    /// stores them behind `Box` to keep `Value` small).
+    /// Create a big `Rat` value. The numerator/denominator are boxed (the
+    /// variant stores them behind `Box` to keep `Value` small).
     pub fn bigrat(num: NumBigInt, den: NumBigInt) -> Self {
-        Value::BigRat(Box::new(num), Box::new(den))
+        Value::BigRat(Box::new(num), Box::new(den), false)
+    }
+    /// Create a big `FatRat` value (unlimited precision). Differs from
+    /// [`Value::bigrat`] only in the FatRat flag, which drives display,
+    /// `.^name`, `.raku`, `.WHICH`, and eqv.
+    pub fn bigfatrat(num: NumBigInt, den: NumBigInt) -> Self {
+        Value::BigRat(Box::new(num), Box::new(den), true)
+    }
+    /// True iff this is a big-integer-backed rational carrying the FatRat flag.
+    #[inline]
+    pub fn is_bigfatrat(&self) -> bool {
+        self.0.is_bigfatrat()
     }
     /// The HOW (meta-object) of a `CustomType` or `CustomTypeInstance`, if this
     /// is one. Centralizes access now that both are boxed payloads.

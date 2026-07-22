@@ -191,12 +191,7 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                 } else {
                     let nn = NumBigInt::from(n).pow(p);
                     let dd = NumBigInt::from(d).pow(p);
-                    let tmp = make_big_fat_rat(nn, dd);
-                    if let ValueView::Rat(nn, dd) = tmp.view() {
-                        Value::fat_rat_raw(nn, dd)
-                    } else {
-                        tmp
-                    }
+                    make_big_fat_rat(nn, dd)
                 }
             }
             (ValueView::FatRat(n, d), ValueView::Int(b)) => {
@@ -209,12 +204,7 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                 } else {
                     let nn = NumBigInt::from(d).pow(p);
                     let dd = NumBigInt::from(n).pow(p);
-                    let tmp = make_big_fat_rat(nn, dd);
-                    if let ValueView::Rat(nn, dd) = tmp.view() {
-                        Value::fat_rat_raw(nn, dd)
-                    } else {
-                        tmp
-                    }
+                    make_big_fat_rat(nn, dd)
                 }
             }
             (ValueView::BigRat(n, d), ValueView::Int(b)) if b >= 0 => {

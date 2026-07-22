@@ -25,6 +25,8 @@ pub(in crate::value) struct F64Pair(pub(in crate::value) f64, pub(in crate::valu
 pub(in crate::value) struct BigRatBox(
     pub(in crate::value) NumBigInt,
     pub(in crate::value) NumBigInt,
+    /// FatRat flag: `true` for a big `FatRat`, `false` for a big `Rat`.
+    pub(in crate::value) bool,
 );
 
 #[derive(Debug, Clone)]
