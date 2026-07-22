@@ -476,6 +476,16 @@ impl Interpreter {
                                 call_args,
                             )?;
                             acc = if negate { Value::truth(!v.truthy()) } else { v };
+                            // `notandthen` short-circuits to Empty once a defined LHS
+                            // produced it: the empty Slip is absorbing, so stop folding
+                            // (a plain pairwise fold would wrongly resume, because an
+                            // empty Slip is undefined and the next `notandthen` would
+                            // pass its RHS through).
+                            if base_op == "notandthen"
+                                && matches!(acc.view(), ValueView::Slip(s) if s.is_empty())
+                            {
+                                break;
+                            }
                             idx += step;
                         }
                         acc
