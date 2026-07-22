@@ -12,15 +12,6 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 
 ## Open
 
-### T-052 — runtime_error: 'X' cannot inherit from 'X' because it is unknown.  [impact: 1 dist]
-- dists: Node::Ethereum::RLP
-- e.g. `Node::Ethereum::RLP`: Node::Ethereum::RLP: 'X::Decode' cannot inherit from 'X' because it is unknown.
-- repro: `class X is Exception {}; class X::Decode is X {}` — a user class named `X`
-  collides with the built-in `X::` exception namespace, so `is X` cannot resolve the
-  user `X`. (Split out of T-001 #5064, which fixed only the `also is X::Qualified`
-  truncation for Config::TOML/Crane.)
-- file: _(needs namespace-resolution work: user `X` vs built-in `X::` exception ns)_
-
 ### T-003 — runtime_error: No such method X for invocant of type 'X'  [impact: 2 dists]
 - dists: Injector, hyperize
 - e.g. `Injector`: Injector: No such method 'loaded' for invocant of type 'CompUnit::Repository::FileSystem'
@@ -133,12 +124,6 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 ### T-033 — test_die [vCard::Parser]  [impact: 1 dist]
 - dists: vCard::Parser
 - e.g. `vCard::Parser`: base=2 pass=1 fail=0 die=1 | t/02-grammar.rakutest: 
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
-
-### T-034 — test_die: No such private method X for invocant of type 'X'  [impact: 1 dist]
-- dists: IdClass
-- e.g. `IdClass`: base=6 pass=0 fail=0 die=6 | t/01-basic.rakutest: No such private method 'gen-rest' for invocant of type 'UserId'
 - repro: _(fill in a minimal repro + raku baseline before fixing)_
 - file: _(suspected parser/runtime file)_
 
@@ -295,7 +280,27 @@ _(move tickets here with `[claim: <branch>]` when you start)_
 
 ## Done
 
-- **T-028** (#PENDING) — P5reset's `reset()` died with "Cannot modify an
+- **T-052** (#PENDING) — Node::Ethereum::RLP failed to load: its
+  `Exception.rakumod` declares `module M { class X is Exception {}; class
+  X::Decode is X {}; class X::Decode::Length is X::Decode {} }`, and `is X`
+  resolved to the built-in `X::` exception namespace (registered as a class)
+  instead of the module-local `M::X`, throwing "'X::Decode' cannot inherit from
+  'X' because it is unknown." Fix: when registering a class inside a module, a
+  bare inheritance-parent name is now qualified to `{current_package}::{parent}`
+  when that names a registered class/role (`qualify_sibling_parent_name`, called
+  from `vm_typedecl_ops` where `current_package` is the enclosing module) — the
+  module-local sibling lexically shadows the same-named built-in. The RLP dist
+  now loads and both test files pass (8/8, 9/9). **Note (separate, pre-existing,
+  not this ticket):** a class written `X::Decode` inside a module is still
+  registered under the bare `X::Decode` rather than `M::X::Decode`, and a bare
+  `X` *term* inside the module still resolves to the built-in namespace — neither
+  affects the dist (the inheritance chain is correct at the object level). Pin:
+  t/module-local-class-shadows-builtin-ns.t.
+- **T-034** (stale) — IdClass ("No such private method 'gen-rest'"): re-verified
+  against the current binary, all 6 test files pass (6/6). The sweep TSV was a
+  stale snapshot; an earlier fix already resolved it. Removed from Open with no
+  new PR (nothing to change).
+- **T-028** (#5180) — P5reset's `reset()` died with "Cannot modify an
   immutable value" on its comb-loop ternary. A ternary `?? !!` is an lvalue and
   assignment binds LOOSER than the conditional, so `cond ?? A !! B op= rhs`
   parses as `(cond ?? A !! B) op= rhs` — the compound (or simple) assignment
