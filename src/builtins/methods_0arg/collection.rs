@@ -366,6 +366,11 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 "Hash" => Some(Ok(target.clone())),
                 _ => Some(Ok(Value::hash(std::collections::HashMap::new()))),
             },
+            // An undefined invocant (`my $d`; a bare `Nil`) has no contents, so
+            // `.hash` is the empty hash — like the type-object arm above. Without
+            // this, `Nil` falls to the list path below and is treated as a
+            // one-element initializer → spurious "Odd number of elements".
+            ValueView::Nil => Some(Ok(Value::hash(std::collections::HashMap::new()))),
             // `.hash` on a hash (`%$h`) IS that hash in Associative context:
             // return it de-itemized (a `$`-held itemized hash contextualized as
             // `%$h` spills to the hash, not an opaque single element), preserving

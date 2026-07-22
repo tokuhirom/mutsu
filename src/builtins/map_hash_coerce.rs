@@ -125,7 +125,24 @@ where
 /// flat list receivers. Mirrors the interpreter's `dispatch_to_hash_impl`.
 pub(crate) fn to_hash(target: Value, check_odd: bool) -> Result<Value, RuntimeError> {
     match target.view() {
-        ValueView::Hash(_) => Ok(target.clone()),
+        ValueView::Hash(map) => {
+            // A Map (a Hash carrying the `Map` declared-type) coerces to a fresh
+            // *mutable* Hash, dropping its immutability; a plain Hash is returned
+            // by identity (raku's `%h.Hash =:= %h`).
+            let is_map = Interpreter::hashdata_type_info(&map)
+                .and_then(|info| info.declared_type)
+                .is_some_and(|dt| dt == "Map");
+            if is_map {
+                let mut result = target.clone();
+                result.with_hash_mut(|arc| {
+                    let data = crate::gc::Gc::make_mut(arc);
+                    data.declared_type = None;
+                });
+                Ok(result)
+            } else {
+                Ok(target.clone())
+            }
+        }
         ValueView::Array(items, ..) => items_to_hash(items.as_ref(), check_odd),
         ValueView::Seq(items) | ValueView::Slip(items) => items_to_hash(items.as_ref(), check_odd),
         ValueView::Set(s, _) => Ok(quanthash_to_hash(

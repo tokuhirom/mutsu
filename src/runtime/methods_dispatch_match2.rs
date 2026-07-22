@@ -126,6 +126,12 @@ impl Interpreter {
                 if method == "Map" {
                     return Some(crate::builtins::map_hash_coerce::to_map(target));
                 }
+                // `.Hash` on an undefined invocant (`my $d`; a bare `Nil`) is the
+                // empty hash, like the `.hash` method. (`.Map` still throws on
+                // an undefined invocant, matching raku, so this is Hash-only.)
+                if target.is_nil() {
+                    return Some(Ok(Value::hash(std::collections::HashMap::new())));
+                }
                 Some(crate::builtins::map_hash_coerce::to_hash(target, true))
             }
             "hash" if args.is_empty() && !matches!(target.view(), ValueView::Instance { .. }) => {
