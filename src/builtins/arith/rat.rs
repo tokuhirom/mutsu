@@ -246,6 +246,17 @@ fn value_from_i128(n: i128) -> Value {
 /// inexact (Num/Complex), the scale is zero, or i128 overflow would occur — the
 /// caller then falls back to the f64 path.
 pub(crate) fn exact_round_scaled(target: &Value, scale: &Value) -> Option<Value> {
+    // Fast path: exact i128 arithmetic. On any i128 overflow (large Ints, e.g.
+    // `(17**1500).round(10)`), this yields `None` via the `checked_*` ops, and we
+    // retry with the BigInt path below rather than degrading to a lossy f64
+    // round (a huge BigInt numifies to `Inf`, so the scaled round returned `Inf`).
+    if let Some(v) = exact_round_scaled_i128(target, scale) {
+        return Some(v);
+    }
+    exact_round_scaled_bigint(target, scale)
+}
+
+fn exact_round_scaled_i128(target: &Value, scale: &Value) -> Option<Value> {
     let (tn, td) = exact_rat_parts_i128(&target.view())?;
     let (sn, sd) = exact_rat_parts_i128(&scale.view())?;
     if sn == 0 {
@@ -271,5 +282,35 @@ pub(crate) fn exact_round_scaled(target: &Value, scale: &Value) -> Option<Value>
         Some(value_from_i128(rn.checked_div(sd)?))
     } else {
         Some(rat_from_i128_or_num(rn, sd))
+    }
+}
+
+/// BigInt-precision `round($scale)` for rational targets/scales that overflow
+/// the i128 fast path. Mirrors `exact_round_scaled_i128` exactly, using
+/// arbitrary-precision arithmetic so `(17**1500).round(10)` stays exact.
+fn exact_round_scaled_bigint(target: &Value, scale: &Value) -> Option<Value> {
+    use num_integer::Integer;
+    let (tn, td) = to_big_rat_parts(target)?;
+    let (sn, sd) = to_big_rat_parts(scale)?;
+    if sn.is_zero() {
+        return None;
+    }
+    let two = NumBigInt::from(2);
+    // r = self/scale + 1/2 = (2*tn*sd + td*sn) / (2*td*sn)
+    let mut num = &two * &tn * &sd + &td * &sn;
+    let mut den = &td * &sn * &two;
+    if den.is_negative() {
+        num = -num;
+        den = -den;
+    }
+    // floor(num/den) with den > 0
+    let floor_q = num.div_floor(&den);
+    // result = floor_q * scale = floor_q * sn / sd
+    let rn = floor_q * &sn;
+    if is_integer_scale(&scale.view()) {
+        // sd == 1 for an integer scale, so the result is an exact integer.
+        Some(Value::from_bigint(rn / &sd))
+    } else {
+        Some(crate::value::make_big_rat_arith(rn, sd))
     }
 }
