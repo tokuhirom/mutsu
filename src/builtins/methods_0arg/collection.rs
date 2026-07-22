@@ -911,32 +911,30 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     );
                     return Some(result);
                 }
-                // Check for non-numeric strings first
+                // Check for non-numeric strings first. Use the full Raku numeric
+                // grammar (via `.Numeric`), NOT a base-10 `parse::<f64>`, so radix
+                // literals and allomorphs a string can hold — `"0xff"` (255),
+                // `"0b1111"` (15), `"1/2"` — sum correctly instead of erroring.
                 for item in items.iter() {
-                    if let ValueView::Str(s) = item.view() {
-                        let trimmed = s.trim();
-                        if trimmed.parse::<f64>().is_err() {
-                            let reason =
-                                "base-10 number must begin with valid digits or '.'".to_string();
-                            let msg =
-                                format!("Cannot convert string '{}' to number: {}", *s, reason);
-                            let mut attrs = std::collections::HashMap::new();
-                            attrs.insert("source".to_string(), Value::str(s.to_string()));
-                            attrs.insert("reason".to_string(), Value::str(reason));
-                            attrs.insert("pos".to_string(), Value::int(0));
-                            attrs.insert(
-                                "target-name".to_string(),
-                                Value::str("Numeric".to_string()),
-                            );
-                            attrs.insert("message".to_string(), Value::str(msg.clone()));
-                            let ex = Value::make_instance(
-                                crate::symbol::Symbol::intern("X::Str::Numeric"),
-                                attrs,
-                            );
-                            let mut err = RuntimeError::new(&msg);
-                            err.exception = Some(Box::new(ex));
-                            return Some(Err(err));
-                        }
+                    if let ValueView::Str(s) = item.view()
+                        && crate::runtime::str_numeric::parse_raku_str_to_numeric(&s).is_none()
+                    {
+                        let reason =
+                            "base-10 number must begin with valid digits or '.'".to_string();
+                        let msg = format!("Cannot convert string '{}' to number: {}", *s, reason);
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert("source".to_string(), Value::str(s.to_string()));
+                        attrs.insert("reason".to_string(), Value::str(reason));
+                        attrs.insert("pos".to_string(), Value::int(0));
+                        attrs.insert("target-name".to_string(), Value::str("Numeric".to_string()));
+                        attrs.insert("message".to_string(), Value::str(msg.clone()));
+                        let ex = Value::make_instance(
+                            crate::symbol::Symbol::intern("X::Str::Numeric"),
+                            attrs,
+                        );
+                        let mut err = RuntimeError::new(&msg);
+                        err.exception = Some(Box::new(ex));
+                        return Some(Err(err));
                     }
                 }
                 // Fold with `+` so the result type promotes like Raku's reduction
