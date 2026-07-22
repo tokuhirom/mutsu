@@ -12,6 +12,23 @@ use crate::value::ValueView;
 use crate::value::signature::extract_sig_info;
 
 impl Interpreter {
+    /// A `.raku`-legal identifier derived from a `rakuseen` id, used for the
+    /// `(my \NAME = ...)` cycle backreference. Non-identifier characters (`::`,
+    /// `|`, spaces, …) are folded to `_` so the emitted binding parses.
+    fn rakuseen_backref_name(id: &str) -> String {
+        let sanitized: String = id
+            .chars()
+            .map(|c| {
+                if c.is_alphanumeric() || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+        format!("{}_backref", sanitized)
+    }
+
     pub(crate) fn call_method_with_values(
         &mut self,
         target: Value,
@@ -130,6 +147,35 @@ impl Interpreter {
         {
             let deconted = Value::array_with_kind(items.clone(), kind.decontainerize());
             return self.call_method_with_values(deconted, method, args);
+        }
+        // `self.rakuseen($id, &code)`: Mu's cyclic-structure guard for
+        // `.raku`/`.gist`. A user `.raku` wraps its body in
+        // `self.rakuseen(self.^name, { ... })`; on the first sight of an id we run
+        // `&code` and return its rendering, but a REPEAT of the same id means a
+        // reference cycle — return a backreference name instead of re-running
+        // `&code` (which would recurse forever), and have the outer occurrence bind
+        // it as `(my \NAME = ...)`.
+        if method == "rakuseen" && args.len() >= 2 {
+            let id = args[0].to_string_value();
+            let code = args[1].clone();
+            if self.rakuseen_active.iter().any(|x| x == &id) {
+                self.rakuseen_cycle_hit.insert(id.clone());
+                return Ok(Value::str(Self::rakuseen_backref_name(&id)));
+            }
+            self.rakuseen_active.push(id.clone());
+            let result = self.call_sub_value(code, vec![], true);
+            if let Some(pos) = self.rakuseen_active.iter().rposition(|x| x == &id) {
+                self.rakuseen_active.remove(pos);
+            }
+            let rendered = result?;
+            if self.rakuseen_cycle_hit.remove(&id) {
+                return Ok(Value::str(format!(
+                    "(my \\{} = {})",
+                    Self::rakuseen_backref_name(&id),
+                    rendered.to_string_value()
+                )));
+            }
+            return Ok(rendered);
         }
         // `List.from-iterator($it)` / `Slip`/`Array`/`Seq`: build the named
         // container by draining a Raku Iterator. Used by custom `does Iterable`
