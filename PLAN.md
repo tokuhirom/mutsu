@@ -1332,6 +1332,27 @@ radix strings, `zip`/`roundrobin` listop parsing, `.invert` on a scalar-held Lis
       reference `raku` (6.d) also `SORRY`s on it, so it is not a divergence. `.rotor` the *method*
       works.
 
+### 8.13 A `sub NAME { }` used as an *expression* loses its `.name` (deferred — found 2026-07-22 by the variables.rakudoc doc-diff sweep)
+
+- [ ] **A named sub in expression/rvalue position drops its name.**
+      `my $s = sub foo { 1 }; say $s.name` is `foo` in raku but empty in mutsu; likewise
+      `(sub baz {1}).name`, `my &g = sub bar {1}; &g.name`, and `anon sub square($x){…}` (its
+      `.name` should stay `square` even though `anon` keeps it out of the symbol table). A
+      *statement-form* `sub foo {…}` is fine — `&foo.name` is `foo` — because the installer records
+      the name; only the expression form loses it.
+- **Root cause: the AST has nowhere to put the name.** A `sub NAME {…}` expression parses to
+      `Expr::AnonSub { body, is_rw, is_block }` / `Expr::AnonSubParams { … }` (`src/ast.rs:311`), both
+      of which have **no `name` field** — the parser consumes and discards the name
+      (`src/parser/primary/ident/anon_sub.rs`). So the created `Sub` value is built nameless.
+- **Why it is deferred (blast radius).** Adding `name: Option<String>` to `AnonSub`/`AnonSubParams`
+      touches ~66 construction sites of `Expr::AnonSub {` across parser + AST helpers + VM, plus the
+      closure-creation path that stamps the `Sub` value's name. It is a mechanical but wide change;
+      do it as its own PR. Also render it in `.gist` (`&foo`) and set `.name`. Pin candidate:
+      `t/sub-expression-name.t`.
+- Entry: `git checkout -b feat-named-sub-expression origin/main`. Files: `src/ast.rs` (the two
+      variants), `src/parser/primary/ident/anon_sub.rs` (+ wherever `sub NAME` in expr position is
+      parsed), the compiler/VM closure builder that creates the `Sub` value.
+
 ---
 
 ## Metrics
