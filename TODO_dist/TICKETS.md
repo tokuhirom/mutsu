@@ -204,8 +204,21 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 ### T-039 — test_fail: An object of type 'X' can do the method X  [impact: 1 dist]
 - dists: Chemistry::Elements
 - e.g. `Chemistry::Elements`: base=7 pass=2 fail=5 die=0 | t/005.languages.rakutest: An object of type 'Chemistry::Elements' can do the method 'lang_str_to_column'
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
+- repro: `class W { method m {} }; can-ok W, 'm'` — raku: passes; mutsu was:
+  fails (even though `W.^can('m')` returned True).
+- **PARTIAL (PR `fix-can-ok-type-object`).** The named `can-ok` symptom is fixed:
+  `value_can_method` (behind `can-ok` / `.can`) only resolved class methods for
+  `ValueView::Instance`, so a **type object** (`ValueView::Package`, e.g.
+  `Chemistry::Elements`) fell through to the universal-method whitelist and
+  reported it could not do its own class methods — despite `.^can` (a separate
+  metamodel path) returning True. Added a `Package` arm that walks the class
+  MRO via `class_has_method`. Pin: `t/can-ok-type-object.t`.
+- **REMAINING (separate, deeper — element-lookup bugs, not `can-ok`):** other
+  test files still fail with wrong data (`t/020.get_name_by_symbol` "Br is 35"
+  got 39; `t/010.get_name_by_Z`; `t/005.min-max-Z`) — a distinct root cause in
+  the element table lookup, unrelated to `.can`. The dist stays test_fail until
+  those are chased.
+- file: `src/runtime/accessors_stack.rs` (`value_can_method` type-object arm)
 
 ### T-040 — test_fail: Can't encode A  [impact: 1 dist]  — FIXED (PR `fix-bitwise-failure-operand`)
 - dists: Gray::Code::RBC
