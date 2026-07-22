@@ -207,7 +207,7 @@ impl Compiler {
                         | Expr::HashVar(_)
                         | Expr::Whatever
                         | Expr::Index { .. }
-                )
+                ) || matches!(t, Expr::DoStmt(s) if matches!(s.as_ref(), Stmt::VarDecl { .. }))
             })
         {
             // ($a, $b, ...) = expr -- list assignment to existing variables
@@ -232,6 +232,27 @@ impl Compiler {
             let mut seen_slurpy = false;
             let mut offset: usize = 0;
             for target in targets.iter() {
+                // An inline `my $x` / `my @a` declaration in the LHS list
+                // (`(my $x, my $y) = 1, 2`) declares the variable first, then
+                // behaves exactly like a plain Var/ArrayVar/HashVar target. The
+                // VarDecl carries the sigil for aggregates (`@a`/`%h`) but not
+                // for scalars (`x`).
+                let declared_target;
+                let target: &Expr = if let Expr::DoStmt(stmt) = target
+                    && let Stmt::VarDecl { name: vn, .. } = stmt.as_ref()
+                {
+                    self.compile_stmt(stmt);
+                    declared_target = if let Some(rest) = vn.strip_prefix('@') {
+                        Expr::ArrayVar(rest.to_string())
+                    } else if let Some(rest) = vn.strip_prefix('%') {
+                        Expr::HashVar(rest.to_string())
+                    } else {
+                        Expr::Var(vn.clone())
+                    };
+                    &declared_target
+                } else {
+                    target
+                };
                 match target {
                     Expr::Var(var_name) => {
                         if seen_slurpy {
@@ -339,10 +360,27 @@ impl Compiler {
             // its `.elems` is the number of targets. A `*` (Whatever) target is a
             // discard slot and contributes nothing; `@`/`%` slurpy targets
             // contribute their (flattened) contents.
+            // An inline `my $x` target was already declared+assigned in the loop
+            // above; read it back as its plain Var/ArrayVar/HashVar so this does
+            // NOT re-run the declaration (which would re-initialize it to Nil).
             let result_targets: Vec<Expr> = targets
                 .iter()
                 .filter(|t| !matches!(t, Expr::Whatever))
-                .cloned()
+                .map(|t| {
+                    if let Expr::DoStmt(stmt) = t
+                        && let Stmt::VarDecl { name: vn, .. } = stmt.as_ref()
+                    {
+                        if let Some(rest) = vn.strip_prefix('@') {
+                            Expr::ArrayVar(rest.to_string())
+                        } else if let Some(rest) = vn.strip_prefix('%') {
+                            Expr::HashVar(rest.to_string())
+                        } else {
+                            Expr::Var(vn.clone())
+                        }
+                    } else {
+                        t.clone()
+                    }
+                })
                 .collect();
             self.compile_expr(&Expr::ArrayLiteral(result_targets));
             return;
