@@ -103,6 +103,37 @@ impl Interpreter {
         false
     }
 
+    /// Whether a user-declared class `name` is (or inherits from) a `Grammar`.
+    /// A `grammar G { ... }` declaration lowers to a class whose parent chain
+    /// contains `Grammar`, so a grammar *instance* (`G.new`) can be recognised
+    /// and routed to the grammar `.parse`/`.subparse`/`.parsefile` dispatch just
+    /// like the type object. Walks the registry parent chain with a shared borrow.
+    pub(crate) fn class_is_grammar(&self, name: &str) -> bool {
+        if name == "Grammar" {
+            return true;
+        }
+        let parents = {
+            let reg = self.registry();
+            reg.classes
+                .get(name)
+                .or_else(|| {
+                    reg.classes
+                        .iter()
+                        .find(|(k, _)| k.rsplit_once("::").is_some_and(|(_, short)| short == name))
+                        .map(|(_, v)| v)
+                })
+                .map(|cd| cd.parents.clone())
+        };
+        if let Some(parents) = parents {
+            for parent in &parents {
+                if parent == "Grammar" || self.class_is_grammar(parent) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     /// Check if a class inherits from an immutable Setty type (Set, Bag, Mix).
     /// Whether a user-declared class `name` inherits (transitively) from the base
     /// `Exception` type (or a built-in `X::`/`CX::` exception). Walks the registry
