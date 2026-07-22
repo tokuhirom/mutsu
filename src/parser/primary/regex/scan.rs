@@ -243,6 +243,13 @@ fn scan_to_delim_inner(
         } else if !p5_mode && c == '>' && input[i + 1..].starts_with('>') {
             // >> is a right word boundary assertion — skip both chars
             chars.next(); // consume second >
+        } else if !p5_mode && c == '{' {
+            // A bare `{ ... }` embedded code block is Main-slang code, not regex:
+            // skip the whole balanced (string-aware) brace block so a delimiter
+            // inside it — most commonly the `/` of the `$/` match variable
+            // (`/ (\d) { say $/ } \d+ /`) — does not end the regex early. In P5
+            // mode `{n,m}` is a quantifier, not code, so this is Raku-only.
+            skip_interp_block(&mut chars)?;
         } else if !p5_mode
             && c == '<'
             && (input[i + 1..].starts_with('[')
