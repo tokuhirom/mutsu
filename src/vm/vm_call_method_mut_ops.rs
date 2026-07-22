@@ -150,6 +150,9 @@ impl Interpreter {
                 // Create HyperSeq/RaceSeq
                 let items = crate::runtime::value_to_list(&target);
                 let arc = std::sync::Arc::new(items);
+                // Remember the requested batch/degree so `.configuration` can
+                // report them (the HyperSeq/RaceSeq does not carry the config).
+                crate::value::hyper_config_set(&arc, batch, degree);
                 let result = if method == "hyper" {
                     Value::hyper_seq_arc(arc)
                 } else {
@@ -179,6 +182,16 @@ impl Interpreter {
                     }
                     "is-lazy" => {
                         self.stack.push(Value::FALSE);
+                        return Ok(());
+                    }
+                    "configuration" if args.is_empty() => {
+                        // `HyperSeq.configuration` — expose the `.batch`/`.degree`
+                        // the sequence was hyperized with (defaults otherwise).
+                        // Used by the `hyperize` dist.
+                        let (batch, degree) =
+                            crate::value::hyper_config_get(&items_arc).unwrap_or((None, None));
+                        self.stack
+                            .push(Interpreter::make_hyper_configuration(batch, degree));
                         return Ok(());
                     }
                     "^name" => {
@@ -1142,6 +1155,9 @@ impl Interpreter {
             }
             let items = crate::runtime::value_to_list(&target);
             let arc = std::sync::Arc::new(items);
+            // Remember the requested batch/degree so `.configuration` can report
+            // them (the HyperSeq/RaceSeq does not carry the config).
+            crate::value::hyper_config_set(&arc, batch, degree);
             let result = if method == "hyper" {
                 Value::hyper_seq_arc(arc)
             } else {

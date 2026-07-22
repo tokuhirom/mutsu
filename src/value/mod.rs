@@ -21,6 +21,43 @@ fn consumed_seqs() -> &'static Mutex<Vec<Weak<Vec<Value>>>> {
     CONSUMED_SEQS.get_or_init(|| Mutex::new(Vec::new()))
 }
 
+/// Records the `:batch`/`:degree` a `HyperSeq`/`RaceSeq` was created with, keyed
+/// by its inner element `Arc` (Weak, so entries expire with the sequence). Read
+/// back by `.configuration` (`HyperSeq.configuration.batch`/`.degree`). `None`
+/// means the value was not specified, so `.configuration` reports the default.
+#[allow(clippy::type_complexity)]
+static HYPER_CONFIGS: OnceLock<Mutex<Vec<(Weak<Vec<Value>>, Option<i64>, Option<i64>)>>> =
+    OnceLock::new();
+
+#[allow(clippy::type_complexity)]
+fn hyper_configs() -> &'static Mutex<Vec<(Weak<Vec<Value>>, Option<i64>, Option<i64>)>> {
+    HYPER_CONFIGS.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+/// Associate a `:batch`/`:degree` configuration with a hyper/race sequence's
+/// element `Arc`, so a later `.configuration` can report it.
+pub(crate) fn hyper_config_set(arc_ptr: &Arc<Vec<Value>>, batch: Option<i64>, degree: Option<i64>) {
+    let mut list = hyper_configs().lock().unwrap();
+    list.retain(|(w, ..)| w.strong_count() > 0);
+    list.push((Arc::downgrade(arc_ptr), batch, degree));
+}
+
+/// Look up the recorded `:batch`/`:degree` for a hyper/race sequence's element
+/// `Arc`. Returns `None` when no configuration was recorded (e.g. a default
+/// `Iterable.hyper` or a `.map`-derived sequence).
+pub(crate) fn hyper_config_get(arc_ptr: &Arc<Vec<Value>>) -> Option<(Option<i64>, Option<i64>)> {
+    let list = hyper_configs().lock().unwrap();
+    let target_ptr = Arc::as_ptr(arc_ptr);
+    for (w, batch, degree) in list.iter() {
+        if let Some(existing) = w.upgrade()
+            && Arc::as_ptr(&existing) == target_ptr
+        {
+            return Some((*batch, *degree));
+        }
+    }
+    None
+}
+
 /// Global set tracking "cached" Seq instances (have called .cache).
 static CACHED_SEQS: OnceLock<Mutex<Vec<Weak<Vec<Value>>>>> = OnceLock::new();
 
