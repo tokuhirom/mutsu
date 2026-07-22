@@ -87,12 +87,18 @@ impl Interpreter {
         let result = (|| {
             let positional_params: Vec<&ParamDef> =
                 param_defs.iter().filter(|p| !p.named).collect();
+            // A `Pair` (interned String key) is a *named* argument (`a => 1`,
+            // `:a(1)`); a `ValuePair` (general key) is a *positional* argument
+            // produced by the parser's `PositionalPair` (a computed/quoted-key
+            // pair or a space-parenthesized `f (a => 1)`), so it counts toward the
+            // positional arity here. Without this, `multi q($x)` fails to match
+            // `q("a" => 1)` / `q (a => 1)` (0 positional args counted).
             let positional_arg_count = args
                 .iter()
                 .filter(|arg| {
                     !matches!(
                         unwrap_varref_value((*arg).clone()).view(),
-                        ValueView::Pair(..) | ValueView::ValuePair(..)
+                        ValueView::Pair(..)
                     )
                 })
                 .count();
