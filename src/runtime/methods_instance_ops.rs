@@ -988,6 +988,25 @@ impl Interpreter {
                         "X::AdHoc.new(payload => {payload_raku})"
                     )));
                 }
+                // Schedulers and Supplier are native instances with no
+                // registered class attributes, so the generic attribute walk
+                // below would render a bare `.new`; Rakudo shows their fixed
+                // raku-visible attributes (an unset `uncaught_handler` is the
+                // `Callable` type object, a fresh taplist is an empty
+                // `Supplier::TapList`).
+                match class_name.resolve().as_str() {
+                    cls @ ("ThreadPoolScheduler" | "CurrentThreadScheduler") => {
+                        return Ok(Value::str(
+                            crate::builtins::methods_0arg::raku_repr::scheduler_raku_repr(cls),
+                        ));
+                    }
+                    "Supplier" => {
+                        return Ok(Value::str(
+                            "Supplier.new(taplist => Supplier::TapList.new)".to_string(),
+                        ));
+                    }
+                    _ => {}
+                }
                 // Collect public attributes for .raku representation. Mark this
                 // instance as being rendered so a reference cycle back to it
                 // (`$obj.myself[0] = $obj`) renders as a backreference name

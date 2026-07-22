@@ -38,6 +38,9 @@ fn leaf_gist(v: &Value) -> String {
         // Promise has no custom gist; its element gist is the `.raku` form.
         return promise_raku_repr(&p.status());
     }
+    if let ValueView::Channel(_) = v.view() {
+        return "Channel.new".to_string();
+    }
     if let ValueView::Version { .. } = v.view() {
         // A Version element keeps its `v` prefix (`[v1.2.3]`), which its
         // bare string value drops.
@@ -836,6 +839,8 @@ pub(super) fn dispatch(
         ValueView::LazyList(_) => None, // fall through to runtime to force
         // Promise has no custom gist, so `.gist` is the default `.raku` form.
         ValueView::Promise(p) => Some(Ok(Value::str(promise_raku_repr(&p.status())))),
+        // Channel likewise; its bare string value reads as a type object.
+        ValueView::Channel(_) => Some(Ok(Value::str_from("Channel.new"))),
         _ => Some(Ok(Value::str(target.to_string_value()))),
     })
 }

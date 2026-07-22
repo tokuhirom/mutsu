@@ -1393,19 +1393,11 @@ item also showed `[:a].raku` renders `[:a]` where raku spells `[:a(Bool::True)]`
 - [ ] **A one-element array holding an Iterable renders without the trailing comma:**
       `[HyperSeq].raku` → mutsu `[HyperSeq]`, raku `[HyperSeq,]` (disambiguates from
       flattening). Applies to Iterable type objects and likely itemized list elements.
-- [ ] **`Channel.new.raku`/`.gist` render as the bare type name `Channel`** (raku:
-      `Channel.new`). The Channel value has no repr arm and its `to_string_value` looks
-      like a type object.
-- [ ] **`Supplier.new.raku` misses its attribute**: raku renders
-      `Supplier.new(taplist => Supplier::TapList.new)`.
 - [ ] **`Proc.new.gist` is `-1`** — Proc's gist/Str delegate to its `.Numeric` (exitcode
       -1 when not run) instead of the default instance form; raku renders
       `Proc.new(in => IO::Pipe, out => IO::Pipe, err => IO::Pipe, os-error => Str,
       exitcode => Nil, signal => Any, pid => Nil, command => [])`. `Proc.new.raku` is
       likewise attribute-less (`Proc.new`).
-- [ ] **`ThreadPoolScheduler.new` / `CurrentThreadScheduler.new` reprs miss
-      `uncaught_handler => Callable`** (their only raku-visible attribute; the Promise
-      repr fixed in #5217 hardcodes the same text and could then compose it).
 - [ ] **`IO::Spec::Unix.new.raku` renders the type-object form `IO::Spec::Unix`** and its
       gist is `(Unix)`; raku renders `IO::Spec::Unix.new` for both.
 - [ ] **`Supply.new` should die** ("Cannot directly create a Supply. You might want: ...");
