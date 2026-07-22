@@ -53,10 +53,19 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 
 ### T-005 — runtime_error: Runtime error: Failed to parse module 'X': Unexpected block in infix position (missing statement control word before the  [impact: 2 dists]
 - dists: REPL, mv2d
-- e.g. `mv2d`: App::MoarVM::Debug: Runtime error: Failed to parse module 'App::MoarVM::Debug': Unexpected block in infix position (missing statement control word before the ex
-- e.g. `REPL`: REPL: Runtime error: Failed to parse module 'REPL': Unexpected block in infix position (missing statement control word before the expression?)
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
+- **PARSE BUG FIXED (PR pending)**: root cause was a leading-dot topic method call
+  with a *quoted* method name — `."$method"()` / `.'method'()` (i.e. `$_."$method"()`).
+  mutsu only handled the explicit-invocant form (`$obj."$m"()`); the topic form left
+  the `.` unconsumed, and the later `{` block was flagged "Unexpected block in infix
+  position". `topic_method_call` (parser/primary/regex/lit.rs) now reuses
+  `parse_quoted_method_name` (Static → `MethodCall{quoted:true}`, Dynamic →
+  `DynamicMethodCall`), matching the explicit-invocant path. Both REPL.rakumod and the
+  mv2d modules parse cleanly now. Pin: t/topic-quoted-method-call.t.
+  (REPL used it as `note ."$method"()` inside a CATCH block, line 693.)
+- remaining (NOT this ticket, deeper): both dists now hit missing *dependencies* —
+  REPL needs `CodeUnit` (raku itself also fails this dep here), mv2d needs
+  `Data::MessagePack`. These are dependency-resolution/install issues, not parse bugs.
+- file: DONE (parse) — parser/primary/regex/lit.rs; remaining — external deps
 
 ### T-009 — parse_error: Runtime error: Failed to parse module 'X': X::Syntax::Confused: Strange text after block (missing semicolon or comma?)  [impact: 1 dist]
 - dists: XML::Canonical

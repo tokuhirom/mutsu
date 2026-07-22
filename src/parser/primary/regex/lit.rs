@@ -1215,6 +1215,45 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
             },
         ));
     }
+    // Quoted method name on the topic: ."$method"() / .'method'() — equivalent to
+    // $_."$method"(). Mirrors the explicit-invocant path; quoted method names
+    // require parenthesized arguments.
+    if (r.starts_with('"') || r.starts_with('\''))
+        && let Some((r, qname)) = crate::parser::expr::parse_quoted_method_name(r)
+    {
+        if !r.starts_with('(') {
+            return Err(PError::expected_at(
+                "parenthesized arguments after quoted method name",
+                r,
+            ));
+        }
+        let (r, _) = parse_char(r, '(')?;
+        let (r, _) = ws(r)?;
+        let (r, args) = parse_call_arg_list(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = parse_char(r, ')')?;
+        let topic = Box::new(Expr::Var("_".to_string()));
+        return Ok((
+            r,
+            match qname {
+                crate::parser::expr::QuotedMethodName::Static(name) => Expr::MethodCall {
+                    target: topic,
+                    name: Symbol::intern(&name),
+                    args,
+                    modifier: None,
+                    quoted: true,
+                },
+                crate::parser::expr::QuotedMethodName::Dynamic(name_expr) => {
+                    Expr::DynamicMethodCall {
+                        target: topic,
+                        name_expr: Box::new(name_expr),
+                        args,
+                        modifier: None,
+                    }
+                }
+            },
+        ));
+    }
     let (r, modifier) = if let Some(stripped) = r.strip_prefix('^') {
         (stripped, Some('^'))
     } else if let Some(stripped) = r.strip_prefix('?') {
