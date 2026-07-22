@@ -3288,8 +3288,16 @@ impl Interpreter {
                 // Read the element value `container[index]` and push it as the
                 // topic, reusing the standard index op so all container shapes
                 // (Array/Hash/ContainerRef/typed) are handled uniformly.
+                //
+                // Under the (B) per-store env-write gate, a plain lexical in a
+                // nested sub is authoritative in its local slot and its env
+                // mirror is suppressed, so `get_env_with_main_alias` misses it
+                // (returns Nil → indexing Nil yields `Any`). This broke
+                // `with $cc<key>` on a grammar Match subcapture held in a nested
+                // sub's `my $cc` (the URI dist). Read the live local slot first.
                 let cval = self
-                    .get_env_with_main_alias(&container)
+                    .gate_local_slot_value(code, &container)
+                    .or_else(|| self.get_env_with_main_alias(&container))
                     .unwrap_or(Value::NIL);
                 self.stack.push(cval);
                 self.stack.push(index.clone());
