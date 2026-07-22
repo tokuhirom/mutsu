@@ -99,7 +99,8 @@ def render(tickets):
         "Move a ticket to **Done** when its PR merges. Rebase on `main` before\n"
         "editing this file; keep edits small (one ticket) to avoid conflicts.\n"
     )
-    out.append(f"\n_{len(tickets)} open tickets._\n")
+    # NOTE: deliberately no "_N open tickets._" line -- a per-PR count is a
+    # constant merge-conflict source when several ticket PRs land in parallel.
     out.append("\n## Open\n")
     for i, t in enumerate(tickets, 1):
         out.append(f"\n### T-{i:03d} — {t['sig']}  [impact: {t['n']} dist{'s' if t['n'] != 1 else ''}]\n")
