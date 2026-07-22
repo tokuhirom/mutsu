@@ -1839,7 +1839,27 @@ impl Interpreter {
                                     }
                                 }
                             }
-                            _ => Value::NIL,
+                            _ => {
+                                // A scalar attribute with no default seeds its
+                                // nominal type object (`has $!z` reads as Any,
+                                // `has Int $!x` as Int) — not Nil — matching
+                                // raku. Native types keep zero/empty defaults.
+                                match attr_type_constraints.get(&attr_name).map(String::as_str) {
+                                    Some(
+                                        "int" | "int8" | "int16" | "int32" | "int64" | "uint"
+                                        | "uint8" | "uint16" | "uint32" | "uint64" | "byte"
+                                        | "atomicint",
+                                    ) => Value::int(0),
+                                    Some("num" | "num32" | "num64") => Value::num(0.0),
+                                    Some("str") => Value::str("".to_string()),
+                                    Some(tc) => {
+                                        let nominal =
+                                            self.nominal_type_object_name_for_constraint(tc);
+                                        Value::package(crate::symbol::Symbol::intern(&nominal))
+                                    }
+                                    None => Value::package(crate::symbol::Symbol::intern("Any")),
+                                }
+                            }
                         }
                     };
                     // A coercion-typed attribute (`has Int() $.x = "42"`) coerces
@@ -1920,8 +1940,14 @@ impl Interpreter {
                     {
                         if let Some(reason) = is_required {
                             let attr_val = attrs.get(attr_name.as_str());
+                            // The pre-BUILD seed for an unset untyped
+                            // attribute is the Any type object, not Nil.
                             let is_set =
-                                !matches!(attr_val.map(Value::view), Some(ValueView::Nil) | None);
+                                !matches!(attr_val.map(Value::view), Some(ValueView::Nil) | None)
+                                    && !matches!(
+                                        attr_val.map(Value::view),
+                                        Some(ValueView::Package(n)) if n == "Any"
+                                    );
                             if !is_set {
                                 let attr_full_name = format!("$!{}", attr_name);
                                 return Err(RuntimeError::attribute_required(

@@ -1196,18 +1196,32 @@ the backlog.
       `roast/S02-types/nil.t` — 67 tests, whitelisted, the authoritative spec; **always run it with
       `MUTSU_FUDGE=1`** or its `#?rakudo todo` tests false-fail) are recorded in the memory note
       `project-nil-any-identity-knot`. Read it before any re-attempt; do **not** re-attempt as a small slice.
-- **Campaign step 1 landed 2026-07-23** (branch `nil-any-campaign`): `.List` materializes array
-      holes as literal `Nil` (via the new canonical `ArrayData::hole_at` predicate; `is default` does
-      not change `.List` — only `.Slip`), argless `.head` reads the store raw (hole → `Nil`), and
-      `Nil` was dropped from the `=:=` fresh-container short-circuit so a List element holding
-      literal `Nil` satisfies `=:= Nil`. This decouples `roast/S32-array/delete.t` subtest 33 from
-      the eqv crutch (it now passes on real Nils). Pin: `t/nil-list-holes.t` (16 assertions,
-      raku-verified). Remaining steps: 2 (store `Any` at every "stored Nil should be Any" site),
-      3 (uninit `my $x` = Any — the compiler/closure-cell knot), 4 (remove the eqv crutch LAST),
-      5 (`(my $x = Nil)` yields the container value Any).
-- **Cost/benefit: LOW-value, HIGH-cost** (for the remaining steps 2-5). The doc-diff payoff is only
-      niche uninitialized-value rendering. Related: §6 (dual-store / lexical slot),
-      [`array-hole-tracking-embedded`], [ADR-0001] container-repr.
+- **Campaign step 1 landed 2026-07-23** (#5256): `.List` materializes array holes as literal
+      `Nil` (via the new canonical `ArrayData::hole_at` predicate; `is default` does not change
+      `.List` — only `.Slip`), argless `.head` reads the store raw (hole → `Nil`), and `=:=`
+      treats only a compile-time *literal* `Nil` operand as the Nil singleton (two reads that both
+      yield Nil stay non-identical — S03-operators/identity.t 34/37). This decouples
+      `roast/S32-array/delete.t` subtest 33 from the eqv crutch. Pin: `t/nil-list-holes.t`.
+- **Campaign step 2 landed 2026-07-23** (branch `nil-any-step2`) — every "stored Nil should be
+      Any" site found by disabling the eqv crutch locally and sweeping the full `t/` suite:
+      explicit `my $x = Nil` resets to Any (statement and expression position; the synthesized
+      no-init default keeps Nil — still load-bearing), `$_` unset-topic reads as Any (an explicitly
+      Nil-topicalized `$_` stays Nil), `$/`/`$!` `.VAR.default` report Nil, absent-key/index
+      `:delete` returns the hole type object (Any / element type) on all paths, and an unset
+      untyped scalar attribute seeds the Any type object in both constructors (post-BUILD required
+      checks treat that seed as unset). Four local tests that encoded the wrong (crutch-masked)
+      semantics were corrected against reference raku: `t/array-slice-oob.t` (Array OOB slices pad
+      Any; List/Seq pad Nil), `t/multidim-indexing.t` 6 (shaped OOB delete throws — the old
+      expectation fails under real raku), `t/vm-basic.t` 188 (`try`'s Nil resets the container to
+      Any). **Key data point: the full `t/` suite (2312 files) passes with the crutch disabled.**
+- **Remaining steps:** 3 (uninit `my $x` = Any — the compiler/closure-cell knot; the ONLY
+      remaining crutch dependency is the uninit-scalar read: `my $x; $x === Any` must stay True,
+      so the crutch cannot be removed before step 3), 4 (remove the eqv crutch LAST; also lets
+      `Nil.^name`/`Nil === Any` divergences close), then re-check `.cache` on a holey Array
+      (returns a List today, raku returns the Array itself — noticed during step 1, unrelated).
+- **Cost/benefit** (for the remaining steps 3-4): step 3 is the proven-hard compiler knot; the
+      payoff is uninit-value rendering + dropping the crutch. Related: §6 (dual-store / lexical
+      slot), [`array-hole-tracking-embedded`], [ADR-0001] container-repr.
 
 ### 8.6 `.WHO`/`.HOW` render without their metamodel detail — mostly done; internals leftover
 

@@ -582,8 +582,11 @@ is vm_shout("hello"), "HELLO", 'compiled function with method call';
 # === Try/Catch ===
 
 # Basic try/catch
+# raku: assigning try's Nil into $try_result resets the container to Any
+# (verified 2026-07-23; the old `is ..., Nil` only passed via the
+# Nil-eqv-Any crutch).
 my $try_result = try { die "oops"; CATCH { default { "caught" } } };
-is $try_result, Nil, 'try/catch catches error';
+ok $try_result === Any, 'try/catch catches error';
 
 # try without error
 my $try_ok = try { 42 };

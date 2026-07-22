@@ -275,6 +275,30 @@ impl Compiler {
                                 });
                                 self.emit_set_named_var(name);
                                 self.emit_get_named_var(name);
+                            } else if type_constraint.is_none()
+                                && is_nil_literal
+                                && custom_traits.iter().any(|(t, _)| t == "__has_initializer")
+                                && !custom_traits
+                                    .iter()
+                                    .any(|(t, _)| t == "__scalar_bind" || t == "default")
+                                && !name.starts_with('@')
+                                && !name.starts_with('%')
+                                && !name.starts_with('&')
+                                && name != "__ANON_STATE__"
+                            {
+                                // Untyped `(my $x = Nil)` with an EXPLICIT Nil
+                                // initializer: assignment of Nil resets a fresh
+                                // untyped scalar to Any (S02-types/nil.t 21) —
+                                // store and yield Any directly (the plain
+                                // SetLocal emitted here has no vardecl reset
+                                // path). Uninitialized `(my $x)` keeps its
+                                // synthesized-Nil path, `:=` binds keep Nil, and
+                                // an `is default(...)` decl is re-read after the
+                                // trait applies (below).
+                                self.code.emit(OpCode::Pop);
+                                self.compile_expr(&Expr::BareWord("Any".to_string()));
+                                self.code.emit(OpCode::Dup);
+                                self.emit_set_named_var(name);
                             } else {
                                 // Enforce a scalar type constraint in expression
                                 // position too (e.g. a bare `my Str $x := 3` whose
