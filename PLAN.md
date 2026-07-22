@@ -1185,8 +1185,18 @@ the backlog.
       is `$((1, 2).Seq)` and `.tree(n)` itemizes exactly the `n` levels it treed — which is what
       makes `.tree(*)` identical to `.tree` (roast `S02-lists/tree.t` test 12, previously passing
       only because *both* sides were un-itemized). Pin: `t/tree-itemization.t`.
-- [ ] Last leftover: `Supply`/`Slip`/`QuantHash` `.raku` rendering differs cosmetically
-      (`Supply()` vs `Supply.new`, `slip(3)` vs `slip(3,)`).
+- **§8.6 is closed** (2026-07-22). The last rendering leftover was the one-element Slip
+      (`slip(3)` → `slip(3,)`, pin `t/slip-raku-repr.t`). A full re-run of the sweep over every
+      name in `is_nodal_list_method` (both the flat and the nested shape) now shows **no
+      remaining nodality divergence**; what it still prints is (a) the inherently random
+      `pick`/`roll`, (b) QuantHash key *ordering* (unordered by definition), (c) rows where
+      both sides error with different wording, and (d) two independent findings now tracked
+      separately: §8.10 (nested-instance `.raku`) and `.WHO`/`.HOW` *content* (mutsu renders a
+      Stash as a plain `Hash` and its `ClassHOW` without the mixin roles — a metamodel-fidelity
+      gap, unrelated to hypers).
+- The sweep script is worth keeping: `tmp/nodal-sweep.sh` (uncommitted, regenerate from the
+      recipe — enumerate the names in `is_nodal_list_method`, run each through a flat and a
+      nested shape under both `mutsu -e` and `raku -e`, print only differing rows).
 
 ### 8.7 Bound-element immutability (mostly LANDED 2026-07-22; only `.kv` remains)
 
@@ -1320,6 +1330,26 @@ the backlog.
 - Entry: `git checkout -b feat-which-keyed-quanthash origin/main`. Files: `src/value/mod.rs`
       (`HashData`), `src/value/value_collections.rs`, `src/value/value_methods_a.rs`
       (`hash_insert_through`), `src/runtime/methods_quanthash_ctor.rs`, the `∈`/`(elem)` set-op path.
+
+### 8.11 A user instance *nested inside a container* renders as `Foo()` for `.raku` (found 2026-07-22 by the nodality sweep re-run)
+
+- [ ] **`[Foo.new].raku` is `[Foo()]`; raku gives `[Foo.new(x => 1)]`.** The instance's *own*
+      `.raku` is correct (`Foo.new(x => 1)`) — only the nested case is wrong, and it is wrong for
+      every container (`(…)`, `[…]`, `%…`, Seq, Pair value, …) and for built-in instance types too
+      (`(1.Supply, 2.Supply).raku` → mutsu `(Supply(), Supply())`, raku `(Supply.new, Supply.new)`).
+- **Root.** Container `.raku` recurses through the *pure* helper
+      `builtins::methods_0arg::raku_repr::raku_value`, which has no interpreter and therefore cannot
+      reach the class registry / `collect_public_raku_attrs`; its `_ =>` arm falls back to
+      `to_string_value()`, i.e. the gist-ish `Foo()`. The correct instance rendering lives in
+      `runtime::methods_instance_ops` (`format!("{}.new({})", …)`) and needs `&mut self`.
+      `builtin_dd` already works around exactly this by special-casing a top-level `Instance` and
+      dispatching the method (`src/runtime/builtins_eval_misc.rs:330`, comment: "would render `F()`").
+- **Fix shape.** Give `raku_value` a way to call back into the interpreter for `Instance` elements
+      — a scoped hook (thread-local set for the duration of a `.raku` dispatch) is the least
+      invasive; the alternative is to make container `.raku` an interpreter-side recursive walk.
+      Medium blast radius (every `.raku` of a container holding an instance changes output), so it
+      wants its own PR with a `make roast` pass. Pin candidate: `t/nested-instance-raku.t`.
+- Entry: `git checkout -b fix-nested-instance-raku origin/main`.
 
 ---
 
