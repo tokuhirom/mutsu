@@ -502,7 +502,9 @@ impl Interpreter {
                     let (contents, next_idx) =
                         Self::collect_pod_entries(lines, idx + 1, Some(target));
                     if target == "pod" {
-                        entries.push(Self::make_pod_block(contents));
+                        let after_target = rest.strip_prefix(target).unwrap_or("");
+                        let (config, _) = Self::parse_pod_config(after_target);
+                        entries.push(Self::make_pod_named_with_config("pod", contents, config));
                     } else if let Some(level) = Self::parse_heading_level(target) {
                         entries.push(Self::make_pod_heading(level, contents));
                     } else {

@@ -1,7 +1,8 @@
 use super::*;
 
 impl Interpreter {
-    pub(super) fn collect_pod_blocks(&mut self, input: &str) {
+    pub(super) fn collect_pod_blocks(&mut self, input: &str) -> Result<(), RuntimeError> {
+        Self::clear_pod_config_error();
         let lines: Vec<&str> = input.lines().collect();
         let mut entries = Vec::new();
         let mut idx = 0usize;
@@ -234,7 +235,9 @@ impl Interpreter {
                     let (contents, next_idx) =
                         Self::collect_pod_entries(&lines, idx + 1, Some(target));
                     if target == "pod" {
-                        entries.push(Self::make_pod_block(contents));
+                        let after_target = rest.strip_prefix(target).unwrap_or("");
+                        let (config, _) = Self::parse_pod_config(after_target);
+                        entries.push(Self::make_pod_named_with_config("pod", contents, config));
                     } else if let Some(level) = Self::parse_heading_level(target) {
                         entries.push(Self::make_pod_heading(level, contents));
                     } else {
@@ -287,5 +290,9 @@ impl Interpreter {
             idx += 1;
         }
         self.env.insert("=pod".to_string(), Value::array(entries));
+        if let Some(err) = Self::take_pod_config_error() {
+            return Err(err);
+        }
+        Ok(())
     }
 }

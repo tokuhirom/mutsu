@@ -1,6 +1,24 @@
 use super::*;
+use std::cell::RefCell;
+
+thread_local! {
+    /// Records the first invalid Pod config colonpair (e.g. `:key<>`) seen while
+    /// parsing a Pod document. `collect_pod_blocks` clears this before parsing and
+    /// surfaces it as a fatal error afterwards, matching Rakudo's compile-time SORRY.
+    static POD_CONFIG_ERROR: RefCell<Option<String>> = const { RefCell::new(None) };
+}
 
 impl Interpreter {
+    /// Clear any pending Pod config error before parsing a fresh document.
+    pub(crate) fn clear_pod_config_error() {
+        POD_CONFIG_ERROR.with(|e| *e.borrow_mut() = None);
+    }
+
+    /// Take the pending Pod config error, if any (e.g. from a `:key<>` colonpair).
+    pub(crate) fn take_pod_config_error() -> Option<RuntimeError> {
+        POD_CONFIG_ERROR.with(|e| e.borrow_mut().take().map(RuntimeError::new))
+    }
+
     /// Parse Pod config adverbs from a directive tail.
     /// Supports all Raku Pod config value forms including `:key<str>`, `:key(val)`,
     /// `:key[val]`, `:key{k=>v}`, `:!key`, `:NNNkey`, lists, hashes, typed scalars.
@@ -52,6 +70,18 @@ impl Interpreter {
             let (value, after_val) = if let Some(after_open) = after_name.strip_prefix('<') {
                 // :key<value> -- angle bracket form (always Str)
                 if let Some(close_idx) = after_open.find('>') {
+                    // `:key<>` (empty angle brackets) is a fatal Pod config error
+                    // in Raku ("Invalid key / colonpair combo in pod config string").
+                    if close_idx == 0 {
+                        POD_CONFIG_ERROR.with(|e| {
+                            let mut slot = e.borrow_mut();
+                            if slot.is_none() {
+                                *slot = Some(format!(
+                                    "Invalid key ({name}) / colonpair (:{name}<>) combo in pod config string"
+                                ));
+                            }
+                        });
+                    }
                     let raw = &after_open[..close_idx];
                     (Value::str(raw.to_string()), &after_open[close_idx + 1..])
                 } else {
