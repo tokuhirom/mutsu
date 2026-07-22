@@ -1041,15 +1041,23 @@ impl Interpreter {
                 self.stack.push(idx_clone);
                 return self.exec_index_op_with_positional(is_positional);
             }
-            (ValueView::Instance { .. }, ValueView::Str(key)) => {
+            (ValueView::Instance { class_name, .. }, ValueView::Str(key)) => {
+                let cn = class_name.resolve();
                 let default = self.typed_container_default(&target);
-                let result = self
-                    .try_compiled_method_or_interpret(
-                        target.clone(),
-                        "AT-KEY",
-                        vec![Value::str_arc(key.clone())],
-                    )
-                    .unwrap_or(Value::NIL);
+                let result = match self.try_compiled_method_or_interpret(
+                    target.clone(),
+                    "AT-KEY",
+                    vec![Value::str_arc(key.clone())],
+                ) {
+                    Ok(v) => v,
+                    // If the class actually has an AT-KEY method, an error it
+                    // raises (e.g. Hash::Agnostic's stub that throws
+                    // X::Hash::NoImplementation) must propagate. Only swallow the
+                    // error for a non-Associative instance that has no AT-KEY,
+                    // where `$obj<foo>` yields Nil.
+                    Err(e) if self.has_user_method(&cn, "AT-KEY") => return Err(e),
+                    Err(_) => Value::NIL,
+                };
                 if result.is_nil() { default } else { result }
             }
             (ValueView::Instance { .. }, ValueView::Int(i)) => {

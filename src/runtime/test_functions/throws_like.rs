@@ -390,17 +390,38 @@ impl Interpreter {
             // Fall back to err.message for the "message" and "gist" matchers:
             // neither is stored as an attribute, and an X:: exception's `.gist`
             // renders its message (plus suggestions), so the message text is the
-            // substring the `gist => /.../` matchers look for.
-            let actual_str = actual_val
-                .as_ref()
-                .map(|v| v.to_string_value())
-                .unwrap_or_else(|| {
-                    if attr_name == "message" || attr_name == "gist" {
-                        err_message.clone()
-                    } else {
-                        String::new()
-                    }
-                });
+            // substring the `gist => /.../` matchers look for. When the thrown
+            // exception is a *user-defined* type that overrides `message`/`gist`
+            // (e.g. a module's own X:: class), invoke that method so the matcher
+            // sees the computed text. Built-in X:: carriers already render their
+            // text into `err_message`, so prefer that for them — a built-in's
+            // native `.message` can differ from the carrier string and would
+            // otherwise regress (e.g. X::Phaser::PrePost).
+            let actual_str = if let Some(v) = actual_val.as_ref() {
+                v.to_string_value()
+            } else if attr_name == "message" || attr_name == "gist" {
+                let user_method = exception_val
+                    .as_ref()
+                    .and_then(|ex| match ex.view() {
+                        ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+                        _ => None,
+                    })
+                    .is_some_and(|cn| self.has_user_method(&cn, attr_name));
+                if user_method {
+                    exception_val
+                        .as_ref()
+                        .and_then(|ex| {
+                            self.call_method_with_values(ex.clone(), attr_name, vec![])
+                                .ok()
+                        })
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_else(|| err_message.clone())
+                } else {
+                    err_message.clone()
+                }
+            } else {
+                String::new()
+            };
             let matched = self.matcher_accepts(expected_val, &actual_str, actual_val.as_ref());
             let expected_display = match expected_val.view() {
                 ValueView::Regex(pattern) => format!("/{}/", *pattern),
