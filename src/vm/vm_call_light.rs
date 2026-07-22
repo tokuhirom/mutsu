@@ -194,6 +194,25 @@ impl Interpreter {
         // coherent; any later reassignment in the body writes through to env via
         // the SetLocal path (`flush_local_to_env`).
 
+        // Raku: a routine gets its own `$_` initialized to `(Any)` — it does NOT
+        // inherit the caller's topic. This positional-light path reads `$_`
+        // through the scoped overlay, which would otherwise fall through to the
+        // caller's topic (`given 'x' { f(1) }` where `sub f($n){ ... $_ ... }`
+        // saw `'x'`, not `Any`). Shadow it with `Any` here — gated on
+        // `reads_topic` so a topic-free hot loop (`fib`) never pays this env
+        // write and keeps the frame-reuse fast path. An explicit `$_` parameter
+        // (bound above) owns `$_`, so skip when one is present.
+        if cf.code.reads_topic
+            && cf.code.is_routine
+            && !cf.param_defs.iter().any(|pd| pd.name == "_")
+        {
+            let any_val = Value::package(crate::symbol::Symbol::intern("Any"));
+            if let Some(slot) = cf.code.locals.iter().position(|n| n == "_") {
+                self.locals[slot] = any_val.clone();
+            }
+            self.env_mut().insert("_".to_string(), any_val);
+        }
+
         let saved_stack_depth = self.stack.len();
         let let_mark = self.let_saves_len();
         // This path skips push_caller_env, so roll back the line the callee
