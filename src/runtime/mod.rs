@@ -1217,9 +1217,14 @@ pub struct Interpreter {
     /// Instance ids whose `.raku` is currently being rendered by the nested-leaf
     /// walker (`methods_raku_dispatch`). A self-referencing object
     /// (`$obj.myself[0] = $obj`) would otherwise recurse forever: instance →
-    /// attribute container → the same instance. A repeated id renders through
-    /// the pure fallback (`Bug()`) instead of dispatching again.
+    /// attribute container → the same instance. A repeated id renders as a
+    /// Rakudo-style backreference name (`Bug_48`) instead of dispatching again.
     pub(crate) raku_leaf_active: Vec<u64>,
+    /// Instance ids for which a cycle backreference was emitted during the
+    /// current native `.raku` render; the frame that pushed the id onto
+    /// [`raku_leaf_active`] consumes the flag to wrap its rendering in the
+    /// `(my \NAME = ...)` binding (mirroring the user-facing `rakuseen`).
+    pub(crate) raku_leaf_cycle_hit: std::collections::HashSet<u64>,
     /// Pending Proxy subclass attribute reference for writeback on mutating methods.
     /// Set when reading a Proxy subclass attribute; consumed by subsequent .push/.pop etc.
     pub(crate) pending_proxy_subclass_attr: Option<(crate::value::ProxySubclassAttrs, String)>,

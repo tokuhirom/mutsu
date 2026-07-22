@@ -989,10 +989,11 @@ impl Interpreter {
                     )));
                 }
                 // Collect public attributes for .raku representation. Mark this
-                // instance as being rendered so a self-referencing attribute
-                // (`$obj.myself[0] = $obj`) stops at the pure `Bug()` fallback
-                // instead of recursing through the nested-leaf walker
-                // (`runtime::methods_raku_dispatch`).
+                // instance as being rendered so a reference cycle back to it
+                // (`$obj.myself[0] = $obj`) renders as a backreference name
+                // instead of recursing (see `dispatch_raku_leaf` in
+                // `runtime::methods_raku_dispatch`); when that happened, wrap
+                // the result in Rakudo's `(my \Bug_48 = Bug.new(...))` binding.
                 let class_key = class_name.resolve();
                 let display_name = crate::value::user_facing_type_name(&class_key);
                 let instance_id = match target.view() {
@@ -1004,19 +1005,26 @@ impl Interpreter {
                 }
                 let public_attrs =
                     self.collect_public_raku_attrs(&class_key, &(attributes).as_map());
-                if let Some(id) = instance_id
-                    && let Some(pos) = self.raku_leaf_active.iter().rposition(|x| *x == id)
-                {
-                    self.raku_leaf_active.remove(pos);
+                let mut cycle_hit = false;
+                if let Some(id) = instance_id {
+                    if let Some(pos) = self.raku_leaf_active.iter().rposition(|x| *x == id) {
+                        self.raku_leaf_active.remove(pos);
+                    }
+                    cycle_hit = self.raku_leaf_cycle_hit.remove(&id);
                 }
-                if public_attrs.is_empty() {
-                    return Ok(Value::str(format!("{}.new", display_name)));
+                let body = if public_attrs.is_empty() {
+                    format!("{}.new", display_name)
+                } else {
+                    format!("{}.new({})", display_name, public_attrs.join(", "))
+                };
+                if cycle_hit && let Some(id) = instance_id {
+                    return Ok(Value::str(format!(
+                        "(my \\{} = {})",
+                        Self::raku_leaf_backref_name(&class_key, id),
+                        body
+                    )));
                 }
-                return Ok(Value::str(format!(
-                    "{}.new({})",
-                    display_name,
-                    public_attrs.join(", ")
-                )));
+                return Ok(Value::str(body));
             }
             if method == "name" && args.is_empty() {
                 return Ok(attributes
@@ -2316,8 +2324,11 @@ impl Interpreter {
                 continue;
             }
             if let Some(val) = attributes.get(attr_name) {
+                // The cycle-guarded dispatch renders a direct instance-valued
+                // attribute that refers back up the chain (`$x.next = $y;
+                // $y.next = $x`) as a backreference instead of recursing.
                 let rendered = self
-                    .call_method_with_values(val.clone(), "raku", vec![])
+                    .dispatch_raku_leaf(val)
                     .map(|v| v.to_string_value())
                     .unwrap_or_else(|_| val.to_string_value());
                 // A `$`-sigil attribute is a Scalar container, so an aggregate
