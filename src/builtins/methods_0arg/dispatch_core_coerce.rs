@@ -773,6 +773,28 @@ pub(super) fn dispatch(
                 Some(None)
             }
         }
+        "Version" => match target.view() {
+            // Cool.Version: Version.new(self.Str). A Version invocant is
+            // already its own version.
+            ValueView::Version { .. } => Some(Some(Ok(target.clone()))),
+            ValueView::Str(_)
+            | ValueView::Int(_)
+            | ValueView::BigInt(_)
+            | ValueView::Num(_)
+            | ValueView::Rat(_, _)
+            | ValueView::BigRat(_, _)
+            | ValueView::FatRat(_, _)
+            | ValueView::Bool(_) => {
+                let s = target.to_string_value();
+                if s.is_empty() {
+                    Some(Some(Ok(Value::version(Vec::new(), false, false))))
+                } else {
+                    let (parts, plus, minus) = Value::parse_version_string(&s);
+                    Some(Some(Ok(Value::version(parts, plus, minus))))
+                }
+            }
+            _ => None,
+        },
         "Num" => {
             let result = match target.view() {
                 ValueView::Int(i) => Value::num(i as f64),

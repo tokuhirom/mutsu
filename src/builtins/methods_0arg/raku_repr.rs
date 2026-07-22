@@ -254,6 +254,23 @@ pub(crate) fn uni_raku_repr(text: &str, form: &str) -> String {
     format!("Uni.new({}){}", codepoints.join(", "), suffix)
 }
 
+/// The `.raku` text of a Version: the `v` literal form when the canonical
+/// string round-trips as a version literal (it starts with an ASCII digit —
+/// Rakudo: `v6.c`, `v6.*`, `v1.2+`), else the constructor form
+/// (`Version.new('True')`, `Version.new('*.6')`, bare `Version.new` when empty).
+pub(crate) fn version_raku_repr(full: &str) -> String {
+    if full.is_empty() {
+        "Version.new".to_string()
+    } else if full.starts_with(|c: char| c.is_ascii_digit()) {
+        format!("v{full}")
+    } else {
+        format!(
+            "Version.new('{}')",
+            full.replace('\\', "\\\\").replace('\'', "\\'")
+        )
+    }
+}
+
 /// Whether a string key may be rendered in the adverbial pair form
 /// `:key(value)`. Mirrors Raku's `<.ident>`: the key must start with a letter
 /// or `_`, continue with word chars, and may contain `-`/`'` only when each is
@@ -864,7 +881,7 @@ pub fn raku_value(v: &Value) -> String {
         ValueView::Nil => "Nil".to_string(),
         // A Version renders as its `v`-prefixed literal (`v1.2`, `v1.2+`) —
         // `.Str` drops the `v`, `.raku` keeps it.
-        ValueView::Version { .. } => format!("v{}", v.to_string_value()),
+        ValueView::Version { .. } => version_raku_repr(&v.to_string_value()),
         // An enum value renders qualified (`Order::Less`); without this arm a
         // nested enum fell through to its bare string value (`Less`).
         ValueView::Enum { enum_type, key, .. } => {
