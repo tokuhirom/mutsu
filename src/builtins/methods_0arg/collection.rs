@@ -634,31 +634,36 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
         }
         "pairup" => match target.view() {
-            ValueView::Package(name) if name == "Any" => Some(Ok(Value::seq(Vec::new()))),
+            // A bare type object listifies to nothing, so `Range.pairup` is `()`.
+            ValueView::Package(_) => Some(Ok(Value::seq(Vec::new()))),
             _ => {
                 let items = crate::runtime::utils::value_to_list(target);
-                if !items.len().is_multiple_of(2) {
-                    let mut attrs = std::collections::HashMap::new();
-                    attrs.insert("got".to_string(), Value::int(items.len() as i64));
-                    attrs.insert(
-                        "message".to_string(),
-                        Value::str(format!(
-                            "Cannot pair up odd number of elements ({})",
-                            items.len()
-                        )),
-                    );
-                    let ex = Value::make_instance(Symbol::intern("X::Pairup::OddNumber"), attrs);
-                    let mut err = RuntimeError::new(format!(
-                        "X::Pairup::OddNumber: Cannot pair up odd number of elements ({})",
-                        items.len()
-                    ));
-                    err.exception = Some(Box::new(ex));
-                    return Some(Err(err));
+                let mut pairs: Vec<Value> = Vec::new();
+                let mut i = 0;
+                while i < items.len() {
+                    // A Pair in the source list is emitted unchanged (consuming
+                    // one element); any other value takes the following element
+                    // as its value (`key => value`, consuming two).
+                    if matches!(
+                        items[i].view(),
+                        ValueView::Pair(..) | ValueView::ValuePair(..)
+                    ) {
+                        pairs.push(items[i].clone());
+                        i += 1;
+                    } else if i + 1 < items.len() {
+                        pairs.push(Value::value_pair(items[i].clone(), items[i + 1].clone()));
+                        i += 2;
+                    } else {
+                        let msg = "Odd number of elements found for .pairup()";
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert("message".to_string(), Value::str(msg.to_string()));
+                        let ex =
+                            Value::make_instance(Symbol::intern("X::Pairup::OddNumber"), attrs);
+                        let mut err = RuntimeError::new(format!("X::Pairup::OddNumber: {msg}"));
+                        err.exception = Some(Box::new(ex));
+                        return Some(Err(err));
+                    }
                 }
-                let pairs: Vec<Value> = items
-                    .chunks_exact(2)
-                    .map(|chunk| Value::value_pair(chunk[0].clone(), chunk[1].clone()))
-                    .collect();
                 Some(Ok(Value::seq(pairs)))
             }
         },
