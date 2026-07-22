@@ -96,6 +96,36 @@ doc) are version skew, not mutsu bugs — lowest priority.
   hash-initializer `ValuePair` arm through it (`build_hash_from_items`,
   `coerce_to_hash`, `MakeHashFromPairs`), covering `%( )`, plain list assignment,
   and single-pair assignment. Pin: `t/hash-junction-key.t`.
+- `operators.rakudoc` [25]/[26] — the left-exclusive sequence operators
+  (`^...` / `^...^`) failed to parse as an unparenthesized listop argument
+  (`say 1 ^... 4`). `build_sequence_from_seeds` recognized `...`/`...^`/`…`/`…^`
+  but not the `^`-prefixed forms; added them (strip the `^`, build the plain
+  sequence, wrap in `.skip(1)`) — **#5116**. Pin: `t/seq-left-exclusive-listop.t`.
+- `operators.rakudoc` [22]/[23] — a `Bool` was ordered by string, not numeric,
+  value, so `0 cmp False`/`0 <=> False` were Less/More instead of Same and
+  `min False, 0` dropped the first-on-tie rule. Normalize a Bool operand to its
+  Int (False→0, True→1) in both `compare_values` and `spaceship_ordering`, fixing
+  `cmp`/`<=>`/`before`/`after`/`min`/`max`/`sort` — **#5119**. Pin:
+  `t/bool-numeric-compare.t`.
+- `operators.rakudoc` [1] — `++$a.=abs` (`++($a.=abs)`) died with "prefix:<++>
+  requires mutable arguments"; the prefix `++`/`--` compiler did not recognize an
+  `AssignExpr` (the `.=` mutator shape) as an lvalue. Added an `AssignExpr` branch
+  — **#5120**. Pin: `t/prefix-incr-dot-assign.t`.
+- `operators.rakudoc` [17] — a qualified method call on a *type object*
+  (`Foo.Bar::baz`) died X::Method::InvalidQualifier because `value_type_name`
+  reports a type object's meta-type ("Package") and the non-instance path
+  dispatched unqualified. Added a `Package` branch to
+  `dispatch_qualified_non_instance_method` mirroring the instance path
+  (`class_mro` + `resolve_method_with_owner`) — **#5124**. Pin:
+  `t/qualified-parent-method-on-type-object.t`.
+- `operators.rakudoc` [20]/[21] (partial) — `≅`/`=~=` short-circuited to True on
+  any `a == b` (so `1 ≅ 1` stayed True at `$*TOLERANCE = 0`) and used `<=`. Now
+  the short-circuit is infinities-only, the relative test is strict `<`, and pure
+  reals skip the imaginary-part test. Also exempted built-in dynamics from
+  X::Dynamic::Postdeclaration (`say $*OUT; { my $*OUT }`) via
+  `is_builtin_dynamic_var` — **#5128**. Pin: `t/approx-equal-tolerance.t`.
+  **Still open:** a bare `say $*TOLERANCE` reads undefined (not 1e-15); seeding it
+  is blocked by the block-scope-dynamic desync below.
 
 ### Deferred / deep (tracked elsewhere — do not re-open as a shallow slice)
 These root causes account for a large share of the survey's `mism`/`crash` and are
@@ -151,6 +181,35 @@ intentionally deferred; see PLAN.md §8.5 and the ADRs:
     `my \i` registers `i` as a user term symbol whose registration leaks past
     its block, so a later bare `i` in the same unit mis-parses (`-> \i` does not
     leak; only the `my \i` VarDecl form).
+- **List-infix (`Z`/`X`/meta/infix-func) comma precedence** — `operators.rakudoc`
+  [24] (`say 100, 200 Z+ 42, 23` → mutsu `100(242)`, raku `(142 223)`; `1, 2 Z 3, 4`
+  → `((1 3) (2 4))`). `Z`/`X` are **looser than comma** in Raku, so the comma list
+  on each side is the operand (`(100,200) Z+ (42,23)`); mutsu binds them tighter
+  than comma. The parenthesized form already builds the right AST
+  (`MetaOp { meta:"Z", op:"+", left: ArrayLiteral, right: ArrayLiteral }`), so the
+  fix is a precedence-layer change: make the listop-arg / comma-expression parser
+  absorb the whole comma level into a top-level `Z`/`X`/meta-op, analogous to the
+  sequence-operator comma-absorption (`try_parse_sequence_arg_list`). Deferred:
+  it is a core precedence-layer change across many operator forms, not a shallow
+  slice.
+- **Forward-declaration stub upgrade** — `operators.rakudoc` [6]
+  (`sub a() { ... }; say a; sub a() { 42 }` → raku 42, mutsu X::Redeclaration). A
+  `{ ... }` yada stub is a forward declaration a later real definition upgrades.
+  Top-level is fixable (thread `existing_single_is_stub` through the
+  `registration_sub.rs` guards + gate an inline stub-over-real no-op on
+  `!__hoisted`), but it **regresses `stub-and-supersede.t`**: a *block-scoped*
+  stub redefinition (`{ sub l {...}; throws-like 'l()', X::StubCode; sub l {42} }`)
+  passes on `main` only because of `throws-like`'s EVAL context — the plain block
+  form already errors on `main`. The real fix must design the hoist-pass +
+  inline-pass double-registration together with block-shadow + EVAL; deferred.
+- **Block-scope restore of a dynamic var with a pre-existing outer value** — a
+  `{ my $*X = v; ... }` block does not fully restore `$*X` for `get_dynamic_var`
+  when `$*X` had an outer (e.g. seeded) value: after the block, the plain read is
+  restored but `get_dynamic_var("$*X")` still resolves the stale inner `v`. Surfaced
+  by an attempt to seed `$*TOLERANCE` (reverted in #5128); it broke
+  `S32-num/complex.t`'s `<=>`-with-negligible-imaginary subtest. This gap blocks a
+  clean `$*TOLERANCE` default (operators.rakudoc [20] bare read). Needs the
+  block-scope snapshot to cover the seeded/outer dynamic key.
 
 ### Untriaged
 Everything in the survey below not listed above. The per-file minimal repros live in
