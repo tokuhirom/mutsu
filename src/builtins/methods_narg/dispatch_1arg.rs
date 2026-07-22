@@ -469,6 +469,11 @@ pub(crate) fn native_method_1arg(
                 ValueView::Num(f) if f >= 0.0 => f as usize,
                 _ => return Some(Ok(Value::NIL)),
             };
+            // A Range is not array-backed; index its (possibly lazy) element
+            // sequence directly.
+            if crate::builtins::arith::range::range_bounds(target).is_some() {
+                return Some(Ok(range_at_pos(target, idx)));
+            }
             if let Some(items) = target.as_list_items() {
                 Some(Ok(items.get(idx).cloned().unwrap_or(Value::NIL)))
             } else {
@@ -520,6 +525,62 @@ pub(crate) fn native_method_1arg(
                     _ => None,
                 }
             }
+        }
+        "EXISTS-POS" => {
+            let idx = match arg.view() {
+                ValueView::Int(i) => i,
+                ValueView::Num(f) => f as i64,
+                _ => return Some(Ok(Value::FALSE)),
+            };
+            if idx < 0 {
+                return Some(Ok(Value::FALSE));
+            }
+            // On a Range, an index exists when it is below the element count.
+            // A lazy (infinite) range cannot report `.elems`, so — like raku —
+            // `.EXISTS-POS` on it throws X::Cannot::Lazy.
+            if crate::builtins::arith::range::range_bounds(target).is_some() {
+                match range_elem_count(target) {
+                    None => {
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert(
+                            "message".to_string(),
+                            Value::str("Cannot .elems a lazy list".to_string()),
+                        );
+                        let ex = Value::make_instance(Symbol::intern("X::Cannot::Lazy"), attrs);
+                        let mut err = RuntimeError::new("Cannot .elems a lazy list");
+                        err.exception = Some(Box::new(ex));
+                        return Some(Err(err));
+                    }
+                    Some(n) => return Some(Ok(Value::truth((idx as usize) < n))),
+                }
+            }
+            if let Some(items) = target.as_list_items() {
+                return Some(Ok(Value::truth((idx as usize) < items.len())));
+            }
+            None
+        }
+        "in-range" => {
+            // Range.in-range(x): True when x lies within the range, otherwise
+            // it throws X::OutOfRange (it never returns False).
+            if crate::builtins::arith::range::range_bounds(target).is_some() {
+                if range_contains_value(target, arg) {
+                    return Some(Ok(Value::TRUE));
+                }
+                use crate::builtins::methods_0arg::raku_repr::raku_value;
+                let msg = format!(
+                    "Value out of range. Is: {}, should be in {}",
+                    raku_value(arg),
+                    raku_value(target)
+                );
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("message".to_string(), Value::str(msg.clone()));
+                attrs.insert("got".to_string(), arg.clone());
+                let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
+                let mut err = RuntimeError::new(msg);
+                err.exception = Some(Box::new(ex));
+                return Some(Err(err));
+            }
+            None
         }
         "split" => {
             if let ValueView::Instance { class_name, .. } = target.view()
@@ -2026,4 +2087,65 @@ pub(crate) fn native_method_1arg(
         }
         _ => None,
     }
+}
+
+/// The 0-based `n`th element of a Range, or Nil when `idx` is past the end.
+/// An infinite integer range (`a..*`) is indexed arithmetically; every other
+/// range materializes its (finite) element list.
+fn range_at_pos(range: &Value, idx: usize) -> Value {
+    if crate::builtins::functions::flat::is_infinite_range(range) {
+        if let Some((start, _end, excl_start, _)) =
+            crate::builtins::arith::range::range_bounds(range)
+            && let ValueView::Int(a) = start.view()
+        {
+            let first = if excl_start { a + 1 } else { a };
+            return Value::int(first + idx as i64);
+        }
+        return Value::NIL;
+    }
+    crate::runtime::value_to_list(range)
+        .get(idx)
+        .cloned()
+        .unwrap_or(Value::NIL)
+}
+
+/// Number of elements in a Range, or None when the range is infinite.
+fn range_elem_count(range: &Value) -> Option<usize> {
+    if crate::builtins::functions::flat::is_infinite_range(range) {
+        return None;
+    }
+    Some(crate::runtime::value_to_list(range).len())
+}
+
+/// Whether `val` lies within `range`, honoring the range's exclusivity and
+/// Whatever endpoints. Mirrors `Interpreter::value_in_range` for the numeric
+/// and string-endpoint cases used by `.in-range`.
+fn range_contains_value(range: &Value, val: &Value) -> bool {
+    let Some((start, end, excl_start, excl_end)) =
+        crate::builtins::arith::range::range_bounds(range)
+    else {
+        return false;
+    };
+    let start_whatever = matches!(start.view(), ValueView::Whatever | ValueView::HyperWhatever);
+    let end_whatever = matches!(end.view(), ValueView::Whatever | ValueView::HyperWhatever);
+    let string_range =
+        matches!(start.view(), ValueView::Str(_)) || matches!(end.view(), ValueView::Str(_));
+    if string_range {
+        let v = val.to_string_value();
+        let smin = start.to_string_value();
+        let smax = end.to_string_value();
+        let min_ok = start_whatever || if excl_start { v > smin } else { v >= smin };
+        let max_ok = end_whatever || if excl_end { v < smax } else { v <= smax };
+        return min_ok && max_ok;
+    }
+    let v = val.to_f64();
+    let min_ok = start_whatever || {
+        let vmin = start.to_f64();
+        if excl_start { v > vmin } else { v >= vmin }
+    };
+    let max_ok = end_whatever || {
+        let vmax = end.to_f64();
+        if excl_end { v < vmax } else { v <= vmax }
+    };
+    min_ok && max_ok
 }

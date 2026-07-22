@@ -8,7 +8,7 @@
 mod add_sub;
 mod mul_div_mod;
 mod pow_negate;
-mod range;
+pub(crate) mod range;
 mod rat;
 mod temporal;
 
