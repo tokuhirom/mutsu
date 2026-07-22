@@ -136,7 +136,27 @@ impl Interpreter {
         items: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         if items.is_empty() {
-            return Ok(Value::NIL);
+            // An empty reduce returns the operator's identity element (`0` for
+            // `+`, `""` for `~`, `1` for `*`, `True` for chaining comparisons, …),
+            // matching raku (`[+] ()` is `0`; `().reduce(&infix:<+>)` is `0`;
+            // `reduce &infix:<*>, ()` is `1`). An operator with no known identity
+            // (a bare block) yields Nil. An *undefined* invocant is caught earlier
+            // by `dispatch_reduce_method` and returns Nil regardless of operator.
+            let op_name = match callable.view() {
+                ValueView::Sub(data) => Some(data.name.resolve()),
+                ValueView::Routine { name, .. } => Some(name.resolve()),
+                _ => None,
+            };
+            return Ok(match op_name {
+                Some(op) => {
+                    let bare_op = op
+                        .strip_prefix("infix:<")
+                        .and_then(|s| s.strip_suffix('>'))
+                        .unwrap_or(op.as_str());
+                    crate::runtime::reduction_identity(bare_op)
+                }
+                None => Value::NIL,
+            });
         }
         if items.len() == 1 {
             // A single-element reduce returns the element's *value* coerced to the
