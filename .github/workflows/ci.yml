@@ -8,8 +8,27 @@ on:
     branches:
       - main
 
+# One in-flight CI run per ref. A PR that gets several pushes in a row (a
+# fixup, a rebase, a force-push) used to leave every superseded run grinding
+# through the full ~25 min roast suite for a commit nobody will merge, which is
+# pure runner-slot waste on a repo that lands many small PRs per hour. Cancel
+# those; never cancel a `push: main` run (its result is the post-merge safety
+# net and is what the bench/history tooling reads).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
+    # Skip the heavy suites on tagpr's release PR. tagpr rewrites
+    # `tagpr-from-v*` on EVERY push to main, so each merged PR used to kick off
+    # a second full CI run (test + wasm-e2e + gc-stress + jit-stress) on a diff
+    # that only ever contains CHANGELOG.md, the Cargo.toml version, and the
+    # matching Cargo.lock line. main itself is CI'd on every push, so that run
+    # verified nothing new. A job skipped by a conditional reports as a passing
+    # required status check, so the release PR still merges (unlike a `paths:`
+    # filter, which would leave the required checks pending forever).
+    if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'tagpr-from-')
     runs-on: ubuntu-latest
     # The job does two full cargo builds (debug for `prove t/`, release for
     # roast) plus clippy, unit tests, and the ~7 min roast suite. At 15 min the
@@ -138,6 +157,8 @@ jobs:
           if-no-files-found: ignore
 
   wasm-e2e:
+    # Skipped on tagpr's release PR — see the `test` job's comment.
+    if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'tagpr-from-')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -202,6 +223,9 @@ jobs:
     # the roast whitelist, and the final "No GC verify violations" step (any
     # `VERIFY FAIL` in the suite = heap corruption). A failure anywhere here
     # is a real GC regression.
+    #
+    # Skipped on tagpr's release PR — see the `test` job's comment.
+    if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'tagpr-from-')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -320,6 +344,9 @@ jobs:
     # byte-identical output to the interpreter, so every step is a BLOCKING
     # gate: any failure here that does not reproduce with MUTSU_JIT=off is a
     # JIT codegen/shim bug.
+    #
+    # Skipped on tagpr's release PR — see the `test` job's comment.
+    if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'tagpr-from-')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
