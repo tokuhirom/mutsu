@@ -639,6 +639,9 @@ impl Interpreter {
                     .unwrap_or(-1);
                 Ok(Value::int(cp))
             }
+            // nqp::gethostname(): the system hostname as a native str. Used by
+            // Sys::Hostname's `hostname` sub (`nqp::gethostname.subst(...)`).
+            "nqp::gethostname" => Ok(Value::str(Self::hostname())),
             // nqp::bindattr($obj, Type, '$!attr', value): write an attribute
             // cell directly, bypassing accessors (roast's Test::Compile uses it
             // to install a precomp repository into a CUR::FileSystem instance).

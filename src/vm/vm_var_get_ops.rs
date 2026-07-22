@@ -281,6 +281,11 @@ impl Interpreter {
         } else if name.starts_with("Metamodel::") {
             // Meta-object protocol type objects
             Value::package(Symbol::intern(name))
+        } else if name == "nqp::gethostname" {
+            // A no-paren 0-arg `nqp::`-op term dispatches through the builtin nqp
+            // compat layer, not the qualified symbol lookup below (which would
+            // raise "Could not find symbol '&gethostname' in 'nqp'").
+            self.call_function(name, Vec::new())?
         } else if name.contains("::") {
             // Check if this is an access to a non-existent enum variant
             if let Some((pkg, sym)) = name.rsplit_once("::")
