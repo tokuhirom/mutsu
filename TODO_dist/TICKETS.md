@@ -606,11 +606,15 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
   (mutsu processes `use` at runtime); poor ROI.
 - file: builtin-vs-imported-sub dispatch priority (deep)
 
-### T-055 — test_fail: 1 s -> 1 second [Time::Duration::Parser]  [impact: 1 dist]
-- dists: Time::Duration::Parser
-- e.g. base=1 pass=0 fail=1 die=0 | t/00-basic.rakutest: 1 s -> 1 second
-- repro: _(fill in — duration string parsing; check `raku -I lib` baseline first)_
-- file: _(suspected parser/runtime file)_
+### T-055 — test_fail: 1 s -> 1 second [Time::Duration::Parser]  [impact: 1 dist]  — DEFERRED (PLAN §8.16)
+- dists: Time::Duration::Parser (0/42)
+- Root cause: **inline grammar-action `make` values do not persist on subrule Match
+  nodes**, so the grammar's `[+] $<time>».made` reduces `[(Any) (Any) …]` → 0. Its
+  `duration`/`time`/`timespec` tokens each `{ make … }` inline and the parent reads
+  `$<subrule>.made` / `».made`. Only the TOP match gets its `ast` set today. Recorded
+  as PLAN.md §8.16 (moderate blast radius: regex capture struct + Match builder). Repro
+  and fix sketch are in §8.16.
+- file: `src/value/value_methods_c.rs` (Match builder), regex capture-commit path
 
 ### T-056 — test_fail: Codepoint [P5quotemeta]  [impact: 1 dist]
 - dists: P5quotemeta
