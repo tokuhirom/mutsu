@@ -106,6 +106,8 @@ pub(crate) fn gist_value(value: &Value) -> String {
         ValueView::Promise(p) => {
             crate::builtins::methods_0arg::raku_repr::promise_raku_repr(&p.status())
         }
+        // Channel likewise; its bare string value reads as a type object.
+        ValueView::Channel(_) => "Channel.new".to_string(),
         ValueView::Rat(_, _) | ValueView::FatRat(_, _) | ValueView::BigRat(_, _) => {
             // Rat.gist is identical to Rat.Str in Raku
             value.to_string_value()

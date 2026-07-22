@@ -203,13 +203,21 @@ pub(crate) fn needs_raku_dispatch(v: &Value) -> bool {
     }
 }
 
+/// The `.raku` (and default `.gist`) text of a scheduler: its only
+/// raku-visible attribute is `uncaught_handler`, `Callable` when unset —
+/// mutsu's schedulers never carry a handler.
+pub(crate) fn scheduler_raku_repr(class: &str) -> String {
+    format!("{}.new(uncaught_handler => Callable)", class)
+}
+
 /// The `.raku` (and default `.gist`) text of a Promise. Rakudo renders the
 /// two public attributes: the scheduler (whose own `.raku` only shows its
 /// `uncaught_handler`, `Callable` when unset — mutsu promises always run on
 /// the global pool with no handler) and the `PromiseStatus` enum constant.
 pub(crate) fn promise_raku_repr(status: &str) -> String {
     format!(
-        "Promise.new(scheduler => ThreadPoolScheduler.new(uncaught_handler => Callable), status => PromiseStatus::{})",
+        "Promise.new(scheduler => {}, status => PromiseStatus::{})",
+        scheduler_raku_repr("ThreadPoolScheduler"),
         status
     )
 }
@@ -584,6 +592,9 @@ pub fn raku_value(v: &Value) -> String {
         ValueView::Str(s) => escape_raku_str(&s),
         ValueView::Int(i) => i.to_string(),
         ValueView::Promise(p) => promise_raku_repr(&p.status()),
+        // A Channel's only repr is the bare constructor (Rakudo shows no
+        // attributes); its string value (`Channel`) reads as a type object.
+        ValueView::Channel(_) => "Channel.new".to_string(),
         ValueView::Rat(n, d) => {
             if d == 0 {
                 if n == 0 {
