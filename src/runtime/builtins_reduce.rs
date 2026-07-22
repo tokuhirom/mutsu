@@ -139,13 +139,18 @@ impl Interpreter {
             return Ok(Value::NIL);
         }
         if items.len() == 1 {
-            // For numeric infix operators (e.g. `reduce &infix:<+>, "2"`), apply
-            // the identity element + the single element so that coercions happen.
+            // A single-element reduce returns the element's *value* coerced to the
+            // operator's natural type — NOT `identity op elem` (that would negate
+            // for `-`, invert for `/`, etc.). Raku: `[+] "2"` is `2` (Int), `[-] 10`
+            // is `10`, `[~] 5` is `"5"` (Str). Numeric operators coerce the element
+            // to Numeric; `~` (and other string ops) coerce to Str; everything else
+            // (e.g. `[,]`, `[max]`, chaining ops) returns the element unchanged.
             let op_name = match callable.view() {
                 ValueView::Sub(data) => Some(data.name.resolve()),
                 ValueView::Routine { name, .. } => Some(name.resolve()),
                 _ => None,
             };
+            let elem = items.into_iter().next().unwrap();
             if let Some(ref op) = op_name {
                 // Strip infix:<...> wrapper if present
                 let bare_op = op
@@ -156,8 +161,7 @@ impl Interpreter {
                     bare_op,
                     "+" | "-" | "*" | "/" | "%" | "**" | "+|" | "+&" | "+^"
                 ) {
-                    let elem = items.into_iter().next().unwrap();
-                    // Validate non-numeric strings
+                    // Validate non-numeric strings (raku throws on `[+] "x"`).
                     if let ValueView::Str(s) = elem.view()
                         && crate::runtime::str_numeric::parse_raku_str_to_numeric(&s).is_none()
                     {
@@ -166,11 +170,13 @@ impl Interpreter {
                             "base-10 number must begin with valid digits or '.'",
                         ));
                     }
-                    let identity = crate::runtime::reduction_identity(bare_op);
-                    return self.call_sub_value(callable, vec![identity, elem], false);
+                    return Ok(crate::runtime::utils::coerce_to_numeric(elem));
+                }
+                if matches!(bare_op, "~" | "x") {
+                    return Ok(Value::str(elem.to_str_context()));
                 }
             }
-            return Ok(items.into_iter().next().unwrap());
+            return Ok(elem);
         }
 
         let arity = self.reduce_callable_arity(&callable);
