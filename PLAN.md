@@ -1175,10 +1175,15 @@ the backlog.
       (`.WHAT`/`.WHO`/`.HOW`/`.DEFINITE`/`.WHERE` are no longer hyper-dispatched at all — they
       apply to the target, like Rakudo's special forms). Pin: `t/hyper-nodality.t` (24 tests).
       See `news/2026-07.md`.
-- [ ] Unrelated leftovers the same sweep surfaced, each small and independent: `Int.reverse` /
-      `Int.rotate` / `Int.batch` are missing (raku has them on `Any`), `.tree` does not itemize its
-      per-node result (`($((1,2).Seq),)` in raku), and `Supply`/`Slip`/`QuantHash` `.raku` rendering
-      differs cosmetically (`Supply()` vs `Supply.new`, `slip(3)` vs `slip(3,)`).
+- The `.reverse`/`.rotate` leftovers are also **done** (2026-07-22): `Any.reverse` is
+      `self.list.reverse`, so a non-Iterable reverses to a one-element Seq (`"abc".reverse` is
+      `("abc",).Seq`, not the `.flip`ped `"cba"` mutsu used to return, and `42.reverse` no longer
+      errors), while `.rotate` — which Rakudo does *not* define on `Any` — throws
+      `X::Method::NotFound` instead of returning a silent `Nil`. (`.batch` was already correct.)
+      Pin: `t/any-reverse-rotate.t`.
+- [ ] Remaining leftovers, each small and independent: `.tree` does not itemize its per-node
+      result (`$((1,2).Seq)` in raku, mutsu `(1, 2)`), and `Supply`/`Slip`/`QuantHash` `.raku`
+      rendering differs cosmetically (`Supply()` vs `Supply.new`, `slip(3)` vs `slip(3,)`).
 
 ### 8.7 Bound-element immutability (mostly LANDED 2026-07-22; only `.kv` remains)
 
