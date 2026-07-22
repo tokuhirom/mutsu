@@ -1166,18 +1166,22 @@ the backlog.
       rendering. Reasonable to keep deferring vs the §1/§6 frontier. Related: §6 (dual-store / lexical
       slot), [`array-hole-tracking-embedded`], [ADR-0001] container-repr.
 
-### 8.6 Hyper-method nodality set is too broad (found 2026-07-22 by the playground example sweep)
+### 8.6 `.WHAT`/`.WHO`/`.HOW`/`.DEFINITE` are hyper-dispatched, but Rakudo never hypers them
 
-- [ ] **Trim `is_nodal_list_method`** (`src/vm/vm_hyper_method_ops.rs:36`) to Rakudo's actual
-      `is nodal` set. mutsu currently marks the *coercers and introspectors* nodal, so a hyper over
-      them stops at the node and yields a `List` where raku descends to the leaves and yields an
-      `Array`. Confirmed divergent (`my @a = 1, 2; say (@a>>.M).WHAT`, mutsu `(List)` vs raku
-      `(Array)`) for: `Str`, `gist`, `raku`, `perl`, `WHAT`, `so`, `Bool`, `Numeric`, `Int`, `Rat`,
-      `Real`, `defined`, `item`, `sink`, `cache`, `lazy`. Nesting is wrong too:
-      `my @a = (1,2),(3,); (@a>>.Str).raku` gives mutsu `("1 2", "3")` vs raku `[("1", "2"), ("3",)]`.
-      `elems`/`sort`/`join`/… are correctly nodal and must stay. `WHO`/`HOW`/`DEFINITE` diverge
-      differently (raku returns `Stash`/`ClassHOW`/`Bool`) — investigate separately, do not lump in.
-      Blast radius is every `>>.` call site, so land it alone and let roast verify.
+- [ ] **Stop hypering the metaobject introspectors.** In Rakudo `@a>>.WHAT` is not a hyper at all:
+      the introspector applies to the *target*, so `my @a = (1,2),(3,); (@a>>.WHAT).raku` is plain
+      `Array`, `(@a>>.WHO).WHAT` is `(Stash)`, `(@a>>.HOW)` is the Array's `ClassHOW`, and
+      `(@a>>.DEFINITE).WHAT` is `(Bool)`. mutsu maps them element-wise instead and yields a list of
+      per-element results. Affects `src/vm/vm_hyper_method_ops.rs`. Low user impact (nobody hypers
+      `.HOW` in anger), but it is a real divergence and the last one left in the `>>.` sweep.
+- The *nodality* half of this item is **done** (2026-07-22): the coercers (`Str`, `gist`, `raku`,
+      `perl`, `so`, `Bool`, `Numeric`, `Int`, `Rat`, `Real`, `defined`, `item`, `sink`, `cache`,
+      `lazy`) were removed from `is_nodal_list_method`, so they descend to the leaves and preserve
+      the `Array` container like raku. Pin: `t/hyper-nodality.t`. See `news/2026-07.md`.
+- Unrelated leftovers the same sweep surfaced, each small and independent: `Int.reverse` /
+      `Int.rotate` / `Int.batch` are missing (raku has them on `Any`), `.tree` does not itemize its
+      per-node result (`($((1,2).Seq),)` in raku), and `Supply`/`Slip`/`QuantHash` `.raku` rendering
+      differs cosmetically (`Supply()` vs `Supply.new`, `slip(3)` vs `slip(3,)`).
 
 ---
 

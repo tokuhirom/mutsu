@@ -33,6 +33,22 @@ fn hyper_subscript_index_is_slice(v: &Value) -> bool {
 /// so a hyper applies it at the node level instead of descending to the leaves.
 /// Raku marks these routines `is nodal`; this is mutsu's approximation of that
 /// set, shared by the method-hyper path and the `>>.&nodal-builtin` path.
+///
+/// Nodality decides two things at once: whether `>>` descends into an Iterable
+/// element, and (in `exec_hyper_method_call_op`'s `result_kind`) whether the
+/// result is a `List` rather than an `Array`. So a name wrongly listed here is
+/// doubly wrong — `my @a = (1,2),(3,); @a>>.Str` must descend and give
+/// `[("1", "2"), ("3",)]`, not stringify each node into `("1 2", "3")`.
+///
+/// **Coercers and introspectors are NOT nodal** (`.Str`, `.gist`, `.raku`,
+/// `.Int`, `.Bool`, `.defined`, …): Rakudo marks only the genuinely
+/// list-shaped routines `is nodal`. They used to be listed here, which is why
+/// `@a>>.Str` returned a `List` where raku returns an `Array`.
+///
+/// Still-known gap: `.WHO`/`.HOW`/`.DEFINITE` are not hyper-dispatched at all
+/// in Rakudo (they apply to the target itself, so `@a>>.WHO` is the Array's
+/// Stash). mutsu maps them per element; they stay listed here so at least the
+/// node level is used. See PLAN.md §8.6.
 fn is_nodal_list_method(name: &str) -> bool {
     matches!(
         name,
@@ -53,9 +69,6 @@ fn is_nodal_list_method(name: &str) -> bool {
             | "minmax"
             | "sum"
             | "flat"
-            | "lazy"
-            | "sink"
-            | "cache"
             | "List"
             | "Array"
             | "Seq"
@@ -67,19 +80,8 @@ fn is_nodal_list_method(name: &str) -> bool {
             | "BagHash"
             | "Mix"
             | "MixHash"
-            | "Str"
-            | "gist"
-            | "raku"
-            | "perl"
-            | "WHAT"
             | "WHO"
             | "HOW"
-            | "so"
-            | "Bool"
-            | "Numeric"
-            | "Int"
-            | "Rat"
-            | "Real"
             | "hash"
             | "Hash"
             | "kv"
@@ -101,9 +103,7 @@ fn is_nodal_list_method(name: &str) -> bool {
             | "rotor"
             | "repeated"
             | "snip"
-            | "defined"
             | "DEFINITE"
-            | "item"
             | "list"
             | "AT-POS"
             | "AT-KEY"
