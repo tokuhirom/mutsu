@@ -353,6 +353,20 @@ impl Interpreter {
 
         let mut symbols: HashMap<String, Value> = HashMap::new();
 
+        // Top-level `our` variables live in GLOBAL. They persist in the flat
+        // `our_vars` store (keyed by bare name), separate from the env, so the
+        // env scan below never sees them; add them explicitly so
+        // `GLOBAL::.<$x>` / `::("GLOBAL")::('$x')` find package-scoped `our`
+        // declarations. Only GLOBAL and the root get these; a named user
+        // package must not vacuum up every bare `our` name.
+        if package_name == "GLOBAL" || package_name.is_empty() {
+            for (key, val) in self.our_vars_iter() {
+                symbols
+                    .entry(Self::add_sigil_prefix(key))
+                    .or_insert_with(|| val.clone());
+            }
+        }
+
         for (key, val) in self.env.iter() {
             let key_s = key.resolve();
             if key_s.starts_with("__mutsu_callable_id::") {
