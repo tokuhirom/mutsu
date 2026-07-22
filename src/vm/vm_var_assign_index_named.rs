@@ -1319,11 +1319,29 @@ impl Interpreter {
                     None
                 };
                 let is_object_hash = key_constraint.is_some();
+                // A parameterized *mutable* QuantHash (`SetHash[Int()]`, ...)
+                // coerces its keys the same way an object hash does. An immutable
+                // Set/Bag/Mix throws `X::Assignment::RO` regardless of the key
+                // (handled by the store path), so it is excluded here to keep RO
+                // taking precedence over a bad-key coercion.
+                let quanthash_key_constraint: Option<String> = if key_constraint.is_none()
+                    && let Some(it) = index_target.as_ref()
+                    && matches!(
+                        it.view(),
+                        ValueView::Set(_, true) | ValueView::Bag(_, true) | ValueView::Mix(_, true)
+                    ) {
+                    self.container_type_metadata(it).and_then(|m| m.key_type)
+                } else {
+                    None
+                };
+                let effective_key_constraint = key_constraint
+                    .as_ref()
+                    .or(quanthash_key_constraint.as_ref());
                 // A coercion key type (`my %h{Int(Str)}`) coerces the key to the
                 // target type before it is stored / `.WHICH`-keyed. A failed
                 // coercion (e.g. a non-numeric string into Int) throws, matching
                 // raku (`X::Str::Numeric`).
-                let idx = if let Some(kc) = &key_constraint
+                let idx = if let Some(kc) = effective_key_constraint
                     && let Some(open) = kc.find('(')
                     && kc.ends_with(')')
                     && open > 0

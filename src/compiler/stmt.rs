@@ -1536,9 +1536,14 @@ impl Compiler {
                 }
                 if matches!(op, AssignOp::Bind) {
                     let mut scalar_elem_bind = false;
-                    if effective_name.starts_with('@') {
+                    if effective_name.starts_with('@') || effective_name.starts_with('%') {
+                        // A container rebind (`@a := ...`, `%h := ...`) replaces
+                        // the whole container: mark the bind so SetGlobal rebinds
+                        // the slot instead of assigning *into* the current value
+                        // (which for an immutable QuantHash would wrongly throw
+                        // "Cannot modify an immutable Set").
                         self.code.emit(OpCode::MarkBindContext);
-                    } else if !effective_name.starts_with('%') && !effective_name.starts_with('&') {
+                    } else if !effective_name.starts_with('&') {
                         // A scalar rebind (`$r := ...`) is still a bind: mark it
                         // so SetLocal records the bound-decont marker (it has no
                         // `__scalar_bind` trait like a `my $r := ...` VarDecl

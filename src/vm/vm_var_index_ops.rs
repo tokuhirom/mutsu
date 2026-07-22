@@ -641,6 +641,31 @@ impl Interpreter {
                 return Ok(());
             }
         }
+        // Parameterized QuantHash key coercion (`Set[Int()]`, `SetHash[Date()]`,
+        // ...): a coercion key type coerces the subscript key with `.Int`/`.Date`/
+        // ... before lookup, throwing the coercion's own exception
+        // (`X::Str::Numeric`, `X::Temporal::InvalidFormat`) for a key that cannot
+        // coerce. A slice (`Array`) or `*` subscript is left to the arms below.
+        let quant_key_coerce_type: Option<String> =
+            if matches!(
+                target.descalarize().view(),
+                ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..)
+            ) && !matches!(index.view(), ValueView::Array(..) | ValueView::Whatever)
+            {
+                self.container_type_metadata(&target)
+                    .and_then(|info| info.key_type)
+                    .and_then(|kt| {
+                        crate::runtime::types::parse_coercion_type(&kt).map(|(t, _)| t.to_string())
+                    })
+            } else {
+                None
+            };
+        let index = if let Some(target_type) = quant_key_coerce_type {
+            let coerced = self.call_method_with_values(index.clone(), &target_type, vec![])?;
+            Self::sink_failure_to_error(coerced)?
+        } else {
+            index
+        };
         let result = match (target.view(), index.view()) {
             // Any subscript (positional or associative) on Nil yields Nil again,
             // so chained access such as `Nil[0][2]` or `Nil<a><b>` keeps

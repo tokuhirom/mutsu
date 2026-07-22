@@ -9,6 +9,14 @@ impl Compiler {
         // (e.g., `if $_ := $c { }`). We compile it like `Stmt::Assign { op: Bind }`
         // so the old alias is broken and a new one is set up.
         if is_bind {
+            // A container rebind (`@a := ...`, `%h := ...`) in expression context
+            // (e.g. `isa-ok (%qh := $t.new), $t`) must mark the bind so the store
+            // replaces the whole container instead of assigning *into* the current
+            // value — otherwise a `%h` holding an immutable Set wrongly throws
+            // "Cannot modify an immutable Set". Mirrors the `Stmt::Assign` path.
+            if name.starts_with('@') || name.starts_with('%') {
+                self.code.emit(OpCode::MarkBindContext);
+            }
             // Signal rebind context for cleanup of old bind pairs / aliases.
             self.code.emit(OpCode::MarkRebindContext);
             self.compile_call_arg(expr);
