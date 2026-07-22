@@ -334,7 +334,18 @@ impl Interpreter {
             // (same type distance, same number of `where` constraints, and the
             // same most-derived owner class) and none is marked `is default`.
             // Raku raises X::Multi::Ambiguous here.
-            if !default_winner && mro_narrowed.len() > 1 && !all_named {
+            // Only a resolution that HAS the invocant can legitimately declare an
+            // ambiguity: without it, `method_args_match_for_invocant` skips every
+            // invocant type/definedness constraint, so a `:U:`/`:D:` multi pair
+            // (or any invocant-narrowed candidates) all "match" and tie spuriously.
+            // Such invocant-less resolutions come from introspection/speculative
+            // callers (`has_user_method`, `Bool`/`Str` existence probes) that never
+            // consume `dispatch_ambiguous`; leaving the flag set here instead leaks
+            // a false ambiguity into the NEXT real dispatch (a defined-instance
+            // `.gist`/`.Str` call poisoning a following `self.pairs`). The real
+            // dispatch always re-resolves WITH the invocant, so deferring the
+            // decision to it loses nothing.
+            if !default_winner && mro_narrowed.len() > 1 && !all_named && invocant.is_some() {
                 self.dispatch_ambiguous = true;
             }
         }
