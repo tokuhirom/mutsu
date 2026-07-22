@@ -1151,7 +1151,7 @@ impl Interpreter {
                 if pd.where_constraint.is_some() {
                     self.check_named_param_where_constraint(pd)?;
                 }
-            } else if pd.name == "__subsig__"
+            } else if pd.is_capture_subsignature()
                 && let Some(sub_params) = &pd.sub_signature
             {
                 // An anonymous capture `|(...)` consumes ALL remaining arguments
@@ -1161,6 +1161,41 @@ impl Interpreter {
                 let capture = sub_signature_target_from_remaining_args(&args[positional_idx..]);
                 bind_sub_signature_from_value(self, sub_params, &capture)?;
                 positional_idx = args.len();
+                continue;
+            } else if pd.name == "__subsig__"
+                && let Some(sub_params) = &pd.sub_signature
+            {
+                // A plain destructuring parameter `($a, $b)` consumes exactly
+                // ONE positional argument and binds that argument's elements
+                // via the subsignature — later parameters keep their own
+                // arguments (`sub f( ($c, $s), $x )`, the reduce-with-
+                // destructuring shape). Pair entries are usually trailing named
+                // args and are skipped — but when ONLY Pairs remain, the first
+                // Pair itself is the destructure target (a `.map` over a Hash
+                // passes each Pair positionally: `-> (:$suffix) { }`).
+                let mut target_idx = positional_idx;
+                while target_idx < args.len()
+                    && matches!(
+                        unwrap_varref_value(args[target_idx].clone()).view(),
+                        ValueView::Pair(..)
+                    )
+                {
+                    target_idx += 1;
+                }
+                if target_idx >= args.len() {
+                    target_idx = positional_idx;
+                }
+                if target_idx < args.len() {
+                    let arg = unwrap_varref_value(args[target_idx].clone());
+                    bind_sub_signature_from_value(self, sub_params, &arg)?;
+                    positional_idx = target_idx + 1;
+                } else if pd.default.is_none() && !pd.optional_marker {
+                    return Err(RuntimeError::new(format!(
+                        "Too few positionals passed; expected {} arguments but got {}",
+                        param_defs.len(),
+                        args.len()
+                    )));
+                }
                 continue;
             } else {
                 // Positional param -- skip over Pair entries (named args)

@@ -107,7 +107,7 @@ impl Interpreter {
             let mut has_variadic_positional = false;
             for pd in &positional_params {
                 let is_capture_param = pd.name == "_capture" || (pd.slurpy && pd.sigilless);
-                let is_subsig_capture = pd.name == "__subsig__" && pd.sub_signature.is_some();
+                let is_subsig_capture = pd.is_capture_subsignature();
                 if pd.slurpy || is_capture_param || is_subsig_capture {
                     has_variadic_positional = true;
                     continue;
@@ -130,7 +130,7 @@ impl Interpreter {
             let mut i = 0usize;
             for pd in positional_params {
                 let is_capture_param = pd.name == "_capture" || (pd.slurpy && pd.sigilless);
-                let is_subsig_capture = pd.name == "__subsig__" && pd.sub_signature.is_some();
+                let is_subsig_capture = pd.is_capture_subsignature();
                 let mut arg_for_checks: Option<Value> = if pd.slurpy || is_capture_param {
                     if is_capture_param {
                         // |c capture params preserve both positional and named parts.

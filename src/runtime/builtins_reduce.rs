@@ -71,34 +71,55 @@ impl Interpreter {
         let step = arity.saturating_sub(1).max(1);
         let assoc = self.callable_produce_assoc(&callable);
 
+        // `last`/`next` in the producer block follow Rakudo's one-behind emit
+        // order: each accumulator value is emitted only after the NEXT reducer
+        // call completes. So `last` on call N truncates the output to the
+        // initial element plus calls 1..N-2 (the pending value is dropped too:
+        // `(2,3,4,5).produce({ last if $^a > 7; $^a + $^b })` is `(2 5)`, and a
+        // first-call `last` yields `()`), while `next` skips that step's emit
+        // and keeps the accumulator unchanged.
         match assoc {
             OpAssoc::Right => {
                 let mut out = Vec::new();
                 let mut acc = items.last().cloned().unwrap_or(Value::NIL);
-                out.push(acc.clone());
                 let mut right_edge = items.len().saturating_sub(1);
                 while right_edge >= step {
                     let start = right_edge - step;
                     let mut call_args = items[start..right_edge].to_vec();
-                    call_args.push(acc);
-                    acc = self.call_sub_value(callable.clone(), call_args, true)?;
-                    out.push(acc.clone());
+                    call_args.push(acc.clone());
+                    match self.call_sub_value(callable.clone(), call_args, true) {
+                        Ok(new_acc) => {
+                            out.push(acc);
+                            acc = new_acc;
+                        }
+                        Err(e) if e.is_last() => return Ok(out),
+                        Err(e) if e.is_next() => {}
+                        Err(e) => return Err(e),
+                    }
                     right_edge = start;
                 }
+                out.push(acc);
                 Ok(out)
             }
             _ => {
                 let mut out = Vec::new();
                 let mut acc = items[0].clone();
-                out.push(acc.clone());
                 let mut idx = 1usize;
                 while idx + step <= items.len() {
-                    let mut call_args = vec![acc];
+                    let mut call_args = vec![acc.clone()];
                     call_args.extend(items[idx..idx + step].iter().cloned());
-                    acc = self.call_sub_value(callable.clone(), call_args, true)?;
-                    out.push(acc.clone());
+                    match self.call_sub_value(callable.clone(), call_args, true) {
+                        Ok(new_acc) => {
+                            out.push(acc);
+                            acc = new_acc;
+                        }
+                        Err(e) if e.is_last() => return Ok(out),
+                        Err(e) if e.is_next() => {}
+                        Err(e) => return Err(e),
+                    }
                     idx += step;
                 }
+                out.push(acc);
                 Ok(out)
             }
         }
@@ -110,13 +131,20 @@ impl Interpreter {
             .cloned()
             .ok_or_else(|| RuntimeError::new("reduce expects a callable as first argument"))?;
 
+        // `reduce &f, +values` follows the one-arg rule: a SINGLE list argument
+        // supplies the item list (flattened), but with several arguments each
+        // one is its own item — `reduce &f, (0, 0), |@nums` keeps the seed
+        // tuple `(0, 0)` as one value (the reduce-with-destructuring shape).
         let mut items = Vec::new();
-        for arg in args.iter().skip(1) {
+        if args.len() == 2 {
+            let arg = &args[1];
             if matches!(arg.view(), ValueView::Hash(_)) {
                 items.push(arg.clone());
             } else {
                 items.extend(crate::runtime::value_to_list(arg));
             }
+        } else {
+            items.extend(args.iter().skip(1).cloned());
         }
         self.reduce_items(callable, items)
     }
