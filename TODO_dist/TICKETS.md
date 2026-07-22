@@ -10,8 +10,6 @@ add a `[claim: <branch>]` marker on its heading and push before you start.
 Move a ticket to **Done** when its PR merges. Rebase on `main` before
 editing this file; keep edits small (one ticket) to avoid conflicts.
 
-_34 open tickets._
-
 ## Open
 
 ### T-052 — runtime_error: 'X' cannot inherit from 'X' because it is unknown.  [impact: 1 dist]
