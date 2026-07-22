@@ -215,17 +215,37 @@ impl Interpreter {
             OpAssoc::Right => {
                 let mut acc = items.last().cloned().unwrap();
                 let mut right_edge = items.len().saturating_sub(1);
+                let mut out = Ok(());
                 while right_edge >= step {
                     let start = right_edge - step;
                     let mut call_args = items[start..right_edge].to_vec();
-                    call_args.push(acc);
-                    acc = self.call_sub_value(callable.clone(), call_args, true)?;
-                    if is_thunky {
-                        acc = Self::dethunk(self, acc)?;
-                    }
+                    call_args.push(acc.clone());
                     right_edge = start;
+                    // `last` inside the reduce block stops and keeps the current
+                    // accumulator; `next` skips this step, also keeping the accumulator.
+                    match self.call_sub_value(callable.clone(), call_args, true) {
+                        Ok(v) => {
+                            acc = if is_thunky {
+                                match Self::dethunk(self, v) {
+                                    Ok(d) => d,
+                                    Err(e) => {
+                                        out = Err(e);
+                                        break;
+                                    }
+                                }
+                            } else {
+                                v
+                            };
+                        }
+                        Err(e) if e.is_last() => break,
+                        Err(e) if e.is_next() => continue,
+                        Err(e) => {
+                            out = Err(e);
+                            break;
+                        }
+                    }
                 }
-                Ok(acc)
+                out.map(|()| acc)
             }
             OpAssoc::Chain => {
                 let mut result = true;
@@ -245,16 +265,36 @@ impl Interpreter {
             OpAssoc::Left => {
                 let mut acc = items[0].clone();
                 let mut idx = 1usize;
+                let mut out = Ok(());
                 while idx + step <= items.len() {
-                    let mut call_args = vec![acc];
+                    let mut call_args = vec![acc.clone()];
                     call_args.extend(items[idx..idx + step].iter().cloned());
-                    acc = self.call_sub_value(callable.clone(), call_args, true)?;
-                    if is_thunky {
-                        acc = Self::dethunk(self, acc)?;
-                    }
                     idx += step;
+                    // `last` inside the reduce block stops and keeps the current
+                    // accumulator; `next` skips this step, also keeping the accumulator.
+                    match self.call_sub_value(callable.clone(), call_args, true) {
+                        Ok(v) => {
+                            acc = if is_thunky {
+                                match Self::dethunk(self, v) {
+                                    Ok(d) => d,
+                                    Err(e) => {
+                                        out = Err(e);
+                                        break;
+                                    }
+                                }
+                            } else {
+                                v
+                            };
+                        }
+                        Err(e) if e.is_last() => break,
+                        Err(e) if e.is_next() => continue,
+                        Err(e) => {
+                            out = Err(e);
+                            break;
+                        }
+                    }
                 }
-                Ok(acc)
+                out.map(|()| acc)
             }
         };
 
