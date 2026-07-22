@@ -465,7 +465,14 @@ pub(super) fn dispatch(
             } else {
                 ""
             };
-            Some(Ok(Value::str(format!("v{}{}", s, suffix))))
+            let full = format!("{}{}", s, suffix);
+            // .gist always keeps the `v` prefix (`vTrue`); only .raku/.perl
+            // switch to the constructor form for a non-literal version.
+            if method == "gist" {
+                Some(Ok(Value::str(format!("v{}", full))))
+            } else {
+                Some(Ok(Value::str(super::raku_repr::version_raku_repr(&full))))
+            }
         }
         ValueView::Str(s) => {
             if method == "raku" || method == "perl" {

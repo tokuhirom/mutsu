@@ -1131,10 +1131,17 @@ the backlog.
       ` # OUTPUT: «…»` annotation that is a built-in oracle — and run them through 8.1. This is the
       structured, objective form of "read the docs to find gaps"; do **not** do the read-and-guess
       form. Complements the one-shot `raku-doc` audits already recorded in §4.
-- [ ] **Per-type method-coverage matrix**: for each `Type/*.rakudoc`, enumerate the documented methods
-      and check which mutsu implements (call each / introspect), producing an "N of M implemented"
-      table per type. This surfaces the **never-called holes** a diff over existing examples cannot: a
-      method with no doc example is invisible to the bullet above.
+- [ ] **Per-type method-coverage matrix** — **harness landed** (`scripts/method-coverage.raku`,
+      2026-07-22): extracts every `=head2 method/routine` from `Type/*.rakudoc` and probes both
+      interpreters with a dynamic call across several argument shapes; a hole = mutsu answers
+      "No such method" on every shape where raku dispatches (`^can` is unusable on both sides —
+      raku over-answers via Any/Cool inheritance, mutsu under/over-answers). Crashing probes are
+      isolated by a PROBE/RES retry protocol and reported as `crash` (§8.3 findings for free).
+      Output: `tmp/method-coverage.tsv` + `tmp/method-coverage-summary.md`. First findings:
+      `Cool.Version` (fixed with the harness PR), `.subst-mutate` unreachable via a *dynamic*
+      method call (any CallMethodMut-opcode-only method — the dynamic path never routes to the
+      mut-op table), `Mu.return`/`Mu.emit` probe crashes. TODO: run the full-corpus triage and
+      fold the per-type hole list into `docs/doc-diff-backlog.md`.
 
 ### 8.3 Robustness — zero panics / crashes
 
@@ -1194,14 +1201,6 @@ the backlog.
       and `Array.HOW.raku`'s anonymous-mixin rendering (`ClassHOW+{<anon>}+{<anon>}.new`).
       Faking either means hardcoding Rakudo internals; only worth doing if a real program is
       ever found to introspect them.
-
-### 8.7 `.kv` on a Hash::Agnostic role returns `()`
-
-- [ ] **`.kv` on a Hash::Agnostic role returns `()`** (raku yields the flattened k/v list) — the
-      last Hash::Agnostic dist gap (subtest 13). Separate pre-existing issue: the role's
-      `method kv { Seq.new(KV.new(:backend(self), :iterator(self.keys.iterator))) }` uses a custom
-      `KV` iterator instance, and mutsu's `Seq.new(<custom Iterator instance>)` does not pull from
-      it (same family as the `from-iterator` gap fixed in #5132). Investigate independently.
 
 ### 8.9 The word-logical operators `and`/`or`/`andthen`/`orelse`/`xor` bind too tightly (deferred deep item — found 2026-07-22 by the traps.rakudoc doc-diff sweep)
 
