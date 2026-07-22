@@ -272,13 +272,25 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
      `-:`/`:!` assertion branch now routes to `parse_combined_class` when
      `has_top_level_combine_op` is present (`regex_parse_core.rs`). Pin:
      `t/regex-negated-property-minus-enum.t`.
-- **Status:** 02-grammar 0 → 19/23 (was `ran 0`). **Remaining (separate, deeper — not
-  this ticket):** (a) `<property-value>+ % <[;]>` with **empty-matching** elements
-  (`N:;Gump;Forrest;;Mr.;` → 6 values incl. 3 empty) fails the whole `content-line`
-  match — an empty-element `+ % sep` quantifier-separator bug; (b) `parsefile` of a
-  full multi-vcard file (test-card1/2) fails while test-card4 passes.
+- **THIRD ROOT CAUSE FIXED (PR `fix-separator-leading-empty-element`).** A separated
+  quantifier `<atom>+ % sep` whose atom can match empty (vCard's
+  `<property-value>+ % <[;]>`, `<property-simple-value>` = `[…]*`) dropped a **leading
+  empty element**: `N:;Gump;Forrest;;Mr.;` failed to match at all because the first
+  property-value (between `:` and the first `;`) is empty. The zero-progress guard
+  rejected a zero-width FIRST atom in BOTH the ratcheted (`token`/`rule`) and the
+  backtracking (`regex`) separator matchers; interior/trailing empties already worked.
+  Fix: accept a zero-width first atom (bounded by the extension loop's `atom_end <= cur`
+  no-progress guard) in `regex_match_sep.rs`. Pin: `t/regex-separator-leading-empty.t`.
+- **Status:** 02-grammar 0 → **23/23**; 01-basic 1/1. **Remaining (separate, deeper —
+  not this ticket):** (a) **03-actions** dies on `%parameter<value>[0]` where
+  `%parameter<value>` is `Any` — a postcircumfix `[idx]` on a runtime-`Any` value is
+  mis-dispatched as type parameterization ("Any cannot be parameterized") instead of
+  returning `Any` (repro: `my %h; %h<k>[0]`; `vm/vm_var_index_ops.rs` ~1868 handles the
+  non-positional Any subscript but not the positional one); (b) `parsefile` of a full
+  multi-vcard file (test-card1/2) fails while test-card4 passes.
 - file: DONE — src/runtime/methods_dispatch_match.rs, runtime_class_query.rs,
-  regex_parse_core.rs; remaining — empty-element `+ % sep`, multi-vcard parsefile.
+  regex_parse_core.rs, regex/regex_match_sep.rs; remaining — positional Any postcircumfix
+  index (vm_var_index_ops.rs), multi-vcard parsefile.
 
 ### T-036 — test_die: plan expects Int (plan * fixed; deeper cardinal bugs remain)  [impact: 1 dist]
 - dists: Lingua::EN::Numbers
