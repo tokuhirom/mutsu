@@ -26,7 +26,16 @@ impl Interpreter {
                 builtin.iter().map(|s| s.to_string()).collect()
             }
         };
-        if self.package_looks_like_grammar(&class_name) {
+        // A grammar's MRO threads through Grammar -> Match -> Capture -> Cool.
+        // Trigger this whenever the type is (or inherits from) Grammar: the
+        // `token`/`rule` heuristic (`package_looks_like_grammar`) misses an empty
+        // grammar (`grammar G {}`), a token-less subclass (`grammar S is B {}`),
+        // and the `Grammar` type object itself, all of which nonetheless carry
+        // `Grammar` in the MRO computed above.
+        if self.package_looks_like_grammar(&class_name)
+            || class_name == "Grammar"
+            || mro.iter().any(|name| name == "Grammar")
+        {
             for parent in ["Grammar", "Match", "Capture", "Cool", "Any", "Mu"] {
                 if !mro.iter().any(|name| name == parent) {
                     mro.push(parent.to_string());
