@@ -1,5 +1,23 @@
 # Changelog
 
+## [v0.16.0](https://github.com/tokuhirom/mutsu/compare/v0.15.0...v0.16.0) - 2026-07-22
+
+- fix: a Bool numifies (False->0, True->1) in ordered comparison by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5119
+- feat: nqp::ordat, typed-scalar bind-to-element, Bool→native-int coercion (T-035) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5121
+- fix: route self.Mu::/self.Any:: qualified coercion to the built-in default by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5118
+- fix: preserve is_positional for a parenthesized indexed assign/bind by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5125
+- fix: prefix ++/-- accepts a postfix `.=` mutator as its lvalue by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5120
+- fix: qualified method call on a type object dispatches to the qualifier class by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5124
+- feat: implement nqp::gethostname for Sys::Hostname (T-030) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5126
+- fix: unbox Bool to native int for array elements and parameter binding by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5127
+- fix: role diamond duplicate mis-flagged as required-method conflict (T-023) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5117
+- fix: do not set dispatch_ambiguous in an invocant-less method resolution by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5129
+- fix: approximately-equal (≅/=~=) tolerance semantics and $*TOLERANCE default by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5128
+- docs(doc-diff-backlog): record operators.rakudoc fixes and newly-triaged deferrals by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5131
+- feat: List/Slip/Array/Seq.from-iterator($iterator) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5132
+- docs: fix dedup_method_candidates comments to match the Arc-pointer key by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5134
+- fix: >>.&sub hyper descends to leaves (deepmap), preserves Hash keys by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5133
+
 ## [v0.15.0](https://github.com/tokuhirom/mutsu/compare/v0.14.0...v0.15.0) - 2026-07-21
 
 - feat: iterate a tied Iterable instance (`for %h is Foo`) via its own iterator by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5107
