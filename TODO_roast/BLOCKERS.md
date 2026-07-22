@@ -46,6 +46,33 @@ Definitions of the classifications:
   whitelisting that file**.
 - **Unpassable** — the test itself contains deliberate flunks etc.; confirmed impossible to pass.
 
+## Working philosophy: subtest progress over file-level oracle
+
+**Do NOT shelve a file just because `raku` SORRYs or fails the whole file.** A file-level "raku
+fails" is not "no subtest is reachable" — most such files still have many individual subtests that
+are correct, spec-defined, and implementable, and mutsu can even be *ahead* of the local raku on a
+file (e.g. `S10-packages/basic.t` = mutsu 59/83 vs raku 6/83). Shelving the whole file throws away
+real, winnable subtest progress. Push subtest-level progress to the limit even when the file can
+never be whitelisted. `S32-str/format.t` (abort-at-26 → 48/49, only the RakuAST test left) is the
+model.
+
+Concretely:
+
+- **Two oracle sources, not one.** (1) Run individual *snippets* under `raku` — a file SORRYs on
+  ONE line but the other constructs are still verifiable (`pseudo-6c.t` SORRYs only on line 67's
+  `::=`, so every other construct has a live oracle). (2) When raku gives no answer at all, **read
+  `raku-doc/` and implement to the written spec**. A missing local oracle is a reason to consult
+  the spec, not to stop.
+- **Stubs to fake a pass stay forbidden.** But returning an honest "not available" value (e.g.
+  `Formatter.AST` → `Nil`) so the rest of a file runs to completion — surfacing the *other*
+  subtests instead of aborting — is fine and good.
+- **Record the EXACT remaining per-subtest blocker** (not a vague "awaiting infra"), so the next
+  session sees how close the file is and what specifically is left.
+- **Still recognize genuine dead-ends** and don't burn effort there: roast-side typos (e.g.
+  `trusts.t` tests 4-9 read `$!an_A`, an attribute class B never declares — mutsu's "no such
+  attribute" throw is *correct*; raku can't compile the file either), deliberate flunks, and
+  GC/Track-B-gated items (ADR-0001). "Don't give up early" means winnable subtests — apply judgment.
+
 ## Current assumptions
 
 - The whitelist stands at **1431 / 1463** (2026-07-17, `wc -l roast-whitelist.txt`) = **32** files not whitelisted.
