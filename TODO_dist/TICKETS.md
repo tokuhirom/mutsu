@@ -189,6 +189,25 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
   handling of a captured Match variable (Slice-F territory). Suspects:
   `src/parser/stmt/modifier.rs` (with-modifier topic binding) and the VM topic/`$_`
   scope handling; the grammar-subcapture storage may reify differently from a regex Match.
+- **PARTIAL FIX (PR pending, `fix-given-element-match-writeback`)**: the *associative*
+  form `with $cc<scheme>` no longer corrupts `$cc`. Root cause was the `given`/`with`
+  element-source rw-writeback (`write_back_element_source`): `given $x<k>`/`given @a[i]`
+  aliases the element read-write and re-stores `$_` into it on block exit — but it did
+  so **unconditionally**, even when the body never changed `$_`. For a read-only
+  aggregate (a `Match` subcapture, where `$cc` is a `ValueView::Instance`, not a
+  Hash/Array) that spurious re-store clobbered the whole `$cc`. Fix: skip the writeback
+  when `$_` is unchanged from its entry value, and only write back to a genuine mutable
+  Array/Hash/ContainerRef container (`vm/vm_given_when_ops.rs`, `vm/vm_loop_writeback.rs`).
+  `given %h<k>`/`given @a[i]` reassignment still writes back. Pin:
+  `t/given-element-topic-readonly-writeback.t`.
+- **remaining (deeper, separate)**: (1) the *positional* form `with $cc[0]` still
+  corrupts `$cc` via a different path (NOT the writeback — it survives even with the
+  writeback guarded; a dual-store locals/env clobber when the block does not reference
+  `$cc`). (2) URI now advances past the `<scheme>` corruption but dies at
+  `URI::Authority` / `URI::Path` construction ("Default constructor ... only takes named
+  arguments") — a positional `Match:D` subcapture argument still arrives as a type object
+  and no user `multi method new(...:U: Match:D $x)` candidate matches. Both are the
+  positional-Match variant of the same dual-store issue.
 
 ### T-032 — test_die [ValueTypeCache] (same nqp cluster as T-027)  [impact: 1 dist]
 - dists: ValueTypeCache

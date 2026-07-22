@@ -52,6 +52,17 @@ impl Interpreter {
         {
             self.topic_container_source = Some(src.clone());
         }
+        // The value the topic was bound to on entry. For an element-source topic
+        // (`given $x<k>` / `given @a[i]`), the writeback below re-stores `$_` into
+        // that element; if the body never changed `$_`, that writeback is a no-op
+        // that must be skipped — re-storing into a *read-only* aggregate (a grammar
+        // Match subcapture, `given $cc<scheme>`) would otherwise autovivify and
+        // clobber the whole `$cc`. Keep the entry value to detect "unchanged".
+        let element_orig = if element_source.is_some() {
+            Some(topic.clone())
+        } else {
+            None
+        };
         self.env_mut().insert("_".to_string(), topic);
         loan_env!(self, set_when_matched(false));
         // A read-only topic (`given @a` / `given 42` / `given expr()`) forbids
@@ -88,7 +99,7 @@ impl Interpreter {
             }
             if write_back {
                 if let Some(src) = &element_source {
-                    this.write_back_element_source(code, src, &pointy_param);
+                    this.write_back_element_source(code, src, &pointy_param, element_orig.as_ref());
                 } else {
                     this.write_back_given_topic(
                         code,
