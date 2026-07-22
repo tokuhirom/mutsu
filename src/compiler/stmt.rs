@@ -3089,6 +3089,22 @@ impl Compiler {
                 condition,
                 arg,
             } => {
+                // A module `use`d here may export operators
+                // (`multi infix:<...> is export`). Because mutsu loads modules
+                // at *runtime*, the compiler cannot see those exports while
+                // compiling the consuming unit, so a literal-only expression
+                // like `64 ** ⅓` after `use Rat::Power` would otherwise be
+                // folded against the *core* operator before the module's
+                // override is installed (ADR-0006 known gap). Treat a real
+                // module import like an inline operator declaration: if the
+                // unit folded any literal operator expression, the unit-level
+                // compile recompiles it with folding off. Only units that both
+                // import a module and fold a literal operator pay this (the
+                // `folded` flag is set solely by operator literal folds), so
+                // constant inlining in the common case is unaffected. Pragmas
+                // (`v6`, `strict`, `nqp`, ...) are matched by earlier arms and
+                // never reach here, so they keep folding.
+                self.fold_ctx.note_operator_decl();
                 let name_idx = self.code.add_constant(Value::str(module.clone()));
                 // The native JSON modules read their import list at run time to
                 // select per-scope defaults (`use JSON::Fast <immutable !pretty>`).
