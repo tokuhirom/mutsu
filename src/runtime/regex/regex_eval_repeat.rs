@@ -233,94 +233,199 @@ impl Interpreter {
             let Ok((stmts, _)) = crate::parse_dispatch::parse_source(&ctx.code) else {
                 continue;
             };
-            // Set up $/ as a match object for the matched-so-far text
-            let match_obj = Value::make_match_object_with_captures(
-                ctx.matched_so_far.clone(),
+            self.setup_regex_code_block_env(ctx);
+            self.eval_regex_code_block_body(&stmts);
+        }
+    }
+
+    /// Install `$/` (matched-so-far), `$¢`, `$0…` and `$<name>` in the env from a
+    /// single code-block context, i.e. the capture state as it stood at the block's
+    /// textual position during matching (so a mid-rule `{ … $/ … }` sees the
+    /// prefix matched so far, not the whole rule).
+    fn setup_regex_code_block_env(&mut self, ctx: &CodeBlockContext) {
+        // Set up $/ as a match object for the matched-so-far text
+        let match_obj = Value::make_match_object_with_captures(
+            ctx.matched_so_far.clone(),
+            0,
+            ctx.matched_so_far.chars().count() as i64,
+            &[],
+            &HashMap::new(),
+        );
+        self.env.insert("/".to_string(), match_obj.clone());
+        // Set up $¢ (current match cursor) — same as $/ for in-progress match
+        self.env.insert("\u{00A2}".to_string(), match_obj);
+        // Set up positional captures ($0, $1, ...)
+        for (i, val) in ctx.positional.iter().enumerate() {
+            let pos_match = Value::make_match_object_with_captures(
+                val.clone(),
                 0,
-                ctx.matched_so_far.chars().count() as i64,
+                val.chars().count() as i64,
                 &[],
                 &HashMap::new(),
             );
-            self.env.insert("/".to_string(), match_obj.clone());
-            // Set up $¢ (current match cursor) — same as $/ for in-progress match
-            self.env.insert("\u{00A2}".to_string(), match_obj);
-            // Set up positional captures ($0, $1, ...)
-            for (i, val) in ctx.positional.iter().enumerate() {
-                let pos_match = Value::make_match_object_with_captures(
-                    val.clone(),
+            self.env.insert(i.to_string(), pos_match);
+        }
+        // Set up named captures as $<name> variables
+        let ast_hint = self.env.get("made").cloned().unwrap_or(Value::NIL);
+        for (k, v) in &ctx.named {
+            let to_match_with_ast = |text: &str, ast: &Value| -> Value {
+                let match_obj = Value::make_match_object_with_captures(
+                    text.to_string(),
                     0,
-                    val.chars().count() as i64,
+                    text.chars().count() as i64,
                     &[],
                     &HashMap::new(),
                 );
-                self.env.insert(i.to_string(), pos_match);
-            }
-            // Set up named captures as $<name> variables
-            let ast_hint = self.env.get("made").cloned().unwrap_or(Value::NIL);
-            for (k, v) in &ctx.named {
-                let to_match_with_ast = |text: &str, ast: &Value| -> Value {
-                    let match_obj = Value::make_match_object_with_captures(
-                        text.to_string(),
-                        0,
-                        text.chars().count() as i64,
-                        &[],
-                        &HashMap::new(),
-                    );
-                    if let ValueView::Instance {
-                        class_name,
-                        attributes,
-                        ..
-                    } = match_obj.view()
-                    {
-                        let attrs = attributes.as_ref().clone();
-                        attrs.insert("ast".to_string(), ast.clone());
-                        Value::make_instance(class_name, (attrs).to_map())
-                    } else {
-                        match_obj
-                    }
-                };
-                let value = if v.len() == 1 {
-                    to_match_with_ast(&v[0], &ast_hint)
+                if let ValueView::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } = match_obj.view()
+                {
+                    let attrs = attributes.as_ref().clone();
+                    attrs.insert("ast".to_string(), ast.clone());
+                    Value::make_instance(class_name, (attrs).to_map())
                 } else {
-                    Value::array(
-                        v.iter()
-                            .map(|s| to_match_with_ast(s, &ast_hint))
-                            .collect::<Vec<_>>(),
-                    )
-                };
-                self.env.insert(format!("<{}>", k), value);
+                    match_obj
+                }
+            };
+            let value = if v.len() == 1 {
+                to_match_with_ast(&v[0], &ast_hint)
+            } else {
+                Value::array(
+                    v.iter()
+                        .map(|s| to_match_with_ast(s, &ast_hint))
+                        .collect::<Vec<_>>(),
+                )
+            };
+            self.env.insert(format!("<{}>", k), value);
+        }
+    }
+
+    /// Evaluate one already-parsed regex `{ … }` code block body, snapshotting
+    /// the env before and recording any changed variable as a pending local
+    /// update for the outer VM. Assumes the block's `$/`, `$<name>`, `$0…` etc.
+    /// have already been installed in `self.env` by the caller.
+    pub(in crate::runtime) fn eval_regex_code_block_body(&mut self, stmts: &[crate::ast::Stmt]) {
+        // Snapshot env keys and values before execution
+        let snapshot: HashMap<Symbol, String> = self
+            .env
+            .iter()
+            .map(|(k, v)| (*k, format!("{:?}", v)))
+            .collect();
+        let saved_in_block = self.in_regex_code_block;
+        self.in_regex_code_block = true;
+        let _ = self.eval_block_value(stmts);
+        self.in_regex_code_block = saved_in_block;
+        // Record changed env variables as pending local updates for the outer VM
+        for (k, v) in &self.env {
+            let old_repr = snapshot.get(k).map(|s| s.as_str()).unwrap_or("");
+            let new_repr = format!("{:?}", v);
+            if old_repr != new_repr {
+                let name = k.resolve();
+                // Slice C' (docs/vm-single-store.md, open-question #2): an
+                // embedded regex `{ ... }` / `:my`/`:let` block writes a caller
+                // lexical *directly* into `env`, bypassing
+                // `set_env_with_main_alias`. If a carrier is active (the regex
+                // ran inside an EVAL / interpreter fallback), log the name into
+                // the carrier write set too, so the carrier-return writeback
+                // reconciles it precisely and the blanket `env_dirty` net can be
+                // dropped for non-EVAL carriers as well. Logging a superset is
+                // safe — the writeback filters by the caller's compiled slots.
+                if let Some(set) = self.carrier_writes.as_mut() {
+                    set.insert(name.clone());
+                }
+                self.pending_local_updates.push((name, v.clone()));
             }
-            // Snapshot env keys and values before execution
-            let snapshot: HashMap<Symbol, String> = self
-                .env
-                .iter()
-                .map(|(k, v)| (*k, format!("{:?}", v)))
-                .collect();
-            let saved_in_block = self.in_regex_code_block;
-            self.in_regex_code_block = true;
-            let _ = self.eval_block_value(&stmts);
-            self.in_regex_code_block = saved_in_block;
-            // Record changed env variables as pending local updates for the outer VM
-            for (k, v) in &self.env {
-                let old_repr = snapshot.get(k).map(|s| s.as_str()).unwrap_or("");
-                let new_repr = format!("{:?}", v);
-                if old_repr != new_repr {
-                    let name = k.resolve();
-                    // Slice C' (docs/vm-single-store.md, open-question #2): an
-                    // embedded regex `{ ... }` / `:my`/`:let` block writes a caller
-                    // lexical *directly* into `env`, bypassing
-                    // `set_env_with_main_alias`. If a carrier is active (the regex
-                    // ran inside an EVAL / interpreter fallback), log the name into
-                    // the carrier write set too, so the carrier-return writeback
-                    // reconciles it precisely and the blanket `env_dirty` net can be
-                    // dropped for non-EVAL carriers as well. Logging a superset is
-                    // safe — the writeback filters by the caller's compiled slots.
-                    if let Some(set) = self.carrier_writes.as_mut() {
-                        set.insert(name.clone());
-                    }
-                    self.pending_local_updates.push((name, v.clone()));
+        }
+    }
+
+    /// Reduce-time bottom-up walk over the winning capture tree that runs each
+    /// node's inline `{ … }` code blocks exactly once — children first — and
+    /// commits the produced `make` value to that node's `ast`. Binding `$<child>`
+    /// to the already-reduced child Matches (so `$<child>.made` / `$<child>».made`
+    /// resolve to the children's produced values) is what makes an inline grammar
+    /// action's `make [+] $<time>».made` work. The block's `$/` still comes from
+    /// its own matched-so-far context, so a mid-rule `{ … $/ … }` is unaffected.
+    /// Leaves the top node's `make` in `env["made"]` for the call site to read as
+    /// the whole-parse `.made`.
+    ///
+    /// Subrule code blocks are NOT bubbled into the parent (see
+    /// `build_named_candidates_from_inner`), so each `caps.code_blocks` list holds
+    /// only that node's own blocks and every block runs once here.
+    pub(in crate::runtime) fn reduce_regex_captures_made(
+        &mut self,
+        caps: &mut RegexCaptures,
+        orig: Option<&str>,
+    ) {
+        // Children first so a parent block reading a child's `.made` sees it.
+        for scs in caps.named_subcaps.values_mut() {
+            for sc in scs.iter_mut() {
+                self.reduce_regex_captures_made(Arc::make_mut(sc), orig);
+            }
+        }
+        for sc in caps.positional_subcaps.iter_mut().flatten() {
+            self.reduce_regex_captures_made(Arc::make_mut(sc), orig);
+        }
+        for pq in caps.positional_quantified.iter_mut().flatten() {
+            for entry in pq.iter_mut() {
+                if let Some(sc) = entry.3.as_mut() {
+                    self.reduce_regex_captures_made(Arc::make_mut(sc), orig);
                 }
             }
+        }
+        if caps.code_blocks.is_empty() {
+            return;
+        }
+        // Build this node's Match so `$<name>` can carry the children's asts. The
+        // block's `$/` still comes from its own matched-so-far context (below), so
+        // a mid-rule `{ … $/ … }` sees the prefix — only the child `.made` values
+        // read via `$<name>` / `$<name>».made` come from here.
+        let node_match = Value::make_match_object_full_q(
+            caps.matched.clone(),
+            caps.from as i64,
+            caps.to as i64,
+            &caps.positional,
+            &caps.named,
+            &caps.named_subcaps,
+            &caps.positional_subcaps,
+            &caps.positional_quantified,
+            &caps.positional_nil,
+            orig,
+            &caps.named_quantified,
+        );
+        // Named captures carrying a child `.made` (from the recursion above).
+        let ast_named: Vec<(String, Value)> =
+            if let ValueView::Instance { attributes, .. } = node_match.view() {
+                match attributes.as_map().get("named").map(Value::view) {
+                    Some(ValueView::Hash(named_hash)) => named_hash
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect(),
+                    _ => Vec::new(),
+                }
+            } else {
+                Vec::new()
+            };
+        let blocks = std::mem::take(&mut caps.code_blocks);
+        let saved_match = self.env.get("/").cloned();
+        // Fresh `make` slot for this node (do not inherit a sibling's value).
+        self.env.remove("made");
+        for ctx in &blocks {
+            let Ok((stmts, _)) = crate::parse_dispatch::parse_source(&ctx.code) else {
+                continue;
+            };
+            self.setup_regex_code_block_env(ctx);
+            // Override `$<name>` with the reduced (ast-carrying) child Matches so
+            // `$<sub>.made` / `$<sub>».made` resolve to the produced values.
+            for (k, v) in &ast_named {
+                self.env.insert(format!("<{}>", k), v.clone());
+            }
+            self.eval_regex_code_block_body(&stmts);
+        }
+        caps.ast = self.env.get("made").cloned();
+        if let Some(m) = saved_match {
+            self.env.insert("/".to_string(), m);
         }
     }
 }

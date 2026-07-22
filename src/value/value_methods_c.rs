@@ -183,6 +183,10 @@ impl Value {
             if let Some(ref action_name) = caps.action_name {
                 attrs.insert("action_name".to_string(), Value::str(action_name.clone()));
             }
+            // Inline `{ make … }` value produced by this subrule at reduce time.
+            if let Some(ref ast) = caps.ast {
+                attrs.insert("ast".to_string(), ast.clone());
+            }
             if !caps.capture_alias_map.is_empty() {
                 let alias_hash: HashMap<String, Value> = caps
                     .capture_alias_map

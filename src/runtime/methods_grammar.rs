@@ -397,7 +397,7 @@ impl Interpreter {
                 // A failed `.subparse` yields a failed Match, not a Failure.
                 return Ok(self.make_failed_match_value(&text, start_pos.unwrap_or(0)));
             };
-            self.execute_regex_code_blocks(&captures.code_blocks);
+            self.reduce_regex_captures_made(&mut captures, Some(&text));
             // A subparse must begin at the requested offset (0, or `:pos(N)`);
             // `:c(N)` allows any start >= N, so it is exempt from the check.
             let required_from = start_pos.or(if continue_pos.is_some() {

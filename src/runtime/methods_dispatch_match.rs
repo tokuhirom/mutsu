@@ -339,14 +339,16 @@ impl Interpreter {
                 let has_code = self.has_code_block_in_prefix(&pat);
                 if has_code {
                     self.enable_eager_code_blocks();
-                    let matches = self.regex_find_all_with_caps(&pat, &text);
+                    let mut matches = self.regex_find_all_with_caps(&pat, &text);
                     let eager_blocks = self.drain_eager_code_blocks();
                     if !eager_blocks.is_empty() {
                         self.execute_regex_code_blocks(&eager_blocks);
                     } else {
-                        for (_, _, caps) in &matches {
-                            if !caps.code_blocks.is_empty() {
-                                self.execute_regex_code_blocks(&caps.code_blocks);
+                        for (_, _, caps) in &mut matches {
+                            if !caps.code_blocks.is_empty()
+                                || caps.named_subcaps.values().any(|v| !v.is_empty())
+                            {
+                                self.reduce_regex_captures_made(caps, Some(&text));
                             }
                         }
                     }

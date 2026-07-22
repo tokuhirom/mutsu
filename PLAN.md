@@ -1350,39 +1350,6 @@ and `[Z]`-reduction-returns-a-Seq landed 2026-07-22 (pin `t/repr-residues-2.t`);
       bare class name, so an earlier arm intercepts. Needs a dispatch trace before fixing;
       cosmetic, low value.
 
-### 8.16 Inline grammar-action `make` values do not persist on subrule Match nodes (found 2026-07-22 by the seed-555 dist sweep; Time::Duration::Parser)
-
-An **inline** grammar action (`token duration { s { make 1 } }`, i.e. a `{ make … }`
-code block inside the rule rather than a separate `.parse(:actions)` class) sets the
-rule's `.made` (AST) value, but that value is **not attached to the subrule's Match
-node** in the parse tree. So a parent action that reads `$<subrule>.made` — or, for a
-quantified subrule, `$<subrule>».made` — sees `Any`/`Nil` instead of the produced value.
-
-Minimal repro (raku: `TOP.made` = 60; mutsu = 0):
-```raku
-grammar G {
-    rule TOP  { <time>+ % <sep> { make [+] $<time>».made } }
-    rule time { <number> { make +$<number> * 10 } }
-    token number { \d+ }
-    token sep { <.ws> }
-}
-my $r = G.parse("1 2 3");
-say $r<time>».made;   # raku: [10 20 30]   mutsu: [(Any) (Any) (Any)]
-say $r.made;          # raku: 60           mutsu: 0
-```
-Only the **top** Match gets its `ast` attribute set (from env `"made"` after the top
-code block, in `seq_helpers/smart_match.rs` ~line 761). Each subrule's inline-`make`
-value must instead be committed to its own `RegexCaptures` node during the match and
-carried into the sub-Match built by `make_match_object_full_q`
-(`src/value/value_methods_c.rs`) so `$<x>.made` / `$<x>».made` resolve in parent actions
-and post-parse. This is orthogonal to the action-class walk in
-`methods_grammar.rs::invoke_grammar_actions` (which handles `.parse(:actions)`), and to
-the reduce-time `.made`-in-`<?{…}>` hook (`regex/regex_eval.rs`), both of which already
-work. Blocks **Time::Duration::Parser** (0/42 — every case chains `$<time>».made`) and any
-grammar that reduces child AST values in a parent inline action. Moderate blast radius
-(regex capture struct + Match builder + the match commit path); a dedicated session.
-
----
 
 ## Metrics
 
