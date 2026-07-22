@@ -100,6 +100,12 @@ pub(crate) struct RegexCaptures {
     pub(crate) action_name: Option<String>,
     /// Hash captures from `%<name>=(...)` aliasing in regex.
     pub(crate) hash_captures: HashMap<String, Vec<(String, Option<String>)>>,
+    /// The AST value produced by this node's inline `{ make … }` code block(s),
+    /// computed at reduce time (`reduce_regex_captures_made`). Carried into the
+    /// Match object built by `make_match_object_full_q` so `$<sub>.made` /
+    /// `$<sub>».made` resolve in a parent inline action and post-parse. `None`
+    /// when the rule ran no `make`.
+    pub(crate) ast: Option<Value>,
 }
 
 #[derive(Clone)]

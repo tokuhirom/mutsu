@@ -239,13 +239,13 @@ impl Interpreter {
                         is_block: false,
                         def_file: None,
                     });
-                    if let Some(captures) = self.regex_match_with_captures(&pat, &text) {
+                    if let Some(mut captures) = self.regex_match_with_captures(&pat, &text) {
                         // Set positional captures before executing code blocks
                         for (i, v) in captures.positional.iter().enumerate() {
                             self.env.insert(i.to_string(), Value::str(v.clone()));
                         }
-                        // Execute code blocks from regex for side effects
-                        self.execute_regex_code_blocks(&captures.code_blocks);
+                        // Reduce-time inline actions (children first).
+                        self.reduce_regex_captures_made(&mut captures, Some(&text));
                         let match_obj = Value::make_match_object_with_captures(
                             captures.matched.clone(),
                             captures.from as i64,
@@ -534,10 +534,13 @@ impl Interpreter {
                 } else {
                     non_overlapping
                 };
-                // Execute code blocks from each match for side effects
-                for cap in &selected {
-                    if !cap.code_blocks.is_empty() {
-                        self.execute_regex_code_blocks(&cap.code_blocks);
+                // Reduce-time inline actions from each match (children first).
+                let mut selected = selected;
+                for cap in &mut selected {
+                    if !cap.code_blocks.is_empty()
+                        || cap.named_subcaps.values().any(|v| !v.is_empty())
+                    {
+                        self.reduce_regex_captures_made(cap, Some(&text));
                     }
                 }
                 self.apply_multi_regex_captures(&selected, &text);
@@ -686,7 +689,7 @@ impl Interpreter {
                 } else {
                     self.env.remove("_");
                 }
-                if let Some(captures) = match_result {
+                if let Some(mut captures) = match_result {
                     // Reset stale numeric capture vars from any previous match.
                     let stale_numeric: Vec<Symbol> = self
                         .env
@@ -705,8 +708,9 @@ impl Interpreter {
                     }
                     // Clear any previous `made` value before executing code blocks
                     self.env.remove("made");
-                    // Execute code blocks from regex for side effects
-                    self.execute_regex_code_blocks(&captures.code_blocks);
+                    // Reduce-time inline actions: run each subrule's `{ make … }`
+                    // once (children first) and commit per-node `.made`.
+                    self.reduce_regex_captures_made(&mut captures, Some(&text));
                     // Merge hash captures into named for Match object
                     let mut named_with_hash = captures.named.clone();
                     for hash_name in captures.hash_captures.keys() {

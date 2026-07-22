@@ -615,16 +615,6 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
   (mutsu processes `use` at runtime); poor ROI.
 - file: builtin-vs-imported-sub dispatch priority (deep)
 
-### T-055 — test_fail: 1 s -> 1 second [Time::Duration::Parser]  [impact: 1 dist]  — DEFERRED (PLAN §8.16)
-- dists: Time::Duration::Parser (0/42)
-- Root cause: **inline grammar-action `make` values do not persist on subrule Match
-  nodes**, so the grammar's `[+] $<time>».made` reduces `[(Any) (Any) …]` → 0. Its
-  `duration`/`time`/`timespec` tokens each `{ make … }` inline and the parent reads
-  `$<subrule>.made` / `».made`. Only the TOP match gets its `ast` set today. Recorded
-  as PLAN.md §8.16 (moderate blast radius: regex capture struct + Match builder). Repro
-  and fix sketch are in §8.16.
-- file: `src/value/value_methods_c.rs` (Match builder), regex capture-commit path
-
 ### T-056 — test_fail: Codepoint [P5quotemeta]  [impact: 1 dist]  — ONE ROOT CAUSE FIXED (PR `fix-subst-replacement-double-backslash`); one deferred
 - dists: P5quotemeta (5756 tests: raku 5756/5756)
 - The module is `S:g/ ( <[ …\x[…] ]> ) /\\$0/` — escape each matched char with a
@@ -662,6 +652,16 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 _(move tickets here with `[claim: <branch>]` when you start)_
 
 ## Done
+
+- **T-055** (#PENDING) — Time::Duration::Parser 0/42 → 42/42. Inline grammar-action
+  `{ make … }` values were bubbled to the top node and run with a shared `$/`, so a
+  subrule's `.made` never reached its own Match node and the parent's
+  `[+] $<time>».made` reduced `[(Any) …]` → 0. Fixed by reduce-time bottom-up inline
+  execution (`reduce_regex_captures_made`): named-subrule blocks stay on their node, run
+  once children-first with `$<name>` bound to the reduced child Matches, and commit the
+  value to `RegexCaptures::ast` (carried into the Match by `make_match_object_full_q`).
+  Mid-rule `$/` matched-so-far preserved. See PLAN §8.16 (now closed) / news 2026-07-23.
+  Pin: `t/grammar-inline-make-subrule-made.t`.
 
 - **T-018** (#PENDING) — Cookie::Jar died with "Cannot call private method without
   permission". It calls a private method whose OWNER class has a *nested* name:

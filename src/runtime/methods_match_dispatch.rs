@@ -176,12 +176,12 @@ impl Interpreter {
         } else {
             self.regex_match_with_captures(&pat, &text)
         };
-        if let Some(captures) = captures {
+        if let Some(mut captures) = captures {
             let matched = captures.matched.clone();
             let from = captures.from as i64;
             let to = captures.to as i64;
-            // Execute code blocks from regex for side effects
-            self.execute_regex_code_blocks(&captures.code_blocks);
+            // Reduce-time inline actions (children first) commit per-node `.made`.
+            self.reduce_regex_captures_made(&mut captures, Some(&text));
             let match_obj = Value::make_match_object_full(
                 matched,
                 from,

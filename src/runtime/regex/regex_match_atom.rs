@@ -752,7 +752,13 @@ impl Interpreter {
                 if subcap.sym.is_none() && sym_key.is_some() {
                     subcap.sym = sym_key.cloned();
                 }
-                new_caps.code_blocks.extend(subcap.code_blocks.clone());
+                // The subrule's own inline `{ … }` code blocks stay ON the subcap
+                // (a queryable Match node) rather than bubbling into the parent, so
+                // the reduce-time walk (`reduce_regex_captures_made`) can run them
+                // once at this node — with `$/` bound to this subrule's Match — and
+                // commit the produced `make` value to `subcap.ast`. Bubbling them up
+                // (the old behaviour) ran them at the top level with the wrong `$/`
+                // and dropped the per-node `.made`.
                 // A non-suppressing alias `<name=subrule>` (NOT `<name=.subrule>` /
                 // `<name=&subrule>`) installs the capture under BOTH the alias name
                 // AND the subrule's own name, matching Rakudo (e.g. `<x=num>` yields
@@ -822,7 +828,8 @@ impl Interpreter {
                     subcap.sym = sym_key.cloned();
                 }
                 subcap.action_name = Some(spec.lookup_name.clone());
-                new_caps.code_blocks.extend(subcap.code_blocks.clone());
+                // Keep the silent subrule's inline blocks on its own (marker) node
+                // for the reduce-time walk to run once — see the non-silent branch.
                 let marker = format!(
                     "{}{}",
                     crate::runtime::SILENT_ACTION_MARKER_PREFIX,
