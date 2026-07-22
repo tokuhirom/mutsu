@@ -38,6 +38,11 @@ fn leaf_gist(v: &Value) -> String {
         // Promise has no custom gist; its element gist is the `.raku` form.
         return promise_raku_repr(&p.status());
     }
+    if let ValueView::Version { .. } = v.view() {
+        // A Version element keeps its `v` prefix (`[v1.2.3]`), which its
+        // bare string value drops.
+        return format!("v{}", v.to_string_value());
+    }
     v.to_string_value()
 }
 
