@@ -221,14 +221,24 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
   Array/Hash/ContainerRef container (`vm/vm_given_when_ops.rs`, `vm/vm_loop_writeback.rs`).
   `given %h<k>`/`given @a[i]` reassignment still writes back. Pin:
   `t/given-element-topic-readonly-writeback.t`.
-- **remaining (deeper, separate)**: (1) the *positional* form `with $cc[0]` still
-  corrupts `$cc` via a different path (NOT the writeback — it survives even with the
-  writeback guarded; a dual-store locals/env clobber when the block does not reference
-  `$cc`). (2) URI now advances past the `<scheme>` corruption but dies at
-  `URI::Authority` / `URI::Path` construction ("Default constructor ... only takes named
-  arguments") — a positional `Match:D` subcapture argument still arrives as a type object
-  and no user `multi method new(...:U: Match:D $x)` candidate matches. Both are the
-  positional-Match variant of the same dual-store issue.
+- **REAL ROOT CAUSE + FULL FIX (PR pending, `fix-nested-element-topic-local-read`)**:
+  the actual bug was the element-source **read**, not the writeback. `with $cc<key>` /
+  `with $cc[i]` lowers to a `TagElementSource` opcode that reads the container by *name*
+  via `get_env_with_main_alias`. Under the (B) per-store env-write gate (#4942, default
+  ON), a plain lexical in a **nested sub** is authoritative in its **local slot** with
+  its env mirror suppressed — so that env-name read missed `$cc`, returned Nil, and
+  indexing Nil bound `$_`/the pointy `-> $auth` to `Any`. Fix: read the live local slot
+  first (`gate_local_slot_value`) in the `TagElementSource` handler
+  (`vm/vm_exec_dispatch.rs`). This fixes BOTH the associative and the positional forms
+  (they were the same bug) and unblocks the whole URI parser. Pin:
+  `t/given-element-topic-nested-local.t`. (The earlier `fix-given-element-match-writeback`
+  guard is complementary and still correct — it stops a spurious no-op writeback from
+  corrupting a read-only Match — but the *nested Any* was this read fix.)
+- **URI now passes 13/14 test files** (01/authority/directory/escape/issue-43/
+  missing-components/mutate/november-urlencoded/path/query/rel2abs/require/
+  rfc-3986-examples all green; was 0). **Remaining: `utf8-c8.rakutest` only** — needs
+  the `utf8-c8` synthetic-codepoint encoding (`.slurp(:enc('utf8-c8'))` /
+  `uri-unescape(:enc('utf8-c8'))`), a separate niche encoding feature, NOT a T-031 bug.
 
 ### T-032 — test_die [ValueTypeCache] (same nqp cluster as T-027)  [impact: 1 dist]
 - dists: ValueTypeCache
