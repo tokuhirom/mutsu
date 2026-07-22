@@ -119,6 +119,26 @@ impl Compiler {
         }
     }
 
+    /// Like `assign_expr_for_lvalue` but never fails: a non-lvalue branch target
+    /// (e.g. the literal `9` in `cond ?? 9 !! $x`) becomes an expression that
+    /// raises the read-only error when evaluated -- which only happens if that
+    /// branch is the one selected, matching raku's runtime "Cannot modify an
+    /// immutable value". Used to desugar a ternary lvalue on the LHS of `=` where
+    /// one branch may not be assignable.
+    pub(super) fn ternary_branch_assign(target: &Expr, value: &Expr) -> Expr {
+        Self::assign_expr_for_lvalue(target, value).unwrap_or_else(|| Expr::DoBlock {
+            body: vec![
+                Stmt::Expr(target.clone()),
+                Stmt::Expr(value.clone()),
+                Stmt::Expr(Expr::Call {
+                    name: crate::symbol::Symbol::intern("__mutsu_assignment_ro"),
+                    args: Vec::new(),
+                }),
+            ],
+            label: None,
+        })
+    }
+
     pub(super) fn postfix_index_name(target: &Expr) -> Option<String> {
         match target {
             Expr::HashVar(name) => Some(format!("%{}", name)),

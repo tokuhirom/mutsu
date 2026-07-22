@@ -117,6 +117,19 @@ pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
             name: Symbol::intern("__mutsu_assign_callable_lvalue"),
             args: vec![*target, Expr::ArrayLiteral(args), value],
         },
+        // `(cond ?? $a !! $b) = rhs`: the ternary selects an lvalue branch; the
+        // assignment writes through to whichever branch is taken. Desugar to
+        // `cond ?? ($a = rhs) !! ($b = rhs)`. A non-lvalue branch recurses to the
+        // RO-error `other` arm, which raises only when that branch is selected.
+        Expr::Ternary {
+            cond,
+            then_expr,
+            else_expr,
+        } => Expr::Ternary {
+            cond,
+            then_expr: Box::new(assign_to_target_expr(*then_expr, value.clone())),
+            else_expr: Box::new(assign_to_target_expr(*else_expr, value)),
+        },
         Expr::SymbolicDeref { sigil, expr } => Expr::SymbolicDerefAssign {
             sigil,
             expr,
@@ -282,6 +295,24 @@ pub(crate) fn build_compound_assign_target_expr(target: Expr, op_name: &str, val
                 value,
             )
         }
+        // `(cond ?? A !! B) op= rhs`: apply the compound assignment through the
+        // ternary lvalue to whichever branch is selected. See the matching arm in
+        // `build_compound_assign_expr` (compound_expr.rs) for the rationale.
+        Expr::Ternary {
+            cond,
+            then_expr,
+            else_expr,
+        } => Expr::Ternary {
+            cond,
+            then_expr: Box::new(build_compound_assign_target_expr(
+                *then_expr,
+                op_name,
+                value.clone(),
+            )),
+            else_expr: Box::new(build_compound_assign_target_expr(
+                *else_expr, op_name, value,
+            )),
+        },
         other => assignment_ro_expr(other, value),
     }
 }

@@ -105,12 +105,6 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 - file: DONE — runtime/registration_role.rs, runtime/undeclared_routines.rs;
   remaining — nqp op support (large, separate)
 
-### T-028 — test_die [P5reset]  [impact: 1 dist]
-- dists: P5reset
-- e.g. `P5reset`: base=1 pass=0 fail=0 die=1 | t/01-basic.rakutest: 
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
-
 ### T-029 — test_die [POFile]  [impact: 1 dist]
 - dists: POFile
 - e.g. `POFile`: base=4 pass=1 fail=1 die=2 | t/02-deletion.rakutest: 
@@ -301,6 +295,24 @@ _(move tickets here with `[claim: <branch>]` when you start)_
 
 ## Done
 
+- **T-028** (#PENDING) — P5reset's `reset()` died with "Cannot modify an
+  immutable value" on its comb-loop ternary. A ternary `?? !!` is an lvalue and
+  assignment binds LOOSER than the conditional, so `cond ?? A !! B op= rhs`
+  parses as `(cond ?? A !! B) op= rhs` — the compound (or simple) assignment
+  applies to whichever branch is selected. mutsu handled only the parenthesized
+  simple `=` case and rejected compound-assign-through-a-ternary-lvalue outright.
+  Fixes: the compound-assign builders (`build_compound_assign_expr`,
+  `build_compound_assign_target_expr`, `assign_to_target_expr`) now desugar a
+  `Ternary` target to `cond ?? (A op= rhs) !! (B op= rhs)`; a non-lvalue branch
+  recurses to the RO-error form (raises only if selected); the compiler's
+  `__mutsu_assign_callable_lvalue(Ternary)` path tolerates a non-lvalue branch;
+  and `(EXPR if COND) op= rhs` pushes the compound assignment into the
+  conditional's then-branch (a silent no-op when the modifier does not fire).
+  The comb-loop now runs identically to raku. Pin:
+  t/ternary-lvalue-compound-assign.t. **Remaining P5reset blocker (deferred, not
+  this ticket):** `for CALLER::OUR::.kv -> \key, \value { value = ... }` writable
+  iteration + sigilless `\value` writeback — the actual variable reset still no-ops
+  (the module loads and reset() executes without error).
 - **T-024** (#5149) — Adverb::Eject died before test 1 on `@a[1]:eject` /
   `%h<a>:eject`: a subscript carrying a user-defined (non built-in) adverb was
   not routed to a user `postcircumfix:<[ ]>`/`<{ }>` candidate. Three general

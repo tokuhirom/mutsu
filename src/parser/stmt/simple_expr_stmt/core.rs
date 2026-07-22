@@ -8,8 +8,9 @@ use crate::parser::parse_result::{
 };
 use crate::parser::primary::parse_call_arg_list;
 use crate::parser::stmt::assign::{
-    CompoundAssignOp, compound_assigned_value_expr, parse_assign_expr_or_comma,
-    parse_comma_or_expr, parse_compound_assign_op, parse_set_compound_assign_op,
+    CompoundAssignOp, build_compound_assign_expr, compound_assigned_value_expr,
+    parse_assign_expr_or_comma, parse_comma_or_expr, parse_compound_assign_op,
+    parse_set_compound_assign_op,
 };
 use crate::parser::stmt::modifier::{is_stmt_modifier_keyword, parse_statement_modifier};
 use crate::parser::stmt::simple::{
@@ -1418,6 +1419,16 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 ],
             });
             return parse_statement_modifier(r, stmt);
+        }
+        // `(cond ?? $a !! $b) op= rhs` (unparenthesized): the ternary is an
+        // lvalue selecting one branch, so route through `build_compound_assign_expr`
+        // which desugars to `cond ?? ($a op= rhs) !! ($b op= rhs)` -- only the
+        // taken branch is mutated. The generic RO fallback below would instead
+        // reject it as immutable.
+        if matches!(expr, Expr::Ternary { .. })
+            && let Ok(ternary_assign) = build_compound_assign_expr(expr.clone(), op, rhs.clone())
+        {
+            return parse_statement_modifier(r, Stmt::Expr(ternary_assign));
         }
         let stmt =
             if matches!(expr, Expr::BracketArray(..)) && matches!(op, CompoundAssignOp::Comma) {
