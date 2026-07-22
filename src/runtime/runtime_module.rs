@@ -365,12 +365,27 @@ impl Interpreter {
             for (name, symbol_tags) in &owned_exports {
                 let is_mandatory = symbol_tags.contains("MANDATORY");
                 if !want_all && !is_mandatory && symbol_tags.is_disjoint(&requested_tags) {
-                    // This export should NOT be imported — remove from GLOBAL
+                    // This export should NOT be imported under the current tags —
+                    // hide it from GLOBAL. Rather than DELETE it (which would lose
+                    // the definition and make a later `use MOD :tag` unable to
+                    // restore it — a bare-file module registers exports only under
+                    // GLOBAL::), RENAME it to a module-qualified `MOD::name` key.
+                    // That keeps it out of the unqualified namespace while leaving
+                    // `import_module` able to re-alias it on a subsequent tagged
+                    // `use` (its source lookup is `MOD::name`). See T-042
+                    // (Math::Arrow `use ... :constants` after a plain `use`).
                     let global_key = Symbol::intern(&format!("GLOBAL::{}", name));
                     if !func_keys_before.contains(&global_key) {
-                        self.registry_mut().functions.remove(&global_key);
+                        let removed = self.registry_mut().functions.remove(&global_key);
+                        if let Some(def) = removed {
+                            let qualified = Symbol::intern(&format!("{}::{}", module, name));
+                            self.registry_mut()
+                                .functions
+                                .entry(qualified)
+                                .or_insert(def);
+                        }
                     }
-                    // Also remove multi-dispatch variants
+                    // Also rename multi-dispatch variants (`GLOBAL::name/sig`).
                     let prefix = format!("GLOBAL::{}/", name);
                     let multi_keys: Vec<Symbol> = self
                         .registry()
@@ -383,7 +398,15 @@ impl Interpreter {
                         .copied()
                         .collect();
                     for mk in multi_keys {
-                        self.registry_mut().functions.remove(&mk);
+                        let removed = self.registry_mut().functions.remove(&mk);
+                        if let Some(def) = removed {
+                            let suffix = mk.resolve().strip_prefix("GLOBAL::").unwrap().to_string();
+                            let qualified = Symbol::intern(&format!("{}::{}", module, suffix));
+                            self.registry_mut()
+                                .functions
+                                .entry(qualified)
+                                .or_insert(def);
+                        }
                     }
                 }
             }

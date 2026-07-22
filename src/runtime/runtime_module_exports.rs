@@ -179,7 +179,21 @@ impl Interpreter {
             .get(module)
             .cloned()
             .unwrap_or_default();
-        if subs.is_empty() && vars.is_empty() && unit_global_subs.is_empty() {
+        // A bare-file module (no `unit module`/package block) registers its
+        // exports only under GLOBAL, so `exported_subs[module]` is empty; its
+        // owned exports (name -> tags) live in `module_owned_exports`. Consult
+        // that too, so a later `use MOD :tag` (after a plain `use MOD` hid the
+        // tagged exports by renaming them to `MOD::name`) can re-import them.
+        let owned_subs: HashMap<String, HashSet<String>> = self
+            .module_owned_exports
+            .get(module)
+            .cloned()
+            .unwrap_or_default();
+        if subs.is_empty()
+            && vars.is_empty()
+            && unit_global_subs.is_empty()
+            && owned_subs.is_empty()
+        {
             return Err(RuntimeError::new(format!(
                 "No exports found for module: {}",
                 module
@@ -204,6 +218,11 @@ impl Interpreter {
                 }
             }
             for symbol_tags in unit_global_subs.values() {
+                for tag in symbol_tags {
+                    known_tags.insert(tag.clone());
+                }
+            }
+            for symbol_tags in owned_subs.values() {
                 for tag in symbol_tags {
                     known_tags.insert(tag.clone());
                 }
@@ -246,6 +265,16 @@ impl Interpreter {
         // actually re-installed, not just tag-validated.
         let mut merged_subs = subs;
         for (name, tags) in unit_global_subs.iter() {
+            merged_subs
+                .entry(name.clone())
+                .or_default()
+                .extend(tags.iter().cloned());
+        }
+        // Bare-file module exports (see `owned_subs` above). Their source
+        // functions live under `MOD::name` (a plain `use` renamed the hidden
+        // tagged ones there; DEFAULT ones stay `GLOBAL::name` and are already
+        // imported, so the re-alias below is a harmless no-op for them).
+        for (name, tags) in owned_subs.iter() {
             merged_subs
                 .entry(name.clone())
                 .or_default()
