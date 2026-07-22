@@ -549,13 +549,18 @@ pub(in crate::runtime) fn bind_named_rename_sub_signature(
                 None,
             ));
         }
-        interpreter.bind_param_value(bind_name, value.clone());
-        interpreter.set_var_type_constraint(bind_name, sub_pd.type_constraint.clone());
         // A named alias can chain: `:type(:class($kind))` nests a further
-        // rename under this alias. The innermost variable (`$kind`) is the one
-        // the body actually reads, so recurse to bind every level down to it.
+        // rename under this alias. Only the LEAF of the chain (`$kind`, the one
+        // with no further sub-signature) names a body variable; the intermediate
+        // alias names (`type`, `class`) are caller-facing keys only and must NOT
+        // be bound as body variables, else they shadow a same-named outer
+        // constant/lexical (e.g. `:mil(:milli(:$millis))` with an outer
+        // `constant milli`). Recurse to reach the leaf.
         if let Some(nested) = &sub_pd.sub_signature {
             bind_named_rename_sub_signature(interpreter, nested, value)?;
+        } else {
+            interpreter.bind_param_value(bind_name, value.clone());
+            interpreter.set_var_type_constraint(bind_name, sub_pd.type_constraint.clone());
         }
     }
     Ok(())
