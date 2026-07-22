@@ -117,6 +117,18 @@ impl Compiler {
         if pointy_topic_scope {
             self.code.emit(OpCode::EnterPointyTopic);
         }
+        // A bare `do if EXPR { ... $^a ... }` / `(if EXPR { ... })` block receives
+        // the condition value as `@_` and as a scalar placeholder (like `-> $a`),
+        // so `do if 9 { $^a + 1 }` is 10. Mirrors `compile_if_value`.
+        let needs_at_underscore = binding_var.is_none() && Self::body_uses_legacy_args(then_branch);
+        let cond_placeholder: Option<String> = if binding_var.is_none() {
+            crate::ast::collect_placeholders_shallow(then_branch)
+                .into_iter()
+                .find(|n| n.starts_with('^'))
+        } else {
+            None
+        };
+        let needs_cond_value = needs_at_underscore || cond_placeholder.is_some();
         if let Some(var_name) = binding_var {
             let bare_name = var_name.trim_start_matches('$').to_string();
             let var_decl = Stmt::VarDecl {
@@ -136,10 +148,22 @@ impl Compiler {
         } else {
             self.compile_expr(cond);
         }
+        if needs_cond_value {
+            self.code.emit(OpCode::Dup);
+        }
         let jump_else = self.code.emit(OpCode::JumpIfFalse(0));
+        if needs_at_underscore {
+            self.code.emit(OpCode::FlattenSlurpy);
+            self.emit_set_named_var("@_");
+        } else if let Some(ph) = &cond_placeholder {
+            self.emit_set_named_var(ph);
+        }
         self.compile_block_inline(then_branch);
         let jump_end = self.code.emit(OpCode::Jump(0));
         self.code.patch_jump(jump_else);
+        if needs_cond_value {
+            self.code.emit(OpCode::Pop);
+        }
 
         if else_branch.is_empty() {
             let empty_idx = self.code.add_constant(Value::slip(vec![]));
