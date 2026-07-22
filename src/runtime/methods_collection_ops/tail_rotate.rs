@@ -243,7 +243,15 @@ impl Interpreter {
             match target.view() {
                 ValueView::Capture { positional, .. } => positional.clone(),
                 ValueView::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
-                _ => return Ok(Value::NIL),
+                // Unlike `.reverse`, `.rotate` is NOT defined on `Any` in Rakudo
+                // (only on List/Array/Buf), so a non-Iterable invocant is a
+                // method-not-found error, not a silent `Nil`.
+                _ => {
+                    return Err(RuntimeError::method_not_found(
+                        "rotate",
+                        &crate::value::types::what_type_name(&target),
+                    ));
+                }
             }
         };
         if items.is_empty() {

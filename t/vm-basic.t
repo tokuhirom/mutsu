@@ -1,5 +1,5 @@
 use Test;
-plan 327;
+plan 328;
 
 # Literal compilation
 is 42, 42, 'integer literal';
@@ -611,7 +611,10 @@ is @nested.flat.elems, 5, 'native .flat flattens array';
 # .reverse
 my @rev = (1, 2, 3);
 is @rev.reverse.join(","), "3,2,1", 'native .reverse on array';
-is "abc".reverse, "cba", 'native .reverse on string';
+# A Str is a single element for `Any.reverse`, so it reverses to itself.
+# (Reversing the characters is `.flip`.)
+is "abc".reverse.raku, '("abc",).Seq', 'native .reverse on string is a 1-element Seq';
+is "abc".flip, "cba", '.flip reverses the characters';
 
 # .unique
 my @dup = (1, 2, 2, 3, 1);
