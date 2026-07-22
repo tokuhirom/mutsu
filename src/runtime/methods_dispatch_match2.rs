@@ -384,6 +384,13 @@ impl Interpreter {
             let attrs_clone = attributes.to_map();
             return self.dispatch_supply_reduce(target, &attrs_clone, callable);
         }
+        // `.reduce` on an *undefined* invocant — a bare type object (`Range`,
+        // `Str`, `Any`) or `Nil` — is `Nil`, because `Any.reduce` is guarded on a
+        // defined invocant. (A type object passed as a list *element*, e.g.
+        // `(Range,).reduce(&+)`, is a different thing and reduces normally.)
+        if !crate::runtime::types::value_is_defined(&target) {
+            return Ok(Value::NIL);
+        }
         let items = Self::value_to_list(&target);
         self.reduce_items(callable, items)
     }
