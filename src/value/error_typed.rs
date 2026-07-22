@@ -155,6 +155,17 @@ impl RuntimeError {
         Self::typed("X::Immutable", attrs)
     }
 
+    /// X::Supply::New - Supply cannot be constructed directly
+    pub(crate) fn supply_new() -> Self {
+        let msg = "Cannot directly create a Supply. You might want:\n \
+                   - To use a Supplier in order to get a live supply\n \
+                   - To use Supply.on-demand to create an on-demand supply\n \
+                   - To create a Supply using a supply block";
+        let mut attrs = HashMap::new();
+        attrs.insert("message".to_string(), Value::str(msg.to_string()));
+        Self::typed("X::Supply::New", attrs)
+    }
+
     /// X::Cannot::Lazy - Cannot .elems a lazy list
     pub(crate) fn cannot_lazy(action: &str) -> Self {
         let msg = format!("Cannot .{} a lazy list", action);
