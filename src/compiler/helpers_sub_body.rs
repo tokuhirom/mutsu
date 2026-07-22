@@ -546,6 +546,14 @@ impl Compiler {
                         }
                         continue;
                     }
+                    Stmt::Say(_) | Stmt::Put(_) | Stmt::Print(_) | Stmt::Note(_) => {
+                        // A statement-form I/O builtin tail (`say`/`put`/`print`/
+                        // `note`) prints and returns True, so leave True on the
+                        // stack as the routine's implicit return.
+                        sub_compiler.compile_stmt(stmt);
+                        sub_compiler.compile_expr(&Expr::Literal(Value::TRUE));
+                        continue;
+                    }
                     _ => {}
                 }
             }
@@ -792,6 +800,18 @@ impl Compiler {
                         continue;
                     }
                 }
+                if is_value
+                    && matches!(
+                        stmt,
+                        Stmt::Say(_) | Stmt::Put(_) | Stmt::Print(_) | Stmt::Note(_)
+                    )
+                {
+                    // A statement-form I/O builtin tail (`say`/`put`/`print`/`note`)
+                    // prints and returns True — leave True as the implicit return.
+                    sub_compiler.compile_stmt(stmt);
+                    sub_compiler.compile_expr(&Expr::Literal(Value::TRUE));
+                    continue;
+                }
                 sub_compiler.compile_stmt(stmt);
             }
             if last_is_enter {
@@ -918,6 +938,14 @@ impl Compiler {
                                 ));
                                 sub_compiler.code.emit(OpCode::GetGlobal(idx));
                             }
+                            continue;
+                        }
+                        Stmt::Say(_) | Stmt::Put(_) | Stmt::Print(_) | Stmt::Note(_) => {
+                            // A statement-form I/O builtin tail (`say`/`put`/
+                            // `print`/`note`) prints and returns True, so leave True
+                            // on the stack as the closure's implicit return.
+                            sub_compiler.compile_stmt(stmt);
+                            sub_compiler.compile_expr(&Expr::Literal(Value::TRUE));
                             continue;
                         }
                         _ => {}

@@ -287,6 +287,15 @@ impl Compiler {
                         self.pop_dynamic_scope_lexical(saved);
                         return;
                     }
+                    Stmt::Say(_) | Stmt::Put(_) | Stmt::Print(_) | Stmt::Note(_) => {
+                        // A statement-form I/O builtin (`say`/`put`/`print`/`note`)
+                        // in block-final position prints and returns True, so leave
+                        // True as the block's value (e.g. `do { say 1 }` is a Bool).
+                        self.compile_stmt(stmt);
+                        self.compile_expr(&Expr::Literal(Value::TRUE));
+                        self.pop_dynamic_scope_lexical(saved);
+                        return;
+                    }
                     _ => {}
                 }
             }
