@@ -283,10 +283,11 @@ pub(crate) fn is_adverbial_pair_key(s: &str) -> bool {
 
 /// Whether a single element warrants a trailing comma when it is the sole
 /// element of a real (`@`-sigil) array's `.raku`: `[1..5,]`, `[(1, 2),]`,
-/// `[{:x(1)},]`. Raku adds the comma when the element is itself an Iterable
-/// whose bare `.raku` literal would otherwise flatten/merge into the array
-/// (Range, List/Array, Seq, Hash/Map). Pair, Set/Bag/Mix (rendered as
-/// constructor calls), scalars, and type objects do NOT get a comma.
+/// `[{:x(1)},]`, `[HyperSeq,]`. Raku's rule (List.raku) is `istype(elem,
+/// Iterable)` — an Iterable's bare `.raku` literal would otherwise
+/// flatten/merge into the array. This includes Iterable *type objects*
+/// (`[List,]`, `[Map,]`) but not Set/Bag/Mix (QuantHashes are not Iterable
+/// in Rakudo), Pair, Buf, Junction, or scalars.
 fn element_needs_trailing_comma(v: &Value) -> bool {
     match v.view() {
         ValueView::ContainerRef(cell) => {
@@ -302,6 +303,20 @@ fn element_needs_trailing_comma(v: &Value) -> bool {
         | ValueView::Array(..)
         | ValueView::Seq(..)
         | ValueView::Hash(_) => true,
+        ValueView::Package(name) => matches!(
+            name.resolve().as_str(),
+            "Iterable"
+                | "List"
+                | "Array"
+                | "Slip"
+                | "Seq"
+                | "HyperSeq"
+                | "RaceSeq"
+                | "Range"
+                | "Map"
+                | "Hash"
+                | "Stash"
+        ),
         _ => false,
     }
 }

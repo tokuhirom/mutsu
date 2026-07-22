@@ -1370,12 +1370,11 @@ nested — recipe in the sweep memory; script was `tmp/repr-sweep.sh`) surfaced 
 The nested-leaf residues it also found (enum qualification, Uni constructor form, Version
 gist `v` prefix) were fixed in the same PR that recorded this entry, and the `[ident]`
 mis-parse (any identifier taken as a reduction metaop, so `say [red].raku` printed `Nil`)
-was fixed right after (`t/bareword-array-not-reduction.t`). Probing the trailing-comma
-item also showed `[:a].raku` renders `[:a]` where raku spells `[:a(Bool::True)]`.
+was fixed right after (`t/bareword-array-not-reduction.t`). The one-element-Iterable
+trailing comma (incl. type objects — `[HyperSeq,]`, `[List,]`; QuantHashes excluded)
+and `[Z]`-reduction-returns-a-Seq landed 2026-07-22 (pin `t/repr-residues-2.t`); the
+`[:a].raku` note was stale — current raku also renders `[:a]`, no divergence.
 
-- [ ] **A one-element array holding an Iterable renders without the trailing comma:**
-      `[HyperSeq].raku` → mutsu `[HyperSeq]`, raku `[HyperSeq,]` (disambiguates from
-      flattening). Applies to Iterable type objects and likely itemized list elements.
 - [ ] **`Proc.raku`/`.gist` render no attributes** (`Proc.new`); raku renders the full
       form `Proc.new(in => IO::Pipe, out => IO::Pipe, err => IO::Pipe, os-error => Str,
       exitcode => Nil, signal => Any, pid => Nil, command => [])` — for a *run* proc even
@@ -1384,7 +1383,13 @@ item also showed `[:a].raku` renders `[:a]` where raku spells `[:a(Bool::True)]`
       (The worse half — gist/Str delegating to `.Numeric`, so `Proc.new.gist` was `-1` —
       was fixed with `t/proc-gist-not-exitcode.t`.)
 - [ ] **`IO::Spec::Unix.new.raku` renders the type-object form `IO::Spec::Unix`** and its
-      gist is `(Unix)`; raku renders `IO::Spec::Unix.new` for both.
+      gist is `(Unix)`; raku renders `IO::Spec::Unix.new` for both. Traced 2026-07-22 as
+      far as: the instance never reaches the generic attribute walk in
+      `methods_instance_ops` (which would render `IO::Spec::Unix.new` correctly) — its
+      gist/raku land in `dispatch_instance_and_fallback`'s tail fallback arms
+      (`_ => to_string_value`), and `.Str` of the instance is empty while `.raku` is the
+      bare class name, so an earlier arm intercepts. Needs a dispatch trace before fixing;
+      cosmetic, low value.
 
 ---
 
