@@ -520,7 +520,13 @@ impl Interpreter {
                 })
                 .collect();
             for pd in param_defs.iter().filter(|pd| pd.named) {
-                let bare_name = pd.name.trim_start_matches(|c: char| "$@%&".contains(c));
+                // Strip the sigil AND any twigil: an attribute-binding named param
+                // `:$!size` / `:$.size` has external named key `size`, so its `!`/`.`
+                // twigil must be dropped to match the call's `size => ...` arg.
+                let bare_name = pd
+                    .name
+                    .trim_start_matches(|c: char| "$@%&".contains(c))
+                    .trim_start_matches(['!', '.']);
                 let arg_val = named_args
                     .iter()
                     .find(|(k, _)| k == bare_name)
@@ -528,6 +534,23 @@ impl Interpreter {
 
                 // Check required named params have corresponding args
                 if pd.required && pd.default.is_none() && arg_val.is_none() {
+                    return false;
+                }
+
+                // An unsupplied optional named param binds its type object, which
+                // is `:U` (undefined). A `:D` (definite) smiley therefore fails to
+                // bind unless a default supplies a defined value — so the candidate
+                // does NOT match a call that omits it. Without this, `f(Int:D
+                // :$size)` wrongly matched `f()` and out-dispatched the narrower
+                // `f()` / `multi submethod BUILD()` candidate.
+                if arg_val.is_none()
+                    && pd.default.is_none()
+                    && let Some(constraint) = &pd.type_constraint
+                    && matches!(
+                        crate::runtime::types::strip_type_smiley(constraint).1,
+                        Some(":D")
+                    )
+                {
                     return false;
                 }
 
