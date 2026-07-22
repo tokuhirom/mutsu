@@ -936,6 +936,22 @@ impl Interpreter {
                     if let Some(value) = stash_lookup(&key) {
                         return Some(Ok(value));
                     }
+                    // CORE::/SETTING:: expose the (huge) core symbol table, which
+                    // is not materialized into the stash. Resolve a missing key
+                    // lazily so `CORE::.<&not>` / `::("CORE")::('&not')` find core
+                    // routines. Qualify with the stash name so a user shadow of the
+                    // same name is bypassed (roast: `CORE::.<&not>` when shadowed).
+                    // TODO: extend to non-code core symbols ($ vars, type objects).
+                    if let Some(ValueView::Str(stash_name)) =
+                        attributes.as_map().get("name").map(Value::view)
+                        && (stash_name.as_str() == "CORE" || stash_name.as_str() == "SETTING")
+                        && let Some(bare) = key.strip_prefix('&')
+                    {
+                        let v = self.resolve_code_var(&format!("{}::{bare}", stash_name.as_str()));
+                        if !v.is_nil() {
+                            return Some(Ok(v));
+                        }
+                    }
                 }
                 Some(Ok(Value::NIL))
             }

@@ -227,6 +227,11 @@ impl Interpreter {
         // resolve the bare function name.
         let bare_name = Self::strip_pseudo_packages(name);
         let has_packages = bare_name != name;
+        // GLOBAL::/OUR:: are package namespaces that do NOT contain CORE symbols,
+        // unlike the lexical/core pseudo-packages (CORE, SETTING, MY, OUTER, ...).
+        // A builtin name qualified through them is undefined (roast pseudo-6c:
+        // `!defined(&GLOBAL::say)`), so suppress the builtin fast-paths below.
+        let core_visible = !has_packages || !Self::innermost_pseudo_is_package_only(name);
         let lookup_name = bare_name.strip_prefix('*').unwrap_or(bare_name);
         if bare_name == "?ROUTINE" {
             // Skip pointy-block entries to find the enclosing routine
@@ -259,7 +264,7 @@ impl Interpreter {
         // user-defined overrides.
         // When pseudo-package qualifiers are present (e.g. SETTING::), resolve
         // to the builtin directly, bypassing user-defined overrides.
-        if has_packages && Self::is_builtin_function(lookup_name) {
+        if has_packages && core_visible && Self::is_builtin_function(lookup_name) {
             return Value::routine_parts(
                 Symbol::intern("GLOBAL"),
                 Symbol::intern(lookup_name),
@@ -376,7 +381,7 @@ impl Interpreter {
             )
         } else if let Some(def) = def {
             self.sub_value_from_function_def(def)
-        } else if Self::is_builtin_function(lookup_name) {
+        } else if core_visible && Self::is_builtin_function(lookup_name) {
             Value::routine_parts(Symbol::intern("GLOBAL"), Symbol::intern(lookup_name), false)
         } else if Self::is_mop_macro_function(lookup_name) {
             // The MOP pseudo-methods `WHAT`/`HOW`/`VAR` are also first-class
@@ -403,6 +408,36 @@ impl Interpreter {
         } else {
             Value::NIL
         }
+    }
+
+    /// True when the innermost (last) stripped pseudo-package prefix is a
+    /// package namespace (GLOBAL/OUR) rather than a lexical/core scope. Such
+    /// namespaces do not contain CORE symbols, so a builtin name qualified
+    /// through them is undefined (roast pseudo-6c: `!defined(&GLOBAL::say)`).
+    /// `GLOBAL::CORE::not` still sees CORE because CORE is the innermost prefix.
+    fn innermost_pseudo_is_package_only(name: &str) -> bool {
+        let pseudo = [
+            "SETTING", "CALLER", "OUTER", "CORE", "GLOBAL", "MY", "OUR", "DYNAMIC", "UNIT",
+        ];
+        let mut rest = name;
+        let mut last: Option<&str> = None;
+        loop {
+            let mut found = false;
+            for pkg in &pseudo {
+                if let Some(after) = rest.strip_prefix(pkg)
+                    && let Some(after) = after.strip_prefix("::")
+                {
+                    rest = after;
+                    last = Some(pkg);
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
+                break;
+            }
+        }
+        matches!(last, Some("GLOBAL") | Some("OUR"))
     }
 
     /// Strip pseudo-package prefixes (SETTING::, OUTER::, CALLER::, CORE::, etc.)
