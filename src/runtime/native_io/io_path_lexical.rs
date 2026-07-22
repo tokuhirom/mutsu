@@ -189,18 +189,41 @@ impl Interpreter {
                 if method == "child" && Self::named_bool(args, "secure") {
                     return None;
                 }
-                let child_name = args
-                    .first()
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                match Self::io_path_join_child(attributes, &p, &child_name) {
-                    Ok(joined) => {
-                        let mut new_attrs = attributes.clone();
-                        new_attrs.insert("path".to_string(), Value::str(joined));
-                        Ok(Value::make_instance(io_path_class, new_attrs))
+                // `.add` is slurpy (`*@children`): it flattens its positional
+                // arguments and joins each resulting element onto the path as a
+                // separate segment, so `"foo".IO.add(<bar baz>)` is `foo/bar/baz`
+                // (not `foo/bar baz`) and `.add(("a", ("b", "c")))` is `foo/a/b/c`.
+                // `.child`, by contrast, takes a single `Str()` child and keeps it
+                // whole (`.child(<bar baz>)` is `foo/bar baz`).
+                let segments: Vec<String> = if method == "add" {
+                    let mut children = Vec::new();
+                    for v in Self::positional_values(args) {
+                        crate::builtins::flat_val(v, &mut children, true);
                     }
-                    Err(e) => Err(e),
+                    children.iter().map(|c| c.to_string_value()).collect()
+                } else {
+                    vec![
+                        Self::positional_value(args, 0)
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default(),
+                    ]
+                };
+                let mut current = p.clone();
+                let mut joined_ok = Ok(());
+                for seg in &segments {
+                    match Self::io_path_join_child(attributes, &current, seg) {
+                        Ok(joined) => current = joined,
+                        Err(e) => {
+                            joined_ok = Err(e);
+                            break;
+                        }
+                    }
                 }
+                joined_ok.map(|()| {
+                    let mut new_attrs = attributes.clone();
+                    new_attrs.insert("path".to_string(), Value::str(current));
+                    Value::make_instance(io_path_class, new_attrs)
+                })
             }
             "extension" => (|| -> Result<Value, RuntimeError> {
                 let subst = Self::positional_value(args, 0).map(|v| v.to_string_value());
