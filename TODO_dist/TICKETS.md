@@ -584,6 +584,50 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 - file: `src/vm/vm_var_trait_ops.rs` (backing), `src/runtime/registration_role.rs` +
   `src/runtime/class.rs` (public/private methods, gap 2), multi-dispatch (gap 3)
 
+<!-- New actionable tickets from the seed-555 fresh sweep (2026-07-22). Known
+     already-blocked root causes (ObjectCache/ValueTypeCache = nqp cluster, XML,
+     Crane compile, P5reset = Slice-F) are NOT re-added. -->
+
+### T-053 — test_fail: BIT add/get [Algorithm::BinaryIndexedTree]  [impact: 1 dist]  — FIXED (PR `fix-multi-optional-named-definite`)
+- dists: Algorithm::BinaryIndexedTree (t/01-basic.t 1/5 → 5/5)
+- No-arg `.new` picked `multi submethod BUILD(Int:D :$!size)` with `$!size`
+  undefined instead of `multi submethod BUILD()`. Root cause: an omitted optional
+  `:D` named param must not match, and `:$!size`'s external key is `size` (twigil
+  stripped). Fixed in `src/runtime/types/args_matching.rs`. Pin:
+  `t/multi-optional-named-definite.t`.
+
+### T-054 — test_fail: builtin push/pop return value [P5push]  [impact: 1 dist]
+- dists: P5push
+- `P5push` exports `proto sub push`/`multi sub push(@a,*@v --> Int:D){...}` and
+  `pop`. mutsu's builtin `push`/`pop` shadow the imported subs in EVERY call form
+  (`push @a,x`, `push(@a,x)`, `&push(@a,x)`), so `push @a, 42` returns the array,
+  not the new elem count. **DEFER**: an imported `sub push` overriding the builtin
+  listop is the same compile-time-import problem as Understitch's `_` operator
+  (mutsu processes `use` at runtime); poor ROI.
+- file: builtin-vs-imported-sub dispatch priority (deep)
+
+### T-055 — test_fail: 1 s -> 1 second [Time::Duration::Parser]  [impact: 1 dist]
+- dists: Time::Duration::Parser
+- e.g. base=1 pass=0 fail=1 die=0 | t/00-basic.rakutest: 1 s -> 1 second
+- repro: _(fill in — duration string parsing; check `raku -I lib` baseline first)_
+- file: _(suspected parser/runtime file)_
+
+### T-056 — test_fail: Codepoint [P5quotemeta]  [impact: 1 dist]
+- dists: P5quotemeta
+- e.g. base=1 pass=0 fail=1 die=0 | t/01-basic.rakutest: Codepoint 0 [0]
+- repro: _(fill in — quotemeta over codepoints; check baseline first)_
+- file: _(suspected parser/runtime file)_
+
+### T-057 — test_die batch (seed-555, un-triaged)  [impact: several dists]
+- dists (each its own root cause; triage individually before claiming, confirm the
+  raku `-I lib` baseline first): Attribute::Predicate, File::Ignore,
+  IO::Path::AutoDecompress, Math::Angle, Math::PascalTriangle,
+  Statistics::LinearRegression, String::Rotate, Text::CodeProcessing, Trait::IO,
+  WriteOnceHash, `are`, `sortuk`, Tree::Binary::PrettyTree (required role method
+  not seen as implemented).
+- These `test_die` on the current binary but were not individually reproduced.
+  Split off a dedicated ticket when you pick one up.
+
 ## Claimed
 
 _(move tickets here with `[claim: <branch>]` when you start)_
