@@ -1357,16 +1357,36 @@ impl Interpreter {
                                 .unwrap_or_else(|| "Any".to_string());
                             Value::package(Symbol::intern(&type_name))
                         };
-                        let mut new_map = (**map).clone();
-                        new_map.remove(&key);
-                        let new_hash = Value::hash_with_data(Value::hash_arc(new_map));
-                        let meta = old_meta.unwrap_or(crate::runtime::ContainerTypeInfo {
-                            value_type: "Any".to_string(),
-                            key_type: None,
-                            declared_type: None,
-                        });
-                        let new_hash = self.tag_container_metadata(new_hash, meta);
-                        self.env_mut().insert(target_name.to_string(), new_hash);
+                        // Prefer an aliased in-place removal so the deletion is
+                        // visible through every holder of the same hash Arc (a
+                        // `\SELF` raw param / `:=` bind), exactly like array
+                        // splice/DELETE-POS. `HashMap::remove` does not
+                        // reallocate, so the pointer-keyed container metadata
+                        // stays attached and needs no re-tag. Rebuilding a fresh
+                        // hash (the fallback below) severs the alias, so a
+                        // `postcircumfix:<{ }>(\SELF, \k, :$eject){ SELF.DELETE-KEY(k) }`
+                        // would not reach the caller's `%h`.
+                        let removed_in_place = self
+                            .env_mut()
+                            .get_mut(target_name.as_ref())
+                            .and_then(|v| {
+                                v.with_hash_mut(|gc| {
+                                    crate::value::gc_data_mut(gc).remove(&key);
+                                })
+                            })
+                            .is_some();
+                        if !removed_in_place {
+                            let mut new_map = (**map).clone();
+                            new_map.remove(&key);
+                            let new_hash = Value::hash_with_data(Value::hash_arc(new_map));
+                            let meta = old_meta.unwrap_or(crate::runtime::ContainerTypeInfo {
+                                value_type: "Any".to_string(),
+                                key_type: None,
+                                declared_type: None,
+                            });
+                            let new_hash = self.tag_container_metadata(new_hash, meta);
+                            self.env_mut().insert(target_name.to_string(), new_hash);
+                        }
                         self.stack.push(old_value);
                         return Ok(());
                     }

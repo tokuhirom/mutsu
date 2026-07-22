@@ -1,9 +1,9 @@
 use super::adverb::{
-    DeleteAdverb, build_adverb_error_call, collect_remaining_adverbs, determine_subscript_what,
-    multidim_target_var_name, normalize_adverb_name, parse_delete_adverb,
-    parse_dynamic_subscript_adverb, parse_subscript_adverb_with_expr,
-    subscript_adverb_expr_with_cond, supports_postfix_call_adverbs, try_parse_exists_adverb,
-    try_parse_unknown_adverb,
+    DeleteAdverb, build_adverb_error_call, build_user_postcircumfix_adverb_call,
+    collect_remaining_adverbs, determine_subscript_what, multidim_target_var_name,
+    normalize_adverb_name, parse_delete_adverb, parse_dynamic_subscript_adverb,
+    parse_subscript_adverb_with_expr, subscript_adverb_expr_with_cond,
+    supports_postfix_call_adverbs, try_parse_exists_adverb, try_parse_unknown_adverb,
 };
 use super::call_method::{
     ParsedBracketIndex, QuotedMethodName, append_call_arg, auto_invoke_bareword_method_target,
@@ -1965,7 +1965,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 if let Expr::Index {
                     ref target,
                     ref index,
-                    ..
+                    is_positional,
                 } = expr
                 {
                     let var_name = match target.as_ref() {
@@ -1978,7 +1978,21 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     let mut unknown_vec = vec![unk_name];
                     let r =
                         collect_remaining_adverbs(r_after_unk, &mut known_vec, &mut unknown_vec);
-                    expr = build_adverb_error_call(&what, &var_name, &known_vec, &unknown_vec);
+                    // A custom adverb (`@a[1]:eject`) with no built-in adverb
+                    // routes to a user-defined `postcircumfix:<[ ]>`/`<{ }>` when
+                    // one is in scope; otherwise it is an X::Adverb error.
+                    if known_vec.is_empty()
+                        && let Some(call) = build_user_postcircumfix_adverb_call(
+                            target,
+                            index,
+                            is_positional,
+                            &unknown_vec,
+                        )
+                    {
+                        expr = call;
+                    } else {
+                        expr = build_adverb_error_call(&what, &var_name, &known_vec, &unknown_vec);
+                    }
                     rest = r;
                     continue;
                 }
