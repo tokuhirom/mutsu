@@ -332,6 +332,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 crate::value::seq_mark_cached(&items);
                 Some(Ok(Value::array(items.to_vec())))
             }
+            // `.List` on a Slip flattens its elements into a List (`slip(1,2,3).List`
+            // is `(1 2 3)`, not `((1 2 3))`) — without this arm a Slip falls through
+            // to the scalar catch-all and is wrapped as a single element.
+            ValueView::Slip(items) => Some(Ok(Value::array(items.to_vec()))),
             // A shaped array falls through to the slow path, which flattens all
             // dimensions and replaces Nil slots with the type-default.
             ValueView::Array(..) if crate::runtime::utils::is_shaped_array(target) => None,

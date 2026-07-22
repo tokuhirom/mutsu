@@ -41,6 +41,21 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         let method: &str = method_sym.as_str();
+        // A `Seq.new($iterator)` stores its iterator deferred (empty backing vec).
+        // Several native interceptors below (`try_native_sort`, `.Seq`/`.Map`
+        // coercions, ...) read the target's items directly and would yield nothing
+        // for such a Seq — reaching them before the `call_method_with_values`
+        // fallthrough that pulls the iterator. Reify here first so every native
+        // path sees the pulled elements. `cache`/`raku`/`perl` keep the Seq lazy.
+        let target = if let ValueView::Seq(arc) = target.view()
+            && crate::value::seq_has_deferred_iter(&arc)
+            && !crate::value::seq_deferred_method_keeps_lazy(method)
+        {
+            let pulled = self.materialize_deferred_seq(&arc);
+            Value::seq_arc(std::sync::Arc::new(pulled))
+        } else {
+            target
+        };
         // Native default construction: `Foo.new(...)` for a simple user-defined
         // class is pure data assembly (named args + attribute defaults), so the
         // Interpreter builds the instance directly instead of routing through the

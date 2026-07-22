@@ -35,6 +35,19 @@ impl Interpreter {
             }
         }
         let method_name = method_sym.resolve();
+        // A `Seq.new($iterator)` stores its iterator deferred (empty backing vec).
+        // The native impls below read that empty vec directly and would yield
+        // nothing (`.List`/`.elems`/`.Array`/...). Defer such a Seq to the
+        // interpreter, whose `call_method_with_values` pulls every element from
+        // the iterator (`materialize_deferred_seq`) before dispatching. `cache`/
+        // `raku`/`perl` intentionally keep the Seq lazy (they must NOT pull), so
+        // they proceed with the native path.
+        if let ValueView::Seq(items) = target.view()
+            && crate::value::seq_has_deferred_iter(&items)
+            && !crate::value::seq_deferred_method_keeps_lazy(method_name.as_str())
+        {
+            return None;
+        }
         // `.Capture` that must call user methods / drain a live source (Channel/
         // Supply, or a non-Str Pair key needing `.Str`) is interpreter-aware; other
         // targets fall through to the pure native `value_to_capture` below.

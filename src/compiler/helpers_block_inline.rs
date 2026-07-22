@@ -47,6 +47,18 @@ impl Compiler {
                 }
                 true
             }
+            // `$x = expr` / `$x := expr` at the tail of a `given`/`when` block is
+            // the block's value (`given 3 { $y = 5 }` yields 5), mirroring the
+            // block-final assignment handling in `compile_block_inline`. Without
+            // this the fallback compiles the assignment as a sink and the block
+            // yields Nil (surfaced by a two-phase `pull-one { with $!k {...} else
+            // { $!k := ... } }` iterator whose `else` value was dropped).
+            Stmt::Assign { name, expr, .. } => {
+                self.compile_expr(expr);
+                self.code.emit(OpCode::Dup);
+                self.emit_set_named_var(name);
+                true
+            }
             _ => false,
         }
     }
