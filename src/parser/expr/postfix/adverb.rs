@@ -227,6 +227,45 @@ pub(crate) fn normalize_adverb_name(s: &str) -> String {
     s.strip_suffix('0').unwrap_or(s).to_string()
 }
 
+/// Route a subscript carrying only user-defined (non-built-in) adverbs to a
+/// user `postcircumfix:<[ ]>` / `postcircumfix:<{ }>` candidate, e.g. the
+/// `Adverb::Eject` module's `@a[1]:eject` -> `postcircumfix:<[ ]>(@a, 1,
+/// :eject)`. Returns `None` when no such user candidate is in scope, so the
+/// caller falls back to the X::Adverb error. `is_positional` selects the
+/// bracket flavour (`[...]` vs `{...}`/`<...>`). Each collected adverb becomes a
+/// `:name` (True) named argument; the runtime multi-dispatch then picks the
+/// matching candidate exactly as an explicit call would.
+pub(crate) fn build_user_postcircumfix_adverb_call(
+    target: &Expr,
+    index: &Expr,
+    is_positional: bool,
+    adverbs: &[String],
+) -> Option<Expr> {
+    if adverbs.is_empty() {
+        return None;
+    }
+    let op_name = if is_positional {
+        "postcircumfix:<[ ]>"
+    } else {
+        "postcircumfix:<{ }>"
+    };
+    if !crate::parser::stmt::simple::is_user_declared_sub(op_name) {
+        return None;
+    }
+    let mut args = vec![target.clone(), index.clone()];
+    for adv in adverbs {
+        args.push(Expr::Binary {
+            left: Box::new(Expr::Literal(Value::str(adv.clone()))),
+            op: crate::token_kind::TokenKind::FatArrow,
+            right: Box::new(Expr::Literal(Value::TRUE)),
+        });
+    }
+    Some(Expr::Call {
+        name: Symbol::intern(op_name),
+        args,
+    })
+}
+
 /// Build a `__mutsu_subscript_adverb_error` call for X::Adverb.
 pub(crate) fn build_adverb_error_call(
     what: &str,
