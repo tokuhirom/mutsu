@@ -1292,26 +1292,21 @@ Both items landed (pins `t/produce-last.t`, `t/reduce-destructuring-signature.t`
 `news/2026-07.md`). Kept note: `rotor(3, 'a'..'h')` as a *function* is `v6.e.PREVIEW`-only; the
 reference `raku` (6.d) also `SORRY`s on it, so it is not a divergence — do not chase.
 
-### 8.13 A `sub NAME { }` used as an *expression* loses its `.name` (deferred — found 2026-07-22 by the variables.rakudoc doc-diff sweep)
+### 8.13 A `sub NAME { }` used as an *expression* loses its `.name` — mostly done 2026-07-23
 
-- [ ] **A named sub in expression/rvalue position drops its name.**
-      `my $s = sub foo { 1 }; say $s.name` is `foo` in raku but empty in mutsu; likewise
-      `(sub baz {1}).name`, `my &g = sub bar {1}; &g.name`, and `anon sub square($x){…}` (its
-      `.name` should stay `square` even though `anon` keeps it out of the symbol table). A
-      *statement-form* `sub foo {…}` is fine — `&foo.name` is `foo` — because the installer records
-      the name; only the expression form loses it.
-- **Root cause: the AST has nowhere to put the name.** A `sub NAME {…}` expression parses to
-      `Expr::AnonSub { body, is_rw, is_block }` / `Expr::AnonSubParams { … }` (`src/ast.rs:311`), both
-      of which have **no `name` field** — the parser consumes and discards the name
-      (`src/parser/primary/ident/anon_sub.rs`). So the created `Sub` value is built nameless.
-- **Why it is deferred (blast radius).** Adding `name: Option<String>` to `AnonSub`/`AnonSubParams`
-      touches ~66 construction sites of `Expr::AnonSub {` across parser + AST helpers + VM, plus the
-      closure-creation path that stamps the `Sub` value's name. It is a mechanical but wide change;
-      do it as its own PR. Also render it in `.gist` (`&foo`) and set `.name`. Pin candidate:
-      `t/sub-expression-name.t`.
-- Entry: `git checkout -b feat-named-sub-expression origin/main`. Files: `src/ast.rs` (the two
-      variants), `src/parser/primary/ident/anon_sub.rs` (+ wherever `sub NAME` in expr position is
-      parsed), the compiler/VM closure builder that creates the `Sub` value.
+The main behaviors landed WITHOUT the feared ~66-site `Expr::AnonSub` field addition: the
+expression-form named sub now parses through the statement sub-decl parser and wraps in
+`Expr::DoStmt(Stmt::SubDecl)` — the compiler's existing do-expr `SubDecl` arm (added for
+`my sub foo {...}`) registers the routine and loads `&NAME` as the value. That gives
+`.name` == "foo" AND the raku-correct lexical install (`&foo` / `foo()` work after
+`my $s = sub foo {...}`, which the old AnonSub lowering also lacked). Pin:
+`t/sub-expression-name.t`.
+
+- [ ] **Leftovers (small):** `anon sub NAME {...}` still drops the name (it must NOT
+      install, so it keeps the AnonSub lowering — needs a name-carrying mechanism or a
+      register-then-remove trick); and a *named* Sub's `.gist` should render `&foo`
+      (mutsu renders the long `sub foo () { ... }` form; anonymous subs gist `sub { }`
+      in raku and that part matches).
 
 ### 8.14 `state` variables in feed-lowered `map` blocks collide across blocks — ✅ DONE 2026-07-23
 

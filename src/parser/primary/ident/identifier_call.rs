@@ -777,47 +777,16 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     },
                 ));
             }
-            if let Ok((r_named, _name)) = crate::parser::stmt::parse_sub_name_pub(r) {
-                let (r_named, _) = ws(r_named)?;
-                if r_named.starts_with("is ")
-                    || r_named.starts_with("returns ")
-                    || r_named.starts_with("of ")
-                {
-                    let (r_named, traits) = crate::parser::stmt::parse_sub_traits_pub(r_named)?;
-                    let (r_named, body) = parse_block_body(r_named)?;
-                    let mut expr = Expr::AnonSub {
-                        body,
-                        is_rw: traits.is_rw,
-                        is_block: false,
-                    };
-                    if traits.is_rw {
-                        expr = set_anon_sub_rw(expr, true);
-                    }
-                    return Ok((r_named, expr));
-                }
-                if r_named.starts_with('{') {
-                    let (r_named, body) = parse_block_body(r_named)?;
-                    return Ok((
-                        r_named,
-                        Expr::AnonSub {
-                            body,
-                            is_rw: false,
-                            is_block: false,
-                        },
-                    ));
-                }
-                if r_named.starts_with('(') {
-                    let (r_named, params_body) =
-                        parse_anon_sub_with_params(r_named).map_err(|err| PError {
-                            messages: merge_expected_messages(
-                                "expected anonymous sub parameter list/body",
-                                &err.messages,
-                            ),
-                            remaining_len: err.remaining_len.or(Some(r_named.len())),
-                            exception: None,
-                        })?;
-                    return Ok((r_named, params_body));
-                }
+            // A NAMED sub in expression position (`my $s = sub foo {...}`)
+            // is a full declaration in Raku: it installs `&foo` lexically AND
+            // evaluates to the routine object (whose `.name` is "foo").
+            // Delegate to the statement sub-decl parser and wrap in `DoStmt` —
+            // the compiler's do-expr `SubDecl` arm registers the routine and
+            // loads `&NAME` as the expression value.
+            if crate::parser::stmt::parse_sub_name_pub(r).is_ok()
+                && let Ok((r_decl, stmt)) = crate::parser::stmt::sub_decl_body_pub(r)
+            {
+                return Ok((r_decl, Expr::DoStmt(Box::new(stmt))));
             }
             if r.starts_with("is ") || r.starts_with("returns ") || r.starts_with("of ") {
                 let (r, traits) = crate::parser::stmt::parse_sub_traits_pub(r)?;
