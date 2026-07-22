@@ -548,6 +548,12 @@ impl Interpreter {
 
         // Execute bytecode
         let let_mark = self.let_saves_len();
+        // A method body is its own topicalizer for a bare `when`/`default`: a
+        // matching `when` sets the global `when_matched` flag, which must not
+        // leak to an enclosing `given`/`with` body (see vm_call_light.rs for the
+        // full rationale). Reset for the body; restore the caller's value below.
+        let saved_when_matched = self.when_matched();
+        self.set_when_matched(false);
         let mut ip = 0;
         let mut result = Ok(());
         let mut explicit_return: Option<Value> = None;
@@ -627,6 +633,10 @@ impl Interpreter {
                 break;
             }
         }
+
+        // Restore the caller's `when_matched` — a bare `when` inside this method
+        // body must not leak its match state to an enclosing given/with.
+        self.set_when_matched(saved_when_matched);
 
         let ret_val = if result.is_ok() {
             if self.stack.len() > saved_stack_depth {
@@ -1317,6 +1327,11 @@ impl Interpreter {
 
         // Execute bytecode (same as slow path)
         let let_mark = self.let_saves_len();
+        // A method body is its own topicalizer for a bare `when`/`default`; its
+        // `when_matched` must not leak to an enclosing given/with (see the slow
+        // path above / vm_call_light.rs for the full rationale).
+        let saved_when_matched = self.when_matched();
+        self.set_when_matched(false);
         let mut ip = 0;
         let mut result = Ok(());
         let mut explicit_return: Option<Value> = None;
@@ -1393,6 +1408,9 @@ impl Interpreter {
                 break;
             }
         }
+
+        // Restore the caller's `when_matched` — see the slow path above.
+        self.set_when_matched(saved_when_matched);
 
         let ret_val = if result.is_ok() {
             if self.stack.len() > saved_stack_depth {

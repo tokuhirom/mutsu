@@ -409,6 +409,14 @@ impl Interpreter {
         // required-param early returns above). Restored after the env merge below.
         let saved_package = self.enter_routine_package(cf);
 
+        // A routine body is its own topicalizer for a bare `when`/`default`: a
+        // matching `when` sets the global `when_matched` flag, which must not
+        // leak to an enclosing `given`/`with` body (see vm_call_light.rs for the
+        // full rationale). Reset for the body; restore the caller's value below.
+        let saved_when_matched = self.when_matched();
+        if cf.code.is_routine {
+            self.set_when_matched(false);
+        }
         // Execute the function body
         let mut ip = 0;
         let mut result = Ok(());
@@ -456,6 +464,12 @@ impl Interpreter {
             if self.is_halted() {
                 break;
             }
+        }
+
+        // Restore the caller's `when_matched` — a bare `when` inside this
+        // routine body must not leak its match state to an enclosing given/with.
+        if cf.code.is_routine {
+            self.set_when_matched(saved_when_matched);
         }
 
         // Natural fall-through completion (no explicit return / fail / error
