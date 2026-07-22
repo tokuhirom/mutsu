@@ -314,6 +314,7 @@ impl Interpreter {
             rakuseen_active: Vec::new(),
             rakuseen_cycle_hit: std::collections::HashSet::new(),
             raku_leaf_active: Vec::new(),
+            raku_leaf_cycle_hit: std::collections::HashSet::new(),
             pending_proxy_subclass_attr: None,
             multi_dispatch_stack: Vec::new(),
             method_dispatch_stack: Vec::new(),

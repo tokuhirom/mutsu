@@ -16,7 +16,7 @@
 
 use super::Interpreter;
 use crate::builtins::methods_0arg::raku_repr::{needs_raku_dispatch, raku_raw};
-use crate::value::{ArrayData, HashData, Value, ValueView};
+use crate::value::{ArrayData, HashData, RuntimeError, Value, ValueView};
 
 /// Depth cap for the walk. Cycles are caught by container identity (below);
 /// this only keeps a pathologically deep structure from blowing the stack.
@@ -165,26 +165,7 @@ impl Interpreter {
 
     fn expand_container(&mut self, value: &Value, active: &mut Vec<usize>, depth: usize) -> Value {
         if needs_raku_dispatch(value) {
-            // A self-referencing object reaches itself through its own
-            // attributes; dispatching again would recurse forever, so a
-            // re-entered instance falls back to the pure repr.
-            let id = match value.view() {
-                ValueView::Instance { id, .. } => Some(id),
-                _ => None,
-            };
-            if let Some(id) = id {
-                if self.raku_leaf_active.contains(&id) {
-                    return value.clone();
-                }
-                self.raku_leaf_active.push(id);
-            }
-            let rendered = self.call_method_with_values(value.clone(), "raku", vec![]);
-            if let Some(id) = id
-                && let Some(pos) = self.raku_leaf_active.iter().rposition(|x| *x == id)
-            {
-                self.raku_leaf_active.remove(pos);
-            }
-            return match rendered {
+            return match self.dispatch_raku_leaf(value) {
                 Ok(rendered) => raku_raw(rendered.to_string_value()),
                 Err(_) => value.clone(),
             };
@@ -311,6 +292,52 @@ impl Interpreter {
             .iter()
             .map(|item| self.expand_raku_leaves(item, active, depth + 1))
             .collect()
+    }
+
+    /// The Rakudo-style backreference name for a cyclic instance:
+    /// `Bug_48` (class display name + instance id; Rakudo uses the `.WHERE`
+    /// address as the suffix, mutsu the stable instance id).
+    pub(crate) fn raku_leaf_backref_name(class_name: &str, id: u64) -> String {
+        format!("{}_{}", crate::value::user_facing_type_name(class_name), id)
+    }
+
+    /// Dispatch `.raku` on a leaf with the reference-cycle guard. A re-entered
+    /// instance (already being rendered further up this call chain) returns its
+    /// backreference name (`Bug_48`) and flags the id; the frame that first
+    /// entered the instance consumes the flag and wraps its rendering in
+    /// Rakudo's binding form `(my \Bug_48 = Bug.new(...))`.
+    ///
+    /// Every recursive `.raku` path into an instance funnels through here (the
+    /// nested-leaf walker and `collect_public_raku_attrs`), so a cycle is cut
+    /// exactly one hop before it would re-render. The top-level render itself
+    /// registers in `raku_leaf_active` inside the native instance renderer
+    /// (`methods_instance_ops`), which performs the same wrap on exit.
+    pub(crate) fn dispatch_raku_leaf(&mut self, value: &Value) -> Result<Value, RuntimeError> {
+        let ValueView::Instance { class_name, id, .. } = value.view() else {
+            return self.call_method_with_values(value.clone(), "raku", vec![]);
+        };
+        if self.raku_leaf_active.contains(&id) {
+            self.raku_leaf_cycle_hit.insert(id);
+            return Ok(Value::str(Self::raku_leaf_backref_name(
+                &class_name.resolve(),
+                id,
+            )));
+        }
+        self.raku_leaf_active.push(id);
+        let result = self.call_method_with_values(value.clone(), "raku", vec![]);
+        if let Some(pos) = self.raku_leaf_active.iter().rposition(|x| *x == id) {
+            self.raku_leaf_active.remove(pos);
+        }
+        let hit = self.raku_leaf_cycle_hit.remove(&id);
+        let rendered = result?;
+        if hit {
+            return Ok(Value::str(format!(
+                "(my \\{} = {})",
+                Self::raku_leaf_backref_name(&class_name.resolve(), id),
+                rendered.to_string_value()
+            )));
+        }
+        Ok(rendered)
     }
 
     /// The `.raku`/`.perl` text of a container holding a dispatch-needing leaf,
