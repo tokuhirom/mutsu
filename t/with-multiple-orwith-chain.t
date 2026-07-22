@@ -4,7 +4,7 @@ use Test;
 # `elsif`s) before an optional `else`. Previously only a single `orwith` was
 # parsed, so a second `orwith` errored with "Undeclared routine: orwith".
 
-plan 7;
+plan 8;
 
 # the documented example: first defined index wins
 my $s = "abc";
@@ -46,3 +46,11 @@ is $w, "w:10", 'the leading with clause wins when defined';
 my $p;
 with Nil { } orwith 7 -> $x { $p = $x * 2 }
 is $p, 14, 'a pointy param binds the orwith clause value';
+
+# an `else -> $pos` after orwith binds $pos to the last orwith value (the last
+# tested value), not to the orwith clause's .defined() Bool. (roast S04/with.t)
+{
+    my $foo = 42;
+    with Int -> $p { $foo = "w" } orwith Str -> $p { $foo = "o" } else -> $p { $foo = $p }
+    is $foo.^name, "Str", 'else -> $pos binds to the last orwith value, not a Bool';
+}
