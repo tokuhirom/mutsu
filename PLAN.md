@@ -1276,31 +1276,11 @@ the backlog.
       (`HashData`), `src/value/value_collections.rs`, `src/value/value_methods_a.rs`
       (`hash_insert_through`), `src/runtime/methods_quanthash_ctor.rs`, the `∈`/`(elem)` set-op path.
 
-### 8.12 `.produce` with `last`, and `.reduce` with a destructuring signature (deferred — found 2026-07-22 by the List.rakudoc doc-diff sweep)
+### 8.12 `.produce` with `last`, and `.reduce` with a destructuring signature — ✅ DONE 2026-07-23
 
-Two leftover `Type/List.rakudoc` reduce/produce findings after the batch of fixes on 2026-07-22
-(`.reduce` on a type object → Nil / empty-list identity, `last`/`next` in a `.reduce` block, `.sum`
-radix strings, `zip`/`roundrobin` listop parsing, `.invert` on a scalar-held List — all landed):
-
-- [ ] **`.produce` with `last` has murky drop semantics.**
-      `(2,3,4,5).produce: { last if $^a > 7; $^a + $^b }` is `(2 5)` in raku, not `(2 5 9)` — the
-      accumulator reaches 9 (call `(5,4)→9`) yet 9 is *not* in the output, so `last` drops **more
-      than** the aborted step (traced: calls are `(2,3)`, `(5,4)`, `(9,5)`; output stops at `5`).
-      mutsu currently throws `X::ControlFlow` (the `.reduce` control-flow fix in the same session did
-      NOT touch `eval_produce_over_items`). Nail the exact raku rule (how many trailing produced
-      values `last` discards) before implementing — do not guess. File: `src/runtime/builtins_reduce.rs`
-      (`eval_produce_over_items`). Pin candidate: `t/produce-last.t`.
-- [ ] **`.reduce` with a destructuring reducer signature.**
-      `reduce &count-and-sum-evens, (0, 0), |numbers` where
-      `sub count-and-sum-evens( (Int \count, Int \sum), Int \x ) {...}` should give `(2 6)`; mutsu
-      throws "Too few positionals passed; expected 2 arguments but got 2" — the destructuring first
-      param `(count, sum)` is not bound from the accumulator tuple. This is the reduce-callable-arity
-      / sub-signature-destructuring interaction, not the reduce loop itself. File:
-      `src/runtime/builtins_reduce.rs` (`reduce_callable_arity`) + the destructuring bind path
-      (`types/binding_signature.rs`). Pin candidate: `t/reduce-destructuring-signature.t`.
-- **Not a bug (do not chase):** `rotor(3, 'a'..'h')` as a *function* is `v6.e.PREVIEW`-only; the
-      reference `raku` (6.d) also `SORRY`s on it, so it is not a divergence. `.rotor` the *method*
-      works.
+Both items landed (pins `t/produce-last.t`, `t/reduce-destructuring-signature.t`; details in
+`news/2026-07.md`). Kept note: `rotor(3, 'a'..'h')` as a *function* is `v6.e.PREVIEW`-only; the
+reference `raku` (6.d) also `SORRY`s on it, so it is not a divergence — do not chase.
 
 ### 8.13 A `sub NAME { }` used as an *expression* loses its `.name` (deferred — found 2026-07-22 by the variables.rakudoc doc-diff sweep)
 

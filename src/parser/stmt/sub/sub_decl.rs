@@ -347,16 +347,29 @@ pub(crate) fn sub_decl_body(
         }
         return Err(PError::expected("sub body '{ ... }'"));
     }
-    let (rest, body) = if param_defs.iter().any(|p| p.sigilless) {
-        // When there are sigilless params, we need to register them as term
-        // symbols in the block scope so they shadow keywords (e.g. \return).
-        let (r, _) = parse_char(rest, '{')?;
-        super::super::simple::push_scope();
-        for pd in &param_defs {
+    // Sigilless params anywhere in the signature — including inside a
+    // destructuring sub-signature (`( (Int \count, Int \sum), Int \x )`) —
+    // must be registered as term symbols so they shadow keywords (\return)
+    // and builtin listops (\sum: `sum + x` is the param, not `sum(+x)`).
+    fn any_sigilless(params: &[crate::ast::ParamDef]) -> bool {
+        params
+            .iter()
+            .any(|p| p.sigilless || p.sub_signature.as_deref().is_some_and(any_sigilless))
+    }
+    fn register_sigilless_terms(params: &[crate::ast::ParamDef]) {
+        for pd in params {
             if pd.sigilless {
                 super::super::simple::register_user_term_symbol(&pd.name);
             }
+            if let Some(sub) = &pd.sub_signature {
+                register_sigilless_terms(sub);
+            }
         }
+    }
+    let (rest, body) = if any_sigilless(&param_defs) {
+        let (r, _) = parse_char(rest, '{')?;
+        super::super::simple::push_scope();
+        register_sigilless_terms(&param_defs);
         let result = block_inner(r);
         super::super::simple::pop_scope();
         result?

@@ -72,15 +72,18 @@ pub(crate) struct ParamDef {
 
 impl ParamDef {
     /// True when this parameter is a capture that carries a subsignature, i.e.
-    /// `|c(...)` (a named, sigilless slurpy capture) or `|(...)` (an anonymous
-    /// capture recorded under the synthetic `__subsig__` name).  Such a
+    /// `|c(...)` or the anonymous `|(...)` — both sigilless slurpies.  Such a
     /// parameter consumes all remaining arguments and delegates dispatch to its
     /// subsignature, so for arity counting it behaves like a slurpy capture.
+    /// A plain destructuring parameter `($a, $b)` — also recorded under the
+    /// synthetic `__subsig__` name but NOT slurpy — consumes exactly one
+    /// positional argument and is deliberately excluded.
     pub(crate) fn is_capture_subsignature(&self) -> bool {
         self.sub_signature.is_some()
             && self.type_constraint.is_none()
             && self.literal_value.is_none()
-            && ((self.slurpy && self.sigilless) || self.name == "__subsig__")
+            && self.slurpy
+            && self.sigilless
     }
 }
 

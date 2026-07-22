@@ -50,6 +50,12 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             }
             let mut p = super::helpers::make_param("__subsig__".to_string());
             p.sub_signature = Some(sub_params);
+            // An anonymous capture `|(...)` consumes ALL remaining arguments;
+            // mark it slurpy+sigilless (like the named `|c(...)` form) so it is
+            // distinguishable from a plain one-argument destructuring
+            // `(...)` parameter, which is also recorded under `__subsig__`.
+            p.slurpy = true;
+            p.sigilless = true;
             return Ok((r, p));
         }
         let (r, _) = ws(r)?;
