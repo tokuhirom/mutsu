@@ -397,9 +397,12 @@ impl Interpreter {
                 parents: Vec::new(),
                 attributes: Vec::new(),
                 methods: HashMap::new(),
+                // `Str`/`gist` are NOT native: Rakudo's Proc has no stringifier
+                // of its own, so the default instance repr applies (`Proc.new`),
+                // not the exitcode number the old native arm rendered.
                 native_methods: [
                     "exitcode", "signal", "command", "pid", "err", "out", "in", "Numeric", "Int",
-                    "Bool", "Str", "gist", "spawn", "shell", "run",
+                    "Bool", "spawn", "shell", "run",
                 ]
                 .iter()
                 .map(|s| s.to_string())

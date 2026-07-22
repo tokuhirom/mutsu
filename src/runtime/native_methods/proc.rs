@@ -327,13 +327,6 @@ impl Interpreter {
                 };
                 Value::truth(exitcode == 0)
             }
-            "Str" | "gist" => {
-                let exitcode = match attributes.get("exitcode").map(Value::view) {
-                    Some(ValueView::Int(c)) => c,
-                    _ => -1,
-                };
-                Value::str(exitcode.to_string())
-            }
             _ => Value::NIL,
         }
     }

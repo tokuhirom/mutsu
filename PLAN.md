@@ -1393,11 +1393,13 @@ item also showed `[:a].raku` renders `[:a]` where raku spells `[:a(Bool::True)]`
 - [ ] **A one-element array holding an Iterable renders without the trailing comma:**
       `[HyperSeq].raku` → mutsu `[HyperSeq]`, raku `[HyperSeq,]` (disambiguates from
       flattening). Applies to Iterable type objects and likely itemized list elements.
-- [ ] **`Proc.new.gist` is `-1`** — Proc's gist/Str delegate to its `.Numeric` (exitcode
-      -1 when not run) instead of the default instance form; raku renders
-      `Proc.new(in => IO::Pipe, out => IO::Pipe, err => IO::Pipe, os-error => Str,
-      exitcode => Nil, signal => Any, pid => Nil, command => [])`. `Proc.new.raku` is
-      likewise attribute-less (`Proc.new`).
+- [ ] **`Proc.raku`/`.gist` render no attributes** (`Proc.new`); raku renders the full
+      form `Proc.new(in => IO::Pipe, out => IO::Pipe, err => IO::Pipe, os-error => Str,
+      exitcode => Nil, signal => Any, pid => Nil, command => [])` — for a *run* proc even
+      with a cyclic `(my \Proc_... = ...)` backref through its IO::Pipe. Needs Proc's
+      public attributes registered (its ClassDef has none) with type-object defaults.
+      (The worse half — gist/Str delegating to `.Numeric`, so `Proc.new.gist` was `-1` —
+      was fixed with `t/proc-gist-not-exitcode.t`.)
 - [ ] **`IO::Spec::Unix.new.raku` renders the type-object form `IO::Spec::Unix`** and its
       gist is `(Unix)`; raku renders `IO::Spec::Unix.new` for both.
 
