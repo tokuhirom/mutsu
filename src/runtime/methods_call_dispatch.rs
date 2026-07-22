@@ -1950,6 +1950,14 @@ impl Interpreter {
             return result;
         }
 
+        // Qualified coercion to a universal base (self.Mu::Str, self.Any::gist):
+        // route to the built-in default, bypassing the receiver's own override.
+        // Must precede the instance/non-instance qualified dispatchers, which would
+        // otherwise recurse (type object) or reject it as "not inherited" (instance).
+        if let Some(result) = self.dispatch_universal_base_coercion(&target, method, &args) {
+            return result;
+        }
+
         // Qualified method: Class::method on Instance
         if let Some(result) = self.dispatch_qualified_instance_method(&target, method, args.clone())
         {

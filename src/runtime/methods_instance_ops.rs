@@ -2282,7 +2282,11 @@ impl Interpreter {
 
     /// Collect public attribute representations for `.raku` output.
     /// Returns a list of `"name => value.raku"` strings for public attributes.
-    fn collect_public_raku_attrs(&mut self, class_name: &str, attributes: &AttrMap) -> Vec<String> {
+    pub(crate) fn collect_public_raku_attrs(
+        &mut self,
+        class_name: &str,
+        attributes: &AttrMap,
+    ) -> Vec<String> {
         let class_attrs = self.collect_class_attributes(class_name);
         let mut parts = Vec::new();
         for (attr_name, is_public, _default, _is_rw, _is_required, _sigil, _where) in &class_attrs {
