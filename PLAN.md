@@ -1166,6 +1166,19 @@ the backlog.
       rendering. Reasonable to keep deferring vs the §1/§6 frontier. Related: §6 (dual-store / lexical
       slot), [`array-hole-tracking-embedded`], [ADR-0001] container-repr.
 
+### 8.6 Hyper-method nodality set is too broad (found 2026-07-22 by the playground example sweep)
+
+- [ ] **Trim `is_nodal_list_method`** (`src/vm/vm_hyper_method_ops.rs:36`) to Rakudo's actual
+      `is nodal` set. mutsu currently marks the *coercers and introspectors* nodal, so a hyper over
+      them stops at the node and yields a `List` where raku descends to the leaves and yields an
+      `Array`. Confirmed divergent (`my @a = 1, 2; say (@a>>.M).WHAT`, mutsu `(List)` vs raku
+      `(Array)`) for: `Str`, `gist`, `raku`, `perl`, `WHAT`, `so`, `Bool`, `Numeric`, `Int`, `Rat`,
+      `Real`, `defined`, `item`, `sink`, `cache`, `lazy`. Nesting is wrong too:
+      `my @a = (1,2),(3,); (@a>>.Str).raku` gives mutsu `("1 2", "3")` vs raku `[("1", "2"), ("3",)]`.
+      `elems`/`sort`/`join`/… are correctly nodal and must stay. `WHO`/`HOW`/`DEFINITE` diverge
+      differently (raku returns `Stash`/`ClassHOW`/`Bool`) — investigate separately, do not lump in.
+      Blast radius is every `>>.` call site, so land it alone and let roast verify.
+
 ---
 
 ## Metrics
