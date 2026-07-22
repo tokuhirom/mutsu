@@ -34,6 +34,13 @@ impl Interpreter {
                 return Err(RuntimeError::assignment_ro(None));
             }
         }
+        // `%h = ...` where `%h` is a tied container held in env (a global, or a
+        // captured lexical reached through this env-named path rather than a
+        // local slot) must route through the class's STORE, exactly like the
+        // local-slot `maybe_tied_store_reassign` does.
+        if self.maybe_tied_store_reassign_named(&name)?.is_some() {
+            return Ok(());
+        }
         let raw_val = self.stack.pop().unwrap_or(Value::NIL);
         let (raw_val, bind_source) = match raw_val.view() {
             ValueView::VarRef { name, value, .. } => (value.clone(), Some(name.resolve())),

@@ -867,6 +867,22 @@ impl Interpreter {
                         }
                     }
                 }
+                // A `%h = ...` / `@a = ...` where the env slot holds a *tied*
+                // instance (`my %h is Foo` closed over into a block, so the store
+                // reaches SetGlobal instead of a local slot) must route through the
+                // class's STORE, exactly like the local-slot path. Statement context
+                // — `maybe_tied_store_reassign_named` leaves the bound instance on
+                // the stack, so discard it after routing.
+                if !raw_mode
+                    && !is_bind_ctx
+                    && !is_rebind
+                    && (name.starts_with('%') || name.starts_with('@'))
+                    && self.maybe_tied_store_reassign_named(&name)?.is_some()
+                {
+                    self.stack.pop();
+                    *ip += 1;
+                    return Ok(());
+                }
                 // Reject private attribute twigil (!) assignment when no self is available
                 {
                     let bare = name.trim_start_matches(['$', '@', '%', '&']);

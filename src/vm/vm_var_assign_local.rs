@@ -695,34 +695,83 @@ impl Interpreter {
         if !(name.starts_with('%') || name.starts_with('@')) {
             return Ok(None);
         }
-        let ValueView::Instance { class_name, .. } = self.locals[idx].view() else {
-            return Ok(None);
+        let name = name.to_string();
+        // The tied instance normally lives in the local slot, but when this store
+        // runs inside a block invoked by another sub (`runit({ %h = "a" })`, or a
+        // `throws-like { %h = ... }` block) the hash is a captured lexical held in
+        // `env`, not `self.locals[idx]`. Resolve the instance from either place and
+        // remember where it came from so the bound result is written back there.
+        let (instance, from_local) = match self.locals[idx].view() {
+            ValueView::Instance { .. } => (self.locals[idx].clone(), true),
+            _ => match self.get_env_with_main_alias(&name) {
+                Some(v) if matches!(v.view(), ValueView::Instance { .. }) => (v, false),
+                _ => return Ok(None),
+            },
         };
-        let cn = class_name.as_str().to_string();
-        let is_tied = self.has_user_method(&cn, "STORE")
-            && (self.class_does_role(&cn, "Associative")
-                || self.class_does_role(&cn, "Positional"));
-        if !is_tied {
+        if !self.instance_is_tied(&instance) {
             return Ok(None);
         }
+        let bound = self.tied_store_dispatch(instance)?;
+        if from_local {
+            self.locals[idx] = bound.clone();
+        }
+        self.set_env_with_main_alias(&name, bound.clone());
+        self.stack.push(bound);
+        Ok(Some(()))
+    }
+
+    /// The `env`-named twin of `maybe_tied_store_reassign`: `%h = ...` where the
+    /// tied instance lives only in `env` (a global or captured lexical, reached
+    /// via `AssignExpr(name_idx)` rather than a local-slot store). Routes through
+    /// the class's `STORE` and leaves the bound instance on the stack.
+    pub(super) fn maybe_tied_store_reassign_named(
+        &mut self,
+        name: &str,
+    ) -> Result<Option<()>, RuntimeError> {
+        if !(name.starts_with('%') || name.starts_with('@')) {
+            return Ok(None);
+        }
+        let Some(instance) = self.get_env_with_main_alias(name) else {
+            return Ok(None);
+        };
+        if !matches!(instance.view(), ValueView::Instance { .. })
+            || !self.instance_is_tied(&instance)
+        {
+            return Ok(None);
+        }
+        let bound = self.tied_store_dispatch(instance)?;
+        self.set_env_with_main_alias(name, bound.clone());
+        self.stack.push(bound);
+        Ok(Some(()))
+    }
+
+    /// True when `instance` is a tied container: a user `STORE` method plus a
+    /// composed `Associative`/`Positional` role.
+    fn instance_is_tied(&mut self, instance: &Value) -> bool {
+        let ValueView::Instance { class_name, .. } = instance.view() else {
+            return false;
+        };
+        let cn = class_name.as_str();
+        self.has_user_method(cn, "STORE")
+            && (self.class_does_role(cn, "Associative") || self.class_does_role(cn, "Positional"))
+    }
+
+    /// Pop the RHS and route it through the tied instance's `STORE`, returning
+    /// the bound instance (the STORE result if it is itself an instance, else the
+    /// original instance).
+    fn tied_store_dispatch(&mut self, instance: Value) -> Result<Value, RuntimeError> {
         let rhs = self.stack.pop().unwrap_or(Value::NIL);
         let store_values = Self::associative_store_values(&rhs);
-        let instance = self.locals[idx].clone();
-        let name = name.to_string();
         // Pass the flattened values as a single positional list; STORE's slurpy
         // `*@values` flattens it (separate args would bind Pairs as *named*).
         let list_arg = Value::array(store_values);
         let stored =
             self.try_compiled_method_or_interpret(instance.clone(), "STORE", vec![list_arg])?;
-        let bound = if matches!(stored.view(), ValueView::Instance { .. }) {
+        Ok(if matches!(stored.view(), ValueView::Instance { .. }) {
             stored
         } else {
             instance
-        };
-        self.locals[idx] = bound.clone();
-        self.set_env_with_main_alias(&name, bound.clone());
-        self.stack.push(bound);
-        Ok(Some(()))
+        })
     }
 
     /// Flatten an RHS value into the list `STORE` expects: a Hash becomes its

@@ -1660,6 +1660,10 @@ impl Interpreter {
         // X::Assignment::RO
         register_x("X::Assignment::RO", "Exception");
 
+        // X::Hash::Store::OddNumber — odd number of elements assigned to a hash.
+        // Constructible from user code with :found / :last accessors.
+        register_x("X::Hash::Store::OddNumber", "Exception");
+
         // X::Str::Numeric
         register_x("X::Str::Numeric", "Exception");
 
