@@ -155,6 +155,47 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        // Formatter / Formatter::Syntax package-level entry points (6.e). These
+        // mirror `Formatter` in Rakudo's `src/core.e/Formatter.rakumod`, which
+        // exposes the sprintf-format compiler:
+        //   * `Formatter::Syntax.parse($fmt)` -> a Match of the format grammar.
+        //   * `Formatter.CODE($fmt)`          -> a Callable rendering the format.
+        //   * `Formatter.AST($fmt)`           -> a RakuAST::Node (see below).
+        if let ValueView::Package(name) = target.view() {
+            match (name.resolve().as_str(), method) {
+                ("Formatter::Syntax", "parse" | "subparse") => {
+                    let fmt = args.first().map(Value::to_string_value).unwrap_or_default();
+                    let len = fmt.chars().count() as i64;
+                    return Some(Ok(Value::make_match_object_full(
+                        fmt.clone(),
+                        0,
+                        len,
+                        &[],
+                        &HashMap::new(),
+                        &HashMap::new(),
+                        &[],
+                        &[],
+                        &[],
+                        Some(&fmt),
+                    )));
+                }
+                ("Formatter", "CODE") => {
+                    let fmt = args.first().map(Value::to_string_value).unwrap_or_default();
+                    let count = super::sprintf::sprintf_directive_count(&fmt);
+                    return Some(Ok(self.format_callable(&fmt, count)));
+                }
+                ("Formatter", "AST") => {
+                    // `Formatter.AST` returns a `RakuAST::Node` describing the
+                    // format. mutsu has no RakuAST subsystem, so we cannot build
+                    // a genuine node; return `Nil` (an honest "not available")
+                    // rather than throwing, so the rest of the file can run.
+                    // TODO: return a real RakuAST::Node once RakuAST exists.
+                    return Some(Ok(Value::NIL));
+                }
+                _ => {}
+            }
+        }
+
         // Format.new("...")
         if method == "new"
             && matches!(target.view(), ValueView::Package(name) if name.resolve() == "Format")
