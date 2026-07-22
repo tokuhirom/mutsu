@@ -1293,35 +1293,18 @@ the backlog.
       (`HashData`), `src/value/value_collections.rs`, `src/value/value_methods_a.rs`
       (`hash_insert_through`), `src/runtime/methods_quanthash_ctor.rs`, the `∈`/`(elem)` set-op path.
 
-### 8.11 A user instance *nested inside a container* renders as `Foo()` for `.raku` (found 2026-07-22 by the nodality sweep re-run)
+### 8.11 Two small `.raku` residues left by the nested-instance fix (found 2026-07-22)
 
-- [ ] **`[Foo.new].raku` is `[Foo()]`; raku gives `[Foo.new(x => 1)]`.** The instance's *own*
-      `.raku` is correct (`Foo.new(x => 1)`) — only the nested case is wrong, and it is wrong for
-      every container (`(…)`, `[…]`, `%…`, Seq, Pair value, …) and for built-in instance types too
-      (`(1.Supply, 2.Supply).raku` → mutsu `(Supply(), Supply())`, raku `(Supply.new, Supply.new)`).
-- **Root.** Container `.raku` recurses through the *pure* helper
-      `builtins::methods_0arg::raku_repr::raku_value`, which has no interpreter and therefore cannot
-      reach the class registry / `collect_public_raku_attrs`; its `_ =>` arm falls back to
-      `to_string_value()`, i.e. the gist-ish `Foo()`. The correct instance rendering lives in
-      `runtime::methods_instance_ops` (`format!("{}.new({})", …)`) and needs `&mut self`.
-      `builtin_dd` already works around exactly this by special-casing a top-level `Instance` and
-      dispatching the method (`src/runtime/builtins_eval_misc.rs:330`, comment: "would render `F()`").
-- **Fix shape — mirror `.gist`, which already solves exactly this.**
-      `src/runtime/methods_call_dispatch.rs` (~2202, `if method == "gist" && args.is_empty()`) has
-      an interpreter-side recursive renderer `gist_item(interp, value)`, gated by a
-      `collection_contains_instance(value)` predicate so any subtree with no dispatch-needing
-      element still takes the pure fast path (`runtime::gist_value`). It walks
-      Array/Seq/Slip/HyperSeq/RaceSeq/Hash/Pair/ValuePair preserving each container's bracket
-      style and dispatches `.gist` on the instance leaves — which is why `[Foo.new].gist` is
-      already correct while `.raku` is not. Do the same for `.raku` rather than the
-      thread-local-hook idea: same gating, same walk, `.raku` on the leaves. `builtin_dd`'s
-      hand-rolled top-level workaround should then collapse into it.
-- **Verify** all containers (`[Foo.new]`, `(Foo.new,)`, `%(a => Foo.new)`, `(a => Foo.new)`) and
-      the built-in instance types (`(1.Supply, 2.Supply).raku`). Medium blast radius (every
-      `.raku` of a container holding an instance changes output), so it wants its own PR with a
-      full `make roast`. Pin candidate: `t/nested-instance-raku.t`.
-- Entry: `git checkout -b fix-nested-instance-raku origin/main`. Queued for the next session
-      (agreed with the user 2026-07-22).
+Both are *bare* (not nested) reprs, so the §8.11 leaf-dispatch walk renders whatever these
+produce — fixing them fixes the nested case for free. Small, independent, unclaimed:
+
+- [ ] **`Promise.new.raku` is `Promise(Planned)`**; raku gives
+      `Promise.new(scheduler => ThreadPoolScheduler.new(uncaught_handler => Callable), status =>
+      PromiseStatus::Planned)`. The Promise repr never got a `.raku` form distinct from its gist.
+- [ ] **`$/.WHICH` names the wrong object.** `"abc" ~~ /b/; say $/.WHICH.raku` → mutsu
+      `ValueObjAt.new("Str|b")`, raku `ObjAt.new("Match|…")`: `.WHICH` on a Match takes the
+      *matched string*'s identity instead of the Match object's, so it is also a `ValueObjAt`
+      (value identity) where raku has an `ObjAt` (object identity).
 
 ---
 

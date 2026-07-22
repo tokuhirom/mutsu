@@ -254,6 +254,7 @@ mod methods_promise;
 mod methods_promise_class;
 mod methods_qualified;
 mod methods_quanthash_ctor;
+mod methods_raku_dispatch;
 mod methods_seq_dispatch;
 pub(crate) mod methods_signature;
 mod methods_signature_candidates;
@@ -369,6 +370,7 @@ pub(crate) use utils::*;
 
 // Re-export thread utility functions for VM access
 pub(crate) use methods_collection_ops::{current_mutsu_thread_id, is_initial_thread};
+pub(crate) use methods_raku_dispatch::container_needs_raku_dispatch;
 
 use self::unicode::{check_unicode_property, check_unicode_property_with_args};
 
@@ -1212,6 +1214,12 @@ pub struct Interpreter {
     /// the outer `rakuseen` for that id consumes the flag to add the `(my \NAME =
     /// ...)` binding wrapper.
     pub(crate) rakuseen_cycle_hit: std::collections::HashSet<String>,
+    /// Instance ids whose `.raku` is currently being rendered by the nested-leaf
+    /// walker (`methods_raku_dispatch`). A self-referencing object
+    /// (`$obj.myself[0] = $obj`) would otherwise recurse forever: instance →
+    /// attribute container → the same instance. A repeated id renders through
+    /// the pure fallback (`Bug()`) instead of dispatching again.
+    pub(crate) raku_leaf_active: Vec<u64>,
     /// Pending Proxy subclass attribute reference for writeback on mutating methods.
     /// Set when reading a Proxy subclass attribute; consumed by subsequent .push/.pop etc.
     pub(crate) pending_proxy_subclass_attr: Option<(crate::value::ProxySubclassAttrs, String)>,

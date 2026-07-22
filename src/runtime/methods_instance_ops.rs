@@ -985,11 +985,27 @@ impl Interpreter {
                         "X::AdHoc.new(payload => {payload_raku})"
                     )));
                 }
-                // Collect public attributes for .raku representation
+                // Collect public attributes for .raku representation. Mark this
+                // instance as being rendered so a self-referencing attribute
+                // (`$obj.myself[0] = $obj`) stops at the pure `Bug()` fallback
+                // instead of recursing through the nested-leaf walker
+                // (`runtime::methods_raku_dispatch`).
                 let class_key = class_name.resolve();
                 let display_name = crate::value::user_facing_type_name(&class_key);
+                let instance_id = match target.view() {
+                    ValueView::Instance { id, .. } => Some(id),
+                    _ => None,
+                };
+                if let Some(id) = instance_id {
+                    self.raku_leaf_active.push(id);
+                }
                 let public_attrs =
                     self.collect_public_raku_attrs(&class_key, &(attributes).as_map());
+                if let Some(id) = instance_id
+                    && let Some(pos) = self.raku_leaf_active.iter().rposition(|x| *x == id)
+                {
+                    self.raku_leaf_active.remove(pos);
+                }
                 if public_attrs.is_empty() {
                     return Ok(Value::str(format!("{}.new", display_name)));
                 }
@@ -2289,7 +2305,7 @@ impl Interpreter {
     ) -> Vec<String> {
         let class_attrs = self.collect_class_attributes(class_name);
         let mut parts = Vec::new();
-        for (attr_name, is_public, _default, _is_rw, _is_required, _sigil, _where) in &class_attrs {
+        for (attr_name, is_public, _default, _is_rw, _is_required, sigil, _where) in &class_attrs {
             if !is_public {
                 continue;
             }
@@ -2298,6 +2314,14 @@ impl Interpreter {
                     .call_method_with_values(val.clone(), "raku", vec![])
                     .map(|v| v.to_string_value())
                     .unwrap_or_else(|_| val.to_string_value());
+                // A `$`-sigil attribute is a Scalar container, so an aggregate
+                // it holds renders itemized: `Foo.new(x => $[1, 2])`. `@`/`%`
+                // attributes are the aggregate itself and stay bare.
+                let rendered = if *sigil == '$' {
+                    crate::builtins::methods_0arg::raku_repr::itemize_scalar_repr(val, rendered)
+                } else {
+                    rendered
+                };
                 parts.push(format!("{} => {}", attr_name, rendered));
             }
         }

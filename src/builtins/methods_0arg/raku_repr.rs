@@ -164,6 +164,45 @@ fn is_self_array_ref_marker(v: &Value) -> bool {
     matches!(v.view(), ValueView::Pair(name, _) if name == "__mutsu_self_array_ref")
 }
 
+/// Key of the pre-rendered-`.raku` marker pair.
+///
+/// A value whose correct `.raku` is only reachable through method dispatch (a
+/// user instance, a built-in object type such as `Supply`/`Date`/`IO::Path`)
+/// cannot be rendered by this pure module: it has no interpreter, so its `_ =>`
+/// arm falls back to `to_string_value()` (`Foo()`). The interpreter-side
+/// `.raku` entry point therefore dispatches those *leaves* itself and splices
+/// the resulting text back into the tree as this marker, then hands the tree to
+/// `raku_value` — so every container keeps its exact bracket / itemization /
+/// trailing-comma rules instead of a duplicated walk having to re-derive them.
+pub(crate) const RAKU_RAW_KEY: &str = "__mutsu_raku_raw";
+
+/// Wrap an already-rendered `.raku` fragment so `raku_value` emits it verbatim.
+pub(crate) fn raku_raw(rendered: String) -> Value {
+    Value::pair(RAKU_RAW_KEY.to_string(), Value::str(rendered))
+}
+
+fn raku_raw_repr(v: &Value) -> Option<String> {
+    match v.view() {
+        ValueView::Pair(name, inner) if name == RAKU_RAW_KEY => Some(inner.to_string_value()),
+        _ => None,
+    }
+}
+
+/// Whether this value's `.raku` needs interpreter method dispatch to be
+/// correct — i.e. `raku_value` would fall through to `to_string_value()`.
+///
+/// `Match`/`ObjAt`/`ValueObjAt` instances are excluded: this module renders
+/// them exactly (and better than dispatch would for a nested Match).
+pub(crate) fn needs_raku_dispatch(v: &Value) -> bool {
+    match v.view() {
+        ValueView::Instance { class_name, .. } => {
+            !(class_name == "Match" || class_name == "ObjAt" || class_name == "ValueObjAt")
+        }
+        ValueView::CustomType(_) | ValueView::CustomTypeInstance(_) => true,
+        _ => false,
+    }
+}
+
 /// Whether a string key may be rendered in the adverbial pair form
 /// `:key(value)`. Mirrors Raku's `<.ident>`: the key must start with a letter
 /// or `_`, continue with word chars, and may contain `-`/`'` only when each is
@@ -265,7 +304,15 @@ fn raku_array_wrap(inner: &str, kind: ArrayKind) -> String {
 /// are rendered as-is. Values whose own repr already carries the `$` sigil
 /// (e.g. an explicitly itemized `$[1, 2]`) are not double-itemized.
 fn raku_hash_value(v: &Value) -> String {
-    let base = raku_value(v);
+    itemize_scalar_repr(v, raku_value(v))
+}
+
+/// Apply the `Scalar`-container itemization rule to an already-rendered repr.
+///
+/// Every value held in a `$`-container — a hash value, a `$`-sigil attribute —
+/// renders itemized when it is an aggregate: `{:a($[1, 2])}`,
+/// `Foo.new(x => $[1, 2])`, `Foo.new(x => $(1, 2))`. Scalars are unchanged.
+pub(crate) fn itemize_scalar_repr(v: &Value, base: String) -> String {
     // Don't double-itemize a value whose repr already carries a sigil: an
     // explicitly itemized `$[...]`, or a cycle-reference placeholder for a
     // recursive structure (`%hash_<ptr>` / `@Array_<ptr>`).
@@ -416,6 +463,10 @@ pub fn raku_value(v: &Value) -> String {
     thread_local! {
         static SEEN_PTRS: std::cell::RefCell<Vec<(usize, String)>> = const { std::cell::RefCell::new(Vec::new()) };
         static ARRAY_CYCLE_FOUND: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
+    // A leaf the interpreter already rendered for us (see `RAKU_RAW_KEY`).
+    if let Some(rendered) = raku_raw_repr(v) {
+        return rendered;
     }
     match v.view() {
         // A `:=`-bound element holds a `ContainerRef` cell; render the held
@@ -602,17 +653,23 @@ pub fn raku_value(v: &Value) -> String {
                     };
                 }
             }
-            let key_repr = match key.view() {
-                // Non-string keys that would be ambiguous as barewords need parens.
-                // A Bool key is NOT wrapped: `Bool::True` already renders
-                // unambiguously (raku prints `Bool::True => "a"`, not `(...)`).
-                ValueView::Pair(_, _)
-                | ValueView::ValuePair(_, _)
-                | ValueView::Package(_)
-                | ValueView::Nil => {
-                    format!("({})", raku_value(key))
+            let key_repr = if raku_raw_repr(key).is_some() {
+                // A pre-rendered leaf (an instance key) is already a complete
+                // term: `Foo.new(x => 1) => 1`, no disambiguating parens.
+                raku_value(key)
+            } else {
+                match key.view() {
+                    // Non-string keys that would be ambiguous as barewords need parens.
+                    // A Bool key is NOT wrapped: `Bool::True` already renders
+                    // unambiguously (raku prints `Bool::True => "a"`, not `(...)`).
+                    ValueView::Pair(_, _)
+                    | ValueView::ValuePair(_, _)
+                    | ValueView::Package(_)
+                    | ValueView::Nil => {
+                        format!("({})", raku_value(key))
+                    }
+                    _ => raku_value(key),
                 }
-                _ => raku_value(key),
             };
             format!("{} => {}", key_repr, raku_value(value))
         }
@@ -750,6 +807,9 @@ pub fn raku_value(v: &Value) -> String {
             }
         }
         ValueView::Nil => "Nil".to_string(),
+        // A Version renders as its `v`-prefixed literal (`v1.2`, `v1.2+`) —
+        // `.Str` drops the `v`, `.raku` keeps it.
+        ValueView::Version { .. } => format!("v{}", v.to_string_value()),
         ValueView::Package(name) => name.resolve().to_string(),
         // A parameterized role type object renders as `Cup[EggNog]`.
         ValueView::ParametricRole {
@@ -824,6 +884,8 @@ pub fn raku_value(v: &Value) -> String {
                 // with quoted key syntax ("key" => value) to distinguish them
                 // from named arguments which use colonpair syntax (:key(value)).
                 match v.view() {
+                    // A pre-rendered leaf is not a Pair, it only wears one.
+                    _ if raku_raw_repr(v).is_some() => parts.push(raku_value(v)),
                     ValueView::Pair(k, val) => {
                         parts.push(format!(
                             "{} => {}",
