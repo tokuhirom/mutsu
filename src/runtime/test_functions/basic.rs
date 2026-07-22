@@ -191,6 +191,15 @@ impl Interpreter {
             self.halted = true;
         } else {
             let count = Self::positional_value_required(args, 0, "plan expects count")?;
+            // `plan *` (a Whatever): the test count is unknown up front, so emit
+            // no `1..N` header. Leave the plan unset (like never calling `plan`) —
+            // the file's trailing `done-testing` emits `1..ran`, and without it no
+            // header is emitted, matching Rakudo. Used by files that compute their
+            // assertion count only as they run.
+            if matches!(count.view(), ValueView::Whatever) {
+                self.tap.ensure_state();
+                return Ok(Value::NIL);
+            }
             let planned = match count.view() {
                 ValueView::Int(i) if i >= 0 => i as usize,
                 ValueView::BigInt(i) => {
