@@ -882,6 +882,12 @@ impl Interpreter {
                 }
             } else if is_bind {
                 self.bind_positional_value(name, &raw_popped)?
+            } else if let Some(items) = self.try_iterable_instance_items(&raw_popped)? {
+                // A user class that `does Iterable` with its own `iterator`
+                // method populates the array via that iterator (raku:
+                // `my @a = $iterable` reifies `.iterator` into the array),
+                // rather than storing the object as a single element.
+                runtime::coerce_to_array(Value::real_array(items))
             } else {
                 match raw_popped.view() {
                     ValueView::LazyList(list) => {

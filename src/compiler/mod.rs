@@ -173,6 +173,14 @@ pub(crate) struct Compiler {
     bind_target_direct: bool,
     /// Variables declared as `constant` (no Scalar container).
     constant_vars: std::collections::HashSet<String>,
+    /// Scalar variables `:=`-bound to a non-itemized value (no Scalar
+    /// container), so `for $x` iterates the bound value's elements rather than
+    /// treating `$x` as a single item. Populated when the bind RHS produces a
+    /// non-itemized value (a list/constructor/method-call/container-var, or
+    /// another already-non-itemized bound scalar). A bind to a plain itemized
+    /// scalar (`my $x := $itemized`) inherits the item container and is NOT
+    /// recorded. See `normalize_for_iterable`.
+    noncontainer_bound_vars: std::collections::HashSet<String>,
     /// Subset of `constant_vars` whose declaring lexical block is still open.
     /// Constants are `our`-scoped (installed in the package), so once their
     /// declaring block has exited, their stale local slot must not be reused —
@@ -305,6 +313,7 @@ impl Compiler {
             bind_terminal: false,
             bind_target_direct: false,
             constant_vars: std::collections::HashSet::new(),
+            noncontainer_bound_vars: std::collections::HashSet::new(),
             constant_vars_in_scope: std::collections::HashSet::new(),
             constant_vars_current_scope: std::collections::HashSet::new(),
             my_vars_current_scope: std::collections::HashSet::new(),
@@ -1342,14 +1351,22 @@ impl Compiler {
     fn normalize_for_iterable(&self, iterable: &Expr) -> Expr {
         match iterable {
             // Scalar variables are item containers in `for` and should not be flattened.
-            // Exception: `constant $x` binds without a Scalar container, so `for $x`
-            // should iterate the elements (like sigilless variables).
-            Expr::Var(name) if !self.constant_vars.contains(name) => {
+            // Exception: `constant $x` and a `:=`-bound-to-non-itemized `$x` bind
+            // without a Scalar container, so `for $x` iterates the elements (like
+            // sigilless variables).
+            Expr::Var(name)
+                if !self.constant_vars.contains(name)
+                    && !self.noncontainer_bound_vars.contains(name) =>
+            {
                 Expr::ArrayLiteral(vec![iterable.clone()])
             }
             // A parenthesized single scalar (`for ($x)`) reaches here as
             // `Grouped(Var)`; iterate it once, exactly like the bare `for $x`.
-            Expr::Grouped(inner) if matches!(inner.as_ref(), Expr::Var(name) if !self.constant_vars.contains(name)) => {
+            Expr::Grouped(inner)
+                if matches!(inner.as_ref(), Expr::Var(name)
+                    if !self.constant_vars.contains(name)
+                        && !self.noncontainer_bound_vars.contains(name)) =>
+            {
                 Expr::ArrayLiteral(vec![(**inner).clone()])
             }
             _ => iterable.clone(),

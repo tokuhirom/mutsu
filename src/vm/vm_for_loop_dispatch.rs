@@ -383,7 +383,7 @@ impl Interpreter {
     /// `None` for any other value so the caller falls through to `value_to_list`.
     /// An `is Array` subclass (backed by `__mutsu_array_storage`) is left to that
     /// path — its elements are the storage, not a user iterator.
-    fn try_iterable_instance_items(
+    pub(crate) fn try_iterable_instance_items(
         &mut self,
         iterable: &Value,
     ) -> Result<Option<Vec<Value>>, RuntimeError> {
