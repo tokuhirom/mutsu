@@ -282,7 +282,23 @@ impl Interpreter {
         // keep it (only the QuantHash constructors eat named args).
         let mut flat = Vec::new();
         for arg in args {
-            flat.extend(Self::value_to_list(arg));
+            // A blessed Associative object (`class Foo does Associative`, e.g. a
+            // Hash::Agnostic tied hash) is NOT enumerable by `value_to_list`, which
+            // would keep it as one scalar item and turn it into a bogus
+            // `{"Foo()" => Any}` entry. Enumerate its `.pairs` so
+            // `Hash.new($assoc)` copies its key/value contents, like raku. Detect
+            // it by the Associative protocol (an `AT-KEY` method) rather than
+            // `does Associative`, since a transitively-composed role `does` does
+            // not always propagate to the type check. A plain Hash/Map already
+            // flattens correctly and is left untouched.
+            let assoc_instance = matches!(arg.view(), ValueView::Instance { class_name, .. }
+                if self.has_user_method(&class_name.resolve(), "AT-KEY"));
+            if assoc_instance {
+                let pairs = self.call_method_with_values(arg.clone(), "pairs", vec![])?;
+                flat.extend(Self::value_to_list(&pairs));
+            } else {
+                flat.extend(Self::value_to_list(arg));
+            }
         }
         let mut map = HashMap::new();
         // Track the original (typed) key objects for a non-`Str`-keyed object
