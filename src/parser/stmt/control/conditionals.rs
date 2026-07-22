@@ -325,16 +325,43 @@ pub(crate) fn parse_elsif_chain(
         if keyword("if", r).is_some() {
             return Err(malformed_elsif_error());
         }
-        let (r, binding_params) = parse_if_binding_params(r)?;
+        let (r, mut binding_params) = parse_if_binding_params(r)?;
         let (r, _) = ws(r)?;
         let (r, mut body) = block(r)?;
         // If the last clause was `orwith`, topicalize $_ in the else body via
         // `given` (a fresh topic scope) so it is not blocked by an enclosing `for`'s
         // read-only `$_` (see the orwith branch above).
         if let Some(ref orwith_expr) = last_orwith_cond {
+            // An `else -> $pos` after `orwith` binds `$pos` to the *orwith value*
+            // (the last tested value), NOT to the generic else-binding source (the
+            // orwith clause's `.defined()` condition, which is a Bool). Bind each
+            // pointy param explicitly to the orwith value and drop `binding_params`
+            // so `lower_else_clause` does not re-bind it to the Bool.
+            let mut given_body = Vec::new();
+            if let Some(ref params) = binding_params {
+                for pd in params {
+                    if pd.name.is_empty() {
+                        continue;
+                    }
+                    given_body.push(Stmt::VarDecl {
+                        name: pd.name.clone(),
+                        expr: orwith_expr.clone(),
+                        type_constraint: None,
+                        is_state: false,
+                        is_our: false,
+                        is_dynamic: false,
+                        is_export: false,
+                        export_tags: Vec::new(),
+                        custom_traits: Vec::new(),
+                        where_constraint: None,
+                    });
+                }
+                binding_params = None;
+            }
+            given_body.extend(body);
             body = vec![Stmt::Given {
                 topic: orwith_expr.clone(),
-                body,
+                body: given_body,
             }];
         }
         return Ok((
