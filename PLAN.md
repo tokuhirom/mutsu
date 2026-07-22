@@ -1219,6 +1219,43 @@ the backlog.
 - Entry: `git checkout -b feat-bound-element-ro origin/main`. Related: §3 (substrate),
       [ADR-0001] container-repr, [ADR-0013] element cell provenance.
 
+### 8.8 A big FatRat has no distinct representation (deferred deep item — found 2026-07-22 by the Math::Root dist)
+
+- [ ] **A `FatRat` whose numerator or denominator overflows i64 collapses to the shared
+      `BigRat` value variant, losing its FatRat identity.** So `FatRat.new(10**40+5, 10**33).WHAT`
+      is `Rat` (via `types.rs`: `BigRat => "Rat"`) instead of `FatRat`, and a routine typed
+      `--> FatRat` that returns such a value fails its return type-check
+      (`Type check failed for return value; expected FatRat but got Rat`).
+- **Where it bites (Math::Root, thundergnat).** `t/01-integer.t` (75) now passes fully after
+      the min-fold fix (#5165) and the exact big-integer `round($scale)` fix (#5168). But
+      `t/02-rational.t` (67) and `t/03-triangular.t` (21) both die at their first `root(...)` call:
+      `root` is `sub root(...) --> FatRat` and its body is `FatRat.new(newton(...).round(10), 10**k)`
+      — the constructed value is a big rational that mutsu stores as `BigRat`, typed `Rat`, so the
+      `--> FatRat` check throws before any test runs. raku passes both files.
+- **Second, entangled facet — big-rational `.Str` digit budget.** A `BigRat` also can't pick the
+      right Rakudo `Rational.Str` digit budget, precisely *because* it can't tell a big Rat from a
+      big FatRat (they differ: `Rat.Str` = `chars(denom)+1` digits and **degrades the intermediate
+      to Num** when `fract*10^digits` overflows u64 — so `Rat.new(10**400, 9**999).Str` is `'0'`;
+      `FatRat.Str` = `chars(denom)+chars(whole)+5` digits and stays exact). The current
+      `display.rs` `BigRat` arm degrades any >20-digit-denominator BigRat to an f64 gist, which is
+      wrong for a moderate terminating FatRat like `FatRat.new(10**40+5, 10**33)` (prints `1e7`
+      instead of `10000000.000…005`). A naïve "render exactly / use the FatRat budget" fix
+      regresses the whitelisted `roast/S32-num/rat.t` test 856 (`Rat.new(10**400, 9**999).Str eq
+      '0'`), because that `'0'` is a *Rat*-specific consequence of the Num degradation. So the
+      display cannot be made correct for both without the type distinction either.
+- **Fix (ADR-worthy — a dedicated big-FatRat representation).** Add a `BigFatRat` value variant
+      (parallel to `BigRat`) threaded through the nanbox `Kind`, `encode`/`decode`/`peek`, the
+      `ValueView` enum, `types.rs` (→ `"FatRat"`), arithmetic (FatRat ops stay exact, never
+      degrade), and `display.rs` (FatRat budget, exact). This is high blast radius: ~150
+      `ValueView::BigRat` match sites plus the nanbox encoding. The existing
+      `format_rat_str_bigint(_, _, is_fatrat)` already implements both Rakudo budgets in BigInt
+      arithmetic, so display becomes a routing decision once the variant carries the FatRat bit.
+- **Landed this session (independent, general):** `#5165` (min/max fold a single iterable) and
+      `#5168` (`round($scale)` exact for big integers). Together they fix Math::Root `01-integer.t`.
+- Entry: `git checkout -b feat-bigfatrat-repr origin/main`. Related: §3 (substrate),
+      [ADR-0001] Value representation; `src/value/nanbox/`, `src/value/display.rs`,
+      `src/runtime/methods_object_native_ctors_buf_num.rs` (`build_native_fatrat_value`).
+
 ---
 
 ## Metrics
