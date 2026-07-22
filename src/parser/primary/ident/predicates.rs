@@ -248,6 +248,8 @@ pub(crate) fn is_expr_listop(name: &str) -> bool {
             | "shell"
             | "indir"
             | "cross"
+            | "zip"
+            | "roundrobin"
             | "await"
             | "sleep"
             | "sleep-timer"
