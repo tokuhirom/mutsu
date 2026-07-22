@@ -64,6 +64,18 @@ pub(crate) fn consume_raw_braced_body(input: &str) -> PResult<'_, Vec<Stmt>> {
     Err(PError::expected("closing '}'"))
 }
 
+/// The content of a `:sym<...>` (or `«...»` / `<<...>>`) adverb is word-quoted,
+/// so surrounding whitespace is insignificant: `:sym<foo >` names the same
+/// candidate as `:sym<foo>`. Trim it so a grammar token candidate whose sym
+/// carries stray whitespace still matches its action method's `:sym<foo>`
+/// (e.g. POFile's `token comment:sym<format-directive >` vs
+/// `method comment:sym<format-directive>`). A whitespace-only symbol is left
+/// verbatim so null-operator detection (`infix:< >`) still sees the spacing.
+pub(crate) fn sym_adverb_inner(inner: &str) -> &str {
+    let trimmed = inner.trim();
+    if trimmed.is_empty() { inner } else { trimmed }
+}
+
 pub(crate) fn parse_token_like_name(input: &str) -> PResult<'_, String> {
     let (mut rest, mut name) = ident(input)?;
     loop {
@@ -100,14 +112,16 @@ pub(crate) fn parse_token_like_name(input: &str) -> PResult<'_, String> {
             if let Some(end) = after_open.find(">>") {
                 // Store as «...» internally for consistency
                 name.push('\u{ab}');
-                name.push_str(&after_open[..end]);
+                name.push_str(sym_adverb_inner(&after_open[..end]));
                 name.push('\u{bb}');
                 r2 = &after_open[end + 2..];
             }
         } else if r2.starts_with('<')
             && let Some(end) = r2.find('>')
         {
-            name.push_str(&r2[..=end]);
+            name.push('<');
+            name.push_str(sym_adverb_inner(&r2[1..end]));
+            name.push('>');
             r2 = &r2[end + 1..];
         } else if r2.starts_with('\u{ab}') {
             // «» (French quotes) — keep as «» internally to avoid
@@ -115,7 +129,7 @@ pub(crate) fn parse_token_like_name(input: &str) -> PResult<'_, String> {
             let after_open = &r2['\u{ab}'.len_utf8()..];
             if let Some(end) = after_open.find('\u{bb}') {
                 name.push('\u{ab}');
-                name.push_str(&after_open[..end]);
+                name.push_str(sym_adverb_inner(&after_open[..end]));
                 name.push('\u{bb}');
                 r2 = &after_open[end + '\u{bb}'.len_utf8()..];
             }

@@ -1,4 +1,5 @@
 use super::*;
+use crate::parser::stmt::class::sym_adverb_inner;
 
 /// Parse a sub name, which can be a regular identifier or an operator-style name
 /// like `infix:<+>`, `prefix:<->`, `postfix:<++>`, `circumfix:<[ ]>`.
@@ -143,7 +144,7 @@ pub(crate) fn parse_sub_name_inner(input: &str) -> PResult<'_, String> {
                         name.push(':');
                         name.push_str(part);
                         name.push('\u{ab}');
-                        name.push_str(&after_open[..end]);
+                        name.push_str(sym_adverb_inner(&after_open[..end]));
                         name.push('\u{bb}');
                         r2 = &after_open[end + 2..];
                         rest = r2;
@@ -154,7 +155,9 @@ pub(crate) fn parse_sub_name_inner(input: &str) -> PResult<'_, String> {
                 {
                     name.push(':');
                     name.push_str(part);
-                    name.push_str(&r2[..=end]);
+                    name.push('<');
+                    name.push_str(sym_adverb_inner(&r2[1..end]));
+                    name.push('>');
                     r2 = &r2[end + 1..];
                     rest = r2;
                     continue;
@@ -164,7 +167,7 @@ pub(crate) fn parse_sub_name_inner(input: &str) -> PResult<'_, String> {
                         name.push(':');
                         name.push_str(part);
                         name.push('\u{ab}');
-                        name.push_str(&after_open[..end]);
+                        name.push_str(sym_adverb_inner(&after_open[..end]));
                         name.push('\u{bb}');
                         r2 = &after_open[end + '\u{bb}'.len_utf8()..];
                         rest = r2;
