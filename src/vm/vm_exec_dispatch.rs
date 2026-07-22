@@ -3983,6 +3983,12 @@ impl Interpreter {
                 *ip += 1;
             }
 
+            OpCode::MetaOpAssign { meta_idx, op_idx } => {
+                self.sync_source_line(code, *ip);
+                self.exec_meta_op_assign(code, *meta_idx, *op_idx)?;
+                *ip += 1;
+            }
+
             OpCode::MetaOpNary {
                 meta_idx,
                 op_idx,

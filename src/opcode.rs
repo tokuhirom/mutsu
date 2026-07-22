@@ -1264,6 +1264,18 @@ pub(crate) enum OpCode {
         op_idx: u32,
     },
 
+    // -- X/Z meta-assignment (`@a X[+=] @b`, `@a Z[+=] @b`) --
+    // The inner op is an in-place assignment operator. Each cross (X) or zip
+    // (Z) pair mutates the corresponding left cell with the base op, in place.
+    // Pops right and left, then pushes TWO values: the result Seq (the per-op
+    // assignment values, bottom) and the mutated left container (top). The
+    // compiler always pairs this with a store of the mutated container back
+    // into the left lvalue, leaving the result Seq as the expression value.
+    MetaOpAssign {
+        meta_idx: u32,
+        op_idx: u32,
+    },
+
     // -- List-associative n-ary MetaOp (X/Z chained: `a X b X c`) --
     // Pops `count` operands off the stack and combines them in a single
     // n-ary cross (X) or zip (Z) so the result is flat n-tuples rather than

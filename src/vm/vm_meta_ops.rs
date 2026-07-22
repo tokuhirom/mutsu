@@ -185,6 +185,79 @@ impl Interpreter {
         Ok(())
     }
 
+    /// X/Z meta-assignment: `@a X[+=] @b`, `@a Z[+=] @b`. The inner op is an
+    /// in-place assignment operator (`+=`, `~=`, `**=`, `min=`, …). Each cross
+    /// (`X`, left index slowest) or zip (`Z`) pair mutates the corresponding
+    /// left cell with the base op, in place. Pushes two values: the Seq of the
+    /// per-op assignment results (bottom) and the mutated left container (top).
+    /// The compiler stores the mutated container back into the lvalue, leaving
+    /// the Seq as the expression value.
+    pub(super) fn exec_meta_op_assign(
+        &mut self,
+        code: &CompiledCode,
+        meta_idx: u32,
+        op_idx: u32,
+    ) -> Result<(), RuntimeError> {
+        let right = self.stack.pop().unwrap_or(Value::NIL);
+        let left = self.stack.pop().unwrap_or(Value::NIL);
+        let meta = Self::const_str(code, meta_idx).to_string();
+        let op = Self::const_str(code, op_idx).to_string();
+        // Strip the trailing `=` to get the base op (`+=` -> `+`, `min=` -> `min`).
+        let base_op = &op[..op.len() - 1];
+
+        // A scalar left operand (`$a X[+=] @b`) folds into a single cell; a
+        // list-like left (`@a`) keeps its per-element cells.
+        let left_is_listy = matches!(
+            left.view(),
+            ValueView::Array(..)
+                | ValueView::Seq(_)
+                | ValueView::Slip(_)
+                | ValueView::Range(..)
+                | ValueView::RangeExcl(..)
+                | ValueView::RangeExclStart(..)
+                | ValueView::RangeExclBoth(..)
+                | ValueView::GenericRange { .. }
+                | ValueView::LazyList(_)
+        );
+        let mut left_cells = runtime::value_to_list(&left);
+        let right_list = runtime::value_to_list(&right);
+
+        // Per-op assignment results, in evaluation order.
+        let mut results: Vec<Value> = Vec::new();
+        if meta == "X" {
+            // Cross: left index slowest, so all right values accumulate into the
+            // first left cell before advancing to the next.
+            for cell in left_cells.iter_mut() {
+                for r in &right_list {
+                    let v = self.eval_reduction_operator_values(base_op, cell, r)?;
+                    *cell = v.clone();
+                    results.push(v);
+                }
+            }
+        } else {
+            // Zip: element-wise up to the shorter length.
+            let n = left_cells.len().min(right_list.len());
+            for i in 0..n {
+                let v =
+                    self.eval_reduction_operator_values(base_op, &left_cells[i], &right_list[i])?;
+                left_cells[i] = v.clone();
+                results.push(v);
+            }
+        }
+
+        let result_seq = Value::seq_arc(std::sync::Arc::new(results));
+        let mutated_left = if left_is_listy {
+            Value::real_array(left_cells)
+        } else {
+            left_cells.into_iter().next().unwrap_or(Value::NIL)
+        };
+        // Bottom: the Seq (expression value). Top: the mutated container, which
+        // the compiler stores back into the lvalue.
+        self.stack.push(result_seq);
+        self.stack.push(mutated_left);
+        Ok(())
+    }
+
     /// List-associative n-ary cross (`X`) / zip (`Z`). `a X b X c` combines all
     /// operands at once so each result is a flat n-tuple (or an n-way reduction
     /// when an operator is attached), matching Raku's list associativity.

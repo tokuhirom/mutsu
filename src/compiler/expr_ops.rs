@@ -500,6 +500,26 @@ impl Compiler {
                 return;
             }
         }
+        // X/Z meta-assignment: `@a X[+=] @b`, `@a Z[+=] @b`. The inner op is an
+        // in-place assignment operator, so each cross/zip pair mutates the
+        // corresponding left cell and the mutated left container is written back
+        // to the lvalue. The expression value is the Seq of per-op assignment
+        // results (which, for `X`, differs from the mutated container). Only a
+        // simple lvalue (`@a`, `$a`) is written back; any other left operand
+        // falls through to the general path.
+        if (meta == "X" || meta == "Z")
+            && let Some(target) = Self::meta_assign_writeback_target(op, left)
+        {
+            self.compile_expr(left);
+            self.compile_expr(right);
+            let meta_idx = self.code.add_constant(Value::str(meta.to_string()));
+            let op_idx = self.code.add_constant(Value::str(op.to_string()));
+            self.code.emit(OpCode::MetaOpAssign { meta_idx, op_idx });
+            // The MetaOpAssign pushes [result_seq, mutated_left]; store the
+            // mutated container (top) back into the lvalue, leaving the Seq.
+            self.emit_set_named_var(&target);
+            return;
+        }
         // List-associative chaining for X/Z: `a X b X c` is a single n-ary
         // cross/zip producing flat n-tuples, not left-nested pairs. Collect a
         // chain of identical (meta, op) MetaOps into one flat operand list and
@@ -527,6 +547,32 @@ impl Compiler {
         let meta_idx = self.code.add_constant(Value::str(meta.to_string()));
         let op_idx = self.code.add_constant(Value::str(op.to_string()));
         self.code.emit(OpCode::MetaOp { meta_idx, op_idx });
+    }
+
+    /// If `op` is an in-place assignment operator (`+=`, `~=`, `**=`, `min=`, …)
+    /// and `left` is a simple lvalue variable, return the name to write the
+    /// mutated container back to (`@a`, `$a`). Comparison operators that merely
+    /// end in `=` (`==`, `<=`, `=~=`, …) are not assignments. Returns `None`
+    /// when the op is not an assignment or the left operand is not a plain
+    /// variable lvalue.
+    fn meta_assign_writeback_target(op: &str, left: &Expr) -> Option<String> {
+        let is_assign_op = op.ends_with('=')
+            && op.len() > 1
+            && !matches!(
+                op,
+                "==" | "!=" | "<=" | ">=" | "===" | "!==" | "<=>" | "=~=" | "=:="
+            );
+        if !is_assign_op {
+            return None;
+        }
+        match left {
+            Expr::ArrayVar(name) => Some(format!("@{name}")),
+            Expr::Var(name) => Some(name.clone()),
+            // TODO: compile to bytecode a slice writeback for an `Index` left
+            // (`@a[0,1] X[+=] 10`), mirroring the hyper-op `IndexAssignExprNamed`
+            // path; for now such targets fall through and are not mutated.
+            _ => None,
+        }
     }
 
     /// Flatten a left-nested chain of identical (meta, op) MetaOps into a flat
