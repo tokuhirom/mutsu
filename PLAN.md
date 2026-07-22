@@ -1282,6 +1282,42 @@ the backlog.
   aliasing** cases ([5]/[6]/[7]/[9]: `($a, ++$a)` / `@arr.push: ($a,$b)` / `Pair.new('a',$v)` reflect
   later mutations) are a *separate* deferred item (container-repr, §8.5-adjacent), NOT this precedence bug.
 
+### 8.10 Object hashes are string-keyed, not `.WHICH`-keyed (deferred deep item — found 2026-07-22 by the numerics/hashmap doc-diff sweeps)
+
+- [ ] **An object hash (`:{ ... }` / a `%h{Any}`-typed hash) must key by the actual key
+      *object* indexed by its `.WHICH` identity, not by the key's stringification.** mutsu stores
+      *every* hash in `HashData.map: HashMap<String, Value>` (`src/value/mod.rs:940`), so an object
+      hash loses its key objects and conflates any keys that share a `.Str`. The user-visible
+      divergences:
+  - `my %h{Any} = 42 => "foo"; say %h.keys.map(*.^name)` → raku `(Int)`, mutsu `(Str)` (the key
+    object type is lost — the key was reduced to the string `"42"`).
+  - `%h<42>:exists` (look up with the allomorph `IntStr <42>`) → raku **`False`** (an `IntStr`'s
+    `.WHICH` differs from the `Int 42` key), mutsu **`True`** (both stringify to `"42"`).
+    `%h{42}:exists` is `True` in both (same `Int` key). *(numerics.rakudoc:458, hashmap.rakudoc:292.)*
+  - `:{ 0 => 42 }<0>` (Int key, IntStr lookup) → raku `(Any)`, mutsu `42`; likewise `:{ '0' => 42 }<0>`
+    (Str key, IntStr lookup) → raku `(Any)`, mutsu `42`. Only `:{ <0> => 42 }<0>` (matching IntStr
+    key/lookup) is `42` in both. *(hashmap.rakudoc:292.)*
+- **Same root, wider blast radius.** This is the QuantHash-identity issue already flagged for
+      `Set`/`Bag`/`Mix` in the PR #4788 note (`(1, "1", 1.0).Set.elems` is 1 in mutsu vs 3 in raku;
+      `∈` over a *Set* stays loose) and the `traps.rakudoc` [8] object-hash-enum-key finding
+      (`:{ Dog => 42 }{ Dog }` should be `(Any)` — a `Dog` *enum value* key is `.WHICH`-distinct from
+      the bareword). All four surfaces (object Hash, Set, Bag, Mix) share the string-key backing store.
+- **Where it bites.** Purely the doc-diff QA campaign so far (numerics [4], hashmap [1], traps [8]);
+      no roast whitelist test depends on it. Object hashes and `∈`-over-Set allomorph identity are
+      niche, so the payoff is modest — this is recorded to stop the recurring re-discovery, not as an
+      urgent item.
+- **Fix shape (representation rework — ADR-worthy).** Give the QuantHash/object-hash family a key
+      store that preserves the key `Value` and indexes by a canonical `.WHICH` string (or a `Value`
+      newtype keyed on `WHICH`), while ordinary `Str`-keyed hashes keep the fast `HashMap<String, _>`
+      path. High blast radius: `HashData` is threaded through ~everything that reads/writes hash
+      entries, plus the Set/Bag/Mix constructors (`src/runtime/methods_quanthash_ctor.rs`) and the
+      `∈`/`(elem)` membership path (already partly `.WHICH`-correct for *list* RHS via
+      `values_identical`, but not for a materialized `Set`). Coordinate with [ADR-0001] container-repr
+      and §8.5; do **not** attempt as a small slice.
+- Entry: `git checkout -b feat-which-keyed-quanthash origin/main`. Files: `src/value/mod.rs`
+      (`HashData`), `src/value/value_collections.rs`, `src/value/value_methods_a.rs`
+      (`hash_insert_through`), `src/runtime/methods_quanthash_ctor.rs`, the `∈`/`(elem)` set-op path.
+
 ---
 
 ## Metrics
