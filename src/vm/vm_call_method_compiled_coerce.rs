@@ -273,19 +273,19 @@ impl Interpreter {
             "skip-one" => {
                 if index < len {
                     index += 1;
-                    Value::TRUE
+                    Value::int(1)
                 } else {
-                    Value::FALSE
+                    Value::int(0)
                 }
             }
             "skip-at-least" => {
                 let want = args.first().map(crate::runtime::to_int).unwrap_or(0).max(0) as usize;
                 if len.saturating_sub(index) >= want {
                     index += want;
-                    Value::TRUE
+                    Value::int(1)
                 } else {
                     index = len;
-                    Value::FALSE
+                    Value::int(0)
                 }
             }
             "skip-at-least-pull-one" => {

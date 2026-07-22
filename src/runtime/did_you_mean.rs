@@ -339,6 +339,7 @@ pub(crate) fn known_methods_for_type(type_name: &str) -> &'static [&'static str]
             "prematch",
             "raku",
             "Str",
+            "target",
             "to",
             "values",
             "WHAT",
