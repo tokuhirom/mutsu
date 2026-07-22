@@ -55,17 +55,72 @@ impl Interpreter {
             }
             return None;
         }
-        let local = format!("{}::{}", self.current_package(), name);
-        self.registry()
+        let cur_pkg = self.current_package();
+        let local = format!("{}::{}", cur_pkg, name);
+        if let Some(def) = self.registry().functions.get(&Symbol::intern(&local)).cloned() {
+            return Some(def);
+        }
+        if let Some(def) = self
+            .registry()
             .functions
-            .get(&Symbol::intern(&local))
+            .get(&Symbol::intern(&format!("GLOBAL::{}", name)))
             .cloned()
-            .or_else(|| {
-                self.registry()
+        {
+            return Some(def);
+        }
+        // A module's tagged export (`sub foo is export(:tag)`) that the importing
+        // program did not request is hidden by renaming `GLOBAL::foo` to
+        // `MOD::foo` (see the hide step in `runtime_module.rs`). But MOD's own
+        // routines — a grammar action method running under `MOD::Grammar`, or an
+        // ordinary method of `MOD::SomeClass` — still refer to `foo` by its bare
+        // name and relied on the now-removed GLOBAL entry. Restore visibility by
+        // walking up the enclosing namespace of the code that is running: the
+        // current package (set to the grammar's package during action dispatch)
+        // and the invocant's class (ordinary method bodies run under GLOBAL, so
+        // `self`'s class is the only module signal available). For each ancestor
+        // namespace that is a loaded module owning an export of this name,
+        // resolve `MOD::foo`. This fires only for genuinely-hidden owned exports,
+        // so an unrelated `Foo::bar` in a sibling package block is never
+        // spuriously resolved.
+        if !self.module_owned_exports.is_empty() {
+            if let Some(def) = self.resolve_hidden_owned_export(&cur_pkg, name) {
+                return Some(def);
+            }
+            if let Some(ValueView::Instance { class_name, .. }) =
+                self.env.get("self").map(Value::view)
+            {
+                let cn = class_name.resolve();
+                if let Some(def) = self.resolve_hidden_owned_export(&cn, name) {
+                    return Some(def);
+                }
+            }
+        }
+        None
+    }
+
+    /// Walk up the namespace segments of `context` looking for a loaded module
+    /// that owns an export named `name`, and return the hidden `MOD::name`
+    /// routine if one is registered. See `resolve_function`.
+    fn resolve_hidden_owned_export(&self, context: &str, name: &str) -> Option<Arc<FunctionDef>> {
+        let mut probe = context;
+        loop {
+            if self
+                .module_owned_exports
+                .get(probe)
+                .is_some_and(|owned| owned.contains_key(name))
+                && let Some(def) = self
+                    .registry()
                     .functions
-                    .get(&Symbol::intern(&format!("GLOBAL::{}", name)))
+                    .get(&Symbol::intern(&format!("{}::{}", probe, name)))
                     .cloned()
-            })
+            {
+                return Some(def);
+            }
+            match probe.rsplit_once("::") {
+                Some((outer, _)) => probe = outer,
+                None => return None,
+            }
+        }
     }
 
     pub(super) fn insert_token_def(&mut self, name: &str, def: FunctionDef, multi: bool) {
