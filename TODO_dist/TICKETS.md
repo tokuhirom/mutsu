@@ -115,11 +115,35 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 - file: DONE — runtime/registration_role.rs, runtime/undeclared_routines.rs;
   remaining — nqp op support (large, separate)
 
-### T-029 — test_die [POFile]  [impact: 1 dist]
-- dists: POFile
-- e.g. `POFile`: base=4 pass=1 fail=1 die=2 | t/02-deletion.rakutest: 
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
+### T-029 — test_die [POFile]  [impact: 1 dist]  — INVESTIGATED, root-caused, deferred
+- dists: POFile (raku passes ALL tests — the sweep's "raku partly fails" was stale)
+- **Root cause:** a grammar **action method** in a *loaded module* cannot resolve a
+  plain module-lexical `sub` (a `sub foo` that is NOT `our` and NOT `is export`).
+  POFile's `PO::Actions.TOP` calls `po-unquote(...)` (a `sub po-unquote` defined
+  later in POFile.rakumod); mutsu dies "Unknown function: po-unquote".
+- **Self-contained minimal repro** (a module + a driver; raku → `H-hello`, mutsu →
+  "Unknown function: helper"):
+  ```
+  # lib/PMod.rakumod
+  grammar PMod::Parser { token TOP { \w+ } }
+  class PMod::Actions { method TOP($/) { make helper(~$/) } }
+  class PMod { method parse(Str $i) { PMod::Parser.parse($i, actions => PMod::Actions).made } }
+  sub helper($x) { "H-" ~ $x }          # plain lexical sub — the trigger
+  # driver:  use PMod; say PMod.parse("hello")
+  ```
+- **Narrowing:** `our sub helper` works; `is export` + import works; a NORMAL method
+  of the same module calling the plain sub works (`class A { method m { helper() } }`);
+  a single-SCRIPT (non-module) grammar action calling the sub works. Only the
+  combination *loaded module* + *grammar action method* + *plain lexical sub* fails.
+- **Mechanism:** during `.parse`, `methods_grammar.rs` sets `current_package` to the
+  GRAMMAR's package (`PMod::Parser`, line 249) and keeps it through action dispatch.
+  `resolve_function` (resolution.rs:58) only looks up `{current_package}::name` and
+  `GLOBAL::name`; a module-lexical `sub` is registered in the module's lexical scope
+  (not `GLOBAL`, not the grammar package), so it is invisible. A normal method
+  restores its own captured lexical scope; the grammar-action invocation path does not.
+- file: `src/runtime/methods_grammar.rs` (action invocation `current_package`/lexical
+  scope) + `src/runtime/resolution.rs` (module-lexical sub visibility). Deferred:
+  needs the grammar-action path to expose the action class's module lexical subs.
 
 ### T-031 — test_die [URI]  [impact: 1 dist]
 - dists: URI
