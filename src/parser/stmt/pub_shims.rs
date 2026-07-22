@@ -60,6 +60,13 @@ pub(crate) fn sub_decl_with_semicolon_mode_pub(
     sub::sub_decl_with_semicolon_mode(input, allow_main_semicolon_decl)
 }
 
+/// Public accessor for sub_decl_body (used by primary/ident for the
+/// expression-form named sub `my $s = sub foo {...}` — input is positioned at
+/// the sub NAME, after the `sub` keyword).
+pub(crate) fn sub_decl_body_pub(input: &str) -> PResult<'_, Stmt> {
+    sub::sub_decl_body(input, false, false, false)
+}
+
 /// Public accessor for constant declaration parser (used by primary.rs in expression context).
 pub(crate) fn constant_decl_pub(input: &str) -> PResult<'_, Stmt> {
     decl::constant_decl(input)

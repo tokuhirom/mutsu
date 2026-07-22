@@ -319,6 +319,7 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ast::Stmt;
     use crate::value::ValueView;
 
     #[test]
@@ -962,7 +963,10 @@ mod tests {
     fn primary_parses_named_sub_literal_in_expression_context() {
         let (rest, expr) = primary("sub f { 42 }").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(expr, Expr::AnonSub { .. }));
+        assert!(matches!(
+            expr,
+            Expr::DoStmt(ref stmt) if matches!(**stmt, Stmt::SubDecl { ref name, .. } if name == "f")
+        ));
     }
 
     #[test]

@@ -55,8 +55,8 @@ pub(super) use pub_shims::{
     constant_decl_pub, for_stmt_pub, given_stmt_pub, ident_pub, if_stmt_pub, labeled_loop_stmt_pub,
     lazy_for_stmt_pub, let_stmt_pub, loop_stmt_pub, my_decl_expr_pub, parse_param_list_pub,
     parse_param_list_with_return_pub, parse_pointy_param_pub, parse_return_type_annotation_pub,
-    parse_sub_name_pub, parse_sub_traits_pub, statement_pub, sub_decl_with_semicolon_mode_pub,
-    temp_stmt_pub, until_stmt_pub, while_stmt_pub, with_stmt_pub,
+    parse_sub_name_pub, parse_sub_traits_pub, statement_pub, sub_decl_body_pub,
+    sub_decl_with_semicolon_mode_pub, temp_stmt_pub, until_stmt_pub, while_stmt_pub, with_stmt_pub,
 };
 
 thread_local! {
