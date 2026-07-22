@@ -89,6 +89,16 @@ impl Interpreter {
         {
             return crate::runtime::utils::coerce_to_hash(listed);
         }
+        // A lazy sequence (e.g. `%h = gather { take ... }` or `%h = ....map(...)`)
+        // must be reified before it can be split into key/value pairs. Without
+        // forcing, `coerce_to_hash` falls to its `_` arm and stringifies the whole
+        // unreified LazyList into a single bogus key. Force it into an eager Seq
+        // first, matching Raku (assignment to a `%` container is eager).
+        if let ValueView::LazyList(ll) = value.view()
+            && let Ok(items) = self.force_lazy_list(&ll)
+        {
+            return crate::runtime::utils::coerce_to_hash(Value::seq(items));
+        }
         crate::runtime::utils::coerce_to_hash(value)
     }
 
