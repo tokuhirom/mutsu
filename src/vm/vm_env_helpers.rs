@@ -353,6 +353,17 @@ impl Interpreter {
         if matches!(sigil, Some('$' | '@' | '%' | '&')) {
             // Sigils are single-byte ASCII, so `name[1..]` is a valid boundary.
             let rest = &name[1..];
+            // PROCESS:: exposes the process-level dynamic variables: a
+            // `$PROCESS::IN` is the dynamic `$*IN`, stored under the twigil env
+            // key (`*IN` for scalars, `@*x`/`%*x` for array/hash). Map it there
+            // so the plain global read/write path finds the same slot `$*` does.
+            if let Some(bare) = rest.strip_prefix("PROCESS::") {
+                return Some(match sigil.unwrap() {
+                    '@' => format!("@*{bare}"),
+                    '%' => format!("%*{bare}"),
+                    _ => format!("*{bare}"),
+                });
+            }
             for prefix in PSEUDO {
                 if let Some(bare) = rest.strip_prefix(prefix) {
                     return Some(format!("{}{bare}", sigil.unwrap()));
@@ -360,6 +371,9 @@ impl Interpreter {
             }
         }
         // Also handle unsigiled forms (e.g. "GLOBAL::x")
+        if let Some(bare) = name.strip_prefix("PROCESS::") {
+            return Some(format!("*{bare}"));
+        }
         for prefix in PSEUDO {
             if let Some(bare) = name.strip_prefix(prefix) {
                 return Some(bare.to_string());
