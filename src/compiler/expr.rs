@@ -679,7 +679,15 @@ impl Compiler {
                 }
                 if matches!(
                     base_op,
-                    "&&" | "||" | "and" | "or" | "//" | "andthen" | "orelse" | "^^" | "xor"
+                    "&&" | "||"
+                        | "and"
+                        | "or"
+                        | "//"
+                        | "andthen"
+                        | "orelse"
+                        | "notandthen"
+                        | "^^"
+                        | "xor"
                 ) && let Expr::ArrayLiteral(items) = expr.as_ref()
                 {
                     // Only use the short-circuit path when no element might
@@ -881,7 +889,7 @@ impl Compiler {
         if items.is_empty() {
             // Identity value
             match op {
-                "&&" | "and" => {
+                "&&" | "and" | "andthen" | "notandthen" => {
                     self.code.emit(OpCode::LoadTrue);
                 }
                 "//" | "orelse" => {
@@ -1019,6 +1027,36 @@ impl Compiler {
                 let done_pos = self.code.current_pos();
                 for ju in jump_undefs {
                     self.code.patch_jump_to(ju, undef_pos);
+                }
+                self.code.patch_jump_to(jump_done, done_pos);
+            }
+            "notandthen" => {
+                // [notandthen] a, b, c  =>  a notandthen b notandthen c
+                // The mirror of [andthen]: if any (non-last) element is *defined*,
+                // return Empty and don't evaluate the rest; otherwise the last
+                // element is the result. (`Nil notandthen 2` is 2; `1 notandthen 2`
+                // is Empty.)
+                let mut jump_defs = Vec::new();
+                let last_idx = items.len() - 1;
+                for (i, item) in items.iter().enumerate() {
+                    self.compile_expr(item);
+                    if i < last_idx {
+                        self.code.emit(OpCode::Dup);
+                        self.code.emit(OpCode::CallDefined);
+                        let jd = self.code.emit(OpCode::JumpIfTrue(0));
+                        jump_defs.push(jd);
+                        self.code.emit(OpCode::Pop);
+                    }
+                }
+                let jump_done = self.code.emit(OpCode::Jump(0));
+                let def_pos = self.code.current_pos();
+                // defined: pop acc and push Empty
+                self.code.emit(OpCode::Pop);
+                let empty_idx = self.code.add_constant(Value::slip(vec![]));
+                self.code.emit(OpCode::LoadConst(empty_idx));
+                let done_pos = self.code.current_pos();
+                for jd in jump_defs {
+                    self.code.patch_jump_to(jd, def_pos);
                 }
                 self.code.patch_jump_to(jump_done, done_pos);
             }

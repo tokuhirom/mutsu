@@ -221,6 +221,7 @@ impl Interpreter {
                 | "not"
                 | "andthen"
                 | "orelse"
+                | "notandthen"
                 | "xor"
                 | "="
                 | "minmax"

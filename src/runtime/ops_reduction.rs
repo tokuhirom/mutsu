@@ -339,6 +339,15 @@ impl Interpreter {
                     Ok(Value::slip(vec![]))
                 }
             }
+            "notandthen" => {
+                // The mirror of `andthen`: pass the RHS through when the LHS is
+                // *undefined*, otherwise return Empty.
+                if crate::runtime::types::value_is_defined(left) {
+                    Ok(Value::slip(vec![]))
+                } else {
+                    Ok(right.clone())
+                }
+            }
             "xor" => {
                 let lt = left.truthy();
                 let rt = right.truthy();

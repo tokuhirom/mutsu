@@ -190,7 +190,7 @@ pub(crate) fn reduction_identity(op: &str) -> Value {
         "||" | "or" | "?|" | "^^" => Value::FALSE,
         "?^" => Value::FALSE,
         "//" | "orelse" => Value::package(Symbol::intern("Any")),
-        "andthen" => Value::TRUE,
+        "andthen" | "notandthen" => Value::TRUE,
         "xor" => Value::FALSE,
         "min" => Value::num(f64::INFINITY),
         "max" => Value::num(f64::NEG_INFINITY),
