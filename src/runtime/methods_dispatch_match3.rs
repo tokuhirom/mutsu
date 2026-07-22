@@ -822,8 +822,10 @@ impl Interpreter {
         }
     }
 
-    /// Dispatch "EXISTS-KEY" on a Match: does the match have the named capture?
-    /// Returns None for non-Match targets so they fall through to other handlers.
+    /// Dispatch "EXISTS-KEY" on a Match (does the match have the named capture?)
+    /// or a Stash (does the package have the named symbol?). `CORE::.EXISTS-KEY`
+    /// is used by dists (e.g. head-skip-tail) to detect a symbol clash before
+    /// exporting. Returns None for other targets so they fall through.
     fn dispatch_match_exists_key(
         &self,
         target: &Value,
@@ -834,14 +836,27 @@ impl Interpreter {
             attributes,
             ..
         } = target.view()
-            && class_name == "Match"
         {
-            let key = args[0].to_string_value();
-            let exists = matches!(
-                attributes.as_map().get("named").map(Value::view),
-                Some(ValueView::Hash(named)) if named.contains_key(key.as_str())
-            );
-            return Some(Ok(Value::truth(exists)));
+            if class_name == "Match" {
+                let key = args[0].to_string_value();
+                let exists = matches!(
+                    attributes.as_map().get("named").map(Value::view),
+                    Some(ValueView::Hash(named)) if named.contains_key(key.as_str())
+                );
+                return Some(Ok(Value::truth(exists)));
+            }
+            if class_name == "Stash" {
+                // Exact-key membership only — unlike the Stash `AT-KEY` arm, raku's
+                // `EXISTS-KEY` does NOT sigil-fallback (`Foo::.EXISTS-KEY('baz')` is
+                // False even when `$baz` exists). Dists query the full sigil'd name
+                // (`CORE::.EXISTS-KEY('&head')`).
+                let exists = matches!(
+                    attributes.as_map().get("symbols").map(Value::view),
+                    Some(ValueView::Hash(symbols))
+                        if symbols.contains_key(args[0].to_string_value().as_str())
+                );
+                return Some(Ok(Value::truth(exists)));
+            }
         }
         None
     }

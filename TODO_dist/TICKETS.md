@@ -230,12 +230,6 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 - repro: _(fill in a minimal repro + raku baseline before fixing)_
 - file: _(suspected parser/runtime file)_
 
-### T-047 — test_fail: does skip(N) work  [impact: 1 dist]
-- dists: head-skip-tail
-- e.g. `head-skip-tail`: base=1 pass=0 fail=1 die=0 | t/01-basic.rakutest: does skip(4) work
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
-
 ### T-048 — test_fail: TimeUnit (nested-alias FIXED #5146; blocked on enum-vs-sub)  [impact: 1 dist]
 - dists: TimeUnit
 - e.g. `TimeUnit`: base=1 pass=0 fail=1 die=0 | t/01-usage.rakutest
@@ -323,6 +317,14 @@ _(move tickets here with `[claim: <branch>]` when you start)_
 
 ## Done
 
+- **T-047** (#PENDING) — head-skip-tail failed to load (not merely the "skip(4)"
+  test): its `EXPORT` sub calls `CORE::.EXISTS-KEY('&head')` to detect a symbol
+  clash, and mutsu's `Stash` (the type behind `CORE::`/`Foo::`) had no `EXISTS-KEY`
+  method ("No such method 'EXISTS-KEY' for invocant of type 'Stash'"). Added
+  `EXISTS-KEY` for `Stash` (exact-key membership over the package `symbols` map;
+  unlike `AT-KEY`, no sigil-fallback — matching raku, where
+  `Foo::.EXISTS-KEY('baz')` is False even when `$baz` exists). The dist now loads
+  and passes 6/6. Pin: t/stash-exists-key.t.
 - **T-052** (#PENDING) — Node::Ethereum::RLP failed to load: its
   `Exception.rakumod` declares `module M { class X is Exception {}; class
   X::Decode is X {}; class X::Decode::Length is X::Decode {} }`, and `is X`
