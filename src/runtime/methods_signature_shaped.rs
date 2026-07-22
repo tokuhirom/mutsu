@@ -283,6 +283,54 @@ impl Interpreter {
             }
         }
 
+        // A *type object* of a user-defined class (`C.+foo` / `C.*foo`): walk the
+        // MRO like the Instance path above, running each level's method with the
+        // type object as the (attribute-less) invocant. Without this, a type
+        // object falls through to the single-dispatch builtin path below and only
+        // the most-derived method runs (`C.+foo` yields `(C-only)` not the whole
+        // MRO chain). Built-in type objects have no registry entry and fall
+        // through to the count-based path.
+        if let ValueView::Package(name) = target.view()
+            && !method.starts_with('!')
+        {
+            let class_name = name.resolve();
+            if self.registry().classes.contains_key(class_name.as_str()) {
+                let candidates = self.resolve_methods_per_mro_level(&class_name, method, &args);
+                if !candidates.is_empty() {
+                    let mut out = Vec::with_capacity(candidates.len());
+                    for (resolved_owner, method_def) in candidates {
+                        let (result, _updated) = self.run_resolved_method_compiled_or_treewalk(
+                            &class_name,
+                            resolved_owner.as_str(),
+                            method,
+                            method_def,
+                            crate::value::AttrMap::default(),
+                            args.clone(),
+                            Some(target.clone()),
+                        )?;
+                        out.push(result);
+                    }
+                    return Ok(out);
+                }
+                // Method is defined somewhere in the MRO but no multi candidate
+                // matched: raise a dispatch error, mirroring the Instance path.
+                let method_exists = self.class_mro(&class_name).iter().any(|cn| {
+                    self.registry()
+                        .classes
+                        .get(cn.as_str())
+                        .and_then(|c| c.methods.get(method))
+                        .is_some_and(|ovs| {
+                            let is_ancestor = cn.as_str() != class_name.as_str();
+                            ovs.iter()
+                                .any(|d| !d.is_private && (!d.is_my || !is_ancestor))
+                        })
+                });
+                if method_exists {
+                    return Err(make_multi_no_match_error(method));
+                }
+            }
+        }
+
         // Built-in (non-Instance) target: one native handler, but `.+`/`.*`
         // (and the hyper `».+`/`».*`, which reach this via
         // `call_method_all_with_temp_target`) must yield one result per MRO level
