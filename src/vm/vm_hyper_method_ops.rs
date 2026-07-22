@@ -45,10 +45,9 @@ fn hyper_subscript_index_is_slice(v: &Value) -> bool {
 /// list-shaped routines `is nodal`. They used to be listed here, which is why
 /// `@a>>.Str` returned a `List` where raku returns an `Array`.
 ///
-/// Still-known gap: `.WHO`/`.HOW`/`.DEFINITE` are not hyper-dispatched at all
-/// in Rakudo (they apply to the target itself, so `@a>>.WHO` is the Array's
-/// Stash). mutsu maps them per element; they stay listed here so at least the
-/// node level is used. See PLAN.md §8.6.
+/// The metaobject introspectors (`.WHAT`/`.WHO`/`.HOW`/`.DEFINITE`/`.WHERE`)
+/// are not nodal either — they are not hyper-dispatched *at all*; see
+/// [`Interpreter::is_target_level_introspector`].
 fn is_nodal_list_method(name: &str) -> bool {
     matches!(
         name,
@@ -80,8 +79,6 @@ fn is_nodal_list_method(name: &str) -> bool {
             | "BagHash"
             | "Mix"
             | "MixHash"
-            | "WHO"
-            | "HOW"
             | "hash"
             | "Hash"
             | "kv"
@@ -103,7 +100,6 @@ fn is_nodal_list_method(name: &str) -> bool {
             | "rotor"
             | "repeated"
             | "snip"
-            | "DEFINITE"
             | "list"
             | "AT-POS"
             | "AT-KEY"
@@ -168,6 +164,19 @@ impl Interpreter {
         }
         self.set_env_with_main_alias(var, new_val.clone());
         self.locals_set_by_name(code, var, new_val);
+    }
+
+    /// Whether a name is a metaobject introspector that Rakudo compiles as a
+    /// special form rather than a method call, so a hyper never applies to the
+    /// elements: `my @a = (1,2),(3,); (@a>>.WHAT).raku` is plain `Array`,
+    /// `(@a>>.WHO)` is the Array's Stash, `(@a>>.HOW)` its ClassHOW,
+    /// `(@a>>.DEFINITE)` a single Bool, and `@a>>.WHERE` == `@a.WHERE`.
+    ///
+    /// `.WHICH`, `.WHY` and `.VAR` are ordinary methods in Rakudo and *do*
+    /// hyper, so they are not listed. A *quoted* name (`@a>>."WHAT"()`) is a
+    /// genuine dynamic method call and hypers too — the caller checks that.
+    fn is_target_level_introspector(name: &str) -> bool {
+        matches!(name, "WHAT" | "WHO" | "HOW" | "DEFINITE" | "WHERE")
     }
 
     /// `$b>>++` / `$b>>--` on a Bag/Mix/Set: apply the postfix op to each weight,
@@ -270,6 +279,17 @@ impl Interpreter {
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("Interpreter stack underflow in HyperMethodCall target")
         })?;
+        // The metaobject introspectors are *not* hyper-dispatched in Rakudo:
+        // they are compiled as special forms, so `@a>>.WHAT` applies to the
+        // Array itself (`Array`, not a per-element list of `Int`s), and a Seq
+        // target is not consumed. `.WHICH`/`.WHY`/`.VAR` *are* ordinary methods
+        // and do hyper, so they are deliberately absent here.
+        if arity == 0 && !quoted && Self::is_target_level_introspector(method_raw) {
+            let (result, _) =
+                self.call_method_mut_with_temp_target(&target, method_raw, vec![], 0)?;
+            self.stack.push(result);
+            return Ok(());
+        }
         // Mark Seq as consumed (single-use semantics).
         if let ValueView::Seq(arc) = target.view() {
             crate::value::seq_consume(&arc)?;
