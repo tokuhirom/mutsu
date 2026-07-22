@@ -32,23 +32,47 @@ impl Interpreter {
             });
         }
         let mro = self.classhow_mro_names(&args[0]);
-        let parents_iter = mro.into_iter().skip(1);
         let parents: Vec<Value> = if local {
-            self.registry()
+            // `:local` returns the immediately-declared parent class(es), with
+            // composed roles excluded. A user class carries its explicit parents
+            // in the registry (handles multiple inheritance); a class with no
+            // explicit superclass — or a built-in type — falls back to the first
+            // non-role entry of the MRO (`Any` for a bare class, `Cool` for Int).
+            let registered: Vec<String> = self
+                .registry()
                 .classes
                 .get(&class_name)
                 .map(|cd| cd.parents.clone())
                 .unwrap_or_default()
-                .iter()
-                .map(|p| Value::package(Symbol::intern(p)))
+                .into_iter()
+                .filter(|p| !self.parent_is_role(p))
+                .collect();
+            let locals = if registered.is_empty() {
+                mro.iter()
+                    .skip(1)
+                    .find(|p| *p != &class_name && !self.parent_is_role(p))
+                    .cloned()
+                    .into_iter()
+                    .collect()
+            } else {
+                registered
+            };
+            locals
+                .into_iter()
+                .map(|p| Value::package(Symbol::intern(&p)))
                 .collect()
         } else if all {
-            parents_iter
+            // `:all` walks the full MRO but still excludes composed roles.
+            mro.into_iter()
+                .skip(1)
+                .filter(|p| !self.parent_is_role(p))
                 .map(|p| Value::package(Symbol::intern(&p)))
                 .collect()
         } else {
-            parents_iter
-                .filter(|p| p != "Any" && p != "Mu")
+            // The default form stops at Cool/Any/Mu and drops composed roles.
+            mro.into_iter()
+                .skip(1)
+                .filter(|p| p != "Any" && p != "Mu" && p != "Cool" && !self.parent_is_role(p))
                 .map(|p| Value::package(Symbol::intern(&p)))
                 .collect()
         };
@@ -57,16 +81,28 @@ impl Interpreter {
         Ok(Value::array(parents))
     }
 
+    /// Whether `name` names a role (parameterization stripped), so it should be
+    /// excluded from a class's parent list — `.^parents` reports parent classes
+    /// only, never composed roles.
+    fn parent_is_role(&self, name: &str) -> bool {
+        let base = name.split_once('[').map(|(b, _)| b).unwrap_or(name);
+        self.is_role(base)
+    }
+
     /// The direct parents used to build a `:tree`, filling in the implicit
     /// `Any`/`Mu` chain. A base class (no explicit parent) inherits `Any`;
-    /// `Any` inherits `Mu`; `Mu` is the root (no parents).
+    /// `Any` inherits `Mu`; `Mu` is the root (no parents). Composed roles are
+    /// excluded — only parent classes participate in the tree.
     fn tree_effective_parents(&self, class_name: &str) -> Vec<String> {
-        let registered = self
+        let registered: Vec<String> = self
             .registry()
             .classes
             .get(class_name)
             .map(|cd| cd.parents.clone())
-            .unwrap_or_default();
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|p| !self.parent_is_role(p))
+            .collect();
         if !registered.is_empty() {
             return registered;
         }
