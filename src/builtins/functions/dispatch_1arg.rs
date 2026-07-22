@@ -829,38 +829,12 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
             ValueView::Array(items, ..) => items.first().cloned().unwrap_or(Value::NIL),
             _ => arg.clone(),
         })),
-        "min" => Some(Ok(match arg.view() {
-            ValueView::Hash(items) => items
-                .iter()
-                .min_by(|(ak, _), (bk, _)| ak.cmp(bk))
-                .map(|(k, v)| items.typed_pair(k, v.clone()))
-                .unwrap_or(Value::NIL),
-            ValueView::Array(items, ..) => items
-                .iter()
-                .cloned()
-                .min_by(|a, b| match (a.view(), b.view()) {
-                    (ValueView::Int(x), ValueView::Int(y)) => x.cmp(&y),
-                    _ => a.to_string_value().cmp(&b.to_string_value()),
-                })
-                .unwrap_or(Value::NIL),
-            _ => arg.clone(),
-        })),
-        "max" => Some(Ok(match arg.view() {
-            ValueView::Hash(items) => items
-                .iter()
-                .max_by(|(ak, _), (bk, _)| ak.cmp(bk))
-                .map(|(k, v)| items.typed_pair(k, v.clone()))
-                .unwrap_or(Value::NIL),
-            ValueView::Array(items, ..) => items
-                .iter()
-                .cloned()
-                .max_by(|a, b| match (a.view(), b.view()) {
-                    (ValueView::Int(x), ValueView::Int(y)) => x.cmp(&y),
-                    _ => a.to_string_value().cmp(&b.to_string_value()),
-                })
-                .unwrap_or(Value::NIL),
-            _ => arg.clone(),
-        })),
+        // `min`/`max` on a single argument are intentionally NOT handled here:
+        // the naive Hash/Array-only arm returned a lone Seq/List/Range unfolded
+        // (`min((5,3,8).Seq)` == the Seq) and mis-ordered non-Int arrays via a
+        // stringwise compare (`min([2.0, 10])` == 10). Return `None` so the sub
+        // form falls through to the authoritative `builtin_min`/`builtin_max`,
+        // which flatten a single iterable and fold with `compare_values`.
         "ords" => {
             let s = arg.to_string_value();
             let codes: Vec<Value> = s.chars().map(|ch| Value::int(ch as u32 as i64)).collect();
