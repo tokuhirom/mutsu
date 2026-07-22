@@ -57,7 +57,12 @@ impl Interpreter {
         }
         let cur_pkg = self.current_package();
         let local = format!("{}::{}", cur_pkg, name);
-        if let Some(def) = self.registry().functions.get(&Symbol::intern(&local)).cloned() {
+        if let Some(def) = self
+            .registry()
+            .functions
+            .get(&Symbol::intern(&local))
+            .cloned()
+        {
             return Some(def);
         }
         if let Some(def) = self
