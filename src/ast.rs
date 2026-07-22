@@ -1908,19 +1908,15 @@ fn collect_ph_stmt_shallow(stmt: &Stmt, out: &mut Vec<String>) {
                 collect_ph_expr_shallow(e, out);
             }
         }
-        Stmt::If {
-            cond,
-            then_branch,
-            else_branch,
-            ..
-        } => {
+        Stmt::If { cond, .. } => {
+            // The `if` condition is evaluated in THIS block's scope, so a
+            // placeholder there (`if $^a { ... }`) is this block's parameter. The
+            // then/else branches are their OWN `{}` block scopes, so a placeholder
+            // inside them (`if 42 { $^a }`) belongs to the if-block and binds the
+            // condition value — it is NOT this block's parameter (matches Raku;
+            // see the If placeholder handling in compile_if_value). So we do NOT
+            // descend into the branches here.
             collect_ph_expr_shallow(cond, out);
-            for s in then_branch {
-                collect_ph_stmt_shallow(s, out);
-            }
-            for s in else_branch {
-                collect_ph_stmt_shallow(s, out);
-            }
         }
         Stmt::While { cond, body, .. } => {
             collect_ph_expr_shallow(cond, out);

@@ -129,6 +129,18 @@ impl Compiler {
             return;
         }
         let needs_at_underscore = Self::body_uses_legacy_args(then_branch);
+        // A bare `if EXPR { ... $^a ... }` whose block has a scalar placeholder
+        // receives the condition value as that placeholder (like `-> $a`), so
+        // `if 42 { $^a.say }` prints 42. Bind the first scalar placeholder
+        // (`$^a` → env key `^a`); a valid block takes only the one condition value.
+        let cond_placeholder: Option<String> = if binding_var.is_none() {
+            crate::ast::collect_placeholders_shallow(then_branch)
+                .into_iter()
+                .find(|n| n.starts_with('^'))
+        } else {
+            None
+        };
+        let needs_cond_value = needs_at_underscore || cond_placeholder.is_some();
         // A topic-binding `if EXPR -> $v { ... }` (or a pointy `elsif`): bind the
         // condition value to `$v` and test the bound variable, mirroring the
         // statement-form desugar (`{ my $v = EXPR; if $v { ... } }`) that
@@ -165,8 +177,9 @@ impl Compiler {
         } else {
             self.compile_expr(cond);
         }
-        if needs_at_underscore {
-            // Duplicate condition for @_ (bare if blocks receive condition as @_).
+        if needs_cond_value {
+            // Duplicate condition for @_ / the placeholder (bare if blocks
+            // receive the condition value).
             self.code.emit(OpCode::Dup);
         }
         let jump_else = self.code.emit(OpCode::JumpIfFalse(0));
@@ -174,11 +187,14 @@ impl Compiler {
             // Flatten the duplicated condition into @_.
             self.code.emit(OpCode::FlattenSlurpy);
             self.emit_set_named_var("@_");
+        } else if let Some(ph) = &cond_placeholder {
+            // Bind the scalar placeholder to the (unflattened) condition value.
+            self.emit_set_named_var(ph);
         }
         self.compile_stmts_value(then_branch);
         let jump_end = self.code.emit(OpCode::Jump(0));
         self.code.patch_jump(jump_else);
-        if needs_at_underscore {
+        if needs_cond_value {
             // Pop leftover duplicated condition on the false branch.
             self.code.emit(OpCode::Pop);
         }

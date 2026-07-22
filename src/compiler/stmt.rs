@@ -1601,6 +1601,19 @@ impl Compiler {
                 // the condition value as @_ in Raku).
                 let needs_at_underscore =
                     binding_var.is_none() && Self::body_uses_legacy_args(then_branch);
+                // A bare `if EXPR { ... $^a ... }` whose block has a scalar
+                // placeholder receives the condition value as that placeholder
+                // (like `if EXPR -> $a { ... }`), so `if 42 { $^a.say }` prints 42.
+                // Bind the first scalar placeholder (`$^a` → env key `^a`); a valid
+                // block can take only the one condition value.
+                let cond_placeholder: Option<String> = if binding_var.is_none() {
+                    crate::ast::collect_placeholders_shallow(then_branch)
+                        .into_iter()
+                        .find(|n| n.starts_with('^'))
+                } else {
+                    None
+                };
+                let needs_cond_value = needs_at_underscore || cond_placeholder.is_some();
                 // A condition that is a compile-time constant resolves the branch
                 // here (ADR-0006 §2.2): `constant DEBUG = False; if DEBUG { note
                 // ... }` emits nothing at all. The unreachable branch is only
@@ -1608,7 +1621,7 @@ impl Compiler {
                 // even in a never-taken branch) — otherwise the runtime branch is
                 // compiled as usual.
                 if binding_var.is_none()
-                    && !needs_at_underscore
+                    && !needs_cond_value
                     && let Some(taken) = self.const_condition(cond)
                 {
                     let (live, dead) = if taken {
@@ -1654,9 +1667,9 @@ impl Compiler {
                     self.compile_condition_expr(&desugared_cond);
                 } else {
                     self.compile_condition_expr(cond);
-                    if needs_at_underscore {
+                    if needs_cond_value {
                         // Duplicate condition value: one for JumpIfFalse truthiness
-                        // test, one for setting @_ in the then_branch.
+                        // test, one for setting @_ / the placeholder in the then_branch.
                         self.code.emit(OpCode::Dup);
                     }
                 }
@@ -1665,6 +1678,9 @@ impl Compiler {
                     // Flatten the duplicated condition into @_ (like *@ slurpy).
                     self.code.emit(OpCode::FlattenSlurpy);
                     self.emit_set_named_var("@_");
+                } else if let Some(ph) = &cond_placeholder {
+                    // Bind the scalar placeholder to the (unflattened) condition value.
+                    self.emit_set_named_var(ph);
                 }
                 if Self::body_mutates_topic(then_branch) {
                     self.synthetic_block_body = true;
@@ -1676,7 +1692,7 @@ impl Compiler {
                 }
                 if else_branch.is_empty() {
                     self.code.patch_jump(jump_else);
-                    if needs_at_underscore {
+                    if needs_cond_value {
                         // Pop the leftover duplicated condition value on the
                         // false branch (JumpIfFalse consumed only one copy).
                         self.code.emit(OpCode::Pop);
@@ -1684,7 +1700,7 @@ impl Compiler {
                 } else {
                     let jump_end = self.code.emit(OpCode::Jump(0));
                     self.code.patch_jump(jump_else);
-                    if needs_at_underscore {
+                    if needs_cond_value {
                         self.code.emit(OpCode::Pop);
                     }
                     if else_branch.len() == 1 && matches!(else_branch[0], Stmt::If { .. }) {
