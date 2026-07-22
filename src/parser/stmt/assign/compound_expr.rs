@@ -180,6 +180,63 @@ pub(crate) fn build_compound_assign_expr(
             op: op.token_kind(),
             right: Box::new(rhs),
         },
+        // `(EXPR if COND) op= rhs`: a statement-modifier conditional whose body is
+        // an lvalue (`($s = $x.chop if $s) ~= $y`, from P5reset). Push the compound
+        // assignment into the then-branch so it runs only when the condition holds;
+        // an unrun modifier yields Empty in raku, which the metaop-assign ignores
+        // (`($s = "a" if 0) ~= "y"` is a silent no-op). Only a single-expression
+        // then-branch with an empty else is a well-defined lvalue.
+        Expr::DoStmt(stmt)
+            if matches!(
+                stmt.as_ref(),
+                Stmt::If { then_branch, else_branch, binding_var: None, .. }
+                    if then_branch.len() == 1
+                        && else_branch.is_empty()
+                        && matches!(then_branch[0], Stmt::Expr(_))
+            ) =>
+        {
+            let Stmt::If {
+                cond,
+                then_branch,
+                else_branch,
+                binding_var,
+            } = *stmt
+            else {
+                unreachable!("guarded by the match arm")
+            };
+            let mut then_branch = then_branch;
+            let inner = match then_branch.pop() {
+                Some(Stmt::Expr(e)) => e,
+                _ => unreachable!("guarded by the match arm"),
+            };
+            let inner_assign = build_compound_assign_expr(inner, op, rhs)?;
+            Expr::DoStmt(Box::new(Stmt::If {
+                cond,
+                then_branch: vec![Stmt::Expr(inner_assign)],
+                else_branch,
+                binding_var,
+            }))
+        }
+        // `(cond ?? A !! B) op= rhs`: the ternary is an lvalue selecting one
+        // branch, so the compound assignment writes through to whichever branch
+        // is taken. Desugar to `cond ?? (A op= rhs) !! (B op= rhs)` so only the
+        // selected branch is mutated and `rhs` is evaluated once, in that branch.
+        // A non-lvalue branch (a literal like `9` in `True ?? 9 !! $l ~= "x"`)
+        // recurses to the RO-error `other` arm below, which raises only if that
+        // branch is taken -- matching raku ("Cannot modify an immutable Int (9)").
+        Expr::Ternary {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            let then_assign = build_compound_assign_expr(*then_expr, op, rhs.clone())?;
+            let else_assign = build_compound_assign_expr(*else_expr, op, rhs)?;
+            Expr::Ternary {
+                cond,
+                then_expr: Box::new(then_assign),
+                else_expr: Box::new(else_assign),
+            }
+        }
         // `(state $best) max= $score` / `(my $n) += 1`: the declaration *is* the lvalue.
         // Unlike plain `=`, the new value has to read the variable back, so this cannot
         // become a `VarDecl` with an initializer — a `state` initializer runs once, but the

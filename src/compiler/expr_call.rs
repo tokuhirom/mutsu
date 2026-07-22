@@ -182,13 +182,16 @@ impl Compiler {
                 then_expr,
                 else_expr,
             } = &args[0]
-            && let Some(then_assign) = Self::assign_expr_for_lvalue(then_expr, &args[2])
-            && let Some(else_assign) = Self::assign_expr_for_lvalue(else_expr, &args[2])
         {
             // `(cond ?? $a !! $b) = rhs`: the ternary yields whichever branch is
             // the selected lvalue, then the assignment writes through to it.
             // Desugar to `cond ?? ($a = rhs) !! ($b = rhs)` so only the taken
-            // branch is assigned (and rhs is evaluated once, in that branch).
+            // branch is assigned (and rhs is evaluated once, in that branch). A
+            // non-lvalue branch (`cond ?? 9 !! $x = rhs`) desugars to an RO-error
+            // form via `ternary_branch_assign`, raising only if that branch is
+            // selected -- raku accepts the assignment when the lvalue branch wins.
+            let then_assign = Self::ternary_branch_assign(then_expr, &args[2]);
+            let else_assign = Self::ternary_branch_assign(else_expr, &args[2]);
             let desugared = Expr::Ternary {
                 cond: cond.clone(),
                 then_expr: Box::new(then_assign),
