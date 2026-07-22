@@ -590,6 +590,9 @@ impl Interpreter {
         if !native_types::is_native_int_type(base) {
             return Ok(val);
         }
+        // Bool `does Int`: unbox it to its integer value (True=1, False=0) when
+        // stored in a native int slot, matching raku (`my int $x = 3 >= 2` → 1).
+        let val = native_types::unbox_bool_to_native_int(val);
         // Full-width signed native types don't wrap — they should throw on overflow.
         if matches!(base, "int" | "int64") {
             if let ValueView::BigInt(n) = val.view() {

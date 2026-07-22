@@ -54,6 +54,9 @@ pub(in crate::runtime) fn wrap_native_int_for_binding(
     if !native_types::is_native_int_type(base) {
         return Ok(val);
     }
+    // Bool `does Int`: unbox it to 1/0 before native-int wrapping, so
+    // `sub f(int $x); f(True)` binds 1 like raku.
+    let val = native_types::unbox_bool_to_native_int(val);
     // Type objects cannot be unboxed to native types
     if let ValueView::Package(pkg_name) = val.view() {
         return Err(crate::value::RuntimeError::new(format!(

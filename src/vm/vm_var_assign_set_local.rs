@@ -1091,11 +1091,19 @@ impl Interpreter {
                     )));
                 }
             }
-            if !val.is_nil() && !self.type_matches_value(&constraint, &val) {
+            // A `:=` bind stores a `ContainerRef` cell (e.g. `my Offset $o := @a[$i]`
+            // aliases the array element). The type constraint applies to the
+            // *contained* value, so deref the cell before matching -- otherwise the
+            // check inspects the container itself and reports the bogus "got Any".
+            // Only the (rare) bind path derefs; the common assignment path borrows
+            // `val` directly with no clone.
+            let bind_derefed = is_bind.then(|| val.deref_container());
+            let check_val = bind_derefed.as_ref().unwrap_or(&val);
+            if !check_val.is_nil() && !self.type_matches_value(&constraint, check_val) {
                 return Err(runtime::utils::type_check_assignment_typed_error(
                     name,
                     &constraint,
-                    &val,
+                    check_val,
                 ));
             }
             if !val.is_nil() {

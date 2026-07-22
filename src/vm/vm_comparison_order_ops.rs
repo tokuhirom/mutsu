@@ -145,6 +145,20 @@ impl Interpreter {
             ValueView::Mixin(inner, _) => inner.as_ref(),
             _ => right,
         };
+        // A Bool numifies (False → 0, True → 1) in ordered comparison, so
+        // `0 cmp False` / `0 <=> False` / `False before 0` all treat it as its
+        // Int value, matching Rakudo. Without this it hits the string-comparison
+        // fallback below ("0" vs "False") and mis-orders.
+        let normalize_bool = |v: &Value| -> Option<Value> {
+            match v.view() {
+                ValueView::Bool(flag) => Some(Value::int(if flag { 1 } else { 0 })),
+                _ => None,
+            }
+        };
+        let left_norm = normalize_bool(left);
+        let right_norm = normalize_bool(right);
+        let left = left_norm.as_ref().unwrap_or(left);
+        let right = right_norm.as_ref().unwrap_or(right);
         match (left.view(), right.view()) {
             (ValueView::Int(a), ValueView::Int(b)) => a.cmp(&b),
             (_, _)

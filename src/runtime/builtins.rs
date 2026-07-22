@@ -616,6 +616,32 @@ impl Interpreter {
                     _ => Ok(Value::NIL),
                 }
             }
+            // nqp::ordat($str, $pos): the Unicode codepoint of the character at
+            // position `$pos` in `$str` (equivalent to `$str.substr($pos, 1).ord`).
+            // Returns -1 when the position is past the end, matching nqp. Used by
+            // Text::Diff::Sift4's inner char-comparison loop.
+            "nqp::ordat" => {
+                let s = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                let pos = args
+                    .get(1)
+                    .and_then(|v| match v.view() {
+                        ValueView::Int(i) => Some(i),
+                        _ => v.to_string_value().parse::<i64>().ok(),
+                    })
+                    .unwrap_or(0);
+                let cp = usize::try_from(pos)
+                    .ok()
+                    .and_then(|p| s.chars().nth(p))
+                    .map(|c| c as i64)
+                    .unwrap_or(-1);
+                Ok(Value::int(cp))
+            }
+            // nqp::gethostname(): the system hostname as a native str. Used by
+            // Sys::Hostname's `hostname` sub (`nqp::gethostname.subst(...)`).
+            "nqp::gethostname" => Ok(Value::str(Self::hostname())),
             // nqp::bindattr($obj, Type, '$!attr', value): write an attribute
             // cell directly, bypassing accessors (roast's Test::Compile uses it
             // to install a precomp repository into a CUR::FileSystem instance).

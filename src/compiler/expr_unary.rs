@@ -72,6 +72,19 @@ impl Compiler {
                     let slot = self.local_map.get(&var_name).copied();
                     let name_idx = self.code.add_constant(Value::str(var_name));
                     self.code.emit(OpCode::PreIncrement(name_idx, slot));
+                } else if let Expr::AssignExpr { name, .. } = expr
+                    && !name.starts_with('@')
+                    && !name.starts_with('%')
+                {
+                    // `++($x .= method)`: the `.=` mutator assigns back into `$x`
+                    // and yields it as an lvalue, so the prefix `++` increments the
+                    // live variable. Emit the assignment (leaving its value on the
+                    // stack), drop it, then pre-increment the scalar.
+                    self.compile_expr(expr);
+                    self.code.emit(OpCode::Pop);
+                    let slot = self.local_map.get(name).copied();
+                    let name_idx = self.code.add_constant(Value::str(name.clone()));
+                    self.code.emit(OpCode::PreIncrement(name_idx, slot));
                 } else if let Expr::Index { target, index, .. } = expr {
                     if let Some(name) = Self::postfix_index_name(target) {
                         self.compile_expr(index);
@@ -118,6 +131,17 @@ impl Compiler {
                     self.code.emit(OpCode::Pop);
                     let slot = self.local_map.get(&var_name).copied();
                     let name_idx = self.code.add_constant(Value::str(var_name));
+                    self.code.emit(OpCode::PreDecrement(name_idx, slot));
+                } else if let Expr::AssignExpr { name, .. } = expr
+                    && !name.starts_with('@')
+                    && !name.starts_with('%')
+                {
+                    // `--($x .= method)`: see the `++` case above — the `.=`
+                    // mutator yields `$x` as an lvalue for the pre-decrement.
+                    self.compile_expr(expr);
+                    self.code.emit(OpCode::Pop);
+                    let slot = self.local_map.get(name).copied();
+                    let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::PreDecrement(name_idx, slot));
                 } else if let Expr::Index { target, index, .. } = expr {
                     if let Some(name) = Self::postfix_index_name(target) {
