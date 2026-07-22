@@ -285,11 +285,30 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
   `t/module-exported-infix-no-constant-fold.t` (+ `t/lib/RatPowerFixture.rakumod`).
 - file: `src/compiler/stmt.rs` (generic `Stmt::Use` arm), `src/compiler/const_fold.rs` (mechanism)
 
-### T-042 — test_fail: We defined G, FWIW  [impact: 1 dist]
+### T-042 — test_fail: We defined G, FWIW  [impact: 1 dist]  — FIXED (PR `fix-reimport-tagged-export`)
 - dists: Math::Arrow
 - e.g. `Math::Arrow`: base=1 pass=0 fail=1 die=0 | t/arrow.rakutest: We defined G, FWIW
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
+- repro: `use Math::Arrow; use Math::Arrow :constants; say &term:<G>.defined`
+  — raku: True; mutsu was: False.
+- **Root cause: re-importing a bare-file module with a new tag lost its
+  tag-only exports.** Math::Arrow does `use Math::Arrow;` (plain) then, later,
+  `use Math::Arrow :constants;`. It is a bare-file module (no `unit module`), so
+  its exports register only under `GLOBAL::`. The plain `use` HID the tag-only
+  `sub term:<G> is export(:constants)` by **deleting** `GLOBAL::term:<G>` — so
+  the second `use ... :constants` (which routes through the already-loaded
+  `import_module` path) had nothing to restore. (`import_module` also only
+  consulted `exported_subs[module]`, which is empty for a bare-file module.)
+- **Fix (two parts):** (1) the tag-filter that hides non-requested exports now
+  RENAMES `GLOBAL::name` -> `MOD::name` instead of deleting it, preserving the
+  definition (`runtime/runtime_module.rs`); (2) `import_module` now also consults
+  `module_owned_exports[module]` (populated for bare-file modules) so a later
+  tagged `use` finds and re-aliases them (`runtime/runtime_module_exports.rs`).
+  Math::Arrow passes 6/6. Pin: `t/reimport-tagged-export-after-plain-use.t`
+  (+ `t/lib/TaggedExportFixture.rakumod`).
+- NOTE: using an imported `term:<G>` as a bare term (`say G`) still needs
+  parse-time custom-term registration (a separate slang concern); the dist only
+  checks `&term:<G>.defined`, which now works.
+- file: `src/runtime/runtime_module.rs`, `src/runtime/runtime_module_exports.rs`
 
 ### T-043 — test_fail: bad pod string  [impact: 1 dist]
 - dists: RakupodObject
