@@ -255,9 +255,30 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 
 ### T-033 — test_die [vCard::Parser]  [impact: 1 dist]
 - dists: vCard::Parser
-- e.g. `vCard::Parser`: base=2 pass=1 fail=0 die=1 | t/02-grammar.rakutest: 
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
+- e.g. `vCard::Parser`: base=2 pass=1 fail=0 die=1 | t/02-grammar.rakutest:
+- **TWO ROOT CAUSES FIXED (PR `fix-grammar-instance-parse-and-negated-prop-subtract`).**
+  The test builds `my $g = vCard::Parser::Grammar.new` and calls `$g.parse(...)`.
+  1. **Grammar *instance* `.parse`/`.subparse`/`.parsefile` was not dispatched.**
+     mutsu resolved these only on the grammar *type object* (`ValueView::Package`); an
+     instance (`ValueView::Instance`) fell through to "No such method 'parse'", so
+     02-grammar died before any test ran (`ran 0`). Fix: route a grammar instance
+     (`class_is_grammar` — MRO contains `Grammar`) to the same `dispatch_package_parse`
+     as the type object (`methods_dispatch_match.rs`, `runtime_class_query.rs`). Pin:
+     `t/grammar-instance-parse.t`.
+  2. **`<-:C-[:;,"]>` dropped the enumerated subtraction.** A negated Unicode property
+     (`-:C`) joined by a top-level `-[...]` set operator was parsed as a bare negated
+     property, silently discarding the `-[:;,"]` term — so `safe-char` matched the
+     excluded `:`/`;`/`,`/`"`, over-consuming and failing `content-line`. Fix: the
+     `-:`/`:!` assertion branch now routes to `parse_combined_class` when
+     `has_top_level_combine_op` is present (`regex_parse_core.rs`). Pin:
+     `t/regex-negated-property-minus-enum.t`.
+- **Status:** 02-grammar 0 → 19/23 (was `ran 0`). **Remaining (separate, deeper — not
+  this ticket):** (a) `<property-value>+ % <[;]>` with **empty-matching** elements
+  (`N:;Gump;Forrest;;Mr.;` → 6 values incl. 3 empty) fails the whole `content-line`
+  match — an empty-element `+ % sep` quantifier-separator bug; (b) `parsefile` of a
+  full multi-vcard file (test-card1/2) fails while test-card4 passes.
+- file: DONE — src/runtime/methods_dispatch_match.rs, runtime_class_query.rs,
+  regex_parse_core.rs; remaining — empty-element `+ % sep`, multi-vcard parsefile.
 
 ### T-036 — test_die: plan expects Int (plan * fixed; deeper cardinal bugs remain)  [impact: 1 dist]
 - dists: Lingua::EN::Numbers

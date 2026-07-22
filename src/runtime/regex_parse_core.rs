@@ -2106,11 +2106,32 @@ impl Interpreter {
                                 } else if trimmed.starts_with(":!") || trimmed.starts_with("-:") {
                                     // <:!PropName> or <-:PropName> — negated Unicode property
                                     let prop_name = &trimmed[2..];
-                                    let (pname, pargs) = split_prop_args(prop_name);
-                                    RegexAtom::UnicodeProp {
-                                        name: pname.to_string(),
-                                        negated: true,
-                                        args: pargs.map(|s| s.to_string()),
+                                    if top_level_combine_is_subtractive(prop_name) {
+                                        // `<-:C-[:;,"]>` — a negated property followed by a
+                                        // top-level `-[...]`/`-name` set *subtraction*. The
+                                        // whole class starts from the full character set
+                                        // (leading `-`), so route it to the combined-class
+                                        // parser as a leading *negative* item (`-:C-[:;,"]`);
+                                        // its purely-subtractive terms fold into a single
+                                        // negated char class. Both `:!P` and `-:P` normalise
+                                        // to the `-:P` form. (A tail containing a top-level
+                                        // `+` union is left to the plain-property path: the
+                                        // combined-class parser's positive-item semantics do
+                                        // not match Raku's full-set base there.)
+                                        if let Some(atom) = self
+                                            .parse_combined_class(&format!("-:{prop_name}"), mode)
+                                        {
+                                            atom
+                                        } else {
+                                            continue;
+                                        }
+                                    } else {
+                                        let (pname, pargs) = split_prop_args(prop_name);
+                                        RegexAtom::UnicodeProp {
+                                            name: pname.to_string(),
+                                            negated: true,
+                                            args: pargs.map(|s| s.to_string()),
+                                        }
                                     }
                                 } else if let Some(prop_name) = trimmed.strip_prefix(':') {
                                     // `<:Ll+:N>` / `<:Ll-:Lu>` — a compact combined
