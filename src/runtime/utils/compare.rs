@@ -148,6 +148,21 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
         };
         return compare_values(&normalize(a), &normalize(b));
     }
+    // List-like values (Array/Seq/Slip/List) compare element-wise, like Raku's
+    // `cmp`/`<=>` on lists: the first differing element decides, and if one list
+    // is a prefix of the other the shorter sorts Less. This drives multi-key
+    // `.sort` where a 1-arity block returns a list of keys
+    // (`.sort({ .Int, .comb.sum, .Str })`) — without it the list keys fall to the
+    // string-gist fallback below and mis-order.
+    if let (Some(al), Some(bl)) = (a.as_list_items(), b.as_list_items()) {
+        for (ax, bx) in al.iter().zip(bl.iter()) {
+            let c = compare_values(ax, bx);
+            if c != 0 {
+                return c;
+            }
+        }
+        return al.len().cmp(&bl.len()) as i32;
+    }
     match (a.view(), b.view()) {
         (
             ValueView::Version {
