@@ -207,11 +207,28 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 - repro: _(fill in a minimal repro + raku baseline before fixing)_
 - file: _(suspected parser/runtime file)_
 
-### T-041 — test_fail: Int  [impact: 1 dist]
+### T-041 — test_fail: Int  [impact: 1 dist]  — FIXED (PR `fix-module-infix-const-fold`)
 - dists: Rat::Power
 - e.g. `Rat::Power`: base=1 pass=0 fail=1 die=0 | t/01-basic.rakutest: Int
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
+- repro: `use Rat::Power; say (64 ** ⅓)` — raku/fix: `4` (Int, via the module's
+  `multi infix:<**>(Int:D, ExpRat:D) is export`); mutsu was: `3.999...` (Num).
+- **Root cause: compile-time constant folding vs a runtime-imported operator
+  override (ADR-0006 known gap).** `64 ** ⅓` is two numeric literals, so the
+  compiler folded it against the *core* `**` at emit time. Rakudo imports the
+  module's `infix:<**>` at *compile* time and never folds a user multi, so it
+  dispatches to the override; mutsu loads modules at *runtime*, so at compile
+  time of the consuming unit the override is not yet registered
+  (`user_declared_infix_ops` / `USER_INFIX_DECLS` still empty).
+- **Fix:** compiling a real module `use` now calls `fold_ctx.note_operator_decl()`
+  (`src/compiler/stmt.rs`), so if the unit folded any literal operator
+  expression it is recompiled with folding off — the same mechanism inline
+  `sub infix:<...>` declarations already use. Only units that BOTH import a
+  module AND fold a literal operator pay this (the `folded` flag is set solely
+  by operator literal folds), so ordinary constant inlining is unaffected;
+  pragmas (`v6`, `strict`, `nqp`, ...) are matched by earlier arms and never
+  reach the generic `use` arm, so they keep folding. Pin:
+  `t/module-exported-infix-no-constant-fold.t` (+ `t/lib/RatPowerFixture.rakumod`).
+- file: `src/compiler/stmt.rs` (generic `Stmt::Use` arm), `src/compiler/const_fold.rs` (mechanism)
 
 ### T-042 — test_fail: We defined G, FWIW  [impact: 1 dist]
 - dists: Math::Arrow
