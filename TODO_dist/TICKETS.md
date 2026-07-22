@@ -139,14 +139,27 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
   (`token_body.rs`, `sub_name.rs`). Pin: `t/grammar-sym-adverb-whitespace.t`.
 - **Status:** POFile `01-basic` 49/51, `02-deletion` 9/10, `03`/`04` pass (was 2/44).
 - **Residual (separate root causes — not this ticket):**
-  1. **Grammar `<.method(args)>` (parametrized method subrule) is not invoked.**
-     `01-basic` test 51: POFile's `token TOP { ... [ $ || <.error('unrecognied syntax')> ] }`
-     — mutsu never calls `error` (the no-arg form `<.error>` works; the *argument* form
-     does not), so a bad parse silently returns a failed match and `.made` on `Any` throws
-     `X::Method::NotFound` instead of the grammar's `die POFile::CannotParse`. Minimal repro:
-     `grammar G { token TOP { \w+ <.oops('bad')> }; method oops($m) { die $m } }` — raku
-     dies with the message, mutsu returns a failed match. General grammar bug (any
-     parametrized method assertion); lives in the regex-engine subrule dispatch.
+  1. **POFile's `<.error(...)>` path is THREE nested bugs — must be fixed together.**
+     `01-basic` test 51 / the whole error path. POFile's
+     `token TOP { ... [ $ || <.error('unrecognied syntax')> ] }` calls a grammar method
+     that reports a typed `X::…`/`POFile::CannotParse` on parse failure. Three problems,
+     each masked by the next:
+     - (a) **`<.method(args)>` (parametrized method subrule) is not invoked.**
+       `try_regex_subrule_as_method` (regex_match_atom.rs, the `!spec.arg_exprs.is_empty()`
+       bail) drops any arg subrule; the caller already computes `arg_values`, so the fix is
+       to thread it in and call `call_method_with_values(invocant, name, arg_values)`. Minimal
+       repro: `grammar G { token TOP { \w+ <.oops('bad')> }; method oops($m) { die $m } }`
+       (raku dies, mutsu returns a failed match). **This one-line fix alone REGRESSES POFile
+       49/51 → 2/43**, because it un-masks (b) and (c):
+     - (b) **No Cursor-`self`.** The method runs with `self` = the grammar *type object*, so
+       POFile's `error` (`self.orig.substr(0, self.pos)…`) dies "No such method 'orig'". Needs
+       a real Match cursor (orig + pos) as invocant (the "deeper feature" the code comment
+       defers). `chars`/`pos` are in scope at the dispatch site.
+     - (c) **`$` end-anchor fails on valid input.** mutsu reaches `<.error>` even for a VALID
+       .po (raku does not), so error() fires on good input; today it no-ops (masking), but
+       once (a)+(b) land it would throw `CannotParse` on valid input. The parse extracts
+       correct data (tests 2–50 pass) but leaves the cursor short of end (likely the trailing
+       `%% "\n"*` / final newline), so `$` fails. Fix the end-anchor/separator handling too.
   2. `02-deletion` test 8/9 — `$result[*-10]:delete` / `[10]:delete` on a custom
      `does Positional` object does not surface the `die POFile::IncorrectIndex` from
      `DELETE-POS` as that type (custom-Positional `[idx]:delete` routing).
