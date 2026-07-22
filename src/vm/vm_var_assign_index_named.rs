@@ -369,6 +369,25 @@ impl Interpreter {
             };
             if let Some(method) = method {
                 let raw_val = self.stack.pop().unwrap_or(Value::NIL);
+                // A plain assign (`%h<i> = v`) to a tied element that was
+                // `:=`-bound to an immutable literal must throw, even though the
+                // tied container routes the write through ASSIGN-KEY (so it never
+                // reaches the plain-container RO check further below). The bind
+                // recorded a `__mutsu_ro_index` marker against the outer variable.
+                if !is_bind && self.is_ro_index(&var_name, &Self::encode_bound_index(&idx)) {
+                    let key_arg = match idx.view() {
+                        ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
+                        _ => idx.clone(),
+                    };
+                    let cur = self
+                        .call_method_with_values(target.clone(), "AT-KEY", vec![key_arg])
+                        .unwrap_or(Value::NIL);
+                    let tn = crate::runtime::utils::value_type_name(&cur);
+                    return Err(RuntimeError::assignment_ro_typename(
+                        tn,
+                        &cur.to_string_value(),
+                    ));
+                }
                 // Unwrap the bind marker so neither BIND-KEY nor the ASSIGN
                 // fallback stores the internal wrapper pair as the value.
                 let (val, _bind_source) = Self::unwrap_bind_index_value(raw_val);
@@ -389,6 +408,29 @@ impl Interpreter {
                     _ => val.clone(),
                 };
                 self.call_method_with_values(target, method, vec![idx_arg, val_arg])?;
+                // A `:=` bind of an immutable literal into a tied container
+                // (`%h<i> := 137` where %h does Associative) makes that element
+                // read-only, just like a plain hash element bind. The literal-ness
+                // is known here but lost across the BIND-KEY method delegation, so
+                // record it against the OUTER variable — a later plain `%h<i> = v`
+                // (which has no ASSIGN-KEY and falls through to the check below)
+                // then throws instead of writing through the backing cell.
+                if method == "BIND-KEY"
+                    && _bind_source.is_none()
+                    && matches!(
+                        val.view(),
+                        ValueView::Int(_)
+                            | ValueView::BigInt(_)
+                            | ValueView::Num(_)
+                            | ValueView::Str(_)
+                            | ValueView::Bool(_)
+                            | ValueView::Rat(..)
+                            | ValueView::Complex(..)
+                    )
+                {
+                    let enc = Self::encode_bound_index(&idx);
+                    self.mark_ro_index(&var_name, enc);
+                }
                 self.stack.push(val);
                 return Ok(());
             }
@@ -545,6 +587,25 @@ impl Interpreter {
         } else {
             val
         };
+        // A `:=` element bind to an immutable literal (`%h<i> := 137`,
+        // `@a[0] := 137`) makes that element read-only: a later plain `=`
+        // assignment must throw rather than write through the shared cell. Same
+        // allowlist as the scalar literal-bind RO (vm_var_assign_set_local.rs):
+        // pure immutable scalar kinds, and no named container source (a bind to
+        // a variable stays writable-through). Marked after the store completes;
+        // consulted at the element-assign chokepoint below.
+        let is_literal_ro_bind = bind_mode
+            && bind_sources.iter().all(|s| s.is_none())
+            && matches!(
+                val.view(),
+                ValueView::Int(_)
+                    | ValueView::BigInt(_)
+                    | ValueView::Num(_)
+                    | ValueView::Str(_)
+                    | ValueView::Bool(_)
+                    | ValueView::Rat(..)
+                    | ValueView::Complex(..)
+            );
         // `$vec[1] = x` / `$vec[1]--` on an `is Array` subclass instance held in
         // a scalar: write into the backing `__mutsu_array_storage` element in
         // place, instead of the associative path treating the instance as a hash
@@ -776,6 +837,34 @@ impl Interpreter {
         // container and cannot call `self`; the marker is cleared after the store.
         let elem_is_value_share =
             !bind_mode && self.array_share_active && self.is_element_share(&var_name, &encoded_idx);
+        // A plain `=` assignment to an element that was `:=`-bound to an immutable
+        // literal (`%h<i> := 137; %h<i> = 666`) must throw, not write through the
+        // shared cell. Checked before any container mutation so the bound value is
+        // preserved. A tied container yields X::Assignment::RO ("Cannot modify an
+        // immutable ..."), a plain hash/array yields X::AdHoc ("Cannot assign to an
+        // immutable value") — matching raku.
+        if !bind_mode && self.is_ro_index(&var_name, &encoded_idx) {
+            let is_tied = self
+                .env()
+                .get(&var_name)
+                .cloned()
+                .is_some_and(|c| self.instance_is_tied(&c));
+            if is_tied {
+                let ro_key = idx.to_string_value();
+                let (tn, disp) = match self.env().get(&var_name).map(Value::view) {
+                    Some(ValueView::Hash(hd)) => match hd.map.get(&ro_key) {
+                        Some(v) => (
+                            crate::runtime::utils::value_type_name(v),
+                            v.to_string_value(),
+                        ),
+                        None => ("Int", String::new()),
+                    },
+                    _ => ("Int", String::new()),
+                };
+                return Err(RuntimeError::assignment_ro_typename(tn, &disp));
+            }
+            return Err(RuntimeError::new("Cannot assign to an immutable value"));
+        }
         // Native typed arrays store unboxed scalars and cannot bind containers to
         // their elements: `my num @a; @a[0] := $x` is illegal.
         if bind_mode
@@ -1988,6 +2077,11 @@ impl Interpreter {
                 }
                 for encoded in range_initialized_marks {
                     self.mark_initialized_index(&var_name, encoded);
+                }
+                // A `:=` bind to an immutable literal locks the element read-only
+                // (see `is_literal_ro_bind`); record it so a later plain `=` throws.
+                if is_literal_ro_bind {
+                    self.mark_ro_index(&var_name, encoded_idx.clone());
                 }
                 // Slice 2b: a `=`-shared element just reassigned with a non-share
                 // value has been replaced by a plain value — drop the share

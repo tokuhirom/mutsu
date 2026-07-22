@@ -278,6 +278,16 @@ impl Interpreter {
         idx: u32,
     ) -> Result<(), RuntimeError> {
         let idx = idx as usize;
+        // A whole `%`/`@` (re)assignment or rebind replaces the container, breaking
+        // every `:=`-bound element — drop the read-only-element markers so a later
+        // `%h<k> = v` is writable again (`%h<i> := 137; %h = (...)`).
+        if crate::env::elem_index_meta_possible() {
+            let name = &code.locals[idx];
+            if name.starts_with('%') || name.starts_with('@') {
+                let name = name.clone();
+                self.clear_all_ro_index(&name);
+            }
+        }
         let raw_popped = self.stack.pop().unwrap_or(Value::NIL);
         // Check if we're trying to write to a private instance attribute (!attr)
         // when self is a type object (not an instance). Raku says this should die.
