@@ -297,9 +297,11 @@ pub(super) fn dispatch(
                         elems.join(",")
                     ))))
                 } else {
-                    // gist — show at most 100 elements, append "..." if truncated
+                    // gist — show at most 100 elements, append "..." if truncated.
+                    // An empty Blob/Buf instance gists as `Blob:0x<>` (empty hex
+                    // body), not `Blob()` — the latter is the type-object spelling.
                     if bytes.is_empty() {
-                        Some(Ok(Value::str(format!("{}()", class_name))))
+                        Some(Ok(Value::str(format!("{}:0x<>", class_name))))
                     } else {
                         let cn = class_name.resolve();
                         let hex_width = if cn.contains("64") {

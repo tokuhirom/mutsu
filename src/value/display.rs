@@ -749,7 +749,11 @@ impl Value {
                     attributes.as_map().get("bytes").map(Value::view)
                 {
                     if bytes.is_empty() {
-                        format!("{}()", class_name)
+                        // An empty Blob/Buf *instance* gists as `Blob:0x<>` (the
+                        // hex body is just empty), not `Blob()` — that spelling
+                        // is reserved for the type object, which gists as
+                        // `(Blob)` via a separate path.
+                        format!("{}:0x<>", class_name)
                     } else {
                         // Determine hex width from element size in the class name
                         let cn = class_name.resolve();
