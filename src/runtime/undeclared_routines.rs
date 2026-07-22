@@ -273,8 +273,18 @@ fn walk_stmt(stmt: &Stmt, scan: &mut Scan) {
             scan.declare(&name.resolve());
             walk_stmts(body, scan);
         }
-        Stmt::RoleDecl { name, body, .. } => {
+        Stmt::RoleDecl {
+            name,
+            type_params,
+            type_param_defs,
+            body,
+            ..
+        } => {
             scan.declare(&name.resolve());
+            // A callable role type parameter (`role R[&f]`) is in scope in the
+            // body as the bare routine `f`, so seed it before scanning the body
+            // (otherwise `method m { f() }` is flagged as an undeclared routine).
+            walk_params(type_params, type_param_defs, scan);
             walk_stmts(body, scan);
         }
         Stmt::SubsetDecl {

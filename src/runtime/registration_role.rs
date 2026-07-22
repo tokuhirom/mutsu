@@ -37,7 +37,23 @@ impl Interpreter {
                 values.push(Value::package(Symbol::intern(trimmed)));
                 continue;
             }
-            match crate::parse_dispatch::parse_source(expr)
+            // A bare block-literal argument (`R[{ .<id> // die }]`) must bind to a
+            // `&callable` param as the Block itself. Evaluated as a *statement*, a
+            // bare `{ ... }` is a block that mutsu immediately *executes* (yielding
+            // its body's value, or dying), so `role R[&f]; class A does R[{ 1 }]`
+            // saw an `Int`, not a `Callable`, and matched no candidate. Wrap it in
+            // parens to force expression context, where `{ ... }` is a Block term.
+            let expr_owned;
+            let eval_expr = {
+                let t = expr.trim();
+                if t.starts_with('{') && t.ends_with('}') {
+                    expr_owned = format!("({t})");
+                    expr_owned.as_str()
+                } else {
+                    expr.as_str()
+                }
+            };
+            match crate::parse_dispatch::parse_source(eval_expr)
                 .and_then(|(stmts, _)| self.eval_block_value(&stmts))
             {
                 Ok(value) => values.push(value),
@@ -208,8 +224,22 @@ impl Interpreter {
                 &arg_values,
             );
             let mut resolved = Vec::with_capacity(selected.type_params.len());
-            for param_name in &selected.type_params {
-                let value = self.env.get(param_name).cloned().unwrap_or(Value::NIL);
+            for (i, param_name) in selected.type_params.iter().enumerate() {
+                // `type_params` are sigil-less (`f`), but `bind_function_args_values`
+                // stores a callable param under its full name (`&f`) — only `$`/`@`/`%`
+                // sigils are stripped. Fall back to the ParamDef's own name so a
+                // `role R[&f]` param resolves to its bound Callable, not `Nil`.
+                let value = self
+                    .env
+                    .get(param_name)
+                    .or_else(|| {
+                        selected
+                            .type_param_defs
+                            .get(i)
+                            .and_then(|pd| self.env.get(&pd.name))
+                    })
+                    .cloned()
+                    .unwrap_or(Value::NIL);
                 resolved.push(value);
             }
             self.env = saved_env;
