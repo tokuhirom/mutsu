@@ -1771,7 +1771,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     .is_some_and(|v| v.truthy());
                 return Some(Ok(Value::truth(ok)));
             }
-            "orig" => {
+            "orig" | "target" => {
+                // `.target` is the original string the match ran against; for an
+                // ordinary Match it is identical to `.orig`.
                 return Some(Ok(attributes
                     .as_map()
                     .get("orig")

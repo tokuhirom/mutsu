@@ -2157,9 +2157,10 @@ impl Interpreter {
                         }
                         "skip-one" => {
                             let next = pull_one_squish(self)?;
-                            Value::truth(
+                            // Iterator.skip-one returns 1 (Int) on a skip, 0 at end.
+                            Value::int(i64::from(
                                 !matches!(next.view(), ValueView::Str(s) if s.as_str() == "IterationEnd"),
-                            )
+                            ))
                         }
                         "skip-at-least" => {
                             let want = args.first().map(super::to_int).unwrap_or(0).max(0) as usize;
@@ -2172,7 +2173,7 @@ impl Interpreter {
                                     break;
                                 }
                             }
-                            Value::truth(ok)
+                            Value::int(i64::from(ok))
                         }
                         "skip-at-least-pull-one" => {
                             let want = args.first().map(super::to_int).unwrap_or(0).max(0) as usize;
@@ -2351,9 +2352,9 @@ impl Interpreter {
                     "skip-one" => {
                         if index < len {
                             index += 1;
-                            Value::TRUE
+                            Value::int(1)
                         } else {
-                            Value::FALSE
+                            Value::int(0)
                         }
                     }
                     "skip-at-least" => {
@@ -2361,10 +2362,10 @@ impl Interpreter {
                         let available = len.saturating_sub(index);
                         if available >= want {
                             index += want;
-                            Value::TRUE
+                            Value::int(1)
                         } else {
                             index = len;
-                            Value::FALSE
+                            Value::int(0)
                         }
                     }
                     "skip-at-least-pull-one" => {
