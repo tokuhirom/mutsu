@@ -1217,6 +1217,25 @@ impl Compiler {
                     if !self.code.scalar_bind_locals.contains(&sym) {
                         self.code.scalar_bind_locals.push(sym);
                     }
+                    // A `:=` bind installs the RHS without a Scalar container, so
+                    // `for $x` iterates the bound value's elements. The one
+                    // exception is a bind to a plain itemized scalar
+                    // (`my $x := $itemized`), which inherits the item container;
+                    // a bind to another already-non-itemized bound scalar stays
+                    // non-itemized. Classify the RHS to distinguish these.
+                    let rhs_is_itemized_scalar = match expr {
+                        Expr::Var(rhs) => !self.noncontainer_bound_vars.contains(rhs),
+                        Expr::Grouped(inner) => match inner.as_ref() {
+                            Expr::Var(rhs) => !self.noncontainer_bound_vars.contains(rhs),
+                            _ => false,
+                        },
+                        _ => false,
+                    };
+                    if !rhs_is_itemized_scalar {
+                        self.noncontainer_bound_vars.insert(name.clone());
+                    } else {
+                        self.noncontainer_bound_vars.remove(name);
+                    }
                 }
                 if *is_state {
                     if let Some((guard_idx, key, key_idx)) = state_guard_idx {
