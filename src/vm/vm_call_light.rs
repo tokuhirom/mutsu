@@ -116,6 +116,17 @@ impl Interpreter {
         }
 
         let saved_readonly = self.enter_readonly_frame();
+        // A routine gets a fresh, writable `$_` — it does NOT inherit the
+        // caller's topic, so a caller `given`/`with`/`for` that marked `_`
+        // readonly (a literal/read-only topic) must not leak that mark into this
+        // routine's `$_` (`given 'x' { f() }` where `sub f { $_ = ... }` must
+        // not hit "Cannot assign to a readonly variable (_)"). Clear it here —
+        // journaled by the readonly frame, so it is restored on return — before
+        // the param loop below, which re-marks `_` if the routine has an
+        // explicit (readonly) `$_` parameter.
+        if cf.code.is_routine && !self.no_readonly_vars() {
+            self.unmark_readonly("_");
+        }
         // Bind params to slots. Also write the param into the overlay when a
         // name-based reader needs it (reflective access anywhere / GetGlobal /
         // closure capture via needs_env_sync), or when it is `Nil` (the GetLocal

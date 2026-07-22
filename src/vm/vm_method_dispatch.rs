@@ -231,6 +231,15 @@ impl Interpreter {
 
         self.push_call_frame();
         let saved_stack_depth = self.call_frames.last().unwrap().saved_stack_depth;
+        // A method gets a fresh, writable `$_` (Any) — it does NOT inherit the
+        // caller's topic, so a caller `given`/`with`/`for` that marked `_`
+        // readonly must not leak that mark into the method (`given 'x' { $o.m }`
+        // where `method m { $_ = ... }`). Clear it here, journaled by the
+        // frame's readonly scope so it is restored on return; an explicit
+        // (readonly) `$_` parameter re-marks it during param binding.
+        if !self.no_readonly_vars() {
+            self.unmark_readonly("_");
+        }
 
         // Scoped-overlay (docs/vm-dual-store.md Slice 6): install an empty
         // born-owned overlay over the caller (gated on no inner closures) so the
@@ -1041,6 +1050,12 @@ impl Interpreter {
 
         self.push_light_call_frame();
         let saved_stack_depth = self.call_frames.last().unwrap().saved_stack_depth;
+        // A method gets a fresh, writable `$_` (Any) — clear any readonly mark
+        // leaked from the caller's topic (see the slow path above). Journaled by
+        // the frame's readonly scope; an explicit `$_` param re-marks it.
+        if !self.no_readonly_vars() {
+            self.unmark_readonly("_");
+        }
         // Scoped-overlay (docs/vm-dual-store.md Slice 6): install an empty
         // born-owned overlay over the caller so the `self`/`?CLASS`/param/attr
         // env writes below land in a fresh map (strong_count 1) instead of
