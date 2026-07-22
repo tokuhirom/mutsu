@@ -447,9 +447,15 @@ impl Interpreter {
         }
     }
 
+    // Both loaders/syncers resolve the key through `scoped_state_key`, matching
+    // `StateVarInit`/`StateVarInitGuard`/`reset_state_locals_in_range` — the
+    // store must be read and written under ONE key shape or a scope-id'd init
+    // and a raw sync silently diverge (a no-op when `state_scope_id` is None,
+    // which is every path that existed before the inline-map scoping).
     fn load_state_locals(&mut self, code: &CompiledCode) {
         for (slot, key) in &code.state_locals {
-            if let Some(val) = self.get_state_var(key) {
+            let scoped_key = self.scoped_state_key(key);
+            if let Some(val) = self.get_state_var(&scoped_key) {
                 self.locals[*slot] = val.clone();
             }
         }
@@ -463,7 +469,8 @@ impl Interpreter {
                 .get(local_name)
                 .cloned()
                 .unwrap_or_else(|| self.locals[*slot].clone());
-            self.set_state_var(key.clone(), val);
+            let scoped_key = self.scoped_state_key(key);
+            self.set_state_var(scoped_key, val);
         }
     }
 
@@ -512,7 +519,8 @@ impl Interpreter {
                 .get(local_name)
                 .cloned()
                 .unwrap_or_else(|| self.locals[*slot].clone());
-            self.set_state_var(key.clone(), val);
+            let scoped_key = self.scoped_state_key(key);
+            self.set_state_var(scoped_key, val);
         }
     }
 
