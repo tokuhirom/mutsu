@@ -233,6 +233,7 @@ pub(crate) fn note_env_key(key: &str) {
         } else if key.starts_with("__mutsu_bound_index::")
             || key.starts_with("__mutsu_elem_share::")
             || key.starts_with("__mutsu_deleted_index::")
+            || key.starts_with("__mutsu_ro_index::")
         {
             ELEM_INDEX_META_SEEN.store(true, Ordering::Relaxed);
         }

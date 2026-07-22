@@ -93,6 +93,68 @@ impl Interpreter {
         }
     }
 
+    /// Mark element `encoded` of `var_name` as read-only. Set when an element is
+    /// `:=`-bound to an immutable literal (`%h<i> := 137` / `@a[0] := 137`): a
+    /// later plain `=` assignment to that element must throw rather than write
+    /// through the shared cell. Parallel to `mark_bound_index` but a distinct
+    /// side-set (a `:=` bind to a *container source* is writable-through, so only
+    /// the literal-bind subset lands here). See PLAN.md §8.7.
+    pub(super) fn mark_ro_index(&mut self, var_name: &str, encoded: String) {
+        let key = format!("__mutsu_ro_index::{}", var_name);
+        if let Some(entry) = self.env_mut().get_mut(&key)
+            && entry
+                .with_hash_mut(|map| {
+                    crate::gc::Gc::make_mut(map).insert(encoded.clone(), Value::TRUE);
+                })
+                .is_some()
+        {
+            return;
+        }
+        let mut map = std::collections::HashMap::new();
+        map.insert(encoded, Value::TRUE);
+        self.env_mut().insert(key, Value::hash(map));
+    }
+
+    pub(super) fn is_ro_index(&self, var_name: &str, encoded: &str) -> bool {
+        // Runs on every element write; see `is_bound_index` for the gate rationale.
+        if !crate::env::elem_index_meta_possible() {
+            return false;
+        }
+        let key = format!("__mutsu_ro_index::{}", var_name);
+        if let Some(ValueView::Hash(map)) = self.env().get(&key).map(Value::view) {
+            map.contains_key(encoded)
+        } else {
+            false
+        }
+    }
+
+    /// Drop the entire read-only-index side table for `var_name` — used when the
+    /// whole `%`/`@` variable is reassigned (`%h = (...)`), which breaks every
+    /// element binding, so a later `%h<k> = v` must be writable again.
+    pub(super) fn clear_all_ro_index(&mut self, var_name: &str) {
+        if !crate::env::elem_index_meta_possible() {
+            return;
+        }
+        let key = format!("__mutsu_ro_index::{}", var_name);
+        self.env_mut().remove(&key);
+    }
+
+    /// Remove a read-only-index marker for the indices addressed by `idx`
+    /// (scalar / slice / range). Mirror of `unmark_bound_indices`.
+    pub(super) fn unmark_ro_indices(&mut self, var_name: &str, idx: &Value) {
+        if !crate::env::elem_index_meta_possible() {
+            return;
+        }
+        let key = format!("__mutsu_ro_index::{}", var_name);
+        let Some(entry) = self.env_mut().get_mut(&key) else {
+            return;
+        };
+        entry.with_hash_mut(|map| {
+            let m = crate::gc::Gc::make_mut(map);
+            Self::unmark_index_entries(m, idx);
+        });
+    }
+
     /// Remove a bound-index marker (e.g. after splice breaks the binding).
     pub(super) fn remove_bound_index(&mut self, var_name: &str, encoded: &str) {
         if !crate::env::elem_index_meta_possible() {

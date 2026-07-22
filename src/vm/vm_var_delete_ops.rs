@@ -100,6 +100,14 @@ impl Interpreter {
         if self.var_type_constraint_fast(var_name).is_some() || self.is_readonly(var_name) {
             return None;
         }
+        // A `:=`-bound-to-literal key must clear its read-only marker on delete;
+        // route it to the slow path (which calls `unmark_ro_indices`) so a later
+        // re-bind/assign of the same key is not stale.
+        if crate::env::elem_index_meta_possible()
+            && self.is_ro_index(var_name, &idx.to_string_value())
+        {
+            return None;
+        }
         let env = self.env();
         match env.get(var_name).map(Value::view) {
             Some(ValueView::Hash(hash_arc)) => {
@@ -226,6 +234,30 @@ impl Interpreter {
                 None
             };
             if let Some(m) = method {
+                // A multi-element subscript (`%h<e f>:delete` / `$q[1,2]:delete`)
+                // is a SLICE: the protocol method takes ONE key/index, so call it
+                // per element and return the list of deleted values. A one-element
+                // list unwraps to the bare key (a single scalar result).
+                let slice_keys: Option<Vec<Value>> = match idx.view() {
+                    ValueView::Array(items, _) if items.len() != 1 => {
+                        Some(items.iter().cloned().collect())
+                    }
+                    ValueView::Seq(items) | ValueView::Slip(items) if items.len() != 1 => {
+                        Some(items.iter().cloned().collect())
+                    }
+                    _ => None,
+                };
+                if let Some(keys) = slice_keys {
+                    let mut results = Vec::with_capacity(keys.len());
+                    for k in keys {
+                        results.push(self.call_method_with_values(target.clone(), m, vec![k])?);
+                    }
+                    self.stack.push(Value::array_with_kind(
+                        crate::gc::Gc::new(crate::value::ArrayData::new(results)),
+                        crate::value::ArrayKind::List,
+                    ));
+                    return Ok(());
+                }
                 let idx_arg = match idx.view() {
                     ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
                     ValueView::Seq(items) | ValueView::Slip(items) if items.len() == 1 => {
@@ -428,6 +460,9 @@ impl Interpreter {
         self.mark_deleted_indices(&var_name, &idx_for_unmark);
         // Remove deleted indices from the bound-index tracking set to sever bindings.
         self.unmark_bound_indices(&var_name, &idx_for_unmark);
+        // Deleting a `:=`-bound-to-literal element frees its key: clear the RO
+        // marker so a later re-bind (or re-assign) of the same key is not stale.
+        self.unmark_ro_indices(&var_name, &idx_for_unmark);
         // Trim trailing holes from arrays after deletion.
         // A "hole" is either Nil (deleted) or an uninitialized Package("Any") slot.
         self.trim_trailing_array_holes(&var_name);
@@ -532,6 +567,7 @@ impl Interpreter {
         self.unmark_initialized_indices(var_name, &flat_idx);
         self.mark_deleted_indices(var_name, &flat_idx);
         self.unmark_bound_indices(var_name, &flat_idx);
+        self.unmark_ro_indices(var_name, &flat_idx);
         self.trim_trailing_array_holes(var_name);
         if let Some(container) = self.env().get(var_name).cloned() {
             self.write_local_slot_or_name(code, slot, var_name, container);

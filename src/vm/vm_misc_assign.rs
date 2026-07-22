@@ -11,6 +11,12 @@ impl Interpreter {
             _ => unreachable!("AssignExpr name must be a string constant"),
         };
         self.check_readonly_for_modify(&name)?;
+        // A whole-container reassignment breaks every `:=`-bound element, so drop
+        // the read-only-element markers (`%h<i> := 137; %h = (...)` makes `%h<i>`
+        // writable again). Covers the tied-STORE path below too.
+        if name.starts_with('%') || name.starts_with('@') {
+            self.clear_all_ro_index(&name);
+        }
         if name.starts_with('%')
             && self
                 .var_type_constraint_fast(&name)

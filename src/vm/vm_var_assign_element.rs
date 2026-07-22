@@ -244,6 +244,14 @@ impl Interpreter {
                 return None;
             }
         }
+        // Reject if this key was `:=`-bound to an immutable literal (`%h<i> := 137`):
+        // the slow path must throw X::AdHoc / X::Assignment::RO, not overwrite it.
+        if crate::env::elem_index_meta_possible() {
+            let ro_key = self.stack[stack_len - 1].to_string_value();
+            if self.is_ro_index(var_name, &ro_key) {
+                return None;
+            }
+        }
         // Check that the variable exists in env as a plain Hash
         // and that it has no container type metadata
         let env = self.env();

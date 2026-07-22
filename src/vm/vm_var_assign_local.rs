@@ -9,6 +9,15 @@ impl Interpreter {
         idx: u32,
     ) -> Result<(), RuntimeError> {
         let idx = idx as usize;
+        // A whole `%`/`@` reassignment breaks every `:=`-bound element — drop the
+        // read-only-element markers so a later `%h<k> = v` is writable again.
+        if crate::env::elem_index_meta_possible() {
+            let name = &code.locals[idx];
+            if name.starts_with('%') || name.starts_with('@') {
+                let name = name.clone();
+                self.clear_all_ro_index(&name);
+            }
+        }
         // Slice 2a/2b: `$scalar = @arr` / chained `$r = $q` reassignment (the
         // VarDecl form goes through `exec_set_local_op`). Promote the source
         // container to a shared `ContainerRef` cell so structural mutation through
@@ -747,7 +756,7 @@ impl Interpreter {
 
     /// True when `instance` is a tied container: a user `STORE` method plus a
     /// composed `Associative`/`Positional` role.
-    fn instance_is_tied(&mut self, instance: &Value) -> bool {
+    pub(super) fn instance_is_tied(&mut self, instance: &Value) -> bool {
         let ValueView::Instance { class_name, .. } = instance.view() else {
             return false;
         };
