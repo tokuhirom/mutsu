@@ -256,6 +256,7 @@ pub(crate) fn is_expr_listop(name: &str) -> bool {
             | "dir"
             | "first"
             | "deepmap"
+            | "nodemap"
             | "duckmap"
             | "make"
             | "take"

@@ -718,6 +718,7 @@ impl Interpreter {
             "flat" => self.builtin_flat(&args),
             "duckmap" => self.builtin_duckmap(&args),
             "deepmap" => self.builtin_deepmap(&args),
+            "nodemap" => self.builtin_nodemap(&args),
             "slip" | "Slip" => self.builtin_slip(&args),
             "take" => {
                 let value = if args.len() <= 1 {
