@@ -2655,6 +2655,23 @@ impl Interpreter {
         // Role type-object method punning
         if method != "new" {
             if let ValueView::Package(role_name) = target.view() {
+                // A class-level (`my $.x`) role attribute is readable on the role
+                // type object directly (`R.x`), returning its recorded default —
+                // no instance punning (there is no per-instance storage for it).
+                let class_level_default = if args.is_empty() {
+                    self.registry()
+                        .role_class_level_attrs
+                        .get(&(role_name.resolve(), method.to_string()))
+                        .cloned()
+                } else {
+                    None
+                };
+                if let Some(default) = class_level_default {
+                    return match default {
+                        Some(expr) => self.eval_block_value(&[Stmt::Expr(expr)]),
+                        None => Ok(Value::NIL),
+                    };
+                }
                 // Decide under the guard, then drop it before re-entering.
                 let should_dispatch = self
                     .registry()

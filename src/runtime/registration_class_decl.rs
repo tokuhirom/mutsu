@@ -764,6 +764,25 @@ impl Interpreter {
                         class_def.attributes.push(attr.clone());
                     }
                 }
+                // Carry each composed-role class-level attribute (`my $.x`/`our $.x`)
+                // onto the consuming class as a class-level attribute, so the accessor
+                // works on the class type object (`C.x`), matching raku. The default
+                // expr is evaluated now (role param bindings, if any, are in scope).
+                let role_class_level: Vec<(String, Option<crate::ast::Expr>)> = self
+                    .registry()
+                    .role_class_level_attrs
+                    .iter()
+                    .filter(|((r, _), _)| r == base_role_name)
+                    .map(|((_, attr), expr)| (attr.clone(), expr.clone()))
+                    .collect();
+                for (attr, default) in role_class_level {
+                    let value = if let Some(expr) = default {
+                        self.eval_block_value(&[Stmt::Expr(expr)])?
+                    } else {
+                        Value::NIL
+                    };
+                    class_def.class_level_attrs.insert(attr, value);
+                }
                 // Carry each composed-role attribute's deferred `is default(...)`
                 // expression onto the consuming class so it can be evaluated at
                 // construction with this class's type-param bindings in scope.

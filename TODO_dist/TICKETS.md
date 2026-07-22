@@ -32,12 +32,24 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 - file: DONE — value/mod.rs, runtime/methods_call_dispatch.rs, vm/vm_call_method_ops.rs,
   vm/vm_call_method_mut_ops.rs; remaining — CompUnit::Repository introspection (Injector)
 
-### T-004 — runtime_error: Runtime error: An exception occurred while evaluating a CHECK  [impact: 2 dists]
-- dists: ML::TriesWithFrequencies, Rakudo::Version
-- e.g. `Rakudo::Version`: rakudo: Runtime error: An exception occurred while evaluating a CHECK
-- e.g. `ML::TriesWithFrequencies`: ML::TriesWithFrequencies: Runtime error: An exception occurred while evaluating a CHECK
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
+### T-004 — runtime_error: An exception occurred while evaluating a CHECK  [impact: ~0 real remaining]
+- dists: ML::TriesWithFrequencies (LOAD fixed, PR pending), Rakudo::Version (rakudo-only)
+- ML::TriesWithFrequencies — **LOAD FIXED**: the `Trieish` role declares
+  `my Str $.trieRootLabel = 'TRIEROOT'` (a *class-level* attribute), and a CHECK-time
+  constant reads it via the composed class's TYPE object
+  (`constant $TrieRoot = ...::Trie.trieRootLabel`). mutsu composed the role's `my $.x`
+  as a *per-instance* attribute, so the type-object accessor was missing → "No such
+  method 'trieRootLabel'". Now a role `my $.x`/`our $.x` composes onto the class's
+  `class_level_attrs` (not per-instance), and the role type object exposes it too
+  (`R.x`). The dist LOADS now; remaining per-test failures (e.g. trie-merge
+  equivalence) are separate, deeper trie-logic bugs. Pin:
+  t/role-my-class-level-attr-accessor.t.
+- Rakudo::Version — **rakudo-only, not a mutsu bug**: its `BEGIN` block does
+  `die "... supposed to run on Rakudo ..." if $*RAKU.compiler.name ne 'rakudo'`, so it
+  intentionally refuses any non-rakudo compiler (raku itself fails it too, at EXPORT).
+  mutsu reports compiler name 'mutsu' → the BEGIN die is correct behavior.
+- file: DONE — runtime/registry.rs, registration_role.rs, registration_class_decl.rs,
+  methods_call_dispatch.rs (role `my $.x` → class-level attr)
 
 ### T-005 — runtime_error: Runtime error: Failed to parse module 'X': Unexpected block in infix position (missing statement control word before the  [impact: 2 dists]
 - dists: REPL, mv2d
