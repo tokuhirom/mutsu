@@ -2,7 +2,7 @@
 use crate::runtime;
 use crate::value::{RuntimeError, Value, ValueView};
 
-use super::raku_repr::raku_value;
+use super::raku_repr::{promise_raku_repr, raku_value};
 use super::{format_temporal_num, gist_array_wrap, range_gist_string};
 
 /// Rakudo caps an aggregate's `.gist` at the first 100 elements, then appends
@@ -33,6 +33,10 @@ fn leaf_gist(v: &Value) -> String {
         )
     {
         return "WhateverCode.new".to_string();
+    }
+    if let ValueView::Promise(p) = v.view() {
+        // Promise has no custom gist; its element gist is the `.raku` form.
+        return promise_raku_repr(&p.status());
     }
     v.to_string_value()
 }
@@ -825,6 +829,8 @@ pub(super) fn dispatch(
             ))))
         }
         ValueView::LazyList(_) => None, // fall through to runtime to force
+        // Promise has no custom gist, so `.gist` is the default `.raku` form.
+        ValueView::Promise(p) => Some(Ok(Value::str(promise_raku_repr(&p.status())))),
         _ => Some(Ok(Value::str(target.to_string_value()))),
     })
 }

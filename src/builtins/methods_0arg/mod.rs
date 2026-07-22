@@ -1944,6 +1944,11 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 // `Str.clone` falling through to the slow path.)
                 return Some(Ok(target.clone()));
             }
+            // A Match has reference identity (`ObjAt.new("Match|<id>")`), not
+            // the value identity of its matched string — the Str delegation
+            // below would land on `ValueObjAt.new("Str|...")`. Fall through to
+            // the generic Instance arm in `dispatch_core_coerce`.
+            "WHICH" => {}
             _ => {
                 let str_val = Value::str(target.to_string_value());
                 return native_method_0arg(&str_val, Symbol::intern(method));

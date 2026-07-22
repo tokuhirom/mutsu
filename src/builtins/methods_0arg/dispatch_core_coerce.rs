@@ -417,8 +417,8 @@ pub(super) fn dispatch(
                 ValueView::RegexWithAdverbs(a) => {
                     format!("Regex|{:p}", Arc::as_ptr(&a.pattern))
                 }
-                ValueView::Instance { id, .. } => {
-                    format!("{}|{}", runtime::utils::value_type_name(target), id)
+                ValueView::Instance { class_name, id, .. } => {
+                    format!("{}|{}", class_name.resolve(), id)
                 }
                 ValueView::Junction { kind, values } => {
                     use std::hash::{Hash, Hasher};

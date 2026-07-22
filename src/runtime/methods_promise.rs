@@ -273,11 +273,10 @@ impl Interpreter {
                 Ok(Value::make_instance(Symbol::intern("Promise::Vow"), attrs))
             }
             "WHAT" => Ok(Value::package(shared.class_name())),
-            "raku" | "perl" => Ok(Value::str(format!(
-                "Promise.new(status => {})",
-                shared.status()
-            ))),
-            "Str" | "gist" => Ok(Value::str(format!("Promise({})", shared.status()))),
+            "raku" | "perl" | "gist" => Ok(Value::str(
+                crate::builtins::methods_0arg::raku_repr::promise_raku_repr(&shared.status()),
+            )),
+            "Str" => Ok(Value::str(format!("Promise({})", shared.status()))),
             "isa" => {
                 let arg = args.first().cloned().unwrap_or(Value::NIL);
                 let target_name = match arg.view() {
