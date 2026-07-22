@@ -377,9 +377,18 @@ impl Interpreter {
         // methods (.Str/.raku/.List/.Slip/.gist/...) all dispatch to the class's
         // (possibly role-provided) methods — a "tied hash". The instance keeps
         // its identity across `%h = ...` (STORE) reassignments.
+        // Raku ties a `%` variable to ANY class named by `is` — the `%` sigil
+        // supplies the associative semantics, so the class need not declare
+        // `does Associative` (e.g. `Hash::str`, which only defines AT-KEY/STORE
+        // via nqp ops). We tie when the class either composes `Associative` or
+        // defines the associative protocol (STORE / AT-KEY), which covers both
+        // the role-composed (`Hash::Agnostic`) and the plain-class (`Hash::str`)
+        // styles without grabbing unrelated `is <Type>` container traits.
         if name.starts_with('%')
             && self.registry().classes.contains_key(&trait_name)
-            && self.class_does_role(&trait_name, "Associative")
+            && (self.class_does_role(&trait_name, "Associative")
+                || self.registry_mut().class_has_method(&trait_name, "STORE")
+                || self.registry_mut().class_has_method(&trait_name, "AT-KEY"))
         {
             if has_arg {
                 self.stack.pop();

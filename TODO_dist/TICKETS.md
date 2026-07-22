@@ -228,8 +228,34 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 ### T-044 — test_fail: can we access existing key (N)  [impact: 1 dist]
 - dists: Hash::str
 - e.g. `Hash::str`: base=1 pass=0 fail=1 die=0 | t/01-basic.rakutest: can we access existing key (1)
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
+- repro: `my %h is Hash::str = fortytwo => "foo"; say %h<fortytwo>` (raku: `foo`,
+  mutsu was: `(Any)`).
+- **PARTIAL (PR `fix-tied-hash-qualified-plain`).** Two general tied-hash bugs
+  found and fixed:
+  1. **`::`-qualified variable trait truncated** — `my %h is Hash::str` parsed
+     the trait name with plain `ident`, yielding `Hash` (the `::str` was
+     dropped), so tied-hash backing never matched the class. Fixed by using the
+     `::`-aware `qualified_ident` in `src/parser/stmt/decl/my_decl.rs`.
+  2. **tied backing required `does Associative`** — `vm_var_trait_ops.rs` only
+     tied a `%` variable when the class composed `Associative`. Raku ties ANY
+     class named by `is` on a `%` variable (the sigil supplies the associative
+     semantics). Relaxed to also tie when the class defines the associative
+     protocol (STORE / AT-KEY). Pin: `t/tied-hash-qualified-plain.t`.
+- **REMAINING (deferred): full nqp op surface.** Hash::str's actual STORE /
+  AT-KEY / push are written directly in nqp ops (`use nqp`): `nqp::create`,
+  `nqp::hash`, `nqp::p6bindattrinvres`, `nqp::bindkey`, `nqp::existskey`,
+  `nqp::deletekey`, `nqp::hllbool`, `nqp::hllize`, `nqp::eqaddr`,
+  `nqp::istype`, `nqp::getattr`, `nqp::decont`, `nqp::isnull`, `nqp::null`,
+  `nqp::elems`, and the **control-flow ops** `nqp::until` / `nqp::if` /
+  `nqp::stmts` (currently mis-parsed as calls to a bare `if`/`until`). mutsu
+  implements only ~5 nqp ops today; the control-flow ops need special
+  compiler forms (thunked, re-evaluated args), which is a large, separate
+  feature (ADR-worthy). The tied-hash *plumbing* is now correct — verified
+  with a pure-Raku tied class in the pin — so once the nqp surface lands,
+  Hash::str should pass.
+- file: `src/parser/stmt/decl/my_decl.rs` (qualified trait name, done),
+  `src/vm/vm_var_trait_ops.rs` (Associative-optional tie, done); remaining —
+  nqp op layer (compiler + runtime)
 
 ### T-045 — test_fail: did we chomp one  [impact: 1 dist]
 - dists: P5chomp
