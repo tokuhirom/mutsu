@@ -140,6 +140,13 @@ impl Interpreter {
             let mapped_parents: Vec<String> = parents
                 .iter()
                 .map(|p| self.lexical_env_remap_name(p))
+                // Qualify a bare parent that names a sibling class in the current
+                // package but collides with a built-in namespace (`class X::Decode
+                // is X` inside `module M`, where `X` is both `M::X` and the built-in
+                // `X::` exception namespace). Must run here, where `current_package`
+                // is the enclosing module — the child class name reaches
+                // `register_class_decl` without its module prefix.
+                .map(|p| self.qualify_sibling_parent_name(&p))
                 .collect();
             let mapped_hidden_parents: Vec<String> = hidden_parents
                 .iter()

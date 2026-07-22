@@ -421,6 +421,40 @@ impl Interpreter {
         names
     }
 
+    /// Qualify a bare inheritance-parent name with the current package when a
+    /// same-named sibling class/role is declared there. Inside
+    /// `module M { class X is Exception {}; class X::Decode is X {} }`, the parent
+    /// `X` collides with the built-in `X::` exception namespace; without this the
+    /// MRO links `X::Decode` to the built-in namespace (an unknown parent, so it
+    /// falls back to `Any`) instead of the module-local `M::X`.
+    ///
+    /// Only rewrites a bare name (no `::`, no type args) when
+    /// `{current_package}::{name}` names a registered class/role. A module-local
+    /// class lexically shadows any same-named outer or built-in type, so the
+    /// package-qualified sibling is preferred even when a bare built-in of that
+    /// name also exists (e.g. `X`, which is registered as the built-in `X::`
+    /// exception namespace class); genuine built-in and cross-package parents,
+    /// which have no current-package-qualified sibling, are left untouched.
+    pub(crate) fn qualify_sibling_parent_name(&self, parent: &str) -> String {
+        if parent.contains("::") || parent.contains('[') {
+            return parent.to_string();
+        }
+        let pkg = self.current_package();
+        if pkg.is_empty() || pkg == "GLOBAL" {
+            return parent.to_string();
+        }
+        let qualified = format!("{}::{}", pkg, parent);
+        let registered = {
+            let reg = self.registry();
+            reg.classes.contains_key(&qualified) || reg.roles.contains_key(&qualified)
+        };
+        if registered {
+            qualified
+        } else {
+            parent.to_string()
+        }
+    }
+
     pub(crate) fn resolve_declared_type_name(&self, name: &str) -> String {
         let (base, suffix) = if let Some(bracket) = name.find('[') {
             (&name[..bracket], &name[bracket..])
