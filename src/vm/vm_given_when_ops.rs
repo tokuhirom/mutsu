@@ -63,6 +63,18 @@ impl Interpreter {
         } else {
             None
         };
+        // When `$_` already occupies a local slot (a `sub f ($_) {...}` parameter
+        // or a `my $_`), the body reads and writes that slot — it is the
+        // authoritative half under the (B) per-store env-write gate, and the env
+        // mirror alone is not seen. Mirror the topic into the slot on entry (and
+        // restore it on exit) so `with $x { $_ }` inside such a sub reads the
+        // topic, not the stale outer `$_`. `code.locals` positions never move
+        // within a frame, so the slot index stays valid across the body.
+        let topic_local_slot = self.find_local_slot(code, "_");
+        let saved_local_topic = topic_local_slot.map(|s| self.locals[s].clone());
+        if let Some(slot) = topic_local_slot {
+            self.locals[slot] = topic.clone();
+        }
         self.env_mut().insert("_".to_string(), topic);
         loan_env!(self, set_when_matched(false));
         // A read-only topic (`given @a` / `given 42` / `given expr()`) forbids
@@ -114,6 +126,11 @@ impl Interpreter {
                 this.env_mut().insert("_".to_string(), v);
             } else {
                 this.env_mut().remove("_");
+            }
+            // Restore the outer `$_` local slot (the sub `$_` param / `my $_`
+            // shadowed by this given/with) to its entry value.
+            if let Some(slot) = topic_local_slot {
+                this.locals[slot] = saved_local_topic.clone().unwrap_or(Value::NIL);
             }
             // A pointy parameter (`-> @p`) is block-scoped in Raku, but mutsu
             // desugars it to a global `@p := $_` whose alias/bound markers would
