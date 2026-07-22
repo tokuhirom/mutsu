@@ -1313,45 +1313,14 @@ reference `raku` (6.d) also `SORRY`s on it, so it is not a divergence — do not
       variants), `src/parser/primary/ident/anon_sub.rs` (+ wherever `sub NAME` in expr position is
       parsed), the compiler/VM closure builder that creates the `Sub` value.
 
-### 8.14 `state` variables in feed-lowered `map` blocks collide across blocks (deferred deep item — found 2026-07-22 by the Chemistry::Elements dist)
+### 8.14 `state` variables in feed-lowered `map` blocks collide across blocks — ✅ DONE 2026-07-23
 
-- [ ] **Two distinct blocks that each declare `state $n`, invoked via the feed-lowered
-      `map(BLOCK, list)` function form, share the same `state` storage.** After the first
-      block runs, the second block's `state $n = 0` does NOT re-initialize — it continues
-      from the first block's final value:
-      ```raku
-      my @a = <a b c d e>;
-      @a ==> map({ state $n = -1; $n++; $_ => $n.clone }) ==> my %first;   # ends $n = 4
-      my @b = <H He Li B>;
-      @b ==> map({ state $n = 0;  $n++; $_ => $n.clone }) ==> my %second;  # raku: H=>1
-      say %second<H>;   # raku: 1 ; mutsu: 5  (continued from %first's 4)
-      ```
-      The `.map` *method* form is correct (raku-equal); only the **feed / function** form
-      (`@a ==> map(...)`, `map(BLOCK, @a)`) collides.
-- **Root cause.** The inline map path (`eval_map_over_items`, `src/runtime/resolution_map_grep.rs`)
-      RE-compiles the block body fresh with `Compiler::new()` (ip restarts at 0), so the
-      compile-time `$var@<ip>` state key is *identical* for two distinct blocks. At runtime,
-      `state_scope_id` is `None` on this path (the method path preserves the block's original
-      `compiled_code`, whose ips differ), so both `$n` resolve to the bare key `$n@<ip>` and
-      share `self.state_vars`.
-- **Why the obvious fix fails.** Setting `vm.state_scope_id = Some(data.id)` in the inline
-      loop (so the key becomes `$n@<ip>#c{id}`) fixes the *cross-block* collision but BREAKS
-      *within-map* persistence (every iteration re-initializes → all `1`s). The state-key
-      plumbing is inconsistent: `StateVarInit` uses `scoped_state_key`, but
-      `load_state_locals`/`sync_state_locals` (`vm_run_loop.rs`) use the RAW key. They only
-      agree when `state_scope_id` is `None`. So a correct fix must thread the scoped key
-      through the inline map path's load/sync/init together — a change to the `state`-variable
-      subsystem, higher blast radius than one map site.
-- **Where it bites (Chemistry::Elements, raku-community-modules).** The module builds two hashes
-      with `... ==> map({ state $n ...}) ==> my %...` back-to-back at load time. The second
-      (`%symbol_to_name`, atomic numbers) starts its counter off by the first map's length (+4),
-      so `get_Z_by_symbol("Br")` returns 39 instead of 35 (and `get_name_by_symbol` → Nil).
-      The `can-ok`-on-a-type-object symptom of the same dist was fixed separately (#5206);
-      this counter bug is the remaining `t/010`/`t/020` failure.
-- Entry: `git checkout -b fix-state-scope-feed-map origin/main`. Files:
-      `src/runtime/resolution_map_grep.rs` (inline loop), `src/vm/vm_run_loop.rs`
-      (`scoped_state_key` / `load_state_locals` / `sync_state_locals`). Pin candidate:
-      `t/state-var-per-block-in-feed-map.t`.
+Fixed exactly along the mapped route: `load_state_locals`/`sync_state_locals`(`_in_range`)
+now resolve through `scoped_state_key` like `StateVarInit`/`Guard`/`reset` (a no-op where
+`state_scope_id` is None), and every inline fresh-recompile loop (map, rw-map, grep, first —
+including the `try_native_array_map`-fed rw path) sets `state_scope_id = Some(data.id)`.
+Pin: `t/state-var-per-block-in-feed-map.t`; details in `news/2026-07.md`. This was the
+remaining Chemistry::Elements `t/010`/`t/020` blocker.
 
 ### 8.15 Built-in object types with missing/wrong reprs, and `[ident]` mis-parsed as reduction (found 2026-07-22 by the repr oracle sweep)
 

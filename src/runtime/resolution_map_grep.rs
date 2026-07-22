@@ -404,6 +404,14 @@ impl Interpreter {
                 .map(|cc| frame_authoritative_set(cc, &data.authoritative_captures))
                 .unwrap_or_default();
             let loop_result: Result<Value, RuntimeError> = self.with_nested_registers(|vm| {
+                // Scope this block's `state` variables to the closure instance
+                // (`$n@<ip>#c{id}`): the body was re-compiled fresh above, so
+                // the compile-time `$var@<ip>` key alone is IDENTICAL for two
+                // distinct blocks (ip restarts at 0) and their state would
+                // collide (`@a ==> map({ state $n ... })` twice — PLAN §8.14).
+                // load/sync/init all resolve through `scoped_state_key`, so
+                // within-map persistence across items is unaffected.
+                vm.state_scope_id = Some(data.id);
                 let mut i = 0usize;
                 while i < list_items.len() {
                     if arity > 1 && i + arity > list_items.len() {
@@ -640,6 +648,9 @@ impl Interpreter {
 
         let mut found: Option<(usize, Value)> = None;
         let loop_result: Result<(), RuntimeError> = self.with_nested_registers(|vm| {
+            // Scope `state` variables to the closure instance (see
+            // `eval_map_over_items`).
+            vm.state_scope_id = Some(data.id);
             vm.set_topic_source_var(None);
             let len = list_items.len();
             for scan in 0..len {
