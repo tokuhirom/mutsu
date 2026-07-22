@@ -174,6 +174,10 @@ fn statement(input: &str) -> PResult<'_, Stmt> {
     }
     if (input.starts_with("qx") || input.starts_with("qqx"))
         && let Ok((rest, expr)) = crate::parser::primary::string::qx_string(input)
+        // A postfix chain on the qx result (`qx`pwd`.chomp.IO`) must parse as
+        // one expression statement — without this guard the shortcut consumed
+        // only the qx call and `.chomp` became a separate $_-method statement.
+        && !rest.starts_with('.')
     {
         let result = parse_statement_modifier(rest, Stmt::Expr(expr));
         STMT_MEMO.store(input, &result);
