@@ -4322,9 +4322,18 @@ impl CompiledFunction {
                                 .to_string(),
                         );
                     }
-                    // On a match (by any key), every sub-signature name is
-                    // bound to the value — e.g. `:color(:$colour)` binds both.
-                    alias_binds.push((sub_pd.name.clone(), slot_of(&sub_pd.name)));
+                    // Only a LEAF of the rename chain names a body variable.
+                    // In `:mil(:milli(:$millis))` the caller may pass `mil`,
+                    // `milli` or `millis` (all become alias_keys above), but
+                    // inside the body only `$millis` exists — the intermediate
+                    // alias names (`mil`, `milli`, which themselves carry a
+                    // sub-signature) must NOT be bound as body variables, else
+                    // they shadow a same-named outer constant/lexical. A leaf
+                    // with no further sub-signature is the real variable
+                    // (`$millis`, or the `$a`/`$b` of a destructuring sig).
+                    if sub_pd.sub_signature.is_none() {
+                        alias_binds.push((sub_pd.name.clone(), slot_of(&sub_pd.name)));
+                    }
                     if let Some(ref nested) = sub_pd.sub_signature {
                         worklist.extend(nested.iter());
                     }

@@ -41,11 +41,32 @@ impl Interpreter {
     /// bound value (already stored in `env` under `pd.name`). The constraint is
     /// checked whether the value was supplied, defaulted, or fell back to the
     /// type object for an unsupplied optional named param.
+    /// The name the parameter's value is actually stored under. For a plain
+    /// named param that is `pd.name`; for a rename param (`:min(:$minutes)`,
+    /// `:version($)`) the value lives under the innermost leaf variable
+    /// (`minutes`, `__ANON_STATE__`) because the alias/param names are
+    /// caller-facing keys only and are never bound as body variables.
+    fn rename_leaf_value_name(pd: &ParamDef) -> Option<String> {
+        let mut sub = pd.sub_signature.as_ref()?;
+        loop {
+            let child = sub.first()?;
+            match &child.sub_signature {
+                Some(next) => sub = next,
+                None => return Some(child.name.clone()),
+            }
+        }
+    }
+
     fn check_named_param_where_constraint(&mut self, pd: &ParamDef) -> Result<(), RuntimeError> {
         let Some(where_expr) = &pd.where_constraint else {
             return Ok(());
         };
-        let bound_val = self.env.get(&pd.name).cloned().unwrap_or(Value::NIL);
+        // Read the value from the leaf variable for a rename param; fall back to
+        // the param's own name for a plain named param.
+        let bound_val = Self::rename_leaf_value_name(pd)
+            .and_then(|n| self.env.get(&n).cloned())
+            .or_else(|| self.env.get(&pd.name).cloned())
+            .unwrap_or(Value::NIL);
         let saved_topic = self.env.get("_").cloned();
         self.env.insert("_".to_string(), bound_val.clone());
         // env_dirty substrate (docs/captured-outer-cell-sharing.md §10):
@@ -993,10 +1014,18 @@ impl Interpreter {
                             ));
                             rw_bindings.push((pd.name.clone(), source_name));
                         }
-                        self.bind_param_value(&pd.name, bound_value);
-                        self.bind_param_type_constraint(&pd.name, pd.type_constraint.clone());
+                        // A rename param `:min(:$minutes)` names a caller key
+                        // only; its OWN name (`min`) is NOT a body variable
+                        // (raku: `min` in the body resolves to the outer
+                        // routine/constant, not the argument). Only bind the
+                        // param's own name when it has no sub-signature; the
+                        // leaf variable is bound via the rename recursion below.
+                        // Mirrors `bind_sub_signature_from_value`'s line-778 rule.
                         if let Some(sub_params) = &pd.sub_signature {
                             bind_named_rename_sub_signature(self, sub_params, val)?;
+                        } else {
+                            self.bind_param_value(&pd.name, bound_value);
+                            self.bind_param_type_constraint(&pd.name, pd.type_constraint.clone());
                         }
                         found = true;
                         break;
@@ -1013,11 +1042,9 @@ impl Interpreter {
                             if let ValueView::Pair(key, inner_val) = arg.view()
                                 && key == inner_key.as_str()
                             {
-                                self.bind_param_value(&pd.name, inner_val.clone());
-                                self.bind_param_type_constraint(
-                                    &pd.name,
-                                    pd.type_constraint.clone(),
-                                );
+                                // Rename param: bind only the leaf variable, not
+                                // the param's own name (see the primary-match
+                                // branch above).
                                 bind_named_rename_sub_signature(self, sub_params, inner_val)?;
                                 found = true;
                                 break 'alias;
@@ -1054,17 +1081,22 @@ impl Interpreter {
                         err.exception = Some(Box::new(exception));
                         return Err(err);
                     }
+                    // A rename param `:min(:$minutes)` binds only its leaf
+                    // variable (below); its own name is a caller key, not a body
+                    // variable — so skip binding `pd.name` when a sub-signature
+                    // is present.
+                    let is_rename = pd.sub_signature.is_some();
                     if let Some(captured_name) = pd
                         .type_constraint
                         .as_deref()
                         .and_then(|constraint| constraint.strip_prefix("::"))
                     {
                         self.bind_type_capture(captured_name, &value);
-                        if !pd.name.is_empty() {
+                        if !pd.name.is_empty() && !is_rename {
                             self.bind_param_value(&pd.name, value.clone());
                             self.bind_param_type_constraint(&pd.name, pd.type_constraint.clone());
                         }
-                    } else if !pd.name.is_empty() {
+                    } else if !pd.name.is_empty() && !is_rename {
                         self.bind_param_value(&pd.name, value.clone());
                         self.bind_param_type_constraint(&pd.name, pd.type_constraint.clone());
                     }
@@ -1096,8 +1128,12 @@ impl Interpreter {
                     // bindings live under twigil'd keys (`$!x`/`!x`), not the bare
                     // param name — so binding the default here does not disturb them.
                     let value = Self::missing_optional_param_value(pd);
-                    self.bind_param_value(&pd.name, value.clone());
-                    self.bind_param_type_constraint(&pd.name, pd.type_constraint.clone());
+                    // A rename param binds only its leaf variable (below); skip
+                    // binding the param's own name when a sub-signature exists.
+                    if pd.sub_signature.is_none() {
+                        self.bind_param_value(&pd.name, value.clone());
+                        self.bind_param_type_constraint(&pd.name, pd.type_constraint.clone());
+                    }
                     // A `:color(:$colour)` alias chain declares its inner
                     // variable(s); bind them to the same unsupplied default so
                     // the body's `$colour` read finds an (undefined) value

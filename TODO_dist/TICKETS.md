@@ -196,11 +196,11 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 - repro: _(fill in a minimal repro + raku baseline before fixing)_
 - file: _(suspected parser/runtime file)_
 
-### T-048 — test_fail: millis unit to nanos  [impact: 1 dist]
+### T-048 — test_fail: millis unit to nanos  [impact: 1 dist]  [claim: fix-nested-alias-name-leak]
 - dists: TimeUnit
 - e.g. `TimeUnit`: base=1 pass=0 fail=1 die=0 | t/01-usage.rakutest: millis unit to nanos
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
+- repro: `sub g(:mil(:milli(:$millis))=0){ milli }` where `my constant milli=1000000` — mutsu binds the alias name `milli` as a body variable and shadows the outer constant. raku: only innermost `:$millis` is a body variable; alias names are caller-side only.
+- file: signature binding (runtime/param binding)
 
 ### T-049 — test_fail: not ok N -  [impact: 1 dist]
 - dists: Understitch
