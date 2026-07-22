@@ -131,8 +131,13 @@ pub(crate) fn to_set(target: Value, what: &str) -> Result<Value, RuntimeError> {
             }
         }
         ValueView::Mix(m, _) => {
-            for k in m.keys() {
-                elems.insert(k.clone());
+            // A Mix coerces to a Set keeping only keys with a positive weight
+            // (`(a=>2,b=>-1,c=>0).Mix.Set` == `Set(a)`); Raku's Setty drops
+            // zero and negative weights.
+            for (k, w) in m.iter() {
+                if *w > 0.0 {
+                    elems.insert(k.clone());
+                }
             }
         }
         ValueView::Pair(k, v) => {
