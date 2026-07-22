@@ -125,6 +125,14 @@ impl Interpreter {
         {
             return true;
         }
+        // For type objects (`Chemistry::Elements.^can(...)` / `can-ok $type,
+        // ...`), resolve methods against the named class's MRO too — a type
+        // object can do any of its class's methods, not just the universal set.
+        if let ValueView::Package(class_name) = value.view()
+            && self.class_has_method(&class_name.resolve(), method)
+        {
+            return true;
+        }
         // Universal methods available on all values
         matches!(
             method,
