@@ -158,6 +158,11 @@ impl Interpreter {
                 return Ok(Value::package(Symbol::intern("Scalar")));
             }
             if method == "raku" || method == "perl" {
+                // An itemized aggregate can still hold a value whose repr needs
+                // method dispatch (`$[Foo.new].raku`).
+                if let Some(rendered) = self.raku_repr_with_dispatch(&target) {
+                    return Ok(Value::str(rendered));
+                }
                 return Ok(Value::str(
                     crate::builtins::methods_0arg::raku_repr::raku_value(&target),
                 ));
@@ -2856,15 +2861,25 @@ impl Interpreter {
             && info.value_type != "Mu"
             && let ValueView::Array(items, _) = target.view()
         {
+            let items = items.to_vec();
             let inner = items
                 .iter()
-                .map(crate::builtins::methods_0arg::raku_repr::raku_value)
+                .map(|item| self.raku_element_repr(item))
                 .collect::<Vec<_>>()
                 .join(", ");
             let type_name = info
                 .declared_type
                 .unwrap_or_else(|| format!("Array[{}]", info.value_type));
             return Ok(Value::str(format!("{type_name}.new({inner})")));
+        }
+        // .raku/.perl on a container holding a value whose repr is only
+        // reachable through method dispatch (a user instance, a built-in object
+        // type). See `methods_raku_dispatch`.
+        if matches!(method, "raku" | "perl")
+            && args.is_empty()
+            && let Some(rendered) = self.raku_repr_with_dispatch(&target)
+        {
+            return Ok(Value::str(rendered));
         }
 
         // ACCEPTS for allomorphic types with Instance arguments

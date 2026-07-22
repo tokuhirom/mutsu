@@ -207,6 +207,16 @@ impl Interpreter {
         if method_sym == "gist" && args.is_empty() && collection_contains_instance(target) {
             return None;
         }
+        // Collection .raku/.perl bypass: an element whose `.raku` is only
+        // reachable through method dispatch (a user instance, a built-in object
+        // type) must be rendered by the interpreter — the pure renderer would
+        // fall back to `Foo()` (see `runtime::methods_raku_dispatch`).
+        if matches!(method_name.as_str(), "raku" | "perl")
+            && args.is_empty()
+            && crate::runtime::container_needs_raku_dispatch(target)
+        {
+            return None;
+        }
         // Pick/roll on Package/Str
         if (method_sym == "pick" || method_sym == "roll")
             && args.len() <= 1
