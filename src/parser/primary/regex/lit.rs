@@ -975,9 +975,23 @@ pub(in crate::parser::primary) fn version_lit(input: &str) -> PResult<'_, Expr> 
     if rest.is_empty() || !rest.as_bytes()[0].is_ascii_digit() {
         return Err(PError::expected("version number"));
     }
+    // A version literal's parts are digits, dots, and short alpha markers
+    // (`v6.c`, `v6c`), with `*`/`+` wildcards. `-` and `_` are NOT version
+    // characters — they are identifier joiners, so `v4-split` is the ordinary
+    // identifier `v4-split`, not the version `v4` minus `split`. (Raku matches
+    // the longest identifier first.)
     let (rest, version) = take_while1(rest, |c: char| {
-        c.is_ascii_alphanumeric() || c == '.' || c == '*' || c == '+' || c == '-' || c == '_'
+        c.is_ascii_alphanumeric() || c == '.' || c == '*' || c == '+'
     })?;
+    // If the version chars are immediately followed by an identifier joiner
+    // (`-` / `'`) leading into another word char, the whole run is one
+    // identifier (`v4-split`, `v1'foo`), not a version term — reject so the
+    // identifier parser handles it.
+    if let Some(after) = rest.strip_prefix(['-', '\''])
+        && after.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
+    {
+        return Err(PError::expected("version number"));
+    }
     // Don't consume trailing '.' — it's likely a method call (e.g. v1.2.3.WHAT)
     // But only if the char after '.' is uppercase (method) or not alphanumeric
     let (version, rest) = if let Some(stripped) = version.strip_suffix('.') {
@@ -990,6 +1004,18 @@ pub(in crate::parser::primary) fn version_lit(input: &str) -> PResult<'_, Expr> 
         } else {
             (version, rest)
         }
+    } else {
+        (version, rest)
+    };
+    // A trailing `-` that is NOT followed by a word char is Raku's version
+    // "minus" marker (`v1.2.3-`, `v5.2-` — scopes a smart-match to the whole
+    // version). The identifier-joiner case (`-` before a word char, `v4-split`)
+    // already returned Err above, so a `-` reaching here is always the marker.
+    // Consume it into the version string so `parse_version_string` records the
+    // flag. (`rest` is a suffix of `input`, so its offset is `len - rest.len()`.)
+    let (version, rest) = if let Some(after_minus) = rest.strip_prefix('-') {
+        let minus_off = input.len() - rest.len();
+        (&input[1..=minus_off], after_minus)
     } else {
         (version, rest)
     };

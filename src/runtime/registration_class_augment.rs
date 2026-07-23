@@ -498,6 +498,10 @@ impl Interpreter {
         self.registry_mut().cunion_classes.insert(name.to_string());
     }
 
+    pub(crate) fn register_cstruct_class(&mut self, name: &str) {
+        self.registry_mut().cstruct_classes.insert(name.to_string());
+    }
+
     pub(crate) fn construct_cunion_instance(
         &mut self,
         class_name: &str,

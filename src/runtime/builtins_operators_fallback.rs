@@ -837,6 +837,15 @@ impl Interpreter {
             return self.call_function(short_name, args.to_vec());
         }
 
+        // NativeCall's `explicitly-manage($str)` marks a value's C-side buffer
+        // as caller-managed so the GC will not free it while a native call holds
+        // the pointer. mutsu copies each `Str` argument into an owned `CString`
+        // that lives for the duration of the call, so there is nothing to pin —
+        // treat it as an identity no-op returning its argument.
+        if name == "explicitly-manage" {
+            return Ok(args.first().cloned().unwrap_or(Value::NIL));
+        }
+
         // Native JSON routines invoked as code objects (`&from-json`,
         // `$str.&from-json`) reach this generic fallback — they have no
         // declared sub for the resolver above to find.

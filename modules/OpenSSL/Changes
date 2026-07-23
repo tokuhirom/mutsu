@@ -1,0 +1,32 @@
+Revision history for OpenSSL
+
+0.2.7  2026-04-20T23:52:44+02:00
+    - Fix improper use of namespace nesting, ugexe++
+    - Update copyright year
+
+0.2.6  2025-08-17T12:19:34+02:00
+    - Change build dependency of "PathTools" to the Raku Community
+      module "File::Directory::Tree" dependency, because it is also
+      a Raku Community module
+    - Modernized META file a bit
+
+0.2.5  2025-07-26T15:44:53+02:00
+    - Tighten build dependencies
+    - Add support for sha224 digests
+    - Allow all digest subroutines (md5,sha1/224/256/384/512) to
+      also take an IO::Path argument (to create a digest of that file)
+      or an object that can be coerced to a Str (to be UTF8 encoded
+      and then calculated a digest of)
+    - Added hexifying subroutines (md5-hex,sha1/224/256/384/512-hex)
+      for fast stringification of digests
+    - Moved network testing tests to author tests, assuming that any
+      person working on this distribution will have network access
+
+0.2.4  2025-04-28T10:56:06+02:00
+    - Fix copyright copy-pasto
+    - Add support for automatic symlink creation on MacOS if the
+      MacOS::NativeLib module is installed
+
+0.2.3  2025-04-27T13:20:11+02:00
+    - Add binding to AES-128-CTR, pheix++
+    - Initial version as a Raku Community Module

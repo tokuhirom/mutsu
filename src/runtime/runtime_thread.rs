@@ -176,6 +176,7 @@ impl Interpreter {
             imported_operator_names: self.imported_operator_names.clone(),
             user_declared_infix_ops: self.user_declared_infix_ops.clone(),
             lib_paths: self.lib_paths.clone(),
+            bundled_lib_paths: self.bundled_lib_paths.clone(),
             io_handles: Arc::new(RwLock::new(io_handles::IoHandleTable {
                 map: cloned_handles,
                 next_id: cloned_next_handle_id,

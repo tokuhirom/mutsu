@@ -1,0 +1,29 @@
+{
+  "auth": "zef:raku-community-modules",
+  "authors": [
+    "Filip Sergot"
+  ],
+  "build-depends": [
+  ],
+  "depends": [
+    "OpenSSL:ver<0.2.4+>:auth<zef:raku-community-modules>"
+  ],
+  "description": "IO::Socket::SSL for Raku using OpenSSL",
+  "license": "MIT",
+  "name": "IO::Socket::SSL",
+  "perl": "6.*",
+  "provides": {
+    "IO::Socket::SSL": "lib/IO/Socket/SSL.rakumod"
+  },
+  "raku": "6.*",
+  "resources": [
+  ],
+  "source-url": "https://github.com/raku-community-modules/IO-Socket-SSL.git",
+  "tags": [
+    "SSL",
+    "Sockets"
+  ],
+  "test-depends": [
+  ],
+  "version": "0.0.4"
+}

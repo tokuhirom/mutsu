@@ -19,6 +19,7 @@ impl Interpreter {
         // so taking self's write lock and nested's read lock in one statement is
         // deadlock-free (matches the slice-1 `subsets` line below).
         self.registry_mut().cunion_classes = nested.registry().cunion_classes.clone();
+        self.registry_mut().cstruct_classes = nested.registry().cstruct_classes.clone();
         self.registry_mut().hidden_classes = nested.registry().hidden_classes.clone();
         self.registry_mut().class_stubs = nested.registry().class_stubs.clone();
         self.registry_mut().package_stubs = nested.registry().package_stubs.clone();

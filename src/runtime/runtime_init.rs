@@ -1804,6 +1804,7 @@ impl Interpreter {
             imported_operator_names: HashSet::new(),
             user_declared_infix_ops: HashSet::new(),
             lib_paths: Vec::new(),
+            bundled_lib_paths: Self::resolve_bundled_lib_paths(),
             io_handles: Arc::new(RwLock::new(io_handles::IoHandleTable {
                 map: HashMap::new(),
                 next_id: 1,

@@ -35,10 +35,14 @@ FROM debian:bookworm-slim AS runtime
 
 # Runtime deps:
 #   libpcre2-8-0            - dynamically linked by mutsu (pcre2 feature)
+#   libssl3                 - dlopen'd by the bundled OpenSSL battery for HTTPS/TLS
+#                            (the crypto rides the OS so its CVEs are patched by
+#                            apt, independent of a mutsu release)
 #   curl / git / tar / unzip / ca-certificates
 #                          - zef's fetch/extract backends shell out to these
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libpcre2-8-0 \
+        libssl3 \
         curl \
         git \
         tar \
@@ -47,15 +51,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Self-contained layout, identical to the release tarball: mzef resolves the
-# bundled zef via ../share/mutsu/zef relative to its own executable.
+# bundled zef via ../share/mutsu/zef relative to its own executable, and mutsu
+# resolves the bundled batteries via ../share/mutsu/modules.
 COPY --from=builder /src/target/release/mutsu /usr/local/bin/mutsu
 COPY --from=builder /src/target/release/mzef  /usr/local/bin/mzef
 COPY --from=builder /src/vendor/zef           /usr/local/share/mutsu/zef
+COPY --from=builder /src/modules              /usr/local/share/mutsu/modules
 
-# Belt-and-suspenders: the exe-relative resolution already finds the tree above,
-# but pin it explicitly so the shim keeps working even if the binary is copied
-# elsewhere in a derived image.
+# Belt-and-suspenders: the exe-relative resolution already finds the trees above,
+# but pin them explicitly so the shim/interpreter keep working even if the
+# binary is copied elsewhere in a derived image.
 ENV MZEF_ZEF_HOME=/usr/local/share/mutsu/zef
+ENV MUTSU_BUNDLE_DIR=/usr/local/share/mutsu/modules
 
 WORKDIR /work
 

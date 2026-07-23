@@ -5,7 +5,9 @@ plan 19;
 is v1.2.3, '1.2.3', 'version literal stringifies';
 is (v1.2.3).WHAT, '(Version)', 'version literal is Version type';
 
-# Version with + and -
+# Version with + and - trailing markers. (A trailing marker is only a version
+# character when NOT followed by a word char — an internal `-` before a word,
+# e.g. `v4-split`, makes an ordinary identifier; see t/version-vn-identifier.t.)
 is v1.2+, '1.2+', 'version literal with +';
 is v1.2.3-, '1.2.3-', 'version literal with -';
 

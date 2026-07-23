@@ -1,0 +1,61 @@
+{
+  "auth": "zef:raku-community-modules",
+  "authors": [
+    "Filip Sergot",
+    "Elizabeth Mattijsen"
+  ],
+  "build-depends": [
+    "File::Directory::Tree:ver<0.2+>:auth<zef:raku-community-modules>",
+    "JSON::Fast:ver<0.19+>:auth<cpan:TIMOTIMO>"
+  ],
+  "depends": [
+  ],
+  "description": "OpenSSL bindings",
+  "license": "MIT",
+  "name": "OpenSSL",
+  "provides": {
+    "OpenSSL": "lib/OpenSSL.rakumod",
+    "OpenSSL::Bio": "lib/OpenSSL/Bio.rakumod",
+    "OpenSSL::Cipher": "lib/OpenSSL/Cipher.rakumod",
+    "OpenSSL::CryptTools": "lib/OpenSSL/CryptTools.rakumod",
+    "OpenSSL::Ctx": "lib/OpenSSL/Ctx.rakumod",
+    "OpenSSL::Digest": "lib/OpenSSL/Digest.rakumod",
+    "OpenSSL::Digest::MD5": "lib/OpenSSL/Digest/MD5.rakumod",
+    "OpenSSL::EVP": "lib/OpenSSL/EVP.rakumod",
+    "OpenSSL::Err": "lib/OpenSSL/Err.rakumod",
+    "OpenSSL::Method": "lib/OpenSSL/Method.rakumod",
+    "OpenSSL::NativeLib": "lib/OpenSSL/NativeLib.rakumod",
+    "OpenSSL::PEM": "lib/OpenSSL/PEM.rakumod",
+    "OpenSSL::RSA": "lib/OpenSSL/RSA.rakumod",
+    "OpenSSL::RSATools": "lib/OpenSSL/RSATools.rakumod",
+    "OpenSSL::SSL": "lib/OpenSSL/SSL.rakumod",
+    "OpenSSL::Session": "lib/OpenSSL/Session.rakumod",
+    "OpenSSL::Stack": "lib/OpenSSL/Stack.rakumod",
+    "OpenSSL::Version": "lib/OpenSSL/Version.rakumod",
+    "OpenSSL::X509": "lib/OpenSSL/X509.rakumod"
+  },
+  "raku": "6.*",
+  "resources": [
+    "ssleay32.dll",
+    "libeay32.dll",
+    "libraries.json"
+  ],
+  "source-url": "https://github.com/raku-community-modules/OpenSSL.git",
+  "support": {
+    "bugtracker": "https://github.com/raku-community-modules/OpenSSL/issues",
+    "email": "community@raku.org",
+    "source": "https://github.com/raku-community-modules/OpenSSL.git"
+  },
+  "tags": [
+    "OPENSSL",
+    "MD5",
+    "SHA1",
+    "SHA224",
+    "SHA256",
+    "SHA384",
+    "SHA256"
+  ],
+  "test-depends": [
+  ],
+  "version": "0.2.7"
+}

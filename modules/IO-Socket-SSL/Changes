@@ -1,0 +1,6 @@
+Revision history for IO::Socket::SSL
+
+{{$NEXT}}
+
+0.0.4  2025-04-28T11:54:05+02:00
+    - Initial version as a Raku Community module

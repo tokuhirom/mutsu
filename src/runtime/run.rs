@@ -40,6 +40,20 @@ class Pointer {
 }
 "#;
 
+/// Builtin `IO::Socket` role. Raku's socket classes (`IO::Socket::INET`,
+/// `IO::Socket::Async`) are native in mutsu, but the base `IO::Socket` role is
+/// only needed so a *user* class can compose it — the community
+/// `IO::Socket::SSL` binding is written `class IO::Socket::SSL does IO::Socket`
+/// and overrides the socket methods itself. A minimal role (carrying just the
+/// newline-separator accessors the SSL class reads) is enough to make the
+/// composition succeed; parsed once and prepended like the other preludes.
+pub(super) const IO_SOCKET_ROLE_PRELUDE: &str = r#"
+role IO::Socket {
+    has $.nl-in is rw = "\n";
+    has $.nl-out is rw = "\n";
+}
+"#;
+
 impl Interpreter {
     pub fn run(&mut self, input: &str) -> Result<String, RuntimeError> {
         // `MUTSU_GC_COLLECT_NOW=1` (§9.2): one collect right at program start.
@@ -77,6 +91,7 @@ impl Interpreter {
         // normal RoleDecl/VM path by prepending their statements to the body.
         Self::inject_prelude_roles(&preprocessed, &mut stmts);
         Self::inject_nativecall_prelude(&preprocessed, &mut stmts);
+        Self::inject_iosocket_prelude(&preprocessed, &mut stmts);
         let (_pre_ph, enter_ph, success_ph, failure_ph, _post_ph, body_main) =
             self.split_block_phasers(&stmts);
         // Register END phasers eagerly (before VM execution) so they run
