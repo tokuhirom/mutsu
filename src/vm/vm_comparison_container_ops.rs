@@ -33,6 +33,10 @@ impl Interpreter {
     ///
     /// Note: `Package` is NOT included because type objects are singletons —
     /// two variables holding the same Package should be considered `=:=`.
+    /// The sole exception is the `Any` type object: it is the seed of every
+    /// uninitialized untyped scalar (PLAN 8.5 step 3), so a fresh container
+    /// holding it must not compare identical to another Any-holding read —
+    /// exactly how the old Nil seed behaved on this path.
     /// `Nil` IS included: two *variable/element reads* both yielding Nil are
     /// distinct containers (uninitialized scalars store Nil pre-PLAN-8.5-step-3),
     /// so they must not compare identical. The `X =:= Nil` literal form is
@@ -40,6 +44,9 @@ impl Interpreter {
     /// which routes to `values_identical` where Nil == Nil holds.
     fn is_value_non_reference(left: &Value, right: &Value) -> bool {
         fn is_non_ref(v: &Value) -> bool {
+            if v.is_any_type_object() {
+                return true;
+            }
             matches!(
                 v.view(),
                 ValueView::Int(_)
@@ -94,7 +101,14 @@ impl Interpreter {
             // Instance values (user objects) are NOT singletons: assignment
             // copies the reference but creates a new container, so =:= is False.
             match (left.view(), right.view()) {
-                (ValueView::Package(a), ValueView::Package(b)) => a == b,
+                // The Any type object is excluded from the Package-singleton
+                // shortcut: it is the seed of every uninitialized untyped
+                // scalar (PLAN 8.5 step 3), so two distinct uninitialized
+                // containers would otherwise wrongly compare identical
+                // (S03-operators/identity.t "basic sanity"). The cost — a
+                // rare `my $a := Any; my $b := Any` pair no longer comparing
+                // True — mirrors how the old Nil seed behaved here.
+                (ValueView::Package(a), ValueView::Package(b)) => a == b && a.as_str() != "Any",
                 (ValueView::Sub(a), ValueView::Sub(b)) => crate::gc::Gc::ptr_eq(&a, &b),
                 (ValueView::WeakSub(a), ValueView::WeakSub(b)) => crate::gc::WeakGc::ptr_eq(&a, &b),
                 _ => false,
@@ -201,6 +215,12 @@ impl Interpreter {
         let b_ref = Self::extract_hash_ref(b);
         if let (Some((a_arc, a_key)), Some((b_arc, b_key))) = (a_ref, b_ref) {
             crate::gc::Gc::ptr_eq(&a_arc, &b_arc) && a_key == b_key
+        } else if a.is_any_type_object() && b.is_any_type_object() {
+            // Two raw container reads that both hold the Any type object (the
+            // uninitialized-scalar seed, PLAN 8.5 step 3) are distinct
+            // containers — `[$foo][0] =:= $foo` with an uninit `$foo` is
+            // False (S02-types/array_ref.t 45), matching the old Nil seed.
+            false
         } else {
             // Both are the same value identity (for non-hash-ref cases)
             crate::runtime::values_identical(a, b)

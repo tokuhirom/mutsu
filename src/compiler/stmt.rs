@@ -1130,6 +1130,10 @@ impl Compiler {
                     // An uninitialized `&`-sigil variable (`my &foo;` / `my &;`)
                     // defaults to the `Callable` type object, not Any/Nil.
                     let callable_default = Expr::BareWord("Callable".to_string());
+                    // An uninitialized untyped `$` scalar (`my $x;`) holds the
+                    // Any type object, not Nil (PLAN 8.5 step 3) — see
+                    // `uninit_untyped_scalar_defaults_to_any`.
+                    let any_default = Self::any_type_object_expr();
                     let rhs_expr = if has_default_trait
                         && !name.starts_with('@')
                         && !name.starts_with('%')
@@ -1146,6 +1150,13 @@ impl Compiler {
                         // would trip the value type-check. Only default to Callable
                         // for the unconstrained `my &a` / `my &`.
                         &callable_default
+                    } else if Self::uninit_untyped_scalar_defaults_to_any(
+                        name,
+                        expr,
+                        type_constraint.as_deref(),
+                        custom_traits,
+                    ) {
+                        &any_default
                     } else {
                         expr
                     };

@@ -273,6 +273,14 @@ impl Interpreter {
                 }
             }
             _ => {
+                // The Any type object is the uninitialized-scalar seed
+                // (PLAN 8.5 step 3): like the old Nil seed (whose empty
+                // stringification skipped insertion), it contributes no
+                // element — `my $s; $s ∪= 0` unions from the empty set
+                // (S04-phasers/enter-leave.t 32).
+                if value.is_any_type_object() {
+                    return;
+                }
                 let sv = value.to_string_value();
                 if !sv.is_empty() {
                     elems.insert(sv);
@@ -320,9 +328,13 @@ impl Interpreter {
             }
             _ => {
                 let mut elems = HashSet::new();
-                let sv = value.to_string_value();
-                if !sv.is_empty() {
-                    elems.insert(sv);
+                // Any type object = uninitialized-scalar seed → empty set,
+                // like the old Nil seed (see union_insert_set_elem).
+                if !value.is_any_type_object() {
+                    let sv = value.to_string_value();
+                    if !sv.is_empty() {
+                        elems.insert(sv);
+                    }
                 }
                 Ok(elems)
             }

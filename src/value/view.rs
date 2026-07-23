@@ -530,6 +530,15 @@ impl Value {
         self.0.is_nil()
     }
 
+    /// Whether this is the `Any` type object (`Package("Any")`) — notably the
+    /// value an uninitialized untyped scalar declaration seeds (PLAN 8.5
+    /// step 3), which container-identity heuristics must treat like the old
+    /// Nil seed (two distinct uninitialized scalars are not `=:=`).
+    #[inline]
+    pub fn is_any_type_object(&self) -> bool {
+        matches!(self.view(), ValueView::Package(sym) if sym.as_str() == "Any")
+    }
+
     // ---- consuming extractors (move the payload out) ----
 
     /// The backing store and kind if this is exactly an `Array`, consuming

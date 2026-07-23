@@ -5,6 +5,41 @@ impl Compiler {
         matches!(expr, Expr::DoStmt(s) if matches!(s.as_ref(), Stmt::VarDecl { .. }))
     }
 
+    /// An uninitialized untyped `$` scalar declaration (`my $x;`) seeds the
+    /// Any type object, not Nil (PLAN 8.5 step 3). The substitution happens
+    /// only at RHS-emission time: the AST keeps the synthesized
+    /// `Literal(Nil)` so every default-init recognition site (redeclaration
+    /// no-op, shadow-slot capture, block-inline, do-expr value) still
+    /// matches. `$/`/`$!` stay Nil per S02-types/nil.t; `is default(...)`
+    /// decls keep the Nil seed so the trailing ApplyVarTrait replaces it
+    /// with the default; `:=` binds and explicit `= Nil` initializers keep
+    /// their own paths.
+    pub(super) fn uninit_untyped_scalar_defaults_to_any(
+        name: &str,
+        expr: &Expr,
+        type_constraint: Option<&str>,
+        custom_traits: &[(String, Option<Expr>)],
+    ) -> bool {
+        !name.starts_with('@')
+            && !name.starts_with('%')
+            && !name.starts_with('&')
+            && name != "/"
+            && name != "!"
+            && name != "$/"
+            && name != "$!"
+            && type_constraint.is_none()
+            && matches!(expr, Expr::Literal(lit) if lit.is_nil())
+            && !custom_traits
+                .iter()
+                .any(|(t, _)| t == "__has_initializer" || t == "__scalar_bind" || t == "default")
+    }
+
+    /// The `Any` type-object literal seeded by
+    /// `uninit_untyped_scalar_defaults_to_any` sites.
+    pub(super) fn any_type_object_expr() -> Expr {
+        Expr::Literal(Value::package(crate::symbol::Symbol::intern("Any")))
+    }
+
     /// Check if a method call is a known mutating method on an indexed target
     /// (e.g., `%hash<key>.push(4)` or `@array[0].push(5)`).
     pub(super) fn is_mutating_method_on_index(

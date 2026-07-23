@@ -1214,14 +1214,36 @@ the backlog.
       Any; List/Seq pad Nil), `t/multidim-indexing.t` 6 (shaped OOB delete throws — the old
       expectation fails under real raku), `t/vm-basic.t` 188 (`try`'s Nil resets the container to
       Any). **Key data point: the full `t/` suite (2312 files) passes with the crutch disabled.**
-- **Remaining steps:** 3 (uninit `my $x` = Any — the compiler/closure-cell knot; the ONLY
-      remaining crutch dependency is the uninit-scalar read: `my $x; $x === Any` must stay True,
-      so the crutch cannot be removed before step 3), 4 (remove the eqv crutch LAST; also lets
-      `Nil.^name`/`Nil === Any` divergences close), then re-check `.cache` on a holey Array
-      (returns a List today, raku returns the Array itself — noticed during step 1, unrelated).
-- **Cost/benefit** (for the remaining steps 3-4): step 3 is the proven-hard compiler knot; the
-      payoff is uninit-value rendering + dropping the crutch. Related: §6 (dual-store / lexical
-      slot), [`array-hole-tracking-embedded`], [ADR-0001] container-repr.
+- **Campaign step 3 landed 2026-07-23** (branch `nil-any-step3`) — uninit `my $x` now seeds the
+      **Any type object**. The winning approach was neither of the two that failed in the 2026-07-20
+      investigation (parser-BareWord / store-reset): the AST keeps the synthesized `Literal(Nil)`
+      (so all 6+ compiler default-init recognition sites — redeclaration no-op, shadow-slot,
+      block-inline, do-expr — stay intact) and the **compiler substitutes the Any type object only
+      at RHS-emission time**, in the three emit sites (`compiler/stmt.rs`, `expr_block.rs`,
+      `helpers_block_inline.rs`; shared predicate `uninit_untyped_scalar_defaults_to_any`).
+      `$/`/`$!` stay Nil; `is default(...)`/`:=`-bind/explicit-init decls keep their paths. VM
+      knock-ons fixed in the same slice: (a) `=:=` — the Package-singleton shortcuts must not
+      treat two Any-holding container reads as identical (`ContainerEqNamed` excludes "Any";
+      `is_value_non_reference` includes the Any type object); (b) closure-capture boxing
+      (`box_captured_lexicals` / `box_decl_local_cell`) boxes the Any seed into a shared cell
+      exactly like the old Nil seed (cross-thread reassignment visibility); (c) the `CallFunc`
+      interpreter-carrier branch gained the same carrier writeback `ExecCall` already had (an
+      `EVAL` under `try` writes caller lexicals by name; the Nil-slot env fallback used to mask
+      the missing writeback); (d) `(my $x) does Int` stays `X::Does::TypeObject` (Any/Mu are
+      type objects even though they sit in the class registry); (e) `.Hash` on the Any type
+      object is `{}` like the old Nil arm. Pin: `t/uninit-scalar-any.t` (18 tests, raku-verified).
+      **Full `t/` (2321 files, 21932 tests) passes with the crutch disabled.**
+- **Remaining steps:** 4 (remove the eqv crutch LAST; also lets `Nil.^name`/`Nil === Any`
+      divergences close — nil.t/identity.t/delete.t and full `t/` already pass crutch-off as of
+      step 3), then re-check `.cache` on a holey Array (returns a List today, raku returns the
+      Array itself — noticed during step 1, unrelated).
+- **Step-4 prerequisite found 2026-07-23:** an **unpassed optional parameter** (`sub w($p?)`)
+      still seeds Nil — visible as `$p.raku` = `Nil` (raku: `Any`; pointy blocks: `Mu`). `===`/
+      `.^name` are crutch-masked today, so step 4 would surface it. Param binding is spread
+      across the light/typed/named/method dispatch paths, so it is its own slice.
+- **Cost/benefit** (for the remaining step 4): payoff is closing the `Nil.^name`/`Nil === Any`
+      divergences and deleting the last band-aid. Related: §6 (dual-store / lexical slot),
+      [`array-hole-tracking-embedded`], [ADR-0001] container-repr.
 
 ### 8.6 `.WHO`/`.HOW` render without their metamodel detail — mostly done; internals leftover
 

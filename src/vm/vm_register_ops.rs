@@ -666,15 +666,21 @@ impl Interpreter {
             }
             // Only box plain scalar containers. Reference types share already;
             // type objects / proxies must not be hidden behind a ContainerRef.
-            if matches!(
-                cur.view(),
-                ValueView::Package(_)
-                    | ValueView::Array(..)
-                    | ValueView::Hash(..)
-                    | ValueView::Sub(..)
-                    | ValueView::Instance { .. }
-                    | ValueView::Proxy { .. }
-            ) {
+            // EXCEPTION: the Any type object is the uninitialized-scalar seed
+            // (PLAN 8.5 step 3) — box it exactly like the old Nil seed, so a
+            // captured-then-reassigned lexical stays a shared cell
+            // (t/then-captured-lexical-cross-thread.t).
+            if !cur.is_any_type_object()
+                && matches!(
+                    cur.view(),
+                    ValueView::Package(_)
+                        | ValueView::Array(..)
+                        | ValueView::Hash(..)
+                        | ValueView::Sub(..)
+                        | ValueView::Instance { .. }
+                        | ValueView::Proxy { .. }
+                )
+            {
                 continue;
             }
             let container = cur.clone().into_container_ref();
