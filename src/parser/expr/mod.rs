@@ -202,6 +202,71 @@ pub(in crate::parser) fn expression_no_assign(input: &str) -> PResult<'_, Expr> 
     Ok((rest, expr))
 }
 
+/// Like [`expression`], but stops before the loosest word-logical operators
+/// (`and`/`or`/`xor`/`andthen`/`orelse`/`notandthen`). Used by the hand-rolled
+/// statement-level assignment, declaration and `return` RHS parsers so those
+/// operators bind *looser* than item assignment (`=`), the comma, and
+/// `return` — matching Raku's precedence table (`operators.rakudoc`: "loose and"
+/// / "loose or" are the last two rows). A parenthesized word-logical
+/// (`return (1 and 2)`) is a complete term consumed here; an unparenthesized one
+/// (`return 1 and 2`) is left in the stream for the caller's word-logical tail.
+///
+/// Applies the same fat-arrow (`=>`) and WhateverCode wrapping as [`expression`].
+/// The parse entry is the list-infix layer ([`list_infix_top`]), which is the
+/// precedence tier just below the word-logicals.
+pub(in crate::parser) fn expression_no_word_logical(input: &str) -> PResult<'_, Expr> {
+    let (rest, mut expr) = precedence::list_infix_top(input, operators::ExprMode::Full)?;
+    let (r, _) = ws(rest)?;
+    if r.starts_with("=>") && !r.starts_with("==>") {
+        let r = &r[2..];
+        let (r, _) = ws(r)?;
+        let (r, value) = parse_fat_arrow_value(r)?;
+        let consumed = &input[..input.len() - rest.len()];
+        let leading_colons = consumed.trim_start().starts_with("::");
+        let is_bareword =
+            !leading_colons && matches!(&expr, Expr::BareWord(name) if !name.contains("::"));
+        let left = match expr {
+            Expr::BareWord(ref name)
+                if !consumed.trim_start().starts_with('(')
+                    && !leading_colons
+                    && !name.contains("::") =>
+            {
+                Expr::Literal(Value::str(name.clone()))
+            }
+            _ => expr,
+        };
+        let pair = Expr::Binary {
+            left: Box::new(left),
+            op: TokenKind::FatArrow,
+            right: Box::new(value),
+        };
+        let result = if is_bareword {
+            pair
+        } else {
+            Expr::PositionalPair(Box::new(pair))
+        };
+        return Ok((r, result));
+    }
+    expr = wrap_composition_operands(expr);
+    if should_wrap_whatevercode(&expr) {
+        expr = match expr {
+            Expr::CallOn { target, args }
+                if should_wrap_whatevercode(&target) && !args.iter().any(contains_whatever) =>
+            {
+                Expr::CallOn {
+                    target: Box::new(wrap_whatevercode(&target)),
+                    args,
+                }
+            }
+            ref e if try_wrap_whatevercode_call_chain(e).is_some() => {
+                try_wrap_whatevercode_call_chain(&expr).unwrap()
+            }
+            other => wrap_whatevercode(&other),
+        };
+    }
+    Ok((rest, expr))
+}
+
 pub(in crate::parser) fn expression_no_sequence(input: &str) -> PResult<'_, Expr> {
     // Same as expression but skip memo and don't include sequence
     let (rest, mut expr) = precedence::ternary_mode(input, operators::ExprMode::NoSequence)?;
@@ -406,4 +471,19 @@ pub(in crate::parser) fn parse_fat_arrow_value(input: &str) -> PResult<'_, Expr>
 
 pub(in crate::parser) fn term_expr(input: &str) -> PResult<'_, Expr> {
     postfix::prefix_expr(input)
+}
+
+/// Returns true when `input` begins with a loose word-logical operator
+/// (`and`/`or`/`xor`/`andthen`/`orelse`/`notandthen`), not immediately followed
+/// by `=` (a compound assignment). Used by the statement-level word-logical tail
+/// wrapper to decide whether to attach a trailing `... and ...`.
+pub(in crate::parser) fn starts_with_loose_word_logical(input: &str) -> bool {
+    operators::parse_word_logical_op(input).is_some()
+}
+
+/// Continue parsing a statement-level word-logical chain from an already-parsed
+/// leftmost operand (`seed`), with `input` positioned at the first word-logical
+/// operator. Thin public wrapper over [`precedence::word_logical_tail`].
+pub(in crate::parser) fn word_logical_tail_pub(input: &str, seed: Expr) -> PResult<'_, Expr> {
+    precedence::word_logical_tail(input, seed)
 }
