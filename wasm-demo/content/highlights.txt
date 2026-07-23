@@ -40,7 +40,7 @@ multi fizz(Int $n where $n %% 15) { "FizzBuzz" }
 multi fizz(Int $n where $n %%  3) { "Fizz"     }
 multi fizz(Int $n where $n %%  5) { "Buzz"     }
 multi fizz(Int $n)                { ~$n        }
-say (1..15).map({ fizz($_) }).join(" ");
+say (1..15).map(&fizz).join(" ");
 #-- expect
 1 2 Fizz 4 Buzz Fizz 7 8 Fizz Buzz 11 Fizz 13 14 FizzBuzz
 

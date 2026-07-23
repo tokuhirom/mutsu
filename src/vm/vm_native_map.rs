@@ -73,10 +73,7 @@ impl Interpreter {
         if !data.assumed_positional.is_empty() || !data.assumed_named.is_empty() {
             return None;
         }
-        if data.env.contains_key("__mutsu_routine_name")
-            || data.env.contains_key("__mutsu_compose_left")
-            || data.env.contains_key("__mutsu_compose_right")
-        {
+        if crate::runtime::resolution_map_grep::sub_is_call_carrier(&data) {
             return None;
         }
         let requires_full_binding = data.param_defs.iter().any(|pd| {
