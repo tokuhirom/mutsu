@@ -63,6 +63,38 @@ pub(crate) fn parse_optional_bracket_suffix(input: &str) -> PResult<'_, String> 
     Ok((&input[end..], input[..end].to_string()))
 }
 
+/// Extract the tag names from an `is export(...)` argument list, e.g.
+/// `":ALL, :FOO"` -> `["ALL", "FOO"]`. Each colonpair `:NAME` contributes its
+/// name; bare words are also accepted (`export(FOO)`).
+fn extract_export_tag_names(inner: &str) -> Vec<String> {
+    let mut tags = Vec::new();
+    for part in inner.split(',') {
+        let t = part.trim().trim_start_matches(':').trim();
+        // Take the leading identifier (drop any `<...>`/value tail).
+        let name: String = t
+            .chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
+            .collect();
+        if !name.is_empty() {
+            tags.push(name);
+        }
+    }
+    tags
+}
+
+/// Emit a runtime call that records a `is export`-ed type (class/grammar) so a
+/// later `use`/`import` of the enclosing module can import it by its bare name.
+pub(crate) fn export_type_stmt(type_name: &str, tags: &[String]) -> Stmt {
+    let mut args = vec![Expr::Literal(Value::str(type_name.to_string()))];
+    for tag in tags {
+        args.push(Expr::Literal(Value::str(tag.clone())));
+    }
+    Stmt::Expr(Expr::Call {
+        name: Symbol::intern("__MUTSU_EXPORT_TYPE__"),
+        args,
+    })
+}
+
 pub(crate) fn meta_setter_stmt(type_name: &str, key: &str, value: Value) -> Stmt {
     Stmt::Expr(Expr::Call {
         name: Symbol::intern("__MUTSU_SET_META__"),
@@ -230,6 +262,8 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
     let mut does_parents = Vec::new();
     let mut is_repr: Option<String> = None;
     let mut custom_traits: Vec<(String, Option<Expr>)> = Vec::new();
+    let mut is_export = false;
+    let mut export_tags: Vec<String> = Vec::new();
     let mut r = rest;
     loop {
         if let Some(r2) = keyword("is", r) {
@@ -261,6 +295,26 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
                 continue;
             } else if parent == "DEPRECATED" {
                 // `is DEPRECATED` on a class — skip optional parenthesized arg
+                let r2 = skip_balanced_parens(r2);
+                let (r2, _) = ws(r2)?;
+                r = r2;
+                continue;
+            } else if parent == "export" {
+                // `class Foo is export` / `is export(:TAG, :TAG2)` — mark the
+                // class as importable. A bare `is export` uses the DEFAULT tag
+                // (also imported under `:ALL`); tagged forms capture each `:TAG`.
+                is_export = true;
+                if let Some(inner) = r2.strip_prefix('(') {
+                    let end = inner.find(')').unwrap_or(inner.len());
+                    for tag in extract_export_tag_names(&inner[..end]) {
+                        if !export_tags.contains(&tag) {
+                            export_tags.push(tag);
+                        }
+                    }
+                }
+                if export_tags.is_empty() && !export_tags.iter().any(|t| t == "DEFAULT") {
+                    export_tags.push("DEFAULT".to_string());
+                }
                 let r2 = skip_balanced_parens(r2);
                 let (r2, _) = ws(r2)?;
                 r = r2;
@@ -424,6 +478,18 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
         if trait_name == "ver" || trait_name == "auth" || trait_name == "api" {
             stmts.push(meta_setter_stmt(&name, &trait_name, trait_value));
         }
+    }
+    if is_export && !is_lexical {
+        // Register the export AFTER the class is declared so its type object is
+        // in scope when `import`/`use` copies it into the caller's namespace.
+        // Only for a package-scoped class: a `my class ... is export` is lexical
+        // and would be trapped inside this synthetic `Stmt::Block` scope (breaking
+        // its visibility to the rest of the module). A bare-file module's
+        // top-level `my class` is already importable by its bare name through the
+        // global registry, so it keeps the pre-existing path here.
+        stmts.push(class_stmt);
+        stmts.push(export_type_stmt(&name, &export_tags));
+        return Ok((rest, Stmt::Block(stmts)));
     }
     if stmts.is_empty() {
         return Ok((rest, class_stmt));
