@@ -641,7 +641,8 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 - dists (each its own root cause; triage individually before claiming, confirm the
   raku `-I lib` baseline first): ~~Attribute::Predicate~~ (FIXED — see Done),
   File::Ignore (PARTIAL — module now loads via Regex.ACCEPTS fix; see Done),
-  IO::Path::AutoDecompress, ~~Math::Angle~~ (FIXED — see Done), Math::PascalTriangle,
+  IO::Path::AutoDecompress, ~~Math::Angle~~ (FIXED — see Done),
+  ~~Math::PascalTriangle~~ (FIXED — see Done),
   ~~Statistics::LinearRegression~~ (FIXED — see Done), String::Rotate,
   Text::CodeProcessing, Trait::IO, WriteOnceHash, `are`, ~~`sortuk`~~ (FIXED — see Done),
   Tree::Binary::PrettyTree (role-`new` requirement FIXED; now blocked on a
@@ -666,8 +667,24 @@ _(move tickets here with `[claim: <branch>]` when you start)_
 
 ## Done
 
-- **T-057 (Statistics::LinearRegression)** (#PENDING) — 6/9 → 9/9. Two general
-  bugs, both on the path to `my LR $model .= new: @x, @y`:
+- **T-057 (Math::PascalTriangle)** (PR `fix-where-named-param-sibling-ref`) —
+  test_die → t/02-triangle.t 13/13 (release). Root cause: a `where` constraint on
+  a **named** parameter could not reference the *other* named parameters of the
+  same signature. The module's dispatch is
+  `multi method get(:$line!, :$col! where $line == *)` /
+  `where $line > *` — the `where` on `:$col!` references the sibling `:$line!`.
+  Positional params were bound into the env before later params' where-checks, but
+  named params were not, so any candidate whose `where` referenced a sibling named
+  param never matched and dispatch failed with "Cannot resolve caller". Fix:
+  `types/args_matching.rs` binds every supplied sibling named param into the env
+  before evaluating a named param's where-constraint (mirroring the positional
+  path). Pin: `t/where-named-param-sibling-ref.t`. (t/01-meta.t needs Test::META,
+  which fails to load under raku here too — out of scope.) Note: the recursive
+  `C(99,49)` case is memoized but slow (~7.5s release) because where-constrained
+  multi dispatch clones the env per candidate — a separate, pre-existing perf item,
+  not a blocker (well within the roast timeout budget).
+
+
   1. **`class ... is export` was silently dropped.** A `class Foo is export` /
      `is export(:TAG)` inside a module never became importable — the class-decl
      `is`-trait loop skipped `export` without recording it (and `is export(:ALL)`
