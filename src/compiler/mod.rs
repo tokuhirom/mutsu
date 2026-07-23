@@ -83,6 +83,12 @@ pub(crate) struct Compiler {
     /// it learns its target name too late to be answered any other way. Empty for a
     /// compilation unit's own compiler. See [`lex_scope::LexScopeChain`].
     enclosing_scopes: Vec<lex_scope::ScopeFrame>,
+    /// Index (within `local_scopes`) of this compilation UNIT's outermost scope —
+    /// the scope `UNIT::` names. 0 for a file's own compiler; an `EVAL`'d unit
+    /// (`mark_as_eval_unit`) pushes an empty wrapper frame first so that
+    /// `OUTER::` from its mainline lands on nothing, which also means its true
+    /// mainline is one frame in — so `UNIT::` must stop there, not at the wrapper.
+    unit_root_scope: usize,
     /// Track type constraints for local variables (for compile-time literal checks).
     local_types: HashMap<String, String>,
     compiled_functions: CompiledFns,
@@ -292,6 +298,7 @@ impl Compiler {
             // Frame 0 = compilation-unit / routine top level; never popped.
             local_scopes: vec![HashMap::new()],
             enclosing_scopes: Vec::new(),
+            unit_root_scope: 0,
             local_types: HashMap::new(),
             compiled_functions: CompiledFns::default(),
             current_package: "GLOBAL".to_string(),
@@ -516,7 +523,11 @@ impl Compiler {
     /// [`lex_scope::LexScopeChain`]. It is emitted per symbolic-deref site, which
     /// is a construct that appears a handful of times in a program at most.
     fn bake_lex_scope_chain(&mut self) -> u32 {
-        let chain = lex_scope::LexScopeChain::new(self.full_scope_chain(), self.local_map.clone());
+        let chain = lex_scope::LexScopeChain::new(
+            self.full_scope_chain(),
+            self.local_map.clone(),
+            self.unit_root_index(),
+        );
         self.code.add_lex_scope_chain(chain)
     }
 
@@ -663,7 +674,12 @@ impl Compiler {
     /// Emit a read of `bare` via `UNIT::` (the compilation unit's outermost
     /// lexical scope): `$UNIT::x`, `UNIT::<$x>`.
     fn emit_unit_var_access(&mut self, bare: String) {
-        let res = lex_scope::resolve_unit(&self.full_scope_chain(), &self.local_map, &bare);
+        let res = lex_scope::resolve_unit(
+            &self.full_scope_chain(),
+            &self.local_map,
+            &bare,
+            self.unit_root_index(),
+        );
         self.emit_outer_resolution(bare, res);
     }
 
@@ -706,6 +722,15 @@ impl Compiler {
     /// which already models the same layout on the caller axis for `CALLER::`.
     pub(crate) fn mark_as_eval_unit(&mut self) {
         self.push_local_scope();
+        // The EVAL'd unit's declarations now land in this freshly-pushed frame,
+        // so it — not the empty wrapper below it — is the unit's `UNIT::` root.
+        self.unit_root_scope = self.local_scopes.len() - 1;
+    }
+
+    /// The index, in the full (enclosing ++ local) scope chain, of this
+    /// compilation unit's outermost scope — the scope `UNIT::` resolves against.
+    fn unit_root_index(&self) -> usize {
+        self.enclosing_scopes.len() + self.unit_root_scope
     }
 
     /// Enter a nested lexical scope for local-slot allocation. Paired with

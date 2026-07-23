@@ -125,6 +125,7 @@ pub(crate) fn resolve_unit(
     scopes: &[ScopeFrame],
     local_map: &HashMap<String, u32>,
     bare: &str,
+    unit_root_index: usize,
 ) -> OuterResolution {
     let n = scopes.len();
     if n == 0 {
@@ -133,7 +134,11 @@ pub(crate) fn resolve_unit(
             slot: local_map.get(bare).copied(),
         };
     }
-    resolve_outer(scopes, local_map, bare, n - 1)
+    // The unit's outermost scope sits at `unit_root_index` from the front; the
+    // depth that reaches it from the innermost (current) scope is its distance
+    // from the end. Guarded so a stale index can never wrap below zero.
+    let depth = (n - 1).saturating_sub(unit_root_index);
+    resolve_outer(scopes, local_map, bare, depth)
 }
 
 /// The compile-time scope chain at one emit point, baked into the code chunk.
@@ -147,11 +152,23 @@ pub(crate) fn resolve_unit(
 pub(crate) struct LexScopeChain {
     scopes: Vec<ScopeFrame>,
     local_map: HashMap<String, u32>,
+    /// Index of the compilation unit's outermost scope (for `UNIT::`), baked in
+    /// so the runtime `$::('UNIT')::x` walk stops at the same boundary the
+    /// compile-time `$UNIT::x` does — notably one frame past an `EVAL` wrapper.
+    unit_root_index: usize,
 }
 
 impl LexScopeChain {
-    pub(crate) fn new(scopes: Vec<ScopeFrame>, local_map: HashMap<String, u32>) -> Self {
-        Self { scopes, local_map }
+    pub(crate) fn new(
+        scopes: Vec<ScopeFrame>,
+        local_map: HashMap<String, u32>,
+        unit_root_index: usize,
+    ) -> Self {
+        Self {
+            scopes,
+            local_map,
+            unit_root_index,
+        }
     }
 
     pub(crate) fn resolve_outer(&self, bare: &str, depth: usize) -> OuterResolution {
@@ -163,7 +180,7 @@ impl LexScopeChain {
     }
 
     pub(crate) fn resolve_unit(&self, bare: &str) -> OuterResolution {
-        resolve_unit(&self.scopes, &self.local_map, bare)
+        resolve_unit(&self.scopes, &self.local_map, bare, self.unit_root_index)
     }
 
     /// Every name any scope in the chain declares — i.e. every name a lookup
