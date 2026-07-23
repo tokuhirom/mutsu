@@ -38,10 +38,16 @@ impl Interpreter {
         // restored after the loop's LAST/post phasers via the `RestoreForParam`
         // opcode (the compiler emits it for any single non-@/% named param), so
         // the push below must balance that pop on normal completion.
-        let saved_param: Option<(String, Option<Value>)> = param_name
+        let saved_param: Option<(String, Option<Value>, Option<u32>)> = param_name
             .as_ref()
             .filter(|n| !n.starts_with('@') && !n.starts_with('%'))
-            .map(|name| (name.clone(), self.env().get(name).cloned()));
+            .map(|name| {
+                (
+                    name.clone(),
+                    self.env().get(name).cloned(),
+                    spec.param_local,
+                )
+            });
 
         // Track loop-body declarations so closures created in the body capture
         // them per-iteration (owned_captures). Balanced by pop on every exit.

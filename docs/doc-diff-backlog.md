@@ -221,26 +221,36 @@ intentionally deferred; see PLAN.md §8.5 and the ADRs:
 
 - **Sigilless-parameter scoping (`py-nutshell.rakudoc`)** — a sigilless binding
   shadowing the `i` term constant is fixed for `my \i` reads and single
-  `-> \i { }` pointy params (#5113), but three sub-cases remain, each on a
-  distinct binding path:
-  - `-> (\i, \j) { i + j }` — the **destructuring** sub-signature path
-    (`__subsig__` + nested `sub_signature` param defs) does not emit the
-    `MarkSigillessReadonly` marker, so `i` still resolves to the imaginary
-    unit. Symmetric fix = inject the marker for each `pd.sigilless` sub-param
-    when compiling the destructuring body.
-  - `for 1,2,3 -> \x { }; say x` — the for-loop sigilless **param leaks** to the
-    outer `\x` binding (gives `3`, not the outer `10`): the single-param
-    save/restore in `vm_for_loop_body.rs` does not restore a sigilless outer
-    binding of the same bare name.
-  - `for ^5 -> \x { block-capturing x }` — a for-loop sigilless param is **not
-    visible** in a nested closure (`Cannot convert string to number '⏏x'`); the
-    nested block does not capture the sigilless loop param.
-  - Also (`py-nutshell` [5] line 1): `{ $_[0] + $_[1] }` over `X`-crossed list
-    topics returns blank — `$_[N]` indexing a list topic is a separate bug.
-  - Minor pre-existing parser-scope leak surfaced while pinning: a source-level
-    `my \i` registers `i` as a user term symbol whose registration leaks past
-    its block, so a later bare `i` in the same unit mis-parses (`-> \i` does not
-    leak; only the `my \i` VarDecl form).
+  `-> \i { }` pointy params (#5113). **Mostly resolved** as of 2026-07-23; pin
+  `t/sigilless-param-scoping.t`:
+  - **Fixed** — `-> (\i, \j) { i + j }` (destructuring): `compile_closure_body`
+    now allocates the `sub_signature` sigilless sub-params as sigilless locals
+    and prepends a `MarkSigillessReadonly` prologue per sigilless sub-param, so a
+    bare-word read resolves the binding, not the imaginary unit. Routine
+    destructure (`sub f((\i,\j))`) is covered by the same
+    `alloc_sub_signature_locals` sigilless registration.
+  - **Fixed** — `for 1,2,3 -> \x { }; say x` (single for-param leak): this was
+    NOT sigilless-specific — a sigiled `for ... -> $x` reusing an outer `my $x`
+    leaked too. The single-param restore only touched env, not the compile-time
+    local *slot* that the loop overwrote each iteration. The
+    `for_param_restore_stack` entry now carries the colliding local slot
+    (`spec.param_local`), and `RestoreForParam` writes the saved value back
+    through it (both the array-source and int-range loop paths). LAST/post
+    phasers still see the final value (restore stays deferred).
+  - **Already worked** — `for ^5 -> \x { block-capturing x }` (nested-closure
+    capture) and `py-nutshell` [5] `{ $_[0] + $_[1] }` over an `X`-crossed list
+    topic both pass on current `main`; no change needed.
+  - **Still deferred (1 niche case, compiler local-scope leak)** —
+    `{ my \i = 5 }; say i` should revert `i` to the imaginary unit after the
+    block, but a bare-block `my \i` leaks its `local_map`/`sigilless_locals`
+    registration past the block, so the outer `say i` compiles to `GetLocal`
+    (the now-Nil block slot) instead of `GetBareWord` (which would reach the
+    imaginary-unit fallback). This is the general compiler bare-block
+    local-scope leak — for a *sigiled* `{ my $x }; say $x` it surfaces only as a
+    runtime "not declared" (vs raku's compile-time), and `i` is the sole name
+    whose term fallback the leak observably suppresses. Fixing it means scoping
+    the compiler's `local_map`/`sigilless_locals` per bare block (broad blast
+    radius), so it is left for a dedicated pass.
 - **List-infix (`Z`/`X`/meta/infix-func) comma precedence** — `operators.rakudoc`
   [24] (`say 100, 200 Z+ 42, 23` → raku `(142 223)`; `1, 2 Z 3, 4` → `((1 3) (2 4))`).
   `Z`/`X` are **looser than comma** in Raku, so the comma list on each side is the

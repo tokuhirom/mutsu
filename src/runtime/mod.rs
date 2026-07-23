@@ -1415,7 +1415,14 @@ pub struct Interpreter {
     pub(crate) topic_container_source: Option<String>,
     pub(crate) element_source: Option<(String, Value, bool)>,
     pub(crate) quanthash_bind_params: Vec<String>,
-    pub(crate) for_param_restore_stack: Vec<(String, Option<Value>)>,
+    /// Deferred restore of a single named for-loop param's prior binding, applied
+    /// by `RestoreForParam` after the loop's LAST/post phasers. Tuple is
+    /// `(name, saved_env_value, colliding_local_slot)`: the slot is `Some` when
+    /// the loop param shares a compile-time local slot with an enclosing binding
+    /// of the same bare name (`my \x = 10; for ... -> \x { }`), so the restore
+    /// must write the saved value back through that slot too — otherwise a later
+    /// `GetLocal` read of the outer name sees the loop's last iteration value.
+    pub(crate) for_param_restore_stack: Vec<(String, Option<Value>, Option<u32>)>,
     pub(crate) call_frames: Vec<crate::vm::VmCallFrame>,
     /// Active CONTROL handlers on the dynamic call stack (one per executing
     /// `CONTROL { }` block). Kept in lock-step with `control_handler_depth` so
