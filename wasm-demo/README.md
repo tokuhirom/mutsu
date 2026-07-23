@@ -30,7 +30,20 @@ content/
   tutorial.ja.js    tutorial titles and prose (Japanese)
   landing.en.js     landing-page copy (English)
   landing.ja.js     landing-page copy (Japanese)
+bench-trend.html    benchmark dashboard — generated, git-ignored (see below)
 pkg/                wasm-pack output — generated, git-ignored
+```
+
+`bench-trend.html` is rendered into the site at deploy time by
+`scripts/bench-visualize.py` from the `bench-data` branch's `bench-history.tsv`.
+Passing `--site-chrome` makes it load `assets/site.css` and `assets/i18n.js` and
+render the same nav, language switch and footer as every other page, so the shared
+chrome has exactly one definition. Without the flag the script keeps producing a
+fully self-contained file for offline use:
+
+```sh
+git show origin/bench-data:bench-history.tsv \
+  | python3 scripts/bench-visualize.py --standalone --site-chrome -o wasm-demo/bench-trend.html
 ```
 
 ## Languages
@@ -115,7 +128,8 @@ SKIP_LESSON_SWEEP=1 node wasm-demo/e2e.test.mjs   # skip the per-lesson sweep
 
 The e2e suite runs **every** tutorial lesson in the browser and compares against the
 recorded expectation, so a WASM-only regression cannot reach the deployed site
-unnoticed.
+unnoticed. It also renders `bench-trend.html` from a synthetic history and checks its
+chrome, so the generated page cannot silently drift away from the hand-written ones.
 
 ## Credit
 
