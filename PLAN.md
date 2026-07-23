@@ -1187,6 +1187,18 @@ the backlog.
       returns the type's `Stash` (was a plain `Hash`, so `(@a>>.WHO).WHAT` was `(Hash)`), and
       `Stash.raku` renders the symbols hash literal (`{:Bar(Foo::Bar)}`, `{}`) instead of
       `Stash.new`. Pin: `t/who-stash.t`.
+- The metamodel-accessor half landed 2026-07-23: `.^shortname` implemented
+      (`Foo::Bar` → `Bar`, qualifier-stripping inside type args too, `R[M2::N]` → `R[N]`);
+      `.^ver` answers `"6.c"` (a Str, as Rakudo) for builtin types/values and `Mu` for
+      unversioned modules/roles/enums instead of throwing; `.^auth`/`.^api` answer `""` for
+      any undeclared type/value (bare `package` still throws — PackageHOW has no
+      ver/auth/api); `.^isa` returns the nqp-boolean Int 1/0 like Rakudo, not Bool.
+      Pin: `t/metamodel-shortname-ver-auth.t`.
+- [ ] **Leftover (doable, small):** anonymous class display name — mutsu names anon classes
+      `__ANON_CLASS_0__` where raku shows `<anon|1>` (visible via `.^name`, `.^shortname`,
+      `say (class :: {})`). The internal name is also the registry key, so the fix is a
+      display-layer mapping (`user_facing_type_name` returns `&str` today and would need to
+      allocate) or renaming the generated key — check `is_internal_anon_type_name` callers.
 - [ ] **Leftover (Rakudo-metamodel-internal, cosmetic):** the *content* of a builtin type's
       stash — raku's `Array.WHO` lists implementation subclasses
       `{:Element(Array::Element), :Shaped(Array::Shaped), ...}` that do not exist in mutsu —

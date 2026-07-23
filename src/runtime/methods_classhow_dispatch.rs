@@ -1,6 +1,30 @@
 use super::*;
 use crate::symbol::Symbol;
 
+/// `Metamodel::Naming.shortname`: the type name with every `Foo::` package
+/// qualifier dropped, including inside `[...]` type args -- `Foo::Bar` ->
+/// `Bar`, `R[M2::N]` -> `R[N]`. Non-identifier suffixes (`<anon|1>`,
+/// `Int:D`, `+{Role}`) pass through unchanged.
+fn shorten_type_name(name: &str) -> String {
+    let is_ident = |c: char| c.is_alphanumeric() || c == '_' || c == '-' || c == '\'';
+    let chars: Vec<char> = name.chars().collect();
+    let mut out = String::new();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == ':' && i + 2 < chars.len() && chars[i + 1] == ':' && is_ident(chars[i + 2]) {
+            // Drop the qualifier segment just emitted along with the `::`.
+            while out.chars().next_back().is_some_and(is_ident) {
+                out.pop();
+            }
+            i += 2;
+            continue;
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    out
+}
+
 impl Interpreter {
     /// Resolve a nominalizable type name to its nominal base type
     /// (`^nominalize`): strip `:D`/`:U`/`:_` definiteness, unwrap a coercion
@@ -125,39 +149,65 @@ impl Interpreter {
                 }
                 _ => value_type_name(&args[0]).to_string(),
             })),
+            "shortname" if !args.is_empty() => {
+                let full = self
+                    .dispatch_classhow_method("name", vec![args[0].clone()])?
+                    .to_string_value();
+                Ok(Value::str(shorten_type_name(&full)))
+            }
             "ver" if args.len() == 1 => {
-                let invocant_name = match args[0].view() {
-                    ValueView::Package(name) => name,
-                    ValueView::Instance { class_name, .. } => class_name,
-                    _ => {
-                        return Err(RuntimeError::new(
-                            "X::Method::NotFound: Unknown method value dispatch (fallback disabled): ver",
-                        ));
-                    }
+                let name = match args[0].view() {
+                    ValueView::Package(name) => name.resolve(),
+                    ValueView::Instance { class_name, .. } => class_name.resolve(),
+                    // A plain value (`42.^ver`): resolve through its type so
+                    // builtins answer below.
+                    _ => value_type_name(&args[0]).to_string(),
                 };
-                let name = invocant_name.resolve();
                 if let Some(meta) = self.type_metadata.get(&name)
                     && let Some(value) = meta.get("ver").cloned()
                 {
                     return Ok(Self::version_from_value(value));
                 }
+                // Core-setting language versions surface as plain Strs
+                // (`Int.^ver.WHAT` is Str in Rakudo); only a declared
+                // `:ver(...)` adverb (the type_metadata path above) is a
+                // real Version object.
                 if let Some(subset) = self.registry().subsets.get(&name) {
-                    return Ok(Self::version_from_value(Value::str(subset.version.clone())));
+                    return Ok(Value::str(subset.version.clone()));
                 }
-                if invocant_name == "Grammar" {
-                    return Ok(Self::version_from_value(Value::str_from("6.e")));
+                if name == "Grammar" {
+                    return Ok(Value::str_from("6.e"));
                 }
-                // A *class* with no declared version: `.^ver` is `Mu` (an undefined
-                // type object), not an error -- matching Rakudo. Reached e.g. when
-                // the `:ver(...)` adverb is an expression mutsu does not evaluate at
-                // registration (`unit class C:ver($?DISTRIBUTION.meta<ver>)`), or a
-                // plain unversioned class. (`has $.V = ::?CLASS.^ver` then sets V to
-                // Mu rather than throwing X::Method::NotFound.)
                 // A bare `package` uses PackageHOW, which has no `.^ver` at all, so
                 // `P.^ver` must still throw X::Method::NotFound ("absent by design").
+                if matches!(
+                    self.registry().package_kinds.get(&name),
+                    Some(crate::ast::PackageKind::Package)
+                ) {
+                    return Err(RuntimeError::new(
+                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): ver",
+                    ));
+                }
+                // Core setting types report the language version they were
+                // declared in (`Int.^ver` is v6.c). Checked before the class
+                // registry so an add_method stub for a builtin doesn't turn
+                // this into Mu.
+                if Self::is_builtin_type(&name) {
+                    return Ok(Value::str_from("6.c"));
+                }
+                // A class/module/role/enum with no declared version: `.^ver` is
+                // `Mu` (an undefined type object), not an error -- matching
+                // Rakudo. Reached e.g. when the `:ver(...)` adverb is an
+                // expression mutsu does not evaluate at registration
+                // (`unit class C:ver($?DISTRIBUTION.meta<ver>)`), or a plain
+                // unversioned declaration.
                 // TODO: evaluate expression-form `:ver(...)` adverbs at class
                 // registration and store the result in type_metadata.
-                if self.registry().classes.contains_key(&name) {
+                if self.registry().classes.contains_key(&name)
+                    || self.registry().roles.contains_key(&name)
+                    || self.registry().enum_types.contains_key(&name)
+                    || self.registry().package_kinds.contains_key(&name)
+                {
                     return Ok(Value::package(crate::symbol::Symbol::intern("Mu")));
                 }
                 Err(RuntimeError::new(
@@ -165,43 +215,53 @@ impl Interpreter {
                 ))
             }
             "auth" if args.len() == 1 => {
-                let invocant_name = match args[0].view() {
-                    ValueView::Package(name) => name,
-                    ValueView::Instance { class_name, .. } => class_name,
-                    _ => {
-                        return Err(RuntimeError::new(
-                            "X::Method::NotFound: Unknown method value dispatch (fallback disabled): auth",
-                        ));
-                    }
+                let name = match args[0].view() {
+                    ValueView::Package(name) => name.resolve(),
+                    ValueView::Instance { class_name, .. } => class_name.resolve(),
+                    _ => value_type_name(&args[0]).to_string(),
                 };
-                let Some(meta) = self.type_metadata.get(&invocant_name.resolve()) else {
+                // A bare `package` uses PackageHOW, which has no `.^auth`.
+                if matches!(
+                    self.registry().package_kinds.get(&name),
+                    Some(crate::ast::PackageKind::Package)
+                ) {
                     return Err(RuntimeError::new(
                         "X::Method::NotFound: Unknown method value dispatch (fallback disabled): auth",
                     ));
-                };
-                let Some(value) = meta.get("auth").cloned() else {
-                    return Err(RuntimeError::new(
-                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): auth",
-                    ));
-                };
-                Ok(Value::str(value.to_string_value()))
+                }
+                // A type with no declared `:auth` has an empty-string auth
+                // (`class C {}; C.^auth` eq ""), so default to "" rather than
+                // throwing -- same shape as `.^api` below.
+                if let Some(value) = self
+                    .type_metadata
+                    .get(&name)
+                    .and_then(|meta| meta.get("auth").cloned())
+                {
+                    return Ok(Value::str(value.to_string_value()));
+                }
+                Ok(Value::str(String::new()))
             }
             "api" if args.len() == 1 => {
-                let invocant_name = match args[0].view() {
-                    ValueView::Package(name) => name,
-                    ValueView::Instance { class_name, .. } => class_name,
-                    _ => {
-                        return Err(RuntimeError::new(
-                            "X::Method::NotFound: Unknown method value dispatch (fallback disabled): api",
-                        ));
-                    }
+                let name = match args[0].view() {
+                    ValueView::Package(name) => name.resolve(),
+                    ValueView::Instance { class_name, .. } => class_name.resolve(),
+                    _ => value_type_name(&args[0]).to_string(),
                 };
+                // A bare `package` uses PackageHOW, which has no `.^api`.
+                if matches!(
+                    self.registry().package_kinds.get(&name),
+                    Some(crate::ast::PackageKind::Package)
+                ) {
+                    return Err(RuntimeError::new(
+                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): api",
+                    ));
+                }
                 // A declared `:api(...)` is stored in type_metadata; a type with no
                 // `:api` has an empty-string api in Rakudo (`class C {}; C.^api` eq
                 // ""), so default to "" rather than throwing.
                 if let Some(value) = self
                     .type_metadata
-                    .get(&invocant_name.resolve())
+                    .get(&name)
                     .and_then(|meta| meta.get("api").cloned())
                 {
                     return Ok(Value::str(value.to_string_value()));
@@ -209,20 +269,22 @@ impl Interpreter {
                 Ok(Value::str(String::new()))
             }
             "isa" if args.len() == 2 => {
+                // `.^isa` answers with an Int 1/0 (Rakudo surfaces the nqp
+                // boolean directly), not a Bool.
                 // Allow calling .^isa on an instance: use the instance's class.
                 let class_name = match args[0].view() {
                     ValueView::Package(name) => name,
                     ValueView::Instance { class_name, .. } => class_name,
-                    _ => return Ok(Value::FALSE),
+                    _ => return Ok(Value::int(0)),
                 };
                 let other_name = match args[1].view() {
                     ValueView::Package(name) => name,
                     ValueView::Instance { class_name, .. } => class_name,
-                    _ => return Ok(Value::FALSE),
+                    _ => return Ok(Value::int(0)),
                 };
                 let is_same = class_name == other_name;
                 if is_same {
-                    return Ok(Value::TRUE);
+                    return Ok(Value::int(1));
                 }
                 let class_resolved = class_name.resolve();
                 let other_resolved = other_name.resolve();
@@ -236,7 +298,7 @@ impl Interpreter {
                 {
                     loop {
                         if base == other_resolved {
-                            return Ok(Value::TRUE);
+                            return Ok(Value::int(1));
                         }
                         let Some(parent_base) =
                             self.registry().subsets.get(&base).map(|s| s.base.clone())
@@ -250,8 +312,8 @@ impl Interpreter {
                     }
                 }
                 let mro = self.class_mro(&class_name.resolve());
-                Ok(Value::truth(
-                    mro.iter().any(|p| p.as_str() == other_resolved),
+                Ok(Value::int(
+                    mro.iter().any(|p| p.as_str() == other_resolved) as i64
                 ))
             }
             "mro" if !args.is_empty() => {
