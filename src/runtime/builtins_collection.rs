@@ -362,10 +362,15 @@ impl Interpreter {
     }
 
     /// `:{ ... }` — a `Mu`-keyed object hash. Builds like `hash(...)` (which
-    /// records the key objects in `original_keys`), then tags the `Mu` key/value
-    /// types and re-keys by `.WHICH`.
+    /// records the key objects in `original_keys`), then tags the `Mu` key type
+    /// and re-keys by `.WHICH`. Uses the warning-free builder: an object hash
+    /// KEEPS a type-object key distinct (no ""-stringification warning).
     pub(super) fn builtin_object_hash(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let hash = self.builtin_hash(args)?;
+        let mut flat_values = Vec::new();
+        for arg in args {
+            flat_values.extend(Self::value_to_list(arg));
+        }
+        let hash = crate::runtime::utils::build_hash_from_items(flat_values)?;
         Ok(crate::runtime::utils::into_object_hash(hash, "Mu"))
     }
 
