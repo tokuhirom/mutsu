@@ -222,11 +222,20 @@ impl SharedPromise {
         // other promises/channels, so it must not hold this mutex).
         crate::gc::gc_safepoint(crate::gc::SafepointKind::Await);
         let (lock, cvar) = &*self.inner;
-        let state = lock.lock().unwrap();
         // STW-aware: the waiting thread counts as quiescent for the GC's
         // cooperative stop-the-world, and never resumes (cloning `Value`s
         // below mutates Gc refcounts) while a cycle scan is in progress.
-        let state = crate::gc::stw_aware_wait(cvar, state, |s| s.status != "Planned");
+        // On wasm this pumps the cooperative scheduler instead of parking —
+        // the `start` block we are waiting for only runs because of it.
+        let state = match crate::gc::wait_until(lock, cvar, |s| s.status != "Planned") {
+            Some(state) => state,
+            None => {
+                // Single-threaded build with nothing left to run: break the
+                // promise so `await` reports a deadlock instead of hanging.
+                let _ = self.try_break(Value::str(crate::gc::DEADLOCK_MESSAGE.to_string()));
+                lock.lock().unwrap()
+            }
+        };
         (
             state.result.clone(),
             state.output.clone(),
@@ -298,13 +307,17 @@ impl SharedChannel {
         // channel lock is taken — see `SharedPromise::wait`.
         crate::gc::gc_safepoint(crate::gc::SafepointKind::Await);
         let (lock, cvar) = &*self.inner;
-        let mut state = lock.lock().unwrap();
         loop {
             // STW-aware: block (quiescent) until there is something to take or
             // the channel is drained-closed; the queue pop / `Value` clones run
-            // only outside a stop-the-world window.
-            state =
-                crate::gc::stw_aware_wait(cvar, state, |s| !s.queue.is_empty() || s.drained_closed);
+            // only outside a stop-the-world window. On wasm the wait pumps the
+            // cooperative scheduler, so a queued `start` block gets to send.
+            let mut state = match crate::gc::wait_until(lock, cvar, |s| {
+                !s.queue.is_empty() || s.drained_closed
+            }) {
+                Some(state) => state,
+                None => return Err(Value::str(crate::gc::DEADLOCK_MESSAGE.to_string())),
+            };
             if let Some(val) = state.queue.pop_front() {
                 Self::finish_if_drained(&mut state);
                 return Ok(val);

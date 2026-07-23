@@ -397,7 +397,10 @@ pub(crate) static NIL_VALUE: Value = Value(NanBox::NIL);
 pub(crate) use types::{role_mixin_suffix, what_type_name};
 pub use view::ValueView;
 
-/// Get current time as seconds since UNIX epoch (returns 0.0 on WASM).
+/// Get current time as seconds since UNIX epoch. On WASM the host's
+/// `Date.now()` supplies it, plus whatever the cooperative scheduler's virtual
+/// clock has been advanced by (see `runtime::wasm_sched`), so a `sleep` is
+/// visible to `now` / `time` / `DateTime.now` exactly as it is natively.
 pub(crate) fn current_time_secs_f64() -> f64 {
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -408,7 +411,8 @@ pub(crate) fn current_time_secs_f64() -> f64 {
     }
     #[cfg(target_arch = "wasm32")]
     {
-        0.0
+        crate::runtime::thread_compat::js_epoch_secs()
+            + crate::runtime::wasm_sched::clock_offset_secs()
     }
 }
 

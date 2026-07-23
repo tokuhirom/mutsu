@@ -38,10 +38,10 @@
 //! mutates; `scan_black` restores it for every survivor, so the heap's refcounts
 //! are pristine afterward (only genuine garbage is disturbed).
 
+use crate::runtime::thread_compat::Instant;
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Instant;
 
 use super::gc_ptr::{
     CollectGuard, Color, ErasedGc, drain_candidates, erased_id, gc_drop_edges, gc_finalize,

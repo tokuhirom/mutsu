@@ -40,9 +40,10 @@
 //! quiescent nor unregistered, so the collector keeps waiting until those
 //! drops are done.
 
+use crate::runtime::thread_compat::Instant;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Condvar, Mutex, MutexGuard, OnceLock};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// A collect has requested the world to stop. Mutators park at their next
 /// safepoint; quiescent waits refuse to complete while this is set.
@@ -276,6 +277,49 @@ pub(crate) fn block_quiescent<R>(f: impl FnOnce() -> R) -> R {
 /// the global rendezvous — a collector achieving a fresh stop in that window
 /// scans without needing this mutex to make progress on *this* thread (it may
 /// briefly block tracing this one node, bounded by the 10ms re-check).
+/// [`stw_aware_wait`] against a mutex this takes itself, so the wasm build can
+/// release it between rounds.
+///
+/// Natively this is `stw_aware_wait` with the lock taken for you, and the
+/// result is always `Some`. On wasm nobody else can ever set the condition
+/// while this thread waits — there is no other thread — so instead of parking
+/// on the condvar it runs the cooperative scheduler ([`crate::runtime::wasm_sched::pump`])
+/// between checks, dropping the guard each round so the task that resolves the
+/// wait can take the same lock. `None` means the pump ran dry: the waiter is
+/// blocked on something that can never happen, and the caller should raise a
+/// deadlock error rather than spin forever.
+pub(crate) fn wait_until<'a, T>(
+    mutex: &'a Mutex<T>,
+    cvar: &Condvar,
+    ready: impl FnMut(&T) -> bool,
+) -> Option<MutexGuard<'a, T>> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let guard = mutex.lock().unwrap();
+        Some(stw_aware_wait(cvar, guard, ready))
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = cvar;
+        let mut ready = ready;
+        loop {
+            let guard = mutex.lock().unwrap();
+            if ready(&guard) {
+                return Some(guard);
+            }
+            drop(guard);
+            if !crate::runtime::wasm_sched::pump() {
+                return None;
+            }
+        }
+    }
+}
+
+/// What a `None` from [`wait_until`] means, phrased for the user who hit it.
+pub(crate) const DEADLOCK_MESSAGE: &str = "deadlock: nothing left to run while waiting. The WASM build runs on a single \
+     thread, so a `start` block that blocks on a value sent only after it began \
+     can never be woken";
+
 pub(crate) fn stw_aware_wait<'a, T>(
     cvar: &Condvar,
     mut guard: MutexGuard<'a, T>,
@@ -332,42 +376,56 @@ impl Drop for StwGuard {
 /// Only one stop can be in flight; a concurrent second caller fails fast (its
 /// suspects are re-queued and picked up later).
 pub(crate) fn try_stop_the_world(timeout: Duration) -> Option<StwGuard> {
-    // SeqCst: the collector side of the Dekker handshake. This store must be
-    // totally ordered against every mutator's `quiescent_exit_checked`
-    // (QUIESCENT store then STOP load) so a worker leaving quiescence cannot slip
-    // past the stop into `Gc` mutation while this collector counts it quiescent.
-    if STOP_REQUESTED.swap(true, Ordering::SeqCst) {
-        return None;
+    // wasm32 has exactly one thread, so the world is already stopped: whoever
+    // called the collector IS the only mutator, and every "worker" is a task on
+    // `runtime::wasm_sched`'s queue that by definition is not running. Take the
+    // stop unconditionally — the rendezvous below would otherwise wait on a
+    // condvar (which wasm32 std cannot do) for a quiescence count that queued,
+    // never-started tasks keep artificially high.
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = timeout;
+        return Some(StwGuard { _private: () });
     }
-    let deadline = Instant::now() + timeout;
-    let (lock, cvar) = rendezvous();
-    let mut guard = lock.lock().unwrap();
-    let self_counted = usize::from(thread_is_registered());
-    loop {
-        // Re-read the target every iteration: a worker finishing mid-wait
-        // unregisters itself (after its `Value` drops are done), lowering the
-        // number of threads that must park. The collector's own thread, if
-        // registered, is running this very function — exclude it.
-        let needed = super::gc_ptr::mutator_worker_count().saturating_sub(self_counted);
-        // SeqCst load (see the `swap` above): pairs with the mutators' SeqCst
-        // QUIESCENT stores to complete the handshake's total order.
-        if QUIESCENT.load(Ordering::SeqCst) >= needed {
-            drop(guard);
-            return Some(StwGuard { _private: () });
-        }
-        let now = Instant::now();
-        if now >= deadline {
-            drop(guard);
-            STOP_REQUESTED.store(false, Ordering::Release);
-            cvar.notify_all();
-            // Back off: an unwrapped blocking site is holding quiescence up;
-            // retrying at every candidate trigger would stall the mutators
-            // that DO park. Suspects stay queued and dead sweeps continue.
-            STW_RETRY_AT_MS.store(now_ms() + 100, Ordering::Release);
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        // SeqCst: the collector side of the Dekker handshake. This store must be
+        // totally ordered against every mutator's `quiescent_exit_checked`
+        // (QUIESCENT store then STOP load) so a worker leaving quiescence cannot slip
+        // past the stop into `Gc` mutation while this collector counts it quiescent.
+        if STOP_REQUESTED.swap(true, Ordering::SeqCst) {
             return None;
         }
-        let (g, _) = cvar.wait_timeout(guard, deadline - now).unwrap();
-        guard = g;
+        let deadline = Instant::now() + timeout;
+        let (lock, cvar) = rendezvous();
+        let mut guard = lock.lock().unwrap();
+        let self_counted = usize::from(thread_is_registered());
+        loop {
+            // Re-read the target every iteration: a worker finishing mid-wait
+            // unregisters itself (after its `Value` drops are done), lowering the
+            // number of threads that must park. The collector's own thread, if
+            // registered, is running this very function — exclude it.
+            let needed = super::gc_ptr::mutator_worker_count().saturating_sub(self_counted);
+            // SeqCst load (see the `swap` above): pairs with the mutators' SeqCst
+            // QUIESCENT stores to complete the handshake's total order.
+            if QUIESCENT.load(Ordering::SeqCst) >= needed {
+                drop(guard);
+                return Some(StwGuard { _private: () });
+            }
+            let now = Instant::now();
+            if now >= deadline {
+                drop(guard);
+                STOP_REQUESTED.store(false, Ordering::Release);
+                cvar.notify_all();
+                // Back off: an unwrapped blocking site is holding quiescence up;
+                // retrying at every candidate trigger would stall the mutators
+                // that DO park. Suspects stay queued and dead sweeps continue.
+                STW_RETRY_AT_MS.store(now_ms() + 100, Ordering::Release);
+                return None;
+            }
+            let (g, _) = cvar.wait_timeout(guard, deadline - now).unwrap();
+            guard = g;
+        }
     }
 }
 

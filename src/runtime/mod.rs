@@ -12,14 +12,13 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
-use std::thread;
 
 static ROLE_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 pub(crate) fn next_role_id() -> u64 {
     ROLE_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
 }
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::ast::{Expr, FunctionDef, ParamDef, PhaserKind, Stmt};
 use crate::env::Env;
@@ -353,12 +352,16 @@ mod system_eval_vars;
 mod system_introspect;
 mod tap_state;
 mod test_functions;
+pub(crate) mod thread_compat;
 pub(crate) mod types;
 mod undeclared_routines;
 mod unicode;
 pub(crate) mod utf8_c8;
 pub(crate) mod utils;
 pub(crate) mod value_iterator;
+/// Cooperative scheduler standing in for OS threads in the browser.
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod wasm_sched;
 pub(crate) use self::output_sink::OutputSink;
 #[allow(unused_imports)]
 pub(crate) use self::output_sink::{OutputSinkReadGuard, OutputSinkWriteGuard};
@@ -1144,7 +1147,7 @@ pub struct Interpreter {
     /// `find_local_slot`. `None` for a non-local target (by-name fallback).
     let_saves: Vec<(String, Value, bool, Option<u32>)>,
     pub(super) supply_emit_buffer: Vec<Vec<Value>>,
-    pub(super) supply_emit_timed_buffer: Vec<Vec<(Value, std::time::Instant)>>,
+    pub(super) supply_emit_timed_buffer: Vec<Vec<(Value, crate::runtime::thread_compat::Instant)>>,
     /// Active streaming consumers for on-demand `supply { ... }` bodies driven by
     /// `react`. When a stream consumer is registered for an emitter's
     /// `supplier_id`, `emit` delivers the value to the consumer callback

@@ -35,7 +35,7 @@ const STRINGS = {
     'expected.summary': 'Expected output',
     'verdict.ok': '✓ matches the expected output',
     'verdict.differs': '≠ differs from the expected output — that is fine while you experiment',
-    'no-browser.note': 'This example needs real OS threads, which the WebAssembly build ' +
+    'no-browser.note': 'This example needs something the WebAssembly build ' +
       'does not have — so it cannot run here. The output below is what it prints when ' +
       'you run it with mutsu (or Rakudo) on your machine.',
     'no-browser.output': 'Output (recorded from a native run)',
@@ -73,7 +73,7 @@ const STRINGS = {
     'expected.summary': '期待される出力',
     'verdict.ok': '✓ 期待どおりの出力です',
     'verdict.differs': '≠ 期待される出力とは違います（自由に書き換えて試している場合はこれで OK）',
-    'no-browser.note': 'この例は本物の OS スレッドを必要とし、WebAssembly 版にはそれがないため、' +
+    'no-browser.note': 'この例は WebAssembly 版にない機能を必要とするため、' +
       'ここでは実行できません。下の出力は、手元の環境で mutsu（または Rakudo）で実行したときのものです。',
     'no-browser.output': '出力（ネイティブ実行の記録）',
 

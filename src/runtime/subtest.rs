@@ -85,7 +85,7 @@ pub(crate) enum SupplyDrivePolicy {
     React,
     Promise {
         promise: crate::value::SharedPromise,
-        deadline: std::time::Instant,
+        deadline: crate::runtime::thread_compat::Instant,
         last_value: Value,
     },
 }

@@ -86,11 +86,16 @@ pub(crate) fn acquire_lock(
             }
             Some(_) => {
                 // STW-aware: a thread blocked on lock acquisition counts as
-                // quiescent for the GC's cooperative stop-the-world.
-                state = crate::gc::stw_aware_wait(&runtime.lock_cv, state, |s| match s.owner {
-                    None => true,
-                    Some(owner) => owner == me,
-                });
+                // quiescent for the GC's cooperative stop-the-world. On wasm
+                // it pumps the cooperative scheduler instead, so the task
+                // holding the lock gets a chance to release it.
+                drop(state);
+                state =
+                    crate::gc::wait_until(&runtime.state, &runtime.lock_cv, |s| match s.owner {
+                        None => true,
+                        Some(owner) => owner == me,
+                    })
+                    .ok_or_else(|| RuntimeError::new(crate::gc::DEADLOCK_MESSAGE))?;
             }
         }
     }
@@ -244,13 +249,10 @@ pub(crate) fn semaphore_runtime_by_id(id: u64) -> Option<Arc<SemaphoreRuntime>> 
 }
 
 pub(crate) fn semaphore_acquire(rt: &SemaphoreRuntime) -> Result<(), RuntimeError> {
-    let state = rt
-        .state
-        .lock()
-        .map_err(|_| RuntimeError::new("Semaphore state poisoned"))?;
     // STW-aware: blocked acquirers count as quiescent for the GC's
-    // cooperative stop-the-world.
-    let mut state = crate::gc::stw_aware_wait(&rt.cv, state, |s| *s > 0);
+    // cooperative stop-the-world (and pump the scheduler on wasm).
+    let mut state = crate::gc::wait_until(&rt.state, &rt.cv, |s| *s > 0)
+        .ok_or_else(|| RuntimeError::new(crate::gc::DEADLOCK_MESSAGE))?;
     *state -= 1;
     Ok(())
 }

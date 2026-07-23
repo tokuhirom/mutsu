@@ -65,7 +65,10 @@ impl Interpreter {
                 Some(ValueView::Bool(true))
             );
             let deadline = if wait_until_done && live {
-                Some(std::time::Instant::now() + std::time::Duration::from_secs(5))
+                Some(
+                    crate::runtime::thread_compat::Instant::now()
+                        + std::time::Duration::from_secs(5),
+                )
             } else {
                 None
             };
@@ -93,7 +96,7 @@ impl Interpreter {
                 let Some(limit) = deadline else {
                     break Ok(());
                 };
-                let now = std::time::Instant::now();
+                let now = crate::runtime::thread_compat::Instant::now();
                 if now >= limit {
                     break Ok(());
                 }

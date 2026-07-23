@@ -91,11 +91,20 @@ A snippet may carry flags after its key:
 #== concurrency/promises no-browser
 ```
 
-`no-browser` means "runs natively, but not in the WebAssembly build" — `start` needs
-real OS threads and `wasm32-unknown-unknown` has none, so `std::thread::spawn` traps.
-Those lessons are still checked natively by `check-site-snippets.mjs`; the site
-disables their Run button, explains why, and shows the recorded native output instead
-of a WASM trap. (See PLAN.md §8.18 for the underlying gap.)
+`no-browser` means "runs natively, but not in the WebAssembly build" — the snippet
+needs something a browser cannot provide at all (spawning a real process, say). Those
+lessons are still checked natively by `check-site-snippets.mjs`; the site disables
+their Run button, explains why, and shows the recorded native output instead of a WASM
+trap. No lesson currently carries the flag.
+
+**Concurrency is not one of those cases.** `start`, `await`, `Promise`, `Channel`,
+`Thread`, `Supply.interval` and `sleep` all run in the browser, on the cooperative
+scheduler in `src/runtime/wasm_sched.rs`: a would-be thread becomes a task on a run
+queue, and every point that would block on another thread pumps that queue instead.
+It is concurrency without parallelism — nothing runs at the same time as anything
+else, and a task that blocks midway on something only its waiter would do later
+reports a deadlock rather than hanging the tab. `wasm-demo/concurrency.test.mjs`
+pins the behaviour (run it with Node, no browser needed).
 
 ## Adding a lesson
 
@@ -121,6 +130,7 @@ python3 -m http.server 8000 -d wasm-demo    # then open http://localhost:8000/
 
 ```sh
 node scripts/check-site-snippets.mjs   # every snippet, under mutsu (+ raku if present)
+node wasm-demo/concurrency.test.mjs    # start/await/Channel/timers in the WASM build
 npm install playwright && npx playwright install chromium
 node wasm-demo/e2e.test.mjs            # the site itself, in a real browser
 SKIP_LESSON_SWEEP=1 node wasm-demo/e2e.test.mjs   # skip the per-lesson sweep

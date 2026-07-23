@@ -237,13 +237,14 @@ impl Interpreter {
                                 .collect::<Vec<_>>()
                         } else {
                             let events = if timed_emitted.is_empty() {
-                                let now = std::time::Instant::now();
+                                let now = crate::runtime::thread_compat::Instant::now();
                                 emitted.into_iter().map(|v| (v, now)).collect::<Vec<_>>()
                             } else {
                                 timed_emitted.clone()
                             };
                             let mut total = initial_count;
-                            let mut last_emit_at: Option<std::time::Instant> = None;
+                            let mut last_emit_at: Option<crate::runtime::thread_compat::Instant> =
+                                None;
                             let mut out = Vec::new();
                             for (_, ts) in events {
                                 total += 1;
@@ -267,10 +268,11 @@ impl Interpreter {
                         let with_fn = attributes.as_map().get("unique_with").cloned();
                         let expires_secs =
                             attributes.as_map().get("unique_expires").map(Value::to_f64);
-                        let mut seen: Vec<(Value, std::time::Instant)> = Vec::new();
+                        let mut seen: Vec<(Value, crate::runtime::thread_compat::Instant)> =
+                            Vec::new();
                         let mut unique = Vec::new();
                         let events = if timed_emitted.is_empty() {
-                            let now = std::time::Instant::now();
+                            let now = crate::runtime::thread_compat::Instant::now();
                             emitted.into_iter().map(|v| (v, now)).collect::<Vec<_>>()
                         } else {
                             timed_emitted

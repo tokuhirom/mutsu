@@ -197,6 +197,12 @@ jobs:
         with:
           node-version: '22'
 
+      # Concurrency runs on a cooperative scheduler in the browser (no threads
+      # there), so it needs its own checks. No browser required — this drives
+      # pkg/ straight from Node.
+      - name: Run WASM concurrency tests
+        run: node wasm-demo/concurrency.test.mjs
+
       - name: Install Playwright
         run: |
           npm install playwright

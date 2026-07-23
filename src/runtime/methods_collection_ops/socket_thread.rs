@@ -414,9 +414,18 @@ impl Interpreter {
             // Flush any remaining buffered output from the thread
             let output = std::mem::take(&mut thread_interp.output_sink_mut().output);
             if !output.is_empty() {
-                use std::io::Write;
-                let _ = std::io::stdout().write_all(output.as_bytes());
-                let _ = std::io::stdout().flush();
+                // wasm has no readable process stdout, so leftovers go to the
+                // shared buffer `Thread.finish` drains (see `OutputSink::emit`).
+                #[cfg(target_arch = "wasm32")]
+                if let Some(shared) = thread_interp.output_sink().shared_thread_output.clone() {
+                    shared.lock().unwrap().push_str(&output);
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    use std::io::Write;
+                    let _ = std::io::stdout().write_all(output.as_bytes());
+                    let _ = std::io::stdout().flush();
+                }
             }
             let stderr = std::mem::take(&mut thread_interp.output_sink_mut().stderr_output);
             if !stderr.is_empty() {
