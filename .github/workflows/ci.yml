@@ -75,7 +75,14 @@ jobs:
         run: cargo clippy -- -D warnings
 
       - name: Unit tests
-        run: cargo test
+        # `--test-threads=1` for the same reason the gc-stress job below
+        # serializes: the collector's `COLLECTING` flag is process-global, so a
+        # collect on one test thread trips `debug_assert!(!collecting())` inside
+        # an unrelated test running concurrently. That produced two red main
+        # builds (gc::gc_ptr::tests::arc_and_gc_strong_counts_stay_in_lockstep,
+        # runs 30006147778 / 29924949096) on trees that had just passed CI.
+        # Costs ~1s. See docs/flaky-test-policy.md §3.
+        run: cargo test -- --test-threads=1
         env:
           RUST_MIN_STACK: 8388608
 
@@ -83,7 +90,12 @@ jobs:
         run: cargo build
 
       - name: TAP tests (prove t/)
-        run: prove -e 'timeout 30 target/debug/mutsu' t/
+        # Via the wrapper (not a bare `timeout 30 <bin>`) so t/ gets the same
+        # per-file timeout + flaky-quarantine handling as roast.
+        run: prove -e 'scripts/run-t-test.sh' t/
+        env:
+          MUTSU_BIN: target/debug/mutsu
+          MUTSU_T_TIMEOUT: "30"
 
       - name: Site snippets still produce their documented output
         # Every code sample shipped on the wasm-demo site (landing highlights +
@@ -104,6 +116,12 @@ jobs:
 
       - name: Roast whitelist is sorted
         run: make check-roast-whitelist
+
+      - name: Flaky quarantine ledger is valid and unexpired
+        # Fails when an entry in flaky-tests.txt is past its review date, so a
+        # quarantine cannot quietly become permanent. See
+        # docs/flaky-test-policy.md §5.
+        run: make check-flaky-list
 
       - name: Clean precomp cache and restore roast files
         run: |
@@ -134,6 +152,10 @@ jobs:
             $(cat roast-whitelist.txt) 2>&1 | tee tmp/roast.log
         env:
           MUTSU_BIN: target/release/mutsu
+
+      - name: Flaky quarantine retries used
+        if: always()
+        run: scripts/report-flaky-retries.sh
 
       - name: Roast failure summary
         # Only runs when the roast step failed. Re-runs just the failed files
@@ -297,7 +319,10 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p tmp
-          prove --merge -e 'timeout 60 target/debug/mutsu' t/ 2>&1 | tee tmp/gc-stress-t.log
+          prove --merge -e 'scripts/run-t-test.sh' t/ 2>&1 | tee tmp/gc-stress-t.log
+        env:
+          MUTSU_BIN: target/debug/mutsu
+          MUTSU_T_TIMEOUT: "60"
 
       - name: Build (release, for roast)
         run: cargo build --release
@@ -323,6 +348,10 @@ jobs:
             $(cat roast-whitelist.txt) 2>&1 | tee tmp/gc-stress-roast.log
         env:
           MUTSU_BIN: target/release/mutsu
+
+      - name: Flaky quarantine retries used (GC on)
+        if: always()
+        run: scripts/report-flaky-retries.sh
 
       - name: No GC verify violations
         # `MUTSU_GC_VERIFY` logs `VERIFY FAIL` to stderr but does not by itself
@@ -393,7 +422,10 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p tmp
-          prove --merge -e 'timeout 60 target/debug/mutsu' t/ 2>&1 | tee tmp/jit-stress-t.log
+          prove --merge -e 'scripts/run-t-test.sh' t/ 2>&1 | tee tmp/jit-stress-t.log
+        env:
+          MUTSU_BIN: target/debug/mutsu
+          MUTSU_T_TIMEOUT: "60"
 
       - name: Build (release, for roast)
         run: cargo build --release
@@ -413,6 +445,10 @@ jobs:
             $(cat roast-whitelist.txt) 2>&1 | tee tmp/jit-stress-roast.log
         env:
           MUTSU_BIN: target/release/mutsu
+
+      - name: Flaky quarantine retries used (JIT on)
+        if: always()
+        run: scripts/report-flaky-retries.sh
 
       - name: Upload JIT stress logs
         if: always()

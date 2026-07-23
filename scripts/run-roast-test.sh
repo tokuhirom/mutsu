@@ -132,10 +132,19 @@ file_timeout=$(per_file_timeout "$test_file")
 if [[ "${MUTSU_ROAST_TIMEOUT_SCALE:-1}" =~ ^[0-9]+$ ]] && [ "${MUTSU_ROAST_TIMEOUT_SCALE:-1}" -gt 1 ]; then
   file_timeout=$((file_timeout * MUTSU_ROAST_TIMEOUT_SCALE))
 fi
+# Files listed in flaky-tests.txt get re-rolled by scripts/flaky-retry.sh; every
+# other file runs exactly once, streamed straight through (see that script and
+# docs/flaky-test-policy.md).
+retry="$(cd "$(dirname "$0")" && pwd)/flaky-retry.sh"
+
 if needs_roast_cwd "$test_file"; then
   abs_bin="$(cd "$(dirname "$MUTSU_BIN")" && pwd)/$(basename "$MUTSU_BIN")"
   abs_test="$(cd "$(dirname "$test_file")" && pwd)/$(basename "$test_file")"
+  # FLAKY_LIST/FLAKY_RETRY_LOG are resolved relative to the CWD, which is about
+  # to change to roast/; make them absolute first.
+  export FLAKY_LIST="${FLAKY_LIST:-$PWD/flaky-tests.txt}"
+  export FLAKY_RETRY_LOG="${FLAKY_RETRY_LOG:-$PWD/tmp/flaky-retries.log}"
   cd roast || exit 1
-  exec timeout "$file_timeout" "$abs_bin" "$abs_test"
+  exec "$retry" "$test_file" timeout "$file_timeout" "$abs_bin" "$abs_test"
 fi
-exec timeout "$file_timeout" "$MUTSU_BIN" "$test_file"
+exec "$retry" "$test_file" timeout "$file_timeout" "$MUTSU_BIN" "$test_file"

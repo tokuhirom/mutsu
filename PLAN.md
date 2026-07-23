@@ -1375,6 +1375,36 @@ and `[Z]`-reduction-returns-a-Seq landed 2026-07-22 (pin `t/repr-residues-2.t`);
       arguably more useful, and no roast test exercises them. Matching Rakudo here is risky and
       low value; **deferred as an intentional divergence** unless a dist-compat consumer needs it.
 
+### 8.19 Two intermittent concurrency bugs surfaced by the CI flake survey (found 2026-07-24)
+
+Mining the CI history (`scripts/ci-flake-survey.sh`) to build the flaky
+quarantine turned up two tests that fail intermittently on a tree that had just
+passed CI — and that `raku` runs deterministically-correct, so they are real
+mutsu races, not statistical noise. Neither is quarantined (quarantine is for
+by-design non-determinism only); both are recorded here to fix.
+
+- **`roast/S17-promise/nonblocking-await.t` test 28 — `await` in sink context on
+  nested iterables drops a promise.** `await (((p(),(p(),(p(),))),(p(),p(),p())),
+  (p(),p(),p()))` with nine `start { $x⚛++ }` promises should leave `$x == 9`;
+  under load it intermittently reads 8 (repro ~2/20 with `-l 6`, and the isolated
+  nested-iterable shape in `tmp/atomic-vs-await.raku` reproduced 7 once). `raku`
+  is 10/10 correct. The flat `await @nine` form never drops, so the bug is in how
+  `builtin_await` (`src/runtime/builtins_system_async.rs:258`) recurses into a
+  *nested* list argument: it only descends one `ValueView::Array` level
+  (`:331`), so promises nested deeper than one list are pushed as raw values and
+  never `.wait()`ed — the increment they carry may not have landed when `await`
+  returns. Fix: normalize/await recursively through arbitrarily-nested list
+  structure, not just the top array.
+- **`t/supply-live-grep-map-react-order.t` test 5 — sibling `grep` whenevers
+  interleave out of emit order.** Two `whenever $s.grep(...)` in one `react`
+  should deliver in global emit order (`p1,n-1,p2,n-2,p3,n-3`); under load mutsu
+  intermittently batches per-supply (`p1,p2,p3,n-1,n-2,n-3`). `raku` is 10/10
+  correct. Repro ~1/20 with `-l 6`. The react drive loop delivers a derived
+  (`grep`) supply's queued values as a batch rather than merging sibling derived
+  supplies into one emit-ordered stream. This is the same drive-loop ordering
+  area as the fixed `S17-supply/batch.t` period-anchor bug; see
+  `docs/s17-scheduler-supply-drive-model.md`.
+
 ### 8.18 The WebAssembly build traps on `start` / `Channel` instead of degrading (found 2026-07-23 building the tutorial site)
 
 `start { ... }` reaches `spawn_callable_promise` → `spawn_user_thread` → `std::thread::spawn`
