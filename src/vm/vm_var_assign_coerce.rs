@@ -429,7 +429,6 @@ impl Interpreter {
         }
     }
 
-    pub(crate) const LAZY_ASSIGN_PRESERVE_MARKER: &str = "__mutsu_preserve_lazy_on_array_assign";
     pub(crate) const MAX_ASSIGN_SLICE_EXPAND: i64 = 100_000;
 
     pub(crate) fn assignment_rhs_values(

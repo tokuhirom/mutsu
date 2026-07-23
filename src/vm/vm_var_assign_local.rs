@@ -140,15 +140,15 @@ impl Interpreter {
             self.coerce_hash_var_value(name, raw_val)?
         } else if name.starts_with('@') {
             let mut assigned = if let ValueView::LazyList(list) = raw_val.view() {
-                match list
-                    .env
-                    .get(Self::LAZY_ASSIGN_PRESERVE_MARKER)
-                    .map(Value::view)
-                {
-                    Some(ValueView::Bool(true)) => Value::lazy_list(list.clone()),
-                    _ => Value::real_array(crate::runtime::utils::nil_elems_to_any(
+                // Mirror the SetLocal `@`-assign arm: an unreifiable lazy list
+                // survives assignment as a reify-on-demand LazyList in array
+                // context (L2b step 6 — docs/lazy-arrays.md).
+                if list.preserve_lazy_on_array_assign() {
+                    Value::lazy_list(crate::gc::Gc::new(list.with_array_context()))
+                } else {
+                    Value::real_array(crate::runtime::utils::nil_elems_to_any(
                         self.force_lazy_list_vm(&list)?,
-                    )),
+                    ))
                 }
             } else {
                 runtime::coerce_to_array(raw_val)
