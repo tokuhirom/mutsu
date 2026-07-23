@@ -431,7 +431,15 @@ impl Interpreter {
         slot: Option<u32>,
     ) -> Value {
         if depth == 0 {
-            return Value::NIL;
+            // Depth 0 names the CURRENT scope itself. `OUTER::` never emits this
+            // (it steps at least one scope out), but `UNIT::` does when the unit
+            // mainline has no enclosing block of its own — e.g. an `EVAL`'d unit
+            // whose `$UNIT::x` sits in the same scope as its `my $x`. Read the
+            // live current binding rather than yielding Nil.
+            return self
+                .get_env_with_main_alias(name)
+                .unwrap_or(Value::NIL)
+                .into_deref();
         }
         // §1.3 S14 (shadow slots only): the compiler baked the emit-point slot
         // of the binding visible `depth` scopes out (resolve_outer_var_slot).
