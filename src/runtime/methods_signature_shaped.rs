@@ -42,6 +42,13 @@ impl Interpreter {
         };
         let mut dims = Vec::with_capacity(dims_vals.len());
         for dim in &dims_vals {
+            // A shape dimension sourced from a scalar variable (`my int
+            // @m[$r; $c]`) arrives as a shared `ContainerRef` cell now that a
+            // List `(...)` aliases its scalar-var elements; deref to the held
+            // integer so the dimension is recognized (otherwise the whole
+            // `shape => [...]` Pair falls through to being a stray array element
+            // and native-array element type-checking dies "Cannot unbox a Pair").
+            let dim = dim.deref_container();
             let n = match dim.view() {
                 ValueView::Int(i) if i > 0 => i as usize,
                 ValueView::Int(i) => {
