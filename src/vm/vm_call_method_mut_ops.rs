@@ -1498,13 +1498,24 @@ impl Interpreter {
                 match inner_target.view() {
                     ValueView::Hash(map) => {
                         let old_meta = self.container_type_metadata(inner_target).clone();
-                        let key = args[0].to_string_value();
                         let value = args[1].clone();
                         let source_var = arg_sources
                             .as_ref()
                             .and_then(|s| s.get(1))
                             .and_then(|s| s.clone());
                         let mut new_map = (**map).clone();
+                        // An object hash stores `.WHICH` keys and records the
+                        // key object.
+                        let key = if new_map.key_type.is_some() {
+                            let which = crate::runtime::utils::value_which_key(&args[0]);
+                            new_map
+                                .original_keys
+                                .get_or_insert_with(std::collections::HashMap::new)
+                                .insert(which.clone(), args[0].clone());
+                            which
+                        } else {
+                            args[0].to_string_value()
+                        };
                         // Phase 2 Stage 2: BIND-KEY installs a shared
                         // `ContainerRef` cell (reusing the source variable's
                         // existing cell binding when present) instead of a

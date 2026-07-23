@@ -2022,6 +2022,14 @@ impl Interpreter {
                     "Type Array does not support associative indexing.".to_string(),
                 ));
             }
+            // An allomorph angle-word subscript (`$ref<0>` — an IntStr Mixin)
+            // is still ASSOCIATIVE indexing: an Array target dies, exactly
+            // like the Str-key arm above.
+            (ValueView::Array(..), ValueView::Mixin(..)) if !is_positional => {
+                return Err(RuntimeError::new(
+                    "Type Array does not support associative indexing.".to_string(),
+                ));
+            }
             // Associative indexing on non-hash types returns a Failure
             (_, ValueView::Str(_))
                 if matches!(
