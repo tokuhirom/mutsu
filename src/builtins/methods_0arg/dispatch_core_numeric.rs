@@ -74,12 +74,22 @@ pub(super) fn dispatch(
     match method {
         "elems" => {
             if let ValueView::LazyList(list) = target.view() {
-                if matches!(
+                let from_gather = matches!(
                     list.env
                         .get("__mutsu_lazylist_from_gather")
                         .map(Value::view),
                     Some(ValueView::Bool(true))
-                ) {
+                );
+                // A plain `gather {...}` Seq is not lazy (raku: `.is-lazy` is
+                // False), so `.elems` reifies and counts. A `lazy gather` (or
+                // `gather.lazy`) is `lazy`-forced -- it carries the preserve-lazy
+                // marker -- and `.elems` must throw X::Cannot::Lazy like any
+                // other lazy list, rather than eagerly reifying.
+                let forced_lazy = list
+                    .env
+                    .get("__mutsu_preserve_lazy_on_array_assign")
+                    .is_some();
+                if from_gather && !forced_lazy {
                     return Some(None);
                 }
                 let mut ex_attrs = std::collections::HashMap::new();

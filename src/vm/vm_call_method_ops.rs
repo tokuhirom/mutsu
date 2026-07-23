@@ -973,10 +973,13 @@ impl Interpreter {
             && !((ll.lazy_pipe.is_some() || ll.is_infinite_spec())
                 && Self::lazy_pipe_preserving_coercion(method)
                 && !ll.pipe_bottoms_out_finite())
-            // On an infinite sequence/closure spec the count/numeric coercions
-            // produce a *soft* X::Cannot::Lazy Failure (recoverable with `//`),
-            // emitted by the 0-arg native dispatch — they must not be hard-forced.
-            && !(ll.is_infinite_spec() && matches!(method, "elems" | "Int" | "Numeric"))
+            // On an infinite sequence/closure spec — OR an explicitly `lazy`-marked
+            // (`lazy gather {…}`) list — the count/numeric coercions produce a
+            // *soft* X::Cannot::Lazy Failure (recoverable with `//`), emitted by
+            // the 0-arg native dispatch — they must not be hard-forced/reified.
+            // A plain (non-`lazy`) finite gather stays forceable and reifies.
+            && !((ll.is_infinite_spec() || ll.is_lazy_marked())
+                && matches!(method, "elems" | "Int" | "Numeric"))
         {
             let saved_env = self.env().clone();
             // `.head(n)` only needs the first `n` elements: pull them lazily so
