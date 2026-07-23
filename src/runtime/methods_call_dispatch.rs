@@ -969,24 +969,27 @@ impl Interpreter {
                         return Ok(Value::array(vec![Value::str(method_name)]));
                     }
                 }
-                // pull-one on a temporary iterator (no variable): read from items at current index.
-                // Since the iterator is a temporary, index is always 0 or whatever is in attrs.
-                "pull-one" if args.is_empty() => {
-                    let items = match attributes.as_map().get("items").map(|v| v.view()) {
-                        Some(ValueView::Array(values, ..)) => values.to_vec(),
-                        _ => Vec::new(),
-                    };
-                    let index = match attributes.as_map().get("index").map(|v| v.view()) {
-                        Some(ValueView::Int(i)) if i >= 0 => i as usize,
-                        _ => 0,
-                    };
-                    if index < items.len() {
-                        return Ok(items[index].clone());
-                    } else {
-                        return Ok(Value::str_from("IterationEnd"));
-                    }
-                }
                 _ => {}
+            }
+            // Index-advancing protocol methods on a temporary iterator (no
+            // variable receiver): the advanced cursor is discarded with the
+            // temporary, but the `push-*` family still appends to its array
+            // argument. Shares the single stepping implementation with the
+            // mutating (variable receiver) path.
+            let items = match attributes.as_map().get("items").map(|v| v.view()) {
+                Some(ValueView::Array(values, ..)) => values.to_vec(),
+                _ => Vec::new(),
+            };
+            let index = match attributes.as_map().get("index").map(|v| v.view()) {
+                Some(ValueView::Int(i)) if i >= 0 => i as usize,
+                _ => 0,
+            };
+            if let Some(step) = super::iterator_protocol::step(method, &items, index, &args) {
+                if let Some(range) = step.append {
+                    let vals = items[range].to_vec();
+                    self.iterator_append_to_array_arg(&args, &vals);
+                }
+                return Ok(step.ret);
             }
         }
         // DateTime/Date formatter rendering
