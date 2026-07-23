@@ -160,7 +160,15 @@ fn parse_io_expr_list(input: &str) -> PResult<'_, Vec<Expr>> {
         return Ok((rest, vec![seq]));
     }
     match parse_expr_list(input) {
-        Ok(ok) => Ok(ok),
+        // A top-level list-infix meta-op (`Z`/`X`) or `minmax` is looser than the
+        // comma separating arguments, so `say 100, 200 Z+ 42, 23` is
+        // `say((100,200) Z+ (42,23))` — the whole comma level is one operand. Lift
+        // it across the argument list (mirrors the sequence-op absorption above and
+        // the parenthesized-list finalizer).
+        Ok((rest, items)) => Ok((
+            rest,
+            crate::parser::primary::lift_list_infix_in_arg_list(items),
+        )),
         Err(err)
             if err
                 .messages

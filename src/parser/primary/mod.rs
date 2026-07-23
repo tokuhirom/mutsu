@@ -3,7 +3,7 @@ mod container;
 // parsing) can build the same X::Comp::FailGoal for unterminated brackets.
 pub(crate) use container::angle_words_subscript_index_expr;
 pub(crate) use container::fail_goal_error_at;
-pub(crate) use container::try_parse_sequence_arg_list;
+pub(crate) use container::{lift_list_infix_in_arg_list, try_parse_sequence_arg_list};
 pub(in crate::parser) mod ident;
 pub(in crate::parser) mod misc;
 mod number;

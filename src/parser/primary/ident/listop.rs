@@ -162,6 +162,13 @@ pub(crate) fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, E
         args.push(arg);
         r = r2;
     }
+    // A top-level list-infix meta-op (`Z`/`X`) or `minmax` is LOOSER than the
+    // comma separating listop arguments, so it owns the whole comma level:
+    // `say 100, 200 Z+ 42, 23` is `say((100,200) Z+ (42,23))`. The per-argument
+    // parse above left the meta-op bound only to its neighbouring element; lift
+    // it across the full argument list, mirroring the parenthesized-list
+    // finalizer (and `try_parse_sequence_arg_list` for the sequence operator).
+    let args = crate::parser::primary::lift_list_infix_in_arg_list(args);
     Ok((r, make_call_expr(name, input, args)))
 }
 
