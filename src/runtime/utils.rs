@@ -243,6 +243,57 @@ pub(crate) fn set_hash_original_keys(
     value
 }
 
+/// Enforce the object-hash keying invariant on a hash that carries (or is
+/// about to carry) a `key_type`: every entry is stored under the canonical
+/// `.WHICH` string of its key *object*, and `original_keys` maps every store
+/// key back to that object. A hash built by a key-type-blind path (hash
+/// literal, list→hash coercion) has stringified keys; this re-keys it
+/// losslessly using the key objects those paths record in `original_keys`
+/// (a key with no recorded object was a genuine `Str` key). Idempotent:
+/// a hash already `.WHICH`-keyed is left untouched (checked first, so a
+/// shared Gc is not cloned).
+pub(crate) fn ensure_object_hash_which_keys(value: &mut crate::gc::Gc<crate::value::HashData>) {
+    let which_keyed = value.map.keys().all(|k| {
+        value
+            .original_keys
+            .as_ref()
+            .and_then(|orig| orig.get(k))
+            .is_some_and(|obj| value_which_key(obj) == *k)
+    });
+    if which_keyed {
+        return;
+    }
+    let data = crate::gc::Gc::make_mut(value);
+    let old_map = std::mem::take(&mut data.map);
+    let old_orig = data.original_keys.take().unwrap_or_default();
+    let mut new_map = HashMap::with_capacity(old_map.len());
+    let mut new_orig = HashMap::with_capacity(old_map.len());
+    for (key, val) in old_map {
+        let key_obj = old_orig
+            .get(&key)
+            .cloned()
+            .unwrap_or_else(|| Value::hash_key_decode(&key));
+        let which = value_which_key(&key_obj);
+        new_orig.insert(which.clone(), key_obj);
+        new_map.insert(which, val);
+    }
+    data.map = new_map;
+    data.original_keys = Some(new_orig);
+}
+
+/// Turn a freshly-built plain hash into an object hash (`:{ ... }` — key type
+/// `Mu`), embedding the key type metadata and enforcing the `.WHICH` keying
+/// invariant. The value type is left unset: like rakudo, a missing-key read
+/// on `:{...}` yields `Any`, not `Mu`. Callers must use the returned value.
+pub(crate) fn into_object_hash(mut value: Value, key_type: &str) -> Value {
+    value.with_hash_mut(|arc| {
+        let data = crate::gc::Gc::make_mut(arc);
+        data.key_type = Some(key_type.to_string());
+        ensure_object_hash_which_keys(arc);
+    });
+    value
+}
+
 /// Snapshot the original keys embedded in an object hash, if any.
 pub(crate) fn hash_original_keys_snapshot(hash: &Value) -> Option<HashMap<String, Value>> {
     if let ValueView::Hash(arc) = hash.view() {

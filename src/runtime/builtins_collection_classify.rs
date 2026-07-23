@@ -94,22 +94,31 @@ impl Interpreter {
                     .or_insert_with(|| Value::hash(HashMap::new()));
                 let is_hash = matches!(entry.view(), ValueView::Hash(_));
                 let is_array = matches!(entry.view(), ValueView::Array(..));
+                // Record the next path component's key object in the nested
+                // hash's `original_keys` so the multi-level result can be
+                // re-keyed by `.WHICH` per level (nested buckets are `Mu`-keyed
+                // object hashes in raku, like the top level).
+                let recurse = |map: &mut crate::gc::Gc<crate::value::HashData>,
+                               item: Value|
+                 -> Result<(), RuntimeError> {
+                    let data = crate::gc::Gc::make_mut(map);
+                    if !matches!(path[1].view(), ValueView::Str(_)) {
+                        data.original_keys
+                            .get_or_insert_with(HashMap::new)
+                            .insert(path[1].to_string_value(), path[1].clone());
+                    }
+                    insert_nested_bucket(&mut data.map, &path[1..], item, name)
+                };
                 if is_hash {
                     entry
-                        .with_hash_mut(|map| {
-                            let map = crate::gc::Gc::make_mut(map);
-                            insert_nested_bucket(map, &path[1..], item, name)
-                        })
+                        .with_hash_mut(|map| recurse(map, item.clone()))
                         .unwrap()
                 } else if is_array {
                     Err(mixed_level_error(name))
                 } else {
                     *entry = Value::hash(HashMap::new());
                     entry
-                        .with_hash_mut(|map| {
-                            let map = crate::gc::Gc::make_mut(map);
-                            insert_nested_bucket(map, &path[1..], item, name)
-                        })
+                        .with_hash_mut(|map| recurse(map, item.clone()))
                         .unwrap_or(Ok(()))
                 }
             }
@@ -212,8 +221,35 @@ impl Interpreter {
             }
         }
 
+        // Object-hash key preservation (§3.3): when the classifier returns a
+        // non-`Str` key (e.g. a Junction from `*.contains: any 'a','f'`), the
+        // bucket key is stored under its stringification but the result must be
+        // an *object hash* so `$result{ any(...) }` is a by-key lookup (not
+        // junction autothreading) and `.keys` yields the real key objects.
+        // Records each first-level non-Str key object under its encoded string.
+        let mut object_keys: HashMap<String, Value> = HashMap::new();
+        // An `:into` object hash stores `.WHICH` keys: seed the (raw-string-
+        // keyed) working buckets from its original key objects, and remember
+        // its key type so the result keeps the object-hash identity.
+        let mut into_key_type: Option<String> = None;
         let mut buckets: HashMap<String, Value> = match into_target.as_ref().map(Value::view) {
-            Some(ValueView::Hash(map)) => map.as_ref().map.clone(),
+            Some(ValueView::Hash(map)) => {
+                into_key_type = map.key_type.clone();
+                if map.has_typed_keys() {
+                    let mut seeded = HashMap::with_capacity(map.len());
+                    for (k, v) in map.iter() {
+                        let obj = map.typed_key(k);
+                        let str_key = obj.to_string_value();
+                        if !matches!(obj.view(), ValueView::Str(_)) {
+                            object_keys.insert(str_key.clone(), obj);
+                        }
+                        seeded.insert(str_key, v.clone());
+                    }
+                    seeded
+                } else {
+                    map.as_ref().map.clone()
+                }
+            }
             _ => HashMap::new(),
         };
         let mut bag_counts: Option<HashMap<String, i64>> = match into_target
@@ -232,14 +268,6 @@ impl Interpreter {
         // Track classification level depth across all items for mixed-level detection
         let mut expected_level: Option<usize> = None;
         let mut expected_multi_level: Option<bool> = None;
-
-        // Object-hash key preservation (§3.3): when the classifier returns a
-        // non-`Str` key (e.g. a Junction from `*.contains: any 'a','f'`), the
-        // bucket key is stored under its stringification but the result must be an
-        // *object hash* so `$result{ any(...) }` is a by-key lookup (not junction
-        // autothreading) and `.keys` yields the real key objects. Records each
-        // first-level non-Str key object under its encoded string.
-        let mut object_keys: HashMap<String, Value> = HashMap::new();
 
         for item in &items {
             let mapped = match mapper.view() {
@@ -362,7 +390,9 @@ impl Interpreter {
                     updated = Some(Self::classify_finish_hash(
                         buckets.clone(),
                         object_keys.clone(),
-                        false,
+                        into_key_type
+                            .clone()
+                            .or_else(|| (!object_keys.is_empty()).then(|| "Any".to_string())),
                     ));
                 }
                 if let Some(new_value) = updated {
@@ -382,14 +412,15 @@ impl Interpreter {
             return Ok(Value::mix(counts));
         }
 
-        // Only the standalone `.classify`/`.categorize` (no `:into` target) mints a
-        // fresh `Hash[Any,Mu]`; `classify-list`/`:into(%h)` classify into an
-        // existing container and keep its type.
-        Ok(Self::classify_finish_hash(
-            buckets,
-            object_keys,
-            into_target.is_none(),
-        ))
+        // The standalone `.classify`/`.categorize` (no `:into` target) mints a
+        // fresh `Hash[Mu,Mu]` (the `:{...}` shape); `classify-list`/`:into(%h)`
+        // classify into an existing container and keep its type.
+        let key_type = if into_target.is_none() {
+            Some("Mu".to_string())
+        } else {
+            into_key_type.or_else(|| (!object_keys.is_empty()).then(|| "Any".to_string()))
+        };
+        Ok(Self::classify_finish_hash(buckets, object_keys, key_type))
     }
 
     /// Wrap classify's bucket map in a `Hash`, marking it an *object hash*
@@ -400,59 +431,64 @@ impl Interpreter {
     /// single (non-flattening) array — Raku stores each bucket as `$[...]`, so
     /// `my @a = %c<k>` yields one element and `for %c<k> {}` runs once. Recurses
     /// into nested categorize buckets (multi-level paths become nested hashes).
-    fn itemize_bucket_value(mut v: Value) -> Value {
+    fn itemize_bucket_value(mut v: Value, object_hash: bool) -> Value {
         if matches!(v.view(), ValueView::Array(..)) {
             let (items, kind) = v.into_array().unwrap();
             return Value::array_with_kind(items, kind.itemize());
         }
         v.with_hash_mut(|arc| {
-            let data = crate::gc::Gc::make_mut(arc);
-            let keys: Vec<String> = data.map.keys().cloned().collect();
-            for k in keys {
-                if let Some(val) = data.map.remove(&k) {
-                    data.map.insert(k, Self::itemize_bucket_value(val));
+            {
+                let data = crate::gc::Gc::make_mut(arc);
+                let keys: Vec<String> = data.map.keys().cloned().collect();
+                for k in keys {
+                    if let Some(val) = data.map.remove(&k) {
+                        data.map
+                            .insert(k, Self::itemize_bucket_value(val, object_hash));
+                    }
                 }
+                // When the top-level result is an object hash (standalone
+                // classify/categorize, or `:into` an object hash), the nested
+                // multi-level buckets are `Mu`-keyed object hashes too, like
+                // raku. Classifying into a PLAIN hash keeps plain nested
+                // buckets.
+                if object_hash {
+                    data.key_type = Some("Mu".to_string());
+                }
+            }
+            if object_hash {
+                crate::runtime::utils::ensure_object_hash_which_keys(arc);
             }
         });
         v
     }
 
+    /// Finish a classify/categorize bucket map: itemize the bucket values,
+    /// then (when `key_type` is `Some`) mark the result an object hash and
+    /// re-key it by `.WHICH` from the recorded key objects. The standalone
+    /// `.classify`/`.categorize` pass `Some("Mu")` — raku returns the same
+    /// `Hash[Mu,Mu]` shape as a `:{...}` literal; the `:into` forms pass the
+    /// target's own key type so the target's identity is preserved.
     fn classify_finish_hash(
         buckets: HashMap<String, Value>,
         object_keys: HashMap<String, Value>,
-        standalone: bool,
+        key_type: Option<String>,
     ) -> Value {
         let buckets: HashMap<String, Value> = buckets
             .into_iter()
-            .map(|(k, v)| (k, Self::itemize_bucket_value(v)))
+            .map(|(k, v)| (k, Self::itemize_bucket_value(v, key_type.is_some())))
             .collect();
         let mut hash = Value::hash(buckets);
-        // The standalone `.classify`/`.categorize` always return a fresh
-        // `Hash[Any,Mu]` in Raku: the value type is `Any` (each bucket is an
-        // itemized array) and the key type is the most general `Mu` (keys can be
-        // anything the mapper returns). Classifying *into* an existing container
-        // (`classify-list`, `:into(%h)`) instead keeps the invocant's own type
-        // (a plain `Hash`, `BagHash`, ...), so only tag when standalone.
-        if standalone {
-            hash.with_hash_mut(|arc| {
-                let data = crate::gc::Gc::make_mut(arc);
-                data.value_type = Some("Any".to_string());
-                data.key_type = Some("Mu".to_string());
-                if !object_keys.is_empty() {
-                    data.original_keys = Some(object_keys);
-                }
-            });
-            return hash;
-        }
-        // Classifying into an existing plain hash: preserve the object-hash
-        // tagging (typed keys) but not the `Any`/`Mu` type-object constraint.
-        if object_keys.is_empty() {
-            return hash;
-        }
         hash.with_hash_mut(|arc| {
-            let data = crate::gc::Gc::make_mut(arc);
-            data.key_type = Some("Any".to_string());
-            data.original_keys = Some(object_keys);
+            {
+                let data = crate::gc::Gc::make_mut(arc);
+                data.key_type = key_type.clone();
+                if !object_keys.is_empty() {
+                    data.original_keys = Some(object_keys.clone());
+                }
+            }
+            if arc.key_type.is_some() {
+                crate::runtime::utils::ensure_object_hash_which_keys(arc);
+            }
         });
         hash
     }

@@ -5,7 +5,6 @@ use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
 
-use super::raku_repr::hash_pick_item;
 use super::{is_infinite_range, sample_weighted_bag_key, sample_weighted_mix_key};
 
 /// Efficiently sample one random element from a Range without enumerating all elements.
@@ -184,7 +183,10 @@ pub(super) fn dispatch(
                         idx = items.len() - 1;
                     }
                     let (key, value) = items.iter().nth(idx).expect("index in range");
-                    Some(Ok(hash_pick_item(key, value)))
+                    // typed_pair reconstructs an object hash's real key object
+                    // from its `.WHICH` store key (plain hashes get the plain
+                    // `Pair(str_key, v)` as before).
+                    Some(Ok(items.typed_pair(key, value.clone())))
                 }
             }
             _ => {

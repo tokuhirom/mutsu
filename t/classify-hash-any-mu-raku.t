@@ -2,27 +2,29 @@ use Test;
 
 plan 10;
 
-# classify/categorize always return `Hash[Any,Mu]` in Raku, and object-hash
-# `.raku` renders each pair per its key: a Str identifier key becomes a
-# colonpair `:key(value)`, everything else becomes `key => value`.
+# classify/categorize return the `:{...}` shape — rakudo's Hash[Mu,Mu]
+# (parameterized name Hash[Mu,Mu,Any]; the third argument is the Any default).
+# Object-hash `.raku` renders each pair per its key: a Str identifier key
+# becomes a colonpair `:key(value)`, everything else becomes `key => value`.
+# All expectations below are raku-verified.
 
 # --- classify / categorize type object + .raku ---
 
-is (1,2,3,4).classify(* %% 2).WHAT.^name, 'Hash[Any,Mu]',
-    'classify with Bool keys is Hash[Any,Mu]';
+is (1,2,3,4).classify(* %% 2).WHAT.^name, 'Hash[Mu,Mu,Any]',
+    'classify with Bool keys is Hash[Mu,Mu]';
 
-is <apple banana avocado>.classify(*.substr(0,1)).WHAT.^name, 'Hash[Any,Mu]',
-    'classify with Str keys is Hash[Any,Mu]';
+is <apple banana avocado>.classify(*.substr(0,1)).WHAT.^name, 'Hash[Mu,Mu,Any]',
+    'classify with Str keys is Hash[Mu,Mu]';
 
-is (1,2,3,4).categorize(* %% 2).WHAT.^name, 'Hash[Any,Mu]',
-    'categorize is Hash[Any,Mu]';
+is (1,2,3,4).categorize(* %% 2).WHAT.^name, 'Hash[Mu,Mu,Any]',
+    'categorize is Hash[Mu,Mu]';
 
 is (1,2,3,4).classify(* %% 2).raku,
-    '(my Any %{Mu} = Bool::False => $[1, 3], Bool::True => $[2, 4])',
+    '(my Mu %{Mu} = Bool::False => $[1, 3], Bool::True => $[2, 4])',
     'classify Bool-key .raku uses arrow for non-Str keys';
 
 is <apple banana avocado>.classify(*.substr(0,1)).raku,
-    '(my Any %{Mu} = :a($["apple", "avocado"]), :b($["banana"]))',
+    '(my Mu %{Mu} = :a($["apple", "avocado"]), :b($["banana"]))',
     'classify Str-key .raku uses colonpairs';
 
 # lookups still work after the metadata tag

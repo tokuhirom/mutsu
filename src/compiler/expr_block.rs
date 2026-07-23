@@ -1,6 +1,45 @@
 use super::*;
 
 impl Compiler {
+    /// The constraint string an expression-position container declaration
+    /// (`(my Int @c)`, `$(my Int %{Int})`) registers via `SetVarType`, or
+    /// `None` when nothing should be tagged. Boxed element types only —
+    /// native `int`/`num`/`str` change the storage and would panic in the
+    /// auto-vivify. For an *anonymous* object hash (`my Int %{Int}` as an
+    /// rvalue / `$(...)` itemization / EVAL round-trip) this keeps the FULL
+    /// constraint including the `{KeyType}` half, so the container's key type
+    /// survives and `(my Int %{Int})` round-trips through `.raku.EVAL`. A
+    /// *named* object hash (`my Int %j{Cool}`) tags only the VALUE-type half:
+    /// re-applying the key-type half would mark the value `.WHICH`-keyed
+    /// while a raw-binding mutation (`gen my Int %j{Cool}` → `sub gen(\h){
+    /// h{$_}=... }`) can still store plain string keys, so adverbs
+    /// (`%j<b>:k`) would miss.
+    fn expr_decl_settable_constraint(
+        name: &str,
+        type_constraint: &Option<String>,
+    ) -> Option<String> {
+        if !(name.starts_with('@') || name.starts_with('%')) {
+            return None;
+        }
+        let tc = type_constraint.as_ref()?;
+        let is_native_value_type = if name.starts_with('@') {
+            crate::runtime::native_types::is_native_array_element_type(tc)
+        } else {
+            crate::runtime::native_types::is_native_int_type(tc)
+                || matches!(tc.as_str(), "num" | "num32" | "num64" | "str")
+        };
+        if is_native_value_type {
+            return None;
+        }
+        let value_tc = if name.starts_with('%') && !name.contains("__ANON_HASH__") {
+            tc.split('{').next().unwrap_or(tc)
+        } else {
+            tc
+        };
+        // Bare `my %h{KeyType}` (no value type): nothing to tag.
+        (!value_tc.is_empty()).then(|| value_tc.to_string())
+    }
+
     /// Compile DoStmt expression (do { ... }, do if, do for, etc.).
     pub(super) fn compile_expr_do_stmt(&mut self, stmt: &Stmt) {
         match stmt {
@@ -85,6 +124,21 @@ impl Compiler {
                         self.code.emit(OpCode::Pop);
                         Some(j)
                     };
+                    // Register the declared type constraint BEFORE the
+                    // initializer assignment, so the assignment's coercion and
+                    // container tagging see THIS declaration's constraint — not
+                    // a stale one left on the shared name by a previous
+                    // expression-position declaration (`$(my Mu %{Mu} = :k<v>)`
+                    // EVAL'd after `(my Int %{Int} = 1 => 2)` reuses
+                    // `%__ANON_HASH__`, and the stale `Int` constraint would
+                    // reject the new values). The post-assignment `SetVarType`
+                    // below still runs to re-tag the stored value.
+                    if let Some(pre_tc) = Self::expr_decl_settable_constraint(name, type_constraint)
+                    {
+                        let name_idx = self.code.add_constant(Value::str(name.clone()));
+                        let tc_idx = self.code.add_constant(Value::str(pre_tc));
+                        self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
+                    }
                     self.compile_expr(expr);
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
                     // Mark a fresh declaration so SetGlobal creates a NEW container
@@ -141,38 +195,11 @@ impl Compiler {
                     //    `Positional[T]`/`Associative[T]` type-capture binding working;
                     //    that role-matching gap is now fixed in `resolved_type_capture_name`,
                     //    so a genuinely-typed `Hash[Int]`/`Array[Int]` binds correctly.)
-                    let is_native_value_type = type_constraint.as_ref().is_some_and(|tc| {
-                        if name.starts_with('@') {
-                            crate::runtime::native_types::is_native_array_element_type(tc)
-                        } else {
-                            crate::runtime::native_types::is_native_int_type(tc)
-                                || matches!(tc.as_str(), "num" | "num32" | "num64" | "str")
-                        }
-                    });
-                    if (name.starts_with('@') || name.starts_with('%'))
-                        && let Some(tc) = type_constraint
-                        && !is_native_value_type
+                    if let Some(post_tc) =
+                        Self::expr_decl_settable_constraint(name, type_constraint)
                     {
-                        // For an *anonymous* object hash (`my Int %{Int}` as an
-                        // rvalue / `$(...)` itemization / EVAL round-trip), tag the
-                        // FULL constraint including the `{KeyType}` half, so the
-                        // container's key type survives (`(my Int %{Int})` .raku
-                        // round-trips). The anonymous form is never the target of a
-                        // raw-binding mutation (`gen my Int %{Cool}` → `\h` param →
-                        // `h{$_}=...`), so tagging the key type here cannot desync a
-                        // later plain-string-keyed write — the concern that keeps a
-                        // *named* object hash's key type stripped below.
-                        let value_tc = if name.starts_with('%') && !name.contains("__ANON_HASH__") {
-                            tc.split('{').next().unwrap_or(tc)
-                        } else {
-                            tc
-                        };
-                        if value_tc.is_empty() {
-                            // Bare `my %h{KeyType}` (no value type): nothing to tag.
-                        } else {
-                            let tc_idx = self.code.add_constant(Value::str(value_tc.to_string()));
-                            self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
-                        }
+                        let tc_idx = self.code.add_constant(Value::str(post_tc));
+                        self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
                     }
                     // Read back the coerced value (SetGlobal coerces list->hash for %)
                     let name_idx2 = self.code.add_constant(Value::str(name.clone()));

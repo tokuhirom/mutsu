@@ -874,7 +874,12 @@ pub fn raku_value(v: &Value) -> String {
             // and the itemized wrapper (`$(my Int %)`) stay type-aware without an
             // interpreter round-trip. (`Map` is handled above and returns early.)
             if map.value_type.is_some() || map.key_type.is_some() {
-                let value_type = map.value_type.as_deref().unwrap_or("Any");
+                // An object hash with no element-type constraint is a
+                // `:{...}` literal — rakudo's Hash[Mu,Mu], shown as `my Mu`.
+                let value_type = map
+                    .value_type
+                    .as_deref()
+                    .unwrap_or(if map.key_type.is_some() { "Mu" } else { "Any" });
                 let key_suffix = match map.key_type.as_deref() {
                     Some(kt) => format!("{{{}}}", kt),
                     None => String::new(),
@@ -1122,19 +1127,6 @@ pub(crate) fn setbagmix_raku(v: &Value) -> Option<String> {
             Some(format!("({}).{}", pairs, type_name))
         }
         _ => None,
-    }
-}
-
-pub(super) fn hash_pick_item(key: &str, value: &Value) -> Value {
-    match key {
-        "True" => Value::value_pair(Value::TRUE, value.clone()),
-        "False" => Value::value_pair(Value::FALSE, value.clone()),
-        _ => {
-            if let Ok(n) = key.parse::<f64>() {
-                return Value::value_pair(Value::num(n), value.clone());
-            }
-            Value::pair(key.to_string(), value.clone())
-        }
     }
 }
 

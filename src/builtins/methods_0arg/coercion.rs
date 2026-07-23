@@ -935,11 +935,20 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
             }
             Ok(Value::capture(vec![], named))
         }
-        // Hash.Capture → named args from hash entries
+        // Hash.Capture → named args from hash entries. An object hash stores
+        // `.WHICH` keys — the named-arg name is the original key's
+        // stringification (raku: `("42" => 70, :42a).Capture` on an object
+        // hash is `\(:42(70), :a(42))`).
         ValueView::Hash(map) => {
+            let typed = map.has_typed_keys();
             let mut named = HashMap::new();
             for (k, v) in map.iter() {
-                named.insert(k.clone(), v.clone());
+                let name = if typed {
+                    map.typed_key(k).to_string_value()
+                } else {
+                    k.clone()
+                };
+                named.insert(name, v.clone());
             }
             Ok(Value::capture(vec![], named))
         }

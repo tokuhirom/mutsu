@@ -109,23 +109,20 @@ impl Interpreter {
         needle: &Value,
         whole: &Value,
     ) -> bool {
-        if let Some(info) = self.container_type_metadata(whole) {
-            if let Some(key_type) = info.key_type {
-                if (key_type == "Any" || key_type == "Mu")
-                    && matches!(needle.view(), ValueView::Str(s) if s.parse::<i128>().is_ok())
-                {
-                    // Heuristic for typed hashes: numeric-looking string keys should
-                    // not alias numeric keys.
-                    return false;
-                }
-                if key_type != "Any"
-                    && key_type != "Mu"
-                    && !self.type_matches_value(&key_type, needle)
-                {
-                    return false;
-                }
+        if let Some(info) = self.container_type_metadata(whole)
+            && let Some(key_type) = info.key_type
+        {
+            if key_type != "Any" && key_type != "Mu" && !self.type_matches_value(&key_type, needle)
+            {
+                return false;
             }
-        } else if !matches!(needle.view(), ValueView::Str(_)) {
+            // An object hash stores `.WHICH` keys: membership is by key
+            // object identity, so `13 ∈ %objh` finds the Int key while
+            // `"13"` does not.
+            let which = crate::runtime::utils::value_which_key(needle);
+            return hash.get(&which).is_some_and(|v| v.truthy());
+        }
+        if !matches!(needle.view(), ValueView::Str(_)) {
             // Plain Hash keys are Str by default.
             return false;
         }
@@ -248,7 +245,7 @@ impl Interpreter {
             ValueView::Hash(items) => {
                 for (k, v) in items.iter() {
                     if v.truthy() || v.is_nil() {
-                        elems.insert(k.clone());
+                        elems.insert(crate::runtime::utils::hash_elem_key(&items, k));
                     }
                 }
             }
@@ -301,7 +298,7 @@ impl Interpreter {
                 .iter()
                 .filter_map(|(k, v)| {
                     if v.truthy() || v.is_nil() {
-                        Some(k.clone())
+                        Some(crate::runtime::utils::hash_elem_key(&h, k))
                     } else {
                         None
                     }

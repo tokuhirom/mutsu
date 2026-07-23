@@ -141,7 +141,24 @@ impl Interpreter {
                         &value,
                     ));
                 }
-                let key = method_args[0].to_string_value();
+                // Insert into a clone of the WHOLE HashData (not just the map),
+                // so an object hash keeps its `original_keys`; an object hash
+                // stores the entry under the key's `.WHICH` and records the
+                // key object. Losing `original_keys` would make the re-tag
+                // treat the `.WHICH` store keys as raw Str keys and
+                // double-encode them.
+                let insert_entry =
+                    |data: &mut crate::value::HashData, key_val: &Value, value: Value| {
+                        if data.key_type.is_some() {
+                            let which = crate::runtime::utils::value_which_key(key_val);
+                            data.original_keys
+                                .get_or_insert_with(std::collections::HashMap::new)
+                                .insert(which.clone(), key_val.clone());
+                            data.map.insert(which, value);
+                        } else {
+                            data.map.insert(key_val.to_string_value(), value);
+                        }
+                    };
                 // An attribute-backed hash (`%!h.AT-KEY($k) = $v` inside a method)
                 // has no live env binding under its twigil name — the attribute
                 // lives in `self`'s shared cell. Read the current hash from that
@@ -154,24 +171,24 @@ impl Interpreter {
                     && let Some(cell_val) = self.read_self_attr_cell(var_name)
                     && matches!(cell_val.view(), ValueView::Hash(_) | ValueView::Nil)
                 {
-                    let mut map = match cell_val.view() {
-                        ValueView::Hash(h) => h.map.clone(),
-                        _ => std::collections::HashMap::new(),
+                    let mut data = match cell_val.view() {
+                        ValueView::Hash(h) => (**h).clone(),
+                        _ => crate::value::HashData::default(),
                     };
-                    map.insert(key, value.clone());
-                    let mut new_hash = Value::hash_with_data(Value::hash_arc(map));
+                    insert_entry(&mut data, &method_args[0], value.clone());
+                    let mut new_hash = Value::hash_with_data(crate::gc::Gc::new(data));
                     if let Some(m) = old_meta.clone() {
                         new_hash = self.tag_container_metadata(new_hash, m);
                     }
                     self.write_self_attr_cell(var_name, new_hash);
                     return Ok(value);
                 }
-                let mut hash = match inner.view() {
-                    ValueView::Hash(map) => map.map.clone(),
-                    _ => std::collections::HashMap::new(),
+                let mut data = match inner.view() {
+                    ValueView::Hash(map) => (**map).clone(),
+                    _ => crate::value::HashData::default(),
                 };
-                hash.insert(key, value.clone());
-                let mut new_hash = Value::hash_with_data(Value::hash_arc(hash));
+                insert_entry(&mut data, &method_args[0], value.clone());
+                let mut new_hash = Value::hash_with_data(crate::gc::Gc::new(data));
                 // Propagate container type metadata to avoid stale pointer reuse
                 let meta = old_meta.unwrap_or(ContainerTypeInfo {
                     value_type: "Any".to_string(),

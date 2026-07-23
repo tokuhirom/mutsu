@@ -97,9 +97,11 @@ impl Interpreter {
                 }
                 items
             }
+            // typed_pair decodes an object hash's `.WHICH` store keys back to
+            // the original key objects (plain hashes get `Pair(str_key, v)`).
             ValueView::Hash(map) => map
                 .iter()
-                .map(|(k, v)| Value::pair(k.clone(), v.clone()))
+                .map(|(k, v)| map.typed_pair(k, v.clone()))
                 .collect(),
             ValueView::LazyList(ll) => {
                 if ll.scan_spec.is_some() {

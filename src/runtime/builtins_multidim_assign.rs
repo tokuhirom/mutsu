@@ -193,7 +193,18 @@ impl Interpreter {
                     // this should fail because {} is not an Int.
                     // (This is handled by type check above for the actual value being assigned.)
                     let mut new_hash = (**h).clone();
-                    new_hash.insert(key, effective_value.clone());
+                    if new_hash.key_type.is_some() {
+                        // An object hash (`has %.a{Str:D}`) stores `.WHICH`
+                        // keys and records the key object.
+                        let which = crate::runtime::utils::value_which_key(&index);
+                        new_hash
+                            .original_keys
+                            .get_or_insert_with(std::collections::HashMap::new)
+                            .insert(which.clone(), index.clone());
+                        new_hash.map.insert(which, effective_value.clone());
+                    } else {
+                        new_hash.insert(key, effective_value.clone());
+                    }
                     Value::hash(new_hash)
                 }
                 ValueView::Array(items, kind) => {
@@ -292,7 +303,12 @@ impl Interpreter {
 
         let (removed, updated) = match current.view() {
             ValueView::Hash(h) => {
-                let key = index.to_string_value();
+                // An object hash (`has %.a{Str:D}`) stores `.WHICH` keys.
+                let key = if h.key_type.is_some() {
+                    crate::runtime::utils::value_which_key(&index)
+                } else {
+                    index.to_string_value()
+                };
                 let mut new_hash = (**h).clone();
                 let removed = new_hash
                     .remove(&key)

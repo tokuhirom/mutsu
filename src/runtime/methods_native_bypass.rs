@@ -313,11 +313,20 @@ impl Interpreter {
         } else {
             String::new()
         };
+        // An object hash with no element-type constraint is a `:{...}`
+        // literal — rakudo's Hash[Mu,Mu], shown as `my Mu`.
+        let value_type = if !info.value_type.is_empty() {
+            info.value_type.as_str()
+        } else if info.key_type.is_some() {
+            "Mu"
+        } else {
+            "Any"
+        };
         let inner = parts.join(", ");
         let result = if inner.is_empty() {
-            format!("(my {} %{})", info.value_type, key_suffix)
+            format!("(my {} %{})", value_type, key_suffix)
         } else {
-            format!("(my {} %{} = {})", info.value_type, key_suffix, inner)
+            format!("(my {} %{} = {})", value_type, key_suffix, inner)
         };
         Ok(Value::str(itemize_wrap(result)))
     }

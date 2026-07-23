@@ -1982,8 +1982,16 @@ pub(crate) fn native_method_1arg(
         }
         "AT-KEY" => match target.view() {
             ValueView::Hash(map) => {
-                let key = arg.to_string_value();
-                Some(Ok(map.get(&key).cloned().unwrap_or(Value::NIL)))
+                // An object hash stores `.WHICH` keys (fall back to the plain
+                // string key for the ordinary Str-keyed hash).
+                let v = if map.key_type.is_some() {
+                    let which = crate::runtime::utils::value_which_key(arg);
+                    map.get(&which).cloned()
+                } else {
+                    None
+                };
+                let v = v.or_else(|| map.get(&arg.to_string_value()).cloned());
+                Some(Ok(v.unwrap_or(Value::NIL)))
             }
             ValueView::Set(data, _) => {
                 let key = arg.to_string_value();
@@ -2020,8 +2028,12 @@ pub(crate) fn native_method_1arg(
         },
         "EXISTS-KEY" => match target.view() {
             ValueView::Hash(map) => {
-                let key = arg.to_string_value();
-                Some(Ok(Value::truth(map.contains_key(&key))))
+                // An object hash stores `.WHICH` keys (fall back to the plain
+                // string key for the ordinary Str-keyed hash).
+                let found = (map.key_type.is_some()
+                    && map.contains_key(&crate::runtime::utils::value_which_key(arg)))
+                    || map.contains_key(&arg.to_string_value());
+                Some(Ok(Value::truth(found)))
             }
             ValueView::Set(data, _) => {
                 let key = arg.to_string_value();

@@ -27,7 +27,15 @@ impl Interpreter {
                 }
                 ValueView::Hash(_) => {
                     let name = if let Some(key_type) = info.key_type {
-                        format!("Hash[{},{}]", info.value_type, key_type)
+                        if info.value_type.is_empty() {
+                            // The `:{...}` / classify shape (of = Mu, no
+                            // declared value type): rakudo parameterizes it as
+                            // Hash[Mu,Mu,Any] — the third argument is the
+                            // (Any) default that differs from the Mu of-type.
+                            format!("Hash[Mu,{},Any]", key_type)
+                        } else {
+                            format!("Hash[{},{}]", info.value_type, key_type)
+                        }
                     } else {
                         format!("Hash[{}]", info.value_type)
                     };
@@ -652,6 +660,11 @@ impl Interpreter {
                     match target.view() {
                         ValueView::Hash(_) => {
                             if let Some(ref key_type) = info.key_type {
+                                // See dispatch_what: the `:{...}` shape (no
+                                // declared value type) is Hash[Mu,Mu,Any].
+                                if info.value_type.is_empty() {
+                                    return Ok(Value::str(format!("Hash[Mu,{},Any]", key_type)));
+                                }
                                 return Ok(Value::str(format!(
                                     "Hash[{},{}]",
                                     info.value_type, key_type

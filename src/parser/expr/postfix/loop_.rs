@@ -700,12 +700,21 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                             .all(|key| !key.is_empty() && key.chars().all(is_angle_key_char))
                     {
                         let r2 = &r2[end + 1..];
+                        // Angle-word subscript keys are val()-allomorphic like
+                        // standalone `<...>` words: `%h<42>` looks up with an
+                        // IntStr, which an object hash keys distinctly from
+                        // both `Int 42` and `Str "42"`. Plain hashes stringify
+                        // the key, so they are unaffected.
                         let index_expr = if keys.len() == 1 {
-                            Expr::Literal(Value::str(keys[0].to_string()))
+                            Expr::Literal(crate::parser::angle_word_value_full_allomorphic(keys[0]))
                         } else {
                             Expr::ArrayLiteral(
                                 keys.into_iter()
-                                    .map(|k| Expr::Literal(Value::str(k.to_string())))
+                                    .map(|k| {
+                                        Expr::Literal(
+                                            crate::parser::angle_word_value_full_allomorphic(k),
+                                        )
+                                    })
                                     .collect(),
                             )
                         };
@@ -1494,14 +1503,17 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 return Err(PError::expected_at("angle index key", r));
             }
             let r = &r[end + 1..];
+            // Angle-word subscript keys are val()-allomorphic like standalone
+            // `<...>` words (see the `.<...>` postfix above). A nested-angle
+            // key (`%h<a<b>>`) is a single literal Str key as before.
             let index_expr = if nested_angle {
                 Expr::Literal(Value::str(content.to_string()))
             } else if keys.len() == 1 {
-                Expr::Literal(Value::str(keys[0].to_string()))
+                Expr::Literal(crate::parser::angle_word_value_full_allomorphic(keys[0]))
             } else {
                 Expr::ArrayLiteral(
                     keys.into_iter()
-                        .map(|k| Expr::Literal(Value::str(k.to_string())))
+                        .map(|k| Expr::Literal(crate::parser::angle_word_value_full_allomorphic(k)))
                         .collect(),
                 )
             };
@@ -2572,12 +2584,20 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                             .iter()
                             .all(|key| !key.is_empty() && key.chars().all(is_angle_key_char))
                     {
+                        // val()-allomorphic keys, matching the plain `<...>`
+                        // subscript above.
                         let args = if keys.len() == 1 {
-                            vec![Expr::Literal(Value::str(keys[0].to_string()))]
+                            vec![Expr::Literal(
+                                crate::parser::angle_word_value_full_allomorphic(keys[0]),
+                            )]
                         } else {
                             vec![Expr::ArrayLiteral(
                                 keys.into_iter()
-                                    .map(|k| Expr::Literal(Value::str(k.to_string())))
+                                    .map(|k| {
+                                        Expr::Literal(
+                                            crate::parser::angle_word_value_full_allomorphic(k),
+                                        )
+                                    })
                                     .collect(),
                             )]
                         };

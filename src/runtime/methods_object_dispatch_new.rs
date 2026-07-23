@@ -1155,6 +1155,10 @@ impl Interpreter {
                         flat.extend(Self::value_to_list(arg));
                     }
                     let mut map = HashMap::new();
+                    // Record non-Str key objects so a parameterized object hash
+                    // (`Hash[Int,Int].new(1 => 2)`) re-keys by `.WHICH` from the
+                    // real key when `tag_container_metadata` runs below.
+                    let mut original_keys: HashMap<String, Value> = HashMap::new();
                     let mut iter = flat.into_iter();
                     while let Some(item) = iter.next() {
                         match item.view() {
@@ -1162,16 +1166,26 @@ impl Interpreter {
                                 map.insert(k.clone(), v.clone());
                             }
                             ValueView::ValuePair(k, v) => {
-                                map.insert(k.to_string_value(), v.clone());
+                                let str_key = k.to_string_value();
+                                if !matches!(k.view(), ValueView::Str(_)) {
+                                    original_keys.insert(str_key.clone(), k.clone());
+                                }
+                                map.insert(str_key, v.clone());
                             }
                             _ => {
-                                let key = item.to_string_value();
+                                let str_key = item.to_string_value();
+                                if !matches!(item.view(), ValueView::Str(_)) {
+                                    original_keys.insert(str_key.clone(), item.clone());
+                                }
                                 let value = iter.next().unwrap_or(Value::NIL);
-                                map.insert(key, value);
+                                map.insert(str_key, value);
                             }
                         }
                     }
-                    let result = Value::hash(map);
+                    let result = crate::runtime::utils::set_hash_original_keys(
+                        Value::hash(map),
+                        original_keys,
+                    );
                     let value_type = type_args
                         .first()
                         .cloned()
