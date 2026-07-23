@@ -172,6 +172,12 @@ impl Interpreter {
                 let bare = Self::sigiled_name(&sigil, &rest);
                 let res = chain.resolve_outer(&bare, depth);
                 Some((bare, res))
+            } else if let Some(rest) = name.strip_prefix("UNIT::") {
+                // UNIT:: — the compilation unit's outermost lexical scope, the
+                // same lexical walk as OUTER:: but at the top of the chain.
+                let bare = Self::sigiled_name(&sigil, rest);
+                let res = chain.resolve_unit(&bare);
+                Some((bare, res))
             } else {
                 None
             };

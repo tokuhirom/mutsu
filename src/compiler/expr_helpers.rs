@@ -587,6 +587,12 @@ impl Compiler {
             self.emit_outer_var_access(bare_name, depth);
             return;
         }
+        // $UNIT:: variable access — the compilation unit's outermost lexical
+        // scope. `UNIT` names one scope (the top), so there is no depth chain.
+        if let Some(bare_name) = name.strip_prefix("UNIT::") {
+            self.emit_unit_var_access(bare_name.to_string());
+            return;
+        }
         // $DYNAMIC:: variable access. Strip every leading DYNAMIC:: layer — a
         // repeated chain (`$DYNAMIC::DYNAMIC::...::x`) still names the dynamic var
         // `x`; going too high just yields an undefined value (roast pseudo-6c

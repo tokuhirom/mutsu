@@ -112,6 +112,30 @@ pub(crate) fn resolve_outers(
     resolve_outer(scopes, local_map, bare, n)
 }
 
+/// Resolve `UNIT::` — the OUTERMOST lexical scope of the compilation unit
+/// (`$UNIT::x`, `UNIT::<$x>`). `OUTER::` names one scope out; `UNIT::` names the
+/// top of the chain: `my $x=1; { my $x=2; { my $x=3; $UNIT::x } }` is 1. That is
+/// exactly an `OUTER::` at the maximum in-frame depth (`n - 1`), so the two share
+/// one implementation. A `UNIT::` reached from inside a routine (a separate
+/// compilation frame) still names the file mainline: the routine's compiler
+/// inherits the enclosing scopes into its chain, so the outermost frame here IS
+/// the mainline; only when that chain is itself severed does the runtime env walk
+/// (depth `n`) take over.
+pub(crate) fn resolve_unit(
+    scopes: &[ScopeFrame],
+    local_map: &HashMap<String, u32>,
+    bare: &str,
+) -> OuterResolution {
+    let n = scopes.len();
+    if n == 0 {
+        return OuterResolution::Read {
+            depth: 0,
+            slot: local_map.get(bare).copied(),
+        };
+    }
+    resolve_outer(scopes, local_map, bare, n - 1)
+}
+
 /// The compile-time scope chain at one emit point, baked into the code chunk.
 ///
 /// A literal `$OUTER::x` never needs this: the compiler resolves it and emits
@@ -136,6 +160,10 @@ impl LexScopeChain {
 
     pub(crate) fn resolve_outers(&self, bare: &str) -> OuterResolution {
         resolve_outers(&self.scopes, &self.local_map, bare)
+    }
+
+    pub(crate) fn resolve_unit(&self, bare: &str) -> OuterResolution {
+        resolve_unit(&self.scopes, &self.local_map, bare)
     }
 
     /// Every name any scope in the chain declares — i.e. every name a lookup
