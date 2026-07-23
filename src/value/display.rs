@@ -6,17 +6,36 @@ pub(crate) fn is_internal_anon_type_name(name: &str) -> bool {
     name.starts_with("__ANON_") && name.ends_with("__")
 }
 
+/// An anonymous `class`/`grammar`/`role` is registered under an internal
+/// `__ANON_<KIND>_<N>__` name; Rakudo displays these as `<anon|N>` (the
+/// number is arbitrary, only distinct within a run). Returns the display
+/// form for those three kinds; anonymous enums (whose type displays as the
+/// empty name) and internal non-type `__ANON_*` markers return None.
+fn anon_type_display_name(name: &str) -> Option<String> {
+    let inner = name.strip_suffix("__")?;
+    let n = ["__ANON_CLASS_", "__ANON_GRAMMAR_", "__ANON_ROLE_"]
+        .iter()
+        .find_map(|prefix| inner.strip_prefix(prefix))?;
+    let n: u64 = n.parse().ok()?;
+    Some(format!("<anon|{}>", n + 1))
+}
+
 /// A lexically-scoped `my class`/`my role` whose bare name collides with an
 /// earlier same-named lexical declaration is stored in the registry under a
 /// mangled internal name `Foo\u{0}<site-id>` so its instances keep their own
 /// identity (see `exec_register_class_op`). The `\u{0}` separator can never
 /// appear in a source identifier, so the user-facing name is just everything
-/// before it. This is a pure function so `display.rs` (which has no interpreter
-/// context) can strip the suffix for `.gist`/`.raku`/`say`.
-pub(crate) fn user_facing_type_name(name: &str) -> &str {
-    match name.split_once('\u{0}') {
+/// before it. Anonymous class/grammar/role internal names display as
+/// Rakudo's `<anon|N>`. This is a pure function so `display.rs` (which has
+/// no interpreter context) can map the name for `.gist`/`.raku`/`say`.
+pub(crate) fn user_facing_type_name(name: &str) -> std::borrow::Cow<'_, str> {
+    let base = match name.split_once('\u{0}') {
         Some((short, _)) => short,
         None => name,
+    };
+    match anon_type_display_name(base) {
+        Some(display) => std::borrow::Cow::Owned(display),
+        None => std::borrow::Cow::Borrowed(base),
     }
 }
 

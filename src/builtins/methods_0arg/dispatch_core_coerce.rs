@@ -362,9 +362,17 @@ pub(super) fn dispatch(
                     | ValueView::GenericRange { .. }
             );
             let which_str = match target.view() {
-                ValueView::Package(name) => format!("{}|U{}", name.resolve(), name.id()),
+                ValueView::Package(name) => format!(
+                    "{}|U{}",
+                    crate::value::user_facing_type_name(&name.resolve()),
+                    name.id()
+                ),
                 ValueView::CustomType(c) => {
-                    format!("{}|U{}", c.name.resolve(), c.id)
+                    format!(
+                        "{}|U{}",
+                        crate::value::user_facing_type_name(&c.name.resolve()),
+                        c.id
+                    )
                 }
                 ValueView::Int(n) => format!("Int|{}", n),
                 ValueView::BigInt(n) => format!("Int|{}", *n),
@@ -437,7 +445,13 @@ pub(super) fn dispatch(
                     format!("Regex|{:p}", Arc::as_ptr(&a.pattern))
                 }
                 ValueView::Instance { class_name, id, .. } => {
-                    format!("{}|{}", class_name.resolve(), id)
+                    // Anonymous classes display as `<anon|N>` (the instance id
+                    // keeps the identity unique).
+                    format!(
+                        "{}|{}",
+                        crate::value::user_facing_type_name(&class_name.resolve()),
+                        id
+                    )
                 }
                 ValueView::Junction { kind, values } => {
                     use std::hash::{Hash, Hasher};
