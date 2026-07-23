@@ -716,10 +716,12 @@ impl Interpreter {
         if let ValueView::Package(type_name) = container.view()
             && (type_name == "Hash" || type_name == "Hash:U")
         {
-            let missing = Value::package(crate::symbol::Symbol::intern(hole_type));
+            // `:delete` on the Hash TYPE OBJECT (`Hash<z>:delete`) yields Nil
+            // (raku: S32-hash/delete.t) — there is no container whose hole
+            // default could apply, unlike an absent key of a real hash.
             return Ok(match idx.view() {
-                ValueView::Array(keys, ..) => Value::array(vec![missing; keys.len()]),
-                _ => missing,
+                ValueView::Array(keys, ..) => Value::array(vec![Value::NIL; keys.len()]),
+                _ => Value::NIL,
             });
         }
         if matches!(container.view(), ValueView::Array(..)) {

@@ -182,6 +182,12 @@ impl Interpreter {
         let r = self.force_lazy_list_vm_inner(list);
         self.restore_readonly_state(saved_readonly);
         self.reconcile_caller_after_lazy_force(caller_code);
+        // An array-context lazy list IS the array's element store: a Nil the
+        // pipe produced resets its fresh element container to Any, like any
+        // other store into an untyped array element.
+        if list.in_array_context() {
+            return r.map(crate::runtime::utils::nil_elems_to_any);
+        }
         r
     }
 
@@ -427,6 +433,10 @@ impl Interpreter {
         let r = self.force_lazy_list_vm_n_inner(list, needed);
         self.restore_readonly_state(saved_readonly);
         self.reconcile_caller_after_lazy_force(caller_code);
+        // See force_lazy_list_vm: array-context elements store Any, not Nil.
+        if list.in_array_context() {
+            return r.map(crate::runtime::utils::nil_elems_to_any);
+        }
         r
     }
 

@@ -140,6 +140,17 @@ pub(crate) fn gist_value(value: &Value) -> String {
             // Nested real arrays recurse through this same arm, so their cells
             // are handled too; a List/Seq keeps a genuine Nil (its own arm).
             let is_real = kind.is_real_array();
+            // Shaped arrays join their rows with a newline (`say my @a[2,2]`
+            // prints one row per line), matching the fast-path gist.
+            let sep = if kind == crate::value::ArrayKind::Shaped
+                && items
+                    .iter()
+                    .any(|v| matches!(v.view(), ValueView::Array(..)))
+            {
+                "\n "
+            } else {
+                " "
+            };
             let inner = items
                 .iter()
                 .map(|v| {
@@ -150,7 +161,7 @@ pub(crate) fn gist_value(value: &Value) -> String {
                     }
                 })
                 .collect::<Vec<_>>()
-                .join(" ");
+                .join(sep);
             SEEN_PTRS.with(|seen| pop_ptr(seen, ptr));
             match kind {
                 crate::value::ArrayKind::Array

@@ -1180,6 +1180,11 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     ll.with_cached_no_sink(),
                 ))));
             }
+            // An already-reified Positional caches as itself: `@a.cache` is
+            // `@a` (an Array, not a List view of it).
+            if matches!(target.view(), ValueView::Array(_, kind) if kind.is_real_array()) {
+                return Some(Ok(target.clone()));
+            }
             let items = target
                 .as_list_items()
                 .map(|items| items.to_vec())

@@ -118,17 +118,10 @@ pub(super) fn dispatch(
                 )))
             }
         }
-        ValueView::Nil => {
-            if method == "raku" || method == "perl" {
-                Some(Ok(Value::str_from("Nil")))
-            } else {
-                // gist returns "(Any)" because mutsu uses the Nil
-                // value for uninitialized variables (which are actually Any).
-                // The literal `Nil.gist` case is handled by compile-time
-                // folding in the compiler (see compiler/expr.rs).
-                Some(Ok(Value::str_from("(Any)")))
-            }
-        }
+        // raku/perl and gist of the Nil value are all "Nil". (Uninitialized
+        // variables hold the Any type object since PLAN 8.5, so a runtime
+        // Nil here is a genuine Nil, not an uninit placeholder.)
+        ValueView::Nil => Some(Ok(Value::str_from("Nil"))),
         ValueView::FatRat(n, d) => {
             if d == 0 && (method == "gist" || method == "Str") {
                 Some(Err(RuntimeError::numeric_divide_by_zero_with(Some(

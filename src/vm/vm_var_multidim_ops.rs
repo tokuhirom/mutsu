@@ -515,8 +515,8 @@ impl Interpreter {
             }
             ValueView::Array(indices, ..) => {
                 // Multiple indices at this dimension level
-                let items = match target.view() {
-                    ValueView::Array(items, ..) => items,
+                let (items, target_is_real_array) = match target.view() {
+                    ValueView::Array(items, kind) => (items, kind.is_real_array()),
                     _ => return Ok(Value::NIL),
                 };
                 let has_more_multi = rest.iter().any(|v| {
@@ -534,6 +534,11 @@ impl Interpreter {
                     let result = if let Some(i) = Self::index_to_usize(idx) {
                         if i < items.len() {
                             self.multi_dim_index_read(&items[i], rest)?
+                        } else if target_is_real_array {
+                            // A missing slot of a real Array reads as its
+                            // element default, Any (indexing further into the
+                            // Any type object stays Any, matching raku).
+                            Value::package(Symbol::intern("Any"))
                         } else {
                             self.multi_dim_index_read(&Value::NIL, rest)?
                         }
@@ -569,12 +574,16 @@ impl Interpreter {
                 }
                 let idx = resolved.as_ref().unwrap_or(dim);
                 if let Some(i) = Self::index_to_usize(idx) {
-                    let items = match target.view() {
-                        ValueView::Array(items, ..) => items,
+                    let (items, is_real) = match target.view() {
+                        ValueView::Array(items, kind) => (items, kind.is_real_array()),
                         _ => return Ok(Value::NIL),
                     };
                     if i < items.len() {
                         self.multi_dim_index_read(&items[i], rest)
+                    } else if is_real {
+                        // Out of bounds on a real Array: the element default
+                        // (Any), like a single-dim OOB read; a List stays Nil.
+                        Ok(Value::package(Symbol::intern("Any")))
                     } else {
                         // Out of bounds — return Nil for scalar index
                         Ok(Value::NIL)
@@ -583,12 +592,14 @@ impl Interpreter {
                     // Non-numeric index (e.g., string "0")
                     let i = idx.to_string_value().parse::<usize>().ok();
                     if let Some(i) = i {
-                        let items = match target.view() {
-                            ValueView::Array(items, ..) => items,
+                        let (items, is_real) = match target.view() {
+                            ValueView::Array(items, kind) => (items, kind.is_real_array()),
                             _ => return Ok(Value::NIL),
                         };
                         if i < items.len() {
                             self.multi_dim_index_read(&items[i], rest)
+                        } else if is_real {
+                            Ok(Value::package(Symbol::intern("Any")))
                         } else {
                             Ok(Value::NIL)
                         }

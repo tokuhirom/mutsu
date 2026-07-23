@@ -16,17 +16,23 @@ impl Interpreter {
             "Array" | "Hash" | "List" | "Seq" | "Positional" | "Associative"
         );
         match value.view() {
-            ValueView::Array(items, ..) => {
+            ValueView::Array(items, kind) => {
+                // A shaped array's unset cell seed (the Any type object from
+                // `Array.new(:shape(...))`) is acceptable like a Nil cell: the
+                // typed coercion re-seeds it with the element type object.
+                let shaped = kind == crate::value::ArrayKind::Shaped;
                 if is_container_constraint {
                     // Each element is checked as a whole against the constraint
-                    items
-                        .iter()
-                        .all(|item| self.type_matches_value(constraint, item))
+                    items.iter().all(|item| {
+                        (shaped && item.is_any_type_object())
+                            || self.type_matches_value(constraint, item)
+                    })
                 } else {
                     // Recurse into sub-arrays for simple element types
-                    items
-                        .iter()
-                        .all(|item| self.array_elements_match_constraint(constraint, item))
+                    items.iter().all(|item| {
+                        (shaped && item.is_any_type_object())
+                            || self.array_elements_match_constraint(constraint, item)
+                    })
                 }
             }
             ValueView::Seq(items) => {

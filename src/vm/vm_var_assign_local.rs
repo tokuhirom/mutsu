@@ -146,11 +146,28 @@ impl Interpreter {
                     .map(Value::view)
                 {
                     Some(ValueView::Bool(true)) => Value::lazy_list(list.clone()),
-                    _ => Value::real_array(self.force_lazy_list_vm(&list)?),
+                    _ => Value::real_array(crate::runtime::utils::nil_elems_to_any(
+                        self.force_lazy_list_vm(&list)?,
+                    )),
                 }
             } else {
                 runtime::coerce_to_array(raw_val)
             };
+            // An untyped `@` assignment resets Nil elements to Any (their
+            // fresh containers' default); typed arrays keep Nil for the typed
+            // element coercion downstream.
+            if loan_env!(self, var_type_constraint(name)).is_none()
+                && let ValueView::Array(items, kind) = assigned.view()
+                && kind.is_real_array()
+                && items.iter().any(Value::is_nil)
+            {
+                // Clone the ArrayData so shape/default/type metadata survive;
+                // only the items are rewritten.
+                let mut data = (**items).clone();
+                data.items =
+                    crate::runtime::utils::nil_elems_to_any(std::mem::take(&mut data.items));
+                assigned = Value::array_with_kind(crate::gc::Gc::new(data), kind);
+            }
             let class_name = match self.locals[idx].view() {
                 ValueView::Instance { class_name, .. } => Some(class_name),
                 ValueView::Package(class_name) => Some(class_name),

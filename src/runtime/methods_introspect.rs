@@ -80,7 +80,9 @@ impl Interpreter {
                 };
                 return Ok(Value::package(Symbol::intern(visible)));
             }
-            ValueView::Nil => "Any",
+            // `Nil.WHAT` IS the Nil type object — the same object the `Nil`
+            // term denotes (`Nil.WHAT === Nil` is True), not a Package wrapper.
+            ValueView::Nil => return Ok(Value::NIL),
             ValueView::Package(name) => {
                 let resolved = name.resolve();
                 let visible = if crate::value::is_internal_anon_type_name(&resolved) {
@@ -283,7 +285,7 @@ impl Interpreter {
                     ValueView::Hash(_) => "Hash",
                     ValueView::Array(_, kind) if kind.is_real_array() => "Array",
                     ValueView::Array(_, _) => "List",
-                    ValueView::Nil => "Any",
+                    ValueView::Nil => "Nil",
                     _ => "Mu",
                 };
                 tn.to_string()

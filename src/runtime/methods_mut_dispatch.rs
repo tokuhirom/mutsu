@@ -663,10 +663,29 @@ impl Interpreter {
                 }
                 _ => "Array".to_string(),
             };
+            // Storing Nil into a fresh array element resets it to the element
+            // default: Any for untyped, the element type object for typed
+            // (`my Int @a; @a.push(Nil)` stores `Int`).
+            let nil_to_elem_default = |slf: &mut Self, vals: Vec<Value>| -> Vec<Value> {
+                if !vals.iter().any(Value::is_nil) {
+                    return vals;
+                }
+                let default = match slf.var_type_constraint(&key) {
+                    Some(c) => {
+                        let nominal = slf.nominal_type_object_name_for_constraint(&c);
+                        Value::package(crate::symbol::Symbol::intern(&nominal))
+                    }
+                    None => Value::package(crate::symbol::Symbol::intern("Any")),
+                };
+                vals.into_iter()
+                    .map(|v| if v.is_nil() { default.clone() } else { v })
+                    .collect()
+            };
             match method {
                 "push" => {
                     let normalized_args = Self::normalize_push_unshift_args(args);
                     self.check_container_element_types(&key, &target, &normalized_args)?;
+                    let normalized_args = nil_to_elem_default(self, normalized_args);
                     let result = self.push_to_shared_var(&key, normalized_args, &target);
                     self.reattach_array_type_metadata(&key, &saved_meta);
                     return Ok(result);
@@ -678,6 +697,7 @@ impl Interpreter {
                     // as-is (no recursive flattening).
                     let flat_values = flatten_append_args(args);
                     self.check_container_element_types(&key, &target, &flat_values)?;
+                    let flat_values = nil_to_elem_default(self, flat_values);
                     let result = if let Some(slot) = self.env.get_mut(&key)
                         && let Some(r) = slot.with_array_mut(|arc_items, kind| {
                             let kind = *kind;
@@ -703,6 +723,7 @@ impl Interpreter {
                 "unshift" => {
                     let normalized_args = Self::normalize_push_unshift_args(args);
                     self.check_container_element_types(&key, &target, &normalized_args)?;
+                    let normalized_args = nil_to_elem_default(self, normalized_args);
                     let result = if let Some(slot) = self.env.get_mut(&key)
                         && let Some(r) = slot.with_array_mut(|arc_items, kind| {
                             let kind = *kind;

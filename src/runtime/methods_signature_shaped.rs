@@ -98,7 +98,12 @@ impl Interpreter {
         let len = dims[0];
         if dims.len() == 1 {
             let mut items = Vec::new();
-            Self::autoviv_resize(&mut items, len, Value::NIL)?;
+            // Unused shaped cells hold the Any type object (the untyped
+            // element default), like a statement-form shaped declaration —
+            // `(my @b[42])` must be eqv to `my @a[42]`. A typed shaped decl
+            // (`my Int @a[3]`) re-seeds these cells with its element type via
+            // coerce_typed_array_elements (the unset-seed arm).
+            Self::autoviv_resize(&mut items, len, Value::package(Symbol::intern("Any")))?;
             let value = Value::shaped_array(items);
             crate::runtime::utils::mark_shaped_array(&value, Some(dims));
             return Ok(value);

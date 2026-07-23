@@ -300,11 +300,11 @@ impl Value {
             }
             // Other Instance types: use identity comparison
             (ValueView::Instance { .. }, ValueView::Instance { .. }) => self == other,
-            // Nil and Package("Any") are eqv: both represent the undefined type object Any.
-            // This matters for containerized contexts (e.g. hash values).
+            // The Nil value IS the Nil type object: a `Package("Nil")` obtained
+            // via type lookup (`::('Nil')`) denotes the same singleton.
             (ValueView::Nil, ValueView::Package(name))
             | (ValueView::Package(name), ValueView::Nil)
-                if name == "Any" =>
+                if name == "Nil" =>
             {
                 true
             }

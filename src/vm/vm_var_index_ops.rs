@@ -1086,7 +1086,6 @@ impl Interpreter {
             }
             (ValueView::Instance { class_name, .. }, ValueView::Str(key)) => {
                 let cn = class_name.resolve();
-                let default = self.typed_container_default(&target);
                 let result = match self.try_compiled_method_or_interpret(
                     target.clone(),
                     "AT-KEY",
@@ -1101,10 +1100,13 @@ impl Interpreter {
                     Err(e) if self.has_user_method(&cn, "AT-KEY") => return Err(e),
                     Err(_) => Value::NIL,
                 };
-                if result.is_nil() { default } else { result }
+                if result.is_nil() {
+                    self.typed_container_default(&target)
+                } else {
+                    result
+                }
             }
             (ValueView::Instance { .. }, ValueView::Int(i)) => {
-                let default = self.typed_container_default(&target);
                 let fallback = target.clone();
                 let result = self
                     .try_compiled_method_or_interpret(target.clone(), "AT-POS", vec![Value::int(i)])
@@ -1116,7 +1118,11 @@ impl Interpreter {
                         )
                     })
                     .unwrap_or(Value::NIL);
-                if result.is_nil() { default } else { result }
+                if result.is_nil() {
+                    self.typed_container_default(&target)
+                } else {
+                    result
+                }
             }
             // Whatever slice on a tied Associative instance (`%h is Foo; %h{*}`):
             // enumerate the class's own keys (via its `keys` method) and read each

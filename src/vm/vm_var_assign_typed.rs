@@ -367,6 +367,18 @@ impl Interpreter {
                 coerced_items.push(Self::native_fill_for_constraint(Some(constraint)));
                 continue;
             }
+            // A shaped declaration's unset cell seed (the Any type object from
+            // `Array.new(:shape(...))`) re-seeds as the element type object,
+            // exactly like a Nil cell. Only the no-initializer shaped form —
+            // a user-supplied `Any` element must still fail the type check.
+            if kind == crate::value::ArrayKind::Shaped
+                && !explicit_initializer
+                && item.is_any_type_object()
+            {
+                let base = crate::runtime::types::strip_type_smiley(constraint).0;
+                coerced_items.push(Value::package(crate::symbol::Symbol::intern(base)));
+                continue;
+            }
             if item.is_nil() {
                 if let Some(default) = self.var_default(var_name) {
                     coerced_items.push(default.clone());

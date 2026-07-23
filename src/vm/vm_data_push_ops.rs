@@ -3,6 +3,44 @@ use super::*;
 use crate::value::RuntimeError;
 
 impl Interpreter {
+    /// Storing Nil into a fresh array element resets it to the element
+    /// default: Any for untyped arrays, the element type object for typed
+    /// (`my Int @a; @a.push(Nil)` stores `Int`). Slips convert per element.
+    fn push_nil_to_elem_default(&mut self, target_name: &str, val: Value) -> Value {
+        let has_nil = match val.view() {
+            ValueView::Slip(items) => items.iter().any(Value::is_nil),
+            _ => val.is_nil(),
+        };
+        if !has_nil {
+            return val;
+        }
+        let default = match self
+            .var_type_constraint_fast(target_name)
+            .map(|s| s.to_string())
+        {
+            Some(c) => {
+                let nominal = loan_env!(self, nominal_type_object_name_for_constraint(&c));
+                Value::package(crate::symbol::Symbol::intern(&nominal))
+            }
+            None => Value::package(crate::symbol::Symbol::intern("Any")),
+        };
+        match val.view() {
+            ValueView::Slip(items) => Value::slip(
+                items
+                    .iter()
+                    .map(|v| {
+                        if v.is_nil() {
+                            default.clone()
+                        } else {
+                            v.clone()
+                        }
+                    })
+                    .collect(),
+            ),
+            _ => default,
+        }
+    }
+
     /// Fast path for @arr.push(val) — directly appends to the array Arc.
     pub(super) fn exec_array_push_op(
         &mut self,
@@ -28,6 +66,7 @@ impl Interpreter {
         // interpreter fallback.
         if self.shared_vars_active {
             let val = self.stack.pop().unwrap_or(Value::NIL);
+            let val = self.push_nil_to_elem_default(target_name, val);
             let target = self.env().get(target_name).cloned().unwrap_or(Value::NIL);
             // Track B/Track C: a `state @a` under an active thread context is a
             // shared `ContainerRef` cell. Push INTO the cell under its lock
@@ -88,7 +127,10 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
-        let mut val = self.stack.pop().unwrap_or(Value::NIL);
+        let mut val = {
+            let popped = self.stack.pop().unwrap_or(Value::NIL);
+            self.push_nil_to_elem_default(target_name, popped)
+        };
 
         // Reference push (`@a.push(@b)` / `@a.push(%h)`): Raku's non-flattening
         // `**@` slurpy stores the container itself, so later mutations of the

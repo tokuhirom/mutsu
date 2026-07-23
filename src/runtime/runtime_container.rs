@@ -415,6 +415,45 @@ impl Interpreter {
                     _ => out.push(v.clone()),
                 }
             }
+            // A shaped array's unset cell seed (the Any type object) re-seeds
+            // as the element type object, like the variable path's typed
+            // coercion (`has Int @.g[2;2]` cells read as `Int`).
+            fn reseed_shaped_cells(v: &Value, elem: &Value) -> Value {
+                let ValueView::Array(items, kind) = v.view() else {
+                    return v.clone();
+                };
+                if !items
+                    .iter()
+                    .any(|it| it.is_any_type_object() || matches!(it.view(), ValueView::Array(..)))
+                {
+                    return v.clone();
+                }
+                let rebuilt: Vec<Value> = items
+                    .iter()
+                    .map(|it| {
+                        if it.is_any_type_object() {
+                            elem.clone()
+                        } else if matches!(it.view(), ValueView::Array(..)) {
+                            reseed_shaped_cells(it, elem)
+                        } else {
+                            it.clone()
+                        }
+                    })
+                    .collect();
+                Value::array_with_kind(
+                    crate::gc::Gc::new(crate::value::ArrayData::new(rebuilt)),
+                    kind,
+                )
+            }
+            let value = if matches!(value.view(), ValueView::Array(_, ArrayKind::Shaped)) {
+                let elem = Value::package(crate::symbol::Symbol::intern(elem_type));
+                let shape = crate::runtime::utils::shaped_array_shape(&value);
+                let reseeded = reseed_shaped_cells(&value, &elem);
+                crate::runtime::utils::mark_shaped_array(&reseeded, shape.as_deref());
+                reseeded
+            } else {
+                value
+            };
             let mut elems: Vec<Value> = Vec::new();
             match value.view() {
                 ValueView::Array(items, ArrayKind::Shaped) => {
@@ -427,12 +466,22 @@ impl Interpreter {
                 _ => {}
             }
             for it in &elems {
-                if !it.is_nil() && !self.type_matches_value(elem_type, it) {
+                if !it.is_nil()
+                    && !self.type_matches_value(elem_type, it)
+                    // The freshly re-seeded element type object is type-legal.
+                    && !(matches!(it.view(), ValueView::Package(p) if p.resolve() == elem_type))
+                {
                     return Err(crate::runtime::utils::type_check_element_typed_error(
                         &display, elem_type, it,
                     ));
                 }
             }
+            let info = ContainerTypeInfo {
+                value_type: elem_type.to_string(),
+                key_type: key_type.map(|k| k.to_string()),
+                declared_type: None,
+            };
+            return Ok(self.tag_container_metadata(value, info));
         }
         let info = ContainerTypeInfo {
             value_type: elem_type.to_string(),
