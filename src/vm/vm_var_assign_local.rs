@@ -378,6 +378,12 @@ impl Interpreter {
             self.stack.push(stash);
             return;
         }
+        if name.strip_suffix("::") == Some("DYNAMIC") {
+            let entries = self.dynamic_pseudo_stash_entries();
+            self.stack
+                .push(Value::hash_with_data(Value::hash_arc(entries)));
+            return;
+        }
         if let Some(package) = name.strip_suffix("::")
             && package != "MY"
             && !package.is_empty()
