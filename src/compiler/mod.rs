@@ -660,6 +660,13 @@ impl Compiler {
         self.emit_outer_resolution(bare, res);
     }
 
+    /// Emit a read of `bare` via `UNIT::` (the compilation unit's outermost
+    /// lexical scope): `$UNIT::x`, `UNIT::<$x>`.
+    fn emit_unit_var_access(&mut self, bare: String) {
+        let res = lex_scope::resolve_unit(&self.full_scope_chain(), &self.local_map, &bare);
+        self.emit_outer_resolution(bare, res);
+    }
+
     /// Emit the read [`lex_scope`] resolved to. A scope that does not declare the
     /// name is settled here as a constant Nil rather than handed to the runtime:
     /// `OUTER` names exactly one scope, and "does that scope declare it?" is a
