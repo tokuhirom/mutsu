@@ -215,6 +215,9 @@ impl Interpreter {
                 | ValueView::Nil
                 | ValueView::Seq(..)
                 | ValueView::Slip(..)
+                // A bare type object key coerces to "" with a string-context
+                // warning (or dispatches a user .Str) — handled on the slow path.
+                | ValueView::Package(..)
         ) {
             return None;
         }

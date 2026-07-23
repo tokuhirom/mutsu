@@ -93,7 +93,12 @@ impl Interpreter {
         // Reject complex index types
         if matches!(
             idx.view(),
-            ValueView::Array(..) | ValueView::Whatever | ValueView::GenericRange { .. }
+            ValueView::Array(..)
+                | ValueView::Whatever
+                | ValueView::GenericRange { .. }
+                // A bare type object key coerces to "" (warning / user .Str) —
+                // handled on the slow path.
+                | ValueView::Package(..)
         ) {
             return None;
         }
@@ -433,6 +438,10 @@ impl Interpreter {
                 })
                 .collect();
             Value::array(converted)
+        } else if matches!(idx.view(), ValueView::Package(_)) {
+            // A bare type object key coerces to "" (warning / user .Str) before
+            // the delete, matching the store/read/exists paths.
+            Value::str(self.coerce_type_object_hash_key(&idx)?)
         } else {
             idx
         };
