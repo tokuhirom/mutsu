@@ -37,6 +37,17 @@ pub(crate) fn native_sprintf(args: &[Value], z_mode: bool) -> Option<Result<Valu
     } else {
         rest
     };
+    // A bare type object argument needs interpreter-aware coercion: a `%s`
+    // directive stringifies it to "" with rakudo's "uninitialized value of type
+    // X in string context" warning (matching `~Int` / `Int.Str`) instead of
+    // rendering the `(Int)` gist. Fall back to `builtin_sprintf`, which can emit
+    // the warning. (Instance args already bail in `try_native_function`.)
+    if actual_args
+        .iter()
+        .any(|a| matches!(a.view(), ValueView::Package(_)))
+    {
+        return None;
+    }
     if let Err(e) = runtime::sprintf::validate_sprintf_directives(&fmt, actual_args.len()) {
         return Some(Err(e));
     }

@@ -46,10 +46,12 @@ impl Interpreter {
             let Some(arg) = actual_args.get(idx) else {
                 continue;
             };
-            let class_name = match arg.view() {
-                ValueView::Instance { class_name, .. } => Some(class_name.resolve().to_string()),
-                ValueView::Package(name) => Some(name.resolve().to_string()),
-                _ => None,
+            let (class_name, is_type_object) = match arg.view() {
+                ValueView::Instance { class_name, .. } => {
+                    (Some(class_name.resolve().to_string()), false)
+                }
+                ValueView::Package(name) => (Some(name.resolve().to_string()), true),
+                _ => (None, false),
             };
             let Some(cn) = class_name else { continue };
             let method = match spec.to_ascii_lowercase() {
@@ -59,6 +61,15 @@ impl Interpreter {
                 _ => continue,
             };
             if !self.has_user_method(&cn, method) {
+                // A bare type object rendered with `%s` stringifies to "" with
+                // rakudo's "uninitialized value of type X in string context"
+                // warning (matching `~Int` / `Int.Str`), rather than the `(Int)`
+                // gist. Numeric directives already coerce a type object to 0 in
+                // the pure formatter, so only `%s` warns/coerces here.
+                if is_type_object && method == "Str" {
+                    let coerced = self.warn_type_object_string_context(&cn, false)?;
+                    actual_args[idx] = Value::str(coerced.to_string_value());
+                }
                 continue;
             }
             let arg_clone = actual_args[idx].clone();
