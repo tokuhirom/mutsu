@@ -616,6 +616,14 @@ impl Compiler {
                     self.compile_expr(&Expr::Var(name.clone()));
                 }
             }
+            // `anon sub NAME ... {...}` (marked `__anon_decl` by the parser):
+            // build the routine value carrying its declared name WITHOUT
+            // registering `&NAME` in the enclosing scope.
+            Stmt::SubDecl { custom_traits, .. }
+                if custom_traits.iter().any(|(t, _)| t == "__anon_decl") =>
+            {
+                self.compile_anon_named_sub_decl(stmt);
+            }
             Stmt::SubDecl {
                 name,
                 name_expr: None,

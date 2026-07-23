@@ -1278,22 +1278,6 @@ Both items landed (pins `t/produce-last.t`, `t/reduce-destructuring-signature.t`
 `news/2026-07.md`). Kept note: `rotor(3, 'a'..'h')` as a *function* is `v6.e.PREVIEW`-only; the
 reference `raku` (6.d) also `SORRY`s on it, so it is not a divergence — do not chase.
 
-### 8.13 A `sub NAME { }` used as an *expression* loses its `.name` — mostly done 2026-07-23
-
-The main behaviors landed WITHOUT the feared ~66-site `Expr::AnonSub` field addition: the
-expression-form named sub now parses through the statement sub-decl parser and wraps in
-`Expr::DoStmt(Stmt::SubDecl)` — the compiler's existing do-expr `SubDecl` arm (added for
-`my sub foo {...}`) registers the routine and loads `&NAME` as the value. That gives
-`.name` == "foo" AND the raku-correct lexical install (`&foo` / `foo()` work after
-`my $s = sub foo {...}`, which the old AnonSub lowering also lacked). Pin:
-`t/sub-expression-name.t`.
-
-- [ ] **Leftovers (small):** `anon sub NAME {...}` still drops the name (it must NOT
-      install, so it keeps the AnonSub lowering — needs a name-carrying mechanism or a
-      register-then-remove trick); and a *named* Sub's `.gist` should render `&foo`
-      (mutsu renders the long `sub foo () { ... }` form; anonymous subs gist `sub { }`
-      in raku and that part matches).
-
 ### 8.14 `state` variables in feed-lowered `map` blocks collide across blocks — ✅ DONE 2026-07-23
 
 Fixed exactly along the mapped route: `load_state_locals`/`sync_state_locals`(`_in_range`)

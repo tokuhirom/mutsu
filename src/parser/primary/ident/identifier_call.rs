@@ -687,34 +687,18 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 }
                 // `anon sub NAME(...) { ... }` / `anon sub NAME { ... }` — a named
                 // anonymous sub in expression context (e.g. `(&f = anon sub g($x)
-                // {...})($y)`). The name allows self-reference; `anon` means it is
-                // not installed in the enclosing namespace. Mirrors the named-sub
-                // handling in the plain `"sub"` case below.
-                if let Ok((r_named, _name)) = crate::parser::stmt::parse_sub_name_pub(r_sub) {
-                    let (r_named, _) = ws(r_named)?;
-                    if r_named.starts_with('(') {
-                        let (r, params_body) =
-                            parse_anon_sub_with_params(r_named).map_err(|err| PError {
-                                messages: merge_expected_messages(
-                                    "expected anonymous sub parameter list/body",
-                                    &err.messages,
-                                ),
-                                remaining_len: err.remaining_len.or(Some(r_named.len())),
-                                exception: None,
-                            })?;
-                        return Ok((r, params_body));
+                // {...})($y)`). The name is kept on the routine (`.name`, gist
+                // `&NAME`) but `anon` means it is NOT installed in the enclosing
+                // namespace. Parse the full declaration like the plain named-sub
+                // expression form below, and mark it `__anon_decl` so the
+                // compiler builds the value without registering it.
+                if crate::parser::stmt::parse_sub_name_pub(r_sub).is_ok()
+                    && let Ok((r_decl, mut stmt)) = crate::parser::stmt::sub_decl_body_pub(r_sub)
+                {
+                    if let Stmt::SubDecl { custom_traits, .. } = &mut stmt {
+                        custom_traits.push(("__anon_decl".to_string(), None));
                     }
-                    if r_named.starts_with('{') {
-                        let (r, body) = parse_block_body(r_named)?;
-                        return Ok((
-                            r,
-                            Expr::AnonSub {
-                                body,
-                                is_rw: false,
-                                is_block: false,
-                            },
-                        ));
-                    }
+                    return Ok((r_decl, Expr::DoStmt(Box::new(stmt))));
                 }
             } else if let Ok((r_type, type_name)) =
                 crate::parser::parse_result::take_while1(r_ws, |c: char| {
