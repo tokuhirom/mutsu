@@ -113,6 +113,18 @@ doc) are version skew, not mutsu bugs — lowest priority.
   hash-initializer `ValuePair` arm through it (`build_hash_from_items`,
   `coerce_to_hash`, `MakeHashFromPairs`), covering `%( )`, plain list assignment,
   and single-pair assignment. Pin: `t/hash-junction-key.t`.
+- `SetHash.rakudoc` [1]/[2] — a QuantHash (SetHash/BagHash/MixHash) **slice**
+  assignment (`$sh<a b> = False, True`) wrongly replaced the container with a
+  fresh plain Hash of the raw rvalues, dropping every untouched member and the
+  membership/count/weight semantics (mutsu gave `(apple kiwi)` for
+  `<peach apple orange>.SetHash; $_<apple kiwi> = False, True` instead of
+  `(kiwi orange peach)`). The named-slice-assign path only handled Array/Hash
+  containers; added a mutable-Set/Bag/Mix arm that mirrors the single-key store
+  (per-key membership/count/weight, Nil-pads a short rvalue rather than cycling,
+  early-returns the per-key result list — Set → Bool, Bag → count, Mix → weight)
+  and throws RO for an immutable Set/Bag/Mix. This also fixed the doc's
+  `$fruits<apple banana kiwi>»++` hyper-increment over a SetHash slice. Pin:
+  `t/quanthash-slice-assign.t`.
 - `operators.rakudoc` [25]/[26] — the left-exclusive sequence operators
   (`^...` / `^...^`) failed to parse as an unparenthesized listop argument
   (`say 1 ^... 4`). `build_sequence_from_seeds` recognized `...`/`...^`/`…`/`…^`

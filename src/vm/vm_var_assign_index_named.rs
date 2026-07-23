@@ -1207,6 +1207,119 @@ impl Interpreter {
                 if vals.is_empty() {
                     vals.push(Value::NIL);
                 }
+                // A mutable QuantHash (SetHash/BagHash/MixHash) slice assignment
+                // applies membership/count/weight semantics per key
+                // (`$sh<a b> = False, True` removes `a`, adds `b`), NOT a plain
+                // hash-slice store — which would replace the container with a
+                // fresh Hash of the raw rvalues and drop every untouched member.
+                // Mirror the single-key store arms, distributing `vals` across
+                // `keys`, then early-return the per-key result list (Set → Bool,
+                // Bag/Mix → the assigned value).
+                {
+                    let (is_set, is_bag, is_mix, is_mut) =
+                        match self.env().get(&var_name).map(Value::view) {
+                            Some(ValueView::Set(_, m)) => (true, false, false, m),
+                            Some(ValueView::Bag(_, m)) => (false, true, false, m),
+                            Some(ValueView::Mix(_, m)) => (false, false, true, m),
+                            _ => (false, false, false, false),
+                        };
+                    if is_set || is_bag || is_mix {
+                        let what = if is_set {
+                            "Set"
+                        } else if is_bag {
+                            "Bag"
+                        } else {
+                            "Mix"
+                        };
+                        if !is_mut {
+                            return Err(RuntimeError::assignment_ro(Some(what)));
+                        }
+                        // Raku pads a short rvalue with Nil (`$sh<a b c> = True`
+                        // sets only `a`), it does NOT cycle the value list. A
+                        // Set slot's expression value is its Bool membership; a
+                        // Bag/Mix slot's is its assigned count/weight (Nil → 0,
+                        // with a "Use of Nil in numeric context" warning in raku).
+                        let mut results: Vec<Value> = Vec::with_capacity(keys.len());
+                        for (i, key_val) in keys.iter().enumerate() {
+                            let v = vals.get(i).cloned().unwrap_or(Value::NIL);
+                            let str_key = key_val.to_string_value();
+                            if is_bag {
+                                let count = Self::bag_assignment_count(&v)?;
+                                if let Some(container) = self.env_mut().get_mut(&var_name) {
+                                    container.with_bag_mut(|bag, _| {
+                                        let b = crate::value::gc_data_mut(bag);
+                                        if count == num_bigint::BigInt::from(0) {
+                                            b.remove(&str_key);
+                                            Self::forget_quanthash_object_key(
+                                                &mut b.original_keys,
+                                                &str_key,
+                                            );
+                                        } else {
+                                            b.insert(str_key.clone(), count.clone());
+                                            Self::record_quanthash_object_key(
+                                                &mut b.original_keys,
+                                                &str_key,
+                                                key_val,
+                                            );
+                                        }
+                                    });
+                                }
+                                results.push(Value::bigint(count));
+                            } else if is_mix {
+                                let weight = Self::mix_assignment_weight(&v)?;
+                                if let Some(container) = self.env_mut().get_mut(&var_name) {
+                                    container.with_mix_mut(|mix, _| {
+                                        let m = crate::value::gc_data_mut(mix);
+                                        if weight == 0.0 {
+                                            m.remove(&str_key);
+                                            Self::forget_quanthash_object_key(
+                                                &mut m.original_keys,
+                                                &str_key,
+                                            );
+                                        } else {
+                                            m.insert(str_key.clone(), weight);
+                                            Self::record_quanthash_object_key(
+                                                &mut m.original_keys,
+                                                &str_key,
+                                                key_val,
+                                            );
+                                        }
+                                    });
+                                }
+                                results.push(crate::value::mix_weight_to_value(weight));
+                            } else {
+                                let present = v.truthy();
+                                if let Some(container) = self.env_mut().get_mut(&var_name) {
+                                    container.with_set_mut(|set, _| {
+                                        let s = crate::value::gc_data_mut(set);
+                                        if present {
+                                            s.insert(str_key.clone());
+                                            Self::record_quanthash_object_key(
+                                                &mut s.original_keys,
+                                                &str_key,
+                                                key_val,
+                                            );
+                                        } else {
+                                            s.remove(&str_key);
+                                            Self::forget_quanthash_object_key(
+                                                &mut s.original_keys,
+                                                &str_key,
+                                            );
+                                        }
+                                    });
+                                }
+                                results.push(Value::truth(present));
+                            }
+                        }
+                        if let Some(slot) = self.resolve_local_slot(code, eff_slot, &var_name)
+                            && let Some(updated) = self.env().get(&var_name).cloned()
+                        {
+                            self.locals[slot] = updated;
+                        }
+                        self.stack.push(Value::array(results));
+                        return Ok(());
+                    }
+                }
                 // Check value type constraint for hash slice assignment
                 if let Some(constraint) = loan_env!(self, var_type_constraint(&var_name))
                     && !self.is_container_subclass(&constraint)
