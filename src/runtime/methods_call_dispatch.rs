@@ -80,6 +80,20 @@ impl Interpreter {
             }
             return Err(RuntimeError::emit_signal(target));
         }
+        // `Regex.ACCEPTS($str)` matches the regex (the invocant) against the
+        // argument and returns the Match (like `$str ~~ $rx`), NOT a Bool. Reuse
+        // the string `.match` path (`$str.match($rx)`), which drives the regex
+        // engine and builds the Match object. Needs the interpreter, so it lives
+        // here rather than on the pure native fast path.
+        if method == "ACCEPTS"
+            && args.len() == 1
+            && matches!(
+                target.view(),
+                ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)
+            )
+        {
+            return self.dispatch_match_method(args[0].clone(), std::slice::from_ref(&target));
+        }
         // `Mu.ACCEPTS`: every value can be smart-matched against, and `$x.ACCEPTS($y)` is
         // just `$y ~~ $x`. The builtins carry their own ACCEPTS for the container types
         // (Range, Set, Bag, Pair, ...) and a user class may define one, so this only backs

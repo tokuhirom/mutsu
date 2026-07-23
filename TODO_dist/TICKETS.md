@@ -640,7 +640,7 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 ### T-057 — test_die batch (seed-555, un-triaged)  [impact: several dists]
 - dists (each its own root cause; triage individually before claiming, confirm the
   raku `-I lib` baseline first): ~~Attribute::Predicate~~ (FIXED — see Done),
-  File::Ignore,
+  File::Ignore (PARTIAL — module now loads via Regex.ACCEPTS fix; see Done),
   IO::Path::AutoDecompress, ~~Math::Angle~~ (FIXED — see Done), Math::PascalTriangle,
   ~~Statistics::LinearRegression~~ (FIXED — see Done), String::Rotate,
   Text::CodeProcessing, Trait::IO, WriteOnceHash, `are`, `sortuk`,
@@ -942,3 +942,16 @@ _(move tickets here with `[claim: <branch>]` when you start)_
   preserved) then dispatches `@arr.push(…)` (`compiler/expr_call.rs`). Math::Angle's
   `sub sexagesimal` does `push my @units, $!angle × rad2deg`. Pin:
   `t/push-inline-array-decl.t`.
+
+- **T-057 (File::Ignore)** (PR `feat-regex-accepts`) — test_die → PARTIAL (0 ran →
+  charclass/literal/path fully pass). One general bug: `$regex.ACCEPTS($str)` threw
+  "No such method 'ACCEPTS' for invocant of type 'Regex'". `.ACCEPTS` on a Regex
+  matches the regex against its argument and returns the **Match** (like
+  `$str ~~ $rx`), not a Bool; File::Ignore's `ignore-file` does
+  `$pattern.ACCEPTS($path)`. Added a Regex/RegexWithAdverbs arm in
+  `call_method_with_values` that reuses the string `.match` path
+  (`runtime/methods_call_dispatch.rs`). Pin: `t/regex-accepts-method.t`.
+  Residual File::Ignore failures are separate gitignore-pattern-semantics bugs
+  (negated-rule precedence, directory-only `dir*/`, globstar `a/**/b`, charclass
+  ranges in negated.t/range.t/wildcard.t, and `walk`) — each its own root cause,
+  deferred.
