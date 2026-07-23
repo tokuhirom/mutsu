@@ -182,6 +182,22 @@ impl Compiler {
         let is_pointy = body
             .first()
             .is_some_and(|s| matches!(s, crate::ast::Stmt::SetLine(_)));
+        // Block params have Mu (not Any) as their implicit nominal type;
+        // mark them here so an unpassed untyped optional seeds Mu.
+        let marked_defs: Vec<crate::ast::ParamDef>;
+        let param_defs: &[crate::ast::ParamDef] = if is_pointy {
+            marked_defs = param_defs
+                .iter()
+                .map(|pd| {
+                    let mut pd = pd.clone();
+                    pd.mark_block_param();
+                    pd
+                })
+                .collect();
+            &marked_defs
+        } else {
+            param_defs
+        };
         // Pointy blocks are NOT routine boundaries for `return`.
         let mut compiled = if is_pointy {
             self.compile_closure_body(params, param_defs, body)
@@ -273,6 +289,7 @@ impl Compiler {
                 code_signature: None,
                 is_invocant: false,
                 shape_constraints: None,
+                block_param: false,
             }]
         } else {
             Vec::new()

@@ -189,6 +189,7 @@ impl Interpreter {
             outer_sub_signature: None,
             code_signature: None,
             shape_constraints: None,
+            block_param: false,
         }
     }
 

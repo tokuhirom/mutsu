@@ -1144,8 +1144,8 @@ impl Interpreter {
                 }
                 param_values.push((param_name, val));
                 arg_idx += 1;
-            } else if pd.map(|pd| pd.optional_marker).unwrap_or(false) {
-                param_values.push((param_name, Value::NIL));
+            } else if let Some(pd) = pd.filter(|pd| pd.optional_marker) {
+                param_values.push((param_name, Self::missing_optional_param_value(pd)));
             }
         }
 

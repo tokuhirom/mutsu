@@ -101,6 +101,7 @@ impl Interpreter {
                 code_signature: None,
                 is_invocant: false,
                 shape_constraints: None,
+                block_param: false,
             });
             method_param_defs
         };
@@ -1709,6 +1710,7 @@ impl Interpreter {
                                     code_signature: None,
                                     is_invocant: false,
                                     shape_constraints: None,
+                                    block_param: false,
                                 },
                             );
                         }
@@ -1963,6 +1965,7 @@ impl Interpreter {
                                 code_signature: None,
                                 is_invocant: false,
                                 shape_constraints: None,
+                                block_param: false,
                             };
                             let mut our_param_defs = vec![self_param];
                             our_param_defs.extend(
@@ -2039,6 +2042,7 @@ impl Interpreter {
                                 code_signature: None,
                                 is_invocant: false,
                                 shape_constraints: None,
+                                block_param: false,
                             };
                             let mut my_param_defs = vec![self_param];
                             my_param_defs.extend(

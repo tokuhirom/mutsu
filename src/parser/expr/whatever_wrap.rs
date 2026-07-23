@@ -141,6 +141,7 @@ fn make_wc_param(name: String) -> crate::ast::ParamDef {
         code_signature: None,
         is_invocant: false,
         shape_constraints: None,
+        block_param: false,
     }
 }
 
@@ -254,6 +255,7 @@ pub(crate) fn wrap_whatevercode(expr: &Expr) -> Expr {
                 code_signature: None,
                 is_invocant: false,
                 shape_constraints: None,
+                block_param: false,
             }],
             return_type: None,
             body: vec![Stmt::Expr(body_expr)],
@@ -290,6 +292,7 @@ pub(crate) fn wrap_whatevercode(expr: &Expr) -> Expr {
                     code_signature: None,
                     is_invocant: false,
                     shape_constraints: None,
+                    block_param: false,
                 })
                 .collect(),
             return_type: None,

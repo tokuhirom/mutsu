@@ -26,6 +26,7 @@ pub(crate) fn make_param(name: String) -> ParamDef {
         code_signature: None,
         is_invocant: false,
         shape_constraints: None,
+        block_param: false,
     }
 }
 

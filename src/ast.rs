@@ -68,6 +68,11 @@ pub(crate) struct ParamDef {
     pub(crate) is_invocant: bool,
     /// Shape constraint for array parameters, e.g. `@a[3]`, `@a[4,4]`, `@a[*]`, `@a[$n]`.
     pub(crate) shape_constraints: Option<Vec<Expr>>,
+    /// True when this parameter belongs to a block (pointy/bare), whose
+    /// implicit nominal type is Mu, not Any. An unpassed untyped optional
+    /// seeds Mu for blocks and Any for routines.
+    #[serde(default)]
+    pub(crate) block_param: bool,
 }
 
 impl ParamDef {
@@ -84,6 +89,25 @@ impl ParamDef {
             && self.literal_value.is_none()
             && self.slurpy
             && self.sigilless
+    }
+
+    /// Mark this param (and every nested sub-signature param) as belonging to
+    /// a block, so an unpassed untyped optional seeds Mu instead of Any.
+    pub(crate) fn mark_block_param(&mut self) {
+        self.block_param = true;
+        for nested in [&mut self.sub_signature, &mut self.outer_sub_signature]
+            .into_iter()
+            .flatten()
+        {
+            for pd in nested.iter_mut() {
+                pd.mark_block_param();
+            }
+        }
+        if let Some((code_defs, _)) = &mut self.code_signature {
+            for pd in code_defs.iter_mut() {
+                pd.mark_block_param();
+            }
+        }
     }
 }
 
@@ -2336,6 +2360,7 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
                         code_signature: None,
                         is_invocant: false,
                         shape_constraints: None,
+                        block_param: false,
                     }
                 })
                 .collect(),

@@ -68,6 +68,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                     optional_marker: false,
                     is_invocant: false,
                     shape_constraints: None,
+                    block_param: true,
                 },
             ));
         } else {
@@ -103,6 +104,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                 optional_marker: false,
                 is_invocant: false,
                 shape_constraints: None,
+                block_param: true,
             },
         ));
     }
@@ -162,6 +164,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                     optional_marker: false,
                     is_invocant: false,
                     shape_constraints: None,
+                    block_param: true,
                 },
             ));
         }
@@ -192,6 +195,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                     optional_marker: false,
                     is_invocant: false,
                     shape_constraints: None,
+                    block_param: true,
                 },
             ));
         }
@@ -221,6 +225,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                 optional_marker: false,
                 is_invocant: false,
                 shape_constraints: None,
+                block_param: true,
             },
         ));
     }
@@ -282,6 +287,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                 optional_marker,
                 is_invocant: false,
                 shape_constraints: None,
+                block_param: true,
             },
         ));
     }
@@ -321,6 +327,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                 optional_marker: false,
                 is_invocant: false,
                 shape_constraints: None,
+                block_param: true,
             },
         ));
     }
@@ -361,6 +368,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                     optional_marker: false,
                     is_invocant: false,
                     shape_constraints: None,
+                    block_param: true,
                 },
             ));
         }
@@ -508,6 +516,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             optional_marker,
             is_invocant: false,
             shape_constraints,
+            block_param: true,
         },
     ))
 }

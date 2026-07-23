@@ -325,6 +325,7 @@ fn positional_param(name: &str) -> ParamDef {
         code_signature: None,
         is_invocant: false,
         shape_constraints: None,
+        block_param: false,
     }
 }
 

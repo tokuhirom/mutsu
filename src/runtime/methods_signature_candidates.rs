@@ -179,6 +179,7 @@ impl Interpreter {
                                 code_signature: None,
                                 is_invocant: false,
                                 shape_constraints: None,
+                                block_param: false,
                             })
                             .collect()
                     } else {
@@ -216,6 +217,7 @@ impl Interpreter {
                                 code_signature: None,
                                 is_invocant: false,
                                 shape_constraints: None,
+                                block_param: true,
                             });
                         }
                         if use_positional {
@@ -239,6 +241,7 @@ impl Interpreter {
                                 code_signature: None,
                                 is_invocant: false,
                                 shape_constraints: None,
+                                block_param: false,
                             });
                         }
                         if use_named {
@@ -262,6 +265,7 @@ impl Interpreter {
                                 code_signature: None,
                                 is_invocant: false,
                                 shape_constraints: None,
+                                block_param: false,
                             });
                         }
                         defs
