@@ -242,6 +242,28 @@ impl Interpreter {
         Ok(val.to_string_value())
     }
 
+    /// Build a `Hash` from a flat item list (`my %h = (...)`, `%(...)`, `Hash(...)`),
+    /// coercing a bare type-object key to `""` with the Rakudo
+    /// "uninitialized value of type X in string context" warning (or dispatching
+    /// a user `.Str`/`.Stringy`). This is the interpreter-aware counterpart of the
+    /// silent `build_hash_from_items`; the warning requires `&mut self`, so the
+    /// no-interpreter `.hash`/`.Hash` list path only coerces silently.
+    pub(crate) fn build_hash_from_items_warning(
+        &mut self,
+        items: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        crate::runtime::utils::build_hash_from_items_with_key_coercion(items, |kk| {
+            if matches!(kk.view(), ValueView::Package(_)) {
+                Ok((self.coerce_type_object_hash_key(kk)?, false))
+            } else {
+                Ok((
+                    Value::hash_key_encode(kk),
+                    !matches!(kk.view(), ValueView::Str(_)),
+                ))
+            }
+        })
+    }
+
     /// Stringify a value by calling .Str method (used by put/print).
     /// Falls back to to_string_value() if .Str method dispatch fails.
     pub(crate) fn render_str_value(&mut self, value: &Value) -> String {

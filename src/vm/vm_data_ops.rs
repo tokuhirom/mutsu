@@ -115,17 +115,25 @@ impl Interpreter {
         self.stack.push(Value::real_array(elems));
     }
 
-    pub(super) fn exec_make_hash_op(&mut self, n: u32) {
+    pub(super) fn exec_make_hash_op(&mut self, n: u32) -> Result<(), RuntimeError> {
         let n = n as usize;
         let start = self.stack.len() - n * 2;
         let items: Vec<Value> = self.stack.drain(start..).collect();
         let mut map = HashMap::new();
         for pair in items.chunks(2) {
-            let key = Value::hash_key_encode(&pair[0]);
+            // A bare type-object key (`%(Int, 1)`) stringifies to "" with the
+            // Rakudo "uninitialized value in string context" warning (or a user
+            // `.Str`/`.Stringy`), matching the `my %h = (Int, 1)` list path.
+            let key = if matches!(pair[0].view(), ValueView::Package(_)) {
+                self.coerce_type_object_hash_key(&pair[0])?
+            } else {
+                Value::hash_key_encode(&pair[0])
+            };
             let val = pair[1].clone();
             map.insert(key, val);
         }
         self.stack.push(Value::hash(map));
+        Ok(())
     }
 
     /// Build a Hash from N Pair values on the stack (from `%(k=>v, ...)` syntax).

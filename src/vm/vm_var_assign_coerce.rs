@@ -140,6 +140,20 @@ impl Interpreter {
         }
     }
 
+    /// True when a `%` variable stores plain `Str` keys — no object-hash key
+    /// constraint, or an explicit `Str` one. A bare type-object key coerces to
+    /// "" (with the string-context warning) only for these; an object hash
+    /// (`%h{Any}`, `%h{Int}`, ...) keeps its keys distinct.
+    fn is_str_keyed_hash_var(&self, name: &str) -> bool {
+        match self.var_hash_key_constraint(name) {
+            None => true,
+            Some(kc) => {
+                let (base, _) = crate::runtime::types::strip_type_smiley(&kc);
+                base == "Str"
+            }
+        }
+    }
+
     pub(super) fn coerce_hash_var_value(
         &mut self,
         name: &str,
@@ -202,6 +216,19 @@ impl Interpreter {
             }
             return Ok(result);
         }
+        // A bare type-object key stringifies to "" with a warning only for a
+        // plain (`Str`-keyed) hash. An object hash (`%h{Any}`, `%h{Int}`, ...)
+        // keeps its keys distinct (by WHICH / reconstructed type) via
+        // `build_hash_from_items`'s `original_keys` recording, so the coercion
+        // must NOT run there — it would collapse distinct type-object keys to a
+        // single "" and drop the object-hash key entirely.
+        let build_items = |this: &mut Self, items: Vec<Value>| {
+            if this.is_str_keyed_hash_var(name) {
+                this.build_hash_from_items_warning(items)
+            } else {
+                runtime::utils::build_hash_from_items(items)
+            }
+        };
         // For Array/Seq/Slip values, use `build_hash_from_items` which
         // raises "Odd number of elements" when appropriate. Hash values from
         // scalar containers (`$h`) are NOT pre-flattened, so they appear as
@@ -213,10 +240,10 @@ impl Interpreter {
                 // while a hash sourced from a `$` scalar carries
                 // `HashData.itemized` and stays opaque (`%m = ($hashitem,)` →
                 // "Odd number") — matching Raku.
-                runtime::utils::build_hash_from_items(items.iter().cloned().collect())?
+                build_items(self, items.iter().cloned().collect())?
             }
             ValueView::Seq(items) | ValueView::Slip(items) => {
-                runtime::utils::build_hash_from_items(items.iter().cloned().collect())?
+                build_items(self, items.iter().cloned().collect())?
             }
             // A single bare scalar assigned to a hash is a one-element (odd)
             // initializer: `my %h = 1` is X::Hash::Store::OddNumber. Hashes,
@@ -233,7 +260,7 @@ impl Interpreter {
                     | ValueView::BigRat(..)
             ) =>
             {
-                runtime::utils::build_hash_from_items(vec![value])?
+                build_items(self, vec![value])?
             }
             _ => self.coerce_object_to_hash(value),
         };
@@ -335,7 +362,7 @@ impl Interpreter {
             }
             // Non-Associative values: coerce to Map
             ValueView::Array(items, _) => {
-                let hash = runtime::utils::build_hash_from_items(items.iter().cloned().collect())?;
+                let hash = self.build_hash_from_items_warning(items.iter().cloned().collect())?;
                 let info = crate::runtime::ContainerTypeInfo {
                     value_type: String::new(),
                     key_type: None,
@@ -344,7 +371,7 @@ impl Interpreter {
                 Ok(self.tag_container_metadata(hash, info))
             }
             ValueView::Seq(items) | ValueView::Slip(items) => {
-                let hash = runtime::utils::build_hash_from_items(items.iter().cloned().collect())?;
+                let hash = self.build_hash_from_items_warning(items.iter().cloned().collect())?;
                 let info = crate::runtime::ContainerTypeInfo {
                     value_type: String::new(),
                     key_type: None,
@@ -356,7 +383,7 @@ impl Interpreter {
                 // For other types (Int, Str, etc.), coerce to Map via
                 // build_hash_from_items which raises X::Hash::Store::OddNumber
                 // for odd element counts (e.g., `constant %h = 42`).
-                let hash = runtime::utils::build_hash_from_items(vec![value])?;
+                let hash = self.build_hash_from_items_warning(vec![value])?;
                 let info = crate::runtime::ContainerTypeInfo {
                     value_type: String::new(),
                     key_type: None,

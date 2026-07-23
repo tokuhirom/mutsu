@@ -474,6 +474,31 @@ impl Interpreter {
         } else {
             target
         };
+        // `.hash` / `.Hash` on a bare positional list (`(Int, 1).hash`, and the
+        // `%(...)` literal, which compiles to `MakeArray(...).hash`) builds a
+        // plain Hash from the flattened elements. A bare type-object key
+        // stringifies to "" with the Rakudo "uninitialized value in string
+        // context" warning; the native `.hash` fast path cannot warn (no
+        // interpreter), so route list invocants through the interpreter-aware
+        // builder here. Set/Bag/Mix/Instance/type-object invocants keep their
+        // native `.hash` semantics.
+        if matches!(method, "hash" | "Hash")
+            && args.is_empty()
+            && modifier.is_none()
+            && matches!(
+                target.view(),
+                ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_)
+            )
+        {
+            let items: Vec<Value> = match target.view() {
+                ValueView::Array(items, _) => items.iter().cloned().collect(),
+                ValueView::Seq(items) | ValueView::Slip(items) => items.iter().cloned().collect(),
+                _ => unreachable!(),
+            };
+            let result = self.build_hash_from_items_warning(items)?;
+            self.stack.push(result);
+            return Ok(());
+        }
         // `Pair.freeze` on a non-variable receiver (e.g. `Pair.new(...).freeze`,
         // or a `.freeze.foo` chain): decontainerize the value, mark it read-only,
         // and return it. There is no variable to rebind here (empty target name).
