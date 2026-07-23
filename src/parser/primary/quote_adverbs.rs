@@ -150,9 +150,12 @@ impl QuoteFlags {
 /// Example: ":s:b:c" → flags.scalar=true, flags.backslash=true, flags.closure=true
 pub(super) fn parse_colon_adverbs<'a>(mut input: &'a str, flags: &mut QuoteFlags) -> &'a str {
     loop {
-        // Allow whitespace before each colon (e.g. "q :heredoc :c \"EOF\"")
-        input = input.trim_start_matches(' ');
-        let Some(r) = input.strip_prefix(':') else {
+        // Allow whitespace before each colon (e.g. "q :heredoc :c \"EOF\"").
+        // Only commit the trim when a `:` adverb actually follows — otherwise
+        // the caller must still see the whitespace, which decides whether a
+        // following `(` is a delimiter (`q (...)`) or call syntax (`q(...)`).
+        let trimmed = input.trim_start_matches(' ');
+        let Some(r) = trimmed.strip_prefix(':') else {
             break;
         };
         // Handle negated adverbs (:!a, :!c, etc.)

@@ -11,8 +11,9 @@ is q{{ {{ } }} }}, ' {{ } }} ',   'q{{ {{ } }} }} — nested doubled braces';
 is q[[$foo $bar]], '$foo $bar',    'q[[$foo $bar]] — doubled brackets';
 is q[[ fo] ]],    ' fo] ',        'q[[ fo] ]] — single ] inside doubled brackets';
 
-# Doubled parentheses
-is q(($foo $bar)), '$foo $bar',    'q(($foo $bar)) — doubled parens';
+# Doubled parentheses (whitespace required before a paren delimiter;
+# `q((...))` without a space is a call to a routine named `q`)
+is q (($foo $bar)), '$foo $bar',   'q (($foo $bar)) — doubled parens';
 
 # Q with doubled brackets
 is Q{{hello}},     'hello',        'Q{{hello}} — doubled braces';

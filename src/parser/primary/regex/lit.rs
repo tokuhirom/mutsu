@@ -115,6 +115,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
             return Err(PError::expected("regex delimiter"));
         }
         let (spec, adverbs) = parse_match_adverbs(rest)?;
+        let pre_ws_len = spec.len();
         if adverbs.global
             || adverbs.exhaustive
             || adverbs.overlap
@@ -130,6 +131,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
             ));
         }
         let (spec, _) = ws(spec)?;
+        let had_ws = spec.len() != pre_ws_len;
         // rx allows any non-word character as its delimiter (e.g. `rx|...|`,
         // `rx!...!`), matching the general rule used by `m//` and `s///` — not
         // just the bracket pairs. Brackets nest; every other delimiter uses the
@@ -138,10 +140,12 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
             return Err(PError::expected("regex delimiter"));
         };
         // `:` is never a delimiter — it starts an adverb (`rx :foo:` is an error).
+        // `(` is only a delimiter after whitespace (`rx:i(a)` is call-like syntax).
         let is_delim = !open_ch.is_alphanumeric()
             && open_ch != '_'
             && open_ch != ':'
-            && !open_ch.is_whitespace();
+            && !open_ch.is_whitespace()
+            && (open_ch != '(' || had_ws);
         // Don't treat `rx.method` as a regex with a `.` delimiter when the `.`
         // is followed by an identifier (a method call on a bare `rx`).
         let looks_like_method = open_ch == '.'
@@ -259,7 +263,10 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         && !crate::parser::stmt::simple::is_user_declared_sub("ss")
         && let Some(first_ch) = after_ss.chars().next()
         && (first_ch == ':'
-            || (!first_ch.is_alphanumeric() && first_ch != '_' && !first_ch.is_whitespace())
+            || (!first_ch.is_alphanumeric()
+                && first_ch != '_'
+                && first_ch != '('
+                && !first_ch.is_whitespace())
             || (first_ch.is_whitespace()
                 && after_ss.trim_start().starts_with(['(', '[', '{', '<'])))
     {
@@ -271,13 +278,19 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         // ss implies :ss (:samespace + :sigspace)
         adverbs.samespace = true;
         adverbs.sigspace = true;
+        let pre_ws_len = spec.len();
         let spec = if first_ch == ':' || first_ch.is_whitespace() {
             ws(spec)?.0
         } else {
             spec
         };
+        let had_ws = spec.len() != pre_ws_len;
         if let Some(open_ch) = spec.chars().next() {
-            let is_delim = !open_ch.is_alphanumeric() && open_ch != '_' && !open_ch.is_whitespace();
+            // `(` is only a delimiter after whitespace (`ss:g(a)` is call-like).
+            let is_delim = !open_ch.is_alphanumeric()
+                && open_ch != '_'
+                && !open_ch.is_whitespace()
+                && (open_ch != '(' || had_ws);
             let looks_like_method = open_ch == '.'
                 && spec.len() > 2
                 && spec[1..].starts_with(|c: char| c.is_alphabetic() || c == '_')
@@ -391,9 +404,15 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
             (after_s, MatchAdverbs::default())
         };
         // Allow whitespace between adverbs and delimiter (e.g. s:Perl5 /pattern/)
+        let pre_ws_len = spec.len();
         let spec = if first_ch == ':' { ws(spec)?.0 } else { spec };
+        let had_ws = spec.len() != pre_ws_len;
         if let Some(open_ch) = spec.chars().next() {
-            let is_delim = !open_ch.is_alphanumeric() && open_ch != '_' && !open_ch.is_whitespace();
+            // `(` is only a delimiter after whitespace (`s(a)` is a call).
+            let is_delim = !open_ch.is_alphanumeric()
+                && open_ch != '_'
+                && !open_ch.is_whitespace()
+                && (open_ch != '(' || had_ws);
             // Don't treat s.identifier as substitution when the identifier is 2+ chars
             // (likely a method call on bare 's'). Single-char like s.a.b. is still valid regex.
             let looks_like_method = open_ch == '.'
@@ -591,9 +610,15 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         let (spec, adverbs) = parse_match_adverbs(after_s)?;
         // Allow whitespace between adverbs and the delimiter (e.g.
         // `S:g /pattern/replacement/`), mirroring the lowercase `s` parser.
+        let pre_ws_len = spec.len();
         let spec = if had_adverbs { ws(spec)?.0 } else { spec };
+        let had_ws = spec.len() != pre_ws_len;
         if let Some(open_ch) = spec.chars().next() {
-            let is_delim = !open_ch.is_alphanumeric() && open_ch != '_' && !open_ch.is_whitespace();
+            // `(` is only a delimiter after whitespace (`S(a)` is a call).
+            let is_delim = !open_ch.is_alphanumeric()
+                && open_ch != '_'
+                && !open_ch.is_whitespace()
+                && (open_ch != '(' || had_ws);
             let looks_like_method = open_ch == '.'
                 && spec.len() > 2
                 && spec[1..].starts_with(|c: char| c.is_alphabetic() || c == '_')
@@ -874,14 +899,21 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     {
         let (spec, mut adverbs) = parse_match_adverbs(after_m)?;
         let spec = parse_compact_match_adverbs(spec, &mut adverbs);
+        let pre_ws_len = spec.len();
         let (spec, _) = ws(spec)?;
+        let had_ws = spec.len() != pre_ws_len;
         // After stripping whitespace, check if this is a fat arrow pair (e.g., `m => 1000`).
         // The initial `=>` check above only catches `m=>` without whitespace.
         if spec.starts_with("=>") {
             return Err(PError::expected("regex literal"));
         }
         if let Some(open_ch) = spec.chars().next() {
-            let is_delim = !open_ch.is_alphanumeric() && open_ch != '_' && !open_ch.is_whitespace();
+            // `(` is only a delimiter after whitespace — `m(9)` / `mm(9)` are
+            // calls to user routines named `m` / `mm`, never a regex.
+            let is_delim = !open_ch.is_alphanumeric()
+                && open_ch != '_'
+                && !open_ch.is_whitespace()
+                && (open_ch != '(' || had_ws);
             if is_delim {
                 let (close_ch, is_paired) = match open_ch {
                     '{' => ('}', true),

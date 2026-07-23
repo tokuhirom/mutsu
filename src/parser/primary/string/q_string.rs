@@ -32,6 +32,12 @@ pub(crate) fn big_q_string(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("Q string"));
     }
 
+    // `(` directly after the construct name/adverbs is call syntax, never a
+    // delimiter — Raku requires whitespace before a paren delimiter (`Q (...)`).
+    if rest.starts_with('(') {
+        return Err(PError::expected("Q string"));
+    }
+
     if let Some((open, close)) = quote_delimiters(rest) {
         flags.quote_open = Some(open);
         flags.quote_close = Some(close);
@@ -159,12 +165,6 @@ pub(crate) fn q_string(input: &str) -> PResult<'_, Expr> {
     }
     let mut after_q = &input[1..];
 
-    if let Some(after_paren) = after_q.strip_prefix('(')
-        && !after_paren.starts_with('(')
-    {
-        return Err(PError::expected("q string"));
-    }
-
     // q:nfc, q:nfd, q:nfkc, q:nfkd — Unicode normalization adverbs
     for nf_form in &[":nfkc", ":nfkd", ":nfc", ":nfd"] {
         if let Some(rest_after_nf) = after_q.strip_prefix(nf_form) {
@@ -211,6 +211,13 @@ pub(crate) fn q_string(input: &str) -> PResult<'_, Expr> {
     // interpolate closures alone, so it goes through the flag-driven path instead.
     if flags.heredoc {
         return parse_to_heredoc_with_flags(after_q, &flags, flags.qq_mode);
+    }
+
+    // `(` directly after the construct name/adverbs is call syntax, never a
+    // delimiter — Raku requires whitespace before a paren delimiter (`q (...)`,
+    // `qq (...)`, `qw (...)`). This covers `q(`, `q((`, `qq(`, `qw(`, `q:w(`, ...
+    if after_q.starts_with('(') {
+        return Err(PError::expected("q string"));
     }
 
     // `#` cannot be used as a quoting delimiter (it starts a comment).
@@ -280,6 +287,10 @@ pub(crate) fn q_string(input: &str) -> PResult<'_, Expr> {
 
 /// Parse q:nfc/q:nfd/q:nfkc/q:nfkd forms.
 pub(crate) fn parse_nf_form<'a>(rest_after_nf: &'a str, nf_name: &str) -> PResult<'a, Expr> {
+    // Same rule as the other quote forms: a paren delimiter needs whitespace.
+    if rest_after_nf.starts_with('(') {
+        return Err(PError::expected("q string"));
+    }
     let form_upper = nf_name.to_uppercase();
     let (rest, content) = read_delimited_content(rest_after_nf, false)?;
     use unicode_normalization::UnicodeNormalization;
