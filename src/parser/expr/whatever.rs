@@ -192,13 +192,15 @@ pub(crate) fn contains_whatever(expr: &Expr) -> bool {
         Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => {
             contains_whatever(expr) || is_wrapped_whatevercode(expr)
         }
-        // Pseudo-methods (.WHAT, .WHO, .HOW, etc.) are always evaluated immediately
-        // on Whatever, they don't create WhateverCode. e.g. *.WHAT returns (Whatever).
+        // Non-currying pseudo-methods evaluate immediately on Whatever AND on
+        // an already-built WhateverCode: `*.WHAT` is `(Whatever)` and
+        // `(* + 1).WHAT` is `(WhateverCode)`. Rakudo's list is exactly these
+        // six — `.WHICH` and `.WHY` DO curry (`*.WHICH` is a WhateverCode).
         Expr::MethodCall { target, name, .. }
             if matches!(
                 name.resolve().as_str(),
-                "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "DEFINITE" | "VAR"
-            ) && is_whatever(target) =>
+                "WHAT" | "WHO" | "HOW" | "WHERE" | "DEFINITE" | "VAR"
+            ) && (is_whatever(target) || is_wrapped_whatevercode(target)) =>
         {
             false
         }
