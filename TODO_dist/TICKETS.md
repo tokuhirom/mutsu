@@ -643,7 +643,7 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
   File::Ignore (PARTIAL — module now loads via Regex.ACCEPTS fix; see Done),
   IO::Path::AutoDecompress, ~~Math::Angle~~ (FIXED — see Done), Math::PascalTriangle,
   ~~Statistics::LinearRegression~~ (FIXED — see Done), String::Rotate,
-  Text::CodeProcessing, Trait::IO, WriteOnceHash, `are`, `sortuk`,
+  Text::CodeProcessing, Trait::IO, WriteOnceHash, `are`, ~~`sortuk`~~ (FIXED — see Done),
   Tree::Binary::PrettyTree (required role method not seen as implemented).
 - These `test_die` on the current binary but were not individually reproduced.
   Split off a dedicated ticket when you pick one up.
@@ -955,3 +955,14 @@ _(move tickets here with `[claim: <branch>]` when you start)_
   (negated-rule precedence, directory-only `dir*/`, globstar `a/**/b`, charclass
   ranges in negated.t/range.t/wildcard.t, and `walk`) — each its own root cause,
   deferred.
+
+- **T-057 (SortUk)** (PR `fix-array-is-copy-list-arg`) — test_die → t/01-basic.t
+  4/4 (00-meta.t needs the uninstalled `Test::META` dep, same as raku). One general
+  bug: an `@`-sigil `is copy` param bound to an (immutable) List argument
+  (`f(<x y>)`, `f((1,2))`) kept the List kind, so `@d[0] = …` / `.push` /
+  `(@d[0],@d[1]).=reverse` inside the sub threw "Cannot modify an immutable List"
+  (a real-Array argument already worked). `detach_shared_container` preserves the
+  array kind, so `is copy` now reifies an `ArrayKind::List`/`ItemList` value bound
+  to an `@` param into a fresh real Array (`runtime/types/binding_signature.rs`).
+  SortUk's sort loop does `(@data[$w1],@data[$w2]).=reverse` on `@data is copy`.
+  Pin: `t/array-is-copy-list-arg.t`.
