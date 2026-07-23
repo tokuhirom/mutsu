@@ -119,7 +119,7 @@ impl Interpreter {
 
     /// Walk the `__mutsu_sigilless_alias::` chain to find the ultimate
     /// binding root for a variable name.
-    fn resolve_alias_root(&self, name: &str) -> String {
+    pub(crate) fn resolve_alias_root(&self, name: &str) -> String {
         let mut current = name.to_string();
         let mut seen = std::collections::HashSet::new();
         while seen.insert(current.clone()) {

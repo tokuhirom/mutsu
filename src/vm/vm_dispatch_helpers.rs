@@ -155,6 +155,21 @@ impl Interpreter {
         if normalized_op == "=~=" || normalized_op == "\u{2245}" {
             return self.approx_eq_values(left.clone(), right.clone());
         }
+        // Container identity (`=:=`/`!=:=`) between scalar-variable operands
+        // needs `self` to resolve binding roots: `($a,$b) X=:= ($c,$d)` compiles
+        // its operand lists ref-preserving (`WrapVarRef`), so the elements are
+        // `VarRef`s carrying the source variable name. Two variables are the same
+        // container only when they share a binding root (`$c := $b`); distinct
+        // `my` scalars are distinct containers. Non-variable operands fall through
+        // to the static value-identity path below.
+        if (normalized_op == "=:=" || normalized_op == "!=:=")
+            && let (Some((ln, _, _)), Some((rn, _, _))) = (left.as_varref(), right.as_varref())
+        {
+            let same =
+                self.resolve_alias_root(&ln.resolve()) == self.resolve_alias_root(&rn.resolve());
+            let result = if normalized_op == "=:=" { same } else { !same };
+            return Ok(Value::truth(result));
+        }
         match Interpreter::apply_reduction_op(normalized_op, left, right) {
             Ok(v) => Ok(v),
             Err(err) if err.message.starts_with("Unsupported reduction operator:") => {

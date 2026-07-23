@@ -7,7 +7,7 @@ use Test;
 # the whole comma list on each side is one operand: `say((a, b) Zop (c, d))`.
 # mutsu previously bound the meta-op tighter than comma, giving `say(a, (b Zop c), d)`.
 
-plan 17;
+plan 25;
 
 # Capture what a `say`/`print` statement actually emits, so we test the
 # unparenthesized listop statement path (not the parenthesized-list path).
@@ -72,3 +72,33 @@ is (collect 1, 2 Z 3, 4), '1|3|2|4',
     'user-sub no-paren: (1,2) Z (3,4)';
 is (collect 1, 2, 3), '1|2|3',
     'user-sub no-paren: a plain comma list is unaffected';
+
+# A no-paren BUILTIN listop (join/reverse/sort/min/sum/...) gobbles the whole
+# comma level, and the list-infix operator is LOOSER than that comma, so it owns
+# both operands: `reverse 1, 2 Z 3, 4` is `reverse((1,2) Z (3,4))`. The whole
+# argument list (separator included) becomes the meta-op's left operand.
+is-deeply (reverse 1, 2 Z 3, 4), ((2, 4), (1, 3)),
+    'builtin reverse: ((1,2) Z (3,4)) is one argument, then reversed';
+is-deeply (sort 3, 1 Z 2, 4), ((1, 4), (3, 2)),
+    'builtin sort: sorts the cross ((3,1) Z (2,4))';
+is (min 1, 2 Z 3, 4), (1, 3),
+    'builtin min: over ((1,2) Z (3,4))';
+is (sum 1, 2 Z 3, 4), 4,
+    'builtin sum: over ((1,2) Z (3,4))';
+
+# Junction constructors (all/any/one/none) are list-prefix, so they too absorb
+# the whole comma level into a single cross/zip meta-op operand.
+ok (? all 1, 2 X<= 2, 3, 4), 'junction all: all((1,2) X<= (2,3,4))';
+ok (? one 1, 2 X== 2, 3, 4), 'junction one: one((1,2) X== (2,3,4))';
+
+# `=:=`/`!=:=` compare CONTAINER identity, so a cross/zip operand list of scalar
+# variables keeps each element's container (raku Lists retain element
+# containers). Four distinct `my` scalars are four distinct containers.
+{
+    my ($a, $b, $c, $d);
+    ok (? all $a, $b X!=:= $c, $d),
+        'X!=:= : distinct my-scalars are distinct containers (all True)';
+    $c := $b;
+    ok (? one $a, $b X=:= $c, $d),
+        'X=:= : exactly one pair shares a binding root after `$c := $b`';
+}
