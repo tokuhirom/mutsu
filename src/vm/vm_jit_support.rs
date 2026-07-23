@@ -108,6 +108,7 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::Itemize
             | OpCode::DeitemizeZen
             | OpCode::Decont
+            | OpCode::DecontListElems
             | OpCode::Index { .. }
             | OpCode::IndexAutovivifyLazy
             // String / bool / numeric helpers

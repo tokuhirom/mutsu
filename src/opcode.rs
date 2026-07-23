@@ -329,6 +329,14 @@ pub(crate) enum OpCode {
     // kept whole. See exec_say_op / flatten_slip_args.
     Decont, // strip ONE level of Scalar for slurpy flattening (NOT the
     // recursive Value::descalarize; touches no ArrayKind flag — see decont family note)
+    /// Snapshot a list's elements to plain VALUES: pop a list/array and push a
+    /// fresh real array where every element is read through its `ContainerRef`
+    /// cell (`:=` / list-element container alias) and descalarized. Used by
+    /// list assignment (`($a, $b) = ($b, $a)`) to buffer the RHS value list
+    /// BEFORE writing any LHS container, so a write cannot corrupt a later read
+    /// of an aliased element. Bounded (only the elements already reified are
+    /// touched), so it stays lazy-safe when applied to a finite prefix slice.
+    DecontListElems,
     /// Itemize (containerize) an Array/List value so it behaves as a single
     /// item in list context. Emitted when `$` variable values are used inside
     /// `ArrayLiteral` or assigned to `@`/`%` targets.

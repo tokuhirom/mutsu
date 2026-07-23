@@ -16,6 +16,19 @@ impl Interpreter {
         self.stack.push(new_val);
     }
 
+    /// Snapshot a list's elements to plain VALUES (see `OpCode::DecontListElems`).
+    /// Reads each element through its `ContainerRef` cell and descalarizes it, so
+    /// a list-assignment RHS is fully decontainerized into a value buffer before
+    /// any LHS container is written.
+    pub(super) fn exec_decont_list_elems_op(&mut self) {
+        let val = self.stack.pop().unwrap();
+        let items = crate::runtime::value_to_list(&val)
+            .into_iter()
+            .map(|e| e.into_deref().into_descalarized())
+            .collect::<Vec<_>>();
+        self.stack.push(Value::real_array(items));
+    }
+
     /// Pull every element from a deferred-iterator `Seq` (as stored by
     /// `Seq.new($iterator)`), driving the iterator's `pull-one` until
     /// `IterationEnd`. Works for both built-in and user-defined `Iterator`

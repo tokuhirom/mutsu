@@ -1933,7 +1933,16 @@ impl Compiler {
                     1
                 };
                 let normalized_iterable = self.normalize_for_iterable(iterable);
+                // A `for`-loop handles `is rw` write-back through its own
+                // `TagContainerRef` mechanism, so the iterable's synthetic
+                // single-element wrap (`for $a` -> `ArrayLiteral([$a])`) must NOT
+                // also box `$a` into an aliasing `ContainerRef` cell -- doing so
+                // would write that shared cell back into `$a` and create a
+                // self-referential cycle (infinite loop on the next read).
+                let saved_suppress = self.suppress_list_var_alias;
+                self.suppress_list_var_alias = true;
                 self.compile_expr(&normalized_iterable);
+                self.suppress_list_var_alias = saved_suppress;
                 if let Some(source_name) = Self::for_iterable_source_name(iterable) {
                     let source_slot = self.local_map.get(source_name.as_str()).copied();
                     let source_idx = self.code.add_constant(Value::str(source_name));
