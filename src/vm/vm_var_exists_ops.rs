@@ -371,6 +371,10 @@ impl Interpreter {
                             } else {
                                 Value::hash_key_encode(&idx)
                             }
+                        } else if matches!(idx.view(), ValueView::Package(_)) {
+                            // A bare type object key coerces to "" (warning /
+                            // user .Str), matching the store/read paths.
+                            self.coerce_type_object_hash_key(&idx)?
                         } else {
                             idx.to_string_value()
                         };
@@ -504,12 +508,21 @@ impl Interpreter {
                     (0..len as i64).collect()
                 }
                 _ => {
+                    // A bare type object key coerces to "" (warning / user .Str)
+                    // before lookup, matching the store/read paths.
+                    let pkg_key = if matches!(idx.view(), ValueView::Package(_)) {
+                        Some(self.coerce_type_object_hash_key(&idx)?)
+                    } else {
+                        None
+                    };
                     // For hash access, delegate to single key exists
                     let exists = match (target.view(), idx.view()) {
                         (ValueView::Hash(map), ValueView::Str(key)) => {
                             map.contains_key(key.as_str())
                         }
-                        (ValueView::Hash(map), _) => map.contains_key(&idx.to_string_value()),
+                        (ValueView::Hash(map), _) => map.contains_key(
+                            &pkg_key.clone().unwrap_or_else(|| idx.to_string_value()),
+                        ),
                         (ValueView::Set(set, _), ValueView::Str(key)) => set.contains(key.as_str()),
                         (ValueView::Set(set, _), _) => set.contains(&idx.to_string_value()),
                         (ValueView::Bag(bag, _), ValueView::Str(key)) => {

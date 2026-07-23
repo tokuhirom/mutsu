@@ -1002,7 +1002,15 @@ impl Interpreter {
                 }
             }
             (ValueView::Hash(items), _) => {
-                let key_str = index.to_string_value();
+                // A bare type object used as a plain-hash key coerces to the
+                // empty string with Rakudo's "uninitialized value of type X in
+                // string context" warning (a user `.Str`/`.Stringy` dispatches
+                // instead). Object hashes never reach here — they key by WHICH.
+                let key_str = if matches!(index.view(), ValueView::Package(_)) {
+                    self.coerce_type_object_hash_key(&index)?
+                } else {
+                    index.to_string_value()
+                };
                 let v = self.resolve_hash_entry(&items, &key_str);
                 if v.is_nil() {
                     if self.hash_autovivify {

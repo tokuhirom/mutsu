@@ -1501,6 +1501,12 @@ impl Interpreter {
                     };
                 let key = if use_which {
                     runtime::utils::value_which_key(&idx)
+                } else if !is_object_hash && matches!(idx.view(), ValueView::Package(_)) {
+                    // A bare type object keyed into a plain (Str-keyed) hash
+                    // coerces to the empty string with Rakudo's "uninitialized
+                    // value of type X in string context" warning (a user
+                    // `.Str`/`.Stringy` dispatches instead).
+                    self.coerce_type_object_hash_key(&idx)?
                 } else {
                     idx.to_string_value()
                 };

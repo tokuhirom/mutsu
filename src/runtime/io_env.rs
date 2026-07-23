@@ -211,6 +211,37 @@ impl Interpreter {
         Ok(resumed)
     }
 
+    /// Coerce a value used as a plain (`Str`-keyed) hash subscript key into its
+    /// string key, matching Rakudo. A bare type object stringifies to the empty
+    /// string with the "uninitialized value of type X in string context"
+    /// warning — unless its class defines a user `.Str`/`.Stringy`, which
+    /// dispatches (`%h{Foo}` where `Foo` defines `method Str` keys as its
+    /// result, no warning). All other values use the ordinary
+    /// `to_string_value` encoding. Object hashes (typed keys) do NOT reach here
+    /// — they key by `.WHICH` and keep the type object.
+    pub(crate) fn coerce_type_object_hash_key(
+        &mut self,
+        val: &Value,
+    ) -> Result<String, RuntimeError> {
+        if let ValueView::Package(name) = val.view() {
+            let cn = name.resolve().to_string();
+            if self.has_user_method(&cn, "Stringy")
+                && let Ok(r) = self.call_method_with_values(val.clone(), "Stringy", vec![])
+            {
+                return Ok(r.to_string_value());
+            }
+            if self.has_user_method(&cn, "Str")
+                && let Ok(r) = self.call_method_with_values(val.clone(), "Str", vec![])
+            {
+                return Ok(r.to_string_value());
+            }
+            return Ok(self
+                .warn_type_object_string_context(&cn, false)?
+                .to_string_value());
+        }
+        Ok(val.to_string_value())
+    }
+
     /// Stringify a value by calling .Str method (used by put/print).
     /// Falls back to to_string_value() if .Str method dispatch fails.
     pub(crate) fn render_str_value(&mut self, value: &Value) -> String {
