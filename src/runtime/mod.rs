@@ -199,6 +199,7 @@ mod io_pod_config;
 mod io_pod_entries;
 mod io_pod_table;
 mod io_sysinfo;
+mod iterator_protocol;
 pub(crate) mod json;
 mod lock_reentry;
 mod main_args;

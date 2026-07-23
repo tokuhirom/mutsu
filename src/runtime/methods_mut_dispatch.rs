@@ -2305,7 +2305,7 @@ impl Interpreter {
                     Some(ValueView::Array(values, ..)) => values.to_vec(),
                     _ => Vec::new(),
                 };
-                let mut index = match updated.get("index").map(Value::view) {
+                let index = match updated.get("index").map(Value::view) {
                     Some(ValueView::Int(i)) if i >= 0 => i as usize,
                     _ => 0,
                 };
@@ -2315,22 +2315,20 @@ impl Interpreter {
                 // on a stored iterator report the true (possibly infinite) count.
                 let known_count = updated.get("known_count").cloned();
 
-                let mut append_to_first_array_arg = |vals: &[Value]| {
-                    if vals.is_empty() {
-                        return;
+                // The index-advancing protocol family shares one stepping
+                // implementation with the read-only (temporary receiver) path.
+                if let Some(step) = super::iterator_protocol::step(method, &items, index, &args) {
+                    if let Some(range) = step.append {
+                        let vals = items[range].to_vec();
+                        self.iterator_append_to_array_arg(&args, &vals);
                     }
-                    if let Some(av) = args.first()
-                        && let ValueView::Array(existing, arr_kind) = av.view()
-                    {
-                        let mut next = existing.to_vec();
-                        next.extend(vals.iter().cloned());
-                        let updated_array = Value::array_with_kind(
-                            crate::gc::Gc::new(crate::value::ArrayData::new(next)),
-                            arr_kind,
-                        );
-                        self.overwrite_array_bindings_by_identity(&existing, updated_array);
-                    }
-                };
+                    updated.insert("index".to_string(), Value::int(step.new_index as i64));
+                    self.env.insert(
+                        target_var.to_string(),
+                        Value::write_back_sharing(&attributes, class_name, updated, target_id),
+                    );
+                    return Ok(step.ret);
+                }
 
                 let ret = match method {
                     "count-only" => known_count
@@ -2340,76 +2338,6 @@ impl Interpreter {
                         Some(c) => Value::truth(c.to_f64() > 0.0),
                         None => Value::truth(index < len),
                     },
-                    "pull-one" => {
-                        if index < len {
-                            let out = items[index].clone();
-                            index += 1;
-                            out
-                        } else {
-                            Value::str_from("IterationEnd")
-                        }
-                    }
-                    "push-exactly" | "push-at-least" => {
-                        let want = args.get(1).map(super::to_int).unwrap_or(1).max(0) as usize;
-                        let available = len.saturating_sub(index);
-                        let take = available.min(want);
-                        if take > 0 {
-                            append_to_first_array_arg(&items[index..index + take]);
-                            index += take;
-                        }
-                        if index >= len {
-                            Value::str_from("IterationEnd")
-                        } else {
-                            Value::NIL
-                        }
-                    }
-                    "push-all" | "push-until-lazy" => {
-                        if index < len {
-                            append_to_first_array_arg(&items[index..]);
-                            index = len;
-                        }
-                        Value::str_from("IterationEnd")
-                    }
-                    "sink-all" => {
-                        index = len;
-                        Value::str_from("IterationEnd")
-                    }
-                    "skip-one" => {
-                        if index < len {
-                            index += 1;
-                            Value::int(1)
-                        } else {
-                            Value::int(0)
-                        }
-                    }
-                    "skip-at-least" => {
-                        let want = args.first().map(super::to_int).unwrap_or(0).max(0) as usize;
-                        let available = len.saturating_sub(index);
-                        if available >= want {
-                            index += want;
-                            Value::int(1)
-                        } else {
-                            index = len;
-                            Value::int(0)
-                        }
-                    }
-                    "skip-at-least-pull-one" => {
-                        let want = args.first().map(super::to_int).unwrap_or(0).max(0) as usize;
-                        let available = len.saturating_sub(index);
-                        if available >= want {
-                            index += want;
-                            if index < len {
-                                let out = items[index].clone();
-                                index += 1;
-                                out
-                            } else {
-                                Value::str_from("IterationEnd")
-                            }
-                        } else {
-                            index = len;
-                            Value::str_from("IterationEnd")
-                        }
-                    }
                     "can" => {
                         let method_name = args
                             .first()
