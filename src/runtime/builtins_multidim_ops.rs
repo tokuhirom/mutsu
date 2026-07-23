@@ -274,8 +274,8 @@ impl Interpreter {
         let value = multidim_index(target, &indices);
         // An unassigned shaped cell holds its unset seed — Nil or the Any
         // type object — and does not exist yet.
-        let raw_exists = !value.is_nil()
-            && !(crate::runtime::utils::is_shaped_array(target) && value.is_any_type_object());
+        let raw_exists = !(value.is_nil()
+            || crate::runtime::utils::is_shaped_array(target) && value.is_any_type_object());
         let exists = if negated { !raw_exists } else { raw_exists };
         let key = make_key_tuple(&indices);
 
