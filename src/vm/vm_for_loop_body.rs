@@ -169,10 +169,16 @@ impl Interpreter {
         // loop's binding of that name (the env keys these by bare name). Skip
         // `@`/`%` sigils, which bind a shared mutable container the body may
         // legitimately reassign, and skip the rw case (handled via writeback).
-        let saved_param: Option<(String, Option<Value>)> = param_name
+        let saved_param: Option<(String, Option<Value>, Option<u32>)> = param_name
             .as_ref()
             .filter(|n| !n.starts_with('@') && !n.starts_with('%'))
-            .map(|name| (name.clone(), self.env().get(name).cloned()));
+            .map(|name| {
+                (
+                    name.clone(),
+                    self.env().get(name).cloned(),
+                    spec.param_local,
+                )
+            });
         // Track loop-body declarations for per-iteration closure capture
         // (owned_captures). Balanced by pop on every exit.
         self.push_loop_local_scope();

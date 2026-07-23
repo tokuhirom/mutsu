@@ -70,7 +70,7 @@ impl Interpreter {
         if let Some((_, v, _)) = &self.element_source {
             visitor.visit_value(v);
         }
-        for (_, v) in &self.for_param_restore_stack {
+        for (_, v, _) in &self.for_param_restore_stack {
             visit_opt(visitor, v);
         }
         for frame in &self.call_frames {

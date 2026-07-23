@@ -3539,7 +3539,19 @@ impl Interpreter {
                 // that the loop's LAST/post phasers (which needed the param at
                 // its final value) have run. Paired with the push the ForLoop
                 // opcode performs on normal completion.
-                if let Some((name, saved_val)) = self.for_param_restore_stack.pop() {
+                if let Some((name, saved_val, colliding_slot)) = self.for_param_restore_stack.pop()
+                {
+                    // A loop param that shares a compile-time local slot with an
+                    // enclosing binding of the same bare name overwrote that slot
+                    // each iteration; write the saved value back through it too so
+                    // a later `GetLocal` read of the outer name (`my \x = 10; for
+                    // ... -> \x {}; say x`) sees the restored outer value, not the
+                    // loop's last iteration value.
+                    if let Some(slot) = colliding_slot
+                        && (slot as usize) < self.locals.len()
+                    {
+                        self.locals[slot as usize] = saved_val.clone().unwrap_or(Value::NIL);
+                    }
                     match saved_val {
                         Some(v) => {
                             self.env_mut().insert(name, v);

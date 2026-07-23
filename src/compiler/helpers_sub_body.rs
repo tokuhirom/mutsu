@@ -8,11 +8,42 @@ impl Compiler {
         for sp in sub_params {
             if !sp.name.is_empty() {
                 compiler.declare_param(&sp.name);
+                // A sigilless destructured sub-param (`-> (\i, \j) { i + j }`) IS the
+                // bare word within the body, so it must shadow a same-named term
+                // constant (e.g. the imaginary unit `i`). Register it like the
+                // single-pointy-param path does, so BareWord resolves to GetLocal.
+                if sp.sigilless {
+                    compiler.sigilless_locals.insert(sp.name.clone());
+                }
             }
             if let Some(nested) = &sp.sub_signature {
                 Self::alloc_sub_signature_locals(compiler, nested);
             }
         }
+    }
+
+    /// Collect `MarkSigillessReadonly` prologue statements for every sigilless
+    /// destructured sub-param (`-> (\i, \j)`), so a bare-word read of the name
+    /// inside the body resolves the binding rather than a same-named term
+    /// constant. Recurses into nested sub-signatures.
+    fn collect_sigilless_subsig_markers(param_defs: &[crate::ast::ParamDef]) -> Vec<Stmt> {
+        fn walk(sub_params: &[crate::ast::ParamDef], out: &mut Vec<Stmt>) {
+            for sp in sub_params {
+                if sp.sigilless && !sp.name.is_empty() {
+                    out.push(Stmt::MarkSigillessReadonly(sp.name.clone()));
+                }
+                if let Some(nested) = &sp.sub_signature {
+                    walk(nested, out);
+                }
+            }
+        }
+        let mut out = Vec::new();
+        for pd in param_defs {
+            if let Some(sub_params) = &pd.sub_signature {
+                walk(sub_params, &mut out);
+            }
+        }
+        out
     }
 
     /// Convert `Stmt::Call`'s `Vec<CallArg>` to `Vec<Expr>` for expression-level
@@ -678,7 +709,31 @@ impl Compiler {
                     sub_compiler.sigilless_locals.insert(pd.name.clone());
                 }
             }
+            // A destructured sub-signature param (`-> (\i, \j) { i + j }`) carries
+            // its real bindings in `sub_signature`. A sigilless sub-param IS the
+            // bare word in the body and must shadow a same-named term constant
+            // (e.g. the imaginary unit `i`); register those names so BareWord
+            // resolves to the binding, not the constant.
+            if let Some(sub_params) = &pd.sub_signature {
+                Self::alloc_sub_signature_locals(&mut sub_compiler, sub_params);
+            }
         }
+        // The destructure bind statements are prepended to the body at runtime by
+        // by-name assignment (not into the freshly-allocated local slots), so a
+        // sigilless sub-param read still routes through GetBareWord. Emit a
+        // `MarkSigillessReadonly` marker for each sigilless sub-param so that
+        // GetBareWord's `i`/`NaN`-term guard sees a sigilless binding and falls
+        // through to the env value instead of the term constant.
+        let subsig_markers = Self::collect_sigilless_subsig_markers(param_defs);
+        let augmented_body: Vec<Stmt>;
+        let body: &[Stmt] = if subsig_markers.is_empty() {
+            body
+        } else {
+            let mut v = subsig_markers;
+            v.extend_from_slice(body);
+            augmented_body = v;
+            &augmented_body
+        };
         // Bake the positional-param → slot map now, while `local_map` still holds
         // exactly the parameter slots (before the body can shadow them). §1.5.
         sub_compiler.record_param_local_slots(params, param_defs);
