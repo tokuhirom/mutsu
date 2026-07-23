@@ -352,12 +352,12 @@ impl Interpreter {
         Some(r)
     }
 
-    pub(super) fn builtin_hash(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+    pub(super) fn builtin_hash(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let mut flat_values = Vec::new();
         for arg in args {
             flat_values.extend(Self::value_to_list(arg));
         }
-        crate::runtime::utils::build_hash_from_items(flat_values)
+        self.build_hash_from_items_warning(flat_values)
     }
 
     pub(super) fn builtin_junction(

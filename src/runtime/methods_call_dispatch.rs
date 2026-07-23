@@ -129,6 +129,28 @@ impl Interpreter {
         {
             return self.call_method_with_values(target, "sum", Vec::new());
         }
+        // `.hash` / `.Hash` on a bare positional list (`(Int, 1).hash`, and the
+        // `%(...)` literal, which compiles to `MakeArray(...).hash`) builds a
+        // plain Hash from the flattened elements. A bare type-object key
+        // stringifies to "" with the Rakudo "uninitialized value in string
+        // context" warning; the native `.hash` fast path cannot warn (no
+        // interpreter), so route list invocants through the interpreter-aware
+        // builder. Set/Bag/Mix/Instance/type-object invocants keep their native
+        // `.hash` semantics.
+        if matches!(method, "hash" | "Hash")
+            && args.is_empty()
+            && matches!(
+                target.view(),
+                ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_)
+            )
+        {
+            let items: Vec<Value> = match target.view() {
+                ValueView::Array(items, _) => items.iter().cloned().collect(),
+                ValueView::Seq(items) | ValueView::Slip(items) => items.iter().cloned().collect(),
+                _ => unreachable!(),
+            };
+            return self.build_hash_from_items_warning(items);
+        }
         // A Backtrace is a List of Backtrace::Frame: list-iteration methods
         // (grep/map/first/...) operate on its frames, not the Backtrace itself.
         if let ValueView::Instance {

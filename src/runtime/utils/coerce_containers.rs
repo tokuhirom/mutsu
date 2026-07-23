@@ -218,6 +218,33 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
 }
 
 pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeError> {
+    // Stringify each non-`Str` key and record the original in `original_keys` so
+    // an object-hash re-tag (`%h{Any} = ..., Foo, $o`) and `.antipairs`/`.invert`
+    // can recover the real key. A bare type object stringifies to its gist here;
+    // the empty-string-with-warning coercion is a *plain* (`Str`-keyed) hash
+    // semantic, applied only by the interpreter-aware `build_hash_from_items_warning`.
+    build_hash_from_items_with_key_coercion(items, |kk| {
+        Ok((
+            Value::hash_key_encode(kk),
+            !matches!(kk.view(), ValueView::Str(_)),
+        ))
+    })
+}
+
+/// Build a `Hash` from a flat item list, mapping each *bare* (non-`Pair`) key
+/// value to its string key via `encode_key`. `encode_key` returns
+/// `(string_key, record_original)`: when `record_original` is true the original
+/// key `Value` is remembered in the hash's `original_keys` side table (so
+/// `.keys` can recover a non-`Str` key); a type object coerced to `""` returns
+/// `false`, matching Rakudo's plain-`Str` `""` key. Pair/Hash flattening and
+/// the "Odd number of elements" error are handled here regardless of the hook.
+pub(crate) fn build_hash_from_items_with_key_coercion<F>(
+    items: Vec<Value>,
+    mut encode_key: F,
+) -> Result<Value, RuntimeError>
+where
+    F: FnMut(&Value) -> Result<(String, bool), RuntimeError>,
+{
     let total_items = items.len();
     let last_item = items
         .last()
@@ -255,8 +282,8 @@ pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeE
             // matching Rakudo. Every other non-Str key stringifies as usual.
             ValueView::ValuePair(key, boxed_val) => {
                 for kk in hash_pair_keys(key) {
-                    let str_key = Value::hash_key_encode(&kk);
-                    if !matches!(kk.view(), ValueView::Str(_)) {
+                    let (str_key, record_original) = encode_key(&kk)?;
+                    if record_original {
                         original_keys.insert(str_key.clone(), kk.clone());
                     }
                     map.insert(str_key, boxed_val.clone());
@@ -280,8 +307,8 @@ pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeE
                     err.exception = Some(Box::new(ex));
                     return Err(err);
                 };
-                let str_key = Value::hash_key_encode(&item);
-                if !matches!(item.view(), ValueView::Str(_)) {
+                let (str_key, record_original) = encode_key(&item)?;
+                if record_original {
                     original_keys.insert(str_key.clone(), item.clone());
                 }
                 map.insert(str_key, value);

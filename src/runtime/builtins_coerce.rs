@@ -27,7 +27,7 @@ impl Interpreter {
         Ok(match name {
             "Array" => Value::real_array(items),
             "List" => Value::array(items),
-            "Hash" => crate::runtime::utils::build_hash_from_items(items)?,
+            "Hash" => self.build_hash_from_items_warning(items)?,
             _ => Value::real_array(items),
         })
     }
