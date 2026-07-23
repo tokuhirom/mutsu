@@ -627,7 +627,42 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
 impl Interpreter {
     /// Perform a smart match, trying pure value matching first, falling back to
     /// the interpreter for complex cases (regex, callable, type checks, etc.).
+    /// Reify a *safely finite* lazy list (a plain gather / a pipe bottoming
+    /// out in a finite source) to a `Seq` so it participates in list
+    /// smartmatch by value — `(gather { take 1; take 2 }) ~~ (1, 2)` must
+    /// compare elements, not an unforced placeholder. Returns `None` for
+    /// anything genuinely lazy (never forces an infinite source).
+    fn reify_finite_lazy_for_match(&mut self, v: &Value) -> Option<Value> {
+        let ValueView::LazyList(ll) = v.view() else {
+            return None;
+        };
+        let finite = if ll.lazy_pipe.is_some() {
+            ll.pipe_bottoms_out_finite()
+        } else {
+            !ll.is_genuinely_lazy()
+                && (ll.coroutine.is_some() || !ll.body.is_empty() || ll.compiled_code.is_some())
+        };
+        if !finite {
+            return None;
+        }
+        match self.force_lazy_list_vm(&ll) {
+            Ok(items) => Some(Value::seq(items)),
+            Err(e) => {
+                self.set_pending_dispatch_error(e);
+                None
+            }
+        }
+    }
+
     pub(super) fn vm_smart_match(&mut self, left: &Value, right: &Value) -> bool {
+        // Force finite lazy operands first so list matching sees their
+        // elements (see reify_finite_lazy_for_match).
+        if let Some(forced) = self.reify_finite_lazy_for_match(left) {
+            return self.vm_smart_match(&forced, right);
+        }
+        if let Some(forced) = self.reify_finite_lazy_for_match(right) {
+            return self.vm_smart_match(left, &forced);
+        }
         // `$x ~~ $obj` where $obj's class defines a user `ACCEPTS` dispatches
         // `$obj.ACCEPTS($x)` — the core smartmatch protocol. Check this BEFORE
         // `pure_smart_match`, whose generic Instance~~Instance arm would otherwise

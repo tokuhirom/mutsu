@@ -434,6 +434,10 @@ impl Compiler {
         // When we have both result_var (KEEP/UNDO) and post_topic_var (POST),
         // we need to capture the body's last expression into both.
         let capture_var = result_var.clone().or(post_topic_var.clone());
+        let body_taken = matches!(
+            body_main.last(),
+            Some(Stmt::Take(_, false)) if capture_var.is_some()
+        );
         if let Some(cap_var) = capture_var.clone() {
             if let Some((last, prefix)) = body_main.split_last() {
                 loop_body.extend(prefix.iter().cloned());
@@ -443,6 +447,18 @@ impl Compiler {
                         expr: expr.clone(),
                         op: AssignOp::Assign,
                     }),
+                    // A trailing `take <expr>` (the gather-lowered loop
+                    // expression form) carries the iteration value: capture it
+                    // for KEEP/UNDO/POST, then take the captured value so the
+                    // gather still collects it.
+                    Stmt::Take(expr, false) => {
+                        loop_body.push(Stmt::Assign {
+                            name: cap_var.clone(),
+                            expr: expr.clone(),
+                            op: AssignOp::Assign,
+                        });
+                        loop_body.push(Stmt::Take(Expr::Var(cap_var.clone()), false));
+                    }
                     other => {
                         loop_body.push(other.clone());
                         loop_body.push(Stmt::Assign {
@@ -501,8 +517,13 @@ impl Compiler {
                     binding_var: None,
                 });
             }
-            // Preserve loop-body value for expression contexts that collect iteration results.
-            loop_body.push(Stmt::Expr(Expr::Var(result_var)));
+            // Preserve loop-body value for expression contexts that collect
+            // iteration results. Not needed (and harmful — sinking a taken
+            // Failure would throw) when the body's value was already `take`n
+            // into the enclosing gather.
+            if !body_taken {
+                loop_body.push(Stmt::Expr(Expr::Var(result_var)));
+            }
         }
         // NEXT runs after KEEP/UNDO, before the next iteration begins.
         // next_ph was already reversed above for LIFO order.

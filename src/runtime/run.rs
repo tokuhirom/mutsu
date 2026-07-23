@@ -183,6 +183,30 @@ impl Interpreter {
             self.finish()?;
             return Err(err);
         }
+        // Raku also DRAINS the sunk tail when it is a side-effecting lazy Seq:
+        // `(while $++ < 2 { 42.say; 43 }).map: *.say` as the program's final
+        // statement must run its pipeline (non-tail statements drain via the
+        // SinkPop/Pop LazyList arms). Restricted to safely-finite sources — a
+        // finite-bottomed map/grep pipe or a plain (non-`lazy`) gather
+        // coroutine; a `.cache` view or a genuinely-lazy list stays undrained.
+        if Self::tail_stmt_sinks_fresh_rvalue(&body_main) {
+            let drain = last_value.as_ref().and_then(|v| match v.view() {
+                crate::value::ValueView::LazyList(ll)
+                    if !ll.is_cached_no_sink()
+                        && ((ll.lazy_pipe.is_some() && ll.pipe_bottoms_out_finite())
+                            || (ll.coroutine.is_some() && !ll.is_genuinely_lazy())) =>
+                {
+                    Some(ll.clone())
+                }
+                _ => None,
+            });
+            if let Some(ll) = drain
+                && let Err(e) = self.force_lazy_list_vm(&ll)
+            {
+                self.finish()?;
+                return Err(e);
+            }
+        }
         // Only store last_value if _ was actually set during this execution
         // (not inherited from a previous REPL line)
         self.last_value = last_value;
@@ -230,6 +254,10 @@ impl Interpreter {
             // Bare `EVAL "..."` parses as a `Stmt::Call`; other bare sub calls
             // are excluded (see the doc comment).
             Stmt::Call { name, .. } => matches!(name.resolve().as_str(), "EVAL" | "EVALFILE"),
+            // A `(while ...)` / `(loop ...)` expression tail is a fresh lazy
+            // Seq (never a Failure), included so the tail-sink drain above
+            // runs its side effects.
+            Stmt::While { .. } | Stmt::Loop { .. } => true,
             Stmt::Expr(e) => Self::expr_is_fresh_rvalue(e),
             // A bare block's value is its own last statement's value.
             Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
