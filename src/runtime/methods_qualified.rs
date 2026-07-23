@@ -442,6 +442,21 @@ impl Interpreter {
             }
         }
 
+        // Last resort: the qualifier is a NATIVE builtin ancestor (verified in the
+        // MRO above) whose method is Rust-implemented rather than a user method —
+        // e.g. `self.IO::Path::slurp` from a class that `is IO::Path`. Dispatch it
+        // to the native handler for the qualifier so an overriding derived method
+        // does not recurse. (`in_mro` guaranteed above, so this cannot reach a
+        // native type outside the receiver's hierarchy.)
+        if let Some(res) = self.try_qualified_native_ancestor_method(
+            qualifier,
+            actual_method,
+            &attributes.to_map(),
+            args,
+        ) {
+            return Some(res);
+        }
+
         None
     }
 
@@ -703,6 +718,24 @@ impl Interpreter {
                 );
                 return Some(res.map(|(result, _updated)| result));
             }
+            // Last resort: qualifier is a native builtin ancestor of the mixin's
+            // inner instance (e.g. `self.IO::Path::slurp` where `self` is a
+            // run-time mixin over an `is IO::Path` instance). Dispatch to the
+            // native handler for the qualifier, reading the inner instance's
+            // attributes. (`in_mro` verified above.)
+            let attrs_map = if let ValueView::Instance { attributes, .. } = inner.as_ref().view() {
+                attributes.to_map()
+            } else {
+                AttrMap::new()
+            };
+            if let Some(res) = self.try_qualified_native_ancestor_method(
+                qualifier,
+                actual_method,
+                &attrs_map,
+                args,
+            ) {
+                return Some(res);
+            }
         }
 
         None
@@ -788,6 +821,28 @@ impl Interpreter {
             "X::Method::InvalidQualifier: Cannot dispatch to a method on {} because it is not inherited or done by {}",
             qualifier, type_name
         ))))
+    }
+
+    /// Route a qualified call `self.Builtin::method` to the native handler for
+    /// `qualifier` when `qualifier` is a builtin type whose `method` is
+    /// Rust-implemented (not a user method). Used as the last resort by the
+    /// instance / mixin qualified-dispatch paths after user-method lookup fails,
+    /// e.g. `self.IO::Path::slurp` from a class that `is IO::Path`. The caller has
+    /// already verified `qualifier` is in the receiver's MRO, so this only reaches
+    /// a native ancestor. Dispatching to the qualifier (not the receiver's most
+    /// derived class) means an overriding `method slurp` calling
+    /// `self.IO::Path::slurp` gets the parent's native version, not itself.
+    pub(super) fn try_qualified_native_ancestor_method(
+        &mut self,
+        qualifier: &str,
+        actual_method: &str,
+        attrs: &AttrMap,
+        args: Vec<Value>,
+    ) -> Option<Result<Value, RuntimeError>> {
+        if !self.is_native_method(qualifier, actual_method) {
+            return None;
+        }
+        Some(self.call_native_instance_method(qualifier, attrs, actual_method, args))
     }
 
     /// Handle method calls on Proxy subclass values (accessing subclass attributes).
