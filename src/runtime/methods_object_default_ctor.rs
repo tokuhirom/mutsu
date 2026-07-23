@@ -456,10 +456,15 @@ impl Interpreter {
                 return Some(Err(e));
             }
         }
-        if has_tweak && let Err(e) = self.run_tweak_phase(class_name, &inv, args) {
+        if has_tweak {
             // Pass the original constructor args so `submethod TWEAK(:$y)` binds
-            // them, matching the full `.new` path.
-            return Some(Err(e));
+            // them, matching the full `.new` path. A `fail` inside TWEAK yields a
+            // Failure to return, not an error.
+            match self.run_tweak_phase(class_name, &inv, args) {
+                Ok(Ok(())) => {}
+                Ok(Err(failure)) => return Some(Ok(failure)),
+                Err(e) => return Some(Err(e)),
+            }
         }
         // Re-check `where` after BUILD/TWEAK: the full constructor enforces
         // constraints again post-construction, so a BUILD/TWEAK that mutates an

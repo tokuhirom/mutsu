@@ -297,6 +297,32 @@ pub(crate) fn multiplicative_expr(input: &str) -> PResult<'_, Expr> {
             rest = r;
             continue;
         }
+        // Unicode `×`/`÷` when the user declared `infix:<×>`/`infix:<÷>`:
+        // `parse_multiplicative_op` deliberately skipped them so the user
+        // candidate can win, but they keep their canonical MULTIPLICATIVE
+        // precedence (Rakudo: `×` is `equiv(&infix:<*>)`). Emit the operator call
+        // here rather than deferring to the generic custom-infix path, which
+        // would give a trait-less declaration the wrong (additive) level and
+        // strand `×` as "two terms in a row".
+        if let Some(sym) = ["\u{00D7}", "\u{00F7}"].into_iter().find(|s| {
+            r.starts_with(*s)
+                && r.as_bytes().get(s.len()) != Some(&b'=')
+                && crate::parser::stmt::simple::is_user_defined_infix(s)
+        }) {
+            let r2 = &r[sym.len()..];
+            let (r2, _) = ws(r2)?;
+            let (r2, right) = prefix_expr_with_ws_dot(r2).map_err(|err| {
+                enrich_expected_error(err, "expected expression after infix operator", r2.len())
+            })?;
+            left = Expr::InfixFunc {
+                name: sym.to_string(),
+                left: Box::new(left),
+                right: vec![right],
+                modifier: None,
+            };
+            rest = r2;
+            continue;
+        }
         // Custom infix ops at multiplicative level (between additive and multiplicative inclusive)
         // (covers is equiv<*>, is tighter<+>, is looser<*>)
         {

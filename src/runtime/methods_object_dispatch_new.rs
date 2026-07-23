@@ -1974,7 +1974,10 @@ impl Interpreter {
                                 .is_empty())
                 });
                 if any_tweak {
-                    self.run_tweak_phase(*class_name, &inv, &args)?;
+                    // `fail` inside TWEAK yields a Failure `.new` returns.
+                    if let Err(failure) = self.run_tweak_phase(*class_name, &inv, &args)? {
+                        return Ok(failure);
+                    }
                     // Re-check `where` after the TWEAK phase (formerly checked
                     // after each TWEAK step; a violation surfaces identically —
                     // rakudo enforces `where` at assignment time, so the
