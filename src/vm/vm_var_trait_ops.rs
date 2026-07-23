@@ -421,11 +421,17 @@ impl Interpreter {
                 // Pass the initializer as a single positional list (not as
                 // separate Pair args, which STORE's signature would bind as
                 // *named* arguments); STORE's slurpy `*@values` flattens it.
+                // Raku passes `:INITIALIZE` on the *declaration* assignment
+                // (`my %h is Foo = ...`) but NOT on a later `%h = ...`
+                // reassignment, so a write-once tie can distinguish the initial
+                // population from a forbidden overwrite (WriteOnceHash's STORE
+                // gates on `:$INITIALIZE`). A STORE that ignores it absorbs the
+                // extra named arg through its implicit `*%_`.
                 let list_arg = Value::array(init_values);
                 let stored = self.try_compiled_method_or_interpret(
                     instance.clone(),
                     "STORE",
-                    vec![list_arg],
+                    vec![list_arg, Value::pair("INITIALIZE".to_string(), Value::TRUE)],
                 )?;
                 let bound = if matches!(stored.view(), ValueView::Instance { .. }) {
                     stored
