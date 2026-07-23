@@ -356,6 +356,7 @@ impl Interpreter {
         if let Stmt::AugmentClass {
             name,
             body,
+            does_roles,
             is_role,
         } = stmt
         {
@@ -372,7 +373,8 @@ impl Interpreter {
             if *is_role {
                 return Err(self.augment_role_error(&name_str));
             }
-            loan_env!(self, augment_class(&name_str, body))?;
+            let does_role_names: Vec<String> = does_roles.iter().map(|s| s.resolve()).collect();
+            loan_env!(self, augment_class(&name_str, body, &does_role_names))?;
             // Recompile augmented class methods for the fast path
             self.compile_class_methods(&name_str);
             // Augment can add methods/attributes — drop cached construction plans.
