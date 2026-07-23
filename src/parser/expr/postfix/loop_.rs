@@ -66,6 +66,12 @@ pub(crate) fn without_pending_prefix<T>(f: impl FnOnce() -> T) -> T {
 /// parse, leaving the trailing `,4,5` to be misread as siblings by whatever
 /// list the prefix expression itself sits in).
 fn parse_prefix_listop_operand(input: &str) -> PResult<'_, Expr> {
+    // The sequence operators are looser than comma, so `lazy 1, 2 ... 100`
+    // takes the WHOLE sequence as the operand (`lazy ((1, 2) ... 100)`), not
+    // just the comma list of seeds.
+    if let Some(result) = crate::parser::primary::try_parse_sequence_arg_list(input) {
+        return result;
+    }
     let (rest, first) = expression_no_sequence(input)?;
     let (r, _) = ws(rest)?;
     if !r.starts_with(',') || r.starts_with(",,") {

@@ -42,8 +42,11 @@ is (1, 0 ... *).[^5].join(', '), '1, 0, -1, -2, -3', 'infinite decreasing';
 is (1, 3, 9 ... *).[^5].join(', '), '1, 3, 9, 27, 81', 'infinite geometric';
 is (81, 27, 9 ... *).[^5].join(', '), '81, 27, 9, 3, 1', 'infinite decreasing geometric';
 is (1, { $_ + 2 } ... *).[^5].join(', '), '1, 3, 5, 7, 9', 'infinite closure';
+# An infinite sequence assigned to an @ array now stays lazy (raku
+# semantics), so pushing to a copy of it dies; slice an eager prefix
+# instead to exercise the slurped multi-seed call.
 my @fib = 0, 1, *+* ... *;
-my @fib-seed = @fib;
+my @fib-seed = @fib[^7];
 @fib-seed.push(8);
 is infix:<...>(|@fib-seed).join(', '), '0, 1, 1, 2, 3, 5, 8', 'slurped multi-seed LHS from array';
 
