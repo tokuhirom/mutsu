@@ -644,7 +644,8 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
   ~~IO::Path::AutoDecompress~~ (FIXED — see Done), ~~Math::Angle~~ (FIXED — see Done),
   ~~Math::PascalTriangle~~ (FIXED — see Done),
   ~~Statistics::LinearRegression~~ (FIXED — see Done), String::Rotate,
-  Text::CodeProcessing, Trait::IO, WriteOnceHash, `are`, ~~`sortuk`~~ (FIXED — see Done),
+  Text::CodeProcessing (PARTIAL — `.match`/`.subst` `&Named` arg fixed; see Done),
+  Trait::IO, WriteOnceHash, `are`, ~~`sortuk`~~ (FIXED — see Done),
   Tree::Binary::PrettyTree (role-`new` requirement FIXED; now blocked on a
   separate `class Iterator does Iterator` name-resolution issue — see Done).
 - These `test_die` on the current binary but were not individually reproduced.
@@ -666,6 +667,27 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 _(move tickets here with `[claim: <branch>]` when you start)_
 
 ## Done
+
+- **T-057 (Text::CodeProcessing)** (PR `fix-match-subst-named-regex-arg`) —
+  PARTIAL. General bug fixed: a **named regex/token passed as a value**
+  (`&Named`, or a hash slot holding it — the module keeps
+  `%fileTypeToSearchSub{$docType} = &MarkdownSearch` and calls
+  `$input.match(that, :g)` / `$input.subst(that, ...)`) did not work as a
+  `.match` / `.subst` pattern. mutsu represents `&Named` as a `Routine`
+  (`is_regex`), and both dispatchers only accepted a `Regex` value or a `Str`, so
+  the Routine fell through to literal-string matching of its stringified
+  `sub Named (...) {...}` form → never matched (returned `Nil` / left the string
+  unchanged). Fix: `.match` (`methods_match_dispatch.rs`) and `.subst`
+  (`methods_string.rs`) now extract the named regex's source via
+  `extract_token_regex_pattern` (the same path `$str ~~ &Named` uses) and match
+  with THAT, so the returned Match carries the named regex's own captures at top
+  level. Pin: `t/match-subst-named-regex-arg.t`. **Remaining blocker (separate
+  regex-engine bug, not `&Named`-specific — reproduces with an inline `/ /` too):**
+  a frugal `.*?` followed by a `<?after \v>` look-behind and a `$<fence>`
+  back-reference (the `MarkdownSearch` code-fence body) does not match minimally
+  under `:g` — mutsu spans one match across several fences (1 match where Rakudo
+  finds 2+), so the markdown/org/pod extraction is still wrong. Needs dedicated
+  regex-engine work (frugal-quantifier + capture-back-reference interaction).
 
 - **T-057 (IO::Path::AutoDecompress)** (PR `fix-qualified-native-ancestor-method`)
   — test_die → t/01-basic.rakutest 8/8. Root cause: a qualified method call
