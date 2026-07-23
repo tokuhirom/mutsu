@@ -7,7 +7,7 @@ use Test;
 # the whole comma list on each side is one operand: `say((a, b) Zop (c, d))`.
 # mutsu previously bound the meta-op tighter than comma, giving `say(a, (b Zop c), d)`.
 
-plan 13;
+plan 17;
 
 # Capture what a `say`/`print` statement actually emits, so we test the
 # unparenthesized listop statement path (not the parenthesized-list path).
@@ -59,3 +59,16 @@ is-deeply @a, [(1, 3), (2, 4)],
 # whole Z becomes a WhateverCode (regression guard for repeat.t test 34).
 my @b = flat <a b c> Z (1 xx *);
 is @b.join('|'), 'a|1|b|1|c|1', 'Z with an `xx *` extender operand does not curry';
+
+# A no-paren user-sub call gobbles a whole comma level as its argument list, and
+# the list-infix operator is LOOSER than that comma, so it owns both operands:
+# `f 1, 2 X 3, 4` is `f((1,2) X (3,4))`, one cross-product argument.
+sub collect(*@a) { @a.join('|') }
+is (collect 1, 2 X 3, 4), '1|3|1|4|2|3|2|4',
+    'user-sub no-paren: (1,2) X (3,4) is one argument';
+is (collect 100, 200 Z+ 42, 23), '142|223',
+    'user-sub no-paren: (100,200) Z+ (42,23)';
+is (collect 1, 2 Z 3, 4), '1|3|2|4',
+    'user-sub no-paren: (1,2) Z (3,4)';
+is (collect 1, 2, 3), '1|2|3',
+    'user-sub no-paren: a plain comma list is unaffected';
