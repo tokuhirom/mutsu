@@ -146,6 +146,22 @@ impl Interpreter {
             self.stack.push(resumed);
             return Ok(());
         }
+        // `~Nil` warns ("Use of Nil in string context") and resumes with the
+        // empty string, matching Rakudo. This mirrors the `Nil.Str`/`.Stringy`
+        // method path; the prefix:<~> operator reaches this coercion opcode
+        // instead, so it needs its own arm here. An inline resume_safe CONTROL
+        // handler can mutate a captured-outer caller lexical while running, so
+        // reconcile its writeback (same pattern as the concat/interp paths).
+        if val.is_nil() {
+            let caller_code = self.current_code;
+            let resumed = self.raise_resumable_warning(
+                "Use of Nil in string context",
+                Value::str(String::new()),
+            )?;
+            self.reconcile_caller_after_internal_dispatch(caller_code);
+            self.stack.push(resumed);
+            return Ok(());
+        }
         // Stringifying an unhandled Failure throws
         if let Some(err) = self.failure_to_runtime_error_if_unhandled(&val) {
             return Err(err);

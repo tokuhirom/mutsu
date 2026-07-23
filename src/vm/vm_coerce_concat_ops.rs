@@ -184,6 +184,15 @@ impl Interpreter {
     /// `concat_values` / `to_str_context` handle those, including built-in
     /// `.gist`/`.Str`). Shared by infix `~` and the string-comparison ops.
     pub(super) fn coerce_stringy_operand(&mut self, v: Value) -> Result<Value, RuntimeError> {
+        // A Nil operand in a string context (infix `~`, `eq`/`lt`/… string
+        // comparisons) warns and resumes with the empty string, matching
+        // Rakudo — once per Nil operand (so `Nil ~ Nil` warns twice).
+        if v.is_nil() {
+            return self.raise_resumable_warning(
+                "Use of Nil in string context",
+                Value::str(String::new()),
+            );
+        }
         let cn = match v.view() {
             ValueView::Instance { class_name, .. } => class_name.resolve().to_string(),
             ValueView::Package(name) => name.resolve().to_string(),
