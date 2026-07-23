@@ -196,6 +196,28 @@ impl Interpreter {
         false
     }
 
+    /// Whether a user-declared class inherits (transitively) from Array or
+    /// Hash. Exact-name registry lookups only — this runs on the
+    /// missing-element read path, so it must stay cheap for non-container
+    /// classes (one map miss).
+    pub(crate) fn class_inherits_array_or_hash(&self, name: &str) -> bool {
+        if name == "Array" || name == "Hash" {
+            return true;
+        }
+        let parents = {
+            let reg = self.registry();
+            reg.classes.get(name).map(|cd| cd.parents.clone())
+        };
+        if let Some(parents) = parents {
+            for parent in &parents {
+                if self.class_inherits_array_or_hash(parent) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     /// Check if a class has scoped subs declared in its body.
     /// True if `class_name` has recorded class-body `my` lexicals (statics)
     /// stored in `package_lexicals` by `register_class_decl`. A method reading

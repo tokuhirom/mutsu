@@ -1113,21 +1113,21 @@ the backlog.
       per-file repros in [docs/doc-diff-backlog.md](docs/doc-diff-backlog.md) / [docs/doc-diff-sweep/](docs/doc-diff-sweep/).
       What dominates these files is analysed in the "Campaign status" bullet below (deep buckets, not
       one-liners).
-- [ ] **Leftover from the first backlog batch (re-verified 2026-07-22):** the sequence/lazy
+- **Leftover from the first backlog batch — closed 2026-07-23:** the sequence/lazy
       argument truncation (`@foo.prepend: 1,3...11`, `600.polymod(lazy …)`), `.Slip` hole
       rendering, empty-`Array` `pop` → `X::Cannot::Empty`, and lazy `.elems` → `X::Cannot::Lazy`
-      all match raku now. The one remaining divergence: **autoviv-hole `.List` renders `(Any)`
-      where raku gives `Nil`** (`my @a; @a[2]=5; @a.List` → raku `(Nil Nil 5)`; `@a.head` → raku
-      `Nil`). Needs per-element hole tracking through the List view — same territory as §8.5 /
-      [`array-hole-tracking-embedded`]; do not chase as a display-only patch.
+      all match raku, and the last divergence (autoviv-hole `.List` rendering `(Any)` where raku
+      gives `Nil`) was fixed by Nil-vs-Any campaign step 1 (#5256; `@a.cache` returning a List
+      instead of the Array itself fell in the step-4 slice).
 - **Campaign status (paused 2026-07-22).** After many slice sessions the *shallow,
       interp-shaped* wins (missing method aliases, single-behaviour mismatches) are largely
       **exhausted**. A fresh full-corpus re-sweep on the current `main` is the first step to resume —
       note the older `tmp/sweep` report can go stale after a merge, so always re-sweep before trusting
       a survey row. The **remaining findings cluster into deep buckets**, not one-liners:
-  - **Nil-vs-Any identity knot** (§8.5 / §8.44) — drives most of `perl-nutshell.rakudoc`'s
-    `no strict` autoviv examples (`@undeclared.end` → -1, `%h{missing}` → `(Any)`). Do NOT retry
-    as a small slice; see the mapped campaign.
+  - **Nil-vs-Any identity knot — RESOLVED 2026-07-23** (campaign steps 1-4, see
+    [news/2026-07.md](news/2026-07.md)): `Nil.^name`/`Nil.WHAT`/`Nil === Any`/`Nil eqv Any`
+    now match raku and the `types_eqv` crutch is gone. The `perl-nutshell.rakudoc` `no strict`
+    autoviv examples it drove should be re-swept.
   - **Object-hash `WHICH` keys** — `my %h{Any}; %h<42>:exists` must be `False` (allomorph
     `IntStr` key ≠ `Int` key); mutsu returns `True`. QuantHash/object-hash WHICH-keyed storage
     rework. Recurs in `numerics.rakudoc` and `hashmap.rakudoc`.
@@ -1173,77 +1173,13 @@ the backlog.
       fails. Corpus = `Type/X*.rakudoc` + `throws-like`-style assertions. Good QA is "fails
       correctly", not only "works".
 
-### 8.5 Nil-vs-Any identity knot (deferred deep item — fully mapped 2026-07-20)
+### 8.5 Nil-vs-Any identity knot — RESOLVED 2026-07-23
 
-- [ ] **Separate the `Nil` value from the `Any` type object.** Surfaced repeatedly by the §8.1 doc-diff
-      campaign (phasers `END say my $x` → mutsu `Nil` / raku `(Any)`; statement-prefixes `sink for`;
-      objects `.new` uninit attr). The user-visible divergences (all masked today by one crutch):
-      `Nil.^name` = `Any` (want `Nil`); `Nil === Any` / `Any === Nil` = True (want False);
-      uninitialized untyped `my $x` — `$x === Nil` = True and `$x.raku` = `Nil` (want `$x === Any`,
-      `.raku` = `Any`, `say $x` gist `(Any)`).
-- **Investigated + fully reverted 2026-07-20 — there is NO clean safe subset.** The sole reason
-      `Nil === Any` is True is one explicit arm in `src/value/types_eqv.rs`
-      (`(Nil, Package("Any")) => true`), which **masks dozens of "mutsu stored `Nil` where `Any` was
-      meant"** sites (attribute defaults, container/`.List` holes, `$_` topic, some special-var defaults).
-      Removing it cascades to **5 t/ files**; making an uninitialized `my $x` hold `Any` cascades to **6
-      t/ files + an index-underflow panic** (both the store-reset and the parser-`BareWord("Any")`
-      approaches), because **`my $x`-defaults-to-`Nil` is load-bearing across the compiler** (shadow-slot
-      capture, block-inline, do-expr value, redeclaration no-op — 6+ `Expr::Literal(nil)` special-cases)
-      **and the VM closure-cell machinery**. The three couplings are proven; `Nil.^name`="Nil" alone even
-      regresses uninit `.^name`. This is genuinely a dedicated multi-session campaign (same hard territory
-      as the §6 lexical-slot / dual-store work; #4822 was closed twice on it).
-- **The full cascade map, the dependency-ordered campaign steps, and the guardrails** (esp.
-      `roast/S02-types/nil.t` — 67 tests, whitelisted, the authoritative spec; **always run it with
-      `MUTSU_FUDGE=1`** or its `#?rakudo todo` tests false-fail) are recorded in the memory note
-      `project-nil-any-identity-knot`. Read it before any re-attempt; do **not** re-attempt as a small slice.
-- **Campaign step 1 landed 2026-07-23** (#5256): `.List` materializes array holes as literal
-      `Nil` (via the new canonical `ArrayData::hole_at` predicate; `is default` does not change
-      `.List` — only `.Slip`), argless `.head` reads the store raw (hole → `Nil`), and `=:=`
-      treats only a compile-time *literal* `Nil` operand as the Nil singleton (two reads that both
-      yield Nil stay non-identical — S03-operators/identity.t 34/37). This decouples
-      `roast/S32-array/delete.t` subtest 33 from the eqv crutch. Pin: `t/nil-list-holes.t`.
-- **Campaign step 2 landed 2026-07-23** (branch `nil-any-step2`) — every "stored Nil should be
-      Any" site found by disabling the eqv crutch locally and sweeping the full `t/` suite:
-      explicit `my $x = Nil` resets to Any (statement and expression position; the synthesized
-      no-init default keeps Nil — still load-bearing), `$_` unset-topic reads as Any (an explicitly
-      Nil-topicalized `$_` stays Nil), `$/`/`$!` `.VAR.default` report Nil, absent-key/index
-      `:delete` returns the hole type object (Any / element type) on all paths, and an unset
-      untyped scalar attribute seeds the Any type object in both constructors (post-BUILD required
-      checks treat that seed as unset). Four local tests that encoded the wrong (crutch-masked)
-      semantics were corrected against reference raku: `t/array-slice-oob.t` (Array OOB slices pad
-      Any; List/Seq pad Nil), `t/multidim-indexing.t` 6 (shaped OOB delete throws — the old
-      expectation fails under real raku), `t/vm-basic.t` 188 (`try`'s Nil resets the container to
-      Any). **Key data point: the full `t/` suite (2312 files) passes with the crutch disabled.**
-- **Campaign step 3 landed 2026-07-23** (branch `nil-any-step3`) — uninit `my $x` now seeds the
-      **Any type object**. The winning approach was neither of the two that failed in the 2026-07-20
-      investigation (parser-BareWord / store-reset): the AST keeps the synthesized `Literal(Nil)`
-      (so all 6+ compiler default-init recognition sites — redeclaration no-op, shadow-slot,
-      block-inline, do-expr — stay intact) and the **compiler substitutes the Any type object only
-      at RHS-emission time**, in the three emit sites (`compiler/stmt.rs`, `expr_block.rs`,
-      `helpers_block_inline.rs`; shared predicate `uninit_untyped_scalar_defaults_to_any`).
-      `$/`/`$!` stay Nil; `is default(...)`/`:=`-bind/explicit-init decls keep their paths. VM
-      knock-ons fixed in the same slice: (a) `=:=` — the Package-singleton shortcuts must not
-      treat two Any-holding container reads as identical (`ContainerEqNamed` excludes "Any";
-      `is_value_non_reference` includes the Any type object); (b) closure-capture boxing
-      (`box_captured_lexicals` / `box_decl_local_cell`) boxes the Any seed into a shared cell
-      exactly like the old Nil seed (cross-thread reassignment visibility); (c) the `CallFunc`
-      interpreter-carrier branch gained the same carrier writeback `ExecCall` already had (an
-      `EVAL` under `try` writes caller lexicals by name; the Nil-slot env fallback used to mask
-      the missing writeback); (d) `(my $x) does Int` stays `X::Does::TypeObject` (Any/Mu are
-      type objects even though they sit in the class registry); (e) `.Hash` on the Any type
-      object is `{}` like the old Nil arm. Pin: `t/uninit-scalar-any.t` (18 tests, raku-verified).
-      **Full `t/` (2321 files, 21932 tests) passes with the crutch disabled.**
-- **Remaining steps:** 4 (remove the eqv crutch LAST; also lets `Nil.^name`/`Nil === Any`
-      divergences close — nil.t/identity.t/delete.t and full `t/` already pass crutch-off as of
-      step 3), then re-check `.cache` on a holey Array (returns a List today, raku returns the
-      Array itself — noticed during step 1, unrelated).
-- **Step-4 prerequisite found 2026-07-23:** an **unpassed optional parameter** (`sub w($p?)`)
-      still seeds Nil — visible as `$p.raku` = `Nil` (raku: `Any`; pointy blocks: `Mu`). `===`/
-      `.^name` are crutch-masked today, so step 4 would surface it. Param binding is spread
-      across the light/typed/named/method dispatch paths, so it is its own slice.
-- **Cost/benefit** (for the remaining step 4): payoff is closing the `Nil.^name`/`Nil === Any`
-      divergences and deleting the last band-aid. Related: §6 (dual-store / lexical slot),
-      [`array-hole-tracking-embedded`], [ADR-0001] container-repr.
+- The four-step campaign landed in full (#5256 → #5264 → #5273/#5280 → step 4); the
+  `types_eqv` `(Nil, Package("Any"))` crutch is deleted and `Nil.^name`/`Nil.WHAT`/
+  `Nil === Any`/`Nil eqv Any`/`Nil.gist` all match raku. Full history, mechanisms, and
+  the per-step knock-on lists are recorded in [news/2026-07.md](news/2026-07.md)
+  (2026-07-23 entry) and the memory note `project-nil-any-identity-knot`.
 
 ### 8.6 `.WHO`/`.HOW` render without their metamodel detail — mostly done; internals leftover
 

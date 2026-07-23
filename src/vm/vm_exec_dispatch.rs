@@ -503,6 +503,11 @@ impl Interpreter {
                             // a topic explicitly set to Nil (e.g. `Xorelse`
                             // topicalizing a Nil operand) must stay Nil.
                             Ok(Value::package(Symbol::intern("Any")))
+                        } else if name.starts_with("__ANON_STATE_") {
+                            // An anonymous scalar (`$`) is a declared but
+                            // uninitialized scalar: it reads as the Any type
+                            // object, like `my $x` (S03-operators/context.t).
+                            Ok(Value::package(Symbol::intern("Any")))
                         } else {
                             Ok(Value::NIL)
                         }

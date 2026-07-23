@@ -330,6 +330,15 @@ impl Interpreter {
             // (`(1,2,3)[11]`, `()[0]`) is out-of-range → `Nil`, so only a real
             // `Array` (`[...]`/`my @a`) gets the `Any` default.
             Value::package(Symbol::intern("Any"))
+        } else if let ValueView::Instance { class_name, .. } = target.view() {
+            // A user subclass of Array/Hash (`class A is Array {}`) defaults
+            // its missing elements to `Any` like its base container does
+            // (S12-introspection/WHAT.t: `A.new[0].WHAT === Any`).
+            if self.class_inherits_array_or_hash(&class_name.resolve()) {
+                Value::package(Symbol::intern("Any"))
+            } else {
+                Value::NIL
+            }
         } else {
             Value::NIL
         }
