@@ -57,15 +57,18 @@ pub(super) fn make_method_not_found_error(
 ) -> RuntimeError {
     use super::did_you_mean::{known_methods_for_type, suggest_method};
 
+    // Display the user-facing type name (`<anon|N>` for anonymous
+    // class/grammar/role); registry lookups below keep the raw name.
+    let display_type = crate::value::user_facing_type_name(type_name);
     let mut msg = if private {
         format!(
             "No such private method '{}' for invocant of type '{}'",
-            method_name, type_name
+            method_name, display_type
         )
     } else {
         format!(
             "No such method '{}' for invocant of type '{}'",
-            method_name, type_name
+            method_name, display_type
         )
     };
 
@@ -79,7 +82,7 @@ pub(super) fn make_method_not_found_error(
 
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("method".to_string(), Value::str(method_name.to_string()));
-    attrs.insert("typename".to_string(), Value::str(type_name.to_string()));
+    attrs.insert("typename".to_string(), Value::str(display_type.to_string()));
     attrs.insert("private".to_string(), Value::truth(private));
     attrs.insert("message".to_string(), Value::str(msg.clone()));
     let ex = Value::make_instance(Symbol::intern("X::Method::NotFound"), attrs);

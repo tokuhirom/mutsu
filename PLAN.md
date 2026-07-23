@@ -1194,11 +1194,10 @@ the backlog.
       any undeclared type/value (bare `package` still throws — PackageHOW has no
       ver/auth/api); `.^isa` returns the nqp-boolean Int 1/0 like Rakudo, not Bool.
       Pin: `t/metamodel-shortname-ver-auth.t`.
-- [ ] **Leftover (doable, small):** anonymous class display name — mutsu names anon classes
-      `__ANON_CLASS_0__` where raku shows `<anon|1>` (visible via `.^name`, `.^shortname`,
-      `say (class :: {})`). The internal name is also the registry key, so the fix is a
-      display-layer mapping (`user_facing_type_name` returns `&str` today and would need to
-      allocate) or renaming the generated key — check `is_internal_anon_type_name` callers.
+- [x] **Anonymous class display name** — done 2026-07-23: `__ANON_{CLASS,GRAMMAR,ROLE}_N__`
+      now display as Rakudo's `<anon|N+1>` via `user_facing_type_name` (returns `Cow` now),
+      covering `.^name`/`.^shortname`/gist/raku/say/`.WHICH`/X::Method::NotFound; anonymous
+      enums keep the empty display name. Pin: `t/anon-class-display-name.t`.
 - [ ] **Leftover (Rakudo-metamodel-internal, cosmetic):** the *content* of a builtin type's
       stash — raku's `Array.WHO` lists implementation subclasses
       `{:Element(Array::Element), :Shaped(Array::Shaped), ...}` that do not exist in mutsu —
