@@ -1,12 +1,28 @@
 use super::*;
 
 impl Interpreter {
-    pub(super) fn exec_make_array_op(&mut self, n: u32, is_real_array: bool) {
+    pub(super) fn exec_make_array_op(&mut self, code: &CompiledCode, n: u32, is_real_array: bool) {
         let n = n as usize;
         let start = self.stack.len() - n;
         let raw: Vec<Value> = self.stack.drain(start..).collect();
         let mut elems = Vec::with_capacity(raw.len());
         for val in raw {
+            // A `WrapVarRef`-tagged scalar variable element of a List (`($a, $b)`):
+            // store the variable's shared `ContainerRef` cell so the List aliases
+            // `$a`'s container and a later mutation is visible when the List is
+            // read. A ContainerRef is a scalar item, so it never flattens. (Only
+            // Lists carry this tag -- bracket arrays `[...]` decontainerize.)
+            if let ValueView::VarRef {
+                name: source_name,
+                value: inner,
+                ..
+            } = val.view()
+            {
+                let source_name = source_name.resolve();
+                let inner = inner.clone();
+                elems.push(self.capture_var_cell(code, &source_name, inner));
+                continue;
+            }
             // Force lazy IO lines into eager arrays
             let val = if matches!(val.view(), ValueView::LazyIoLines { .. }) {
                 match self.force_if_lazy_io_lines(val) {

@@ -236,7 +236,21 @@ impl Compiler {
                 self.with_escape(true, |c| {
                     for elem in elems {
                         c.compile_expr(elem);
-                        if Self::expr_is_scalar_var(elem) {
+                        // A List (`($a, $b)`) holds the *container* of each scalar
+                        // variable element, not a snapshot of its value: a later
+                        // mutation of `$a` is visible when the List is read
+                        // (`my $l = ($a, $a); $a = 99; say $l` -> `(99 99)`; see
+                        // traps.rakudoc "list-element container aliasing"). Tag the
+                        // element with its source name via `WrapVarRef`; `MakeArray`
+                        // boxes the named local into a shared `ContainerRef` cell.
+                        // Consumers that decontainerize (`@arr = (...)`, param
+                        // binding, single-scalar push) deref the cell to its value.
+                        if let Expr::Var(name) = elem
+                            && !name.contains("::")
+                        {
+                            let name_idx = c.code.add_constant(Value::str(name.clone()));
+                            c.code.emit(OpCode::WrapVarRef(name_idx));
+                        } else if Self::expr_is_scalar_var(elem) {
                             c.code.emit(OpCode::Itemize);
                         }
                     }
