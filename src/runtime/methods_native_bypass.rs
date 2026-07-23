@@ -33,6 +33,7 @@ impl Interpreter {
                 | "archetypes"
                 | "nominalize"
                 | "name"
+                | "shortname"
                 | "set_name"
                 | "ver"
                 | "auth"
