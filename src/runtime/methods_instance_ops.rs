@@ -494,8 +494,13 @@ impl Interpreter {
                 return Ok(Value::truth(result));
             }
 
-            // IO::Spec methods — delegate to Package-based handler
-            if class_name == "IO::Spec" || class_name.resolve().starts_with("IO::Spec::") {
+            // IO::Spec methods — delegate to the Package-based handler (the
+            // path methods are class methods). Repr methods stay on the
+            // instance: `IO::Spec::Unix.new.gist` is `IO::Spec::Unix.new`
+            // (the generic instance repr), not the type object's `(Unix)`.
+            if (class_name == "IO::Spec" || class_name.resolve().starts_with("IO::Spec::"))
+                && !matches!(method, "gist" | "raku" | "perl" | "Str" | "Stringy")
+            {
                 let pkg = Value::package(class_name);
                 return self.call_method_with_values(pkg, method, args);
             }

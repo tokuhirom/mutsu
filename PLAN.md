@@ -1359,14 +1359,16 @@ and `[Z]`-reduction-returns-a-Seq landed 2026-07-22 (pin `t/repr-residues-2.t`);
       `t/proc-gist-not-exitcode.t`. (The *run*-proc full form with the cyclic
       `(my \Proc_... = ...)` backref through IO::Pipe remains a plain instance form — a deep
       IO::Pipe-repr + backref-naming rabbit hole, out of scope.)
-- [ ] **`IO::Spec::Unix.new.raku` renders the type-object form `IO::Spec::Unix`** and its
-      gist is `(Unix)`; raku renders `IO::Spec::Unix.new` for both. Traced 2026-07-22 as
-      far as: the instance never reaches the generic attribute walk in
-      `methods_instance_ops` (which would render `IO::Spec::Unix.new` correctly) — its
-      gist/raku land in `dispatch_instance_and_fallback`'s tail fallback arms
-      (`_ => to_string_value`), and `.Str` of the instance is empty while `.raku` is the
-      bare class name, so an earlier arm intercepts. Needs a dispatch trace before fixing;
-      cosmetic, low value.
+- [x] **`IO::Spec::Unix.new.raku`/`.gist` rendered the type-object form** — fixed 2026-07-23.
+      The interceptor was the IO::Spec instance→Package method delegation in
+      `methods_instance_ops.rs` (path methods are class methods, so every method call on an
+      IO::Spec instance swapped the invocant for the type object — including gist/raku/Str).
+      Repr methods now stay on the instance and reach the generic attribute walk
+      (`IO::Spec::Unix.new`). Bonus found while testing: `catdir`/`catfile` are slurpy in
+      Rakudo, so a passed list flattens (`$*SPEC.catdir(<a b>)` is `a/b`, was `a b`) —
+      now routed through `flatten_into_slurpy`. `.Str` keeps the generic
+      `IO::Spec::Unix()` form (the Rakudo `<addr>` form is a global divergence, out of
+      scope). Pin: `t/io-spec-instance-repr.t`.
 - [x] **`IO::Path::Parts.raku`/`.gist` drop the constructor arguments** — fixed 2026-07-23.
       Unlike Proc, IO::Path::Parts is a Positional in Rakudo, so its `.raku`/`.gist` render the
       three parts *positionally* (`IO::Path::Parts.new("C:","/some/dir","foo.txt")`, each via its

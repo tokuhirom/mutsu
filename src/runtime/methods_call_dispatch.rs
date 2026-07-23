@@ -1324,7 +1324,11 @@ impl Interpreter {
                     }
                     "updir" => return Ok(Value::str_from("..")),
                     "catdir" => {
-                        let parts: Vec<String> = args.iter().map(|a| a.to_string_value()).collect();
+                        // catdir/catfile are slurpy (`*@parts`): a passed list
+                        // (`$*SPEC.catdir(<a b>)`) flattens into its elements.
+                        let mut flat = Vec::new();
+                        crate::runtime::types::flatten_into_slurpy(&args, &mut flat);
+                        let parts: Vec<String> = flat.iter().map(|a| a.to_string_value()).collect();
                         if parts.is_empty() {
                             return Ok(Value::str_from(""));
                         }
@@ -1337,7 +1341,9 @@ impl Interpreter {
                         return Ok(Value::str(result));
                     }
                     "catfile" => {
-                        let parts: Vec<String> = args.iter().map(|a| a.to_string_value()).collect();
+                        let mut flat = Vec::new();
+                        crate::runtime::types::flatten_into_slurpy(&args, &mut flat);
+                        let parts: Vec<String> = flat.iter().map(|a| a.to_string_value()).collect();
                         if is_win32 {
                             return Ok(Value::str(Self::win32_catfile(&parts)));
                         }
