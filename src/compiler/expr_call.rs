@@ -854,6 +854,36 @@ impl Compiler {
                 self.compile_expr(&call);
             }
         }
+        // Rewrite push(my @arr, val...)/unshift/append/prepend on an INLINE array
+        // declaration -> declare `@arr` in the current scope, then dispatch the
+        // method on it. Without this the listop falls through to the generic call,
+        // which pushes into a throwaway copy of the fresh array and never writes
+        // back, leaving `@arr` empty (`push my @u, 10; say @u` gave `[]`).
+        else if args.len() >= 2
+            && matches!(
+                name.resolve().as_str(),
+                "push" | "unshift" | "append" | "prepend"
+            )
+            && matches!(&args[0], Expr::DoStmt(s)
+                if matches!(s.as_ref(), Stmt::VarDecl { name: vn, .. } if vn.starts_with('@')))
+        {
+            if let Expr::DoStmt(stmt) = &args[0]
+                && let Stmt::VarDecl { name: vn, .. } = stmt.as_ref()
+            {
+                // Declare `@arr` in the current scope (runs any initializer too),
+                // then behave exactly like `push(@arr, val...)`.
+                self.compile_stmt(stmt);
+                let target = Expr::ArrayVar(vn.trim_start_matches('@').to_string());
+                let method_call = Expr::MethodCall {
+                    target: Box::new(target),
+                    name: *name,
+                    args: args[1..].to_vec(),
+                    modifier: None,
+                    quoted: false,
+                };
+                self.compile_expr(&method_call);
+            }
+        }
         // Rewrite push(@arr, val...)/unshift(@arr, val...)/append/prepend/splice -> @arr.method(val...)
         // splice needs only 1 arg (the array); others need at least 2
         else if !args.is_empty()

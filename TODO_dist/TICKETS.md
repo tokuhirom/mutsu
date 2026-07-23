@@ -641,12 +641,23 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 - dists (each its own root cause; triage individually before claiming, confirm the
   raku `-I lib` baseline first): ~~Attribute::Predicate~~ (FIXED — see Done),
   File::Ignore,
-  IO::Path::AutoDecompress, Math::Angle, Math::PascalTriangle,
+  IO::Path::AutoDecompress, ~~Math::Angle~~ (FIXED — see Done), Math::PascalTriangle,
   ~~Statistics::LinearRegression~~ (FIXED — see Done), String::Rotate,
   Text::CodeProcessing, Trait::IO, WriteOnceHash, `are`, `sortuk`,
   Tree::Binary::PrettyTree (required role method not seen as implemented).
 - These `test_die` on the current binary but were not individually reproduced.
   Split off a dedicated ticket when you pick one up.
+- Triaged 2026-07-23 (deferred, each deep — own root cause):
+  - **String::Rotate**: an imported `sub rotate` must override the builtin `rotate`
+    listop (mutsu's builtin shadows it in all call forms) — same class as T-054
+    (P5push) builtin-vs-imported-sub dispatch. DEFER.
+  - **WriteOnceHash**: `self.BIND-KEY`/`self.ASSIGN-KEY`/`self.DELETE-KEY` don't
+    dispatch on a fresh `class ... is Hash` instance (Array-subclass `self.push`
+    is the same no-op) — deep container-subclass-instance self-mutation gap. DEFER
+    (memory `project_container_subclass_instance_self_mutation`).
+  - **`are`**: pure-nqp module (`nqp::if`/`eqaddr`/`until`/`getattr`/`istype`). DEFER.
+  - **Trait::IO**: `my $fh does auto-close` variable trait with a scope-exit phaser
+    that calls `.close`. DEFER.
 
 ## Claimed
 
@@ -919,3 +930,15 @@ _(move tickets here with `[claim: <branch>]` when you start)_
      attribute-trait parser now consumes a `<...>` word-quote as the trait
      argument (single word → Str, multiple → list) (`has_decl.rs`).
   - Pin: `t/attribute-trait-adds-method.t`.
+
+- **T-057 (Math::Angle)** (PR `fix-push-inline-array-decl`) — test_die → 77/77.
+  One general compiler bug: `push my @arr, VALUE` (an inline `my @arr` declaration
+  as the first argument of the `push`/`unshift`/`append`/`prepend` listop) fell
+  through to the generic function-call path, which pushed into a throwaway copy of
+  the freshly declared array and never wrote back — `@arr` stayed empty and a later
+  `@arr[0]` read returned `Any`. The listop→method rewrite only handled a plain
+  `ArrayVar`/`Var`/`Index` first argument; added an `Expr::DoStmt(VarDecl @…)`
+  branch that declares the array in the current scope (`compile_stmt`, initializer
+  preserved) then dispatches `@arr.push(…)` (`compiler/expr_call.rs`). Math::Angle's
+  `sub sexagesimal` does `push my @units, $!angle × rad2deg`. Pin:
+  `t/push-inline-array-decl.t`.
