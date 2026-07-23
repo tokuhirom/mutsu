@@ -1423,11 +1423,21 @@ impl Interpreter {
                             self.stack.push(Value::real_array(arr));
                             return Ok(());
                         }
-                        "defined" | "Bool" | "so" | "not" | "gist" | "Str" | "raku" | "perl"
-                        | "WHAT" | "WHICH" | "WHERE" | "HOW" | "WHY" | "VAR" | "DEFINITE"
-                        | "isa" | "does" | "can" | "^name" | "^mro" | "^pun" | "new" | "bless"
+                        "defined" | "Bool" | "so" | "not" | "gist" | "raku" | "perl" | "WHAT"
+                        | "WHICH" | "WHERE" | "HOW" | "WHY" | "VAR" | "DEFINITE" | "isa"
+                        | "does" | "can" | "^name" | "^mro" | "^pun" | "new" | "bless"
                         | "clone" | "item" | "self" | "sink" | "pending" => {
                             // Fall through to normal dispatch
+                        }
+                        // String coercion on Nil warns ("Use of Nil in string
+                        // context") and resumes with the empty string. (`.gist`
+                        // and `.raku`, above, stay in the fall-through list — they
+                        // render "Nil" and do NOT warn.)
+                        "Str" | "Stringy" if args.is_empty() => {
+                            return Err(RuntimeError::warn_signal_with_resume(
+                                "Use of Nil in string context".to_string(),
+                                Value::str(String::new()),
+                            ));
                         }
                         // List/iteration methods inherited from Any: Nil behaves
                         // like a single undefined item (e.g. `Nil.grep(*.defined)`
