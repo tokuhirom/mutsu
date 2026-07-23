@@ -611,6 +611,20 @@ impl Interpreter {
                         }
                     };
                     let saved = self.env.clone();
+                    // Bind every sibling named parameter supplied in this call so a
+                    // `where` constraint on this param can reference the others, e.g.
+                    // `:$line!, :$col! where $line == *`. Positional params get this
+                    // for free (each is bound into env before later where-checks);
+                    // named params are only reached here, so bind them explicitly.
+                    for sib in param_defs.iter().filter(|s| s.named && !s.name.is_empty()) {
+                        let sib_bare = sib
+                            .name
+                            .trim_start_matches(|c: char| "$@%&".contains(c))
+                            .trim_start_matches(['!', '.']);
+                        if let Some((_, v)) = named_args.iter().find(|(k, _)| k == sib_bare) {
+                            self.env.insert(sib.name.clone(), v.clone());
+                        }
+                    }
                     self.env.insert("_".to_string(), val.clone());
                     // Bind the parameter name so `where {$param ...}` can reference
                     // it during dispatch matching (mirrors the positional path).
