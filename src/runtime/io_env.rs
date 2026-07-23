@@ -211,6 +211,23 @@ impl Interpreter {
         Ok(resumed)
     }
 
+    /// Emit rakudo's "Use of uninitialized value of type X in numeric context"
+    /// warning for a bare type object used in numeric context, and resume with
+    /// integer `0` (Rakudo's `Mu.Numeric` coercion). The numeric wording has no
+    /// `Methods .^name...` suffix (that is string-context only). Like its string
+    /// sibling, the warning handler can run user code that mutates a
+    /// captured-outer caller lexical, so its writeback is reconciled here.
+    pub(crate) fn warn_type_object_numeric_context(
+        &mut self,
+        type_name: &str,
+    ) -> Result<Value, RuntimeError> {
+        let msg = format!("Use of uninitialized value of type {type_name} in numeric context");
+        let caller_code = self.current_code;
+        let resumed = self.raise_resumable_warning(&msg, Value::int(0))?;
+        self.reconcile_caller_after_internal_dispatch(caller_code);
+        Ok(resumed)
+    }
+
     /// Coerce a value used as a plain (`Str`-keyed) hash subscript key into its
     /// string key, matching Rakudo. A bare type object stringifies to the empty
     /// string with the "uninitialized value of type X in string context"
