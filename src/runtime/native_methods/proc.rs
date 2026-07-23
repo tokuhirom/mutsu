@@ -294,7 +294,13 @@ impl Interpreter {
         }
         match method {
             "exitcode" => attributes.get("exitcode").cloned().unwrap_or(Value::NIL),
-            "signal" => attributes.get("signal").cloned().unwrap_or(Value::int(0)),
+            // An un-run `Proc.new` seeds `signal` with its `Any` type-object
+            // default (so `.raku` renders `signal => Any`); the getter itself
+            // reports the concrete signal number, defaulting to 0 when unset.
+            "signal" => match attributes.get("signal").map(Value::view) {
+                Some(ValueView::Int(_)) => attributes.get("signal").cloned().unwrap(),
+                _ => Value::int(0),
+            },
             "command" => {
                 let cmd = attributes
                     .get("command")
@@ -316,10 +322,12 @@ impl Interpreter {
             "err" => attributes.get("err").cloned().unwrap_or(Value::NIL),
             "out" => attributes.get("out").cloned().unwrap_or(Value::NIL),
             "in" => attributes.get("in").cloned().unwrap_or(Value::NIL),
-            "Numeric" | "Int" => attributes
-                .get("exitcode")
-                .cloned()
-                .unwrap_or(Value::int(-1)),
+            // The `exitcode` slot carries a `Nil` default on an un-run proc; the
+            // numeric coercion reports -1 unless a concrete exit code was set.
+            "Numeric" | "Int" => match attributes.get("exitcode").map(Value::view) {
+                Some(ValueView::Int(_)) => attributes.get("exitcode").cloned().unwrap(),
+                _ => Value::int(-1),
+            },
             "Bool" => {
                 let exitcode = match attributes.get("exitcode").map(Value::view) {
                     Some(ValueView::Int(c)) => c,

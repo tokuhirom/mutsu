@@ -391,11 +391,32 @@ impl Interpreter {
                 class_level_attrs: HashMap::new(),
             },
         );
-        classes.insert(
-            "Proc".to_string(),
+        classes.insert("Proc".to_string(), {
+            // Proc's public attributes, registered so `.raku`/`.gist` renders
+            // the full Rakudo form. An un-run `Proc.new` seeds each with its
+            // type-object / value default: `in`/`out`/`err` => IO::Pipe,
+            // os-error => Str, signal => Any, exitcode/pid => Nil, command => [].
+            let proc_attr = |name: &str, sigil: char, default: Option<Expr>| -> ClassAttributeDef {
+                (name.to_string(), true, default, false, None, sigil, None)
+            };
+            let nil_default = || Some(Expr::Literal(Value::NIL));
+            let mut attribute_types = HashMap::new();
+            attribute_types.insert("in".to_string(), "IO::Pipe".to_string());
+            attribute_types.insert("out".to_string(), "IO::Pipe".to_string());
+            attribute_types.insert("err".to_string(), "IO::Pipe".to_string());
+            attribute_types.insert("os-error".to_string(), "Str".to_string());
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: vec![
+                    proc_attr("in", '$', None),
+                    proc_attr("out", '$', None),
+                    proc_attr("err", '$', None),
+                    proc_attr("os-error", '$', None),
+                    proc_attr("exitcode", '$', nil_default()),
+                    proc_attr("signal", '$', None),
+                    proc_attr("pid", '$', nil_default()),
+                    proc_attr("command", '@', None),
+                ],
                 methods: HashMap::new(),
                 // `Str`/`gist` are NOT native: Rakudo's Proc has no stringifier
                 // of its own, so the default instance repr applies (`Proc.new`),
@@ -408,14 +429,14 @@ impl Interpreter {
                 .map(|s| s.to_string())
                 .collect(),
                 mro: sym_mro(&["Proc"]),
-                attribute_types: HashMap::new(),
+                attribute_types,
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
                 wildcard_handles: Vec::new(),
                 alias_attributes: HashSet::new(),
                 class_level_attrs: HashMap::new(),
-            },
-        );
+            }
+        });
         classes.insert(
             "Tap".to_string(),
             ClassDef {
