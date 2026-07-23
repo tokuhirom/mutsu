@@ -374,13 +374,8 @@ impl Interpreter {
             return;
         }
         if name.strip_suffix("::") == Some("OUR") {
-            let mut entries: HashMap<String, Value> = HashMap::new();
-            for (key, val) in self.our_vars_iter() {
-                let display_key = Self::add_sigil_prefix(key);
-                entries.insert(display_key, val.clone());
-            }
-            self.stack
-                .push(Value::hash_with_data(Value::hash_arc(entries)));
+            let stash = self.our_pseudo_stash();
+            self.stack.push(stash);
             return;
         }
         if let Some(package) = name.strip_suffix("::")
@@ -427,12 +422,7 @@ impl Interpreter {
             return Value::hash_with_data(Value::hash_arc(entries));
         }
         if name == "OUR" {
-            let mut entries: HashMap<String, Value> = HashMap::new();
-            for (key, val) in self.our_vars_iter() {
-                let display_key = Self::add_sigil_prefix(key);
-                entries.insert(display_key, val.clone());
-            }
-            return Value::hash_with_data(Value::hash_arc(entries));
+            return self.our_pseudo_stash();
         }
         if name != "MY" && name != "LEXICAL" {
             return loan_env!(self, package_stash_value(name));
@@ -457,6 +447,21 @@ impl Interpreter {
 
     /// Add a sigil prefix to a variable name for display in pseudo-stash.
     /// Names starting with @, %, & already have sigils. Others get $ prefix.
+    /// Build the `OUR::` pseudo-stash scoped to the current package. `OUR::` is
+    /// the current package's own stash: at file scope (`current_package ==
+    /// GLOBAL`) the GLOBAL package, inside `package A {}` the `A` package. So it
+    /// exposes that package's `our` variables AND its sub-packages/classes (the
+    /// latter lets `::('OUR')::('A')::('$x')` indirect through a nested package),
+    /// while a GLOBAL `our` stays invisible from a nested package's `OUR::.{}`
+    /// and vice versa (roast pseudo-6c OUR block). Built on `package_stash_value`
+    /// (which already scopes members by package) with the current package's
+    /// scoped `our` variables overlaid so a var stored only in the `our` store
+    /// (not mirrored in env) is still present.
+    pub(crate) fn our_pseudo_stash(&self) -> Value {
+        let cur = self.current_package();
+        loan_env!(self, package_stash_value(&cur))
+    }
+
     pub(crate) fn add_sigil_prefix(name: &str) -> String {
         if name.starts_with('$')
             || name.starts_with('@')
