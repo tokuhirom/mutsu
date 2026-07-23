@@ -408,7 +408,11 @@ impl Interpreter {
         // parameter binds -- the args are also pre-folded into `attributes` above
         // for the common no-explicit-BUILD case.
         if plan.has_tweak {
-            self.run_tweak_phase(class_name, &inv, &args)?;
+            match self.run_tweak_phase(class_name, &inv, &args)? {
+                Ok(()) => {}
+                // `fail` inside TWEAK: return the Failure instead of the instance.
+                Err(failure) => return Ok(failure),
+            }
         }
         Ok(inv)
     }
@@ -575,14 +579,15 @@ impl Interpreter {
     /// ordering/dispatch instead of duplicating it (Track A ③ ctor: a class whose
     /// only non-simple feature is TWEAK is native-default constructible, then
     /// runs TWEAK here).
+    #[allow(clippy::type_complexity)]
     pub(crate) fn run_tweak_phase(
         &mut self,
         class_name: Symbol,
         inv: &Value,
         tweak_args: &[Value],
-    ) -> Result<(), RuntimeError> {
+    ) -> Result<Result<(), Value>, RuntimeError> {
         let Some(cell) = Self::self_instance_attrs(inv) else {
-            return Ok(());
+            return Ok(Ok(()));
         };
         let mut probe_attrs = cell.to_map();
         let refresh_probe = probe_attrs
@@ -642,7 +647,7 @@ impl Interpreter {
                 if refresh_probe {
                     probe_attrs = cell.to_map();
                 }
-                let (_v, updated) = self.run_resolved_method_celled(
+                match self.run_resolved_method_celled(
                     &cn,
                     &role_name,
                     "TWEAK",
@@ -650,9 +655,18 @@ impl Interpreter {
                     &probe_attrs,
                     tweak_args.to_vec(),
                     Some(inv.clone()),
-                )?;
-                if let Some(m) = updated {
-                    cell.commit_attrs(m);
+                ) {
+                    Ok((_v, updated)) => {
+                        if let Some(m) = updated {
+                            cell.commit_attrs(m);
+                        }
+                    }
+                    // `fail` inside TWEAK yields a Failure `.new` returns, not an
+                    // error (Raku: the Failure only throws when the object is used).
+                    Err(err) if err.is_fail() => {
+                        return Ok(Err(self.fail_error_to_failure_value(&err)));
+                    }
+                    Err(err) => return Err(err),
                 }
             }
             // Call the class's TWEAK if it has one that wasn't already handled
@@ -672,19 +686,26 @@ impl Interpreter {
                 if refresh_probe {
                     probe_attrs = cell.to_map();
                 }
-                let (_v, updated) = self.run_instance_method_celled(
+                match self.run_instance_method_celled(
                     mro_class,
                     &probe_attrs,
                     "TWEAK",
                     tweak_args.to_vec(),
                     Some(inv.clone()),
-                )?;
-                if let Some(m) = updated {
-                    cell.commit_attrs(m);
+                ) {
+                    Ok((_v, updated)) => {
+                        if let Some(m) = updated {
+                            cell.commit_attrs(m);
+                        }
+                    }
+                    Err(err) if err.is_fail() => {
+                        return Ok(Err(self.fail_error_to_failure_value(&err)));
+                    }
+                    Err(err) => return Err(err),
                 }
             }
         }
-        Ok(())
+        Ok(Ok(()))
     }
 
     /// Run the BUILD phase of construction: invoke every BUILD submethod (own and

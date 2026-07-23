@@ -285,8 +285,11 @@ impl Interpreter {
                 crate::builtins::arith_add(left.clone(), right.clone())
             }
             "-" => Ok(crate::builtins::arith_sub(left.clone(), right.clone())),
-            "*" => Ok(crate::builtins::arith_mul(left.clone(), right.clone())),
-            "/" => crate::builtins::arith_div(left.clone(), right.clone()),
+            // `×` (U+00D7) / `÷` (U+00F7) are the Unicode multiply/divide
+            // operators; they fall back to the same arithmetic as `*` / `/` when a
+            // user `infix:<×>`/`infix:<÷>` candidate does not match the operands.
+            "*" | "\u{00D7}" => Ok(crate::builtins::arith_mul(left.clone(), right.clone())),
+            "/" | "\u{00F7}" => crate::builtins::arith_div(left.clone(), right.clone()),
             "div" => {
                 let divisor = to_int(right);
                 if divisor == 0 {

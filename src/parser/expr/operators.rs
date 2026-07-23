@@ -236,8 +236,10 @@ fn word_infix_at(r: &str, kw: &str) -> bool {
 }
 
 pub(super) fn parse_multiplicative_op(r: &str) -> Option<(MultiplicativeOp, usize)> {
-    // Unicode: multiply (U+00D7) -- skip if user-defined infix exists, and (like
-    // the ASCII `*` below) leave `×=` for the compound-assignment parser.
+    // Unicode: multiply (U+00D7) -- skip if user-defined infix exists (the caller
+    // then parses it as a multiplicative-precedence `infix:<×>` call so the user
+    // candidate dispatches), and (like the ASCII `*` below) leave `×=` for the
+    // compound-assignment parser.
     if r.starts_with('\u{00D7}')
         && !r.starts_with("\u{00D7}=")
         && !super::super::stmt::simple::is_user_defined_infix("\u{00D7}")
