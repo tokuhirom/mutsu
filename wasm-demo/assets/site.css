@@ -497,7 +497,7 @@ details.expected pre {
 }
 
 /* ------------------------------------------------------------------ *
- * Playground
+ * Playground and REPL
  * ------------------------------------------------------------------ */
 
 .container {
@@ -510,6 +510,17 @@ details.expected pre {
   flex-direction: column;
   gap: 0.8rem;
 }
+
+.page-head { margin-top: 0.6rem; }
+.page-head h1 { font-size: 1.6rem; }
+.page-intro { color: var(--dim); font-size: 0.92rem; margin-top: 0.35rem; max-width: 46rem; }
+.page-cta { margin-top: 0.2rem; font-size: 0.85rem; }
+.page-cta a { color: var(--pink); text-decoration: none; }
+.page-cta a:hover { text-decoration: underline; }
+
+/* The playground's output is the point of the page, so it keeps a visible
+   height even when a program printed nothing. */
+.output-pane { min-height: 9rem; max-height: 26rem; overflow-y: auto; }
 
 .examples { display: flex; flex-direction: column; gap: 0.4rem; }
 .example-group { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
@@ -539,6 +550,26 @@ details.expected pre {
 .examples button.active { border-color: var(--pink); color: var(--text); background: #3a1a48; }
 #example-desc { color: var(--dim); font-size: 0.82rem; min-height: 1.2em; padding-left: 0.2rem; }
 
+/* One-liners on the REPL page: the code itself is the label, so these are
+   monospaced and may wrap, unlike the pill-shaped example names. */
+#try-buttons { display: contents; }
+.chip-code {
+  background: var(--console-bg);
+  border: 1px solid var(--border);
+  color: var(--dim);
+  padding: 0.2rem 0.55rem;
+  border-radius: 0.35rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.chip-code:hover, .chip-code:focus-visible {
+  border-color: var(--pink);
+  color: var(--text);
+  outline: none;
+}
+
 .repl {
   background: var(--console-bg);
   border: 1px solid var(--border);
@@ -551,6 +582,10 @@ details.expected pre {
   min-height: 220px;
   max-height: 460px;
 }
+/* On the page that is only a REPL, the console takes the room the editor and
+   the output pane take on the playground. */
+.repl-container { min-height: calc(100vh - 4rem); }
+.repl-full { flex: 1; min-height: 24rem; max-height: none; }
 .repl:focus-within { border-color: var(--pink); }
 #repl-log {
   flex: 1;

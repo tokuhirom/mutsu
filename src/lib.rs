@@ -102,12 +102,13 @@ pub fn evaluate(code: &str) -> String {
     }
 }
 
-/// A stateful REPL session for the WASM playground.
+/// A stateful REPL session for the WASM site.
 ///
 /// Unlike [`evaluate`], which spins up a fresh [`Interpreter`] per call, a
 /// `Repl` keeps one interpreter alive so declarations persist across lines —
-/// and the editor pane shares that same interpreter, so you can define a class
-/// in the editor and poke at it from the prompt.
+/// which is what the REPL page is built around. [`Repl::eval_block`] runs a
+/// whole program against that same interpreter; the playground drives it
+/// through a session it resets before every run, so each run is its own.
 ///
 /// Line handling (bracket-continuation, last-value gist display) is delegated
 /// to [`repl_core::process_line`], the same core the CLI REPL drives.

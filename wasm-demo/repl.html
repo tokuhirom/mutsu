@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>mutsu REPL — a Raku session in your browser</title>
+<meta name="description" content="An interactive Raku REPL running entirely in your browser: declarations stay in scope, unfinished lines wait for the rest. Powered by mutsu, a Raku interpreter written in Rust and compiled to WebAssembly.">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+
+<nav class="site-nav"></nav>
+
+<noscript>
+  <p class="section">The REPL runs a Raku interpreter in your browser, so it needs
+  JavaScript and WebAssembly enabled. The language itself is documented at
+  <a href="https://docs.raku.org/">docs.raku.org</a>.</p>
+</noscript>
+
+<div class="container repl-container">
+  <header class="page-head">
+    <h1 id="page-title"></h1>
+    <p class="page-intro" id="page-intro"></p>
+  </header>
+
+  <div class="examples" id="examples">
+    <div class="example-group">
+      <span class="group-label" id="try-label"></span>
+      <span id="try-buttons"></span>
+    </div>
+  </div>
+
+  <div class="repl repl-full" id="repl">
+    <div id="repl-log"></div>
+    <div class="repl-input-line">
+      <span id="repl-prompt">&gt;</span>
+      <input id="repl-input" type="text" spellcheck="false" autocapitalize="off"
+             autocorrect="off" autocomplete="off" disabled aria-label="REPL input"
+             placeholder="loading...">
+    </div>
+  </div>
+
+  <div class="run-row">
+    <span class="hint" id="repl-hint"></span>
+    <span class="grow"></span>
+    <button id="clear-btn" class="btn-ghost"></button>
+    <button id="reset-btn" class="btn-ghost"></button>
+  </div>
+
+  <p class="page-cta"><a id="pg-cta" href="playground.html"></a></p>
+</div>
+
+<footer class="site-footer"></footer>
+
+<script type="module">
+import { renderChrome, t, langHref } from './assets/i18n.js';
+import { createSession } from './assets/runner.js';
+import { REPL_LINES } from './content/examples.js';
+
+renderChrome('repl');
+
+const logEl = document.getElementById('repl-log');
+const inputEl = document.getElementById('repl-input');
+const promptEl = document.getElementById('repl-prompt');
+const clearBtn = document.getElementById('clear-btn');
+const resetBtn = document.getElementById('reset-btn');
+const tryEl = document.getElementById('try-buttons');
+
+/* ------------------------------------------------------------------ *
+ * The log
+ * ------------------------------------------------------------------ */
+
+function appendLog(text, cls) {
+  if (!text) return;
+  const div = document.createElement('div');
+  div.className = cls;
+  div.textContent = text.replace(/\n$/, '');
+  logEl.appendChild(div);
+  logEl.scrollTop = logEl.scrollHeight;
+  return div;
+}
+
+function appendEcho(prompt, text) {
+  const div = document.createElement('div');
+  div.className = 'echo';
+  const p = document.createElement('span');
+  p.className = 'prompt';
+  p.textContent = prompt + ' ';
+  div.appendChild(p);
+  div.appendChild(document.createTextNode(text));
+  logEl.appendChild(div);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function appendOutput(text) {
+  if (!text) return;
+  const isError = /(^|\n)Error:/.test(text);
+  appendLog(text, 'out' + (isError ? ' error' : ''));
+}
+
+function greet() {
+  appendLog(t('repl.ready'), 'note');
+  appendLog(t('repl.ready2'), 'note');
+}
+
+/* ------------------------------------------------------------------ *
+ * The session
+ * ------------------------------------------------------------------ */
+
+let repl = null;
+
+async function initWasm() {
+  const loading = appendLog(t('repl.loading'), 'note');
+  try {
+    repl = await createSession();
+    loading.remove();
+    greet();
+    inputEl.disabled = false;
+    inputEl.placeholder = '';
+    document.body.dataset.ready = '1';
+    inputEl.focus();
+  } catch (e) {
+    loading.remove();
+    appendLog(t('repl.load-failed', { msg: e.message }), 'out error');
+  }
+}
+
+/** Rust panics abort the wasm instance; everything after is garbage. */
+function fatal(e) {
+  appendLog(t('repl.fatal', { msg: e.message }), 'out error');
+  appendLog(t('repl.fatal-hint'), 'note');
+}
+
+function updatePrompt() {
+  promptEl.textContent = repl && repl.isPending() ? '*' : '>';
+}
+
+/* ------------------------------------------------------------------ *
+ * Input, history
+ * ------------------------------------------------------------------ */
+
+/* history: newest last, index === length means "editing a fresh line" */
+const HISTORY_KEY = 'mutsu-repl-history';
+const HISTORY_MAX = 200;
+
+function loadHistory() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+    return Array.isArray(saved) ? saved.filter(l => typeof l === 'string') : [];
+  } catch {
+    return [];                                   // absent, private mode, or junk
+  }
+}
+
+const history = loadHistory();
+let historyIndex = history.length;
+let draft = '';
+
+function remember(line) {
+  if (line.trim() === '' || history[history.length - 1] === line) return;
+  history.push(line);
+  if (history.length > HISTORY_MAX) history.splice(0, history.length - HISTORY_MAX);
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history)); } catch { /* private mode */ }
+}
+
+function submitLine(line) {
+  if (!repl) return;
+  appendEcho(promptEl.textContent, line);
+  inputEl.value = '';
+  remember(line);
+  historyIndex = history.length;
+  draft = '';
+  try {
+    const res = JSON.parse(repl.evalLine(line));
+    appendOutput(res.output);
+  } catch (e) {
+    fatal(e);
+  }
+  updatePrompt();
+}
+
+inputEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    submitLine(inputEl.value);
+  } else if (e.key === 'ArrowUp') {
+    if (historyIndex > 0) {
+      if (historyIndex === history.length) draft = inputEl.value;
+      historyIndex--;
+      inputEl.value = history[historyIndex];
+      e.preventDefault();
+    }
+  } else if (e.key === 'ArrowDown') {
+    if (historyIndex < history.length) {
+      historyIndex++;
+      inputEl.value = historyIndex === history.length ? draft : history[historyIndex];
+      e.preventDefault();
+    }
+  } else if (e.key === 'l' && e.ctrlKey) {
+    logEl.innerHTML = '';
+    e.preventDefault();
+  }
+});
+
+// Clicking anywhere in the console focuses the input, the way a terminal does —
+// but not when the click was a text selection the reader wants to copy.
+document.getElementById('repl').addEventListener('mouseup', () => {
+  if (!inputEl.disabled && String(getSelection()) === '') inputEl.focus();
+});
+
+clearBtn.addEventListener('click', () => {
+  logEl.innerHTML = '';
+  inputEl.focus();
+});
+
+resetBtn.addEventListener('click', async () => {
+  if (!repl) return;
+  try {
+    repl.reset();
+  } catch {
+    // A panicked instance cannot reset itself; build a brand new one.
+    repl = await createSession();
+  }
+  logEl.innerHTML = '';
+  appendLog(t('repl.was-reset'), 'note');
+  updatePrompt();
+  inputEl.focus();
+});
+
+/* ------------------------------------------------------------------ *
+ * "Try" chips: put a line in the input, ready to be read before it runs
+ * ------------------------------------------------------------------ */
+
+function renderTryChips() {
+  for (const line of REPL_LINES) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'chip-code';
+    btn.textContent = line;
+    btn.addEventListener('click', () => {
+      inputEl.value = line;
+      inputEl.focus();
+      inputEl.setSelectionRange(line.length, line.length);
+    });
+    tryEl.appendChild(btn);
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Language-dependent text
+ * ------------------------------------------------------------------ */
+
+function paintText() {
+  document.getElementById('page-title').textContent = t('repl.title');
+  document.getElementById('page-intro').textContent = t('repl.intro');
+  document.getElementById('try-label').textContent = t('repl.try');
+  document.getElementById('repl-hint').textContent = t('repl.hint');
+  clearBtn.textContent = t('repl.clear');
+  resetBtn.textContent = t('repl.reset');
+  const cta = document.getElementById('pg-cta');
+  cta.textContent = t('repl.pg-cta');
+  cta.href = langHref('playground.html');
+}
+
+/* ------------------------------------------------------------------ *
+ * Boot
+ * ------------------------------------------------------------------ */
+
+renderTryChips();
+paintText();
+window.addEventListener('langchange', paintText);
+initWasm();
+</script>
+
+</body>
+</html>

@@ -13,6 +13,7 @@ const STRINGS = {
     'nav.home': 'Home',
     'nav.tutorial': 'Tutorial',
     'nav.playground': 'Playground',
+    'nav.repl': 'REPL',
     'nav.bench': 'Benchmarks',
     'nav.github': 'GitHub',
 
@@ -29,6 +30,7 @@ const STRINGS = {
     'run.loading': 'Loading the interpreter…',
     'run.hint': 'Ctrl+Enter',
     'reset': 'Reset code',
+    'editor': 'Editor',
     'output': 'Output',
     'output.empty': 'Press Run to execute this snippet.',
     'output.none': '(no output)',
@@ -47,11 +49,39 @@ const STRINGS = {
 
     'toc.title': 'Contents',
     'toc.reset-progress': 'Clear progress',
+
+    'pg.title': 'Playground',
+    'pg.intro': 'Write a program, run it, read what it printed. Every run starts from a ' +
+      'clean interpreter, exactly like running a file.',
+    'pg.pick': 'Pick an example, edit it, then press Run.',
+    'pg.loaded': 'Loaded from a shared link.',
+    'pg.share': 'Share link',
+    'pg.share.copied': 'Link copied to clipboard',
+    'pg.share.hash': 'The link is in the address bar',
+    'pg.repl-cta': 'Want a session that remembers what you declared? Try the REPL →',
+
+    'repl.title': 'REPL',
+    'repl.intro': 'One line at a time, in a session that keeps everything you declare. ' +
+      'An unfinished line waits for the rest.',
+    'repl.pane': 'Session',
+    'repl.loading': 'Loading the mutsu WASM module…',
+    'repl.ready': 'mutsu — a Raku interpreter in Rust, compiled to WebAssembly.',
+    'repl.ready2': 'Type an expression and press Enter. Everything you declare stays in scope.',
+    'repl.hint': 'Enter runs · ↑ / ↓ recalls · Ctrl+L clears the screen',
+    'repl.reset': 'Reset session',
+    'repl.clear': 'Clear screen',
+    'repl.was-reset': 'Session reset — every variable and declaration is gone.',
+    'repl.load-failed': 'Failed to load the WASM module: {msg}',
+    'repl.fatal': 'WASM error: {msg}',
+    'repl.fatal-hint': 'This session cannot continue — press "Reset session" for a fresh one.',
+    'repl.try': 'Try',
+    'repl.pg-cta': 'Writing something longer than a line? Open the playground →',
   },
   ja: {
     'nav.home': 'ホーム',
     'nav.tutorial': 'チュートリアル',
     'nav.playground': 'プレイグラウンド',
+    'nav.repl': 'REPL',
     'nav.bench': 'ベンチマーク',
     'nav.github': 'GitHub',
 
@@ -67,6 +97,7 @@ const STRINGS = {
     'run.loading': 'インタプリタを読み込み中…',
     'run.hint': 'Ctrl+Enter',
     'reset': 'コードを戻す',
+    'editor': 'エディタ',
     'output': '出力',
     'output.empty': '「実行」を押すとこのコードが動きます。',
     'output.none': '（出力なし）',
@@ -84,6 +115,33 @@ const STRINGS = {
 
     'toc.title': '目次',
     'toc.reset-progress': '進捗を消す',
+
+    'pg.title': 'プレイグラウンド',
+    'pg.intro': 'プログラムを書いて、実行して、出力を読む。実行のたびにインタプリタは' +
+      'まっさらな状態から始まります（ファイルを実行するのと同じです）。',
+    'pg.pick': '例を選んで書き換え、「実行」を押してください。',
+    'pg.loaded': '共有リンクから読み込みました。',
+    'pg.share': 'リンクを共有',
+    'pg.share.copied': 'リンクをクリップボードにコピーしました',
+    'pg.share.hash': 'リンクをアドレスバーに入れました',
+    'pg.repl-cta': '宣言したものが残るセッションが欲しいなら REPL へ →',
+
+    'repl.title': 'REPL',
+    'repl.intro': '1 行ずつ試すためのセッション。宣言したものはそのまま残り、' +
+      '途中の行は閉じるまで待ってくれます。',
+    'repl.pane': 'セッション',
+    'repl.loading': 'mutsu の WASM モジュールを読み込み中…',
+    'repl.ready': 'mutsu — Rust で書かれた Raku インタプリタ（WebAssembly 版）。',
+    'repl.ready2': '式を入力して Enter。宣言したものはこのセッションに残ります。',
+    'repl.hint': 'Enter で実行 · ↑ / ↓ で履歴 · Ctrl+L で画面を消去',
+    'repl.reset': 'セッションを初期化',
+    'repl.clear': '画面を消去',
+    'repl.was-reset': 'セッションを初期化しました。変数も宣言もすべて消えています。',
+    'repl.load-failed': 'WASM モジュールの読み込みに失敗しました: {msg}',
+    'repl.fatal': 'WASM エラー: {msg}',
+    'repl.fatal-hint': 'このセッションは継続できません。「セッションを初期化」を押してください。',
+    'repl.try': '例',
+    'repl.pg-cta': '1 行に収まらないものを書くならプレイグラウンドへ →',
   },
 };
 
@@ -132,6 +190,7 @@ const NAV = [
   { key: 'nav.home', href: 'index.html', page: 'home' },
   { key: 'nav.tutorial', href: 'tutorial.html', page: 'tutorial' },
   { key: 'nav.playground', href: 'playground.html', page: 'playground' },
+  { key: 'nav.repl', href: 'repl.html', page: 'repl' },
   { key: 'nav.bench', href: 'bench-trend.html', page: 'bench' },
 ];
 

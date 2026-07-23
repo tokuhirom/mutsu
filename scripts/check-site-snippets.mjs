@@ -94,6 +94,63 @@ function indent(text, pad = '       ') {
   return text.split('\n').map(l => pad + l).join('\n');
 }
 
+/* ------------------------------------------------------------------ *
+ * The playground programs and the REPL one-liners
+ *
+ * These carry no recorded expectation -- the visitor reads whatever they
+ * print -- so the bar is different: a program must run cleanly, and must not
+ * disagree with raku when raku is available.  A shipped example that errors
+ * is the worst possible first impression of the language.
+ * ------------------------------------------------------------------ */
+
+const { PROGRAMS, REPL_LINES } = await import('../wasm-demo/content/examples.js');
+
+console.log(`\n=== wasm-demo/content/examples.js (${PROGRAMS.length} programs)`);
+
+for (const ex of PROGRAMS) {
+  checked++;
+  const file = join(scratch, `example-${ex.name.replace(/\W+/g, '-')}.raku`);
+  writeFileSync(file, ex.code + '\n');
+
+  const got = run(MUTSU, file);
+  const ref = RAKU ? run('raku', file) : null;
+
+  const problems = [];
+  if (!got.ok) problems.push(`mutsu exited non-zero:\n${indent(got.text)}`);
+  if (ref && !ref.ok) problems.push(`raku exited non-zero:\n${indent(ref.text)}`);
+  if (ref && ref.ok && got.ok && ref.text !== got.text) {
+    problems.push(`mutsu and raku disagree:\n--- raku\n${indent(ref.text)}\n--- mutsu\n${indent(got.text)}`);
+  }
+
+  if (problems.length) {
+    failed++;
+    console.log(`FAIL ${ex.name}`);
+    for (const p of problems) console.log(indent(p, '     '));
+  } else {
+    console.log(`ok   ${ex.name}`);
+  }
+}
+
+/* The REPL suggestions are a session, not a program: later lines use what the
+   earlier ones declared, so they are fed to the REPL in order and the whole
+   transcript must come back error-free.  (raku's REPL needs a terminal, so
+   there is no cross-check here.) */
+console.log(`\n=== REPL suggestions (${REPL_LINES.length} lines, one session)`);
+checked++;
+const session = spawnSync(MUTSU, ['--repl'], {
+  input: REPL_LINES.join('\n') + '\n',
+  encoding: 'utf8',
+  timeout: TIMEOUT,
+});
+const transcript = (session.stdout || '') + (session.stderr || '');
+if (session.error || session.status !== 0 || /(^|\n)(Error|Runtime error|Parse error):/.test(transcript)) {
+  failed++;
+  console.log('FAIL the REPL suggestions do not all run cleanly');
+  console.log(indent(session.error ? session.error.message : transcript, '     '));
+} else {
+  console.log('ok   every suggestion runs in one session');
+}
+
 rmSync(scratch, { recursive: true, force: true });
 
 /* ------------------------------------------------------------------ *
@@ -132,6 +189,10 @@ for (const lang of LANGS) {
   }
   for (const key of Object.keys(landing[lang].snippets)) {
     want(highlights.some(h => h.key === key), `landing.${lang}: prose for unknown snippet ${key}`);
+  }
+  for (const ex of PROGRAMS) {
+    want(ex.desc[lang], `examples.js: no ${lang} description for the "${ex.name}" example`);
+    want(ex.group[lang], `examples.js: no ${lang} label for the "${ex.group.en}" group`);
   }
 }
 console.log(missing

@@ -2,9 +2,10 @@
  * WASM lifecycle for the whole site.
  *
  * The module is a few megabytes, so it is loaded once per page and shared by
- * every snippet on it.  `runIsolated` gives each snippet a clean interpreter
- * (the tutorial's lessons must not leak declarations into each other), while
- * `createSession` hands out the long-lived REPL the playground needs.
+ * every snippet on it.  `runIsolated` gives each run a clean interpreter (the
+ * tutorial's lessons must not leak declarations into each other, and a
+ * playground run is a program run), while `createSession` hands out the
+ * long-lived session the REPL page is built around.
  */
 
 import init, { Repl } from '../pkg/mutsu.js';
@@ -31,7 +32,7 @@ export function isReady() {
   return document.body.dataset.wasmReady === '1';
 }
 
-/** A fresh REPL session (playground). */
+/** A fresh long-lived session (the REPL page). */
 export async function createSession() {
   await boot();
   return new Repl();

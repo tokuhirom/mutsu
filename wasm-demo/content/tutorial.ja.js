@@ -408,8 +408,8 @@ export default {
         <p>ツアーはこれで終わりです。ここから先は
         <a href="https://docs.raku.org/" rel="noopener">公式ドキュメント</a>
         が各トピックをさらに詳しく解説しています。
-        <a href="playground.html">プレイグラウンド</a>では、
-        実行のあいだ状態が保たれる REPL を試せます。</p>`,
+        <a href="playground.html">プレイグラウンド</a>ではプログラムをまるごと実行でき、
+        <a href="repl.html">REPL</a> では状態の残るセッションで 1 行ずつ試せます。</p>`,
     },
   },
 };
