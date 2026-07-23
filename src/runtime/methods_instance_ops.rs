@@ -1853,7 +1853,21 @@ impl Interpreter {
                 }
             }
             "Str" | "Stringy" if args.is_empty() => match target.view() {
-                ValueView::Package(_) => Ok(Value::str(String::new())),
+                ValueView::Package(name) => {
+                    // A bare type object stringifies to "" with rakudo's
+                    // "uninitialized value of type X in string context" warning
+                    // (matching `~Int`); a user `.Str`/`.Stringy` dispatched
+                    // before reaching here. `.Stringy`'s default implementation
+                    // is `self.Str`, so `.Stringy` on a type object with only a
+                    // user `.Str` delegates to it; `.Str` never falls back to
+                    // `.Stringy`.
+                    let n = name.resolve();
+                    if method == "Stringy" && self.has_user_method(&n, "Str") {
+                        self.call_method_with_values(target.clone(), "Str", vec![])
+                    } else {
+                        self.warn_type_object_string_context(&n, false)
+                    }
+                }
                 ValueView::Instance { class_name, .. } => {
                     // When Stringy is requested but only Str is user-defined (or
                     // vice versa), delegate to the available user method so that
