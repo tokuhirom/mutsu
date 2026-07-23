@@ -156,6 +156,12 @@ pub(crate) struct LexScopeChain {
     /// so the runtime `$::('UNIT')::x` walk stops at the same boundary the
     /// compile-time `$UNIT::x` does — notably one frame past an `EVAL` wrapper.
     unit_root_index: usize,
+    /// True when this deref site sits inside an *immediate* block (bare block /
+    /// `if` / `for` / `while` body). There an indirect `$::('CALLER')::x` /
+    /// `$::('CALLERS')::x` names the lexical parent chain, not the runtime call
+    /// stack (which the block never pushed a frame onto) — the same routing the
+    /// literal `$CALLER::x` / `$CALLERS::x` spellings get in the compiler.
+    caller_lexical: bool,
 }
 
 impl LexScopeChain {
@@ -163,12 +169,20 @@ impl LexScopeChain {
         scopes: Vec<ScopeFrame>,
         local_map: HashMap<String, u32>,
         unit_root_index: usize,
+        caller_lexical: bool,
     ) -> Self {
         Self {
             scopes,
             local_map,
             unit_root_index,
+            caller_lexical,
         }
+    }
+
+    /// Whether an indirect `CALLER::` / `CALLERS::` at this site resolves
+    /// lexically (immediate-block context — see the `caller_lexical` field).
+    pub(crate) fn caller_is_lexical(&self) -> bool {
+        self.caller_lexical
     }
 
     pub(crate) fn resolve_outer(&self, bare: &str, depth: usize) -> OuterResolution {

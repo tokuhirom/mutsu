@@ -379,6 +379,13 @@ impl Compiler {
                 Some('$' | '@' | '%' | '&') => key.chars().skip(1).collect(),
                 _ => key.as_ref().clone(),
             };
+            // Immediate-block `CALLERS::<$x>` is the lexical `OUTERS::` walk, the
+            // stash twin of the `$CALLERS::x` routing in `emit_var_read`.
+            if depth == 1 && self.in_immediate_block() {
+                self.emit_outers_var_access(bare);
+                self.bind_terminal = saved_terminal;
+                return;
+            }
             let cascade = Self::callers_name_cascades(&bare);
             let name_idx = self.code.add_constant(Value::str(bare));
             self.code.emit(OpCode::GetCallersVar {
@@ -404,6 +411,13 @@ impl Compiler {
                 Some('$' | '@' | '%' | '&') => key.chars().skip(1).collect(),
                 _ => key.as_ref().clone(),
             };
+            // Immediate-block `CALLER::<$x>` resolves lexically, the stash twin of
+            // the `$CALLER::x` routing in `emit_var_read`.
+            if depth == 1 && self.in_immediate_block() {
+                self.emit_caller_outer_var_access(bare, 1);
+                self.bind_terminal = saved_terminal;
+                return;
+            }
             let name_idx = self.code.add_constant(Value::str(bare));
             self.code.emit(OpCode::GetCallerVar {
                 name_idx,

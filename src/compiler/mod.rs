@@ -553,6 +553,7 @@ impl Compiler {
             self.full_scope_chain(),
             self.local_map.clone(),
             self.unit_root_index(),
+            self.in_immediate_block(),
         );
         self.code.add_lex_scope_chain(chain)
     }
@@ -757,6 +758,40 @@ impl Compiler {
     /// compilation unit's outermost scope — the scope `UNIT::` resolves against.
     fn unit_root_index(&self) -> usize {
         self.enclosing_scopes.len() + self.unit_root_scope
+    }
+
+    /// True when the site currently being compiled sits inside an *immediate*
+    /// block (a bare block / `if` / `for` / `while` body run in place), i.e. at
+    /// least one lexical scope has been pushed above this compilation's own
+    /// routine/closure/unit boundary. Such a block never pushes a runtime call
+    /// frame, and in Raku its dynamic caller IS its lexical parent — so a
+    /// `CALLER::` here resolves lexically (`OUTER::`) rather than against the
+    /// runtime call stack. `unit_root_scope` accounts for an `EVAL` wrapper frame
+    /// so an EVAL'd mainline (no block of its own) is not mistaken for one.
+    fn in_immediate_block(&self) -> bool {
+        self.local_scopes.len() > self.unit_root_scope + 1
+    }
+
+    /// Emit a `CALLER::` read that resolves lexically (immediate-block context):
+    /// `OUTER::`-style slot resolution plus the `CALLER::` dynamic-ness check.
+    /// A target scope that does not declare the name is a quiet Nil, matching both
+    /// `OUTER::` and raku's absent-`CALLER::` behavior.
+    fn emit_caller_outer_var_access(&mut self, bare: String, depth: usize) {
+        let res = lex_scope::resolve_outer(&self.full_scope_chain(), &self.local_map, &bare, depth);
+        match res {
+            lex_scope::OuterResolution::NotDeclared => {
+                let idx = self.code.add_constant(Value::NIL);
+                self.code.emit(OpCode::LoadConst(idx));
+            }
+            lex_scope::OuterResolution::Read { depth, slot } => {
+                let name_idx = self.code.add_constant(Value::str(bare));
+                self.code.emit(OpCode::GetCallerOuterVar {
+                    name_idx,
+                    depth: depth as u32,
+                    slot,
+                });
+            }
+        }
     }
 
     /// Enter a nested lexical scope for local-slot allocation. Paired with

@@ -4448,6 +4448,22 @@ impl Interpreter {
                 self.stack.push(val);
                 *ip += 1;
             }
+            OpCode::GetCallerOuterVar {
+                name_idx,
+                depth,
+                slot,
+            } => {
+                let name = Self::const_str(code, *name_idx);
+                // The target scope declares the name (the compiler emits a Nil
+                // constant otherwise), so a non-dynamic binding here is the
+                // X::Caller::NotDynamic case, not an absent one.
+                if !self.is_var_dynamic(name) {
+                    return Err(crate::runtime::utils::caller_not_dynamic_error(name));
+                }
+                let val = self.get_outer_var(code, name, *depth as usize, *slot);
+                self.stack.push(val);
+                *ip += 1;
+            }
             OpCode::GetDynamicVar(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
                 // An unfound dynamic via the DYNAMIC:: pseudo-package is undefined,

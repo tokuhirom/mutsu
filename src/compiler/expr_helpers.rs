@@ -559,6 +559,14 @@ impl Compiler {
         // is not strictly required — but keeping the more specific prefix first is
         // clearer.
         if let Some((bare_name, depth)) = Self::parse_callers_prefix(name) {
+            // Inside an immediate block, `CALLERS::` names the lexical parent
+            // chain (the block's dynamic callers ARE its lexical outers), so it is
+            // the `OUTERS::` walk — reliable slot reads instead of a runtime
+            // caller-frame snapshot that the immediate block never populated.
+            if depth == 1 && self.in_immediate_block() {
+                self.emit_outers_var_access(bare_name);
+                return;
+            }
             let cascade = Self::callers_name_cascades(&bare_name);
             let name_idx = self.code.add_constant(Value::str(bare_name));
             self.code.emit(OpCode::GetCallersVar {
@@ -570,6 +578,12 @@ impl Compiler {
         }
         // $CALLER:: / $CALLER::CALLER:: variable access
         if let Some((bare_name, depth)) = Self::parse_caller_prefix(name) {
+            // Immediate-block `CALLER::` resolves lexically (see
+            // `in_immediate_block`): its dynamic caller is its lexical parent.
+            if depth == 1 && self.in_immediate_block() {
+                self.emit_caller_outer_var_access(bare_name, 1);
+                return;
+            }
             let name_idx = self.code.add_constant(Value::str(bare_name));
             self.code.emit(OpCode::GetCallerVar {
                 name_idx,
