@@ -1736,27 +1736,6 @@ impl Interpreter {
                 }
                 _ => Ok(Value::str(target.to_string_value())),
             },
-            "WHERE" if args.is_empty() => {
-                let type_obj_name = match target.view() {
-                    ValueView::Package(name) => Some(name.resolve()),
-                    ValueView::Str(name) => Some(name.to_string()),
-                    _ => None,
-                };
-                if let Some(name) = type_obj_name {
-                    if !self.registry().roles.contains_key(&name) {
-                        return Err(RuntimeError::new(format!(
-                            "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
-                            method
-                        )));
-                    }
-                    Ok(Value::str(format!("{}|type-object", name)))
-                } else {
-                    Err(RuntimeError::new(format!(
-                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
-                        method
-                    )))
-                }
-            }
             "raku" | "perl" if args.is_empty() => match target.view() {
                 ValueView::Package(name) => Ok(Value::str(name.resolve())),
                 ValueView::Junction { kind, values } => {
