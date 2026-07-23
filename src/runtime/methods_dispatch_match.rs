@@ -105,19 +105,16 @@ impl Interpreter {
             }
             "sprintf" if args.is_empty() => Some(self.dispatch_sprintf(&target)),
             "sprintf" => {
-                // Method form `$format.sprintf(*@args)` == `sprintf($format, @args)`
-                // for two or more args (the 1-arg form is a native fast-path
-                // method; the 0-arg arm above is a no-directive passthrough).
-                let fmt = target.to_string_value();
-                Some(
-                    crate::runtime::sprintf::validate_sprintf_directives(&fmt, args.len())
-                        .and_then(|_| {
-                            crate::runtime::sprintf::validate_sprintf_arg_types(&fmt, &args)
-                        })
-                        .map(|_| {
-                            Value::str(crate::runtime::sprintf::format_sprintf_args(&fmt, &args))
-                        }),
-                )
+                // Method form `$format.sprintf(*@args)` == `sprintf($format, @args)`.
+                // Delegate to `builtin_sprintf` (the single source of truth) so a
+                // bare type object arg gets the same string-context warning and
+                // "" coercion as the sub form. Reached for 2+ args, and for the
+                // 1-arg type-object case the native fast-path defers here (the
+                // 0-arg arm above is a no-directive passthrough).
+                let mut full = Vec::with_capacity(args.len() + 1);
+                full.push(target.clone());
+                full.extend(args.iter().cloned());
+                Some(self.builtin_sprintf(&full, false))
             }
             "shape" if args.is_empty() => self.dispatch_shape(&target),
             "default" if args.is_empty() => Self::dispatch_default(&target),

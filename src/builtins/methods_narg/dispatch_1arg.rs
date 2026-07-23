@@ -1028,7 +1028,13 @@ pub(crate) fn native_method_1arg(
             }
         }
         "sprintf" => {
-            // Method form: '%f'.sprintf(value) — target is the format string
+            // Method form: '%f'.sprintf(value) — target is the format string.
+            // A bare type object arg needs the interpreter-aware warning path
+            // (`%s` warns and stringifies to ""), so defer to the slow-path
+            // `sprintf` arm which routes through `builtin_sprintf`.
+            if matches!(arg.view(), ValueView::Package(_)) {
+                return None;
+            }
             let fmt = target.to_string_value();
             let rendered = runtime::format_sprintf(&fmt, Some(arg));
             Some(Ok(Value::str(rendered)))
