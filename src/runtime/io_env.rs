@@ -184,22 +184,57 @@ impl Interpreter {
         }
     }
 
+    /// Emit rakudo's "Use of uninitialized value[ element] of type X in string
+    /// context." warning for a bare type object used in string context, and
+    /// resume with the empty string. `element` selects the interpolation
+    /// wording (`... value element of type ...`) that Rakudo uses inside `"$x"`;
+    /// prefix/infix `~` and the string comparators use the non-`element` form.
+    ///
+    /// Callers must first rule out a user-defined `.Str`/`.Stringy` (a type
+    /// object whose class defines one dispatches it and is NOT warned) and any
+    /// operator-specific hard error (e.g. `prefix:<~>(Mu:U)`). The warning
+    /// handler can run user code that mutates a captured-outer caller lexical,
+    /// so its writeback is reconciled here (Slice 1b render pattern).
+    pub(crate) fn warn_type_object_string_context(
+        &mut self,
+        type_name: &str,
+        element: bool,
+    ) -> Result<Value, RuntimeError> {
+        let msg = format!(
+            "Use of uninitialized value{} of type {} in string context.\nMethods .^name, .raku, .gist, or .say can be used to stringify it to something meaningful.",
+            if element { " element" } else { "" },
+            type_name,
+        );
+        let caller_code = self.current_code;
+        let resumed = self.raise_resumable_warning(&msg, Value::str(String::new()))?;
+        self.reconcile_caller_after_internal_dispatch(caller_code);
+        Ok(resumed)
+    }
+
     /// Stringify a value by calling .Str method (used by put/print).
     /// Falls back to to_string_value() if .Str method dispatch fails.
     pub(crate) fn render_str_value(&mut self, value: &Value) -> String {
         // Printing a type object stringifies to "" with rakudo's
-        // uninitialized-value warning suggesting .^name/.raku/.gist/.say.
+        // uninitialized-value warning suggesting .^name/.raku/.gist/.say —
+        // unless its class defines a user `.Stringy`/`.Str`, which dispatches
+        // instead (`class A { method Str {"foo"} }` then `print A` renders
+        // "foo", matching Rakudo).
         if let ValueView::Package(name) = value.view() {
-            let n = name.resolve();
-            let msg = format!(
-                "Use of uninitialized value of type {} in string context.\nMethods .^name, .raku, .gist, or .say can be used to stringify it to something meaningful.",
-                n
-            );
-            let resumed = self
-                .raise_resumable_warning(&msg, Value::str(String::new()))
+            let n = name.resolve().to_string();
+            if self.has_user_method(&n, "Stringy")
+                && let Ok(r) = self.call_method_with_values(value.clone(), "Stringy", vec![])
+            {
+                return r.to_string_value();
+            }
+            if self.has_user_method(&n, "Str")
+                && let Ok(r) = self.call_method_with_values(value.clone(), "Str", vec![])
+            {
+                return r.to_string_value();
+            }
+            return self
+                .warn_type_object_string_context(&n, false)
                 .map(|v| v.to_string_value())
                 .unwrap_or_default();
-            return resumed;
         }
         self.call_method_with_values(value.clone(), "Str", vec![])
             .map(|result| result.to_string_value())

@@ -132,20 +132,6 @@ impl Interpreter {
                 name.resolve()
             )));
         }
-        // Any and other Cool-descended type objects stringify to the empty
-        // string with a warning (Rakudo emits `Use of uninitialized value
-        // of type Any in string context.`).
-        if let ValueView::Package(name) = val.view()
-            && name.resolve() == "Any"
-        {
-            let msg = format!(
-                "Use of uninitialized value of type {} in string context.\nMethods .^name, .raku, .gist, or .say can be used to stringify it to something meaningful.",
-                name.resolve()
-            );
-            let resumed = self.raise_resumable_warning(&msg, Value::str(String::new()))?;
-            self.stack.push(resumed);
-            return Ok(());
-        }
         // `~Nil` warns ("Use of Nil in string context") and resumes with the
         // empty string, matching Rakudo. This mirrors the `Nil.Str`/`.Stringy`
         // method path; the prefix:<~> operator reaches this coercion opcode
@@ -197,6 +183,31 @@ impl Interpreter {
                 self.stack.push(result);
                 return Ok(());
             }
+        }
+        // A bare type object stringifies to the empty string with Rakudo's
+        // "uninitialized value of type X in string context" warning — unless its
+        // class defines a user `.Stringy`/`.Str` (`class A { method Str {...} }`
+        // then `~A` dispatches it, matching Rakudo). Mu is already handled above
+        // as a hard error, so it never reaches here.
+        if let ValueView::Package(name) = val.view() {
+            let cn = name.resolve().to_string();
+            if self.has_user_method(&cn, "Stringy") {
+                let caller_code = self.current_code;
+                let r = self.try_compiled_method_or_interpret(val.clone(), "Stringy", vec![]);
+                self.reconcile_caller_after_internal_dispatch(caller_code);
+                self.stack.push(r?);
+                return Ok(());
+            }
+            if self.has_user_method(&cn, "Str") {
+                let caller_code = self.current_code;
+                let r = self.try_compiled_method_or_interpret(val.clone(), "Str", vec![]);
+                self.reconcile_caller_after_internal_dispatch(caller_code);
+                self.stack.push(r?);
+                return Ok(());
+            }
+            let resumed = self.warn_type_object_string_context(&cn, false)?;
+            self.stack.push(resumed);
+            return Ok(());
         }
         // Force LazyList before stringification
         if let ValueView::LazyList(_) = val.view() {
