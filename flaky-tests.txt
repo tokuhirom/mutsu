@@ -1,0 +1,22 @@
+# Flaky test quarantine ledger.
+#
+# Format:  <test-path>  <added:YYYY-MM-DD>  <review:YYYY-MM-DD>  <reason>
+#
+# A listed test is re-run (up to 3 attempts) by scripts/flaky-retry.sh, which
+# both test runners go through, so a single unlucky roll no longer blocks a
+# merge. It is NOT immunity: a deterministic failure fails all three attempts
+# and still blocks. Every retry is reported in the CI job summary.
+#
+# The bar for adding an entry is deliberately high -- the non-determinism must
+# be understood and must not be a defect in mutsu. Crashes, wrong answers, and
+# anything whose root cause is unknown are never quarantined; they are bugs to
+# fix. Read docs/flaky-test-policy.md before touching this file, and back every
+# entry with numbers from scripts/ci-flake-survey.sh and scripts/flake-repro.sh.
+#
+# Entries expire: `make check-flaky-list` fails once the review date passes,
+# which forces a re-measurement rather than a silent permanent quarantine.
+#
+# Keep sorted by path.
+
+roast/S02-types/baghash.t 2026-07-24 2026-10-22 Statistically flaky by design: tests 121/122/261/262 bound a Binomial(100,1/3) .roll sample (2<a<75, a+2<b), which a correct RNG violates with small probability. Roast is read-only so the bounds cannot be tightened. Distribution verified correct 2026-07-15 (mean a=32.6 over 30 processes; exactly 1/3 at n=10000). CI survey 2026-07-23: 3 failures in 300 runs, all single-job, zero multi-job.
+roast/S02-types/mixhash.t 2026-07-24 2026-10-22 The MixHash twin of baghash.t above: tests 128-131 bound the same Binomial(100,1/3) sample on a (a=>1,b=>2).MixHash roll. Verified 2026-07-16 (CI run 29462324997 failed test 129 only; 5/5 green locally; exactly 1/3 at n=10000). CI survey 2026-07-23: 0 failures in 300 runs -- listed because the mechanism is proven by construction, and it is the same assertion as baghash.t.
