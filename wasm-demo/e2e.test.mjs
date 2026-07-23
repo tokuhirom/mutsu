@@ -16,6 +16,8 @@ import { spawn, spawnSync } from 'child_process';
 import { existsSync, readFileSync, writeFileSync, rmSync } from 'fs';
 
 import { parseCorpus } from './assets/corpus.js';
+import landingEn from './content/landing.en.js';
+import INSTALL from './content/install.js';
 
 const PORT = 18765;
 const BASE = `http://localhost:${PORT}`;
@@ -124,9 +126,27 @@ try {
   assert((await page.textContent('#hero-title')).length > 0, 'the hero has a title');
   assert(await page.locator('#why-cards .card').count() === highlights.length,
          `every highlight snippet has a card (${highlights.length})`);
+  assert(await page.locator('#feature-cards .card').count() === landingEn.features.cards.length,
+         `every feature has a card (${landingEn.features.cards.length})`);
+  assert(await page.locator('#stat-row .stat').count() === 3,
+         'the headline numbers are shown');
+  assert(/^\d+(\.\d+)?%$/.test((await page.textContent('#stat-row .stat-value')).trim()),
+         'the roast figure renders as a percentage');
   assert(await page.locator('.site-nav .nav-links a').count() >= 4, 'the nav lists the pages');
   assert((await page.textContent('.site-footer')).includes('Raku/doc'),
          'the footer credits the official Raku documentation');
+
+  console.log('Test: install recipes');
+  assert(await page.locator('#install-tabs button').count() === INSTALL.length,
+         `every install recipe has a tab (${INSTALL.length})`);
+  const firstRecipe = (await page.textContent('#install-panels pre')).trim();
+  assert(firstRecipe === INSTALL[0].code.trim(),
+         `the ${INSTALL[0].id} recipe is shown first`);
+  await page.click(`#install-tabs button:nth-child(${INSTALL.length})`);
+  assert((await page.textContent('#install-panels pre')).trim()
+           === INSTALL[INSTALL.length - 1].code.trim(),
+         'picking another tab swaps in its recipe');
+  await page.click('#install-tabs button:nth-child(1)');
 
   console.log('Test: landing page language switch');
   const enTitle = await page.textContent('#hero-title');

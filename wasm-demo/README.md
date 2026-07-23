@@ -1,10 +1,12 @@
 # wasm-demo — the mutsu site
 
 The static site deployed to <https://tokuhirom.github.io/mutsu/> by
-`.github/workflows/pages.yml`. It is an introduction to **Raku**, not just a demo of
-mutsu: a landing page arguing why the language is interesting, a hands-on tutorial,
-and the playground. Every code sample runs locally in the visitor's browser through
-mutsu compiled to WebAssembly — nothing is sent to a server.
+`.github/workflows/pages.yml`. It is **mutsu's home page**, not a WebAssembly demo:
+the landing page introduces the implementation (what it is, how to install it, what is
+inside), and then argues why the language it implements is worth a look. A hands-on
+Raku tutorial and the playground follow. Every code sample runs locally in the
+visitor's browser through mutsu compiled to WebAssembly — nothing is sent to a server,
+which makes the site both the pitch and the proof.
 
 The site is deliberately **build-step free**: plain HTML, ES modules and CSS, served
 as-is. The only generated input is `pkg/`, the `wasm-pack` output.
@@ -12,7 +14,8 @@ as-is. The only generated input is `pkg/`, the `wasm-pack` output.
 ## Layout
 
 ```
-index.html          landing page — "why Raku", with runnable highlights
+index.html          landing page — what mutsu is, install, what is inside,
+                    then "why Raku" with runnable highlights
 tutorial.html       the tutorial: chapter/lesson navigation + one runnable lesson
 playground.html     editor + persistent REPL (this used to be index.html)
 assets/
@@ -26,13 +29,25 @@ assets/
 content/
   lessons.txt       tutorial code and expected output (the corpus)
   highlights.txt    landing-page code and expected output
+  install.js        the install recipes (shell code, shared between languages)
   tutorial.en.js    tutorial titles and prose (English)
   tutorial.ja.js    tutorial titles and prose (Japanese)
   landing.en.js     landing-page copy (English)
   landing.ja.js     landing-page copy (Japanese)
+  stats.json        compatibility numbers — generated, git-ignored (see below)
 bench-trend.html    benchmark dashboard — generated, git-ignored (see below)
 pkg/                wasm-pack output — generated, git-ignored
 ```
+
+## The compatibility headline
+
+The landing page leads with "N% of the official spec files pass in full". That
+number is **counted at deploy time**, not written into the copy: `pages.yml` divides
+`roast-whitelist.txt` by the number of `.t` files under `roast/` and writes
+`content/stats.json`. A local checkout has no such file, so the page falls back to
+the figure baked into `index.html` — keep that fallback roughly current, but the
+deployed site never depends on it. (The README's hand-written count is exactly what
+this avoids: it sat ~290 files stale.)
 
 `bench-trend.html` is rendered into the site at deploy time by
 `scripts/bench-visualize.py` from the `bench-data` branch's `bench-history.tsv`.

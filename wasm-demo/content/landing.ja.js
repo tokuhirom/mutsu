@@ -5,13 +5,82 @@
 
 export default {
   hero: {
-    title: 'Raku を、このタブの中で',
-    tagline: '漸進的型付け、本物の Grammar、遅延リスト、マルチディスパッチ——' +
-      '表現力のために設計された言語を、ブラウザに配れるほど小さなインタプリタで。',
-    sub: 'mutsu は Rust で書かれた Raku 実装です。このサイトの実行はすべて ' +
-      'WebAssembly としてローカルで行われます。サーバとの往復はありません。',
-    startTutorial: 'チュートリアルを始める',
-    openPlayground: 'プレイグラウンドを開く',
+    title: 'mutsu — Rust で書かれた Raku 実装',
+    tagline: 'バイトコード VM、ベースライン JIT、循環参照を回収する GC を備えた Raku ' +
+      'インタプリタ。パッケージマネージャ同梱の単一バイナリとして配布しています。',
+    sub: 'WebAssembly にもビルドでき、このページを動かしているのがそれです。' +
+      '以下の例はすべてブラウザ内でローカルに実行されます。サーバはありません。',
+    install: 'インストール',
+    openPlayground: 'ブラウザで試す',
+    repo: 'GitHub',
+  },
+
+  stats: {
+    roastLabel: '完全にパスする Roast 仕様テストファイル',
+    roastNote: '公式 Raku テストスイート {total} ファイル中 {pass} ファイル',
+    binaryValue: '単一バイナリ',
+    binaryLabel: '別途ランタイム不要',
+    binaryNote: '<code>mutsu</code> と、同梱のパッケージマネージャ <code>mzef</code>',
+    wasmValue: 'WebAssembly',
+    wasmLabel: '同じインタプリタがタブの中で',
+    wasmNote: 'このページがそれです。サーバには何も送っていません',
+  },
+
+  install: {
+    heading: 'インストール',
+    lede: 'Linux と macOS 向けのビルド済みバイナリをリリースごとに公開しています。',
+    copy: 'コピー',
+    copied: 'コピーしました',
+    notes: {
+      mise: 'リリースアーカイブは <code>bin/mutsu</code>、<code>bin/mzef</code>、' +
+        '同梱の Zef ツリーで完結しているので、<code>mzef install &lt;dist&gt;</code> が' +
+        '追加設定なしで動きます。',
+      docker: 'イメージには両方のバイナリが入っています。<code>mzef</code> で入れた' +
+        'モジュールを残したい場合は <code>$HOME</code> に名前付きボリュームをマウントしてください。',
+      source: 'Rust 1.92 以降と C コンパイラが必要です。<code>make test</code> でローカルの' +
+        'テスト、<code>make roast</code> で公式仕様テストが走ります。',
+    },
+  },
+
+  features: {
+    heading: '中身',
+    lede: '機能を絞ったサブセット実装ではありません。公式仕様スイートを基準に開発し、' +
+      '言語全体の実装を目指しています。',
+    cards: [
+      {
+        title: '木を辿るのではなくバイトコード VM',
+        body: 'ソースを AST に解析し、バイトコードにコンパイルして、約 340 命令の VM で' +
+          '実行します。フォールバック先の別インタプリタは存在せず、実行エンジンは VM だけです。',
+      },
+      {
+        title: 'ベースライン JIT',
+        body: 'バイトコードがホットになると Cranelift でネイティブコードにコンパイルします。' +
+          '既定で有効で、インタプリタのみの経路もコミットごとに並べて計測し続けています。',
+      },
+      {
+        title: '本物のガベージコレクタ',
+        body: '参照カウントだけでは循環参照が漏れるため、循環回収器を備えています。' +
+          '対象はコンテナ系の値だけなので、数値や文字列の処理は GC のコストを一切払いません。',
+      },
+      {
+        title: 'パッケージマネージャ mzef を同梱',
+        body: '本家の <a href="https://github.com/ugexe/zef">Zef</a> を同梱し、mutsu 上で' +
+          '動かしています。エコシステムの配布物をダウンロードしてサイトリポジトリに' +
+          'インストールし、<code>use</code> で解決できます。別途 Raku を入れる必要はありません。',
+      },
+      {
+        title: 'NativeCall',
+        body: 'Raku から C ライブラリを呼べます。ネイティブ型、<code>CArray[T]</code> ' +
+          'バッファ、<code>is rw</code> の出力引数を含むポインタに対応しており、' +
+          'SQLite の C API を叩ける程度には揃っています。構造体とコールバックは今後の課題です。',
+      },
+      {
+        title: '公式テストスイート駆動',
+        body: '仕様は Roast であり、進捗はファイル単位の完全パス数で測ります。' +
+          'テストを個別に特別扱いすることはしません。パスしていたファイルが落ちたら' +
+          'それはトレードオフではなくバグです。',
+      },
+    ],
   },
 
   why: {

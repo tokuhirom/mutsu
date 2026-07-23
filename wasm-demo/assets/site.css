@@ -281,7 +281,95 @@ footer.site-footer a:hover { text-decoration: underline; }
 }
 .card h3 { font-size: 1.12rem; margin-bottom: 0.35rem; }
 .card .card-body { color: var(--dim); font-size: 0.92rem; margin-bottom: 0.8rem; }
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr));
+  gap: 1.1rem;
+  align-items: start;
+}
+.card-grid .card { margin-bottom: 0; }
+.card-grid .card .card-body { margin-bottom: 0; }
+.card a { color: var(--pink); }
+
+/* Headline numbers */
+
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1rem;
+}
+.stat {
+  background: rgba(42, 18, 53, 0.55);
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.stat-value {
+  font-size: 1.75rem;
+  line-height: 1.2;
+  font-weight: 700;
+  background: linear-gradient(90deg, var(--purple), var(--pink));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.stat-label { color: var(--text); font-size: 0.92rem; }
+.stat-note { color: var(--dim); font-size: 0.8rem; }
+
+/* Install recipes */
+
+.tabs { display: flex; gap: 0.35rem; flex-wrap: wrap; margin-bottom: 0.7rem; }
+.tabs button {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  color: var(--dim);
+  padding: 0.3rem 0.85rem;
+  border-radius: 1rem;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.tabs button:hover, .tabs button:focus-visible { color: var(--text); border-color: var(--pink); outline: none; }
+.tabs button[aria-selected="true"] { border-color: var(--pink); color: var(--text); background: #3a1a48; }
+
+.shell {
+  position: relative;
+  background: var(--console-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+.shell pre {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  line-height: 1.6;
+  padding: 0.9rem 1rem;
+  padding-right: 5.5rem;
+  overflow-x: auto;
+  color: var(--text);
+}
+.copy-btn {
+  position: absolute;
+  top: 0.55rem;
+  right: 0.55rem;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  color: var(--dim);
+  font: inherit;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 0.3rem;
+  cursor: pointer;
+}
+.copy-btn:hover { color: var(--text); border-color: var(--pink); }
+.install-note { color: var(--dim); font-size: 0.85rem; margin-top: 0.7rem; }
+
 .card .card-body code,
+.stat-note code,
+.install-note code,
 .lesson-body code {
   font-family: var(--mono);
   font-size: 0.88em;

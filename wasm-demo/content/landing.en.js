@@ -5,14 +5,86 @@
 
 export default {
   hero: {
-    title: 'Raku, running in this tab',
-    tagline: 'A language built for expressiveness — gradual types, real grammars, ' +
-      'lazy lists and multiple dispatch — with an interpreter small enough to ship ' +
-      'to your browser.',
-    sub: 'mutsu is a Raku implementation written in Rust. Everything on this site ' +
-      'runs locally as WebAssembly: no server, no round trip.',
-    startTutorial: 'Start the tutorial',
-    openPlayground: 'Open the playground',
+    title: 'mutsu — Raku, implemented in Rust',
+    tagline: 'A Raku interpreter with a bytecode VM, a baseline JIT and a cycle-collecting ' +
+      'GC — shipped as a single binary with a package manager in the box.',
+    sub: 'It also compiles to WebAssembly, which is what is running this page: every ' +
+      'example below executes locally in your browser, with no server behind it.',
+    install: 'Install it',
+    openPlayground: 'Try it in the browser',
+    repo: 'GitHub',
+  },
+
+  stats: {
+    roastLabel: 'Roast spec files passing in full',
+    roastNote: '{pass} of {total} files in the official Raku test suite',
+    binaryValue: 'Single binary',
+    binaryLabel: 'No runtime to install',
+    binaryNote: '<code>mutsu</code> plus the bundled <code>mzef</code> package manager',
+    wasmValue: 'WebAssembly',
+    wasmLabel: 'The same interpreter, in a tab',
+    wasmNote: 'this page is running it — nothing is sent to a server',
+  },
+
+  install: {
+    heading: 'Install',
+    lede: 'Prebuilt binaries for Linux and macOS are published on every release.',
+    copy: 'Copy',
+    copied: 'Copied',
+    notes: {
+      mise: 'The release archive is self-contained — <code>bin/mutsu</code>, ' +
+        '<code>bin/mzef</code> and the vendored Zef tree — so ' +
+        '<code>mzef install &lt;dist&gt;</code> works with no further setup.',
+      docker: 'The image carries both binaries. Mount a named volume at ' +
+        '<code>$HOME</code> to keep modules installed by <code>mzef</code> across runs.',
+      source: 'Needs Rust 1.92+ and a C compiler. <code>make test</code> runs the local ' +
+        'suite, <code>make roast</code> the official spec tests.',
+    },
+  },
+
+  features: {
+    heading: 'What is inside',
+    lede: 'mutsu is not a subset interpreter with a fixed feature list — it is built ' +
+      'against the official spec suite and tries to be the whole language.',
+    cards: [
+      {
+        title: 'A bytecode VM, not a tree walker',
+        body: 'Source is parsed to an AST, compiled to bytecode and executed by a VM ' +
+          'with around 340 instructions. There is no separate interpreter to fall back ' +
+          'to — the VM is the only execution engine.',
+      },
+      {
+        title: 'Baseline JIT',
+        body: 'Once a chunk of bytecode is hot it is compiled to native machine code ' +
+          'through Cranelift. It is on by default, and the interpreter-only path stays ' +
+          'benchmarked next to it on every commit.',
+      },
+      {
+        title: 'A real garbage collector',
+        body: 'Reference counting alone leaks cycles, so mutsu adds a cycle collector. ' +
+          'Only container-shaped values take part in it, which keeps numeric and string ' +
+          'code out of the collector entirely.',
+      },
+      {
+        title: 'mzef, the package manager, is bundled',
+        body: 'Upstream <a href="https://github.com/ugexe/zef">Zef</a> ships with mutsu ' +
+          'and runs on it. A distribution from the ecosystem downloads, installs into ' +
+          'the site repository and is then <code>use</code>-able — with no second Raku ' +
+          'installation involved.',
+      },
+      {
+        title: 'NativeCall',
+        body: 'Call into C libraries from Raku: native types, <code>CArray[T]</code> ' +
+          'buffers, and pointers including <code>is rw</code> out-parameters — enough ' +
+          'to drive SQLite through its C API. Structs and callbacks are still to come.',
+      },
+      {
+        title: 'Driven by the official test suite',
+        body: 'Roast is the specification, and progress is measured in whole files ' +
+          'passing — never by special-casing a test. Anything that regresses a passing ' +
+          'file is a bug, not a tradeoff.',
+      },
+    ],
   },
 
   why: {

@@ -4,10 +4,10 @@ A Raku (Perl 6) interpreter written in Rust, using a bytecode VM architecture.
 
 mutsu parses Raku source into an AST, compiles it to bytecode, and executes it on a custom VM. It is under active development and improving rapidly, but is **not yet suitable for production use**.
 
-Try it in your browser: **https://tokuhirom.github.io/mutsu/** — an introduction to
-Raku (English / 日本語) with a [hands-on tutorial](https://tokuhirom.github.io/mutsu/tutorial.html)
-and a [playground](https://tokuhirom.github.io/mutsu/playground.html), all running
-locally as WebAssembly.
+**https://tokuhirom.github.io/mutsu/** (English / 日本語) introduces the project and
+the language, with a [hands-on Raku tutorial](https://tokuhirom.github.io/mutsu/tutorial.html)
+and a [playground](https://tokuhirom.github.io/mutsu/playground.html). Everything on
+it runs locally as WebAssembly — the site is running mutsu itself.
 
 ## Install
 
@@ -29,8 +29,8 @@ mzef --version                            # the bundled Zef package manager
 The release archive is self-contained: `bin/mutsu`, `bin/mzef`, and the
 vendored Zef tree at `share/mutsu/zef`. `mzef` is a thin shim that runs the
 bundled Zef under `mutsu`, so `mzef install <dist>` works out of the box with no
-extra setup. Linux (x64/arm64) binaries are published each release; macOS builds
-are best-effort while an upstream toolchain issue is resolved.
+extra setup. Every release publishes all four targets: Linux x64/arm64 and macOS
+x64/arm64.
 
 ### With Docker
 
@@ -94,7 +94,7 @@ For interactive use:
 
 ## Status
 
-mutsu passes **1,145 out of ~1,460** official [Roast](https://github.com/Raku/roast) test files. Compatibility is improving daily.
+mutsu passes **1,433 out of 1,464** official [Roast](https://github.com/Raku/roast) test files in full. Compatibility is improving daily; the [site](https://tokuhirom.github.io/mutsu/) shows the figure counted at its last deploy.
 
 ## What Works
 
@@ -254,7 +254,7 @@ Usage:
 - **Single-threaded execution.** `start`/`await` work but run on a single thread.
 - **Incomplete container semantics.** Some binding and container behaviors differ from Rakudo.
 - **Limited exception types.** Not all `X::` exception classes are implemented.
-- **No package manager integration.** There is no zef/ecosystem support; `use` works for local modules only.
+- **The package manager is young.** Zef ships bundled as `mzef` and runs on mutsu, but installing arbitrary ecosystem distributions is not yet dependable.
 - **Some advanced features are missing or incomplete.** Certain meta-programming, NativeCall, and supply/react patterns are not yet supported.
 
 ## Building
