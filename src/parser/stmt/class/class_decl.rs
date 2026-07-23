@@ -479,9 +479,14 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
             stmts.push(meta_setter_stmt(&name, &trait_name, trait_value));
         }
     }
-    if is_export {
+    if is_export && !is_lexical {
         // Register the export AFTER the class is declared so its type object is
         // in scope when `import`/`use` copies it into the caller's namespace.
+        // Only for a package-scoped class: a `my class ... is export` is lexical
+        // and would be trapped inside this synthetic `Stmt::Block` scope (breaking
+        // its visibility to the rest of the module). A bare-file module's
+        // top-level `my class` is already importable by its bare name through the
+        // global registry, so it keeps the pre-existing path here.
         stmts.push(class_stmt);
         stmts.push(export_type_stmt(&name, &export_tags));
         return Ok((rest, Stmt::Block(stmts)));
