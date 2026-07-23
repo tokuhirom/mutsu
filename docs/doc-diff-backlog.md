@@ -160,7 +160,24 @@ doc) are version skew, not mutsu bugs — lowest priority.
 These root causes account for a large share of the survey's `mism`/`crash` and are
 intentionally deferred; see PLAN.md §8.5 and the ADRs:
 - **Nil-vs-Any identity knot** — `Nil.rakudoc`, `Mu.rakudoc`, uninit-scalar `.raku`/gist. No clean safe subset (closed #4822 twice).
-- **Lazy-list / container-repr (Track-B, fused with GC per ADR-0001)** — `List.rakudoc`, `Iterator.rakudoc`, `Iterable.rakudoc`, `Seq.rakudoc`, `list.rakudoc` (`loop`/`while`-as-lazy-list, flat-itemization depth).
+- **Lazy-list cluster — MOSTLY RESOLVED 2026-07-23** (4 PRs; memory
+  `lazy-list-cluster-progress`). What landed: Iterator `push-*`/`sink-all` on
+  temporary receivers + count return values (#5292, shared
+  `runtime/iterator_protocol.rs`); infinite `...` sequences survive `@`-array
+  assignment as reify-on-demand lazy arrays = L2b step 6, plus the `lazy`-prefix
+  sequence operand and the `gather do {…}; say` terminator misparse (#5294);
+  `.flat` itemization depth — Array elements stay single/itemized (#5295);
+  `loop`/`while`/`until` expressions are lazy Seqs pulled on demand (#5296,
+  gather-lowered like `lazy for`). **Still deferred (the real container-repr
+  core, fused with GC per ADR-0001):** closure_seq (`1, {rand} ... *`) /
+  scan_spec arrays stay force-capped on `@`-assign because
+  `S32-array/create.t` requires `.clone` to *share* the reifier — needs the
+  element-cell store (TODO in `value_lazy.rs`); `=:= IterationEnd` container
+  identity; IterationEnd's repr (it is a Str internally, so `.raku` quotes
+  it); the custom `does Iterator` residue where an `is Array` subclass skips
+  its user iterator (`__mutsu_array_storage` guard in
+  `vm_for_loop_dispatch.rs`); big-Int→Float degradation in geometric
+  sequence generation past i64 (`list.rakudoc` [1] tail).
 - **`and`/`or`/`not` word-logical precedence** — `operators.rakudoc`, `control.rakudoc`, `traps.rakudoc` (looser than list-prefix; needs statement-level re-association).
 - **FatRat-vs-Rat repr tag** — `Rat`/`FatRat`/`numerics` (`.^name` of a big FatRat is `Rat`).
 - **`$/<key>` postcircumfix vs. lexical-name collision inside a block** — `regexes.rakudoc` [23]
