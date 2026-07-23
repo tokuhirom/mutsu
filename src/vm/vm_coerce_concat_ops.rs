@@ -193,9 +193,9 @@ impl Interpreter {
                 Value::str(String::new()),
             );
         }
-        let cn = match v.view() {
-            ValueView::Instance { class_name, .. } => class_name.resolve().to_string(),
-            ValueView::Package(name) => name.resolve().to_string(),
+        let (cn, is_type_object) = match v.view() {
+            ValueView::Instance { class_name, .. } => (class_name.resolve().to_string(), false),
+            ValueView::Package(name) => (name.resolve().to_string(), true),
             _ => return Ok(v),
         };
         if self.has_user_method(&cn, "Stringy") {
@@ -205,6 +205,12 @@ impl Interpreter {
         if self.has_user_method(&cn, "Str") {
             let r = self.try_compiled_method_or_interpret(v, "Str", Vec::new())?;
             return Ok(Value::str(r.to_string_value()));
+        }
+        // A bare type object without a user stringifier warns and resumes with
+        // the empty string, matching Rakudo (`"a" ~ Int`, `Int eq "x"`). An
+        // Instance without one passes through to the pure stringifier unchanged.
+        if is_type_object {
+            return self.warn_type_object_string_context(&cn, false);
         }
         Ok(v)
     }

@@ -670,6 +670,17 @@ impl Interpreter {
                     result.push_str(&r.to_string_value());
                     continue;
                 }
+                // A bare type object interpolated into a string warns and
+                // resumes with "" (Rakudo: `Use of uninitialized value element
+                // of type X in string context.` — note the "element" wording
+                // specific to interpolation). The loop reconciles the caller
+                // writeback once after it finishes (same as the Nil arm above).
+                let msg = format!(
+                    "Use of uninitialized value element of type {cn} in string context.\nMethods .^name, .raku, .gist, or .say can be used to stringify it to something meaningful."
+                );
+                let resumed = self.raise_resumable_warning(&msg, Value::str(String::new()))?;
+                result.push_str(&resumed.to_string_value());
+                continue;
             }
             result.push_str(&crate::runtime::utils::coerce_to_str(&v));
         }
