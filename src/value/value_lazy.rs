@@ -213,7 +213,7 @@ impl LazyList {
 
     /// Whether this list carries the `lazy` prefix marker (set by the `lazy`
     /// statement prefix / `.lazy` method).
-    fn is_lazy_marked(&self) -> bool {
+    pub(crate) fn is_lazy_marked(&self) -> bool {
         matches!(
             self.env
                 .get("__mutsu_preserve_lazy_on_array_assign")
