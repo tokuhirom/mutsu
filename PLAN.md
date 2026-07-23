@@ -1228,8 +1228,13 @@ the backlog.
 - Entry: `git checkout -b fix-word-logical-precedence origin/main`. Files: `src/parser/expr/mod.rs`
   (`expression`), `src/parser/expr/precedence/logic.rs`, `src/parser/stmt/assign.rs`, and the
   `return`/`take` statement parsers. Cross-ref: the related `traps.rakudoc` list-element **container
-  aliasing** cases ([5]/[6]/[7]/[9]: `($a, ++$a)` / `@arr.push: ($a,$b)` / `Pair.new('a',$v)` reflect
-  later mutations) are a *separate* deferred item (container-repr, §8.5-adjacent), NOT this precedence bug.
+  aliasing** cases are a *separate* item (container-repr, §8.5-adjacent), NOT this precedence bug. The
+  **List** cases ([5]/[6]/[9]: `($a, ++$a)` / `@arr.push: ($a,$b)` reflect later mutations) were fixed
+  2026-07-23 in #5290 (a List `(...)` now boxes each scalar-var element into a shared `ContainerRef`
+  via `WrapVarRef`+`capture_var_cell`; pin `t/list-container-aliasing.t`). Still open: **[7]
+  `Pair.new('a', $v)`** — `Pair.new`'s method-arg binding decontainerizes the value, so a later `$v`
+  mutation is not reflected (raku: `a => 9`, mutsu: `a => 1`). That is a method-arg-binding container
+  case, not List construction; defer with the rest of container-repr.
 
 ### 8.10 Object hashes are string-keyed, not `.WHICH`-keyed (deferred deep item — found 2026-07-22 by the numerics/hashmap doc-diff sweeps)
 
