@@ -1019,7 +1019,17 @@ _(move tickets here with `[claim: <branch>]` when you start)_
   Residual File::Ignore failures are separate gitignore-pattern-semantics bugs
   (negated-rule precedence, directory-only `dir*/`, globstar `a/**/b`, charclass
   ranges in negated.t/range.t/wildcard.t, and `walk`) — each its own root cause,
-  deferred.
+  deferred. **Triaged 2026-07-24 — most residuals share ONE root cause:** the
+  globstar `**` (and the `dir*/`-ignores-a-file / `a/**/b` failures) is a
+  **proto-token LTM tie-break bug** — mutsu dispatches `**` to the fall-through
+  `path-part:sym<matcher>` (char-class) instead of the dedicated
+  `path-part:sym<**>` when both match the same length. Minimal repro, ruled-out
+  code paths, and the fix direction are in **PLAN.md §8.20** (a general grammar
+  bug, load-bearing for every proto-token grammar — validate against all of
+  `S05-grammar/`). `directory-only` logic itself is correct in isolation; it only
+  looks wrong because `d/**` mis-dispatches and matches `dir21`. Separate: a
+  `<sym>` auto-capture is not recorded on a multi-candidate proto match (the
+  action doesn't read it, so it doesn't affect File::Ignore).
 
 - **T-057 (SortUk)** (PR `fix-array-is-copy-list-arg`) — test_die → t/01-basic.t
   4/4 (00-meta.t needs the uninstalled `Test::META` dep, same as raku). One general
