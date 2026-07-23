@@ -1,16 +1,24 @@
-// E2E tests for the WASM playground using Playwright
+// E2E tests for the static site (landing page, tutorial, playground) using Playwright.
 // Run: node wasm-demo/e2e.test.mjs
 //
 // Requires: npm install playwright
 // Also requires wasm-demo/pkg/ to be built:
 //   wasm-pack build --target web --no-default-features --features wasm
 //   mv pkg wasm-demo/pkg
+//
+// The tutorial sweep runs EVERY lesson in the browser and compares against the
+// expectation recorded in content/lessons.txt (which scripts/check-site-snippets.mjs
+// generated from a native mutsu run cross-checked against raku). Set
+// SKIP_LESSON_SWEEP=1 to skip it while iterating locally.
 
 import { chromium } from 'playwright';
 import { spawn } from 'child_process';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
+
+import { parseCorpus } from './assets/corpus.js';
 
 const PORT = 18765;
+const BASE = `http://localhost:${PORT}`;
 let server;
 let browser;
 let passed = 0;
@@ -47,11 +55,24 @@ async function runEditor(page, code) {
   return (await page.locator('#repl-log > div').last().textContent()).trim();
 }
 
+/** Press a snippet's Run button and return its output text. */
+async function runSnippet(page, scope = '') {
+  const btn = `${scope} .run-btn`.trim();
+  await page.click(btn);
+  await page.waitForFunction(
+    (sel) => { const b = document.querySelector(sel); return b && !b.disabled; },
+    btn, { timeout: 60000 });
+  return (await page.locator(`${scope} .output`.trim()).first().textContent()).trim();
+}
+
 // Check pkg exists
 if (!existsSync('wasm-demo/pkg/mutsu.js')) {
   console.error('Error: wasm-demo/pkg/ not found. Build WASM first.');
   process.exit(1);
 }
+
+const lessons = parseCorpus(readFileSync('wasm-demo/content/lessons.txt', 'utf8'));
+const highlights = parseCorpus(readFileSync('wasm-demo/content/highlights.txt', 'utf8'));
 
 // Start HTTP server
 server = spawn('python3', ['-m', 'http.server', String(PORT), '-d', 'wasm-demo'], {
@@ -66,9 +87,151 @@ try {
   const errors = [];
   page.on('pageerror', err => errors.push(err.message));
 
-  // --- Test: Page loads and WASM initializes ---
-  console.log('Test: WASM initialization');
-  await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'networkidle' });
+  /* =============================================================== *
+   * Landing page
+   * =============================================================== */
+
+  console.log('Test: landing page');
+  await page.goto(`${BASE}/index.html?lang=en`, { waitUntil: 'networkidle' });
+  await page.waitForFunction(() => document.body.dataset.ready === '1', { timeout: 30000 });
+
+  assert((await page.textContent('#hero-title')).length > 0, 'the hero has a title');
+  assert(await page.locator('#why-cards .card').count() === highlights.length,
+         `every highlight snippet has a card (${highlights.length})`);
+  assert(await page.locator('.site-nav .nav-links a').count() >= 4, 'the nav lists the pages');
+  assert((await page.textContent('.site-footer')).includes('Raku/doc'),
+         'the footer credits the official Raku documentation');
+
+  console.log('Test: landing page language switch');
+  const enTitle = await page.textContent('#hero-title');
+  await page.click('.lang-switch button[data-lang="ja"]');
+  const jaTitle = await page.textContent('#hero-title');
+  assert(enTitle !== jaTitle, 'switching to Japanese re-renders the hero');
+  assert((await page.textContent('.site-footer')).includes('Artistic License 2.0'),
+         'the Japanese footer keeps the licence credit');
+  assert(new URL(page.url()).searchParams.get('lang') === 'ja',
+         'the language lands in the URL so links stay shareable');
+  await page.click('.lang-switch button[data-lang="en"]');
+  assert(await page.textContent('#hero-title') === enTitle, 'switching back restores English');
+
+  console.log('Test: landing page snippet runs');
+  const firstHighlight = highlights[0];
+  const cardOut = await runSnippet(page, `#card-${firstHighlight.id}`);
+  assert(cardOut === firstHighlight.expect,
+         `the "${firstHighlight.key}" card produces its expected output`);
+  assert(await page.locator(`#card-${firstHighlight.id} .verdict.ok`).count() === 1,
+         'a matching run is marked as matching');
+
+  /* =============================================================== *
+   * Tutorial
+   * =============================================================== */
+
+  console.log('Test: tutorial page');
+  await page.goto(`${BASE}/tutorial.html?lang=en`, { waitUntil: 'networkidle' });
+  await page.waitForFunction(() => document.body.dataset.ready === '1', { timeout: 30000 });
+
+  assert(await page.locator('.toc .lesson-link').count() === lessons.length,
+         `the table of contents lists every lesson (${lessons.length})`);
+  assert(await page.locator('.toc .chapter').count() ===
+         new Set(lessons.map(l => l.group)).size, 'chapters are grouped');
+  assert(await page.textContent('#lesson-title') !== '', 'the first lesson renders');
+  assert(await page.locator('#prev-btn').isDisabled(), 'Previous is disabled on lesson 1');
+
+  console.log('Test: tutorial navigation');
+  await page.click('#next-btn');
+  assert(new URL(page.url()).hash === `#${lessons[1].key}`,
+         'Next moves to the second lesson and records it in the URL');
+  const secondTitle = await page.textContent('#lesson-title');
+  await page.click('#prev-btn');
+  assert(await page.textContent('#lesson-title') !== secondTitle, 'Previous goes back');
+
+  console.log('Test: tutorial deep link');
+  const deep = lessons.find(l => l.group === 'regex');
+  await page.goto(`${BASE}/tutorial.html?lang=en#${deep.key}`, { waitUntil: 'networkidle' });
+  await page.waitForFunction(() => document.body.dataset.ready === '1', { timeout: 30000 });
+  assert((await page.inputValue('.editor-wrap textarea')).trim() === deep.code.trim(),
+         'a deep link opens that lesson with its code loaded');
+  assert(await page.locator('details.expected').count() === 1,
+         'the lesson shows its expected output');
+
+  console.log('Test: tutorial language switch keeps your edits');
+  await page.fill('.editor-wrap textarea', 'say "mine";');
+  const titleBefore = await page.textContent('#lesson-title');
+  await page.click('.lang-switch button[data-lang="ja"]');
+  assert(await page.textContent('#lesson-title') !== titleBefore,
+         'the lesson title switches to Japanese');
+  assert(await page.inputValue('.editor-wrap textarea') === 'say "mine";',
+         'switching language does not discard what you typed');
+  await page.click('.lang-switch button[data-lang="en"]');
+  await page.click('.reset-btn');
+
+  console.log('Test: tutorial marks a lesson done when its output matches');
+  await runSnippet(page);
+  assert(await page.locator('.toc .lesson-link.done').count() >= 1,
+         'a matching run marks the lesson done in the table of contents');
+  await page.click('#clear-progress');
+  assert(await page.locator('.toc .lesson-link.done').count() === 0, 'progress can be cleared');
+
+  console.log('Test: a lesson the WASM build cannot run says so');
+  const blocked = lessons.find(l => l.flags.includes('no-browser'));
+  if (blocked) {
+    await page.evaluate(k => { location.hash = k; }, blocked.key);
+    await page.waitForFunction(() => !document.querySelector('.snippet-note').hidden,
+                               { timeout: 10000 }).catch(() => {});
+    assert(!(await page.locator('.snippet-note').isHidden()),
+           `${blocked.key} explains why it cannot run in the browser`);
+    assert(await page.locator('.run-btn').isDisabled(), 'and its Run button is disabled');
+    assert((await page.textContent('.output')).trim() === blocked.expect,
+           'and it shows the output recorded from a native run');
+    await page.evaluate(k => { location.hash = k; }, deep.key);
+    await page.waitForFunction(() => document.querySelector('.snippet-note').hidden,
+                               { timeout: 10000 });
+    assert(!(await page.locator('.run-btn').isDisabled()),
+           'moving to a runnable lesson re-enables Run');
+  }
+
+  console.log('Test: tutorial edits are runnable');
+  await page.fill('.editor-wrap textarea', 'say "edited";');
+  const editedOut = await runSnippet(page);
+  assert(editedOut === 'edited', `an edited lesson runs (got: ${JSON.stringify(editedOut)})`);
+  assert(await page.locator('.verdict.differs').count() === 1,
+         'output that differs from the expectation says so');
+  await page.click('.reset-btn');
+  assert((await page.inputValue('.editor-wrap textarea')).trim() === deep.code.trim(),
+         'Reset restores the lesson code');
+
+  /* =============================================================== *
+   * Every lesson actually runs in the browser
+   * =============================================================== */
+
+  if (!process.env.SKIP_LESSON_SWEEP) {
+    const runnable = lessons.filter(l => !l.flags.includes('no-browser'));
+    console.log(`Test: all ${runnable.length} browser-runnable lessons produce their expected output`);
+    let sweepFailures = 0;
+    for (const lesson of runnable) {
+      // Navigate by hash rather than reloading: one page load means one WASM
+      // instance for the whole sweep instead of ~20 MB recompiled per lesson.
+      await page.evaluate(k => { location.hash = k; }, lesson.key);
+      await page.waitForFunction(
+        (code) => document.querySelector('.editor-wrap textarea').value.trim() === code,
+        lesson.code.trim(), { timeout: 10000 });
+      const out = await runSnippet(page);
+      if (out !== lesson.expect) {
+        sweepFailures++;
+        console.error(`  ${lesson.key}\n    expected: ${JSON.stringify(lesson.expect)}` +
+                      `\n    got:      ${JSON.stringify(out)}`);
+      }
+    }
+    assert(sweepFailures === 0,
+           `every lesson matches its recorded output (${sweepFailures} mismatched)`);
+  }
+
+  /* =============================================================== *
+   * Playground
+   * =============================================================== */
+
+  console.log('Test: playground WASM initialization');
+  await page.goto(`${BASE}/playground.html`, { waitUntil: 'networkidle' });
   await page.waitForFunction(() => document.body.dataset.ready === '1', { timeout: 30000 });
   assert(!(await page.isDisabled('#repl-input')), 'REPL input is enabled once WASM is ready');
 
@@ -171,13 +334,21 @@ try {
     };
     return enc(document.getElementById('code').value);
   });
-  await page.goto(`http://localhost:${PORT}/#code=${hash}`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE}/playground.html#code=${hash}`, { waitUntil: 'networkidle' });
   await page.waitForFunction(() => document.body.dataset.ready === '1', { timeout: 30000 });
   assert(await page.inputValue('#code') === shared,
          'a permalink restores the code, non-ASCII included');
   const sharedOut = await runEditor(page, await page.inputValue('#code'));
   assert(sharedOut === 'unicode: こんにちは',
          `the restored code runs (got: ${JSON.stringify(sharedOut)})`);
+
+  // --- Test: old index.html permalinks still work ---
+  console.log('Test: legacy permalink redirect');
+  await page.goto(`${BASE}/index.html#code=${hash}`, { waitUntil: 'networkidle' });
+  await page.waitForFunction(() => document.body.dataset.ready === '1', { timeout: 30000 });
+  assert(new URL(page.url()).pathname.endsWith('/playground.html'),
+         'an old index.html permalink redirects to the playground');
+  assert(await page.inputValue('#code') === shared, 'and still carries its code');
 
   // --- Test: No page errors (unreachable traps) ---
   console.log('Test: No WASM crashes');

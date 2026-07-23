@@ -1,0 +1,527 @@
+/* Shared styling for the mutsu site (landing, tutorial, playground). */
+
+:root {
+  --purple: #7B2D8B;
+  --pink: #E91E8C;
+  --dark-bg: #1a0a20;
+  --panel-bg: #2a1235;
+  --panel-bg-2: #33163f;
+  --console-bg: #0d0514;
+  --border: #4a2555;
+  --text: #f0e6f6;
+  --dim: #9a7fa8;
+  --green: #7deba0;
+  --red: #ff6b8a;
+  --mono: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', ui-monospace, monospace;
+  --sans: system-ui, -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+
+  /* syntax colors */
+  --syn-comment: #7a5f88;
+  --syn-string: #ffc48a;
+  --syn-number: #9fd6ff;
+  --syn-var: #7deba0;
+  --syn-keyword: #ff86c8;
+  --syn-type: #e6a3ff;
+  --syn-op: #c8b0d4;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--sans);
+  background: linear-gradient(135deg, var(--dark-bg) 0%, #2d1040 50%, #1a0a30 100%);
+  background-attachment: fixed;
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.6;
+}
+
+a { color: #e6a3ff; }
+
+/* ------------------------------------------------------------------ *
+ * Site chrome
+ * ------------------------------------------------------------------ */
+
+.site-nav {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.7rem 1.2rem;
+  border-bottom: 1px solid var(--border);
+  background: rgba(13, 5, 20, 0.6);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  backdrop-filter: blur(8px);
+  flex-wrap: wrap;
+}
+.site-nav .brand {
+  font-weight: 700;
+  font-size: 1.05rem;
+  text-decoration: none;
+  background: linear-gradient(90deg, var(--purple), var(--pink));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.site-nav .nav-links { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.site-nav .nav-links a {
+  color: var(--dim);
+  text-decoration: none;
+  font-size: 0.9rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 0.35rem;
+}
+.site-nav .nav-links a:hover { color: var(--text); background: var(--panel-bg); }
+.site-nav .nav-links a[aria-current="page"] { color: var(--text); background: var(--panel-bg-2); }
+.site-nav .spacer { flex: 1; }
+
+.lang-switch { display: flex; border: 1px solid var(--border); border-radius: 0.4rem; overflow: hidden; }
+.lang-switch button {
+  background: transparent;
+  border: 0;
+  color: var(--dim);
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 0.25rem 0.65rem;
+  cursor: pointer;
+}
+.lang-switch button[aria-pressed="true"] { background: var(--panel-bg-2); color: var(--text); }
+.lang-switch button:hover { color: var(--text); }
+
+footer.site-footer {
+  border-top: 1px solid var(--border);
+  padding: 1.4rem 1.2rem 2rem;
+  color: var(--dim);
+  font-size: 0.82rem;
+  text-align: center;
+  margin-top: auto;
+}
+footer.site-footer p + p { margin-top: 0.4rem; }
+footer.site-footer a { color: var(--pink); text-decoration: none; }
+footer.site-footer a:hover { text-decoration: underline; }
+
+/* ------------------------------------------------------------------ *
+ * Buttons
+ * ------------------------------------------------------------------ */
+
+.btn {
+  background: linear-gradient(135deg, var(--purple), var(--pink));
+  border: none;
+  color: white;
+  padding: 0.5rem 1.3rem;
+  border-radius: 0.4rem;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+  transition: opacity 0.15s;
+}
+.btn:hover { opacity: 0.9; }
+.btn:disabled { opacity: 0.5; cursor: wait; }
+.btn-ghost {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--dim);
+  padding: 0.45rem 0.9rem;
+  border-radius: 0.4rem;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+  transition: all 0.15s;
+}
+.btn-ghost:hover { border-color: var(--pink); color: var(--text); }
+
+/* ------------------------------------------------------------------ *
+ * Editor widget (textarea + highlight overlay, pixel-aligned)
+ * ------------------------------------------------------------------ */
+
+.editor-wrap {
+  position: relative;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+.editor-wrap:focus-within {
+  border-color: var(--pink);
+  box-shadow: 0 0 0 2px rgba(233, 30, 140, 0.15);
+}
+/* The overlay and the textarea must render text identically and overlap
+   pixel-for-pixel: same font, size, padding, line-height, borders. */
+.editor-wrap textarea,
+.editor-wrap pre {
+  font-family: var(--mono);
+  font-size: 0.88rem;
+  line-height: 1.55;
+  padding: 0.9rem;
+  margin: 0;
+  border: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  tab-size: 4;
+}
+.editor-wrap pre {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  pointer-events: none;
+  color: var(--text);
+}
+.editor-wrap textarea {
+  position: relative;
+  display: block;
+  width: 100%;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--pink);
+  resize: vertical;
+  outline: none;
+  overflow: auto;
+}
+.editor-wrap textarea::selection { background: rgba(233, 30, 140, 0.35); }
+
+.tok-comment { color: var(--syn-comment); font-style: italic; }
+.tok-string  { color: var(--syn-string); }
+.tok-number  { color: var(--syn-number); }
+.tok-var     { color: var(--syn-var); }
+.tok-keyword { color: var(--syn-keyword); font-weight: 600; }
+.tok-type    { color: var(--syn-type); }
+.tok-op      { color: var(--syn-op); }
+
+/* ------------------------------------------------------------------ *
+ * Output pane
+ * ------------------------------------------------------------------ */
+
+.output {
+  background: var(--console-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  padding: 0.7rem 0.9rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+  color: var(--green);
+  min-height: 2.6rem;
+}
+.output.error { color: var(--red); }
+.output.muted { color: var(--dim); font-style: italic; font-family: var(--sans); }
+
+.run-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin: 0.6rem 0;
+}
+.hint { color: var(--dim); font-size: 0.78rem; }
+.grow { flex: 1; }
+.snippet-note {
+  color: var(--syn-string);
+  background: rgba(255, 196, 138, 0.08);
+  border-left: 2px solid var(--syn-string);
+  font-size: 0.82rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: 0 0.3rem 0.3rem 0;
+  margin-bottom: 0.6rem;
+}
+.verdict { font-size: 0.82rem; font-weight: 600; }
+.verdict.ok { color: var(--green); }
+.verdict.differs { color: var(--syn-string); }
+
+/* ------------------------------------------------------------------ *
+ * Landing page
+ * ------------------------------------------------------------------ */
+
+.hero {
+  text-align: center;
+  padding: 3rem 1.2rem 2rem;
+  max-width: 52rem;
+  margin: 0 auto;
+}
+.hero h1 {
+  font-size: clamp(2.2rem, 6vw, 3.4rem);
+  line-height: 1.15;
+  background: linear-gradient(90deg, var(--purple), var(--pink));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.hero .tagline { color: var(--text); font-size: 1.15rem; margin-top: 0.9rem; }
+.hero .sub { color: var(--dim); margin-top: 0.7rem; font-size: 0.95rem; }
+.hero .cta { margin-top: 1.6rem; display: flex; gap: 0.7rem; justify-content: center; flex-wrap: wrap; }
+
+.section {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 1.5rem 1.2rem;
+  width: 100%;
+}
+.section > h2 {
+  font-size: 1.5rem;
+  margin-bottom: 0.4rem;
+}
+.section > .lede { color: var(--dim); margin-bottom: 1.4rem; }
+
+.card {
+  background: rgba(42, 18, 53, 0.55);
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+  padding: 1.1rem 1.2rem;
+  margin-bottom: 1.1rem;
+}
+.card h3 { font-size: 1.12rem; margin-bottom: 0.35rem; }
+.card .card-body { color: var(--dim); font-size: 0.92rem; margin-bottom: 0.8rem; }
+.card .card-body code,
+.lesson-body code {
+  font-family: var(--mono);
+  font-size: 0.88em;
+  background: rgba(13, 5, 20, 0.6);
+  padding: 0.08em 0.35em;
+  border-radius: 0.25rem;
+  color: var(--syn-type);
+}
+
+/* ------------------------------------------------------------------ *
+ * Tutorial page
+ * ------------------------------------------------------------------ */
+
+.tutorial-layout {
+  display: grid;
+  grid-template-columns: 17rem 1fr;
+  gap: 1.4rem;
+  max-width: 78rem;
+  width: 100%;
+  margin: 0 auto;
+  padding: 1.2rem;
+  align-items: start;
+  flex: 1;
+}
+
+.toc {
+  position: sticky;
+  top: 4.2rem;
+  max-height: calc(100vh - 5.5rem);
+  overflow-y: auto;
+  background: rgba(42, 18, 53, 0.45);
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  padding: 0.8rem;
+}
+.toc h2 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); margin-bottom: 0.6rem; }
+.toc .toc-intro { font-size: 0.82rem; color: var(--dim); margin-bottom: 0.9rem; }
+.toc .toc-source {
+  font-size: 0.72rem;
+  color: var(--dim);
+  margin-top: 0.9rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--border);
+}
+.toc ol { list-style: none; }
+.toc .chapter { margin-bottom: 0.7rem; }
+.toc .chapter > .chapter-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 0.25rem;
+  display: flex;
+  gap: 0.4rem;
+}
+.toc .chapter > .chapter-title .num { color: var(--pink); }
+.toc .lesson-link {
+  display: block;
+  padding: 0.22rem 0.5rem;
+  font-size: 0.85rem;
+  color: var(--dim);
+  text-decoration: none;
+  border-left: 2px solid transparent;
+  border-radius: 0 0.25rem 0.25rem 0;
+}
+.toc .lesson-link:hover { color: var(--text); background: var(--panel-bg); }
+.toc .lesson-link[aria-current="true"] {
+  color: var(--text);
+  background: var(--panel-bg-2);
+  border-left-color: var(--pink);
+}
+.toc .lesson-link.done::after { content: " ✓"; color: var(--green); }
+
+.lesson { min-width: 0; }
+.lesson .crumb { color: var(--dim); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.07em; }
+.lesson h1 { font-size: 1.7rem; margin: 0.25rem 0 0.9rem; }
+.lesson-body { margin-bottom: 1.1rem; }
+.lesson-body p + p,
+.lesson-body p + ul,
+.lesson-body ul + p { margin-top: 0.7rem; }
+.lesson-body ul { padding-left: 1.2rem; }
+.lesson-body li { margin-top: 0.25rem; }
+.lesson-body strong { color: var(--text); }
+
+.pane-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--dim);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.35rem;
+}
+.pane-title::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+
+.lesson-nav {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  margin-top: 1.6rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+.lesson-nav button:disabled { opacity: 0.4; cursor: default; }
+
+.toc-actions { margin-top: 0.8rem; }
+
+details.expected { margin-top: 0.7rem; }
+details.expected summary {
+  cursor: pointer;
+  color: var(--dim);
+  font-size: 0.82rem;
+}
+details.expected pre {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  white-space: pre-wrap;
+  color: var(--dim);
+  background: var(--console-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  padding: 0.6rem 0.8rem;
+  margin-top: 0.4rem;
+  overflow-x: auto;
+}
+
+/* ------------------------------------------------------------------ *
+ * Playground
+ * ------------------------------------------------------------------ */
+
+.container {
+  max-width: 62rem;
+  width: 100%;
+  margin: 0 auto;
+  padding: 1rem 1.2rem 1.5rem;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.examples { display: flex; flex-direction: column; gap: 0.4rem; }
+.example-group { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
+.example-group .group-label {
+  color: var(--dim);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  min-width: 5.5rem;
+}
+.examples button {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  color: var(--dim);
+  padding: 0.25rem 0.65rem;
+  border-radius: 1rem;
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.examples button:hover, .examples button:focus-visible {
+  border-color: var(--pink);
+  color: var(--text);
+  outline: none;
+}
+.examples button.active { border-color: var(--pink); color: var(--text); background: #3a1a48; }
+#example-desc { color: var(--dim); font-size: 0.82rem; min-height: 1.2em; padding-left: 0.2rem; }
+
+.repl {
+  background: var(--console-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.86rem;
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  min-height: 220px;
+  max-height: 460px;
+}
+.repl:focus-within { border-color: var(--pink); }
+#repl-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.8rem 0.8rem 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+#repl-log .echo { color: var(--text); }
+#repl-log .echo .prompt { color: var(--pink); user-select: none; }
+#repl-log .out { color: var(--green); }
+#repl-log .out.error { color: var(--red); }
+#repl-log .note { color: var(--dim); font-style: italic; }
+.repl-input-line { display: flex; align-items: baseline; gap: 0.4rem; padding: 0.4rem 0.8rem 0.8rem; }
+#repl-prompt { color: var(--pink); user-select: none; }
+#repl-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: inherit;
+}
+#repl-input:disabled { opacity: 0.5; }
+
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: 1.5rem;
+  transform: translateX(-50%) translateY(1rem);
+  background: var(--panel-bg);
+  border: 1px solid var(--pink);
+  color: var(--text);
+  padding: 0.5rem 1rem;
+  border-radius: 0.4rem;
+  font-size: 0.85rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s, transform 0.2s;
+  z-index: 40;
+}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ------------------------------------------------------------------ *
+ * Responsive
+ * ------------------------------------------------------------------ */
+
+@media (max-width: 860px) {
+  .tutorial-layout { grid-template-columns: 1fr; }
+  /* Stacked above the lesson, 36 links would be a long scroll before the
+     reader reaches any content, so cap it and let it scroll internally. */
+  .toc { position: static; max-height: 45vh; }
+}
+@media (max-width: 640px) {
+  .example-group .group-label { min-width: 100%; }
+  .hero { padding-top: 2rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}

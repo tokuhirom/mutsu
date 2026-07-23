@@ -1,0 +1,6 @@
+{
+  "name": "mutsu-site",
+  "private": true,
+  "type": "module",
+  "description": "Marks the static site's content modules as ESM so Node can import them directly (scripts/check-site-snippets.mjs)."
+}

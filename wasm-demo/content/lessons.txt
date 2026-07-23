@@ -1,0 +1,595 @@
+#  Tutorial code corpus.
+#
+#  Format:  "#== <chapter-id>/<lesson-id> [flags]" starts a lesson, the lines
+#  after it are the starter code, and "#-- expect" starts the expected output
+#  block.  The order of the lessons here is the order of the tutorial; chapters
+#  are ordered by first appearance.
+#
+#  Flag `no-browser`: the snippet runs natively but not in the WebAssembly
+#  build (`start` needs OS threads, which wasm32 has none of).  The site shows
+#  the recorded native output instead of offering to run it.
+#
+#  The expected-output blocks are GENERATED and verified: run
+#      node scripts/check-site-snippets.mjs --update
+#  which runs every snippet under both `raku` and `mutsu` and only writes an
+#  expectation when the two agree.  Titles and prose live in
+#  content/tutorial.<lang>.js, keyed by "<chapter-id>/<lesson-id>".
+
+#== basics/hello
+# Every Raku program is a list of statements.  `say` prints its argument
+# followed by a newline.  Edit anything below and press Run.
+say "Hello, World!";
+say "Hello".uc;
+say 6 * 7;
+#-- expect
+Hello, World!
+HELLO
+42
+
+#== basics/variables
+my $answer = 42;          # $ - a single item
+my @langs  = <Raku Perl Rust>;   # @ - a positional list
+my %ages   = Raku => 10, Perl => 37;   # % - an associative map
+
+say $answer;
+say @langs.elems;
+say @langs[0];
+say %ages<Raku>;
+#-- expect
+42
+3
+Raku
+10
+
+#== basics/types
+say 42.^name;
+say "hi".^name;
+say (1/3).^name;
+say (1..5).^name;
+say 42 ~~ Int;
+say 42 ~~ Cool;
+say Int.^mro;
+#-- expect
+Int
+Str
+Rat
+Range
+True
+True
+((Int) (Cool) (Any) (Mu))
+
+#== basics/interpolation
+my $who  = "world";
+my @xs   = 1, 2, 3;
+
+say "Hello, $who!";
+say "The sum is { @xs.sum }";   # any expression in { }
+say "The list is @xs[]";
+say 'single quotes take no $who';
+#-- expect
+Hello, world!
+The sum is 6
+The list is 1 2 3
+single quotes take no $who
+
+#== operators/numbers
+say 0.1 + 0.2 == 0.3;     # True: Raku divides into exact Rats
+say (1/3).nude;           # numerator and denominator
+say 7 / 2;
+say 7 div 2;              # integer division
+say 7 % 3;
+say 10 %% 5;              # "is divisible by"
+say 2 ** 100;             # arbitrary precision
+#-- expect
+True
+(1 3)
+3.5
+3
+1
+True
+1267650600228229401496703205376
+
+#== operators/strings
+say "ab" ~ "cd";          # ~ concatenates
+say "-" x 10;             # x repeats
+say "apple" lt "banana";  # string comparison
+say "b" cmp "a";
+say 3 <=> 10;
+say "Raku".flip;
+say "raku".tc;
+#-- expect
+abcd
+----------
+True
+More
+Less
+ukaR
+Raku
+
+#== operators/ranges
+say (1..5).list;
+say (1..^5).list;         # ^ excludes the endpoint
+say ("a".."e").join(",");
+say (2, 4, 8 ... 64);     # ... infers the rule
+say (1, 1, * + * ... *)[^10];
+#-- expect
+(1 2 3 4 5)
+(1 2 3 4)
+a,b,c,d,e
+(2 4 8 16 32 64)
+(1 1 2 3 5 8 13 21 34 55)
+
+#== operators/meta
+say [+] 1..10;            # reduce with +
+say [*] 1..5;
+say [~] <a b c>;
+my @a = 1, 2, 3;
+say @a >>+>> 10;          # hyper: apply element-wise
+say (-3, 4, -5)>>.abs;
+say (1, 2) Z (3, 4);      # zip
+say (1, 2) X <a b>;       # cross
+#-- expect
+55
+120
+abc
+[11 12 13]
+(3 4 5)
+((1 3) (2 4))
+((1 a) (1 b) (2 a) (2 b))
+
+#== operators/junctions
+my $n = 7;
+say so $n == 3 | 7 | 9;   # any-junction
+say so all(1, 2, 3) < 5;
+say so none(<a b c>) eq "d";
+say (1..10).grep(* == any(2, 4, 8));
+#-- expect
+True
+True
+True
+(2 4 8)
+
+#== control/conditionals
+my $n = 7;
+if    $n > 10 { say "big"    }
+elsif $n > 5  { say "medium" }
+else          { say "small"  }
+
+unless $n %% 2 { say "$n is odd" }
+
+my $maybe;
+with $maybe { say "defined" } else { say "undefined" }
+
+say $n > 5 ?? "yes" !! "no";
+#-- expect
+medium
+7 is odd
+undefined
+yes
+
+#== control/loops
+for 1..3 -> $i { say "i = $i" }
+
+for <a b c>.kv -> $i, $v { say "$i: $v" }
+
+my $sum = 0;
+$sum += $_ for 1..10;     # statement modifier
+say $sum;
+
+my $k = 0;
+while $k < 3 { $k++ }
+say "k = $k";
+#-- expect
+i = 1
+i = 2
+i = 3
+0: a
+1: b
+2: c
+55
+k = 3
+
+#== control/given-when
+sub describe($x) {
+    given $x {
+        when Int     { "an Int"       }
+        when Str     { "a Str"        }
+        when 1.5     { "exactly 1.5"  }
+        when * > 100 { "a big number" }
+        default      { "something else" }
+    }
+}
+say describe($_) for 42, "hi", 1.5, 200e0, pi;
+#-- expect
+an Int
+a Str
+exactly 1.5
+a big number
+something else
+
+#== control/loop-control
+for 1..10 {
+    next if $_ %% 2;      # skip the evens
+    last if $_ > 7;       # stop past 7
+    say $_;
+}
+say "done";
+#-- expect
+1
+3
+5
+7
+done
+
+#== lists/arrays
+my @a = 10, 20, 30, 40, 50;
+say @a[0];
+say @a[*-1];              # * - 1 counts from the end
+say @a[1..3];             # a slice
+say @a[0, 2, 4];
+@a.push(60);
+say @a.elems;
+say @a.reverse;
+#-- expect
+10
+50
+(20 30 40)
+(10 30 50)
+6
+(60 50 40 30 20 10)
+
+#== lists/map-grep-sort
+my @n = 5, 3, 9, 1, 7;
+say @n.sort;
+say @n.sort({ $^b <=> $^a });   # descending
+say @n.grep(* > 4);
+say @n.map(* ** 2);
+say @n.sum, " ", @n.min, " ", @n.max;
+say <banana apple cherry>.sort(*.chars);
+#-- expect
+(1 3 5 7 9)
+(9 7 5 3 1)
+(5 9 7)
+(25 9 81 1 49)
+25 1 9
+(apple banana cherry)
+
+#== lists/hashes
+my %h = apple => 3, banana => 5, cherry => 2;
+say %h<apple>;
+%h<durian> = 7;
+say %h.elems;
+say %h.keys.sort;
+say %h<grape>:exists;
+say %h.sort(*.key).map({ "{.key}={.value}" }).join(", ");
+#-- expect
+3
+4
+(apple banana cherry durian)
+False
+apple=3, banana=5, cherry=2, durian=7
+
+#== lists/lazy
+my @fib = 1, 1, * + * ... *;    # infinite, computed on demand
+say @fib.head(10);
+say (1..Inf).grep(*.is-prime).head(5);
+say (1..*).map(* ** 2).head(5);
+
+my @collatz = gather {
+    my $x = 27;
+    while $x > 1 { take $x; $x = $x %% 2 ?? $x div 2 !! 3 * $x + 1 }
+    take 1;
+}
+say @collatz.elems;
+#-- expect
+(1 1 2 3 5 8 13 21 34 55)
+(2 3 5 7 11)
+(1 4 9 16 25)
+112
+
+#== subs/basics
+sub greet($name) { "Hello, $name!" }
+say greet("Raku");
+
+sub area($w, $h = $w) { $w * $h }     # default value
+say area(3, 4);
+say area(5);
+
+sub stats(*@nums) { min => @nums.min, max => @nums.max }   # slurpy
+say stats(3, 9, 1);
+#-- expect
+Hello, Raku!
+12
+25
+(min => 1 max => 9)
+
+#== subs/signatures
+sub connect(Str :$host = "localhost", Int :$port = 80 --> Str) {
+    "$host:$port"
+}
+say connect;
+say connect(:port(8080));
+say connect(host => "example.com", port => 443);
+
+sub first-and-rest($first, *@rest) { "$first + {@rest.elems} more" }
+say first-and-rest(1, 2, 3, 4);
+#-- expect
+localhost:80
+localhost:8080
+example.com:443
+1 + 3 more
+
+#== subs/multi
+multi fact(0)                  { 1 }
+multi fact(Int $n where * > 0) { $n * fact($n - 1) }
+say fact(10);
+
+multi show(Int $x) { "Int $x" }
+multi show(Str $x) { "Str $x" }
+multi show(@x)     { "a list of {@x.elems}" }
+say show($_) for 1, "a", [1, 2, 3];
+#-- expect
+3628800
+Int 1
+Str a
+a list of 3
+
+#== subs/closures
+my $add = -> $a, $b { $a + $b };
+say $add(2, 3);
+
+sub counter() { my $n = 0; return sub { ++$n } }
+my $tick = counter();
+say $tick(), $tick(), $tick();
+
+say (1..5).map({ $_ * 2 });
+say (1..5).map(* * 2);          # the same, with the Whatever star
+#-- expect
+5
+123
+(2 4 6 8 10)
+(2 4 6 8 10)
+
+#== objects/classes
+class Point {
+    has $.x = 0;                # public accessor
+    has $.y = 0;
+    method length { sqrt($.x ** 2 + $.y ** 2) }
+    method Str    { "($.x, $.y)" }
+}
+
+my $p = Point.new(x => 3, y => 4);
+say ~$p;                        # our Str method
+say $p.length;
+say $p.x;
+#-- expect
+(3, 4)
+5
+3
+
+#== objects/inheritance
+class Animal {
+    has Str $.name;
+    method speak { "..." }
+    method intro { "{$.name} says {self.speak}" }
+}
+class Dog is Animal { method speak { "Woof" } }
+class Cat is Animal { method speak { "Meow" } }
+
+.say for Dog.new(name => "Rex").intro, Cat.new(name => "Tom").intro;
+say Dog.new(name => "Rex") ~~ Animal;
+#-- expect
+Rex says Woof
+Tom says Meow
+True
+
+#== objects/roles
+role Comparable {
+    method compare($other) { self.value <=> $other.value }
+}
+class Card does Comparable {
+    has $.value;
+}
+say Card.new(value => 3).compare(Card.new(value => 9));
+say Card ~~ Comparable;
+say Card.^roles.map(*.^name);
+#-- expect
+Less
+True
+(Comparable)
+
+#== objects/subsets
+subset Even of Int where * %% 2;
+sub half(Even $n) { $n div 2 }
+say half(10);
+say (try half(7)) // "7 is not Even";
+
+enum Color <Red Green Blue>;
+say Green;
+say Green.Int;
+say Blue > Red;
+#-- expect
+5
+7 is not Even
+Green
+1
+True
+
+#== regex/matching
+my $s = "The year 2026 rocks";
+if $s ~~ / \d ** 4 / { say "matched: $/" }
+say so "foobar" ~~ /^ foo /;
+say "a1b2c3".comb(/\d/).join(",");
+say $s.words.grep(/^ <[A..Z]> /);
+#-- expect
+matched: 2026
+True
+1,2,3
+(The)
+
+#== regex/captures
+if "2026-07-23" ~~ / (\d ** 4) "-" (\d ** 2) "-" (\d ** 2) / {
+    say "y=$0 m=$1 d=$2";
+}
+
+if "key = value" ~~ / $<k>=[\w+] \s* "=" \s* $<v>=[\w+] / {
+    say "{$<k>} => {$<v>}";
+}
+
+my regex ident { <[a..zA..Z_]> \w* }
+say so "hello_world" ~~ / ^ <ident> $ /;
+#-- expect
+y=2026 m=07 d=23
+key => value
+True
+
+#== regex/substitution
+my $t = "the quick brown fox";
+say $t.subst("quick", "slow");
+say $t.subst(/\w+/, *.tc, :g);        # :g is global
+say $t.trans("aeiou" => "AEIOU");
+
+my $u = $t;
+$u ~~ s/quick/lazy/;
+say $u;
+#-- expect
+the slow brown fox
+The Quick Brown Fox
+thE qUIck brOwn fOx
+the lazy brown fox
+
+#== regex/grammars
+grammar Greeting {
+    rule  TOP   { <greet> <name> }
+    token greet { "Hello" | "Hi" }
+    token name  { \w+ }
+}
+
+my $m = Greeting.parse("Hello Camelia");
+say $m<greet>;
+say $m<name>;
+say Greeting.parse("Goodbye Camelia").defined;
+#-- expect
+｢Hello｣
+｢Camelia｣
+False
+
+#== concurrency/promises no-browser
+my @squares = (1..5).map: -> $n { start { $n * $n } };
+say await @squares;
+
+my $p = Promise.new;
+$p.keep("kept");
+say $p.result;
+say $p.status;
+#-- expect
+(1 4 9 16 25)
+kept
+Kept
+
+#== concurrency/channels no-browser
+my $c = Channel.new;
+start {
+    $c.send($_) for 1..3;
+    $c.close;
+}
+say $c.list;
+#-- expect
+(1 2 3)
+
+#== concurrency/supplies
+my $supply = Supply.from-list(1..5);
+react {
+    whenever $supply -> $v {
+        say "got $v";
+    }
+}
+say "stream finished";
+#-- expect
+got 1
+got 2
+got 3
+got 4
+got 5
+stream finished
+
+#== wrapping-up/exceptions
+sub risky($n) {
+    die "negative input" if $n < 0;
+    sqrt($n);
+}
+say risky(9);
+
+my $r = try risky(-1);
+say "caught: {$!.message}" with $!;
+
+class MyError is Exception {
+    method message { "something specific went wrong" }
+}
+try {
+    MyError.new.throw;
+    CATCH { when MyError { say "caught: {.message}" } }
+}
+#-- expect
+3
+caught: negative input
+caught: something specific went wrong
+
+#== wrapping-up/phasers
+sub work {
+    ENTER { say "entering" }
+    LEAVE { say "leaving"  }
+    say "working";
+}
+work();
+
+for 1..3 {
+    FIRST { say "first"  }
+    LAST  { say "last"   }
+    say "  item $_";
+}
+#-- expect
+entering
+working
+leaving
+first
+  item 1
+  item 2
+  item 3
+last
+
+#== wrapping-up/introspection
+class Foo {
+    has $.bar;
+    method baz { }
+}
+say Foo.^name;
+say Foo.^attributes.map(*.name);
+say Foo.^mro;
+say Foo.new(bar => 1).^can("baz").elems;
+say Foo.new(bar => 1).^can("nope").elems;
+#-- expect
+Foo
+($!bar)
+((Foo) (Any) (Mu))
+1
+0
+
+#== wrapping-up/putting-it-together
+my $text = "the quick brown fox jumps over the lazy dog the end";
+
+my %freq;
+%freq{$_}++ for $text.words;
+
+for %freq.sort({ -.value, .key }).head(3) -> $pair {
+    say "{$pair.key}: {$pair.value}";
+}
+
+say "distinct words: {%freq.elems}";
+say "longest: {$text.words.sort(-*.chars).head}";
+#-- expect
+the: 3
+brown: 1
+dog: 1
+distinct words: 9
+longest: quick

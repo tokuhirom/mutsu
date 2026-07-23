@@ -1,0 +1,89 @@
+#  Landing-page highlight snippets.  Same format as lessons.txt:
+#  "#== <group>/<id>" then code, then "#-- expect" then the expected output.
+#  Regenerate the expectations with:
+#      node scripts/check-site-snippets.mjs --update
+#  Titles and prose live in content/landing.<lang>.js, keyed by "<group>/<id>".
+
+#== why/rationals
+# 0.1 + 0.2 is exactly 0.3, because Raku divides into rationals.
+say 0.1 + 0.2 == 0.3;
+say (1/3 + 1/6).nude;
+say 2 ** 100;
+#-- expect
+True
+(1 2)
+1267650600228229401496703205376
+
+#== why/junctions
+# One value that is several values at once.
+my $x = 7;
+say so $x == 3 | 7 | 9;
+say so all(2, 4, 6) %% 2;
+say (1..20).grep(* == any(3, 7, 11));
+#-- expect
+True
+True
+(3 7 11)
+
+#== why/lazy
+# Infinite sequences, computed only as far as you look.
+my @fib = 1, 1, * + * ... *;
+say @fib.head(10);
+say (1..Inf).grep(*.is-prime).head(5);
+#-- expect
+(1 1 2 3 5 8 13 21 34 55)
+(2 3 5 7 11)
+
+#== why/multi
+# Dispatch on types, arity, and arbitrary constraints.
+multi fizz(Int $n where $n %% 15) { "FizzBuzz" }
+multi fizz(Int $n where $n %%  3) { "Fizz"     }
+multi fizz(Int $n where $n %%  5) { "Buzz"     }
+multi fizz(Int $n)                { ~$n        }
+say (1..15).map({ fizz($_) }).join(" ");
+#-- expect
+1 2 Fizz 4 Buzz Fizz 7 8 Fizz Buzz 11 Fizz 13 14 FizzBuzz
+
+#== why/grammars
+# Grammars are first-class: a parser is just a class of named regexes.
+grammar Ini {
+    token TOP     { <pair>+ % \n }
+    token pair    { <key> \s* "=" \s* <value> }
+    token key     { \w+ }
+    token value   { \N+ }
+}
+my $m = Ini.parse("name = mutsu\nlang = Raku");
+say $m<pair>.map({ "{.<key>} -> {.<value>}" });
+#-- expect
+(name -> mutsu lang -> Raku)
+
+#== why/operators
+# Metaoperators build new operators out of the ones you already know.
+say [+] 1..100;
+say (1, 2, 3) >>*>> 10;
+say (-4, 5, -6)>>.abs;
+say <a b c> Z <1 2 3>;
+#-- expect
+5050
+(10 20 30)
+(4 5 6)
+((a 1) (b 2) (c 3))
+
+#== why/concurrency
+# Promises and reactive streams are in the core language.
+my @results = (1..4).map: -> $n { start { $n * $n } };
+say await @results;
+#-- expect
+(1 4 9 16)
+
+#== why/unicode
+# Raku speaks Unicode: in source, in strings, and as operators.
+say "π ≈ {pi.fmt('%.5f')}";
+say 1 ≤ 2 ≤ 3;                     # ≤ is an alias for <=
+say (set(<a b>) ∪ set(<b c>)).keys.sort;
+say "Ω".uniname;
+#-- expect
+π ≈ 3.14159
+True
+(a b c)
+GREEK CAPITAL LETTER OMEGA

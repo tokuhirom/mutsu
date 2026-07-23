@@ -4,7 +4,10 @@ A Raku (Perl 6) interpreter written in Rust, using a bytecode VM architecture.
 
 mutsu parses Raku source into an AST, compiles it to bytecode, and executes it on a custom VM. It is under active development and improving rapidly, but is **not yet suitable for production use**.
 
-Try it in your browser: **https://tokuhirom.github.io/mutsu/** (WebAssembly demo)
+Try it in your browser: **https://tokuhirom.github.io/mutsu/** — an introduction to
+Raku (English / 日本語) with a [hands-on tutorial](https://tokuhirom.github.io/mutsu/tutorial.html)
+and a [playground](https://tokuhirom.github.io/mutsu/playground.html), all running
+locally as WebAssembly.
 
 ## Install
 
@@ -284,4 +287,4 @@ See [CLAUDE.md](CLAUDE.md) for development conventions, architecture details, an
 
 - [Raku documentation](https://docs.raku.org/)
 - [Roast (official Raku test suite)](https://github.com/Raku/roast)
-- [WebAssembly demo](https://tokuhirom.github.io/mutsu/)
+- [The mutsu site](https://tokuhirom.github.io/mutsu/) — Raku introduction, tutorial and playground (source in `wasm-demo/`)
