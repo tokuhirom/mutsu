@@ -42,6 +42,10 @@ target-local/
 # wasm-pack output + the Playwright install that drives wasm-demo/e2e.test.mjs
 /pkg/
 /wasm-demo/pkg/
+# Rendered at deploy time by scripts/bench-visualize.py (and transiently by the
+# e2e suite) from the bench-data branch's history.
+/wasm-demo/bench-trend.html
+/wasm-demo/.bench-history.e2e.tsv
 /node_modules/
 /package.json
 /package-lock.json

@@ -57,7 +57,7 @@ jobs:
         run: |
           git fetch --depth 1 origin bench-data 2>/dev/null || true
           if git show FETCH_HEAD:bench-history.tsv > /tmp/bench-history.tsv 2>/dev/null; then
-            python3 scripts/bench-visualize.py --standalone \
+            python3 scripts/bench-visualize.py --standalone --site-chrome \
               /tmp/bench-history.tsv -o wasm-demo/bench-trend.html
           else
             echo "no bench-history.tsv on bench-data yet; skipping bench-trend"

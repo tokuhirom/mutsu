@@ -12,8 +12,8 @@
 // SKIP_LESSON_SWEEP=1 to skip it while iterating locally.
 
 import { chromium } from 'playwright';
-import { spawn } from 'child_process';
-import { existsSync, readFileSync } from 'fs';
+import { spawn, spawnSync } from 'child_process';
+import { existsSync, readFileSync, writeFileSync, rmSync } from 'fs';
 
 import { parseCorpus } from './assets/corpus.js';
 
@@ -74,6 +74,32 @@ if (!existsSync('wasm-demo/pkg/mutsu.js')) {
 const lessons = parseCorpus(readFileSync('wasm-demo/content/lessons.txt', 'utf8'));
 const highlights = parseCorpus(readFileSync('wasm-demo/content/highlights.txt', 'utf8'));
 
+// The bench dashboard is generated at deploy time from the bench-data branch.
+// Render one here from a synthetic history so its site chrome is covered by the
+// same suite as the hand-written pages — it is a page of the site, and it is
+// easy to forget when the shared chrome changes.
+const BENCH_HTML = 'wasm-demo/bench-trend.html';
+const BENCH_TSV = 'wasm-demo/.bench-history.e2e.tsv';
+const benchRows = [
+  'date\tcommit\tbenchmark\tmutsu_median_s\tmutsu_min_s\traku_median_s\tratio_mutsu_over_raku\truns\trunner\trakudo',
+];
+for (let i = 0; i < 6; i++) {
+  const sha = `${i}`.repeat(40);
+  for (const [name, base] of [['bench-fib', 0.2], ['bench-hash', 0.04]]) {
+    const t = (base * (1 + i / 50)).toFixed(4);
+    benchRows.push(`2026-07-${10 + i}T00:00:00Z\t${sha}\t${name}\t${t}\t${t}\t0.3000\t0.80\t7\tci\tRakudo`);
+    benchRows.push(`2026-07-${10 + i}T00:00:00Z\t${sha}\t${name}+jit\t${t}\t${t}\t0.3000\t0.70\t7\tci\tRakudo`);
+  }
+}
+writeFileSync(BENCH_TSV, benchRows.join('\n') + '\n');
+const rendered = spawnSync('python3', ['scripts/bench-visualize.py', '--standalone',
+                                       '--site-chrome', BENCH_TSV, '-o', BENCH_HTML],
+                           { encoding: 'utf8' });
+if (rendered.status !== 0) {
+  console.error('Error: could not render the bench dashboard:', rendered.stderr);
+  process.exit(1);
+}
+
 // Start HTTP server
 server = spawn('python3', ['-m', 'http.server', String(PORT), '-d', 'wasm-demo'], {
   stdio: ['ignore', 'pipe', 'pipe'],
@@ -121,6 +147,34 @@ try {
          `the "${firstHighlight.key}" card produces its expected output`);
   assert(await page.locator(`#card-${firstHighlight.id} .verdict.ok`).count() === 1,
          'a matching run is marked as matching');
+
+  /* =============================================================== *
+   * Benchmark dashboard — a generated page, but still a page of the site
+   * =============================================================== */
+
+  console.log('Test: benchmark dashboard wears the site chrome');
+  await page.goto(`${BASE}/bench-trend.html?lang=en`, { waitUntil: 'networkidle' });
+  await page.waitForFunction(() => document.querySelector('.site-nav a') !== null,
+                             { timeout: 15000 });
+  assert(await page.locator('.site-nav .nav-links a').count() >= 4,
+         'it has the shared navigation');
+  assert(await page.textContent('.site-nav a[aria-current="page"]') === 'Benchmarks',
+         'with itself marked as the current page');
+  assert((await page.textContent('.site-footer')).includes('Raku/doc'),
+         'and the shared footer credit');
+  assert(await page.locator('.lang-switch button').count() === 2,
+         'and the language switch');
+  assert(await page.locator('.bench-card svg').count() === 2,
+         'the charts still render (one per benchmark)');
+  await page.click('#view button[data-v="table"]');
+  assert(await page.locator('#tableWrap tbody tr').count() === 2,
+         'and the table view still works');
+  assert(await page.evaluate(() =>
+    getComputedStyle(document.body).backgroundImage.includes('gradient')),
+    'it uses the site background rather than its own');
+  assert(await page.evaluate(() =>
+    document.documentElement.scrollWidth <= document.documentElement.clientWidth),
+    'and does not scroll sideways');
 
   /* =============================================================== *
    * Tutorial
@@ -360,6 +414,8 @@ try {
   failed++;
 } finally {
   server.kill();
+  rmSync(BENCH_TSV, { force: true });
+  rmSync(BENCH_HTML, { force: true });
 }
 
 console.log(`\nResults: ${passed} passed, ${failed} failed`);

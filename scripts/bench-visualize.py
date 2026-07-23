@@ -18,6 +18,11 @@ The output is a single HTML file with no external requests (charts are drawn as
 inline SVG by a small vanilla-JS runtime), so it opens offline. Omit
 `--standalone` when the HTML will be wrapped by something that supplies its own
 document skeleton (e.g. published as an Artifact).
+
+Pass `--site-chrome` when the output is deployed into `wasm-demo/`: it adds the
+site's shared nav and footer by loading `assets/site.css` and `assets/i18n.js`
+from the same directory, so the dashboard is a page of the site rather than an
+orphan. That trades away self-containedness, which is why it is opt-in.
 """
 
 import argparse
@@ -92,71 +97,66 @@ def build_model(rows):
     return {"commits": commit_meta, "benches": out}
 
 
-TEMPLATE = r"""<title>mutsu bench trend</title>
+TEMPLATE = r"""<title>Benchmark trend &mdash; mutsu</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+__CHROME_HEAD__
 <style>
+/* Palette shared with the rest of the site (wasm-demo/assets/site.css), so the
+   dashboard reads as the same product whether it is deployed alongside the
+   site or opened as a standalone file. */
 :root {
-  --surface: #fcfcfb; --card: #ffffff; --ink: #1a1c1f; --muted: #6b7280;
-  --hair: #e7e7ea; --grid: #eeeef1; --edge: #e2e2e6;
-  --base: #2563eb; --jit: #d97706; --good: #15803d; --bad: #b91c1c;
-  --shadow: 0 1px 2px rgba(20,22,26,.05), 0 1px 3px rgba(20,22,26,.06);
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --surface: #14161a; --card: #1b1e23; --ink: #e8eaed; --muted: #969ca5;
-    --hair: #2a2e35; --grid: #24272d; --edge: #2c3037;
-    --base: #3b82f6; --jit: #d97706; --good: #34d399; --bad: #f87171;
-    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 1px 3px rgba(0,0,0,.35);
-  }
-}
-:root[data-theme="light"] {
-  --surface: #fcfcfb; --card: #ffffff; --ink: #1a1c1f; --muted: #6b7280;
-  --hair: #e7e7ea; --grid: #eeeef1; --edge: #e2e2e6;
-  --base: #2563eb; --jit: #d97706; --good: #15803d; --bad: #b91c1c;
-  --shadow: 0 1px 2px rgba(20,22,26,.05), 0 1px 3px rgba(20,22,26,.06);
-}
-:root[data-theme="dark"] {
-  --surface: #14161a; --card: #1b1e23; --ink: #e8eaed; --muted: #969ca5;
-  --hair: #2a2e35; --grid: #24272d; --edge: #2c3037;
-  --base: #3b82f6; --jit: #d97706; --good: #34d399; --bad: #f87171;
+  --surface: #1a0a20; --card: #2a1235; --ink: #f0e6f6; --muted: #9a7fa8;
+  --hair: #3a1c46; --grid: #33163f; --edge: #4a2555;
+  --base: #9fd6ff; --jit: #ffc48a; --good: #7deba0; --bad: #ff6b8a;
+  --accent: #E91E8C;
   --shadow: 0 1px 2px rgba(0,0,0,.3), 0 1px 3px rgba(0,0,0,.35);
 }
 * { box-sizing: border-box; }
 body {
-  margin: 0; background: var(--surface); color: var(--ink);
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  margin: 0; color: var(--ink);
+  background: linear-gradient(135deg, var(--surface) 0%, #2d1040 50%, #1a0a30 100%);
+  background-attachment: fixed;
+  font-family: system-ui, -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
   font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased;
+  min-height: 100vh; display: flex; flex-direction: column;
 }
-.mono { font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+.mono { font-family: 'Fira Code', 'JetBrains Mono', ui-monospace, Menlo, monospace;
   font-variant-numeric: tabular-nums; }
-header {
-  position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--surface) 88%, transparent);
+.bench-head {
+  position: sticky; top: 0; z-index: 5; background: rgba(13, 5, 20, .75);
   backdrop-filter: blur(8px); border-bottom: 1px solid var(--edge);
   padding: 18px clamp(16px, 4vw, 40px) 14px;
 }
+/* Deployed alongside the site, the site's own nav already owns the top of the
+   viewport, so the controls scroll away with the content instead of fighting
+   it for the sticky slot. */
+.site-nav ~ .bench-head { position: static; }
 .title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
 h1 { font-size: 19px; font-weight: 650; margin: 0; letter-spacing: -.01em; }
-.sub { color: var(--muted); font-size: 12.5px; }
+.bench-head .sub { color: var(--muted); font-size: 12.5px; }
 .controls { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
 .seg { display: inline-flex; border: 1px solid var(--edge); border-radius: 8px; overflow: hidden; }
 .seg button {
   appearance: none; border: 0; background: transparent; color: var(--muted);
   font: inherit; font-size: 12.5px; padding: 6px 12px; cursor: pointer;
 }
-.seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.seg button:hover { color: var(--ink); }
 .seg button:focus-visible { outline: 2px solid var(--base); outline-offset: -2px; }
 .ctl-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-right: 2px; }
 .legend { display: flex; gap: 16px; align-items: center; margin-left: auto; font-size: 12.5px; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
 .swatch { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
-main { padding: clamp(16px, 3vw, 28px) clamp(16px, 4vw, 40px) 60px; }
+main { padding: clamp(16px, 3vw, 28px) clamp(16px, 4vw, 40px) 60px; flex: 1; }
 .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(310px, 1fr)); }
-.card {
+/* Namespaced: site.css also defines `.card`, and this file is loaded next to
+   it on the deployed site. */
+.bench-card {
   background: var(--card); border: 1px solid var(--edge); border-radius: 12px;
   padding: 13px 14px 8px; box-shadow: var(--shadow); position: relative;
 }
-.card h2 { font-size: 13.5px; font-weight: 600; margin: 0; letter-spacing: -.005em; }
-.card .head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.bench-card h2 { font-size: 13.5px; font-weight: 600; margin: 0; letter-spacing: -.005em; }
+.bench-card .head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .readout { display: flex; align-items: baseline; gap: 8px; margin: 2px 0 4px; }
 .now { font-size: 16px; font-weight: 600; }
 .now .unit { font-size: 11px; color: var(--muted); font-weight: 400; margin-left: 1px; }
@@ -184,16 +184,16 @@ svg { display: block; width: 100%; height: auto; overflow: visible; touch-action
 table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
 th, td { text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--hair); }
 th:first-child, td:first-child { text-align: left; }
-thead th { position: sticky; top: 0; background: var(--surface); color: var(--muted);
+thead th { position: sticky; top: 0; background: var(--card); color: var(--muted);
   font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; cursor: pointer; }
-tbody tr:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+tbody tr:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); }
 .hidden { display: none; }
 .foot { color: var(--muted); font-size: 11.5px; margin-top: 22px; }
 </style>
-
-<header>
+__CHROME_NAV__
+<div class="bench-head">
   <div class="title">
-    <h1>mutsu bench trend</h1>
+    <h1>Benchmark trend</h1>
     <span class="sub" id="meta"></span>
   </div>
   <div class="controls">
@@ -218,12 +218,13 @@ tbody tr:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); }
       <span><i class="swatch" style="background:var(--jit)"></i>+jit</span>
     </div>
   </div>
-</header>
+</div>
 <main>
   <div class="grid" id="grid"></div>
   <div id="tableWrap" class="hidden"></div>
   <p class="foot" id="foot"></p>
 </main>
+__CHROME_FOOTER__
 
 <script id="data" type="application/json">__DATA__</script>
 <script>
@@ -300,7 +301,7 @@ function cardHTML(b) {
     chip = `<span class="chip ${cls}">${sign}${d.pct.toFixed(1)}%${cls==='flat'?'':arrow}</span>`;
     now = `<span class="now mono">${fmt(d.now)}<span class="unit">${unit()}${nowLane==='jit'?' (+jit)':''}</span></span>`;
   }
-  return `<div class="card" data-name="${b.name}">
+  return `<div class="bench-card" data-name="${b.name}">
     <div class="head"><h2>${b.name}</h2></div>
     <div class="readout">${now}${chip}</div>
     ${c.svg}
@@ -404,6 +405,20 @@ render();
 """
 
 
+# Site chrome (nav + footer), added by --site-chrome. The markup is empty on
+# purpose: the real navigation, language switch and credit footer are rendered
+# into it by the site's own `assets/i18n.js`, so this page can never drift from
+# the other pages' chrome. Without the flag the file stays self-contained (no
+# external requests) and simply has no chrome.
+CHROME_HEAD = '<link rel="stylesheet" href="assets/site.css">'
+CHROME_NAV = '<nav class="site-nav"></nav>'
+CHROME_FOOTER = """<footer class="site-footer"></footer>
+<script type="module">
+  import { renderChrome } from './assets/i18n.js';
+  renderChrome('bench');
+</script>"""
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("input", nargs="?", help="bench-history.tsv (default: stdin)")
@@ -413,6 +428,13 @@ def main():
         action="store_true",
         help="prepend a DOCTYPE so the file renders in standards mode when opened "
         "directly in a browser (omit when publishing as an Artifact, which adds its own)",
+    )
+    ap.add_argument(
+        "--site-chrome",
+        action="store_true",
+        help="add the mutsu site's shared nav and footer (pulls in assets/site.css and "
+        "assets/i18n.js from the same directory). Use when the output is deployed into "
+        "wasm-demo/; omit to keep the file self-contained for offline use.",
     )
     args = ap.parse_args()
 
@@ -425,6 +447,11 @@ def main():
     # Guard against a stray </script> in the data breaking the inline block.
     payload = payload.replace("</", "<\\/")
     doc = TEMPLATE.replace("__DATA__", payload)
+    doc = (
+        doc.replace("__CHROME_HEAD__", CHROME_HEAD if args.site_chrome else "")
+        .replace("__CHROME_NAV__", CHROME_NAV if args.site_chrome else "")
+        .replace("__CHROME_FOOTER__", CHROME_FOOTER if args.site_chrome else "")
+    )
     if args.standalone:
         doc = '<!DOCTYPE html>\n<meta charset="utf-8">\n' + doc
 
