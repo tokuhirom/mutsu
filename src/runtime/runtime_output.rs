@@ -130,6 +130,13 @@ impl Interpreter {
         }
     }
 
+    /// Everything `warn` has emitted on this interpreter so far, whatever sink
+    /// it went to. Lets a test assert on warnings without capturing stderr.
+    #[cfg(test)]
+    pub(crate) fn warnings_emitted(&self) -> &str {
+        &self.warn_output
+    }
+
     pub(crate) fn write_warn_to_stderr(&mut self, message: &str) {
         // Rakudo appends the warn location ("  in sub foo at file line N") to
         // every warning. Skip when the message already carries location lines

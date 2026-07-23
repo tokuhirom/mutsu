@@ -71,7 +71,11 @@ thread_local! {
 
 /// Arm the value-tail sink semantics for the next `parse_program` call (see
 /// `EVAL_VALUE_TAIL`).
-fn set_eval_value_tail() {
+///
+/// Also used by the REPL: a REPL line's final statement is the line's displayed
+/// value, exactly like EVAL's, so `1 + 2 * 3` at the prompt is not sink context
+/// and must not warn (rakudo's REPL does not).
+pub(crate) fn set_eval_value_tail() {
     EVAL_VALUE_TAIL.with(|f| f.set(true));
 }
 

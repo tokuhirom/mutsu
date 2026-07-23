@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>mutsu playground — Raku in the browser</title>
-<meta name="description" content="An in-browser Raku playground and REPL, powered by mutsu — a Raku interpreter written in Rust and compiled to WebAssembly.">
+<title>mutsu playground — write Raku, run it, read the output</title>
+<meta name="description" content="An in-browser Raku playground: write a program, run it, and read what it printed. Powered by mutsu — a Raku interpreter written in Rust and compiled to WebAssembly.">
 <link rel="stylesheet" href="assets/site.css">
 </head>
 <body>
@@ -18,34 +18,33 @@
 </noscript>
 
 <div class="container">
+  <header class="page-head">
+    <h1 id="page-title"></h1>
+    <p class="page-intro" id="page-intro"></p>
+  </header>
+
   <div class="examples" id="examples"></div>
-  <div id="example-desc">Pick an example, edit it, then poke at the result from the REPL below.</div>
+  <div id="example-desc"></div>
 
   <div>
-    <div class="pane-title">Editor</div>
+    <div class="pane-title" id="editor-title"></div>
     <div id="editor-host"></div>
   </div>
 
   <div class="run-row">
-    <button id="run-btn" class="btn">Run &#9654;</button>
-    <span class="hint">Ctrl+Enter</span>
+    <button id="run-btn" class="btn"></button>
+    <span class="hint" id="run-hint"></span>
     <span class="grow"></span>
-    <button id="share-btn" class="btn-ghost">Share link</button>
-    <button id="reset-btn" class="btn-ghost">Reset session</button>
+    <button id="share-btn" class="btn-ghost"></button>
+    <button id="reset-btn" class="btn-ghost"></button>
   </div>
 
   <div>
-    <div class="pane-title">REPL &mdash; shares the editor's interpreter state</div>
-    <div class="repl">
-      <div id="repl-log"></div>
-      <div class="repl-input-line">
-        <span id="repl-prompt">&gt;</span>
-        <input id="repl-input" type="text" spellcheck="false" autocapitalize="off"
-               autocorrect="off" autocomplete="off" disabled aria-label="REPL input"
-               placeholder="loading...">
-      </div>
-    </div>
+    <div class="pane-title" id="output-title"></div>
+    <div id="output" class="output output-pane muted"></div>
   </div>
+
+  <p class="page-cta"><a id="repl-cta" href="repl.html"></a></p>
 </div>
 
 <footer class="site-footer"></footer>
@@ -53,177 +52,39 @@
 <div id="toast"></div>
 
 <script type="module">
-import { renderChrome } from './assets/i18n.js';
+import { renderChrome, t, currentLang, langHref } from './assets/i18n.js';
 import { createEditor } from './assets/editor.js';
-import { createSession } from './assets/runner.js';
+import { runIsolated, looksLikeError, isReady, boot } from './assets/runner.js';
+import { PROGRAMS } from './content/examples.js';
 
 renderChrome('playground');
 
 const runBtn = document.getElementById('run-btn');
 const shareBtn = document.getElementById('share-btn');
 const resetBtn = document.getElementById('reset-btn');
-const logEl = document.getElementById('repl-log');
-const inputEl = document.getElementById('repl-input');
-const promptEl = document.getElementById('repl-prompt');
+const outEl = document.getElementById('output');
 const descEl = document.getElementById('example-desc');
 const examplesEl = document.getElementById('examples');
 const toastEl = document.getElementById('toast');
+
+const DEFAULT_CODE = 'say "Hello from mutsu!";';
 
 /* ------------------------------------------------------------------ *
  * Examples
  * ------------------------------------------------------------------ */
 
-const EXAMPLES = [
-  { group: 'Basics', name: 'Hello', desc: 'The obligatory greeting.',
-    code: `say "Hello, World!";` },
-  { group: 'Basics', name: 'FizzBuzz', desc: '%% is the "divisible by" operator - no modulo-equals-zero dance.',
-    code: `for 1..20 -> $n {
-    if    $n %% 15 { say "FizzBuzz" }
-    elsif $n %% 3  { say "Fizz" }
-    elsif $n %% 5  { say "Buzz" }
-    else           { say $n }
-}` },
-  { group: 'Basics', name: 'Rationals', desc: 'Raku divides into exact Rats, so 0.1 + 0.2 == 0.3 really is True.',
-    code: `say 0.1 + 0.2 == 0.3;      # True - not a Num!
-my $third = 1 / 3;
-say $third;                # 0.333333
-say $third.nude;           # (1 3) - numerator and denominator
-say $third * 3 == 1;       # True
-say 2 ** 100;              # arbitrary precision Int` },
-  { group: 'Basics', name: 'Ranges', desc: 'Ranges are first-class and work on strings too.',
-    code: `say (1..10).sum;
-say ('a'..'e').join('-');
-say (1..*).head(5);        # infinite range, lazily taken
-say (1..10).grep(*.is-prime);` },
-
-  { group: 'Functional', name: 'Map & Grep', desc: '* builds a lambda: * ** 2 is "square it".',
-    code: `my @nums = 1..10;
-my @evens = @nums.grep(* %% 2);
-my @squares = @evens.map(* ** 2);
-say "Evens:   @evens[]";
-say "Squares: @squares[]";` },
-  { group: 'Functional', name: 'Sequences', desc: 'The ... operator infers the rule and produces a lazy sequence.',
-    code: `my @fib = 0, 1, * + * ... *;
-say @fib[^10];
-
-say (1, 2, 4 ... 64);      # geometric, inferred
-say ('a' ... 'j').join;` },
-  { group: 'Functional', name: 'Reduce & Hyper', desc: '[+] reduces with +; >>.<< applies a method element-wise.',
-    code: `say [+] 1..10;             # 55
-say [*] 1..5;              # 120
-say [~] <hello world>;
-say [max] 3, 9, 2;
-
-my @a = 1, 2, 3;
-say @a >>*>> 10;           # hyper: (10 20 30)
-say (-5, 3, -1)>>.abs;` },
-  { group: 'Functional', name: 'gather/take', desc: 'gather/take is a coroutine-ish lazy list producer.',
-    code: `my @collatz = gather {
-    my $n = 27;
-    while $n > 1 {
-        take $n;
-        $n = $n %% 2 ?? $n div 2 !! 3 * $n + 1;
-    }
-    take 1;
-}
-say @collatz.elems;
-say @collatz.head(10);
-say @collatz.max;` },
-  { group: 'Functional', name: 'Junctions', desc: 'One value that is several values at once - comparisons thread over it.',
-    code: `my $x = 5;
-say "in the set"   if $x == any(3, 5, 9);
-say "all positive" if all(1, 2, $x) > 0;
-say "none is even" if none(1, 3, $x) %% 2;
-say so 5 == 3 | 5 | 9;     # | is the any-junction operator` },
-  { group: 'Functional', name: 'Sets & Bags', desc: 'Set operators use real math symbols (ASCII alternatives exist).',
-    code: `my $a = set <apple banana cherry>;
-my $b = set <banana cherry durian>;
-say $a (&) $b;             # intersection
-say $a (|) $b;             # union
-say $a (-) $b;             # difference
-say 'apple' (elem) $a;
-
-my $bag = bag <a b a c a b>;
-say $bag<a>;               # 3
-say $bag.sort(-*.value).head(2).map(*.key);` },
-
-  { group: 'Objects', name: 'Classes', desc: 'has $.x gives a public accessor; has $!x stays private.',
-    code: `class Point {
-    has $.x is required;
-    has $.y is required;
-    method distance { sqrt($.x ** 2 + $.y ** 2) }
-    method Str { "($.x, $.y)" }
-}
-my $p = Point.new(x => 3, y => 4);
-say $p;                    # .gist - the default rendering
-say ~$p;                   # our Str method
-say $p.distance;` },
-  { group: 'Objects', name: 'Roles', desc: 'Roles compose behaviour into classes - flat, not inherited.',
-    code: `role Greet {
-    method greet { "Hi, I am { self.name }" }
-}
-class Dog does Greet {
-    has $.name;
-    method speak { "Woof!" }
-}
-my $d = Dog.new(name => 'Rex');
-say $d.greet;
-say $d.speak;
-say $d ~~ Greet;` },
-  { group: 'Objects', name: 'Multi dispatch', desc: 'Dispatch on type, arity, and even on a where-constraint.',
-    code: `multi fact(0) { 1 }
-multi fact(Int $n where * > 0) { $n * fact($n - 1) }
-say fact(10);
-
-multi describe(Int $n) { "an Int: $n" }
-multi describe(Str $s) { "a Str: $s" }
-multi describe(@a)     { "a list of {@a.elems}" }
-say describe($_) for 42, "hi", [1,2,3];` },
-  { group: 'Objects', name: 'Subsets', desc: 'A named type plus a predicate - checked at binding time.',
-    code: `subset Even of Int where * %% 2;
-sub halve(Even $n) { $n div 2 }
-say halve(10);
-
-my $err = try { halve(7) };
-say $!.^name if $!;` },
-
-  { group: 'Text', name: 'Regex', desc: 'Raku regexes: whitespace is free, <[...]> is a character class.',
-    code: `my $str = "Hello World 2026";
-if $str ~~ / (<[A..Z]>\\w+) \\s (\\w+) \\s (\\d ** 4) / {
-    say "matched: $/";
-    say "first:   $0";
-    say "year:    $2";
-}
-say "a1b2c3".comb(/\\d/).join(',');
-say "2026-07-22".split('-').map(+*);` },
-  { group: 'Text', name: 'Named rules', desc: 'Regexes can be named and nested, which is how grammars are built.',
-    code: `my regex ident { <[a..zA..Z_]> \\w* }
-my regex num   { \\d+ }
-if "count = 42" ~~ / <ident> \\s* '=' \\s* <num> / {
-    say "name  = ", ~$<ident>;
-    say "value = ", +$<num>;
-}` },
-  { group: 'Text', name: 'Substitution', desc: 'S/// returns a new string; :g goes global.',
-    code: `my $s = "the quick brown fox";
-say $s.subst('quick', 'slow');
-say $s.subst(/\\w+/, *.tc, :g);
-say $s.trans('aeiou' => 'AEIOU');
-say $s.words.map(*.tc).join(' ');` },
-  { group: 'Text', name: 'Strings', desc: 'Interpolation runs arbitrary code inside { }.',
-    code: `my @xs = 1..5;
-say "sum of @xs[] is { @xs.sum }";
-say "unicode: \\c[SNOWMAN] { "snow" x 3 }";
-say "raku".flip, " ", "abc".uc, " ", "Hello".chars;
-say "%.3f".sprintf(pi);` },
-];
-
-let activeExample = null;
+/* The picked example, so a language switch can repaint its description in the
+   new language rather than leaving the old one behind. */
+let active = null;
+const groupLabels = [];
+const exampleButtons = [];
 
 function renderExamples() {
   const groups = [];
-  for (const ex of EXAMPLES) {
-    let g = groups.find(g => g.name === ex.group);
-    if (!g) groups.push(g = { name: ex.group, items: [] });
+  for (const ex of PROGRAMS) {
+    const name = ex.group.en;
+    let g = groups.find(g => g.name === name);
+    if (!g) groups.push(g = { name, group: ex.group, items: [] });
     g.items.push(ex);
   }
   for (const g of groups) {
@@ -231,14 +92,15 @@ function renderExamples() {
     row.className = 'example-group';
     const label = document.createElement('span');
     label.className = 'group-label';
-    label.textContent = g.name;
     row.appendChild(label);
+    groupLabels.push({ el: label, group: g.group });
     for (const ex of g.items) {
       const btn = document.createElement('button');
+      btn.type = 'button';
       btn.textContent = ex.name;
-      btn.title = ex.desc;
       btn.addEventListener('click', () => loadExample(ex, btn));
       row.appendChild(btn);
+      exampleButtons.push({ el: btn, ex });
     }
     examplesEl.appendChild(row);
   }
@@ -246,11 +108,22 @@ function renderExamples() {
 
 function loadExample(ex, btn) {
   editor.setCode(ex.code);
-  descEl.textContent = ex.desc;
-  if (activeExample) activeExample.classList.remove('active');
-  activeExample = btn || null;
+  original = ex.code;
+  if (active && active.btn) active.btn.classList.remove('active');
+  active = { ex, btn };
   if (btn) btn.classList.add('active');
+  clearOutput();
+  paintExampleText();
   editor.textarea.focus();
+}
+
+function paintExampleText() {
+  const lang = currentLang();
+  for (const g of groupLabels) g.el.textContent = g.group[lang] || g.group.en;
+  for (const b of exampleButtons) b.el.title = b.ex.desc[lang] || b.ex.desc.en;
+  if (active === null) descEl.textContent = t('pg.pick');
+  else if (active.ex === null) descEl.textContent = t('pg.loaded');
+  else descEl.textContent = active.ex.desc[lang] || active.ex.desc.en;
 }
 
 /* ------------------------------------------------------------------ *
@@ -258,46 +131,55 @@ function loadExample(ex, btn) {
  * ------------------------------------------------------------------ */
 
 const editor = createEditor(document.getElementById('editor-host'), {
-  code: 'say "Hello from mutsu!";',
-  minHeight: '190px',
+  code: DEFAULT_CODE,
+  minHeight: '15rem',
   label: 'Raku code',
-  onRun: () => runEditor(),
+  onRun: () => run(),
 });
 // Stable ids for the e2e suite and for anything linking into the page.
 editor.textarea.id = 'code';
-editor.textarea.placeholder = 'Write your Raku code here...';
 document.querySelector('#editor-host pre').id = 'highlight';
 
+let original = DEFAULT_CODE;
+
 /* ------------------------------------------------------------------ *
- * REPL log
+ * Running
  * ------------------------------------------------------------------ */
 
-function appendLog(text, cls) {
-  if (!text) return;
-  const div = document.createElement('div');
-  div.className = cls;
-  div.textContent = text.replace(/\n$/, '');
-  logEl.appendChild(div);
-  logEl.scrollTop = logEl.scrollHeight;
-  return div;
+let busy = false;
+
+function clearOutput() {
+  outEl.className = 'output output-pane muted';
+  delete outEl.dataset.ran;
+  outEl.textContent = t('output.empty');
 }
 
-function appendEcho(prompt, text) {
-  const div = document.createElement('div');
-  div.className = 'echo';
-  const p = document.createElement('span');
-  p.className = 'prompt';
-  p.textContent = prompt + ' ';
-  div.appendChild(p);
-  div.appendChild(document.createTextNode(text));
-  logEl.appendChild(div);
-  logEl.scrollTop = logEl.scrollHeight;
-}
+async function run() {
+  if (busy) return;
+  const code = editor.getCode();
+  if (!code.trim()) return;
+  busy = true;
+  runBtn.disabled = true;
+  runBtn.textContent = isReady() ? t('run.running') : t('run.loading');
+  // Let the button repaint before the VM blocks this thread.
+  await new Promise(r => setTimeout(r, 0));
 
-function appendOutput(text) {
-  if (!text) return;
-  const isError = /(^|\n)Error:/.test(text);
-  appendLog(text, 'out' + (isError ? ' error' : ''));
+  // Each run gets a clean interpreter: this page is "run a program and read
+  // its output", so nothing may leak in from the run before it.  The REPL page
+  // is where a session that remembers things lives.
+  const res = await runIsolated(code);
+  outEl.className = 'output output-pane';
+  outEl.dataset.ran = '1';
+  if (!res.output) {
+    outEl.classList.add('muted');
+    outEl.textContent = t('output.none');
+  } else {
+    outEl.textContent = res.output;
+    if (res.crashed || looksLikeError(res.output)) outEl.classList.add('error');
+  }
+  busy = false;
+  runBtn.disabled = false;
+  runBtn.textContent = t('run');
 }
 
 function toast(msg) {
@@ -306,116 +188,11 @@ function toast(msg) {
   setTimeout(() => toastEl.classList.remove('show'), 1600);
 }
 
-/* ------------------------------------------------------------------ *
- * WASM session
- * ------------------------------------------------------------------ */
-
-let repl = null;
-
-async function initWasm() {
-  appendLog('Loading mutsu WASM module...', 'note');
-  try {
-    repl = await createSession();
-    logEl.innerHTML = '';
-    appendLog('mutsu - a Raku interpreter in Rust + WebAssembly.', 'note');
-    appendLog('Type an expression and hit Enter. The editor above shares this session.', 'note');
-    inputEl.disabled = false;
-    inputEl.placeholder = '';
-    document.body.dataset.ready = '1';
-    inputEl.focus();
-  } catch (e) {
-    appendLog('Failed to load WASM module: ' + e.message, 'out error');
-  }
-}
-
-/** Rust panics abort the wasm instance; everything after is garbage. */
-function fatal(e) {
-  appendLog('WASM error: ' + e.message, 'out error');
-  appendLog('The session is unusable - press "Reset session" to start a fresh one.', 'note');
-}
-
-function runEditor() {
-  if (!repl) return;
-  const code = editor.getCode();
-  if (!code.trim()) return;
-  runBtn.disabled = true;
-  // Let the disabled state paint before we block the thread on the VM.
-  setTimeout(() => {
-    appendEcho('#', 'run editor buffer');
-    try {
-      const res = JSON.parse(repl.evalBlock(code));
-      appendOutput(res.output || '(no output)');
-    } catch (e) {
-      fatal(e);
-    }
-    runBtn.disabled = false;
-    updatePrompt();
-  }, 10);
-}
-
-function updatePrompt() {
-  promptEl.textContent = repl && repl.isPending() ? '*' : '>';
-}
-
-/* history: newest last, index === length means "editing a fresh line" */
-const history = [];
-let historyIndex = 0;
-let draft = '';
-
-function submitLine() {
-  if (!repl) return;
-  const line = inputEl.value;
-  appendEcho(promptEl.textContent, line);
-  inputEl.value = '';
-  if (line.trim() !== '' && history[history.length - 1] !== line) history.push(line);
-  historyIndex = history.length;
-  draft = '';
-  try {
-    const res = JSON.parse(repl.evalLine(line));
-    appendOutput(res.output);
-  } catch (e) {
-    fatal(e);
-  }
-  updatePrompt();
-}
-
-inputEl.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') {
-    e.preventDefault();
-    submitLine();
-  } else if (e.key === 'ArrowUp') {
-    if (historyIndex > 0) {
-      if (historyIndex === history.length) draft = inputEl.value;
-      historyIndex--;
-      inputEl.value = history[historyIndex];
-      e.preventDefault();
-    }
-  } else if (e.key === 'ArrowDown') {
-    if (historyIndex < history.length) {
-      historyIndex++;
-      inputEl.value = historyIndex === history.length ? draft : history[historyIndex];
-      e.preventDefault();
-    }
-  } else if (e.key === 'l' && e.ctrlKey) {
-    logEl.innerHTML = '';
-    e.preventDefault();
-  }
-});
-
-runBtn.addEventListener('click', runEditor);
-
-resetBtn.addEventListener('click', async () => {
-  if (!repl) return;
-  try {
-    repl.reset();
-  } catch (e) {
-    // A panicked instance cannot reset itself; build a brand new one.
-    repl = await createSession();
-  }
-  logEl.innerHTML = '';
-  appendLog('Session reset - all variables and declarations are gone.', 'note');
-  updatePrompt();
-  inputEl.focus();
+runBtn.addEventListener('click', run);
+resetBtn.addEventListener('click', () => {
+  editor.setCode(original);
+  clearOutput();
+  editor.textarea.focus();
 });
 
 /* ------------------------------------------------------------------ *
@@ -440,10 +217,10 @@ shareBtn.addEventListener('click', async () => {
   const url = location.origin + location.pathname + '#code=' + encodeCode(editor.getCode());
   try {
     await navigator.clipboard.writeText(url);
-    toast('Link copied to clipboard');
+    toast(t('pg.share.copied'));
   } catch {
     location.hash = 'code=' + encodeCode(editor.getCode());
-    toast('Link is in the address bar');
+    toast(t('pg.share.hash'));
   }
 });
 
@@ -451,12 +228,36 @@ function loadFromHash() {
   const m = /^#code=(.+)$/.exec(location.hash);
   if (!m) return false;
   try {
-    editor.setCode(decodeCode(m[1]));
-    descEl.textContent = 'Loaded from a shared link.';
+    const code = decodeCode(m[1]);
+    editor.setCode(code);
+    original = code;
+    active = { ex: null, btn: null };
     return true;
   } catch {
     return false;
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * Language-dependent text
+ * ------------------------------------------------------------------ */
+
+function paintText() {
+  document.getElementById('page-title').textContent = t('pg.title');
+  document.getElementById('page-intro').textContent = t('pg.intro');
+  document.getElementById('editor-title').textContent = t('editor');
+  document.getElementById('output-title').textContent = t('output');
+  document.getElementById('run-hint').textContent = t('run.hint');
+  shareBtn.textContent = t('pg.share');
+  resetBtn.textContent = t('reset');
+  if (!busy) runBtn.textContent = t('run');
+  const cta = document.getElementById('repl-cta');
+  cta.textContent = t('pg.repl-cta');
+  cta.href = langHref('repl.html');
+  paintExampleText();
+  // An untouched output pane shows a prompt, which is language-dependent; a
+  // pane holding real output must not be overwritten by a language switch.
+  if (!outEl.dataset.ran) outEl.textContent = t('output.empty');
 }
 
 /* ------------------------------------------------------------------ *
@@ -465,7 +266,17 @@ function loadFromHash() {
 
 renderExamples();
 loadFromHash();
-initWasm();
+paintText();
+window.addEventListener('langchange', paintText);
+
+// This page exists to run code, so the interpreter is fetched up front rather
+// than on first interest.
+boot().then(() => { document.body.dataset.ready = '1'; })
+      .catch(e => {
+        outEl.className = 'output output-pane error';
+        outEl.dataset.ran = '1';
+        outEl.textContent = t('repl.load-failed', { msg: e.message });
+      });
 </script>
 
 </body>

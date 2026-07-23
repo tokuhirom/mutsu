@@ -4,9 +4,17 @@ The static site deployed to <https://tokuhirom.github.io/mutsu/> by
 `.github/workflows/pages.yml`. It is **mutsu's home page**, not a WebAssembly demo:
 the landing page introduces the implementation (what it is, how to install it, what is
 inside), and then argues why the language it implements is worth a look. A hands-on
-Raku tutorial and the playground follow. Every code sample runs locally in the
+Raku tutorial, a playground and a REPL follow. Every code sample runs locally in the
 visitor's browser through mutsu compiled to WebAssembly — nothing is sent to a server,
 which makes the site both the pitch and the proof.
+
+**The playground and the REPL are two pages, deliberately.** The playground answers
+"what does this program print": an editor, a Run button, an output pane, and a fresh
+interpreter for every run, exactly like running a file. The REPL answers "what is this
+value, and what can I do with it next": one line at a time, in a session that keeps
+every declaration, with a continuation prompt for unfinished lines. They used to share
+one page — an editor whose Run button fed the REPL's transcript and its interpreter —
+which made neither question easy to ask.
 
 The site is deliberately **build-step free**: plain HTML, ES modules and CSS, served
 as-is. The only generated input is `pkg/`, the `wasm-pack` output.
@@ -17,7 +25,8 @@ as-is. The only generated input is `pkg/`, the `wasm-pack` output.
 index.html          landing page — what mutsu is, install, what is inside,
                     then "why Raku" with runnable highlights
 tutorial.html       the tutorial: chapter/lesson navigation + one runnable lesson
-playground.html     editor + persistent REPL (this used to be index.html)
+playground.html     editor + Run + output: whole programs, one clean run each
+repl.html           the interactive session: one line at a time, state kept
 assets/
   site.css          all styling
   i18n.js           language selection, UI strings, shared nav + footer
@@ -29,6 +38,7 @@ assets/
 content/
   lessons.txt       tutorial code and expected output (the corpus)
   highlights.txt    landing-page code and expected output
+  examples.js       playground programs and REPL one-liners
   install.js        the install recipes (shell code, shared between languages)
   tutorial.en.js    tutorial titles and prose (English)
   tutorial.ja.js    tutorial titles and prose (Japanese)

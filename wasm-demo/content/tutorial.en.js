@@ -458,9 +458,10 @@ export default {
         interpolated method calls.</p>
         <p>That is the tour. From here, the
         <a href="https://docs.raku.org/" rel="noopener">official documentation</a>
-        goes deeper on every topic here, and the
-        <a href="playground.html">playground</a> gives you a REPL that keeps its
-        state between runs.</p>`,
+        goes deeper on every topic here, the
+        <a href="playground.html">playground</a> runs whole programs, and the
+        <a href="repl.html">REPL</a> keeps a session so you can poke at values one
+        line at a time.</p>`,
     },
   },
 };

@@ -105,11 +105,18 @@ export default {
         cta: 'Start the tutorial →',
       },
       {
-        title: 'Just try things',
-        body: 'A playground with a REPL that keeps its state between runs, ' +
-          'plus a shareable permalink for whatever you write.',
+        title: 'Write a program',
+        body: 'The playground: an editor, a Run button, and the output — plus a ' +
+          'shareable permalink for whatever you write.',
         href: 'playground.html',
         cta: 'Open the playground →',
+      },
+      {
+        title: 'Poke at it line by line',
+        body: 'The REPL keeps a session, so what you declare on one line is still ' +
+          'there on the next. Unfinished lines wait for the rest.',
+        href: 'repl.html',
+        cta: 'Open the REPL →',
       },
       {
         title: 'Read the real docs',
