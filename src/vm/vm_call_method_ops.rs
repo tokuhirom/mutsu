@@ -1439,14 +1439,22 @@ impl Interpreter {
                             // Fall through to normal dispatch
                         }
                         // Numeric coercion on Nil (an undefined value) warns and
-                        // yields the corresponding numeric type object, e.g.
-                        // `Nil.Rat` is `(Rat)` which numifies to 0.
-                        "Rat" | "FatRat" | "Int" | "Num" | "Complex" if args.is_empty() => {
+                        // resumes with the corresponding numeric *zero* — raku's
+                        // `Nil.Int` is `0` (defined), `Nil.Num` is `0e0`,
+                        // `Nil.Rat` is `0.0`, etc. — NOT the type object.
+                        "Rat" | "FatRat" | "Int" | "Num" | "Complex" | "Numeric"
+                            if args.is_empty() =>
+                        {
+                            let zero = match method {
+                                "Int" | "Numeric" => Value::int(0),
+                                "Num" => Value::num(0.0),
+                                "Rat" => crate::value::make_rat(0, 1),
+                                "FatRat" => crate::value::make_big_fat_rat(0.into(), 1.into()),
+                                "Complex" => Value::complex(0.0, 0.0),
+                                _ => unreachable!(),
+                            };
                             let msg = "Use of Nil in numeric context".to_string();
-                            return Err(RuntimeError::warn_signal_with_resume(
-                                msg,
-                                Value::package(method_sym),
-                            ));
+                            return Err(RuntimeError::warn_signal_with_resume(msg, zero));
                         }
                         // `Nil.ords` warns ("Use of Nil in string context") and
                         // resumes to an empty Seq; `Nil.chrs` warns and resumes
