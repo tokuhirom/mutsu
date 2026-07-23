@@ -253,6 +253,22 @@ pub(crate) fn junctive_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Exp
     let mut last_junction: Option<JunctionInfixOp> = None;
     loop {
         let (r, _) = ws(rest)?;
+        // Longest-token rule (Raku LTM): a user-declared *symbol* infix operator
+        // that shadows or extends a junction operator (`multi sub infix:<&>`,
+        // `infix:<&&&>`) routes to the list-infix layer, which dispatches through
+        // the user candidate and can carry a trailing adverb (`$a & $b :adverb`).
+        // A built-in junction with no user candidate returns `None` and is
+        // unaffected.
+        if let Some((_, ulen)) = crate::parser::stmt::simple::match_user_declared_infix_symbol_op(r)
+        {
+            let jlen = parse_junctive_op(r)
+                .map(|(_, l)| l)
+                .or_else(|| parse_junction_infix_op(r).map(|(_, l)| l))
+                .unwrap_or(0);
+            if jlen > 0 && ulen >= jlen {
+                break;
+            }
+        }
         if let Some((op, len)) = parse_junctive_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
