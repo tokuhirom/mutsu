@@ -2270,11 +2270,23 @@ impl Interpreter {
                 match value.view() {
                     ValueView::Nil => "Nil".to_string(),
                     ValueView::Array(items, kind) => {
+                        // Shaped arrays join their rows with a newline, like
+                        // the pure fast path (`say my @a[2,2]` is one row per
+                        // line even when cells are type objects).
+                        let sep = if kind == ArrayKind::Shaped
+                            && items
+                                .iter()
+                                .any(|v| matches!(v.view(), ValueView::Array(..)))
+                        {
+                            "\n "
+                        } else {
+                            " "
+                        };
                         let inner = items
                             .iter()
                             .map(|item| gist_item(interp, item))
                             .collect::<Vec<_>>()
-                            .join(" ");
+                            .join(sep);
                         match kind {
                             ArrayKind::List | ArrayKind::ItemList => format!("({inner})"),
                             _ => format!("[{inner}]"),

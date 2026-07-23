@@ -161,12 +161,12 @@ impl Interpreter {
                 && kind.is_real_array()
                 && items.iter().any(Value::is_nil)
             {
-                assigned = Value::array_with_kind(
-                    crate::gc::Gc::new(crate::value::ArrayData::new(
-                        crate::runtime::utils::nil_elems_to_any(items.to_vec()),
-                    )),
-                    kind,
-                );
+                // Clone the ArrayData so shape/default/type metadata survive;
+                // only the items are rewritten.
+                let mut data = (**items).clone();
+                data.items =
+                    crate::runtime::utils::nil_elems_to_any(std::mem::take(&mut data.items));
+                assigned = Value::array_with_kind(crate::gc::Gc::new(data), kind);
             }
             let class_name = match self.locals[idx].view() {
                 ValueView::Instance { class_name, .. } => Some(class_name),

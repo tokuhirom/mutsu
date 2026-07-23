@@ -468,10 +468,12 @@ impl Interpreter {
             let idxs = match idx.view() {
                 ValueView::Int(i) => vec![i],
                 ValueView::Array(items, ..) if crate::runtime::utils::is_shaped_array(&target) => {
-                    // Shaped array: multi-dimensional exists (e.g. @arr[0;0]:exists)
+                    // Shaped array: multi-dimensional exists (e.g. @arr[0;0]:exists).
+                    // An unassigned cell holds its unset seed — Nil or the Any
+                    // type object — and does not exist yet.
                     let exists = Self::index_array_multidim(&target, items.as_ref(), false)
                         .ok()
-                        .is_some_and(|v| !v.is_nil());
+                        .is_some_and(|v| !v.is_nil() && !v.is_any_type_object());
                     let result = Value::truth(exists ^ effective_negated);
                     self.stack.push(result);
                     return Ok(());
