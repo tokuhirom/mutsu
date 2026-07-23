@@ -25,8 +25,9 @@ fn make_nonneg_failure() -> Value {
     Value::make_instance(Symbol::intern("Failure"), failure_attrs)
 }
 
-/// Recursively fetch @target[indices...]; returns Failure for any negative index,
-/// or Nil if the chain runs out of elements.
+/// Recursively fetch @target[indices...]; returns Failure for any negative index.
+/// A missing slot of a real Array reads as its element default (`Any`), like a
+/// single-dim out-of-range read; a List miss (or a non-list link) reads as Nil.
 pub(crate) fn multidim_at_pos(target: &Value, indices: &[Value]) -> Value {
     let mut cur = target.clone();
     for idx in indices {
@@ -35,10 +36,18 @@ pub(crate) fn multidim_at_pos(target: &Value, indices: &[Value]) -> Value {
         let Some(i) = pos_index(idx) else {
             return make_nonneg_failure();
         };
+        let is_real_array =
+            matches!(cur.view(), crate::value::ValueView::Array(_, kind) if kind.is_real_array());
         let Some(items) = cur.as_list_items() else {
             return Value::NIL;
         };
-        cur = items.get(i).cloned().unwrap_or(Value::NIL);
+        cur = items.get(i).cloned().unwrap_or_else(|| {
+            if is_real_array {
+                Value::package(Symbol::intern("Any"))
+            } else {
+                Value::NIL
+            }
+        });
     }
     cur.into_descalarized()
 }

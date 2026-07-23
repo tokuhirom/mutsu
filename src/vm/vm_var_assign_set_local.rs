@@ -901,7 +901,9 @@ impl Interpreter {
                             Some(ValueView::Bool(true)) => {
                                 Value::lazy_list(crate::gc::Gc::new(list.with_array_context()))
                             }
-                            _ => Value::real_array(self.force_lazy_list_vm(&list)?),
+                            _ => Value::real_array(crate::runtime::utils::nil_elems_to_any(
+                                self.force_lazy_list_vm(&list)?,
+                            )),
                         }
                     }
                     ValueView::LazyIoLines { .. } => {
@@ -924,6 +926,24 @@ impl Interpreter {
                     }
                 }
             };
+            // An untyped `@` assignment resets Nil elements to Any (their
+            // fresh containers' default; `my @a = (1,2)[1,2]` is `[2, Any]`).
+            // Typed arrays keep Nil here — the typed element coercion below
+            // converts it to the element type object instead. Binds keep the
+            // source values untouched.
+            if !is_bind
+                && loan_env!(self, var_type_constraint(name)).is_none()
+                && let ValueView::Array(items, kind) = assigned.view()
+                && kind.is_real_array()
+                && items.iter().any(Value::is_nil)
+            {
+                assigned = Value::array_with_kind(
+                    crate::gc::Gc::new(crate::value::ArrayData::new(
+                        crate::runtime::utils::nil_elems_to_any(items.to_vec()),
+                    )),
+                    kind,
+                );
+            }
             // Mark a genuine bound array SLICE (`@slice := @array[1,2]`, §4
             // BLOCKERS.md test 15): its OWN elements are shared `ContainerRef`
             // cells from the bind-time slice promotion (`vm_var_index_ops.rs`).

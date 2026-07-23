@@ -108,12 +108,18 @@ impl Interpreter {
         let Some(i) = Self::index_to_usize(head) else {
             return Ok(Value::NIL);
         };
-        let ValueView::Array(items, ..) = target.view() else {
+        let ValueView::Array(items, kind) = target.view() else {
             return Ok(Value::NIL);
         };
         if i >= items.len() {
             if strict_oob {
                 return Err(RuntimeError::new("Index out of bounds"));
+            }
+            // A missing slot of a real Array reads as its element default
+            // (`Any`), like a single-dim out-of-range read; a List miss
+            // stays Nil (S32-array/multislice-6e.t).
+            if kind.is_real_array() {
+                return Ok(Value::package(Symbol::intern("Any")));
             }
             return Ok(Value::NIL);
         }

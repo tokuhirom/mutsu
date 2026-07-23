@@ -295,6 +295,25 @@ pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeE
 /// TODO: Properly implement lazy arrays that reify elements on demand.
 const MAX_ARRAY_EXPAND: i64 = 100_000;
 
+/// Replace Nil elements with the Any type object when materializing values
+/// into a fresh untyped real Array: assigning Nil to an element container
+/// resets it to its default (`my @a = (..., Nil, ...)` stores Any).
+pub(crate) fn nil_elems_to_any(items: Vec<Value>) -> Vec<Value> {
+    if !items.iter().any(Value::is_nil) {
+        return items;
+    }
+    items
+        .into_iter()
+        .map(|v| {
+            if v.is_nil() {
+                Value::package(crate::symbol::Symbol::intern("Any"))
+            } else {
+                v
+            }
+        })
+        .collect()
+}
+
 pub(crate) fn coerce_to_array(value: Value) -> Value {
     fn metadata_shape_for_items(
         items: &crate::gc::Gc<crate::value::ArrayData>,
@@ -309,7 +328,10 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
             // `ContainerRef` cell (Phase 2); decontainerize it on copy so a
             // later write through the bound source does not leak into the copy.
             // Only rebuild when a cell is actually present (common path keeps
-            // sharing the Arc, so there is no per-assignment cost).
+            // sharing the Arc, so there is no per-assignment cost). Nil
+            // elements are left alone here — this coercion is type-blind, and
+            // the assignment sites convert them to the element default (Any,
+            // or the typed default via coerce_typed_array_elements).
             let items = if items
                 .iter()
                 .any(|v| matches!(v.view(), ValueView::ContainerRef(_)))
@@ -430,7 +452,8 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
             // element VALUES, so decontainerize any shared `ContainerRef` cells the
             // Seq carries (e.g. `my @g = @a.grep(...)`, whose Seq references @a's
             // rw slots) so a later write through the copy does not leak into the
-            // source. Only rebuild when a cell is actually present.
+            // source. Only rebuild when a cell is actually present. (Nil
+            // elements are handled by the assignment sites, not here.)
             let arc = if items
                 .iter()
                 .any(|v| matches!(v.view(), ValueView::ContainerRef(_)))

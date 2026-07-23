@@ -573,16 +573,18 @@ impl Interpreter {
             }
             _ => (raw_val, false, Vec::new()),
         };
-        // For typed container elements, explicit `is default(...)` wins over
-        // the nominal type-object fallback when Nil is assigned.
-        let val = if val.is_nil() {
+        // Assigning Nil to a container element resets it to its default:
+        // explicit `is default(...)` wins, then the typed nominal type object,
+        // then Any for an untyped element (raku: `@a[0] = Nil; @a[0]` is Any).
+        // A `:=` bind replaces the container, so Nil stays Nil there.
+        let val = if val.is_nil() && !bind_mode {
             if let Some(default) = self.var_default(&var_name) {
                 default.clone()
             } else if let Some(constraint) = loan_env!(self, var_type_constraint(&var_name)) {
                 let nominal = loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
                 Value::package(Symbol::intern(&nominal))
             } else {
-                val
+                Value::package(Symbol::intern("Any"))
             }
         } else {
             val

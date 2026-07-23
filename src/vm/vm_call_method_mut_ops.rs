@@ -2120,9 +2120,12 @@ impl Interpreter {
                             // `@a.push` compiles to `ArrayPush` only for single-arg pushes on
                             // a *local* array; the captured-closure and multi-arg forms reach
                             // here as `CallMethodMut`. Mirror the `ArrayPush` opcode's env-bound
-                            // branch (`normalize_push_unshift_args` then extend).
-                            let norm = crate::runtime::Interpreter::normalize_push_unshift_args(
-                                args.to_vec(),
+                            // branch (`normalize_push_unshift_args` then extend). This path is
+                            // gated to untyped arrays, so a Nil element stores Any.
+                            let norm = crate::runtime::utils::nil_elems_to_any(
+                                crate::runtime::Interpreter::normalize_push_unshift_args(
+                                    args.to_vec(),
+                                ),
                             );
                             items.extend(norm);
                             Value::array_with_kind(
@@ -2131,7 +2134,9 @@ impl Interpreter {
                             )
                         }
                         "append" | "prepend" => {
-                            let flat = crate::runtime::flatten_append_args(args.to_vec());
+                            let flat = crate::runtime::utils::nil_elems_to_any(
+                                crate::runtime::flatten_append_args(args.to_vec()),
+                            );
                             if method == "append" {
                                 items.extend(flat);
                             } else {
@@ -2145,8 +2150,10 @@ impl Interpreter {
                             )
                         }
                         "unshift" => {
-                            let norm = crate::runtime::Interpreter::normalize_push_unshift_args(
-                                args.to_vec(),
+                            let norm = crate::runtime::utils::nil_elems_to_any(
+                                crate::runtime::Interpreter::normalize_push_unshift_args(
+                                    args.to_vec(),
+                                ),
                             );
                             for (i, v) in norm.into_iter().enumerate() {
                                 items.insert(i, v);
