@@ -116,6 +116,12 @@ impl Interpreter {
                 self.dispatch_setty_baggy_mixy(&target, method)
             }
             "Map" | "Hash" if args.is_empty() => {
+                // `.Hash` on the Any type object — notably an uninitialized
+                // `my $d` (PLAN 8.5 step 3 seeds Any) — is the empty hash,
+                // exactly like the Nil arm below.
+                if method == "Hash" && target.is_any_type_object() {
+                    return Some(Ok(Value::hash(std::collections::HashMap::new())));
+                }
                 if matches!(target.view(), ValueView::Package(_)) {
                     return Some(Ok(Value::package(Symbol::intern(method))));
                 }

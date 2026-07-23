@@ -191,7 +191,12 @@ impl Interpreter {
             ValueView::Nil => Some("Any".to_string()),
             ValueView::Package(name) => {
                 let n = name.resolve();
-                if self.has_class(&n) {
+                // `Any`/`Mu` sit in the class registry but are the
+                // undefined-scalar type objects — an uninitialized `my $x`
+                // holds the Any type object (PLAN 8.5 step 3), and
+                // `(my $x) does Int` must stay X::Does::TypeObject exactly
+                // like the old Nil seed did via the arm above.
+                if n != "Any" && n != "Mu" && self.has_class(&n) {
                     None
                 } else {
                     Some(n.to_string())

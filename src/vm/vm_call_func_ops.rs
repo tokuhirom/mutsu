@@ -1345,7 +1345,19 @@ impl Interpreter {
                         crate::vm::vm_stats::record_function_fallback(name);
                     }
                     self.set_pending_call_arg_sources(arg_sources);
+                    // Carrier writeback (mirrors `exec_exec_call_op`): an
+                    // interpreter carrier like `EVAL` writes caller lexicals
+                    // into env BY NAME; drain those writes into this frame's
+                    // slots so a subsequent slot read sees them. Previously
+                    // masked by the Nil-slot env fallback: an uninitialized
+                    // caller scalar's slot stayed Nil, so reads fell back to
+                    // env. With the Any seed (PLAN 8.5 step 3) the slot holds
+                    // a real value, so the writeback must be explicit
+                    // (t/require-expression.t `BEGIN try EVAL`).
+                    let carrier_saved = self.begin_carrier();
                     let result = self.vm_call_function(name, args);
+                    let written = self.end_carrier(carrier_saved);
+                    self.writeback_carrier_writes(code, &written);
                     self.set_pending_call_arg_sources(None);
                     // Interpreter function calls (e.g. `require`) may register
                     // new subs — invalidate function resolution caches.

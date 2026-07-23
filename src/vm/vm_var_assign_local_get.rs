@@ -282,15 +282,20 @@ impl Interpreter {
         if self.locals[idx].is_container_ref() {
             return;
         }
-        if matches!(
-            self.locals[idx].view(),
-            ValueView::Package(_)
-                | ValueView::Array(..)
-                | ValueView::Hash(..)
-                | ValueView::Sub(..)
-                | ValueView::Instance { .. }
-                | ValueView::Proxy { .. }
-        ) {
+        // The Any type object (uninitialized-scalar seed, PLAN 8.5 step 3) is
+        // boxed like the old Nil seed; other reference/identity-bearing values
+        // are skipped (mirrors `box_captured_lexicals`).
+        if !self.locals[idx].is_any_type_object()
+            && matches!(
+                self.locals[idx].view(),
+                ValueView::Package(_)
+                    | ValueView::Array(..)
+                    | ValueView::Hash(..)
+                    | ValueView::Sub(..)
+                    | ValueView::Instance { .. }
+                    | ValueView::Proxy { .. }
+            )
+        {
             return;
         }
         if loan_env!(self, var_type_constraint(name)).is_some()

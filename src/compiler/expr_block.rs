@@ -214,6 +214,16 @@ impl Compiler {
                         // An uninitialized `&`-sigil var (`(my &)` / `(my &foo)`)
                         // defaults to the Callable type object, not Any/Nil.
                         self.compile_expr(&Expr::BareWord("Callable".to_string()));
+                    } else if Self::uninit_untyped_scalar_defaults_to_any(
+                        name,
+                        expr,
+                        type_constraint.as_deref(),
+                        custom_traits,
+                    ) {
+                        // Expression-position uninitialized untyped scalar
+                        // (`(my $x)`, `(my $)`, do-block value): seed and yield
+                        // the Any type object (PLAN 8.5 step 3).
+                        self.compile_expr(&Self::any_type_object_expr());
                     } else {
                         self.compile_expr(expr);
                     }

@@ -236,7 +236,19 @@ impl Compiler {
                             let slot = self.declare_local(name);
                             self.code.emit(OpCode::SetLocal(slot));
                         } else {
-                            self.compile_expr(expr);
+                            if Self::uninit_untyped_scalar_defaults_to_any(
+                                name,
+                                expr,
+                                type_constraint.as_deref(),
+                                custom_traits,
+                            ) {
+                                // Block-final uninitialized untyped scalar:
+                                // seed and yield the Any type object
+                                // (PLAN 8.5 step 3).
+                                self.compile_expr(&Self::any_type_object_expr());
+                            } else {
+                                self.compile_expr(expr);
+                            }
                             // Enforce a scalar type constraint here too, so a
                             // block-final `my Str $x := 3` raises
                             // X::TypeCheck::Binding instead of silently storing
