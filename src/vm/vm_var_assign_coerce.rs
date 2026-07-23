@@ -229,6 +229,27 @@ impl Interpreter {
                 runtime::utils::build_hash_from_items(items)
             }
         };
+        // An object hash (`.WHICH`-keyed) assigned to a `%` variable
+        // materializes as fresh entries: a plain target sees the stringified
+        // original keys (raku: `my %p = %o` stringifies), while the key
+        // objects are recorded in `original_keys` so a key-constrained target
+        // re-keys by `.WHICH` when `tag_container_metadata` runs below.
+        let value = match value.view() {
+            ValueView::Hash(h) if h.has_typed_keys() => {
+                let mut map = std::collections::HashMap::with_capacity(h.len());
+                let mut orig = std::collections::HashMap::new();
+                for (k, v) in h.iter() {
+                    let key_obj = h.typed_key(k);
+                    let str_key = Value::hash_key_encode(&key_obj);
+                    if !matches!(key_obj.view(), ValueView::Str(_)) {
+                        orig.insert(str_key.clone(), key_obj);
+                    }
+                    map.insert(str_key, v.clone());
+                }
+                runtime::utils::set_hash_original_keys(Value::hash(map), orig)
+            }
+            _ => value,
+        };
         // For Array/Seq/Slip values, use `build_hash_from_items` which
         // raises "Odd number of elements" when appropriate. Hash values from
         // scalar containers (`$h`) are NOT pre-flattened, so they appear as

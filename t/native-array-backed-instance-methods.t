@@ -48,7 +48,9 @@ is $s.values.join(","), "3,1,2,4", 'values of is-Array';
 is $s.kv.join(","), "0,3,1,1,2,2,3,4", 'kv of is-Array';
 is $s.pairs.map(*.value).join(","), "3,1,2,4", 'pairs of is-Array';
 is $s.antipairs.map(*.key).join(","), "3,1,2,4", 'antipairs of is-Array';
-is $s.classify({ $_ %% 2 })<True>.join(","), "2,4", 'classify over is-Array';
+# classify keys by the Bool OBJECT (.WHICH-keyed object hash), so index with
+# the Bool `True`, not the Str `<True>` — matching raku, where `<True>` misses.
+is $s.classify({ $_ %% 2 }){True}.join(","), "2,4", 'classify over is-Array';
 is $s.rotor(2).map(*.join("")).join(","), "31,24", 'rotor over is-Array';
 is $s.combinations(4).elems, 1, 'combinations over is-Array';
 is $s.permutations.elems, 24, 'permutations over is-Array';

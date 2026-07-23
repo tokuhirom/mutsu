@@ -63,9 +63,21 @@ pub(crate) fn to_set(target: Value, what: &str) -> Result<Value, RuntimeError> {
                 }
             }
             ValueView::Hash(h) if flatten => {
+                // An object hash contributes its key OBJECTS (decoded from the
+                // `.WHICH` store keys); a plain hash its string keys.
                 for (k, v) in h.iter() {
                     if v.truthy() {
-                        elems.insert(k.clone());
+                        if h.has_typed_keys() {
+                            let obj = h.typed_key(k);
+                            let str_key = obj.to_string_value();
+                            if !matches!(obj.view(), ValueView::Str(_)) {
+                                *has_non_str = true;
+                                original_keys.entry(str_key.clone()).or_insert(obj);
+                            }
+                            elems.insert(str_key);
+                        } else {
+                            elems.insert(k.clone());
+                        }
                     }
                 }
             }
@@ -119,9 +131,21 @@ pub(crate) fn to_set(target: Value, what: &str) -> Result<Value, RuntimeError> {
             }
         }
         ValueView::Hash(items) => {
+            // An object hash's Set keeps the key OBJECTS (`:{42 => "a"}.Set`
+            // is `Set.new(42)`, an Int element); plain hashes keep Str keys.
             for (k, v) in items.iter() {
                 if v.truthy() {
-                    elems.insert(k.clone());
+                    if items.has_typed_keys() {
+                        let obj = items.typed_key(k);
+                        let str_key = obj.to_string_value();
+                        if !matches!(obj.view(), ValueView::Str(_)) {
+                            has_non_str = true;
+                            original_keys.entry(str_key.clone()).or_insert(obj);
+                        }
+                        elems.insert(str_key);
+                    } else {
+                        elems.insert(k.clone());
+                    }
                 }
             }
         }
@@ -309,7 +333,19 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
                 for (k, v) in h.iter() {
                     let weight = pair_weight(v)?;
                     if weight.is_positive() {
-                        *counts.entry(k.clone()).or_default() += weight;
+                        // Object hashes contribute their key OBJECTS.
+                        let key = if h.has_typed_keys() {
+                            let obj = h.typed_key(k);
+                            let str_key = obj.to_string_value();
+                            if !matches!(obj.view(), ValueView::Str(_)) {
+                                *has_non_str_keys = true;
+                                original_keys.entry(str_key.clone()).or_insert(obj);
+                            }
+                            str_key
+                        } else {
+                            k.clone()
+                        };
+                        *counts.entry(key).or_default() += weight;
                     }
                 }
             }
@@ -611,7 +647,20 @@ fn mix_add_item_with_keys(
             for (k, v) in h.iter() {
                 let w = mix_pair_weight_value(v)?;
                 if w.to_f64() != 0.0 {
-                    mix_accum(weights, k.clone(), w)?;
+                    // Object hashes contribute their key OBJECTS.
+                    let key = if h.has_typed_keys() {
+                        let obj = h.typed_key(k);
+                        let str_key = obj.to_string_value();
+                        if let Some(ref mut orig) = original_keys
+                            && !matches!(obj.view(), ValueView::Str(_))
+                        {
+                            orig.entry(str_key.clone()).or_insert(obj);
+                        }
+                        str_key
+                    } else {
+                        k.clone()
+                    };
+                    mix_accum(weights, key, w)?;
                 }
             }
         }

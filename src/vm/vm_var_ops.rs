@@ -321,6 +321,12 @@ impl Interpreter {
             if let Some(def) = native_element_default(&info.value_type) {
                 return def;
             }
+            // Metadata with no element-type constraint (e.g. `:{...}` — an
+            // object hash with only a key type) defaults like an untyped
+            // container: `Any`.
+            if info.value_type.is_empty() {
+                return Value::package(Symbol::intern("Any"));
+            }
             Value::package(Symbol::intern(&info.value_type))
         } else if matches!(target.view(), ValueView::Hash(_))
             || matches!(target.view(), ValueView::Array(_, kind) if kind.is_real_array())

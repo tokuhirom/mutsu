@@ -434,16 +434,17 @@ mod tests {
 
     #[test]
     fn parse_typed_hash_literal_with_non_string_keys() {
-        // Object hash `:{ ... }` is now parsed as a `hash(...)` call
-        // to preserve expression-typed keys (e.g., regex keys).
+        // Object hash `:{ ... }` parses as an `__object_hash(...)` call —
+        // the runtime builds a Mu-keyed, `.WHICH`-keyed object hash — with
+        // expression-typed keys (e.g., regex keys) preserved as arguments.
         let (rest, expr) = primary(":{ :42foo, (True) => False, 42e0 => 1 }").unwrap();
         assert_eq!(rest, "");
         match expr {
             Expr::Call { name, args } => {
-                assert_eq!(name, "hash");
+                assert_eq!(name, "__object_hash");
                 assert_eq!(args.len(), 3);
             }
-            _ => panic!("expected hash call, got {:?}", expr),
+            _ => panic!("expected __object_hash call, got {:?}", expr),
         }
     }
 

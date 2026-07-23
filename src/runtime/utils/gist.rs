@@ -184,9 +184,19 @@ pub(crate) fn gist_value(value: &Value) -> String {
             }
             let mut sorted_keys: Vec<&String> = items.keys().collect();
             sorted_keys.sort();
+            // An object hash stores `.WHICH` keys — gist the original key
+            // object (plain hashes gist the string key unchanged).
+            let typed = items.has_typed_keys();
             let parts: Vec<String> = sorted_keys
                 .iter()
-                .map(|k| format!("{} => {}", k, gist_value(&items[*k])))
+                .map(|k| {
+                    let key_gist = if typed {
+                        gist_value(&items.typed_key(k))
+                    } else {
+                        (*k).clone()
+                    };
+                    format!("{} => {}", key_gist, gist_value(&items[*k]))
+                })
                 .collect();
             SEEN_PTRS.with(|seen| pop_ptr(seen, ptr));
             // An immutable Map gists as `Map.new((k => v, ...))`, not `{...}`

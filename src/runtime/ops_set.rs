@@ -32,7 +32,7 @@ impl Interpreter {
                 .iter()
                 .filter_map(|(k, v)| {
                     if v.truthy() || v.is_nil() {
-                        Some(k.clone())
+                        Some(crate::runtime::utils::hash_elem_key(&h, k))
                     } else {
                         None
                     }
@@ -219,7 +219,7 @@ impl Interpreter {
                 .filter_map(|(k, v)| {
                     let c = Self::multiply_pair_i64(v);
                     if c > 0 {
-                        Some((k.clone(), (c, c != 1)))
+                        Some((crate::runtime::utils::hash_elem_key(&h, k), (c, c != 1)))
                     } else {
                         None
                     }
@@ -319,7 +319,11 @@ impl Interpreter {
                             }
                         }
                     };
-                    if w != 0.0 { Some((k.clone(), w)) } else { None }
+                    if w != 0.0 {
+                        Some((crate::runtime::utils::hash_elem_key(&h, k), w))
+                    } else {
+                        None
+                    }
                 })
                 .collect()),
             _ if value.as_list_items().is_some() => {
@@ -441,7 +445,7 @@ impl Interpreter {
                 for (k, v) in map.iter() {
                     let weight = v.to_f64() as i64;
                     if weight != 0 {
-                        result.insert(k.clone(), weight);
+                        result.insert(crate::runtime::utils::hash_elem_key(&map, k), weight);
                     }
                 }
                 Ok(result)
@@ -503,7 +507,7 @@ impl Interpreter {
                 for (k, v) in map.iter() {
                     let weight = v.to_f64();
                     if weight != 0.0 {
-                        result.insert(k.clone(), weight);
+                        result.insert(crate::runtime::utils::hash_elem_key(&map, k), weight);
                     }
                 }
                 Ok(result)

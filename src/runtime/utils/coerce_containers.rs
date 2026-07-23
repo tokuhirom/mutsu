@@ -24,8 +24,11 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
             let mut flat: Vec<Value> = Vec::with_capacity(items.len());
             for item in items.iter() {
                 if let ValueView::Hash(h) = item.view() {
+                    // An object hash stores `.WHICH` keys — flatten via the
+                    // original key objects (a plain hash's typed_pair is the
+                    // plain `Pair(str_key, v)` as before).
                     for (k, v) in h.iter() {
-                        flat.push(Value::pair(k.clone(), v.clone()));
+                        flat.push(h.typed_pair(k, v.clone()));
                     }
                 } else {
                     flat.push(item.clone());
@@ -74,6 +77,7 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
         | ValueView::RaceSeq(items)
         | ValueView::Slip(items) => {
             let mut map = HashMap::new();
+            let mut original_keys: HashMap<String, Value> = HashMap::new();
             let mut i = 0;
             while i < items.len() {
                 if let ValueView::Pair(k, v) = items[i].view() {
@@ -82,21 +86,29 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
                 } else if let ValueView::ValuePair(k, v) = items[i].view() {
                     let dv = v.deref_container();
                     for kk in hash_pair_keys(k) {
-                        map.insert(kk.to_string_value(), dv.clone());
+                        let str_key = kk.to_string_value();
+                        if !matches!(kk.view(), ValueView::Str(_)) {
+                            original_keys.insert(str_key.clone(), kk.clone());
+                        }
+                        map.insert(str_key, dv.clone());
                     }
                     i += 1;
                 } else {
-                    let key = items[i].to_string_value();
+                    let key_val = &items[i];
+                    let str_key = key_val.to_string_value();
+                    if !matches!(key_val.view(), ValueView::Str(_)) {
+                        original_keys.insert(str_key.clone(), key_val.clone());
+                    }
                     let val = if i + 1 < items.len() {
                         items[i + 1].clone()
                     } else {
                         Value::NIL
                     };
-                    map.insert(key, val);
+                    map.insert(str_key, val);
                     i += 2;
                 }
             }
-            Value::hash(map)
+            set_hash_original_keys(Value::hash(map), original_keys)
         }
         ValueView::Pair(k, v) => {
             let mut map = HashMap::new();
@@ -105,11 +117,16 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
         }
         ValueView::ValuePair(k, v) => {
             let mut map = HashMap::new();
+            let mut original_keys: HashMap<String, Value> = HashMap::new();
             let dv = v.deref_container();
             for kk in hash_pair_keys(k) {
-                map.insert(kk.to_string_value(), dv.clone());
+                let str_key = kk.to_string_value();
+                if !matches!(kk.view(), ValueView::Str(_)) {
+                    original_keys.insert(str_key.clone(), kk.clone());
+                }
+                map.insert(str_key, dv.clone());
             }
-            Value::hash(map)
+            set_hash_original_keys(Value::hash(map), original_keys)
         }
         ValueView::Set(items, _) => {
             let mut map = HashMap::new();
@@ -269,12 +286,24 @@ where
             // key=>value pairs (`%m = (%h,)` / `%(%h,)`). A hash sourced from a
             // `$` scalar carries the per-holder itemization flag (set by
             // `itemize_value`) and stays an opaque single element — matching
-            // Raku, where `%m = ($hashitem,)` dies "Odd number". Keys are the
-            // source hash's string keys: flattening an object hash into a plain
-            // Hash/Map stringifies them (the target re-tags via its own metadata).
+            // Raku, where `%m = ($hashitem,)` dies "Odd number". An object hash
+            // stores `.WHICH` keys: flatten via the original key objects, so a
+            // plain target sees their stringifications and an object-hash
+            // target (re-keyed by `tag_container_metadata`) keeps the objects.
             ValueView::Hash(h) if !item.hash_is_itemized() => {
-                for (k, v) in h.iter() {
-                    map.insert(k.clone(), v.clone());
+                if h.has_typed_keys() {
+                    for (k, v) in h.iter() {
+                        let key_obj = h.typed_key(k);
+                        let str_key = Value::hash_key_encode(&key_obj);
+                        if !matches!(key_obj.view(), ValueView::Str(_)) {
+                            original_keys.insert(str_key.clone(), key_obj);
+                        }
+                        map.insert(str_key, v.clone());
+                    }
+                } else {
+                    for (k, v) in h.iter() {
+                        map.insert(k.clone(), v.clone());
+                    }
                 }
             }
             // A Junction key (`"a"|"b" => 1`) is not itself a key: it threads,

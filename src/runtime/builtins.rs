@@ -703,6 +703,7 @@ impl Interpreter {
             "bag" => self.builtin_bag(&args),
             "mix" => self.builtin_mix(&args),
             "hash" => self.builtin_hash(&args),
+            "__object_hash" => self.builtin_object_hash(&args),
             "any" | "all" | "one" | "none" => self.builtin_junction(name, args),
             "pair" => self.builtin_pair(&args),
             "keys" => self.builtin_keys(&args),

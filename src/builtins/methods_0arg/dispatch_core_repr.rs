@@ -516,7 +516,16 @@ pub(super) fn dispatch(
                         sorted_keys.sort();
                         let parts: Vec<String> = sorted_keys
                             .iter()
-                            .map(|k| format!("{} => {}", k, gist_item(&map[*k])))
+                            .map(|k| {
+                                // An object hash stores `.WHICH` string keys;
+                                // show the original key (`True`, not `Bool|1`).
+                                let key_disp = if map.has_typed_keys() {
+                                    gist_item(&map.typed_key(k))
+                                } else {
+                                    (*k).clone()
+                                };
+                                format!("{} => {}", key_disp, gist_item(&map[*k]))
+                            })
                             .collect();
                         // A nested immutable Map gists as `Map.new((...))`, not `{...}`.
                         if map.declared_type.as_deref() == Some("Map") {
@@ -642,7 +651,16 @@ pub(super) fn dispatch(
                         sorted_keys.sort();
                         let parts: Vec<String> = sorted_keys
                             .iter()
-                            .map(|k| format!("{} => {}", k, gist_item(&map[*k])))
+                            .map(|k| {
+                                // An object hash stores `.WHICH` string keys;
+                                // show the original key (`True`, not `Bool|1`).
+                                let key_disp = if map.has_typed_keys() {
+                                    gist_item(&map.typed_key(k))
+                                } else {
+                                    (*k).clone()
+                                };
+                                format!("{} => {}", key_disp, gist_item(&map[*k]))
+                            })
                             .collect();
                         // A nested immutable Map gists as `Map.new((...))`, not `{...}`.
                         if map.declared_type.as_deref() == Some("Map") {

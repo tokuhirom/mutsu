@@ -1,5 +1,16 @@
 use super::*;
 
+/// The Set-element key string for a hash entry: an object hash stores
+/// `.WHICH` keys, so decode back to the original key object's
+/// stringification (a plain hash's key is returned unchanged).
+pub(crate) fn hash_elem_key(h: &crate::value::HashData, k: &str) -> String {
+    if h.has_typed_keys() {
+        h.typed_key(k).to_string_value()
+    } else {
+        k.to_string()
+    }
+}
+
 pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
     fn insert_set_elem(elems: &mut HashSet<String>, value: &Value) {
         let pair_selected = |weight: &Value| weight.truthy() || weight.is_nil();
@@ -24,7 +35,7 @@ pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
             ValueView::Hash(items) => {
                 for (k, v) in items.iter() {
                     if v.truthy() || v.is_nil() {
-                        elems.insert(k.clone());
+                        elems.insert(hash_elem_key(&items, k));
                     }
                 }
             }
@@ -69,7 +80,7 @@ pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
             .iter()
             .filter_map(|(k, v)| {
                 if v.truthy() || v.is_nil() {
-                    Some(k.clone())
+                    Some(hash_elem_key(&items, k))
                 } else {
                     None
                 }
@@ -119,7 +130,7 @@ pub(crate) fn coerce_value_to_quanthash(val: &Value) -> Value {
             let mut set = HashSet::new();
             for (k, v) in h.iter() {
                 if v.truthy() {
-                    set.insert(k.clone());
+                    set.insert(hash_elem_key(&h, k));
                 }
             }
             Value::set(set)
@@ -136,7 +147,7 @@ pub(crate) fn coerce_value_to_quanthash(val: &Value) -> Value {
                     ValueView::Hash(h) => {
                         for (k, v) in h.iter() {
                             if v.truthy() {
-                                set.insert(k.clone());
+                                set.insert(hash_elem_key(&h, k));
                             }
                         }
                     }

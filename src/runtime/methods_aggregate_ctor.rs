@@ -368,25 +368,22 @@ impl Interpreter {
             } else {
                 (String::new(), None)
             };
-            // An object hash with a non-`Str` key type keeps the original typed
-            // keys so they round-trip through `.raku`/`.keys`.
-            let track_typed_keys = key_type.as_deref().is_some_and(|kt| {
-                let (base, _) = crate::runtime::types::strip_type_smiley(kt);
-                base != "Str" && base != "Any" && base != "Mu"
-            });
             let info = crate::runtime::ContainerTypeInfo {
                 value_type,
                 key_type,
                 declared_type: Some(class_name.resolve()),
             };
-            let result = self.tag_container_metadata(result, info);
-            if track_typed_keys && !original_keys.is_empty() {
-                return Ok(crate::runtime::utils::set_hash_original_keys(
-                    result,
-                    original_keys,
-                ));
-            }
-            return Ok(result);
+            // Attach the recorded key objects BEFORE tagging: for an object
+            // hash (`Hash[Int,Int].new(1 => 2)`) `tag_container_metadata`
+            // re-keys the map by each key object's `.WHICH`, so it must see
+            // the real keys (a plain typed hash ignores the speculative map
+            // via the `has_typed_keys` gate).
+            let result = if original_keys.is_empty() {
+                result
+            } else {
+                crate::runtime::utils::set_hash_original_keys(result, original_keys)
+            };
+            return Ok(self.tag_container_metadata(result, info));
         }
         Ok(result)
     }

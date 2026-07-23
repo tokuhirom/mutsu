@@ -126,33 +126,6 @@ impl Interpreter {
         Value::str(key.to_string())
     }
 
-    /// For an object hash (`my Int %{Int}`) whose key type is a non-`Str` type,
-    /// reconstruct the typed key objects from the stringified store keys and
-    /// record them in `original_keys`, so `.keys`/`.pairs`/`.raku` report the
-    /// real key (`Int(1)`, not `"1"`). No-op for plain / `Str`-keyed hashes and
-    /// for hashes that already carry `original_keys`. Used on the SetVarType
-    /// path, where the list→hash coercion ran before the key type was known.
-    pub(crate) fn populate_object_hash_typed_keys(&self, value: Value) -> Value {
-        let ValueView::Hash(map) = value.view() else {
-            return value;
-        };
-        let Some(key_type) = map.key_type.clone() else {
-            return value;
-        };
-        let (base, _) = crate::runtime::types::strip_type_smiley(&key_type);
-        if base == "Str" || base == "Any" || base == "Mu" || map.has_typed_keys() {
-            return value;
-        }
-        let mut original_keys = std::collections::HashMap::with_capacity(map.len());
-        for key in map.keys() {
-            original_keys.insert(key.clone(), Self::try_reconstruct_typed_key(key, base));
-        }
-        if original_keys.is_empty() {
-            return value;
-        }
-        crate::runtime::utils::set_hash_original_keys(value, original_keys)
-    }
-
     pub(super) fn coerce_typed_container_assignment(
         &mut self,
         var_name: &str,
@@ -252,15 +225,19 @@ impl Interpreter {
                 std::collections::HashMap::new();
             for (key, val) in map.iter() {
                 let coerced_key = if let Some(constraint) = &key_constraint {
-                    // Hash keys are always stored as strings internally, but for
-                    // key-constrained hashes (e.g. %h{Int}), we need to check
-                    // that the key can be interpreted as the constraint type.
-                    // Since hash construction stringifies pair keys (e.g. 1 => 2
-                    // becomes "1" => 2), we try to reconstruct the typed value
-                    // from the string key before checking the constraint.
+                    // The hash was built by a key-type-blind path that
+                    // stringified the keys, recording the key objects in
+                    // `original_keys`. Check the constraint against the real
+                    // key object when recorded (so `my %h{Int} = "42" => 1`
+                    // fails like raku); a key with no recorded object was a
+                    // genuine `Str` key — reconstruct as a last resort.
                     let target_type =
                         coercion_target(constraint).unwrap_or_else(|| constraint.clone());
-                    let key_as_typed_value = Self::try_reconstruct_typed_key(key, &target_type);
+                    let key_as_typed_value = saved_original_keys
+                        .as_ref()
+                        .and_then(|orig| orig.get(key))
+                        .cloned()
+                        .unwrap_or_else(|| Self::try_reconstruct_typed_key(key, &target_type));
                     if !loan_env!(self, type_matches_value(&target_type, &key_as_typed_value)) {
                         return Err(runtime::utils::type_check_element_typed_error(
                             var_name,

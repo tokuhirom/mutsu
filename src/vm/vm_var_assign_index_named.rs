@@ -1484,21 +1484,11 @@ impl Interpreter {
                 } else {
                     idx
                 };
-                // Determine the keying mode for an object hash. A freshly created
-                // or already-`.WHICH`-keyed hash (one carrying `original_keys`) is
-                // keyed by `.WHICH`. A *plain-built* object hash — e.g. one bulk
-                // assigned from a pair list (`my %h{Mu} = :42a, ...`), whose keys
-                // were stringified during hash construction and which carries no
-                // `original_keys` — must keep using plain string keys here so that
-                // a follow-up element assignment (`%h<c> = ...`) overwrites the
-                // existing entry instead of inserting a duplicate under a `.WHICH`
-                // key. (Fully unifying object-hash keying across construction,
-                // flatten, gist and comparison is a larger change.)
-                let use_which = is_object_hash
-                    && match index_target.as_ref().map(Value::view) {
-                        Some(ValueView::Hash(h)) => h.original_keys.is_some() || h.map.is_empty(),
-                        _ => true,
-                    };
+                // An object hash is always `.WHICH`-keyed: every path that
+                // attaches a `key_type` (`tag_container_metadata`) enforces the
+                // keying invariant, so a "plain-built" object hash with
+                // stringified keys can no longer reach this element assignment.
+                let use_which = is_object_hash;
                 let key = if use_which {
                     runtime::utils::value_which_key(&idx)
                 } else if !is_object_hash && matches!(idx.view(), ValueView::Package(_)) {

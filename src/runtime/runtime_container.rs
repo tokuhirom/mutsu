@@ -106,7 +106,21 @@ impl Interpreter {
         {
             return value;
         }
-        if value.with_hash_mut(|arc| embed_type_info!(arc)).is_some() {
+        if value
+            .with_hash_mut(|arc| {
+                embed_type_info!(arc);
+                // An object hash (`my %h{Any}` / `:{...}`) keys by the `.WHICH`
+                // of the key *object*. The list→hash coercion that built the
+                // value is key-type-blind and stringified the keys (recording
+                // the key objects in `original_keys`), so enforce the keying
+                // invariant here — the chokepoint every declared-constraint
+                // assignment and `SetVarType` tagging flows through.
+                if info.key_type.is_some() {
+                    crate::runtime::utils::ensure_object_hash_which_keys(arc);
+                }
+            })
+            .is_some()
+        {
             return value;
         }
         if value

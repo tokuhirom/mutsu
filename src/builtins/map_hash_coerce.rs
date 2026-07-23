@@ -208,6 +208,10 @@ pub(crate) fn to_map(target: Value) -> Result<Value, RuntimeError> {
                 return Ok(target.clone());
             }
             // Decontainerize values (Map values are not wrapped in Scalar).
+            // An object hash stores `.WHICH` keys — a plain `.Map` is
+            // Str-keyed, so stringify each original key object (raku:
+            // `my %h{Any} = 1 => "a"; %h.Map.keys` is `("1",)`).
+            let typed = map.has_typed_keys();
             let deconted: HashMap<String, Value> = map
                 .iter()
                 .map(|(k, v)| {
@@ -215,7 +219,12 @@ pub(crate) fn to_map(target: Value) -> Result<Value, RuntimeError> {
                         ValueView::Scalar(inner) => inner.clone(),
                         _ => v.clone(),
                     };
-                    (k.clone(), deconted)
+                    let key = if typed {
+                        map.typed_key(k).to_string_value()
+                    } else {
+                        k.clone()
+                    };
+                    (key, deconted)
                 })
                 .collect();
             break 'hash Value::hash(deconted);

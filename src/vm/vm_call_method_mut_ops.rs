@@ -1277,7 +1277,12 @@ impl Interpreter {
                     _ => &target,
                 };
                 if let ValueView::Hash(map) = inner_target.view() {
-                    let key = args[0].to_string_value();
+                    // An object hash stores `.WHICH` keys.
+                    let key = if map.key_type.is_some() {
+                        crate::runtime::utils::value_which_key(&args[0])
+                    } else {
+                        args[0].to_string_value()
+                    };
                     let result = self.resolve_hash_entry(&map, &key);
                     self.stack.push(result);
                     return Ok(());
@@ -1291,14 +1296,23 @@ impl Interpreter {
                     _ => &target,
                 };
                 match inner_target.view() {
-                    ValueView::Hash(_) => {
+                    ValueView::Hash(map) => {
                         let old_meta = self.container_type_metadata(inner_target).clone();
-                        let mut hash = match inner_target.view() {
-                            ValueView::Hash(map) => map.map.clone(),
-                            _ => std::collections::HashMap::new(),
-                        };
-                        hash.insert(key, value.clone());
-                        let new_hash = Value::hash_with_data(Value::hash_arc(hash));
+                        // Clone the whole HashData (not just the map) so the
+                        // object-hash `original_keys` survive; an object hash
+                        // stores the key under its `.WHICH` and records the
+                        // key object.
+                        let mut data = (**map).clone();
+                        if data.key_type.is_some() {
+                            let which = crate::runtime::utils::value_which_key(&args[0]);
+                            data.original_keys
+                                .get_or_insert_with(std::collections::HashMap::new)
+                                .insert(which.clone(), args[0].clone());
+                            data.map.insert(which, value.clone());
+                        } else {
+                            data.map.insert(key, value.clone());
+                        }
+                        let new_hash = Value::hash_with_data(crate::gc::Gc::new(data));
                         let meta = old_meta.unwrap_or(crate::runtime::ContainerTypeInfo {
                             value_type: "Any".to_string(),
                             key_type: None,
@@ -1380,6 +1394,12 @@ impl Interpreter {
                 };
                 match inner_target.view() {
                     ValueView::Hash(map) => {
+                        // An object hash stores `.WHICH` keys.
+                        let key = if map.key_type.is_some() {
+                            crate::runtime::utils::value_which_key(&args[0])
+                        } else {
+                            key
+                        };
                         let old_meta = self.container_type_metadata(inner_target).clone();
                         let old_value = if map.contains_key(&key) {
                             self.resolve_hash_entry(&map, &key)

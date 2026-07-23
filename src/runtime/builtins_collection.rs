@@ -347,6 +347,7 @@ impl Interpreter {
             "list" => self.builtin_list(args),
             "slip" | "Slip" => self.builtin_slip(args),
             "hash" => self.builtin_hash(args),
+            "__object_hash" => self.builtin_object_hash(args),
             _ => return None,
         };
         Some(r)
@@ -358,6 +359,14 @@ impl Interpreter {
             flat_values.extend(Self::value_to_list(arg));
         }
         self.build_hash_from_items_warning(flat_values)
+    }
+
+    /// `:{ ... }` — a `Mu`-keyed object hash. Builds like `hash(...)` (which
+    /// records the key objects in `original_keys`), then tags the `Mu` key/value
+    /// types and re-keys by `.WHICH`.
+    pub(super) fn builtin_object_hash(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let hash = self.builtin_hash(args)?;
+        Ok(crate::runtime::utils::into_object_hash(hash, "Mu"))
     }
 
     pub(super) fn builtin_junction(
