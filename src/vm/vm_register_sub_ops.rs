@@ -340,15 +340,36 @@ impl Interpreter {
             let Some(tc) = pd.type_constraint.as_deref() else {
                 return Ok(());
             };
+            let is_rw = pd.traits.iter().any(|t| t == "rw");
+            // `CArray[T]` — a contiguous C buffer whose element type T is
+            // marshalled per-element. Unrecognized element types skip native
+            // registration (so the failure surfaces clearly).
+            if let Some(inner) = tc.strip_prefix("CArray[").and_then(|s| s.strip_suffix(']')) {
+                let Some(elem) = CType::from_type_name(inner) else {
+                    return Ok(());
+                };
+                params.push(ParamSpec {
+                    ct: CType::CArray,
+                    is_rw,
+                    elem: Some(elem),
+                });
+                continue;
+            }
             let Some(ct) = CType::from_type_name(tc) else {
                 return Ok(());
             };
-            let is_rw = pd.traits.iter().any(|t| t == "rw");
-            params.push(ParamSpec { ct, is_rw });
+            params.push(ParamSpec {
+                ct,
+                is_rw,
+                elem: None,
+            });
         }
 
         let ret = match return_type {
             None => CType::Void,
+            // A returned `CArray[T]` has no length to reify into a Raku array,
+            // so it is surfaced as the raw `Pointer` it carries.
+            Some(rt) if rt.starts_with("CArray[") => CType::Pointer,
             Some(rt) => match CType::from_type_name(rt) {
                 Some(ct) => ct,
                 None => return Ok(()),

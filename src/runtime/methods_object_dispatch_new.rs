@@ -572,7 +572,7 @@ impl Interpreter {
                     // Shared with the VM's native fast path.
                     return Ok(Self::build_native_iterationbuffer_value(*class_name, &args));
                 }
-                "Array" | "List" | "Positional" | "array" => {
+                "Array" | "List" | "Positional" | "array" | "CArray" => {
                     // Shared single implementation with the VM's native fast path.
                     return self.try_native_array_construct(
                         *class_name,

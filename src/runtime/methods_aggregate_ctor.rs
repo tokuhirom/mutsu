@@ -238,7 +238,9 @@ impl Interpreter {
                 }
             }
         }
-        let mut result = if matches!(base_class_name, "Array" | "array") {
+        let mut result = if matches!(base_class_name, "Array" | "array" | "CArray") {
+            // A CArray is a mutable, element-assignable buffer like a native
+            // `array`, so build a real (mutable) Array, not an immutable List.
             Value::real_array(items)
         } else {
             Value::array(items)
@@ -408,7 +410,7 @@ impl Interpreter {
             (cn_resolved.as_str(), None)
         };
         match base {
-            "Array" | "List" | "Positional" | "array" => {
+            "Array" | "List" | "Positional" | "array" | "CArray" => {
                 Some(self.try_native_array_construct(class_name, base, &type_args, args))
             }
             "Hash" | "Map" => Some(self.try_native_hash_construct(class_name, &type_args, args)),

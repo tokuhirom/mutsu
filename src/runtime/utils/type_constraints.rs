@@ -113,6 +113,8 @@ pub(crate) fn is_known_type_constraint(constraint: &str) -> bool {
             // Array-like
             | "array"
             | "Hashray"
+            // NativeCall aggregate type (a contiguous C array)
+            | "CArray"
             // Numeric subtypes
             | "byte"
             | "uint"

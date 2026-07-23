@@ -304,9 +304,13 @@ sessions).
       [`docs/ecosystem-guts-dependency-survey.md`](../docs/ecosystem-guts-dependency-survey.md)
       and the highest-leverage way to widen the batteries base. Workflow per bug:
       minimal repro → general fix → `t/` pin → PR → re-check with `--only <Dist>`.
-- [ ] **NativeCall remainder**: ① `CArray[uint8]`, `CArray[Str]` ② `is repr('CStruct')` structs
-      ③ callbacks (generic C callbacks). Everything from the MVP up to real SQLite CRUD is done
-      (news/2026-06.md archive section).
+- [ ] **NativeCall remainder**: ~~① `CArray[uint8]`, `CArray[Str]`~~ (done — CArray[T] is a
+      constructible/indexable native-backed buffer, marshalled to a `T*` / `char**` argument with
+      out-array writeback; `t/nativecall-carray.t`) ② `is repr('CStruct')` structs ③ callbacks
+      (generic C callbacks). Not yet: a *returned* `CArray[T]` is surfaced as the raw `Pointer` it
+      carries (no length to reify a Raku array), and `.^name` reads `CArray[uint8]` rather than
+      raku's `NativeCall::Types::CArray[uint8]`. Everything from the MVP up to real SQLite CRUD is
+      done (news/2026-06.md archive section).
 - [ ] **Remaining 2 blockers for full Humming-Bird serving** (LOAD + LISTEN + accept + decode works;
       #3549): **B1** = leakage of `var_type_constraint` from typed parameters to same-named caller
       lexicals (the proper fix scopes the global name-keyed HashMap at call boundaries;
