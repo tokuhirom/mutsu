@@ -215,6 +215,12 @@ impl Interpreter {
         let b_ref = Self::extract_hash_ref(b);
         if let (Some((a_arc, a_key)), Some((b_arc, b_key))) = (a_ref, b_ref) {
             crate::gc::Gc::ptr_eq(&a_arc, &b_arc) && a_key == b_key
+        } else if a.is_any_type_object() && b.is_any_type_object() {
+            // Two raw container reads that both hold the Any type object (the
+            // uninitialized-scalar seed, PLAN 8.5 step 3) are distinct
+            // containers — `[$foo][0] =:= $foo` with an uninit `$foo` is
+            // False (S02-types/array_ref.t 45), matching the old Nil seed.
+            false
         } else {
             // Both are the same value identity (for non-hash-ref cases)
             crate::runtime::values_identical(a, b)
