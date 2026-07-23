@@ -206,6 +206,38 @@ impl Interpreter {
         }
     }
 
+    /// Collect the dynamic variables (`$*x` / `@*x` / `%*x`) visible in the
+    /// current dynamic scope — the whole caller chain plus the current frame —
+    /// keyed by their full `$*name` spelling. Backs the `DYNAMIC::` pseudo-stash
+    /// (`DYNAMIC::<$*x>`, `DYNAMIC::<$*x>:exists`, `DYNAMIC::.keys`), which must
+    /// find a dynamic bound in ANY caller — including one `:=`-bound to a value
+    /// with no Scalar container (roast pseudo-6c "Bound dynamics"). Innermost
+    /// frame wins: the current env overlays older callers.
+    pub(crate) fn dynamic_pseudo_stash_entries(&self) -> HashMap<String, Value> {
+        let mut entries: HashMap<String, Value> = HashMap::new();
+        // oldest caller first, current env last, so the nearest binding wins.
+        let frames = self
+            .caller_env_stack
+            .iter()
+            .chain(std::iter::once(&self.env));
+        for env in frames {
+            for (k, v) in env.iter() {
+                let key = k.resolve();
+                let spelled = if let Some(n) = key.strip_prefix("@*") {
+                    format!("@*{n}")
+                } else if let Some(n) = key.strip_prefix("%*") {
+                    format!("%*{n}")
+                } else if let Some(n) = key.strip_prefix('*') {
+                    format!("$*{n}")
+                } else {
+                    continue;
+                };
+                entries.insert(spelled, v.clone().into_deref());
+            }
+        }
+        entries
+    }
+
     /// Look up a variable through $DYNAMIC:: — searches the entire caller stack.
     pub(crate) fn get_dynamic_var(&self, name: &str) -> Result<Value, RuntimeError> {
         // Search from the most recent caller to the oldest
