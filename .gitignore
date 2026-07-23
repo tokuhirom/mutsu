@@ -46,6 +46,9 @@ target-local/
 # e2e suite) from the bench-data branch's history.
 /wasm-demo/bench-trend.html
 /wasm-demo/.bench-history.e2e.tsv
+# Compatibility numbers counted at deploy time by pages.yml (the landing page
+# falls back to a baked-in figure when it is absent).
+/wasm-demo/content/stats.json
 /node_modules/
 /package.json
 /package-lock.json

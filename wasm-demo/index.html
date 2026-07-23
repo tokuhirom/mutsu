@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>mutsu — Raku in the browser</title>
-<meta name="description" content="An introduction to the Raku programming language, with every example runnable in the browser. Powered by mutsu, a Raku interpreter written in Rust and compiled to WebAssembly.">
+<title>mutsu — a Raku implementation written in Rust</title>
+<meta name="description" content="mutsu is a Raku interpreter written in Rust: a bytecode VM with a baseline JIT and a cycle-collecting GC, shipped as a single binary with the Zef package manager bundled. It also compiles to WebAssembly, so every example on this page runs in your browser.">
 <link rel="stylesheet" href="assets/site.css">
 </head>
 <body>
@@ -12,9 +12,10 @@
 <nav class="site-nav"></nav>
 
 <noscript>
-  <p class="section">This site runs a Raku interpreter in your browser, so it needs
-  JavaScript and WebAssembly enabled. The language itself is documented at
-  <a href="https://docs.raku.org/">docs.raku.org</a>.</p>
+  <p class="section">This page runs the mutsu interpreter in your browser, so it needs
+  JavaScript and WebAssembly enabled. mutsu itself is a native binary — see
+  <a href="https://github.com/tokuhirom/mutsu">github.com/tokuhirom/mutsu</a> for
+  install instructions.</p>
 </noscript>
 
 <header class="hero">
@@ -22,12 +23,30 @@
   <p class="tagline" id="hero-tagline"></p>
   <p class="sub" id="hero-sub"></p>
   <p class="cta">
-    <a class="btn" id="cta-tutorial" href="tutorial.html"></a>
+    <a class="btn" id="cta-install" href="#install-section"></a>
     <a class="btn-ghost" id="cta-playground" href="playground.html"></a>
+    <a class="btn-ghost" id="cta-repo" href="https://github.com/tokuhirom/mutsu" rel="noopener"></a>
   </p>
 </header>
 
 <main>
+  <section class="section" id="stats-section">
+    <div class="stat-row" id="stat-row"></div>
+  </section>
+
+  <section class="section" id="install-section">
+    <h2 id="install-heading"></h2>
+    <p class="lede" id="install-lede"></p>
+    <div class="tabs" id="install-tabs" role="tablist"></div>
+    <div id="install-panels"></div>
+  </section>
+
+  <section class="section" id="features-section">
+    <h2 id="features-heading"></h2>
+    <p class="lede" id="features-lede"></p>
+    <div class="card-grid" id="feature-cards"></div>
+  </section>
+
   <section class="section" id="why-section">
     <h2 id="why-heading"></h2>
     <p class="lede" id="why-lede"></p>
@@ -50,8 +69,17 @@ import { createSnippet } from './assets/snippet.js';
 
 import landingEn from './content/landing.en.js';
 import landingJa from './content/landing.ja.js';
+import INSTALL from './content/install.js';
 
 const LANDING = { en: landingEn, ja: landingJa };
+
+/* Compatibility numbers.  pages.yml writes content/stats.json at deploy time by
+   counting roast-whitelist.txt against roast/, so the figure on the site cannot
+   drift away from the suite the way a hand-written one does.  These values are
+   the fallback for a local checkout, where that file does not exist. */
+let STATS = { roastPass: 1433, roastTotal: 1464 };
+
+const nf = () => new Intl.NumberFormat(currentLang() === 'ja' ? 'ja' : 'en');
 
 /* ---- static text ------------------------------------------------- */
 
@@ -60,16 +88,125 @@ function paintText() {
   document.getElementById('hero-title').textContent = L.hero.title;
   document.getElementById('hero-tagline').textContent = L.hero.tagline;
   document.getElementById('hero-sub').textContent = L.hero.sub;
-  const tut = document.getElementById('cta-tutorial');
+  const install = document.getElementById('cta-install');
   const play = document.getElementById('cta-playground');
-  tut.textContent = L.hero.startTutorial;
-  tut.href = langHref('tutorial.html');
+  install.textContent = L.hero.install;
   play.textContent = L.hero.openPlayground;
   play.href = langHref('playground.html');
+  document.getElementById('cta-repo').textContent = L.hero.repo;
+  document.getElementById('install-heading').textContent = L.install.heading;
+  document.getElementById('install-lede').textContent = L.install.lede;
+  document.getElementById('features-heading').textContent = L.features.heading;
+  document.getElementById('features-lede').textContent = L.features.lede;
   document.getElementById('why-heading').textContent = L.why.heading;
   document.getElementById('why-lede').textContent = L.why.lede;
   document.getElementById('next-heading').textContent = L.next.heading;
   document.getElementById('next-lede').textContent = L.next.lede;
+}
+
+/* ---- headline numbers -------------------------------------------- */
+
+const statRow = document.getElementById('stat-row');
+
+function paintStats() {
+  const L = LANDING[currentLang()].stats;
+  const fmt = nf();
+  const pct = (100 * STATS.roastPass / STATS.roastTotal).toFixed(1);
+  const tiles = [
+    {
+      value: `${pct}%`,
+      label: L.roastLabel,
+      note: L.roastNote.replace('{pass}', fmt.format(STATS.roastPass))
+        .replace('{total}', fmt.format(STATS.roastTotal)),
+    },
+    { value: L.binaryValue, label: L.binaryLabel, note: L.binaryNote },
+    { value: L.wasmValue, label: L.wasmLabel, note: L.wasmNote },
+  ];
+
+  statRow.textContent = '';
+  for (const tile of tiles) {
+    const el = document.createElement('div');
+    el.className = 'stat';
+    const v = document.createElement('strong');
+    v.className = 'stat-value';
+    v.textContent = tile.value;
+    const l = document.createElement('span');
+    l.className = 'stat-label';
+    l.textContent = tile.label;
+    const n = document.createElement('span');
+    n.className = 'stat-note';
+    // Prose is a literal from the content modules, never user input.
+    n.innerHTML = tile.note;
+    el.append(v, l, n);
+    statRow.appendChild(el);
+  }
+}
+
+/* ---- install recipes --------------------------------------------- */
+
+const tabsEl = document.getElementById('install-tabs');
+const panelsEl = document.getElementById('install-panels');
+let installTab = INSTALL[0].id;
+
+function paintInstall() {
+  const L = LANDING[currentLang()].install;
+
+  tabsEl.textContent = '';
+  for (const recipe of INSTALL) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.role = 'tab';
+    b.textContent = recipe.label;
+    b.setAttribute('aria-selected', String(recipe.id === installTab));
+    b.addEventListener('click', () => { installTab = recipe.id; paintInstall(); });
+    tabsEl.appendChild(b);
+  }
+
+  const recipe = INSTALL.find(r => r.id === installTab);
+  panelsEl.textContent = '';
+
+  const shell = document.createElement('div');
+  shell.className = 'shell';
+  const pre = document.createElement('pre');
+  pre.textContent = recipe.code;
+  const copy = document.createElement('button');
+  copy.type = 'button';
+  copy.className = 'copy-btn';
+  copy.textContent = L.copy;
+  copy.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(recipe.code);
+      copy.textContent = L.copied;
+      setTimeout(() => { copy.textContent = L.copy; }, 1500);
+    } catch { /* clipboard blocked (insecure context, denied permission) */ }
+  });
+  shell.append(copy, pre);
+
+  const note = document.createElement('p');
+  note.className = 'install-note';
+  note.innerHTML = L.notes[recipe.id];
+
+  panelsEl.append(shell, note);
+}
+
+/* ---- feature cards ----------------------------------------------- */
+
+const featuresEl = document.getElementById('feature-cards');
+
+function paintFeatures() {
+  const L = LANDING[currentLang()].features;
+  featuresEl.textContent = '';
+  for (const card of L.cards) {
+    const el = document.createElement('section');
+    el.className = 'card';
+    const h = document.createElement('h3');
+    h.textContent = card.title;
+    const p = document.createElement('p');
+    p.className = 'card-body';
+    p.innerHTML = card.body;
+    el.append(h, p);
+    featuresEl.appendChild(el);
+  }
 }
 
 /* ---- highlight cards --------------------------------------------- */
@@ -138,14 +275,27 @@ function paintNext() {
 
 function paintAll() {
   paintText();
+  paintStats();
+  paintInstall();
+  paintFeatures();
   paintCards();
   paintNext();
 }
 
 /* ---- boot -------------------------------------------------------- */
 
+async function loadStats() {
+  try {
+    const res = await fetch('content/stats.json');
+    if (!res.ok) return;                       // not deployed: keep the fallback
+    const s = await res.json();
+    if (s.roastPass > 0 && s.roastTotal > 0) STATS = s;
+  } catch { /* absent or unparsable: keep the fallback */ }
+}
+
 async function main() {
   renderChrome('home');
+  await loadStats();
   buildCards(parseCorpus(await (await fetch('content/highlights.txt')).text()));
   window.addEventListener('langchange', paintAll);
   paintAll();

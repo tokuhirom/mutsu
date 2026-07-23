@@ -46,6 +46,18 @@ jobs:
           wasm-pack build --target web --no-default-features --features wasm
           mv pkg wasm-demo/pkg
 
+      - name: Record compatibility stats
+        # The landing page headlines "N% of the official spec files pass". Count
+        # it here rather than hand-writing it into the copy, so the figure cannot
+        # drift away from the suite (the README's did). The site falls back to a
+        # baked-in number when this file is absent, i.e. in a local checkout.
+        run: |
+          pass=$(grep -c . roast-whitelist.txt)
+          total=$(find roast -name '*.t' -type f | wc -l)
+          printf '{"roastPass":%d,"roastTotal":%d}\n' "$pass" "$total" \
+            > wasm-demo/content/stats.json
+          cat wasm-demo/content/stats.json
+
       - name: Render bench-trend dashboard
         # Pull the perf history from the bench-data branch and render it into the
         # deployed site as bench-trend.html, so the trend is viewable at
