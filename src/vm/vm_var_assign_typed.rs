@@ -611,6 +611,17 @@ impl Interpreter {
             if let Some(err) = self.failure_to_runtime_error_if_unhandled(&v) {
                 return Err(err);
             }
+            // Interpolating Nil (`"{Nil}"`, `"$x"` with $x holding Nil) stringifies
+            // via `.Str`: warns ("Use of Nil in string context") and resumes with
+            // the empty string, matching Rakudo.
+            if v.is_nil() {
+                let resumed = self.raise_resumable_warning(
+                    "Use of Nil in string context",
+                    Value::str(String::new()),
+                )?;
+                result.push_str(&resumed.to_string_value());
+                continue;
+            }
             // Buf/Blob instances with "bytes" attribute: call .Str which throws X::Buf::AsStr
             // Blob type objects (no "bytes" attr, e.g. $*DISTRO.signature) stringify to ""
             if let ValueView::Instance { attributes, .. } = v.view()

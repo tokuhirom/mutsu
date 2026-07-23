@@ -268,6 +268,16 @@ impl Interpreter {
     /// Recursively collect .Str output from a value, threading through Junctions.
     fn collect_str_threaded(&mut self, v: &Value, out: &mut String) -> Result<(), RuntimeError> {
         match v.view() {
+            ValueView::Nil => {
+                // `print Nil` stringifies via `.Str`, which warns ("Use of Nil
+                // in string context") and resumes with the empty string. (`say`
+                // uses `.gist` and renders "Nil" without a warning.)
+                let resumed = self.raise_resumable_warning(
+                    "Use of Nil in string context",
+                    Value::str(String::new()),
+                )?;
+                out.push_str(&resumed.to_string_value());
+            }
             ValueView::Junction { values, .. } => {
                 for elem in values.iter() {
                     self.collect_str_threaded(elem, out)?;
