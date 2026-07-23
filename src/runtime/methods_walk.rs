@@ -675,6 +675,7 @@ fn walk_param(name: &str, slurpy: bool) -> crate::ast::ParamDef {
         code_signature: None,
         is_invocant: false,
         shape_constraints: None,
+        block_param: false,
     }
 }
 

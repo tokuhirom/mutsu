@@ -223,8 +223,13 @@ impl Interpreter {
                         break 'bind;
                     } else {
                         // Missing optional positional: shadow like the named
-                        // case below.
-                        bind_value!(ppb.slot, true, Value::NIL);
+                        // case below, seeding the param's type object (Any/Mu
+                        // for untyped) like the slow path does.
+                        bind_value!(
+                            ppb.slot,
+                            true,
+                            Self::missing_optional_param_value(&cf.param_defs[i])
+                        );
                     }
                     continue;
                 }
@@ -258,28 +263,22 @@ impl Interpreter {
                     ));
                     break 'bind;
                 }
-                // Missing optional named param: bind `Nil` into the overlay
-                // env so the param SHADOWS a same-named caller lexical (the
-                // locals seed below reads through to the caller otherwise)
-                // and so GetLocal's Nil-slot "declared?" probe finds it.
-                match cf.param_name_syms.get(i) {
-                    Some(sym) => {
-                        self.env_mut().insert_sym(*sym, Value::NIL);
-                    }
-                    None => {
-                        self.env_mut()
-                            .insert(cf.param_defs[i].name.clone(), Value::NIL);
-                    }
-                }
+                // Missing optional named param: bind the param's type object
+                // (Any/Mu for untyped, like the slow path) into the slot and
+                // the overlay env so the param SHADOWS a same-named caller
+                // lexical (the locals seed below reads through to the caller
+                // otherwise).
+                let seed = Self::missing_optional_param_value(&cf.param_defs[i]);
                 // A `:color(:$colour)` alias chain also declares its inner
                 // variable(s); when the param is unsupplied they must still be
                 // in scope (undefined), else the body's `$colour` read throws.
                 for (alias_name, alias_slot) in &npb.alias_binds {
                     if let Some(slot) = alias_slot {
-                        self.locals[*slot] = Value::NIL;
+                        self.locals[*slot] = seed.clone();
                     }
-                    self.env_mut().insert(alias_name.clone(), Value::NIL);
+                    self.env_mut().insert(alias_name.clone(), seed.clone());
                 }
+                bind_value!(npb.slot, true, seed);
                 continue;
             };
             let v = v.clone();

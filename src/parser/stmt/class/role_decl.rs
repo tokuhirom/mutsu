@@ -201,6 +201,7 @@ pub(crate) fn parse_optional_role_type_params(
                     code_signature: None,
                     is_invocant: false,
                     shape_constraints: None,
+                    block_param: false,
                 });
                 continue;
             }
@@ -235,6 +236,7 @@ pub(crate) fn parse_optional_role_type_params(
                         code_signature: None,
                         is_invocant: false,
                         shape_constraints: None,
+                        block_param: false,
                     });
                     continue;
                 }

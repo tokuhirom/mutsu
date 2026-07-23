@@ -122,6 +122,7 @@ fn delegation_slurpy_param() -> ParamDef {
         code_signature: None,
         is_invocant: false,
         shape_constraints: None,
+        block_param: false,
     }
 }
 
@@ -170,6 +171,7 @@ fn delegation_double_slurpy_param() -> ParamDef {
         code_signature: None,
         is_invocant: false,
         shape_constraints: None,
+        block_param: false,
     }
 }
 

@@ -667,16 +667,11 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
                     "Too few positional arguments in sub-signature binding".to_string(),
                 ));
             }
-            // Explicitly bind optional params to their type object (Any)
-            // so that values from an outer scope don't leak into recursive calls.
+            // Explicitly bind optional params to their type object (Any/Mu,
+            // or the constrained type) so that values from an outer scope
+            // don't leak into recursive calls.
             if !sub_pd.name.is_empty() {
-                let default_val = if sub_pd.name.starts_with('@') {
-                    Value::array(vec![])
-                } else if sub_pd.name.starts_with('%') {
-                    Value::hash(std::collections::HashMap::new())
-                } else {
-                    Value::NIL
-                };
+                let default_val = Interpreter::missing_optional_param_value(sub_pd);
                 interpreter
                     .env
                     .insert(sub_pd.name.clone(), default_val.clone());
@@ -879,6 +874,7 @@ pub(in crate::runtime) fn callable_signature_info(
                         code_signature: None,
                         is_invocant: false,
                         shape_constraints: None,
+                        block_param: false,
                     })
                     .collect::<Vec<_>>()
             };
@@ -912,6 +908,7 @@ pub(in crate::runtime) fn callable_signature_info(
                         code_signature: None,
                         is_invocant: false,
                         shape_constraints: None,
+                        block_param: false,
                     })
                     .collect::<Vec<_>>()
             };

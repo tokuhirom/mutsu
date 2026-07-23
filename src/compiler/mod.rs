@@ -1147,14 +1147,47 @@ impl Compiler {
                     bind_stmts.push(bind_stmt(sub.name.clone(), capture_expr));
                     // No need to increment positional_index; capture consumes all remaining
                 } else {
-                    bind_stmts.push(bind_stmt(
-                        sub.name.clone(),
-                        Expr::Index {
-                            target: Box::new(Expr::Var(target_name.clone())),
-                            index: Box::new(Expr::Literal(Value::int(positional_index as i64))),
-                            is_positional: false,
-                        },
-                    ));
+                    let element_expr = Expr::Index {
+                        target: Box::new(Expr::Var(target_name.clone())),
+                        index: Box::new(Expr::Literal(Value::int(positional_index as i64))),
+                        is_positional: false,
+                    };
+                    // An optional destructure param (`-> ($a, $b?)`) seeds its
+                    // type object (Mu for untyped — this is a block) when the
+                    // source has no element at this slot; a default binds the
+                    // default expression instead.
+                    let value_expr = if sub.default.is_some() || sub.optional_marker {
+                        let fallback = match &sub.default {
+                            Some(default_expr) => default_expr.clone(),
+                            None => {
+                                let mut marked = sub.clone();
+                                marked.mark_block_param();
+                                Expr::Literal(
+                                    crate::runtime::Interpreter::missing_optional_param_value(
+                                        &marked,
+                                    ),
+                                )
+                            }
+                        };
+                        Expr::Ternary {
+                            cond: Box::new(Expr::Binary {
+                                left: Box::new(Expr::MethodCall {
+                                    target: Box::new(Expr::Var(target_name.clone())),
+                                    name: Symbol::intern("elems"),
+                                    args: Vec::new(),
+                                    modifier: None,
+                                    quoted: false,
+                                }),
+                                op: crate::token_kind::TokenKind::Gt,
+                                right: Box::new(Expr::Literal(Value::int(positional_index as i64))),
+                            }),
+                            then_expr: Box::new(element_expr),
+                            else_expr: Box::new(fallback),
+                        }
+                    } else {
+                        element_expr
+                    };
+                    bind_stmts.push(bind_stmt(sub.name.clone(), value_expr));
                     positional_index += 1;
                 }
             }
@@ -1222,15 +1255,25 @@ impl Compiler {
                 index: Box::new(Expr::Literal(Value::int(i as i64))),
                 is_positional: false,
             };
-            let value_expr = match params_def.get(i).and_then(|d| d.default.as_ref()) {
-                Some(default_expr) => Expr::Ternary {
+            // An optional param without a default (`-> $a, $b? {}`) seeds its
+            // type object (Mu for untyped block params) when the chunk is
+            // short, like an unpassed optional in a routine call.
+            let missing_expr = match params_def.get(i) {
+                Some(d) if d.default.is_some() => Some(d.default.clone().unwrap()),
+                Some(d) if d.optional_marker => Some(Expr::Literal(
+                    crate::runtime::Interpreter::missing_optional_param_value(d),
+                )),
+                _ => None,
+            };
+            let value_expr = match missing_expr {
+                Some(fallback) => Expr::Ternary {
                     cond: Box::new(Expr::Binary {
                         left: Box::new(chunk_elems()),
                         op: crate::token_kind::TokenKind::Gt,
                         right: Box::new(Expr::Literal(Value::int(i as i64))),
                     }),
                     then_expr: Box::new(element_expr),
-                    else_expr: Box::new(default_expr.clone()),
+                    else_expr: Box::new(fallback),
                 },
                 None => element_expr,
             };

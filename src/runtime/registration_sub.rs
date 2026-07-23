@@ -608,6 +608,7 @@ impl Interpreter {
                     code_signature: None,
                     is_invocant: false,
                     shape_constraints: None,
+                    block_param: false,
                 });
             }
             if use_named {
@@ -631,6 +632,7 @@ impl Interpreter {
                     code_signature: None,
                     is_invocant: false,
                     shape_constraints: None,
+                    block_param: false,
                 });
             }
             // If neither @_ nor %_ is used, this is a true empty signature
@@ -1192,6 +1194,7 @@ impl Interpreter {
                     code_signature: None,
                     is_invocant: false,
                     shape_constraints: None,
+                    block_param: false,
                 });
             }
             if use_named {
@@ -1215,6 +1218,7 @@ impl Interpreter {
                     code_signature: None,
                     is_invocant: false,
                     shape_constraints: None,
+                    block_param: false,
                 });
             }
             let is_empty = defs.is_empty();

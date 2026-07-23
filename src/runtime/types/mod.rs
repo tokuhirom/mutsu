@@ -485,7 +485,7 @@ impl Interpreter {
         constraint[..end].to_string()
     }
 
-    pub(in crate::runtime) fn missing_optional_param_value(pd: &ParamDef) -> Value {
+    pub(crate) fn missing_optional_param_value(pd: &ParamDef) -> Value {
         if pd.name.starts_with('@') {
             return Value::real_array(Vec::new());
         }
@@ -495,7 +495,9 @@ impl Interpreter {
         if let Some(constraint) = &pd.type_constraint {
             return Value::package(Symbol::intern(&Self::optional_type_object_name(constraint)));
         }
-        Value::NIL
+        // An unpassed untyped optional binds the parameter's implicit nominal
+        // type object: Any for routines, Mu for pointy/bare blocks.
+        Value::package(Symbol::intern(if pd.block_param { "Mu" } else { "Any" }))
     }
 
     pub(crate) fn nominal_type_object_name_for_constraint(&self, constraint: &str) -> String {

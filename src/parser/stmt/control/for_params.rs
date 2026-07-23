@@ -71,6 +71,7 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
                 code_signature: None,
                 is_invocant: false,
                 shape_constraints: None,
+                block_param: true,
             };
             return Ok((
                 r,
@@ -116,6 +117,7 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
                 code_signature: None,
                 is_invocant: false,
                 shape_constraints: None,
+                block_param: true,
             };
             return Ok((
                 r,
@@ -171,6 +173,7 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
                 code_signature: None,
                 is_invocant: false,
                 shape_constraints: None,
+                block_param: true,
             };
             return Ok((
                 r,
@@ -311,6 +314,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                 code_signature: None,
                 is_invocant: false,
                 shape_constraints: None,
+                block_param: true,
             },
         ));
     }
@@ -397,6 +401,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             code_signature: None,
             is_invocant: false,
             shape_constraints,
+            block_param: true,
         },
     ))
 }

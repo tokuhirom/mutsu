@@ -24,6 +24,7 @@ pub(crate) fn invocant_param_def() -> crate::ast::ParamDef {
         code_signature: None,
         is_invocant: true,
         shape_constraints: None,
+        block_param: false,
     }
 }
 

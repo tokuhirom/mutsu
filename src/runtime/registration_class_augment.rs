@@ -201,6 +201,7 @@ impl Interpreter {
                                     code_signature: None,
                                     is_invocant: false,
                                     shape_constraints: None,
+                                    block_param: false,
                                 },
                             );
                         }
