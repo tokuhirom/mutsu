@@ -987,6 +987,7 @@ impl Interpreter {
                         is_default: *is_default_candidate,
                         deprecated_message: None,
                         is_submethod: *is_submethod,
+                        captured_env: None,
                     };
                     // `my method` in roles are role-private, skip method table.
                     // Submethods (is_submethod) DO get composed even though

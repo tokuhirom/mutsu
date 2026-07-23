@@ -904,6 +904,15 @@ pub struct Interpreter {
     /// Used to propagate package declarations when a module is re-used.
     module_packages: HashMap<String, HashSet<String>>,
     closure_env_overrides: HashMap<u64, Env>,
+    /// Sigilless parameter names (`\attr`, `my \x`) of the routine whose body is
+    /// about to be compiled by the interpret path (`compile_block_value_opts`).
+    /// The multi/user-sub fallback runs a body via a *fresh* `Compiler`, which
+    /// otherwise would not know these bare names are lexical variables — so a
+    /// nested closure would compile them as barewords and lose the capture
+    /// (e.g. Attribute::Predicate's `is predicate` builds `method {
+    /// attr.get_value(self) }`). Seeded right before the eval and consumed by the
+    /// fresh compiler's `enclosing_sigilless`. Empty except across that call.
+    pending_eval_sigilless: Vec<String>,
     /// PredictiveIterator backing a `Seq.new(iterator)`, keyed by the Seq's
     /// Arc pointer (`seq_id`). Kept off the scoped `env` so the association
     /// survives sub/block returns between Seq creation and `.tail`/`.Numeric`

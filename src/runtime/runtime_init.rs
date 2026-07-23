@@ -1963,6 +1963,7 @@ impl Interpreter {
                             is_default: false,
                             deprecated_message: None,
                             is_submethod: false,
+                            captured_env: None,
                         };
                         let mut methods = HashMap::new();
                         // Rakudo's CompUnit::Repository role requires exactly
@@ -2016,6 +2017,7 @@ impl Interpreter {
                             is_default: false,
                             deprecated_message: None,
                             is_submethod: false,
+                            captured_env: None,
                         };
                         let mut methods = HashMap::new();
                         for name in ["meta", "content"] {
@@ -2060,6 +2062,7 @@ impl Interpreter {
             chain_declared_packages: HashSet::new(),
             module_packages: HashMap::new(),
             closure_env_overrides: HashMap::new(),
+            pending_eval_sigilless: Vec::new(),
             predictive_seq_iters: HashMap::new(),
             protect_block_cache: HashMap::new(),
             subset_predicate_cache: HashMap::new(),

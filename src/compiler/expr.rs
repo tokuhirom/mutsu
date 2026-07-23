@@ -187,6 +187,19 @@ impl Compiler {
                         let name_idx = self.code.add_constant(Value::str(name.clone()));
                         self.code.emit(OpCode::GetBareWord(name_idx));
                     }
+                } else if self.enclosing_sigilless.contains(name.as_str())
+                    && !crate::runtime::Interpreter::is_builtin_type(name)
+                {
+                    // A sigilless binding (`\thing`, `my \x`) from an ENCLOSING
+                    // scope, read here from a nested — possibly escaping — closure.
+                    // It IS the variable, so emit a by-name global read: GetGlobal
+                    // is in `op_name_const_idx`, so `compute_free_vars` records it
+                    // as a free variable and the closure captures the enclosing
+                    // frame's slot value. A plain GetBareWord would not be captured
+                    // and would degrade to the literal string once the creating
+                    // frame returns (escaping closure / `.^add_method` method body).
+                    let name_idx = self.code.add_constant(Value::str(name.clone()));
+                    self.code.emit(OpCode::GetGlobal(name_idx));
                 } else {
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::GetBareWord(name_idx));

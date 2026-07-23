@@ -245,6 +245,7 @@ impl Interpreter {
                     is_default: *is_default_candidate,
                     deprecated_message: deprecated_message.clone(),
                     is_submethod: false,
+                    captured_env: None,
                 };
                 if let Some(class_def) = self.registry_mut().classes.get_mut(&class_name) {
                     if *multi {

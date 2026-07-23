@@ -229,6 +229,7 @@ impl Interpreter {
             chain_declared_packages: self.chain_declared_packages.clone(),
             module_packages: self.module_packages.clone(),
             closure_env_overrides: self.closure_env_overrides.clone(),
+            pending_eval_sigilless: Vec::new(),
             predictive_seq_iters: self.predictive_seq_iters.clone(),
             protect_block_cache: HashMap::new(),
             subset_predicate_cache: HashMap::new(),

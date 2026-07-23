@@ -264,6 +264,7 @@ impl Interpreter {
             is_default: false,
             deprecated_message: None,
             is_submethod: false,
+            captured_env: None,
         };
         let attributes = match invocant.view() {
             ValueView::Instance { attributes, .. } => attributes.as_map().clone(),

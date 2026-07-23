@@ -217,6 +217,14 @@ pub(crate) struct Compiler {
     /// or as a sigilless parameter).  BareWord resolution only uses GetLocal
     /// for names in this set; `$`-sigiled variables must not shadow type names.
     sigilless_locals: std::collections::HashSet<String>,
+    /// Sigilless-binding names declared in an ENCLOSING compilation (the parent
+    /// sub/block's `sigilless_locals`, transitively). A BareWord naming one of
+    /// these — but not a local of the current frame — is a genuine lexical
+    /// capture, so it is compiled as a by-name global read (recorded as a free
+    /// variable and captured) rather than a plain `GetBareWord` that would
+    /// degrade to the literal name string once the creating frame is gone
+    /// (escaping closure / `.^add_method`).
+    enclosing_sigilless: std::collections::HashSet<String>,
     /// Set true immediately before compiling a *synthesized* `Stmt::Block`
     /// (an if/while/loop/control branch body the compiler wraps at compile time,
     /// not a genuine source `{ ... }`). The `Stmt::Block` arm consumes it to
@@ -320,6 +328,7 @@ impl Compiler {
             class_names_current_scope: std::collections::HashSet::new(),
             outer_constant_names: std::collections::HashSet::new(),
             sigilless_locals: std::collections::HashSet::new(),
+            enclosing_sigilless: std::collections::HashSet::new(),
             last_source_line: None,
             pending_index_rw_writebacks: Vec::new(),
             current_distribution: None,
@@ -505,8 +514,25 @@ impl Compiler {
 
     /// Hand a nested body's compiler the chain it is being compiled inside, so a
     /// symbolic deref in that body still sees the enclosing scopes.
+    /// Seed the enclosing-sigilless set from an interpret-path caller (the multi
+    /// / user-sub fallback), which compiles a routine body with a fresh compiler
+    /// that has no signature context. Without this, a nested closure in the body
+    /// would compile a bare reference to a `\thing` parameter as a bareword and
+    /// lose the capture. Public so `Interpreter::compile_block_value_opts` can
+    /// call it. No-op for the common empty case.
+    pub(crate) fn seed_enclosing_sigilless(&mut self, names: &[String]) {
+        self.enclosing_sigilless.extend(names.iter().cloned());
+    }
+
     fn inherit_enclosing_scopes(&self, sub: &mut Compiler) {
         sub.enclosing_scopes = self.full_scope_chain();
+        // Hand down every sigilless binding visible here (this frame's own plus
+        // the ones it inherited) so a nested closure recognizes a bare reference
+        // to an enclosing `\thing` / `my \x` as a lexical capture, not a bareword.
+        sub.enclosing_sigilless
+            .extend(self.sigilless_locals.iter().cloned());
+        sub.enclosing_sigilless
+            .extend(self.enclosing_sigilless.iter().cloned());
     }
 
     /// Bake the scope chain visible right here into the code chunk, and return

@@ -551,6 +551,15 @@ impl Interpreter {
                     is_default: false,
                     deprecated_message: None,
                     is_submethod: false,
+                    // Preserve the closure literal's captured scope so a method
+                    // like `method { attr.get_value(self) }` (Attribute::Predicate's
+                    // `is predicate`) can still resolve `attr` after its creating
+                    // sub returns. Only carried when the env actually holds captures.
+                    captured_env: if sub_data.env.is_empty() {
+                        None
+                    } else {
+                        Some(sub_data.env.clone())
+                    },
                 };
                 // If the class doesn't exist yet (e.g. built-in types like Rat, Int, Str),
                 // create a stub ClassDef so methods can be added dynamically.
@@ -616,6 +625,11 @@ impl Interpreter {
                     is_default: false,
                     deprecated_message: None,
                     is_submethod: false,
+                    captured_env: if sub_data.env.is_empty() {
+                        None
+                    } else {
+                        Some(sub_data.env.clone())
+                    },
                 };
                 let inserted =
                     if let Some(class_def) = self.registry_mut().classes.get_mut(&class_name) {

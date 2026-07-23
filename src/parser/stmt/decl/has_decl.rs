@@ -575,6 +575,31 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
                     rest = r2;
                     continue;
                 }
+                // `is predicate<bazzy>` — an angle-bracket word-quote argument
+                // (`:predicate<bazzy>` == `:predicate("bazzy")`). A single word
+                // becomes a Str; multiple words become a list of Str. Without
+                // this the `<bazzy>` leaked out as a separate statement and the
+                // trait sub saw only the bare `:predicate` (Bool True).
+                if let Some(stripped) = r_ws.strip_prefix('<')
+                    && let Some(close) = stripped.find('>')
+                {
+                    let inner = stripped[..close].trim();
+                    let words: Vec<&str> = inner.split_whitespace().collect();
+                    let trait_arg = match words.as_slice() {
+                        [] => None,
+                        [one] => Some(Expr::Literal(Value::str_from(one))),
+                        many => Some(Expr::ArrayLiteral(
+                            many.iter()
+                                .map(|w| Expr::Literal(Value::str_from(w)))
+                                .collect(),
+                        )),
+                    };
+                    unknown_traits.push(("is".to_string(), trait_name.to_string(), trait_arg));
+                    rest = &stripped[close + 1..];
+                    let (r2, _) = ws(rest)?;
+                    rest = r2;
+                    continue;
+                }
                 unknown_traits.push(("is".to_string(), trait_name.to_string(), None));
             }
             let (r, _) = ws(r)?;

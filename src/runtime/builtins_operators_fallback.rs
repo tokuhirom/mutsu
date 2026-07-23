@@ -517,7 +517,20 @@ impl Interpreter {
                 self.set_current_package(fn_pkg);
             }
             self.prepare_definite_return_slot(return_spec.as_deref());
+            // Tell the fresh-compiler body path which parameters are sigilless
+            // (`\attr`) so a nested closure captures them by name instead of
+            // compiling a bare reference as a bareword (lost capture). Restored
+            // after the eval; a nested call sets and restores its own.
+            let saved_eval_sigilless = std::mem::replace(
+                &mut self.pending_eval_sigilless,
+                def.param_defs
+                    .iter()
+                    .filter(|pd| pd.sigilless && !pd.name.is_empty())
+                    .map(|pd| pd.name.clone())
+                    .collect(),
+            );
             let result = self.eval_block_value_with_pre_post(&def.body);
+            self.pending_eval_sigilless = saved_eval_sigilless;
             self.set_current_package(saved_package);
             self.routine_stack.pop();
             self.block_stack.pop();
