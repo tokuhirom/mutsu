@@ -1,5 +1,5 @@
 use Test;
-plan 328;
+plan 329;
 
 # Literal compilation
 is 42, 42, 'integer literal';
@@ -607,9 +607,12 @@ is $block_val, 30, 'block with multiple stmts returns last value';
 
 # === Additional native methods ===
 
-# .flat
+# .flat — an Array's elements are itemized (Scalar containers), so flat
+# does not descend into them (raku: 3); a bound List flattens fully.
 my @nested = (1, (2, 3), (4, 5));
-is @nested.flat.elems, 5, 'native .flat flattens array';
+is @nested.flat.elems, 3, 'native .flat keeps itemized array elements';
+my @nested-list := 1, (2, 3), (4, 5);
+is @nested-list.flat.elems, 5, 'native .flat flattens a bound List';
 
 # .reverse
 my @rev = (1, 2, 3);
