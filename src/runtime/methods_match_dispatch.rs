@@ -61,6 +61,30 @@ impl Interpreter {
                 let escaped = p.replace('\'', "\\'");
                 format!("'{}'", escaped)
             }
+            // A named regex/token passed as a value — `&Named`, or a hash/array
+            // slot holding it (`%searchSub{$type}`) — is a `Routine` with
+            // `is_regex`. Extract its regex source and match with THAT, so the
+            // returned Match carries the named regex's own captures at top level
+            // (mirroring the smartmatch `$str ~~ &Named` path). Without this the
+            // Routine fell through to the literal-string arm below and matched its
+            // stringified form (`sub Named (...) {...}`) → never matched.
+            ValueView::Routine {
+                is_regex: true,
+                name,
+                package,
+            } => {
+                let qualified = format!("{}::{}", package.resolve(), name.resolve());
+                match self
+                    .extract_token_regex_pattern(&qualified)
+                    .or_else(|| self.extract_token_regex_pattern(&name.resolve()))
+                {
+                    Some(p) => p,
+                    None => {
+                        let escaped = pattern.to_string_value().replace('\'', "\\'");
+                        format!("'{}'", escaped)
+                    }
+                }
+            }
             // An *undefined* matcher (Nil, or a bare type object like `Any`)
             // resolves to no `.match` candidate — Rakudo throws X::Multi::NoMatch
             // rather than hanging (roast .../multi-no-match.t).

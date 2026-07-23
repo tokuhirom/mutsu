@@ -226,6 +226,29 @@ impl Interpreter {
         let pattern = positional
             .first()
             .ok_or_else(|| super::methods_signature_errors::make_multi_no_match_error("subst"))?;
+        // A named regex/token passed as a value (`&Named`, or a hash slot holding
+        // it) is a `Routine` with `is_regex`. Normalize it to a `Regex` value
+        // built from its source so the regex-pattern branch below drives the
+        // substitution (mirrors `.match`); otherwise it fell through to the
+        // literal-string branch and matched its stringified `sub ...` form.
+        let pattern_owned: Value = match pattern.view() {
+            ValueView::Routine {
+                is_regex: true,
+                name,
+                package,
+            } => {
+                let qualified = format!("{}::{}", package.resolve(), name.resolve());
+                match self
+                    .extract_token_regex_pattern(&qualified)
+                    .or_else(|| self.extract_token_regex_pattern(&name.resolve()))
+                {
+                    Some(p) => Value::regex(p),
+                    None => pattern.clone(),
+                }
+            }
+            _ => pattern.clone(),
+        };
+        let pattern = &pattern_owned;
         let replacement_val = positional.get(1).cloned();
         let is_closure = matches!(
             replacement_val.as_ref().map(Value::view),
