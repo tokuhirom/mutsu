@@ -170,6 +170,27 @@ impl Interpreter {
             let result = if normalized_op == "=:=" { same } else { !same };
             return Ok(Value::truth(result));
         }
+        // With List container aliasing the operand lists of `($a,$b) X=:= ($c,$d)`
+        // hold shared `ContainerRef` cells (`WrapVarRef` boxes each scalar's
+        // slot), so the elements arrive as cells rather than `VarRef`s. Two cells
+        // are the same container only when they are the same allocation (a `:=`
+        // bind shares the cell); a cell is never identical to a plain value. This
+        // mirrors `capture_elem_identical` and must NOT go through
+        // `values_identical` (which derefs the cell — that is `===` value
+        // identity, where two uninitialized `Any` scalars would wrongly match).
+        if normalized_op == "=:=" || normalized_op == "!=:=" {
+            let cell_result = match (left.view(), right.view()) {
+                (ValueView::ContainerRef(x), ValueView::ContainerRef(y)) => {
+                    Some(crate::gc::Gc::ptr_eq(&x, &y))
+                }
+                (ValueView::ContainerRef(_), _) | (_, ValueView::ContainerRef(_)) => Some(false),
+                _ => None,
+            };
+            if let Some(same) = cell_result {
+                let result = if normalized_op == "=:=" { same } else { !same };
+                return Ok(Value::truth(result));
+            }
+        }
         match Interpreter::apply_reduction_op(normalized_op, left, right) {
             Ok(v) => Ok(v),
             Err(err) if err.message.starts_with("Unsupported reduction operator:") => {

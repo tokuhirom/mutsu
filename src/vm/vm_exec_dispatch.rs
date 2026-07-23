@@ -1751,6 +1751,10 @@ impl Interpreter {
                 self.exec_decont_op();
                 *ip += 1;
             }
+            OpCode::DecontListElems => {
+                self.exec_decont_list_elems_op();
+                *ip += 1;
+            }
             OpCode::Itemize => {
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 self.stack.push(Self::itemize_value(val));

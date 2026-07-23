@@ -1249,19 +1249,27 @@ the backlog.
       in `ArrayLiteral([$a])`; the loop's own `TagContainerRef`+writeback drives rw, so aliasing there
       wrote the cell back into `$a` = self-referential cycle = infinite loop; new compiler flag
       `suppress_list_var_alias` keeps Itemize while compiling the for-iterable — `t/for-param.t` fixed).
-- **Remaining (3 consumers not yet cell-aware — the campaign work):**
-  1. `t/list-dot-equals-method.t` — `($x,$y).=reverse` → `[35 35]` (want `[35 7]`). `.=`-on-list lowers
-     to `__mutsu_assign_callable_lvalue(ArrayLiteral-lvalue, [], MethodCall{target: ArrayLiteral})`; the
-     lvalue-target and RHS-target Lists both box cells and the assign-back corrupts. Fix: the lvalue
-     list-assign must deref cells to values on write-back (or suppress alias for the lvalue-target list).
-  2. `t/hash-itemization-flag.t` test 8 — `my %c = ($hi,)` (hash-holding scalar) should die "odd number",
-     but the cell derefs to the hash and *flattens*. Old Itemize-Scalar was non-flattening. Fix: the
-     hash-assign flatten path must treat a `ContainerRef`-wrapped value as itemized (non-flatten), as it
-     does a Scalar.
-  3. `t/list-infix-comma-precedence.t` tests 24/25 — `$a,$b X!=:= $c,$d` (uninit `my` scalars) all-True;
-     after `$c:=$b`, `one ... X=:=` True. The cross/zip metaop **derefs the cells** before `=:=`, losing
-     container identity (direct `$a=:=$c` works). Fix: metaop cross/zip must preserve `ContainerRef`
-     identity (pass cells through to `=:=`).
+- **The 3 consumers are now cell-aware ✅ (2026-07-23).** All three CI failures fixed on branch:
+  1. `t/list-dot-equals-method.t` — `($x,$y).=reverse` / `($p,$q) = ($q,$p)` swap. Root cause was
+     broader than `.=`: **every** list assignment held the RHS as live cells and read them lazily during
+     the write loop, so an earlier write corrupted a later aliased read (even a plain `($p,$q)=($q,$p)`
+     gave `35 35`). Fix: list assignment now snapshots the decontainerized RHS *prefix* into a `snap`
+     buffer up front (new `OpCode::DecontListElems` + `list_assign_prefix_count`); the greedy `@`/`%`
+     slurpy still reads the raw lazy tail from `tmp`, so `($a,$b) = 1..Inf` stays lazy. Matches raku
+     `($a,$b) = ($x,++$x)` → `4,4`.
+  2. `t/hash-itemization-flag.t` test 8 — `my %c = ($hi,)` (hash-holding scalar) inside a closure. The
+     captured `$hi` is not a frame local, so `capture_var_cell_inner` could not box it into a cell and
+     returned the bare (de-itemized) `Hash`, which `build_hash_from_items` then flattened. Fix: the
+     non-local List path (`box_type_objects`) now itemizes the value, restoring the old `Itemize`
+     non-flatten semantics for captured `$`-scalars.
+  3. `t/list-infix-comma-precedence.t` tests 24/25 — `$a,$b X!=:= $c,$d`. The cross/zip operand lists
+     now hold `ContainerRef` cells (not `VarRef`s), so the `=:=` branch in
+     `eval_reduction_operator_values` was falling through to `values_identical` (deref → both `Any` →
+     wrongly equal). Fix: added a cell-identity branch (`Gc::ptr_eq`, cell-vs-value → distinct) mirroring
+     `capture_elem_identical`. Also `capture_var_cell_inner` now resolves the `:=` alias root so
+     `$c := $b` boxes into `$b`'s cell (both lists share one cell → exactly one `=:=` pair True).
+  Pins: `t/list-dot-equals-method.t`, `t/hash-itemization-flag.t`, `t/list-infix-comma-precedence.t`
+  (plus the existing `t/list-container-aliasing.t` 13/13, `t/for-param.t`).
 - **Still open beyond the CI failures:** [7] `Pair.new('a', $v)` — `Pair.new`'s method-arg binding
       decontainerizes, so a later `$v` mutation is not reflected (raku `a => 9`, mutsu `a => 1`). Separate
       method-arg-binding container case; defer with the rest.

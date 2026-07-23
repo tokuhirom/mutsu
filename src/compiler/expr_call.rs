@@ -32,6 +32,48 @@ impl Compiler {
         }
     }
 
+    /// Number of RHS elements consumed by the non-slurpy (scalar / index /
+    /// whatever) targets of a list assignment before the first greedy `@`/`%`
+    /// slurpy target. This is exactly the prefix that must be decontainerized
+    /// into a value buffer up front (see the snapshot note in the list-assign
+    /// branch); the slurpy tail is read lazily from the raw RHS.
+    fn list_assign_prefix_count(targets: &[Expr]) -> usize {
+        let mut count = 0usize;
+        for target in targets {
+            // Resolve an inline `my $x` / `my @a` declaration to its sigil.
+            let sigil_is_aggregate = |t: &Expr| -> Option<bool> {
+                match t {
+                    Expr::ArrayVar(_) | Expr::HashVar(_) => Some(true),
+                    Expr::Var(_) | Expr::Whatever | Expr::Index { .. } => Some(false),
+                    Expr::DoStmt(stmt) => match stmt.as_ref() {
+                        Stmt::VarDecl { name, .. } => {
+                            Some(name.starts_with('@') || name.starts_with('%'))
+                        }
+                        _ => Some(false),
+                    },
+                    _ => Some(false),
+                }
+            };
+            match sigil_is_aggregate(target) {
+                Some(true) => break, // first slurpy: stop counting
+                _ => {
+                    count += match target {
+                        Expr::Index {
+                            index,
+                            is_positional: true,
+                            ..
+                        } => match index.as_ref() {
+                            Expr::ArrayLiteral(items) => items.len().max(1),
+                            _ => 1,
+                        },
+                        _ => 1,
+                    };
+                }
+            }
+        }
+        count
+    }
+
     /// True when `expr` is a `key => value` named argument whose key is the
     /// literal string `key`.
     fn is_named_arg_key(expr: &Expr, key: &str) -> bool {
@@ -224,6 +266,35 @@ impl Compiler {
             let tmp_idx = self.code.add_constant(Value::str(tmp_name.clone()));
             self.code.emit(OpCode::Dup);
             self.code.emit(OpCode::SetGlobal(tmp_idx));
+            // List assignment copies RHS *values* into the LHS containers, and
+            // the whole RHS is decontainerized into a value buffer BEFORE any LHS
+            // is written (`($p, $q) = ($q, $p)` swaps, `($a, $b) = ($x, ++$x)`
+            // yields `4, 4`). With list-element container aliasing the RHS list
+            // holds live `ContainerRef` cells that may alias the LHS targets, so
+            // reading them lazily during the write loop would let an earlier
+            // write corrupt a later read. Snapshot the decontainerized *prefix*
+            // (the elements consumed by the non-slurpy scalar/index/whatever
+            // targets, count known at compile time) into a separate `snap`
+            // global up front; the write loop then reads scalar/index values
+            // from `snap` while the greedy `@`/`%` slurpy still reads the raw
+            // lazy tail from `tmp` (so `($a, $b) = 1..Inf` stays lazy).
+            let prefix_count = Self::list_assign_prefix_count(targets);
+            let snap_name = format!("__mutsu_destructure_snap_{}", self.code.constants.len());
+            let snap_idx = self.code.add_constant(Value::str(snap_name.clone()));
+            if prefix_count > 0 {
+                let slice = Expr::Index {
+                    target: Box::new(Expr::Var(tmp_name.clone())),
+                    index: Box::new(Expr::ArrayLiteral(
+                        (0..prefix_count)
+                            .map(|k| Expr::Literal(Value::int(k as i64)))
+                            .collect(),
+                    )),
+                    is_positional: true,
+                };
+                self.compile_expr(&slice);
+                self.code.emit(OpCode::DecontListElems);
+                self.code.emit(OpCode::SetGlobal(snap_idx));
+            }
             // For each target variable, index into the RHS and assign.
             // `offset` is the running count of RHS items already consumed. Each
             // scalar target consumes one item; a positional *slice* target
@@ -262,7 +333,10 @@ impl Compiler {
                             let nil_idx = self.code.add_constant(Value::NIL);
                             self.code.emit(OpCode::LoadConst(nil_idx));
                         } else {
-                            self.code.emit(OpCode::GetGlobal(tmp_idx));
+                            // Read the decontainerized value from the prefix
+                            // snapshot (see the snapshot note above), not the raw
+                            // aliased `tmp`.
+                            self.code.emit(OpCode::GetGlobal(snap_idx));
                             let idx = self.code.add_constant(Value::int(offset as i64));
                             self.code.emit(OpCode::LoadConst(idx));
                             self.code.emit(OpCode::Index {
@@ -325,9 +399,17 @@ impl Compiler {
                         } else {
                             1
                         };
+                        // Read from the decontainerized prefix snapshot while in
+                        // the prefix; after a slurpy, keep the raw `tmp` (these
+                        // trailing positions are out of the snapshot's range).
+                        let src_name = if seen_slurpy {
+                            tmp_name.clone()
+                        } else {
+                            snap_name.clone()
+                        };
                         let rhs_item = if width > 1 {
                             Expr::Index {
-                                target: Box::new(Expr::Var(tmp_name.clone())),
+                                target: Box::new(Expr::Var(src_name.clone())),
                                 index: Box::new(Expr::ArrayLiteral(
                                     (offset..offset + width)
                                         .map(|k| Expr::Literal(Value::int(k as i64)))
@@ -337,7 +419,7 @@ impl Compiler {
                             }
                         } else {
                             Expr::Index {
-                                target: Box::new(Expr::Var(tmp_name.clone())),
+                                target: Box::new(Expr::Var(src_name.clone())),
                                 index: Box::new(Expr::Literal(Value::int(offset as i64))),
                                 is_positional: true,
                             }
