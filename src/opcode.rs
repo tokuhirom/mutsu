@@ -1496,6 +1496,22 @@ pub(crate) enum OpCode {
         slot: Option<u32>,
     },
 
+    /// Get a caller-frame lexical when the `CALLER::` site sits inside an
+    /// *immediate* block (a bare block / `if` / `for` / `while` body, run in
+    /// place). Such a block's dynamic caller IS its lexical parent, so `CALLER::`
+    /// there resolves lexically — exactly like [`GetOuterVar`] — rather than
+    /// against the runtime call stack (which the block never pushed a frame onto).
+    /// Unlike `GetOuterVar` it still enforces the `CALLER::` dynamic-ness contract:
+    /// a binding present in the target scope but not declared `is dynamic` throws
+    /// X::Caller::NotDynamic (raku: `if 1 { $CALLER::nd }` on a plain lexical). The
+    /// compiler only emits this when the target scope DECLARES the name (a
+    /// not-declared `CALLER::` is a quiet Nil constant, same as `OUTER::`).
+    GetCallerOuterVar {
+        name_idx: u32,
+        depth: u32,
+        slot: Option<u32>,
+    },
+
     /// Get a variable by searching the dynamic call stack ($DYNAMIC::varname).
     GetDynamicVar(u32),
 
@@ -2691,6 +2707,7 @@ impl CompiledCode {
                 OpCode::GetCallerVar { .. }
                 | OpCode::GetCallersVar { .. }
                 | OpCode::GetOuterVar { .. }
+                | OpCode::GetCallerOuterVar { .. }
                 | OpCode::GetPseudoStash(_)
                 | OpCode::SymbolicDeref { .. }
                 | OpCode::SymbolicDerefStore(_)
@@ -3173,7 +3190,11 @@ impl CompiledCode {
             // `GetOuterVar` as a name-read, so register the bare name here. (CALLER::
             // is dynamic-scope — resolved against the live call stack — so it is
             // deliberately NOT captured.)
-            if let OpCode::GetOuterVar { name_idx, .. } = op
+            // `GetCallerOuterVar` (an immediate-block `CALLER::` that resolves
+            // lexically) reads the same enclosing binding via `get_outer_var`, so
+            // it must snapshot it into the closure env exactly like `GetOuterVar`.
+            if let OpCode::GetOuterVar { name_idx, .. } | OpCode::GetCallerOuterVar { name_idx, .. } =
+                op
                 && let Some(name) = self
                     .constants
                     .get(*name_idx as usize)

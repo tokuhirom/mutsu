@@ -123,6 +123,16 @@ impl Interpreter {
             self.stack.push(val);
             return;
         }
+        // An indirect `CALLER::`/`CALLERS::` at an immediate-block site resolves
+        // lexically (the block's dynamic caller IS its lexical parent), so route
+        // it through the baked scope chain exactly like the literal spellings —
+        // `CALLER::` -> `OUTER::` (with the dynamic-ness check), `CALLERS::` ->
+        // `OUTERS::`. Only depth 1 crosses into the lexical parent; deeper levels
+        // (past the routine/closure boundary) still walk the runtime call stack.
+        let caller_lexical = code
+            .lex_scopes
+            .get(scopes_idx as usize)
+            .is_some_and(|chain| chain.caller_is_lexical());
         // Handle CALLERS:: prefix(es) — checked before CALLER:: so "CALLERS::x"
         // is not left for the CALLER:: strip (which rejects it at the `::`
         // boundary anyway, but the specific prefix reads clearer first).
@@ -135,6 +145,19 @@ impl Interpreter {
             }
             if depth > 0 {
                 let bare = Self::sigiled_name(&sigil, remaining);
+                if caller_lexical
+                    && depth == 1
+                    && let Some(chain) = code.lex_scopes.get(scopes_idx as usize)
+                {
+                    let val = match chain.resolve_outers(&bare) {
+                        OuterResolution::NotDeclared => Value::NIL,
+                        OuterResolution::Read { depth, slot } => {
+                            self.get_outer_var(code, &bare, depth, slot)
+                        }
+                    };
+                    self.stack.push(val);
+                    return;
+                }
                 let cascade = Compiler::callers_name_cascades(&bare);
                 let val = self
                     .get_callers_var(&bare, depth, cascade)
@@ -151,8 +174,28 @@ impl Interpreter {
             remaining = rest;
         }
         if caller_depth > 0 {
+            let bare = Self::sigiled_name(&sigil, remaining);
+            if caller_lexical
+                && caller_depth == 1
+                && let Some(chain) = code.lex_scopes.get(scopes_idx as usize)
+            {
+                // `$::('CALLER')::x` resolving lexically. A present-but-non-dynamic
+                // binding is the X::Caller::NotDynamic case in raku, but this
+                // symbolic-deref path has never surfaced that error (`get_caller_var`
+                // above is `.unwrap_or(Nil)`), so keep it a quiet miss here too
+                // rather than diverging one spelling from the other.
+                let val = match chain.resolve_outer(&bare, 1) {
+                    OuterResolution::NotDeclared => Value::NIL,
+                    OuterResolution::Read { depth, slot } if self.is_var_dynamic(&bare) => {
+                        self.get_outer_var(code, &bare, depth, slot)
+                    }
+                    OuterResolution::Read { .. } => Value::NIL,
+                };
+                self.stack.push(val);
+                return;
+            }
             let val = self
-                .get_caller_var(&Self::sigiled_name(&sigil, remaining), caller_depth)
+                .get_caller_var(&bare, caller_depth)
                 .unwrap_or(Value::NIL);
             self.stack.push(val);
             return;
