@@ -128,12 +128,29 @@ impl Interpreter {
                 // so a whole-hash rw-accessor writeback (`$o.h<k> = v`, which
                 // round-trips the whole hash) does not strip the element default.
                 let existing_default = existing_hash.default.clone();
+                // Likewise carry the object-hash `original_keys` from BOTH
+                // sides of the merge: the store keys are `.WHICH` strings, and
+                // losing the key objects would make the later re-tag treat
+                // them as raw Str keys and double-encode them.
+                let mut merged_orig = existing_hash.original_keys.clone().unwrap_or_default();
+                if let ValueView::Hash(new_hash) = value.descalarize().view()
+                    && let Some(ref new_orig) = new_hash.original_keys
+                {
+                    merged_orig.extend(new_orig.clone());
+                }
                 let mut result =
                     Self::normalize_hash_like_assignment(existing_hash.map.clone(), value);
                 if let Some(def) = existing_default {
                     result.with_hash_mut(|arc| {
                         if arc.default.is_none() {
                             crate::gc::Gc::make_mut(arc).default = Some(def);
+                        }
+                    });
+                }
+                if !merged_orig.is_empty() {
+                    result.with_hash_mut(|arc| {
+                        if arc.original_keys.is_none() {
+                            crate::gc::Gc::make_mut(arc).original_keys = Some(merged_orig);
                         }
                     });
                 }

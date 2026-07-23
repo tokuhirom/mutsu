@@ -431,7 +431,7 @@ impl Interpreter {
     /// single (non-flattening) array — Raku stores each bucket as `$[...]`, so
     /// `my @a = %c<k>` yields one element and `for %c<k> {}` runs once. Recurses
     /// into nested categorize buckets (multi-level paths become nested hashes).
-    fn itemize_bucket_value(mut v: Value) -> Value {
+    fn itemize_bucket_value(mut v: Value, object_hash: bool) -> Value {
         if matches!(v.view(), ValueView::Array(..)) {
             let (items, kind) = v.into_array().unwrap();
             return Value::array_with_kind(items, kind.itemize());
@@ -442,14 +442,22 @@ impl Interpreter {
                 let keys: Vec<String> = data.map.keys().cloned().collect();
                 for k in keys {
                     if let Some(val) = data.map.remove(&k) {
-                        data.map.insert(k, Self::itemize_bucket_value(val));
+                        data.map
+                            .insert(k, Self::itemize_bucket_value(val, object_hash));
                     }
                 }
-                // A nested multi-level bucket is a `Mu`-keyed object hash in
-                // raku, like the top-level result.
-                data.key_type = Some("Mu".to_string());
+                // When the top-level result is an object hash (standalone
+                // classify/categorize, or `:into` an object hash), the nested
+                // multi-level buckets are `Mu`-keyed object hashes too, like
+                // raku. Classifying into a PLAIN hash keeps plain nested
+                // buckets.
+                if object_hash {
+                    data.key_type = Some("Mu".to_string());
+                }
             }
-            crate::runtime::utils::ensure_object_hash_which_keys(arc);
+            if object_hash {
+                crate::runtime::utils::ensure_object_hash_which_keys(arc);
+            }
         });
         v
     }
@@ -467,7 +475,7 @@ impl Interpreter {
     ) -> Value {
         let buckets: HashMap<String, Value> = buckets
             .into_iter()
-            .map(|(k, v)| (k, Self::itemize_bucket_value(v)))
+            .map(|(k, v)| (k, Self::itemize_bucket_value(v, key_type.is_some())))
             .collect();
         let mut hash = Value::hash(buckets);
         hash.with_hash_mut(|arc| {
