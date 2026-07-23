@@ -1,7 +1,8 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use super::super::expr::{
-    QuotedMethodName, expression, expression_no_sequence, parse_quoted_method_name,
+    QuotedMethodName, expression, expression_no_sequence, expression_no_word_logical,
+    parse_quoted_method_name,
 };
 use super::super::helpers::ws;
 use super::super::parse_result::{
@@ -76,7 +77,8 @@ mod try_assign;
 // ---- Re-exports preserving each public function's original visibility ----
 pub(in crate::parser) use assign_stmt::assign_stmt;
 pub(in crate::parser) use comma::{
-    normalize_comma_list_items, parse_comma_or_expr, parse_comma_or_expr_item,
+    normalize_comma_list_items, parse_comma_or_expr, parse_comma_or_expr_item_no_word_logical,
+    parse_comma_or_expr_no_word_logical,
 };
 pub(in crate::parser) use try_assign::try_parse_assign_expr;
 
@@ -94,7 +96,7 @@ pub(crate) use op::{
 };
 pub(crate) use paren::{looks_like_parenthesized_assignment, parenthesized_assign_expr};
 pub(crate) use sink::{
-    parse_assign_expr_or_comma, rewrite_scalar_assignment_rhs_as_sink,
-    rewrite_scalar_assignment_stmt_as_sink,
+    parse_assign_expr_or_comma, parse_assign_expr_or_comma_no_word_logical,
+    rewrite_scalar_assignment_rhs_as_sink, rewrite_scalar_assignment_stmt_as_sink,
 };
 pub(crate) use try_assign::parse_colon_method_arg;
