@@ -1328,18 +1328,15 @@ and `[Z]`-reduction-returns-a-Seq landed 2026-07-22 (pin `t/repr-residues-2.t`);
       (`_ => to_string_value`), and `.Str` of the instance is empty while `.raku` is the
       bare class name, so an earlier arm intercepts. Needs a dispatch trace before fixing;
       cosmetic, low value.
-- [ ] **`IO::Path::Parts.raku`/`.gist` drop the constructor arguments** — found 2026-07-23.
-      `IO::Path::Parts.new('C:', '/some/dir', 'foo.txt').gist` renders `IO::Path::Parts.new`
-      (mutsu) vs `IO::Path::Parts.new("C:","/some/dir","foo.txt")` (raku) — the three attrs
-      (`volume`/`dirname`/`basename`) are not walked into the repr. Same class of bug as the
-      just-fixed Proc one (§8.15 above): register the attributes so the generic attribute walk
-      renders the full `.new(...)` form. `.Str` also diverges (mutsu `IO::Path::Parts()` vs raku
-      `IO::Path::Parts<addr>`) but that is the object-address form and low value. **The rest of
-      IO::Path::Parts already matches raku exactly** — the documented spec surface (`.new`,
-      `.volume`/`.dirname`/`.basename`, Associative `$parts<k>`, Positional `$parts[0]` → Pair,
-      Iterable `for $parts[]`/`.map` → 3 pairs, `.hash`/`.Hash`, `.^name`, type-matching against
-      Positional/Associative/Iterable, and construction via `IO::Path.parts` / `IO::Spec.split`)
-      is fully implemented and verified. Pin target: `t/io-path-parts-repr.t`.
+- [x] **`IO::Path::Parts.raku`/`.gist` drop the constructor arguments** — fixed 2026-07-23.
+      Unlike Proc, IO::Path::Parts is a Positional in Rakudo, so its `.raku`/`.gist` render the
+      three parts *positionally* (`IO::Path::Parts.new("C:","/some/dir","foo.txt")`, each via its
+      own `.raku`, joined by `,` with no spaces) — the generic named-attribute walk would have
+      emitted `volume => ...` pairs, so registering attributes was the wrong tool. Added a native
+      arm in `methods_instance_ops.rs` (alongside the Scheduler/Supplier/Stash native reprs) that
+      builds the positional form for `.raku`/`.perl`/`.gist`. `.Str` still diverges (mutsu
+      `IO::Path::Parts()` vs raku `IO::Path::Parts<addr>`) — the object-address form, intentionally
+      not matched (low value, non-deterministic). Pin: `t/io-path-parts-repr.t`.
 - [ ] **Undocumented single-item fallback methods diverge from Rakudo (low value, no roast
       coverage)** — `.elems` (mutsu 3 / raku 1), `.list`/`.List` (mutsu 3 pairs / raku `(self,)`),
       `.keys` (mutsu `(volume dirname basename)` / raku `(0)`), `.values` (mutsu 3 parts / raku

@@ -1005,6 +1005,31 @@ impl Interpreter {
                             "Supplier.new(taplist => Supplier::TapList.new)".to_string(),
                         ));
                     }
+                    // IO::Path::Parts is a Positional in Rakudo, so its .raku
+                    // (and .gist, which equals .raku) renders the three parts
+                    // positionally via each part's own .raku, joined by `,`
+                    // (`IO::Path::Parts.new("C:","/some/dir","foo.txt")`) — NOT
+                    // the generic named-attribute walk, which has no fixed
+                    // ordering and would emit `volume => ...` pairs.
+                    "IO::Path::Parts" => {
+                        let attr_map = attributes.as_map();
+                        let rendered: Vec<String> = ["volume", "dirname", "basename"]
+                            .iter()
+                            .map(|k| {
+                                let v = attr_map
+                                    .get(*k)
+                                    .cloned()
+                                    .unwrap_or_else(|| Value::str_from(""));
+                                self.call_method_with_values(v.clone(), "raku", vec![])
+                                    .map(|r| r.to_string_value())
+                                    .unwrap_or_else(|_| v.to_string_value())
+                            })
+                            .collect();
+                        return Ok(Value::str(format!(
+                            "IO::Path::Parts.new({})",
+                            rendered.join(",")
+                        )));
+                    }
                     // A Stash is a Hash subclass in Rakudo: its .raku is the
                     // symbols hash literal (`{:Bar(Foo::Bar)}`), not `Stash.new`.
                     // (.gist/.Str — the package name — are handled on the fast
