@@ -155,6 +155,20 @@ doc) are version skew, not mutsu bugs — lowest priority.
   `is_builtin_dynamic_var` — **#5128**. Pin: `t/approx-equal-tolerance.t`.
   **Still open:** a bare `say $*TOLERANCE` reads undefined (not 1e-15); seeding it
   is blocked by the block-scope-dynamic desync below.
+- `Mix.rakudoc` [1]/[2], `Baggy.rakudoc` [1] — Mix **construction** folded
+  repeated-key weights with lossy f64 addition, so
+  `(sugar => 0.1, sugar => 0.02).Mix<sugar>` was `0.12000000000000001` instead of
+  `0.12` (and `Mix.new-from-pairs` the same). `MixData.weights` is still a
+  `HashMap<String,f64>` store, but the two coercion ctors (`to_mix` in
+  `quanthash_coerce.rs`, `dispatch_new_from_pairs`) now accumulate weights as
+  exact `Value`s (`arith_add` keeps `Rat + Rat` exact via `mix_pair_weight_value`
+  + `mix_accum`) and lower to the stored f64 only at the boundary, so the nearest
+  double to `0.12` (which formats as `0.12`) is stored. Pin:
+  `t/mix-weight-exact-accumulation.t`. **Still deferred:** Mix *arithmetic*
+  operators (`$a (+) $b`) still add the already-f64 stored weights, so
+  `(a=>0.1).Mix (+) (a=>0.02).Mix` remains `0.12000000000000001` — that needs the
+  full exact-weight storage rework (the "FatRat-vs-Rat repr tag" class below), not
+  a construction fix.
 
 ### Deferred / deep (tracked elsewhere — do not re-open as a shallow slice)
 These root causes account for a large share of the survey's `mism`/`crash` and are

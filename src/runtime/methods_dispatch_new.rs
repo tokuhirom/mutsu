@@ -160,21 +160,31 @@ impl Interpreter {
         };
         match type_name.as_str() {
             "Mix" | "MixHash" => {
-                let mut weights: HashMap<String, f64> = HashMap::new();
+                // Fold weights as exact `Value`s so repeated keys accumulate with
+                // exact rational arithmetic (`0.1 + 0.02` → `0.12`, not the lossy
+                // f64 `0.12000000000000001`); lower to f64 only at the boundary.
+                use crate::builtins::quanthash_coerce::mix_pair_weight_value;
+                let mut weights: HashMap<String, Value> = HashMap::new();
                 for item in &items {
                     let (key, weight) = match item.view() {
-                        ValueView::Pair(k, v) => (
-                            k.clone(),
-                            crate::builtins::quanthash_coerce::mix_pair_weight(v)?,
-                        ),
-                        ValueView::ValuePair(k, v) => (
-                            k.to_string_value(),
-                            crate::builtins::quanthash_coerce::mix_pair_weight(v)?,
-                        ),
-                        _ => (item.to_string_value(), 1.0),
+                        ValueView::Pair(k, v) => (k.clone(), mix_pair_weight_value(v)?),
+                        ValueView::ValuePair(k, v) => {
+                            (k.to_string_value(), mix_pair_weight_value(v)?)
+                        }
+                        _ => (item.to_string_value(), Value::int(1)),
                     };
-                    *weights.entry(key).or_insert(0.0) += weight;
+                    match weights.entry(key) {
+                        std::collections::hash_map::Entry::Occupied(mut e) => {
+                            let sum = crate::builtins::arith::arith_add(e.get().clone(), weight)?;
+                            *e.get_mut() = sum;
+                        }
+                        std::collections::hash_map::Entry::Vacant(e) => {
+                            e.insert(weight);
+                        }
+                    }
                 }
+                let weights: HashMap<String, f64> =
+                    weights.into_iter().map(|(k, v)| (k, v.to_f64())).collect();
                 Ok(if type_name == "MixHash" {
                     Value::mix_hash(weights)
                 } else {

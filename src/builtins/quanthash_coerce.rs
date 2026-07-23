@@ -545,32 +545,73 @@ pub(crate) fn mix_pair_weight(v: &Value) -> Result<f64, RuntimeError> {
     }
 }
 
+/// The exact numeric weight of a Mix pair value, preserving its `Rat`/`Int`
+/// representation so repeated keys accumulate with exact rational arithmetic
+/// (`0.1 + 0.02` must sum to `0.12`, not the lossy f64 `0.12000000000000001`).
+/// Delegates to [`mix_pair_weight`] for the Inf/NaN/Complex/bad-Str validation
+/// errors, then returns the exact `Value` rather than that validated f64.
+pub(crate) fn mix_pair_weight_value(v: &Value) -> Result<Value, RuntimeError> {
+    let f = mix_pair_weight(v)?;
+    match v.view() {
+        ValueView::Int(_)
+        | ValueView::BigInt(_)
+        | ValueView::Num(_)
+        | ValueView::Rat(..)
+        | ValueView::BigRat(..)
+        | ValueView::FatRat(..) => Ok(v.clone()),
+        ValueView::Bool(b) => Ok(Value::int(i64::from(b))),
+        // Str / other coercible types fall back to the validated f64 — none of
+        // these carry exactly-representable rationals through this path.
+        _ => Ok(Value::num(f)),
+    }
+}
+
+/// Accumulate `w` into `weights[key]` using exact `Value` arithmetic
+/// (`arith_add` keeps `Rat + Rat` exact). Mix weights are folded as `Value`s
+/// during construction and only lowered to `f64` at the coercion boundary.
+fn mix_accum(
+    weights: &mut HashMap<String, Value>,
+    key: String,
+    w: Value,
+) -> Result<(), RuntimeError> {
+    use std::collections::hash_map::Entry;
+    match weights.entry(key) {
+        Entry::Occupied(mut e) => {
+            let sum = crate::builtins::arith::arith_add(e.get().clone(), w)?;
+            *e.get_mut() = sum;
+        }
+        Entry::Vacant(e) => {
+            e.insert(w);
+        }
+    }
+    Ok(())
+}
+
 fn mix_add_item_with_keys(
-    weights: &mut HashMap<String, f64>,
+    weights: &mut HashMap<String, Value>,
     mut original_keys: Option<&mut HashMap<String, Value>>,
     item: &Value,
     flatten: bool,
 ) -> Result<(), RuntimeError> {
     match item.view() {
         ValueView::Pair(k, v) => {
-            let w = mix_pair_weight(v)?;
-            *weights.entry(k.clone()).or_insert(0.0) += w;
+            mix_accum(weights, k.clone(), mix_pair_weight_value(v)?)?;
         }
         ValueView::ValuePair(k, v) => {
-            let w = mix_pair_weight(v)?;
+            let w = mix_pair_weight_value(v)?;
             let str_key = k.to_string_value();
             if let Some(ref mut orig) = original_keys
                 && k.as_str().is_none()
             {
                 orig.entry(str_key.clone()).or_insert_with(|| k.clone());
             }
-            *weights.entry(str_key).or_insert(0.0) += w;
+            mix_accum(weights, str_key, w)?;
         }
         ValueView::Hash(h) if flatten => {
             for (k, v) in h.iter() {
-                let w = mix_pair_weight(v)?;
-                if w != 0.0 {
-                    *weights.entry(k.clone()).or_insert(0.0) += w;
+                let w = mix_pair_weight_value(v)?;
+                if w.to_f64() != 0.0 {
+                    mix_accum(weights, k.clone(), w)?;
                 }
             }
         }
@@ -595,7 +636,7 @@ fn mix_add_item_with_keys(
                 {
                     orig.entry(k.clone()).or_insert(typed);
                 }
-                *weights.entry(k.clone()).or_insert(0.0) += 1.0;
+                mix_accum(weights, k.clone(), Value::int(1))?;
             }
         }
         ValueView::Bag(b, _) if flatten => {
@@ -606,8 +647,7 @@ fn mix_add_item_with_keys(
                 {
                     orig.entry(k.clone()).or_insert(typed);
                 }
-                *weights.entry(k.clone()).or_insert(0.0) +=
-                    crate::runtime::utils::bigint_to_f64_sat(v);
+                mix_accum(weights, k.clone(), Value::bigint(v.clone()))?;
             }
         }
         ValueView::Mix(m, _) if flatten => {
@@ -618,7 +658,9 @@ fn mix_add_item_with_keys(
                 {
                     orig.entry(k.clone()).or_insert(typed);
                 }
-                *weights.entry(k.clone()).or_insert(0.0) += v;
+                // A Mix already stores f64 weights, so this fold is inherently
+                // f64-precision (there is no exact source to recover here).
+                mix_accum(weights, k.clone(), Value::num(*v))?;
             }
         }
         _ => {
@@ -628,7 +670,7 @@ fn mix_add_item_with_keys(
             {
                 orig.entry(str_key.clone()).or_insert_with(|| item.clone());
             }
-            *weights.entry(str_key).or_insert(0.0) += 1.0;
+            mix_accum(weights, str_key, Value::int(1))?;
         }
     }
     Ok(())
@@ -648,7 +690,9 @@ pub(crate) fn to_mix(target: Value, what: &str) -> Result<Value, RuntimeError> {
         )));
         return Err(err);
     }
-    let mut weights: HashMap<String, f64> = HashMap::new();
+    // Weights are folded as exact `Value`s (so `0.1 + 0.02` stays `0.12`) and
+    // lowered to the stored `f64` representation only at the return boundary.
+    let mut weights: HashMap<String, Value> = HashMap::new();
     let mut original_keys: HashMap<String, Value> = HashMap::new();
     match target.view() {
         // Always return the immutable variant; the caller flips it for `.MixHash`.
@@ -683,7 +727,7 @@ pub(crate) fn to_mix(target: Value, what: &str) -> Result<Value, RuntimeError> {
         }
         _ if target.is_range() => {
             for item in value_to_list(&target) {
-                *weights.entry(item.to_string_value()).or_insert(0.0) += 1.0;
+                mix_accum(&mut weights, item.to_string_value(), Value::int(1))?;
             }
         }
         _ => {
@@ -693,9 +737,11 @@ pub(crate) fn to_mix(target: Value, what: &str) -> Result<Value, RuntimeError> {
                     .entry(str_key.clone())
                     .or_insert_with(|| target.clone());
             }
-            weights.insert(str_key, 1.0);
+            mix_accum(&mut weights, str_key, Value::int(1))?;
         }
     }
+    // Lower the exact-`Value` weights to the stored `f64` representation.
+    let weights: HashMap<String, f64> = weights.into_iter().map(|(k, v)| (k, v.to_f64())).collect();
     if original_keys.is_empty() {
         Ok(Value::mix(weights))
     } else {
