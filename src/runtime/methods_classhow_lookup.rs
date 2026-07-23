@@ -315,6 +315,7 @@ impl Interpreter {
         if matches!(
             method_name,
             "name"
+                | "shortname"
                 | "ver"
                 | "auth"
                 | "api"
