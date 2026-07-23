@@ -306,6 +306,10 @@ pub(crate) fn make_call_expr_from_listop_args<'a>(
         remaining_len: err.remaining_len.or(Some(rest.len())),
         exception: err.exception,
     })?;
+    // A list-infix operator (Z/X/meta/infix func) binds tighter than the comma
+    // separating listop arguments, so it is absorbed into the argument here
+    // (`f @a Z @b` is `f(@a Z @b)`); the whole comma level is then lifted below.
+    let (r, first) = extend_listop_arg_list_infix(r, input, first)?;
     let (r, invocant_colon_call) = try_parse_no_paren_invocant_colon_call(&name, first.clone(), r)?;
     if let Some(method_call) = invocant_colon_call {
         return Ok((r, method_call));
@@ -346,8 +350,15 @@ pub(crate) fn make_call_expr_from_listop_args<'a>(
             remaining_len: err.remaining_len.or(Some(r2.len())),
             exception: err.exception,
         })?;
+        let (r2, arg) = extend_listop_arg_list_infix(r2, input, arg)?;
         args.push(arg);
         r = r2;
     }
+    // A top-level list-infix meta-op (`Z`/`X`) or `minmax` is LOOSER than the
+    // comma separating listop arguments, so it owns the whole comma level:
+    // `f 1, 2 X 3, 4` is `f((1,2) X (3,4))`. The per-argument parse above left
+    // the meta-op bound only to its neighbouring element; lift it across the
+    // full argument list, mirroring `parse_expr_listop_args`.
+    let args = crate::parser::primary::lift_list_infix_in_arg_list(args);
     Ok((r, make_call_expr(name, input, args)))
 }

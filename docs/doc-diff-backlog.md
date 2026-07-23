@@ -199,16 +199,22 @@ intentionally deferred; see PLAN.md §8.5 and the ADRs:
     its block, so a later bare `i` in the same unit mis-parses (`-> \i` does not
     leak; only the `my \i` VarDecl form).
 - **List-infix (`Z`/`X`/meta/infix-func) comma precedence** — `operators.rakudoc`
-  [24] (`say 100, 200 Z+ 42, 23` → mutsu `100(242)`, raku `(142 223)`; `1, 2 Z 3, 4`
-  → `((1 3) (2 4))`). `Z`/`X` are **looser than comma** in Raku, so the comma list
-  on each side is the operand (`(100,200) Z+ (42,23)`); mutsu binds them tighter
-  than comma. The parenthesized form already builds the right AST
-  (`MetaOp { meta:"Z", op:"+", left: ArrayLiteral, right: ArrayLiteral }`), so the
-  fix is a precedence-layer change: make the listop-arg / comma-expression parser
-  absorb the whole comma level into a top-level `Z`/`X`/meta-op, analogous to the
-  sequence-operator comma-absorption (`try_parse_sequence_arg_list`). Deferred:
-  it is a core precedence-layer change across many operator forms, not a shallow
-  slice.
+  [24] (`say 100, 200 Z+ 42, 23` → raku `(142 223)`; `1, 2 Z 3, 4` → `((1 3) (2 4))`).
+  `Z`/`X` are **looser than comma** in Raku, so the comma list on each side is the
+  operand (`(100,200) Z+ (42,23)`). **Fixed for the statement/argument listop paths:**
+  `say`/`print`/`put`/`note` and `is`/`ok`/`is-deeply` (#5268), and the no-paren
+  **user-sub / imported-sub / hyphen-forward** call path (#5271) — each applies a
+  per-argument `extend_listop_arg_list_infix` + whole-level
+  `lift_list_infix_in_arg_list` (the paren form already lifted post-parse). **Still
+  deferred (two sub-cases):**
+  - **Builtin listop path** (`join`/`grep`/`map` in `identifier_call.rs` ~1490-1529):
+    subtler raku semantics — `join "-", 1, 2 Z 3, 4` returns `""` in raku, not a
+    clean `(1,2) Z (3,4)` cross — and a distinct code path, so it is NOT the same
+    shallow lift.
+  - **Comparison-operand precedence** (`1 == 1 Z 2 == 2` → raku `(True True)`, mutsu
+    `False`): mutsu's list-infix operand is `range_expr`, tighter than comparison,
+    inverting raku where the `Z` operand is the comparison level. A core
+    precedence-layer redesign (do NOT bolt on) — see the pin memo.
 - **Forward-declaration stub upgrade** — `operators.rakudoc` [6]
   (`sub a() { ... }; say a; sub a() { 42 }` → raku 42, mutsu X::Redeclaration). A
   `{ ... }` yada stub is a forward declaration a later real definition upgrades.
