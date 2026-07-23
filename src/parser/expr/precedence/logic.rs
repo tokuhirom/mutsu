@@ -74,7 +74,10 @@ pub(crate) fn assign_or_and_expr(input: &str, mode: ExprMode) -> PResult<'_, Exp
 
 /// Low-precedence: and / andthen / notandthen
 pub(crate) fn and_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
-    let (mut rest, mut left) = assign_not_expr_mode(input, mode)?;
+    // The list-infix operators (`Z`/`X`/meta/`...`/feed/`minmax`) sit just below
+    // the loose word-logicals, so their operand — everything down to the item
+    // level — is parsed here, tighter than `and`/`andthen`/`notandthen`.
+    let (mut rest, mut left) = list_infix_top(input, mode)?;
     loop {
         let (r, _) = ws(rest)?;
         if mode == ExprMode::ListopArg {
@@ -86,7 +89,7 @@ pub(crate) fn and_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, right) = if mode == ExprMode::Full {
-                assign_not_expr_mode(r, mode).map_err(|err| {
+                list_infix_top(r, mode).map_err(|err| {
                     enrich_expected_error(
                         err,
                         "expected expression after 'and'/'andthen'/'notandthen'",
@@ -94,7 +97,7 @@ pub(crate) fn and_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                     )
                 })?
             } else {
-                assign_not_expr_mode(r, mode)?
+                list_infix_top(r, mode)?
             };
             left = Expr::Binary {
                 left: Box::new(left),
@@ -138,6 +141,34 @@ pub(crate) fn and_expr_no_assign_mode(input: &str, mode: ExprMode) -> PResult<'_
 pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     let (rest, expr) = not_expr_mode(input, mode)?;
     let (r, _) = ws(rest)?;
+
+    // Longest-token rule (Raku LTM): a user-declared *symbol* infix operator that
+    // starts here and is LONGER than the assignment operator that would otherwise
+    // match (`infix:<-=->` vs the compound `-=`; `infix:<=...>` vs `=`) is that
+    // infix, not an assignment. Leave it unconsumed so the enclosing list-infix
+    // layer parses it. Before the list-infix layer moved above item assignment,
+    // this collision was resolved for free — the infix was consumed inside the
+    // operand chain (below this compound-assignment check).
+    let assign_len = if let Some((after_op, _)) = parse_compound_assign_op(r) {
+        r.len() - after_op.len()
+    } else if r.starts_with(":=") && !r.starts_with("::=") {
+        2
+    } else if r.starts_with('=')
+        && !r.starts_with("==")
+        && !r.starts_with("=>")
+        && !r.starts_with("=:=")
+        && !r.starts_with("=~=")
+    {
+        1
+    } else {
+        0
+    };
+    if assign_len > 0
+        && let Some((_, ulen)) = crate::parser::stmt::simple::match_user_declared_infix_symbol_op(r)
+        && ulen > assign_len
+    {
+        return Ok((rest, expr));
+    }
 
     // Try compound assignment operators (+=, *=, //=, etc.) before simple =
     if let Some((after_op, op)) = parse_compound_assign_op(r) {
@@ -308,7 +339,12 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
         || matches!(&expr, Expr::SymbolicDeref { sigil, .. } if sigil == "$")
         || matches!(&expr, Expr::IndirectTypeLookup(_));
     let (r, rhs) = if scalar_item_assign {
-        ternary_mode(r, mode)?
+        // Item assignment (`$x = ...`) binds TIGHTER than the comma operator and
+        // therefore tighter than the list-infix operators: `$x = 1 Z 2` is
+        // `($x = 1) Z 2`. Parse the RHS at the item level (which still includes
+        // the conditional `?? !!`), leaving any trailing `Z`/`X`/`...` for the
+        // enclosing list-infix layer.
+        item_expr(r, mode)?
     } else {
         parse_assignment_rhs_mode(r, mode)?
     };

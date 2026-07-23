@@ -186,6 +186,69 @@ pub(crate) fn parse_comma_list_of_range_raw<'a>(input: &'a str) -> PResult<'a, V
 }
 
 /// Parse a comma-separated list of range_expr, returning (rest, Vec<Expr>).
-pub(crate) fn parse_comma_list_of_range<'a>(input: &'a str) -> PResult<'a, Vec<Expr>> {
-    parse_comma_list_of_range_raw(input)
+/// The precedence level at which a list-infix operator (Z/X/meta/`...`) parses
+/// its operands.
+///
+/// - `Range`: the historical tight level (`range_expr`). Used for list-infix in
+///   call-argument / feed contexts, where the loosest binding is handled by the
+///   post-parse comma lift instead.
+/// - `Item(mode)`: the correct "item" level (`item_expr` at `mode`), i.e.
+///   everything tighter than the comma operator — comparison, `&&`, `||`, `min`,
+///   item assignment, `so`/`not`, junctions. Used for the top-level list-infix
+///   layer so that `1 == 1 Z 2 == 2` parses as `(1 == 1) Z (2 == 2)`.
+#[derive(Clone, Copy)]
+pub(crate) enum ListInfixOperand {
+    Range,
+    Item(crate::parser::expr::operators::ExprMode),
+}
+
+impl ListInfixOperand {
+    /// Parse a single list-infix operand at this level.
+    pub(crate) fn parse_single<'a>(self, input: &'a str) -> PResult<'a, Expr> {
+        match self {
+            ListInfixOperand::Range => range_expr(input),
+            ListInfixOperand::Item(mode) => super::list_infix_top::item_expr(input, mode),
+        }
+    }
+
+    /// Parse a comma-separated list of operands at this level. The comma-absorbing
+    /// behaviour (which the paren/arg comma-lift later re-associates) is preserved
+    /// for both levels.
+    pub(crate) fn parse_comma_list<'a>(self, input: &'a str) -> PResult<'a, Vec<Expr>> {
+        match self {
+            ListInfixOperand::Range => parse_comma_list_of_range_raw(input),
+            ListInfixOperand::Item(mode) => parse_comma_list_of_item_raw(input, mode),
+        }
+    }
+}
+
+/// Like [`parse_comma_list_of_range_raw`], but each element is parsed at the
+/// "item" level (`item_expr`) so a list-infix operand may contain comparison /
+/// logic operators (`2 == 2`, `3 && 4`).
+pub(crate) fn parse_comma_list_of_item_raw<'a>(
+    input: &'a str,
+    mode: crate::parser::expr::operators::ExprMode,
+) -> PResult<'a, Vec<Expr>> {
+    let (r, first) = super::list_infix_top::item_expr(input, mode)
+        .map_err(|err| enrich_expected_error(err, "expected expression", input.len()))?;
+    let mut items = vec![first];
+    let mut r = r;
+    loop {
+        let (r2, _) = ws(r)?;
+        if !r2.starts_with(',') || r2.starts_with(",,") {
+            break;
+        }
+        let r2 = &r2[1..];
+        let (r2, _) = ws(r2)?;
+        if r2.starts_with(';') || r2.is_empty() || r2.starts_with('}') || r2.starts_with(')') {
+            break;
+        }
+        if let Ok((r3, next)) = super::list_infix_top::item_expr(r2, mode) {
+            items.push(next);
+            r = r3;
+        } else {
+            break;
+        }
+    }
+    Ok((r, items))
 }

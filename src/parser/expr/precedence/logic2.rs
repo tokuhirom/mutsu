@@ -231,9 +231,14 @@ pub(crate) fn and_and_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr
 
 /// Boolean bitwise / junction: ?| ?& ?^ | & ^
 pub(crate) fn junctive_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
+    // The list-infix operators (`Z`/`X`/meta/`...`/feed) are LOOSER than the
+    // comma operator and thus looser than the junctions / comparison / range
+    // chain reached here; they are handled by the `list_infix_top` layer that
+    // sits just below the loose word-logicals. So the junction operand descends
+    // straight to the range level in the general expression modes.
     let next_fn: fn(&str) -> PResult<'_, Expr> = match mode {
-        ExprMode::Full => sequence_expr,
-        ExprMode::NoSequence => list_infix_expr,
+        ExprMode::Full => range_expr,
+        ExprMode::NoSequence => range_expr,
         // An (unparenthesized) call / list-prefix argument binds the sequence
         // operator TIGHTER than the comma that separates arguments, so
         // `none 2 ... 5` is `none(2 ... 5)`, NOT `(none 2) ... 5`. Route the
