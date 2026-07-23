@@ -449,6 +449,8 @@ impl Interpreter {
                 | "Supply"
                 | "Supplier"
                 | "Promise"
+                // NativeCall aggregate type (a contiguous C array).
+                | "CArray"
         ) || {
             // Handle parameterized types like Buf[uint8], Array[Int], etc.
             if let Some(open) = name.find('[')

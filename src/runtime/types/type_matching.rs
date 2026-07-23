@@ -453,6 +453,23 @@ impl Interpreter {
                     }
                     return false;
                 }
+                // NativeCall `CArray[T]`: a C buffer backed by a native Array
+                // carrying a `CArray[...]` declared type and `T` value type.
+                "CArray" => {
+                    if let ValueView::Array(..) = value.view()
+                        && let Some(metadata) = self.container_type_metadata(value)
+                        && metadata
+                            .declared_type
+                            .as_deref()
+                            .is_some_and(|declared| declared.starts_with("CArray["))
+                    {
+                        return self.type_matches_value(
+                            inner,
+                            &Value::package(Symbol::intern(&metadata.value_type)),
+                        );
+                    }
+                    return false;
+                }
                 "Array" | "List" | "Positional" => {
                     if let ValueView::Array(items, ..) = value.view() {
                         // Prefer the container's declared element type when known

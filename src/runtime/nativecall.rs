@@ -6,10 +6,12 @@
 //! types, marshal the Raku argument `Value`s into C values, perform the call,
 //! and marshal the C return value back into a `Value`.
 //!
-//! This is the MVP: scalar C types (signed/unsigned 8/16/32/64-bit integers,
-//! 32/64-bit floats), `Str` passed as a NUL-terminated `char*`, and an opaque
-//! `Pointer`. Aggregates (`CStruct`/`CArray`/`CUnion`), callbacks, and typed
-//! pointers are follow-up work.
+//! Supported so far: scalar C types (signed/unsigned 8/16/32/64-bit integers,
+//! 32/64-bit floats), `Str` passed as a NUL-terminated `char*`, an opaque
+//! `Pointer`, and `CArray[T]` (a contiguous C buffer / `char**` for
+//! `CArray[Str]`) as a call argument, with the C-side data copied back into the
+//! Raku array after the call so an out-array (`memcpy`-style fill) is visible.
+//! `CStruct`/`CUnion` structs and callbacks remain follow-up work.
 
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -31,6 +33,10 @@ pub enum CType {
     Str,
     /// Opaque `Pointer` / `Pointer[T]` — carried as an integer address.
     Pointer,
+    /// `CArray[T]` — a contiguous C buffer whose element C type is carried in
+    /// the [`ParamSpec::elem`] field (a scalar numeric type, or `Str` for a
+    /// `char**`). Passed as a pointer to the first element.
+    CArray,
 }
 
 impl CType {
@@ -64,6 +70,8 @@ impl CType {
 pub struct ParamSpec {
     pub ct: CType,
     pub is_rw: bool,
+    /// Element C type when `ct == CType::CArray` (`None` otherwise).
+    pub elem: Option<CType>,
 }
 
 /// The resolved descriptor for one `is native` sub: which library/symbol to
@@ -200,6 +208,9 @@ pub fn call_native(spec: &NativeCallSpec, args: &[Value]) -> Result<Value, Runti
     // Arg indices whose `is rw Pointer` out-slot must be written back into the
     // caller's Pointer object after the call.
     let mut writebacks: Vec<usize> = Vec::new();
+    // Arg indices holding a numeric `CArray` whose C buffer must be copied back
+    // into the caller's Raku array after the call (an out-array fill).
+    let mut carray_writebacks: Vec<usize> = Vec::new();
 
     for (i, (ps, v)) in spec.params.iter().zip(args.iter()).enumerate() {
         let (ty, owner) = if ps.is_rw && ps.ct == CType::Pointer {
@@ -209,13 +220,19 @@ pub fn call_native(spec: &NativeCallSpec, args: &[Value]) -> Result<Value, Runti
             writebacks.push(i);
             (Type::pointer(), ArgOwner::new_out_ptr(slot))
         } else {
-            marshal_arg(ps.ct, v).map_err(|msg| {
+            let (ty, owner) = marshal_arg(ps, v).map_err(|msg| {
                 RuntimeError::new(format!(
                     "NativeCall: argument {} to '{}': {msg}",
                     i + 1,
                     spec.symbol
                 ))
-            })?
+            })?;
+            // A numeric CArray is backed by C memory in Raku, so any write the
+            // callee performs must be reflected back into the caller's array.
+            if matches!(owner, ArgOwner::CArrayNum { .. }) {
+                carray_writebacks.push(i);
+            }
+            (ty, owner)
         };
         arg_types.push(ty);
         owners.push(owner);
@@ -246,7 +263,12 @@ pub fn call_native(spec: &NativeCallSpec, args: &[Value]) -> Result<Value, Runti
             CType::U64 => Value::int(cif.call::<u64>(code, &ffi_args) as i64),
             CType::F32 => Value::num(cif.call::<f32>(code, &ffi_args) as f64),
             CType::F64 => Value::num(cif.call::<f64>(code, &ffi_args)),
-            CType::Pointer => make_pointer_value(cif.call::<usize>(code, &ffi_args)),
+            // A CArray return is mapped to `CType::Pointer` at registration
+            // (a returned `CArray[T]` has no length to reify), so this arm is
+            // unreachable in practice — treat it as an opaque pointer.
+            CType::Pointer | CType::CArray => {
+                make_pointer_value(cif.call::<usize>(code, &ffi_args))
+            }
             CType::Str => {
                 let ptr = cif.call::<*const std::ffi::c_char>(code, &ffi_args);
                 if ptr.is_null() {
@@ -265,6 +287,25 @@ pub fn call_native(spec: &NativeCallSpec, args: &[Value]) -> Result<Value, Runti
     for idx in writebacks {
         if let ArgOwner::OutPtr { slot, .. } = &owners[idx] {
             write_pointer_address(&args[idx], **slot);
+        }
+    }
+
+    // Copy each numeric CArray's (possibly callee-modified) C buffer back into
+    // the caller's Raku array, element by element, through the shared backing
+    // node so the mutation is visible at the call site.
+    for idx in carray_writebacks {
+        if let ArgOwner::CArrayNum { buf, elem, .. } = &owners[idx]
+            && let Some(arr) = resolve_array_value(&args[idx])
+        {
+            let sz = carray_elem_size(*elem);
+            arr.with_array_inplace(|data, _kind| {
+                for (i, cell) in data.items.iter_mut().enumerate() {
+                    let off = i * sz;
+                    if off + sz <= buf.len() {
+                        *cell = decode_carray_elem(*elem, &buf[off..off + sz]);
+                    }
+                }
+            });
         }
     }
 
@@ -355,6 +396,24 @@ enum ArgOwner {
         slot: Box<usize>,
         slot_ptr: *mut std::ffi::c_void,
     },
+    /// A numeric `CArray[T]`: `buf` is the contiguous element buffer (heap, so
+    /// its address is stable across the move into `owners`); `data_ptr` is the
+    /// `T*` handed to libffi. `elem` is the element C type (for writeback).
+    CArrayNum {
+        buf: Vec<u8>,
+        data_ptr: *const std::ffi::c_void,
+        elem: CType,
+    },
+    /// A `CArray[Str]` (`char**`): `strings` keeps the NUL-terminated buffers
+    /// alive, `ptrs` is the NULL-terminated `char*` array, `data_ptr` is the
+    /// `char**` handed to libffi (the address of the first `char*`).
+    CArrayStr {
+        #[allow(dead_code)]
+        strings: Vec<std::ffi::CString>,
+        #[allow(dead_code)]
+        ptrs: Vec<*const std::ffi::c_char>,
+        data_ptr: *const std::ffi::c_void,
+    },
 }
 
 #[cfg(feature = "libffi")]
@@ -383,6 +442,8 @@ impl ArgOwner {
             ArgOwner::Ptr(p) => arg(p),
             ArgOwner::CStr(_, p) => arg(p),
             ArgOwner::OutPtr { slot_ptr, .. } => arg(slot_ptr),
+            ArgOwner::CArrayNum { data_ptr, .. } => arg(data_ptr),
+            ArgOwner::CArrayStr { data_ptr, .. } => arg(data_ptr),
         }
     }
 }
@@ -402,9 +463,86 @@ fn resolve_arg(v: &Value) -> Value {
     }
 }
 
+/// Unwrap a native-call argument to the underlying `Array` value (sharing the
+/// same GC backing node), unwrapping a `Scalar` / `ContainerRef` / `VarRef`
+/// container first. Used to write a numeric CArray's buffer back into the
+/// caller's array in place.
 #[cfg(feature = "libffi")]
-fn marshal_arg(ct: CType, raw: &Value) -> Result<(libffi::middle::Type, ArgOwner), String> {
+fn resolve_array_value(v: &Value) -> Option<Value> {
+    match v.view() {
+        ValueView::Array(..) => Some(v.clone()),
+        ValueView::Scalar(inner) => resolve_array_value(inner),
+        ValueView::ContainerRef(cell) => cell.lock().ok().and_then(|g| resolve_array_value(&g)),
+        ValueView::VarRef { value, .. } => resolve_array_value(value),
+        _ => None,
+    }
+}
+
+/// The size in bytes of one `CArray[T]` element for a scalar C element type.
+#[cfg(feature = "libffi")]
+fn carray_elem_size(elem: CType) -> usize {
+    match elem {
+        CType::I8 | CType::U8 => 1,
+        CType::I16 | CType::U16 => 2,
+        CType::I32 | CType::U32 | CType::F32 => 4,
+        CType::I64 | CType::U64 | CType::F64 => 8,
+        // A pointer-sized element (`Pointer`); Str is handled separately.
+        CType::Pointer | CType::Str | CType::CArray | CType::Void => std::mem::size_of::<usize>(),
+    }
+}
+
+/// Encode one Raku value into `dst` (exactly `carray_elem_size(elem)` bytes) as
+/// a native-endian C scalar of the given element type.
+#[cfg(feature = "libffi")]
+fn encode_carray_elem(elem: CType, v: &Value, dst: &mut [u8]) {
+    let int = crate::runtime::to_int(v);
+    let num = crate::runtime::utils::to_float_value(v).unwrap_or(0.0);
+    match elem {
+        CType::I8 | CType::U8 => dst.copy_from_slice(&(int as u8).to_ne_bytes()),
+        CType::I16 | CType::U16 => dst.copy_from_slice(&(int as u16).to_ne_bytes()),
+        CType::I32 | CType::U32 => dst.copy_from_slice(&(int as u32).to_ne_bytes()),
+        CType::I64 | CType::U64 => dst.copy_from_slice(&(int as u64).to_ne_bytes()),
+        CType::F32 => dst.copy_from_slice(&(num as f32).to_ne_bytes()),
+        CType::F64 => dst.copy_from_slice(&num.to_ne_bytes()),
+        CType::Pointer | CType::Str | CType::CArray | CType::Void => {
+            dst.copy_from_slice(&(int as usize).to_ne_bytes())
+        }
+    }
+}
+
+/// Decode one C scalar element (native-endian bytes in `src`) back into a Raku
+/// value. Integer elements become `Int`, float elements become `Num`.
+#[cfg(feature = "libffi")]
+fn decode_carray_elem(elem: CType, src: &[u8]) -> Value {
+    fn arr<const N: usize>(src: &[u8]) -> [u8; N] {
+        let mut a = [0u8; N];
+        a.copy_from_slice(&src[..N]);
+        a
+    }
+    match elem {
+        CType::I8 => Value::int(i8::from_ne_bytes(arr(src)) as i64),
+        CType::U8 => Value::int(u8::from_ne_bytes(arr(src)) as i64),
+        CType::I16 => Value::int(i16::from_ne_bytes(arr(src)) as i64),
+        CType::U16 => Value::int(u16::from_ne_bytes(arr(src)) as i64),
+        CType::I32 => Value::int(i32::from_ne_bytes(arr(src)) as i64),
+        CType::U32 => Value::int(u32::from_ne_bytes(arr(src)) as i64),
+        CType::I64 => Value::int(i64::from_ne_bytes(arr(src))),
+        CType::U64 => Value::int(u64::from_ne_bytes(arr::<8>(src)) as i64),
+        CType::F32 => Value::num(f32::from_ne_bytes(arr(src)) as f64),
+        CType::F64 => Value::num(f64::from_ne_bytes(arr(src))),
+        CType::Pointer | CType::Str | CType::CArray | CType::Void => {
+            Value::int(usize::from_ne_bytes(arr(src)) as i64)
+        }
+    }
+}
+
+#[cfg(feature = "libffi")]
+fn marshal_arg(ps: &ParamSpec, raw: &Value) -> Result<(libffi::middle::Type, ArgOwner), String> {
     use libffi::middle::Type;
+    if ps.ct == CType::CArray {
+        return marshal_carray_arg(ps, raw);
+    }
+    let ct = ps.ct;
     let resolved = resolve_arg(raw);
     let v = &resolved;
     let int = || crate::runtime::to_int(v);
@@ -433,7 +571,68 @@ fn marshal_arg(ct: CType, raw: &Value) -> Result<(libffi::middle::Type, ArgOwner
             (Type::pointer(), ArgOwner::CStr(cstr, ptr))
         }
         CType::Void => return Err("a parameter cannot have type void".to_string()),
+        // Routed to `marshal_carray_arg` above; unreachable here.
+        CType::CArray => return marshal_carray_arg(ps, raw),
     })
+}
+
+/// Marshal a `CArray[T]` argument: a Raku array of elements becomes a
+/// contiguous C buffer (`T*`), or a `char**` (NULL-terminated) for
+/// `CArray[Str]`. A null/Any argument becomes a null pointer.
+#[cfg(feature = "libffi")]
+fn marshal_carray_arg(
+    ps: &ParamSpec,
+    raw: &Value,
+) -> Result<(libffi::middle::Type, ArgOwner), String> {
+    use libffi::middle::Type;
+    let elem = ps
+        .elem
+        .ok_or_else(|| "CArray parameter is missing its element type".to_string())?;
+    let list = match resolve_array_value(raw) {
+        Some(arr) => arr
+            .with_array_inplace(|data, _| data.items.clone())
+            .unwrap_or_default(),
+        // A bare type object / Any becomes a null pointer.
+        None => Vec::new(),
+    };
+
+    if elem == CType::Str {
+        let mut strings = Vec::with_capacity(list.len());
+        let mut ptrs: Vec<*const std::ffi::c_char> = Vec::with_capacity(list.len() + 1);
+        for item in &list {
+            let s = item.to_string_value();
+            let cstr = std::ffi::CString::new(s)
+                .map_err(|_| "CArray[Str] element contains an embedded NUL byte".to_string())?;
+            ptrs.push(cstr.as_ptr());
+            strings.push(cstr);
+        }
+        // C `char**` arrays are conventionally NULL-terminated.
+        ptrs.push(std::ptr::null());
+        let data_ptr = ptrs.as_ptr() as *const std::ffi::c_void;
+        return Ok((
+            Type::pointer(),
+            ArgOwner::CArrayStr {
+                strings,
+                ptrs,
+                data_ptr,
+            },
+        ));
+    }
+
+    let sz = carray_elem_size(elem);
+    let mut buf = vec![0u8; list.len() * sz];
+    for (i, item) in list.iter().enumerate() {
+        encode_carray_elem(elem, item, &mut buf[i * sz..(i + 1) * sz]);
+    }
+    let data_ptr = buf.as_ptr() as *const std::ffi::c_void;
+    Ok((
+        Type::pointer(),
+        ArgOwner::CArrayNum {
+            buf,
+            data_ptr,
+            elem,
+        },
+    ))
 }
 
 #[cfg(feature = "libffi")]
@@ -451,7 +650,7 @@ fn ret_ffi_type(ct: CType) -> libffi::middle::Type {
         CType::U64 => Type::u64(),
         CType::F32 => Type::f32(),
         CType::F64 => Type::f64(),
-        CType::Str | CType::Pointer => Type::pointer(),
+        CType::Str | CType::Pointer | CType::CArray => Type::pointer(),
     }
 }
 
