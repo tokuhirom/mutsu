@@ -23,9 +23,10 @@ my $lang = 'Raku';
 my $qq1 = qq/hello $lang/;
 is $qq1, 'hello Raku', 'qq// interpolates variables';
 
-# qq() with parens
-my $qq2 = qq(hello $lang);
-is $qq2, 'hello Raku', 'qq() interpolates variables';
+# qq () with parens (whitespace required before a paren delimiter;
+# `qq(...)` without a space is a call to a routine named `qq`)
+my $qq2 = qq (hello $lang);
+is $qq2, 'hello Raku', 'qq () interpolates variables';
 
 # qq{} with braces
 my $qq3 = qq{hello $lang};

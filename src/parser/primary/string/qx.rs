@@ -20,7 +20,8 @@ pub(crate) fn qx_string(input: &str) -> PResult<'_, Expr> {
         .chars()
         .next()
         .ok_or_else(|| PError::expected("qx string delimiter"))?;
-    if delim.is_alphanumeric() || delim.is_whitespace() {
+    // `(` directly after `qx`/`qqx` is call syntax, never a delimiter.
+    if delim.is_alphanumeric() || delim.is_whitespace() || delim == '(' {
         return Err(PError::expected("qx string delimiter"));
     }
 
