@@ -644,7 +644,8 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
   ~~IO::Path::AutoDecompress~~ (FIXED — see Done), ~~Math::Angle~~ (FIXED — see Done),
   ~~Math::PascalTriangle~~ (FIXED — see Done),
   ~~Statistics::LinearRegression~~ (FIXED — see Done), String::Rotate,
-  Text::CodeProcessing (PARTIAL — `.match`/`.subst` `&Named` arg fixed; see Done),
+  Text::CodeProcessing (PARTIAL — extraction 05/07 pass via `&Named` + frugal-`:g`
+  fixes; code-eval 02/03/04/06 deferred; see Done),
   Trait::IO, WriteOnceHash, `are`, ~~`sortuk`~~ (FIXED — see Done),
   Tree::Binary::PrettyTree (role-`new` requirement FIXED; now blocked on a
   separate `class Iterator does Iterator` name-resolution issue — see Done).
@@ -681,13 +682,18 @@ _(move tickets here with `[claim: <branch>]` when you start)_
   (`methods_string.rs`) now extract the named regex's source via
   `extract_token_regex_pattern` (the same path `$str ~~ &Named` uses) and match
   with THAT, so the returned Match carries the named regex's own captures at top
-  level. Pin: `t/match-subst-named-regex-arg.t`. **Remaining blocker (separate
-  regex-engine bug, not `&Named`-specific — reproduces with an inline `/ /` too):**
-  a frugal `.*?` followed by a `<?after \v>` look-behind and a `$<fence>`
-  back-reference (the `MarkdownSearch` code-fence body) does not match minimally
-  under `:g` — mutsu spans one match across several fences (1 match where Rakudo
-  finds 2+), so the markdown/org/pod extraction is still wrong. Needs dedicated
-  regex-engine work (frugal-quantifier + capture-back-reference interaction).
+  level. Pin: `t/match-subst-named-regex-arg.t`. **Second general bug — FIXED**
+  (PR `fix-frugal-quantifier-global-match`): a top-level frugal `.*?` (the
+  `MarkdownSearch` code-fence body) did not match minimally under `:g` — the
+  global-match path kept the *longest* end per start, forcing the frugal
+  quantifier to its greedy length, so one match spanned several fences. Fixed by a
+  canonical-per-start global match (see that PR / news). With both fixes the
+  **code-extraction** tests pass: `t/05-string-code-extraction.rakutest` 3/3 and
+  `t/07-file-code-extraction.rakutest` 3/3 (were 0). **Remaining (deferred, deep):
+  code *evaluation*** — `t/02`/`03`/`04` (markdown/org/pod processing) and `t/06`
+  (file evaluation) drive `StringCodeChunksEvaluation`, which runs each chunk in a
+  `Text::CodeProcessing::REPLSandbox` and injects the results; that REPL-eval
+  pipeline is a separate, larger feature. (`t/08` header-parameters is 2/4.)
 
 - **T-057 (IO::Path::AutoDecompress)** (PR `fix-qualified-native-ancestor-method`)
   — test_die → t/01-basic.rakutest 8/8. Root cause: a qualified method call

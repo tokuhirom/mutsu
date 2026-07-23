@@ -195,6 +195,32 @@ impl Interpreter {
         pattern: &str,
         text: &str,
     ) -> Vec<RegexCaptures> {
+        self.regex_match_captures_impl(pattern, text, false)
+    }
+
+    /// Like [`regex_match_all_with_captures`], but at each start position keeps
+    /// ONLY the highest-DFS-priority (canonical greedy/frugal) match end — the one
+    /// the single-match engine would pick — instead of every possible end. Used by
+    /// the plain `:g` path: collecting every end and then keeping the longest per
+    /// start (as `select_non_overlapping_matches` does) forces a top-level frugal
+    /// quantifier (`.*?`) to its greedy length, so `"aXbXcX".match(/.*?'X'/, :g)`
+    /// returned one match ("aXbXcX") instead of three ("aX","bX","cX"). The
+    /// `:overlap` / `:exhaustive` paths still need all ends and keep using
+    /// `regex_match_all_with_captures`.
+    pub(in crate::runtime) fn regex_match_canonical_per_start(
+        &mut self,
+        pattern: &str,
+        text: &str,
+    ) -> Vec<RegexCaptures> {
+        self.regex_match_captures_impl(pattern, text, true)
+    }
+
+    fn regex_match_captures_impl(
+        &mut self,
+        pattern: &str,
+        text: &str,
+        canonical_only: bool,
+    ) -> Vec<RegexCaptures> {
         let Some(parsed) = self.parse_regex(pattern) else {
             return Vec::new();
         };
@@ -213,18 +239,22 @@ impl Interpreter {
                 starts.extend(0..=stripped_chars.len());
             }
             for start in starts {
-                for (end, mut caps) in self.regex_match_ends_from_caps_in_pkg(
+                let ends = self.regex_match_ends_from_caps_in_pkg(
                     &stripped_parsed,
                     &stripped_chars,
                     start,
                     &pkg,
-                ) {
+                );
+                for (end, mut caps) in ends {
                     let from = map_pos(caps.capture_start.unwrap_or(start), &pos_map, orig_len);
                     let to = map_pos(caps.capture_end.unwrap_or(end), &pos_map, orig_len);
                     caps.from = from;
                     caps.to = to;
                     caps.matched = orig_chars[from..to].iter().collect();
                     out.push(caps);
+                    if canonical_only {
+                        break;
+                    }
                 }
             }
             out.sort_by_key(|caps| (caps.from, caps.to, caps.positional.len(), caps.named.len()));
@@ -239,13 +269,15 @@ impl Interpreter {
             starts.extend(0..=orig_chars.len());
         }
         for start in starts {
-            for (end, mut caps) in
-                self.regex_match_ends_from_caps_in_pkg(&parsed, &orig_chars, start, &pkg)
-            {
+            let ends = self.regex_match_ends_from_caps_in_pkg(&parsed, &orig_chars, start, &pkg);
+            for (end, mut caps) in ends {
                 caps.from = caps.capture_start.unwrap_or(start);
                 caps.to = caps.capture_end.unwrap_or(end);
                 caps.matched = orig_chars[caps.from..caps.to].iter().collect();
                 out.push(caps);
+                if canonical_only {
+                    break;
+                }
             }
         }
         out.sort_by_key(|caps| (caps.from, caps.to, caps.positional.len(), caps.named.len()));

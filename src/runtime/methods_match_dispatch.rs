@@ -102,14 +102,14 @@ impl Interpreter {
             }
         };
         if global || overlap || exhaustive || repeat_bounds.is_some() || nth_arg.is_some() {
-            let all = self.regex_match_all_with_captures(&pat, &text);
             let mut selected = if exhaustive {
                 // :exhaustive keeps every possible match, ordered by start
                 // position ascending and, at each position, longest first.
-                let mut all = all;
+                let mut all = self.regex_match_all_with_captures(&pat, &text);
                 all.sort_by(|a, b| a.from.cmp(&b.from).then(b.to.cmp(&a.to)));
                 all
             } else if overlap {
+                let all = self.regex_match_all_with_captures(&pat, &text);
                 let mut best_by_start: std::collections::BTreeMap<usize, RegexCaptures> =
                     std::collections::BTreeMap::new();
                 for capture in all {
@@ -123,6 +123,10 @@ impl Interpreter {
                 }
                 best_by_start.into_values().collect::<Vec<_>>()
             } else {
+                // Plain `:g` (and `:nth` / `:x`, which index into the ordered
+                // non-overlapping match list): keep the canonical greedy/frugal
+                // match at each start so a top-level `.*?` matches minimally.
+                let all = self.regex_match_canonical_per_start(&pat, &text);
                 self.select_non_overlapping_matches(all)
             };
             // Apply :nth filtering before :x bounds
