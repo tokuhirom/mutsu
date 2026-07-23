@@ -525,12 +525,21 @@ impl Compiler {
         // chain of identical (meta, op) MetaOps into one flat operand list and
         // emit a single n-ary op. Only the plain general op reaches here; the
         // special short-circuit ops above return early, so they never chain.
+        // `=:=`/`!=:=` compare container identity, so an operand list of scalar
+        // variables (`($a,$b) X=:= ($c,$d)`) must preserve each element's
+        // container (raku Lists retain element containers). Compile such
+        // operands ref-preserving so the runtime sees `ContainerRef`s.
+        let is_identity_op = op == "=:=" || op == "!=:=";
         if meta == "X" || meta == "Z" {
             let mut operands: Vec<&Expr> = Vec::new();
             Self::collect_meta_chain(meta, op, left, right, &mut operands);
             if operands.len() > 2 {
                 for operand in &operands {
-                    self.compile_expr(operand);
+                    if is_identity_op {
+                        self.compile_meta_identity_operand(operand);
+                    } else {
+                        self.compile_expr(operand);
+                    }
                 }
                 let meta_idx = self.code.add_constant(Value::str(meta.to_string()));
                 let op_idx = self.code.add_constant(Value::str(op.to_string()));
@@ -542,11 +551,49 @@ impl Compiler {
                 return;
             }
         }
-        self.compile_expr(left);
-        self.compile_expr(right);
+        if is_identity_op && (meta == "X" || meta == "Z") {
+            self.compile_meta_identity_operand(left);
+            self.compile_meta_identity_operand(right);
+        } else {
+            self.compile_expr(left);
+            self.compile_expr(right);
+        }
         let meta_idx = self.code.add_constant(Value::str(meta.to_string()));
         let op_idx = self.code.add_constant(Value::str(op.to_string()));
         self.code.emit(OpCode::MetaOp { meta_idx, op_idx });
+    }
+
+    /// Compile a cross/zip meta-op operand for a container-identity op
+    /// (`=:=`/`!=:=`), preserving each scalar-var element's container so the
+    /// runtime compares container identity rather than value. A list literal
+    /// (`($a,$b)`) tags each scalar-var element with `WrapVarRef` (instead of
+    /// `Itemize`, which would decontainerize it); a bare scalar var operand is
+    /// wrapped directly. Everything else compiles normally.
+    fn compile_meta_identity_operand(&mut self, operand: &Expr) {
+        match operand {
+            Expr::ArrayLiteral(elems) => {
+                self.with_escape(true, |c| {
+                    for elem in elems {
+                        c.compile_expr(elem);
+                        if let Expr::Var(name) = elem
+                            && !name.contains("::")
+                        {
+                            let name_idx = c.code.add_constant(Value::str(name.clone()));
+                            c.code.emit(OpCode::WrapVarRef(name_idx));
+                        } else if Self::expr_is_scalar_var(elem) {
+                            c.code.emit(OpCode::Itemize);
+                        }
+                    }
+                });
+                self.code.emit(OpCode::MakeArray(elems.len() as u32));
+            }
+            Expr::Var(name) if !name.contains("::") => {
+                self.compile_expr(operand);
+                let name_idx = self.code.add_constant(Value::str(name.clone()));
+                self.code.emit(OpCode::WrapVarRef(name_idx));
+            }
+            _ => self.compile_expr(operand),
+        }
     }
 
     /// If `op` is an in-place assignment operator (`+=`, `~=`, `**=`, `min=`, …)

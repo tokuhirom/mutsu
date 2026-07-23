@@ -1501,6 +1501,12 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 remaining_len: err.remaining_len.or(Some(r.len())),
                 exception: None,
             })?;
+            // A list-infix operator (Z/X/meta/infix func) binds tighter than the
+            // comma separating listop arguments, so it is absorbed into the
+            // argument here (`reverse @a Z @b` is `reverse(@a Z @b)`); the whole
+            // comma level is then lifted below. (Same as the user-sub path in
+            // `make_call_expr_from_listop_args`.)
+            let (r2, arg) = crate::parser::expr::extend_listop_arg_list_infix(r2, input, arg)?;
             let (r2, invocant_colon_call) =
                 try_parse_no_paren_invocant_colon_call(&name, arg.clone(), r2)?;
             if let Some(method_call) = invocant_colon_call {
@@ -1523,9 +1529,18 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     break;
                 }
                 let (r3, rest_arg) = parse_arg(r3)?;
+                let (r3, rest_arg) =
+                    crate::parser::expr::extend_listop_arg_list_infix(r3, input, rest_arg)?;
                 args.push(rest_arg);
                 rest_after = r3;
             }
+            // A top-level list-infix meta-op (`Z`/`X`) or `minmax` is LOOSER than
+            // the comma separating listop arguments, so it owns the whole comma
+            // level: `reverse 1, 2 Z 3, 4` is `reverse((1,2) Z (3,4))`. The
+            // per-argument parse above left the meta-op bound only to its
+            // neighbouring element; lift it across the full argument list,
+            // mirroring `make_call_expr_from_listop_args`.
+            let args = crate::parser::primary::lift_list_infix_in_arg_list(args);
             return Ok((rest_after, make_call_expr(name, input, args)));
         }
     }

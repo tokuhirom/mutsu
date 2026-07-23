@@ -657,6 +657,10 @@ impl Interpreter {
                 Ok(Value::truth(left == right))
             }
             "eqv" => Ok(Value::truth(left.eqv(right))),
+            // Plain-value container identity (`1 =:= 1`, `Nil =:= Nil`). Named
+            // scalar-variable operands (`($a,$b) X=:= ($c,$d)`) are intercepted
+            // by `eval_reduction_operator_values` before reaching here so their
+            // binding roots decide identity; only non-variable values fall here.
             "=:=" => Ok(Value::truth(super::values_identical(left, right))),
             "!=:=" => Ok(Value::truth(!super::values_identical(left, right))),
             "===" => Ok(Value::truth(super::values_identical(left, right))),
