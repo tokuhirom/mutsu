@@ -39,6 +39,20 @@ pub(crate) fn whatever_code_keeps_outer_topic(data: &SubData) -> bool {
     ) && !data.params.iter().any(|p| p == "_")
 }
 
+/// A carrier Sub delegates its behaviour through env markers instead of its
+/// own body: an `.assuming` routine wrapper (`__mutsu_routine_name`), a
+/// composed callable (`__mutsu_compose_left`/`right`), or the multi-candidate
+/// dispatcher built by `resolve_code_var` for a proto-less `&some-multi`
+/// (`__mutsu_multi_dispatch_candidates`). Its `data.body` is empty, so any
+/// fast path that compiles the body inline would silently evaluate to the
+/// topic; such Subs must always go through `call_sub_value`, which resolves
+/// the markers.
+pub(crate) fn sub_is_call_carrier(data: &SubData) -> bool {
+    data.env.contains_key("__mutsu_routine_name")
+        || data.env.contains_key("__mutsu_compose_left")
+        || data.env.contains_key("__mutsu_multi_dispatch_candidates")
+}
+
 /// Bind `$_`/`_` for one iteration of a batched map/grep/first loop.
 ///
 /// For a `$_`-referencing WhateverCode the topic is held at `outer_topic` for
@@ -272,34 +286,9 @@ impl Interpreter {
             } else {
                 1
             };
-            // Routine wrapper from .assuming() on a builtin — delegate to call_sub_value
-            // which knows how to resolve __mutsu_routine_name.
-            if data.env.contains_key("__mutsu_routine_name") {
-                let mut result = Vec::new();
-                let mut i = 0usize;
-                while i < list_items.len() {
-                    if arity > 1 && i + arity > list_items.len() {
-                        return Err(RuntimeError::new("Not enough elements for map block arity"));
-                    }
-                    let chunk: Vec<Value> = if arity == 1 {
-                        vec![list_items[i].clone()]
-                    } else {
-                        list_items[i..i + arity].to_vec()
-                    };
-                    let value =
-                        self.call_sub_value(Value::sub_value(data.clone()), chunk, false)?;
-                    let value = self.reify_finite_pipe_value(value)?;
-                    match value.view() {
-                        ValueView::Slip(elems) => result.extend(elems.iter().cloned()),
-                        _ => result.push(value),
-                    }
-                    i += arity;
-                }
-                return Ok(Value::array(result));
-            }
-            if data.env.contains_key("__mutsu_compose_left")
-                && data.env.contains_key("__mutsu_compose_right")
-            {
+            // Carrier Subs (.assuming wrapper, composed callable, multi-candidate
+            // dispatcher) — delegate to call_sub_value which resolves the markers.
+            if sub_is_call_carrier(&data) {
                 let mut result = Vec::new();
                 let mut i = 0usize;
                 while i < list_items.len() {
@@ -595,9 +584,7 @@ impl Interpreter {
         if !data.assumed_positional.is_empty() || !data.assumed_named.is_empty() {
             return None;
         }
-        if data.env.contains_key("__mutsu_compose_left")
-            && data.env.contains_key("__mutsu_compose_right")
-        {
+        if sub_is_call_carrier(&data) {
             return None;
         }
         // A multi-param matcher block would take element tuples; `.first` has

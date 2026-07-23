@@ -44,8 +44,7 @@ impl Interpreter {
                 && crate::ast::collect_placeholders_shallow(&data.body).is_empty();
             if requires_full_binding
                 || is_routine_callback
-                || data.env.contains_key("__mutsu_routine_name")
-                || data.env.contains_key("__mutsu_compose_left")
+                || super::resolution_map_grep::sub_is_call_carrier(&data)
             {
                 // Fall through to call_sub_value path for complex cases
                 let mut result = Vec::new();
@@ -295,9 +294,9 @@ impl Interpreter {
             } else {
                 1
             };
-            if data.env.contains_key("__mutsu_compose_left")
-                && data.env.contains_key("__mutsu_compose_right")
-            {
+            // Carrier Subs (.assuming wrapper, composed callable, multi-candidate
+            // dispatcher) — delegate to call_sub_value which resolves the markers.
+            if super::resolution_map_grep::sub_is_call_carrier(&data) {
                 let mut i = 0usize;
                 while i < list_items.len() {
                     if arity > 1 && i + arity > list_items.len() {

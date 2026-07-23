@@ -1258,52 +1258,14 @@ also fixes the parens ambiguity — `return (1 and 2)` (a complete term = 2) vs
   `Pair.new('a', $v)`** — a method-arg-binding container case, not List construction; defer with the
   rest of container-repr (§8.5-adjacent), NOT this precedence bug.
 
-### 8.16 List container aliasing — WIP deep campaign (branch `fix-list-container-aliasing`, draft PR #5290)
+### 8.16 List container aliasing — residue (main campaign MERGED 2026-07-23, PR #5290)
 
-- [ ] **A List `($a, $b)` must hold the *container* of each scalar-var element** (raku), so a later
-      mutation is visible when the List is read: `my $l=($a,$a); $a=99; say $l` → `(99 99)`;
-      `say join ",", ($a, ++$a)` → `3,3`; the fibonacci `@arr.push: ($x,$y)` trap
-      (traps.rakudoc "list-element container aliasing", cases [5]/[6]/[9]). mutsu previously
-      `Itemize`d scalar-var List elements *by value* (a snapshot), so later mutations never tracked.
-- **Approach (in progress).** Tag each scalar-var List element with `WrapVarRef` at compile time and,
-      in `exec_make_array_op` (List path), box the named local into a shared `ContainerRef` cell via
-      `capture_var_cell_inner(box_type_objects=true)` — the same primitive Captures use. The load-bearing
-      design principle: **a `ContainerRef` cell must be transparent like the old `Itemize`-Scalar** —
-      every List *consumer* that needs a value derefs the cell; every consumer that compares *identity*
-      (`=:=`) uses the cell. The deep work is making all consumers cell-aware.
-- **Done so far** (committed on branch): headline aliasing (stored/pushed/nested, `+$a` value-forcing,
-      by-value fn args, array-assign decont, bracket-array non-alias) — pin `t/list-container-aliasing.t`
-      13/13, verified vs raku. Plus the for-loop self-cycle fix (`for $a -> $v is rw` wraps its iterable
-      in `ArrayLiteral([$a])`; the loop's own `TagContainerRef`+writeback drives rw, so aliasing there
-      wrote the cell back into `$a` = self-referential cycle = infinite loop; new compiler flag
-      `suppress_list_var_alias` keeps Itemize while compiling the for-iterable — `t/for-param.t` fixed).
-- **The 3 consumers are now cell-aware ✅ (2026-07-23).** All three CI failures fixed on branch:
-  1. `t/list-dot-equals-method.t` — `($x,$y).=reverse` / `($p,$q) = ($q,$p)` swap. Root cause was
-     broader than `.=`: **every** list assignment held the RHS as live cells and read them lazily during
-     the write loop, so an earlier write corrupted a later aliased read (even a plain `($p,$q)=($q,$p)`
-     gave `35 35`). Fix: list assignment now snapshots the decontainerized RHS *prefix* into a `snap`
-     buffer up front (new `OpCode::DecontListElems` + `list_assign_prefix_count`); the greedy `@`/`%`
-     slurpy still reads the raw lazy tail from `tmp`, so `($a,$b) = 1..Inf` stays lazy. Matches raku
-     `($a,$b) = ($x,++$x)` → `4,4`.
-  2. `t/hash-itemization-flag.t` test 8 — `my %c = ($hi,)` (hash-holding scalar) inside a closure. The
-     captured `$hi` is not a frame local, so `capture_var_cell_inner` could not box it into a cell and
-     returned the bare (de-itemized) `Hash`, which `build_hash_from_items` then flattened. Fix: the
-     non-local List path (`box_type_objects`) now itemizes the value, restoring the old `Itemize`
-     non-flatten semantics for captured `$`-scalars.
-  3. `t/list-infix-comma-precedence.t` tests 24/25 — `$a,$b X!=:= $c,$d`. The cross/zip operand lists
-     now hold `ContainerRef` cells (not `VarRef`s), so the `=:=` branch in
-     `eval_reduction_operator_values` was falling through to `values_identical` (deref → both `Any` →
-     wrongly equal). Fix: added a cell-identity branch (`Gc::ptr_eq`, cell-vs-value → distinct) mirroring
-     `capture_elem_identical`. Also `capture_var_cell_inner` now resolves the `:=` alias root so
-     `$c := $b` boxes into `$b`'s cell (both lists share one cell → exactly one `=:=` pair True).
-  Pins: `t/list-dot-equals-method.t`, `t/hash-itemization-flag.t`, `t/list-infix-comma-precedence.t`
-  (plus the existing `t/list-container-aliasing.t` 13/13, `t/for-param.t`).
-- **Still open beyond the CI failures:** [7] `Pair.new('a', $v)` — `Pair.new`'s method-arg binding
-      decontainerizes, so a later `$v` mutation is not reflected (raku `a => 9`, mutsu `a => 1`). Separate
-      method-arg-binding container case; defer with the rest.
-- **State/entry.** Full campaign detail in memory `project_list_container_aliasing_campaign`. Coordinate
-      with §8.5 and [ADR-0001] container-repr — this is the first-class-scalar-container direction, do NOT
-      merge #5290 until all three consumers are cell-aware and CI is green.
+The List-holds-scalar-containers campaign landed (#5290; see [news/2026-07.md](news/2026-07.md)
+and memory `project_list_container_aliasing_campaign`). One case remains open:
+
+- [ ] **[7] `Pair.new('a', $v)`** — `Pair.new`'s method-arg binding decontainerizes, so a later
+      `$v` mutation is not reflected (raku `a => 9`, mutsu `a => 1`). Separate
+      method-arg-binding container case; coordinate with §8.5 and [ADR-0001] container-repr.
 
 ### 8.10 Object hashes are string-keyed, not `.WHICH`-keyed (deferred deep item — found 2026-07-22 by the numerics/hashmap doc-diff sweeps)
 
@@ -1406,49 +1368,30 @@ and `[Z]`-reduction-returns-a-Seq landed 2026-07-22 (pin `t/repr-residues-2.t`);
       arguably more useful, and no roast test exercises them. Matching Rakudo here is risky and
       low value; **deferred as an intentional divergence** unless a dist-compat consumer needs it.
 
-### 8.17 `&name` for a proto-less `multi` collapses to one candidate (found 2026-07-23 while writing the tutorial site)
+### 8.18 The WebAssembly build traps on `start` / `Channel` instead of degrading (found 2026-07-23 building the tutorial site)
 
-Taking a code reference to a `multi` that has **no explicit `proto`** and then invoking it as a
-value — the ordinary `.map(&f)` / `.grep(&f)` / `.sort(&f)` shape — does not multi-dispatch. It
-either calls one fixed candidate or nothing at all:
+`start { ... }` reaches `spawn_callable_promise` → `spawn_user_thread` → `std::thread::spawn`
+(`src/runtime/builtins_system.rs:13`), which on `wasm32-unknown-unknown` has no
+implementation and traps. In the browser that surfaces as `RuntimeError: unreachable`,
+which also poisons the whole wasm instance — every later evaluation in that session is
+garbage until the page rebuilds the interpreter.
 
-```raku
-multi k(Int $n) { "int $n" }
-multi k(Str $s) { "str $s" }
-say (1, "a").map(&k).join(" ");   # raku: "int 1 str a"   mutsu: "1 a"
+- Affected: `start`, `Promise` combinators that spawn, `Channel` producers, `Proc::Async`.
+  `react`/`whenever` over a `Supply.from-list` already works (no spawn), as does
+  `gather`/`take`.
+- **Likely correct fix:** on wasm, run a `start` block *synchronously* and return an
+  already-kept (or broken) `Promise`, and give `Channel` the same treatment — a
+  single-threaded scheduler is the honest semantics for a platform with one thread, and it
+  is what a reader of the concurrency chapter would expect to see work. The mechanism is one
+  `#[cfg(target_arch = "wasm32")]` arm in `spawn_callable_promise` plus the equivalent for
+  the channel/supply pumps, but the *semantics* need thought: a `start` that blocks until it
+  finishes changes the observable ordering of any program that relies on interleaving, and
+  `await` on a never-kept promise would deadlock rather than trap.
+- **Not attempted here.** The tutorial marks those two lessons `no-browser` in
+  `wasm-demo/content/lessons.txt`, so the site explains the limitation and shows the
+  recorded native output rather than a trap. Removing those flags is the acceptance test
+  for this item; `wasm-demo/e2e.test.mjs` sweeps every non-flagged lesson in a real browser.
 
-multi f(Int $n where $n %% 3) { "Fizz" }
-multi f(Int $n)               { ~$n }
-say (1..5).map(&f).join(" ");     # raku: "1 2 Fizz 4 5"  mutsu: "1 2 3 4 5"
-```
-
-Adding `proto k($) {*}` fixes it, and every *direct* call form is already correct
-(`f(3)`, `(&f)(3)`, `my &g = &f; g(3)`, `&f(3)`) — so this is specifically the
-value-carried callable path.
-
-- Route: `Interpreter::resolve_code_var` (`src/runtime/accessors_resolve.rs:302-383`). With a
-  proto it returns a by-name `Value::routine_parts`, which re-dispatches by name and is correct.
-  Without one it takes either the `def.is_some()` arm (a plain-signature candidate is reachable
-  under the unsuffixed `GLOBAL::<name>` key, so `sub_value_from_function_def` hands back that
-  ONE candidate — the `f` case) or, when no unsuffixed key exists, the `is_multi` arm that builds
-  an empty-body dispatcher Sub carrying `__mutsu_multi_dispatch_candidates` (the `k` case, which
-  then produces no output at all). `call_sub_value`
-  (`src/runtime/resolution_call_sub.rs:234-276`) does understand that dispatcher env, so the
-  fault is upstream of it: the value handed out is wrong, and its fallback ladder
-  (`bind_function_args_values` → slurpy → `candidates.first()`) ignores `where` constraints and
-  specificity ordering anyway.
-- **Likely correct fix:** make `resolve_code_var` return the by-name routine value for *any*
-  name with multi candidates (the proto path), rather than materializing a candidate or a
-  synthetic dispatcher. The captured-Sub dispatcher then only needs to survive the
-  out-of-scope case, and should reuse the real specificity-sorted dispatch
-  (`sort_candidates_by_specificity` / `push_multi_dispatch_frame`) instead of its own ladder.
-- **Why it is not a one-liner:** the `is_multi` dispatcher exists precisely so a `&multi-sub`
-  outlives its defining scope, so the by-name value must keep working after the scope exits;
-  and `resolve_code_var` is on the hot path for every `&foo`. Needs a test matrix over
-  proto/no-proto × in-scope/out-of-scope × where-constrained/type-only.
-- Repro kept at `wasm-demo/content/highlights.txt` (`why/multi` uses the direct-call form as a
-  workaround); `scripts/check-site-snippets.mjs` cross-checks against `raku` and would catch a
-  regression the moment the snippet is switched back to `&fizz`.
 
 ## Metrics
 
