@@ -2175,7 +2175,11 @@ impl Compiler {
                         quoted: false,
                     };
                     self.compile_expr(&method_call);
-                    self.code.emit(OpCode::Pop);
+                    // Sink context: a method-call statement (`foo($obj:);`,
+                    // i.e. `$obj.foo();`) sinks its value, and sinking an
+                    // unhandled Failure throws. `true` = the value is a fresh
+                    // rvalue that may run a user-defined `sink` method.
+                    self.code.emit(OpCode::SinkPop(true));
                     return;
                 }
 
@@ -2200,7 +2204,13 @@ impl Compiler {
                         args: expr_args,
                     };
                     self.compile_expr(&call_expr);
-                    self.code.emit(OpCode::Pop);
+                    // Sink context: a bare call statement sinks its value, so a
+                    // returned unhandled Failure throws (e.g. `pop @a;` /
+                    // `shift @a;` on an empty array — Raku's X::Cannot::Empty).
+                    // `false` = a function-call return is not auto-`sink`ed
+                    // (Raku keeps it container-wrapped); only Failure/lazy
+                    // handling applies. Matches the method form `@a.pop;`.
+                    self.code.emit(OpCode::SinkPop(false));
                     return;
                 }
 
