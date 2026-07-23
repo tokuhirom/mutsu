@@ -1,5 +1,184 @@
 # Changelog
 
+## [v0.16.0](https://github.com/tokuhirom/mutsu/compare/v0.15.0...v0.16.0) - 2026-07-23
+
+- fix: a Bool numifies (False->0, True->1) in ordered comparison by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5119
+- feat: nqp::ordat, typed-scalar bind-to-element, Bool→native-int coercion (T-035) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5121
+- fix: route self.Mu::/self.Any:: qualified coercion to the built-in default by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5118
+- fix: preserve is_positional for a parenthesized indexed assign/bind by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5125
+- fix: prefix ++/-- accepts a postfix `.=` mutator as its lvalue by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5120
+- fix: qualified method call on a type object dispatches to the qualifier class by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5124
+- feat: implement nqp::gethostname for Sys::Hostname (T-030) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5126
+- fix: unbox Bool to native int for array elements and parameter binding by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5127
+- fix: role diamond duplicate mis-flagged as required-method conflict (T-023) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5117
+- fix: do not set dispatch_ambiguous in an invocant-less method resolution by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5129
+- fix: approximately-equal (≅/=~=) tolerance semantics and $*TOLERANCE default by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5128
+- docs(doc-diff-backlog): record operators.rakudoc fixes and newly-triaged deferrals by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5131
+- feat: List/Slip/Array/Seq.from-iterator($iterator) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5132
+- docs: fix dedup_method_candidates comments to match the Arc-pointer key by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5134
+- fix: >>.&sub hyper descends to leaves (deepmap), preserves Hash keys by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5133
+- ci: stop burning runner slots on tagpr's release PR by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5137
+- feat: Mu.rakuseen($id, &code) cyclic-structure guard for .raku/.gist by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5136
+- fix: .+/.* on a type object walks the full MRO by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5135
+- fix: statement-form say/put/print/note as a tail returns True, not Nil by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5138
+- fix: Hash.new/Map.new copy the pairs of a blessed Associative argument by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5139
+- fix: [notandthen] reduce meta-operator by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5140
+- chore(dist-tickets): drop the per-PR "N open tickets" count line by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5130
+- fix: route :v/:k/:kv/:p slice adverbs through a tied Associative hash by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5141
+- fix: multi-dispatch counts a positional Pair toward positional arity by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5142
+- fix: X/Z meta-assignment operators write back and accumulate in place by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5143
+- fix: an empty Blob/Buf instance gists as `Blob:0x<>`, not `Blob()` by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5144
+- fix: a grammar's .^mro threads Grammar -> Match -> Capture -> Cool by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5145
+- fix: nested named-alias names must not leak as body variables (T-048) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5146
+- fix: propagate tied hash AT-KEY throw and match user exception messages by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5147
+- fix: .^parents excludes composed roles and stops at Cool by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5148
+- feat: route custom subscript adverbs to user postcircumfix (Adverb::Eject) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5149
+- fix: unique/squish/repeated parse as list-prefix operators by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5150
+- fix: .pairup is Pair-aware and handles type objects by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5151
+- fix: inline `my` declarations in a parenthesized list-assignment target by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5152
+- docs: record hard/large findings in PLAN.md and PR them by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5153
+- chore(dist-tickets): T-024/T-026 Done, T-048 part-1 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5154
+- feat: turn the Pages demo into a stateful WASM playground (editor + REPL) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5155
+- fix: add Any.serial (identity for ordinary values) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5156
+- fix: .hash/.Hash on an undefined invocant is the empty hash by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5157
+- fix: tied-hash STORE routes for env/captured lexicals + register X::Hash::Store::OddNumber by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5158
+- docs: record bound-element immutability deep item in PLAN.md (§8.7) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5159
+- chore(dist-tickets): T-025 Math::Root partial progress notes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5161
+- fix: .slice expands a Range index argument by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5162
+- fix: multi-dispatch with a where-constrained optional param; exact exp(Int,Int) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5160
+- fix: nodemap sub form + nodemap on a Hash acts on values by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5163
+- fix: hyper coercer methods descend to the leaves and keep the Array container by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5164
+- fix: min()/max() over a single iterable folds it (Seq, numeric arrays) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5165
+- docs: de-risk PLAN.md §8.7 bound-element RO into a ready-to-implement plan by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5167
+- fix: .round($scale) stays exact for large integers (BigInt path) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5168
+- fix: list-valued sort keys compare element-wise (multi-key .sort) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5169
+- docs: record the BigFatRat representation gap (Math::Root 02/03) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5170
+- fix: a literal-bound hash/array element is read-only by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5171
+- fix: a bare block binds to a role's &callable type parameter by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5172
+- docs(dist-tickets): T-027 ObjectCache block-callable role arg fixed (nqp-blocked) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5173
+- fix: accept `plan *` (a Whatever plan) instead of dying by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5174
+- docs(dist-tickets): T-032 = T-027 nqp cluster; T-036 plan * fixed by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5175
+- fix: reify a lazy Seq before coercing it to a Hash (gather/map assignment) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5176
+- fix: single-element reduce returns the coerced element, not identity op elem by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5178
+- fix: a bare `if` block binds its scalar placeholder to the condition value by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5179
+- fix: assignment binds through a ternary lvalue (compound and conditional) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5180
+- fix: the metaobject introspectors are not hyper-dispatched (PLAN.md §8.6) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5182
+- fix: a bare HyperWhatever (`**`) matches any value under `~~` by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5183
+- docs(PLAN §8.9): record the word-logical (`and`/`or`) precedence bug by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5184
+- fix: Any.reverse is self.list.reverse; .rotate is list-only by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5185
+- fix: a module-local class shadows a same-named built-in namespace as a parent by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5186
+- fix: reify a deferred Seq (Seq.new / *.from-iterator over a user Iterator) universally by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5181
+- fix: .tree itemizes every node it descends into by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5187
+- docs(dist-tickets): T-031 URI root-caused (with-modifier corrupts grammar subcapture) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5188
+- fix: a leading-`::` pair key (`::V => 42`) evaluates to the constant's value by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5189
+- fix: a package Stash supports .EXISTS-KEY by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5190
+- docs(PLAN §8.10): object hashes are string-keyed, not `.WHICH`-keyed by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5191
+- fix: **@values slurpy no longer suppresses the implicit %_ named slurpy by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5192
+- fix: a one-element Slip renders as slip(3,) (closes PLAN.md §8.6) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5193
+- feat: HyperSeq/RaceSeq expose .configuration (.batch/.degree) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5194
+- fix: tied-hash backing for qualified/plain classes (`my %h is Foo::Bar`) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5195
+- fix: IO::Path.add is slurpy; .relative defaults to $*CWD by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5196
+- fix: don't constant-fold literal operators when a module override may be imported by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5197
+- fix: .reduce on a type object is Nil; empty list returns operator identity by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5198
+- fix: a role's my $.x composes as a class-level attribute (type-object accessor) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5199
+- fix: a return-type coercion to Array/List reifies a lazy gather by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5200
+- fix: .sum coerces string elements via the full Raku numeric grammar by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5201
+- fix: a Failure operand to a bitwise/shift operator throws instead of coercing to 0 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5202
+- fix: .invert on a scalar-held List inverts its pairs, not the whole list by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5203
+- fix: zip/roundrobin parse unparenthesized <...> args; roundrobin :slip by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5205
+- fix: a qualified private-method call resolves a nested owner class name by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5204
+- fix: can-ok / value_can_method resolves methods on a type object by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5206
+- fix: last/next inside a .reduce block are loop-control, not X::ControlFlow by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5207
+- docs(PLAN §8.12): record deferred .produce-with-last and .reduce-destructuring by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5208
+- fix: a nested instance renders as Foo.new(...) for .raku, not Foo() by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5209
+- fix: a zen slice :k/:kv/:p adverb maps to keys/kv/pairs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5210
+- docs(dist-tickets): T-029 POFile root-caused (grammar action can't see module-lexical sub) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5211
+- fix: re-importing a bare-file module with a new tag restores its tag-only exports by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5212
+- docs(PLAN §8.13): record that a sub-expression loses its .name by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5214
+- fix: a with statement accepts multiple chained orwith clauses by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5213
+- docs(PLAN §8.12): record the state-var collision in feed-lowered map blocks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5215
+- fix: Promise renders its Rakudo .raku repr; instance .WHICH names its class by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5217
+- fix: Iterator.skip-one/skip-at-least return Int; add Match.target by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5216
+- fix: Range.AT-POS/EXISTS-POS/in-range + Range.WHICH notation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5218
+- fix: allow the $/ match variable inside a slash-regex code block by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5220
+- fix: a leading-dot topic method call accepts a quoted method name by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5221
+- fix: cyclic instance .raku renders Rakudo's backref binding; mutual cycle no longer overflows the stack by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5222
+- fix: `:sym<...>` adverb word-quotes its content (trim surrounding whitespace) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5224
+- fix: a module's own code can call its un-imported tagged export by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5219
+- fix: a read-only `with $match<key>` topic no longer corrupts the Match by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5226
+- fix: nested-leaf reprs for enum/Uni/Version; record the repr-sweep batch (PLAN §8.15) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5225
+- docs(dist-tickets): T-029 POFile two root causes fixed by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5227
+- fix: .Setty/.Baggy/.Mixy coerce the quant-hash instead of returning the type object by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5228
+- fix: [ident] is an array literal unless ident is an infix operator by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5229
+- fix: Code.yada reports whether the body is a yada stub by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5230
+- fix: Channel/scheduler/Supplier reprs — three more PLAN §8.15 items by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5232
+- fix: Supply.new throws X::Supply::New (cannot directly create a Supply) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5233
+- fix: a nested-sub `with $cc<key>` element topic reads the local container (URI 13/14) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5234
+- fix: Proc.new.gist is no longer -1 — drop the native Str/gist exitcode arm by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5235
+- fix: =begin pod is a Pod::Block::Named; :key<> pod config is a fatal error by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5236
+- fix: grammar instance .parse and negated Unicode property minus enum class (vCard::Parser T-033) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5237
+- fix: distinguish big FatRat from big Rat with a representation flag by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5238
+- fix: a separated quantifier keeps a leading empty element (vCard::Parser 02-grammar 23/23) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5240
+- docs(dist-tickets): T-009 XML::Canonical stale (dep-blocked) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5231
+- docs: record BigFatRat completion (PLAN §8.8) and pause the doc-diff campaign by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5241
+- fix: EXPORT-installed operator sub is a first-class Sub, not a dangling ref by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5239
+- fix: .WHO on builtin values returns the type's Stash; Stash.raku is the symbols hash by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5242
+- fix: qqx and backtick command quoting interpolate { EXPR } closure blocks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5244
+- fix: a positional index on a runtime Any value returns Any by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5245
+- fix: given/with rebinds $_ over a local-slot $_ (sub param or my $_) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5248
+- fix: an optional :D named param does not match a call that omits it by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5247
+- feat: Cool.Version + Version.raku ctor-form rule; §8.2 method-coverage harness by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5246
+- docs: refresh doc-diff sweep survey + commit raw scan data by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5243
+- fix: Iterable-type-object trailing comma in .raku; [Z] reduction returns a Seq by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5249
+- fix: produce with last/next; reduce with a destructuring signature (PLAN §8.12) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5250
+- fix: state variables no longer collide across feed/function-form map blocks (PLAN §8.14) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5252
+- feat: parameterized QuantHash types (Set[Int()], .^parameterize, key coercion) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5253
+- fix: s/// replacement \\ before a capture var keeps its backslash by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5255
+- fix: inline grammar-action make values persist on subrule Match nodes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5251
+- feat: expression-form sub NAME keeps its name and installs lexically (PLAN §8.13) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5254
+- fix: .List materializes array holes as literal Nil; Nil =:= Nil holds through fresh-container reads (PLAN 8.5 step 1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5256
+- feat: Formatter::Syntax.parse / Formatter.CODE + lazy .List/.Seq (S32-str/format.t 26→48/49) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5258
+- refactor: drop dead merge_unit_class post-parse AST surgery (#95) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5259
+- docs(roast): record subtest-progress-over-file-oracle philosophy in BLOCKERS.md by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5260
+- fix: bare when/default in a routine no longer leaks when_matched to an enclosing given/with by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5261
+- feat: PROCESS:: pseudo-package + GLOBAL:: our-var stash (pseudo-6c.t 49→43) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5262
+- feat: user does Iterable/Iterator drives for-loop and array-assign by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5263
+- fix: a read-only given/with/for topic no longer leaks its readonly mark into a called routine by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5265
+- feat: CORE:: stash resolves core symbols; GLOBAL::/OUR:: exclude CORE; DYNAMIC:: chain lives (pseudo-6c 40→31) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5266
+- fix: store Any (not Nil) at every crutch-masked storage site (PLAN 8.5 step 2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5264
+- fix: a routine's $_ is a fresh Any, not the caller's given/for/with topic by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5267
+- fix: list-infix Z/X/meta-op/minmax is looser than comma in say/print/put args by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5268
+- feat: OUR:: pseudo-package is the current package's own stash (pseudo-6c.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5269
+- fix: importable `class ... is export` + multi-method sigil narrowness (T-057 Statistics::LinearRegression) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5270
+- fix: list-infix Z/X/meta-op is looser than comma in no-paren user-sub call args by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5271
+- feat: DYNAMIC::<$*x> pseudo-stash does a dynamic-scope search (pseudo-6c.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5272
+- docs(roast): record that CALLER:: indirect stash needs the frame-model fix by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5274
+- feat: uninitialized untyped `my $x` holds the Any type object (PLAN 8.5 step 3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5273
+- feat: UNIT:: pseudo-package resolves the compilation unit's outermost scope (pseudo-6c.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5275
+- fix: attribute `is` trait that adds a method via .^add_method (T-057 Attribute::Predicate) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5276
+- fix: list-infix Z/X/meta-op is looser than comma in no-paren builtin-listop call args by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5277
+- feat: UNIT:: inside EVAL names the EVAL'd unit's own mainline (pseudo-6c.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5278
+- fix: pass :INITIALIZE to a tied hash's STORE on declaration assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5279
+- fix: unpassed optional params seed their type object (Any/Mu), not Nil (PLAN 8.5) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5280
+- fix: reject `(` as a quote/regex delimiter without preceding whitespace by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5281
+- feat: inline-block CALLER::/CALLERS:: resolve lexically (pseudo-6c.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5282
+- fix: augment `class X does Role` composition + sigilless binding shadows native type by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5284
+- fix: Proc.raku/.gist render the full public-attribute form (PLAN 8.15) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5285
+- fix: `fail` in TWEAK returns a Failure; user infix:<×>/<÷> keeps builtin parse by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5287
+- docs: record IO::Path::Parts repr gap and single-item divergences (PLAN 8.15) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5288
+- fix: list-infix (Z/X/.../minmax) is looser than comparison/&&/||/min/= operands by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5286
+- feat: Nil and Any are distinct — remove the types_eqv crutch (PLAN 8.5 complete) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5283
+- fix: IO::Path::Parts.raku/.gist render the positional parts (PLAN 8.15) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5289
+- fix: Iterator push-*/sink-all work on temporary receivers; push-exactly/push-at-least return the count by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5292
+- fix: loose word-logicals (and/or/andthen/...) are looser than =, +=, comma, return/die (PLAN 8.9) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5291
+- fix: QuantHash slice assignment applies membership/count/weight semantics by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5293
+- fix: lazy sequences survive @-array assignment; gather/start do-statement parse fixes (L2b step 6) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5294
+- fix: .flat respects itemization depth — Array elements stay single and itemized by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5295
+- docs: record the lazy-list cluster burn-down in the doc-diff backlog by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5297
+- fix: Mix construction accumulates repeated-key weights with exact arithmetic by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5298
+- feat: loop/while/until expressions are lazy Seqs pulled on demand by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5296
+- feat: implement .^shortname; .^ver/.^auth/.^api answer for builtins and undeclared types by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5299
+
 ## [v0.16.0](https://github.com/tokuhirom/mutsu/compare/v0.15.0...v0.16.0) - 2026-07-22
 
 - fix: a Bool numifies (False->0, True->1) in ordered comparison by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5119
