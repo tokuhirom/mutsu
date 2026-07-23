@@ -477,7 +477,12 @@ impl Interpreter {
             // variants above stay inline for speed; everything else expands via
             // the shared `value_to_list` range walker.
             ValueView::GenericRange { .. } => crate::runtime::utils::value_to_list(val),
-            ValueView::LazyList(list) => self.force_lazy_list_vm(&list)?,
+            // Bounded pull so an infinite source (`@a[0,1,2] = (loop { 42 })`)
+            // supplies the slice without hanging; a finite list reifies fully
+            // below the cap.
+            ValueView::LazyList(list) => {
+                self.force_lazy_list_vm_n(&list, Self::MAX_ASSIGN_SLICE_EXPAND as usize)?
+            }
             _ => vec![val.clone()],
         })
     }

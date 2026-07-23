@@ -955,7 +955,7 @@ impl Interpreter {
         let target = if let ValueView::LazyList(ll) = target.view()
             && ll.needs_vm_lazy_dispatch()
             && Self::lazy_list_needs_forcing(method)
-            && !(ll.coroutine.is_some() && matches!(method, "List" | "values"))
+            && !(ll.coroutine.is_some() && matches!(method, "List" | "list" | "values"))
             // A `.map`/`.grep` on a lazy pipeline, an infinite sequence/closure
             // spec, OR a gather coroutine appends another lazy stage (interpreter
             // dispatch via `is_lazy_pipe_source`) — it must not force the source

@@ -312,22 +312,7 @@ impl Compiler {
         use crate::ast::{Expr as AExpr, Stmt as AStmt};
         // Build `take <last_expr>` body: replace the last expression with `take <expr>`
         // and wrap the body in a for loop inside a gather block.
-        let take_body: Vec<AStmt> = {
-            let mut stmts = body.to_vec();
-            // Replace last expression statement with `take(expr)`
-            let last_idx = stmts.iter().rposition(|s| !matches!(s, AStmt::SetLine(_)));
-            if let Some(idx) = last_idx {
-                if let AStmt::Expr(expr) = stmts[idx].clone() {
-                    stmts[idx] = AStmt::Take(expr, false);
-                } else {
-                    // Wrap non-expr last stmt in Take(Nil) since we need a take
-                    stmts.push(AStmt::Take(AExpr::Literal(crate::value::Value::NIL), false));
-                }
-            } else {
-                stmts.push(AStmt::Take(AExpr::Literal(crate::value::Value::NIL), false));
-            }
-            stmts
-        };
+        let take_body = Self::wrap_loop_body_last_in_take(body);
         // Build inner for loop with the take body
         let inner_for = AStmt::For {
             iterable: iterable.clone(),
@@ -359,34 +344,58 @@ impl Compiler {
         self.compile_expr(&lazy_expr);
     }
 
-    /// Compile `do while` / `do until` expression: collect each iteration value.
+    /// Rewrite a loop body so its per-iteration value is `take`n: the last
+    /// expression statement becomes `take <expr>`; a value-bearing `if`/`given`
+    /// last statement is taken through `do` (so a false `if`-modifier yields
+    /// `Empty`, which `take` slips away); any other shape appends `take Nil`.
+    /// The loop's KEEP/UNDO result capture sees through the trailing `Take`
+    /// (see `expand_loop_phasers`). Shared by the `lazy for` lowering and the
+    /// `while`/`loop` expression forms.
+    fn wrap_loop_body_last_in_take(body: &[Stmt]) -> Vec<Stmt> {
+        use crate::ast::{Expr as AExpr, Stmt as AStmt};
+        let mut stmts = body.to_vec();
+        let last_idx = stmts.iter().rposition(|s| !matches!(s, AStmt::SetLine(_)));
+        if let Some(idx) = last_idx {
+            match stmts[idx].clone() {
+                AStmt::Expr(expr) => stmts[idx] = AStmt::Take(expr, false),
+                s @ (AStmt::If { .. } | AStmt::Given { .. }) => {
+                    stmts[idx] = AStmt::Take(AExpr::DoStmt(Box::new(s)), false);
+                }
+                _ => {
+                    stmts.push(AStmt::Take(AExpr::Literal(crate::value::Value::NIL), false));
+                }
+            }
+        } else {
+            stmts.push(AStmt::Take(AExpr::Literal(crate::value::Value::NIL), false));
+        }
+        stmts
+    }
+
+    /// Compile `do while` / `do until` (and parenthesized `(while ...)`)
+    /// expression: lower to `gather { while COND { take do { body } } }` so
+    /// the result is a lazy Seq pulled on demand, matching raku —
+    /// `(while $++ < 2 { 42.say; 43 }).map: *.say` interleaves 42/43, and
+    /// the whole loop only runs to completion when the Seq is reified.
     pub(super) fn compile_do_while_expr(
         &mut self,
         cond: &Expr,
         body: &[Stmt],
         label: &Option<String>,
     ) {
-        let (pre_stmts, loop_body, post_stmts) = self.expand_loop_phasers(body, label.as_deref());
-        for stmt in &pre_stmts {
-            self.compile_stmt(stmt);
-        }
-        let loop_idx = self.code.emit(OpCode::WhileLoop {
-            cond_end: 0,
-            body_end: 0,
+        use crate::ast::{Expr as AExpr, Stmt as AStmt};
+        let inner = AStmt::While {
+            cond: cond.clone(),
+            body: Self::wrap_loop_body_last_in_take(body),
             label: label.clone(),
-            collect: true,
-            isolate_topic: Self::body_mutates_topic(&loop_body),
-        });
-        self.compile_expr(cond);
-        self.code.patch_while_cond_end(loop_idx);
-        self.compile_collected_loop_body(&loop_body);
-        self.code.patch_loop_end(loop_idx);
-        for stmt in &post_stmts {
-            self.compile_stmt(stmt);
-        }
+        };
+        let gather_expr = AExpr::Gather(vec![inner]);
+        self.compile_expr(&gather_expr);
     }
 
-    /// Compile `do loop (...) { ... }` expression: collect each iteration value.
+    /// Compile `do loop (...) { ... }` / `(loop { ... })` expression: lower to
+    /// `gather { loop (...) { take do { body } } }` — a lazy Seq, so an
+    /// infinite `(loop { 42.say })[2]` pulls exactly three iterations.
+    /// The C-style init runs inside the gather, deferred until first pull.
     pub(super) fn compile_do_loop_expr(
         &mut self,
         init: &Option<Box<Stmt>>,
@@ -395,36 +404,17 @@ impl Compiler {
         body: &[Stmt],
         label: &Option<String>,
     ) {
-        let (pre_stmts, loop_body, post_stmts) = self.expand_loop_phasers(body, label.as_deref());
-        if let Some(init_stmt) = init {
-            self.compile_stmt(init_stmt);
-        }
-        for stmt in &pre_stmts {
-            self.compile_stmt(stmt);
-        }
-        let loop_idx = self.code.emit(OpCode::CStyleLoop {
-            cond_end: 0,
-            step_start: 0,
-            body_end: 0,
+        use crate::ast::{Expr as AExpr, Stmt as AStmt};
+        let inner = AStmt::Loop {
+            init: init.clone(),
+            cond: cond.clone(),
+            step: step.clone(),
+            body: Self::wrap_loop_body_last_in_take(body),
+            repeat: false,
             label: label.clone(),
-            collect: true,
-        });
-        if let Some(cond_expr) = cond {
-            self.compile_expr(cond_expr);
-        } else {
-            self.code.emit(OpCode::LoadTrue);
-        }
-        self.code.patch_cstyle_cond_end(loop_idx);
-        self.compile_collected_loop_body(&loop_body);
-        self.code.patch_cstyle_step_start(loop_idx);
-        if let Some(step_expr) = step {
-            self.compile_expr(step_expr);
-            self.code.emit(OpCode::Pop);
-        }
-        self.code.patch_loop_end(loop_idx);
-        for stmt in &post_stmts {
-            self.compile_stmt(stmt);
-        }
+        };
+        let gather_expr = AExpr::Gather(vec![inner]);
+        self.compile_expr(&gather_expr);
     }
 
     pub(super) fn do_if_branch_supported(stmts: &[Stmt]) -> bool {
