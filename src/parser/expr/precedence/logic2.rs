@@ -231,9 +231,14 @@ pub(crate) fn and_and_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr
 
 /// Boolean bitwise / junction: ?| ?& ?^ | & ^
 pub(crate) fn junctive_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
+    // The list-infix operators (`Z`/`X`/meta/`...`/feed) are LOOSER than the
+    // comma operator and thus looser than the junctions / comparison / range
+    // chain reached here; they are handled by the `list_infix_top` layer that
+    // sits just below the loose word-logicals. So the junction operand descends
+    // straight to the range level in the general expression modes.
     let next_fn: fn(&str) -> PResult<'_, Expr> = match mode {
-        ExprMode::Full => sequence_expr,
-        ExprMode::NoSequence => list_infix_expr,
+        ExprMode::Full => range_expr,
+        ExprMode::NoSequence => range_expr,
         // An (unparenthesized) call / list-prefix argument binds the sequence
         // operator TIGHTER than the comma that separates arguments, so
         // `none 2 ... 5` is `none(2 ... 5)`, NOT `(none 2) ... 5`. Route the
@@ -248,6 +253,22 @@ pub(crate) fn junctive_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Exp
     let mut last_junction: Option<JunctionInfixOp> = None;
     loop {
         let (r, _) = ws(rest)?;
+        // Longest-token rule (Raku LTM): a user-declared *symbol* infix operator
+        // that shadows or extends a junction operator (`multi sub infix:<&>`,
+        // `infix:<&&&>`) routes to the list-infix layer, which dispatches through
+        // the user candidate and can carry a trailing adverb (`$a & $b :adverb`).
+        // A built-in junction with no user candidate returns `None` and is
+        // unaffected.
+        if let Some((_, ulen)) = crate::parser::stmt::simple::match_user_declared_infix_symbol_op(r)
+        {
+            let jlen = parse_junctive_op(r)
+                .map(|(_, l)| l)
+                .or_else(|| parse_junction_infix_op(r).map(|(_, l)| l))
+                .unwrap_or(0);
+            if jlen > 0 && ulen >= jlen {
+                break;
+            }
+        }
         if let Some((op, len)) = parse_junctive_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;

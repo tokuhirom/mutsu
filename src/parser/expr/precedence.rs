@@ -31,6 +31,7 @@ mod errors;
 mod feed;
 mod list_infix;
 mod list_infix_loop;
+mod list_infix_top;
 mod logic;
 mod logic2;
 mod operands;
@@ -61,15 +62,16 @@ pub(crate) use chain_cmp::{
     wrap_smartmatch_rhs,
 };
 pub(crate) use comparison::comparison_expr_mode;
-pub(crate) use custom_infix::{
-    parse_comma_list_of_range, parse_comma_list_of_range_raw, parse_flipflop_infix,
-};
+pub(crate) use custom_infix::{ListInfixOperand, parse_flipflop_infix};
 pub(crate) use errors::{
     check_range_precedence_worry, conditional_precedence_too_loose_error, non_associative_error,
     non_associative_pair_error, non_list_associative_error, syntax_exception,
 };
-pub(crate) use list_infix::{list_infix_expr, sequence_expr, sequence_only_expr};
-pub(crate) use list_infix_loop::{parse_list_infix_loop, parse_list_infix_loop_no_feed};
+pub(crate) use list_infix::{sequence_expr, sequence_only_expr};
+pub(crate) use list_infix_loop::{
+    parse_list_infix_loop, parse_list_infix_loop_no_feed, parse_list_infix_loop_with_operand,
+};
+pub(crate) use list_infix_top::{item_expr, list_infix_top};
 pub(crate) use logic::{assign_not_expr_mode, or_expr_mode, or_expr_no_assign_mode};
 pub(crate) use logic2::{junctive_expr_mode, not_expr_mode, or_or_expr_mode};
 pub(crate) use ternary::{comparison_nonassoc_key, structural_comparison_expr_mode};

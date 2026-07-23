@@ -133,6 +133,26 @@ pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
             r,
         ));
     }
+    // Longest-token rule (Raku LTM): a user-declared *symbol* infix operator that
+    // starts here and is LONGER than the comparison operator that would otherwise
+    // match (e.g. `infix:<==⨧>` vs `==`) is that infix, not a comparison. Leave it
+    // unconsumed so the enclosing list-infix layer parses it. Before the list-infix
+    // layer moved above the comparison chain, this collision was resolved for free
+    // (the infix was consumed inside the operand chain below comparison).
+    if let Some((_, ulen)) = crate::parser::stmt::simple::match_user_declared_infix_symbol_op(r) {
+        let cmp_len = parse_comparison_op(r)
+            .map(|(_, l)| l)
+            .or_else(|| parse_negated_meta_comparison_op(r).map(|(_, l)| l))
+            .unwrap_or(0);
+        // `>=`, not `>`: a user symbol infix that EXACTLY shadows the built-in
+        // comparison (`multi sub infix:<==>`) must also route to the list-infix
+        // layer, which dispatches through the user candidate (falling back to the
+        // built-in for non-matching argument types). A built-in comparison with no
+        // user candidate returns `None` above and is unaffected.
+        if cmp_len > 0 && ulen >= cmp_len {
+            return Ok((rest, left));
+        }
+    }
     if let Some((op, len)) = parse_negated_meta_comparison_op(r) {
         let r = &r[len..];
         let (r, _) = ws(r)?;

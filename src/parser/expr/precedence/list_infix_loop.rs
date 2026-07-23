@@ -8,7 +8,14 @@ pub(crate) fn parse_list_infix_loop<'a>(
     left: &mut Expr,
     current_assoc_key: &mut Option<String>,
 ) -> Result<&'a str, PError> {
-    parse_list_infix_loop_impl(input, orig_input, left, current_assoc_key, true)
+    parse_list_infix_loop_impl(
+        input,
+        orig_input,
+        left,
+        current_assoc_key,
+        true,
+        ListInfixOperand::Range,
+    )
 }
 
 /// Like `parse_list_infix_loop`, but does NOT consume feed operators
@@ -21,7 +28,35 @@ pub(crate) fn parse_list_infix_loop_no_feed<'a>(
     left: &mut Expr,
     current_assoc_key: &mut Option<String>,
 ) -> Result<&'a str, PError> {
-    parse_list_infix_loop_impl(input, orig_input, left, current_assoc_key, false)
+    parse_list_infix_loop_impl(
+        input,
+        orig_input,
+        left,
+        current_assoc_key,
+        false,
+        ListInfixOperand::Range,
+    )
+}
+
+/// Like `parse_list_infix_loop`, but parses each Z/X/`...` operand at the loose
+/// "item" level (`operand`) rather than at `range_expr`. Used by the top-level
+/// list-infix layer so `1 == 1 Z 2 == 2` is `(1 == 1) Z (2 == 2)`.
+pub(crate) fn parse_list_infix_loop_with_operand<'a>(
+    input: &'a str,
+    orig_input: &str,
+    left: &mut Expr,
+    current_assoc_key: &mut Option<String>,
+    allow_feed: bool,
+    operand: ListInfixOperand,
+) -> Result<&'a str, PError> {
+    parse_list_infix_loop_impl(
+        input,
+        orig_input,
+        left,
+        current_assoc_key,
+        allow_feed,
+        operand,
+    )
 }
 
 fn parse_list_infix_loop_impl<'a>(
@@ -30,6 +65,7 @@ fn parse_list_infix_loop_impl<'a>(
     left: &mut Expr,
     current_assoc_key: &mut Option<String>,
     allow_feed: bool,
+    operand: ListInfixOperand,
 ) -> Result<&'a str, PError> {
     let mut rest = input;
     loop {
@@ -77,9 +113,9 @@ fn parse_list_infix_loop_impl<'a>(
             let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, mut right_exprs) = if modifier.as_deref() == Some("X") {
-                parse_comma_list_of_range(r)?
+                operand.parse_comma_list(r)?
             } else {
-                let (r, expr) = range_expr(r).map_err(|err| {
+                let (r, expr) = operand.parse_single(r).map_err(|err| {
                     enrich_expected_error(
                         err,
                         "expected expression after infixed function",
@@ -242,7 +278,7 @@ fn parse_list_infix_loop_impl<'a>(
                         || op == "…"
                         || op == "…^";
                     let (r, right) = if needs_comma_list {
-                        let (r, items) = parse_comma_list_of_range_raw(r)?;
+                        let (r, items) = operand.parse_comma_list(r)?;
                         if items.len() == 1 {
                             (r, items.into_iter().next().unwrap())
                         } else {
@@ -365,7 +401,7 @@ fn parse_list_infix_loop_impl<'a>(
                 || op == "…"
                 || op == "…^";
             let (r, right) = if needs_comma_list {
-                let (r, items) = parse_comma_list_of_range_raw(r)?;
+                let (r, items) = operand.parse_comma_list(r)?;
                 if items.len() == 1 {
                     (r, items.into_iter().next().unwrap())
                 } else {
@@ -442,7 +478,10 @@ fn parse_list_infix_loop_impl<'a>(
         {
             let mut r = &r[len..];
             let (r2, _) = ws(r)?;
-            let (r2, right) = range_expr(r2).map_err(|err| {
+            // A user infix word handled here is at the list-infix precedence
+            // level, so its operand absorbs the whole tighter expression
+            // (junctions, comparison, ...): `1 op 2 | 3` is `1 op (2 | 3)`.
+            let (r2, right) = operand.parse_single(r2).map_err(|err| {
                 enrich_expected_error(err, "expected expression after infix operator", r.len())
             })?;
             let assoc = crate::parser::stmt::simple::lookup_user_infix_assoc(&name)
@@ -472,7 +511,7 @@ fn parse_list_infix_loop_impl<'a>(
                     }
                     let r_after_op = &r_ws[next_len..];
                     let (r_after_op, _) = ws(r_after_op)?;
-                    let (r_after_arg, arg) = range_expr(r_after_op).map_err(|err| {
+                    let (r_after_arg, arg) = operand.parse_single(r_after_op).map_err(|err| {
                         enrich_expected_error(
                             err,
                             "expected expression after infix operator",
