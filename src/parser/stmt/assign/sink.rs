@@ -86,6 +86,89 @@ pub(crate) fn parse_assign_expr_or_comma(input: &str) -> PResult<'_, Expr> {
     parse_comma_or_expr(input)
 }
 
+/// No-word-logical twin of [`parse_assign_expr_or_comma`]: identical
+/// chained-assignment and comma handling, but every element is parsed with
+/// [`expression_no_word_logical`] so a top-level (unparenthesized) word-logical
+/// is left in the stream for the statement-level word-logical tail. Used by the
+/// assignment / declaration RHS parsers so `@a = 1, 2 and 3` is
+/// `(@a = 1, 2) and 3` while `$x ||= 42, 43` keeps its item-assignment
+/// (comma-tight) `||=`.
+pub(crate) fn parse_assign_expr_or_comma_no_word_logical(input: &str) -> PResult<'_, Expr> {
+    if let Ok((rest, assign_expr)) = try_parse_assign_expr(input) {
+        let (r, _) = ws(rest)?;
+        // Chained *list* assignment to an `@`/`%` container absorbs the comma list
+        // on its right (see [`parse_assign_expr_or_comma`]).
+        if r.starts_with(',')
+            && !r.starts_with(",,")
+            && let Expr::AssignExpr {
+                name,
+                expr,
+                is_bind: false,
+            } = &assign_expr
+            && (name.starts_with('@') || name.starts_with('%'))
+        {
+            let (r2, _) = parse_char(r, ',')?;
+            let (r2, _) = ws(r2)?;
+            if !(r2.starts_with(';') || r2.is_empty() || r2.starts_with('}') || r2.starts_with(')'))
+            {
+                let mut items = vec![(**expr).clone()];
+                let (mut r_iter, second) = expression_no_word_logical(r2)?;
+                items.push(second);
+                loop {
+                    let (r3, _) = ws(r_iter)?;
+                    if !r3.starts_with(',') || r3.starts_with(",,") {
+                        r_iter = r3;
+                        break;
+                    }
+                    let (r3, _) = parse_char(r3, ',')?;
+                    let (r3, _) = ws(r3)?;
+                    if r3.starts_with(';') || r3.is_empty() || r3.starts_with('}') {
+                        r_iter = r3;
+                        break;
+                    }
+                    let (r3, next) = expression_no_word_logical(r3)?;
+                    items.push(next);
+                    r_iter = r3;
+                }
+                return Ok((
+                    r_iter,
+                    Expr::AssignExpr {
+                        name: name.clone(),
+                        expr: Box::new(Expr::ArrayLiteral(items)),
+                        is_bind: false,
+                    },
+                ));
+            }
+        }
+        if r.starts_with(',') && !r.starts_with(",,") {
+            let (r, _) = parse_char(r, ',')?;
+            let (r, _) = ws(r)?;
+            if r.starts_with(';') || r.is_empty() || r.starts_with('}') {
+                return Ok((r, Expr::ArrayLiteral(vec![assign_expr])));
+            }
+            let mut items = vec![assign_expr];
+            let (mut r, second) = expression_no_word_logical(r)?;
+            items.push(second);
+            loop {
+                let (r2, _) = ws(r)?;
+                if !r2.starts_with(',') {
+                    return Ok((r2, Expr::ArrayLiteral(items)));
+                }
+                let (r2, _) = parse_char(r2, ',')?;
+                let (r2, _) = ws(r2)?;
+                if r2.starts_with(';') || r2.is_empty() || r2.starts_with('}') {
+                    return Ok((r2, Expr::ArrayLiteral(items)));
+                }
+                let (r2, next) = expression_no_word_logical(r2)?;
+                items.push(next);
+                r = r2;
+            }
+        }
+        return Ok((rest, assign_expr));
+    }
+    parse_comma_or_expr_no_word_logical(input)
+}
+
 pub(crate) fn rewrite_scalar_assignment_rhs_as_sink(name: String, rhs: Expr) -> Option<Expr> {
     match rhs {
         Expr::MetaOp {

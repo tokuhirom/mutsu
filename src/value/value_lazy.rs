@@ -192,6 +192,25 @@ impl LazyList {
             || self.cat_pull.is_some()
     }
 
+    /// Whether `my @a = <this list>` keeps the list as a reify-on-demand lazy
+    /// array (L2b step 6, docs/lazy-arrays.md) instead of eagerly
+    /// materializing. An explicit `lazy` marker always preserves; otherwise
+    /// only a *deterministic* unreifiable source does — an infinite
+    /// arithmetic/geometric sequence spec, or a map/grep pipe over an
+    /// infinite source. A pipe bottoming out in a finite source (a plain
+    /// gather) and a finite cat-pull materialize eagerly, matching raku.
+    ///
+    /// TODO: closure_seq (`1, {rand} ... *`) and scan_spec stay on the old
+    /// capped-Array path: S32-array/create.t "partially-reified" requires
+    /// `@a.clone` to SHARE the reifier (clone and original see the same
+    /// `{rand}` values), which needs a shared element-cell store —
+    /// container-repr territory (ADR-0001 layer 3a), not a per-site fix.
+    pub(crate) fn preserve_lazy_on_array_assign(&self) -> bool {
+        self.is_lazy_marked()
+            || self.sequence_spec.is_some()
+            || (self.lazy_pipe.is_some() && !self.pipe_bottoms_out_finite())
+    }
+
     /// Whether this list carries the `lazy` prefix marker (set by the `lazy`
     /// statement prefix / `.lazy` method).
     fn is_lazy_marked(&self) -> bool {

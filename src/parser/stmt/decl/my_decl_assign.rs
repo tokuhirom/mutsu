@@ -1,6 +1,7 @@
-use super::super::super::expr::expression;
+use super::super::super::expr::{expression, expression_no_word_logical};
 use super::super::super::helpers::ws;
 use super::super::super::parse_result::{PError, PResult, merge_expected_messages, parse_char};
+use super::super::assign::parse_assign_expr_or_comma_no_word_logical;
 use super::super::keyword;
 use super::helpers::shaped_array_new_with_data_expr;
 use super::my_decl::MyDeclState;
@@ -344,24 +345,26 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     let is_scalar = !s.is_array && !s.is_hash;
     let var_name_for_leave = s.name.clone();
     // Scalar declarations stop at comma; array/hash consume the full comma list.
+    // The RHS is parsed at a precedence that stops before the loose
+    // word-logicals (`and`/`or`/`andthen`/...): in Raku they are looser than the
+    // declaration's `=`, so `my $x = 1 and 2` is `(my $x = 1) and 2`.
     let (rest, expr) = if s.is_array || s.is_hash {
-        parse_assign_expr_or_comma(rest)?
+        parse_assign_expr_or_comma_no_word_logical(rest)?
     } else {
-        expression(rest)?
+        expression_no_word_logical(rest)?
     };
-    // In Raku, andthen/orelse/notandthen have lower precedence than declaration
-    // assignment. If the expression is `expr andthen { block }`, split it so
-    // the declaration assigns `expr` and the andthen runs as a side effect.
-    let (expr, post_andthen) = match expr {
-        Expr::Binary {
-            left,
-            op:
-                op @ (crate::token_kind::TokenKind::AndThen
-                | crate::token_kind::TokenKind::OrElse
-                | crate::token_kind::TokenKind::NotAndThen),
-            right,
-        } => (*left, Some((op, *right))),
-        other => (other, None),
+    // Capture a trailing word-logical tail, seeded by a re-read of the declared
+    // variable. It is re-attached below as a scopeless `SyntheticBlock` second
+    // statement: `my $x = 1 and 2` runs `my $x = 1`, then `$x and 2`.
+    let (rest, post_andthen) = {
+        let (rws, _) = ws(rest)?;
+        if crate::parser::expr::starts_with_loose_word_logical(rws) {
+            let seed = crate::parser::stmt::word_logical_split::seed_read_expr(&s.name);
+            let (r, tail) = crate::parser::expr::word_logical_tail_pub(rws, seed)?;
+            (r, Some(tail))
+        } else {
+            (rest, None)
+        }
     };
     let expr = match expr {
         Expr::MetaOp {
@@ -399,6 +402,11 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
                 consume_scalar_decl_trailing_comma(rest, stmt)?
             } else {
                 (rest, stmt)
+            };
+            let stmt = if let Some(tail) = post_andthen {
+                Stmt::SyntheticBlock(vec![stmt, Stmt::Expr(tail)])
+            } else {
+                stmt
             };
             if s.apply_modifier {
                 return parse_statement_modifier(rest, stmt);
@@ -494,14 +502,8 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         } else {
             (rest, stmt)
         };
-        let stmt = if let Some((op, rhs)) = post_andthen.clone() {
-            let var_ref = Expr::Var(s.name.clone());
-            let andthen_expr = Expr::Binary {
-                left: Box::new(var_ref),
-                op,
-                right: Box::new(rhs),
-            };
-            Stmt::SyntheticBlock(vec![stmt, Stmt::Expr(andthen_expr)])
+        let stmt = if let Some(tail) = post_andthen.clone() {
+            Stmt::SyntheticBlock(vec![stmt, Stmt::Expr(tail)])
         } else {
             stmt
         };
@@ -542,14 +544,8 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     } else {
         (rest, stmt)
     };
-    let stmt = if let Some((op, rhs)) = post_andthen {
-        let var_ref = Expr::Var(s.name.clone());
-        let andthen_expr = Expr::Binary {
-            left: Box::new(var_ref),
-            op,
-            right: Box::new(rhs),
-        };
-        Stmt::SyntheticBlock(vec![stmt, Stmt::Expr(andthen_expr)])
+    let stmt = if let Some(tail) = post_andthen {
+        Stmt::SyntheticBlock(vec![stmt, Stmt::Expr(tail)])
     } else {
         stmt
     };

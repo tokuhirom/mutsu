@@ -72,6 +72,82 @@ pub(crate) fn assign_or_and_expr(input: &str, mode: ExprMode) -> PResult<'_, Exp
     and_expr_mode(input, mode)
 }
 
+/// Continue parsing a statement-level word-logical chain, given an
+/// already-parsed leftmost operand (`seed`) and the input positioned *at* the
+/// first word-logical operator.
+///
+/// Used by the hand-rolled statement-level assignment / declaration / `return`
+/// parsers: after the RHS is parsed with `expression_no_word_logical` (which
+/// stops before the loose word-logicals), the trailing `... and ...` is parsed
+/// here with `seed` (typically a re-read of the just-assigned variable) as the
+/// left operand. The precedence mirrors `or_expr_mode` wrapping `and_expr_mode`
+/// (`or`/`xor`/`orelse` looser than `and`/`andthen`/`notandthen`), but — because
+/// this runs at *statement* level, where the comma is looser than `=` yet the
+/// word-logicals are looser still — each operand absorbs a full comma list
+/// (`X = 1, 2 and 3, 4` → `(X = 1, 2) and (3, 4)`).
+pub(crate) fn word_logical_tail(input: &str, seed: Expr) -> PResult<'_, Expr> {
+    let (rest, left) = and_chain_seeded(input, seed)?;
+    or_chain_continue(rest, left)
+}
+
+/// Word-logical operand at statement level: a comma list whose elements stop
+/// before the word-logicals.
+fn wl_operand(input: &str) -> PResult<'_, Expr> {
+    crate::parser::stmt::assign::parse_comma_or_expr_no_word_logical(input)
+}
+
+/// Consume a chain of `and`/`andthen`/`notandthen` starting from `seed`.
+fn and_chain_seeded(input: &str, seed: Expr) -> PResult<'_, Expr> {
+    let mut rest = input;
+    let mut left = seed;
+    loop {
+        let (r, _) = ws(rest)?;
+        if let Some((op @ (LogicalOp::And | LogicalOp::AndThen | LogicalOp::NotAndThen), len)) =
+            parse_word_logical_op(r)
+        {
+            let r = &r[len..];
+            let (r, _) = ws(r)?;
+            let (r, right) = wl_operand(r)?;
+            left = Expr::Binary {
+                left: Box::new(left),
+                op: op.token_kind(),
+                right: Box::new(right),
+            };
+            rest = r;
+            continue;
+        }
+        break;
+    }
+    Ok((rest, left))
+}
+
+/// Continue a chain of `or`/`xor`/`orelse` from an already-parsed `and`-level
+/// left operand. Each `or`-operand is itself a full `and` chain.
+fn or_chain_continue(input: &str, left0: Expr) -> PResult<'_, Expr> {
+    let mut rest = input;
+    let mut left = left0;
+    loop {
+        let (r, _) = ws(rest)?;
+        if let Some((op @ (LogicalOp::Or | LogicalOp::XorXor | LogicalOp::OrElse), len)) =
+            parse_word_logical_op(r)
+        {
+            let r = &r[len..];
+            let (r, _) = ws(r)?;
+            let (r, first) = wl_operand(r)?;
+            let (r, right) = and_chain_seeded(r, first)?;
+            left = Expr::Binary {
+                left: Box::new(left),
+                op: op.token_kind(),
+                right: Box::new(right),
+            };
+            rest = r;
+            continue;
+        }
+        break;
+    }
+    Ok((rest, left))
+}
+
 /// Low-precedence: and / andthen / notandthen
 pub(crate) fn and_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     // The list-infix operators (`Z`/`X`/meta/`...`/feed/`minmax`) sit just below

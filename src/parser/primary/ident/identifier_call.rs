@@ -932,8 +932,21 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 return Ok((r, Expr::Gather(body)));
             }
             // gather <statement> (e.g. `gather for ^5 { ... }`)
-            if let Ok((r, stmt)) = crate::parser::stmt::statement_pub(r) {
-                return Ok((r, Expr::Gather(vec![stmt])));
+            if let Ok((r_after, stmt)) = crate::parser::stmt::statement_pub(r) {
+                // The statement parse consumes the terminating `;`, but the
+                // gather expression must stop before it — otherwise the rest
+                // of the line (`my @a = gather do {…}; say "x"`) is misread
+                // as an infix on the gather.
+                let r_after = restore_do_stmt_terminator(r, r_after);
+                // `gather do { ... }` is `gather { ... }`: the do-block is the
+                // whole body, so inline its statements. This also lets the
+                // lazy-gather coroutine suspend at each take (it can only
+                // suspend at the body's top level, not inside a nested
+                // DoBlockExpr frame).
+                if let crate::ast::Stmt::Expr(Expr::DoBlock { body, label: None }) = &stmt {
+                    return Ok((r_after, Expr::Gather(body.clone())));
+                }
+                return Ok((r_after, Expr::Gather(vec![stmt])));
             }
         }
         "die" | "fail" => {
@@ -1026,9 +1039,11 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 ));
             }
             // start <statement> — wrap the next statement in a block
-            if let Ok((r, stmt)) = crate::parser::stmt::statement_pub(r) {
+            if let Ok((r_after, stmt)) = crate::parser::stmt::statement_pub(r) {
+                // Give back a consumed statement terminator (see the gather arm).
+                let r_after = restore_do_stmt_terminator(r, r_after);
                 return Ok((
-                    r,
+                    r_after,
                     Expr::Call {
                         name: Symbol::intern("start"),
                         args: vec![make_anon_sub(vec![stmt])],

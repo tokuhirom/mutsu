@@ -11,6 +11,7 @@ pub(crate) mod simple_expr_stmt;
 mod stmtlist;
 mod sub;
 pub(crate) mod sub_param;
+pub(crate) mod word_logical_split;
 
 use super::memo::{MemoEntry, MemoStats, ParseMemo};
 use super::parse_result::{PError, PResult, parse_char, update_best_error};
@@ -28,7 +29,7 @@ use super::helpers::{
 use args::{parse_stmt_call_args, parse_stmt_call_args_no_paren};
 pub(in crate::parser) use assign::assign_stmt;
 use assign::{
-    parse_assign_expr_or_comma, parse_comma_or_expr, parse_comma_or_expr_item,
+    parse_assign_expr_or_comma, parse_comma_or_expr, parse_comma_or_expr_item_no_word_logical,
     try_parse_assign_expr,
 };
 use class::class_decl_body;

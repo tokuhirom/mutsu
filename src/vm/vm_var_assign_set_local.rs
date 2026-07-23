@@ -891,19 +891,20 @@ impl Interpreter {
             } else {
                 match raw_popped.view() {
                     ValueView::LazyList(list) => {
-                        match list
-                            .env
-                            .get(Self::LAZY_ASSIGN_PRESERVE_MARKER)
-                            .map(Value::view)
-                        {
-                            // Preserved into an `@` array: keep it lazy but tag
-                            // array context so gist/`.WHAT` render `[...]`/`Array`.
-                            Some(ValueView::Bool(true)) => {
-                                Value::lazy_list(crate::gc::Gc::new(list.with_array_context()))
-                            }
-                            _ => Value::real_array(crate::runtime::utils::nil_elems_to_any(
+                        // An unreifiable lazy list (infinite spec / infinite
+                        // pipe / `lazy`-marked) survives `@`-assign as a
+                        // reify-on-demand LazyList tagged with array context
+                        // so gist/`.WHAT` render `[...]`/`Array` (L2b step 6 —
+                        // docs/lazy-arrays.md; mutations reify a prefix via
+                        // `reify_lazy_array_slot`). A plain finite gather (or
+                        // a pipe over one) is `.is-lazy` False and
+                        // materializes eagerly.
+                        if list.preserve_lazy_on_array_assign() {
+                            Value::lazy_list(crate::gc::Gc::new(list.with_array_context()))
+                        } else {
+                            Value::real_array(crate::runtime::utils::nil_elems_to_any(
                                 self.force_lazy_list_vm(&list)?,
-                            )),
+                            ))
                         }
                     }
                     ValueView::LazyIoLines { .. } => {

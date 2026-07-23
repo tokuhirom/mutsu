@@ -195,6 +195,12 @@ pub(super) fn dispatch(
         "clone" => {
             match target.view() {
                 ValueView::Package(_) | ValueView::Nil => Some(Some(Ok(target.clone()))),
+                // A lazy array (`my @a = 1, 2, 4 ... Inf`) clones to an
+                // independent lazy list: separate cache/spec state, same
+                // deterministic generator, so both keep reifying on demand.
+                ValueView::LazyList(ll) => Some(Some(Ok(Value::lazy_list(crate::gc::Gc::new(
+                    (**ll).clone(),
+                ))))),
                 // Clone the whole `ArrayData`, not just its elements, so
                 // per-slot metadata (`initialized` deletion holes, `default`,
                 // `shape`, element type) survives the copy — e.g.

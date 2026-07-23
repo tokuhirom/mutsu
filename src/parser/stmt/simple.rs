@@ -5,7 +5,7 @@ use std::sync::atomic::AtomicUsize;
 use regex::Regex;
 
 use super::super::add_parse_warning;
-use super::super::expr::expression;
+use super::super::expr::{expression, expression_no_word_logical};
 use super::super::helpers::{is_loop_label_name, skip_balanced_parens, ws, ws1};
 use super::super::parse_result::{PError, PResult, merge_expected_messages, opt_char, parse_char};
 
@@ -18,8 +18,9 @@ use crate::value::ValueView;
 pub(super) use super::simple_expr_stmt::{expr_stmt, let_stmt, temp_stmt};
 
 use super::{
-    block, ident, is_stmt_modifier_keyword, keyword, parse_comma_or_expr, parse_comma_or_expr_item,
-    parse_statement_modifier, parse_stmt_call_args, parse_stmt_call_args_no_paren, statement,
+    block, ident, is_stmt_modifier_keyword, keyword, parse_comma_or_expr,
+    parse_comma_or_expr_item_no_word_logical, parse_statement_modifier, parse_stmt_call_args,
+    parse_stmt_call_args_no_paren, statement,
 };
 
 // Themed submodules. This file is the facade: it owns the parser-state statics

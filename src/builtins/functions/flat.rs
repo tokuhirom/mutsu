@@ -67,23 +67,49 @@ pub(crate) fn deitemize_flat_operand(v: &Value) -> Value {
 
 pub(crate) fn flat_val(v: &Value, out: &mut Vec<Value>, flatten_arrays: bool) {
     match v.view() {
-        // Lists, Seqs, and Slips are always flattened; their children
-        // inherit flatten_arrays=true since Lists don't itemize.
-        ValueView::Array(items, ArrayKind::List) => {
+        // Slips always flatten — slipping is their whole purpose.
+        ValueView::Slip(items) => {
             for item in items.iter() {
                 flat_val(item, out, true);
             }
         }
-        ValueView::Seq(items) | ValueView::Slip(items) => {
-            for item in items.iter() {
-                flat_val(item, out, true);
+        // Lists and Seqs flatten in list context; as the element of an
+        // itemizing container (a `[...]` Array element lives in a Scalar
+        // container) they stay single and itemized: `(1, @a, 5).flat` with
+        // `my @a = 2, (3, 4)` yields `(1 2 (3 4) 5)`, and
+        // `[(1, 2), $(3, 4)].flat.raku` is `($(1, 2), $(3, 4)).Seq`.
+        ValueView::Array(items, ArrayKind::List) => {
+            if flatten_arrays {
+                for item in items.iter() {
+                    flat_val(item, out, true);
+                }
+            } else {
+                out.push(Value::array_with_kind(items.clone(), ArrayKind::ItemList));
+            }
+        }
+        ValueView::Seq(items) => {
+            if flatten_arrays {
+                for item in items.iter() {
+                    flat_val(item, out, true);
+                }
+            } else {
+                out.push(Value::array_with_kind(
+                    crate::gc::Gc::new(crate::value::ArrayData::new(items.to_vec())),
+                    ArrayKind::ItemList,
+                ));
             }
         }
         // Real Arrays ([...]): flatten if flag is set. Children get
-        // flatten_arrays=false because [...] itemizes its elements.
-        ValueView::Array(items, ArrayKind::Array) if flatten_arrays => {
-            for item in items.iter() {
-                flat_val(item, out, false);
+        // flatten_arrays=false because [...] itemizes its elements. As an
+        // element of an itemizing container the array itself stays single,
+        // itemized (`[1, [2, 3]].flat.raku` is `(1, $[2, 3]).Seq`).
+        ValueView::Array(items, ArrayKind::Array) => {
+            if flatten_arrays {
+                for item in items.iter() {
+                    flat_val(item, out, false);
+                }
+            } else {
+                out.push(Value::array_with_kind(items.clone(), ArrayKind::ItemArray));
             }
         }
         // A shaped (native) array (`array[int].new(:shape(10), …)`) flattens its

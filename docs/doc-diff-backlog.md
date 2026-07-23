@@ -113,6 +113,18 @@ doc) are version skew, not mutsu bugs — lowest priority.
   hash-initializer `ValuePair` arm through it (`build_hash_from_items`,
   `coerce_to_hash`, `MakeHashFromPairs`), covering `%( )`, plain list assignment,
   and single-pair assignment. Pin: `t/hash-junction-key.t`.
+- `SetHash.rakudoc` [1]/[2] — a QuantHash (SetHash/BagHash/MixHash) **slice**
+  assignment (`$sh<a b> = False, True`) wrongly replaced the container with a
+  fresh plain Hash of the raw rvalues, dropping every untouched member and the
+  membership/count/weight semantics (mutsu gave `(apple kiwi)` for
+  `<peach apple orange>.SetHash; $_<apple kiwi> = False, True` instead of
+  `(kiwi orange peach)`). The named-slice-assign path only handled Array/Hash
+  containers; added a mutable-Set/Bag/Mix arm that mirrors the single-key store
+  (per-key membership/count/weight, Nil-pads a short rvalue rather than cycling,
+  early-returns the per-key result list — Set → Bool, Bag → count, Mix → weight)
+  and throws RO for an immutable Set/Bag/Mix. This also fixed the doc's
+  `$fruits<apple banana kiwi>»++` hyper-increment over a SetHash slice. Pin:
+  `t/quanthash-slice-assign.t`.
 - `operators.rakudoc` [25]/[26] — the left-exclusive sequence operators
   (`^...` / `^...^`) failed to parse as an unparenthesized listop argument
   (`say 1 ^... 4`). `build_sequence_from_seeds` recognized `...`/`...^`/`…`/`…^`
@@ -148,7 +160,24 @@ doc) are version skew, not mutsu bugs — lowest priority.
 These root causes account for a large share of the survey's `mism`/`crash` and are
 intentionally deferred; see PLAN.md §8.5 and the ADRs:
 - **Nil-vs-Any identity knot** — `Nil.rakudoc`, `Mu.rakudoc`, uninit-scalar `.raku`/gist. No clean safe subset (closed #4822 twice).
-- **Lazy-list / container-repr (Track-B, fused with GC per ADR-0001)** — `List.rakudoc`, `Iterator.rakudoc`, `Iterable.rakudoc`, `Seq.rakudoc`, `list.rakudoc` (`loop`/`while`-as-lazy-list, flat-itemization depth).
+- **Lazy-list cluster — MOSTLY RESOLVED 2026-07-23** (4 PRs; memory
+  `lazy-list-cluster-progress`). What landed: Iterator `push-*`/`sink-all` on
+  temporary receivers + count return values (#5292, shared
+  `runtime/iterator_protocol.rs`); infinite `...` sequences survive `@`-array
+  assignment as reify-on-demand lazy arrays = L2b step 6, plus the `lazy`-prefix
+  sequence operand and the `gather do {…}; say` terminator misparse (#5294);
+  `.flat` itemization depth — Array elements stay single/itemized (#5295);
+  `loop`/`while`/`until` expressions are lazy Seqs pulled on demand (#5296,
+  gather-lowered like `lazy for`). **Still deferred (the real container-repr
+  core, fused with GC per ADR-0001):** closure_seq (`1, {rand} ... *`) /
+  scan_spec arrays stay force-capped on `@`-assign because
+  `S32-array/create.t` requires `.clone` to *share* the reifier — needs the
+  element-cell store (TODO in `value_lazy.rs`); `=:= IterationEnd` container
+  identity; IterationEnd's repr (it is a Str internally, so `.raku` quotes
+  it); the custom `does Iterator` residue where an `is Array` subclass skips
+  its user iterator (`__mutsu_array_storage` guard in
+  `vm_for_loop_dispatch.rs`); big-Int→Float degradation in geometric
+  sequence generation past i64 (`list.rakudoc` [1] tail).
 - **`and`/`or`/`not` word-logical precedence** — `operators.rakudoc`, `control.rakudoc`, `traps.rakudoc` (looser than list-prefix; needs statement-level re-association).
 - **FatRat-vs-Rat repr tag** — `Rat`/`FatRat`/`numerics` (`.^name` of a big FatRat is `Rat`).
 - **`$/<key>` postcircumfix vs. lexical-name collision inside a block** — `regexes.rakudoc` [23]

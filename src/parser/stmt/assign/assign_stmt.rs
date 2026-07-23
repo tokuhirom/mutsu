@@ -223,35 +223,45 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
 
     if let Some((stripped, op)) = parse_compound_assign_op(rest) {
         let (rest, _) = ws(stripped)?;
-        let (rest, rhs) = parse_assign_expr_or_comma(rest).map_err(|err| PError {
-            messages: merge_expected_messages(
-                "expected right-hand expression after compound assignment",
-                &err.messages,
-            ),
-            remaining_len: err.remaining_len.or(Some(rest.len())),
-            exception: None,
-        })?;
+        // The loose word-logicals bind looser than the compound assignment:
+        // `$x += 5 and 6` is `($x += 5) and 6`. Parse the RHS no-word-logical and
+        // re-attach a trailing tail below.
+        let (rest, rhs) =
+            parse_assign_expr_or_comma_no_word_logical(rest).map_err(|err| PError {
+                messages: merge_expected_messages(
+                    "expected right-hand expression after compound assignment",
+                    &err.messages,
+                ),
+                remaining_len: err.remaining_len.or(Some(rest.len())),
+                exception: None,
+            })?;
         // Use the sigil-appropriate lvalue expression so `%h ,= %g` / `@a ,= 3`
         // read the current container as a Hash/Array (not a scalar `Var("%h")`),
         // giving the comma operator the two containers to merge/append.
         let expr = compound_assigned_value_expr(var_expr, op, rhs);
         let stmt = Stmt::Assign {
-            name,
+            name: name.clone(),
             expr,
             op: AssignOp::Assign,
         };
+        let (rest, stmt) = crate::parser::stmt::word_logical_split::wrap_trailing_word_logical(
+            rest,
+            stmt,
+            crate::parser::stmt::word_logical_split::seed_read_expr(&name),
+        )?;
         return parse_statement_modifier(rest, stmt);
     }
     if let Some((stripped, op_name)) = parse_custom_compound_assign_op(rest) {
         let (rest, _) = ws(stripped)?;
-        let (rest, rhs) = parse_assign_expr_or_comma(rest).map_err(|err| PError {
-            messages: merge_expected_messages(
-                "expected right-hand expression after compound assignment",
-                &err.messages,
-            ),
-            remaining_len: err.remaining_len.or(Some(rest.len())),
-            exception: None,
-        })?;
+        let (rest, rhs) =
+            parse_assign_expr_or_comma_no_word_logical(rest).map_err(|err| PError {
+                messages: merge_expected_messages(
+                    "expected right-hand expression after compound assignment",
+                    &err.messages,
+                ),
+                remaining_len: err.remaining_len.or(Some(rest.len())),
+                exception: None,
+            })?;
         let stmt = Stmt::Assign {
             name: name.clone(),
             expr: Expr::InfixFunc {
@@ -262,6 +272,11 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             },
             op: AssignOp::Assign,
         };
+        let (rest, stmt) = crate::parser::stmt::word_logical_split::wrap_trailing_word_logical(
+            rest,
+            stmt,
+            crate::parser::stmt::word_logical_split::seed_read_expr(&name),
+        )?;
         return parse_statement_modifier(rest, stmt);
     }
 
@@ -495,7 +510,11 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         // `@x = 1, 2, 3` assigns the whole list. Atomic `⚛=` is always a scalar
         // store and is handled below.
         if sigil == b'$' && !is_atomic {
-            let (after_rhs, rhs) = expression(rest).map_err(|err| PError {
+            // Parse the RHS at a precedence that stops before the loose
+            // word-logicals: `$x = 1 and 2` is `($x = 1) and 2` (they are looser
+            // than item assignment). Any trailing `... and ...` is re-attached by
+            // `wrap_trailing_word_logical` below.
+            let (after_rhs, rhs) = expression_no_word_logical(rest).map_err(|err| PError {
                 messages: merge_expected_messages(
                     "expected right-hand expression after '='",
                     &err.messages,
@@ -507,7 +526,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             if after_ws.starts_with(',') && !after_ws.starts_with(",,") {
                 // `($x = rhs), <rest...>` — assign the first element, sink the rest.
                 let assign_expr = Expr::AssignExpr {
-                    name,
+                    name: name.clone(),
                     expr: Box::new(rhs),
                     is_bind: false,
                 };
@@ -524,30 +543,43 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                         r = r2;
                         break;
                     }
-                    let (r2, next) = expression(r2)?;
+                    let (r2, next) = expression_no_word_logical(r2)?;
                     items.push(next);
                     let (r2, _) = ws(r2)?;
                     r = r2;
                 }
                 let stmt = Stmt::Expr(Expr::ArrayLiteral(items));
+                let (r, stmt) =
+                    crate::parser::stmt::word_logical_split::wrap_trailing_word_logical(
+                        r,
+                        stmt,
+                        Expr::Var(name),
+                    )?;
                 return parse_statement_modifier(r, stmt);
             }
             let stmt = Stmt::Assign {
-                name,
+                name: name.clone(),
                 expr: rhs,
                 op: AssignOp::Assign,
             };
+            let (after_rhs, stmt) =
+                crate::parser::stmt::word_logical_split::wrap_trailing_word_logical(
+                    after_rhs,
+                    stmt,
+                    Expr::Var(name),
+                )?;
             return parse_statement_modifier(after_rhs, stmt);
         }
 
-        let (rest, expr) = parse_assign_expr_or_comma(rest).map_err(|err| PError {
-            messages: merge_expected_messages(
-                "expected right-hand expression after '='",
-                &err.messages,
-            ),
-            remaining_len: err.remaining_len.or(Some(rest.len())),
-            exception: None,
-        })?;
+        let (rest, expr) =
+            parse_assign_expr_or_comma_no_word_logical(rest).map_err(|err| PError {
+                messages: merge_expected_messages(
+                    "expected right-hand expression after '='",
+                    &err.messages,
+                ),
+                remaining_len: err.remaining_len.or(Some(rest.len())),
+                exception: None,
+            })?;
         if is_atomic {
             let stmt = Stmt::Expr(Expr::Call {
                 name: Symbol::intern("__mutsu_atomic_store_var"),
@@ -556,10 +588,15 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             return parse_statement_modifier(rest, stmt);
         }
         let stmt = Stmt::Assign {
-            name,
+            name: name.clone(),
             expr,
             op: AssignOp::Assign,
         };
+        let (rest, stmt) = crate::parser::stmt::word_logical_split::wrap_trailing_word_logical(
+            rest,
+            stmt,
+            crate::parser::stmt::word_logical_split::seed_read_expr(&name),
+        )?;
         return parse_statement_modifier(rest, stmt);
     }
     // Binding (:= or ::=)

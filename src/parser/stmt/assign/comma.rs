@@ -5,16 +5,6 @@ pub(in crate::parser) fn parse_comma_or_expr(input: &str) -> PResult<'_, Expr> {
     parse_comma_or_expr_impl(input, false)
 }
 
-/// Like [`parse_comma_or_expr`], but in *item* context: a bare single element
-/// with a trailing comma (`return 5,`) yields the scalar element, not a
-/// 1-element list. Rakudo distinguishes bare `5,` (scalar) from the
-/// parenthesized `(5,)` (a 1-element List, parsed by the circumfix parser and so
-/// unaffected). Used by `return` (and `fail`), where `return sprintf(...),`
-/// must yield the scalar so a `--> Str` routine does not see a `List`.
-pub(in crate::parser) fn parse_comma_or_expr_item(input: &str) -> PResult<'_, Expr> {
-    parse_comma_or_expr_impl(input, true)
-}
-
 fn parse_comma_or_expr_impl(input: &str, item_context: bool) -> PResult<'_, Expr> {
     let (rest, first) = expression(input)?;
     let (r, _) = ws(rest)?;
@@ -46,6 +36,60 @@ fn parse_comma_or_expr_impl(input: &str, item_context: bool) -> PResult<'_, Expr
                 return Ok((r2, finalize_list(items)));
             }
             let (r2, next) = expression(r2)?;
+            items.push(next);
+            r = r2;
+        }
+    }
+    Ok((rest, first))
+}
+
+/// Like [`parse_comma_or_expr`], but each element is parsed with
+/// [`expression_no_word_logical`] so the loose word-logicals bind looser than
+/// the comma. Parsing therefore stops at a top-level `... and ...`, leaving it
+/// for the statement-level word-logical tail. Used by the assignment /
+/// declaration / `return` RHS parsers.
+pub(in crate::parser) fn parse_comma_or_expr_no_word_logical(input: &str) -> PResult<'_, Expr> {
+    parse_comma_or_expr_no_wl_impl(input, false)
+}
+
+/// Item-context variant of [`parse_comma_or_expr_no_word_logical`]: a bare
+/// single element with a trailing comma (`return 5,`) yields the scalar element,
+/// not a 1-element list. Rakudo distinguishes bare `5,` (scalar) from the
+/// parenthesized `(5,)` (a 1-element List). Used by `return` (and `fail`).
+pub(in crate::parser) fn parse_comma_or_expr_item_no_word_logical(
+    input: &str,
+) -> PResult<'_, Expr> {
+    parse_comma_or_expr_no_wl_impl(input, true)
+}
+
+fn parse_comma_or_expr_no_wl_impl(input: &str, item_context: bool) -> PResult<'_, Expr> {
+    let (rest, first) = expression_no_word_logical(input)?;
+    let (r, _) = ws(rest)?;
+    if r.starts_with(',') && !r.starts_with(",,") {
+        let (r, _) = parse_char(r, ',')?;
+        let (r, _) = ws(r)?;
+        if r.starts_with(';') || r.is_empty() || r.starts_with('}') || r.starts_with(')') {
+            if item_context {
+                return Ok((r, first));
+            }
+            return Ok((r, Expr::ArrayLiteral(vec![first])));
+        }
+        let mut items = vec![first];
+        let (mut r, second) = expression_no_word_logical(r)?;
+        items.push(second);
+        loop {
+            let (r2, _) = ws(r)?;
+            if !r2.starts_with(',') {
+                let items = normalize_comma_list_items(items);
+                return Ok((r2, finalize_list(items)));
+            }
+            let (r2, _) = parse_char(r2, ',')?;
+            let (r2, _) = ws(r2)?;
+            if r2.starts_with(';') || r2.is_empty() || r2.starts_with('}') || r2.starts_with(')') {
+                let items = normalize_comma_list_items(items);
+                return Ok((r2, finalize_list(items)));
+            }
+            let (r2, next) = expression_no_word_logical(r2)?;
             items.push(next);
             r = r2;
         }

@@ -18,11 +18,27 @@ pub(crate) fn return_stmt(input: &str) -> PResult<'_, Stmt> {
         let (rest, _) = opt_char(rest, ';');
         return Ok((rest, Stmt::Return(Expr::Literal(Value::NIL))));
     }
-    let (rest, expr) = parse_comma_or_expr_item(rest).map_err(|err| PError {
+    // Parse the return value at a precedence that stops before the loose
+    // word-logicals (`and`/`or`/`andthen`/...): they are looser than `return`, so
+    // `return True and False` is `(return True) and False`. The `return` fires
+    // with `True`; `and False` is dead code (control has already transferred).
+    let (rest, expr) = parse_comma_or_expr_item_no_word_logical(rest).map_err(|err| PError {
         messages: merge_expected_messages("expected return value expression", &err.messages),
         remaining_len: err.remaining_len.or(Some(rest.len())),
         exception: None,
     })?;
+    // Consume (and discard) any trailing word-logical tail: it is unreachable
+    // because `return` transfers control before it would be evaluated.
+    let rest = {
+        let (r, _) = ws(rest)?;
+        if crate::parser::expr::starts_with_loose_word_logical(r) {
+            let (r, _dead) =
+                crate::parser::expr::word_logical_tail_pub(r, Expr::Literal(Value::NIL))?;
+            r
+        } else {
+            rest
+        }
+    };
     // `return $x:` is the indirect-method-call spelling `$x.return`, which
     // returns `$x` from the enclosing routine — identical to `return $x`. Accept
     // a bare trailing colon (no colon-args), i.e. a `:` immediately followed by a
@@ -122,7 +138,21 @@ pub(crate) fn die_stmt(input: &str) -> PResult<'_, Stmt> {
         };
         return parse_statement_modifier(rest, stmt);
     }
-    let (rest, expr) = expression(rest)?;
+    // Like `return`, `die`/`fail` transfer control before a trailing loose
+    // word-logical would run: `die X and Y` is `(die X) and Y`, so `die` throws
+    // (or `fail` returns a Failure) with `X` and the tail is dead code. Parse the
+    // argument no-word-logical and consume (discard) any trailing tail.
+    let (rest, expr) = expression_no_word_logical(rest)?;
+    let rest = {
+        let (r, _) = ws(rest)?;
+        if crate::parser::expr::starts_with_loose_word_logical(r) {
+            let (r, _dead) =
+                crate::parser::expr::word_logical_tail_pub(r, Expr::Literal(Value::NIL))?;
+            r
+        } else {
+            rest
+        }
+    };
     let stmt = if is_fail {
         Stmt::Fail(expr)
     } else {
