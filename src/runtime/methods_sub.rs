@@ -359,11 +359,6 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
-        if method == "WHERE" && args.is_empty() {
-            // Rakudo: the object's memory address. Any per-object-stable Int
-            // is compatible (addresses are not pinnable); use the sub's id.
-            return Some(Ok(Value::int(data.id as i64)));
-        }
         if method == "nextwith" {
             // Tail-style dispatch: call target with caller frame and return from current frame.
             let saved_env = self.env.clone();

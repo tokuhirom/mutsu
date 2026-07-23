@@ -1155,6 +1155,12 @@ the backlog.
   - Niche/parser one-offs (lower priority): extended identifiers in variable names
     (`my $foo:bar<baz>`), Win32 `IO::Path` backslash semantics, `Thread.run`/`Thread.start`,
     declarator-pod `.WHY` on a `&sub`, `X::AdHoc+{X::Promise::Broken}` role-mixin in `.^name`.
+  - **`&f` re-materializes a fresh Sub per mention** (found 2026-07-23 by the generic-WHERE
+    slice): `sub f() {1}; &f.WHICH` differs across two mentions (`Sub|27` then `Sub|29`;
+    raku: stable) because `sub_value_from_function_def` builds a new `SubData` (fresh id +
+    fresh env snapshot) on every `resolve_code_var`. `&f === &f` masks it via fingerprint
+    comparison, and `&f.WHERE` inherits the instability. A stable per-`FunctionDef` identity
+    interacts with wrap-chain ids (`wrap_chains` is keyed by `data.id`) — not a small slice.
 
 ### 8.2 Documented-surface coverage (doc examples + method matrix)
 

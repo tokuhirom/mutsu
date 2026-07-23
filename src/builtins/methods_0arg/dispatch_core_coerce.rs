@@ -528,6 +528,29 @@ pub(super) fn dispatch(
                 attrs,
             ))))
         }
+        "WHERE" => {
+            // Rakudo: `.WHERE` is the object's memory address as an Int.
+            // mutsu's scalar values are unboxed (no stable address to report),
+            // so derive a per-identity-stable Int from the WHICH identity
+            // string instead: reference types embed their allocation address /
+            // object id in it, value types their value. This preserves the
+            // observable contract (same object => same WHERE, distinct
+            // objects => distinct) without pinnable addresses.
+            let which_str = match dispatch(target, "WHICH") {
+                Some(Some(Ok(objat))) => match objat.view() {
+                    ValueView::Instance { attributes, .. } => attributes
+                        .as_map()
+                        .get("WHICH")
+                        .map(|v| v.to_string_value()),
+                    _ => None,
+                },
+                _ => None,
+            }?;
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            which_str.hash(&mut hasher);
+            Some(Some(Ok(Value::int((hasher.finish() >> 1) as i64))))
+        }
         "Bool" => {
             if matches!(target.view(), ValueView::Instance { .. })
                 && (target.does_check("Real") || target.does_check("Numeric"))
