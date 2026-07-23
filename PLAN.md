@@ -1374,13 +1374,16 @@ trailing comma (incl. type objects — `[HyperSeq,]`, `[List,]`; QuantHashes exc
 and `[Z]`-reduction-returns-a-Seq landed 2026-07-22 (pin `t/repr-residues-2.t`); the
 `[:a].raku` note was stale — current raku also renders `[:a]`, no divergence.
 
-- [ ] **`Proc.raku`/`.gist` render no attributes** (`Proc.new`); raku renders the full
-      form `Proc.new(in => IO::Pipe, out => IO::Pipe, err => IO::Pipe, os-error => Str,
-      exitcode => Nil, signal => Any, pid => Nil, command => [])` — for a *run* proc even
-      with a cyclic `(my \Proc_... = ...)` backref through its IO::Pipe. Needs Proc's
-      public attributes registered (its ClassDef has none) with type-object defaults.
-      (The worse half — gist/Str delegating to `.Numeric`, so `Proc.new.gist` was `-1` —
-      was fixed with `t/proc-gist-not-exitcode.t`.)
+- [x] **`Proc.raku`/`.gist` render no attributes** — fixed 2026-07-23. Registered Proc's
+      eight public attributes (`in`/`out`/`err`/`os-error`/`exitcode`/`signal`/`pid`/`command`)
+      in its ClassDef with type-object / value defaults, so a fresh `Proc.new` seeds them and
+      `.raku`/`.gist` render the full `Proc.new(in => IO::Pipe, ..., command => [])` form.
+      A native getter now supersedes the auto-generated accessor at the same MRO level
+      (`resolve_user_method_or_accessor`), so `.signal`/`.exitcode`/`.Int` keep their computed
+      fallbacks (0/Nil/-1) instead of returning the raw seeded `Any`/`Nil`. Pin extended in
+      `t/proc-gist-not-exitcode.t`. (The *run*-proc full form with the cyclic
+      `(my \Proc_... = ...)` backref through IO::Pipe remains a plain instance form — a deep
+      IO::Pipe-repr + backref-naming rabbit hole, out of scope.)
 - [ ] **`IO::Spec::Unix.new.raku` renders the type-object form `IO::Spec::Unix`** and its
       gist is `(Unix)`; raku renders `IO::Spec::Unix.new` for both. Traced 2026-07-22 as
       far as: the instance never reaches the generic attribute walk in

@@ -258,7 +258,7 @@ impl Interpreter {
         let mro = self.class_mro(class_name);
         for cn in mro.iter() {
             let is_ancestor = cn.as_str() != class_name;
-            let (has_local_method, has_role_method, has_attr) = {
+            let (has_local_method, has_role_method, has_attr, has_native) = {
                 let registry = self.registry();
                 if let Some(class_def) = registry.classes.get(cn.as_str()) {
                     let (mut local, mut role) = (false, false);
@@ -278,7 +278,13 @@ impl Interpreter {
                         .attributes
                         .iter()
                         .any(|(n, is_public, ..)| *is_public && n == method_name);
-                    (local, role, attr)
+                    // A built-in class (e.g. Proc) may register a public attribute
+                    // for `.raku`/introspection while a native method of the same
+                    // name is the real getter (its computed fallbacks differ from
+                    // the raw seeded default). The native method wins over the
+                    // auto-generated accessor at this level.
+                    let native = class_def.native_methods.contains(method_name);
+                    (local, role, attr, native)
                 } else if let Some(role_def) = registry.roles.get(cn.as_str()) {
                     // A punned role used as a parent class: its own methods
                     // and attribute accessors sit at this MRO level.
@@ -290,15 +296,20 @@ impl Interpreter {
                         .attributes
                         .iter()
                         .any(|(n, is_public, ..)| *is_public && n == method_name);
-                    (local, false, attr)
+                    (local, false, attr, false)
                 } else {
-                    (false, false, false)
+                    (false, false, false, false)
                 }
             };
             if has_local_method {
                 return Some(UserMethodOrAccessor::Method);
             }
             if has_attr {
+                // A native getter for the same name (built-in classes only)
+                // supersedes the auto-generated accessor.
+                if has_native {
+                    return Some(UserMethodOrAccessor::Method);
+                }
                 return Some(UserMethodOrAccessor::Accessor);
             }
             if has_role_method {
