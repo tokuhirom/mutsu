@@ -641,7 +641,7 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 - dists (each its own root cause; triage individually before claiming, confirm the
   raku `-I lib` baseline first): ~~Attribute::Predicate~~ (FIXED — see Done),
   File::Ignore (PARTIAL — module now loads via Regex.ACCEPTS fix; see Done),
-  IO::Path::AutoDecompress, ~~Math::Angle~~ (FIXED — see Done),
+  ~~IO::Path::AutoDecompress~~ (FIXED — see Done), ~~Math::Angle~~ (FIXED — see Done),
   ~~Math::PascalTriangle~~ (FIXED — see Done),
   ~~Statistics::LinearRegression~~ (FIXED — see Done), String::Rotate,
   Text::CodeProcessing, Trait::IO, WriteOnceHash, `are`, ~~`sortuk`~~ (FIXED — see Done),
@@ -666,6 +666,25 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 _(move tickets here with `[claim: <branch>]` when you start)_
 
 ## Done
+
+- **T-057 (IO::Path::AutoDecompress)** (PR `fix-qualified-native-ancestor-method`)
+  — test_die → t/01-basic.rakutest 8/8. Root cause: a qualified method call
+  `self.Builtin::method` where the qualifier is a **native builtin ancestor** was
+  not routed to the native method. The module's `Proccer` role does
+  `self.IO::Path::slurp(|c)` / `self.IO::Path::lines(|c)` to reach the parent's
+  native readers. mutsu's qualified dispatch only resolved a *user*-defined
+  ancestor method, so `resolve_method_with_owner("IO::Path","slurp")` returned
+  None: the instance path fell through to "No such method 'IO::Path::slurp'", and
+  the run-time-mixin path fell through to `dispatch_qualified_non_instance_method`,
+  which split at the FIRST `::` (`IO` / `Path::slurp`) → "Cannot dispatch to a
+  method on IO". Fix: after user-method lookup fails, both the instance and mixin
+  qualified-dispatch paths route to the native handler for the qualifier
+  (`try_qualified_native_ancestor_method` → `call_native_instance_method`) — which
+  bypasses any derived override, so an overriding `method slurp` calling
+  `self.IO::Path::slurp` gets the parent's native version instead of recursing.
+  A qualifier not in the MRO still dies; user-class ancestor qualified calls are
+  unchanged. Pin: `t/qualified-native-ancestor-method.t`.
+  File: `src/runtime/methods_qualified.rs`.
 
 - **T-057 (Math::PascalTriangle)** (PR `fix-where-named-param-sibling-ref`) —
   test_die → t/02-triangle.t 13/13 (release). Root cause: a `where` constraint on
