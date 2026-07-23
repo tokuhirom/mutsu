@@ -477,6 +477,38 @@ impl Compiler {
             });
             return;
         }
+        // `OUR::.<$name> {:=,=} value` is the stash spelling of `$OUR::name
+        // {:=,=} value` (roast pseudo-6c: `OUR::.<$x32> := $x`). The subscript
+        // key already carries the sigil, so reconstruct the sigiled pseudo-var
+        // and route through the working sigiled-OUR assignment/bind path rather
+        // than the generic index-assign (which writes a throwaway stash hash and
+        // silently drops the store).
+        if let Expr::PseudoStash(stash_name) = target
+            && stash_name == "OUR::"
+            && let Expr::Literal(lit) = index
+            && let Some(key) = lit.as_str()
+            && key.starts_with(['$', '@', '%', '&'])
+        {
+            let (is_bind, rhs) = match value {
+                Expr::Call { name, args } if *name == "__mutsu_bind_index_value" => (
+                    true,
+                    args.first().cloned().unwrap_or(Expr::Literal(Value::NIL)),
+                ),
+                other => (false, other.clone()),
+            };
+            // `$OUR::name` compiles to AssignExpr name "OUR::name" (scalar sigil
+            // dropped); `@`/`%`/`&` keep their sigil ahead of the qualifier.
+            let compiled_name = match key.as_bytes()[0] {
+                b'$' => format!("OUR::{}", &key[1..]),
+                sig => format!("{}OUR::{}", sig as char, &key[1..]),
+            };
+            self.compile_expr(&Expr::AssignExpr {
+                name: compiled_name,
+                expr: Box::new(rhs),
+                is_bind,
+            });
+            return;
+        }
         // Runtime-key PROCESS:: assignment (`PROCESS::{$k} = v`), notably how a
         // `//=` / `||=` compound assignment desugars its subscript into a temp
         // variable. Without this it would fall through to the generic path, which

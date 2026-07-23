@@ -297,6 +297,52 @@ impl Interpreter {
             .cloned()
     }
 
+    /// Resolve an `OUR::`-qualified *variable* read (scalar/array/hash) scoped
+    /// to the current package. `OUR::` names the `our` variables of the current
+    /// package: `$OUR::x` inside `package A {}` is `A::x`; at file scope
+    /// (`current_package == GLOBAL`) it is the bare `x`. **Authoritative** — a
+    /// miss returns `Some(Nil)` (the variable is genuinely absent from THIS
+    /// package), so the caller must not fall through to the bare-name
+    /// resolution, which would leak a same-named GLOBAL `our`. Returns `None`
+    /// only when `name` is not an `OUR::` *variable* form (a `&OUR::` code
+    /// name or an `OUR::Type` package), which the caller resolves normally.
+    pub(super) fn our_pseudo_var_read(&self, name: &str) -> Option<Value> {
+        // `@`/`%` keep their sigil in the env/our-store key; a scalar reaches
+        // GetGlobal sigil-less (`OUR::x`), and `&OUR::f` is code (handled below).
+        let (sigil, rest) = match name.as_bytes().first() {
+            Some(b'@' | b'%') => (&name[..1], &name[1..]),
+            _ => ("", name),
+        };
+        let bare = rest.strip_prefix("OUR::")?;
+        if bare.is_empty() {
+            return None;
+        }
+        // A sigil-less name whose final segment starts uppercase is a package
+        // or type (`OUR::A36`), not a variable — resolved elsewhere.
+        if sigil.is_empty() {
+            let last = bare.rsplit("::").next().unwrap_or(bare);
+            if last.chars().next().is_some_and(|c| c.is_uppercase()) {
+                return None;
+            }
+        }
+        let cur = self.current_package();
+        let qkey = if cur.is_empty() || cur == "GLOBAL" {
+            format!("{sigil}{bare}")
+        } else {
+            format!("{sigil}{cur}::{bare}")
+        };
+        // The `our` store holds both the bare and package-qualified keys and
+        // survives block-scope restoration (env drops the bare key on block
+        // exit); fall back to env for a live qualified alias. A miss is an
+        // authoritative Nil — the var is genuinely absent from THIS package.
+        Some(
+            self.get_our_var(&qkey)
+                .cloned()
+                .or_else(|| self.get_env_with_main_alias(&qkey))
+                .unwrap_or(Value::NIL),
+        )
+    }
+
     /// Write-back companion of [`read_package_scope_var`]: if a bare free
     /// variable resolves to an existing package-scope store entry (`our` var
     /// or package-block `my` lexical), update it in place so a mutation made

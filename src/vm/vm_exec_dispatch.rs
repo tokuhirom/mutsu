@@ -507,6 +507,13 @@ impl Interpreter {
                             Ok(Value::NIL)
                         }
                     })?;
+                // `OUR::`-qualified variable reads are scoped to the CURRENT
+                // package (`$OUR::x` inside `package A {}` is `A::x`, bare `x`
+                // at file scope). Authoritative: a miss is an undefined package
+                // variable, so it overrides any same-named GLOBAL `our` the
+                // generic chain above may have leaked (`our_pseudo_var_read`
+                // returns None for non-`OUR::` names, leaving `val` untouched).
+                let val = self.our_pseudo_var_read(name).unwrap_or(val);
                 // When the value is Nil and the variable has a type constraint,
                 // return the type object (consistent with GetLocal behavior).
                 let val = if val.is_nil() {
