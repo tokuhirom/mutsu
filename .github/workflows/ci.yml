@@ -85,6 +85,14 @@ jobs:
       - name: TAP tests (prove t/)
         run: prove -e 'timeout 30 target/debug/mutsu' t/
 
+      - name: Site snippets still produce their documented output
+        # Every code sample shipped on the wasm-demo site (landing highlights +
+        # tutorial lessons) runs under mutsu here and must match the output
+        # recorded next to it. `raku` is not installed on the runner, so the
+        # raku cross-check is skipped and this is a pure regression gate; the
+        # cross-check runs locally when the expectations are regenerated.
+        run: node scripts/check-site-snippets.mjs
+
       - name: Build (release, for roast)
         # The repo sets `[profile.release] debug = true` for local perf
         # profiling. CI never profiles, and full debug info bloats the binary

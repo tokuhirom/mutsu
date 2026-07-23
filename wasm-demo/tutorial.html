@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Raku tutorial — mutsu</title>
+<meta name="description" content="A hands-on tour of the Raku programming language: nine chapters of editable, runnable examples, in English and Japanese.">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+
+<nav class="site-nav"></nav>
+
+<noscript>
+  <p class="section">The tutorial runs a Raku interpreter in your browser, so it needs
+  JavaScript and WebAssembly enabled. The language itself is documented at
+  <a href="https://docs.raku.org/">docs.raku.org</a>.</p>
+</noscript>
+
+<div class="tutorial-layout">
+  <aside class="toc">
+    <p class="toc-intro" id="toc-intro"></p>
+    <h2 id="toc-title"></h2>
+    <div id="toc-body"></div>
+    <p class="toc-actions">
+      <button type="button" class="btn-ghost" id="clear-progress"></button>
+    </p>
+    <p class="toc-source" id="toc-source"></p>
+  </aside>
+
+  <main class="lesson">
+    <p class="crumb" id="lesson-crumb"></p>
+    <h1 id="lesson-title"></h1>
+    <div class="lesson-body" id="lesson-body"></div>
+
+    <div class="pane-title" id="editor-label"></div>
+    <div id="snippet-host"></div>
+
+    <nav class="lesson-nav">
+      <button type="button" class="btn-ghost" id="prev-btn"></button>
+      <span class="grow"></span>
+      <span class="hint" id="lesson-counter"></span>
+      <span class="grow"></span>
+      <button type="button" class="btn" id="next-btn"></button>
+    </nav>
+  </main>
+</div>
+
+<footer class="site-footer"></footer>
+
+<script type="module">
+import { renderChrome, currentLang, t } from './assets/i18n.js';
+import { parseCorpus, groupCorpus } from './assets/corpus.js';
+import { createSnippet } from './assets/snippet.js';
+
+import tutorialEn from './content/tutorial.en.js';
+import tutorialJa from './content/tutorial.ja.js';
+
+const TEXT = { en: tutorialEn, ja: tutorialJa };
+const PROGRESS_KEY = 'mutsu-tutorial-done';
+
+renderChrome('tutorial');
+
+const lessons = parseCorpus(await (await fetch('content/lessons.txt')).text());
+const chapters = groupCorpus(lessons);
+
+/* ---- progress ---------------------------------------------------- */
+
+function loadProgress() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(PROGRESS_KEY) || '[]'));
+  } catch {
+    return new Set();
+  }
+}
+function saveProgress(set) {
+  try {
+    localStorage.setItem(PROGRESS_KEY, JSON.stringify([...set]));
+  } catch { /* private mode */ }
+}
+let done = loadProgress();
+
+/* ---- routing ----------------------------------------------------- */
+
+function keyFromHash() {
+  const key = decodeURIComponent(location.hash.replace(/^#/, ''));
+  return lessons.some(l => l.key === key) ? key : lessons[0].key;
+}
+
+let currentKey = keyFromHash();
+
+function go(key) {
+  if (key === currentKey && location.hash) return;
+  currentKey = key;
+  location.hash = key;
+  render();
+  document.querySelector('.lesson h1').scrollIntoView({ block: 'nearest' });
+}
+
+/* ---- the one snippet widget, reused across lessons --------------- */
+
+const snippet = createSnippet(document.getElementById('snippet-host'), {
+  code: '',
+  expect: '',
+  minHeight: '11rem',
+  showExpected: true,
+  eagerBoot: true,
+});
+
+document.addEventListener('snippetrun', (e) => {
+  if (e.detail && e.detail.ok) {
+    done.add(currentKey);
+    saveProgress(done);
+    paintToc();
+  }
+});
+
+/* ---- rendering --------------------------------------------------- */
+
+const tocBody = document.getElementById('toc-body');
+
+function paintToc() {
+  const T = TEXT[currentLang()];
+  tocBody.textContent = '';
+  chapters.forEach((chapter, ci) => {
+    const box = document.createElement('div');
+    box.className = 'chapter';
+
+    const title = document.createElement('div');
+    title.className = 'chapter-title';
+    const num = document.createElement('span');
+    num.className = 'num';
+    num.textContent = String(ci + 1);
+    const label = document.createElement('span');
+    label.textContent = T.chapters[chapter.group] || chapter.group;
+    title.append(num, label);
+    box.appendChild(title);
+
+    for (const lesson of chapter.items) {
+      const a = document.createElement('a');
+      a.className = 'lesson-link';
+      a.href = `#${lesson.key}`;
+      a.textContent = (T.lessons[lesson.key] || {}).title || lesson.id;
+      if (lesson.key === currentKey) a.setAttribute('aria-current', 'true');
+      if (done.has(lesson.key)) a.classList.add('done');
+      a.addEventListener('click', (e) => { e.preventDefault(); go(lesson.key); });
+      box.appendChild(a);
+    }
+    tocBody.appendChild(box);
+  });
+}
+
+/**
+ * @param {boolean} loadCode  replace the editor contents with the lesson's
+ *   code.  False when only the language changed: the reader's edits are theirs,
+ *   and the code is language-independent anyway.
+ */
+function render(loadCode = true) {
+  const T = TEXT[currentLang()];
+  const idx = lessons.findIndex(l => l.key === currentKey);
+  const lesson = lessons[idx];
+  const text = T.lessons[lesson.key] || { title: lesson.id, body: '' };
+
+  document.title = `${text.title} — ${T.title}`;
+  document.getElementById('toc-intro').textContent = T.intro;
+  document.getElementById('toc-source').textContent = T.source;
+  document.getElementById('toc-title').textContent = t('toc.title');
+  document.getElementById('clear-progress').textContent = t('toc.reset-progress');
+  document.getElementById('lesson-crumb').textContent =
+    T.chapters[lesson.group] || lesson.group;
+  document.getElementById('lesson-title').textContent = text.title;
+  // Prose comes from the content modules in this repository, never user input.
+  document.getElementById('lesson-body').innerHTML = text.body;
+  document.getElementById('editor-label').textContent = t('lesson.editor');
+  document.getElementById('lesson-counter').textContent =
+    t('lesson.of', { n: idx + 1, total: lessons.length });
+
+  const prev = document.getElementById('prev-btn');
+  const next = document.getElementById('next-btn');
+  prev.textContent = t('lesson.prev');
+  next.textContent = t('lesson.next');
+  prev.disabled = idx === 0;
+  next.disabled = idx === lessons.length - 1;
+  prev.onclick = () => go(lessons[idx - 1].key);
+  next.onclick = () => go(lessons[idx + 1].key);
+
+  if (loadCode) {
+    snippet.setCode(lesson.code, lesson.expect, lesson.flags.includes('no-browser'));
+  }
+  paintToc();
+}
+
+document.getElementById('clear-progress').addEventListener('click', () => {
+  done = new Set();
+  saveProgress(done);
+  paintToc();
+});
+
+window.addEventListener('hashchange', () => {
+  const key = keyFromHash();
+  if (key !== currentKey) { currentKey = key; render(); }
+});
+window.addEventListener('langchange', () => render(false));
+
+render();
+document.body.dataset.ready = '1';
+</script>
+
+</body>
+</html>

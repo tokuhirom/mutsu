@@ -1401,6 +1401,74 @@ and `[Z]`-reduction-returns-a-Seq landed 2026-07-22 (pin `t/repr-residues-2.t`);
       arguably more useful, and no roast test exercises them. Matching Rakudo here is risky and
       low value; **deferred as an intentional divergence** unless a dist-compat consumer needs it.
 
+### 8.17 `&name` for a proto-less `multi` collapses to one candidate (found 2026-07-23 while writing the tutorial site)
+
+Taking a code reference to a `multi` that has **no explicit `proto`** and then invoking it as a
+value — the ordinary `.map(&f)` / `.grep(&f)` / `.sort(&f)` shape — does not multi-dispatch. It
+either calls one fixed candidate or nothing at all:
+
+```raku
+multi k(Int $n) { "int $n" }
+multi k(Str $s) { "str $s" }
+say (1, "a").map(&k).join(" ");   # raku: "int 1 str a"   mutsu: "1 a"
+
+multi f(Int $n where $n %% 3) { "Fizz" }
+multi f(Int $n)               { ~$n }
+say (1..5).map(&f).join(" ");     # raku: "1 2 Fizz 4 5"  mutsu: "1 2 3 4 5"
+```
+
+Adding `proto k($) {*}` fixes it, and every *direct* call form is already correct
+(`f(3)`, `(&f)(3)`, `my &g = &f; g(3)`, `&f(3)`) — so this is specifically the
+value-carried callable path.
+
+- Route: `Interpreter::resolve_code_var` (`src/runtime/accessors_resolve.rs:302-383`). With a
+  proto it returns a by-name `Value::routine_parts`, which re-dispatches by name and is correct.
+  Without one it takes either the `def.is_some()` arm (a plain-signature candidate is reachable
+  under the unsuffixed `GLOBAL::<name>` key, so `sub_value_from_function_def` hands back that
+  ONE candidate — the `f` case) or, when no unsuffixed key exists, the `is_multi` arm that builds
+  an empty-body dispatcher Sub carrying `__mutsu_multi_dispatch_candidates` (the `k` case, which
+  then produces no output at all). `call_sub_value`
+  (`src/runtime/resolution_call_sub.rs:234-276`) does understand that dispatcher env, so the
+  fault is upstream of it: the value handed out is wrong, and its fallback ladder
+  (`bind_function_args_values` → slurpy → `candidates.first()`) ignores `where` constraints and
+  specificity ordering anyway.
+- **Likely correct fix:** make `resolve_code_var` return the by-name routine value for *any*
+  name with multi candidates (the proto path), rather than materializing a candidate or a
+  synthetic dispatcher. The captured-Sub dispatcher then only needs to survive the
+  out-of-scope case, and should reuse the real specificity-sorted dispatch
+  (`sort_candidates_by_specificity` / `push_multi_dispatch_frame`) instead of its own ladder.
+- **Why it is not a one-liner:** the `is_multi` dispatcher exists precisely so a `&multi-sub`
+  outlives its defining scope, so the by-name value must keep working after the scope exits;
+  and `resolve_code_var` is on the hot path for every `&foo`. Needs a test matrix over
+  proto/no-proto × in-scope/out-of-scope × where-constrained/type-only.
+- Repro kept at `wasm-demo/content/highlights.txt` (`why/multi` uses the direct-call form as a
+  workaround); `scripts/check-site-snippets.mjs` cross-checks against `raku` and would catch a
+  regression the moment the snippet is switched back to `&fizz`.
+
+### 8.18 The WebAssembly build traps on `start` / `Channel` instead of degrading (found 2026-07-23 building the tutorial site)
+
+`start { ... }` reaches `spawn_callable_promise` → `spawn_user_thread` → `std::thread::spawn`
+(`src/runtime/builtins_system.rs:13`), which on `wasm32-unknown-unknown` has no
+implementation and traps. In the browser that surfaces as `RuntimeError: unreachable`,
+which also poisons the whole wasm instance — every later evaluation in that session is
+garbage until the page rebuilds the interpreter.
+
+- Affected: `start`, `Promise` combinators that spawn, `Channel` producers, `Proc::Async`.
+  `react`/`whenever` over a `Supply.from-list` already works (no spawn), as does
+  `gather`/`take`.
+- **Likely correct fix:** on wasm, run a `start` block *synchronously* and return an
+  already-kept (or broken) `Promise`, and give `Channel` the same treatment — a
+  single-threaded scheduler is the honest semantics for a platform with one thread, and it
+  is what a reader of the concurrency chapter would expect to see work. The mechanism is one
+  `#[cfg(target_arch = "wasm32")]` arm in `spawn_callable_promise` plus the equivalent for
+  the channel/supply pumps, but the *semantics* need thought: a `start` that blocks until it
+  finishes changes the observable ordering of any program that relies on interleaving, and
+  `await` on a never-kept promise would deadlock rather than trap.
+- **Not attempted here.** The tutorial marks those two lessons `no-browser` in
+  `wasm-demo/content/lessons.txt`, so the site explains the limitation and shows the
+  recorded native output rather than a trap. Removing those flags is the acceptance test
+  for this item; `wasm-demo/e2e.test.mjs` sweeps every non-flagged lesson in a real browser.
+
 
 ## Metrics
 
