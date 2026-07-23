@@ -1392,6 +1392,26 @@ and `[Z]`-reduction-returns-a-Seq landed 2026-07-22 (pin `t/repr-residues-2.t`);
       (`_ => to_string_value`), and `.Str` of the instance is empty while `.raku` is the
       bare class name, so an earlier arm intercepts. Needs a dispatch trace before fixing;
       cosmetic, low value.
+- [ ] **`IO::Path::Parts.raku`/`.gist` drop the constructor arguments** — found 2026-07-23.
+      `IO::Path::Parts.new('C:', '/some/dir', 'foo.txt').gist` renders `IO::Path::Parts.new`
+      (mutsu) vs `IO::Path::Parts.new("C:","/some/dir","foo.txt")` (raku) — the three attrs
+      (`volume`/`dirname`/`basename`) are not walked into the repr. Same class of bug as the
+      just-fixed Proc one (§8.15 above): register the attributes so the generic attribute walk
+      renders the full `.new(...)` form. `.Str` also diverges (mutsu `IO::Path::Parts()` vs raku
+      `IO::Path::Parts<addr>`) but that is the object-address form and low value. **The rest of
+      IO::Path::Parts already matches raku exactly** — the documented spec surface (`.new`,
+      `.volume`/`.dirname`/`.basename`, Associative `$parts<k>`, Positional `$parts[0]` → Pair,
+      Iterable `for $parts[]`/`.map` → 3 pairs, `.hash`/`.Hash`, `.^name`, type-matching against
+      Positional/Associative/Iterable, and construction via `IO::Path.parts` / `IO::Spec.split`)
+      is fully implemented and verified. Pin target: `t/io-path-parts-repr.t`.
+- [ ] **Undocumented single-item fallback methods diverge from Rakudo (low value, no roast
+      coverage)** — `.elems` (mutsu 3 / raku 1), `.list`/`.List` (mutsu 3 pairs / raku `(self,)`),
+      `.keys` (mutsu `(volume dirname basename)` / raku `(0)`), `.values` (mutsu 3 parts / raku
+      `(self,)`), `.pairs`/`.kv` (mutsu 3 pairs / raku `(0 => self)`), and bare `for $parts`
+      (mutsu 3 pairs / raku self once, because raku's `.list` is `(self,)`). These are Rakudo
+      accidents — `.elems == 1` on a three-part container is nonsensical, mutsu's behavior is
+      arguably more useful, and no roast test exercises them. Matching Rakudo here is risky and
+      low value; **deferred as an intentional divergence** unless a dist-compat consumer needs it.
 
 
 ## Metrics
