@@ -85,6 +85,44 @@ impl Interpreter {
         Self::is_stub_routine_body(&def.body)
     }
 
+    /// Methods every object inherits from `Mu`/`Any` and therefore always
+    /// responds to, so a role requirement of this name is satisfied even when
+    /// the composing class does not define it (rakudo satisfies a `method new
+    /// {...}` role stub with the inherited `Mu.new`). Mirrors the universal-set
+    /// in `value_can_method`; kept to the object-protocol / coercion defaults
+    /// that a bare class genuinely provides.
+    fn is_universal_object_method(method_name: &str) -> bool {
+        matches!(
+            method_name,
+            "new"
+                | "bless"
+                | "CREATE"
+                | "clone"
+                | "defined"
+                | "Bool"
+                | "so"
+                | "not"
+                | "gist"
+                | "raku"
+                | "perl"
+                | "Str"
+                | "item"
+                | "self"
+                | "sink"
+                | "WHAT"
+                | "WHICH"
+                | "WHERE"
+                | "HOW"
+                | "WHY"
+                | "VAR"
+                | "DEFINITE"
+                | "isa"
+                | "does"
+                | "can"
+                | "ACCEPTS"
+        )
+    }
+
     /// Remove duplicate method candidates that are the *same* underlying
     /// definition reaching a class through multiple composition paths (a role
     /// diamond). Identity is the method body's `Arc` pointer plus its positional
@@ -256,6 +294,18 @@ impl Interpreter {
                             required,
                         ));
                         let total = inherited_matches + accessor_match;
+                        if total == 0 && Self::is_universal_object_method(&method_name) {
+                            // A role requirement is satisfied by NAME, and every
+                            // object inherits a set of methods from `Mu`/`Any`
+                            // (`new`, `bless`, `clone`, `gist`, `defined`, ...).
+                            // rakudo composes fine when a role stub `method new
+                            // {...}` is "implemented" only by the inherited
+                            // `Mu.new`; the class need not redefine it. (Real
+                            // dist: Tree::Binary::PrettyTree provides only
+                            // `submethod BUILD`, relying on `Mu.new` to satisfy
+                            // `Renderer`'s `method new {...}` requirement.)
+                            continue;
+                        }
                         if total == 0 {
                             // rakudo: "Method 'o' must be implemented by A
                             // because it is required by roles: C1, R1." — an

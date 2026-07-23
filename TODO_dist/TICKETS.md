@@ -644,7 +644,8 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
   IO::Path::AutoDecompress, ~~Math::Angle~~ (FIXED — see Done), Math::PascalTriangle,
   ~~Statistics::LinearRegression~~ (FIXED — see Done), String::Rotate,
   Text::CodeProcessing, Trait::IO, WriteOnceHash, `are`, ~~`sortuk`~~ (FIXED — see Done),
-  Tree::Binary::PrettyTree (required role method not seen as implemented).
+  Tree::Binary::PrettyTree (role-`new` requirement FIXED; now blocked on a
+  separate `class Iterator does Iterator` name-resolution issue — see Done).
 - These `test_die` on the current binary but were not individually reproduced.
   Split off a dedicated ticket when you pick one up.
 - Triaged 2026-07-23 (deferred, each deep — own root cause):
@@ -966,3 +967,20 @@ _(move tickets here with `[claim: <branch>]` when you start)_
   to an `@` param into a fresh real Array (`runtime/types/binding_signature.rs`).
   SortUk's sort loop does `(@data[$w1],@data[$w2]).=reverse` on `@data is copy`.
   Pin: `t/array-is-copy-list-arg.t`.
+
+- **T-057 (Tree::Binary::PrettyTree)** (PR `fix-role-required-universal-method`) —
+  test_die → role-`new` requirement FIXED (still blocked on a separate issue). One
+  general bug: a role requiring a method that every object inherits from `Mu`/`Any`
+  (`method new {...}`, `gist`, `clone`, ...) was reported "Method 'new' must be
+  implemented by C because it is required by roles: R." — the composition check
+  only counted class/parent-defined methods, not the universal defaults. Now the
+  requirement is satisfied by name when it is a universal object method
+  (`runtime/registration.rs`, mirrors `value_can_method`); a non-universal required
+  method still errors. Pin: `t/role-required-universal-method.t`.
+  **Residual (deferred, separate deep bug):** Tree::Binary defines
+  `class Iterator does Iterator` inside `package Tree::Binary`, where the second
+  `Iterator` is the **core Raku `Iterator` role**. mutsu resolves the `does`
+  target to the class being defined (same short name in the same package),
+  producing a false "C3 MRO cycle detected at Tree::Binary::Iterator". The `does`
+  role-name lookup must exclude the class under composition and fall back to the
+  outer/core role.
