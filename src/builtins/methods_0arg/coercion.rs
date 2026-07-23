@@ -613,8 +613,14 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
                 // A genuinely-lazy list stays lazy through `.Array`/`.list`:
                 // tag it with the target context so `.WHAT` reports `Array`/`List`
-                // without materializing the (possibly infinite) generator.
-                ValueView::LazyList(ll) if ll.is_genuinely_lazy() => {
+                // without materializing the (possibly infinite) generator. A
+                // live (not-yet-pulled) gather coroutine is equally deferred —
+                // `(loop { ... }).list[2]` must pull three iterations, not
+                // force the (possibly infinite) loop here.
+                ValueView::LazyList(ll)
+                    if ll.is_genuinely_lazy()
+                        || (ll.coroutine.is_some() && ll.cache.lock().unwrap().is_none()) =>
+                {
                     if want_array {
                         Some(Ok(Value::lazy_list(crate::gc::Gc::new(
                             ll.with_array_context(),
