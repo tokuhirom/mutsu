@@ -93,6 +93,11 @@ pub(crate) fn process_line(
     // reset belongs here rather than in `run` itself.
     interpreter.last_value.take();
     interpreter.last_topic_value.take();
+    // The line's final statement is what the prompt displays, so it is a value
+    // position rather than sink context — the same rule EVAL follows. Without
+    // this, typing `1 + 2 * 3` answers 7 *and* warns "Useless use of ... in
+    // sink context"; rakudo's REPL just answers 7.
+    crate::parser::set_eval_value_tail();
     let display = match interpreter.run(accumulated) {
         Ok(_) => {
             let output = interpreter.output().to_string();
@@ -185,6 +190,45 @@ mod tests {
     fn test_multiline_block() {
         let out = repl_session(&["if True {", "  say 'yes'", "}"]);
         assert_eq!(out, vec!["yes\n"]);
+    }
+
+    /// Helper: run a session and hand back the warnings it emitted alongside
+    /// the displayed values.
+    fn repl_session_warnings(lines: &[&str]) -> (Vec<String>, String) {
+        let mut interpreter = Interpreter::new();
+        interpreter.set_program_path("<repl-test>");
+        let mut accumulated = String::new();
+        let mut outputs = Vec::new();
+        for line in lines {
+            let (_result, display) = process_line(&mut interpreter, &mut accumulated, line);
+            if let Some(text) = display {
+                outputs.push(text);
+            }
+        }
+        (outputs, interpreter.warnings_emitted().to_string())
+    }
+
+    /// A line's last statement is the value the prompt shows, so it is not sink
+    /// context — rakudo's REPL answers `1 + 2 * 3` with 7 and no warning.
+    #[test]
+    fn test_final_expression_is_not_sink_context() {
+        let (out, warnings) = repl_session_warnings(&["1 + 2 * 3"]);
+        assert_eq!(out, vec!["7\n"]);
+        assert!(
+            !warnings.contains("Useless use"),
+            "REPL warned on its own displayed value: {warnings}"
+        );
+    }
+
+    /// ...but a statement the line genuinely discards still warns, so this is a
+    /// value-position exemption rather than warnings being switched off.
+    #[test]
+    fn test_discarded_statement_still_warns() {
+        let (_out, warnings) = repl_session_warnings(&["42; say 'hi'"]);
+        assert!(
+            warnings.contains("Useless use"),
+            "a discarded statement should still warn, got: {warnings:?}"
+        );
     }
 
     /// Helper: same as repl_session but with immediate_stdout enabled
