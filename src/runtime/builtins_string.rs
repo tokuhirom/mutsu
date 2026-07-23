@@ -61,14 +61,20 @@ impl Interpreter {
                 _ => continue,
             };
             if !self.has_user_method(&cn, method) {
-                // A bare type object rendered with `%s` stringifies to "" with
-                // rakudo's "uninitialized value of type X in string context"
-                // warning (matching `~Int` / `Int.Str`), rather than the `(Int)`
-                // gist. Numeric directives already coerce a type object to 0 in
-                // the pure formatter, so only `%s` warns/coerces here.
-                if is_type_object && method == "Str" {
-                    let coerced = self.warn_type_object_string_context(&cn, false)?;
-                    actual_args[idx] = Value::str(coerced.to_string_value());
+                // A bare type object stringifies (`%s`) to "" with rakudo's
+                // "uninitialized value of type X in string context" warning
+                // (matching `~Int` / `Int.Str`), rather than the `(Int)` gist; a
+                // numeric directive coerces it to 0 with the "... in numeric
+                // context" warning (matching `+Int`). The pure formatter already
+                // renders the numeric 0, so the numeric arm only emits the
+                // warning.
+                if is_type_object {
+                    if method == "Str" {
+                        let coerced = self.warn_type_object_string_context(&cn, false)?;
+                        actual_args[idx] = Value::str(coerced.to_string_value());
+                    } else {
+                        self.warn_type_object_numeric_context(&cn)?;
+                    }
                 }
                 continue;
             }
