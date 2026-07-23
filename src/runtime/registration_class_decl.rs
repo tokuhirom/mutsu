@@ -1446,19 +1446,38 @@ impl Interpreter {
                     // to it with an Attribute introspection object; otherwise raise
                     // X::Comp::Trait::Unknown. Kept in a separate method so its
                     // locals don't inflate this already-large function's frame.
-                    if !unknown_traits.is_empty()
-                        && let Err(err) = self.apply_attribute_traits(
+                    if !unknown_traits.is_empty() {
+                        if let Err(err) = self.apply_attribute_traits(
                             unknown_traits,
                             &attr_name_str,
                             *sigil,
                             *is_public,
                             name,
                             type_constraint.as_deref(),
-                        )
-                    {
-                        self.set_current_package(saved_package);
-                        self.env = saved_env;
-                        return Err(err);
+                        ) {
+                            self.set_current_package(saved_package);
+                            self.env = saved_env;
+                            return Err(err);
+                        }
+                        // A user-defined `trait_mod:<is>` may have called
+                        // `.^add_method` on the class currently being composed
+                        // (e.g. Attribute::Predicate's `is predicate` adds a
+                        // `has-foo` accessor). Those methods land directly in the
+                        // registry entry, but the local `class_def` — re-inserted
+                        // at the end of body processing — would clobber them.
+                        // Merge any registry methods not already present locally,
+                        // mirroring the class_def re-sync done after run_block_raw.
+                        if let Some(reg_cd) = self.registry().classes.get(name) {
+                            let added: Vec<(String, Vec<MethodDef>)> = reg_cd
+                                .methods
+                                .iter()
+                                .filter(|(mname, _)| !class_def.methods.contains_key(*mname))
+                                .map(|(mname, mdefs)| (mname.clone(), mdefs.clone()))
+                                .collect();
+                            for (mname, mdefs) in added {
+                                class_def.methods.insert(mname, mdefs);
+                            }
+                        }
                     }
 
                     // Handle class-level attributes (our $.x / my $.x)
@@ -1737,6 +1756,7 @@ impl Interpreter {
                         is_default: *is_default_candidate,
                         deprecated_message: deprecated_message.clone(),
                         is_submethod: *is_submethod,
+                        captured_env: None,
                     };
                     // `my method` and `our method` are NOT part of the class
                     // method table — they are only callable as functions.

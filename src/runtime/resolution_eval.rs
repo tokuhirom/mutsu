@@ -107,6 +107,10 @@ impl Interpreter {
         }
         compiler.is_routine = !self.routine_stack.is_empty();
         compiler.lexically_in_routine = !self.routine_stack.is_empty();
+        // Let a nested closure in this body recognize the enclosing routine's
+        // sigilless parameters (`\attr`) as lexical captures rather than
+        // barewords. The fresh compiler otherwise has no signature context.
+        compiler.seed_enclosing_sigilless(&self.pending_eval_sigilless);
         let scope = if let Some(frame) = self.routine_stack.last() {
             // Set enclosing_package to the clean package name so that
             // $?PACKAGE resolves to the package, not the mangled routine

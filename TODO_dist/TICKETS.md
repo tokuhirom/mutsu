@@ -639,7 +639,8 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 
 ### T-057 — test_die batch (seed-555, un-triaged)  [impact: several dists]
 - dists (each its own root cause; triage individually before claiming, confirm the
-  raku `-I lib` baseline first): Attribute::Predicate, File::Ignore,
+  raku `-I lib` baseline first): ~~Attribute::Predicate~~ (FIXED — see Done),
+  File::Ignore,
   IO::Path::AutoDecompress, Math::Angle, Math::PascalTriangle,
   ~~Statistics::LinearRegression~~ (FIXED — see Done), String::Rotate,
   Text::CodeProcessing, Trait::IO, WriteOnceHash, `are`, `sortuk`,
@@ -886,3 +887,35 @@ _(move tickets here with `[claim: <branch>]` when you start)_
   angle key. Trait::Env now parses; a follow-up cross-module private-sub
   false-redeclaration (`sub apply-trait` in two modules) and a missing JSON::Tiny
   dep still block full load — see `bug-cross-module-private-sub-redeclaration`.
+- **T-057 (Attribute::Predicate)** (#PENDING) — 0/4 → 4/4. The dist's `is
+  predicate` attribute trait (`multi sub trait_mod:<is>(Attribute:D \attr,
+  :$predicate!)`) builds `method { attr.get_value(self).defined }` and installs
+  it with `.^add_method`. Four general bugs on that path:
+  1. **A trait-added method was clobbered by class composition.** During class
+     registration the attribute trait's `.^add_method` writes straight into the
+     registry entry, but the local `class_def` (re-inserted at the end of body
+     processing) overwrote it. Merge registry methods not present locally after
+     `apply_attribute_traits`, mirroring the class_def re-sync already done after
+     `run_block_raw` (`registration_class_decl.rs`).
+  2. **An escaping closure did not capture sigilless bindings.** `\attr` /
+     `my \x` read from a nested closure compiled to a plain `GetBareWord` — fine
+     while the creating frame was live, but once it returned the bare name
+     degraded to the literal string (`{ thing }` returned `"thing"`). The
+     compiler now hands enclosing sigilless names down to nested closures
+     (`enclosing_sigilless`) and emits a by-name `GetGlobal` (recorded as a free
+     variable and captured) for them (`compiler/mod.rs`, `compiler/expr.rs`).
+  3. **The interpret dispatch path lost the signature's sigilless context.** The
+     multi/user-sub fallback compiles a body with a *fresh* `Compiler`, so a
+     nested closure there never saw `\attr` as a lexical. Seed the fresh
+     compiler's `enclosing_sigilless` from the routine's sigilless params via a
+     `pending_eval_sigilless` interpreter field (`builtins_operators_fallback.rs`,
+     `resolution_eval.rs`). `MethodDef` gained a `captured_env` carrying the
+     closure literal's frozen scope so a `.^add_method` method resolves its
+     captures at dispatch (`decl_types.rs`, `vm_method_dispatch.rs`,
+     `methods_classhow_dispatch.rs`).
+  4. **An angle-bracket trait argument was dropped.** `is predicate<bazzy>`
+     parsed as bare `is predicate` (Bool True) with `<bazzy>` leaking out as a
+     separate statement; the trait sub therefore never got the name. The
+     attribute-trait parser now consumes a `<...>` word-quote as the trait
+     argument (single word → Str, multiple → list) (`has_decl.rs`).
+  - Pin: `t/attribute-trait-adds-method.t`.

@@ -1237,6 +1237,20 @@ impl Interpreter {
         // owner class declared statics.
         self.inject_class_body_statics(owner_class);
 
+        // A method installed via `.^add_method` with a closure literal
+        // (`method { $captured }`) carries the frozen creating-scope env so its
+        // captures still resolve after that scope is gone. Merge those names in
+        // (params/self/attrs inserted above win) so the locals-population loop
+        // below picks them up via its by-name `self.env().get(name)` fallback.
+        if let Some(captured) = &method_def.captured_env {
+            let env = self.env_mut();
+            for (sym, val) in captured.iter() {
+                if !env.contains_key_sym(*sym) {
+                    env.insert_sym(*sym, val.clone());
+                }
+            }
+        }
+
         // Raku: routine parameters are read-only by default (`method m($x) { $x = 5 }`
         // dies). The slow path does this in `bind_function_args_values`; the fast
         // path binds params directly, so mark `$` scalar params read-only here.
