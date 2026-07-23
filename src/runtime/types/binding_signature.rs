@@ -1331,6 +1331,23 @@ impl Interpreter {
                     // caller's `@a`.
                     if is_copy {
                         value = value.detach_shared_container();
+                        // A `@`-sigil `is copy` param is a *mutable Array* copy of
+                        // its argument, even when the argument is an (immutable)
+                        // List (`f(<x y>)`, `f((1,2))`): `@d[0] = …`, `.push`, and
+                        // `.=reverse` must work. `detach_shared_container` preserves
+                        // the `List` kind, so element assignment was still rejected
+                        // as "Cannot modify an immutable List". Reify any list-kind
+                        // value into a fresh real Array (keeping its element data /
+                        // type metadata). A real-Array argument already detached above.
+                        if pd.name.starts_with('@')
+                            && let ValueView::Array(gc, ArrayKind::List | ArrayKind::ItemList) =
+                                value.view()
+                        {
+                            value = Value::array_with_kind(
+                                crate::gc::Gc::new((**gc).clone()),
+                                ArrayKind::Array,
+                            );
+                        }
                     }
                     if pd.sigilless {
                         let alias_key = sigilless_alias_key(&pd.name);
