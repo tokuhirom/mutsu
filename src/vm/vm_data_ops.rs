@@ -20,7 +20,7 @@ impl Interpreter {
             {
                 let source_name = source_name.resolve();
                 let inner = inner.clone();
-                elems.push(self.capture_var_cell(code, &source_name, inner));
+                elems.push(self.capture_var_cell_inner(code, &source_name, inner, true));
                 continue;
             }
             // Force lazy IO lines into eager arrays
@@ -167,6 +167,22 @@ impl Interpreter {
         name: &str,
         inner: Value,
     ) -> Value {
+        self.capture_var_cell_inner(code, name, inner, false)
+    }
+
+    /// Like `capture_var_cell`, but when `box_type_objects` is set a plain type
+    /// object (an uninitialized `my $a` holds `Any`) is also boxed into a fresh
+    /// `ContainerRef` cell. This is required for List container aliasing: four
+    /// distinct uninitialized `my` scalars must be four distinct containers
+    /// (`$a, $b X!=:= $c, $d` is all-True), which only holds if each gets its own
+    /// cell rather than falling back to the shared `Any` type object.
+    pub(super) fn capture_var_cell_inner(
+        &mut self,
+        code: &CompiledCode,
+        name: &str,
+        inner: Value,
+        box_type_objects: bool,
+    ) -> Value {
         if inner.is_container_ref() {
             return inner;
         }
@@ -176,17 +192,20 @@ impl Interpreter {
         if self.locals[idx].is_container_ref() {
             return self.locals[idx].clone();
         }
-        // Only box a plain scalar container; reference/type values are not
-        // re-containerized (mirrors the box-on-capture guard).
-        if matches!(
+        // Only box a plain scalar container; genuine reference values are not
+        // re-containerized (mirrors the box-on-capture guard). A bare type object
+        // (`Any`) is boxed only for List aliasing (`box_type_objects`), so that
+        // distinct uninitialized scalars stay distinct containers.
+        let is_reference = matches!(
             self.locals[idx].view(),
-            ValueView::Package(_)
-                | ValueView::Array(..)
+            ValueView::Array(..)
                 | ValueView::Hash(..)
                 | ValueView::Sub(..)
                 | ValueView::Instance { .. }
                 | ValueView::Proxy { .. }
-        ) {
+        );
+        let is_type_object = matches!(self.locals[idx].view(), ValueView::Package(_));
+        if is_reference || (is_type_object && !box_type_objects) {
             return self.locals[idx].clone();
         }
         let cell = self.locals[idx].clone().into_container_ref();

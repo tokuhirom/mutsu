@@ -279,6 +279,14 @@ pub(crate) struct Compiler {
     /// Standalone Pair literals (`my $p = (k => $v)`) still capture for
     /// write-through (S02:1704).
     suppress_pair_capture: bool,
+    /// When set, an `ArrayLiteral` does NOT box its scalar-variable elements into
+    /// aliasing `ContainerRef` cells (the List container-aliasing behavior). Set
+    /// while compiling a `for`-loop's synthetic single-element iterable wrap
+    /// (`for $a` -> `ArrayLiteral([$a])`): the loop already handles `is rw`
+    /// write-back through its own `TagContainerRef` mechanism, so aliasing here
+    /// would write the shared cell back into `$a` and create a self-referential
+    /// `ContainerRef` cycle (infinite loop on the next read).
+    suppress_list_var_alias: bool,
     /// Constant-folding state (ADR-0006 §2.1), shared with every child compiler
     /// of this compilation unit so an operator declaration found while compiling
     /// a sub body disables folding for the whole unit.
@@ -343,6 +351,7 @@ impl Compiler {
             compiling_our_sub: false,
             is_mainline: false,
             suppress_pair_capture: false,
+            suppress_list_var_alias: false,
             synthetic_block_body: false,
             next_try_is_bare_block: false,
             fold_ctx: std::sync::Arc::new(const_fold::FoldCtx::enabled()),

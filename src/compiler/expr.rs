@@ -247,6 +247,7 @@ impl Compiler {
                         // binding, single-scalar push) deref the cell to its value.
                         if let Expr::Var(name) = elem
                             && !name.contains("::")
+                            && !c.suppress_list_var_alias
                         {
                             let name_idx = c.code.add_constant(Value::str(name.clone()));
                             c.code.emit(OpCode::WrapVarRef(name_idx));
