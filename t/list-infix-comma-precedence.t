@@ -7,7 +7,7 @@ use Test;
 # the whole comma list on each side is one operand: `say((a, b) Zop (c, d))`.
 # mutsu previously bound the meta-op tighter than comma, giving `say(a, (b Zop c), d)`.
 
-plan 12;
+plan 13;
 
 # Capture what a `say`/`print` statement actually emits, so we test the
 # unparenthesized listop statement path (not the parenthesized-list path).
@@ -53,3 +53,9 @@ is captured({ say $x, 10 Z+ 1, 2 }), "(6 12)\n",
 my @a = 1, 2 Z 3, 4;
 is-deeply @a, [(1, 3), (2, 4)],
     'array assignment RHS absorbs the whole comma level';
+
+# The lift must NOT Whatever-curry a `*` that is a list extender inside an
+# operand (`1 xx *` is a lazy infinite repeat, not a curry placeholder), or the
+# whole Z becomes a WhateverCode (regression guard for repeat.t test 34).
+my @b = flat <a b c> Z (1 xx *);
+is @b.join('|'), 'a|1|b|1|c|1', 'Z with an `xx *` extender operand does not curry';

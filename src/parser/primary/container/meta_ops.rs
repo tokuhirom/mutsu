@@ -53,12 +53,12 @@ pub(crate) fn lift_list_infix_in_arg_list(items: Vec<Expr>) -> Vec<Expr> {
     if let Some(expr) = lift_minmax_in_paren_list(&lifted) {
         return vec![expr];
     }
-    // Match the paren finalizer's Whatever-curry of a lone lifted meta-op
-    // (`say * X+ *, 5`), leaving multi-argument lists (no lift happened)
-    // element-for-element intact.
-    if lifted.len() == 1 && matches!(&lifted[0], Expr::MetaOp { .. }) {
-        return vec![maybe_curry_xz_metaop(lifted.into_iter().next().unwrap())];
-    }
+    // NOTE: unlike `finalize_paren_list`, this does NOT Whatever-curry the lifted
+    // meta-op. The argument-list callers run each element through the full
+    // `expression` parser, whose `should_wrap_whatevercode` already curries a
+    // genuine standalone `*` (`say * X+ *`) while correctly leaving a `*` that is
+    // a list *extender* inside an operand (`<a b c> Z (1 xx *)`) untouched.
+    // Currying here would wrap the latter into a WhateverCode by mistake.
     lifted
 }
 
