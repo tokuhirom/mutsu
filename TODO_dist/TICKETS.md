@@ -977,10 +977,27 @@ _(move tickets here with `[claim: <branch>]` when you start)_
   requirement is satisfied by name when it is a universal object method
   (`runtime/registration.rs`, mirrors `value_can_method`); a non-universal required
   method still errors. Pin: `t/role-required-universal-method.t`.
-  **Residual (deferred, separate deep bug):** Tree::Binary defines
+- **T-057 (Tree::Binary — `class Iterator does Iterator`)** (PR
+  `fix-class-does-self-named-role`) — the self-named-`does`-role blocker recorded
+  as the residual below is now FIXED. `class Iterator does Iterator` (top level)
+  gave "cannot inherit from itself"; inside `package Tree::Binary` it gave a false
+  "C3 MRO cycle detected at Tree::Binary::Iterator". Root cause: a `does`-role
+  whose (short) name equals the class's own name resolved to the class being
+  declared (the package-sibling qualification produced the self FQN), so the role
+  entered the class's own inheritance parents. Fix: in `register_class_decl`, a
+  `does`-parent whose short name matches the class and which names a registered
+  role is composed as that role (the CORE `Iterator`) and excluded from the C3
+  inheritance parents — it is neither self-inheritance nor a self-cycle. `is`
+  self-inheritance and a non-role `does <self>` still error. Pin:
+  `t/class-does-self-named-role.t`.
+  01-basic.rakutest passes; iterator.rakutest / simple-int-trees.rakutest now
+  progress to the **next, separate blocker**: a parametric role
+  `role BinaryTree[...] does HasNodes { method nodes {...} }` — the `method nodes`
+  implementation on the parametric role is not recognized as satisfying the
+  `HasNodes` requirement when `BinaryTree[Int]` is composed, so a consuming class
+  gets "Method 'nodes' must be implemented by IntTree ... required by roles
+  BinaryTree, HasNodes." Parametric-role requirement-satisfaction is a distinct,
+  deeper root cause (deferred).
+  **Residual (FIXED above):** Tree::Binary defines
   `class Iterator does Iterator` inside `package Tree::Binary`, where the second
-  `Iterator` is the **core Raku `Iterator` role**. mutsu resolves the `does`
-  target to the class being defined (same short name in the same package),
-  producing a false "C3 MRO cycle detected at Tree::Binary::Iterator". The `does`
-  role-name lookup must exclude the class under composition and fall back to the
-  outer/core role.
+  `Iterator` is the **core Raku `Iterator` role**.

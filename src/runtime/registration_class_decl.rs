@@ -498,6 +498,19 @@ impl Interpreter {
             "Metamodel::GrammarHOW",
             "Perl6::Metamodel::GrammarHOW",
         ];
+        // Short (unqualified) name of the class being declared, for detecting a
+        // `does`-role that shares the class's own name (see below).
+        fn short_of(s: &str) -> &str {
+            s.rsplit("::").next().unwrap_or(s)
+        }
+        let self_short = short_of(name);
+        // Parents that must NOT enter the C3 inheritance MRO because they are a
+        // `does`-role whose (short) name collides with the class's own name — e.g.
+        // `class Iterator does Iterator` (Rakudo composes the CORE `Iterator` role,
+        // not the class itself). Such a parent is still composed as a role by the
+        // role-composition loop below; keeping it in the inheritance parent list
+        // would make the class its own C3 ancestor (self-cycle / self-inherit).
+        let mut self_named_does_roles: HashSet<String> = HashSet::new();
         let mut deferred_custom_traits: Vec<String> = Vec::new();
         for parent in parents {
             let resolved_parent_name = self.resolve_declared_type_name(parent);
@@ -509,6 +522,16 @@ impl Interpreter {
             };
             // Strip leading `::` for comparison (e.g., `is ::F` refers to `F`)
             let resolved_parent = base_parent.strip_prefix("::").unwrap_or(base_parent);
+            // A `does`-role of the class's own short name resolves to the like-named
+            // CORE/existing role (a class cannot compose itself), so it is neither a
+            // self-inheritance error nor a real inheritance parent.
+            let is_self_named_does_role = does_parents.contains(parent)
+                && short_of(resolved_parent) == self_short
+                && self.registry().roles.contains_key(resolved_parent);
+            if is_self_named_does_role {
+                self_named_does_roles.insert(parent.clone());
+                continue;
+            }
             if resolved_parent == name {
                 return Err(RuntimeError::new(format!(
                     "X::Inheritance::SelfInherit: class '{}' cannot inherit from itself",
@@ -672,8 +695,20 @@ impl Interpreter {
                 return Err(err);
             }
         }
+        // Drop any `does`-role that shares the class's own name from the C3
+        // inheritance parents (it is composed as a role below; leaving it here
+        // would make the class its own ancestor — see `self_named_does_roles`).
+        let inheritance_parents: Vec<String> = if self_named_does_roles.is_empty() {
+            parents.to_vec()
+        } else {
+            parents
+                .iter()
+                .filter(|p| !self_named_does_roles.contains(*p))
+                .cloned()
+                .collect()
+        };
         let mut class_def = ClassDef {
-            parents: parents.to_vec(),
+            parents: inheritance_parents,
             attributes: Vec::new(),
             attribute_types: HashMap::new(),
             attribute_smileys: HashMap::new(),
