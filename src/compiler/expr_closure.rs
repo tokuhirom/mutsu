@@ -114,6 +114,41 @@ impl Compiler {
         }
     }
 
+    /// Compile `anon sub NAME ... { ... }` (a `Stmt::SubDecl` marked
+    /// `__anon_decl` by the parser): compile the routine body and emit
+    /// `MakeAnonSubParams` with the original decl (which carries the name)
+    /// so the built `SubData` keeps `.name` — without registering or
+    /// installing `&NAME` in the enclosing scope.
+    pub(super) fn compile_anon_named_sub_decl(&mut self, stmt: &Stmt) {
+        let Stmt::SubDecl {
+            params,
+            param_defs,
+            body,
+            ..
+        } = stmt
+        else {
+            return;
+        };
+        if let Some(err_val) = self.check_placeholder_conflicts(params, body, None) {
+            let idx = self.code.add_constant(err_val);
+            self.code.emit(OpCode::LoadConst(idx));
+            self.code.emit(OpCode::Die);
+            return;
+        }
+        if let Some(err_val) = Self::check_native_readonly_param_assignment(param_defs, body) {
+            let idx = self.code.add_constant(err_val);
+            self.code.emit(OpCode::LoadConst(idx));
+            self.code.emit(OpCode::Die);
+            return;
+        }
+        let compiled = self.compile_routine_closure_body(params, param_defs, body);
+        let esc = self.escaping_position;
+        let cc_idx = self.add_closure_code_baked(compiled, esc);
+        let idx = self.code.add_stmt(stmt.clone());
+        self.code
+            .emit(OpCode::MakeAnonSubParams(idx, Some(cc_idx), false));
+    }
+
     /// Compile AnonSubParams expression.
     pub(super) fn compile_expr_anon_sub_params(
         &mut self,

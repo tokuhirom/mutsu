@@ -676,28 +676,45 @@ impl Interpreter {
             };
             let name = data.name.resolve();
             let id = data.id;
-            if method == "gist" || method == "Str" {
-                if name.is_empty() || name == "<anon>" {
-                    return Some(Ok(Value::str(format!(
-                        "-> {} {{ #`(Block|{}) ... }}",
-                        sig_gist, id
-                    ))));
-                }
-                return Some(Ok(Value::str(format!(
-                    "sub {} {} {{ #`(Sub|{}) ... }}",
-                    name, sig_gist, id
-                ))));
-            }
-            // .raku / .perl
-            if name.is_empty() || name == "<anon>" {
+            let is_anon = name.is_empty() || name == "<anon>";
+            // Bare/pointy blocks are `Block`s: `-> sig { #`(Block|id) ... }`
+            // for gist/Str/raku alike (an anon *sub* is a `Sub` even without
+            // a name, so blockness is decided by is_bare_block, not the name).
+            if data.is_bare_block {
                 return Some(Ok(Value::str(format!(
                     "-> {} {{ #`(Block|{}) ... }}",
                     sig_gist, id
                 ))));
             }
+            if method == "gist" {
+                // Rakudo: a named Sub gists as `&name`; an anonymous sub as
+                // `sub { }` (the signature is not shown).
+                if is_anon {
+                    return Some(Ok(Value::str_from("sub { }")));
+                }
+                return Some(Ok(Value::str(format!("&{}", name))));
+            }
+            if method == "Str" {
+                // Rakudo: Code.Str is the routine's name (with a coercion
+                // warning, which mutsu does not emit).
+                return Some(Ok(Value::str(name.to_string())));
+            }
+            // .raku / .perl — an empty signature is omitted entirely:
+            // `sub foo { ... }`, `sub ($x) { ... }`, `sub { ... }`.
+            let sig_part = if sig_gist == "()" {
+                String::new()
+            } else {
+                format!("{} ", sig_gist)
+            };
+            if is_anon {
+                return Some(Ok(Value::str(format!(
+                    "sub {}{{ #`(Sub|{}) ... }}",
+                    sig_part, id
+                ))));
+            }
             return Some(Ok(Value::str(format!(
-                "sub {} {} {{ #`(Sub|{}) ... }}",
-                name, sig_gist, id
+                "sub {} {}{{ #`(Sub|{}) ... }}",
+                name, sig_part, id
             ))));
         }
         if method == "line" && args.is_empty() {

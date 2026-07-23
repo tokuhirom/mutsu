@@ -182,6 +182,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::SubDecl {
+            name,
             params,
             param_defs,
             return_type,
@@ -221,7 +222,9 @@ impl Interpreter {
                 .or_else(|| self.current_source_line());
             let val = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
                 package: Symbol::intern(&self.current_package()),
-                name: Symbol::intern(""),
+                // Anonymous closures pool a SubDecl with an empty name; a
+                // named `anon sub NAME` decl carries its name through here.
+                name: *name,
                 params: params.clone(),
                 param_defs: param_defs.clone(),
                 body: body.clone(),
