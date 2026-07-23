@@ -23,7 +23,7 @@ is $=pod[1].WHEREFORE.^name, 'Submethod', 'submethod trailing #= -> Submethod WH
 
 proto sub foo() { }
 #={solo}
-is $=pod[2].WHEREFORE.^name, 'Routine', 'proto sub trailing #= -> Routine WHEREFORE';
+is $=pod[2].WHEREFORE.^name, 'Sub', 'proto sub trailing #= -> Sub WHEREFORE (raku: a proto handle is a Sub)';
 
 my $anon-sub = anon Str sub {};
 #={Anonymous}

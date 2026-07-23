@@ -168,7 +168,21 @@ impl Interpreter {
             }
             return Some(Ok(Value::junction(JunctionKind::Any, signatures)));
         }
-        if matches!(method, "raku" | "perl" | "gist" | "Str") && args.is_empty() {
+        if matches!(method, "gist" | "Str") && args.is_empty() {
+            // Rakudo: a Sub handle gists as `&name` and a builtin-method
+            // lookup handle (package = owning type) as the bare name; `.Str`
+            // is the bare name for both (Rakudo warns on the coercion too).
+            let display = super::methods_instance_ops::format_operator_name(name);
+            let is_method = !(package == "GLOBAL" || package.is_empty());
+            if method == "gist" && !is_method {
+                return Some(Ok(Value::str(format!("&{}", display))));
+            }
+            return Some(Ok(Value::str(display)));
+        }
+        if matches!(method, "raku" | "perl") && args.is_empty() {
+            // TODO: Rakudo renders a builtin routine's .raku as its proto
+            // (`proto sub say (|) {*}`); mutsu has no real protos for
+            // builtins, so the long candidate-signature form remains.
             // For Routine handles, render using the first candidate's signature
             let candidates = self.routine_candidate_subs(package, name);
             let sig_gist = if !candidates.is_empty() {

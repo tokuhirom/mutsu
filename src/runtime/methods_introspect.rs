@@ -93,6 +93,13 @@ impl Interpreter {
                 return Ok(Value::package(Symbol::intern(visible)));
             }
             ValueView::Routine { is_regex: true, .. } => "Regex",
+            // Keep in sync with `value_type_name`: a builtin-method lookup
+            // handle (package = owning type) is a Method, otherwise a Sub.
+            ValueView::Routine { package, .. }
+                if !package.with_str(|p| p == "GLOBAL" || p.is_empty()) =>
+            {
+                "Method"
+            }
             ValueView::Routine { .. } => "Sub",
             // Keep in sync with `runtime::utils::value_type_name`: a bare/pointy
             // block (`{...}`, `-> {...}`) is a `Block`, not a `Sub`. `.WHAT`/`.^name`

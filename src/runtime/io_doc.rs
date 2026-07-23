@@ -1220,13 +1220,11 @@ impl Interpreter {
                     if dc.wherefore_name.starts_with("block:") {
                         Value::package(crate::symbol::Symbol::intern("Block"))
                     } else {
-                        // Use callable_type_override if set (Method, Submethod)
-                        let is_standalone_sub =
-                            dc.wherefore_name.starts_with('&') || !dc.wherefore_name.contains("::");
+                        // Use callable_type_override if set (Method, Submethod).
+                        // A proto handle's .^name is "Sub" too (Rakudo; "Routine"
+                        // is never a concrete value's type), so no proto case.
                         let base_type = if let Some(ref ct) = dc.callable_type_override {
                             ct.as_str()
-                        } else if dc.is_proto && is_standalone_sub {
-                            "Routine"
                         } else {
                             "Sub"
                         };
