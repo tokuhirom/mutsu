@@ -20,7 +20,8 @@
 > **all already implemented**; instead, it turned out that **the 41 `integration/` files (real-program
 > compatibility, all perfect-score under raku) had been missing from the BLOCKERS table**.
 > §5 reflects the work consumed by #4492–#4495.
-> The canonical record of completed work is [news/2026-07.md](news/2026-07.md). The redefinition of the goal
+> The canonical record of completed work is [news/2026-07.md](news/2026-07.md) plus the per-entry files under
+> [news/2026-07/](news/2026-07/) (new entries land there, one file each, to avoid merge conflicts). The redefinition of the goal
 > ("**a batteries-included Raku implementation**") and the full restructuring happened on 2026-07-05
 > (the old completion notes are in the [news/2026-06.md](news/2026-06.md) archive section and news/2026-07.md).
 

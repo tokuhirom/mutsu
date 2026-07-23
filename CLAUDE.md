@@ -129,7 +129,7 @@ Executes compiled bytecode. `vm.rs` holds the (unified `Interpreter`) struct, `r
 - If CI fails, fix on the same branch and push again (the background watch notifies you; re-watch after pushing).
   - **Flaky-looking CI failures:** consult the "Known flaky tests" section below before re-triggering. (`roast/S02-names-vars/perl.t`'s historical `Failed: 0` abort no longer reproduces as of 2026-07-05 and was re-whitelisted — treat a new failure there as real first, per the triage protocol.)
 - **Never close a PR without preserving its knowledge.** If a PR has rebase conflicts, rebase it (manually or with an agent that reads the PR diff via `gh pr diff <number>`). The PR diff itself is the best documentation of the change — do not just close it and write a summary. Reopen and fix it, or have a new agent read the diff and re-implement on a fresh branch.
-- Write all documents, code comments, and commit messages in English. This explicitly includes ADRs (`docs/adr/`), `news/*.md`, `PLAN.md`, `TODO_roast/*.md`, design docs under `docs/`, and PR titles/descriptions. Conversing with the user in Japanese does NOT change this — repository artifacts are always English.
+- Write all documents, code comments, and commit messages in English. This explicitly includes ADRs (`docs/adr/`), everything under `news/` (`news/*.md` and `news/YYYY-MM/*.md`), `PLAN.md`, `TODO_roast/*.md`, design docs under `docs/`, and PR titles/descriptions. Conversing with the user in Japanese does NOT change this — repository artifacts are always English.
 - Do not use `echo`, `cat`, `printf`, or heredoc via Bash to create files. Always use the Write tool.
 - Temporary test scripts must be written to `./tmp/` (project-local, gitignored) using the Write tool. Never write to `/tmp/` or `/tmp/claude-1000/`.
 - Do not use `cat`, `head`, `tail`, or `sed` via Bash to read files. Always use the Read tool.
@@ -519,9 +519,11 @@ Each slang has its own grammar rules (e.g., `+` means repetition in Regex slang 
 ## Project planning and news
 
 - **PLAN.md** contains only **future tasks**. Keep it slim — no completed items. When a task is done, remove it from PLAN.md.
-- **news/YYYY-MM.md** (e.g. `news/2026-05.md`) records what was accomplished each month. When completing a PLAN.md task, move its description and results to the current month's news file.
+- **`news/YYYY-MM/` is a directory, one file per accomplishment.** Record each completed task as a **new** file `news/YYYY-MM/<kebab-slug>.md` in the current month's directory, with an H1 title and a prose body — see `news/2026-07/nil-string-context-warning.md` for the shape. When completing a PLAN.md task, move its description and results into a new such file.
+- **One file per entry — never append to a shared monthly file. This is deliberate: it exists to avoid merge conflicts.** Many small PRs land in parallel; a monolithic monthly file made every PR edit the same lines and conflict on merge. A brand-new per-entry file conflicts with nothing. For the same reason there is **no index or README inside the month directory** — the file listing *is* the index, so keep slugs descriptive.
+- Create the month directory lazily: just `Write` the file at `news/YYYY-MM/<slug>.md`; the directory is created with it. Do not check whether the directory exists first, and do not add a placeholder/index file.
+- **Past months are frozen monolithic archives — do not touch them.** `news/2026-06.md` and earlier stay as single `.md` files. `news/2026-07.md` is the July archive of entries written *before* this switch (still linked from PLAN.md, so it must not be renamed or moved); all **new** July entries go in `news/2026-07/`. From August 2026 on, only the directory form is used (no monolithic `news/YYYY-MM.md`).
 - PLAN.md links to `news/` for historical context. Do not duplicate completed work in both files.
-- When starting a new month's work, create `news/YYYY-MM.md` if it doesn't exist.
 - **When you discover a bug or missing feature that is too large to fix in the current or the next session, record it in PLAN.md and open a PR for that record.** Do not let a hard, high-blast-radius finding evaporate at the end of a session — capture it as a concrete PLAN.md entry (root cause, affected files, why it is large) so a future session can pick it up. The record itself is worth a PR (docs-only, default patch bump, no label).
 
 ## Agent workflow
