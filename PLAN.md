@@ -1228,13 +1228,46 @@ the backlog.
 - Entry: `git checkout -b fix-word-logical-precedence origin/main`. Files: `src/parser/expr/mod.rs`
   (`expression`), `src/parser/expr/precedence/logic.rs`, `src/parser/stmt/assign.rs`, and the
   `return`/`take` statement parsers. Cross-ref: the related `traps.rakudoc` list-element **container
-  aliasing** cases are a *separate* item (container-repr, §8.5-adjacent), NOT this precedence bug. The
-  **List** cases ([5]/[6]/[9]: `($a, ++$a)` / `@arr.push: ($a,$b)` reflect later mutations) were fixed
-  2026-07-23 in #5290 (a List `(...)` now boxes each scalar-var element into a shared `ContainerRef`
-  via `WrapVarRef`+`capture_var_cell`; pin `t/list-container-aliasing.t`). Still open: **[7]
-  `Pair.new('a', $v)`** — `Pair.new`'s method-arg binding decontainerizes the value, so a later `$v`
-  mutation is not reflected (raku: `a => 9`, mutsu: `a => 1`). That is a method-arg-binding container
-  case, not List construction; defer with the rest of container-repr.
+  aliasing** cases are a *separate* item — see §8.16 (WIP campaign #5290), NOT this precedence bug.
+
+### 8.16 List container aliasing — WIP deep campaign (branch `fix-list-container-aliasing`, draft PR #5290)
+
+- [ ] **A List `($a, $b)` must hold the *container* of each scalar-var element** (raku), so a later
+      mutation is visible when the List is read: `my $l=($a,$a); $a=99; say $l` → `(99 99)`;
+      `say join ",", ($a, ++$a)` → `3,3`; the fibonacci `@arr.push: ($x,$y)` trap
+      (traps.rakudoc "list-element container aliasing", cases [5]/[6]/[9]). mutsu previously
+      `Itemize`d scalar-var List elements *by value* (a snapshot), so later mutations never tracked.
+- **Approach (in progress).** Tag each scalar-var List element with `WrapVarRef` at compile time and,
+      in `exec_make_array_op` (List path), box the named local into a shared `ContainerRef` cell via
+      `capture_var_cell_inner(box_type_objects=true)` — the same primitive Captures use. The load-bearing
+      design principle: **a `ContainerRef` cell must be transparent like the old `Itemize`-Scalar** —
+      every List *consumer* that needs a value derefs the cell; every consumer that compares *identity*
+      (`=:=`) uses the cell. The deep work is making all consumers cell-aware.
+- **Done so far** (committed on branch): headline aliasing (stored/pushed/nested, `+$a` value-forcing,
+      by-value fn args, array-assign decont, bracket-array non-alias) — pin `t/list-container-aliasing.t`
+      13/13, verified vs raku. Plus the for-loop self-cycle fix (`for $a -> $v is rw` wraps its iterable
+      in `ArrayLiteral([$a])`; the loop's own `TagContainerRef`+writeback drives rw, so aliasing there
+      wrote the cell back into `$a` = self-referential cycle = infinite loop; new compiler flag
+      `suppress_list_var_alias` keeps Itemize while compiling the for-iterable — `t/for-param.t` fixed).
+- **Remaining (3 consumers not yet cell-aware — the campaign work):**
+  1. `t/list-dot-equals-method.t` — `($x,$y).=reverse` → `[35 35]` (want `[35 7]`). `.=`-on-list lowers
+     to `__mutsu_assign_callable_lvalue(ArrayLiteral-lvalue, [], MethodCall{target: ArrayLiteral})`; the
+     lvalue-target and RHS-target Lists both box cells and the assign-back corrupts. Fix: the lvalue
+     list-assign must deref cells to values on write-back (or suppress alias for the lvalue-target list).
+  2. `t/hash-itemization-flag.t` test 8 — `my %c = ($hi,)` (hash-holding scalar) should die "odd number",
+     but the cell derefs to the hash and *flattens*. Old Itemize-Scalar was non-flattening. Fix: the
+     hash-assign flatten path must treat a `ContainerRef`-wrapped value as itemized (non-flatten), as it
+     does a Scalar.
+  3. `t/list-infix-comma-precedence.t` tests 24/25 — `$a,$b X!=:= $c,$d` (uninit `my` scalars) all-True;
+     after `$c:=$b`, `one ... X=:=` True. The cross/zip metaop **derefs the cells** before `=:=`, losing
+     container identity (direct `$a=:=$c` works). Fix: metaop cross/zip must preserve `ContainerRef`
+     identity (pass cells through to `=:=`).
+- **Still open beyond the CI failures:** [7] `Pair.new('a', $v)` — `Pair.new`'s method-arg binding
+      decontainerizes, so a later `$v` mutation is not reflected (raku `a => 9`, mutsu `a => 1`). Separate
+      method-arg-binding container case; defer with the rest.
+- **State/entry.** Full campaign detail in memory `project_list_container_aliasing_campaign`. Coordinate
+      with §8.5 and [ADR-0001] container-repr — this is the first-class-scalar-container direction, do NOT
+      merge #5290 until all three consumers are cell-aware and CI is green.
 
 ### 8.10 Object hashes are string-keyed, not `.WHICH`-keyed (deferred deep item — found 2026-07-22 by the numerics/hashmap doc-diff sweeps)
 
