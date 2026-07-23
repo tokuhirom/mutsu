@@ -1416,6 +1416,51 @@ garbage until the page rebuilds the interpreter.
   recorded native output rather than a trap. Removing those flags is the acceptance test
   for this item; `wasm-demo/e2e.test.mjs` sweeps every non-flagged lesson in a real browser.
 
+### 8.20 Proto-token LTM ignores literal-vs-charclass specificity on an equal-length tie (found 2026-07-24, File::Ignore)
+
+When a `proto token` has two `:sym<>` candidates that match the SAME length at a
+position, Rakudo's Longest-Token-Matching breaks the tie by declaration order /
+specificity (a literal `<sym>` candidate outranks a character-class one). mutsu
+picks the wrong candidate, so a globstar `**` in a `.gitignore`-style grammar is
+dispatched to the fall-through `matcher` candidate instead of the dedicated `**`
+candidate.
+
+- **Minimal repro** (both candidates match `**`, 2 chars):
+  ```raku
+  grammar G {
+      token TOP { <pp>+ % '/' }
+      proto token pp {*}
+      token pp:sym<**> { <sym> }        # literal, declared first
+      token pp:sym<m>  { <-[/]>+ }      # char-class fall-through
+  }
+  class Act {
+      method TOP($/) { make $<pp>.map(*.ast).join('|') }
+      method pp:sym<**>($/) { make 'GLOBSTAR' }
+      method pp:sym<m>($/)  { make "M:$/" }
+  }
+  say G.parse('d/**', :actions(Act)).ast;
+  # raku:  M:d|GLOBSTAR      mutsu: M:d|M:**   (dispatched to the wrong sym)
+  ```
+- **Confirmed:** a SOLE `pp:sym<**>` candidate matches `**` fine (so `<sym>`
+  literal escaping is correct); the bug is purely the multi-candidate tie-break.
+  raku's tie-break is declaration order — swapping the two `token` lines makes
+  raku pick `m` too; mutsu picks `m` regardless of order.
+- **Code paths ruled out during triage:** the tie-break is NOT in
+  `regex_match_public.rs` `parse_anchored_single_subrule` LTM loop (never entered
+  for a `<pp>` inside `<pp>+ % '/'`) nor the `regex_match_capture.rs:453`
+  "keep-longest inner_end / first-on-tie" subrule loop (a `MUTSU_DBG_LTM` probe in
+  both produced zero output for this grammar). The live path is a third
+  proto-token dispatch — likely via `regex_match_ends_from_caps_in_pkg` /
+  `regex_token_method.rs` (or wherever `parsed_subrule_candidates` for a proto is
+  actually consumed). Find that path first; the fix is to break an equal-length
+  tie by candidate declaration order (and/or literal-over-charclass specificity),
+  matching Rakudo. Validate against the whole `S05-grammar/` roast set — this is
+  load-bearing for every proto-token grammar.
+- **Impact:** unblocks the `File::Ignore` distribution's `**` globstar patterns
+  (T-057): `wildcard.rakutest` 36/44 → (expected) full, plus `negated`/`range`
+  partials that also stem from globstar. `path`/`charclass`/`literal` already pass.
+  Also a general grammar-correctness fix.
+
 
 ## Metrics
 
