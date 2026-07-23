@@ -400,6 +400,25 @@ impl Interpreter {
         right: Value,
         exclusive: bool,
     ) -> Result<Value, RuntimeError> {
+        // The `...` seeds and endpoint are pure VALUES (pattern deduction and the
+        // termination test compare them). A List `(...)` now aliases its
+        // scalar-var elements into shared `ContainerRef` cells, so `($start, {…}
+        // ... 1)` would hand the deduction a cell for `$start`; the endpoint test
+        // `element == 1` then never matches the initial cell and the sequence
+        // overruns (`(1, {…} ... 1)` yielded `1 4 2 1` instead of `1`). Deref any
+        // cell in the left seeds and the right endpoint up front.
+        let left = match left.view() {
+            ValueView::Array(items, kind) if items.iter().any(Value::is_container_ref) => {
+                Value::array_with_kind(
+                    crate::value::Value::array_arc(
+                        items.iter().map(Value::deref_container).collect(),
+                    ),
+                    kind,
+                )
+            }
+            _ => left.into_deref(),
+        };
+        let right = right.into_deref();
         // A genuinely-INFINITE lazy left operand IS itself the generator: iterate
         // it against the endpoint instead of deducing a new pattern from its
         // realized prefix (`@primes ...^ * > sqrt $n`, where `@primes` is the lazy
