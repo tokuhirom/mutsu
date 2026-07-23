@@ -10,7 +10,7 @@ pub(crate) const USER_THREAD_STACK_SIZE: usize = 256 * 1024 * 1024;
 
 /// Spawn a worker thread with a large stack for running user code, so deep VM
 /// recursion does not overflow the default thread stack.
-pub(crate) fn spawn_user_thread<F, T>(f: F) -> std::thread::JoinHandle<T>
+pub(crate) fn spawn_user_thread<F, T>(f: F) -> crate::runtime::thread_compat::JoinHandle<T>
 where
     F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,
@@ -32,7 +32,7 @@ where
 /// collect). Long blocking waits inside the closure (sleeps, blocking reads)
 /// must be wrapped in `gc::block_quiescent` so the thread does not starve the
 /// stop-the-world rendezvous.
-pub(crate) fn spawn_gc_helper_thread<F, T>(f: F) -> std::thread::JoinHandle<T>
+pub(crate) fn spawn_gc_helper_thread<F, T>(f: F) -> crate::runtime::thread_compat::JoinHandle<T>
 where
     F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,
@@ -40,7 +40,10 @@ where
     spawn_registered_thread(None, f)
 }
 
-fn spawn_registered_thread<F, T>(stack_size: Option<usize>, f: F) -> std::thread::JoinHandle<T>
+fn spawn_registered_thread<F, T>(
+    stack_size: Option<usize>,
+    f: F,
+) -> crate::runtime::thread_compat::JoinHandle<T>
 where
     F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,
@@ -56,36 +59,30 @@ where
     // without this a spawn burst starves every stop-the-world attempt — see
     // `gc::stw::preregister_worker_quiescent`.
     crate::gc::preregister_worker_quiescent();
-    let mut builder = std::thread::Builder::new();
-    if let Some(size) = stack_size {
-        builder = builder.stack_size(size);
-    }
-    builder
-        .spawn(move || {
-            struct WorkerGuard;
-            impl Drop for WorkerGuard {
-                fn drop(&mut self) {
-                    // Drop this thread's `Gc`-bearing thread-local state (pending
-                    // DESTROY queue, failure registry) BEFORE unregistering. Rust
-                    // runs TLS destructors after the closure returns — i.e. after
-                    // `exit_mutator_worker` below — so without this an unregistered
-                    // thread's TLS teardown would mutate the `Gc` graph while a
-                    // collector, believing this thread gone, runs trial deletion.
-                    // See `value::drop_thread_local_gc_state`.
-                    crate::value::drop_thread_local_gc_state();
-                    crate::gc::mark_thread_registered(false);
-                    crate::gc::exit_mutator_worker();
-                }
+    crate::runtime::thread_compat::spawn_thread(stack_size, move || {
+        struct WorkerGuard;
+        impl Drop for WorkerGuard {
+            fn drop(&mut self) {
+                // Drop this thread's `Gc`-bearing thread-local state (pending
+                // DESTROY queue, failure registry) BEFORE unregistering. Rust
+                // runs TLS destructors after the closure returns — i.e. after
+                // `exit_mutator_worker` below — so without this an unregistered
+                // thread's TLS teardown would mutate the `Gc` graph while a
+                // collector, believing this thread gone, runs trial deletion.
+                // See `value::drop_thread_local_gc_state`.
+                crate::value::drop_thread_local_gc_state();
+                crate::gc::mark_thread_registered(false);
+                crate::gc::exit_mutator_worker();
             }
-            let _guard = WorkerGuard;
-            // Registered-mutator flag + leave the parent-granted quiescent
-            // state (parking first if a scan is in progress): this thread's
-            // quiescence now counts toward (and is required by) the STW
-            // rendezvous (gc::stw).
-            crate::gc::worker_started();
-            f()
-        })
-        .expect("failed to spawn worker thread")
+        }
+        let _guard = WorkerGuard;
+        // Registered-mutator flag + leave the parent-granted quiescent
+        // state (parking first if a scan is in progress): this thread's
+        // quiescence now counts toward (and is required by) the STW
+        // rendezvous (gc::stw).
+        crate::gc::worker_started();
+        f()
+    })
 }
 
 /// State for a live child process (when `:in` is used with `run`).

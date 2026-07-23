@@ -471,7 +471,7 @@ impl Interpreter {
                     buf.push(value.clone());
                 }
                 if let Some(buf) = self.supply_emit_timed_buffer.last_mut() {
-                    buf.push((value.clone(), std::time::Instant::now()));
+                    buf.push((value.clone(), crate::runtime::thread_compat::Instant::now()));
                 }
                 if let Some(supplier_id) = supplier_id_from_attrs(&attrs) {
                     supplier_emit(supplier_id, value.clone());

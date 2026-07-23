@@ -81,6 +81,37 @@ impl ReactWaker {
     /// elapses. Counts the thread GC-quiescent for the duration (the wait
     /// touches no `Gc` state). Consumes a pending poke.
     pub(crate) fn wait_activity(&self, timeout: Duration) {
+        #[cfg(target_arch = "wasm32")]
+        {
+            // In a browser the producers are not other threads — they are the
+            // queued tasks and timers of `runtime::wasm_sched`, and a condvar
+            // wait would both park the only thread that could ever run them and
+            // panic (wasm32 std has no condvar). So run them instead, until an
+            // event shows up or the requested timeout elapses on the virtual
+            // clock. Letting the timeout elapse matters: it is what lets the
+            // caller's own deadline (the react drive loop's) expire rather than
+            // spin, when nothing is left that could produce.
+            use crate::runtime::thread_compat::mono_now;
+            let (lock, _) = &*self.inner;
+            let deadline = mono_now() + timeout.as_secs_f64();
+            loop {
+                {
+                    let state = lock.lock().unwrap();
+                    if !state.events.is_empty() || state.poked {
+                        break;
+                    }
+                }
+                if mono_now() >= deadline {
+                    break;
+                }
+                if !crate::runtime::wasm_sched::pump() {
+                    crate::runtime::wasm_sched::advance_clock_to(deadline);
+                    break;
+                }
+            }
+            lock.lock().unwrap().poked = false;
+        }
+        #[cfg(not(target_arch = "wasm32"))]
         crate::gc::block_quiescent(|| {
             let (lock, cvar) = &*self.inner;
             let mut state = lock.lock().unwrap();

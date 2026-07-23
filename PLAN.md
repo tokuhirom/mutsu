@@ -912,6 +912,22 @@ unification / the malloc clusters from `Value` clone/drop and attribute material
 
       Worth doing before the worker-pool ADR above: a silent wrong answer outranks a
       perf/footprint change, and the fix retires name-keyed mechanisms rather than building on them.
+- [ ] **★A joined `start` block writes its stale captured env back over a variable declared after
+      it** (found 2026-07-23 while testing WASM concurrency; reproduces on `main`, so it is not a
+      WASM artefact):
+
+      ```raku
+      my $p = Promise.allof(start { 1 }, start { 2 }); await $p; say $p.WHAT;   # Nil (raku: (Promise))
+      my @p = (start { 1 }, start { 2 }); my $q = Promise.anyof(@p); await $q;  # $q survives
+      ```
+
+      Two or more `start` blocks written **inline as arguments** each capture the enclosing env at a
+      point where `$p` does not exist yet (so it reads as `Nil`); joining them writes that snapshot
+      back wholesale and clobbers the now-assigned `$p`. One inline `start` does not trip it, and
+      binding the promises to a variable first avoids it — i.e. it is the blanket env writeback, the
+      same mechanism as the `named-sub free-var shadow` / dual-store family, not a `Promise` bug.
+      The fix belongs with the cell-based capture work above (write back only what the thread
+      actually mutated), not with a special case at the `allof`/`anyof` call sites.
 - [ ] Eliminate raw-pointer aliased writes: the old `arc_contents_mut` is dead code now, and the
       production path moved to `gc::gc_contents_mut` / `Gc::{get,make}_mut` (the unsoundness was
       moved, not resolved — ANALYSIS rev8 §2.1). With Track B T4–T6 done (news/2026-07.md), start
@@ -1429,31 +1445,6 @@ value-carried callable path.
 - Repro kept at `wasm-demo/content/highlights.txt` (`why/multi` uses the direct-call form as a
   workaround); `scripts/check-site-snippets.mjs` cross-checks against `raku` and would catch a
   regression the moment the snippet is switched back to `&fizz`.
-
-### 8.18 The WebAssembly build traps on `start` / `Channel` instead of degrading (found 2026-07-23 building the tutorial site)
-
-`start { ... }` reaches `spawn_callable_promise` → `spawn_user_thread` → `std::thread::spawn`
-(`src/runtime/builtins_system.rs:13`), which on `wasm32-unknown-unknown` has no
-implementation and traps. In the browser that surfaces as `RuntimeError: unreachable`,
-which also poisons the whole wasm instance — every later evaluation in that session is
-garbage until the page rebuilds the interpreter.
-
-- Affected: `start`, `Promise` combinators that spawn, `Channel` producers, `Proc::Async`.
-  `react`/`whenever` over a `Supply.from-list` already works (no spawn), as does
-  `gather`/`take`.
-- **Likely correct fix:** on wasm, run a `start` block *synchronously* and return an
-  already-kept (or broken) `Promise`, and give `Channel` the same treatment — a
-  single-threaded scheduler is the honest semantics for a platform with one thread, and it
-  is what a reader of the concurrency chapter would expect to see work. The mechanism is one
-  `#[cfg(target_arch = "wasm32")]` arm in `spawn_callable_promise` plus the equivalent for
-  the channel/supply pumps, but the *semantics* need thought: a `start` that blocks until it
-  finishes changes the observable ordering of any program that relies on interleaving, and
-  `await` on a never-kept promise would deadlock rather than trap.
-- **Not attempted here.** The tutorial marks those two lessons `no-browser` in
-  `wasm-demo/content/lessons.txt`, so the site explains the limitation and shows the
-  recorded native output rather than a trap. Removing those flags is the acceptance test
-  for this item; `wasm-demo/e2e.test.mjs` sweeps every non-flagged lesson in a real browser.
-
 
 ## Metrics
 

@@ -6,8 +6,10 @@
 #  are ordered by first appearance.
 #
 #  Flag `no-browser`: the snippet runs natively but not in the WebAssembly
-#  build (`start` needs OS threads, which wasm32 has none of).  The site shows
-#  the recorded native output instead of offering to run it.
+#  build (a feature the browser cannot provide at all, e.g. spawning a real
+#  process).  The site shows the recorded native output instead of offering to
+#  run it.  Concurrency does NOT need this flag: `start`/`await`/`Channel` run
+#  on the cooperative scheduler (src/runtime/wasm_sched.rs).
 #
 #  The expected-output blocks are GENERATED and verified: run
 #      node scripts/check-site-snippets.mjs --update
@@ -474,7 +476,7 @@ say Greeting.parse("Goodbye Camelia").defined;
 ｢Camelia｣
 False
 
-#== concurrency/promises no-browser
+#== concurrency/promises
 my @squares = (1..5).map: -> $n { start { $n * $n } };
 say await @squares;
 
@@ -487,7 +489,7 @@ say $p.status;
 kept
 Kept
 
-#== concurrency/channels no-browser
+#== concurrency/channels
 my $c = Channel.new;
 start {
     $c.send($_) for 1..3;

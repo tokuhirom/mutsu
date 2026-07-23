@@ -559,9 +559,10 @@ impl Interpreter {
                         let as_fn = attrs.get("unique_as").cloned();
                         let with_fn = attrs.get("unique_with").cloned();
                         let expires_secs = attrs.get("unique_expires").map(|v| v.to_f64());
-                        let mut seen_keys: Vec<(Value, std::time::Instant)> = Vec::new();
+                        let mut seen_keys: Vec<(Value, crate::runtime::thread_compat::Instant)> =
+                            Vec::new();
                         let mut unique_items: Vec<Value> = Vec::new();
-                        let now = std::time::Instant::now();
+                        let now = crate::runtime::thread_compat::Instant::now();
                         for item in emitted {
                             // Expire old seen values if :expires is set
                             if let Some(expire_secs) = expires_secs {

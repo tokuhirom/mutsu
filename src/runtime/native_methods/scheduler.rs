@@ -119,7 +119,9 @@ impl Interpreter {
         }
         // Quiescent: a registered thread's raw sleep would starve a GC
         // stop-the-world rendezvous.
-        crate::gc::block_quiescent(|| std::thread::sleep(interval_timer::clamp_delay_secs(delay)));
+        crate::gc::block_quiescent(|| {
+            crate::runtime::thread_compat::sleep(interval_timer::clamp_delay_secs(delay))
+        });
         true
     }
 
@@ -440,7 +442,9 @@ impl Interpreter {
             } else if interval > 0.0 && interval.is_finite() {
                 // Quiescent — see `scheduler_sleep`.
                 crate::gc::block_quiescent(|| {
-                    std::thread::sleep(std::time::Duration::from_secs_f64(interval))
+                    crate::runtime::thread_compat::sleep(std::time::Duration::from_secs_f64(
+                        interval,
+                    ))
                 });
             }
         }

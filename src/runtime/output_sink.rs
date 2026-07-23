@@ -64,7 +64,12 @@ impl OutputSink {
     /// identical to the former `Interpreter::emit_output` body.
     pub(crate) fn emit(&mut self, text: &str, subtest_active: bool) {
         self.output_emitted = true;
-        if !subtest_active && self.immediate_stdout {
+        // On wasm the process stdout goes nowhere the page can read: the
+        // playground shows what this sink buffers and hands back. So the
+        // immediate-flush path (used by `Thread.start` workers, which want
+        // real-time chronological output natively) must not bypass the buffer,
+        // or a thread's `say` would simply vanish.
+        if !subtest_active && self.immediate_stdout && !cfg!(target_arch = "wasm32") {
             use std::io::Write;
             let _ = std::io::stdout().write_all(text.as_bytes());
             let _ = std::io::stdout().flush();
@@ -87,7 +92,8 @@ impl OutputSink {
     /// `write_to_handle_value_trying` (no `output_emitted` flag, no Stdout-style
     /// thread-clone interleaving — stderr buffers per interpreter).
     pub(crate) fn emit_stderr(&mut self, text: &str, subtest_active: bool) {
-        if !subtest_active && self.immediate_stdout {
+        // Buffered on wasm for the same reason as `emit`.
+        if !subtest_active && self.immediate_stdout && !cfg!(target_arch = "wasm32") {
             use std::io::Write;
             let _ = std::io::stderr().write_all(text.as_bytes());
             let _ = std::io::stderr().flush();

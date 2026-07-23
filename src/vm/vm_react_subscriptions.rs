@@ -280,7 +280,7 @@ impl Interpreter {
                     return Ok(());
                 }
                 // Bound the wait so a stalled source cannot hang the await.
-                if std::time::Instant::now() >= *deadline {
+                if crate::runtime::thread_compat::Instant::now() >= *deadline {
                     promise.keep(Value::NIL, String::new(), String::new());
                     return Ok(());
                 }
@@ -549,7 +549,7 @@ impl Interpreter {
             if !progressed {
                 let mut cap = REACT_IDLE_WAIT;
                 if let SupplyDrivePolicy::Promise { deadline, .. } = &policy {
-                    let now = std::time::Instant::now();
+                    let now = crate::runtime::thread_compat::Instant::now();
                     cap = if *deadline > now {
                         cap.min(*deadline - now)
                     } else {

@@ -250,7 +250,7 @@ impl Interpreter {
             react_subs,
             crate::runtime::subtest::SupplyDrivePolicy::Promise {
                 promise: promise.clone(),
-                deadline: std::time::Instant::now() + Duration::from_secs(30),
+                deadline: crate::runtime::thread_compat::Instant::now() + Duration::from_secs(30),
                 last_value: seed,
             },
         )

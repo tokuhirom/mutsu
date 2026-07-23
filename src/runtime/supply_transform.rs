@@ -14,7 +14,7 @@ fn wait_for_control_limit(ctrl_id: u64) -> i64 {
     let waker = crate::value::waker::ReactWaker::new();
     let sink_id = supplier_sink_register(ctrl_id, 0, &waker);
     let mut current_limit: i64 = 0;
-    let start = std::time::Instant::now();
+    let start = crate::runtime::thread_compat::Instant::now();
     while current_limit == 0 && start.elapsed() < std::time::Duration::from_secs(30) {
         for (_, event) in waker.drain() {
             if let crate::value::waker::SinkEvent::Emit(val) = event

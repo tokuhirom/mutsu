@@ -54,7 +54,7 @@ impl Interpreter {
             String,
             String,
         );
-        let mut handles: Vec<std::thread::JoinHandle<ThreadResult>> =
+        let mut handles: Vec<crate::runtime::thread_compat::JoinHandle<ThreadResult>> =
             Vec::with_capacity(num_batches);
         for batch in batches {
             let thread_interp = self.clone_for_thread();
