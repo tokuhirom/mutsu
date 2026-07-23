@@ -766,6 +766,14 @@ pub struct Interpreter {
     /// lookups.
     pub(crate) user_declared_infix_ops: HashSet<String>,
     lib_paths: Vec<String>,
+    /// Bundled-battery module search paths (`modules/<Dist>/lib` shipped
+    /// alongside the binary). Searched *after* every `lib_paths` entry so the
+    /// bundle is the lowest-priority source — an explicit `-I`/`MUTSULIB` path,
+    /// a project-local module, or an `mzef`-installed (site-repo) version all
+    /// shadow it. This is the batteries "floor + independent-update" mechanism
+    /// (BATTERIES.md §3/§6). Resolved once at startup (exe-relative, or via
+    /// `MUTSU_BUNDLE_DIR`).
+    bundled_lib_paths: Vec<String>,
     /// Open IO handles (files/sockets/listeners) shared between the VM and the
     /// Interpreter behind transitional `Arc<RwLock>` scaffolding. Snapshot-cloned
     /// per thread (see [`io_handles`] module docs and `clone_for_thread`).

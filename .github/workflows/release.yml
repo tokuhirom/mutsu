@@ -77,7 +77,9 @@ jobs:
       #
       #   bin/mutsu
       #   bin/mzef
-      #   share/mutsu/zef/...   <- mzef resolves this via ../share/mutsu/zef
+      #   share/mutsu/zef/...       <- mzef resolves this via ../share/mutsu/zef
+      #   share/mutsu/modules/...   <- bundled batteries; mutsu resolves them via
+      #                                ../share/mutsu/modules (zero-config `use`)
       #
       # mise extracts the whole archive into the tool's install dir and exposes
       # `bin/` on PATH, so both commands work after `mise use`.
@@ -90,6 +92,7 @@ jobs:
           cp "target/${{ matrix.target }}/release/mutsu" "$stage/bin/"
           cp "target/${{ matrix.target }}/release/mzef" "$stage/bin/"
           cp -R vendor/zef "$stage/share/mutsu/zef"
+          cp -R modules "$stage/share/mutsu/modules"
           tar -C "$stage" -czf "$pkg.tar.gz" bin share
           echo "Packaged $pkg.tar.gz:"
           tar tzf "$pkg.tar.gz" | head -20

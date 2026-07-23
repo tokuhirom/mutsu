@@ -146,6 +146,17 @@ impl Interpreter {
                 }
             }
         }
+        // Bundled batteries are the lowest-priority source: append their
+        // candidates last so an explicit `-I`/`MUTSULIB`/project-local module or
+        // an `mzef`-installed (site-repo) version always shadows the bundled copy
+        // (BATTERIES.md §3/§6).
+        for base in &self.bundled_lib_paths {
+            let base_path = Path::new(base.as_str());
+            for ext in &extensions {
+                let filename = format!("{}{}", base_name, ext);
+                candidates.push(base_path.join(&filename));
+            }
+        }
         candidates
             .into_iter()
             .find(|path| path.exists())
@@ -221,6 +232,46 @@ impl Interpreter {
     /// `precomp.rs::cache_dir()`. Returns `None` (no default available) rather
     /// than erroring when `$HOME`/`XDG_DATA_HOME` can't be determined; callers
     /// must not assume the directory exists yet.
+    /// Resolve the bundled-battery module search paths (`<bundle>/<Dist>/lib`).
+    /// The bundle base is `$MUTSU_BUNDLE_DIR` if set, else discovered relative to
+    /// the running binary: `share/mutsu/modules` next to `bin/` (release tarball
+    /// / container layout), `modules/` two levels up (a `target/<profile>/mutsu`
+    /// dev build), or `modules/` beside the binary. Each dist's `lib/` directory
+    /// that exists is returned; a missing bundle yields an empty list (the
+    /// interpreter simply has no bundled batteries).
+    pub(crate) fn resolve_bundled_lib_paths() -> Vec<String> {
+        use std::path::PathBuf;
+        let base: Option<PathBuf> = if let Ok(dir) = std::env::var("MUTSU_BUNDLE_DIR") {
+            Some(PathBuf::from(dir))
+        } else {
+            std::env::current_exe().ok().and_then(|exe| {
+                let dir = exe.parent()?.to_path_buf();
+                [
+                    dir.join("..").join("share").join("mutsu").join("modules"),
+                    dir.join("..").join("..").join("modules"),
+                    dir.join("modules"),
+                ]
+                .into_iter()
+                .find(|c| c.is_dir())
+            })
+        };
+        let Some(base) = base.filter(|b| b.is_dir()) else {
+            return Vec::new();
+        };
+        let Ok(entries) = std::fs::read_dir(&base) else {
+            return Vec::new();
+        };
+        let mut paths: Vec<String> = Vec::new();
+        for entry in entries.flatten() {
+            let lib = entry.path().join("lib");
+            if lib.is_dir() {
+                paths.push(lib.display().to_string());
+            }
+        }
+        paths.sort();
+        paths
+    }
+
     pub(super) fn default_repo_dir(kind: &str) -> Option<std::path::PathBuf> {
         let base = if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
             std::path::PathBuf::from(xdg)
@@ -386,6 +437,7 @@ impl Interpreter {
         // sees the main source, so a NativeCall binding distributed as a module
         // would otherwise hit an undeclared `Pointer`.
         Self::inject_nativecall_prelude(&preprocessed, &mut stmts);
+        Self::inject_iosocket_prelude(&preprocessed, &mut stmts);
 
         // Save to precompilation cache when the module is eligible.
         if precomp_eligible {

@@ -62,6 +62,11 @@ pub(crate) struct Registry {
     // ----- class metadata (PR-A slice 2) -----
     /// Classes declared as a C `union` (native interop helper set).
     pub(crate) cunion_classes: HashSet<String>,
+    /// Classes declared `is repr('CStruct')` (native interop). Used by
+    /// NativeCall to recognize a signature type as an opaque native handle
+    /// passed by pointer, even when the class name is lowercase (e.g.
+    /// `evp_cipher_st`) and so would not match the name-shape heuristic.
+    pub(crate) cstruct_classes: HashSet<String>,
     /// Classes marked `is hidden` (excluded from `.^mro` etc.).
     pub(crate) hidden_classes: HashSet<String>,
     /// Forward-declared class stubs (`class Foo { ... }` declared later).

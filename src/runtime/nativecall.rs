@@ -8,10 +8,15 @@
 //!
 //! Supported so far: scalar C types (signed/unsigned 8/16/32/64-bit integers,
 //! 32/64-bit floats), `Str` passed as a NUL-terminated `char*`, an opaque
-//! `Pointer`, and `CArray[T]` (a contiguous C buffer / `char**` for
-//! `CArray[Str]`) as a call argument, with the C-side data copied back into the
-//! Raku array after the call so an out-array (`memcpy`-style fill) is visible.
-//! `CStruct`/`CUnion` structs and callbacks remain follow-up work.
+//! `Pointer`, `CArray[T]` (a contiguous C buffer / `char**` for `CArray[Str]`)
+//! and `Blob`/`Buf` (a byte buffer) as call arguments, with the C-side data
+//! copied back into the Raku array/buffer after the call so an out-array /
+//! out-buffer (`SSL_read` / `BIO_read`-style fill) is visible, and
+//! `is repr('CStruct')` types as **opaque native handles passed by pointer**
+//! (returned wrapped in an instance of the declared class, e.g. OpenSSL's
+//! `SSL` / `SSL_CTX` / `SSL_METHOD`). The library name may be supplied by a code
+//! object (`is native(&ssl-lib)`), resolved at bind time. By-value CStructs
+//! (field layout marshalling) and callbacks remain follow-up work.
 
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -37,6 +42,12 @@ pub enum CType {
     /// the [`ParamSpec::elem`] field (a scalar numeric type, or `Str` for a
     /// `char**`). Passed as a pointer to the first element.
     CArray,
+    /// `Blob` / `Buf` / `buf8` — a byte buffer passed as a pointer to its bytes
+    /// (`char*` / `void*`). Unlike `Str`, it is not NUL-terminated and may carry
+    /// embedded NULs, and the callee may write into it (an out-buffer, e.g.
+    /// `SSL_read` / `BIO_read`), so the C bytes are copied back into the caller's
+    /// buffer after the call.
+    Buf,
 }
 
 impl CType {
@@ -56,6 +67,10 @@ impl CType {
             "num64" | "num" | "Num" => CType::F64,
             "Str" => CType::Str,
             "Pointer" | "OpaquePointer" => CType::Pointer,
+            // A byte buffer passed as a `void*` to its raw bytes. `blob8`/`buf8`
+            // are the `uint8` parametric spellings; the bracketed forms
+            // (`Buf[uint8]`) are handled by the caller stripping to the stem.
+            "Blob" | "Buf" | "buf8" | "blob8" => CType::Buf,
             _ => return None,
         })
     }
@@ -88,6 +103,12 @@ pub struct NativeCallSpec {
     pub symbol: String,
     pub params: Vec<ParamSpec>,
     pub ret: CType,
+    /// When the return type is a user-declared `is repr('CStruct')` class (an
+    /// opaque native handle passed by pointer, e.g. OpenSSL's `SSL` / `SSL_CTX`
+    /// / `SSL_METHOD`), `ret` is [`CType::Pointer`] and this holds the class
+    /// name so the returned address is wrapped in an instance of that class
+    /// (rather than a bare `Pointer`). `None` for a plain `Pointer` return.
+    pub ret_struct: Option<String>,
 }
 
 /// Candidate OS library file names for a `is native(<arg>)` argument, applying
@@ -211,6 +232,9 @@ pub fn call_native(spec: &NativeCallSpec, args: &[Value]) -> Result<Value, Runti
     // Arg indices holding a numeric `CArray` whose C buffer must be copied back
     // into the caller's Raku array after the call (an out-array fill).
     let mut carray_writebacks: Vec<usize> = Vec::new();
+    // Arg indices holding a `Blob`/`Buf` whose C buffer must be copied back into
+    // the caller's Buf after the call (an out-buffer, e.g. `SSL_read`).
+    let mut buf_writebacks: Vec<usize> = Vec::new();
 
     for (i, (ps, v)) in spec.params.iter().zip(args.iter()).enumerate() {
         let (ty, owner) = if ps.is_rw && ps.ct == CType::Pointer {
@@ -231,6 +255,10 @@ pub fn call_native(spec: &NativeCallSpec, args: &[Value]) -> Result<Value, Runti
             // callee performs must be reflected back into the caller's array.
             if matches!(owner, ArgOwner::CArrayNum { .. }) {
                 carray_writebacks.push(i);
+            }
+            // A `Buf`/`Blob` out-buffer: reflect callee writes back into the Buf.
+            if matches!(owner, ArgOwner::BufBytes { .. }) {
+                buf_writebacks.push(i);
             }
             (ty, owner)
         };
@@ -265,9 +293,15 @@ pub fn call_native(spec: &NativeCallSpec, args: &[Value]) -> Result<Value, Runti
             CType::F64 => Value::num(cif.call::<f64>(code, &ffi_args)),
             // A CArray return is mapped to `CType::Pointer` at registration
             // (a returned `CArray[T]` has no length to reify), so this arm is
-            // unreachable in practice — treat it as an opaque pointer.
-            CType::Pointer | CType::CArray => {
-                make_pointer_value(cif.call::<usize>(code, &ffi_args))
+            // unreachable in practice — treat it as an opaque pointer. A CStruct
+            // return (`ret_struct` set) wraps the address in an instance of the
+            // declared class so it round-trips as that native handle type.
+            CType::Pointer | CType::CArray | CType::Buf => {
+                let addr = cif.call::<usize>(code, &ffi_args);
+                match &spec.ret_struct {
+                    Some(class) => make_struct_value(class, addr),
+                    None => make_pointer_value(addr),
+                }
             }
             CType::Str => {
                 let ptr = cif.call::<*const std::ffi::c_char>(code, &ffi_args);
@@ -309,6 +343,14 @@ pub fn call_native(spec: &NativeCallSpec, args: &[Value]) -> Result<Value, Runti
         }
     }
 
+    // Copy each `Buf`/`Blob` out-buffer's (possibly callee-modified) C bytes
+    // back into the caller's Buf instance.
+    for idx in buf_writebacks {
+        if let ArgOwner::BufBytes { buf, .. } = &owners[idx] {
+            write_buf_instance_bytes(&args[idx], buf);
+        }
+    }
+
     Ok(result)
 }
 
@@ -321,6 +363,23 @@ fn make_pointer_value(addr: usize) -> Value {
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("address".to_string(), Value::int(addr as i64));
     Value::make_instance(crate::symbol::Symbol::intern("Pointer"), attrs)
+}
+
+/// Wrap a returned native pointer as an instance of a user-declared
+/// `is repr('CStruct')` class (an opaque native handle, e.g. `SSL_CTX`). The
+/// address is carried in an `address` attribute so it round-trips as a `void*`
+/// when passed back to another native call (`pointer_address` reads it). A NULL
+/// return becomes the class's type object (undefined) so `.defined` / boolean
+/// checks — the OpenSSL binding's `try {...} || try {...}` fallback pattern —
+/// behave like Rakudo, where a null CStruct return is a type object.
+#[cfg(feature = "libffi")]
+fn make_struct_value(class: &str, addr: usize) -> Value {
+    if addr == 0 {
+        return Value::package(crate::symbol::Symbol::intern(class));
+    }
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("address".to_string(), Value::int(addr as i64));
+    Value::make_instance(crate::symbol::Symbol::intern(class), attrs)
 }
 
 /// Read the C address carried by a NativeCall argument: a `Pointer` object's
@@ -404,6 +463,14 @@ enum ArgOwner {
         data_ptr: *const std::ffi::c_void,
         elem: CType,
     },
+    /// A `Blob` / `Buf` byte buffer (`void*`): `buf` is the contiguous bytes
+    /// (heap, stable address), `data_ptr` is the pointer handed to libffi. The
+    /// callee may write into `buf` (an out-buffer), so it is copied back into
+    /// the caller's `Buf` instance after the call.
+    BufBytes {
+        buf: Vec<u8>,
+        data_ptr: *const std::ffi::c_void,
+    },
     /// A `CArray[Str]` (`char**`): `strings` keeps the NUL-terminated buffers
     /// alive, `ptrs` is the NULL-terminated `char*` array, `data_ptr` is the
     /// `char**` handed to libffi (the address of the first `char*`).
@@ -443,6 +510,7 @@ impl ArgOwner {
             ArgOwner::CStr(_, p) => arg(p),
             ArgOwner::OutPtr { slot_ptr, .. } => arg(slot_ptr),
             ArgOwner::CArrayNum { data_ptr, .. } => arg(data_ptr),
+            ArgOwner::BufBytes { data_ptr, .. } => arg(data_ptr),
             ArgOwner::CArrayStr { data_ptr, .. } => arg(data_ptr),
         }
     }
@@ -487,7 +555,9 @@ fn carray_elem_size(elem: CType) -> usize {
         CType::I32 | CType::U32 | CType::F32 => 4,
         CType::I64 | CType::U64 | CType::F64 => 8,
         // A pointer-sized element (`Pointer`); Str is handled separately.
-        CType::Pointer | CType::Str | CType::CArray | CType::Void => std::mem::size_of::<usize>(),
+        CType::Pointer | CType::Str | CType::CArray | CType::Buf | CType::Void => {
+            std::mem::size_of::<usize>()
+        }
     }
 }
 
@@ -504,7 +574,7 @@ fn encode_carray_elem(elem: CType, v: &Value, dst: &mut [u8]) {
         CType::I64 | CType::U64 => dst.copy_from_slice(&(int as u64).to_ne_bytes()),
         CType::F32 => dst.copy_from_slice(&(num as f32).to_ne_bytes()),
         CType::F64 => dst.copy_from_slice(&num.to_ne_bytes()),
-        CType::Pointer | CType::Str | CType::CArray | CType::Void => {
+        CType::Pointer | CType::Str | CType::CArray | CType::Buf | CType::Void => {
             dst.copy_from_slice(&(int as usize).to_ne_bytes())
         }
     }
@@ -530,7 +600,7 @@ fn decode_carray_elem(elem: CType, src: &[u8]) -> Value {
         CType::U64 => Value::int(u64::from_ne_bytes(arr::<8>(src)) as i64),
         CType::F32 => Value::num(f32::from_ne_bytes(arr(src)) as f64),
         CType::F64 => Value::num(f64::from_ne_bytes(arr(src))),
-        CType::Pointer | CType::Str | CType::CArray | CType::Void => {
+        CType::Pointer | CType::Str | CType::CArray | CType::Buf | CType::Void => {
             Value::int(usize::from_ne_bytes(arr(src)) as i64)
         }
     }
@@ -570,10 +640,66 @@ fn marshal_arg(ps: &ParamSpec, raw: &Value) -> Result<(libffi::middle::Type, Arg
             let ptr = cstr.as_ptr();
             (Type::pointer(), ArgOwner::CStr(cstr, ptr))
         }
+        CType::Buf => {
+            // A `Blob`/`Buf` is passed as a `void*` to a contiguous copy of its
+            // bytes (kept alive by the owner for the call). A NULL/absent buffer
+            // becomes a null pointer.
+            let buf = buf_instance_bytes(v).unwrap_or_default();
+            let data_ptr = buf.as_ptr() as *const std::ffi::c_void;
+            (Type::pointer(), ArgOwner::BufBytes { buf, data_ptr })
+        }
         CType::Void => return Err("a parameter cannot have type void".to_string()),
         // Routed to `marshal_carray_arg` above; unreachable here.
         CType::CArray => return marshal_carray_arg(ps, raw),
     })
+}
+
+/// Read the bytes of a `Blob`/`Buf` native-call argument. A `Buf`/`Blob` is an
+/// `Instance` whose `bytes` attribute is an `Array` of byte `Int`s; unwrap any
+/// `Scalar`/`ContainerRef`/`VarRef` container first (a `$`-variable argument
+/// arrives wrapped).
+#[cfg(feature = "libffi")]
+fn buf_instance_bytes(v: &Value) -> Option<Vec<u8>> {
+    match v.view() {
+        ValueView::Instance { attributes, .. } => {
+            match attributes.as_map().get("bytes").map(|b| b.view()) {
+                Some(ValueView::Array(items, ..)) => Some(
+                    items
+                        .iter()
+                        .map(|b| crate::runtime::to_int(b) as u8)
+                        .collect(),
+                ),
+                _ => None,
+            }
+        }
+        ValueView::Scalar(inner) => buf_instance_bytes(inner),
+        ValueView::ContainerRef(cell) => cell.lock().ok().and_then(|g| buf_instance_bytes(&g)),
+        ValueView::VarRef { value, .. } => buf_instance_bytes(value),
+        _ => None,
+    }
+}
+
+/// Copy C-side bytes back into a `Blob`/`Buf` argument's `bytes` attribute after
+/// a native call (an out-buffer such as `SSL_read` / `BIO_read`). The `Instance`
+/// shares its attribute cell with the caller's variable, so the update is
+/// visible at the call site. The buffer length is preserved (the callee reports
+/// how many bytes it wrote via the return value; the caller slices accordingly).
+#[cfg(feature = "libffi")]
+fn write_buf_instance_bytes(v: &Value, bytes: &[u8]) {
+    match v.view() {
+        ValueView::Instance { attributes, .. } => {
+            let byte_vals: Vec<Value> = bytes.iter().map(|b| Value::int(*b as i64)).collect();
+            attributes.insert("bytes".to_string(), Value::array(byte_vals));
+        }
+        ValueView::Scalar(inner) => write_buf_instance_bytes(inner, bytes),
+        ValueView::ContainerRef(cell) => {
+            if let Ok(g) = cell.lock() {
+                write_buf_instance_bytes(&g, bytes);
+            }
+        }
+        ValueView::VarRef { value, .. } => write_buf_instance_bytes(value, bytes),
+        _ => {}
+    }
 }
 
 /// Marshal a `CArray[T]` argument: a Raku array of elements becomes a
@@ -650,7 +776,7 @@ fn ret_ffi_type(ct: CType) -> libffi::middle::Type {
         CType::U64 => Type::u64(),
         CType::F32 => Type::f32(),
         CType::F64 => Type::f64(),
-        CType::Str | CType::Pointer | CType::CArray => Type::pointer(),
+        CType::Str | CType::Pointer | CType::CArray | CType::Buf => Type::pointer(),
     }
 }
 

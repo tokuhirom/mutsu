@@ -314,14 +314,26 @@ impl Interpreter {
         use crate::runtime::nativecall::{CType, NativeCallSpec, ParamSpec};
 
         // Evaluate a trait's argument expression to a String, if present.
+        // A native library name can be supplied dynamically as a code object:
+        // `is native(&ssl-lib)` means "call `ssl-lib()` at bind time and use its
+        // return value as the library name" (Rakudo semantics — the OpenSSL /
+        // IO::Socket::SSL bindings resolve `libssl.so.3` etc. this way). So when
+        // the trait argument evaluates to a Callable, invoke it with no
+        // arguments and stringify the result instead of stringifying the code
+        // object itself.
         let mut eval_trait_str = |trait_name: &str| -> Result<Option<String>, RuntimeError> {
             for (t, arg) in custom_traits {
                 if t == trait_name {
                     return Ok(match arg {
-                        Some(expr) => Some(
-                            self.vm_eval_block_value(&[Stmt::Expr(expr.clone())])?
-                                .to_string_value(),
-                        ),
+                        Some(expr) => {
+                            let val = self.vm_eval_block_value(&[Stmt::Expr(expr.clone())])?;
+                            let resolved = if matches!(val.view(), ValueView::Sub(..)) {
+                                self.vm_call_sub_value(val, Vec::new(), false)?
+                            } else {
+                                val
+                            };
+                            Some(resolved.to_string_value())
+                        }
                         None => None,
                     });
                 }
@@ -355,8 +367,17 @@ impl Interpreter {
                 });
                 continue;
             }
-            let Some(ct) = CType::from_type_name(tc) else {
-                return Ok(());
+            let ct = match CType::from_type_name(tc) {
+                Some(ct) => ct,
+                // A user-declared `is repr('CStruct')` class (an opaque native
+                // handle, e.g. `SSL_CTX`) is passed by pointer. Recognize it by
+                // its type-name shape (a class name, so it lacks a mapped scalar
+                // C type) and marshal it as a `void*` — `pointer_address` reads
+                // the address the instance carries. A genuinely-unmarshallable
+                // type (a lowercase / unqualified non-class name) still skips
+                // native registration so the failure surfaces clearly.
+                None if self.is_native_struct_type(tc) => CType::Pointer,
+                None => return Ok(()),
             };
             params.push(ParamSpec {
                 ct,
@@ -365,6 +386,7 @@ impl Interpreter {
             });
         }
 
+        let mut ret_struct: Option<String> = None;
         let ret = match return_type {
             None => CType::Void,
             // A returned `CArray[T]` has no length to reify into a Raku array,
@@ -372,20 +394,66 @@ impl Interpreter {
             Some(rt) if rt.starts_with("CArray[") => CType::Pointer,
             Some(rt) => match CType::from_type_name(rt) {
                 Some(ct) => ct,
+                // A CStruct return (opaque native handle): wrap the returned
+                // pointer in an instance of the declared class so it round-trips
+                // as that handle type (`ret_struct` carries the class name).
+                None if self.is_native_struct_type(rt) => {
+                    ret_struct = Some(Self::native_struct_class_name(rt));
+                    CType::Pointer
+                }
                 None => return Ok(()),
             },
         };
 
-        self.native_call_specs.insert(
-            name.to_string(),
-            NativeCallSpec {
-                library,
-                symbol,
-                params,
-                ret,
-            },
-        );
+        let spec = NativeCallSpec {
+            library,
+            symbol,
+            params,
+            ret,
+            ret_struct,
+        };
+        // Key the descriptor under the sub's short name. An `our sub` declared
+        // inside a `module`/`package` (e.g. `OpenSSL::Method::TLS_client_method`)
+        // is also called by its package-qualified name, and the callsite looks
+        // the descriptor up by exactly the name it wrote — so register the
+        // qualified name too. Without this, a qualified call misses the native
+        // path and runs the stub `{ * }` body instead.
+        let pkg = self.current_package();
+        if pkg != "GLOBAL" {
+            self.native_call_specs
+                .insert(format!("{pkg}::{name}"), spec.clone());
+        }
+        self.native_call_specs.insert(name.to_string(), spec);
         Ok(())
+    }
+
+    /// A native parameter / return type name that is not one of the mapped
+    /// scalar C types is treated as an opaque native handle (a pointer) when it
+    /// is a `is repr('CStruct')` class — or, failing an exact registry match,
+    /// when it has the shape of a class name: it starts with an uppercase letter
+    /// or is package-qualified (`Foo::Bar`). This matches Rakudo NativeCall,
+    /// where a `CStruct` type used directly is passed by pointer. The registry
+    /// check catches lowercase CStruct classes (e.g. `evp_cipher_st`) that the
+    /// shape heuristic would miss; the heuristic catches structs declared in
+    /// another compilation unit not visible in this registry. A lowercase,
+    /// unqualified, non-CStruct name (a likely typo'd scalar type) is rejected so
+    /// a real mistake still surfaces rather than being silently mis-marshalled.
+    fn is_native_struct_type(&self, name: &str) -> bool {
+        let short = Self::native_struct_class_name(name);
+        {
+            let reg = self.registry();
+            if reg.cstruct_classes.contains(name) || reg.cstruct_classes.contains(&short) {
+                return true;
+            }
+        }
+        name.contains("::") || name.starts_with(|c: char| c.is_ascii_uppercase())
+    }
+
+    /// The class name to tag a returned CStruct instance with: the last
+    /// component of a package-qualified name (`OpenSSL::Method::SSL_METHOD` ->
+    /// `SSL_METHOD`), matching how the class is registered by its short name.
+    fn native_struct_class_name(name: &str) -> String {
+        name.rsplit("::").next().unwrap_or(name).to_string()
     }
 
     pub(super) fn exec_register_token_op(

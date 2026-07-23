@@ -307,11 +307,16 @@ sessions).
       minimal repro → general fix → `t/` pin → PR → re-check with `--only <Dist>`.
 - [ ] **NativeCall remainder**: ~~① `CArray[uint8]`, `CArray[Str]`~~ (done — CArray[T] is a
       constructible/indexable native-backed buffer, marshalled to a `T*` / `char**` argument with
-      out-array writeback; `t/nativecall-carray.t`) ② `is repr('CStruct')` structs ③ callbacks
-      (generic C callbacks). Not yet: a *returned* `CArray[T]` is surfaced as the raw `Pointer` it
-      carries (no length to reify a Raku array), and `.^name` reads `CArray[uint8]` rather than
-      raku's `NativeCall::Types::CArray[uint8]`. Everything from the MVP up to real SQLite CRUD is
-      done (news/2026-06.md archive section).
+      out-array writeback; `t/nativecall-carray.t`) ~~② `is repr('CStruct')` structs~~ (done for the
+      common case — a CStruct is an **opaque native handle passed by pointer**: a return is wrapped in
+      a defined instance of the declared class carrying the C address, an argument reads that address;
+      also `Blob`/`Buf` byte-buffer args with out-buffer writeback, and `is native(&sub)` code-object
+      library names. This is what made the genuine OpenSSL + IO::Socket::SSL binding run a real
+      `https://` GET — see news/2026-07/openssl-battery-https.md. Still TODO: **by-value** CStructs
+      (field-layout marshalling, not a pointer)) ③ callbacks (generic C callbacks). Not yet: a
+      *returned* `CArray[T]` is surfaced as the raw `Pointer` it carries (no length to reify a Raku
+      array), and `.^name` reads `CArray[uint8]` rather than raku's `NativeCall::Types::CArray[uint8]`.
+      Everything from the MVP up to real SQLite CRUD is done (news/2026-06.md archive section).
 - [ ] **Remaining 2 blockers for full Humming-Bird serving** (LOAD + LISTEN + accept + decode works;
       #3549): **B1** = leakage of `var_type_constraint` from typed parameters to same-named caller
       lexicals (the proper fix scopes the global name-keyed HashMap at call boundaries;

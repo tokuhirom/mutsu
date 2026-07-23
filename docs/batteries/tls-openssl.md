@@ -9,6 +9,49 @@ This is the **first active battery target** and, by design, a **NativeCall
 campaign** rather than a quick win. It is the foundation the whole pure-Raku HTTP
 stack stands on, so it is sequenced first.
 
+## Status: working (end-to-end HTTPS)
+
+Both modules are vendored into the bundled `modules/` tree and resolve with
+**zero config** (`use OpenSSL;` / `use IO::Socket::SSL;` — no `-I`). The genuine
+community binding runs on mutsu far enough to complete a **real `https://` GET**:
+
+```raku
+use IO::Socket::SSL;
+my $sock = IO::Socket::SSL.new(:host<example.com>, :port(443));
+$sock.print("GET / HTTP/1.0\r\nHost: example.com\r\n\r\n");
+say $sock.recv;   # HTTP/1.1 200 OK ...
+```
+
+The interpreter grew the NativeCall + parser features the binding needs (all
+general improvements, none patched into the vendored source — rung 2 of the
+[adoption policy](../../BATTERIES.md#1-adoption-policy--community-first-adopt-as-is)):
+
+- **`is native(&sub)`** — the library name is produced by calling a Raku sub at
+  bind time (`is native(&ssl-lib)`); the trait argument is now invoked when it is
+  a code object.
+- **`is repr('CStruct')` opaque handles** — `SSL` / `SSL_CTX` / `SSL_METHOD` /
+  `BIO` / … are marshalled **by pointer**: a CStruct return is wrapped in a
+  defined instance of the declared class (carrying the C address); passing one
+  back reads that address. Registered CStruct classes are tracked so even a
+  lowercase class name (`evp_cipher_st`) is recognized.
+- **`Blob`/`Buf` byte buffers** — passed as a `void*` to their bytes, with the
+  callee's writes copied back (the `SSL_read` / `BIO_read` out-buffers).
+- **Qualified-name native dispatch** — an `our sub` in a `unit module` called by
+  its package-qualified name (`OpenSSL::EVP::EVP_aes_128_cbc`) reaches the native
+  descriptor.
+- **`IO::Socket` role** — a minimal built-in role so `class IO::Socket::SSL does
+  IO::Socket` composes; the native `IO::Socket::INET` satisfies the role for the
+  `set-socket(IO::Socket $s)` type check. `explicitly-manage` is a no-op.
+- **Parser fix** — `v4-split` / `v6-split` are ordinary identifiers, not the
+  version literal `v4` followed by `-split` (a too-greedy version lexer broke the
+  binding). A `-` is only a version character as a trailing minus marker
+  (`v1.2.3-`), not before a word char.
+
+Pinned by `t/openssl-battery.t` (offline load + client context, skips if the host
+lacks `libssl`), `t/nativecall-native-lib-sub.t`, and `t/version-vn-identifier.t`.
+Remaining follow-ups (not on the HTTPS path): NativeCall callbacks (verify
+callbacks) and by-value CStruct field marshalling.
+
 ## Why this is first
 
 The chosen HTTP client direction is the mature **`HTTP::UserAgent`** (see
@@ -119,13 +162,29 @@ do **not** hand-edit the vendored tree:
 
 ```sh
 # 1. Get the new upstream release into a checkout, then rsync it into modules/.
-#    Keep runtime files + attribution; drop upstream tests/CI/precomp.
+#    Keep runtime files + attribution; drop upstream tests/CI/precomp, the doc
+#    tree, and the Windows-only resource DLLs (mutsu has no Windows target, so
+#    the 2.8 MB `libeay32.dll`/`ssleay32.dll` would be dead weight in git).
 rsync -a --delete \
   --exclude='.git' --exclude='.github' --exclude='t/' --exclude='xt/' \
-  --exclude='*.precomp' --exclude='.precomp/' \
+  --exclude='doc/' --exclude='run-tests' --exclude='dist.ini' \
+  --exclude='Build.rakumod' --exclude='*.precomp' --exclude='.precomp/' \
+  --exclude='resources/*.dll' \
   <openssl-checkout>/ modules/OpenSSL/
 # (same for IO-Socket-SSL -> modules/IO-Socket-SSL/)
 ```
+
+**Two vendoring notes specific to OpenSSL:**
+
+- **`resources/libraries.json` is generated, not shipped upstream.** Upstream's
+  `Build.rakumod` writes it at install time (`{ "crypto": "crypto", "ssl": "ssl" }`
+  on a non-brew Linux/macOS host, which `$*VM.platform-library-name` turns into
+  `libssl.so.3` / `libcrypto.so.3`). Since we drop `Build.rakumod`, commit that
+  file directly. If a future upstream changes the library stems, regenerate it.
+- **Windows DLLs are excluded** (see the `--exclude='resources/*.dll'` above).
+  They are referenced by `META6.json`'s `resources` list but are only used on
+  Windows, which mutsu does not target; the Linux/macOS path only reads
+  `libraries.json` and `dlopen`s the system `libssl`.
 
 2. Bump the version/commit in the table above and in the
    [bundle index](../../BATTERIES.md#7-bundle-index).

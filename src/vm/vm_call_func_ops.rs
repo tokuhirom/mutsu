@@ -218,7 +218,18 @@ impl Interpreter {
         // empty in the overwhelmingly common case, so this guard is free.
         if !self.native_call_specs.is_empty() {
             let name_str = Self::const_str(code, name_idx);
-            if let Some(spec) = self.native_call_specs.get(name_str).cloned() {
+            // A native descriptor is keyed by the sub's short name (and, when the
+            // declaring package is known at registration, its qualified name). A
+            // package-qualified callsite (`OpenSSL::EVP::EVP_aes_128_cbc`) may
+            // therefore need the short-name fallback — `unit module` subs are
+            // registered while `current_package` is still GLOBAL, so only the
+            // short name is present.
+            let spec = self.native_call_specs.get(name_str).cloned().or_else(|| {
+                name_str
+                    .rsplit_once("::")
+                    .and_then(|(_, short)| self.native_call_specs.get(short).cloned())
+            });
+            if let Some(spec) = spec {
                 let arity_usize = arity as usize;
                 if self.stack.len() < arity_usize {
                     return Err(RuntimeError::new(format!(

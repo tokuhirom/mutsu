@@ -1,4 +1,4 @@
-use super::run::{NATIVECALL_POINTER_PRELUDE, RATIONAL_ROLE_PRELUDE};
+use super::run::{IO_SOCKET_ROLE_PRELUDE, NATIVECALL_POINTER_PRELUDE, RATIONAL_ROLE_PRELUDE};
 use super::*;
 
 impl Interpreter {
@@ -41,6 +41,29 @@ impl Interpreter {
         static POINTER_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
         let prelude = POINTER_STMTS.get_or_init(|| {
             crate::parse_dispatch::parse_source(NATIVECALL_POINTER_PRELUDE)
+                .map(|(s, _)| s)
+                .unwrap_or_default()
+        });
+        if prelude.is_empty() {
+            return;
+        }
+        let mut combined = prelude.clone();
+        combined.append(stmts);
+        *stmts = combined;
+    }
+
+    /// Prepend the builtin `IO::Socket` role when a module/program composes it
+    /// (`does IO::Socket`) without declaring its own. Enables the community
+    /// `IO::Socket::SSL` binding, whose class header is
+    /// `class IO::Socket::SSL does IO::Socket`. Parsed once and cached.
+    pub(super) fn inject_iosocket_prelude(source: &str, stmts: &mut Vec<Stmt>) {
+        if !source.contains("does IO::Socket") || source.contains("role IO::Socket") {
+            return;
+        }
+        use std::sync::OnceLock;
+        static IO_SOCKET_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
+        let prelude = IO_SOCKET_STMTS.get_or_init(|| {
+            crate::parse_dispatch::parse_source(IO_SOCKET_ROLE_PRELUDE)
                 .map(|(s, _)| s)
                 .unwrap_or_default()
         });

@@ -334,6 +334,21 @@ impl Interpreter {
                 _ => false,
             };
         }
+        // The native socket classes (`IO::Socket::INET`, `IO::Socket::Async`)
+        // do the built-in `IO::Socket` role in Raku, but mutsu implements them
+        // natively rather than by composing a `RoleDef`, so the role membership
+        // must be asserted here. This lets a user class that composes
+        // `IO::Socket` (e.g. the community `IO::Socket::SSL` binding, whose
+        // `set-socket(IO::Socket $s)` receives a plain INET socket) accept them.
+        if constraint == "IO::Socket"
+            && let ValueView::Instance { class_name, .. } = value.view()
+            && matches!(
+                class_name.as_str(),
+                "IO::Socket::INET" | "IO::Socket::Async"
+            )
+        {
+            return true;
+        }
         if constraint == "Inf" {
             return matches!(value.view(), ValueView::Num(n) if n.is_infinite() && n.is_sign_positive());
         }

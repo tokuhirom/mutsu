@@ -180,11 +180,13 @@ impl Interpreter {
             }
             // Compile method bodies to bytecode for the fast path
             self.compile_class_methods(&storage_name);
-            // Register CUnion repr if present
-            if let Some(repr_name) = repr
-                && repr_name == "CUnion"
-            {
-                self.register_cunion_class(&storage_name);
+            // Register CUnion / CStruct repr if present
+            if let Some(repr_name) = repr {
+                if repr_name == "CUnion" {
+                    self.register_cunion_class(&storage_name);
+                } else if repr_name == "CStruct" {
+                    self.register_cstruct_class(&storage_name);
+                }
             }
             // Register the class name in the lexical env so that
             // ::("ClassName") indirect lookups can find it in the current scope.

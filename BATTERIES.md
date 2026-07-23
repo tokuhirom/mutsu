@@ -203,7 +203,7 @@ the HTTP client on top of it.
 
 | Battery | Provider | Kind | License | Status | Record |
 | --- | --- | --- | --- | --- | --- |
-| TLS / HTTPS socket (foundation) | `OpenSSL` + `IO::Socket::SSL` | Adopted | MIT / MIT | **Active first target** — NativeCall campaign (`%?RESOURCES`, `is native(&lib)`, CStruct, buffer round-trips) | [tls-openssl.md](docs/batteries/tls-openssl.md) |
+| TLS / HTTPS socket (foundation) | `OpenSSL` + `IO::Socket::SSL` | Adopted | MIT / MIT | **Working** — vendored + zero-config `use`; a real `https://` GET runs end-to-end. Needs system `libssl` at runtime. | [tls-openssl.md](docs/batteries/tls-openssl.md) |
 | HTTP client | `HTTP::UserAgent` (`zef:sergot`), leaning; `HTTP::Tiny` alt. | Adopted | MIT / Artistic-2.0 | Planned — sequenced after the TLS foundation | [http-client.md](docs/batteries/http-client.md) |
 | JSON | native `to-json` / `from-json` | Native | — | Working | — |
 
