@@ -71,11 +71,19 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
             }
         },
         ValueView::WeakSub(_) => "Sub",
-        ValueView::Routine { is_regex, .. } => {
+        // A builtin routine handle is a `Sub` (Rakudo: `&say.^name` is "Sub"),
+        // except a builtin-method lookup handle (`"abc".^lookup("uc")`), whose
+        // package is the owning type, which is a `Method`. "Routine" itself is
+        // never a concrete value's type in Rakudo.
+        ValueView::Routine {
+            is_regex, package, ..
+        } => {
             if is_regex {
                 "Regex"
+            } else if package.with_str(|p| p == "GLOBAL" || p.is_empty()) {
+                "Sub"
             } else {
-                "Routine"
+                "Method"
             }
         }
         ValueView::Package(_) => "Package",

@@ -2446,7 +2446,7 @@ impl Interpreter {
 ///   and backslash-escape any `<` or `>` in the symbol.
 /// - Otherwise, if the symbol contains `<` or `>`, use `\u{ab}\u{bb}` delimiters.
 /// - Otherwise, use `<>` delimiters as-is.
-fn format_operator_name(name: &str) -> String {
+pub(super) fn format_operator_name(name: &str) -> String {
     // Check if this is a categorical name like "infix:<...>", "prefix:<...>", etc.
     let Some(colon_pos) = name.find(":<") else {
         return name.to_string();

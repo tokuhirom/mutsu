@@ -605,7 +605,9 @@ impl Value {
                 let args: Vec<String> = type_args.iter().map(|a| a.to_string_value()).collect();
                 format!("({}[{}])", base_name, args.join(","))
             }
-            ValueView::Routine { package, name, .. } => format!("{}::{}", package, name),
+            // Rakudo: Code stringifies to its bare name (`~&say` is "say",
+            // with a coercion warning mutsu does not emit).
+            ValueView::Routine { name, .. } => name.resolve(),
             ValueView::Sub(data) => data.name.resolve(),
             ValueView::WeakSub(weak) => match weak.upgrade() {
                 Some(data) => data.name.resolve(),
