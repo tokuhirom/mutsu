@@ -534,6 +534,18 @@ impl Compiler {
                     return;
                 }
                 let saved_dynamic_scope = self.push_dynamic_scope_lexical();
+                // Snapshot the sigilless bindings that name a native lowercase
+                // type (`str`/`int`/...). A `my \str` declared *inside* this block
+                // is lexically scoped to it, so it must stop shadowing the native
+                // type once the block ends; drop any such name the block newly
+                // registers on exit. Scoped to type names only to keep the
+                // (pre-existing) leak behaviour of ordinary sigilless names.
+                let sigilless_type_names_before: std::collections::HashSet<String> = self
+                    .sigilless_locals
+                    .iter()
+                    .filter(|n| crate::runtime::Interpreter::is_builtin_type(n))
+                    .cloned()
+                    .collect();
                 // A genuine source `{ ... }` is a Raku callframe (it contributes
                 // an anonymous frame to a backtrace captured inside it); a
                 // synthesized if/while/loop body is not. `synthetic_block_body`
@@ -660,6 +672,10 @@ impl Compiler {
                     self.code.patch_block_post_start(idx);
                     self.code.patch_loop_end(idx);
                 }
+                self.sigilless_locals.retain(|n| {
+                    sigilless_type_names_before.contains(n)
+                        || !crate::runtime::Interpreter::is_builtin_type(n)
+                });
                 self.pop_dynamic_scope_lexical(saved_dynamic_scope);
             }
             Stmt::SyntheticBlock(stmts) => {

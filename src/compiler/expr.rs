@@ -168,19 +168,22 @@ impl Compiler {
                 // stripped share the same key in local_map but must NOT shadow type
                 // names, so they go through GetBareWord which checks the type registry.
                 if let Some(&slot) = self.local_map.get(name.as_str()) {
-                    if crate::runtime::Interpreter::is_builtin_type(name) {
-                        let name_idx = self.code.add_constant(Value::str(name.clone()));
-                        self.code.emit(OpCode::GetBareWord(name_idx));
-                    } else if self.sigilless_locals.contains(name.as_str())
+                    if self.sigilless_locals.contains(name.as_str())
                         || self.constant_vars_in_scope.contains(name.as_str())
                         || name == "self"
                         || name == "__ANON_STATE__"
                     {
                         // Sigilless bindings and in-scope constants: the bare word
-                        // IS the variable, so read directly from the local slot.
+                        // IS the variable, so read directly from the local slot —
+                        // even when the name coincides with a native lowercase type
+                        // (`my \str`, an `Int \ch` param): in Raku the lexical
+                        // binding shadows the native type within its scope.
                         // (Out-of-scope constants fall through to GetBareWord, which
                         // resolves them as `our`-scoped package globals.)
                         self.code.emit(OpCode::GetLocal(slot));
+                    } else if crate::runtime::Interpreter::is_builtin_type(name) {
+                        let name_idx = self.code.add_constant(Value::str(name.clone()));
+                        self.code.emit(OpCode::GetBareWord(name_idx));
                     } else {
                         // The local is a `$`-sigiled variable — a bare word with the
                         // same name should resolve as a type/package, not the variable.

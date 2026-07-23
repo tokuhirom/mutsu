@@ -52,7 +52,12 @@ impl Interpreter {
 
     /// Augment an existing class by adding methods (and attributes) from the body.
     /// This implements `augment class ClassName { ... }` (monkey-patching).
-    pub(crate) fn augment_class(&mut self, name: &str, body: &[Stmt]) -> Result<(), RuntimeError> {
+    pub(crate) fn augment_class(
+        &mut self,
+        name: &str,
+        body: &[Stmt],
+        does_roles: &[String],
+    ) -> Result<(), RuntimeError> {
         self.clear_private_zeroarg_method_cache();
         // Check if the class exists (user-defined or builtin)
         let is_builtin = !self.registry().classes.contains_key(name);
@@ -319,8 +324,110 @@ impl Interpreter {
             }
         }
 
+        // Mix in roles composed via `does Role` on the augment declaration
+        // (`augment class Str does Rotate { }`): copy each role's methods
+        // (including those of its parent roles) onto the augmented class, and
+        // record the composition so `.^roles`/`does` introspection sees it.
+        for role_name in does_roles {
+            self.compose_role_into_augmented_class(name, role_name);
+        }
+
         self.set_current_package(saved_package);
         Ok(())
+    }
+
+    /// Copy the methods and attributes of `role_name` (and its parent roles)
+    /// onto an already-registered class `name`, marking them as role-origin so
+    /// class-local methods still take priority. Used by `augment class X does R`.
+    fn compose_role_into_augmented_class(&mut self, name: &str, role_name: &str) {
+        self.clear_private_zeroarg_method_cache();
+        // Ensure a parameterized/bare role is available. Strip any `[...]`
+        // type-parameter suffix, then resolve the (possibly short) name to its
+        // registered qualified name — a role imported from a module is stored
+        // under its full `Module::Role` name with the short name as an alias.
+        let stripped = role_name
+            .split_once('[')
+            .map(|(b, _)| b)
+            .unwrap_or(role_name);
+        let resolved = self.resolve_declared_type_name(stripped);
+        let base_role = if self.registry().roles.contains_key(resolved.as_str()) {
+            resolved.as_str()
+        } else {
+            stripped
+        };
+        let role_def = match self.registry().roles.get(base_role) {
+            Some(r) => r.clone(),
+            None => return,
+        };
+        let base_role = base_role.to_string();
+        let base_role = base_role.as_str();
+        // Collect this role's methods plus every parent role's methods.
+        let mut all_methods: HashMap<String, Vec<MethodDef>> = role_def.methods.clone();
+        let mut all_attributes = role_def.attributes.clone();
+        let mut composed = vec![base_role.to_string()];
+        if let Some(parent_names) = self.registry().role_parents.get(base_role).cloned() {
+            let mut stack: Vec<String> = parent_names;
+            while let Some(parent) = stack.pop() {
+                if composed.contains(&parent) {
+                    continue;
+                }
+                composed.push(parent.clone());
+                if let Some(parent_role) = self.registry().roles.get(&parent).cloned() {
+                    for (mname, mdefs) in &parent_role.methods {
+                        all_methods
+                            .entry(mname.clone())
+                            .or_default()
+                            .extend(mdefs.clone());
+                    }
+                    for attr in &parent_role.attributes {
+                        if !all_attributes.iter().any(|a| a.0 == attr.0) {
+                            all_attributes.push(attr.clone());
+                        }
+                    }
+                }
+                if let Some(grandparents) = self.registry().role_parents.get(&parent).cloned() {
+                    for gp in grandparents {
+                        if !composed.contains(&gp) {
+                            stack.push(gp);
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(class_def) = self.registry_mut().classes.get_mut(name) {
+            for (mname, mdefs) in all_methods {
+                // Only add a role method the class does not already define
+                // itself (a class-local method wins over a composed one).
+                let entry = class_def.methods.entry(mname).or_default();
+                let has_local = entry.iter().any(|d| d.role_origin.is_none());
+                if !has_local {
+                    for mut d in mdefs {
+                        if d.role_origin.is_none() {
+                            d.role_origin = Some(base_role.to_string());
+                        }
+                        entry.push(d);
+                    }
+                }
+            }
+            for attr in all_attributes {
+                if !class_def.attributes.iter().any(|a| a.0 == attr.0) {
+                    class_def.attributes.push(attr);
+                }
+            }
+        }
+        // Record the `does` relationship for introspection (`.^roles`, `does`).
+        self.registry_mut()
+            .class_does_only_roles
+            .entry(name.to_string())
+            .or_default()
+            .push(base_role.to_string());
+        self.registry_mut()
+            .class_composed_roles
+            .entry(name.to_string())
+            .or_default()
+            .extend(composed);
+        // Recompile so the fast path sees the newly composed methods.
+        self.compile_class_methods(name);
     }
 
     pub(crate) fn register_subset_decl(

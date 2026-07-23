@@ -957,6 +957,10 @@ pub(crate) enum Stmt {
     AugmentClass {
         name: Symbol,
         body: Vec<Stmt>,
+        /// Roles composed onto the augmented type via `does Role` on the augment
+        /// declaration itself (`augment class Str does Rotate { }`). Their methods
+        /// are mixed into the existing (builtin or user) class.
+        does_roles: Vec<Symbol>,
         /// True when declared with `augment role ...` (roles are always closed,
         /// so augmenting one is illegal); false for `augment class ...`.
         is_role: bool,

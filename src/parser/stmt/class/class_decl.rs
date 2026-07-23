@@ -161,12 +161,41 @@ pub(crate) fn augment_class_decl(input: &str) -> PResult<'_, Stmt> {
         }
     }
     let (rest, _) = ws(rest)?;
+    // Parent/role clauses on the augment itself: `augment class Str does Rotate { }`
+    // (and `is Parent`, which is accepted and ignored — you cannot change a
+    // builtin's parents by augmenting). Only `does Role` is captured, since its
+    // methods must be mixed into the augmented type.
+    let mut does_roles = Vec::new();
+    let mut rest = rest;
+    loop {
+        if let Some(r2) = keyword("does", rest) {
+            let (r2, _) = ws1(r2)?;
+            let (r2, role_name) = qualified_ident(r2)?;
+            let (r2, _) = ws(r2)?;
+            let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
+            does_roles.push(Symbol::intern(&format!("{}{}", role_name, bracket_suffix)));
+            let (r2, _) = ws(r2)?;
+            rest = r2;
+            continue;
+        }
+        if let Some(r2) = keyword("is", rest) {
+            let (r2, _) = ws1(r2)?;
+            let (r2, _parent) = qualified_ident(r2)?;
+            let (r2, _) = ws(r2)?;
+            let (r2, _) = parse_optional_bracket_suffix(r2)?;
+            let (r2, _) = ws(r2)?;
+            rest = r2;
+            continue;
+        }
+        break;
+    }
     let (rest, body) = block(rest)?;
     Ok((
         rest,
         Stmt::AugmentClass {
             name: Symbol::intern(&name),
             body,
+            does_roles,
             is_role,
         },
     ))

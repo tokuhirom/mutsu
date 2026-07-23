@@ -3582,6 +3582,25 @@ impl Interpreter {
             return result;
         }
 
+        // A method the user explicitly added to a builtin type via
+        // `augment class Str does Role { }` (or a method body) must win over the
+        // native string/collection/coercion dispatchers below — in Rakudo an
+        // augmented method overrides the built-in. This only diverts when the
+        // value's type actually carries a user-declared method of this name
+        // (builtin types have no `.methods` entries unless augmented), so normal
+        // native dispatch is unaffected. Without it, a name that collides with a
+        // native dispatcher that hard-errors on this type (e.g. `.rotate` on a
+        // Str is method-not-found natively) never reaches the augment fallback.
+        if !matches!(
+            target.view(),
+            ValueView::Instance { .. } | ValueView::Package(_)
+        ) {
+            let type_name = crate::runtime::utils::value_type_name(&target);
+            if self.has_user_method(type_name, method) {
+                return self.dispatch_instance_and_fallback(target, method, args);
+            }
+        }
+
         // Primary method dispatch by name (group 1: string, IO, coercion, misc)
         if let Some(result) = self.dispatch_method_by_name_1(target.clone(), method, args.clone()) {
             return result;
