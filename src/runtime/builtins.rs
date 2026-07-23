@@ -532,6 +532,24 @@ impl Interpreter {
                     .insert(key, value);
                 Ok(Value::NIL)
             }
+            "__MUTSU_EXPORT_TYPE__" => {
+                // Record a `is export`-ed type (class/grammar) so a later
+                // `use`/`import` of the enclosing module imports it by its bare
+                // name. Mirrors the sub `is export` path: the export package is
+                // the current package at declaration time. Suppressed exports
+                // (e.g. inside an inner block) are skipped, like other exports.
+                if self.suppress_exports {
+                    return Ok(Value::NIL);
+                }
+                let Some(name) = args.first() else {
+                    return Ok(Value::NIL);
+                };
+                let name = name.to_string_value();
+                let tags: Vec<String> = args[1..].iter().map(|a| a.to_string_value()).collect();
+                let pkg = self.current_package().to_string();
+                self.register_exported_var(pkg, name, tags);
+                Ok(Value::NIL)
+            }
             "__mutsu_set_newline" => {
                 let pair = args.first().cloned().unwrap_or(Value::NIL);
                 let ValueView::Pair(name, value) = pair.view() else {

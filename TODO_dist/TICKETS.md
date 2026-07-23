@@ -641,9 +641,9 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 - dists (each its own root cause; triage individually before claiming, confirm the
   raku `-I lib` baseline first): Attribute::Predicate, File::Ignore,
   IO::Path::AutoDecompress, Math::Angle, Math::PascalTriangle,
-  Statistics::LinearRegression, String::Rotate, Text::CodeProcessing, Trait::IO,
-  WriteOnceHash, `are`, `sortuk`, Tree::Binary::PrettyTree (required role method
-  not seen as implemented).
+  ~~Statistics::LinearRegression~~ (FIXED — see Done), String::Rotate,
+  Text::CodeProcessing, Trait::IO, WriteOnceHash, `are`, `sortuk`,
+  Tree::Binary::PrettyTree (required role method not seen as implemented).
 - These `test_die` on the current binary but were not individually reproduced.
   Split off a dedicated ticket when you pick one up.
 
@@ -652,6 +652,30 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 _(move tickets here with `[claim: <branch>]` when you start)_
 
 ## Done
+
+- **T-057 (Statistics::LinearRegression)** (#PENDING) — 6/9 → 9/9. Two general
+  bugs, both on the path to `my LR $model .= new: @x, @y`:
+  1. **`class ... is export` was silently dropped.** A `class Foo is export` /
+     `is export(:TAG)` inside a module never became importable — the class-decl
+     `is`-trait loop skipped `export` without recording it (and `is export(:ALL)`
+     left its `(:ALL)` unconsumed, mis-parsing the body → "Unknown function:
+     export"). The `LR` class (`class LR is export`) was therefore undeclared
+     under `use Statistics::LinearRegression :ALL`. Fix: the class parser now
+     captures `is export`/`is export(:tags)` (a bare `is export` == DEFAULT, also
+     under `:ALL`, matching Rakudo) and emits a `__MUTSU_EXPORT_TYPE__` runtime
+     call that records the export via `register_exported_var(current_package,
+     name, tags)` — mirroring the sub `is export` path. Pin:
+     `t/class-is-export-tag.t` (+ `t/lib/ExportedTypeFixture.rakumod`).
+  2. **`multi method` sigil narrowness was not a tie-break.** `multi method
+     new(@x, @y)` vs `new($a, $b)` reported X::Multi::Ambiguous for two array
+     args: the method dispatch's narrowness tie-break only counted `where`/subset
+     constraints, ignoring the implicit Positional/Associative/Callable constraint
+     an `@`/`%`/`&` sigil imposes (the multi *sub* path already counted these via
+     `typed_param_count`). Fix: `resolution_method.rs` narrowness now returns
+     `(where+subset, sigil-typed)` so `(@x, @y)` beats `($a, $b)`. Pin:
+     `t/multi-method-sigil-narrowness.t`.
+  - file: `src/parser/stmt/class/class_decl.rs`, `src/runtime/builtins.rs`
+    (`__MUTSU_EXPORT_TYPE__`), `src/runtime/resolution_method.rs`.
 
 - **T-055** (#PENDING) — Time::Duration::Parser 0/42 → 42/42. Inline grammar-action
   `{ make … }` values were bubbled to the top node and run with a shared `$/`, so a

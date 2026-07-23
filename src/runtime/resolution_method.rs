@@ -239,11 +239,17 @@ impl Interpreter {
             .collect();
         if tied.len() > 1 {
             // "Narrowness" tie-break: among equally-typed candidates, prefer the
-            // one whose params carry more narrowing constraints — a `where` clause
-            // OR a subset type (a subset is narrower than its base, and its
-            // nominal distance was resolved to the base above, so the two tie).
-            let narrowness = |def: &MethodDef| -> usize {
-                def.param_defs
+            // one whose params carry more narrowing constraints. Ranked as a tuple
+            // (higher wins lexicographically):
+            //   .0 = `where` clauses OR subset types (a subset is narrower than its
+            //        base, whose nominal distance was resolved to the base above);
+            //   .1 = sigilled params (`@`/`%`/`&`) — the sigil imposes an implicit
+            //        Positional/Associative/Callable constraint, so `(@x, @y)` is
+            //        narrower than `($a, $b)` for two array args (matching the sub
+            //        dispatch's `typed_param_count`, which also counts sigils).
+            let narrowness = |def: &MethodDef| -> (usize, usize) {
+                let where_subset = def
+                    .param_defs
                     .iter()
                     .filter(|p| {
                         p.where_constraint.is_some()
@@ -253,13 +259,26 @@ impl Interpreter {
                                     .contains_key(Self::constraint_base_for_distance(tc))
                             })
                     })
-                    .count()
+                    .count();
+                let sigil_typed = def
+                    .param_defs
+                    .iter()
+                    .filter(|p| {
+                        !p.is_invocant
+                            && !p.slurpy
+                            && !p.double_slurpy
+                            && (p.name.starts_with('@')
+                                || p.name.starts_with('%')
+                                || p.name.starts_with('&'))
+                    })
+                    .count();
+                (where_subset, sigil_typed)
             };
             let best_where = tied
                 .iter()
                 .map(|&i| narrowness(&all_matches[i].1))
                 .max()
-                .unwrap_or(0);
+                .unwrap_or((0, 0));
             let mut narrowed: Vec<usize> = tied
                 .iter()
                 .copied()
