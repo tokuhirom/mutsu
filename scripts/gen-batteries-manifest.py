@@ -60,6 +60,14 @@ SIDECAR = {
         # META6.json has no license key; the dist ships an MIT LICENSE file.
         "license": "MIT",
     },
+    "Encode": {
+        "slot": "HTTP client dependency layer",
+        "record": "docs/batteries/http-deps.md",
+        # Upstream states no license anywhere; clarification is pending at
+        # https://github.com/sergot/perl6-encode/issues/17. Say so on the page
+        # rather than leaving the chip blank (BATTERIES.md 4).
+        "license": "license pending",
+    },
     "File::Directory::Tree": {
         "slot": "HTTP client dependency layer",
         "record": "docs/batteries/http-deps.md",

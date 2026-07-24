@@ -19,6 +19,27 @@
       "readme": "DateTime::Parse\n===================\n\nDateTime parser.\n\n[![test](https://github.com/sergot/datetime-parse/actions/workflows/test.yml/badge.svg)](https://github.com/sergot/datetime-parse/actions/workflows/test.yml)\n\n\nSynopsis\n===================\n\n\n        my $rfc1123 = DateTime::Parse.new('Sun, 06 Nov 1994 08:49:37 GMT');\n        say $rfc1123.Date;\n\n        say DateTime::Parse.new('Sun', :rule<wkday>) + 1; # 7th day of week\n\n\n\nDescription\n==================\n\n- new( $format, $rule )\n    - $format : String with DateTime to be parsed\n    - $rule   : Rule to run\n"
     },
     {
+      "name": "Encode",
+      "version": "0.0.4",
+      "description": "Character encodings in Perl 6",
+      "license": "license pending",
+      "authors": [
+        "Filip Sergot"
+      ],
+      "auth": "github:sergot",
+      "provides": [
+        "Encode",
+        "Encode::Latin2",
+        "Encode::Windows1251",
+        "Encode::Windows1252"
+      ],
+      "depends": [],
+      "upstream": "git://github.com/sergot/perl6-encode",
+      "slot": "HTTP client dependency layer",
+      "record": "docs/batteries/http-deps.md",
+      "readme": "Encode [![test](https://github.com/sergot/perl6-encode/actions/workflows/test.yml/badge.svg)](https://github.com/sergot/perl6-encode/actions/workflows/test.yml)\n============\n\nCharacter encodings in Perl 6\n"
+    },
+    {
       "name": "File::Directory::Tree",
       "version": "0.2",
       "description": "Create, delete and empty directories",

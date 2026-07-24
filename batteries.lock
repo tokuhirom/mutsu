@@ -30,4 +30,5 @@ URI	modules/URI/lib	https://github.com/raku-community-modules/URI.git	f44892483b
 MIME::Base64	modules/MIME-Base64/lib	https://github.com/raku-community-modules/MIME-Base64.git	7964e26f72e90a25f3f2a08ed3f405466ce8d720	t/*.rakutest	-
 HTTP::Status	modules/HTTP-Status/lib	https://github.com/raku-community-modules/HTTP-Status.git	71cc3c76c0084341fd846fd41c8ef830f034db43	t/*.rakutest	-
 DateTime::Parse	modules/DateTime-Parse/lib	https://github.com/sergot/datetime-parse.git	4ad4ea1df1b4c91ff1ab8f7aadf91685de6a6189	t/*.t	-
+Encode	modules/Encode/lib	https://github.com/sergot/perl6-encode.git	f61acc36653bfe999d6ea5b4b84ee4dbce3c61d5	t/*.t	-
 File::Directory::Tree	modules/File-Directory-Tree/lib	https://github.com/raku-community-modules/File-Directory-Tree.git	b34d800a087b5813a978151c4ce91d7e39ecc277	t/*.rakutest	-

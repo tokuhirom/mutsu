@@ -1,6 +1,13 @@
 DateTime::Parse	01-asctime.t
 DateTime::Parse	01-basic.t
 DateTime::Parse	01-nginx-accesslog-timestamps.t
+Encode	01-basic.t
+Encode	02-latin2.t
+Encode	03-utf8.t
+Encode	04-latin1.t
+Encode	05-ascii.t
+Encode	06-windows1252.t
+Encode	07-windows1251.t
 File::Directory::Tree	01-basic.rakutest
 HTTP::Status	01-basic.rakutest
 HTTP::Status	02-is-tests.rakutest

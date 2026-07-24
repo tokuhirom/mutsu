@@ -221,13 +221,21 @@ try {
          'the provided modules are listed');
 
   console.log('Test: batteries README renders from Markdown');
-  const firstDetails = page.locator('.bat-readme').first();
-  await firstDetails.locator('summary').click();
-  assert(await firstDetails.locator('.bat-readme-body h2, .bat-readme-body h3').count() > 0,
+  // Pick a library whose README actually carries an example, rather than
+  // whichever happens to sort first: bundling a new library reorders the cards,
+  // and some upstream READMEs are a title and two lines. Both code-block styles
+  // count -- older dists (DateTime::Parse) indent their Synopsis instead of
+  // fencing it.
+  const readmeIdx = battManifest.libraries.findIndex(
+    (lib) => /^```/m.test(lib.readme ?? '') || /^(?: {4}|\t)\S/m.test(lib.readme ?? ''));
+  assert(readmeIdx >= 0, 'at least one bundled README carries a code example');
+  const details = page.locator('.bat-readme').nth(readmeIdx);
+  await details.locator('summary').click();
+  assert(await details.locator('.bat-readme-body h2, .bat-readme-body h3').count() > 0,
          'the README renders headings');
-  assert(await firstDetails.locator('.bat-readme-body pre code').count() > 0,
+  assert(await details.locator('.bat-readme-body pre code').count() > 0,
          'the README renders code blocks');
-  assert(await firstDetails.locator('.bat-readme-body img').count() === 0,
+  assert(await details.locator('.bat-readme-body img').count() === 0,
          'badge images are stripped, not rendered');
   assert(await page.evaluate(() =>
     document.documentElement.scrollWidth <= document.documentElement.clientWidth),

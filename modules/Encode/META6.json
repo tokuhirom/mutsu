@@ -1,0 +1,29 @@
+{
+    "auth": "github:sergot",
+    "authors": [
+        "Filip Sergot"
+    ],
+    "description": "Character encodings in Perl 6",
+    "build-depends": [
+    ],
+    "depends": [
+    ],
+    "name": "Encode",
+    "perl": "6.*",
+    "provides": {
+        "Encode": "lib/Encode.rakumod",
+        "Encode::Latin2": "lib/Encode/Latin2.rakumod",
+        "Encode::Windows1251": "lib/Encode/Windows1251.rakumod",
+        "Encode::Windows1252": "lib/Encode/Windows1252.rakumod"
+    },
+    "raku": "6.*",
+    "source-url": "git://github.com/sergot/perl6-encode.git",
+    "support": {
+        "bugtracker": "https://github.com/sergot/perl6-encode/issues",
+        "source": "git://github.com/sergot/perl6-encode.git"
+    },
+    "test-depends": [
+        "Test"
+    ],
+    "version": "0.0.4"
+}

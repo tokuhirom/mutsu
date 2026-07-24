@@ -6,7 +6,7 @@ use Test;
 # slice of each module's API; the exhaustive behaviour check is the release-time
 # gate that runs their full upstream suites (scripts/battery-testsuite.sh).
 
-plan 13;
+plan 15;
 
 use URI;
 my $u = URI.new('https://example.com:8443/a/b?x=1&y=2#frag');
@@ -28,6 +28,10 @@ ok is-client-error(404), 'HTTP::Status classifies a client error';
 use DateTime::Parse;
 is DateTime::Parse.new('Sun, 06 Nov 1994 08:49:37 GMT').Date, '1994-11-06',
     'DateTime::Parse reads an RFC 1123 date';
+
+use Encode;
+is Encode::decode('iso-8859-2', buf8.new(0xa3)), 'Ł', 'Encode decodes latin-2';
+is Encode::decode('utf-8', buf8.new(0xc5, 0x81)), 'Ł', 'Encode decodes utf-8';
 
 use File::Directory::Tree;
 my $root = 'tmp/http-deps-battery-t';

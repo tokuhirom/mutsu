@@ -1,8 +1,8 @@
-# Battery: the HTTP client's dependency layer — `URI`, `MIME::Base64`, `HTTP::Status`, `DateTime::Parse`, `File::Directory::Tree`
+# Battery: the HTTP client's dependency layer — `URI`, `MIME::Base64`, `HTTP::Status`, `DateTime::Parse`, `Encode`, `File::Directory::Tree`
 
 **Slot:** HTTP client dependency layer · **Kind:** Adopted (community modules,
 vendored as-is) · **Licenses:** Artistic-2.0 / Artistic-2.0 / Artistic-2.0 / MIT /
-Artistic-2.0
+**license clarification pending** / Artistic-2.0
 
 These are the libraries the chosen HTTP client, `HTTP::UserAgent`
 ([http-client.md](http-client.md)), depends on at runtime. They are bundled as a
@@ -22,11 +22,12 @@ their **complete upstream test suites pass against the bundled copy**:
 | `MIME::Base64` | 4 files | 4/4 |
 | `HTTP::Status` | 3 files | 3/3 |
 | `DateTime::Parse` | 3 files | 3/3 |
+| `Encode` | 7 files | 7/7 |
 | `File::Directory::Tree` | 1 file | 1/1 |
 
 They are registered in [`batteries.lock`](../../batteries.lock) and every file is
 in [`batteries-whitelist.txt`](../../batteries-whitelist.txt), so the release-time
-gate (`scripts/battery-testsuite.sh`, run by `release.yml`) re-runs all 25 files
+gate (`scripts/battery-testsuite.sh`, run by `release.yml`) re-runs all 32 files
 against the shipped library on every release; a regression blocks the release.
 Nothing was patched into the vendored sources — they run on mutsu unmodified.
 
@@ -55,22 +56,41 @@ satisfy the dependency*, and each lost for the same reason:
 Each is small, dependency-light (only `File::Temp` → `File::Directory::Tree` has
 a bundled dependency of its own), and permissively licensed.
 
+## ⚠️ `Encode`: license clarification pending upstream
+
+`Encode` is bundled, but its license status is **not yet settled**, and that must
+stay visible until it is. The dist carries **no license statement at all**: no
+`LICENSE` file, no `license` key in `META6.json`, nothing in the README or the
+sources. [BATTERIES.md §4](../../BATTERIES.md#4-license-policy) normally makes a
+stated, compatible license a hard gate.
+
+We are shipping it ahead of that statement as a deliberate, time-boxed call:
+`HTTP::UserAgent` needs it, the author (Filip Sergot, `github:sergot`) is a
+long-standing Perl/Raku community member whose other dists in this same layer
+(`DateTime::Parse`) are MIT, and the omission reads as an oversight rather than
+an intent to restrict. **The clarification is being tracked upstream at
+<https://github.com/sergot/perl6-encode/issues/17>.**
+
+Follow-ups, in order of what the answer turns out to be:
+
+- **A permissive license is stated upstream** — re-vendor to pick up the
+  `LICENSE` file, record it here and in the [bundle
+  index](../../BATTERIES.md#7-bundle-index), and delete this section.
+- **No answer, or a license we cannot redistribute** — `Encode` must come back
+  out of `modules/`, and `HTTP::UserAgent`'s non-UTF-8 charset path needs another
+  route.
+
+Until then, treat this as the one bundled library whose redistribution basis is
+provisional; do not cite it as precedent for relaxing §4.
+
 ## Not bundled from this layer, and why
 
-- **`Encode`** (`github:sergot`, needed by `HTTP::UserAgent` for non-UTF-8
-  charsets) — **blocked on licensing**, not on behaviour: its full upstream suite
-  (7/7) passes on mutsu, but the dist carries **no license at all** (no `LICENSE`
-  file, `META6.json` has no `license` key, no statement in the README or sources).
-  [BATTERIES.md §4](../../BATTERIES.md#4-license-policy) makes a compatible
-  license a hard gate, so it cannot be redistributed inside mutsu until upstream
-  states one. Resolving this is an upstream-contribution task (rung 4 of the
-  policy): ask <https://github.com/sergot/perl6-encode> to add an explicit
-  license.
-- **`File::Temp`** — Artistic-2.0 and otherwise ready (2/3 upstream files pass),
-  held back only by a live mutsu bug: `t/03-tempfile` loads the module through
-  `'use File::Temp; &tempfile, &tempdir'.EVAL`, and a module loaded inside `EVAL`
-  loses its file-scoped helper subs afterwards (`Unknown function: make-temp`).
-  Bundled once that is fixed, so the gate stays all-green.
+- **`File::Temp`** — Artistic-2.0, ready, and bundled separately: its upstream
+  `t/03-tempfile` loads the module through
+  `'use File::Temp; &tempfile, &tempdir'.EVAL`, which needed an interpreter fix
+  (a module loaded inside `EVAL` lost its file-scoped helper subs afterwards —
+  `Unknown function: make-temp`). With that fixed its suite is 3/3, and it joins
+  this layer in the follow-up that lands on top of the fix.
 
 ## Known drift (outside the upstream suites)
 
@@ -90,9 +110,9 @@ HTTP::UserAgent
 ├─ MIME::Base64           v1.2.5   (Artistic-2.0, zero deps)
 ├─ HTTP::Status           v0.0.5   (Artistic-2.0, zero deps)
 ├─ DateTime::Parse        v0.9.3   (MIT, zero deps)
-├─ File::Temp             v0.0.12  (Artistic-2.0)   -- pending, see above
-│  └─ File::Directory::Tree v0.2.1 (Artistic-2.0, zero deps)
-├─ Encode                 v0.0.4   (NO LICENSE)     -- blocked, see above
+├─ Encode                 v0.0.4   (license pending, zero deps)  -- see above
+├─ File::Temp             v0.0.12  (Artistic-2.0)   -- follows, see above
+│  └─ File::Directory::Tree v0.2   (Artistic-2.0, zero deps)
 └─ IO::Socket::SSL                 (MIT)            -- already bundled
 ```
 
@@ -113,7 +133,8 @@ To bump a module, re-vendor — do **not** hand-edit the vendored tree:
 | `MIME::Base64` | <https://github.com/raku-community-modules/MIME-Base64> | v1.2.5 | `7964e26f` |
 | `HTTP::Status` | <https://github.com/raku-community-modules/HTTP-Status> | v0.0.5 | `71cc3c76` |
 | `DateTime::Parse` | <https://github.com/sergot/datetime-parse> | v0.9.3 | `4ad4ea1d` |
-| `File::Directory::Tree` | <https://github.com/raku-community-modules/File-Directory-Tree> | v0.2.1 | `b34d800a` |
+| `Encode` | <https://github.com/sergot/perl6-encode> | v0.0.4 | `f61acc36` |
+| `File::Directory::Tree` | <https://github.com/raku-community-modules/File-Directory-Tree> | v0.2 | `b34d800a` |
 
 ```sh
 # 1. Clone the new upstream revision, then copy the runtime tree + attribution.
@@ -155,6 +176,9 @@ say is-client-error(404);                  # True
 use DateTime::Parse;
 say DateTime::Parse.new('Sun, 06 Nov 1994 08:49:37 GMT').Date;   # 1994-11-06
 
+use Encode;
+say Encode::decode('iso-8859-2', buf8.new(0xa3));                # Ł
+
 use File::Directory::Tree;
 mktree 'a/b/c';
 rmtree 'a';
@@ -165,5 +189,9 @@ rmtree 'a';
 - `URI` — Artistic-2.0. `MIME::Base64` — Artistic-2.0. `File::Directory::Tree` —
   Artistic-2.0. `HTTP::Status` — Artistic-2.0 (stated in the README).
   `DateTime::Parse` — MIT.
+- `Encode` — **unstated upstream; clarification pending** at
+  <https://github.com/sergot/perl6-encode/issues/17>. See
+  [the section above](#️-encode-license-clarification-pending-upstream) for the
+  reasoning and the two exit paths.
 - Vendored verbatim with `LICENSE` / `META6.json` / `README` preserved; sources
   unmodified (per [BATTERIES.md §4](../../BATTERIES.md#4-license-policy)).
