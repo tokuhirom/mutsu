@@ -1,0 +1,28 @@
+# Bundled runtime libraries ("batteries") — upstream test-suite provenance.
+#
+# mutsu ships these libraries verbatim (see BATTERIES.md and vendor/README.md).
+# Their upstream test suites are NOT vendored (BATTERIES.md §3), so the
+# release-time gate (scripts/battery-testsuite.sh, run by release.yml's
+# `batteries` job) fetches each suite fresh at the pinned commit below and runs
+# it against the BUNDLED library + the release `mutsu`. A release cannot publish
+# unless every file in batteries-whitelist.txt still passes.
+#
+# When you re-vendor a battery to a newer version, bump its `commit` here to the
+# matching upstream commit and re-run `scripts/battery-testsuite.sh --update` to
+# refresh batteries-whitelist.txt (review the diff — a newly failing file is a
+# regression to fix, not to whitelist away).
+#
+# Do NOT edit the data rows' shape by hand carelessly — the harness parses them.
+#
+# Format: tab-separated. Columns:
+#   name            the battery's identity (also the whitelist path prefix)
+#   bundled_lib     the shipped library dir mutsu resolves `use` against
+#   test_url        upstream git repo that carries the test suite
+#   commit          pinned upstream commit to fetch the tests from
+#   test_glob       glob (relative to the clone) selecting the test files
+#   extra_includes  comma-separated extra `-I` dirs; `{clone}` = the fetched
+#                   repo root; `-` means none
+name	bundled_lib	test_url	commit	test_glob	extra_includes
+zef	vendor/zef/lib	https://github.com/ugexe/zef.git	0aa54f53b55662d3a7a3b89981d34b9de97422f1	t/*.rakutest	{clone}/t/lib
+OpenSSL	modules/OpenSSL/lib	https://github.com/raku-community-modules/OpenSSL.git	8dda81950edba943d1acf3f800e01633227d3e04	t/*.rakutest	-
+IO::Socket::SSL	modules/IO-Socket-SSL/lib	https://github.com/raku-community-modules/IO-Socket-SSL.git	353ef4f58da07cb141715d6baa95de5d36d1e26a	t/*.rakutest	modules/OpenSSL/lib

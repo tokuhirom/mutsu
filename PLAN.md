@@ -125,6 +125,44 @@ section.
       output match). External dists are either `zef fetch`ed in CI or vendored. Failures are
       report-only (a red run does not stop main). Once the bundle set is fixed, its smoke tests
       become the battery quality gate as-is.
+- [ ] **★ Close the bundled-library test-suite gaps — target: green before the next release**
+      (user policy 2026-07-24). The release-time gate now runs every battery's upstream suite
+      against the shipped library (`scripts/battery-testsuite.sh`, `batteries.lock`,
+      `batteries-whitelist.txt`; see [docs/batteries/testsuite-gate.md](docs/batteries/testsuite-gate.md)),
+      but it is a **baseline** gate, and the measured baseline is only **11/18 test files**. The
+      goal is to raise that toward all-green so a release ships batteries that genuinely pass their
+      own suites — the gate stops regressions, it does not close these gaps:
+      - **OpenSSL — 2/7**. Measured shapes (release build, run from the suite's own checkout):
+        `01-basic` 2/7 die (0.1 s) · `03-rsa` 1/8 **hang** · `04-crypt` 1/13 die (0.0 s) ·
+        `05-digest` 0/24 **hang** · `10-client-ca-file` 2/7 **SIGSEGV** (exit 139, 1.2 s).
+        ★ **Root cause of both hangs is found and is ONE general mutsu bug — multi-dispatch picks a
+        coercion candidate over an exact type match.** Minimal repro:
+        ```raku
+        my proto sub f(|) {*}
+        my multi sub f(Str() $s)   { "str"  }
+        my multi sub f(Blob:D $b)  { "blob" }
+        say f("abc".encode);   # raku: blob   mutsu: str   <-- wrong
+        ```
+        `Str()` (a coercion type, which accepts anything coercible) must rank **less specific** than
+        an exact `Blob:D` match. `OpenSSL::Digest` declares exactly this shape, and its `Str()`
+        candidate delegates with `md5 $string.encode` — so in mutsu the Blob re-enters the `Str()`
+        candidate and it is **infinite mutual recursion**, i.e. the hang. Fixing the ranking should
+        close `05-digest` (0/24) and `03-rsa` (1/8, `.sign` → `sha1`) together. Beware blast radius:
+        this is core dispatch ranking (cf. the earlier specificity fix #4967).
+        The `10-client-ca-file` **segfault** is a separate, higher-priority defect (project rule:
+        panics/crashes first), as are the two fast dies.
+        ★ Already ruled out: a *harness* artifact. These suites reach for fixtures by relative path
+        (`slurp 't/key.pem'`), so the harness now runs each test with its own repo as the working
+        directory. That moved `03-rsa` from 0/8 to 1/8 — real, but it flipped no file to passing.
+      - **Zef — 8/10** (`00-load` 1/2, `distribution-depends-parsing` 18/35). ★ This **contradicts
+        the recorded "all 10 upstream tests pass" (2026-07-10, #4383/#4384)**. Not yet triaged:
+        either a real regression since then, or a run-context difference (the gate runs
+        `mutsu -I vendor/zef/lib <test>` directly, whereas the 2026-07-10 result came from the full
+        mzef/install context). **Determine which before assuming a regression** — if it is context,
+        the gate's invocation may need to match how zef actually runs its own tests.
+      - **IO::Socket::SSL — 1/1** ✅ already green.
+      Raising a file into the baseline is `scripts/battery-testsuite.sh --update` + committing the
+      whitelist diff.
 
 ### B2. mzef — an `mzef` package manager bundling the real Zef (north-star; user policy 2026-06-28)
 
