@@ -367,6 +367,22 @@ impl Interpreter {
                 });
                 continue;
             }
+            // An unparameterized `CArray` parameter — OpenSSL declares
+            // `RSA_sign(int32, Blob, int32, Blob, CArray, OpaquePointer)`, whose
+            // fifth argument is the `unsigned int*` signature-length slot. The
+            // element type is not in the signature, so it is read from the
+            // argument's container metadata at call time. Without this the name
+            // fell through to the CStruct branch and was passed as an opaque
+            // `void*` — i.e. NULL, since a `CArray` carries no address — and the
+            // callee wrote through it.
+            if tc == "CArray" {
+                params.push(ParamSpec {
+                    ct: CType::CArray,
+                    is_rw,
+                    elem: None,
+                });
+                continue;
+            }
             let ct = match CType::from_type_name(tc) {
                 Some(ct) => ct,
                 // A user-declared `is repr('CStruct')` class (an opaque native

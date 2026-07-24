@@ -283,6 +283,7 @@ mod native_supply_methods;
 mod native_supply_mut_methods;
 pub(crate) mod native_types;
 pub(crate) mod nativecall;
+pub(crate) mod nativecall_pin;
 pub(crate) mod once_store;
 mod ops_bits;
 mod ops_compare;
