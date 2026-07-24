@@ -132,22 +132,28 @@ section.
       but it is a **baseline** gate, and the measured baseline is only **11/18 test files**. The
       goal is to raise that toward all-green so a release ships batteries that genuinely pass their
       own suites — the gate stops regressions, it does not close these gaps:
-      - **OpenSSL — 2/7** (`01-basic`, `03-rsa`, `04-crypt`, `05-digest`, `10-client-ca-file` fail).
-        All five emit their TAP plan and then produce **zero** test lines, but they split into two
-        distinct shapes (measured from CI run 30075859520 timings, reproduced identically locally):
-        - `05-digest` (0/24) **hangs** — it burns the harness's full 120 s `timeout`. A hang, not a
-          die: investigate as a blocking/looping NativeCall call, not as a thrown exception.
-        - `01-basic` (2/7), `03-rsa` (1/8), `04-crypt` (1/13), `10-client-ca-file` (2/7) **stop
-          immediately** (0.04–0.9 s), i.e. something dies right after the last test they manage.
-        The suites are NativeCall-heavy (RSA / EVP digest / cipher), so missing NativeCall surface
-        is the prime suspect for the fast-failing four, and they likely share one cause. Treat the
-        `05-digest` hang as a separate investigation.
+      - **OpenSSL — 2/7**. Measured shapes (release build, run from the suite's own checkout):
+        `01-basic` 2/7 die (0.1 s) · `03-rsa` 1/8 **hang** · `04-crypt` 1/13 die (0.0 s) ·
+        `05-digest` 0/24 **hang** · `10-client-ca-file` 2/7 **SIGSEGV** (exit 139, 1.2 s).
+        ★ **Root cause of both hangs is found and is ONE general mutsu bug — multi-dispatch picks a
+        coercion candidate over an exact type match.** Minimal repro:
+        ```raku
+        my proto sub f(|) {*}
+        my multi sub f(Str() $s)   { "str"  }
+        my multi sub f(Blob:D $b)  { "blob" }
+        say f("abc".encode);   # raku: blob   mutsu: str   <-- wrong
+        ```
+        `Str()` (a coercion type, which accepts anything coercible) must rank **less specific** than
+        an exact `Blob:D` match. `OpenSSL::Digest` declares exactly this shape, and its `Str()`
+        candidate delegates with `md5 $string.encode` — so in mutsu the Blob re-enters the `Str()`
+        candidate and it is **infinite mutual recursion**, i.e. the hang. Fixing the ranking should
+        close `05-digest` (0/24) and `03-rsa` (1/8, `.sign` → `sha1`) together. Beware blast radius:
+        this is core dispatch ranking (cf. the earlier specificity fix #4967).
+        The `10-client-ca-file` **segfault** is a separate, higher-priority defect (project rule:
+        panics/crashes first), as are the two fast dies.
         ★ Already ruled out: a *harness* artifact. These suites reach for fixtures by relative path
         (`slurp 't/key.pem'`), so the harness now runs each test with its own repo as the working
-        directory. That moved `03-rsa` from 0/8 to 1/8 — real, but it did not flip any file to
-        passing, so the remaining failures are genuine mutsu gaps, not miscounts. A good entry
-        point is `03-rsa`: `OpenSSL::RSAKey.new(private-pem => ...)` now succeeds and the very next
-        call, `.sign($data.encode)`, is where it dies.
+        directory. That moved `03-rsa` from 0/8 to 1/8 — real, but it flipped no file to passing.
       - **Zef — 8/10** (`00-load` 1/2, `distribution-depends-parsing` 18/35). ★ This **contradicts
         the recorded "all 10 upstream tests pass" (2026-07-10, #4383/#4384)**. Not yet triaged:
         either a real regression since then, or a run-context difference (the gate runs
