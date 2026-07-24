@@ -76,6 +76,28 @@ impl RuntimeError {
         err
     }
 
+    /// X::Numeric::Uninitialized — a bare numeric type object (`Int`, `Num`,
+    /// `Rat`, ...) used as an operand of an infix numeric operator (`+ - * / % **`,
+    /// `== != < > <= >= <=>`). Unlike prefix `+`/`-` (a resumable warning that
+    /// coerces to 0), Rakudo's numeric infix multis have no candidate accepting an
+    /// undefined operand of a concrete numeric type, so they throw this fatal
+    /// exception (not suppressed by `quietly`). The `type` attribute holds the
+    /// offending type object; `.message` is the standard "uninitialized value"
+    /// wording.
+    pub(crate) fn numeric_uninitialized(type_name: &str) -> Self {
+        let mut attrs = HashMap::new();
+        let msg = format!("Use of uninitialized value of type {type_name} in numeric context");
+        attrs.insert("message".to_string(), Value::str_from(&msg));
+        attrs.insert(
+            "type".to_string(),
+            Value::package(Symbol::intern(type_name)),
+        );
+        let ex = Value::make_instance(Symbol::intern("X::Numeric::Uninitialized"), attrs);
+        let mut err = Self::new(&msg);
+        err.exception = Some(Box::new(ex));
+        err
+    }
+
     /// Create a Failure value wrapping an X::Numeric::DivideByZero exception
     /// for a method call on a zero-denominator Rational (e.g. `.floor`, `.Int`).
     pub(crate) fn divide_by_zero_failure_for_method(method: &str, type_name: &str) -> Value {
