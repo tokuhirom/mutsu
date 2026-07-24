@@ -172,7 +172,7 @@ impl Interpreter {
             return Ok(Value::NIL);
         }
         let let_mark = self.let_saves_len();
-        let saved_functions = self.registry().functions.clone();
+        let mut saved_functions = self.registry().functions.clone();
         let saved_proto_subs = self.registry().proto_subs.clone();
         let saved_proto_functions = self.registry().proto_functions.clone();
         let saved_operator_assoc = self.operator_assoc.clone();
@@ -252,6 +252,10 @@ impl Interpreter {
             .load(std::sync::atomic::Ordering::Relaxed)
             != registry_gen_before
         {
+            // A `use` inside this block registered the module's own routines;
+            // they outlive the block (`loaded_modules` does), so put them back
+            // before the snapshot lands. See `reinstate_module_functions`.
+            self.reinstate_module_functions(&mut saved_functions);
             {
                 let mut reg = self.registry_mut();
                 reg.functions = saved_functions;

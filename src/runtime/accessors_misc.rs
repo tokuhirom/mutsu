@@ -98,6 +98,37 @@ impl Interpreter {
         self.end_phaser_sites.insert(site_id)
     }
 
+    /// Put back the routines a module load introduced that `snapshot` predates.
+    ///
+    /// Restoring `registry.functions` to a snapshot taken before a `use` drops
+    /// the used module's own routines, but NOT its entry in `loaded_modules` —
+    /// so the module is left half-loaded: code that still holds one of its subs
+    /// (a `&name` the scope returned, or an export hoisted into the caller) runs
+    /// with the module's file-scoped helpers gone, and re-`use`ing it is a no-op
+    /// that cannot restore them. `'use File::Temp; &tempfile'.EVAL` hits exactly
+    /// this: the returned `&tempfile` then dies with `Unknown function:
+    /// make-temp`.
+    ///
+    /// Only package-qualified keys are tracked (see `module_registered_functions`),
+    /// so the importing scope's bare aliases still go out of scope normally.
+    pub(crate) fn reinstate_module_functions(
+        &self,
+        functions: &mut rustc_hash::FxHashMap<Symbol, std::sync::Arc<FunctionDef>>,
+    ) {
+        if self.module_registered_functions.is_empty() {
+            return;
+        }
+        let registry = self.registry();
+        for key in &self.module_registered_functions {
+            if functions.contains_key(key) {
+                continue;
+            }
+            if let Some(def) = registry.functions.get(key) {
+                functions.insert(*key, def.clone());
+            }
+        }
+    }
+
     pub(crate) fn snapshot_routine_registry(&self) -> RoutineRegistrySnapshot {
         // Single guard for all six reads (avoids stacking read guards).
         let registry = self.registry();
@@ -120,8 +151,9 @@ impl Interpreter {
     }
 
     fn restore_routine_registry_impl(&mut self, snapshot: RoutineRegistrySnapshot, is_eval: bool) {
-        let (functions, proto_functions, token_defs, proto_subs, proto_tokens, our_scoped_keys) =
+        let (mut functions, proto_functions, token_defs, proto_subs, proto_tokens, our_scoped_keys) =
             snapshot;
+        self.reinstate_module_functions(&mut functions);
         // Collect our-scoped functions that were newly added during this block
         // (not present in the snapshot) that need to persist after scope restoration.
         // Preserve functions defined in the current package (original behavior)

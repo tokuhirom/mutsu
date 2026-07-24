@@ -511,6 +511,25 @@ impl Interpreter {
             }
 
             self.loaded_modules.insert(module.to_string());
+            // Record the module's own (package-qualified) routines so a later
+            // registry restore cannot drop them while `loaded_modules` still
+            // claims the module is loaded. Collected BEFORE `import_module`, so
+            // the bare `GLOBAL::` aliases it creates are excluded — those are
+            // lexical to the importing scope and must still disappear with it
+            // (roast S11-modules/lexical.t). Mirrors the same distinction
+            // `pop_import_scope` already makes.
+            let module_funcs: Vec<Symbol> = self
+                .registry()
+                .functions
+                .keys()
+                .filter(|k| !func_keys_before.contains(k))
+                .filter(|k| {
+                    let ks = k.resolve();
+                    ks.contains("::") && !ks.starts_with("GLOBAL::")
+                })
+                .copied()
+                .collect();
+            self.module_registered_functions.extend(module_funcs);
             if let Err(err) = self.import_module(module, tags)
                 && !err.message.starts_with("No exports found for module:")
             {
