@@ -1,4 +1,5 @@
 IO::Socket::SSL	01-basic.rakutest
+OpenSSL	03-rsa.rakutest
 OpenSSL	05-digest.rakutest
 OpenSSL	06-digest-md5.rakutest
 OpenSSL	07-version.rakutest

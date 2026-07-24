@@ -298,9 +298,18 @@ pub fn call_native(spec: &NativeCallSpec, args: &[Value]) -> Result<Value, Runti
             // declared class so it round-trips as that native handle type.
             CType::Pointer | CType::CArray | CType::Buf => {
                 let addr = cif.call::<usize>(code, &ffi_args);
-                match &spec.ret_struct {
-                    Some(class) => make_struct_value(class, addr),
-                    None => make_pointer_value(addr),
+                let class = spec.ret_struct.as_deref().unwrap_or("Pointer");
+                if addr == 0 {
+                    // A NULL return is the *type object*, not a defined pointer
+                    // holding 0 — that is what lets the caller's usual
+                    // `die "..." unless defined($p)` guard fire (OpenSSL's
+                    // `PEM_read_bio_RSAPrivateKey` reports failure this way).
+                    Value::package(crate::symbol::Symbol::intern(class))
+                } else {
+                    match &spec.ret_struct {
+                        Some(class) => make_struct_value(class, addr),
+                        None => make_pointer_value(addr),
+                    }
                 }
             }
             CType::Str => {
@@ -346,8 +355,15 @@ pub fn call_native(spec: &NativeCallSpec, args: &[Value]) -> Result<Value, Runti
     // Copy each `Buf`/`Blob` out-buffer's (possibly callee-modified) C bytes
     // back into the caller's Buf instance.
     for idx in buf_writebacks {
-        if let ArgOwner::BufBytes { buf, .. } = &owners[idx] {
-            write_buf_instance_bytes(&args[idx], buf);
+        if let ArgOwner::BufBytes { pin_key, buf, .. } = &owners[idx] {
+            match pin_key {
+                Some(key) => {
+                    if let Some(bytes) = crate::runtime::nativecall_pin::read(*key) {
+                        write_buf_instance_bytes(&args[idx], &bytes);
+                    }
+                }
+                None => write_buf_instance_bytes(&args[idx], buf),
+            }
         }
     }
 
@@ -463,11 +479,18 @@ enum ArgOwner {
         data_ptr: *const std::ffi::c_void,
         elem: CType,
     },
-    /// A `Blob` / `Buf` byte buffer (`void*`): `buf` is the contiguous bytes
-    /// (heap, stable address), `data_ptr` is the pointer handed to libffi. The
-    /// callee may write into `buf` (an out-buffer), so it is copied back into
-    /// the caller's `Buf` instance after the call.
+    /// A `Blob` / `Buf` byte buffer (`void*`): `data_ptr` is the pointer handed
+    /// to libffi. The callee may write into it (an out-buffer), so the bytes
+    /// are copied back into the caller's `Buf` instance after the call.
+    ///
+    /// `pin_key` is `Some` in the normal case, where the bytes live in the
+    /// object-lifetime pin registry (see [`crate::runtime::nativecall_pin`]) so
+    /// that a C function which *retains* the pointer keeps seeing live memory.
+    /// It is `None` only when the argument is not a pinnable instance (a type
+    /// object, say), and then the fallback `buf` backs the pointer for the
+    /// duration of the call.
     BufBytes {
+        pin_key: Option<usize>,
         buf: Vec<u8>,
         data_ptr: *const std::ffi::c_void,
     },
@@ -544,6 +567,19 @@ fn resolve_array_value(v: &Value) -> Option<Value> {
         ValueView::VarRef { value, .. } => resolve_array_value(value),
         _ => None,
     }
+}
+
+/// The C element type recorded on a `CArray` *value* (`CArray[int32].new` tags
+/// the array's container metadata with `int32`). Used for an unparameterized
+/// `CArray` parameter, whose signature does not say what the elements are.
+#[cfg(feature = "libffi")]
+fn carray_value_elem_type(v: &Value) -> Option<CType> {
+    let arr = resolve_array_value(v)?;
+    let name = match arr.view() {
+        ValueView::Array(items, ..) => items.value_type.clone()?,
+        _ => return None,
+    };
+    CType::from_type_name(&name)
 }
 
 /// The size in bytes of one `CArray[T]` element for a scalar C element type.
@@ -653,11 +689,35 @@ fn marshal_arg(ps: &ParamSpec, raw: &Value) -> Result<(libffi::middle::Type, Arg
         }
         CType::Buf => {
             // A `Blob`/`Buf` is passed as a `void*` to a contiguous copy of its
-            // bytes (kept alive by the owner for the call). A NULL/absent buffer
-            // becomes a null pointer.
-            let buf = buf_instance_bytes(v).unwrap_or_default();
-            let data_ptr = buf.as_ptr() as *const std::ffi::c_void;
-            (Type::pointer(), ArgOwner::BufBytes { buf, data_ptr })
+            // bytes. The copy is pinned to the Raku object rather than to the
+            // call, so a C function that retains the pointer (OpenSSL's
+            // `BIO_new_mem_buf` builds a memory BIO *over* the caller's bytes)
+            // still sees live memory afterwards.
+            let bytes = buf_instance_bytes(v).unwrap_or_default();
+            match buf_instance_pin_key(v).and_then(|key| {
+                crate::runtime::nativecall_pin::pin(key, &bytes).map(|ptr| (key, ptr))
+            }) {
+                Some((key, ptr)) => (
+                    Type::pointer(),
+                    ArgOwner::BufBytes {
+                        pin_key: Some(key),
+                        buf: Vec::new(),
+                        data_ptr: ptr as *const std::ffi::c_void,
+                    },
+                ),
+                // Not a pinnable instance: fall back to a per-call temporary.
+                None => {
+                    let data_ptr = bytes.as_ptr() as *const std::ffi::c_void;
+                    (
+                        Type::pointer(),
+                        ArgOwner::BufBytes {
+                            pin_key: None,
+                            buf: bytes,
+                            data_ptr,
+                        },
+                    )
+                }
+            }
         }
         CType::Void => return Err("a parameter cannot have type void".to_string()),
         // Routed to `marshal_carray_arg` above; unreachable here.
@@ -686,6 +746,21 @@ fn buf_instance_bytes(v: &Value) -> Option<Vec<u8>> {
         ValueView::Scalar(inner) => buf_instance_bytes(inner),
         ValueView::ContainerRef(cell) => cell.lock().ok().and_then(|g| buf_instance_bytes(&g)),
         ValueView::VarRef { value, .. } => buf_instance_bytes(value),
+        _ => None,
+    }
+}
+
+/// The pin-registry key for a `Blob`/`Buf` native-call argument: the address of
+/// its shared attribute cell, which is unique per object and stays valid until
+/// the object dies. `None` for anything that is not an instance (a type object
+/// passed where a buffer was declared), which then gets a per-call temporary.
+#[cfg(feature = "libffi")]
+fn buf_instance_pin_key(v: &Value) -> Option<usize> {
+    match v.view() {
+        ValueView::Instance { attributes, .. } => Some(attributes.cell_key()),
+        ValueView::Scalar(inner) => buf_instance_pin_key(inner),
+        ValueView::ContainerRef(cell) => cell.lock().ok().and_then(|g| buf_instance_pin_key(&g)),
+        ValueView::VarRef { value, .. } => buf_instance_pin_key(value),
         _ => None,
     }
 }
@@ -722,8 +797,12 @@ fn marshal_carray_arg(
     raw: &Value,
 ) -> Result<(libffi::middle::Type, ArgOwner), String> {
     use libffi::middle::Type;
+    // An unparameterized `CArray` parameter carries no element type in the
+    // signature, so take it from the argument itself (`CArray[int32].new` tags
+    // the array with its element type).
     let elem = ps
         .elem
+        .or_else(|| carray_value_elem_type(raw))
         .ok_or_else(|| "CArray parameter is missing its element type".to_string())?;
     let list = match resolve_array_value(raw) {
         Some(arr) => arr

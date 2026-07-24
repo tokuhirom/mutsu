@@ -139,6 +139,19 @@ impl InstanceAttrs {
         self.id
     }
 
+    /// The address of this instance's shared attribute cell.
+    ///
+    /// Unlike [`instance_id`], which an [`InstanceAttrs::clone`] deliberately
+    /// carries over to the copy, this is unique per *allocation*: every alias
+    /// of one object shares the cell, and a deep clone gets a fresh one. That
+    /// makes it the right key for a side table whose entry must be released
+    /// exactly once, when this object dies — see the NativeCall pinned-buffer
+    /// registry, which frees its entry from `Drop for InstanceAttrs` (while the
+    /// cell is still alive, so the address cannot yet have been recycled).
+    pub(crate) fn cell_key(&self) -> usize {
+        Arc::as_ptr(&self.attributes) as usize
+    }
+
     pub(crate) fn contains_key<K: AttrKey>(&self, key: K) -> bool {
         self.as_map().contains_key(key)
     }
@@ -321,6 +334,12 @@ impl InstanceAttrs {
 
 impl Drop for InstanceAttrs {
     fn drop(&mut self) {
+        // Free any C buffer pinned to this object for NativeCall (see
+        // `runtime::nativecall_pin`). Done here, while the attribute cell is
+        // still alive, so the key cannot have been recycled — and it short-
+        // circuits on an atomic load, so a program that pins nothing pays a
+        // single relaxed read per instance drop.
+        crate::runtime::nativecall_pin::release(self.cell_key());
         self.finalize_destroy();
     }
 }
