@@ -134,12 +134,39 @@ impl Interpreter {
         self.eval_block_value_opts(body, false)
     }
 
+    /// `eval_block_value`, additionally recording the block's compile-time
+    /// `free_var_writes` for the caller-slot writeback (retain-on-miss list).
+    ///
+    /// A carrier that runs user code by name — a `where` clause, notably — can
+    /// mutate a caller lexical (`where { $t ~= 'a' }`). The write reaches `env`,
+    /// but the owning caller *slot* is only refreshed if the name is recorded.
+    /// The compiler already knows exactly which free variables the block writes,
+    /// so record those and nothing else. (Diffing `env` before/after is not a
+    /// usable substitute: `Env::iter` walks only this tier's overlay, and a
+    /// nested call can flatten the parent chain into it mid-block, which makes
+    /// every inherited lexical look brand-new — see PLAN 8.22.)
+    pub(crate) fn eval_block_value_recording_writes(
+        &mut self,
+        body: &[Stmt],
+    ) -> Result<Value, RuntimeError> {
+        self.eval_block_value_inner(body, false, true)
+    }
+
     /// `eval_block_value`, with `is_eval_unit` marking `body` as an EVAL'd
     /// compilation unit's mainline (see `Compiler::mark_as_eval_unit`).
     pub(crate) fn eval_block_value_opts(
         &mut self,
         body: &[Stmt],
         is_eval_unit: bool,
+    ) -> Result<Value, RuntimeError> {
+        self.eval_block_value_inner(body, is_eval_unit, false)
+    }
+
+    fn eval_block_value_inner(
+        &mut self,
+        body: &[Stmt],
+        is_eval_unit: bool,
+        record_free_var_writes: bool,
     ) -> Result<Value, RuntimeError> {
         if body.is_empty() {
             return Ok(Value::NIL);
@@ -182,6 +209,14 @@ impl Interpreter {
         // frames, so the by-name write survives the owner frame's env restore.
         // No-op in the default build (gated on cell_boxing_active).
         self.box_carrier_free_var_writes(&code);
+        if record_free_var_writes {
+            for sym in &code.free_var_writes {
+                let name = sym.resolve();
+                if name != "_" && name != "$_" && name != "@_" && name != "%_" {
+                    self.record_caller_var_writeback(&name);
+                }
+            }
+        }
         self.block_scope_depth += 1;
         let result = self.run_compiled_block(&code, &compiled_fns);
         let trailing_sub_value = match body.last() {

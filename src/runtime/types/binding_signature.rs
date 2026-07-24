@@ -73,20 +73,22 @@ impl Interpreter {
         // a `where { $t ~= 'a' }` clause can mutate a captured-outer caller
         // lexical by name. The write reaches env, but the owning caller slot is
         // refreshed only by the call site's blanket pull — a no-op once
-        // env_dirty is removed. Snapshot the env scalars before the clause runs
-        // and record the names it changes into the retain-on-miss caller-var
-        // writeback, drained at the call site.
-        let pre_env: std::collections::HashMap<crate::symbol::Symbol, Value> = self
-            .env
-            .iter()
-            .filter(|(_, v)| Self::is_writeback_safe_scalar(v))
-            .map(|(k, v)| (*k, v.clone()))
-            .collect();
+        // env_dirty is removed. `eval_block_value_recording_writes` records the
+        // clause's compile-time `free_var_writes` into the retain-on-miss
+        // caller-var writeback, drained at the call site.
+        //
+        // This used to diff `env` around the clause instead, which was unsound:
+        // `Env::iter` walks only the innermost tier's overlay, so a nested call
+        // that flattens the parent chain into it (`Env::scoped_child` past
+        // `MAX_OVERLAY_DEPTH`) makes every inherited caller lexical look
+        // brand-new. Each was then "written back" from its stale `env` value —
+        // the declaration seed `Any`, because the slot is authoritative — wiping
+        // every caller lexical declared before the call (PLAN 8.22).
         let ok = match where_expr.as_ref() {
             Expr::AnonSub { body, .. } => {
                 let ph_keys = self.bind_where_placeholders(body, &bound_val);
                 let r = self
-                    .eval_block_value(body)
+                    .eval_block_value_recording_writes(body)
                     .map(|v| v.truthy())
                     .unwrap_or(false);
                 for k in ph_keys {
@@ -96,28 +98,15 @@ impl Interpreter {
                 r
             }
             Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") => {
-                self.eval_block_value(&[Stmt::Expr(where_expr.as_ref().clone())])
+                self.eval_block_value_recording_writes(&[Stmt::Expr(where_expr.as_ref().clone())])
                     .map(|v| v.truthy())
                     .unwrap_or(false)
             }
             expr => self
-                .eval_block_value(&[Stmt::Expr(expr.clone())])
+                .eval_block_value_recording_writes(&[Stmt::Expr(expr.clone())])
                 .map(|v| self.smart_match(&bound_val, &v))
                 .unwrap_or(false),
         };
-        let changed: Vec<String> = self
-            .env
-            .iter()
-            .filter(|(k, v)| {
-                k.resolve() != "_"
-                    && Self::is_writeback_safe_scalar(v)
-                    && pre_env.get(*k).map(|p| p != *v).unwrap_or(true)
-            })
-            .map(|(k, _)| k.resolve())
-            .collect();
-        for name in changed {
-            self.record_caller_var_writeback(&name);
-        }
         if let Some(previous) = saved_topic {
             self.env.insert("_".to_string(), previous);
         } else {
