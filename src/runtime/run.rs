@@ -176,9 +176,16 @@ impl Interpreter {
             queue_result?;
         }
 
-        // If the main body failed (e.g. die), run END phasers before propagating
+        // If the main body failed (e.g. die), run END phasers before propagating.
+        // `finish()`'s own error must not replace `e`: under `Test`, a mainline
+        // exception leaves the plan short, so `finish()` returns the "Test
+        // failures" plan-mismatch error — and propagating that instead swallowed
+        // the exception the user actually needs to see, leaving only
+        // `# You planned N test, but ran M`. Raku prints the exception first and
+        // the plan diagnostic after, so keep `finish()`'s side effects (the
+        // diagnostics it writes and the exit code it sets) and drop its error.
         if let Err(e) = body_result {
-            self.finish()?;
+            let _ = self.finish();
             return Err(e);
         }
 
@@ -195,7 +202,8 @@ impl Interpreter {
             && let Some(v) = last_value.as_ref()
             && let Some(err) = self.failure_to_runtime_error_if_unhandled(v)
         {
-            self.finish()?;
+            // Keep this error over `finish()`'s (see the mainline-failure arm above).
+            let _ = self.finish();
             return Err(err);
         }
         // Raku also DRAINS the sunk tail when it is a side-effecting lazy Seq:
@@ -218,7 +226,8 @@ impl Interpreter {
             if let Some(ll) = drain
                 && let Err(e) = self.force_lazy_list_vm(&ll)
             {
-                self.finish()?;
+                // Keep this error over `finish()`'s (see the mainline-failure arm above).
+                let _ = self.finish();
                 return Err(e);
             }
         }
