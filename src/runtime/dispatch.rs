@@ -78,14 +78,28 @@ impl Interpreter {
             .map(|p| {
                 // Include sigil-based implicit type constraint in the shape
                 // so that @-param and $-param are distinguishable.
-                let effective_type = if p.type_constraint.is_some() {
-                    p.type_constraint.clone()
+                let effective_type = if let Some(tc) = p.type_constraint.as_deref() {
+                    // A coercion param is shaped by the type it *accepts*, so
+                    // that `Int() $` and `Str() $` (both `(Any)`) are seen as
+                    // the same shape and can be reported as ambiguous once
+                    // ranking has tied them.
+                    Some(
+                        crate::runtime::types::parse_coercion_type(tc)
+                            .map(|(_, source)| source.unwrap_or("Any").to_string())
+                            .unwrap_or_else(|| tc.to_string()),
+                    )
                 } else if !p.slurpy && p.name.starts_with('@') {
                     Some("__sigil_@__".to_string())
                 } else if !p.slurpy && p.name.starts_with('%') {
                     Some("__sigil_%__".to_string())
                 } else if p.name.starts_with('&') {
                     Some("__sigil_&__".to_string())
+                } else if !p.slurpy {
+                    // An unconstrained `$`-param IS an `Any` param in raku, so
+                    // `multi f(Any $x)` and `multi f($y)` are the same shape
+                    // (and hence an ambiguous pair, not a silent win for
+                    // whichever was declared first).
+                    Some("Any".to_string())
                 } else {
                     None
                 };
