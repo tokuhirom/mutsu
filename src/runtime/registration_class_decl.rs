@@ -2437,14 +2437,36 @@ impl Interpreter {
         // the package-block store in `exec_package_scope_op`. `current_package`
         // is still `name` here, which is exactly when a method of this class
         // reads these names, so the store is correctly scoped.
+        // Names this class body actually `my`/`state`-declared at top level. A
+        // class-body static is normally recognized by being NEW in `env` (absent
+        // from `saved_env`). But a same-named lexical leaked into the persistent
+        // mainline env by an EARLIER module's class body (the success path leaves
+        // body statics in `env`) makes `saved_env` already carry the name, so this
+        // class's own `my $x` would be wrongly skipped and never registered as a
+        // static — its methods then fall back to the leaked bare-name global (e.g.
+        // `HTTP::Message`/`HTTP::Request` both `my $CRLF`). A name explicitly
+        // declared here IS a static regardless of any pre-existing outer/leaked
+        // binding, so recognize it directly from the body.
+        let declared_statics: std::collections::HashSet<&str> = body
+            .iter()
+            .filter_map(|stmt| match stmt {
+                Stmt::VarDecl {
+                    name,
+                    is_our: false,
+                    is_dynamic: false,
+                    ..
+                } => Some(name.as_str()),
+                _ => None,
+            })
+            .collect();
         let body_lexicals: Vec<(String, Value)> = self
             .env
             .iter()
             .filter_map(|(k, v)| {
-                if saved_env.contains_key_sym(*k) {
+                let bare = k.resolve();
+                if saved_env.contains_key_sym(*k) && !declared_statics.contains(bare.as_str()) {
                     return None;
                 }
-                let bare = k.resolve();
                 if bare.contains("::")
                     || bare.starts_with("__")
                     || bare.starts_with('?')
