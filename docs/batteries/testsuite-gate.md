@@ -14,14 +14,14 @@ requirement**: a tag cannot publish unless every bundled library's upstream
 tests still pass, at a recorded per-file baseline, against the *shipped* library
 and the release `mutsu`.
 
-## Why at release time (and why tagpr is now manual)
+## Why at release time
 
 Cutting a release is a deliberate act, so the expensive, network-dependent
-suite run belongs there rather than on every merge. In exchange, `tagpr.yml` is
-now **`workflow_dispatch`-only** — the release PR is no longer continuously
-refreshed; you kick tagpr by hand when you actually intend to release. The
-thoroughness moved from "restate the CHANGELOG constantly" to "verify the
-batteries before we ship."
+suite run belongs there rather than on every merge. A release is now cut by the
+manual `tag-release.yml` workflow (`gh workflow run tag-release.yml -f
+version=X.Y.Z`; see "Cutting a release" in `CLAUDE.md`), which bumps the version
+and pushes the tag that fires `release.yml`. This batteries gate runs as part of
+that release build, so a regression against a shipped library blocks the publish.
 
 ## Moving parts
 

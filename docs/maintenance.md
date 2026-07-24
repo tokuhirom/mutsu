@@ -65,8 +65,9 @@ For each crate a **major** behind, decide case by case — do **not** bump blind
    `make test` → exercise the affected feature end-to-end).
 4. **One concern per PR.** Keep the safe in-range sweep, each risky major bump,
    and any MSRV bump as separate PRs so a regression is easy to bisect and
-   revert. Dependency PRs are `chore(deps):` and take the default patch bump (no
-   tagpr label).
+   revert. Dependency PRs are `chore(deps):` and take a patch bump at the next
+   release (the version is chosen by hand — see "Cutting a release" in
+   `CLAUDE.md`).
 
 Worked examples from the 2026-07 refresh:
 
@@ -94,8 +95,8 @@ Some crates raise the **minimum supported Rust version**. When a bump reports
 - The toolchain pins in the workflows. They are **not** all the same and must be
   kept ≥ the MSRV:
   - `.github/workflows/ci.yml`, `bench.yml` — the test/roast/bench builders.
-  - `.github/workflows/release.yml`, `pages.yml`, `tagpr.yml` — the
-    release/docs/version-bump builders. `tagpr.yml` is **SHA-pinned** (with a
+  - `.github/workflows/release.yml`, `pages.yml`, `tag-release.yml` — the
+    release/docs builders. `tag-release.yml` is **SHA-pinned** (with a
     `# <version>` comment); resolve the new tag's commit with
     `gh api repos/dtolnay/rust-toolchain/commits/<version> --jq .sha`.
 - **`Dockerfile`** — the builder stage pins a `rust:<version>-bookworm` base

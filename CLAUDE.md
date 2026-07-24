@@ -115,17 +115,12 @@ Executes compiled bytecode. `vm.rs` holds the (unified `Interpreter`) struct, `r
 - PR workflow:
   1. Create a feature branch from main: `git checkout -b <branch-name>`
   2. Commit changes to the feature branch.
-  3. Push and open a PR with `gh pr create`.
-  4. **Apply the tagpr version-bump label that matches the change.** tagpr aggregates the labels of all PRs merged since the last release to decide the next version (default = patch). Pass `--label` to `gh pr create` (or `gh pr edit <n> --add-label`):
-     - `major` — backward-incompatible change (breaking API/CLI/behavior; a `feat!:`/`fix!:` or `BREAKING CHANGE` commit).
-     - `minor` — new user-visible feature, no break (a `feat:` commit; e.g. a newly supported Raku builtin/operator).
-     - **no label** — bug fix, roast/whitelist additions, perf, refactor, docs, chore, tests (`fix:`/`perf:`/`refactor:`/`docs:`/`chore:`/`test:`). These take the default patch bump; do NOT add a label.
-     - The label names are exactly `minor` / `major` (tagpr's defaults; `.tagpr` sets no custom names). Do NOT use the stale `tagpr:minor` / `tagpr:major` labels that also exist in the repo — tagpr ignores them. Pick at most one (major wins if a PR is somehow both).
-  5. Enable auto-merge: `gh pr merge --auto --squash <pr-number>`.
-  6. **Immediately after opening the PR, verify it is mergeable — do NOT assume it is.** Run `gh pr view <pr-number> --json mergeStateStatus,state -q '.state + " / " + .mergeStateStatus'`. If `mergeStateStatus` is `DIRTY` (merge conflict) or CI never registers (no workflow runs appear within ~1 min via `gh run list --branch <branch>`), the branch has conflicted with `main` — a sibling PR almost certainly touched the same file (docs/ledger files are the usual culprit, since slices update the same survey table). **Rebase onto `main` and resolve the conflict before relying on auto-merge:** `git fetch origin main && git rebase origin/main`, resolve, `git rebase --continue`, then `git push --force-with-lease`. A `DIRTY` PR will sit unmerged forever and CI will not run — catching it at open time (not hours later) is the rule. This conflict is frequent when landing many small slices in sequence; expect it.
-  7. CI (GitHub Actions) runs `make test` and `make roast`. The PR merges automatically when CI passes.
-  8. **Watch the new PR's CI in the background, never foreground-block on it.** Use a `run_in_background` bash poll loop on `gh pr checks <pr-number>` that exits when no check is `pending` (the harness notifies you on completion). Do NOT use foreground `gh pr checks --watch` — it blocks ~13 min and wastes the session. The background watch surfaces a red CI within minutes so you can fix-forward instead of leaving it unnoticed; auto-merge still lands the PR on its own once CI is green. If you have genuinely-independent, non-conflicting work, do it in parallel; in the final stretch there usually isn't any, so the watch itself is the productive thing.
-  9. **Before going idle, decide the next slice.** Don't wait on the merge with nothing queued. Re-read the relevant ledger/PLAN (`PLAN.md`, `TODO_roast/BLOCKERS.md`) and pick the next concrete unit of work — start it on a fresh branch off `main` if it's independent of the open PR, or lay out options and confirm with the user when the next step is a strategic fork.
+  3. Push and open a PR with `gh pr create`. No version-bump label is needed — the release version is chosen by hand at release time (see "Cutting a release" below), not aggregated from PR labels.
+  4. Enable auto-merge: `gh pr merge --auto --squash <pr-number>`.
+  5. **Immediately after opening the PR, verify it is mergeable — do NOT assume it is.** Run `gh pr view <pr-number> --json mergeStateStatus,state -q '.state + " / " + .mergeStateStatus'`. If `mergeStateStatus` is `DIRTY` (merge conflict) or CI never registers (no workflow runs appear within ~1 min via `gh run list --branch <branch>`), the branch has conflicted with `main` — a sibling PR almost certainly touched the same file (docs/ledger files are the usual culprit, since slices update the same survey table). **Rebase onto `main` and resolve the conflict before relying on auto-merge:** `git fetch origin main && git rebase origin/main`, resolve, `git rebase --continue`, then `git push --force-with-lease`. A `DIRTY` PR will sit unmerged forever and CI will not run — catching it at open time (not hours later) is the rule. This conflict is frequent when landing many small slices in sequence; expect it.
+  6. CI (GitHub Actions) runs `make test` and `make roast`. The PR merges automatically when CI passes.
+  7. **Watch the new PR's CI in the background, never foreground-block on it.** Use a `run_in_background` bash poll loop on `gh pr checks <pr-number>` that exits when no check is `pending` (the harness notifies you on completion). Do NOT use foreground `gh pr checks --watch` — it blocks ~13 min and wastes the session. The background watch surfaces a red CI within minutes so you can fix-forward instead of leaving it unnoticed; auto-merge still lands the PR on its own once CI is green. If you have genuinely-independent, non-conflicting work, do it in parallel; in the final stretch there usually isn't any, so the watch itself is the productive thing.
+  8. **Before going idle, decide the next slice.** Don't wait on the merge with nothing queued. Re-read the relevant ledger/PLAN (`PLAN.md`, `TODO_roast/BLOCKERS.md`) and pick the next concrete unit of work — start it on a fresh branch off `main` if it's independent of the open PR, or lay out options and confirm with the user when the next step is a strategic fork.
 - If CI fails, fix on the same branch and push again (the background watch notifies you; re-watch after pushing).
   - **Flaky-looking CI failures:** consult the "Known flaky tests" section below before re-triggering. (`roast/S02-names-vars/perl.t`'s historical `Failed: 0` abort no longer reproduces as of 2026-07-05 and was re-whitelisted — treat a new failure there as real first, per the triage protocol.)
 - **Never close a PR without preserving its knowledge.** If a PR has rebase conflicts, rebase it (manually or with an agent that reads the PR diff via `gh pr diff <number>`). The PR diff itself is the best documentation of the change — do not just close it and write a summary. Reopen and fix it, or have a new agent read the diff and re-implement on a fresh branch.
@@ -134,6 +129,20 @@ Executes compiled bytecode. `vm.rs` holds the (unified `Interpreter`) struct, `r
 - Temporary test scripts must be written to `./tmp/` (project-local, gitignored) using the Write tool. Never write to `/tmp/` or `/tmp/claude-1000/`.
 - Do not use `cat`, `head`, `tail`, or `sed` via Bash to read files. Always use the Read tool.
 - Do not use `grep`, `rg`, or `find` via Bash to search files. Always use the Grep and Glob tools.
+
+## Cutting a release
+
+Releases are cut by **one manual trigger** — the `tag-release.yml` workflow (`.github/workflows/tag-release.yml`). tagpr was removed (2026-07-25); there is no release PR, no `CHANGELOG.md`, and no `minor`/`major` version-bump label to apply on ordinary PRs. To release:
+
+```
+gh workflow run tag-release.yml -f version=0.18.0
+```
+
+(or the Actions tab → "Tag release" → Run workflow → enter the version, no `v` prefix). That one run: bumps `Cargo.toml` + the `mutsu` `Cargo.lock` entry to the given version, commits it straight to `main` (via a GitHub App token that is a bypass actor on the `main` ruleset), and pushes the `vX.Y.Z` tag. The tag push fires `release.yml`, which builds all four target tarballs (Linux x64/arm64, macOS x64/arm64), runs the batteries gate, and publishes the GitHub Release with **auto-generated notes** (`generate_release_notes: true`, from the merged PRs since the previous tag).
+
+- **Pick the version by hand** using semver judgment over what merged since the last tag: patch for fixes/roast/docs, minor for a new user-visible feature, major for a breaking change. There is no label-driven automation anymore.
+- `mutsu --version` reports `env!("CARGO_PKG_VERSION")`, so the `Cargo.toml` version the workflow writes is the shipped version — keep them coherent (the workflow does this for you).
+- **Prerequisite (infra, one-time):** the release GitHub App must remain a bypass actor on the `main` branch ruleset, or the workflow's push to `main` is rejected by `required_status_checks`.
 
 ## mzef package manager and distribution
 

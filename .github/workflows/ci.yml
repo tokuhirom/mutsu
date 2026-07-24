@@ -20,15 +20,6 @@ concurrency:
 
 jobs:
   test:
-    # Skip the heavy suites on tagpr's release PR. tagpr rewrites
-    # `tagpr-from-v*` on EVERY push to main, so each merged PR used to kick off
-    # a second full CI run (test + wasm-e2e + gc-stress + jit-stress) on a diff
-    # that only ever contains CHANGELOG.md, the Cargo.toml version, and the
-    # matching Cargo.lock line. main itself is CI'd on every push, so that run
-    # verified nothing new. A job skipped by a conditional reports as a passing
-    # required status check, so the release PR still merges (unlike a `paths:`
-    # filter, which would leave the required checks pending forever).
-    if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'tagpr-from-')
     runs-on: ubuntu-latest
     # The job does two full cargo builds (debug for `prove t/`, release for
     # roast) plus clippy, unit tests, and the ~7 min roast suite. At 15 min the

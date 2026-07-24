@@ -105,8 +105,8 @@ jobs:
 
   # Release-time gate: every bundled library's upstream test suite must still
   # pass (at its recorded baseline) against the SHIPPED library + this mutsu.
-  # This is the deliberate, thorough check that replaces continuous tagpr churn
-  # (tagpr is now manual-only). A regression here blocks the release publish.
+  # This is the deliberate, thorough check gating a release publish: a release is
+  # cut by the manual `tag-release.yml` trigger, and a regression here blocks it.
   # See scripts/battery-testsuite.sh, batteries.lock, batteries-whitelist.txt.
   batteries:
     runs-on: ubuntu-latest
