@@ -3658,6 +3658,27 @@ impl Interpreter {
             }
         }
 
+        // A role-mixed native-backed value (`$sock does Connection`,
+        // `$path does R`): a native method of the inner class must delegate to the
+        // inner value BEFORE the by-name native dispatchers below. Those key on the
+        // target's runtime shape and hard-error on the Mixin wrapper (e.g.
+        // `.basename` on `IO::Path+{R}`, `.print` on `IO::Socket::INET+{Connection}`)
+        // instead of falling through to the Mixin-inner delegation at the tail of
+        // this function. Role methods and `__mutsu_attr__` markers were already
+        // handled by `dispatch_mixin_method_call` above; a user-declared (possibly
+        // inherited) method is left for the Mixin fallback so it runs with `self`
+        // bound to the wrapper.
+        if let ValueView::Mixin(inner, _) = target.view() {
+            let inner_owned = inner.as_ref().clone();
+            if let ValueView::Instance { class_name, .. } = inner_owned.view() {
+                let cls = class_name.resolve().to_string();
+                if !self.class_has_user_method(&cls, method) && self.is_native_method(&cls, method)
+                {
+                    return self.call_method_with_values(inner_owned, method, args);
+                }
+            }
+        }
+
         // Primary method dispatch by name (group 1: string, IO, coercion, misc)
         if let Some(result) = self.dispatch_method_by_name_1(target.clone(), method, args.clone()) {
             return result;
