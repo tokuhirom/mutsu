@@ -376,6 +376,10 @@ impl Interpreter {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            // `<=>` is numeric (unlike generic `cmp`): a bare numeric type object
+            // operand throws X::Numeric::Uninitialized, matching rakudo.
+            crate::vm::vm_comparison_ops::check_type_object_in_numeric_context(&l)?;
+            crate::vm::vm_comparison_ops::check_type_object_in_numeric_context(&r)?;
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             // NaN <=> anything produces Nil (unordered)
             if is_nan_value(&l) || is_nan_value(&r) {

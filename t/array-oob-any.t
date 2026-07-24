@@ -15,11 +15,13 @@ plan 24;
     is @s[11].^name, 'Str', 'typed Array OOB is the element type';
 }
 
-# A type object coerces to "" (Str context) and 0 (numeric context).
+# A non-concrete-numeric type object coerces to "" (Str context) and 0 (numeric
+# context) with a warning. A concrete-numeric type object (Int) instead throws
+# X::Numeric::Uninitialized in a numeric infix op (fatal, matching rakudo).
 {
     ok Any eq '', 'Any eq ""';
     ok Str eq '', 'Str eq ""';
-    ok Int == 0, 'Int == 0';
+    throws-like { Int == 0 }, X::Numeric::Uninitialized, 'Int == 0 throws (concrete numeric)';
     ok Any == 0, 'Any == 0';
     my @foo;
     ok @foo[0] eq '', 'Array OOB eq ""';

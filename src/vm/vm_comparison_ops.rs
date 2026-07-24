@@ -1,21 +1,24 @@
 use super::*;
 
-/// Check if a value is a numeric type object (undefined) used in numeric context.
-/// In Raku, numeric type objects (Int, Num, Rat, etc.) throw a hard error when
-/// used in numeric comparison, even inside `quietly`. Non-numeric type objects
-/// (Any, Str, etc.) only produce a suppressible warning and coerce to 0.
-fn check_type_object_in_numeric_context(v: &Value) -> Result<(), RuntimeError> {
+/// Check if a value is a concrete numeric type object (undefined) used as an
+/// operand of an infix numeric operator. In Raku, the numeric infix multis
+/// (`+ - * / % **`, `== != < > <= >= <=>`) have no candidate accepting an
+/// undefined operand of a concrete numeric type, so they throw a fatal
+/// `X::Numeric::Uninitialized` (not suppressed by `quietly`). Non-concrete-numeric
+/// type objects (Any, Str, Cool, Numeric, Complex, ...) instead fall through to a
+/// generic candidate that warns and coerces to 0, so they must NOT be caught here.
+pub(crate) fn check_type_object_in_numeric_context(v: &Value) -> Result<(), RuntimeError> {
     if let ValueView::Package(name) = v.view() {
         let type_name = name.resolve();
+        // Rakudo hard-errors for these concrete numeric type objects. `Complex`
+        // is deliberately excluded — its infix candidates warn+coerce like the
+        // generic path (verified against rakudo).
         let is_numeric_type = matches!(
             type_name.as_ref(),
-            "Int" | "Num" | "Rat" | "FatRat" | "Complex" | "int" | "num"
+            "Int" | "Num" | "Rat" | "FatRat" | "Real" | "Bool"
         );
         if is_numeric_type {
-            return Err(RuntimeError::new(format!(
-                "Use of uninitialized value of type {} in numeric context",
-                type_name
-            )));
+            return Err(RuntimeError::numeric_uninitialized(&type_name));
         }
     }
     Ok(())
@@ -265,6 +268,8 @@ impl Interpreter {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            check_type_object_in_numeric_context(&l)?;
+            check_type_object_in_numeric_context(&r)?;
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             let (l, r) = (deref_allomorph_numeric(l), deref_allomorph_numeric(r));
             // NaN is unordered: NaN == anything is always False
@@ -309,6 +314,8 @@ impl Interpreter {
         // It first evaluates == (which autothreads through junctions),
         // then negates the boolean-collapsed result, always returning Bool.
         let eq_result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            check_type_object_in_numeric_context(&l)?;
+            check_type_object_in_numeric_context(&r)?;
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             let (l, r) = (deref_allomorph_numeric(l), deref_allomorph_numeric(r));
             // NaN is unordered: NaN == anything is always False
@@ -357,6 +364,8 @@ impl Interpreter {
         }
         // Fall through to standard != logic
         let eq_result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            check_type_object_in_numeric_context(&l)?;
+            check_type_object_in_numeric_context(&r)?;
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             if is_nan_value(&l) || is_nan_value(&r) {
                 return Ok(Value::FALSE);

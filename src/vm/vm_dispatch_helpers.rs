@@ -272,6 +272,15 @@ impl Interpreter {
         left: Value,
         right: Value,
     ) -> Result<(Value, Value), RuntimeError> {
+        // NOTE: unlike the comparison ops, the arithmetic ops do NOT throw
+        // X::Numeric::Uninitialized on a bare numeric type object here. `Int + 1`
+        // *should* throw (rakudo), but mutsu desugars the assignment metaop
+        // `$a += 0.1` to the same `Add` opcode as bare infix, and that form must
+        // NOT throw — rakudo's METAOP_ASSIGN uses the operator's identity element
+        // (0 for `+`, 1 for `*`) when the container holds a type object. Adding the
+        // check here breaks `my Rat $a; $a += 0.1` (roast S32-num/rat.t). Fixing
+        // the bare-infix case needs a compiler-level distinction between the two
+        // forms plus METAOP_ASSIGN identity semantics — see PLAN.md.
         crate::runtime::utils::check_str_numeric(&left)?;
         crate::runtime::utils::check_str_numeric(&right)?;
         self.coerce_numeric_bridge_pair(left, right)

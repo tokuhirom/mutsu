@@ -1430,6 +1430,39 @@ garbage until the page rebuilds the interpreter.
   for this item; `wasm-demo/e2e.test.mjs` sweeps every non-flagged lesson in a real browser.
 
 
+### 8.20 Bare numeric type object in an infix *arithmetic* op should throw X::Numeric::Uninitialized (found 2026-07-24 by the numeric-context doc-diff)
+
+The comparison ops (`== != < > <= >= <=>`) now throw `X::Numeric::Uninitialized`
+for a bare concrete-numeric type object operand (`Int == 0`, `Int < 5`), matching
+Rakudo (news `2026-07/numeric-uninitialized-infix.md`). The **arithmetic** ops
+(`+ - * / % **`) should throw the same way (`Int + 1` → `X::Numeric::Uninitialized`
+in rakudo) but were left unchanged, because the fix is entangled with the
+assignment metaops:
+
+- mutsu desugars `$a += 0.1` to `GetLocal; LoadConst; Add; SetLocal` — the **same**
+  `Add` opcode as bare `$a + 0.1`. Adding the type-object check to the shared arith
+  chokepoint (`coerce_numeric_bridge_pair_strict`, `src/vm/vm_dispatch_helpers.rs`)
+  makes `my Rat $a; $a += 0.1` throw, which is wrong (roast `S32-num/rat.t` test
+  ~803, "can do += on variable initialized by type object").
+- Rakudo's `METAOP_ASSIGN` special-cases an undefined container: it uses the
+  operator's **identity element** — `0` for `+`/`-`, `1` for `*`/`**`, and a hard
+  "No zero-argument meaning for: infix:</>" for `/`/`%` — instead of calling
+  `infix:<+>(Rat:U, ...)`. mutsu currently only *accidentally* gets `+=`/`-=` right
+  (it coerces the type object to 0); `*=` already diverges (`my Int $a; $a *= 5`
+  gives 0, should give 5).
+- **Correct fix (one PR):** give the compound-assignment path its own emission that,
+  when the LHS reads as a type object, substitutes the base op's identity (and
+  errors for `/`/`%`), so the bare-infix arith ops are then free to throw
+  `X::Numeric::Uninitialized` via the same predicate the comparison ops use
+  (`check_type_object_in_numeric_context`, `src/vm/vm_comparison_ops.rs`, already
+  `pub(crate)`). This also fixes the pre-existing `*=`/`**=` identity divergence.
+- Related follow-up: prefix `+`/`-` on a type object (`+Int`) should emit the
+  resumable `CX::Warn` numeric-context warning and resume with the type's zero
+  (`+Num` → `0e0`, `+Rat` → `0.0`, ...); mutsu currently coerces to `0` silently
+  for non-`Any` type objects (`src/vm/vm_misc_coerce.rs::exec_num_coerce_op` only
+  handles `Any`). This is the numeric twin of the string-context warning campaign.
+
+
 ## Metrics
 
 | Metric | Current | Target |
