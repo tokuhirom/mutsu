@@ -430,10 +430,16 @@ impl Interpreter {
         }
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
-        let args = if raw_args
-            .iter()
-            .any(|a| matches!(a.view(), ValueView::Slip(_)))
-        {
+        let mut has_slip = false;
+        let mut has_varref = false;
+        for a in &raw_args {
+            match a.view() {
+                ValueView::Slip(_) => has_slip = true,
+                ValueView::VarRef { .. } => has_varref = true,
+                _ => {}
+            }
+        }
+        let args = if has_slip {
             let preserve_empty_slip = Self::preserve_empty_slip_arg(&method);
             let mut args = Vec::new();
             for arg in raw_args {
@@ -446,6 +452,33 @@ impl Interpreter {
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("Interpreter stack underflow in CallMethodMut target".to_string())
         })?;
+        // `Pair.new($k, $v)` compiles its value argument tagged with `WrapVarRef`
+        // (see `compile_expr_method_on_var`): when the receiver is the native
+        // Pair type, box the source local into a shared `ContainerRef` cell so
+        // the built Pair's value aliases `$v` (write-through, the same capture
+        // the fat-arrow `MakePair` path performs). Any other receiver (a
+        // shadowing user class, a rebound name) unwraps to the plain value —
+        // identical to an untagged compile.
+        let args = if has_varref {
+            let native_pair_new = method == "new"
+                && matches!(target.view(), ValueView::Package(cn) if cn == "Pair")
+                && !self.has_user_method("Pair", "new");
+            args.into_iter()
+                .map(|a| match a.view() {
+                    ValueView::VarRef { name, value, .. } => {
+                        let inner = value.clone();
+                        if native_pair_new {
+                            self.capture_var_cell(code, &name.resolve(), inner)
+                        } else {
+                            inner
+                        }
+                    }
+                    _ => a,
+                })
+                .collect()
+        } else {
+            args
+        };
         // `X::Foo.throw`/`.fail`/... on an Exception type object (compiled here
         // because the bareword target routes through CallMethodMut) requires a
         // concrete invocant: X::Parameter::InvalidConcreteness.

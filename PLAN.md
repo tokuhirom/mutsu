@@ -1261,18 +1261,12 @@ also fixes the parens ambiguity — `return (1 and 2)` (a complete term = 2) vs
 - Cross-ref: the related `traps.rakudoc` list-element **container aliasing** cases. The **List**
   cases ([5]/[6]/[9]: `($a, ++$a)` / `@arr.push: ($a,$b)` reflect later mutations) were fixed
   2026-07-23 in #5290 (a List `(...)` boxes each scalar-var element into a shared `ContainerRef`;
-  the three list/hash/metaop consumers are cell-aware — see §8.16). Still open: **[7]
-  `Pair.new('a', $v)`** — a method-arg-binding container case, not List construction; defer with the
-  rest of container-repr (§8.5-adjacent), NOT this precedence bug.
-
-### 8.16 List container aliasing — residue (main campaign MERGED 2026-07-23, PR #5290)
-
-The List-holds-scalar-containers campaign landed (#5290; see [news/2026-07.md](news/2026-07.md)
-and memory `project_list_container_aliasing_campaign`). One case remains open:
-
-- [ ] **[7] `Pair.new('a', $v)`** — `Pair.new`'s method-arg binding decontainerizes, so a later
-      `$v` mutation is not reflected (raku `a => 9`, mutsu `a => 1`). Separate
-      method-arg-binding container case; coordinate with §8.5 and [ADR-0001] container-repr.
+  the three list/hash/metaop consumers are cell-aware). The last case, **[7]
+  `Pair.new('a', $v)`**, was fixed 2026-07-24 (the value argument is `WrapVarRef`-tagged and the
+  CallMethodMut exec boxes the source local into a shared cell — the fat-arrow `MakePair`
+  mechanism; pin `t/pair-new-container-alias.t`, details in `news/2026-07/`). Known shared
+  residue: a *captured outer* variable still snapshots (no local slot to box) for both `=> $var`
+  and `Pair.new` — container-repr territory ([ADR-0001]).
 
 ### 8.10 Object hashes are string-keyed, not `.WHICH`-keyed (object-hash half ✅ DONE 2026-07-24; Set/Bag/Mix element identity still open)
 
