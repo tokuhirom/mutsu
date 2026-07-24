@@ -47,6 +47,12 @@ vendor/zef/lib`, `-I modules/OpenSSL/lib`, …) — the clone provides only the
 `t/` tests. A test file "passes" when it emits a TAP plan and every planned test
 is `ok` with no `not ok`.
 
+**Each test runs with the fetched repo as its working directory**, which is how
+`prove` / `zef test` run these suites. It matters: they reach for fixtures by
+relative path (OpenSSL's `03-rsa.rakutest` does `slurp 't/key.pem'`). Running
+them from the mutsu repo root instead makes such files die before their first
+test and be miscounted as *library* failures rather than harness artifacts.
+
 ## Baseline, not all-green
 
 The gate is a **per-file baseline** (the same philosophy as

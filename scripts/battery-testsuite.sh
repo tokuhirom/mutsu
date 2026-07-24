@@ -29,7 +29,7 @@ ROOT="$(pwd)"
 MUTSU_BIN="${MUTSU_BIN:-target/release/mutsu}"
 LOCK="${BATTERIES_LOCK:-batteries.lock}"
 WHITELIST="${BATTERIES_WHITELIST:-batteries-whitelist.txt}"
-WORK="tmp/battery-testsuite"
+WORK="$ROOT/tmp/battery-testsuite"
 
 MODE="gate"
 [ "${1:-}" = "--update" ] && MODE="update"
@@ -39,6 +39,9 @@ if [ ! -x "$MUTSU_BIN" ]; then
   echo "  build it first (cargo build --release) or set MUTSU_BIN" >&2
   exit 2
 fi
+# Tests run with their own repo as the working directory (below), so the binary
+# must be addressable from there.
+case "$MUTSU_BIN" in /*) ;; *) MUTSU_BIN="$ROOT/$MUTSU_BIN" ;; esac
 
 # --- fetch a specific upstream commit into $dir (shallow, no full history) ----
 fetch_commit() {
@@ -56,9 +59,16 @@ fetch_commit() {
 }
 
 # --- run one test file; echo PASS or FAIL(detail); return 0 iff it fully passes
+#
+# $1 is the working directory to run in — the fetched repo root. These suites are
+# written to be run from their own checkout (`prove` / `zef test` do exactly
+# that) and reach for fixtures by RELATIVE path, e.g. OpenSSL's 03-rsa does
+# `slurp 't/key.pem'`. Running from the mutsu repo root instead made such files
+# die before their first test and be miscounted as library failures.
 run_one() {
+  local workdir="$1"; shift
   local out planned nok okc
-  out="$(timeout 120 "$MUTSU_BIN" "$@" 2>&1)"
+  out="$(cd "$workdir" && timeout 120 "$MUTSU_BIN" "$@" 2>&1)"
   planned="$(printf '%s\n' "$out" | grep -oE '^1\.\.[0-9]+' | head -1 | cut -d. -f3)"
   nok="$(printf '%s\n' "$out" | grep -cE '^not ok')"
   okc="$(printf '%s\n' "$out" | grep -cE '^ok ')"
@@ -120,8 +130,10 @@ while IFS=$'\t' read -r name bundled_lib test_url commit test_glob extra_include
 
   for f in "${files[@]}"; do
     base="$(basename "$f")"
+    # Address the test relative to its own repo — run_one runs it from there.
+    rel="${f#"$clone"/}"
     TOTAL_FILES=$((TOTAL_FILES + 1))
-    verdict="$(run_one "${inc[@]}" "$f")"
+    verdict="$(run_one "$clone" "${inc[@]}" "$rel")"
     rc=$?
     printf '  %-40s %s\n' "$base" "$verdict"
     if [ "$rc" -eq 0 ]; then
