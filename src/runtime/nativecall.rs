@@ -376,20 +376,18 @@ pub fn call_native(spec: &NativeCallSpec, args: &[Value]) -> Result<Value, Runti
 /// method dispatch (`.Int`/`.gist`/…) on the result resolves.
 #[cfg(feature = "libffi")]
 fn make_pointer_value(addr: usize) -> Value {
-    let mut attrs = std::collections::HashMap::new();
-    attrs.insert("address".to_string(), Value::int(addr as i64));
-    Value::make_instance(crate::symbol::Symbol::intern("Pointer"), attrs)
+    make_native_handle("Pointer", addr)
 }
 
-/// Wrap a returned native pointer as an instance of a user-declared
-/// `is repr('CStruct')` class (an opaque native handle, e.g. `SSL_CTX`). The
-/// address is carried in an `address` attribute so it round-trips as a `void*`
-/// when passed back to another native call (`pointer_address` reads it). A NULL
-/// return becomes the class's type object (undefined) so `.defined` / boolean
-/// checks — the OpenSSL binding's `try {...} || try {...}` fallback pattern —
-/// behave like Rakudo, where a null CStruct return is a type object.
-#[cfg(feature = "libffi")]
-fn make_struct_value(class: &str, addr: usize) -> Value {
+/// Wrap a native pointer as an instance of `class` — a user-declared
+/// `is repr('CStruct')` class (an opaque native handle, e.g. `SSL_CTX`) or the
+/// builtin `Pointer`. The address is carried in an `address` attribute so it
+/// round-trips as a `void*` when passed back to another native call
+/// ([`value_c_address`] reads it). A NULL address becomes the class's type
+/// object (undefined) so `.defined` / boolean checks — the OpenSSL binding's
+/// `try {...} || try {...}` fallback pattern — behave like Rakudo, where a null
+/// CStruct return is a type object.
+pub(crate) fn make_native_handle(class: &str, addr: usize) -> Value {
     if addr == 0 {
         return Value::package(crate::symbol::Symbol::intern(class));
     }
@@ -398,12 +396,15 @@ fn make_struct_value(class: &str, addr: usize) -> Value {
     Value::make_instance(crate::symbol::Symbol::intern(class), attrs)
 }
 
-/// Read the C address carried by a NativeCall argument: a `Pointer` object's
-/// `address` attribute, a bare integer, or 0 for Nil / anything else. Unwraps a
-/// `Scalar` / `ContainerRef` container first (a `$`-variable argument arrives
-/// wrapped).
 #[cfg(feature = "libffi")]
-fn pointer_address(v: &Value) -> usize {
+fn make_struct_value(class: &str, addr: usize) -> Value {
+    make_native_handle(class, addr)
+}
+
+/// Read the C address a value carries: a `Pointer`/CStruct handle's `address`
+/// attribute, a bare integer, or 0 for Nil / anything else. Unwraps a `Scalar`
+/// / `ContainerRef` / `VarRef` container first.
+pub(crate) fn value_c_address(v: &Value) -> usize {
     match v.view() {
         ValueView::Int(i) => i as usize,
         ValueView::Instance { attributes, .. } => {
@@ -412,13 +413,19 @@ fn pointer_address(v: &Value) -> usize {
                 _ => 0,
             }
         }
-        ValueView::Scalar(inner) => pointer_address(inner),
-        ValueView::ContainerRef(cell) => cell.lock().ok().map(|g| pointer_address(&g)).unwrap_or(0),
-        // An `is rw` argument arrives as a `VarRef` carrying the bound
-        // variable's current value.
-        ValueView::VarRef { value, .. } => pointer_address(value),
+        ValueView::Scalar(inner) => value_c_address(inner),
+        ValueView::ContainerRef(cell) => cell.lock().ok().map(|g| value_c_address(&g)).unwrap_or(0),
+        ValueView::VarRef { value, .. } => value_c_address(value),
         _ => 0,
     }
+}
+
+/// Read the C address carried by a NativeCall argument. (An `is rw` argument
+/// arrives as a `VarRef` carrying the bound variable's current value, which
+/// [`value_c_address`] unwraps along with `Scalar` / `ContainerRef`.)
+#[cfg(feature = "libffi")]
+fn pointer_address(v: &Value) -> usize {
+    value_c_address(v)
 }
 
 /// Write a resolved C address back into a `Pointer` object's `address`

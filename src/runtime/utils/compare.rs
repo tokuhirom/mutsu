@@ -70,7 +70,17 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
         }
         ValueView::Enum { value, .. } => Some(value.as_i64() as f64),
         ValueView::Bool(b) => Some(if b { 1.0 } else { 0.0 }),
-        ValueView::Str(s) => s.trim().parse::<f64>().ok(),
+        ValueView::Str(s) => {
+            let t = s.trim();
+            // Raku numifies an empty (or whitespace-only) string to 0 — `+""`
+            // is `0` and `"" == 0` is True. Without this the string compared
+            // as "not a number at all" and `==` answered False.
+            if t.is_empty() {
+                Some(0.0)
+            } else {
+                t.parse::<f64>().ok()
+            }
+        }
         ValueView::Nil => Some(0.0),
         ValueView::Set(items, _) => Some(items.len() as f64),
         ValueView::Bag(items, _) => Some(items.len() as f64),

@@ -163,6 +163,17 @@ impl Interpreter {
                     ),
                 );
             }
+            // A field read on an `is repr('CStruct')` handle: the instance
+            // carries the C pointer, so resolve the name against the struct's
+            // declared field layout and read it out of native memory
+            // (`$ssl.server`, `nativecast(evp_cipher_st, $c).key_len`). The
+            // class declares the fields as attributes but has no storage for
+            // them, so accessor resolution reaches here.
+            if args.is_empty()
+                && let Some(field) = self.cstruct_field_value(&inv_value, method_name)
+            {
+                return Ok((field, None));
+            }
             let type_name = receiver_class_name.to_string();
             return Err(
                 super::methods_signature_errors::make_method_not_found_error(
