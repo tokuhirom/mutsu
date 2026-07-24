@@ -15,7 +15,9 @@ on:
     branches: [main]
     paths:
       - 'wasm-demo/**'
+      - 'modules/**'                   # the batteries page lists these
       - 'scripts/bench-visualize.py'   # renders bench-trend.html
+      - 'scripts/gen-batteries-manifest.py'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -45,6 +47,16 @@ jobs:
         run: |
           wasm-pack build --target web --no-default-features --features wasm
           mv pkg wasm-demo/pkg
+
+      - name: Generate the batteries listing
+        # The batteries page (batteries.html) is generated from the vendored
+        # modules/ tree so it can never drift from what the binary ships. The
+        # committed snapshot is regenerated here at deploy time to pick up any
+        # module vendored since it was last committed.
+        run: |
+          python3 scripts/gen-batteries-manifest.py
+          cat wasm-demo/content/batteries.json | python3 -c \
+            'import json,sys; print("bundled:", ", ".join(l["name"] for l in json.load(sys.stdin)["libraries"]))'
 
       - name: Record compatibility stats
         # The landing page headlines "N% of the official spec files pass". Count

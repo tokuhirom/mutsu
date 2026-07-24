@@ -119,6 +119,14 @@ export default {
         cta: 'Open the REPL →',
       },
       {
+        title: 'See what ships in the box',
+        body: 'mutsu is batteries-included: TLS, HTTP and more are bundled alongside the ' +
+          'binary, ready for a plain <code>use</code> with no <code>zef install</code>. ' +
+          'Browse the bundled libraries and their docs.',
+        href: 'batteries.html',
+        cta: 'Browse the batteries →',
+      },
+      {
         title: 'Read the real docs',
         body: 'The official Raku documentation is the authority on the language, ' +
           'and it is excellent. This site is an introduction, not a replacement.',

@@ -1,0 +1,61 @@
+{
+  "libraries": [
+    {
+      "name": "OpenSSL",
+      "version": "0.2.7",
+      "description": "OpenSSL bindings",
+      "license": "MIT",
+      "authors": [
+        "Filip Sergot",
+        "Elizabeth Mattijsen"
+      ],
+      "auth": "zef:raku-community-modules",
+      "provides": [
+        "OpenSSL",
+        "OpenSSL::Bio",
+        "OpenSSL::Cipher",
+        "OpenSSL::CryptTools",
+        "OpenSSL::Ctx",
+        "OpenSSL::Digest",
+        "OpenSSL::Digest::MD5",
+        "OpenSSL::EVP",
+        "OpenSSL::Err",
+        "OpenSSL::Method",
+        "OpenSSL::NativeLib",
+        "OpenSSL::PEM",
+        "OpenSSL::RSA",
+        "OpenSSL::RSATools",
+        "OpenSSL::SSL",
+        "OpenSSL::Session",
+        "OpenSSL::Stack",
+        "OpenSSL::Version",
+        "OpenSSL::X509"
+      ],
+      "depends": [],
+      "upstream": "https://github.com/raku-community-modules/OpenSSL",
+      "slot": "TLS / HTTPS socket (foundation)",
+      "record": "docs/batteries/tls-openssl.md",
+      "readme": "[![Actions Status](https://github.com/raku-community-modules/OpenSSL/actions/workflows/linux.yml/badge.svg)](https://github.com/raku-community-modules/OpenSSL/actions) [![Actions Status](https://github.com/raku-community-modules/OpenSSL/actions/workflows/macos.yml/badge.svg)](https://github.com/raku-community-modules/OpenSSL/actions) [![Actions Status](https://github.com/raku-community-modules/OpenSSL/actions/workflows/windows.yml/badge.svg)](https://github.com/raku-community-modules/OpenSSL/actions)\n\nNAME\n====\n\nOpenSSL - OpenSSL bindings\n\nSYNOPSIS\n========\n\n```raku\nuse OpenSSL;\nmy $openssl = OpenSSL.new;\n$openssl.set-fd(123);\n$openssl.write(\"GET / HTTP/1.1\\r\\nHost: somehost\\r\\n\\r\\n\");\n```\n\nDESCRIPTION\n===========\n\nA module which provides OpenSSL bindings, making us able to set up a TLS/SSL connection.\n\nMETHODS\n=======\n\nmethod new\n----------\n\n```raku\nmethod new(Bool :$client = False, Int :$version?)\n```\n\nA constructor. Initializes OpenSSL library, sets method and context. If $version is not specified, the highest possible version is negotiated.\n\nmethod set-fd\n-------------\n\n```raku\nmethod set-fd(OpenSSL:, int32 $fd)\n```\n\nAssigns connection's file descriptor (file handle) $fd to the SSL object.\n\nTo get the $fd we should use C to set up the connection. (See [NativeCall](NativeCall)) I hope we will be able to use Raku's IO::Socket module instead of connecting through C soon-ish.\n\nmethod set-connect-state\n------------------------\n\n```raku\nmethod set-connect-state(OpenSSL:)\n```\n\nSets SSL object to connect (client) state.\n\nUse it when you want to connect to SSL servers.\n\nmethod set-accept-state\n-----------------------\n\n```raku\nmethod set-accept-state(OpenSSL:)\n```\n\nSets SSL object to accept (server) state.\n\nUse it when you want to provide an SSL server.\n\nmethod connect\n--------------\n\n```raku\nmethod connect(OpenSSL:)\n```\n\nConnects to the server using $fd (passed using .set-fd).\n\nDoes all the SSL stuff like handshaking.\n\nmethod accept\n-------------\n\n```raku\nmethod accept(OpenSSL:)\n```\n\nAccepts new client connection.\n\nDoes all the SSL stuff like handshaking.\n\nmethod write\n------------\n\n```raku\nmethod write(OpenSSL:, Str $s)\n```\n\nSends $s to the other side (server/client).\n\nmethod read\n-----------\n\n```raku\nmethod read(OpenSSL:, Int $n, Bool :$bin)\n```\n\nReads $n bytes from the other side (server/client).\n\nBool :$bin if we want it to return Buf instead of Str.\n\nmethod use-certificate-file\n---------------------------\n\n```raku\nmethod use-certificate-file(OpenSSL:, Str $file)\n```\n\nAssings a certificate (from file) to the SSL object.\n\nmethod use-privatekey-file\n--------------------------\n\n```raku\nmethod use-privatekey-file(OpenSSL:, Str $file)\n```\n\nAssings a private key (from file) to the SSL object.\n\nmethod check-private-key\n------------------------\n\n```raku\nmethod check-private-key(OpenSSL:)\n```\n\nChecks if private key is valid.\n\nmethod shutdown\n---------------\n\n```raku\nmethod shutdown(OpenSSL:)\n```\n\nTurns off the connection.\n\nmethod ctx-free\n---------------\n\n```raku\nmethod ctx-free(OpenSSL:)\n```\n\nFrees C's SSL_CTX struct.\n\nmethod ssl-free\n---------------\n\n```raku\nmethod ssl-free(OpenSSL:)\n```\n\nFrees C's SSL struct.\n\nmethod close\n------------\n\n```raku\nmethod close(OpenSSL:)\n```\n\nCloses the connection.\n\nUnlike .shutdown it calls ssl-free, ctx-free, and then it shutdowns.\n\nTOOLS\n=====\n\nPublic key signing tools.\n\nOpenSSL::RSATools\n-----------------\n\n```raku\nuse OpenSSL::RSATools;\n\nmy $pem = slurp 'key.pem';\nmy $rsa = OpenSSL::RSAKey.new(private-pem => $pem);\nmy $data = 'as df jk l';\nmy $signature = $rsa.sign($data.encode);\nmy $rsa = OpenSSL::RSAKey.new(public-pem => $public);\nif $rsa.verify($data.encode, $signature) { ... }\n```\n\nOpenSSL::CryptTools\n-------------------\n\nSymmetric encryption tools (currently only AES256/192/128 encrypt/decrypt)\n\n```raku\nuse OpenSSL::CryptTools;\n\nmy $ciphertext = encrypt(\"asdf\".encode,\n                         :aes256,\n                         :iv((\"0\" x 16).encode),\n                         :key(('x' x 32).encode));\nmy $plaintext = decrypt($ciphertext,\n                        :aes256,\n                        :iv((\"0\" x 16).encode),\n                        :key(('x' x 32).encode));\n```\n\nOpenSSL::Digest\n---------------\n\n```raku\nuse OpenSSL::Digest;\n\nmy Blob $digest = md5(\"filename\".IO);    # IO::Path object\nmy Blob $digest = md5(Blob.new(1,2,3));  # Blob object\nmy Blob $digest = md5(\"foo bar\");        # coercible to string\n\nsay md5-hex(\"foo bar\");  # 327b6f07435811239bc47e1544353273\n```\n\nDigest Functions exported as subroutines. Takes either an `IO::Path` object of a path of which to create a digest, or a `Blob` object, or an object that can be coerced to a string. A `Blob` is always returned.\n\n  * md5\n\n  * sha1\n\n  * sha224\n\n  * sha256\n\n  * sha384\n\n  * sha512\n\nThese subroutines have hexified counterparts with the same name, but postfixed with \"-hex\", which return a string (lowercase hexadecimal characters) representation of the digest.\n\n  * md5-hex\n\n  * sha1-hex\n\n  * sha224-hex\n\n  * sha256-hex\n\n  * sha384-hex\n\n  * sha512-hex\n\nOpenSSL::Digest::MD5\n--------------------\n\nOO-Interface supporting incremental digesting\n\n```raku\nuse OpenSSL::Digest::MD5;\n\nmy $md5 = OpenSSL::Digest::MD5.new; # Create fresh object\n$md5.add('abc');                    # pass in Str or Blob\n$md5.add('def');                    # Add some more data\nmy $digest = $md5.hash;             # Blob hash (and reset)\n$md5.addfile('myfile');             # Read a file\nmy $hexdigest = $md5.hex;           # hex hash  (and reset)\n```\n\nCAVEATS\n=======\n\nMacOS\n-----\n\nMany native libraries on MacOS are installed with the `brew` command line interface. For this module one would typically have to do a `brew install openssl`.\n\nThe use of native libraries is slightly more complicated on the MacOS operating system than on other operating systems. This generally means that a symlink needs to be installed in a trusted filesystem location. If the [`MacOS::NativeLib`](https://raku.land/zef:lizmat/MacOS::NativeLib) distribution is installed, then these symlinks will be automatically created when this module is built.\n\nSEE ALSO\n========\n\n[IO::Socket::SSL](IO::Socket::SSL)\n\nAUTHORS\n=======\n\n  * Filip Sergot\n\n  * Elizabeth Mattijsen\n\nSource can be located at: https://github.com/raku-community-modules/OpenSSL . Comments and Pull Requests are welcome.\n\nCOPYRIGHT AND LICENSE\n=====================\n\nCopyright 2014 - 2022 Filip Sergot\n\nCopyright 2023 - 2026 The Raku Community\n\nThis library is free software; you can redistribute it and/or modify it under the MIT License.\n\n"
+    },
+    {
+      "name": "IO::Socket::SSL",
+      "version": "0.0.4",
+      "description": "IO::Socket::SSL for Raku using OpenSSL",
+      "license": "MIT",
+      "authors": [
+        "Filip Sergot"
+      ],
+      "auth": "zef:raku-community-modules",
+      "provides": [
+        "IO::Socket::SSL"
+      ],
+      "depends": [
+        "OpenSSL:ver<0.2.4+>:auth<zef:raku-community-modules>"
+      ],
+      "upstream": "https://github.com/raku-community-modules/IO-Socket-SSL",
+      "slot": "TLS / HTTPS socket (foundation)",
+      "record": "docs/batteries/tls-openssl.md",
+      "readme": "[![Actions Status](https://github.com/raku-community-modules/IO-Socket-SSL/actions/workflows/linux.yml/badge.svg)](https://github.com/raku-community-modules/IO-Socket-SSL/actions) [![Actions Status](https://github.com/raku-community-modules/IO-Socket-SSL/actions/workflows/macos.yml/badge.svg)](https://github.com/raku-community-modules/IO-Socket-SSL/actions) [![Actions Status](https://github.com/raku-community-modules/IO-Socket-SSL/actions/workflows/windows.yml/badge.svg)](https://github.com/raku-community-modules/IO-Socket-SSL/actions)\n\nNAME\n====\n\nIO::Socket::SSL - interface for SSL connection\n\nSYNOPSIS\n========\n\n```raku\nuse IO::Socket::SSL;\nmy $ssl = IO::Socket::SSL.new(:host<example.com>, :port(443));\nif $ssl.print(\"GET / HTTP/1.1\\r\\n\\r\\n\") {\n    say $ssl.recv;\n}\n```\n\nDESCRIPTION\n===========\n\nThis module provides an interface for SSL connections.\n\nIt uses C to setting up the connection so far (hope it will change soon).\n\nMETHODS\n=======\n\nmethod new\n----------\n\n```raku\nmethod new(*%params) returns IO::Socket::SSL\n```\n\nGets params like:\n\n  * encoding : connection's encoding\n\n  * input-line-separator : specifies how lines of input are separated\n\nfor client state:\n\n  * host : host to connect\n\n  * port : port to connect\n\nfor server state:\n\n  * localhost : host to use for the server\n\n  * localport : port for the server\n\n  * listen : create a server and listen for a new incoming connection\n\n  * certfile : path to a file with certificates\n\nmethod recv\n-----------\n\n```raku\nmethod recv(IO::Socket::SSL:, Int $n = 1048576, Bool :$bin = False)\n```\n\nReads $n bytes from the other side (server/client).\n\nBool :$bin if we want it to return Buf instead of Str.\n\nmethod print\n------------\n\n```raku\nmethod print(IO::Socket::SSL:, Str $s)\n```\n\nmethod send\n-----------\n\nDEPRECATED. Use `.print` instead\n\n```raku\nmethod send(IO::Socket::SSL:, Str $s)\n```\n\nSends $s to the other side (server/client).\n\nmethod accept\n-------------\n\n```raku\nmethod accept(IO::Socket::SSL:);\n```\n\nWaits for a new incoming connection and accepts it.\n\nclose\n-----\n\n```raku\nmethod close(IO::Socket::SSL:)\n```\n\nCloses the connection.\n\nSEE ALSO\n========\n\n[OpenSSL](OpenSSL)\n\nEXAMPLE\n=======\n\nTo download sourcecode of e.g. github.com:\n\n```raku\nuse IO::Socket::SSL;\nmy $ssl = IO::Socket::SSL.new(:host<github.com>, :port(443));\nmy $content = Buf.new;\n$ssl.print(\"GET /\\r\\n\\r\\n\");\nwhile my $read = $ssl.recv {\n    $content ~= $read;\n}\nsay $content;\n```\n\nAUTHOR\n======\n\n  * Filip Sergot\n\nSource can be located at: https://github.com/raku-community-modules/IO-Socket-SSL . Comments and Pull Requests are welcome.\n\nCOPYRIGHT AND LICENSE\n=====================\n\nCopyright 2014 - 2022 Filip Sergot\n\nCopyright 2023 - 2025 The Raku Community\n\nThis library is free software; you can redistribute it and/or modify it under the MIT License.\n\n"
+    }
+  ]
+}

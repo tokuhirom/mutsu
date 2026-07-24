@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>mutsu Batteries — the bundled standard library</title>
+<meta name="description" content="The libraries mutsu ships in the box: vendored community modules that work with a plain use, no zef install and no network. Browse each bundled library's version, license, provided modules, and upstream documentation.">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+
+<nav class="site-nav"></nav>
+
+<div class="container">
+  <header class="page-head">
+    <h1 id="page-title"></h1>
+    <p class="page-intro" id="page-intro"></p>
+    <p class="install-note" id="page-note"></p>
+    <p class="bat-count" id="page-count"></p>
+  </header>
+
+  <main id="battery-list" class="bat-list"></main>
+</div>
+
+<footer class="site-footer"></footer>
+
+<script type="module">
+import { renderChrome, t, currentLang } from './assets/i18n.js';
+import { renderMarkdown } from './assets/mini-md.js';
+
+renderChrome('batteries');
+
+const listEl = document.getElementById('battery-list');
+let LIBRARIES = null;
+
+/* ------------------------------------------------------------------ *
+ * One library card
+ * ------------------------------------------------------------------ */
+
+function metaRow(label, valueNode) {
+  const row = document.createElement('div');
+  row.className = 'bat-meta-row';
+  const k = document.createElement('span');
+  k.className = 'bat-meta-key';
+  k.textContent = label;
+  const v = document.createElement('span');
+  v.className = 'bat-meta-val';
+  if (typeof valueNode === 'string') v.textContent = valueNode;
+  else v.appendChild(valueNode);
+  row.append(k, v);
+  return row;
+}
+
+function extLink(href, text) {
+  const a = document.createElement('a');
+  a.href = href;
+  a.textContent = text;
+  a.rel = 'noopener';
+  return a;
+}
+
+function renderCard(lib) {
+  const card = document.createElement('section');
+  card.className = 'card bat-card';
+  card.id = `battery-${lib.name.replace(/\W+/g, '-')}`;
+
+  // header: name + version/license chips
+  const head = document.createElement('div');
+  head.className = 'bat-head';
+  const h = document.createElement('h2');
+  h.textContent = lib.name;
+  head.appendChild(h);
+  const chips = document.createElement('span');
+  chips.className = 'bat-chips';
+  if (lib.version) {
+    const v = document.createElement('span');
+    v.className = 'bat-chip';
+    v.textContent = `v${lib.version}`;
+    chips.appendChild(v);
+  }
+  if (lib.license) {
+    const l = document.createElement('span');
+    l.className = 'bat-chip bat-chip-license';
+    l.textContent = lib.license;
+    chips.appendChild(l);
+  }
+  head.appendChild(chips);
+  card.appendChild(head);
+
+  if (lib.description) {
+    const desc = document.createElement('p');
+    desc.className = 'bat-desc';
+    desc.textContent = lib.description;
+    card.appendChild(desc);
+  }
+
+  // metadata block
+  const meta = document.createElement('div');
+  meta.className = 'bat-meta';
+  if (lib.slot) meta.appendChild(metaRow(t('bat.slot'), lib.slot));
+  if (lib.authors && lib.authors.length) {
+    meta.appendChild(metaRow(t('bat.authors'), lib.authors.join(', ')));
+  }
+  if (lib.upstream) {
+    meta.appendChild(metaRow(t('bat.upstream'), extLink(lib.upstream, lib.upstream.replace(/^https?:\/\//, ''))));
+  }
+  if (lib.record) {
+    const href = `https://github.com/tokuhirom/mutsu/blob/main/${lib.record}`;
+    meta.appendChild(metaRow(t('bat.record'), extLink(href, lib.record)));
+  }
+  card.appendChild(meta);
+
+  // provided modules
+  if (lib.provides && lib.provides.length) {
+    const provWrap = document.createElement('div');
+    provWrap.className = 'bat-provides';
+    const label = document.createElement('span');
+    label.className = 'bat-meta-key';
+    label.textContent = t('bat.provides-n', { n: lib.provides.length });
+    provWrap.appendChild(label);
+    const grid = document.createElement('div');
+    grid.className = 'bat-provides-grid';
+    for (const mod of lib.provides) {
+      const code = document.createElement('code');
+      code.className = 'bat-mod';
+      code.textContent = mod;
+      grid.appendChild(code);
+    }
+    provWrap.appendChild(grid);
+    card.appendChild(provWrap);
+  }
+
+  // documentation (rendered README) inside a collapsible
+  const details = document.createElement('details');
+  details.className = 'bat-readme';
+  const summary = document.createElement('summary');
+  summary.textContent = t('bat.readme');
+  details.appendChild(summary);
+  const body = document.createElement('div');
+  body.className = 'bat-readme-body';
+  if (lib.readme && lib.readme.trim()) {
+    body.appendChild(renderMarkdown(lib.readme));
+  } else {
+    const empty = document.createElement('p');
+    empty.textContent = t('bat.no-readme');
+    body.appendChild(empty);
+  }
+  details.appendChild(body);
+  card.appendChild(details);
+
+  return card;
+}
+
+/* ------------------------------------------------------------------ *
+ * Painting
+ * ------------------------------------------------------------------ */
+
+function paintText() {
+  document.documentElement.lang = currentLang();
+  document.getElementById('page-title').textContent = t('bat.title');
+  document.getElementById('page-intro').innerHTML = t('bat.intro');
+  document.getElementById('page-note').innerHTML = t('bat.note');
+  paintList();
+}
+
+function paintList() {
+  const countEl = document.getElementById('page-count');
+  listEl.textContent = '';
+  if (LIBRARIES === null) return;                    // still loading
+  if (!LIBRARIES.length) {
+    countEl.textContent = '';
+    const p = document.createElement('p');
+    p.className = 'bat-empty';
+    p.textContent = t('bat.empty');
+    listEl.appendChild(p);
+    return;
+  }
+  countEl.textContent = t('bat.count', { n: LIBRARIES.length });
+  for (const lib of LIBRARIES) listEl.appendChild(renderCard(lib));
+}
+
+async function loadLibraries() {
+  try {
+    const res = await fetch('content/batteries.json');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    LIBRARIES = Array.isArray(data.libraries) ? data.libraries : [];
+  } catch {
+    LIBRARIES = [];
+    const err = document.createElement('p');
+    err.className = 'bat-empty';
+    err.textContent = t('bat.load-failed');
+    listEl.appendChild(err);
+    return;
+  }
+  paintList();
+}
+
+paintText();
+window.addEventListener('langchange', paintText);
+loadLibraries();
+document.body.dataset.ready = '1';
+</script>
+
+</body>
+</html>

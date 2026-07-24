@@ -197,6 +197,52 @@ try {
     'and does not scroll sideways');
 
   /* =============================================================== *
+   * Batteries — the bundled-library listing (no WASM needed)
+   * =============================================================== */
+
+  console.log('Test: batteries page lists the bundled libraries');
+  const battManifest = JSON.parse(readFileSync('wasm-demo/content/batteries.json', 'utf8'));
+  await page.goto(`${BASE}/batteries.html?lang=en`, { waitUntil: 'networkidle' });
+  await page.waitForFunction(() => document.body.dataset.ready === '1', { timeout: 15000 });
+
+  assert(await page.locator('.site-nav .nav-links a').count() >= 5,
+         'the nav now includes the batteries page');
+  assert(await page.textContent('.site-nav a[aria-current="page"]') === 'Batteries',
+         'with itself marked as the current page');
+  assert(await page.locator('.bat-card').count() === battManifest.libraries.length,
+         `every bundled library has a card (${battManifest.libraries.length})`);
+  assert((await page.locator('.bat-card h2').first().textContent()).trim()
+           === battManifest.libraries[0].name,
+         'the first card names the first bundled library');
+  assert(await page.locator('.bat-card .bat-chip-license').first().textContent()
+           === battManifest.libraries[0].license,
+         'the license is shown as a chip');
+  assert(await page.locator('.bat-card .bat-mod').count() > 0,
+         'the provided modules are listed');
+
+  console.log('Test: batteries README renders from Markdown');
+  const firstDetails = page.locator('.bat-readme').first();
+  await firstDetails.locator('summary').click();
+  assert(await firstDetails.locator('.bat-readme-body h2, .bat-readme-body h3').count() > 0,
+         'the README renders headings');
+  assert(await firstDetails.locator('.bat-readme-body pre code').count() > 0,
+         'the README renders code blocks');
+  assert(await firstDetails.locator('.bat-readme-body img').count() === 0,
+         'badge images are stripped, not rendered');
+  assert(await page.evaluate(() =>
+    document.documentElement.scrollWidth <= document.documentElement.clientWidth),
+    'the batteries page does not scroll sideways');
+
+  console.log('Test: batteries page language switch');
+  const battEnTitle = await page.textContent('#page-title');
+  await page.click('.lang-switch button[data-lang="ja"]');
+  assert(await page.textContent('#page-title') !== battEnTitle,
+         'switching to Japanese re-renders the heading');
+  assert(await page.locator('.bat-card').count() === battManifest.libraries.length,
+         'and the library cards survive the re-render');
+  await page.click('.lang-switch button[data-lang="en"]');
+
+  /* =============================================================== *
    * Tutorial
    * =============================================================== */
 

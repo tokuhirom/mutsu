@@ -14,6 +14,7 @@ const STRINGS = {
     'nav.tutorial': 'Tutorial',
     'nav.playground': 'Playground',
     'nav.repl': 'REPL',
+    'nav.batteries': 'Batteries',
     'nav.bench': 'Benchmarks',
     'nav.github': 'GitHub',
 
@@ -76,12 +77,38 @@ const STRINGS = {
     'repl.fatal-hint': 'This session cannot continue — press "Reset session" for a fresh one.',
     'repl.try': 'Try',
     'repl.pg-cta': 'Writing something longer than a line? Open the playground →',
+
+    'bat.title': 'Batteries',
+    'bat.intro': 'mutsu ships a standard library in the box. These modules are ' +
+      'bundled with mutsu — installed next to the binary, not compiled into it — so ' +
+      'a plain <code>use</code> works the moment you install mutsu, with no ' +
+      '<code>zef install</code> and no network. Each library below is the genuine ' +
+      'community module, adopted as-is; mutsu grows its core to run it rather than ' +
+      'patching the library.',
+    'bat.note': 'These modules run in a native mutsu — not in this in-browser ' +
+      'WebAssembly build, which has no sockets or native libraries. The listing is ' +
+      'generated from the vendored <code>modules/</code> tree, so it always matches ' +
+      'what mutsu ships.',
+    'bat.count': '{n} bundled libraries',
+    'bat.version': 'version',
+    'bat.license': 'license',
+    'bat.provides': 'Provides',
+    'bat.provides-n': 'Provides {n} modules',
+    'bat.authors': 'Authors',
+    'bat.upstream': 'Upstream',
+    'bat.record': 'Selection record',
+    'bat.readme': 'Documentation (upstream README)',
+    'bat.no-readme': 'This library ships no README.',
+    'bat.empty': 'No bundled libraries were found.',
+    'bat.load-failed': 'Could not load the bundle listing.',
+    'bat.slot': 'Slot',
   },
   ja: {
     'nav.home': 'ホーム',
     'nav.tutorial': 'チュートリアル',
     'nav.playground': 'プレイグラウンド',
     'nav.repl': 'REPL',
+    'nav.batteries': 'バッテリー',
     'nav.bench': 'ベンチマーク',
     'nav.github': 'GitHub',
 
@@ -142,6 +169,31 @@ const STRINGS = {
     'repl.fatal-hint': 'このセッションは継続できません。「セッションを初期化」を押してください。',
     'repl.try': '例',
     'repl.pg-cta': '1 行に収まらないものを書くならプレイグラウンドへ →',
+
+    'bat.title': 'バッテリー（同梱ライブラリ）',
+    'bat.intro': 'mutsu は標準ライブラリを最初から同梱しています。これらのモジュールは' +
+      'バイナリに埋め込まれるのではなくバイナリの隣に配置される形で mutsu に同梱され、' +
+      'mutsu をインストールした瞬間から素の <code>use</code> で使えます' +
+      '（<code>zef install</code> もネットワークも不要）。以下のライブラリはいずれも' +
+      '本物のコミュニティモジュールをそのまま採用したもので、ライブラリを改変するのではなく' +
+      'mutsu 本体を成長させて動かしています。',
+    'bat.note': 'これらのモジュールはネイティブの mutsu で動作します。ソケットやネイティブ' +
+      'ライブラリを持たないこのブラウザ内 WebAssembly 版では動きません。この一覧は同梱された' +
+      '<code>modules/</code> ツリーから生成しているので、mutsu が実際に同梱する内容と常に' +
+      '一致します。',
+    'bat.count': '同梱ライブラリ {n} 件',
+    'bat.version': 'バージョン',
+    'bat.license': 'ライセンス',
+    'bat.provides': '提供モジュール',
+    'bat.provides-n': '{n} モジュールを提供',
+    'bat.authors': '作者',
+    'bat.upstream': '上流リポジトリ',
+    'bat.record': '採用記録',
+    'bat.readme': 'ドキュメント（上流 README）',
+    'bat.no-readme': 'このライブラリには README がありません。',
+    'bat.empty': '同梱ライブラリが見つかりませんでした。',
+    'bat.load-failed': '同梱ライブラリ一覧を読み込めませんでした。',
+    'bat.slot': 'スロット',
   },
 };
 
@@ -191,6 +243,7 @@ const NAV = [
   { key: 'nav.tutorial', href: 'tutorial.html', page: 'tutorial' },
   { key: 'nav.playground', href: 'playground.html', page: 'playground' },
   { key: 'nav.repl', href: 'repl.html', page: 'repl' },
+  { key: 'nav.batteries', href: 'batteries.html', page: 'batteries' },
   { key: 'nav.bench', href: 'bench-trend.html', page: 'bench' },
 ];
 
