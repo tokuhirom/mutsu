@@ -1,19 +1,19 @@
-# Battery: the HTTP client's dependency layer — `URI`, `MIME::Base64`, `HTTP::Status`, `DateTime::Parse`, `Encode`, `File::Directory::Tree`
+# Battery: the HTTP client's dependency layer — `URI`, `MIME::Base64`, `HTTP::Status`, `DateTime::Parse`, `Encode`, `File::Temp`, `File::Directory::Tree`
 
 **Slot:** HTTP client dependency layer · **Kind:** Adopted (community modules,
 vendored as-is) · **Licenses:** Artistic-2.0 / Artistic-2.0 / Artistic-2.0 / MIT /
-**license clarification pending** / Artistic-2.0
+**license clarification pending** / Artistic-2.0 / Artistic-2.0
 
 These are the libraries the chosen HTTP client, `HTTP::UserAgent`
 ([http-client.md](http-client.md)), depends on at runtime. They are bundled as a
 layer because none of them is useful to sequence separately: `HTTP::UserAgent`
 cannot ship until all of them do, and each is independently useful to a program
 that ships with mutsu (URL parsing, base64, status-code names, HTTP date
-parsing, recursive directory removal).
+parsing, character-set decoding, temp files, recursive directory removal).
 
 ## Status: working (every upstream test passes)
 
-All five resolve with **zero config** (`use URI;` — no `-I`, no install) and
+All seven resolve with **zero config** (`use URI;` — no `-I`, no install) and
 their **complete upstream test suites pass against the bundled copy**:
 
 | Module | Upstream suite | Result |
@@ -23,11 +23,12 @@ their **complete upstream test suites pass against the bundled copy**:
 | `HTTP::Status` | 3 files | 3/3 |
 | `DateTime::Parse` | 3 files | 3/3 |
 | `Encode` | 7 files | 7/7 |
+| `File::Temp` | 3 files | 3/3 |
 | `File::Directory::Tree` | 1 file | 1/1 |
 
 They are registered in [`batteries.lock`](../../batteries.lock) and every file is
 in [`batteries-whitelist.txt`](../../batteries-whitelist.txt), so the release-time
-gate (`scripts/battery-testsuite.sh`, run by `release.yml`) re-runs all 32 files
+gate (`scripts/battery-testsuite.sh`, run by `release.yml`) re-runs all 35 files
 against the shipped library on every release; a regression blocks the release.
 Nothing was patched into the vendored sources — they run on mutsu unmodified.
 
@@ -53,8 +54,9 @@ satisfy the dependency*, and each lost for the same reason:
   does not remove this layer: `URI` and the TLS stack are needed either way, and
   `HTTP::UserAgent` is the more complete client.
 
-Each is small, dependency-light (only `File::Temp` → `File::Directory::Tree` has
-a bundled dependency of its own), and permissively licensed.
+Each is small and dependency-light (only `File::Temp` → `File::Directory::Tree`
+has a bundled dependency of its own); all are permissively licensed except
+`Encode`, whose license is still being clarified (next section).
 
 ## ⚠️ `Encode`: license clarification pending upstream
 
@@ -83,15 +85,6 @@ Follow-ups, in order of what the answer turns out to be:
 Until then, treat this as the one bundled library whose redistribution basis is
 provisional; do not cite it as precedent for relaxing §4.
 
-## Not bundled from this layer, and why
-
-- **`File::Temp`** — Artistic-2.0, ready, and bundled separately: its upstream
-  `t/03-tempfile` loads the module through
-  `'use File::Temp; &tempfile, &tempdir'.EVAL`, which needed an interpreter fix
-  (a module loaded inside `EVAL` lost its file-scoped helper subs afterwards —
-  `Unknown function: make-temp`). With that fixed its suite is 3/3, and it joins
-  this layer in the follow-up that lands on top of the fix.
-
 ## Known drift (outside the upstream suites)
 
 `URI::Query` wraps each value in a `Proxy` container. Rendering a *list* that
@@ -111,7 +104,7 @@ HTTP::UserAgent
 ├─ HTTP::Status           v0.0.5   (Artistic-2.0, zero deps)
 ├─ DateTime::Parse        v0.9.3   (MIT, zero deps)
 ├─ Encode                 v0.0.4   (license pending, zero deps)  -- see above
-├─ File::Temp             v0.0.12  (Artistic-2.0)   -- follows, see above
+├─ File::Temp             v0.0.12  (Artistic-2.0)
 │  └─ File::Directory::Tree v0.2   (Artistic-2.0, zero deps)
 └─ IO::Socket::SSL                 (MIT)            -- already bundled
 ```
@@ -120,7 +113,9 @@ HTTP::UserAgent
 "free software; you can redistribute it and/or modify it under the Artistic
 License 2.0" (Copyright 2012-2020 Timothy Totten; 2021, 2022, 2025 Elizabeth
 Mattijsen), which clears the gate. `DateTime::Parse`'s `META6.json` has no
-`license` key either, but the dist ships an MIT `LICENSE` file.
+`license` key either, but the dist ships an MIT `LICENSE` file. `File::Temp`
+ships no `LICENSE` file, but declares `Artistic-2.0` in `META6.json` and repeats
+it in its README, so there is nothing ambiguous to resolve.
 
 ## Provenance and update procedure
 
@@ -134,6 +129,7 @@ To bump a module, re-vendor — do **not** hand-edit the vendored tree:
 | `HTTP::Status` | <https://github.com/raku-community-modules/HTTP-Status> | v0.0.5 | `71cc3c76` |
 | `DateTime::Parse` | <https://github.com/sergot/datetime-parse> | v0.9.3 | `4ad4ea1d` |
 | `Encode` | <https://github.com/sergot/perl6-encode> | v0.0.4 | `f61acc36` |
+| `File::Temp` | <https://github.com/raku-community-modules/File-Temp> | v0.0.12 | `ad3445e0` |
 | `File::Directory::Tree` | <https://github.com/raku-community-modules/File-Directory-Tree> | v0.2 | `b34d800a` |
 
 ```sh
@@ -187,8 +183,8 @@ rmtree 'a';
 ## License
 
 - `URI` — Artistic-2.0. `MIME::Base64` — Artistic-2.0. `File::Directory::Tree` —
-  Artistic-2.0. `HTTP::Status` — Artistic-2.0 (stated in the README).
-  `DateTime::Parse` — MIT.
+  Artistic-2.0. `File::Temp` — Artistic-2.0. `HTTP::Status` — Artistic-2.0
+  (stated in the README). `DateTime::Parse` — MIT.
 - `Encode` — **unstated upstream; clarification pending** at
   <https://github.com/sergot/perl6-encode/issues/17>. See
   [the section above](#️-encode-license-clarification-pending-upstream) for the
