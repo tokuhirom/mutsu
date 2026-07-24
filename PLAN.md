@@ -1276,46 +1276,6 @@ their argument the same way and discard the (unreachable) tail. Parsing no-word-
 also fixes the parens ambiguity — `return (1 and 2)` (a complete term = 2) vs
 `return 1 and 2` (`(return 1) and 2`) — which a post-parse tree rewrite could not.
 
-- [ ] **Leftover (NOT niche — found 2026-07-24): a non-simple-variable lvalue still binds too
-      tightly.** The fix above covers a plain `$x`/`@a`/`%h` assignment target. Every *other*
-      lvalue shape still swallows the operator into its RHS, so the wrong value is stored:
-
-      ```raku
-      class C { has $.v is rw }
-      my $o = C.new; $o.v = 1 andthen 0;   say $o.v;   # mutsu 0, raku 1
-      my @a;         @a[0] = 8 andthen 0;  say @a[0];  # mutsu 0, raku 8
-      my %h;         %h<k> = 9 andthen 0;  say %h<k>;  # mutsu 0, raku 9
-      my $x;         $x    = 7 andthen 0;  say $x;     # 7 both — the variable case is fine
-      ```
-
-      It stores the value of `(RHS op tail)`, so `and`/`andthen`/`notandthen` store the *tail*
-      (or `Nil`), while `or`/`orelse` happen to look right by short-circuit accident. The
-      parenthesized `($o.v = 1) andthen 0` is correct, and so is expression position
-      (`my $r = ($o.v = 1 andthen 0)` stores 0 in `$r` but must still leave `$o.v == 1`).
-
-      **Diagnosis so far.** The *expression* precedence chain is already correct
-      (`assign_not_expr_mode` parses its RHS with `parse_assignment_rhs_mode` → `ternary_mode`,
-      which stops before the word-logicals). The defect is that these lvalue shapes are consumed
-      by tighter hand-rolled paths that parse the RHS with the full `expression()`:
-      `stmt/assign/try_assign.rs:151` (and `:109` for `:=`) for the subscripted forms, and an
-      analogous method-lvalue path for `$o.attr`. Patching only
-      `simple_expr_stmt/core.rs`'s `=` branch does **not** help — that branch is not the one
-      reached (verified by AST dump).
-
-      **Shape of the fix.** Parse those RHSs with `expression_no_word_logical` and re-attach the
-      tail. Unlike the variable case there is no need to re-read the lvalue: `$o.attr = v`,
-      `@a[i] = v` and `%h<k> = v` all desugar to assignment *expressions* whose value is the
-      assigned value, so the assignment expression itself can be the tail's left operand
-      (evaluated exactly once, no double evaluation of a subscript). A
-      `wrap_trailing_word_logical_expr` sibling of `wrap_trailing_word_logical` is the natural
-      home. The risk to manage is that `try_parse_assign_expr` has many callers: leaving the
-      tail unconsumed must not turn into a `Confused` error in a caller that does not expect it,
-      so every call site needs auditing. Sized as its own PR.
-
-      Found while driving `HTTP::UserAgent` against a live server: `get-response` ends with
-      `$response.content = $content andthen $response.content = $response.decoded-content(:$bin)`,
-      which stored the wrong thing and surfaced as *"Type check failed for return value; expected
-      Blob:D but got Any"* from `inflate-content`.
 - [ ] **Leftover (niche): `take X and Y`.** `take` is value-producing, so `(take X) and Y`
       must run `Y` with `take`'s *returned* value driving the short-circuit — the re-read-seed
       trick used for assignment does not apply (there is no variable to re-read, and re-evaluating

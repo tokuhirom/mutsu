@@ -146,24 +146,30 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                 &r_after[1..]
             };
             let (rest, _) = ws(r3)?;
+            // The loose word-logicals bind looser than item assignment, so in an
+            // expression / parenthesized context `(@a[0] = 8 andthen 0)` is
+            // `(@a[0] = 8) andthen 0`. Parse the RHS no-word-logical (a chained
+            // inner assignment via `try_parse_assign_expr` still handles
+            // `@a[0] = @b[0] := 5`) and re-attach the trailing `... and ...`
+            // seeded by the IndexAssign expression itself.
             let (rest, rhs) = match try_parse_assign_expr(rest) {
                 Ok(r) => r,
-                Err(_) => expression(rest)?,
+                Err(_) => expression_no_word_logical(rest)?,
             };
             let target = match sigil {
                 b'@' => Expr::ArrayVar(var.to_string()),
                 b'%' => Expr::HashVar(var.to_string()),
                 _ => Expr::Var(var.to_string()),
             };
-            return Ok((
-                rest,
-                Expr::IndexAssign {
-                    target: Box::new(target),
-                    index: Box::new(index_expr),
-                    value: Box::new(rhs),
-                    is_positional,
-                },
-            ));
+            let assigned = Expr::IndexAssign {
+                target: Box::new(target),
+                index: Box::new(index_expr),
+                value: Box::new(rhs),
+                is_positional,
+            };
+            return crate::parser::stmt::word_logical_split::wrap_trailing_word_logical_expr(
+                rest, assigned,
+            );
         }
         return Err(PError::expected("assignment expression"));
     }

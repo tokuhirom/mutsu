@@ -23,6 +23,26 @@ use crate::parser::expr::{starts_with_loose_word_logical, word_logical_tail_pub}
 use crate::parser::helpers::ws;
 use crate::parser::parse_result::PResult;
 
+/// Re-attach a trailing loose word-logical to a *non-variable-lvalue* assignment
+/// expression (`@a[i] = v`, `%h<k> = v`, ...) in expression / parenthesized
+/// context.
+///
+/// Unlike the statement-level [`wrap_trailing_word_logical`] — which re-reads the
+/// assigned variable to seed the tail — a subscripted-element assignment is an
+/// *expression* (`IndexAssign`) whose value is precisely the assigned value. So
+/// the assignment expression itself becomes the tail's left operand: it is
+/// evaluated exactly once (no subscript re-evaluation) and the boolean /
+/// definedness short-circuit and the `andthen`/`orelse` value pass-through match
+/// `(<assignment>) <op> ...`. Returns `assigned` unchanged when no loose
+/// word-logical follows.
+pub(crate) fn wrap_trailing_word_logical_expr(rest: &str, assigned: Expr) -> PResult<'_, Expr> {
+    let (r, _) = ws(rest)?;
+    if !starts_with_loose_word_logical(r) {
+        return Ok((rest, assigned));
+    }
+    word_logical_tail_pub(r, assigned)
+}
+
 /// The read expression for an assignment target's variable, used to re-read the
 /// just-assigned value as the left operand of the hoisted word-logical.
 /// `$x` is stored as `Var("x")`, `@a` as `ArrayVar("a")`, `%h` as `HashVar("h")`.
