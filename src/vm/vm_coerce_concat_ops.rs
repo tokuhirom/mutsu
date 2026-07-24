@@ -296,12 +296,25 @@ impl Interpreter {
     /// (`apply_reduction_op` delegates here). It uses no Interpreter state, so it is a
     /// plain associated function callable as `crate::runtime::Interpreter::concat_values(...)`.
     pub(crate) fn concat_values(left: Value, right: Value) -> Value {
-        // Buf ~ Buf → Buf (byte concatenation, preserving LHS type)
+        // Buf ~ Buf → byte concatenation. Rakudo types the result by whether the
+        // two operands have the *same* type: `Blob[uint8] ~ Blob[uint8]` stays
+        // `Blob[uint8]` and `utf8 ~ utf8` stays `utf8`, but any mismatch widens to
+        // the plain mutable `Buf` — so `Blob[uint8] ~ Buf[uint8]` is a `Buf`, which
+        // is what lets `my Buf $x = $blob-typed-var` type-check after an append
+        // (HTTP::UserAgent accumulates `Blob[uint8] ~= <recv Buf>` and then binds
+        // the result to a `Buf`). Preserving the LHS type instead kept it a Blob.
         if Self::is_buf_value(&left) && Self::is_buf_value(&right) {
-            let result_class = if let ValueView::Instance { class_name, .. } = left.view() {
-                class_name
-            } else {
-                crate::symbol::Symbol::intern("Buf")
+            let left_class = match left.view() {
+                ValueView::Instance { class_name, .. } => Some(class_name),
+                _ => None,
+            };
+            let right_class = match right.view() {
+                ValueView::Instance { class_name, .. } => Some(class_name),
+                _ => None,
+            };
+            let result_class = match (left_class, right_class) {
+                (Some(l), Some(r)) if l == r => l,
+                _ => crate::symbol::Symbol::intern("Buf"),
             };
             let mut bytes = Self::extract_buf_bytes(&left);
             bytes.extend(Self::extract_buf_bytes(&right));
