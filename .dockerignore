@@ -1,11 +1,16 @@
 # Keep the Docker build context tiny: ignore everything, then re-include only
-# what the build needs (src + manifests to compile, vendor/ for the bundled
-# zef tree, and modules/ for the bundled batteries, both copied into the runtime
-# image). This excludes the 45G target/, the vendored roast/raku-doc trees,
-# tmp/, .git, etc.
+# what the build needs. This excludes the 45G target/, the vendored
+# roast/raku-doc trees, tmp/, .git, etc.
+#
+# IMPORTANT: every path the Dockerfile pulls from the build context must be
+# allowlisted here, or the build fails with `"/src/<path>": not found`. When you
+# add a `COPY --from=builder /src/<x>` line to the Dockerfile, add `!<x>` below.
+# (This bit us for modules/ and LICENSE — docker.yml only runs on a tag, so PR CI
+# does not catch it.)
 *
 !Cargo.toml
 !Cargo.lock
 !src/
 !vendor/
 !modules/
+!LICENSE
