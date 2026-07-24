@@ -18,19 +18,16 @@ impl Interpreter {
             Some(ValueView::Str(s)) => s.to_string(),
             _ => String::new(),
         };
-        // Flatten array arguments (Raku: sprintf("%d", [42]) treats array elements as args)
+        // Raku's `sprintf($format, *@args)` slurps its arguments, so every
+        // list-like argument (Array, List/Seq/Slip, Range) flattens into a single
+        // flat positional list — `sprintf("%d %d", 1..2)` sees two args, and
+        // `sprintf("%d %d %d", 1, 2..3)` sees three. `flatten_into_slurpy` performs
+        // exactly the slurpy flatten, respecting itemization: a scalar-held array
+        // (`my $x = [1,2,3]`) is itemized and stays a single argument, matching
+        // raku, whereas a bare `[1,2,3]` literal flattens to its elements.
         let rest = &args[1..];
-        let flattened: Vec<Value>;
-        let mut actual_args: Vec<Value> = if rest.len() == 1 {
-            if let ValueView::Array(items, ..) = rest[0].view() {
-                flattened = items.as_ref().clone().items;
-                flattened
-            } else {
-                rest.to_vec()
-            }
-        } else {
-            rest.to_vec()
-        };
+        let mut actual_args: Vec<Value> = Vec::with_capacity(rest.len());
+        crate::runtime::types::flatten_into_slurpy(rest, &mut actual_args);
         super::sprintf::validate_sprintf_directives(&fmt, actual_args.len())?;
         super::sprintf::validate_sprintf_arg_types(&fmt, &actual_args)?;
         // The pure formatter only knows `to_string_value`/`.gist`/numeric unbox,
