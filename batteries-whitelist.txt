@@ -1,6 +1,7 @@
 IO::Socket::SSL	01-basic.rakutest
 OpenSSL	06-digest-md5.rakutest
 OpenSSL	07-version.rakutest
+OpenSSL	10-client-ca-file.rakutest
 zef	build.rakutest
 zef	extract.rakutest
 zef	fetch.rakutest

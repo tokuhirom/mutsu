@@ -205,6 +205,17 @@ impl Interpreter {
                 | ValueView::LazyList(_) => {
                     items.extend(crate::runtime::utils::value_to_list(arg));
                 }
+                // `CArray` — and ONLY `CArray` — also flattens an Array/List
+                // argument into its elements: `CArray[uint8].new(@a, 3)` is 3
+                // elements, whereas `Array.new(@a, 3)` / `List.new(@a, 3)` keep
+                // `@a` as a single element (verified against rakudo). The
+                // idiomatic way to build a NUL-terminated C string depends on
+                // it — `CArray[uint8].new($path.encode.list, 0)` (OpenSSL's
+                // `use-client-ca-file`) otherwise produced a 2-element buffer
+                // and the callee saw a garbage filename.
+                ValueView::Array(..) if base_class_name == "CArray" => {
+                    items.extend(crate::runtime::utils::value_to_list(arg));
+                }
                 _ => items.push(arg.clone()),
             }
         }
