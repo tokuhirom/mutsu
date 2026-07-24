@@ -41,6 +41,12 @@ is [(1,2,3)].elems, 3, "single list element flattens";
 nok [gather { take 1; take 2 }].is-lazy, "[plain gather] is not lazy";
 is [gather { take 1; take 2 }].elems, 2, "[plain gather] materializes";
 
+# --- Regression: a `lazy`-marked *finite* bracket array is NOT kept lazy here
+#     (only infinite lists are), so whole-array `cmp` reads every element
+#     (roast S03-operators/cmp.t "lazy array comparisons"). ---
+is-deeply ([lazy 1, 2] cmp [lazy 1, 2, 3]), Less, "[lazy finite] cmp: shorter is Less";
+is-deeply ([lazy 1, 3] cmp [lazy 1, 2]),    More, "[lazy finite] cmp: differ at pos 1";
+
 # --- Assignment from a lazy bracket array is consistent ---
 {
     my @a = [1,2,3...*];
