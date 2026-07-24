@@ -53,21 +53,18 @@ fn sample_one_from_range(target: &Value) -> Option<Value> {
             if let Some(result) = generic_range_pick_one(start, end, excl_start, excl_end) {
                 return Some(result);
             }
-            // Float endpoints
-            if let (Some(s), Some(e)) =
-                (runtime::to_float_value(start), runtime::to_float_value(end))
-                && s.is_finite()
-                && e.is_finite()
-            {
-                let lo = if excl_start { s + 1.0 } else { s };
-                let hi = if excl_end { e - 1.0 } else { e };
-                if lo > hi {
+            // Non-integer numeric endpoints (Rat/Num/FatRat): enumerate via
+            // `.succ` semantics so the picked element keeps its endpoint type
+            // (`(1.1..3.1).roll` yields a Rat, not a Num) — reuse value_to_list,
+            // which already expands the range preserving type, then pick one.
+            if start.is_numeric() {
+                let pool = crate::runtime::utils::value_to_list(target);
+                if pool.is_empty() {
                     return Some(Value::NIL);
                 }
-                let span = hi - lo + 1.0;
-                let idx = (crate::builtins::rng::builtin_rand() * span) as i64;
-                let idx = idx.min((span - 1.0) as i64);
-                return Some(Value::num(lo + idx as f64));
+                let idx = (crate::builtins::rng::builtin_rand() * pool.len() as f64) as usize
+                    % pool.len();
+                return Some(pool[idx].clone());
             }
             None
         }

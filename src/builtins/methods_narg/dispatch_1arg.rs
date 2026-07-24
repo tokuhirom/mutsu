@@ -129,13 +129,24 @@ pub(crate) fn native_method_1arg(
                 ValueView::ValuePair(k, v) => (k.to_string_value(), v.clone()),
                 _ => unreachable!(),
             };
+            // Set/Bag/Mix store elements under their `.WHICH` key, so membership
+            // lookups must key by the pair-key's `.WHICH`, not its raw string.
+            let elem_key = match target.view() {
+                ValueView::Pair(k, _) => crate::runtime::utils::str_elem_key(k),
+                ValueView::ValuePair(k, _) => crate::runtime::utils::value_which_key(k),
+                _ => unreachable!(),
+            };
             let result = match arg.view() {
                 ValueView::Bag(data, _) => {
-                    let count = data.counts.get(&pk).cloned().unwrap_or_else(BigInt::zero);
+                    let count = data
+                        .counts
+                        .get(&elem_key)
+                        .cloned()
+                        .unwrap_or_else(BigInt::zero);
                     Value::from_bigint(count) == pv
                 }
                 ValueView::Mix(data, _) => {
-                    let w = data.weights.get(&pk).copied().unwrap_or(0.0);
+                    let w = data.weights.get(&elem_key).copied().unwrap_or(0.0);
                     let mv = if w.fract() == 0.0 {
                         Value::int(w as i64)
                     } else {
@@ -144,7 +155,7 @@ pub(crate) fn native_method_1arg(
                     mv == pv
                 }
                 ValueView::Set(data, _) => {
-                    let in_set = data.elements.contains(&pk);
+                    let in_set = data.elements.contains(&elem_key);
                     Value::truth(in_set) == pv
                 }
                 ValueView::Hash(items) => {
@@ -1749,21 +1760,12 @@ pub(crate) fn native_method_1arg(
                         if let Some(result) = crate::builtins::methods_0arg::dispatch_core_range::generic_range_pick_one_pub(start, end, excl_start, excl_end) {
                             return Some(result);
                         }
-                        if let (Some(s), Some(e)) =
-                            (runtime::to_float_value(start), runtime::to_float_value(end))
-                            && s.is_finite()
-                            && e.is_finite()
-                        {
-                            let mut vals = Vec::new();
-                            let mut cur = if excl_start { s + 1.0 } else { s };
-                            let limit = 10_000usize;
-                            while vals.len() < limit {
-                                if (excl_end && cur >= e) || (!excl_end && cur > e) {
-                                    break;
-                                }
-                                vals.push(Value::num(cur));
-                                cur += 1.0;
-                            }
+                        // Non-integer numeric endpoints (Rat/Num/FatRat):
+                        // enumerate via `.succ` (value_to_list preserves the
+                        // endpoint type) so a picked element keeps its type —
+                        // `(1.1..3.1).roll(n)` yields Rats, not Nums.
+                        if start.is_numeric() {
+                            let vals = crate::runtime::utils::value_to_list(range);
                             if !vals.is_empty() {
                                 let idx = (crate::builtins::rng::builtin_rand() * vals.len() as f64)
                                     as usize
