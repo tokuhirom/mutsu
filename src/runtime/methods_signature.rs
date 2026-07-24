@@ -148,27 +148,25 @@ impl Interpreter {
                     map.insert(Value::hash_key_encode(k), v.clone());
                     Value::hash(map)
                 }
+                // A list coerces to a Hash exactly like `my %h = list`: Pairs
+                // flatten, bare elements pair up `key => value`, and an *empty*
+                // list yields an empty Hash (previously a no-pair / empty list
+                // was kept as an Array, so `%!attr<k>` then died "does not
+                // support associative indexing" — surfaced by HTTP::MediaType's
+                // `has %.parameters` when a media type carried no parameters).
+                // An odd non-pair count raku-throws "Odd number of elements";
+                // `coerce_attr_value_by_sigil` cannot throw, so keep the raw
+                // value on that error and let a later type check report it.
                 ValueView::Array(arr, _) => {
-                    // Convert array of pairs to hash
-                    let mut map = HashMap::new();
-                    let mut has_pairs = false;
-                    for item in arr.iter() {
-                        match item.view() {
-                            ValueView::Pair(k, v) => {
-                                map.insert(k.clone(), v.clone());
-                                has_pairs = true;
-                            }
-                            ValueView::ValuePair(k, v) => {
-                                map.insert(Value::hash_key_encode(k), v.clone());
-                                has_pairs = true;
-                            }
-                            _ => {}
-                        }
+                    match crate::runtime::utils::build_hash_from_items(arr.to_vec()) {
+                        Ok(h) => h,
+                        Err(_) => val.clone(),
                     }
-                    if has_pairs {
-                        Value::hash(map)
-                    } else {
-                        val.clone()
+                }
+                ValueView::Slip(items) => {
+                    match crate::runtime::utils::build_hash_from_items(items.to_vec()) {
+                        Ok(h) => h,
+                        Err(_) => val.clone(),
                     }
                 }
                 _ => val.clone(),
