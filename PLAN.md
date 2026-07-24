@@ -162,29 +162,25 @@ section.
           Deciding the fix needs care about *why* the blanket rollback exists (a `class`/`role`
           declared directly in a subtest body should stay lexical); making the two stores agree —
           rather than widening or narrowing the rollback blindly — is the shape of the fix.
-        - **`distribution-depends-parsing` (18/35)** — two bugs, one masking the other.
-          1. ★ **A type constraint whose qualified name ends in `::Any` is resolved as the builtin
-             `Any`**, so it matches every value and its candidate wrongly wins:
-             ```raku
-             class Spec { }
-             class Spec::Any { }
-             class Other {
-                 multi method sm(Spec::Any $s) { "ANY" }
-                 multi method sm($s)           { "GENERIC" }
-             }
-             say Other.new.sm(Spec.new);   # raku: GENERIC   mutsu: ANY   <-- wrong
-             ```
-             Renaming the class to `Spec::Alt` makes it correct, which pins the cause to the
-             trailing-component fallback in type-name resolution rather than to multi-dispatch
-             ranking. In Zef this sends a plain `Zef::Distribution::DependencySpecification` into
-             the `…::DependencySpecification::Any`-constrained `spec-matcher` candidate, which
-             calls `.specs` — a method only the `::Any` sibling has — and dies with
-             `X::Method::NotFound`.
-          2. ★ **That uncaught exception aborts the file with no message at all** — the run just
-             stops after test 18 and only the plan mismatch is reported. Wrapping the call in
-             `try`/`CATCH` is what revealed the error above. A silently swallowed exception makes
-             every failure of this kind look like a plan bug; this is worth fixing on its own, and
-             first, because it is what made this file hard to triage.
+        - **`distribution-depends-parsing` (20/35)** — three bugs so far; the first two are fixed.
+          1. ✅ **DONE** — a type constraint whose qualified name ended in `::Any` was equated with
+             the builtin `Any` by the "qualified name matching" short-name bridge in
+             `Interpreter::type_matches`, so it matched every value (every class's MRO ends in
+             `Any`) and its candidate wrongly won. In Zef that sent a plain
+             `Zef::Distribution::DependencySpecification` into the `…::Any`-constrained
+             `spec-matcher` candidate, which calls `.specs` — a method only the `::Any` sibling
+             has. The bridge now refuses core setting type names, which never live under a user
+             package. Pin: `t/nested-any-type-constraint.t`.
+          2. ✅ **DONE** — that uncaught exception aborted the file with **no message at all**:
+             `run()` propagated `finish()`'s error instead of the original, and under `Test` a
+             mainline exception always leaves the plan short, so the "Test failures" plan-mismatch
+             error replaced the real one. Every such failure read as a plan bug. Pin:
+             `t/mainline-exception-not-masked-by-plan.t`. **This one was the real blocker on
+             triage** — with the exception visible, each remaining failure names itself.
+          3. **Current frontier (test 21)**: `Failed to resolve some missing dependencies` for the
+             `[{:any["Unavailable", "Available"]},]` case — an `any(...)` dependency spec with one
+             satisfiable alternative must resolve, and does not. Reduce from
+             `Zef::Client.!find-prereq-candidates`.
       - **IO::Socket::SSL — 1/1** ✅ already green.
       Raising a file into the baseline is `scripts/battery-testsuite.sh --update` + committing the
       whitelist diff.

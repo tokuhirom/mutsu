@@ -1,6 +1,22 @@
 use super::*;
 
 impl Interpreter {
+    /// Whether `qualified`'s trailing component may stand in for the bare name
+    /// `short` (see the "qualified name matching" bridge in [`Self::type_matches`]).
+    ///
+    /// A *core setting* type never lives under a user package, so a nested
+    /// `Foo::Any` is a genuinely different type from `Any` and the bridge must
+    /// not equate them. Doing so was catastrophic rather than merely wrong: a
+    /// `Foo::Any` constraint reached the `constraint == "Any"` universal arm via
+    /// every class's MRO (which ends in `Any`, `Mu`), so it accepted *every*
+    /// instance — e.g. Zef's `multi method spec-matcher(…::DependencySpecification::Any $spec)`
+    /// swallowed a plain `…::DependencySpecification` and then died calling the
+    /// `.specs` method only the `::Any` sibling has.
+    fn short_name_bridges(qualified: &str, short: &str) -> bool {
+        qualified.rsplit("::").next() == Some(short)
+            && !crate::runtime::Interpreter::is_builtin_type(short)
+    }
+
     pub(crate) fn type_matches(constraint: &str, value_type: &str) -> bool {
         if constraint == "Mu" {
             return true;
@@ -15,21 +31,17 @@ impl Interpreter {
         // Qualified name matching: GH2613::R1 should match R1 and vice versa.
         // When one name is qualified (contains ::) and the other is a short name,
         // check if the short name matches the last component of the qualified name.
+        // This bridges a registration gap: a type declared under a `unit module`
+        // is registered qualified but referred to bare inside that module.
         if constraint.contains("::")
             && !value_type.contains("::")
-            && constraint
-                .rsplit("::")
-                .next()
-                .is_some_and(|short| short == value_type)
+            && Self::short_name_bridges(constraint, value_type)
         {
             return true;
         }
         if value_type.contains("::")
             && !constraint.contains("::")
-            && value_type
-                .rsplit("::")
-                .next()
-                .is_some_and(|short| short == constraint)
+            && Self::short_name_bridges(value_type, constraint)
         {
             return true;
         }
