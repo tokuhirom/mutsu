@@ -221,11 +221,38 @@ impl Interpreter {
         &mut self,
         type_name: &str,
     ) -> Result<Value, RuntimeError> {
+        self.warn_type_object_numeric_context_resume(type_name, Value::int(0))
+    }
+
+    /// Like [`Self::warn_type_object_numeric_context`], but resumes with an
+    /// explicit value instead of the default integer `0`. Prefix `+`/`-` on a
+    /// bare numeric type object resumes with the type's own numeric *zero*
+    /// (`+Num` → `0e0`, `+Rat` → `0.0`, `+Complex` → `0+0i`), not a bare `Int 0`.
+    pub(crate) fn warn_type_object_numeric_context_resume(
+        &mut self,
+        type_name: &str,
+        resume: Value,
+    ) -> Result<Value, RuntimeError> {
         let msg = format!("Use of uninitialized value of type {type_name} in numeric context");
         let caller_code = self.current_code;
-        let resumed = self.raise_resumable_warning(&msg, Value::int(0))?;
+        let resumed = self.raise_resumable_warning(&msg, resume)?;
         self.reconcile_caller_after_internal_dispatch(caller_code);
         Ok(resumed)
+    }
+
+    /// The numeric *zero* a bare type object of `type_name` resumes with when
+    /// used in numeric context (prefix `+`/`-`, `.Numeric` on the type object):
+    /// `Num` → `0e0`, `Rat` → `0.0`, `FatRat` → `FatRat.new(0, 1)`, `Complex` →
+    /// `0+0i`, and every other type (`Int`, `Real`, `Cool`, `Str`, user classes,
+    /// ...) → `Int 0`. Mirrors rakudo's `Mu.Numeric` per-type coercion.
+    pub(crate) fn type_object_numeric_zero(type_name: &str) -> Value {
+        match type_name {
+            "Num" => Value::num(0.0),
+            "Rat" => crate::value::make_rat(0, 1),
+            "FatRat" => crate::value::make_big_fat_rat(0.into(), 1.into()),
+            "Complex" => Value::complex(0.0, 0.0),
+            _ => Value::int(0),
+        }
     }
 
     /// Coerce a value used as a plain (`Str`-keyed) hash subscript key into its

@@ -1461,37 +1461,43 @@ candidate.
   Also a general grammar-correctness fix.
 
 
-### 8.20 Bare numeric type object in an infix *arithmetic* op should throw X::Numeric::Uninitialized (found 2026-07-24 by the numeric-context doc-diff)
+### 8.21 Bare numeric type object in an infix *arithmetic* op should throw X::Numeric::Uninitialized (found 2026-07-24 by the numeric-context doc-diff)
 
 The comparison ops (`== != < > <= >= <=>`) now throw `X::Numeric::Uninitialized`
 for a bare concrete-numeric type object operand (`Int == 0`, `Int < 5`), matching
-Rakudo (news `2026-07/numeric-uninitialized-infix.md`). The **arithmetic** ops
-(`+ - * / % **`) should throw the same way (`Int + 1` → `X::Numeric::Uninitialized`
-in rakudo) but were left unchanged, because the fix is entangled with the
-assignment metaops:
+Rakudo (news `2026-07/numeric-uninitialized-infix.md`), and prefix `+`/`-` on a
+type object now warns+resumes with the per-type zero
+(`2026-07/prefix-numeric-type-object-warning.md`). The remaining gap is the
+**arithmetic** infix ops (`+ - * / % **`): `Int + 1` should throw
+`X::Numeric::Uninitialized` in rakudo but mutsu still coerces the type object to
+`0` (so `Int + 1` returns `1`). This was left unchanged because the fix is
+entangled with the assignment metaops AND has a hot-path cost:
 
 - mutsu desugars `$a += 0.1` to `GetLocal; LoadConst; Add; SetLocal` — the **same**
   `Add` opcode as bare `$a + 0.1`. Adding the type-object check to the shared arith
   chokepoint (`coerce_numeric_bridge_pair_strict`, `src/vm/vm_dispatch_helpers.rs`)
   makes `my Rat $a; $a += 0.1` throw, which is wrong (roast `S32-num/rat.t` test
-  ~803, "can do += on variable initialized by type object").
+  ~803, "can do += on variable initialized by type object"). Confirmed by CI.
 - Rakudo's `METAOP_ASSIGN` special-cases an undefined container: it uses the
   operator's **identity element** — `0` for `+`/`-`, `1` for `*`/`**`, and a hard
-  "No zero-argument meaning for: infix:</>" for `/`/`%` — instead of calling
-  `infix:<+>(Rat:U, ...)`. mutsu currently only *accidentally* gets `+=`/`-=` right
-  (it coerces the type object to 0); `*=` already diverges (`my Int $a; $a *= 5`
-  gives 0, should give 5).
-- **Correct fix (one PR):** give the compound-assignment path its own emission that,
-  when the LHS reads as a type object, substitutes the base op's identity (and
-  errors for `/`/`%`), so the bare-infix arith ops are then free to throw
-  `X::Numeric::Uninitialized` via the same predicate the comparison ops use
-  (`check_type_object_in_numeric_context`, `src/vm/vm_comparison_ops.rs`, already
-  `pub(crate)`). This also fixes the pre-existing `*=`/`**=` identity divergence.
-- Related follow-up: prefix `+`/`-` on a type object (`+Int`) should emit the
-  resumable `CX::Warn` numeric-context warning and resume with the type's zero
-  (`+Num` → `0e0`, `+Rat` → `0.0`, ...); mutsu currently coerces to `0` silently
-  for non-`Any` type objects (`src/vm/vm_misc_coerce.rs::exec_num_coerce_op` only
-  handles `Any`). This is the numeric twin of the string-context warning campaign.
+  "No zero-argument meaning for: infix:</>" for `/`/`%`. **mutsu already implements
+  this in the parser** (`autoviv_compound_lhs`, `src/parser/stmt/assign/op.rs`):
+  it desugars `$a *= 5` / `$a **= 2` to `$a = (defined($a) ?? $a !! 1) OP 5` and
+  `$a %= 3` to a die. But `+=`/`-=` are NOT wrapped (they rely on the `Add`
+  undefined→0 coercion), which is exactly why adding the throw breaks them.
+- **Correct fix:** extend `autoviv_compound_lhs` to also wrap `Add`/`Sub` (identity
+  `0`) and `Div` (die "No zero-argument meaning for: infix:</>", matching rakudo's
+  message), so no compound-assign form ever feeds an undefined LHS to a bare arith
+  op. Then the bare-infix arith ops are free to throw `X::Numeric::Uninitialized`
+  via the same `check_type_object_in_numeric_context` predicate the comparison ops
+  use (`src/vm/vm_comparison_ops.rs`, already `pub(crate)`).
+- **⚠ Perf caveat — weigh before doing this.** Wrapping `+=`/`-=` in a
+  `defined($x) ?? $x !! 0` ternary adds a `defined` check + branch to **every**
+  `$i += 1` — the single most common loop-counter op. That is a real hot-path cost
+  to fix a rare edge (`Int + 1` is almost always a latent bug the user wants to
+  see). Measure the loop-bench delta first; if it regresses, this stays deferred
+  (low gain, real risk). The comparison + prefix fixes already captured the
+  high-value, zero-hot-path-cost parts of this doc-diff.
 
 
 ## Metrics

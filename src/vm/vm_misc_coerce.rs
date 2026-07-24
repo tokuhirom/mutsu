@@ -33,9 +33,12 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
-        // Type objects: Mu has no Numeric candidate at all (hard error); Any
-        // (and Cool descendants) numify to 0 with an uninitialized-value
-        // warning, matching rakudo.
+        // Type objects: `Mu` has no `Numeric` candidate at all (hard error). A
+        // class with a user `Numeric` method dispatches even on the bare type
+        // object (`class Foo { method Numeric { 42 } }; +Foo` is 42). Every other
+        // type object numifies to its per-type numeric *zero* with an
+        // uninitialized-value warning (`+Int` → 0, `+Num` → 0e0, `+Rat` → 0.0,
+        // `+Complex` → 0+0i), matching rakudo.
         if let ValueView::Package(name) = val.view() {
             let n = name.resolve();
             if n == "Mu" {
@@ -44,15 +47,20 @@ impl Interpreter {
                     n
                 )));
             }
-            if n == "Any" {
-                let msg = format!(
-                    "Use of uninitialized value of type {} in numeric context",
-                    n
-                );
-                let resumed = self.raise_resumable_warning(&msg, Value::int(0))?;
-                self.stack.push(resumed);
-                return Ok(());
+            let cn = n.to_string();
+            if self.has_user_method(&cn, "Numeric") {
+                let caller_code = self.current_code;
+                let result = self.try_compiled_method_or_interpret(val.clone(), "Numeric", vec![]);
+                self.reconcile_caller_after_internal_dispatch(caller_code);
+                if let Ok(result) = result {
+                    self.stack.push(result);
+                    return Ok(());
+                }
             }
+            let zero = Interpreter::type_object_numeric_zero(&cn);
+            let resumed = self.warn_type_object_numeric_context_resume(&cn, zero)?;
+            self.stack.push(resumed);
+            return Ok(());
         }
         if matches!(
             val.view(),
