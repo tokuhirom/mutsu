@@ -3904,6 +3904,11 @@ impl Interpreter {
                 self.update_local_if_exists(code, &name, &pkg_val);
                 *ip += 1;
             }
+            OpCode::SetCurrentPackage { name_idx } => {
+                let name = Self::const_str(code, *name_idx).to_string();
+                self.set_current_package(name);
+                *ip += 1;
+            }
             OpCode::SetPackageKind { name_idx, kind } => {
                 let name = Self::const_str(code, *name_idx).to_string();
                 self.registry_mut().package_kinds.insert(name, *kind);

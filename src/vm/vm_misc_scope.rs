@@ -24,6 +24,32 @@ impl Interpreter {
         }
     }
 
+    /// Reverse companion of [`sync_our_local_from_qualified`]: after a plain
+    /// `SetLocal` into an `our`-linked slot (`our $x; ... $x = 1`), push the new
+    /// value out to the package variable it aliases. `our` is an alias for a
+    /// package var, so `$Foo::x` must see the write immediately — block-exit
+    /// reconciliation is too late (and never happens at all for a module
+    /// mainline, which is why an exported `our` variable read as Nil in the
+    /// consumer). No-op for the overwhelmingly common code with no `our` locals.
+    pub(crate) fn sync_our_package_var_from_local(&mut self, code: &CompiledCode, slot: usize) {
+        if code.our_locals.is_empty() {
+            return;
+        }
+        let Some(qualified) = code
+            .our_locals
+            .iter()
+            .find(|(s, _)| *s == slot)
+            .map(|(_, name)| name.clone())
+        else {
+            return;
+        };
+        let Some(val) = self.locals.get(slot).cloned() else {
+            return;
+        };
+        self.set_our_var(qualified.clone(), val.clone());
+        self.env_mut().insert(qualified, val);
+    }
+
     pub(super) fn exec_state_var_init_op(&mut self, code: &CompiledCode, slot: u32, key_idx: u32) {
         let init_val = self.stack.pop().unwrap_or(Value::NIL);
         let base_key = Self::const_str(code, key_idx);

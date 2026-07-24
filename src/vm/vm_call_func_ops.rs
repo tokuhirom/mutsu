@@ -471,8 +471,19 @@ impl Interpreter {
                 // does not key on (the multi fork resolves per-call via
                 // resolve_function_with_types instead). Guard the lookup, not the
                 // gen check, so a multi call never clears the whole cache.
+                // The cache is also package-blind, so an entry is only reusable
+                // from the package it was resolved under (PLAN 8.22): a `unit
+                // module Foo`'s non-exported sub must not stay callable by its
+                // bare name once control returns to the consumer's GLOBAL scope.
+                // Peek the package before removing so a mismatch leaves the entry
+                // in place for the package that does own it.
+                let cur_pkg_sym = self.current_package_sym();
                 if !self.has_multi_candidates_cached(name_str)
-                    && let Some(cf) = self.otf_call_cache.remove(&name_sym)
+                    && self
+                        .otf_call_cache
+                        .get(&name_sym)
+                        .is_some_and(|(pkg, _, _)| *pkg == cur_pkg_sym)
+                    && let Some((_, def_pkg_sym, cf)) = self.otf_call_cache.remove(&name_sym)
                     && !cf.has_inner_subs
                 {
                     let arity_usize = arity as usize;
@@ -522,7 +533,9 @@ impl Interpreter {
                                 name_str,
                             )
                         } else {
-                            let pkg = self.current_package().to_string();
+                            // The body must run under its *defining* package, not
+                            // the callsite's (see `otf_call_cache`'s doc comment).
+                            let pkg = def_pkg_sym.resolve();
                             self.push_samewith_context(name_str, None);
                             let pushed_dispatch =
                                 loan_env!(self, push_multi_dispatch_frame(name_str, &args));
@@ -544,7 +557,8 @@ impl Interpreter {
                             r
                         };
                         // Put CF back in cache
-                        self.otf_call_cache.insert(name_sym, cf);
+                        self.otf_call_cache
+                            .insert(name_sym, (cur_pkg_sym, def_pkg_sym, cf));
                         let result = result?;
                         // Slice F: drain this frame's recorded captured-outer
                         // writes, plus (env_dirty-gated) reconcile to catch a
@@ -560,7 +574,8 @@ impl Interpreter {
                     }
                     // Put CF back if we couldn't use it (stack underflow, or a Slip
                     // arg that must be flattened by the slow path below).
-                    self.otf_call_cache.insert(name_sym, cf);
+                    self.otf_call_cache
+                        .insert(name_sym, (cur_pkg_sym, def_pkg_sym, cf));
                 }
             } else {
                 self.otf_call_cache.clear();

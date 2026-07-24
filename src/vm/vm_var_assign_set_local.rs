@@ -248,6 +248,7 @@ impl Interpreter {
         let r = self.exec_set_local_op_inner(code, idx);
         // Phase 3 Stage 2: write-through scalar attribute writes to the cell.
         if r.is_ok() {
+            self.sync_our_package_var_from_local(code, idx as usize);
             self.mirror_attr_local_to_cell(code, idx as usize);
             if box_decl
                 && let Some(sym) = code.locals_sym.get(idx as usize)

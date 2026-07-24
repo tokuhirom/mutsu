@@ -181,6 +181,12 @@ impl Interpreter {
                     | "warnings"
                     | "MONKEY-SEE-NO-EVAL"
                     | "MONKEY-TYPING"
+                    // `use MONKEY-GUTS` only lifts the ban on `nqp::` ops in
+                    // user code, which mutsu does not enforce; recognizing it is
+                    // enough. It is a core pragma (roast's Test::Util uses it),
+                    // and failing the `use` aborted the rest of that module's
+                    // mainline — every declaration after it silently vanished.
+                    | "MONKEY-GUTS"
                     | "nqp"
                     | "MONKEY"
                     | "newline"

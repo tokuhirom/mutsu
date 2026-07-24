@@ -107,7 +107,7 @@ impl Interpreter {
     /// stacks, and closure-capture overrides.
     fn visit_lexical_envs(&self, visitor: &mut dyn RootVisitor) {
         self.env.visit_values(visitor);
-        for (_, env) in &self.end_phasers {
+        for (_, env, _) in &self.end_phasers {
             env.visit_values(visitor);
         }
         for env in self.closure_env_overrides.values() {

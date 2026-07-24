@@ -10,7 +10,7 @@ use std::os::unix::fs::{self as unix_fs, PermissionsExt};
 use std::os::windows::fs as windows_fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
 static ROLE_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -790,6 +790,12 @@ pub struct Interpreter {
     /// `current_package()` / `set_current_package()`, which read-clone / write the
     /// lock and never hold the guard across user-code re-entry.
     current_package: Arc<RwLock<String>>,
+    /// Interned-symbol mirror of `current_package`, kept in lockstep by the two
+    /// setters. Reading the `RwLock<String>` clones a `String` (one malloc), which
+    /// is far too expensive for per-call use; the name-keyed call caches need the
+    /// package identity on every hit to stay package-scoped, so they read this
+    /// relaxed atomic instead.
+    current_package_sym: Arc<AtomicU32>,
     routine_stack: Vec<RoutineFrame>,
     callframe_stack: Vec<CallFrameEntry>,
     method_class_stack: Vec<String>,
@@ -892,7 +898,11 @@ pub struct Interpreter {
     /// a local before running the module body (so a transitive `use` inside the
     /// body cannot see them) and hands them to the module's `sub EXPORT`.
     pub(crate) pending_use_export_args: Option<Vec<Value>>,
-    end_phasers: Vec<(Vec<Stmt>, Env)>,
+    /// Registered END phasers: `(body, captured lexical env, declaring package)`.
+    /// The package is captured because END bodies run at program exit, long after
+    /// `current_package` has returned to GLOBAL — a phaser declared in a
+    /// `unit module Foo` must still see `Foo`'s routines by their bare names.
+    end_phasers: Vec<(Vec<Stmt>, Env, String)>,
     /// Tracks END phaser site_ids to ensure each is registered only once.
     end_phaser_sites: HashSet<u64>,
     chroot_root: Option<PathBuf>,
@@ -1689,7 +1699,20 @@ pub struct Interpreter {
     /// `LoadEnterResult` at the end of the block body.
     pub(crate) enter_result_stack: Vec<Value>,
     pub(crate) pending_alias_bind_names: Vec<(String, String)>,
-    pub(crate) otf_call_cache: rustc_hash::FxHashMap<Symbol, CompiledFunction>,
+    /// Name-keyed cache of OTF-compiled routine bodies. The cached entry records
+    /// the package the resolution was made *under* (the callsite's
+    /// `current_package`), because the same bare name resolves to different
+    /// routines in different packages: a `unit module Foo`'s non-exported sub is
+    /// visible as `foo` only while `current_package == Foo`, and reusing that
+    /// entry at a GLOBAL callsite would leak it into the consumer's scope
+    /// (PLAN 8.22). A package mismatch falls through to a fresh resolve.
+    /// Entries are `(callsite package, defining package, body)`. The defining
+    /// package is what the body must run under (it scopes `$?PACKAGE`, qualified
+    /// name resolution and the `__mutsu_callable_id::PKG::NAME` lookup that keys
+    /// `once`); reading `current_package()` at the callsite instead would give
+    /// the caller's package, which only happened to agree while every module sub
+    /// registered into GLOBAL.
+    pub(crate) otf_call_cache: rustc_hash::FxHashMap<Symbol, (Symbol, Symbol, CompiledFunction)>,
     pub(crate) otf_call_cache_gen: u64,
     pub(crate) check_phaser_depth: u32,
     pub(crate) gather_for_loop_resume: Option<crate::value::ForLoopResumeState>,

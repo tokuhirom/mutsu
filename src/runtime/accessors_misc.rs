@@ -48,7 +48,8 @@ impl Interpreter {
 
     pub(crate) fn push_end_phaser(&mut self, body: Vec<Stmt>) {
         let captured_env = self.env.clone();
-        self.end_phasers.push((body, captured_env));
+        let package = self.current_package();
+        self.end_phasers.push((body, captured_env, package));
     }
 
     /// Return the number of currently registered END phasers.

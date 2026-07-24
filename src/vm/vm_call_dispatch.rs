@@ -206,7 +206,14 @@ impl Interpreter {
         // body fingerprint in `otf_compile_cache` above (safe, per-candidate).
         if !self.has_multi_candidates_cached(&name) {
             let name_sym = Symbol::intern(&name);
-            self.otf_call_cache.insert(name_sym, cf.clone());
+            // Keyed to the *callsite* package, not `def.package`: the cache
+            // answers "what does this bare name mean here", and a module's
+            // non-exported sub means nothing outside its own package. The
+            // defining package rides along so a cache hit runs the body under
+            // the same package this (uncached) call does.
+            let cur_pkg_sym = self.current_package_sym();
+            self.otf_call_cache
+                .insert(name_sym, (cur_pkg_sym, def.package, cf.clone()));
             self.otf_call_cache_gen = self.fn_resolve_gen;
         }
 

@@ -476,7 +476,7 @@ impl Interpreter {
             // should propagate) and stale captured values (which should not
             // override live values).
             let original_env = self.env.clone();
-            for (body, captured_env) in phasers.iter().rev() {
+            for (body, captured_env, package) in phasers.iter().rev() {
                 // Track which keys are being added from captured env
                 // (not already present) so we can remove them after.
                 let mut overlay_keys: Vec<String> = Vec::new();
@@ -508,7 +508,18 @@ impl Interpreter {
                         self.env.insert_sym(*k, v.clone());
                     }
                 }
-                self.run_block(body)?;
+                // Run the body under the package it was declared in: at
+                // program exit `current_package` is back to GLOBAL, so an END
+                // in a `unit module Foo` would otherwise fail to resolve Foo's
+                // own routines by their bare names (Test::Compile's END calls
+                // its module-private `delete_compunits`).
+                let saved_package = self.current_package();
+                if *package != saved_package {
+                    self.set_current_package(package.clone());
+                }
+                let body_result = self.run_block(body);
+                self.set_current_package(saved_package);
+                body_result?;
                 // Remove only the overlay keys (captured lexicals not in
                 // the current scope), keeping mutations to shared variables.
                 for k in &overlay_keys {
