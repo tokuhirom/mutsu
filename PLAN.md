@@ -1548,6 +1548,73 @@ entangled with the assignment metaops AND has a hot-path cost:
   (low gain, real risk). The comparison + prefix fixes already captured the
   high-value, zero-hot-path-cost parts of this doc-diff.
 
+### 8.22 A `unit module`'s subs register into GLOBAL, so they leak into every consumer's scope (found 2026-07-24 via Test::Util's `run`)
+
+A `unit module Foo;` body executes with `current_package() == "GLOBAL"`, so every
+routine it declares is registered as `GLOBAL::name` instead of `Foo::name`. The
+result is that mutsu has essentially **no scoping for module-declared routines**:
+every `sub` in a `unit module` is callable unqualified from anywhere that `use`s
+it, regardless of `is export` — and regardless of `my` / `our` / no scope
+declarator. The export machinery (`runtime_module_exports.rs`, `is_export` /
+`export_tags`) is real and works; the `unit_module_exported_subs` side table
+exists precisely to compensate for this GLOBAL registration, which is a good
+marker of where the fix has to reach.
+
+Reproduce (`tmp/lib/OurSub2.rakumod`):
+
+```raku
+unit module OurSub2;
+sub plainhelper(Str $a) { ... }        # not exported
+our sub ourhelper(Str $a) { ... }      # `our`, still not exported
+my sub myhelper(Str $a) { ... }        # explicitly lexical
+```
+
+```raku
+use OurSub2;
+plainhelper('x');            # raku: "Undeclared routine"   mutsu: calls it
+ourhelper('x');              # raku: "Undeclared routine"   mutsu: calls it
+myhelper('x');               # raku: "Undeclared routine"   mutsu: calls it
+GLOBAL::plainhelper('x');    # resolves -- the direct evidence
+```
+
+**Why it matters:** a leaked routine can *shadow a builtin* at a call site that
+never asked for it. `roast/packages/Test-Helpers/lib/Test/Util.rakumod` declares
+`our sub run( Str $code, Str $input = '', *%o)`, which is not exported; in mutsu
+it is a live candidate for every plain `run(...)` in a file that `use`s
+`Test::Util`.
+
+**It is already blocking a correctness fix.** `args_match_param_types` matches
+positional parameters against *raw* argument slots, so a named argument written
+before a positional (`f(:x(1), 7)` — which is what forwarding a capture after
+adding a named, `f(:x(1), |c)`, produces) mis-indexes them and no candidate
+matches:
+
+```
+Cannot resolve caller e(Int:D); none of these signatures matches:
+    (Int $p, $y, $x)
+```
+
+That is `OpenSSL::CryptTools`'s `encrypt` chain
+(`multi encrypt(:$aes256!, |c) { encrypt(:$cipher, |c) }` feeding
+`multi encrypt(Blob $plaintext, :$key, :$iv, :$cipher!)`), so `04-crypt` cannot
+pass without it. The fix is small and known — index positional params through a
+precomputed list of positional argument slots, and give a variadic param every
+positional from its own index on plus every named — **but it cannot land while
+§8.22 stands**: with the indexing corrected, `Test::Util`'s leaked `run` starts
+matching `run(:out, "cmd")` and wins over the builtin, breaking whitelisted
+`roast/S11-repository/cur-current-distribution.t` and `roast/S29-os/system.t`.
+(The `*%o`-is-not-a-positional-slurpy half of that investigation *did* land —
+news `2026-07/named-slurpy-not-positional.md` — because it is independently
+correct and regresses nothing.)
+
+**Why it is large:** running a `unit module` body under its own package changes
+where every routine, constant and package item in every bundled module lands, and
+`unit_module_exported_subs` (plus the `module_owned_exports` hiding logic) exists
+to paper over the current behaviour. Related: the `constant` / `my` bare-name
+collision fixed in #5350, whose root cause was the same registration-side
+flattening. Expect broad fallout in mutsu's own modules and tests that rely on
+the leak — this is a campaign, not a patch.
+
 
 ## Metrics
 

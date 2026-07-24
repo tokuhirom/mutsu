@@ -85,8 +85,17 @@ impl Interpreter {
                 || pd.code_signature.is_some()
         });
         let result = (|| {
-            let positional_params: Vec<&ParamDef> =
-                param_defs.iter().filter(|p| !p.named).collect();
+            // A slurpy hash (`*%o`) collects *named* arguments, so it is neither
+            // a positional parameter nor a positional variadic: `sub f(Str $a,
+            // Str $b = '', *%o)` still accepts at most two positionals. Counting
+            // it as a positional slurpy let such a candidate match any argument
+            // count at all -- which is how Test::Util's
+            // `our sub run(Str $code, Str $input = '', *%o)` became a live
+            // candidate for the builtin `run`.
+            let positional_params: Vec<&ParamDef> = param_defs
+                .iter()
+                .filter(|p| !(p.named || p.slurpy && p.name.starts_with('%')))
+                .collect();
             // A `Pair` (interned String key) is a *named* argument (`a => 1`,
             // `:a(1)`); a `ValuePair` (general key) is a *positional* argument
             // produced by the parser's `PositionalPair` (a computed/quoted-key
