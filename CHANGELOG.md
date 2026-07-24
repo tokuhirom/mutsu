@@ -1,5 +1,43 @@
 # Changelog
 
+## [v0.17.0](https://github.com/tokuhirom/mutsu/compare/v0.16.0...v0.17.0) - 2026-07-24
+
+- fix: a class may compose a CORE role of its own name (`class Iterator does Iterator`) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5325
+- fix: bare type objects warn in string context (~, eq, interpolation, print) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5326
+- fix: a named param's `where` constraint can reference its sibling named params by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5328
+- feat: split the site's playground and REPL into two pages by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5327
+- fix: qualified call `self.Builtin::method` reaches a native ancestor method by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5329
+- fix: type-object hash keys coerce to "" with a string-context warning by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5330
+- ci: evidence-based flaky-test quarantine so noise stops blocking merges by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5332
+- fix: `.match` / `.subst` accept a named regex passed as a value (`&Named`) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5334
+- fix: list-constructed hash type-object keys coerce to "" with a string-context warning by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5335
+- fix: sprintf `%s` coerces a bare type object to "" with a string-context warning by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5336
+- docs: batteries adoption policy + first slot records (TLS foundation, HTTP client) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5337
+- fix: `.Str` / `.Stringy` on a bare type object warns in string context by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5338
+- fix: frugal quantifiers match minimally under `:g` by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5339
+- fix: sprintf numeric directives warn for a bare type object in numeric context by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5340
+- fix: object hashes key by .WHICH — key objects survive (PLAN 8.10) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5333
+- docs: record proto-token LTM literal-vs-charclass tie-break bug (File::Ignore globstar) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5341
+- feat: OpenSSL + IO::Socket::SSL battery — real HTTPS runs on mutsu by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5342
+- fix: Pair.new value argument aliases the source scalar's container (PLAN 8.16 [7]) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5343
+- fix: numeric comparison of a bare numeric type object throws X::Numeric::Uninitialized by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5344
+- fix: prefix +/- on a bare type object warns and resumes with the per-type zero by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5345
+- fix: multi-dispatch named-slurpy ranking + cross-module proto invocant clobber by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5346
+- docs: record HTTP::UserAgent battery status + constant/my bare-name collision blocker by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5347
+- fix: method-form .sprintf spreads a single positional container argument by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5348
+- fix: sprintf slurps its argument list, flattening Range/List/Seq args by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5349
+- fix: register a class-body `my $NAME` static even when a same-named binding leaked into env by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5350
+- fix: method-form sprintf validates its directive count against the arg count by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5351
+- fix: a role mixed into a native-backed instance keeps its native methods by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5353
+- fix: `Blob ~ Buf` widens to `Buf` instead of keeping the LHS type by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5355
+- fix: Nil.say / .note / .put / .print print instead of being Nil-absorbed by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5356
+- fix: a bracket-array literal wrapping a single lazy `...` sequence stays lazy by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5354
+- fix: a lone `'` in a `< ... >` word list is a word, not a quote delimiter by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5357
+- docs: record the word-logical precedence gap for non-variable lvalues by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5358
+- fix: Nil.abs / .floor / .ceiling / .round / .truncate / .sign numify to 0 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5360
+- fix: word-logicals bind looser than a non-variable-lvalue assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5359
+- fix: a %-sigil attribute coerces an empty (or flat) list init to a Hash by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5361
+
 ## [v0.16.0](https://github.com/tokuhirom/mutsu/compare/v0.15.0...v0.16.0) - 2026-07-23
 
 - fix: a Bool numifies (False->0, True->1) in ordered comparison by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5119
