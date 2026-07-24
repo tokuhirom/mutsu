@@ -129,7 +129,7 @@ section.
       (user policy 2026-07-24). The release-time gate now runs every battery's upstream suite
       against the shipped library (`scripts/battery-testsuite.sh`, `batteries.lock`,
       `batteries-whitelist.txt`; see [docs/batteries/testsuite-gate.md](docs/batteries/testsuite-gate.md)),
-      but it is a **baseline** gate, and the measured baseline is **16/18 test files** (it landed at
+      but it is a **baseline** gate, and the measured baseline is **17/18 test files** (it landed at
       11/18). The goal is to raise that toward all-green so a release ships batteries that genuinely
       pass their own suites — the gate stops regressions, it does not close these gaps:
       - **OpenSSL — 7/7** ✅ **DONE (2026-07-25)**. All seven upstream files pass against the
@@ -139,7 +139,7 @@ section.
         `Blob:D`, which made `OpenSSL::Digest` mutually recurse — the `05-digest`/`03-rsa` hangs),
         `unit module` package scoping (#5369), positional-argument indexing (#5370), and the
         `where`-constraint caller-lexical wipe (`04-crypt`, PLAN 8.22).
-      - **Zef — 8/10**, now triaged (2026-07-25). Both remaining files fail for **real, general mutsu
+      - **Zef — 9/10** (was 8/10; `distribution-depends-parsing` is green as of 2026-07-25). Both remaining files fail for **real, general mutsu
         bugs**, not for a run-context difference, so the "all 10 upstream tests pass" note from
         2026-07-10 (#4383/#4384) is stale rather than contradicted — these two are reachable only
         through paths the older mzef/install run did not take. Each has a standalone minimal
@@ -162,25 +162,23 @@ section.
           Deciding the fix needs care about *why* the blanket rollback exists (a `class`/`role`
           declared directly in a subtest body should stay lexical); making the two stores agree —
           rather than widening or narrowing the rollback blindly — is the shape of the fix.
-        - **`distribution-depends-parsing` (20/35)** — three bugs so far; the first two are fixed.
-          1. ✅ **DONE** — a type constraint whose qualified name ended in `::Any` was equated with
-             the builtin `Any` by the "qualified name matching" short-name bridge in
-             `Interpreter::type_matches`, so it matched every value (every class's MRO ends in
-             `Any`) and its candidate wrongly won. In Zef that sent a plain
-             `Zef::Distribution::DependencySpecification` into the `…::Any`-constrained
-             `spec-matcher` candidate, which calls `.specs` — a method only the `::Any` sibling
-             has. The bridge now refuses core setting type names, which never live under a user
-             package. Pin: `t/nested-any-type-constraint.t`.
-          2. ✅ **DONE** — that uncaught exception aborted the file with **no message at all**:
-             `run()` propagated `finish()`'s error instead of the original, and under `Test` a
-             mainline exception always leaves the plan short, so the "Test failures" plan-mismatch
-             error replaced the real one. Every such failure read as a plan bug. Pin:
-             `t/mainline-exception-not-masked-by-plan.t`. **This one was the real blocker on
-             triage** — with the exception visible, each remaining failure names itself.
-          3. **Current frontier (test 21)**: `Failed to resolve some missing dependencies` for the
-             `[{:any["Unavailable", "Available"]},]` case — an `any(...)` dependency spec with one
-             satisfiable alternative must resolve, and does not. Reduce from
-             `Zef::Client.!find-prereq-candidates`.
+        - **`distribution-depends-parsing`** ✅ **DONE — 35/35**. Three bugs, all general:
+          1. A type constraint whose qualified name ended in `::Any` was equated with the builtin
+             `Any` by the "qualified name matching" short-name bridge in `Interpreter::type_matches`,
+             so it matched every value (every class's MRO ends in `Any`) and its candidate wrongly
+             won. Pin: `t/nested-any-type-constraint.t`.
+          2. That exception aborted the file with **no message at all**: `run()` propagated
+             `finish()`'s error instead of the original, and under `Test` a mainline exception
+             always leaves the plan short, so the "Test failures" plan-mismatch error replaced the
+             real one. **This was the real blocker on triage** — with the exception visible, each
+             remaining failure named itself. Pin: `t/mainline-exception-not-masked-by-plan.t`.
+          3. A block containing a `CATCH` yielded the **topic** instead of its last statement's
+             value: the implicit `try` wrapping such a body had its value `Pop`ped, so the block
+             value fell back to `last_topic_value`. Any block used for its value broke as soon as
+             it grew a `CATCH` — `.map` yielded the topic, `.first`/`.grep` saw a truthy topic and
+             matched the first element. Zef resolves `any(...)` dependency alternatives with
+             `$needed.specs.first({ CATCH {…}; …; @candidates })`, so it always took the first
+             (unsatisfiable) one. Pin: `t/catch-block-keeps-block-value.t`.
       - **IO::Socket::SSL — 1/1** ✅ already green.
       Raising a file into the baseline is `scripts/battery-testsuite.sh --update` + committing the
       whitelist diff.

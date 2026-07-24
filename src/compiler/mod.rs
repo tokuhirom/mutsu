@@ -1604,7 +1604,7 @@ impl Compiler {
             .any(|s| matches!(s, Stmt::Catch(_) | Stmt::Control(_)));
         if has_catch {
             self.compile_try(stmts, &None);
-            self.code.emit(OpCode::Pop);
+            self.code.emit(OpCode::SetTopic);
         } else if self.is_routine && Self::has_block_enter_leave_phasers(stmts) {
             self.compile_phaser_block_scope(stmts, false);
         } else {
