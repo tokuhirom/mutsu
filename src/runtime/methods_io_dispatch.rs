@@ -88,7 +88,8 @@ impl Interpreter {
     pub(super) fn dispatch_note(&mut self, target: &Value) -> Result<Value, RuntimeError> {
         let content = format!("{}\n", self.render_gist_value(target)?);
         self.write_to_named_handle("$*ERR", &content, false)?;
-        Ok(Value::NIL)
+        // `note` returns True (like the `note LIST` sub form), not Nil.
+        Ok(Value::TRUE)
     }
 
     /// Apply a Unicode normalization form before encoding. Accepts the short
