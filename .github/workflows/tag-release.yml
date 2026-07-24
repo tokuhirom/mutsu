@@ -1,0 +1,70 @@
+name: Tag release
+
+# Cut a release with a single manual trigger. Supply the new version number and
+# this workflow bumps Cargo.toml (+ the matching Cargo.lock entry), commits that
+# to main, and pushes the `vX.Y.Z` tag. The tag push fires release.yml, which
+# builds all four target tarballs, runs the batteries gate, and publishes the
+# GitHub Release with auto-generated notes.
+#
+# This replaces the old two-phase tagpr dance (dispatch -> refresh release PR ->
+# merge -> dispatch again -> tag) with one action:
+#
+#     gh workflow run tag-release.yml -f version=0.18.0
+#
+# Or from the Actions tab: "Tag release" -> Run workflow -> enter the version.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, no v prefix (e.g. 0.18.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate version input
+        run: |
+          if ! printf '%s' '${{ inputs.version }}' | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::version must be X.Y.Z with no v prefix, got '${{ inputs.version }}'"
+            exit 1
+          fi
+
+      # App token so (1) the push to main can bypass the branch ruleset — the App
+      # is a configured bypass actor — and (2) the pushed tag actually starts
+      # release.yml. A tag pushed with the default GITHUB_TOKEN does NOT trigger
+      # dependent workflows; a token from a GitHub App does.
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token
+        with:
+          app-id: ${{ vars.TAGPR_APP_ID }}
+          private-key: ${{ secrets.TAGPR_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          ref: main
+          fetch-depth: 0
+
+      # Needed only to sync Cargo.lock's `mutsu` entry to the new version.
+      - uses: dtolnay/rust-toolchain@191af2e1955bbe165f9bbacff2d2438002dff4d4 # 1.96.0
+
+      - name: Bump version in Cargo.toml + Cargo.lock
+        run: |
+          set -eu
+          sed -i -E "0,/^version = \".*\"$/ s//version = \"${{ inputs.version }}\"/" Cargo.toml
+          cargo update -p mutsu
+          grep -m1 '^version' Cargo.toml
+
+      - name: Commit bump, tag, and push
+        run: |
+          set -eu
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -am "Release v${{ inputs.version }}"
+          git tag -a "v${{ inputs.version }}" -m "Release v${{ inputs.version }}"
+          git push origin HEAD:main
+          git push origin "v${{ inputs.version }}"
