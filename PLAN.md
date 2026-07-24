@@ -129,39 +129,16 @@ section.
       (user policy 2026-07-24). The release-time gate now runs every battery's upstream suite
       against the shipped library (`scripts/battery-testsuite.sh`, `batteries.lock`,
       `batteries-whitelist.txt`; see [docs/batteries/testsuite-gate.md](docs/batteries/testsuite-gate.md)),
-      but it is a **baseline** gate, and the measured baseline is only **12/18 test files** (it
-      landed at 11/18; `10-client-ca-file` was fixed since). The goal is to raise that toward
-      all-green so a release ships batteries that genuinely pass their own suites — the gate stops
-      regressions, it does not close these gaps:
-      - **OpenSSL — 3/7**. Measured shapes (release build, run from the suite's own checkout):
-        `01-basic` 2/7 die (0.1 s) · `03-rsa` 1/8 **hang** · `04-crypt` 1/13 die (0.0 s) ·
-        `05-digest` 0/24 **hang**.
-        ✅ `10-client-ca-file` **DONE** — was a SIGSEGV (exit 139), now 7/7. Two general NativeCall
-        bugs, neither OpenSSL-specific: an undefined `Str` argument was stringified instead of
-        marshalled as a NULL `char*` (so `ERR_error_string($e, Nil)`, where NULL means "use your own
-        static buffer", wrote up to 256 bytes into a 1-byte buffer and corrupted the heap), and
-        `CArray[T].new` did not flatten an Array/List argument (so the `CArray[uint8].new(
-        $path.encode.list, 0)` C-string idiom built a 2-element buffer and the callee saw a garbage
-        filename). Pins: `t/nativecall-null-str-arg.t`, `t/carray-new-flattens-list.t`.
-        ★ **Root cause of both hangs is found and is ONE general mutsu bug — multi-dispatch picks a
-        coercion candidate over an exact type match.** Minimal repro:
-        ```raku
-        my proto sub f(|) {*}
-        my multi sub f(Str() $s)   { "str"  }
-        my multi sub f(Blob:D $b)  { "blob" }
-        say f("abc".encode);   # raku: blob   mutsu: str   <-- wrong
-        ```
-        `Str()` (a coercion type, which accepts anything coercible) must rank **less specific** than
-        an exact `Blob:D` match. `OpenSSL::Digest` declares exactly this shape, and its `Str()`
-        candidate delegates with `md5 $string.encode` — so in mutsu the Blob re-enters the `Str()`
-        candidate and it is **infinite mutual recursion**, i.e. the hang. Fixing the ranking should
-        close `05-digest` (0/24) and `03-rsa` (1/8, `.sign` → `sha1`) together. Beware blast radius:
-        this is core dispatch ranking (cf. the earlier specificity fix #4967).
-        The `10-client-ca-file` **segfault** is a separate, higher-priority defect (project rule:
-        panics/crashes first), as are the two fast dies.
-        ★ Already ruled out: a *harness* artifact. These suites reach for fixtures by relative path
-        (`slurp 't/key.pem'`), so the harness now runs each test with its own repo as the working
-        directory. That moved `03-rsa` from 0/8 to 1/8 — real, but it flipped no file to passing.
+      but it is a **baseline** gate, and the measured baseline is **16/18 test files** (it landed at
+      11/18). The goal is to raise that toward all-green so a release ships batteries that genuinely
+      pass their own suites — the gate stops regressions, it does not close these gaps:
+      - **OpenSSL — 7/7** ✅ **DONE (2026-07-25)**. All seven upstream files pass against the
+        bundled library. The gaps were closed by general mutsu fixes, none OpenSSL-specific:
+        NativeCall NULL-`Str` marshalling + `CArray[T].new` list flattening (`10-client-ca-file`'s
+        SIGSEGV), multi-dispatch specificity (a `Str()` coercion candidate outranked an exact
+        `Blob:D`, which made `OpenSSL::Digest` mutually recurse — the `05-digest`/`03-rsa` hangs),
+        `unit module` package scoping (#5369), positional-argument indexing (#5370), and the
+        `where`-constraint caller-lexical wipe (`04-crypt`, PLAN 8.22).
       - **Zef — 8/10** (`00-load` 1/2, `distribution-depends-parsing` 18/35). ★ This **contradicts
         the recorded "all 10 upstream tests pass" (2026-07-10, #4383/#4384)**. Not yet triaged:
         either a real regression since then, or a run-context difference (the gate runs
@@ -1547,95 +1524,6 @@ entangled with the assignment metaops AND has a hot-path cost:
   see). Measure the loop-bench delta first; if it regresses, this stays deferred
   (low gain, real risk). The comparison + prefix fixes already captured the
   high-value, zero-hot-path-cost parts of this doc-diff.
-
-### 8.22 Calling a `where`-constrained module sub wipes every earlier caller lexical (found 2026-07-24 via OpenSSL's `04-crypt`)
-
-**Decided 2026-07-24 (user): fix this with the correct architecture — make the
-call-return coherence precise, do NOT paper over it by flushing every `my`
-declaration into `env`.** The precise route is the one the codebase is already
-converging on (carrier writes are logged by name; cell boxing is the permanent
-mechanism); the env-flush route would put an `env` write on the hottest
-declaration path *and* keep `env` as a shadow source of truth, which is the
-thing being retired.
-
-#### Symptom
-
-Every caller lexical declared *before* the call is reset to `Any`. Minimal
-reproduction — no NativeCall, no multi-dispatch, no forwarding:
-
-```raku
-# lib/WhereMod.rakumod
-unit module WhereMod;
-sub w(Int $n, :$c! where .so) is export { $n }
-```
-
-```raku
-use WhereMod;
-my $a = Blob.new(1);
-my $b = 99;
-my $r = w(1, :c<x>);
-say "a={$a.gist} b={$b.gist} r={$r.gist}";
-# raku:  a=Blob:0x<01> b=99 r=1
-# mutsu: a=(Any)       b=(Any) r=1
-```
-
-Note `$r` — the local receiving the call's result — is **correct**; only the
-earlier ones are wiped. Their type is irrelevant (`Blob`, `Int`, `Str` all go to
-`Any`).
-
-All three of these are required; drop any one and it is clean:
-
-1. the sub is declared in a **module** (the same sub in the main script is fine);
-2. it carries a **`where` constraint** — that is what keeps the routine on the
-   interpreter carrier instead of the OTF compile;
-3. the call's **result is assigned to a variable** — both `my $r = w(...)` and
-   a separate `my $r; $r = w(...)` reproduce; discarding it (`w(1, :c<x>);` as a
-   bare statement) is clean.
-
-Two things hide it, both diagnostic: reading the variable once before the call,
-and putting any unrelated statement (`say "sep";`) between the declaration and
-the call. Both make `env` carry the value, which says the slot's value had never
-reached `env` and something is rebuilding the slots from `env`.
-
-Not JIT- or GC-related (`MUTSU_JIT=off` / `MUTSU_GC=off` reproduce identically).
-
-#### What has been ruled out (2026-07-24, by instrumentation — do not re-walk)
-
-- **`sync_locals_from_env` no longer exists.** The blanket env→locals reconcile
-  is retired (`drain_and_reconcile_after_cached_call` now only calls
-  `apply_pending_rw_writeback`; `box_carrier_free_var_writes` documents cell
-  boxing as the permanent mechanism). An earlier version of this entry blamed
-  it — that citation was stale.
-- **None of the carrier writebacks fire for this case**: `apply_pending_rw_writeback`,
-  `writeback_carrier_writes`, and both branches of
-  `carrier_writeback_changed_aggregates` were instrumented and produce no output
-  on the reproduction.
-- **The frame-entry seeding loop in `run_inner`** (`vm/vm_run_loop.rs`, which
-  fills every slot from `env` by name and NILs the misses) is **not** re-running
-  for the caller frame — also instrumented, no output.
-- **NativeCall's `Blob` writeback (`write_buf_instance_bytes`) is not involved** —
-  the reproduction contains no native call at all. (That writeback *is*
-  separately wrong for an immutable `Blob`; restricting it to the mutable `Buf`
-  family is correct but fixes nothing here, so it needs its own evidence.)
-
-#### Where to start next
-
-The remaining candidate is the save/restore of the per-execution registers
-around the nested run: `with_nested_registers` (`vm/vm_run_loop.rs`) takes
-`self.locals` and restores it afterwards, and `exec_call` reaches it via
-`run_block` → `run_block_raw` → `run_nested`. Instrument the restore itself
-(and `push_call_frame`/`pop_call_frame`'s `saved_locals`) to find which snapshot
-the stale `Any`s come from; the asymmetry to explain is why the result-receiving
-slot survives while every earlier one does not.
-
-**Verified pre-existing**: reproduces unchanged at `3fc5a5a5b`, before the
-unit-module package-scoping (#5369) and positional-indexing (#5370) work.
-
-**Why it matters now**: it is what holds the bundled OpenSSL battery's
-`t/04-crypt.rakutest` at 6/13 — `OpenSSL::CryptTools`'s `encrypt`/`decrypt`
-candidates are all `where`-constrained module subs, so every call wipes the
-caller's plaintext Blob and the round-trip assertions compare against `Any`. The
-battery test-suite gate is a release gate.
 
 ## Metrics
 
