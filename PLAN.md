@@ -139,12 +139,52 @@ section.
         `Blob:D`, which made `OpenSSL::Digest` mutually recurse — the `05-digest`/`03-rsa` hangs),
         `unit module` package scoping (#5369), positional-argument indexing (#5370), and the
         `where`-constraint caller-lexical wipe (`04-crypt`, PLAN 8.22).
-      - **Zef — 8/10** (`00-load` 1/2, `distribution-depends-parsing` 18/35). ★ This **contradicts
-        the recorded "all 10 upstream tests pass" (2026-07-10, #4383/#4384)**. Not yet triaged:
-        either a real regression since then, or a run-context difference (the gate runs
-        `mutsu -I vendor/zef/lib <test>` directly, whereas the 2026-07-10 result came from the full
-        mzef/install context). **Determine which before assuming a regression** — if it is context,
-        the gate's invocation may need to match how zef actually runs its own tests.
+      - **Zef — 8/10**, now triaged (2026-07-25). Both remaining files fail for **real, general mutsu
+        bugs**, not for a run-context difference, so the "all 10 upstream tests pass" note from
+        2026-07-10 (#4383/#4384) is stale rather than contradicted — these two are reachable only
+        through paths the older mzef/install run did not take. Each has a standalone minimal
+        reproduction; neither is Zef-specific.
+        - **`00-load` (1/2)** — `subtest` **rolls back the type registry but not `loaded_modules`.**
+          `test_fn_subtest` (`src/runtime/test_functions/tap_subtest.rs`) restores `classes`,
+          `roles`, `subsets`, `functions`, `proto_subs`, `token_defs`, … wholesale after the block,
+          so a module first loaded *inside* a subtest has all of its declarations erased on exit —
+          while `loaded_modules` still lists it, which makes every later `use` an early-return
+          no-op. The type is then permanently gone. Repro:
+          ```raku
+          use Test;
+          plan 1;
+          sub probe($t) { say "$t: ", ::('Zef::Fetcher').^name }
+          subtest 'A' => { use Zef; probe('inside'); };   # inside: Zef::Fetcher
+          probe('after');                                  # after: Failure   <-- wrong
+          ```
+          In the real file, `subtest 'Core'` loads `Zef` and `subtest 'Plugins'` then dies with
+          `X::InvalidType: Invalid typename 'Fetcher'` on all three `Zef::Service::Shell::*` files.
+          Deciding the fix needs care about *why* the blanket rollback exists (a `class`/`role`
+          declared directly in a subtest body should stay lexical); making the two stores agree —
+          rather than widening or narrowing the rollback blindly — is the shape of the fix.
+        - **`distribution-depends-parsing` (18/35)** — two bugs, one masking the other.
+          1. ★ **A type constraint whose qualified name ends in `::Any` is resolved as the builtin
+             `Any`**, so it matches every value and its candidate wrongly wins:
+             ```raku
+             class Spec { }
+             class Spec::Any { }
+             class Other {
+                 multi method sm(Spec::Any $s) { "ANY" }
+                 multi method sm($s)           { "GENERIC" }
+             }
+             say Other.new.sm(Spec.new);   # raku: GENERIC   mutsu: ANY   <-- wrong
+             ```
+             Renaming the class to `Spec::Alt` makes it correct, which pins the cause to the
+             trailing-component fallback in type-name resolution rather than to multi-dispatch
+             ranking. In Zef this sends a plain `Zef::Distribution::DependencySpecification` into
+             the `…::DependencySpecification::Any`-constrained `spec-matcher` candidate, which
+             calls `.specs` — a method only the `::Any` sibling has — and dies with
+             `X::Method::NotFound`.
+          2. ★ **That uncaught exception aborts the file with no message at all** — the run just
+             stops after test 18 and only the plan mismatch is reported. Wrapping the call in
+             `try`/`CATCH` is what revealed the error above. A silently swallowed exception makes
+             every failure of this kind look like a plan bug; this is worth fixing on its own, and
+             first, because it is what made this file hard to triage.
       - **IO::Socket::SSL — 1/1** ✅ already green.
       Raising a file into the baseline is `scripts/battery-testsuite.sh --update` + committing the
       whitelist diff.
