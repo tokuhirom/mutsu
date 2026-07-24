@@ -129,12 +129,20 @@ section.
       (user policy 2026-07-24). The release-time gate now runs every battery's upstream suite
       against the shipped library (`scripts/battery-testsuite.sh`, `batteries.lock`,
       `batteries-whitelist.txt`; see [docs/batteries/testsuite-gate.md](docs/batteries/testsuite-gate.md)),
-      but it is a **baseline** gate, and the measured baseline is only **11/18 test files**. The
-      goal is to raise that toward all-green so a release ships batteries that genuinely pass their
-      own suites — the gate stops regressions, it does not close these gaps:
-      - **OpenSSL — 2/7**. Measured shapes (release build, run from the suite's own checkout):
+      but it is a **baseline** gate, and the measured baseline is only **12/18 test files** (it
+      landed at 11/18; `10-client-ca-file` was fixed since). The goal is to raise that toward
+      all-green so a release ships batteries that genuinely pass their own suites — the gate stops
+      regressions, it does not close these gaps:
+      - **OpenSSL — 3/7**. Measured shapes (release build, run from the suite's own checkout):
         `01-basic` 2/7 die (0.1 s) · `03-rsa` 1/8 **hang** · `04-crypt` 1/13 die (0.0 s) ·
-        `05-digest` 0/24 **hang** · `10-client-ca-file` 2/7 **SIGSEGV** (exit 139, 1.2 s).
+        `05-digest` 0/24 **hang**.
+        ✅ `10-client-ca-file` **DONE** — was a SIGSEGV (exit 139), now 7/7. Two general NativeCall
+        bugs, neither OpenSSL-specific: an undefined `Str` argument was stringified instead of
+        marshalled as a NULL `char*` (so `ERR_error_string($e, Nil)`, where NULL means "use your own
+        static buffer", wrote up to 256 bytes into a 1-byte buffer and corrupted the heap), and
+        `CArray[T].new` did not flatten an Array/List argument (so the `CArray[uint8].new(
+        $path.encode.list, 0)` C-string idiom built a 2-element buffer and the callee saw a garbage
+        filename). Pins: `t/nativecall-null-str-arg.t`, `t/carray-new-flattens-list.t`.
         ★ **Root cause of both hangs is found and is ONE general mutsu bug — multi-dispatch picks a
         coercion candidate over an exact type match.** Minimal repro:
         ```raku

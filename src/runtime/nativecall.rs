@@ -634,11 +634,22 @@ fn marshal_arg(ps: &ParamSpec, raw: &Value) -> Result<(libffi::middle::Type, Arg
             (Type::pointer(), ArgOwner::Ptr(addr))
         }
         CType::Str => {
-            let s = v.to_string_value();
-            let cstr = std::ffi::CString::new(s)
-                .map_err(|_| "Str argument contains an embedded NUL byte".to_string())?;
-            let ptr = cstr.as_ptr();
-            (Type::pointer(), ArgOwner::CStr(cstr, ptr))
+            // An UNDEFINED `Str` argument (`Nil`, `Str`, any type object) is a
+            // NULL `char*`, as in Rakudo. Stringifying it instead handed C a
+            // pointer to a 1-byte buffer, and a callee that treats the argument
+            // as a caller-provided output buffer then wrote past it and
+            // corrupted the heap: OpenSSL's `ERR_error_string($e, Nil)` — where
+            // NULL means "use your own static buffer" — writes up to 256 bytes
+            // and aborted mutsu with "realloc(): invalid next size".
+            if !crate::runtime::types::value_is_defined(v) {
+                (Type::pointer(), ArgOwner::Ptr(std::ptr::null()))
+            } else {
+                let s = v.to_string_value();
+                let cstr = std::ffi::CString::new(s)
+                    .map_err(|_| "Str argument contains an embedded NUL byte".to_string())?;
+                let ptr = cstr.as_ptr();
+                (Type::pointer(), ArgOwner::CStr(cstr, ptr))
+            }
         }
         CType::Buf => {
             // A `Blob`/`Buf` is passed as a `void*` to a contiguous copy of its
