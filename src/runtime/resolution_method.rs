@@ -381,17 +381,24 @@ impl Interpreter {
             if pd.is_invocant || pd.name.starts_with("__type_capture__") {
                 continue;
             }
-            // Slurpy parameters (`*@x`, `*%h`, `**@x`) are less specific than a
-            // required positional of the same type. When a single Positional
+            // Positional slurpy parameters (`*@x`, `**@x`) are less specific than
+            // a required positional of the same type. When a single Positional
             // argument matches both `(@x)` and `(*@x)`, the non-slurpy candidate
             // must win rather than being treated as equally specific (ambiguous).
-            // This includes a user-written named-hash slurpy: `(*%items)` must
-            // lose to `(IO::Path :$file!)` for `.load(file => $path)` (META6's
-            // `multi method new` set). The implicit method `*%_` is on every
-            // candidate, so it carries no penalty.
+            //
+            // A named-hash slurpy (`*%h`) is NOT penalized here. It competes with
+            // other candidates only over *named* arguments, and a bare zero-arg
+            // candidate is really `(*%_)` in Raku — equivalent, not narrower — so
+            // a flat distance penalty would wrongly let `()` beat `(Bool :$b, *%h)`
+            // (`HTTP::Request.new(GET => $url)` picking the wrong `new`). Named
+            // slurpies are instead ranked by the explicit-named tie-break below:
+            // `(IO::Path :$file!)` still beats `(*%items)` because it declares an
+            // explicit named param, and `()` vs `(*%h)` correctly ties (ambiguous),
+            // matching rakudo. The implicit method `*%_` carries no penalty either.
             if (pd.slurpy || pd.double_slurpy) && pd.name != "%_" && pd.name != "_" {
-                total += 2000;
                 if !pd.named && !pd.name.starts_with('%') {
+                    // positional slurpy
+                    total += 2000;
                     arg_idx += 1;
                 }
                 continue;
