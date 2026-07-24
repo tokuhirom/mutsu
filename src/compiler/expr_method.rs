@@ -131,8 +131,29 @@ impl Compiler {
         let arity = args.len() as u32;
         let arg_sources_idx = self.add_arg_sources_constant(args);
         let esc = Self::method_escapes_closure_args(&name.resolve());
-        for arg in args {
+        // `Pair.new($k, $v)` binds its value parameter raw, so the built Pair's
+        // value aliases `$v`'s container (write-through, traps.rakudoc; only the
+        // 2-positional form — the named form and the key decontainerize). Tag the
+        // value argument with `WrapVarRef` — the same capture the fat-arrow
+        // `key => $var` path uses — and let the CallMethodMut exec box the source
+        // local into a shared cell when the receiver really is the native Pair
+        // type (any other receiver unwraps to the plain value).
+        let pair_value_capture = matches!(target, Expr::BareWord(_))
+            && target_name == "Pair"
+            && name.resolve() == "new"
+            && modifier.is_none()
+            && !quoted
+            && args.len() == 2
+            && matches!(&args[1], Expr::Var(n) if !n.contains("::"));
+        for (i, arg) in args.iter().enumerate() {
             self.compile_method_arg_with_escape(arg, esc);
+            if pair_value_capture
+                && i == 1
+                && let Expr::Var(n) = arg
+            {
+                let src_idx = self.code.add_constant(Value::str(n.clone()));
+                self.code.emit(OpCode::WrapVarRef(src_idx));
+            }
         }
         let name_idx = self.code.add_constant(Value::str(name.resolve()));
         let modifier_idx = modifier.map(|m| self.code.add_constant(Value::str(m.to_string())));
