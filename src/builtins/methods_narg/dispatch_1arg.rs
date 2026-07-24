@@ -1052,6 +1052,15 @@ pub(crate) fn native_method_1arg(
                 return None;
             }
             let fmt = target.to_string_value();
+            // The single scalar arg feeds exactly one directive. Any other
+            // directive count is an arg-count mismatch (`"%s and %s".sprintf("a")`
+            // wants two args), which `format_sprintf` would silently paper over by
+            // rendering the missing directives as empty/0. Defer to the slow-path
+            // arm so `builtin_sprintf` raises the same `X::Str::Sprintf::Directives::Count`
+            // the sub form does.
+            if runtime::sprintf_directive_count(&fmt) != 1 {
+                return None;
+            }
             let rendered = runtime::format_sprintf(&fmt, Some(arg));
             Some(Ok(Value::str(rendered)))
         }

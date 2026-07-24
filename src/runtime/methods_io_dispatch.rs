@@ -65,8 +65,19 @@ impl Interpreter {
     }
 
     pub(super) fn dispatch_sprintf(&mut self, target: &Value) -> Result<Value, RuntimeError> {
+        // No-arg method form: `$format.sprintf`. The stringified invocant is the
+        // format, consumed against zero arguments — so a format with any directive
+        // (`"%s".sprintf`) is an arg-count mismatch, exactly as `sprintf("%s")` is,
+        // while a directive-free string (`"no dir".sprintf`, `42.sprintf`) renders
+        // as itself.
         let content = self.render_str_value(target);
-        Ok(Value::str(content))
+        crate::runtime::sprintf::validate_sprintf_directives(&content, 0)?;
+        // Still run the formatter so an escaped `%%` collapses to a literal `%`
+        // (`"100%%".sprintf` is `100%`), matching `sprintf("100%%")`.
+        Ok(Value::str(crate::runtime::format_sprintf_args(
+            &content,
+            &[],
+        )))
     }
 
     pub(super) fn dispatch_put(&mut self, target: &Value) -> Result<Value, RuntimeError> {
