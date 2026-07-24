@@ -78,6 +78,13 @@ pub(crate) fn nil_absorbs_method(method: &str) -> bool {
             | "ords"
             | "chrs"
     )
+    // NOTE: the numify-to-0 Real methods (abs/floor/ceiling/round/truncate/sign)
+    // are deliberately NOT listed above. Their warn+resume handling lives only in
+    // the scalar `MethodCall` opcode path, not in `try_native_method`, so the
+    // hyper leaf (`».abs`) would raise "No such method" if it declined to absorb
+    // them. Absorbing to Nil in the hyper path keeps the pre-existing behavior
+    // (the same gap the Int/Rat/Num coercions above have for `(Nil,)».Int`);
+    // making the hyper path warn+resume is a separate follow-up.
 }
 
 impl Interpreter {
@@ -1504,6 +1511,22 @@ impl Interpreter {
                             };
                             let msg = "Use of Nil in numeric context".to_string();
                             return Err(RuntimeError::warn_signal_with_resume(msg, zero));
+                        }
+                        // Real methods that numify their invocant (`abs`, `floor`,
+                        // `ceiling`, `round`, `truncate`, `sign`) treat Nil as the
+                        // numeric zero: they warn "Use of Nil in numeric context"
+                        // and resume with the method applied to 0 — which is 0 (an
+                        // Int) for every one of these — instead of absorbing to Nil.
+                        // (`sqrt`/`exp`/`log` are `Cool:D`-only and error on Nil:U;
+                        // they stay in the Nil-absorbing catch-all — matching raku's
+                        // X::Multi::NoMatch is a separate follow-up.)
+                        "abs" | "floor" | "ceiling" | "round" | "truncate" | "sign"
+                            if args.is_empty() =>
+                        {
+                            return Err(RuntimeError::warn_signal_with_resume(
+                                "Use of Nil in numeric context".to_string(),
+                                Value::int(0),
+                            ));
                         }
                         // `Nil.ords` warns ("Use of Nil in string context") and
                         // resumes to an empty Seq; `Nil.chrs` warns and resumes
