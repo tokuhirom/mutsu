@@ -1476,6 +1476,17 @@ impl Interpreter {
                         | "Slip" | "flat" | "Seq" | "cache" | "head" | "tail" | "elems" => {
                             // Fall through to normal dispatch
                         }
+                        // I/O routines print rather than absorb: `Nil.say` /
+                        // `Nil.note` emit the gist "Nil" (and return True), while
+                        // `Nil.put` / `Nil.print` coerce via `.Str`, warning "Use of
+                        // Nil in string context" and printing the empty string.
+                        // Route them to the normal dispatch (dispatch_say/note/
+                        // put/print), the same as the `say Nil` sub form. (A
+                        // positional arg — `Nil.say("x")` — is a separate
+                        // X::Multi::NoMatch case handled by the catch-all below.)
+                        "say" | "note" | "put" | "print" if args.is_empty() => {
+                            // Fall through to normal dispatch
+                        }
                         // Numeric coercion on Nil (an undefined value) warns and
                         // resumes with the corresponding numeric *zero* — raku's
                         // `Nil.Int` is `0` (defined), `Nil.Num` is `0e0`,
