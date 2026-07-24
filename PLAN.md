@@ -1548,42 +1548,65 @@ entangled with the assignment metaops AND has a hot-path cost:
   (low gain, real risk). The comparison + prefix fixes already captured the
   high-value, zero-hot-path-cost parts of this doc-diff.
 
-### 8.22 A native sub writes back into a `Blob` argument, clobbering the caller's value (found 2026-07-24 via OpenSSL's `04-crypt`)
+### 8.22 Calling a `where`-constrained module sub wipes an unrelated caller lexical (found 2026-07-24 via OpenSSL's `04-crypt`)
 
-NativeCall marshals a `Blob`/`Buf` argument as a byte buffer and, after the
-call, copies the (possibly callee-modified) C bytes back into the *same* Raku
-instance (`write_buf_instance_bytes`, `runtime/nativecall.rs`). That is right for
-an out-buffer but wrong for an input: a `Blob` is immutable in Raku, and the
-instance is shared with the caller's variable, so the writeback destroys it.
-
-Reproduce (needs the bundled OpenSSL battery):
+A caller lexical declared *before* the call is reset to `Any` by a call that has
+nothing to do with it. Minimal reproduction — no NativeCall, no multi-dispatch,
+no forwarding:
 
 ```raku
-use OpenSSL::CryptTools;
-my $test = Blob.new(0xf6, 0x9f, 0x24, 0x45, 0xdf, 0x4f, 0x9b, 0x17,
-                    0xad, 0x2b, 0x41, 0x7b, 0xe6, 0x6c, 0x37, 0x10);
-my $ct = encrypt($test, :aes256, :$iv, :$key);
-say $test.raku;    # raku: the original Blob   mutsu: Any (elems == 1)
+# lib/WhereMod.rakumod
+unit module WhereMod;
+sub w(Int $n, :$c! where .so) is export { $n }
 ```
-
-`OpenSSL::EVP` declares both the out-buffer and the plaintext as `Blob`:
 
 ```raku
-our sub EVP_EncryptUpdate(OpaquePointer, Blob, CArray[int32], Blob, int32
-  --> int32) is native(&gen-lib) { ... }
+use WhereMod;
+my $keep = Blob.new(1, 2, 3);
+my $r = w(1, :c<x>);        # unrelated call
+say $keep;                  # raku: Blob.new(1,2,3)   mutsu: (Any)
 ```
 
-so the declared type cannot distinguish them — the *runtime* class can. The
-buffer `$part` is a `buf8` (mutable Buf family); the plaintext is a `Blob`
-(immutable). Restricting the writeback to a mutable Buf-family instance is the
-principled rule and matches Raku semantics, but it needs care: `write_buf_instance_bytes`
-is also reached through `Scalar`/`ContainerRef`/`VarRef` wrappers, and the
-`nativecall_pin` object-lifetime pin (ADR-less, added with the TLS battery)
-feeds it, so both the pinned and unpinned paths have to agree.
+All three of these are required to trigger it; drop any one and it is clean:
 
-**Why it matters now**: `t/04-crypt.rakutest` is the OpenSSL battery's last
-failing file (6/13 as of the positional-indexing fix; the remaining failures
-are all this bug), and the battery test-suite gate is a release gate.
+1. the sub is declared in a **module** (a same-shaped sub in the main script is
+   fine);
+2. it carries a **`where` constraint** (drop `where .so` and it is fine) — that
+   is what keeps the routine on the interpreter carrier instead of the OTF
+   compile, so the call ends in a blanket `env_dirty` locals reconcile;
+3. the call's **result is assigned to a fresh `my`** (`w(1, :c<x>);` as a bare
+   statement is fine).
+
+The clobbered variable's type does not matter (`Blob`, `Int`, `Str` all reset to
+`Any`), and reading it once *before* the call hides the bug — the signature of a
+`locals` slot whose value was never flushed to `env`, so the post-carrier
+`sync_locals_from_env` pulls the declaration-time `Any` back into the slot.
+
+This is the `env_dirty` dual store (CLAUDE.md "Architecture") biting, not a
+NativeCall or dispatch bug: an earlier guess that NativeCall's `Blob` writeback
+(`write_buf_instance_bytes`) was responsible was **disproved** — a direct call
+into the same routine with the same `Blob` argument leaves it intact, and the
+reproduction above involves no native call at all. (Separately, that writeback
+*is* wrong for a `Blob`, which is immutable in Raku; restricting it to the
+mutable `Buf` family is correct but fixes nothing observable here, so it should
+land, if at all, with its own evidence.)
+
+**Verified pre-existing**: reproduces unchanged at `3fc5a5a5b`, before the
+unit-module package-scoping and positional-indexing work of 2026-07-24.
+
+**Why it matters now**: it is what keeps the bundled OpenSSL battery's
+`t/04-crypt.rakutest` at 6/13 — `OpenSSL::CryptTools`'s `encrypt`/`decrypt`
+candidates are all `where`-constrained module subs, so every call wipes the
+caller's `$test` Blob and the round-trip assertions compare against `Any`. The
+battery test-suite gate is a release gate.
+
+**Why it is large**: the fix is in the locals↔env coherence model, not in a
+single site. Either the `my $x = v` declaration must flush the value to `env`
+(costing an env write on the hottest declaration path), or the carrier-return
+reconcile must stop being blanket and reconcile only names the carrier actually
+wrote (`writeback_carrier_writes` already logs those — the blanket net is the
+documented CP-2 wall). The second is the architecturally right one and is the
+same work as retiring `env_dirty`.
 
 ## Metrics
 
