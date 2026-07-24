@@ -114,7 +114,7 @@ const MAX_SLURPY_RANGE_EXPAND: i64 = 100_000;
 /// Recursively flatten a list of values for `*@` (flattening slurpy) parameter binding.
 /// Non-itemized Array/List elements are flattened recursively; itemized containers
 /// (`$(...)`, `$[...]`) are preserved as single elements.
-pub(in crate::runtime) fn flatten_into_slurpy(values: &[Value], out: &mut Vec<Value>) {
+pub(crate) fn flatten_into_slurpy(values: &[Value], out: &mut Vec<Value>) {
     for val in values {
         match val.view() {
             ValueView::Array(arr, kind) if !kind.is_itemized() => {

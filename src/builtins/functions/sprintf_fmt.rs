@@ -25,18 +25,14 @@ pub(crate) fn native_sprintf(args: &[Value], z_mode: bool) -> Option<Result<Valu
         _ => String::new(),
     };
     let rest: &[Value] = if args.is_empty() { &[] } else { &args[1..] };
-    // Raku: sprintf("%d", [42]) treats the single array's elements as args.
-    let flattened: Vec<Value>;
-    let actual_args = if rest.len() == 1 {
-        if let ValueView::Array(items, ..) = rest[0].view() {
-            flattened = items.as_ref().clone().items;
-            &flattened[..]
-        } else {
-            rest
-        }
-    } else {
-        rest
-    };
+    // Raku's `sprintf($format, *@args)` slurps its arguments, so every list-like
+    // argument (Array, List/Seq/Slip, Range) flattens into one flat positional
+    // list: `sprintf("%d %d", 1..2)` sees two args. `flatten_into_slurpy` performs
+    // exactly the slurpy flatten, respecting itemization (a scalar-held array
+    // stays one argument), and mirrors `Interpreter::builtin_sprintf`.
+    let mut flattened: Vec<Value> = Vec::with_capacity(rest.len());
+    runtime::types::flatten_into_slurpy(rest, &mut flattened);
+    let actual_args = &flattened[..];
     // A bare type object argument needs interpreter-aware coercion: a `%s`
     // directive stringifies it to "" with rakudo's "uninitialized value of type
     // X in string context" warning (matching `~Int` / `Int.Str`) instead of

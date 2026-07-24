@@ -1030,12 +1030,25 @@ pub(crate) fn native_method_1arg(
         "sprintf" => {
             // Method form: '%f'.sprintf(value) — target is the format string.
             // The `*@args` slurpy spreads a single positional container across the
-            // directives (`"%s-%s".sprintf([1,2])` is `1-2`, not `1 2-`), so a
-            // list-like arg must defer to the slow-path `sprintf` arm, which routes
-            // through `builtin_sprintf` (the same flattening the sub form gets). A
+            // directives (`"%s-%s".sprintf([1,2])` is `1-2`, not `1 2-`; likewise a
+            // Range: `"%d %d".sprintf(1..2)` is `1 2`), so any list-like arg must
+            // defer to the slow-path `sprintf` arm, which routes through
+            // `builtin_sprintf` (the same slurpy flattening the sub form gets). A
             // bare type object likewise needs the interpreter-aware warning path
             // (`%s` warns and stringifies to "").
-            if matches!(arg.view(), ValueView::Package(_)) || arg.as_list_items().is_some() {
+            if matches!(arg.view(), ValueView::Package(_))
+                || arg.as_list_items().is_some()
+                || matches!(
+                    arg.view(),
+                    ValueView::Range(..)
+                        | ValueView::RangeExcl(..)
+                        | ValueView::RangeExclStart(..)
+                        | ValueView::RangeExclBoth(..)
+                        | ValueView::GenericRange { .. }
+                        | ValueView::Seq(..)
+                        | ValueView::Slip(..)
+                )
+            {
                 return None;
             }
             let fmt = target.to_string_value();
