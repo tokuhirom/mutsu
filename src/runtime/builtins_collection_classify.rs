@@ -259,18 +259,16 @@ impl Interpreter {
         // `.WHICH` matches a freshly-constructed one — is-deeply / eqv).
         let mut bag_originals: HashMap<String, Value> = HashMap::new();
         let mut mix_originals: HashMap<String, Value> = HashMap::new();
-        let mut bag_counts: Option<HashMap<String, i64>> = match into_target
-            .as_ref()
-            .map(Value::view)
-        {
-            Some(ValueView::Bag(b, _)) => {
-                if let Some(ref orig) = b.original_keys {
-                    bag_originals.extend(orig.iter().map(|(k, v)| (k.clone(), v.clone())));
+        let mut bag_counts: Option<HashMap<String, i64>> =
+            match into_target.as_ref().map(Value::view) {
+                Some(ValueView::Bag(b, _)) => {
+                    if let Some(ref orig) = b.original_keys {
+                        bag_originals.extend(orig.iter().map(|(k, v)| (k.clone(), v.clone())));
+                    }
+                    Some(crate::runtime::utils::bag_counts_as_i64(&b.counts))
                 }
-                Some(crate::runtime::utils::bag_counts_as_i64(&b.counts))
-            }
-            _ => None,
-        };
+                _ => None,
+            };
         let mut mix_counts: Option<HashMap<String, f64>> =
             match into_target.as_ref().map(Value::view) {
                 Some(ValueView::Mix(m, _)) => {
@@ -340,8 +338,7 @@ impl Interpreter {
                             }
                         )));
                     }
-                    let (key, elem) =
-                        crate::runtime::utils::quanthash_elem_entry(&path[0]);
+                    let (key, elem) = crate::runtime::utils::quanthash_elem_entry(&path[0]);
                     if let Some(counts) = bag_counts.as_mut() {
                         crate::runtime::utils::record_quanthash_original(
                             &mut bag_originals,
