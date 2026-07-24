@@ -125,63 +125,16 @@ section.
       output match). External dists are either `zef fetch`ed in CI or vendored. Failures are
       report-only (a red run does not stop main). Once the bundle set is fixed, its smoke tests
       become the battery quality gate as-is.
-- [ ] **★ Close the bundled-library test-suite gaps — target: green before the next release**
-      (user policy 2026-07-24). The release-time gate now runs every battery's upstream suite
-      against the shipped library (`scripts/battery-testsuite.sh`, `batteries.lock`,
-      `batteries-whitelist.txt`; see [docs/batteries/testsuite-gate.md](docs/batteries/testsuite-gate.md)),
-      but it is a **baseline** gate, and the measured baseline is **17/18 test files** (it landed at
-      11/18). The goal is to raise that toward all-green so a release ships batteries that genuinely
-      pass their own suites — the gate stops regressions, it does not close these gaps:
-      - **OpenSSL — 7/7** ✅ **DONE (2026-07-25)**. All seven upstream files pass against the
-        bundled library. The gaps were closed by general mutsu fixes, none OpenSSL-specific:
-        NativeCall NULL-`Str` marshalling + `CArray[T].new` list flattening (`10-client-ca-file`'s
-        SIGSEGV), multi-dispatch specificity (a `Str()` coercion candidate outranked an exact
-        `Blob:D`, which made `OpenSSL::Digest` mutually recurse — the `05-digest`/`03-rsa` hangs),
-        `unit module` package scoping (#5369), positional-argument indexing (#5370), and the
-        `where`-constraint caller-lexical wipe (`04-crypt`, PLAN 8.22).
-      - **Zef — 9/10** (was 8/10; `distribution-depends-parsing` is green as of 2026-07-25). Both remaining files fail for **real, general mutsu
-        bugs**, not for a run-context difference, so the "all 10 upstream tests pass" note from
-        2026-07-10 (#4383/#4384) is stale rather than contradicted — these two are reachable only
-        through paths the older mzef/install run did not take. Each has a standalone minimal
-        reproduction; neither is Zef-specific.
-        - **`00-load` (1/2)** — `subtest` **rolls back the type registry but not `loaded_modules`.**
-          `test_fn_subtest` (`src/runtime/test_functions/tap_subtest.rs`) restores `classes`,
-          `roles`, `subsets`, `functions`, `proto_subs`, `token_defs`, … wholesale after the block,
-          so a module first loaded *inside* a subtest has all of its declarations erased on exit —
-          while `loaded_modules` still lists it, which makes every later `use` an early-return
-          no-op. The type is then permanently gone. Repro:
-          ```raku
-          use Test;
-          plan 1;
-          sub probe($t) { say "$t: ", ::('Zef::Fetcher').^name }
-          subtest 'A' => { use Zef; probe('inside'); };   # inside: Zef::Fetcher
-          probe('after');                                  # after: Failure   <-- wrong
-          ```
-          In the real file, `subtest 'Core'` loads `Zef` and `subtest 'Plugins'` then dies with
-          `X::InvalidType: Invalid typename 'Fetcher'` on all three `Zef::Service::Shell::*` files.
-          Deciding the fix needs care about *why* the blanket rollback exists (a `class`/`role`
-          declared directly in a subtest body should stay lexical); making the two stores agree —
-          rather than widening or narrowing the rollback blindly — is the shape of the fix.
-        - **`distribution-depends-parsing`** ✅ **DONE — 35/35**. Three bugs, all general:
-          1. A type constraint whose qualified name ended in `::Any` was equated with the builtin
-             `Any` by the "qualified name matching" short-name bridge in `Interpreter::type_matches`,
-             so it matched every value (every class's MRO ends in `Any`) and its candidate wrongly
-             won. Pin: `t/nested-any-type-constraint.t`.
-          2. That exception aborted the file with **no message at all**: `run()` propagated
-             `finish()`'s error instead of the original, and under `Test` a mainline exception
-             always leaves the plan short, so the "Test failures" plan-mismatch error replaced the
-             real one. **This was the real blocker on triage** — with the exception visible, each
-             remaining failure named itself. Pin: `t/mainline-exception-not-masked-by-plan.t`.
-          3. A block containing a `CATCH` yielded the **topic** instead of its last statement's
-             value: the implicit `try` wrapping such a body had its value `Pop`ped, so the block
-             value fell back to `last_topic_value`. Any block used for its value broke as soon as
-             it grew a `CATCH` — `.map` yielded the topic, `.first`/`.grep` saw a truthy topic and
-             matched the first element. Zef resolves `any(...)` dependency alternatives with
-             `$needed.specs.first({ CATCH {…}; …; @candidates })`, so it always took the first
-             (unsatisfiable) one. Pin: `t/catch-block-keeps-block-value.t`.
-      - **IO::Socket::SSL — 1/1** ✅ already green.
-      Raising a file into the baseline is `scripts/battery-testsuite.sh --update` + committing the
-      whitelist diff.
+- [x] **★ Close the bundled-library test-suite gaps — DONE 2026-07-25, baseline 18/18.**
+      (user policy 2026-07-24.) The release-time gate runs every battery's upstream suite against
+      the shipped library (`scripts/battery-testsuite.sh`, `batteries.lock`,
+      `batteries-whitelist.txt`; see [docs/batteries/testsuite-gate.md](docs/batteries/testsuite-gate.md)).
+      It landed at 11/18 and every remaining gap is now closed — OpenSSL 7/7, Zef 10/10,
+      IO::Socket::SSL 1/1 — entirely through general mutsu fixes, none library-specific. **The gate
+      is now all-green, so a drop below 18/18 is a pure regression to fix, not a baseline to
+      accept.** Adding a new battery is what re-opens work here: whitelist what passes with
+      `scripts/battery-testsuite.sh --update`, then close its gaps the same way. Details in
+      `news/2026-07/`.
 
 ### B2. mzef — an `mzef` package manager bundling the real Zef (north-star; user policy 2026-06-28)
 
