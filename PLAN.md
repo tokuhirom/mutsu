@@ -133,10 +133,15 @@ section.
       goal is to raise that toward all-green so a release ships batteries that genuinely pass their
       own suites — the gate stops regressions, it does not close these gaps:
       - **OpenSSL — 2/7** (`01-basic`, `03-rsa`, `04-crypt`, `05-digest`, `10-client-ca-file` fail).
-        All five emit their TAP plan and then go silent with **zero** test lines, i.e. something
-        dies right after `plan`; the suites are NativeCall-heavy (RSA / EVP digest / cipher), so the
-        prime suspect is missing NativeCall surface rather than five unrelated bugs. Investigate one
-        (`05-digest`, 0/24) and the cause likely explains the rest.
+        All five emit their TAP plan and then produce **zero** test lines, but they split into two
+        distinct shapes (measured from CI run 30075859520 timings, reproduced identically locally):
+        - `05-digest` (0/24) **hangs** — it burns the harness's full 120 s `timeout`. A hang, not a
+          die: investigate as a blocking/looping NativeCall call, not as a thrown exception.
+        - `01-basic` (2/7), `03-rsa` (0/8), `04-crypt` (1/13), `10-client-ca-file` (2/7) **stop
+          immediately** (0.04–0.9 s), i.e. something dies right after `plan`.
+        The suites are NativeCall-heavy (RSA / EVP digest / cipher), so missing NativeCall surface
+        is the prime suspect for the fast-failing four, and they likely share one cause. Treat the
+        `05-digest` hang as a separate investigation.
       - **Zef — 8/10** (`00-load` 1/2, `distribution-depends-parsing` 18/35). ★ This **contradicts
         the recorded "all 10 upstream tests pass" (2026-07-10, #4383/#4384)**. Not yet triaged:
         either a real regression since then, or a run-context difference (the gate runs
