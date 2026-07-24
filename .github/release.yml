@@ -1,0 +1,26 @@
+# Groups the auto-generated GitHub Release notes into sections.
+#
+# release.yml passes `generate_release_notes: true`, and GitHub sorts each
+# merged PR into the first category whose labels it carries. PRs are labeled
+# automatically:
+#   - label-pr.yml applies feat / fix / perf / docs / maintenance from the PR's
+#     conventional-commit title prefix (feat: fix: perf: docs: chore: ...).
+#   - Dependabot applies `dependencies` itself, keeping dependency bumps in their
+#     own section rather than mixed into Maintenance.
+# Anything without a category label falls through to "Other Changes".
+changelog:
+  categories:
+    - title: 🚀 Features
+      labels: [feat]
+    - title: 🐛 Bug Fixes
+      labels: [fix]
+    - title: ⚡ Performance
+      labels: [perf]
+    - title: 📝 Documentation
+      labels: [docs]
+    - title: 📦 Dependencies
+      labels: [dependencies]
+    - title: 🔧 Maintenance
+      labels: [maintenance]
+    - title: Other Changes
+      labels: ["*"]
