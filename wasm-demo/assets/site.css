@@ -648,3 +648,109 @@ details.expected pre {
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
+
+/* ------------------------------------------------------------------ *
+ * Batteries page
+ * ------------------------------------------------------------------ */
+
+.bat-count { color: var(--dim); font-size: 0.85rem; margin-top: 0.8rem; }
+.bat-list { margin-top: 1.4rem; }
+
+.bat-card { margin-bottom: 1.4rem; }
+.bat-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem 0.8rem;
+}
+.bat-head h2 { font-size: 1.3rem; }
+.bat-chips { display: inline-flex; flex-wrap: wrap; gap: 0.4rem; }
+.bat-chip {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--dim);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  padding: 0.1rem 0.45rem;
+  white-space: nowrap;
+}
+.bat-chip-license { color: var(--green); border-color: rgba(125, 235, 160, 0.4); }
+.bat-desc { color: var(--text); font-size: 0.95rem; margin-top: 0.5rem; }
+
+.bat-meta { margin-top: 0.9rem; display: grid; gap: 0.3rem; }
+.bat-meta-row { display: flex; flex-wrap: wrap; gap: 0.4rem 0.7rem; font-size: 0.85rem; }
+.bat-meta-key { color: var(--dim); min-width: 8rem; flex: 0 0 auto; }
+.bat-meta-val { color: var(--text); word-break: break-word; }
+.bat-meta-val a, .bat-provides a { color: var(--pink); }
+
+.bat-provides { margin-top: 0.9rem; }
+.bat-provides-grid {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.bat-mod {
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  color: var(--syn-type);
+  background: var(--console-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.35rem;
+  padding: 0.12rem 0.45rem;
+}
+
+.bat-readme { margin-top: 1.1rem; border-top: 1px solid var(--border); padding-top: 0.6rem; }
+.bat-readme > summary {
+  cursor: pointer;
+  color: var(--pink);
+  font-size: 0.9rem;
+  font-weight: 600;
+  list-style-position: inside;
+}
+.bat-readme > summary:hover { color: var(--syn-type); }
+.bat-readme-body { margin-top: 0.8rem; }
+.bat-readme-body h1,
+.bat-readme-body h2,
+.bat-readme-body h3 { margin: 1.1rem 0 0.5rem; line-height: 1.3; }
+.bat-readme-body h2 { font-size: 1.05rem; color: var(--syn-type); }
+.bat-readme-body h3 { font-size: 0.95rem; color: var(--text); }
+.bat-readme-body p { color: var(--text); font-size: 0.9rem; margin: 0.5rem 0; line-height: 1.6; }
+.bat-readme-body ul { margin: 0.5rem 0 0.5rem 1.2rem; }
+.bat-readme-body li { color: var(--text); font-size: 0.9rem; margin: 0.25rem 0; line-height: 1.55; }
+.bat-readme-body a { color: var(--pink); }
+.bat-readme-body code {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  color: var(--syn-string);
+  background: var(--console-bg);
+  border-radius: 0.3rem;
+  padding: 0.05rem 0.3rem;
+}
+.bat-readme-body pre {
+  background: var(--console-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.8rem 0.9rem;
+  overflow-x: auto;
+  margin: 0.7rem 0;
+}
+.bat-readme-body pre code {
+  background: none;
+  padding: 0;
+  color: var(--text);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+.bat-readme-body blockquote {
+  border-left: 3px solid var(--border);
+  padding-left: 0.8rem;
+  color: var(--dim);
+  margin: 0.6rem 0;
+}
+
+.bat-empty { color: var(--dim); font-size: 0.9rem; margin-top: 1rem; }
+
+@media (max-width: 640px) {
+  .bat-meta-key { min-width: 100%; }
+}
