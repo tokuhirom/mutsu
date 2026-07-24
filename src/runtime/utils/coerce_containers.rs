@@ -132,12 +132,15 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
             let mut map = HashMap::new();
             let mut original_keys: HashMap<String, Value> = HashMap::new();
             let mut has_typed = false;
+            // The store key is a `.WHICH` string; the produced Hash is
+            // display-string-keyed with the element object recorded.
             for key in items.iter() {
-                map.insert(key.clone(), Value::TRUE);
                 let typed = items.typed_key(key);
-                if !matches!(typed.view(), ValueView::Str(sv) if sv.as_ref() == key) {
+                let display = typed.to_string_value();
+                map.insert(display.clone(), Value::TRUE);
+                if !matches!(typed.view(), ValueView::Str(_)) {
                     has_typed = true;
-                    original_keys.insert(key.clone(), typed);
+                    original_keys.insert(display, typed);
                 }
             }
             let mut result = Value::hash(map);
@@ -152,11 +155,12 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
             let mut original_keys: HashMap<String, Value> = HashMap::new();
             let mut has_typed = false;
             for (key, count) in items.iter() {
-                map.insert(key.clone(), Value::from_bigint(count.clone()));
                 let typed = items.typed_key(key);
-                if !matches!(typed.view(), ValueView::Str(sv) if sv.as_ref() == key) {
+                let display = typed.to_string_value();
+                map.insert(display.clone(), Value::from_bigint(count.clone()));
+                if !matches!(typed.view(), ValueView::Str(_)) {
                     has_typed = true;
-                    original_keys.insert(key.clone(), typed);
+                    original_keys.insert(display, typed);
                 }
             }
             let mut result = Value::hash(map);
@@ -171,11 +175,12 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
             let mut original_keys: HashMap<String, Value> = HashMap::new();
             let mut has_typed = false;
             for (key, weight) in items.iter() {
-                map.insert(key.clone(), mix_weight_value(*weight));
                 let typed = items.typed_key(key);
-                if !matches!(typed.view(), ValueView::Str(sv) if sv.as_ref() == key) {
+                let display = typed.to_string_value();
+                map.insert(display.clone(), mix_weight_value(*weight));
+                if !matches!(typed.view(), ValueView::Str(_)) {
                     has_typed = true;
-                    original_keys.insert(key.clone(), typed);
+                    original_keys.insert(display, typed);
                 }
             }
             let mut result = Value::hash(map);

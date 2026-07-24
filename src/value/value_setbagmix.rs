@@ -29,12 +29,18 @@ impl BagData {
         self.value_type.is_some() || self.key_type.is_some() || self.declared_type.is_some()
     }
 
-    /// Get the original Value for a key, falling back to Str.
+    /// Get the original Value for a key. Store keys are `value_which_key`
+    /// strings: a plain-Str element is not recorded in `original_keys` (its
+    /// `"Str|<s>"` key decodes losslessly), so strip that prefix here; the
+    /// bare-string fallback only remains for legacy display-keyed stores.
     pub fn typed_key(&self, str_key: &str) -> Value {
         if let Some(ref orig) = self.original_keys
             && let Some(v) = orig.get(str_key)
         {
             return v.clone();
+        }
+        if let Some(s) = str_key.strip_prefix("Str|") {
+            return Value::Str(Arc::new(s.to_string()));
         }
         Value::Str(Arc::new(str_key.to_string()))
     }
@@ -88,12 +94,18 @@ impl SetData {
         self.value_type.is_some() || self.key_type.is_some() || self.declared_type.is_some()
     }
 
-    /// Get the original Value for a key, falling back to Str.
+    /// Get the original Value for a key. Store keys are `value_which_key`
+    /// strings: a plain-Str element is not recorded in `original_keys` (its
+    /// `"Str|<s>"` key decodes losslessly), so strip that prefix here; the
+    /// bare-string fallback only remains for legacy display-keyed stores.
     pub fn typed_key(&self, str_key: &str) -> Value {
         if let Some(ref orig) = self.original_keys
             && let Some(v) = orig.get(str_key)
         {
             return v.clone();
+        }
+        if let Some(s) = str_key.strip_prefix("Str|") {
+            return Value::Str(Arc::new(s.to_string()));
         }
         Value::Str(Arc::new(str_key.to_string()))
     }
@@ -147,12 +159,18 @@ impl MixData {
         self.value_type.is_some() || self.key_type.is_some() || self.declared_type.is_some()
     }
 
-    /// Get the original Value for a key, falling back to Str.
+    /// Get the original Value for a key. Store keys are `value_which_key`
+    /// strings: a plain-Str element is not recorded in `original_keys` (its
+    /// `"Str|<s>"` key decodes losslessly), so strip that prefix here; the
+    /// bare-string fallback only remains for legacy display-keyed stores.
     pub fn typed_key(&self, str_key: &str) -> Value {
         if let Some(ref orig) = self.original_keys
             && let Some(v) = orig.get(str_key)
         {
             return v.clone();
+        }
+        if let Some(s) = str_key.strip_prefix("Str|") {
+            return Value::Str(Arc::new(s.to_string()));
         }
         Value::Str(Arc::new(str_key.to_string()))
     }

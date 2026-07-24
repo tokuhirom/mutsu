@@ -17,6 +17,9 @@
 
 use crate::runtime::Interpreter;
 use crate::runtime::utils::value_to_list;
+use crate::runtime::utils::{
+    quanthash_elem_entry, quanthash_insert_set, record_quanthash_original, str_elem_key,
+};
 use crate::value::{RuntimeError, Value, ValueView};
 use num_bigint::BigInt;
 use num_traits::Signed;
@@ -31,7 +34,6 @@ pub(crate) fn to_set(target: Value, what: &str) -> Result<Value, RuntimeError> {
     }
     let mut elems = HashSet::new();
     let mut original_keys: HashMap<String, Value> = HashMap::new();
-    let mut has_non_str = false;
     // `flatten` is true when this item sits in a list-context-flattening
     // position (an element of a List `(...)` invocant): nested Lists/Arrays/
     // Seqs/Hashes spill their contents. It is false for elements of an Array
@@ -40,26 +42,18 @@ pub(crate) fn to_set(target: Value, what: &str) -> Result<Value, RuntimeError> {
     fn add_item(
         elems: &mut HashSet<String>,
         original_keys: &mut HashMap<String, Value>,
-        has_non_str: &mut bool,
         item: &Value,
         flatten: bool,
     ) {
         match item.view() {
             ValueView::Pair(k, v) => {
                 if v.truthy() {
-                    elems.insert(k.clone());
+                    elems.insert(str_elem_key(k));
                 }
             }
             ValueView::ValuePair(k, v) => {
                 if v.truthy() {
-                    let str_key = k.to_string_value();
-                    if k.as_str().is_none() {
-                        *has_non_str = true;
-                        original_keys
-                            .entry(str_key.clone())
-                            .or_insert_with(|| k.clone());
-                    }
-                    elems.insert(str_key);
+                    quanthash_insert_set(elems, original_keys, k);
                 }
             }
             ValueView::Hash(h) if flatten => {
@@ -68,39 +62,25 @@ pub(crate) fn to_set(target: Value, what: &str) -> Result<Value, RuntimeError> {
                 for (k, v) in h.iter() {
                     if v.truthy() {
                         if h.has_typed_keys() {
-                            let obj = h.typed_key(k);
-                            let str_key = obj.to_string_value();
-                            if !matches!(obj.view(), ValueView::Str(_)) {
-                                *has_non_str = true;
-                                original_keys.entry(str_key.clone()).or_insert(obj);
-                            }
-                            elems.insert(str_key);
+                            quanthash_insert_set(elems, original_keys, &h.typed_key(k));
                         } else {
-                            elems.insert(k.clone());
+                            elems.insert(str_elem_key(k));
                         }
                     }
                 }
             }
             ValueView::Array(inner, kind) if flatten && !kind.is_itemized() => {
                 for inner_item in inner.iter() {
-                    add_item(elems, original_keys, has_non_str, inner_item, true);
+                    add_item(elems, original_keys, inner_item, true);
                 }
             }
             ValueView::Seq(inner) | ValueView::Slip(inner) if flatten => {
                 for inner_item in inner.iter() {
-                    add_item(elems, original_keys, has_non_str, inner_item, true);
+                    add_item(elems, original_keys, inner_item, true);
                 }
             }
-            ValueView::Str(_) => {
-                elems.insert(item.to_string_value());
-            }
             _ => {
-                let str_key = item.to_string_value();
-                *has_non_str = true;
-                original_keys
-                    .entry(str_key.clone())
-                    .or_insert_with(|| item.clone());
-                elems.insert(str_key);
+                quanthash_insert_set(elems, original_keys, item);
             }
         }
     }
@@ -111,23 +91,17 @@ pub(crate) fn to_set(target: Value, what: &str) -> Result<Value, RuntimeError> {
         // Array `[...]` (or itemized) invocant takes each element whole.
         ValueView::Array(items, crate::value::ArrayKind::List) => {
             for item in items.iter() {
-                add_item(&mut elems, &mut original_keys, &mut has_non_str, item, true);
+                add_item(&mut elems, &mut original_keys, item, true);
             }
         }
         ValueView::Array(items, ..) => {
             for item in items.iter() {
-                add_item(
-                    &mut elems,
-                    &mut original_keys,
-                    &mut has_non_str,
-                    item,
-                    false,
-                );
+                add_item(&mut elems, &mut original_keys, item, false);
             }
         }
         ValueView::Seq(items) | ValueView::Slip(items) => {
             for item in items.iter() {
-                add_item(&mut elems, &mut original_keys, &mut has_non_str, item, true);
+                add_item(&mut elems, &mut original_keys, item, true);
             }
         }
         ValueView::Hash(items) => {
@@ -136,21 +110,16 @@ pub(crate) fn to_set(target: Value, what: &str) -> Result<Value, RuntimeError> {
             for (k, v) in items.iter() {
                 if v.truthy() {
                     if items.has_typed_keys() {
-                        let obj = items.typed_key(k);
-                        let str_key = obj.to_string_value();
-                        if !matches!(obj.view(), ValueView::Str(_)) {
-                            has_non_str = true;
-                            original_keys.entry(str_key.clone()).or_insert(obj);
-                        }
-                        elems.insert(str_key);
+                        quanthash_insert_set(&mut elems, &mut original_keys, &items.typed_key(k));
                     } else {
-                        elems.insert(k.clone());
+                        elems.insert(str_elem_key(k));
                     }
                 }
             }
         }
         ValueView::Bag(b, _) => {
             for k in b.keys() {
+                record_quanthash_original(&mut original_keys, k, &b.typed_key(k));
                 elems.insert(k.clone());
             }
         }
@@ -160,25 +129,19 @@ pub(crate) fn to_set(target: Value, what: &str) -> Result<Value, RuntimeError> {
             // zero and negative weights.
             for (k, w) in m.iter() {
                 if *w > 0.0 {
+                    record_quanthash_original(&mut original_keys, k, &m.typed_key(k));
                     elems.insert(k.clone());
                 }
             }
         }
         ValueView::Pair(k, v) => {
             if v.truthy() {
-                elems.insert(k.clone());
+                elems.insert(str_elem_key(k));
             }
         }
         ValueView::ValuePair(k, v) => {
             if v.truthy() {
-                let str_key = k.to_string_value();
-                if k.as_str().is_none() {
-                    has_non_str = true;
-                    original_keys
-                        .entry(str_key.clone())
-                        .or_insert_with(|| k.clone());
-                }
-                elems.insert(str_key);
+                quanthash_insert_set(&mut elems, &mut original_keys, k);
             }
         }
         // Instance types composing Baggy: delegate to internal bag data
@@ -188,31 +151,14 @@ pub(crate) fn to_set(target: Value, what: &str) -> Result<Value, RuntimeError> {
         }
         _ if target.is_range() => {
             for item in value_to_list(&target) {
-                add_item(
-                    &mut elems,
-                    &mut original_keys,
-                    &mut has_non_str,
-                    &item,
-                    false,
-                );
+                add_item(&mut elems, &mut original_keys, &item, false);
             }
         }
         _ => {
-            let str_key = target.to_string_value();
-            if target.as_str().is_none() {
-                has_non_str = true;
-                original_keys
-                    .entry(str_key.clone())
-                    .or_insert_with(|| target.clone());
-            }
-            elems.insert(str_key);
+            quanthash_insert_set(&mut elems, &mut original_keys, &target);
         }
     }
-    if has_non_str {
-        Ok(Value::set_typed(elems, original_keys))
-    } else {
-        Ok(Value::set(elems))
-    }
+    Ok(Value::set_typed(elems, original_keys))
 }
 
 /// Bag weight of a pair value: a non-positive weight drops the key, a fractional
@@ -263,43 +209,31 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
     }
     let mut counts: HashMap<String, BigInt> = HashMap::new();
     let mut original_keys: HashMap<String, Value> = HashMap::new();
-    let mut has_non_str_keys = false;
 
     fn add_item(
         counts: &mut HashMap<String, BigInt>,
         original_keys: &mut HashMap<String, Value>,
-        has_non_str_keys: &mut bool,
         item: &Value,
     ) -> Result<(), RuntimeError> {
         match item.view() {
             ValueView::Pair(k, v) => {
                 let weight = pair_weight(v)?;
                 if weight.is_positive() {
-                    *counts.entry(k.clone()).or_default() += weight;
+                    *counts.entry(str_elem_key(k)).or_default() += weight;
                 }
             }
             ValueView::ValuePair(k, v) => {
-                let str_key = k.to_string_value();
-                if k.as_str().is_none() {
-                    *has_non_str_keys = true;
-                    original_keys
-                        .entry(str_key.clone())
-                        .or_insert_with(|| k.clone());
-                }
+                let (key, elem) = quanthash_elem_entry(k);
                 let weight = pair_weight(v)?;
                 if weight.is_positive() {
-                    *counts.entry(str_key).or_default() += weight;
+                    record_quanthash_original(original_keys, &key, &elem);
+                    *counts.entry(key).or_default() += weight;
                 }
             }
             _ => {
-                let str_key = item.to_string_value();
-                if item.as_str().is_none() {
-                    *has_non_str_keys = true;
-                    original_keys
-                        .entry(str_key.clone())
-                        .or_insert_with(|| item.clone());
-                }
-                *counts.entry(str_key).or_default() += 1;
+                let (key, elem) = quanthash_elem_entry(item);
+                record_quanthash_original(original_keys, &key, &elem);
+                *counts.entry(key).or_default() += 1;
             }
         }
         Ok(())
@@ -314,19 +248,18 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
     fn flatten_into(
         counts: &mut HashMap<String, BigInt>,
         original_keys: &mut HashMap<String, Value>,
-        has_non_str_keys: &mut bool,
         value: &Value,
         flatten: bool,
     ) -> Result<(), RuntimeError> {
         match value.view() {
             ValueView::Array(items, kind) if flatten && !kind.is_itemized() => {
                 for item in items.iter() {
-                    flatten_into(counts, original_keys, has_non_str_keys, item, true)?;
+                    flatten_into(counts, original_keys, item, true)?;
                 }
             }
             ValueView::Seq(items) | ValueView::Slip(items) if flatten => {
                 for item in items.iter() {
-                    flatten_into(counts, original_keys, has_non_str_keys, item, true)?;
+                    flatten_into(counts, original_keys, item, true)?;
                 }
             }
             ValueView::Hash(h) if flatten => {
@@ -335,15 +268,11 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
                     if weight.is_positive() {
                         // Object hashes contribute their key OBJECTS.
                         let key = if h.has_typed_keys() {
-                            let obj = h.typed_key(k);
-                            let str_key = obj.to_string_value();
-                            if !matches!(obj.view(), ValueView::Str(_)) {
-                                *has_non_str_keys = true;
-                                original_keys.entry(str_key.clone()).or_insert(obj);
-                            }
-                            str_key
+                            let (key, obj) = quanthash_elem_entry(&h.typed_key(k));
+                            record_quanthash_original(original_keys, &key, &obj);
+                            key
                         } else {
-                            k.clone()
+                            str_elem_key(k)
                         };
                         *counts.entry(key).or_default() += weight;
                     }
@@ -351,21 +280,24 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
             }
             ValueView::Set(s, _) if flatten => {
                 for k in s.iter() {
+                    record_quanthash_original(original_keys, k, &s.typed_key(k));
                     counts.insert(k.clone(), BigInt::from(1));
                 }
             }
             ValueView::Mix(m, _) if flatten => {
                 for (k, v) in m.iter() {
+                    record_quanthash_original(original_keys, k, &m.typed_key(k));
                     counts.insert(k.clone(), BigInt::from(*v as i64));
                 }
             }
             ValueView::Bag(b, _) if flatten => {
                 for (k, v) in b.iter() {
+                    record_quanthash_original(original_keys, k, &b.typed_key(k));
                     *counts.entry(k.clone()).or_default() += v.clone();
                 }
             }
             _ => {
-                add_item(counts, original_keys, has_non_str_keys, value)?;
+                add_item(counts, original_keys, value)?;
             }
         }
         Ok(())
@@ -375,58 +307,30 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
         // Always return the immutable variant; the caller flips it for `.BagHash`.
         ValueView::Bag(b, _) => return Ok(Value::bag_parts(b.clone(), false)),
         ValueView::Pair(_, _) | ValueView::ValuePair(_, _) => {
-            add_item(
-                &mut counts,
-                &mut original_keys,
-                &mut has_non_str_keys,
-                &target,
-            )?;
+            add_item(&mut counts, &mut original_keys, &target)?;
         }
         _ if target.is_range() => {
             for item in value_to_list(&target) {
-                let str_key = item.to_string_value();
-                if item.as_str().is_none() {
-                    has_non_str_keys = true;
-                    original_keys
-                        .entry(str_key.clone())
-                        .or_insert_with(|| item.clone());
-                }
-                *counts.entry(str_key).or_default() += 1;
+                let (key, elem) = quanthash_elem_entry(&item);
+                record_quanthash_original(&mut original_keys, &key, &elem);
+                *counts.entry(key).or_default() += 1;
             }
         }
         // A List `(...)` invocant flattens its elements in list context; an
         // Array `[...]` (or itemized) invocant takes each element whole.
         ValueView::Array(items, crate::value::ArrayKind::List) => {
             for item in items.iter() {
-                flatten_into(
-                    &mut counts,
-                    &mut original_keys,
-                    &mut has_non_str_keys,
-                    item,
-                    true,
-                )?;
+                flatten_into(&mut counts, &mut original_keys, item, true)?;
             }
         }
         ValueView::Seq(items) => {
             for item in items.iter() {
-                flatten_into(
-                    &mut counts,
-                    &mut original_keys,
-                    &mut has_non_str_keys,
-                    item,
-                    true,
-                )?;
+                flatten_into(&mut counts, &mut original_keys, item, true)?;
             }
         }
         ValueView::Array(items, _) => {
             for item in items.iter() {
-                flatten_into(
-                    &mut counts,
-                    &mut original_keys,
-                    &mut has_non_str_keys,
-                    item,
-                    false,
-                )?;
+                flatten_into(&mut counts, &mut original_keys, item, false)?;
             }
         }
         _ => {
@@ -438,30 +342,15 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
                 && !matches!(target.view(), ValueView::Array(_, _) | ValueView::Hash(_))
             {
                 // Single non-collection value
-                add_item(
-                    &mut counts,
-                    &mut original_keys,
-                    &mut has_non_str_keys,
-                    &target,
-                )?;
+                add_item(&mut counts, &mut original_keys, &target)?;
             } else {
                 for item in &items {
-                    flatten_into(
-                        &mut counts,
-                        &mut original_keys,
-                        &mut has_non_str_keys,
-                        item,
-                        true,
-                    )?;
+                    flatten_into(&mut counts, &mut original_keys, item, true)?;
                 }
             }
         }
     }
-    if has_non_str_keys {
-        Ok(Value::bag_typed_big(counts, original_keys))
-    } else {
-        Ok(Value::bag_big(counts))
-    }
+    Ok(Value::bag_typed_big(counts, original_keys))
 }
 
 /// Mix weight of a pair value: like `pair_weight` but keeps the fractional
@@ -625,23 +514,19 @@ fn mix_accum(
 
 fn mix_add_item_with_keys(
     weights: &mut HashMap<String, Value>,
-    mut original_keys: Option<&mut HashMap<String, Value>>,
+    original_keys: &mut HashMap<String, Value>,
     item: &Value,
     flatten: bool,
 ) -> Result<(), RuntimeError> {
     match item.view() {
         ValueView::Pair(k, v) => {
-            mix_accum(weights, k.clone(), mix_pair_weight_value(v)?)?;
+            mix_accum(weights, str_elem_key(k), mix_pair_weight_value(v)?)?;
         }
         ValueView::ValuePair(k, v) => {
             let w = mix_pair_weight_value(v)?;
-            let str_key = k.to_string_value();
-            if let Some(ref mut orig) = original_keys
-                && k.as_str().is_none()
-            {
-                orig.entry(str_key.clone()).or_insert_with(|| k.clone());
-            }
-            mix_accum(weights, str_key, w)?;
+            let (key, elem) = quanthash_elem_entry(k);
+            record_quanthash_original(original_keys, &key, &elem);
+            mix_accum(weights, key, w)?;
         }
         ValueView::Hash(h) if flatten => {
             for (k, v) in h.iter() {
@@ -649,16 +534,11 @@ fn mix_add_item_with_keys(
                 if w.to_f64() != 0.0 {
                     // Object hashes contribute their key OBJECTS.
                     let key = if h.has_typed_keys() {
-                        let obj = h.typed_key(k);
-                        let str_key = obj.to_string_value();
-                        if let Some(ref mut orig) = original_keys
-                            && !matches!(obj.view(), ValueView::Str(_))
-                        {
-                            orig.entry(str_key.clone()).or_insert(obj);
-                        }
-                        str_key
+                        let (key, obj) = quanthash_elem_entry(&h.typed_key(k));
+                        record_quanthash_original(original_keys, &key, &obj);
+                        key
                     } else {
-                        k.clone()
+                        str_elem_key(k)
                     };
                     mix_accum(weights, key, w)?;
                 }
@@ -669,57 +549,38 @@ fn mix_add_item_with_keys(
         // element (flatten == false) is kept whole.
         ValueView::Array(items, kind) if flatten && !kind.is_itemized() => {
             for sub_item in items.iter() {
-                mix_add_item_with_keys(weights, original_keys.as_deref_mut(), sub_item, true)?;
+                mix_add_item_with_keys(weights, original_keys, sub_item, true)?;
             }
         }
         ValueView::Seq(items) | ValueView::Slip(items) if flatten => {
             for sub_item in items.iter() {
-                mix_add_item_with_keys(weights, original_keys.as_deref_mut(), sub_item, true)?;
+                mix_add_item_with_keys(weights, original_keys, sub_item, true)?;
             }
         }
         ValueView::Set(s, _) if flatten => {
             for k in s.iter() {
-                let typed = s.typed_key(k);
-                if let Some(ref mut orig) = original_keys
-                    && !matches!(typed.view(), ValueView::Str(sv) if sv.as_ref() == k)
-                {
-                    orig.entry(k.clone()).or_insert(typed);
-                }
+                record_quanthash_original(original_keys, k, &s.typed_key(k));
                 mix_accum(weights, k.clone(), Value::int(1))?;
             }
         }
         ValueView::Bag(b, _) if flatten => {
             for (k, v) in b.iter() {
-                let typed = b.typed_key(k);
-                if let Some(ref mut orig) = original_keys
-                    && !matches!(typed.view(), ValueView::Str(sv) if sv.as_ref() == k)
-                {
-                    orig.entry(k.clone()).or_insert(typed);
-                }
+                record_quanthash_original(original_keys, k, &b.typed_key(k));
                 mix_accum(weights, k.clone(), Value::bigint(v.clone()))?;
             }
         }
         ValueView::Mix(m, _) if flatten => {
             for (k, v) in m.iter() {
-                let typed = m.typed_key(k);
-                if let Some(ref mut orig) = original_keys
-                    && !matches!(typed.view(), ValueView::Str(sv) if sv.as_ref() == k)
-                {
-                    orig.entry(k.clone()).or_insert(typed);
-                }
+                record_quanthash_original(original_keys, k, &m.typed_key(k));
                 // A Mix already stores f64 weights, so this fold is inherently
                 // f64-precision (there is no exact source to recover here).
                 mix_accum(weights, k.clone(), Value::num(*v))?;
             }
         }
         _ => {
-            let str_key = item.to_string_value();
-            if let Some(ref mut orig) = original_keys
-                && item.as_str().is_none()
-            {
-                orig.entry(str_key.clone()).or_insert_with(|| item.clone());
-            }
-            mix_accum(weights, str_key, Value::int(1))?;
+            let (key, elem) = quanthash_elem_entry(item);
+            record_quanthash_original(original_keys, &key, &elem);
+            mix_accum(weights, key, Value::int(1))?;
         }
     }
     Ok(())
@@ -750,17 +611,17 @@ pub(crate) fn to_mix(target: Value, what: &str) -> Result<Value, RuntimeError> {
         // Array `[...]` (or itemized) invocant takes each element whole.
         ValueView::Array(items, crate::value::ArrayKind::List) => {
             for item in items.iter() {
-                mix_add_item_with_keys(&mut weights, Some(&mut original_keys), item, true)?;
+                mix_add_item_with_keys(&mut weights, &mut original_keys, item, true)?;
             }
         }
         ValueView::Seq(items) | ValueView::Slip(items) => {
             for item in items.iter() {
-                mix_add_item_with_keys(&mut weights, Some(&mut original_keys), item, true)?;
+                mix_add_item_with_keys(&mut weights, &mut original_keys, item, true)?;
             }
         }
         ValueView::Array(items, ..) => {
             for item in items.iter() {
-                mix_add_item_with_keys(&mut weights, Some(&mut original_keys), item, false)?;
+                mix_add_item_with_keys(&mut weights, &mut original_keys, item, false)?;
             }
         }
         _ if matches!(
@@ -772,30 +633,24 @@ pub(crate) fn to_mix(target: Value, what: &str) -> Result<Value, RuntimeError> {
                 | ValueView::Hash(_)
         ) =>
         {
-            mix_add_item_with_keys(&mut weights, Some(&mut original_keys), &target, true)?;
+            mix_add_item_with_keys(&mut weights, &mut original_keys, &target, true)?;
         }
         _ if target.is_range() => {
             for item in value_to_list(&target) {
-                mix_accum(&mut weights, item.to_string_value(), Value::int(1))?;
+                let (key, elem) = quanthash_elem_entry(&item);
+                record_quanthash_original(&mut original_keys, &key, &elem);
+                mix_accum(&mut weights, key, Value::int(1))?;
             }
         }
         _ => {
-            let str_key = target.to_string_value();
-            if target.as_str().is_none() {
-                original_keys
-                    .entry(str_key.clone())
-                    .or_insert_with(|| target.clone());
-            }
-            mix_accum(&mut weights, str_key, Value::int(1))?;
+            let (key, elem) = quanthash_elem_entry(&target);
+            record_quanthash_original(&mut original_keys, &key, &elem);
+            mix_accum(&mut weights, key, Value::int(1))?;
         }
     }
     // Lower the exact-`Value` weights to the stored `f64` representation.
     let weights: HashMap<String, f64> = weights.into_iter().map(|(k, v)| (k, v.to_f64())).collect();
-    if original_keys.is_empty() {
-        Ok(Value::mix(weights))
-    } else {
-        Ok(Value::mix_with_original_keys(weights, original_keys))
-    }
+    Ok(Value::mix_with_original_keys(weights, original_keys))
 }
 
 /// Coerce `target` to a mutable `MixHash`. This is `.Mix` plus the mutable flag

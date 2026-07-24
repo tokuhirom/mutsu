@@ -283,56 +283,120 @@ impl Interpreter {
                         && constraint != "Any"
                         && constraint != "Mu"
                     {
-                        let keys: Vec<String> = match instance.view() {
-                            ValueView::Mix(m, _) => m.weights.keys().cloned().collect(),
-                            ValueView::Bag(b, _) => b.counts.keys().cloned().collect(),
-                            ValueView::Set(s, _) => s.elements.iter().cloned().collect(),
+                        // The store is `.WHICH`-keyed with the element objects
+                        // recorded in `original_keys` (decode via `typed_key`).
+                        // Each element must satisfy the parameter type; a
+                        // coercion parameter (`Int()`) coerces the element and
+                        // re-keys it under the coerced object's `.WHICH`.
+                        let target_type = match constraint.find('(') {
+                            Some(open) => constraint[..open].to_string(),
+                            None => constraint.to_string(),
+                        };
+                        let is_coercion = constraint.contains('(');
+                        let entries: Vec<(String, Value)> = match instance.view() {
+                            ValueView::Mix(m, _) => m
+                                .weights
+                                .keys()
+                                .map(|k| (k.clone(), m.typed_key(k)))
+                                .collect(),
+                            ValueView::Bag(b, _) => b
+                                .counts
+                                .keys()
+                                .map(|k| (k.clone(), b.typed_key(k)))
+                                .collect(),
+                            ValueView::Set(s, _) => s
+                                .elements
+                                .iter()
+                                .map(|k| (k.clone(), s.typed_key(k)))
+                                .collect(),
                             _ => vec![],
                         };
-                        // Try to coerce keys to the constraint type for type checking
-                        let mut typed_keys = std::collections::HashMap::new();
-                        for key in &keys {
-                            let coerced = self.try_coerce_str_to_type(key, constraint);
-                            if let Some(ref typed_val) = coerced {
-                                if !self.type_matches_value(constraint, typed_val) {
-                                    let got_type = crate::value::what_type_name(typed_val);
+                        // old store key -> (new store key, final element)
+                        let mut rekeyed: std::collections::HashMap<String, (String, Value)> =
+                            std::collections::HashMap::new();
+                        for (key, elem) in &entries {
+                            let final_elem = if self.type_matches_value(&target_type, elem) {
+                                elem.clone()
+                            } else if is_coercion {
+                                let coerced = loan_env!(
+                                    self,
+                                    try_coerce_value_for_constraint(constraint, elem.clone())
+                                )?;
+                                if !self.type_matches_value(&target_type, &coerced) {
+                                    let got_type = crate::value::what_type_name(elem);
                                     return Err(RuntimeError::typecheck_binding_parameter(
-                                        key, constraint, &got_type, None,
+                                        &elem.to_string_value(),
+                                        &target_type,
+                                        &got_type,
+                                        None,
                                     ));
                                 }
-                                typed_keys.insert(key.clone(), typed_val.clone());
+                                coerced
                             } else {
-                                // Can't coerce to type - check original string
-                                let key_val = Value::str(key.clone());
-                                if !self.type_matches_value(constraint, &key_val) {
-                                    let got_type = crate::value::what_type_name(&key_val);
-                                    return Err(RuntimeError::typecheck_binding_parameter(
-                                        key, constraint, &got_type, None,
-                                    ));
-                                }
-                            }
+                                let got_type = crate::value::what_type_name(elem);
+                                return Err(RuntimeError::typecheck_binding_parameter(
+                                    &elem.to_string_value(),
+                                    &target_type,
+                                    &got_type,
+                                    None,
+                                ));
+                            };
+                            let (new_key, final_elem) =
+                                crate::runtime::utils::quanthash_elem_entry(&final_elem);
+                            rekeyed.insert(key.clone(), (new_key, final_elem));
                         }
-                        // Store typed keys in the QuantHash so .keys returns typed values
-                        if !typed_keys.is_empty() {
+                        let needs_rekey = rekeyed.iter().any(|(old, (new, _))| old != new);
+                        if needs_rekey {
+                            let mut originals = std::collections::HashMap::new();
                             instance = match instance.view() {
                                 ValueView::Mix(data, mutable) => {
+                                    let mut weights = std::collections::HashMap::new();
+                                    for (k, w) in data.weights.iter() {
+                                        let (nk, el) = &rekeyed[k];
+                                        crate::runtime::utils::record_quanthash_original(
+                                            &mut originals,
+                                            nk,
+                                            el,
+                                        );
+                                        *weights.entry(nk.clone()).or_insert(0.0) += *w;
+                                    }
                                     let new_data = crate::value::MixData::with_original_keys(
-                                        data.weights.clone(),
-                                        typed_keys,
+                                        weights, originals,
                                     );
                                     Value::mix_parts(crate::gc::Gc::new(new_data), mutable)
                                 }
                                 ValueView::Bag(data, mutable) => {
+                                    let mut counts = std::collections::HashMap::new();
+                                    for (k, c) in data.counts.iter() {
+                                        let (nk, el) = &rekeyed[k];
+                                        crate::runtime::utils::record_quanthash_original(
+                                            &mut originals,
+                                            nk,
+                                            el,
+                                        );
+                                        *counts
+                                            .entry(nk.clone())
+                                            .or_insert_with(|| num_bigint::BigInt::from(0)) +=
+                                            c.clone();
+                                    }
                                     let new_data = crate::value::BagData::with_original_keys(
-                                        data.counts.clone(),
-                                        typed_keys,
+                                        counts, originals,
                                     );
                                     Value::bag_parts(crate::gc::Gc::new(new_data), mutable)
                                 }
                                 ValueView::Set(data, mutable) => {
+                                    let mut elements = std::collections::HashSet::new();
+                                    for k in data.elements.iter() {
+                                        let (nk, el) = &rekeyed[k];
+                                        crate::runtime::utils::record_quanthash_original(
+                                            &mut originals,
+                                            nk,
+                                            el,
+                                        );
+                                        elements.insert(nk.clone());
+                                    }
                                     let new_data = crate::value::SetData::with_original_keys(
-                                        data.elements.clone(),
-                                        typed_keys,
+                                        elements, originals,
                                     );
                                     Value::set_parts(crate::gc::Gc::new(new_data), mutable)
                                 }

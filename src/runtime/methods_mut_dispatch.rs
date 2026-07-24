@@ -302,6 +302,8 @@ impl Interpreter {
             && let ValueView::Set(data, true) = target.view()
         {
             let mut elements = data.elements.clone();
+            // Preserve the recorded element objects of untouched keys.
+            let mut originals = data.original_keys.clone().unwrap_or_default();
             for arg in &args {
                 let keys: Vec<Value> = match arg.view() {
                     ValueView::Array(items, _) => items.to_vec(),
@@ -309,16 +311,24 @@ impl Interpreter {
                     _ => vec![arg.clone()],
                 };
                 for key in keys {
-                    let k = key.to_string_value();
+                    let (k, elem) = crate::runtime::utils::quanthash_elem_entry(&key);
                     if method == "set" {
+                        crate::runtime::utils::record_quanthash_original(&mut originals, &k, &elem);
                         elements.insert(k);
                     } else {
                         elements.remove(&k);
+                        originals.remove(&k);
                     }
                 }
             }
-            self.env
-                .insert(target_var.to_string(), Value::set_hash(elements));
+            let mut new_data = crate::value::SetData::with_original_keys(elements, originals);
+            new_data.value_type = data.value_type.clone();
+            new_data.key_type = data.key_type.clone();
+            new_data.declared_type = data.declared_type.clone();
+            self.env.insert(
+                target_var.to_string(),
+                Value::set_parts(crate::gc::Gc::new(new_data), true),
+            );
             return Ok(Value::NIL);
         }
 
@@ -1785,15 +1795,24 @@ impl Interpreter {
                 }
                 let idx = (builtin_rand() * elements.len() as f64) as usize % elements.len();
                 let key = elements.remove(idx);
+                let elem = set_data.typed_key(&key);
                 if method == "grabpairs" {
-                    grabbed.push(Value::pair(key, Value::TRUE));
+                    grabbed.push(crate::runtime::utils::quanthash_typed_pair(
+                        elem,
+                        Value::TRUE,
+                    ));
                 } else {
-                    grabbed.push(Value::str(key));
+                    grabbed.push(elem);
                 }
             }
             let new_elements: std::collections::HashSet<String> = elements.into_iter().collect();
+            let mut new_originals = set_data.original_keys.clone().unwrap_or_default();
+            new_originals.retain(|k, _| new_elements.contains(k));
             let new_set = Value::set_parts(
-                crate::gc::Gc::new(crate::value::SetData::new(new_elements)),
+                crate::gc::Gc::new(crate::value::SetData::with_original_keys(
+                    new_elements,
+                    new_originals,
+                )),
                 true,
             );
             self.env.insert(target_var.to_string(), new_set);
@@ -1840,10 +1859,11 @@ impl Interpreter {
             {
                 return Err(RuntimeError::new("Cannot convert NaN to Int"));
             }
-            let bag = match target.view() {
-                ValueView::Bag(b, _) => b.counts.clone(),
+            let bag_data = match target.view() {
+                ValueView::Bag(b, _) => (**b).clone(),
                 _ => unreachable!(),
             };
+            let bag = bag_data.counts.clone();
             let count = if args.is_empty() {
                 1usize
             } else {
@@ -1878,7 +1898,10 @@ impl Interpreter {
                     let idx = (builtin_rand() * ks.len() as f64) as usize % ks.len();
                     let key = ks[idx].clone();
                     let val = remaining.remove(&key).unwrap_or_default();
-                    grabbed.push(Value::pair(key, Value::from_bigint(val)));
+                    grabbed.push(crate::runtime::utils::quanthash_typed_pair(
+                        bag_data.typed_key(&key),
+                        Value::from_bigint(val),
+                    ));
                 }
             } else {
                 // grab: pick weighted random elements one at a time
@@ -1909,12 +1932,17 @@ impl Interpreter {
                             remaining.remove(&chosen_key);
                         }
                     }
-                    grabbed.push(Value::str(chosen_key));
+                    grabbed.push(bag_data.typed_key(&chosen_key));
                 }
             }
-            // Update the original variable
+            // Update the original variable (keep the surviving element objects)
+            let mut new_originals = bag_data.original_keys.clone().unwrap_or_default();
+            new_originals.retain(|k, _| remaining.contains_key(k));
             let new_bag = Value::bag_parts(
-                crate::gc::Gc::new(crate::value::BagData::new(remaining)),
+                crate::gc::Gc::new(crate::value::BagData::with_original_keys(
+                    remaining,
+                    new_originals,
+                )),
                 true,
             );
             self.env.insert(target_var.to_string(), new_bag);
@@ -1988,13 +2016,19 @@ impl Interpreter {
                 let ks: Vec<String> = remaining.keys().cloned().collect();
                 let idx = (builtin_rand() * ks.len() as f64) as usize % ks.len();
                 let key = ks[idx].clone();
+                let elem = remaining.typed_key(&key);
                 let weight = remaining.remove(&key).unwrap_or(0.0);
+                if let Some(ok) = remaining.original_keys.as_mut() {
+                    ok.remove(&key);
+                }
                 if method == "grabpairs" {
                     let weight_val = crate::value::mix_weight_to_value(weight);
-                    grabbed.push(Value::pair(key, weight_val));
+                    grabbed.push(crate::runtime::utils::quanthash_typed_pair(
+                        elem, weight_val,
+                    ));
                 } else {
-                    // grab: return the key
-                    grabbed.push(Value::str(key));
+                    // grab: return the element object
+                    grabbed.push(elem);
                 }
             }
             // Update the original variable

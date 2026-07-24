@@ -980,7 +980,7 @@ pub(crate) fn native_method_1arg(
                     .map(|(k, v)| {
                         runtime::format_sprintf_args(
                             &fmt,
-                            &[Value::str(k.clone()), Value::from_bigint(v.clone())],
+                            &[items.typed_key(k), Value::from_bigint(v.clone())],
                         )
                     })
                     .collect::<Vec<_>>()
@@ -989,9 +989,7 @@ pub(crate) fn native_method_1arg(
             } else if let ValueView::Set(items, _) = target.view() {
                 let rendered = items
                     .iter()
-                    .map(|k| {
-                        runtime::format_sprintf_args(&fmt, &[Value::str(k.clone()), Value::TRUE])
-                    })
+                    .map(|k| runtime::format_sprintf_args(&fmt, &[items.typed_key(k), Value::TRUE]))
                     .collect::<Vec<_>>()
                     .join("\n");
                 Some(Ok(Value::str(rendered)))
@@ -999,7 +997,7 @@ pub(crate) fn native_method_1arg(
                 let rendered = items
                     .iter()
                     .map(|(k, v)| {
-                        runtime::format_sprintf_args(&fmt, &[Value::str(k.clone()), Value::num(*v)])
+                        runtime::format_sprintf_args(&fmt, &[items.typed_key(k), Value::num(*v)])
                     })
                     .collect::<Vec<_>>()
                     .join("\n");
@@ -1372,10 +1370,16 @@ pub(crate) fn native_method_1arg(
                     return Some(Ok(Value::seq(Vec::new())));
                 }
                 // Build a mutable copy of counts for without-replacement picking
-                let mut counts: Vec<(String, i128)> = bag
+                // (keys decoded to the element objects via typed_key).
+                let mut counts: Vec<(Value, i128)> = bag
                     .iter()
                     .filter(|(_, c)| c.is_positive())
-                    .map(|(k, c)| (k.clone(), crate::runtime::utils::bigint_to_i128_sat(c)))
+                    .map(|(k, c)| {
+                        (
+                            bag.typed_key(k),
+                            crate::runtime::utils::bigint_to_i128_sat(c),
+                        )
+                    })
                     .collect();
                 let mut total: i128 = counts.iter().map(|(_, c)| *c).sum();
                 let pick_count = (count as usize).min(total as usize);
@@ -1398,7 +1402,7 @@ pub(crate) fn native_method_1arg(
                             break;
                         }
                     }
-                    result.push(Value::str(counts[picked_idx].0.clone()));
+                    result.push(counts[picked_idx].0.clone());
                     counts[picked_idx].1 -= 1;
                     total -= 1;
                     if counts[picked_idx].1 == 0 {
@@ -1414,7 +1418,7 @@ pub(crate) fn native_method_1arg(
                 {
                     return Some(Err(RuntimeError::new("Cannot convert NaN to Int")));
                 }
-                let mut keys: Vec<String> = set.iter().cloned().collect();
+                let mut keys: Vec<Value> = set.iter().map(|k| set.typed_key(k)).collect();
                 let count: usize = match arg.view() {
                     ValueView::Whatever => keys.len(),
                     ValueView::Num(f) if f.is_infinite() && f.is_sign_positive() => keys.len(),
@@ -1432,7 +1436,7 @@ pub(crate) fn native_method_1arg(
                     keys.swap(i, j);
                 }
                 keys.truncate(pick_count);
-                return Some(Ok(Value::seq(keys.into_iter().map(Value::str).collect())));
+                return Some(Ok(Value::seq(keys)));
             }
             // Fast path for integer ranges — avoid materializing
             if let Some(result) = range_pick_n_fast(target, arg) {
@@ -1567,8 +1571,10 @@ pub(crate) fn native_method_1arg(
                 if count == 0 || bag.is_empty() {
                     return Some(Ok(Value::seq(Vec::new())));
                 }
-                let mut pairs: Vec<(String, BigInt)> =
-                    bag.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                let mut pairs: Vec<(Value, BigInt)> = bag
+                    .iter()
+                    .map(|(k, v)| (bag.typed_key(k), v.clone()))
+                    .collect();
                 let pick_count = count.min(pairs.len());
                 let mut result = Vec::with_capacity(pick_count);
                 for _ in 0..pick_count {
@@ -1578,7 +1584,10 @@ pub(crate) fn native_method_1arg(
                     let idx = (crate::builtins::rng::builtin_rand() * pairs.len() as f64) as usize
                         % pairs.len();
                     let (key, count) = pairs.swap_remove(idx);
-                    result.push(Value::pair(key, Value::from_bigint(count)));
+                    result.push(crate::runtime::utils::quanthash_typed_pair(
+                        key,
+                        Value::from_bigint(count),
+                    ));
                 }
                 return Some(Ok(Value::seq(result)));
             }
@@ -1678,7 +1687,7 @@ pub(crate) fn native_method_1arg(
                         if idx >= keys.len() {
                             idx = keys.len() - 1;
                         }
-                        out.push(Value::str(keys[idx].clone()));
+                        out.push(items.typed_key(keys[idx]));
                     }
                     return Some(Ok(Value::lazy_list(crate::gc::Gc::new(
                         crate::value::LazyList::new_cached(out),
@@ -1695,7 +1704,7 @@ pub(crate) fn native_method_1arg(
                     if idx >= keys.len() {
                         idx = keys.len() - 1;
                     }
-                    result.push(Value::str(keys[idx].clone()));
+                    result.push(items.typed_key(keys[idx]));
                 }
                 return Some(Ok(Value::seq(result)));
             }
@@ -2010,16 +2019,16 @@ pub(crate) fn native_method_1arg(
                 Some(Ok(v.unwrap_or(Value::NIL)))
             }
             ValueView::Set(data, _) => {
-                let key = arg.to_string_value();
+                let (key, _) = crate::runtime::utils::quanthash_elem_entry(arg);
                 Some(Ok(Value::truth(data.elements.contains(&key))))
             }
             ValueView::Bag(data, _) => {
-                let key = arg.to_string_value();
+                let (key, _) = crate::runtime::utils::quanthash_elem_entry(arg);
                 let count = data.counts.get(&key).cloned().unwrap_or_else(BigInt::zero);
                 Some(Ok(Value::from_bigint(count)))
             }
             ValueView::Mix(data, _) => {
-                let key = arg.to_string_value();
+                let (key, _) = crate::runtime::utils::quanthash_elem_entry(arg);
                 let weight = data.weights.get(&key).copied().unwrap_or(0.0);
                 Some(Ok(crate::value::mix_weight_to_value(weight)))
             }
@@ -2052,15 +2061,15 @@ pub(crate) fn native_method_1arg(
                 Some(Ok(Value::truth(found)))
             }
             ValueView::Set(data, _) => {
-                let key = arg.to_string_value();
+                let (key, _) = crate::runtime::utils::quanthash_elem_entry(arg);
                 Some(Ok(Value::truth(data.elements.contains(&key))))
             }
             ValueView::Bag(data, _) => {
-                let key = arg.to_string_value();
+                let (key, _) = crate::runtime::utils::quanthash_elem_entry(arg);
                 Some(Ok(Value::truth(data.counts.contains_key(&key))))
             }
             ValueView::Mix(data, _) => {
-                let key = arg.to_string_value();
+                let (key, _) = crate::runtime::utils::quanthash_elem_entry(arg);
                 Some(Ok(Value::truth(data.weights.contains_key(&key))))
             }
             ValueView::Nil => Some(Ok(Value::FALSE)),

@@ -39,26 +39,27 @@ impl Interpreter {
         let result_level = left_level.max(right_level).max(1); // minimum Bag
         let result_mutable = runtime::set_result_mutability(&left);
 
+        let mut originals: HashMap<String, Value> = HashMap::new();
         let result = match result_level {
             2 => {
                 // Result is Mix
-                let mut a = Self::coerce_to_mix(&left);
-                let b = Self::coerce_to_mix(&right);
+                let mut a = Self::coerce_to_mix(&left, &mut originals);
+                let b = Self::coerce_to_mix(&right, &mut originals);
                 for (k, v) in b {
                     let e = a.entry(k).or_insert(0.0);
                     *e += v;
                 }
-                Value::mix(a)
+                Value::mix_with_original_keys(a, originals)
             }
             _ => {
                 // Result is Bag (level 1 is the minimum for (+))
-                let mut a = Self::coerce_to_bag(&left);
-                let b = Self::coerce_to_bag(&right);
+                let mut a = Self::coerce_to_bag(&left, &mut originals);
+                let b = Self::coerce_to_bag(&right, &mut originals);
                 for (k, v) in b {
                     let e = a.entry(k).or_insert(0);
                     *e += v;
                 }
-                Value::bag(a)
+                Value::bag_typed(a, originals)
             }
         };
         let result = runtime::with_set_mutability(result, result_mutable);
@@ -115,19 +116,29 @@ impl Interpreter {
     }
 
     /// Helper: extract bag-like weights from a list item (Pair or plain value)
-    fn bag_insert_item(result: &mut HashMap<String, i64>, item: &Value) {
+    fn bag_insert_item(
+        result: &mut HashMap<String, i64>,
+        originals: &mut HashMap<String, Value>,
+        item: &Value,
+    ) {
+        use crate::runtime::utils::{
+            quanthash_elem_entry, record_quanthash_original, str_elem_key,
+        };
         match item.view() {
             ValueView::Pair(k, v) => {
                 let weight = v.to_f64() as i64;
-                *result.entry(k.clone()).or_insert(0) += weight;
+                *result.entry(str_elem_key(k)).or_insert(0) += weight;
             }
             ValueView::ValuePair(k, v) => {
                 let weight = v.to_f64() as i64;
-                *result.entry(k.to_string_value()).or_insert(0) += weight;
+                let (key, elem) = quanthash_elem_entry(k);
+                record_quanthash_original(originals, &key, &elem);
+                *result.entry(key).or_insert(0) += weight;
             }
             _ => {
-                let key = item.to_string_value();
-                if !key.is_empty() {
+                let (key, elem) = quanthash_elem_entry(item);
+                if !elem.to_string_value().is_empty() {
+                    record_quanthash_original(originals, &key, &elem);
                     *result.entry(key).or_insert(0) += 1;
                 }
             }
@@ -135,19 +146,29 @@ impl Interpreter {
     }
 
     /// Helper: extract mix-like weights from a list item (Pair or plain value)
-    fn mix_insert_item(result: &mut HashMap<String, f64>, item: &Value) {
+    fn mix_insert_item(
+        result: &mut HashMap<String, f64>,
+        originals: &mut HashMap<String, Value>,
+        item: &Value,
+    ) {
+        use crate::runtime::utils::{
+            quanthash_elem_entry, record_quanthash_original, str_elem_key,
+        };
         match item.view() {
             ValueView::Pair(k, v) => {
                 let weight = v.to_f64();
-                *result.entry(k.clone()).or_insert(0.0) += weight;
+                *result.entry(str_elem_key(k)).or_insert(0.0) += weight;
             }
             ValueView::ValuePair(k, v) => {
                 let weight = v.to_f64();
-                *result.entry(k.to_string_value()).or_insert(0.0) += weight;
+                let (key, elem) = quanthash_elem_entry(k);
+                record_quanthash_original(originals, &key, &elem);
+                *result.entry(key).or_insert(0.0) += weight;
             }
             _ => {
-                let key = item.to_string_value();
-                if !key.is_empty() {
+                let (key, elem) = quanthash_elem_entry(item);
+                if !elem.to_string_value().is_empty() {
+                    record_quanthash_original(originals, &key, &elem);
                     *result.entry(key).or_insert(0.0) += 1.0;
                 }
             }
@@ -155,26 +176,37 @@ impl Interpreter {
     }
 
     /// Coerce a value to a Bag (HashMap<String, i64>)
-    fn coerce_to_bag(val: &Value) -> HashMap<String, i64> {
+    fn coerce_to_bag(val: &Value, originals: &mut HashMap<String, Value>) -> HashMap<String, i64> {
+        use crate::runtime::utils::{extend_quanthash_originals, str_elem_key};
         match val.view() {
             // A Bag/Set/Mix subclass instance (`class Foo is Bag`) carries its real
             // quantified collection in `__baggy_data__`; unwrap it so a set/baggy op
             // sees the elements, not the opaque instance as a single element.
             ValueView::Instance { attributes, .. } if attributes.contains_key("__baggy_data__") => {
                 match attributes.as_map().get("__baggy_data__") {
-                    Some(inner) => Self::coerce_to_bag(inner),
+                    Some(inner) => Self::coerce_to_bag(inner, originals),
                     None => HashMap::new(),
                 }
             }
-            ValueView::Bag(b, _) => crate::runtime::utils::bag_counts_as_i64(&b.counts),
-            ValueView::Set(s, _) => s.iter().map(|k| (k.clone(), 1)).collect(),
-            ValueView::Mix(m, _) => m.iter().map(|(k, v)| (k.clone(), *v as i64)).collect(),
+            ValueView::Bag(b, _) => {
+                extend_quanthash_originals(originals, &b.original_keys);
+                crate::runtime::utils::bag_counts_as_i64(&b.counts)
+            }
+            ValueView::Set(s, _) => {
+                extend_quanthash_originals(originals, &s.original_keys);
+                s.iter().map(|k| (k.clone(), 1)).collect()
+            }
+            ValueView::Mix(m, _) => {
+                extend_quanthash_originals(originals, &m.original_keys);
+                m.iter().map(|(k, v)| (k.clone(), *v as i64)).collect()
+            }
             ValueView::Hash(map) => {
                 let mut result = HashMap::new();
                 for (k, v) in map.iter() {
                     let weight = v.to_f64() as i64;
                     if weight != 0 {
-                        result.insert(k.clone(), weight);
+                        let key = crate::runtime::utils::hash_elem_key(&map, k, originals);
+                        result.insert(key, weight);
                     }
                 }
                 result
@@ -182,7 +214,7 @@ impl Interpreter {
             _ if val.as_list_items().is_some() => {
                 let mut result = HashMap::new();
                 for item in val.as_list_items().unwrap().iter() {
-                    Self::bag_insert_item(&mut result, item);
+                    Self::bag_insert_item(&mut result, originals, item);
                 }
                 // Remove entries with 0 weight
                 result.retain(|_, v| *v != 0);
@@ -192,38 +224,48 @@ impl Interpreter {
                 let mut result = HashMap::new();
                 let weight = v.to_f64() as i64;
                 if weight != 0 {
-                    result.insert(k.clone(), weight);
+                    result.insert(str_elem_key(k), weight);
                 }
                 result
             }
             _ => {
-                let set = runtime::coerce_to_set(val);
+                let set = runtime::coerce_to_set(val, originals);
                 set.into_iter().map(|k| (k, 1)).collect()
             }
         }
     }
 
     /// Coerce a value to a Mix (HashMap<String, f64>)
-    fn coerce_to_mix(val: &Value) -> HashMap<String, f64> {
+    fn coerce_to_mix(val: &Value, originals: &mut HashMap<String, Value>) -> HashMap<String, f64> {
+        use crate::runtime::utils::{extend_quanthash_originals, str_elem_key};
         match val.view() {
             ValueView::Instance { attributes, .. } if attributes.contains_key("__baggy_data__") => {
                 match attributes.as_map().get("__baggy_data__") {
-                    Some(inner) => Self::coerce_to_mix(inner),
+                    Some(inner) => Self::coerce_to_mix(inner, originals),
                     None => HashMap::new(),
                 }
             }
-            ValueView::Mix(m, _) => m.weights.clone(),
-            ValueView::Bag(b, _) => b
-                .iter()
-                .map(|(k, v)| (k.clone(), crate::runtime::utils::bigint_to_f64_sat(v)))
-                .collect(),
-            ValueView::Set(s, _) => s.iter().map(|k| (k.clone(), 1.0)).collect(),
+            ValueView::Mix(m, _) => {
+                extend_quanthash_originals(originals, &m.original_keys);
+                m.weights.clone()
+            }
+            ValueView::Bag(b, _) => {
+                extend_quanthash_originals(originals, &b.original_keys);
+                b.iter()
+                    .map(|(k, v)| (k.clone(), crate::runtime::utils::bigint_to_f64_sat(v)))
+                    .collect()
+            }
+            ValueView::Set(s, _) => {
+                extend_quanthash_originals(originals, &s.original_keys);
+                s.iter().map(|k| (k.clone(), 1.0)).collect()
+            }
             ValueView::Hash(map) => {
                 let mut result = HashMap::new();
                 for (k, v) in map.iter() {
                     let weight = v.to_f64();
                     if weight != 0.0 {
-                        result.insert(k.clone(), weight);
+                        let key = crate::runtime::utils::hash_elem_key(&map, k, originals);
+                        result.insert(key, weight);
                     }
                 }
                 result
@@ -231,7 +273,7 @@ impl Interpreter {
             _ if val.as_list_items().is_some() => {
                 let mut result = HashMap::new();
                 for item in val.as_list_items().unwrap().iter() {
-                    Self::mix_insert_item(&mut result, item);
+                    Self::mix_insert_item(&mut result, originals, item);
                 }
                 // Remove entries with 0 weight
                 result.retain(|_, v| *v != 0.0);
@@ -241,12 +283,12 @@ impl Interpreter {
                 let mut result = HashMap::new();
                 let weight = v.to_f64();
                 if weight != 0.0 {
-                    result.insert(k.clone(), weight);
+                    result.insert(str_elem_key(k), weight);
                 }
                 result
             }
             _ => {
-                let set = runtime::coerce_to_set(val);
+                let set = runtime::coerce_to_set(val, originals);
                 set.into_iter().map(|k| (k, 1.0)).collect()
             }
         }
@@ -290,36 +332,37 @@ impl Interpreter {
         let result_level = left_level.max(right_level);
         let result_mutable = runtime::set_result_mutability(&left);
 
+        let mut originals: HashMap<String, Value> = HashMap::new();
         let result = match result_level {
             2 => {
                 // Result is Mix
-                let a = Self::coerce_to_mix(&left);
-                let b = Self::coerce_to_mix(&right);
+                let a = Self::coerce_to_mix(&left, &mut originals);
+                let b = Self::coerce_to_mix(&right, &mut originals);
                 let mut result = HashMap::new();
                 for (k, v) in a.iter() {
                     if let Some(bv) = b.get(k) {
                         result.insert(k.clone(), v.min(*bv));
                     }
                 }
-                Value::mix(result)
+                Value::mix_with_original_keys(result, originals)
             }
             1 => {
                 // Result is Bag
-                let a = Self::coerce_to_bag(&left);
-                let b = Self::coerce_to_bag(&right);
+                let a = Self::coerce_to_bag(&left, &mut originals);
+                let b = Self::coerce_to_bag(&right, &mut originals);
                 let mut result = HashMap::new();
                 for (k, v) in a.iter() {
                     if let Some(bv) = b.get(k) {
                         result.insert(k.clone(), (*v).min(*bv));
                     }
                 }
-                Value::bag(result)
+                Value::bag_typed(result, originals)
             }
             _ => {
                 // Result is Set
-                let a = runtime::coerce_to_set(&left);
-                let b = runtime::coerce_to_set(&right);
-                Value::set(a.intersection(&b).cloned().collect())
+                let a = runtime::coerce_to_set(&left, &mut originals);
+                let b = runtime::coerce_to_set(&right, &mut originals);
+                Value::set_typed(a.intersection(&b).cloned().collect(), originals)
             }
         };
         self.stack

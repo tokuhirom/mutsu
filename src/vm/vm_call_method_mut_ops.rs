@@ -1361,13 +1361,22 @@ impl Interpreter {
                         return Err(RuntimeError::assignment_ro_typename("Set", &repr));
                     }
                     ValueView::Set(data, true) => {
-                        let mut new_set = data.elements.clone();
+                        let (qkey, elem) = crate::runtime::utils::quanthash_elem_entry(&args[0]);
+                        let mut new_data = (**data).clone();
                         if value.truthy() {
-                            new_set.insert(key);
+                            crate::runtime::utils::record_quanthash_original(
+                                new_data.original_keys.get_or_insert_with(Default::default),
+                                &qkey,
+                                &elem,
+                            );
+                            new_data.elements.insert(qkey);
                         } else {
-                            new_set.remove(&key);
+                            new_data.elements.remove(&qkey);
+                            if let Some(ok) = new_data.original_keys.as_mut() {
+                                ok.remove(&qkey);
+                            }
                         }
-                        let new_val = Value::set_hash(new_set);
+                        let new_val = Value::set_parts(crate::gc::Gc::new(new_data), true);
                         self.env_mut().insert(target_name.to_string(), new_val);
                         self.stack.push(value);
                         return Ok(());
@@ -1377,14 +1386,23 @@ impl Interpreter {
                         return Err(RuntimeError::assignment_ro_typename("Bag", &repr));
                     }
                     ValueView::Bag(data, true) => {
+                        let (qkey, elem) = crate::runtime::utils::quanthash_elem_entry(&args[0]);
                         let count = value.to_bigint();
-                        let mut new_counts = data.counts.clone();
+                        let mut new_data = (**data).clone();
                         if num_traits::Signed::is_positive(&count) {
-                            new_counts.insert(key, count);
+                            crate::runtime::utils::record_quanthash_original(
+                                new_data.original_keys.get_or_insert_with(Default::default),
+                                &qkey,
+                                &elem,
+                            );
+                            new_data.counts.insert(qkey, count);
                         } else {
-                            new_counts.remove(&key);
+                            new_data.counts.remove(&qkey);
+                            if let Some(ok) = new_data.original_keys.as_mut() {
+                                ok.remove(&qkey);
+                            }
                         }
-                        let new_val = Value::bag_hash_big(new_counts);
+                        let new_val = Value::bag_parts(crate::gc::Gc::new(new_data), true);
                         self.env_mut().insert(target_name.to_string(), new_val);
                         self.stack.push(value);
                         return Ok(());
@@ -1394,14 +1412,23 @@ impl Interpreter {
                         return Err(RuntimeError::assignment_ro_typename("Mix", &repr));
                     }
                     ValueView::Mix(data, true) => {
+                        let (qkey, elem) = crate::runtime::utils::quanthash_elem_entry(&args[0]);
                         let weight = crate::runtime::to_float_value(&value).unwrap_or(0.0);
-                        let mut new_weights = data.weights.clone();
+                        let mut new_data = (**data).clone();
                         if weight != 0.0 {
-                            new_weights.insert(key, weight);
+                            crate::runtime::utils::record_quanthash_original(
+                                new_data.original_keys.get_or_insert_with(Default::default),
+                                &qkey,
+                                &elem,
+                            );
+                            new_data.weights.insert(qkey, weight);
                         } else {
-                            new_weights.remove(&key);
+                            new_data.weights.remove(&qkey);
+                            if let Some(ok) = new_data.original_keys.as_mut() {
+                                ok.remove(&qkey);
+                            }
                         }
-                        let new_val = Value::mix_hash(new_weights);
+                        let new_val = Value::mix_parts(crate::gc::Gc::new(new_data), true);
                         self.env_mut().insert(target_name.to_string(), new_val);
                         self.stack.push(value);
                         return Ok(());
@@ -1481,10 +1508,14 @@ impl Interpreter {
                         return Err(RuntimeError::assignment_ro_typename("Set", &repr));
                     }
                     ValueView::Set(data, true) => {
-                        let existed = data.elements.contains(&key);
-                        let mut new_set = data.elements.clone();
-                        new_set.remove(&key);
-                        let new_val = Value::set_hash(new_set);
+                        let (qkey, _) = crate::runtime::utils::quanthash_elem_entry(&args[0]);
+                        let existed = data.elements.contains(&qkey);
+                        let mut new_data = (**data).clone();
+                        new_data.elements.remove(&qkey);
+                        if let Some(ok) = new_data.original_keys.as_mut() {
+                            ok.remove(&qkey);
+                        }
+                        let new_val = Value::set_parts(crate::gc::Gc::new(new_data), true);
                         self.env_mut().insert(target_name.to_string(), new_val);
                         self.stack.push(Value::truth(existed));
                         return Ok(());
@@ -1494,10 +1525,14 @@ impl Interpreter {
                         return Err(RuntimeError::assignment_ro_typename("Bag", &repr));
                     }
                     ValueView::Bag(data, true) => {
-                        let old_count = data.counts.get(&key).cloned().unwrap_or_default();
-                        let mut new_counts = data.counts.clone();
-                        new_counts.remove(&key);
-                        let new_val = Value::bag_hash_big(new_counts);
+                        let (qkey, _) = crate::runtime::utils::quanthash_elem_entry(&args[0]);
+                        let old_count = data.counts.get(&qkey).cloned().unwrap_or_default();
+                        let mut new_data = (**data).clone();
+                        new_data.counts.remove(&qkey);
+                        if let Some(ok) = new_data.original_keys.as_mut() {
+                            ok.remove(&qkey);
+                        }
+                        let new_val = Value::bag_parts(crate::gc::Gc::new(new_data), true);
                         self.env_mut().insert(target_name.to_string(), new_val);
                         self.stack.push(Value::from_bigint(old_count));
                         return Ok(());
@@ -1507,10 +1542,14 @@ impl Interpreter {
                         return Err(RuntimeError::assignment_ro_typename("Mix", &repr));
                     }
                     ValueView::Mix(data, true) => {
-                        let old_weight = data.weights.get(&key).copied().unwrap_or(0.0);
-                        let mut new_weights = data.weights.clone();
-                        new_weights.remove(&key);
-                        let new_val = Value::mix_hash(new_weights);
+                        let (qkey, _) = crate::runtime::utils::quanthash_elem_entry(&args[0]);
+                        let old_weight = data.weights.get(&qkey).copied().unwrap_or(0.0);
+                        let mut new_data = (**data).clone();
+                        new_data.weights.remove(&qkey);
+                        if let Some(ok) = new_data.original_keys.as_mut() {
+                            ok.remove(&qkey);
+                        }
+                        let new_val = Value::mix_parts(crate::gc::Gc::new(new_data), true);
                         self.env_mut().insert(target_name.to_string(), new_val);
                         let result = crate::value::mix_weight_to_value(old_weight);
                         self.stack.push(result);

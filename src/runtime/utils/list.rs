@@ -472,15 +472,22 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
         }
         ValueView::Set(items, _) => items
             .iter()
-            .map(|s| Value::pair(s.clone(), Value::TRUE))
+            .map(|s| super::quanthash_typed_pair(items.typed_key(s), Value::TRUE))
             .collect(),
         ValueView::Bag(items, _) => items
             .iter()
-            .map(|(k, v)| Value::pair(k.clone(), Value::from_bigint(v.clone())))
+            .map(|(k, v)| {
+                super::quanthash_typed_pair(items.typed_key(k), Value::from_bigint(v.clone()))
+            })
             .collect(),
         ValueView::Mix(items, _) => items
             .iter()
-            .map(|(k, v)| Value::pair(k.clone(), crate::value::mix_weight_to_value(*v)))
+            .map(|(k, v)| {
+                super::quanthash_typed_pair(
+                    items.typed_key(k),
+                    crate::value::mix_weight_to_value(*v),
+                )
+            })
             .collect(),
         ValueView::Slip(items) => items.to_vec(),
         ValueView::Instance {

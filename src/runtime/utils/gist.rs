@@ -10,54 +10,63 @@ pub(crate) fn setbagmix_gist(value: &Value) -> Option<String> {
     match value.view() {
         ValueView::Set(s, mutable) => {
             let type_name = if mutable { "SetHash" } else { "Set" };
-            let mut keys: Vec<&String> = s.iter().collect();
-            keys.sort();
-            // Render each element via its original type's gist (so a Pair element
-            // is `a => 1`, not the internal `a\t1` string key); a plain Str/Int
-            // element gists bare, identical to the raw key.
-            let inner = keys
-                .iter()
-                .map(|k| gist_value(&s.typed_key(k)))
-                .collect::<Vec<_>>()
-                .join(" ");
+            let ptr = crate::gc::Gc::as_ptr(&s) as usize;
+            let inner = crate::value::with_quanthash_render_guard(ptr, || {
+                let mut keys: Vec<&String> = s.iter().collect();
+                keys.sort();
+                // Render each element via its original type's gist (so a Pair element
+                // is `a => 1`, not the internal `a\t1` string key); a plain Str/Int
+                // element gists bare, identical to the raw key.
+                keys.iter()
+                    .map(|k| gist_value(&s.typed_key(k)))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
+            .unwrap_or_else(|| "...".to_string());
             Some(format!("{}({})", type_name, inner))
         }
         ValueView::Bag(b, mutable) => {
             let type_name = if mutable { "BagHash" } else { "Bag" };
-            let mut keys: Vec<(&String, &BigInt)> = b.iter().collect();
-            keys.sort_by_key(|(k, _)| (*k).clone());
-            let inner = keys
-                .iter()
-                .map(|(k, v)| {
-                    let key = gist_value(&b.typed_key(k));
-                    if **v == BigInt::from(1) {
-                        key
-                    } else {
-                        format!("{}({})", key, v)
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join(" ");
+            let ptr = crate::gc::Gc::as_ptr(&b) as usize;
+            let inner = crate::value::with_quanthash_render_guard(ptr, || {
+                let mut keys: Vec<(&String, &BigInt)> = b.iter().collect();
+                keys.sort_by_key(|(k, _)| (*k).clone());
+                keys.iter()
+                    .map(|(k, v)| {
+                        let key = gist_value(&b.typed_key(k));
+                        if **v == BigInt::from(1) {
+                            key
+                        } else {
+                            format!("{}({})", key, v)
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
+            .unwrap_or_else(|| "...".to_string());
             Some(format!("{}({})", type_name, inner))
         }
         ValueView::Mix(m, mutable) => {
             let type_name = if mutable { "MixHash" } else { "Mix" };
-            let mut keys: Vec<(&String, &f64)> = m.iter().collect();
-            keys.sort_by_key(|(k, _)| (*k).clone());
-            let inner = keys
-                .iter()
-                .map(|(k, v)| {
-                    let key = gist_value(&m.typed_key(k));
-                    if (**v - 1.0).abs() < f64::EPSILON {
-                        key
-                    } else if v.fract() == 0.0 {
-                        format!("{}({})", key, **v as i64)
-                    } else {
-                        format!("{}({})", key, v)
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join(" ");
+            let ptr = crate::gc::Gc::as_ptr(&m) as usize;
+            let inner = crate::value::with_quanthash_render_guard(ptr, || {
+                let mut keys: Vec<(&String, &f64)> = m.iter().collect();
+                keys.sort_by_key(|(k, _)| (*k).clone());
+                keys.iter()
+                    .map(|(k, v)| {
+                        let key = gist_value(&m.typed_key(k));
+                        if (**v - 1.0).abs() < f64::EPSILON {
+                            key
+                        } else if v.fract() == 0.0 {
+                            format!("{}({})", key, **v as i64)
+                        } else {
+                            format!("{}({})", key, v)
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
+            .unwrap_or_else(|| "...".to_string());
             Some(format!("{}({})", type_name, inner))
         }
         _ => None,

@@ -1242,7 +1242,9 @@ impl Interpreter {
                         let mut results: Vec<Value> = Vec::with_capacity(keys.len());
                         for (i, key_val) in keys.iter().enumerate() {
                             let v = vals.get(i).cloned().unwrap_or(Value::NIL);
-                            let str_key = key_val.to_string_value();
+                            // QuantHash stores are `.WHICH`-keyed.
+                            let (str_key, key_val) = runtime::utils::quanthash_elem_entry(key_val);
+                            let key_val = &key_val;
                             if is_bag {
                                 let count = Self::bag_assignment_count(&v)?;
                                 if let Some(container) = self.env_mut().get_mut(&var_name) {
@@ -1488,7 +1490,25 @@ impl Interpreter {
                 // attaches a `key_type` (`tag_container_metadata`) enforces the
                 // keying invariant, so a "plain-built" object hash with
                 // stringified keys can no longer reach this element assignment.
-                let use_which = is_object_hash;
+                // QuantHash (Set/Bag/Mix) element stores are `.WHICH`-keyed too —
+                // including the typed-autoviv case (`my SetHash $sh; $sh<k> = v`),
+                // where the target is still the bare type object.
+                let target_quanthash = matches!(
+                    index_target.as_ref().map(Value::view),
+                    Some(ValueView::Mix(..) | ValueView::Bag(..) | ValueView::Set(..))
+                ) || matches!(
+                    index_target.as_ref().map(Value::view),
+                    Some(ValueView::Package(sym))
+                        if matches!(
+                            sym.resolve().as_str(),
+                            "Set" | "SetHash" | "Bag" | "BagHash" | "Mix" | "MixHash"
+                        )
+                ) || loan_env!(self, var_type_constraint(&var_name))
+                    .as_deref()
+                    .is_some_and(|c| {
+                        matches!(c, "Set" | "SetHash" | "Bag" | "BagHash" | "Mix" | "MixHash")
+                    });
+                let use_which = is_object_hash || target_quanthash;
                 let key = if use_which {
                     runtime::utils::value_which_key(&idx)
                 } else if !is_object_hash && matches!(idx.view(), ValueView::Package(_)) {
@@ -2080,7 +2100,15 @@ impl Interpreter {
                         && matches!(sym.resolve().as_str(), "MixHash" | "BagHash" | "SetHash")
                     {
                         // Autovivify typed containers: MixHash, BagHash, SetHash
+                        // (the store key is the `.WHICH` string; record the key
+                        // object so `.keys` reports it).
                         let type_name = sym.resolve();
+                        let mut originals = HashMap::new();
+                        crate::runtime::utils::record_quanthash_original(
+                            &mut originals,
+                            &key,
+                            &idx.deref_container(),
+                        );
                         match type_name.as_str() {
                             "MixHash" => {
                                 let mut weights = HashMap::new();
@@ -2088,7 +2116,7 @@ impl Interpreter {
                                 if weight != 0.0 {
                                     weights.insert(key.clone(), weight);
                                 }
-                                *container = Value::mix_hash(weights);
+                                *container = Value::mix_hash_with_original_keys(weights, originals);
                             }
                             "BagHash" => {
                                 let mut counts = HashMap::new();
@@ -2096,17 +2124,15 @@ impl Interpreter {
                                 if num_traits::Signed::is_positive(&count) {
                                     counts.insert(key.clone(), count);
                                 }
-                                *container = Value::bag_hash_big(counts);
+                                *container = Value::bag_typed_big(counts, originals);
+                                let _ = container.with_bag_mut(|_, m| *m = true);
                             }
                             "SetHash" => {
                                 let mut items = std::collections::HashSet::new();
                                 if val.truthy() {
                                     items.insert(key.clone());
                                 }
-                                *container = Value::set_parts(
-                                    crate::gc::Gc::new(crate::value::SetData::new(items)),
-                                    true,
-                                );
+                                *container = Value::set_hash_typed(items, originals);
                             }
                             _ => unreachable!(),
                         }

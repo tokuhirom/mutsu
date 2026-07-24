@@ -427,7 +427,7 @@ impl Interpreter {
                 let idx = (builtin_rand() * ks.len() as f64) as usize % ks.len();
                 let key = ks[idx].clone();
                 remaining.remove(&key);
-                grabbed.push(Value::str(key));
+                grabbed.push(mix.typed_key(&key));
             }
             return Some(Ok(if grabbed.len() == 1 && args.is_empty() {
                 grabbed.into_iter().next().unwrap()
@@ -437,7 +437,7 @@ impl Interpreter {
         }
         // BagHash.grab: select and remove random element(s)
         if let ValueView::Bag(bag, true) = target.view() {
-            return Some(self.dispatch_bag_grab(&bag.counts, &args));
+            return Some(self.dispatch_bag_grab(&bag, &args));
         }
         None
     }
@@ -450,7 +450,7 @@ impl Interpreter {
     ) -> Option<Result<Value, RuntimeError>> {
         // BagHash.grabpairs
         if let ValueView::Bag(bag, true) = target.view() {
-            return Some(self.dispatch_bag_grabpairs(&bag.counts, &args));
+            return Some(self.dispatch_bag_grabpairs(&bag, &args));
         }
         let ValueView::Mix(mix, ..) = target.view() else {
             return None;
@@ -478,7 +478,10 @@ impl Interpreter {
             let key = ks[idx].clone();
             let weight = remaining.remove(&key).unwrap_or(0.0);
             let weight_val = crate::value::mix_weight_to_value(weight);
-            grabbed.push(Value::pair(key, weight_val));
+            grabbed.push(match mix.typed_key(&key).view() {
+                ValueView::Str(sk) => Value::pair(sk.to_string(), weight_val),
+                _ => Value::value_pair(mix.typed_key(&key), weight_val),
+            });
         }
         // TODO: compile to bytecode - should mutate the original variable
         Some(Ok(Value::seq(grabbed)))
@@ -487,9 +490,10 @@ impl Interpreter {
     /// Helper for BagHash.grab (works on a clone, does not mutate the original).
     fn dispatch_bag_grab(
         &mut self,
-        bag: &std::collections::HashMap<String, num_bigint::BigInt>,
+        bag_data: &crate::value::BagData,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
+        let bag = &bag_data.counts;
         use crate::builtins::rng::builtin_rand;
         use crate::runtime::utils::bigint_to_i128_sat;
         use num_bigint::BigInt;
@@ -536,7 +540,7 @@ impl Interpreter {
                     remaining.remove(&chosen_key);
                 }
             }
-            grabbed.push(Value::str(chosen_key));
+            grabbed.push(bag_data.typed_key(&chosen_key));
         }
         Ok(if grabbed.len() == 1 && args.is_empty() {
             grabbed.into_iter().next().unwrap()
@@ -548,9 +552,10 @@ impl Interpreter {
     /// Helper for BagHash.grabpairs (works on a clone, does not mutate the original).
     fn dispatch_bag_grabpairs(
         &mut self,
-        bag: &std::collections::HashMap<String, num_bigint::BigInt>,
+        bag_data: &crate::value::BagData,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
+        let bag = &bag_data.counts;
         use crate::builtins::rng::builtin_rand;
         let count = if args.is_empty() {
             1usize
@@ -573,7 +578,10 @@ impl Interpreter {
             let idx = (builtin_rand() * ks.len() as f64) as usize % ks.len();
             let key = ks[idx].clone();
             let val = remaining.remove(&key).unwrap_or_default();
-            grabbed.push(Value::pair(key, Value::from_bigint(val)));
+            grabbed.push(match bag_data.typed_key(&key).view() {
+                ValueView::Str(sk) => Value::pair(sk.to_string(), Value::from_bigint(val)),
+                _ => Value::value_pair(bag_data.typed_key(&key), Value::from_bigint(val)),
+            });
         }
         Ok(Value::seq(grabbed))
     }

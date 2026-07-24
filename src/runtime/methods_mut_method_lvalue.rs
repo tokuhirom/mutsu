@@ -400,15 +400,19 @@ impl Interpreter {
         }
         if method == "value" {
             let pair_data = match target.view() {
-                ValueView::Pair(key, current_value) => {
-                    Some((key.clone(), Box::new(current_value.clone())))
-                }
-                ValueView::ValuePair(key, current_value) => {
-                    Some((key.to_string_value(), Box::new(current_value.clone())))
-                }
+                ValueView::Pair(key, current_value) => Some((
+                    key.clone(),
+                    Value::str(key.clone()),
+                    Box::new(current_value.clone()),
+                )),
+                ValueView::ValuePair(key, current_value) => Some((
+                    key.to_string_value(),
+                    (*key).clone(),
+                    Box::new(current_value.clone()),
+                )),
                 _ => None,
             };
-            if let Some((key, current_value)) = pair_data {
+            if let Some((key, key_elem, current_value)) = pair_data {
                 // A Pair whose value is a live `HashEntryRef` (a `for %h -> $p`
                 // loop pair) writes `.value` straight through to the shared hash
                 // node in place, so `$p.value = X` updates `%h{$p.key}` and the
@@ -476,7 +480,7 @@ impl Interpreter {
                     // env (and main-alias) only, which is what the post-loop read
                     // of `$b` resolves through here.
                     let code = crate::opcode::CompiledCode::new();
-                    self.quanthash_set_weight(&code, &source, key, &value)?;
+                    self.quanthash_set_weight_elem(&code, &source, &key_elem, &value)?;
                     return Ok(value);
                 }
                 let mut selected_hash: Option<crate::gc::Gc<crate::value::HashData>> = None;

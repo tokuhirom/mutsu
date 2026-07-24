@@ -11,6 +11,9 @@
 
 use std::collections::{HashMap, HashSet};
 
+use crate::runtime::utils::{
+    quanthash_elem_entry, quanthash_insert_set, record_quanthash_original,
+};
 use crate::runtime::{ContainerTypeInfo, Interpreter};
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
@@ -170,34 +173,14 @@ impl Interpreter {
                 let items = self.apply_quanthash_element_param(&type_args, items, true)?;
                 let mut elems = HashSet::new();
                 let mut original_keys: HashMap<String, Value> = HashMap::new();
-                let mut has_non_str_keys = false;
-                let add_item = |elems: &mut HashSet<String>,
-                                original_keys: &mut HashMap<String, Value>,
-                                has_non_str: &mut bool,
-                                item: &Value| {
-                    let str_key = item.to_string_value();
-                    if !matches!(item.view(), ValueView::Str(_)) {
-                        *has_non_str = true;
-                        original_keys
-                            .entry(str_key.clone())
-                            .or_insert_with(|| item.clone());
-                    }
-                    elems.insert(str_key);
-                };
                 for item in &items {
-                    add_item(&mut elems, &mut original_keys, &mut has_non_str_keys, item);
+                    quanthash_insert_set(&mut elems, &mut original_keys, item);
                 }
                 let is_mutable = base_class_name == "SetHash";
-                let result = if has_non_str_keys {
-                    if is_mutable {
-                        Value::set_hash_typed(elems, original_keys)
-                    } else {
-                        Value::set_typed(elems, original_keys)
-                    }
-                } else if is_mutable {
-                    Value::set_hash(elems)
+                let result = if is_mutable {
+                    Value::set_hash_typed(elems, original_keys)
                 } else {
-                    Value::set(elems)
+                    Value::set_typed(elems, original_keys)
                 };
                 // Embed type metadata for parameterized SetHash[T]
                 let result = if let Some(ref ta) = type_args
@@ -260,33 +243,15 @@ impl Interpreter {
                 let items = self.apply_quanthash_element_param(&type_args, items, false)?;
                 let mut counts: HashMap<String, i64> = HashMap::new();
                 let mut original_keys: HashMap<String, Value> = HashMap::new();
-                let mut has_non_str_keys = false;
-                let add_item = |counts: &mut HashMap<String, i64>,
-                                original_keys: &mut HashMap<String, Value>,
-                                has_non_str: &mut bool,
-                                item: &Value| {
-                    let str_key = item.to_string_value();
-                    if !matches!(item.view(), ValueView::Str(_)) {
-                        *has_non_str = true;
-                        original_keys
-                            .entry(str_key.clone())
-                            .or_insert_with(|| item.clone());
-                    }
-                    *counts.entry(str_key).or_insert(0) += 1;
-                };
                 for item in &items {
-                    add_item(&mut counts, &mut original_keys, &mut has_non_str_keys, item);
+                    let (key, elem) = quanthash_elem_entry(item);
+                    record_quanthash_original(&mut original_keys, &key, &elem);
+                    *counts.entry(key).or_insert(0) += 1;
                 }
-                let result = if has_non_str_keys {
-                    if base_class_name == "BagHash" {
-                        Value::bag_hash_typed(counts, original_keys)
-                    } else {
-                        Value::bag_typed(counts, original_keys)
-                    }
-                } else if base_class_name == "BagHash" {
-                    Value::bag_hash(counts)
+                let result = if base_class_name == "BagHash" {
+                    Value::bag_hash_typed(counts, original_keys)
                 } else {
-                    Value::bag(counts)
+                    Value::bag_typed(counts, original_keys)
                 };
                 // Embed type metadata for parameterized Bag[T]/BagHash[T] so
                 // later element binding (`$b{42} = 1`) can type-check the key.
@@ -323,42 +288,19 @@ impl Interpreter {
                 let items = self.apply_quanthash_element_param(&type_args, items, false)?;
                 let mut weights: HashMap<String, f64> = HashMap::new();
                 let mut original_keys: HashMap<String, Value> = HashMap::new();
-                let mut has_non_str_keys = false;
-                let add_item = |weights: &mut HashMap<String, f64>,
-                                original_keys: &mut HashMap<String, Value>,
-                                has_non_str: &mut bool,
-                                item: &Value| {
-                    let str_key = item.to_string_value();
-                    if !matches!(item.view(), ValueView::Str(_)) {
-                        *has_non_str = true;
-                        original_keys
-                            .entry(str_key.clone())
-                            .or_insert_with(|| item.clone());
-                    }
-                    *weights.entry(str_key).or_insert(0.0) += 1.0;
-                };
                 for item in &items {
-                    add_item(
-                        &mut weights,
-                        &mut original_keys,
-                        &mut has_non_str_keys,
-                        item,
-                    );
+                    let (key, elem) = quanthash_elem_entry(item);
+                    record_quanthash_original(&mut original_keys, &key, &elem);
+                    *weights.entry(key).or_insert(0.0) += 1.0;
                 }
                 // Use `base_class_name` (not `class_name.resolve()`) so a
                 // parameterized `MixHash[T]` is still recognized as the mutable
                 // variant — `class_name.resolve()` would be "MixHash[T]".
                 let is_hash_variant = base_class_name == "MixHash";
-                let result = if has_non_str_keys {
-                    if is_hash_variant {
-                        Value::mix_hash_with_original_keys(weights, original_keys)
-                    } else {
-                        Value::mix_with_original_keys(weights, original_keys)
-                    }
-                } else if is_hash_variant {
-                    Value::mix_hash(weights)
+                let result = if is_hash_variant {
+                    Value::mix_hash_with_original_keys(weights, original_keys)
                 } else {
-                    Value::mix(weights)
+                    Value::mix_with_original_keys(weights, original_keys)
                 };
                 // For a parameterized Mix[T]/MixHash[T] embed the element type so
                 // later element binding (`$m{42} = 1`) can type-check the key.

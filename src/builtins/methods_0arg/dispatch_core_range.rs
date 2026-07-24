@@ -170,7 +170,7 @@ pub(super) fn dispatch(
                     if idx >= keys.len() {
                         idx = keys.len() - 1;
                     }
-                    Some(Ok(Value::str(keys[idx].clone())))
+                    Some(Ok(items.typed_key(keys[idx])))
                 }
             }
             ValueView::Hash(items) => {
@@ -231,7 +231,7 @@ pub(super) fn dispatch(
                 if idx >= keys.len() {
                     idx = keys.len() - 1;
                 }
-                return Some(Some(Ok(Value::str(keys[idx].clone()))));
+                return Some(Some(Ok(items.typed_key(keys[idx]))));
             }
             // Try efficient range sampling first
             if let Some(v) = sample_one_from_range(target) {
@@ -263,8 +263,8 @@ pub(super) fn dispatch(
                         idx = items.len() - 1;
                     }
                     let (key, count) = items.iter().nth(idx).expect("index in range");
-                    Some(Ok(Value::pair(
-                        key.clone(),
+                    Some(Ok(crate::runtime::utils::quanthash_typed_pair(
+                        items.typed_key(key),
                         Value::from_bigint(count.clone()),
                     )))
                 }
@@ -279,7 +279,10 @@ pub(super) fn dispatch(
                         idx = items.len() - 1;
                     }
                     let key = items.iter().nth(idx).expect("index in range");
-                    Some(Ok(Value::pair(key.clone(), Value::TRUE)))
+                    Some(Ok(crate::runtime::utils::quanthash_typed_pair(
+                        items.typed_key(key),
+                        Value::TRUE,
+                    )))
                 }
             }
             ValueView::Mix(items, _) => {
@@ -292,8 +295,8 @@ pub(super) fn dispatch(
                         idx = items.len() - 1;
                     }
                     let (key, weight) = items.iter().nth(idx).expect("index in range");
-                    Some(Ok(Value::pair(
-                        key.clone(),
+                    Some(Ok(crate::runtime::utils::quanthash_typed_pair(
+                        items.typed_key(key),
                         crate::value::mix_weight_to_value(*weight),
                     )))
                 }

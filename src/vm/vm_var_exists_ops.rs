@@ -409,7 +409,8 @@ impl Interpreter {
                 }
             }
             if let ValueView::Set(set, _) = target.view() {
-                let exists_for_key = |key: &Value| set.contains(&key.to_string_value());
+                let exists_for_key =
+                    |key: &Value| set.contains(&crate::runtime::utils::quanthash_elem_entry(key).0);
                 let result = match idx.view() {
                     ValueView::Array(items, ..) => Value::array(
                         items
@@ -423,7 +424,9 @@ impl Interpreter {
                 return Ok(());
             }
             if let ValueView::Bag(bag, _) = target.view() {
-                let exists_for_key = |key: &Value| bag.contains_key(&key.to_string_value());
+                let exists_for_key = |key: &Value| {
+                    bag.contains_key(&crate::runtime::utils::quanthash_elem_entry(key).0)
+                };
                 let result = match idx.view() {
                     ValueView::Array(items, ..) => Value::array(
                         items
@@ -437,7 +440,9 @@ impl Interpreter {
                 return Ok(());
             }
             if let ValueView::Mix(mix, _) = target.view() {
-                let exists_for_key = |key: &Value| mix.contains_key(&key.to_string_value());
+                let exists_for_key = |key: &Value| {
+                    mix.contains_key(&crate::runtime::utils::quanthash_elem_entry(key).0)
+                };
                 let result = match idx.view() {
                     ValueView::Array(items, ..) => Value::array(
                         items
@@ -516,57 +521,55 @@ impl Interpreter {
                         None
                     };
                     // For hash access, delegate to single key exists
-                    let exists = match (target.view(), idx.view()) {
-                        (ValueView::Hash(map), ValueView::Str(key)) => {
-                            map.contains_key(key.as_str())
-                        }
-                        (ValueView::Hash(map), _) => map.contains_key(
-                            &pkg_key.clone().unwrap_or_else(|| idx.to_string_value()),
-                        ),
-                        (ValueView::Set(set, _), ValueView::Str(key)) => set.contains(key.as_str()),
-                        (ValueView::Set(set, _), _) => set.contains(&idx.to_string_value()),
-                        (ValueView::Bag(bag, _), ValueView::Str(key)) => {
-                            bag.contains_key(key.as_str())
-                        }
-                        (ValueView::Bag(bag, _), _) => bag.contains_key(&idx.to_string_value()),
-                        (ValueView::Mix(mix, _), ValueView::Str(key)) => {
-                            mix.contains_key(key.as_str())
-                        }
-                        (ValueView::Mix(mix, _), _) => mix.contains_key(&idx.to_string_value()),
-                        (
-                            ValueView::Instance {
-                                class_name,
-                                attributes,
-                                ..
-                            },
-                            ValueView::Str(key),
-                        ) if class_name == "Stash" => {
-                            if let Some(ValueView::Hash(symbols)) =
-                                attributes.as_map().get("symbols").map(Value::view)
-                            {
-                                symbols.contains_key(key.as_str())
-                            } else {
-                                false
+                    let exists =
+                        match (target.view(), idx.view()) {
+                            (ValueView::Hash(map), ValueView::Str(key)) => {
+                                map.contains_key(key.as_str())
                             }
-                        }
-                        (
-                            ValueView::Instance {
-                                class_name,
-                                attributes,
-                                ..
-                            },
-                            _,
-                        ) if class_name == "Stash" => {
-                            if let Some(ValueView::Hash(symbols)) =
-                                attributes.as_map().get("symbols").map(Value::view)
-                            {
-                                symbols.contains_key(&idx.to_string_value())
-                            } else {
-                                false
+                            (ValueView::Hash(map), _) => map.contains_key(
+                                &pkg_key.clone().unwrap_or_else(|| idx.to_string_value()),
+                            ),
+                            (ValueView::Set(set, _), _) => {
+                                set.contains(&crate::runtime::utils::quanthash_elem_entry(&idx).0)
                             }
-                        }
-                        _ => false,
-                    };
+                            (ValueView::Bag(bag, _), _) => bag
+                                .contains_key(&crate::runtime::utils::quanthash_elem_entry(&idx).0),
+                            (ValueView::Mix(mix, _), _) => mix
+                                .contains_key(&crate::runtime::utils::quanthash_elem_entry(&idx).0),
+                            (
+                                ValueView::Instance {
+                                    class_name,
+                                    attributes,
+                                    ..
+                                },
+                                ValueView::Str(key),
+                            ) if class_name == "Stash" => {
+                                if let Some(ValueView::Hash(symbols)) =
+                                    attributes.as_map().get("symbols").map(Value::view)
+                                {
+                                    symbols.contains_key(key.as_str())
+                                } else {
+                                    false
+                                }
+                            }
+                            (
+                                ValueView::Instance {
+                                    class_name,
+                                    attributes,
+                                    ..
+                                },
+                                _,
+                            ) if class_name == "Stash" => {
+                                if let Some(ValueView::Hash(symbols)) =
+                                    attributes.as_map().get("symbols").map(Value::view)
+                                {
+                                    symbols.contains_key(&idx.to_string_value())
+                                } else {
+                                    false
+                                }
+                            }
+                            _ => false,
+                        };
                     let result = Value::truth(exists ^ effective_negated);
                     self.stack.push(result);
                     return Ok(());

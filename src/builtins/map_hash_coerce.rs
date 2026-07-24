@@ -106,11 +106,15 @@ where
     let mut map = HashMap::new();
     let mut original_keys = HashMap::new();
     let mut has_typed = false;
-    for (k, weight, typed) in entries {
-        map.insert(k.clone(), value_for(&weight));
-        if !matches!(typed.view(), ValueView::Str(sv) if sv.as_ref() == &k) {
+    // The QuantHash store key is a `.WHICH` string; the produced Hash is
+    // display-string-keyed (raku: `$set.Hash<a>` works), with the element
+    // object recorded so `.keys` keeps its type.
+    for (_k, weight, typed) in entries {
+        let display = typed.to_string_value();
+        map.insert(display.clone(), value_for(&weight));
+        if !matches!(typed.view(), ValueView::Str(_)) {
             has_typed = true;
-            original_keys.insert(k, typed);
+            original_keys.insert(display, typed);
         }
     }
     let mut result = Value::hash(map);
