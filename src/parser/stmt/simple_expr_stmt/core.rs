@@ -67,6 +67,33 @@ fn lvalue_assign_to_expr(lvalue: Expr, rhs: Expr) -> Expr {
                 method_lvalue_assign_expr(*target, target_var_name, method_name, args, rhs)
             }
         }
+        // An indirect method-call lvalue (`$o."$name"() = v` — an rw accessor
+        // whose name is computed at runtime). Mirror the `MethodCall` arm above but
+        // pass the name expression through instead of a literal, so it writes back
+        // through the accessor rather than being mis-lowered to a callable lvalue
+        // (which threw "cannot assign through non-callable value").
+        Expr::DynamicMethodCall {
+            target,
+            name_expr,
+            args,
+            modifier,
+        } => {
+            let target_var_name = match target.as_ref() {
+                Expr::Var(v) => Some(v.clone()),
+                Expr::ArrayVar(v) => Some(format!("@{}", v)),
+                Expr::HashVar(v) => Some(format!("%{}", v)),
+                Expr::DoStmt(s) => decl_target_var_name(s),
+                _ => None,
+            };
+            crate::parser::stmt::assign::dynamic_method_lvalue_assign_expr(
+                *target,
+                target_var_name,
+                *name_expr,
+                modifier,
+                args,
+                rhs,
+            )
+        }
         Expr::Call { name, args } => named_sub_lvalue_assign_expr(name.resolve(), args, rhs),
         Expr::CallOn { target, args } => callable_lvalue_assign_expr(*target, args, rhs),
         other => callable_lvalue_assign_expr(other, Vec::new(), rhs),

@@ -31,6 +31,46 @@ pub(crate) fn method_lvalue_assign_expr(
     }
 }
 
+/// Lower an assignment whose lvalue is an indirect method call
+/// (`$o."$name"() = value`) to the same rw-accessor writeback as a literal
+/// method-call lvalue, but with the method name computed at runtime. The name
+/// expression is passed as `__mutsu_assign_method_lvalue`'s method-name argument
+/// (evaluated eagerly to a string), so `$o."x"() = v` writes through the `x`
+/// accessor exactly like `$o.x = v`. A private indirect call (`$o!"$name"()`,
+/// `modifier: Some('!')`) prefixes `!` so it dispatches to the private accessor.
+pub(crate) fn dynamic_method_lvalue_assign_expr(
+    target: Expr,
+    target_var_name: Option<String>,
+    name_expr: Expr,
+    modifier: Option<char>,
+    method_args: Vec<Expr>,
+    value: Expr,
+) -> Expr {
+    let name_expr = if modifier == Some('!') {
+        Expr::Binary {
+            left: Box::new(Expr::Literal(Value::str_from("!"))),
+            op: crate::token_kind::TokenKind::Tilde,
+            right: Box::new(name_expr),
+        }
+    } else {
+        name_expr
+    };
+    let args = vec![
+        target,
+        name_expr,
+        Expr::ArrayLiteral(method_args),
+        value,
+        match target_var_name {
+            Some(name) => Expr::Literal(Value::str(name)),
+            None => Expr::Literal(Value::NIL),
+        },
+    ];
+    Expr::Call {
+        name: Symbol::intern("__mutsu_assign_method_lvalue"),
+        args,
+    }
+}
+
 pub(crate) fn named_sub_lvalue_assign_expr(
     name: String,
     call_args: Vec<Expr>,

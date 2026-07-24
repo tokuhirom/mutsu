@@ -87,8 +87,8 @@ pub(crate) use compound_expr::{
     build_compound_assign_expr, build_custom_compound_assign_expr, build_meta_assign_expr,
 };
 pub(crate) use lvalue::{
-    callable_lvalue_assign_expr, list_lvalue_assign_expr, method_lvalue_assign_expr,
-    named_sub_lvalue_assign_expr, subscript_adverb_lvalue_assign_expr,
+    callable_lvalue_assign_expr, dynamic_method_lvalue_assign_expr, list_lvalue_assign_expr,
+    method_lvalue_assign_expr, named_sub_lvalue_assign_expr, subscript_adverb_lvalue_assign_expr,
 };
 pub(crate) use op::{
     compound_assign_op_from_name, compound_assigned_value_expr, parse_compound_assign_op,
