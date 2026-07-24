@@ -329,6 +329,34 @@ sessions).
       fire in the default configuration, so basic serving is unaffected.
 - [ ] **Template::Mustache remainder** (91/92 specs): delimiter persistence / inheritable partials /
       a lambda + first-spec-only `+$spec.value`=0 subtest/Seq-consumption bug.
+- [ ] **HTTP::UserAgent battery (HTTP client slot, `docs/batteries/http-client.md`).** The whole
+      dependency tree — `HTTP::Status`, `MIME::Base64`, `URI`, `Encode`, `DateTime::Parse`,
+      `File::Temp` (+ `File::Directory::Tree`) — **loads and works on mutsu as-is** (verified: URI
+      parse, base64 round-trip, tempfile, etc.), so those are ready to vendor into `modules/`.
+      `HTTP::UserAgent` itself constructs but a real request is blocked by interpreter bugs surfaced
+      one after another. **Fixed so far (PR #5346):** (1) a named-hash-slurpy multi candidate
+      `(Bool :$bin, *%args)` lost dispatch to a bare `()` (so `HTTP::Request.new(GET => $url)` dropped
+      the URL); (2) a cross-module `proto method` delegation clobbered the enclosing invocant to `Any`
+      (`HTTP::Message.field` → `HTTP::Header.field`). **Open blocker (bug #3):** a `constant NAME` and
+      a scalar `my $NAME` collide by *bare name* — mutsu strips the `$` sigil from scalar names in the
+      AST (`$CRLF` → `Var("CRLF")`), the same bare key a sigilless `constant CRLF` uses. A module-level
+      scalar `my $CRLF` is not written to its package store (`Pkg::CRLF`), so a method that reads it
+      compiles to `GetGlobal("Pkg::CRLF")` and, when a same-named `constant CRLF` from another module
+      has leaked into the bare-name namespace, falls back to that constant. Triggers only when **both**
+      a parent and child class (in separate modules) declare `my $NAME` and a `constant NAME` exists
+      elsewhere — exactly `HTTP::Message`/`HTTP::Request` (both `my $CRLF = "\r\n"`) plus
+      `HTTP::UserAgent`'s `constant CRLF = Buf.new(13,10)`, which turned the request's line-ending into
+      a `Buf` and threw "Cannot use a Buf as a string". Minimal repro (child method reads the constant,
+      not its own `my`):
+      ```
+      # Base.rakumod   unit class Base; my $CRLF = "\r\n"; method b() {1}
+      # Der.rakumod    use Base; unit class Der is Base; my $CRLF = "\r\n"; method read() { $CRLF.^name }
+      # Ua.rakumod     unit class Ua; use Der; constant CRLF = Buf.new(13,10);
+      # run            use Ua; use Der; say Der.read;   # mutsu: Buf   raku: Str
+      ```
+      Root fix is namespace-scoping (a sigilless `constant NAME` must not leak to a bare global that a
+      scalar `$NAME` read resolves to; module-scope scalar `my` needs a package store its own methods
+      can read). Likely more request/response-parsing bugs behind it — this is a dedicated session.
 - [ ] Stored Regex `<$var>` lexical capture loss (found via Tubu; separate axis).
 - 📌 The off-the-shelf `DBDish::SQLite` depends on `MoarVM::Guts::REPRs` (direct emulation of MoarVM
   internal representations) and cannot work in principle = a de-facto wall. Practical SQLite goes
