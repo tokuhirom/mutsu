@@ -1,6 +1,131 @@
 use super::regex_parse::*;
 use super::*;
 
+/// Result of scanning the body of a `< ... >` regex assertion (the opening `<`
+/// is already consumed).
+struct AngleBodyScan {
+    /// The text between the angle brackets, exclusive of the closing `>`.
+    name: String,
+    /// How many characters of the input the scan consumed, *including* the
+    /// closing `>` when one was found.
+    consumed: usize,
+    /// Whether the body terminated properly: the matching `>` was reached with
+    /// no quote left open.
+    closed: bool,
+}
+
+/// Scan the body of a `< ... >` assertion, balancing nested angles, parens,
+/// brackets and braces so that an inner `>` (`<.foo(a => 1)>`) does not
+/// terminate it.
+///
+/// `honor_quotes` controls whether `'`/`"` open a quoted span. Callers scan once
+/// with it on and, if the result is not `closed` (a quote ran off the end of the
+/// input), scan again with it off — an unterminated quote means the character
+/// was a literal word of a `< a b ' c >` alternation rather than a quote opener.
+fn scan_angle_assertion_body(rest: &[char], honor_quotes: bool) -> AngleBodyScan {
+    let mut name = String::new();
+    let mut angle_depth = 1usize;
+    let mut paren_depth: usize = 0;
+    let mut bracket_depth: usize = 0;
+    let mut brace_depth: usize = 0;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    let mut idx = 0usize;
+    while idx < rest.len() {
+        let ch = rest[idx];
+        idx += 1;
+        if let Some(q) = quote {
+            name.push(ch);
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == q {
+                quote = None;
+            }
+            continue;
+        }
+        // Handle backslash escapes: \< and \> should not affect angle_depth,
+        // \[ and \] should not affect bracket_depth, etc.
+        if escaped {
+            escaped = false;
+            name.push(ch);
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            name.push(ch);
+            continue;
+        }
+        // An apostrophe that sits between two identifier characters is part of a
+        // Raku long identifier (e.g. `with'hyphen`), not the start of a quoted
+        // literal. Only treat `'` as a quote opener when it is not flanked by
+        // word characters.
+        let apostrophe_in_ident = ch == '\''
+            && name
+                .chars()
+                .last()
+                .is_some_and(|p| p.is_alphanumeric() || p == '_')
+            && rest
+                .get(idx)
+                .is_some_and(|n| n.is_alphanumeric() || *n == '_');
+        match ch {
+            '\'' if apostrophe_in_ident => {
+                name.push(ch);
+            }
+            '\'' | '"' if honor_quotes && bracket_depth == 0 => {
+                quote = Some(ch);
+                name.push(ch);
+            }
+            '(' => {
+                paren_depth += 1;
+                name.push(ch);
+            }
+            ')' => {
+                paren_depth = paren_depth.saturating_sub(1);
+                name.push(ch);
+            }
+            '[' => {
+                bracket_depth += 1;
+                name.push(ch);
+            }
+            ']' => {
+                bracket_depth = bracket_depth.saturating_sub(1);
+                name.push(ch);
+            }
+            '{' => {
+                brace_depth += 1;
+                name.push(ch);
+            }
+            '}' => {
+                brace_depth = brace_depth.saturating_sub(1);
+                name.push(ch);
+            }
+            '<' if paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 => {
+                angle_depth += 1;
+                name.push(ch);
+            }
+            '>' if paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 => {
+                angle_depth -= 1;
+                if angle_depth == 0 {
+                    return AngleBodyScan {
+                        name,
+                        consumed: idx,
+                        closed: true,
+                    };
+                }
+                name.push(ch);
+            }
+            _ => name.push(ch),
+        }
+    }
+    AngleBodyScan {
+        name,
+        consumed: idx,
+        closed: false,
+    }
+}
+
 impl Interpreter {
     /// Build the alternation atom for a `<@var>` array-variable subrule: look up
     /// the array variable named by `env_key` (including its `@` sigil) and
@@ -1696,103 +1821,25 @@ impl Interpreter {
                             // strings so `<.foo(a => 1)>` and `<.foo(|[3,4,5])>`
                             // are not terminated by the inner `>` or by close
                             // brackets that match opens inside the args list.
-                            let mut name = String::new();
-                            let mut angle_depth = 1usize;
-                            let mut paren_depth: usize = 0;
-                            let mut bracket_depth: usize = 0;
-                            let mut brace_depth: usize = 0;
-                            let mut quote: Option<char> = None;
-                            let mut escaped = false;
-                            while let Some(ch) = chars.next() {
-                                if let Some(q) = quote {
-                                    name.push(ch);
-                                    if escaped {
-                                        escaped = false;
-                                    } else if ch == '\\' {
-                                        escaped = true;
-                                    } else if ch == q {
-                                        quote = None;
-                                    }
-                                    continue;
-                                }
-                                // Handle backslash escapes: \< and \> should not
-                                // affect angle_depth, \[ and \] should not affect
-                                // bracket_depth, etc.
-                                if escaped {
-                                    escaped = false;
-                                    name.push(ch);
-                                    continue;
-                                }
-                                if ch == '\\' {
-                                    escaped = true;
-                                    name.push(ch);
-                                    continue;
-                                }
-                                // An apostrophe that sits between two identifier
-                                // characters is part of a Raku long identifier
-                                // (e.g. `with'hyphen`), not the start of a quoted
-                                // literal. Only treat `'` as a quote opener when it
-                                // is not flanked by word characters.
-                                let apostrophe_in_ident = ch == '\''
-                                    && name
-                                        .chars()
-                                        .last()
-                                        .is_some_and(|p| p.is_alphanumeric() || p == '_')
-                                    && chars
-                                        .peek()
-                                        .is_some_and(|n| n.is_alphanumeric() || *n == '_');
-                                match ch {
-                                    '\'' if apostrophe_in_ident => {
-                                        name.push(ch);
-                                    }
-                                    '\'' | '"' if bracket_depth == 0 => {
-                                        quote = Some(ch);
-                                        name.push(ch);
-                                    }
-                                    '(' => {
-                                        paren_depth += 1;
-                                        name.push(ch);
-                                    }
-                                    ')' => {
-                                        paren_depth = paren_depth.saturating_sub(1);
-                                        name.push(ch);
-                                    }
-                                    '[' => {
-                                        bracket_depth += 1;
-                                        name.push(ch);
-                                    }
-                                    ']' => {
-                                        bracket_depth = bracket_depth.saturating_sub(1);
-                                        name.push(ch);
-                                    }
-                                    '{' => {
-                                        brace_depth += 1;
-                                        name.push(ch);
-                                    }
-                                    '}' => {
-                                        brace_depth = brace_depth.saturating_sub(1);
-                                        name.push(ch);
-                                    }
-                                    '<' if paren_depth == 0
-                                        && bracket_depth == 0
-                                        && brace_depth == 0 =>
-                                    {
-                                        angle_depth += 1;
-                                        name.push(ch);
-                                    }
-                                    '>' if paren_depth == 0
-                                        && bracket_depth == 0
-                                        && brace_depth == 0 =>
-                                    {
-                                        angle_depth -= 1;
-                                        if angle_depth == 0 {
-                                            break;
-                                        }
-                                        name.push(ch);
-                                    }
-                                    _ => name.push(ch),
-                                }
+                            // Scan honouring quotes first. A quote that never closes
+                            // means the `'`/`"` was not a quote opener at all but a
+                            // literal word of a `< ... >` alternation (Raku takes a
+                            // lone `'` there as the one-character word `'`, e.g. the
+                            // HTTP tchar set `< ! # $ % & ' * + - . ^ _ \` | ~ >`).
+                            // Honouring it swallowed the closing `>` and everything
+                            // after it, silently dropping the assertion's quantifier
+                            // — `< ! ' # >+` matched exactly once. Re-scan with quote
+                            // tracking off in that case; a properly closed quote keeps
+                            // the original behaviour.
+                            let rest: Vec<char> = chars.clone().collect();
+                            let scanned = match scan_angle_assertion_body(&rest, true) {
+                                scan @ AngleBodyScan { closed: true, .. } => scan,
+                                _ => scan_angle_assertion_body(&rest, false),
+                            };
+                            for _ in 0..scanned.consumed {
+                                chars.next();
                             }
+                            let mut name = scanned.name;
                             // Check for word alternation: < word1 word2 ... >
                             // In Raku, when the first character after `<` is
                             // whitespace (space or tab), the contents are treated

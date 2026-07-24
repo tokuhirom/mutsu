@@ -60,12 +60,19 @@ impl Interpreter {
                 escaped = true;
                 continue;
             }
-            if ch == '\'' && !in_double_quote {
+            // Inside a `<...>` assertion, `'` and `"` are ordinary characters, not
+            // quote delimiters: a `< a b ' c >` alternation may list a lone quote
+            // as a one-character word (the HTTP `tchar` set does). Toggling on it
+            // left the scanner "inside a string" for the rest of the pattern, so a
+            // following `||` never split. The split operators below all require
+            // `depth_angle == 0` anyway, so an assertion's contents cannot produce
+            // a spurious split and need no quote tracking at all.
+            if ch == '\'' && !in_double_quote && depth_angle == 0 {
                 in_single_quote = !in_single_quote;
                 current.push(ch);
                 continue;
             }
-            if ch == '"' && !in_single_quote {
+            if ch == '"' && !in_single_quote && depth_angle == 0 {
                 in_double_quote = !in_double_quote;
                 current.push(ch);
                 continue;
@@ -168,12 +175,15 @@ impl Interpreter {
                 escaped = true;
                 continue;
             }
-            if ch == '\'' && !in_double_quote {
+            // See `split_top_level_alternation`: `'`/`"` inside a `<...>` assertion
+            // are literal word characters, and the `&`/`&&` split below requires
+            // `depth_angle == 0`, so quote tracking must pause inside an assertion.
+            if ch == '\'' && !in_double_quote && depth_angle == 0 {
                 in_single_quote = !in_single_quote;
                 current.push(ch);
                 continue;
             }
-            if ch == '"' && !in_single_quote {
+            if ch == '"' && !in_single_quote && depth_angle == 0 {
                 in_double_quote = !in_double_quote;
                 current.push(ch);
                 continue;
