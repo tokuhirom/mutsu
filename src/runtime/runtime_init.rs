@@ -2081,6 +2081,7 @@ impl Interpreter {
             end_phaser_sites: HashSet::new(),
             chroot_root: None,
             loaded_modules: HashSet::new(),
+            module_registered_functions: HashSet::new(),
             need_hidden_classes: HashSet::new(),
             cur_repo: Box::new(CurRepoState::default()),
             package_stash_hidden: HashSet::new(),

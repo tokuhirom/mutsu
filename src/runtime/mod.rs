@@ -907,6 +907,16 @@ pub struct Interpreter {
     end_phaser_sites: HashSet<u64>,
     chroot_root: Option<PathBuf>,
     loaded_modules: HashSet<String>,
+    /// Package-qualified routine keys a module load introduced (`M::helper`,
+    /// `M::EXPORT::ALL::foo`) — never the bare `GLOBAL::` import aliases, which
+    /// stay lexical to the importing scope.
+    ///
+    /// `loaded_modules` is never rolled back, so these must not be either: a
+    /// scope that restores the routine registry wholesale (a bare block, an
+    /// `EVAL`) would otherwise leave the module marked as loaded while its own
+    /// routines are gone, and a re-`use` — being a no-op — could not bring them
+    /// back. See `reinstate_module_functions`.
+    module_registered_functions: HashSet<Symbol>,
     need_hidden_classes: HashSet<String>,
     /// CompUnit::Repository::Installation state (`.loaded` units and the symbols
     /// pulled in by `.need` but not yet merged into GLOBAL).
