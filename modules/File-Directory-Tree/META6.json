@@ -1,0 +1,32 @@
+{
+  "auth": "zef:raku-community-modules",
+  "authors": [
+    "Brent Laabs",
+    "Paul Cochrane",
+    "Zoffix Znet"
+  ],
+  "build-depends": [
+  ],
+  "depends": [
+  ],
+  "description": "Create, delete and empty directories",
+  "license": "Artistic-2.0",
+  "name": "File::Directory::Tree",
+  "perl": "6.d",
+  "production": true,
+  "provides": {
+    "File::Directory::Tree": "lib/File/Directory/Tree.rakumod"
+  },
+  "raku": "6.d",
+  "resources": [
+  ],
+  "source-url": "https://github.com/raku-community-modules/File-Directory-Tree.git",
+  "tags": [
+    "MKTREE",
+    "RMTREE",
+    "EMPTY"
+  ],
+  "test-depends": [
+  ],
+  "version": "0.2"
+}

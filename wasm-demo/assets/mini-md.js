@@ -8,6 +8,8 @@
  * scheme. The supported subset is what those READMEs actually use:
  *
  *   - fenced code blocks (``` … ```), with an optional language label
+ *   - indented code blocks (4+ spaces or a tab); like CommonMark they may not
+ *     interrupt a paragraph, so they only start after a blank line
  *   - ATX headers (`#`..`######`) and setext headers (a line underlined with
  *     `===` → h2, `---` → h3 — h1 is reserved for the library name the page
  *     draws itself)
@@ -130,6 +132,34 @@ export function renderMarkdown(src) {
       const pre = document.createElement('pre');
       const code = document.createElement('code');
       if (fence[1]) code.dataset.lang = fence[1];
+      code.textContent = buf.join('\n');
+      pre.appendChild(code);
+      frag.appendChild(pre);
+      continue;
+    }
+
+    // indented code block (4+ spaces or a tab). Older READMEs — DateTime::Parse's
+    // Synopsis, for one — write their examples this way rather than fenced. Like
+    // CommonMark, an indented block may not interrupt a paragraph, so it only
+    // starts after a blank line; that also keeps a wrapped paragraph whose
+    // continuation happens to be indented from turning into code.
+    if ((i === 0 || /^\s*$/.test(lines[i - 1])) && /^(?: {4}|\t)/.test(line)) {
+      const buf = [];
+      while (i < lines.length) {
+        if (/^\s*$/.test(lines[i])) {
+          // A blank run belongs to the block only when indented code follows it.
+          let j = i;
+          while (j < lines.length && /^\s*$/.test(lines[j])) j++;
+          if (j >= lines.length || !/^(?: {4}|\t)/.test(lines[j])) break;
+          while (i < j) { buf.push(''); i++; }
+          continue;
+        }
+        if (!/^(?: {4}|\t)/.test(lines[i])) break;
+        buf.push(lines[i].replace(/^(?: {4}|\t)/, ''));
+        i++;
+      }
+      const pre = document.createElement('pre');
+      const code = document.createElement('code');
       code.textContent = buf.join('\n');
       pre.appendChild(code);
       frag.appendChild(pre);

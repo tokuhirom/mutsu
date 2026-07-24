@@ -1,0 +1,22 @@
+Revision history for MIME-Base64
+
+{{$NEXT}}
+
+1.2.5  2025-09-01T12:02:11+02:00
+    - Fix test on big-endian systems, sertonix++
+
+1.2.4  2025-08-02T11:56:39+02:00
+    - Move documentation to separate file
+    - Update copyright year
+    - Integrate submodule into main module: no need to exist
+      separately
+    - Some minor optimizations
+    - Add coverage tests
+    - Add CI badge for each OS
+
+1.2.3  2022-02-09T18:34:18+01:00
+    - Add support for :eol to "encode-str" and "encode", as discussed in
+      issue #10
+
+1.2.2  2022-02-09T15:54:44+01:00
+    - Initial version on the zef ecosystem using App::Mi6

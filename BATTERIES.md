@@ -145,6 +145,17 @@ license compliance is mandatory, not optional.
 - **Record the license** in the library's selection record and in the bundle
   index below.
 - **mutsu's own license** must remain compatible with everything it bundles.
+- **A dist that simply *states* no license is a hard case, not automatically a
+  copyleft one.** Much of the older ecosystem omits the field by oversight. If a
+  needed dependency has no statement, the default is still "do not bundle" — but
+  it may be bundled **provisionally** when all of: (a) the omission plausibly is
+  an oversight (the author's sibling dists are permissive), (b) the clarification
+  is **actually being pursued upstream**, with the issue linked from the
+  library's record and the [bundle index](#7-bundle-index), and (c) the record
+  spells out the exit path if the answer is unfavourable (remove it; route
+  around it). `Encode` is the one library currently in this state — see
+  [http-deps.md](docs/batteries/http-deps.md). It is an exception with a
+  deadline, not a relaxation of the rule.
 
 ## 5. Documentation requirement
 
@@ -221,10 +232,11 @@ the HTTP client on top of it.
 | Battery | Provider | Kind | License | Status | Record |
 | --- | --- | --- | --- | --- | --- |
 | TLS / HTTPS socket (foundation) | `OpenSSL` + `IO::Socket::SSL` | Adopted | MIT / MIT | **Working** — vendored + zero-config `use`; a real `https://` GET runs end-to-end. Needs system `libssl` at runtime. | [tls-openssl.md](docs/batteries/tls-openssl.md) |
-| HTTP client | `HTTP::UserAgent` (`zef:sergot`), leaning; `HTTP::Tiny` alt. | Adopted | MIT / Artistic-2.0 | Planned — sequenced after the TLS foundation | [http-client.md](docs/batteries/http-client.md) |
+| HTTP client dependency layer | `URI` + `MIME::Base64` + `HTTP::Status` + `DateTime::Parse` + `Encode` + `File::Directory::Tree` | Adopted | Artistic-2.0 ×4 / MIT / **`Encode`: pending** | **Working** — vendored + zero-config `use`; all 32 upstream test files pass against the bundled copy. ⚠️ `Encode` ships ahead of a stated license — [clarification pending upstream](https://github.com/sergot/perl6-encode/issues/17), see the record | [http-deps.md](docs/batteries/http-deps.md) |
+| HTTP client | `HTTP::UserAgent` (`zef:sergot`), leaning; `HTTP::Tiny` alt. | Adopted | MIT / Artistic-2.0 | Planned — dependency layer above is in place; `File::Temp` follows | [http-client.md](docs/batteries/http-client.md) |
 | JSON | native `to-json` / `from-json` | Native | — | Working | — |
 
 Other modules with a proven working record (Template::Mustache, File::Temp,
-File::Directory::Tree, HTTP::Parser, MIME::Base64, HTTP::Server::Tiny,
-NativeCall MVP, the Zef CLI) are tracked in `PLAN.md` §1 and are folded into this
-index as their bundling + documentation is finalized.
+HTTP::Parser, HTTP::Server::Tiny, NativeCall MVP, the Zef CLI) are tracked in
+`PLAN.md` §1 and are folded into this index as their bundling + documentation is
+finalized.

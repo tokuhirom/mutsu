@@ -1,0 +1,37 @@
+{
+  "auth": "zef:raku-community-modules",
+  "authors": [
+    "Raku community"
+  ],
+  "build-depends": [
+  ],
+  "depends": [
+  ],
+  "description": "A URI implementation using Raku grammars to implement RFC 3986 BNF",
+  "license": "Artistic-2.0",
+  "meta-version": 1,
+  "name": "URI",
+  "provides": {
+    "IETF::RFC_Grammar": "lib/IETF/RFC_Grammar.rakumod",
+    "IETF::RFC_Grammar::IPv6": "lib/IETF/RFC_Grammar/IPv6.rakumod",
+    "IETF::RFC_Grammar::URI": "lib/IETF/RFC_Grammar/URI.rakumod",
+    "URI": "lib/URI.rakumod",
+    "URI::DefaultPort": "lib/URI/DefaultPort.rakumod",
+    "URI::Escape": "lib/URI/Escape.rakumod",
+    "URI::Path": "lib/URI/Path.rakumod",
+    "URI::Query": "lib/URI/Query.rakumod"
+  },
+  "raku": "6.d",
+  "resources": [
+  ],
+  "source-url": "https://github.com/raku-community-modules/URI.git",
+  "support": {
+    "bugtracker": "https://github.com/raku-community-modules/URI/issues",
+    "source": "https://github.com/raku-community-modules/URI.git"
+  },
+  "tags": [
+  ],
+  "test-depends": [
+  ],
+  "version": "0.3.8"
+}

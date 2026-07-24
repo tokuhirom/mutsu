@@ -1,0 +1,36 @@
+{
+  "auth": "zef:raku-community-modules",
+  "authors": [
+    "Adrian White"
+  ],
+  "build-depends": [
+  ],
+  "depends": [
+  ],
+  "description": "Encoding and decoding Base64 ASCII strings",
+  "license": "Artistic-2.0",
+  "name": "MIME::Base64",
+  "perl": "6.d",
+  "production": true,
+  "provides": {
+    "MIME::Base64": "lib/MIME/Base64.rakumod"
+  },
+  "raku": "6.d",
+  "resources": [
+  ],
+  "source-url": "https://github.com/raku-community-modules/MIME-Base64.git",
+  "support": {
+    "bugtracker": "https://github.com/raku-community-modules/MIME-Base64/issues",
+    "email": "community@raku.org",
+    "source": "git://github.com/raku-community-modules/MIME-Base64.git"
+  },
+  "tags": [
+    "MIME",
+    "BASE64",
+    "ENCODING",
+    "DECODING"
+  ],
+  "test-depends": [
+  ],
+  "version": "1.2.5"
+}

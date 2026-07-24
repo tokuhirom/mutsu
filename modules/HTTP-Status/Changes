@@ -1,0 +1,29 @@
+Revision history for HTTP::Status
+
+{{$NEXT}}
+
+0.0.5  2025-01-10T12:46:20+01:00
+    - Add CI badge for each OS
+    - Update copyright year
+
+0.0.4  2022-05-28T19:08:40+02:00
+    - Fixed issue with status code 599 (it was missing)
+    - Added class methods .keys, .values, .kv, .pairs, .Map, .Hash
+    - Added tests for new class methods
+
+0.0.3  2021-11-26T14:33:27+01:00
+    - Add documentation and test for .source class method
+    - Change adding code example
+    - Add test for invalid code
+
+0.0.2  2021-11-25T22:07:59+01:00
+    - Taken over from community modules (Timothy Totten)
+    - Refactored to modern use of Raku capabilities
+    - Returns a HTTP::Status object rather than just a string
+    - Provide a lot more additional information
+    - Add possibility to customize messages
+    - Add extensive pod
+    - Made compatible with App::Mi6
+
+0.0.1  2020-04-29T15:19:10+02:00
+    - Initial version
