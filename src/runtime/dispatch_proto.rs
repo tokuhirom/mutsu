@@ -337,17 +337,53 @@ impl Interpreter {
             .filter(|(_, v)| Self::is_writeback_safe_scalar(v))
             .map(|(k, v)| (*k, v.clone()))
             .collect();
+        // The nested proto dispatch rebinds `env["self"]` to its own invocant and
+        // does not restore the enclosing method's `self` afterward (unlike the
+        // normal method-call path). When a plain method delegates to an attribute
+        // whose class declares a cross-module `proto method` (HTTP::Message.field
+        // -> HTTP::Header.field), the enclosing method's `self` is left holding the
+        // proto's invocant / a stale type object, and the method-return writeback
+        // then commits that back to the caller's variable — turning it into `Any`.
+        // Save and restore the enclosing invocant across the proto dispatch.
+        let saved_self = self.env.get("self").cloned();
         let result =
             self.run_proto_method(target.clone(), &cn, &owner, method, args.to_vec(), proto);
+        match saved_self {
+            Some(v) => {
+                self.env.insert("self".to_string(), v);
+            }
+            None => {
+                self.env.remove("self");
+            }
+        }
         let changed: Vec<String> = self
             .env
             .iter()
             .filter(|(k, v)| {
                 let kn = k.resolve();
+                // `self`/`$_` are the callee's invocant and topic, never a caller
+                // lexical to write back. The nested proto dispatch can leave the
+                // enclosing method's `self` slot holding a type object (a
+                // writeback-safe `Package`); recording it here would clobber the
+                // enclosing invocant on return — a plain method that merely
+                // delegates to an attribute's cross-module `proto method` would
+                // turn its own `self` into `Any` (HTTP::Message.field ->
+                // HTTP::Header.field). Exclude the invocant explicitly.
                 kn != "_"
                     && kn != "$_"
+                    && kn != "self"
+                    && !kn.starts_with("__mutsu_")
                     && Self::is_writeback_safe_scalar(v)
-                    && proto_pre_env.get(*k).map(|p| p != *v).unwrap_or(true)
+                    // Only a name that ALREADY existed as a writeback-safe scalar
+                    // before the proto dispatch and whose value the dispatch
+                    // changed is a genuine caller-lexical mutation to propagate.
+                    // A name that is *new* to env (or was a non-scalar before) is
+                    // internal leakage from the proto run — bareword type objects
+                    // (`Any`/`POuter`), magic vars (`?FILE`), `__mutsu_*` keys, and
+                    // even the caller's own instance var reset to a type object.
+                    // Recording those clobbers the caller (`unwrap_or(true)` turned
+                    // `$o` into `Any`). Require a real pre-existing scalar.
+                    && proto_pre_env.get(*k).map(|p| p != *v).unwrap_or(false)
             })
             .map(|(k, _)| k.resolve())
             .collect();
