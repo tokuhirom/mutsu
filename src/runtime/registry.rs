@@ -67,6 +67,12 @@ pub(crate) struct Registry {
     /// passed by pointer, even when the class name is lowercase (e.g.
     /// `evp_cipher_st`) and so would not match the name-shape heuristic.
     pub(crate) cstruct_classes: HashSet<String>,
+    /// Classes declared `is repr('CPointer')` — an opaque native handle with no
+    /// declared field layout of its own (OpenSSL's `BIO`). Tracked separately
+    /// from [`cstruct_classes`] because such a class has no layout to compute,
+    /// but a *field* of that type is still one pointer wide inside an enclosing
+    /// CStruct.
+    pub(crate) cpointer_classes: HashSet<String>,
     /// Classes marked `is hidden` (excluded from `.^mro` etc.).
     pub(crate) hidden_classes: HashSet<String>,
     /// Forward-declared class stubs (`class Foo { ... }` declared later).

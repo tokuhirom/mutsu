@@ -171,6 +171,7 @@ mod class;
 mod class_dispatch;
 mod class_introspection;
 pub(crate) use class_introspection::UserMethodOrAccessor;
+pub(crate) mod cstruct_layout;
 mod decl_types;
 pub(crate) use self::decl_types::*;
 pub(crate) mod deprecation;

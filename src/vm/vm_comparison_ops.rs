@@ -232,7 +232,13 @@ fn value_to_i64(v: &Value) -> Option<i64> {
 
 impl Interpreter {
     fn parse_numeric_string_for_spaceship(s: &str) -> Result<f64, RuntimeError> {
-        s.trim().parse::<f64>().map_err(|_| {
+        let t = s.trim();
+        // Raku numifies an empty (or whitespace-only) string to 0, so `"" <=> 0`
+        // is `Same` rather than an X::Str::Numeric.
+        if t.is_empty() {
+            return Ok(0.0);
+        }
+        t.parse::<f64>().map_err(|_| {
             RuntimeError::new(format!(
                 "X::Str::Numeric: Cannot convert string '{}' to a number",
                 s
@@ -327,7 +333,10 @@ impl Interpreter {
                 && (is_rationalish(&l) || is_rationalish(&r))
             {
                 Ok(Value::truth(runtime::big_rat_parts_equal(a, b)))
-            } else if l.is_nil() || r.is_nil() {
+            } else if !l.same_variant(&r) || l.is_nil() {
+                // Mirror `==` exactly: operands of different shapes (a Str and
+                // an Int, say) compare as floats. Structural equality here made
+                // `"" != 0` answer True while `"" == 0` answered False.
                 Ok(Value::truth(
                     runtime::to_float_value(&l) == runtime::to_float_value(&r),
                 ))
@@ -375,7 +384,10 @@ impl Interpreter {
                 && (is_rationalish(&l) || is_rationalish(&r))
             {
                 Ok(Value::truth(runtime::big_rat_parts_equal(a, b)))
-            } else if l.is_nil() || r.is_nil() {
+            } else if !l.same_variant(&r) || l.is_nil() {
+                // Mirror `==` exactly: operands of different shapes (a Str and
+                // an Int, say) compare as floats. Structural equality here made
+                // `"" != 0` answer True while `"" == 0` answered False.
                 Ok(Value::truth(
                     runtime::to_float_value(&l) == runtime::to_float_value(&r),
                 ))

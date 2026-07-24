@@ -1284,6 +1284,9 @@ impl Interpreter {
                 } else if let Some(result) = self.try_native_test_function(name, &args) {
                     // Dispatch Test functions straight to their typed handler (lever A).
                     result
+                } else if let Some(result) = self.try_nativecast(name, &args) {
+                    // NativeCall's `nativecast($target-type, $source)` helper.
+                    result
                 } else if let Some(result) = self.try_native_json_function(name, &args) {
                     // Dispatch JSON::Fast / JSON::Tiny `to-json` / `from-json`
                     // to the native implementation (runtime/json.rs).

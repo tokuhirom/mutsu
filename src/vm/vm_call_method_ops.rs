@@ -208,6 +208,13 @@ impl Interpreter {
             return None;
         }
         let cn = class_name.resolve();
+        // An `is repr('CStruct')` handle stores no Raku attributes: its fields
+        // live in the C struct the instance's `address` points at, so the
+        // accessor must read them out of native memory rather than return the
+        // absent (Nil) slot. Bail to the interpreter path, which does that.
+        if self.is_cstruct_class(&cn) {
+            return None;
+        }
         // The fast accessor read proceeds only when the public attribute
         // accessor wins the per-MRO-level race against user methods of the
         // same name: an explicit method at the same or a more-derived level

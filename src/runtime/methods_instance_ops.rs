@@ -1220,6 +1220,13 @@ impl Interpreter {
             }
             // Fallback: auto-generated accessor for public attributes.
             if args.is_empty() {
+                // An `is repr('CStruct')` handle stores no Raku attributes: its
+                // fields live in the C struct the instance's `address` points
+                // at, so the accessor reads them out of native memory
+                // (`$ssl.server`, `nativecast(evp_cipher_st, $c).key_len`).
+                if let Some(field) = self.cstruct_field_value(&target, method) {
+                    return Ok(field);
+                }
                 let cn = class_name.resolve();
                 let class_attrs = self.collect_class_attributes(&cn);
                 // For a *user-declared* class the collected public-attribute list is
@@ -2122,6 +2129,15 @@ impl Interpreter {
                     && let Some(node) = crate::rakuast::construct(&type_name, method, &args)?
                 {
                     return Ok(node);
+                }
+                // A field read on an `is repr('CStruct')` handle: the instance
+                // carries the C pointer, so resolve the name against the
+                // struct's declared field layout and read it out of native
+                // memory (`$ssl.server`, `nativecast(evp_cipher_st, $c).key_len`).
+                if args.is_empty()
+                    && let Some(field) = self.cstruct_field_value(&target, method)
+                {
+                    return Ok(field);
                 }
                 Err(make_method_not_found_error(method, &type_name, false))
             }
