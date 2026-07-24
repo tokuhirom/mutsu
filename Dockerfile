@@ -57,6 +57,8 @@ COPY --from=builder /src/target/release/mutsu /usr/local/bin/mutsu
 COPY --from=builder /src/target/release/mzef  /usr/local/bin/mzef
 COPY --from=builder /src/vendor/zef           /usr/local/share/mutsu/zef
 COPY --from=builder /src/modules              /usr/local/share/mutsu/modules
+# Artistic-2.0 requires the license text to travel with binary distributions.
+COPY --from=builder /src/LICENSE              /usr/local/share/mutsu/LICENSE
 
 # Belt-and-suspenders: the exe-relative resolution already finds the trees above,
 # but pin them explicitly so the shim/interpreter keep working even if the

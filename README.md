@@ -283,6 +283,28 @@ mutsu uses a bytecode VM architecture. Source code is parsed into an AST, compil
 
 See [CLAUDE.md](CLAUDE.md) for development conventions, architecture details, and working agreements. See [PLAN.md](PLAN.md) for the project roadmap.
 
+## License
+
+mutsu is licensed under the **Artistic License 2.0** — see [LICENSE](LICENSE).
+That covers mutsu's own code (`src/`, `t/`, `docs/`, `benchmarks/`, `wasm-demo/`, ...).
+
+This repository also contains a number of **vendored third-party trees, each of
+which keeps its own license**. They are not covered by mutsu's LICENSE:
+
+| Path | What it is | License |
+| --- | --- | --- |
+| `vendor/zef/` | Upstream [Zef](https://github.com/ugexe/zef) package manager, shipped with mutsu as `share/mutsu/zef` | Artistic-2.0 — [`vendor/zef/LICENSE`](vendor/zef/LICENSE) |
+| `modules/OpenSSL/` | Bundled battery, shipped as `share/mutsu/modules` | MIT — `modules/OpenSSL/LICENSE` |
+| `modules/IO-Socket-SSL/` | Bundled battery, shipped as `share/mutsu/modules` | MIT — `modules/IO-Socket-SSL/LICENSE` |
+| `roast/` | Official Raku spec test suite (development only, not shipped) | Artistic-2.0 — `roast/LICENSE` |
+| `roast/3rdparty/Unicode/` | Unicode data files used by roast | Unicode License Agreement — `roast/3rdparty/Unicode/LICENSE` |
+| `roast/3rdparty/wikipedia/` | Wikipedia text used by roast | CC BY-SA 3.0 — `roast/3rdparty/wikipedia/LICENSE` |
+| `raku-doc/` | Raku documentation (development only, not shipped) | Artistic-2.0 — `raku-doc/LICENSE` |
+| `old-design-docs/` | Original Raku design documents (development only, not shipped) | Artistic-2.0 — `old-design-docs/LICENSE` |
+
+The vendored trees are read-only mirrors pinned in `vendor.lock` and refreshed
+only via `scripts/update-vendor.sh` (see [docs/vendoring.md](docs/vendoring.md)).
+
 ## Links
 
 - [Raku documentation](https://docs.raku.org/)
