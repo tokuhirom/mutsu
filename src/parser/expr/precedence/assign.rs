@@ -361,7 +361,19 @@ pub(crate) fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Exp
 }
 
 pub(crate) fn parse_assignment_rhs_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
-    let (rest, first) = ternary_mode(input, mode)?;
+    // Parse each comma element at the *list-infix* level (`list_infix_top`):
+    // everything tighter than the comma plus the list-infix operators (`Z`/`X`/
+    // their meta-ops, the sequence `...`, `minmax`, feed), so `@a[^3] = 1, 2 ... 10`
+    // still folds the whole comma list into one sequence. Crucially this stops
+    // BEFORE the loose word-logicals (`and`/`or`/`xor`/`andthen`/`orelse`/
+    // `notandthen`) — the loosest operators in Raku — so an assignment RHS never
+    // absorbs them: `@a[0] = 8 andthen 0` is `(@a[0] = 8) andthen 0`, not
+    // `@a[0] = (8 andthen 0)`. The trailing word-logical is left in the stream for
+    // the enclosing `and`/`or` chain, which re-attaches it with the whole
+    // assignment as its left operand. (`ternary_mode` used to be called here, but
+    // it wrongly folded the word-logical into the RHS, storing the tail value;
+    // see logic.rs `assign_not_expr_mode`.)
+    let (rest, first) = list_infix_top(input, mode)?;
     let (r, _) = ws(rest)?;
     if !r.starts_with(',') || r.starts_with(",,") {
         return Ok((rest, first));
@@ -375,7 +387,7 @@ pub(crate) fn parse_assignment_rhs_mode(input: &str, mode: ExprMode) -> PResult<
         if r2.is_empty() || r2.starts_with(';') || r2.starts_with('}') || r2.starts_with(')') {
             return Ok((r2, finalize_assignment_rhs_list(items)));
         }
-        let (r3, next) = ternary_mode(r2, mode)?;
+        let (r3, next) = list_infix_top(r2, mode)?;
         items.push(next);
         let (r3, _) = ws(r3)?;
         if !r3.starts_with(',') || r3.starts_with(",,") {
