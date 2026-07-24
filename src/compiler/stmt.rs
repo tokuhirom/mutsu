@@ -2714,6 +2714,10 @@ impl Compiler {
                         name_idx,
                         kind: *kind,
                     });
+                    // Keep the runtime package in step with the compiler's, so
+                    // routines declared after this point register under
+                    // `Foo::name` instead of leaking into `GLOBAL::` (PLAN 8.22).
+                    self.code.emit(OpCode::SetCurrentPackage { name_idx });
                 } else if is_stub_body {
                     // Stub package — register name but don't execute the body
                     let name_idx = self.code.add_constant(Value::str(qualified_name.clone()));

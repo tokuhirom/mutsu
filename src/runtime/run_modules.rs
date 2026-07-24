@@ -450,7 +450,7 @@ impl Interpreter {
     /// Return the name of a top-level `unit module/package/class` statement
     /// in `stmts`, if any. Used by `load_module` to track which unit module
     /// is currently loading so exports can be mirrored under the module name.
-    fn detect_unit_package_name(stmts: &[crate::ast::Stmt]) -> Option<String> {
+    pub(crate) fn detect_unit_package_name(stmts: &[crate::ast::Stmt]) -> Option<String> {
         for s in stmts {
             if let crate::ast::Stmt::Package {
                 name,

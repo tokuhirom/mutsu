@@ -1212,6 +1212,15 @@ pub(crate) enum OpCode {
     ClearPackageStub {
         name_idx: u32,
     },
+    /// Switch the runtime `current_package` for the rest of the compilation
+    /// unit, mirroring what the compiler does to its own `current_package` at a
+    /// `unit module Foo;` / `unit package Foo;` declaration. Routine and package
+    /// registration is keyed off the *runtime* package, so without this a unit
+    /// module's routines register as `GLOBAL::name` and stay callable by their
+    /// bare name from every consumer, `is export` or not (PLAN 8.22).
+    SetCurrentPackage {
+        name_idx: u32,
+    },
 
     // -- Phaser --
     /// Register an END phaser. `site_id` ensures register-once semantics

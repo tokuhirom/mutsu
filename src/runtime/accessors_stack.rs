@@ -228,7 +228,21 @@ impl Interpreter {
         self.current_package.read().unwrap().clone()
     }
 
+    /// The current package as an interned `Symbol`, read from the atomic mirror
+    /// of `current_package`. Cheap enough (one relaxed load) for per-call use on
+    /// the hot dispatch path, where `current_package()`'s `String` clone is not.
+    pub(crate) fn current_package_sym(&self) -> Symbol {
+        Symbol::from_id(
+            self.current_package_sym
+                .load(std::sync::atomic::Ordering::Relaxed),
+        )
+    }
+
     pub(crate) fn set_current_package(&mut self, pkg: String) {
+        self.current_package_sym.store(
+            Symbol::intern(&pkg).id(),
+            std::sync::atomic::Ordering::Relaxed,
+        );
         *self.current_package.write().unwrap() = pkg;
     }
 
@@ -237,6 +251,10 @@ impl Interpreter {
     /// grammar subrule's defining package while parsing its body) does not need
     /// `&mut self`.
     pub(crate) fn set_current_package_shared(&self, pkg: String) {
+        self.current_package_sym.store(
+            Symbol::intern(&pkg).id(),
+            std::sync::atomic::Ordering::Relaxed,
+        );
         *self.current_package.write().unwrap() = pkg;
     }
 }

@@ -702,7 +702,17 @@ impl Interpreter {
                         };
                         let skip_runtime = compile_time_only && non_version_use_count > 1;
                         if !skip_runtime {
-                            self.run_block(&stmts)?;
+                            // A compunit is a fresh compilation unit: run it under
+                            // GLOBAL, not the package of whatever routine called
+                            // `.need` (Test::Compile's `do_compunit` runs in
+                            // `Test::Compile`, which would otherwise register the
+                            // compunit's `package Pod { class Ber {} }` as
+                            // `Test::Compile::Pod::Ber`). Mirrors `load_module`.
+                            let saved_package = self.current_package();
+                            self.set_current_package("GLOBAL".to_string());
+                            let result = self.run_block(&stmts);
+                            self.set_current_package(saved_package);
+                            result?;
                         }
                         self.loaded_modules.insert(short_name_str.clone());
                         let mut attrs = HashMap::new();

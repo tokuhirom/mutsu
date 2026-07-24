@@ -99,6 +99,54 @@ impl Interpreter {
         }
     }
 
+    /// When the routine's package is not GLOBAL, the compiler qualifies bare
+    /// variable references in its body as `$Package::name` (`compile_block_raw`
+    /// seeds the body compiler with the runtime package, and a body compiled on
+    /// its own has no parameter locals to shadow them). Mirror each bound
+    /// parameter under that qualified name so the body's reads find it.
+    ///
+    /// Must run *after* `bind_function_args_values`, and from every path that
+    /// invokes a routine body through `run_block` — `exec_call` lacked it, so an
+    /// `@`/`%` parameter of a routine in a non-GLOBAL package read as empty
+    /// there (`Test::Assuming`'s `is-primed-call` saw `@expect` as `[]`).
+    pub(crate) fn alias_params_into_current_package(&mut self, param_defs: &[ParamDef]) {
+        let cur_pkg = self.current_package().to_string();
+        if cur_pkg == "GLOBAL" {
+            return;
+        }
+        let qualified_aliases: Vec<(String, Value)> = param_defs
+            .iter()
+            .filter_map(|pd| {
+                let bare = pd
+                    .name
+                    .strip_prefix('$')
+                    .or_else(|| pd.name.strip_prefix('@'))
+                    .or_else(|| pd.name.strip_prefix('%'))
+                    .or_else(|| pd.name.strip_prefix('&'));
+                if let Some(bare) = bare {
+                    self.env.get(&pd.name).cloned().map(|v| {
+                        let sigil = &pd.name[..pd.name.len() - bare.len()];
+                        (format!("{}{}::{}", sigil, cur_pkg, bare), v)
+                    })
+                } else if !pd.name.is_empty()
+                    && !pd.name.starts_with('_')
+                    && !pd.name.starts_with('!')
+                    && !pd.name.contains("::")
+                {
+                    self.env
+                        .get(&pd.name)
+                        .cloned()
+                        .map(|v| (format!("{}::{}", cur_pkg, pd.name), v))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        for (key, val) in qualified_aliases {
+            self.env.insert(key, val);
+        }
+    }
+
     /// Call a specific FunctionDef directly, bypassing the built-in function dispatch.
     /// Used for user-defined operator overrides.
     pub(crate) fn call_function_def(
@@ -142,44 +190,7 @@ impl Interpreter {
                 ));
             }
         };
-        // When the function's package is not GLOBAL, the Compiler qualifies
-        // bare variable references as $Package::name.  Ensure parameter bindings
-        // are also reachable via those qualified names.
-        let cur_pkg = self.current_package().to_string();
-        if cur_pkg != "GLOBAL" {
-            let qualified_aliases: Vec<(String, Value)> = def
-                .param_defs
-                .iter()
-                .filter_map(|pd| {
-                    let bare = pd
-                        .name
-                        .strip_prefix('$')
-                        .or_else(|| pd.name.strip_prefix('@'))
-                        .or_else(|| pd.name.strip_prefix('%'))
-                        .or_else(|| pd.name.strip_prefix('&'));
-                    if let Some(bare) = bare {
-                        self.env.get(&pd.name).cloned().map(|v| {
-                            let sigil = &pd.name[..pd.name.len() - bare.len()];
-                            (format!("{}{}::{}", sigil, cur_pkg, bare), v)
-                        })
-                    } else if !pd.name.is_empty()
-                        && !pd.name.starts_with('_')
-                        && !pd.name.starts_with('!')
-                        && !pd.name.contains("::")
-                    {
-                        self.env
-                            .get(&pd.name)
-                            .cloned()
-                            .map(|v| (format!("{}::{}", cur_pkg, pd.name), v))
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            for (key, val) in qualified_aliases {
-                self.env.insert(key, val);
-            }
-        }
+        self.alias_params_into_current_package(&def.param_defs);
         // Push Sub value to block_stack so callframe().code works for nested calls
         let sub_val = Value::make_sub(
             def.package,
@@ -364,6 +375,7 @@ impl Interpreter {
                                 ));
                             }
                         };
+                    self.alias_params_into_current_package(&def.param_defs);
                     let sub_val = Value::make_sub(
                         def.package,
                         def.name,

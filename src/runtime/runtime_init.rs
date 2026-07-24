@@ -1811,6 +1811,9 @@ impl Interpreter {
             })),
             program_path: None,
             current_package: Arc::new(RwLock::new("GLOBAL".to_string())),
+            current_package_sym: Arc::new(std::sync::atomic::AtomicU32::new(
+                crate::symbol::Symbol::intern("GLOBAL").id(),
+            )),
             routine_stack: Vec::new(),
             callframe_stack: Vec::new(),
             method_class_stack: Vec::new(),

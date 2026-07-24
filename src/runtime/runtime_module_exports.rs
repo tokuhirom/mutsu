@@ -375,8 +375,17 @@ impl Interpreter {
                     }
                 })
                 .collect();
+            let imported_proto = !proto_entries.is_empty();
             for (k, v) in proto_entries {
                 self.registry_mut().proto_functions.insert(k, v);
+            }
+            // `has_proto` consults the `proto_subs` name set, not just
+            // `proto_functions`, so an imported proto has to be recorded there
+            // under the importing package too. (Before unit-module routines
+            // registered under their own package, a module's proto was already
+            // in `proto_subs` as `GLOBAL::name` and this was invisible.)
+            if imported_proto {
+                self.registry_mut().proto_subs.insert(target_single.clone());
             }
 
             // If this exported sub carried a trait-modified value (e.g. a role

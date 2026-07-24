@@ -1578,6 +1578,17 @@ impl Compiler {
             self.code.compute_needs_env_sync();
             return (self.code, self.compiled_functions);
         }
+        // A `unit module Foo;` puts the whole rest of the compilation unit in
+        // package Foo. Switch the *runtime* package before the hoist pass, not
+        // when the declaration's own opcodes run: the hoisted `RegisterSub`s are
+        // emitted first, and registration is keyed off the runtime package, so
+        // hoisting under GLOBAL would install a second, bare-named copy of every
+        // routine that stays callable from the consumer's scope (PLAN 8.22).
+        // The compiler's own `current_package` is still switched by the
+        // declaration itself, so this must not qualify anything here.
+        if let Some(name_idx) = self.unit_package_name_const(stmts) {
+            self.code.emit(OpCode::SetCurrentPackage { name_idx });
+        }
         self.hoist_sub_decls(stmts, false);
         // Register `our` subs declared inside nested blocks early so they are
         // reachable via `OUR::` before their declaring block runs (Raku

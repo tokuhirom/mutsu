@@ -124,10 +124,24 @@ impl Interpreter {
         let before_env_keys: std::collections::HashSet<Symbol> = self.env.keys().copied().collect();
         let before_class_keys: std::collections::HashSet<String> =
             self.registry().classes.keys().cloned().collect();
-        if let Some(pkg) = package_hint
-            && !pkg.is_empty()
-        {
-            self.set_current_package(pkg.to_string());
+        // A required file is a fresh compilation unit, not a continuation of the
+        // requiring scope: its top-level declarations must not be qualified with
+        // the caller's package (a `require` issued from inside a module's sub —
+        // e.g. Test::Compile's `$repo.need` — would otherwise register the
+        // required file's `package Pod { class Ber {} }` as
+        // `Test::Compile::Pod::Ber`). Mirrors `load_module`.
+        //
+        // The package hint names the package a *hintless* file's declarations
+        // belong to. A file that declares its own `unit module Foo;` sets the
+        // package itself (and the compiler qualifies relative to whatever is
+        // already current), so pre-setting it here would nest it inside itself
+        // as `Foo::Foo`.
+        let unit_declared = Self::detect_unit_package_name(&stmts).is_some();
+        match package_hint {
+            Some(pkg) if !pkg.is_empty() && !unit_declared => {
+                self.set_current_package(pkg.to_string())
+            }
+            _ => self.set_current_package("GLOBAL".to_string()),
         }
         let run_result = self.run_block(&stmts);
         self.set_current_package(saved_package);

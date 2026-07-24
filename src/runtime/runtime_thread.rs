@@ -185,6 +185,9 @@ impl Interpreter {
             // Snapshot (fresh lock), not a shared handle: thread-local registry
             // semantics — child sees a copy, writes don't leak to the parent.
             current_package: Arc::new(RwLock::new(self.current_package())),
+            current_package_sym: Arc::new(std::sync::atomic::AtomicU32::new(
+                self.current_package_sym().id(),
+            )),
             routine_stack: Vec::new(),
             callframe_stack: Vec::new(),
             method_class_stack: Vec::new(),
