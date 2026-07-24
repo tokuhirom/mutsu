@@ -36,9 +36,10 @@ own merits.
 
 The bundled OpenSSL battery's `t/04-crypt.rakutest` goes from 1/13 to 6/13 —
 every `encrypt`/`decrypt` call in it goes through that forwarding chain. The
-remaining failures are a separate NativeCall bug (a `Blob` argument passed to a
-native sub is written back into, so the caller's immutable Blob is clobbered),
-recorded in `PLAN.md`.
+remaining failures are a separate, pre-existing locals/env coherence bug:
+calling a `where`-constrained module sub resets an unrelated caller lexical to
+`Any`, so the round-trip assertions compare their plaintext against `Any`. It
+is recorded, with a minimal no-NativeCall reproduction, as PLAN.md 8.22.
 
 Pinned by `t/multi-dispatch-named-before-positional.t`, which passes
 identically under `raku`.
