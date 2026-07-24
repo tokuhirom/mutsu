@@ -252,14 +252,34 @@ impl Interpreter {
 
     pub(super) fn exec_negate_op(&mut self) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap();
-        // Type objects (Mu, Any, etc.) cannot be negated
-        if let ValueView::Package(name) = val.view()
-            && matches!(name.resolve().as_str(), "Mu" | "Any")
-        {
-            return Err(RuntimeError::new(format!(
-                "Cannot resolve caller prefix:<->({}:U); none of these signatures matches:\n    (\\a)",
-                name.resolve()
-            )));
+        // Type objects: `Mu` has no `prefix:<->` candidate (hard error). A class
+        // with a user `Numeric` method dispatches even on the bare type object,
+        // then negates. Every other type object warns and resumes with its
+        // negated per-type numeric *zero* (`-Int` → 0, `-Num` → -0e0,
+        // `-Complex` → 0-0i), matching rakudo — the negate twin of prefix `+`.
+        if let ValueView::Package(name) = val.view() {
+            let n = name.resolve();
+            if n == "Mu" {
+                return Err(RuntimeError::new(format!(
+                    "Cannot resolve caller prefix:<->({}:U); none of these signatures matches:\n    (\\a)",
+                    n
+                )));
+            }
+            let cn = n.to_string();
+            if self.has_user_method(&cn, "Numeric") {
+                let caller_code = self.current_code;
+                let result = self.try_compiled_method_or_interpret(val.clone(), "Numeric", vec![]);
+                self.reconcile_caller_after_internal_dispatch(caller_code);
+                if let Ok(result) = result {
+                    self.stack.push(crate::builtins::arith_negate(result)?);
+                    return Ok(());
+                }
+            }
+            let neg_zero =
+                crate::builtins::arith_negate(Interpreter::type_object_numeric_zero(&cn))?;
+            let resumed = self.warn_type_object_numeric_context_resume(&cn, neg_zero)?;
+            self.stack.push(resumed);
+            return Ok(());
         }
         // For strings, first coerce to numeric (preserving Rat/Complex types and
         // producing X::Str::Numeric for invalid strings), then negate the result.
