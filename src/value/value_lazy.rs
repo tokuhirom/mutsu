@@ -211,6 +211,20 @@ impl LazyList {
             || (self.lazy_pipe.is_some() && !self.pipe_bottoms_out_finite())
     }
 
+    /// Whether this list is genuinely *infinite / unreifiable* — an infinite
+    /// `...` sequence spec, or a lazy map/grep pipe over an infinite source —
+    /// as opposed to a merely `lazy`-marked but *finite* list (`lazy 1, 2`).
+    /// This is `preserve_lazy_on_array_assign` MINUS the `is_lazy_marked` case.
+    ///
+    /// A `[...]` bracket-array keeps only these lazy (`.is-lazy` True, `.elems`
+    /// throws `X::Cannot::Lazy`); a finite `[lazy 1, 2]` still materializes, so
+    /// whole-array reads (`cmp`, element access) that would otherwise mis-read
+    /// the tiny seed cache keep working.
+    pub(crate) fn is_lazy_infinite(&self) -> bool {
+        self.sequence_spec.is_some()
+            || (self.lazy_pipe.is_some() && !self.pipe_bottoms_out_finite())
+    }
+
     /// Whether this list carries the `lazy` prefix marker (set by the `lazy`
     /// statement prefix / `.lazy` method).
     pub(crate) fn is_lazy_marked(&self) -> bool {

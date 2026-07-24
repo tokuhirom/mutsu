@@ -81,6 +81,23 @@ impl Interpreter {
                     self.stack.push(lazy);
                     return;
                 }
+                // A single genuinely-*infinite* lazy list (an infinite `...`
+                // sequence like `[1,2,3...*]` / `[-Inf...Inf]`, or a lazy map/grep
+                // pipe over an infinite source) keeps the `[...]` array lazy,
+                // exactly as `my @a = 1,2,3...*` does: `.is-lazy` is True and
+                // `.elems` throws `X::Cannot::Lazy` instead of eagerly materializing
+                // (which would hang or truncate to the seed cache). Mirrors the
+                // infinite-int-range arm above for the sequence/pipe case. A merely
+                // `lazy`-marked *finite* list (`[lazy 1, 2]`) is deliberately NOT
+                // preserved here — it still materializes so whole-array reads like
+                // `cmp` don't mis-read the seed cache (roast S03-operators/cmp.t
+                // "lazy array comparisons").
+                ValueView::LazyList(ll) if is_real_array && n == 1 && ll.is_lazy_infinite() => {
+                    self.stack.push(Value::lazy_list(crate::gc::Gc::new(
+                        ll.with_array_context(),
+                    )));
+                    return;
+                }
                 // In bracket-array literals (`[...]`), a single element is in
                 // list context and should flatten one level (e.g. `[2..6]`,
                 // `[@a]`, `[(1,2,3)]`), while multi-element forms keep each
