@@ -6,6 +6,7 @@ OpenSSL	05-digest.rakutest
 OpenSSL	06-digest-md5.rakutest
 OpenSSL	07-version.rakutest
 OpenSSL	10-client-ca-file.rakutest
+zef	00-load.rakutest
 zef	build.rakutest
 zef	distribution-depends-parsing.rakutest
 zef	extract.rakutest

@@ -1,6 +1,91 @@
+use std::sync::Arc;
+
+use rustc_hash::{FxHashMap, FxHashSet};
+
 use super::super::*;
+use crate::ast::FunctionDef;
+
+/// Declaration state a subtest body must not leak into its caller.
+///
+/// A subtest body is a block, so anything it declares (`class`, `role`,
+/// `subset`, `sub`, `token`, ...) is lexical to it in Raku and must be rolled
+/// back when the block ends. `use` is lexical too, which is why the set of
+/// loaded modules belongs here: a module first loaded inside a subtest has all
+/// of its declarations rolled back with everything else, so it must also stop
+/// counting as loaded — otherwise a later `use` of it short-circuits as a
+/// no-op and the types stay gone for the rest of the file.
+pub(crate) struct SubtestDeclSnapshot {
+    functions: FxHashMap<Symbol, Arc<FunctionDef>>,
+    proto_functions: FxHashMap<Symbol, Arc<FunctionDef>>,
+    token_defs: FxHashMap<Symbol, Vec<Arc<FunctionDef>>>,
+    proto_subs: FxHashSet<String>,
+    proto_tokens: FxHashSet<String>,
+    classes: FxHashMap<String, ClassDef>,
+    class_trusts: FxHashMap<String, FxHashSet<String>>,
+    roles: FxHashMap<String, RoleDef>,
+    subsets: FxHashMap<String, SubsetDef>,
+    loaded_modules: HashSet<String>,
+    type_metadata: HashMap<String, HashMap<String, Value>>,
+    var_type_constraints: HashMap<String, String>,
+}
 
 impl Interpreter {
+    pub(crate) fn snapshot_subtest_decls(&self) -> SubtestDeclSnapshot {
+        let registry = self.registry();
+        SubtestDeclSnapshot {
+            functions: registry.functions.clone(),
+            proto_functions: registry.proto_functions.clone(),
+            token_defs: registry.token_defs.clone(),
+            proto_subs: registry.proto_subs.clone(),
+            proto_tokens: registry.proto_tokens.clone(),
+            classes: registry.classes.clone(),
+            class_trusts: registry.class_trusts.clone(),
+            roles: registry.roles.clone(),
+            subsets: registry.subsets.clone(),
+            loaded_modules: self.loaded_modules.clone(),
+            type_metadata: self.type_metadata.clone(),
+            var_type_constraints: self.snapshot_var_type_constraints(),
+        }
+    }
+
+    pub(crate) fn restore_subtest_decls(&mut self, snapshot: SubtestDeclSnapshot) {
+        let SubtestDeclSnapshot {
+            functions,
+            proto_functions,
+            token_defs,
+            proto_subs,
+            proto_tokens,
+            classes,
+            class_trusts,
+            roles,
+            subsets,
+            loaded_modules,
+            mut type_metadata,
+            var_type_constraints,
+        } = snapshot;
+        {
+            let mut registry = self.registry_mut();
+            registry.functions = functions;
+            registry.proto_functions = proto_functions;
+            registry.token_defs = token_defs;
+            registry.proto_subs = proto_subs;
+            registry.proto_tokens = proto_tokens;
+            registry.classes = classes;
+            registry.class_trusts = class_trusts;
+            registry.roles = roles;
+            registry.subsets = subsets;
+        }
+        crate::runtime::regex_parse::TOKEN_DEFS_GEN
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.loaded_modules = loaded_modules;
+        // Merge type_metadata: preserve entries added during the subtest
+        for (key, val) in std::mem::take(&mut self.type_metadata) {
+            type_metadata.entry(key).or_insert(val);
+        }
+        self.type_metadata = type_metadata;
+        self.restore_var_type_constraints(var_type_constraints);
+    }
+
     pub(crate) fn test_fn_subtest(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         // subtest 'name' => { ... } (Pair arg) or subtest 'name', { ... } (two args)
         // Pairs are treated as named args by positional_value, so check raw args first
@@ -42,17 +127,7 @@ impl Interpreter {
         // Override the default (true) set by begin_subtest
         self.tap.set_subtest_callable_is_sub_last(callable_is_sub);
         let saved_env = self.env.clone();
-        let saved_functions = self.registry().functions.clone();
-        let saved_proto_functions = self.registry().proto_functions.clone();
-        let saved_token_defs = self.registry().token_defs.clone();
-        let saved_proto_subs = self.registry().proto_subs.clone();
-        let saved_proto_tokens = self.registry().proto_tokens.clone();
-        let saved_classes = self.registry().classes.clone();
-        let saved_class_trusts = self.registry().class_trusts.clone();
-        let saved_roles = self.registry().roles.clone();
-        let saved_subsets = self.registry().subsets.clone();
-        let mut saved_type_metadata = self.type_metadata.clone();
-        let saved_var_type_constraints = self.snapshot_var_type_constraints();
+        let saved_decls = self.snapshot_subtest_decls();
         let run_result = self.call_sub_value(block, vec![], true);
         // If `plan skip-all` was used inside a Block callable, the error is fatal
         // and should propagate out of the subtest entirely (matching Raku behavior).
@@ -65,23 +140,7 @@ impl Interpreter {
             self.halted = ctx.parent_halted;
             self.tap.end_subtest();
             self.env = saved_env;
-            self.registry_mut().functions = saved_functions;
-            self.registry_mut().proto_functions = saved_proto_functions;
-            self.registry_mut().token_defs = saved_token_defs;
-            crate::runtime::regex_parse::TOKEN_DEFS_GEN
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            self.registry_mut().proto_subs = saved_proto_subs;
-            self.registry_mut().proto_tokens = saved_proto_tokens;
-            self.registry_mut().classes = saved_classes;
-            self.registry_mut().class_trusts = saved_class_trusts;
-            self.registry_mut().roles = saved_roles;
-            self.registry_mut().subsets = saved_subsets;
-            // Merge type_metadata: preserve entries added during the subtest
-            for (key, val) in std::mem::take(&mut self.type_metadata) {
-                saved_type_metadata.entry(key).or_insert(val);
-            }
-            self.type_metadata = saved_type_metadata;
-            self.restore_var_type_constraints(saved_var_type_constraints);
+            self.restore_subtest_decls(saved_decls);
             return Err(run_result.unwrap_err());
         }
         let mut merged_env = saved_env.clone();
@@ -95,23 +154,7 @@ impl Interpreter {
             }
         }
         self.env = merged_env;
-        self.registry_mut().functions = saved_functions;
-        self.registry_mut().proto_functions = saved_proto_functions;
-        self.registry_mut().token_defs = saved_token_defs;
-        crate::runtime::regex_parse::TOKEN_DEFS_GEN
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.registry_mut().proto_subs = saved_proto_subs;
-        self.registry_mut().proto_tokens = saved_proto_tokens;
-        self.registry_mut().classes = saved_classes;
-        self.registry_mut().class_trusts = saved_class_trusts;
-        self.registry_mut().roles = saved_roles;
-        self.registry_mut().subsets = saved_subsets;
-        // Merge type_metadata: preserve entries added during the subtest
-        for (key, val) in std::mem::take(&mut self.type_metadata) {
-            saved_type_metadata.entry(key).or_insert(val);
-        }
-        self.type_metadata = saved_type_metadata;
-        self.restore_var_type_constraints(saved_var_type_constraints);
+        self.restore_subtest_decls(saved_decls);
         self.finish_subtest(ctx, &label, run_result.map(|_| ()))?;
         Ok(Value::TRUE)
     }
@@ -144,37 +187,11 @@ impl Interpreter {
         let desc = desc_key.to_string_value();
         let ctx = self.begin_subtest();
         let saved_env = self.env.clone();
-        let saved_functions = self.registry().functions.clone();
-        let saved_proto_functions = self.registry().proto_functions.clone();
-        let saved_token_defs = self.registry().token_defs.clone();
-        let saved_proto_subs = self.registry().proto_subs.clone();
-        let saved_proto_tokens = self.registry().proto_tokens.clone();
-        let saved_classes = self.registry().classes.clone();
-        let saved_class_trusts = self.registry().class_trusts.clone();
-        let saved_roles = self.registry().roles.clone();
-        let saved_subsets = self.registry().subsets.clone();
-        let mut saved_type_metadata = self.type_metadata.clone();
-        let saved_var_type_constraints = self.snapshot_var_type_constraints();
+        let saved_decls = self.snapshot_subtest_decls();
         self.test_fn_plan(&[Value::int(plan)])?;
         let run_result = self.call_sub_value(block, vec![], true);
         self.env = saved_env;
-        self.registry_mut().functions = saved_functions;
-        self.registry_mut().proto_functions = saved_proto_functions;
-        self.registry_mut().token_defs = saved_token_defs;
-        crate::runtime::regex_parse::TOKEN_DEFS_GEN
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.registry_mut().proto_subs = saved_proto_subs;
-        self.registry_mut().proto_tokens = saved_proto_tokens;
-        self.registry_mut().classes = saved_classes;
-        self.registry_mut().class_trusts = saved_class_trusts;
-        self.registry_mut().roles = saved_roles;
-        self.registry_mut().subsets = saved_subsets;
-        // Merge type_metadata: preserve entries added during the subtest
-        for (key, val) in std::mem::take(&mut self.type_metadata) {
-            saved_type_metadata.entry(key).or_insert(val);
-        }
-        self.type_metadata = saved_type_metadata;
-        self.restore_var_type_constraints(saved_var_type_constraints);
+        self.restore_subtest_decls(saved_decls);
         self.finish_subtest(ctx, &desc, run_result.map(|_| ()))?;
         Ok(Value::TRUE)
     }
