@@ -1,6 +1,24 @@
 use super::*;
-use crate::runtime::types::is_coercion_constraint;
+use crate::runtime::types::{is_coercion_constraint, parse_coercion_type};
 use crate::value::ValueView;
+
+/// The distance reported for a constraint that is not an ancestor of the
+/// argument's type at all (including types whose hierarchy mutsu does not
+/// model).  Any real ancestor scores below this.
+const UNRELATED_DISTANCE: usize = 500;
+
+/// The type a coercion parameter accepts, i.e. the type it is as *wide* as.
+/// `Str()` is short for `Str(Any)`, so it accepts anything.
+fn coercion_accepted_constraint(constraint: &str) -> Option<&str> {
+    if !is_coercion_constraint(constraint) {
+        return None;
+    }
+    match parse_coercion_type(constraint) {
+        Some((_, Some(source))) => Some(source),
+        Some((_, None)) => Some("Any"),
+        None => None,
+    }
+}
 
 impl Interpreter {
     fn ambiguous_multi_dispatch_error(
@@ -92,7 +110,7 @@ impl Interpreter {
                 .iter()
                 .enumerate()
                 .map(|(i, def)| {
-                    let rank = self.candidate_specificity_rank(def);
+                    let rank = self.candidate_specificity_rank_for_args(def, args);
                     let dist = self.candidate_type_distance(args, def);
                     let opt = Self::candidate_optional_positional_count(def);
                     let req_named = Self::candidate_required_named_count(def);
@@ -114,7 +132,7 @@ impl Interpreter {
             matches = sorted_matches;
         }
 
-        let best_rank = self.candidate_specificity_rank(&matches[0]);
+        let best_rank = self.candidate_specificity_rank_for_args(&matches[0], args);
         let best_shape = self.candidate_dispatch_shape(&matches[0]);
         let best_distance = self.candidate_type_distance(args, &matches[0]);
         let best_opt = Self::candidate_optional_positional_count(&matches[0]);
@@ -122,7 +140,7 @@ impl Interpreter {
         let tied: Vec<Arc<FunctionDef>> = matches
             .iter()
             .filter(|def| {
-                self.candidate_specificity_rank(def) == best_rank
+                self.candidate_specificity_rank_for_args(def, args) == best_rank
                     && self.candidate_type_distance(args, def) == best_distance
                     && Self::candidate_optional_positional_count(def) == best_opt
                     && Self::candidate_required_named_count(def) == best_req_named
@@ -163,34 +181,53 @@ impl Interpreter {
         &self,
         def: &FunctionDef,
     ) -> (usize, usize, usize, usize, usize, usize, usize) {
+        self.candidate_specificity_rank_for_args(def, &[])
+    }
+
+    /// Like [`candidate_specificity_rank`], but ranks coercion parameters
+    /// against the arguments that would bind to them — see
+    /// [`effective_dispatch_constraint`].  Pass an empty `args` slice when no
+    /// call is in flight (ordering a `callsame` chain, say); coercion params
+    /// then rank by the type they accept.
+    pub(super) fn candidate_specificity_rank_for_args(
+        &self,
+        def: &FunctionDef,
+        args: &[Value],
+    ) -> (usize, usize, usize, usize, usize, usize, usize) {
         let params = Self::dispatch_visible_params(def);
+        let param_args = self.dispatch_param_arguments(&params, args);
+        let effective: Vec<Option<&str>> = params
+            .iter()
+            .zip(param_args.iter())
+            .map(|(p, arg)| {
+                p.type_constraint
+                    .as_deref()
+                    .map(|tc| self.effective_dispatch_constraint(tc, arg.as_ref()))
+            })
+            .collect();
         let literal_value_count = params.iter().filter(|p| p.literal_value.is_some()).count();
         let where_count = params
             .iter()
             .filter(|p| p.where_constraint.is_some())
             .count();
-        let subset_type_count = params
+        let subset_type_count = effective
             .iter()
-            .filter(|p| {
-                p.type_constraint
-                    .as_deref()
-                    .map(Self::constraint_base_name)
+            .filter(|tc| {
+                tc.map(Self::constraint_base_name)
                     .map(|base| self.registry().subsets.contains_key(base))
                     .unwrap_or(false)
             })
             .count();
         let typed_param_count = params
             .iter()
-            .filter(|p| {
+            .zip(effective.iter())
+            .filter(|(p, tc)| {
                 // A bare `Mu`/`Any` constraint is no narrower than an
                 // unconstrained param (raku: unconstrained IS Any) — counting
                 // it made `(Any:D $j, Mu)` outrank `($j, @x)` wholesale
                 // (JSON::Unmarshal's fallback swallowing the Positional
                 // candidate). A smiley (`Any:D`) still counts.
-                let meaningful_type = p
-                    .type_constraint
-                    .as_deref()
-                    .is_some_and(|tc| !matches!(tc, "Mu" | "Any"));
+                let meaningful_type = tc.is_some_and(|tc| !matches!(tc, "Mu" | "Any"));
                 meaningful_type
                     || (!p.slurpy
                         && (p.name.starts_with('@')
@@ -217,6 +254,65 @@ impl Interpreter {
             named_count,
             trait_count,
         )
+    }
+
+    /// The constraint a parameter effectively dispatches on when `arg` binds
+    /// to it.
+    ///
+    /// Raku compiles a coercion type `T(F)` into *two* candidates — see
+    /// `roast/S06-multi/type-based.t`, "Coercion types introduce two
+    /// candidates": one taking `T` directly, and one taking `F` (`Any` when
+    /// omitted) and coercing.  Collapsed back into the single candidate mutsu
+    /// keeps, that means the parameter is as narrow as `T` when the argument
+    /// already IS a `T`, and only as wide-open as `F` otherwise.  So `Int() $`
+    /// beats `Cool $` for `42` but loses to it for `"42"`, and `Str() $` loses
+    /// to `Blob:D $` for `"x".encode`.
+    fn effective_dispatch_constraint<'a>(
+        &self,
+        constraint: &'a str,
+        arg: Option<&Value>,
+    ) -> &'a str {
+        let Some(accepted) = coercion_accepted_constraint(constraint) else {
+            return constraint;
+        };
+        let Some(open) = constraint.find('(') else {
+            return constraint;
+        };
+        let target = &constraint[..open];
+        match arg {
+            Some(value) if self.type_hierarchy_distance(target, value) < UNRELATED_DISTANCE => {
+                target
+            }
+            _ => accepted,
+        }
+    }
+
+    /// Pair each dispatch-visible parameter with the argument that would bind
+    /// to it (`None` when the call supplies none), so ranking can ask type
+    /// questions about the actual argument.
+    fn dispatch_param_arguments(&self, params: &[&ParamDef], args: &[Value]) -> Vec<Option<Value>> {
+        let mut out = Vec::with_capacity(params.len());
+        let mut pos_idx = 0usize;
+        for pd in params {
+            if pd.named {
+                let bare_name = pd.name.trim_start_matches(|c: char| "$@%&".contains(c));
+                out.push(args.iter().find_map(|a| match a.view() {
+                    ValueView::Pair(key, val) if key == bare_name => Some(val.clone()),
+                    _ => None,
+                }));
+                continue;
+            }
+            while pos_idx < args.len() && matches!(args[pos_idx].view(), ValueView::Pair(..)) {
+                pos_idx += 1;
+            }
+            if pos_idx < args.len() {
+                out.push(Some(self.unwrap_varref_for_dispatch(&args[pos_idx]).0));
+                pos_idx += 1;
+            } else {
+                out.push(None);
+            }
+        }
+        out
     }
 
     /// Count required named parameters — used as a tertiary tiebreaker
@@ -259,7 +355,6 @@ impl Interpreter {
         let mut pos_idx = 0usize;
         for pd in params.iter() {
             if let Some(constraint) = &pd.type_constraint {
-                let base = Self::constraint_base_name(constraint);
                 // For named params, find the matching Pair arg
                 if pd.named {
                     let bare_name = pd.name.trim_start_matches(|c: char| "$@%&".contains(c));
@@ -275,6 +370,8 @@ impl Interpreter {
                         }
                     });
                     if let Some(val) = named_val {
+                        let effective = self.effective_dispatch_constraint(constraint, Some(&val));
+                        let base = Self::constraint_base_name(effective);
                         total += self.type_hierarchy_distance_with_var_type(base, &val, None);
                     } else {
                         total += 1000;
@@ -294,8 +391,10 @@ impl Interpreter {
                     }
                     // Unwrap VarRef Capture wrappers and check the source
                     // variable's declared type constraint for native type dispatch.
-                    let (mut arg, var_type) = self.unwrap_varref_for_dispatch(&args[pos_idx]);
+                    let (arg, var_type) = self.unwrap_varref_for_dispatch(&args[pos_idx]);
                     pos_idx += 1;
+                    let effective = self.effective_dispatch_constraint(constraint, Some(&arg));
+                    let base = Self::constraint_base_name(effective);
                     if pd.name.starts_with('&')
                         && let Some(return_type) = self.callable_return_type(&arg)
                     {
@@ -304,14 +403,6 @@ impl Interpreter {
                             &Value::package(Symbol::intern(&return_type)),
                         );
                         continue;
-                    }
-                    if is_coercion_constraint(constraint)
-                        && let Some(s) = arg.as_str()
-                        && matches!(base, "Int" | "Num" | "Rat" | "Complex" | "Numeric" | "Real")
-                        && let Some(parsed) =
-                            crate::runtime::str_numeric::parse_raku_str_to_numeric(s)
-                    {
-                        arg = parsed;
                     }
                     if (pd.name.starts_with('@') || pd.name.starts_with('%'))
                         && let Some(info) = self.container_type_metadata(&arg)
@@ -420,13 +511,13 @@ impl Interpreter {
         if base == "Inf" {
             return match value.view() {
                 ValueView::Num(n) if n.is_infinite() && n.is_sign_positive() => 0,
-                _ => 500,
+                _ => UNRELATED_DISTANCE,
             };
         }
         if base == "NaN" {
             return match value.view() {
                 ValueView::Num(n) if n.is_nan() => 0,
-                _ => 500,
+                _ => UNRELATED_DISTANCE,
             };
         }
         if base == value_type {
@@ -482,6 +573,31 @@ impl Interpreter {
                     return 1;
                 }
             }
+        }
+        // Buf/Blob family. `Buf` extends `Blob`; the `utfN` encodings and the
+        // sized `blobN`/`bufN` types do the `Blob`/`Buf` roles. The value's own
+        // type is distance 0 and was handled above, so these lists start at the
+        // first ancestor and the index is offset by one. Without them a
+        // `Blob:D` candidate scored the 500 "unknown type" distance for a
+        // `"x".encode` argument and lost the tie-break to whichever candidate
+        // happened to be declared first.
+        let buf_ancestors: &[&str] = match value_type {
+            "Buf" => &["Blob", "Positional", "Stringy", "Any", "Mu"],
+            "buf8" | "buf16" | "buf32" | "buf64" => {
+                &["Buf", "Blob", "Positional", "Stringy", "Any", "Mu"]
+            }
+            "utf8" | "utf16" | "utf32" | "blob8" | "blob16" | "blob32" | "blob64" => {
+                &["Blob", "Positional", "Stringy", "Any", "Mu"]
+            }
+            _ => &[],
+        };
+        if !buf_ancestors.is_empty() {
+            for (i, &ancestor) in buf_ancestors.iter().enumerate() {
+                if ancestor == base {
+                    return i + 1;
+                }
+            }
+            return UNRELATED_DISTANCE;
         }
         // Built-in type hierarchy (approximation of Raku MRO depths)
         // Bool -> Int -> Cool -> Any -> Mu
@@ -539,7 +655,7 @@ impl Interpreter {
             }
         }
         // Not found in hierarchy; return a large distance
-        500
+        UNRELATED_DISTANCE
     }
 
     /// Like `type_hierarchy_distance`, but also considers the source variable's

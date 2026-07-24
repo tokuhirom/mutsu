@@ -23,8 +23,13 @@ is classify-inf-nan(NaN), 'nan', 'NaN dispatch beats Numeric';
     multi numeric-main(Rat() $x) { $x }
     multi numeric-main(Int() $x) { $x }
 
-    ok try { numeric-main('42') } eqv 42, 'coercive dispatch prefers Int-like strings';
-    ok try { numeric-main('123e3') } eqv 123e3, 'coercive dispatch prefers Num-like strings';
+    # A coercion type `T()` is `T(Any)`: it accepts anything, so four of them
+    # are equally wide for a Str argument and raku reports an ambiguity rather
+    # than guessing which target type the string "looks like".
+    throws-like { numeric-main('42') }, X::Multi::Ambiguous,
+        'all-coercive candidates are ambiguous for a Str argument (Int-like)';
+    throws-like { numeric-main('123e3') }, X::Multi::Ambiguous,
+        'all-coercive candidates are ambiguous for a Str argument (Num-like)';
 }
 
 {
