@@ -105,6 +105,33 @@ pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
                 )
             }
         }
+        // An indirect method-call lvalue (`$o."$name"() = v`) in expression
+        // position, e.g. the middle term of a chained assignment. Mirror the
+        // `MethodCall` arm but with a runtime-computed name (see
+        // `dynamic_method_lvalue_assign_expr`).
+        Expr::DynamicMethodCall {
+            target,
+            name_expr,
+            args,
+            modifier,
+        } => {
+            let target_var_name = match target.as_ref() {
+                Expr::Var(v) => Some(v.clone()),
+                Expr::ArrayVar(v) => Some(format!("@{}", v)),
+                Expr::HashVar(v) => Some(format!("%{}", v)),
+                Expr::BareWord(v) => Some(v.clone()),
+                Expr::DoStmt(s) => crate::parser::stmt::simple_expr_stmt::decl_target_var_name(s),
+                _ => None,
+            };
+            crate::parser::stmt::assign::dynamic_method_lvalue_assign_expr(
+                *target,
+                target_var_name,
+                *name_expr,
+                modifier,
+                args,
+                value,
+            )
+        }
         Expr::Call { name, args } => Expr::Call {
             name: Symbol::intern("__mutsu_assign_named_sub_lvalue"),
             args: vec![

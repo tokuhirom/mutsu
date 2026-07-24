@@ -571,6 +571,10 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                 Ok((r, assign_to_target_expr(mc, rhs)))
             }
         }
+        // An indirect method-call lvalue (`$o."$name"() = v`) in expression
+        // position: route through the shared lowering (which has a
+        // `DynamicMethodCall` arm) instead of leaving `=` unconsumed.
+        dmc @ Expr::DynamicMethodCall { .. } => Ok((r, assign_to_target_expr(dmc, rhs))),
         _ => Ok((rest, expr)),
     }
 }
