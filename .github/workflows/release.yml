@@ -103,8 +103,39 @@ jobs:
           name: mutsu-${{ matrix.archive_name }}
           path: mutsu-${{ github.ref_name }}-${{ matrix.archive_name }}.tar.gz
 
+  # Release-time gate: every bundled library's upstream test suite must still
+  # pass (at its recorded baseline) against the SHIPPED library + this mutsu.
+  # This is the deliberate, thorough check that replaces continuous tagpr churn
+  # (tagpr is now manual-only). A regression here blocks the release publish.
+  # See scripts/battery-testsuite.sh, batteries.lock, batteries-whitelist.txt.
+  batteries:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@1.96.0
+
+      - name: Cache cargo (rust-cache)
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: x86_64-unknown-linux-gnu
+
+      # libpcre2 for building mutsu; libssl for the OpenSSL / IO::Socket::SSL
+      # batteries' NativeCall at runtime.
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y libpcre2-dev libssl-dev
+
+      - name: Build release mutsu
+        run: cargo build --release --bin mutsu
+
+      - name: Run bundled-library test suites
+        env:
+          MUTSU_BIN: target/release/mutsu
+        run: scripts/battery-testsuite.sh
+
   release:
-    needs: build
+    needs: [build, batteries]
     runs-on: ubuntu-latest
     # Only publish a GitHub Release for a real tag push. workflow_dispatch runs
     # stop after build (artifacts are available for inspection, no release).

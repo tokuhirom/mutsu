@@ -1,0 +1,11 @@
+IO::Socket::SSL	01-basic.rakutest
+OpenSSL	06-digest-md5.rakutest
+OpenSSL	07-version.rakutest
+zef	build.rakutest
+zef	extract.rakutest
+zef	fetch.rakutest
+zef	identity.rakutest
+zef	install.rakutest
+zef	repository.rakutest
+zef	test.rakutest
+zef	utils-filesystem.rakutest

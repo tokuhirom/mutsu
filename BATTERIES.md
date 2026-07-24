@@ -109,10 +109,27 @@ imported. The recipe, kept in the library's `docs/batteries/<lib>.md`, states:
    [bundle index](#7-bundle-index).
 4. **Verification** — the smoke test to re-run after the bump (`use` the module +
    a representative call), so a bad bump is caught.
+5. **Re-baseline the test-suite gate** — bump the library's `commit` in
+   `batteries.lock` to the matching upstream commit and re-run
+   `scripts/battery-testsuite.sh --update`, then **review the
+   `batteries-whitelist.txt` diff**. A test file that dropped out of the
+   whitelist is a regression to fix, not a smaller baseline to accept.
 
 Vendored sources are **never hand-edited**; an update is always a clean re-vendor
 of a new upstream release. If mutsu needs a change to run the module, that change
 goes in the interpreter (rung 2), not in the vendored copy.
+
+### Release-time verification: the bundled-library test-suite gate
+
+Upstream test suites are excluded from the vendored copy (above), so "does the
+shipped library actually run under this mutsu?" is verified **at release time**:
+`release.yml`'s `batteries` job fetches every battery's upstream suite at the
+commit pinned in `batteries.lock`, runs it against the *bundled* library and the
+release `mutsu`, and blocks the publish job if any file listed in
+`batteries-whitelist.txt` regressed. It is a per-file baseline (the
+`roast-whitelist.txt` philosophy), not an all-green wall, so suites with known
+gaps still pin their passing files. Full details:
+[docs/batteries/testsuite-gate.md](docs/batteries/testsuite-gate.md).
 
 ## 4. License policy
 

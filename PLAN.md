@@ -125,6 +125,27 @@ section.
       output match). External dists are either `zef fetch`ed in CI or vendored. Failures are
       report-only (a red run does not stop main). Once the bundle set is fixed, its smoke tests
       become the battery quality gate as-is.
+- [ ] **★ Close the bundled-library test-suite gaps — target: green before the next release**
+      (user policy 2026-07-24). The release-time gate now runs every battery's upstream suite
+      against the shipped library (`scripts/battery-testsuite.sh`, `batteries.lock`,
+      `batteries-whitelist.txt`; see [docs/batteries/testsuite-gate.md](docs/batteries/testsuite-gate.md)),
+      but it is a **baseline** gate, and the measured baseline is only **11/18 test files**. The
+      goal is to raise that toward all-green so a release ships batteries that genuinely pass their
+      own suites — the gate stops regressions, it does not close these gaps:
+      - **OpenSSL — 2/7** (`01-basic`, `03-rsa`, `04-crypt`, `05-digest`, `10-client-ca-file` fail).
+        All five emit their TAP plan and then go silent with **zero** test lines, i.e. something
+        dies right after `plan`; the suites are NativeCall-heavy (RSA / EVP digest / cipher), so the
+        prime suspect is missing NativeCall surface rather than five unrelated bugs. Investigate one
+        (`05-digest`, 0/24) and the cause likely explains the rest.
+      - **Zef — 8/10** (`00-load` 1/2, `distribution-depends-parsing` 18/35). ★ This **contradicts
+        the recorded "all 10 upstream tests pass" (2026-07-10, #4383/#4384)**. Not yet triaged:
+        either a real regression since then, or a run-context difference (the gate runs
+        `mutsu -I vendor/zef/lib <test>` directly, whereas the 2026-07-10 result came from the full
+        mzef/install context). **Determine which before assuming a regression** — if it is context,
+        the gate's invocation may need to match how zef actually runs its own tests.
+      - **IO::Socket::SSL — 1/1** ✅ already green.
+      Raising a file into the baseline is `scripts/battery-testsuite.sh --update` + committing the
+      whitelist diff.
 
 ### B2. mzef — an `mzef` package manager bundling the real Zef (north-star; user policy 2026-06-28)
 
