@@ -1548,11 +1548,20 @@ entangled with the assignment metaops AND has a hot-path cost:
   (low gain, real risk). The comparison + prefix fixes already captured the
   high-value, zero-hot-path-cost parts of this doc-diff.
 
-### 8.22 Calling a `where`-constrained module sub wipes an unrelated caller lexical (found 2026-07-24 via OpenSSL's `04-crypt`)
+### 8.22 Calling a `where`-constrained module sub wipes every earlier caller lexical (found 2026-07-24 via OpenSSL's `04-crypt`)
 
-A caller lexical declared *before* the call is reset to `Any` by a call that has
-nothing to do with it. Minimal reproduction — no NativeCall, no multi-dispatch,
-no forwarding:
+**Decided 2026-07-24 (user): fix this with the correct architecture — make the
+call-return coherence precise, do NOT paper over it by flushing every `my`
+declaration into `env`.** The precise route is the one the codebase is already
+converging on (carrier writes are logged by name; cell boxing is the permanent
+mechanism); the env-flush route would put an `env` write on the hottest
+declaration path *and* keep `env` as a shadow source of truth, which is the
+thing being retired.
+
+#### Symptom
+
+Every caller lexical declared *before* the call is reset to `Any`. Minimal
+reproduction — no NativeCall, no multi-dispatch, no forwarding:
 
 ```raku
 # lib/WhereMod.rakumod
@@ -1562,51 +1571,71 @@ sub w(Int $n, :$c! where .so) is export { $n }
 
 ```raku
 use WhereMod;
-my $keep = Blob.new(1, 2, 3);
-my $r = w(1, :c<x>);        # unrelated call
-say $keep;                  # raku: Blob.new(1,2,3)   mutsu: (Any)
+my $a = Blob.new(1);
+my $b = 99;
+my $r = w(1, :c<x>);
+say "a={$a.gist} b={$b.gist} r={$r.gist}";
+# raku:  a=Blob:0x<01> b=99 r=1
+# mutsu: a=(Any)       b=(Any) r=1
 ```
 
-All three of these are required to trigger it; drop any one and it is clean:
+Note `$r` — the local receiving the call's result — is **correct**; only the
+earlier ones are wiped. Their type is irrelevant (`Blob`, `Int`, `Str` all go to
+`Any`).
 
-1. the sub is declared in a **module** (a same-shaped sub in the main script is
-   fine);
-2. it carries a **`where` constraint** (drop `where .so` and it is fine) — that
-   is what keeps the routine on the interpreter carrier instead of the OTF
-   compile, so the call ends in a blanket `env_dirty` locals reconcile;
-3. the call's **result is assigned to a fresh `my`** (`w(1, :c<x>);` as a bare
-   statement is fine).
+All three of these are required; drop any one and it is clean:
 
-The clobbered variable's type does not matter (`Blob`, `Int`, `Str` all reset to
-`Any`), and reading it once *before* the call hides the bug — the signature of a
-`locals` slot whose value was never flushed to `env`, so the post-carrier
-`sync_locals_from_env` pulls the declaration-time `Any` back into the slot.
+1. the sub is declared in a **module** (the same sub in the main script is fine);
+2. it carries a **`where` constraint** — that is what keeps the routine on the
+   interpreter carrier instead of the OTF compile;
+3. the call's **result is assigned to a variable** — both `my $r = w(...)` and
+   a separate `my $r; $r = w(...)` reproduce; discarding it (`w(1, :c<x>);` as a
+   bare statement) is clean.
 
-This is the `env_dirty` dual store (CLAUDE.md "Architecture") biting, not a
-NativeCall or dispatch bug: an earlier guess that NativeCall's `Blob` writeback
-(`write_buf_instance_bytes`) was responsible was **disproved** — a direct call
-into the same routine with the same `Blob` argument leaves it intact, and the
-reproduction above involves no native call at all. (Separately, that writeback
-*is* wrong for a `Blob`, which is immutable in Raku; restricting it to the
-mutable `Buf` family is correct but fixes nothing observable here, so it should
-land, if at all, with its own evidence.)
+Two things hide it, both diagnostic: reading the variable once before the call,
+and putting any unrelated statement (`say "sep";`) between the declaration and
+the call. Both make `env` carry the value, which says the slot's value had never
+reached `env` and something is rebuilding the slots from `env`.
+
+Not JIT- or GC-related (`MUTSU_JIT=off` / `MUTSU_GC=off` reproduce identically).
+
+#### What has been ruled out (2026-07-24, by instrumentation — do not re-walk)
+
+- **`sync_locals_from_env` no longer exists.** The blanket env→locals reconcile
+  is retired (`drain_and_reconcile_after_cached_call` now only calls
+  `apply_pending_rw_writeback`; `box_carrier_free_var_writes` documents cell
+  boxing as the permanent mechanism). An earlier version of this entry blamed
+  it — that citation was stale.
+- **None of the carrier writebacks fire for this case**: `apply_pending_rw_writeback`,
+  `writeback_carrier_writes`, and both branches of
+  `carrier_writeback_changed_aggregates` were instrumented and produce no output
+  on the reproduction.
+- **The frame-entry seeding loop in `run_inner`** (`vm/vm_run_loop.rs`, which
+  fills every slot from `env` by name and NILs the misses) is **not** re-running
+  for the caller frame — also instrumented, no output.
+- **NativeCall's `Blob` writeback (`write_buf_instance_bytes`) is not involved** —
+  the reproduction contains no native call at all. (That writeback *is*
+  separately wrong for an immutable `Blob`; restricting it to the mutable `Buf`
+  family is correct but fixes nothing here, so it needs its own evidence.)
+
+#### Where to start next
+
+The remaining candidate is the save/restore of the per-execution registers
+around the nested run: `with_nested_registers` (`vm/vm_run_loop.rs`) takes
+`self.locals` and restores it afterwards, and `exec_call` reaches it via
+`run_block` → `run_block_raw` → `run_nested`. Instrument the restore itself
+(and `push_call_frame`/`pop_call_frame`'s `saved_locals`) to find which snapshot
+the stale `Any`s come from; the asymmetry to explain is why the result-receiving
+slot survives while every earlier one does not.
 
 **Verified pre-existing**: reproduces unchanged at `3fc5a5a5b`, before the
-unit-module package-scoping and positional-indexing work of 2026-07-24.
+unit-module package-scoping (#5369) and positional-indexing (#5370) work.
 
-**Why it matters now**: it is what keeps the bundled OpenSSL battery's
+**Why it matters now**: it is what holds the bundled OpenSSL battery's
 `t/04-crypt.rakutest` at 6/13 — `OpenSSL::CryptTools`'s `encrypt`/`decrypt`
 candidates are all `where`-constrained module subs, so every call wipes the
-caller's `$test` Blob and the round-trip assertions compare against `Any`. The
+caller's plaintext Blob and the round-trip assertions compare against `Any`. The
 battery test-suite gate is a release gate.
-
-**Why it is large**: the fix is in the locals↔env coherence model, not in a
-single site. Either the `my $x = v` declaration must flush the value to `env`
-(costing an env write on the hottest declaration path), or the carrier-return
-reconcile must stop being blanket and reconcile only names the carrier actually
-wrote (`writeback_carrier_writes` already logs those — the blanket net is the
-documented CP-2 wall). The second is the architecturally right one and is the
-same work as retiring `env_dirty`.
 
 ## Metrics
 
