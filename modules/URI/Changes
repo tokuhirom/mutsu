@@ -1,0 +1,70 @@
+Revision history for URI
+
+{{$NEXT}}
+
+0.3.8  2024-11-17T13:48:28+01:00
+    - Fix multi-thread issue
+    - First release using App::Mi6 to make releasing easier
+    - Modernized test file extensions
+    - Added CI for each OS separately
+    - Moved documentation to a separate file
+    - Did a light editor run on the documentation, modernizing
+      code blocks and signature information
+
+2023-10-17  v0.3.7
+
+    * File extensions now follow the Raku conventions
+    * References also follow the Raku terminology
+    * Remove Vim highlighter pragmas from the sources
+    * The dist consistently uses v6.d semantics
+    * Some polishing in the META6 file
+
+2022-11-30  v0.3.6
+
+    * A few minors have been skipped, but I don't think there are major changes
+    here.
+    * Eliminates some deprecated functions.
+    * Minor refactoring.
+    * Adds some tests
+
+2021-02-22  v0.3.1
+
+	* Remove the meta test (Test::META depends on this module.)
+
+2019-08-25  v0.3.0
+
+	* Allow mutation of a URI in user code
+
+	This contains potentially incompatible changes. Please see README.md
+
+2019-06-29  v0.2.2
+
+	* Fix double encoding of path parts
+
+2019-06-12  Juan J. merelo  <jmerelo@penny>
+
+	* lib/URI/Escape.pm: Eliminates a debug "say" that was bugging some other stuff.
+
+New features for June 2011 upgrade include:
+
+1) Make "new" method a useful parsing constructor.
+
+2) Add "parse" method to replace "init".
+
+3) Formalize access to result parse tree created by grammar parsing.  URI
+    object has grammar attribute which in turn has a parse_result attribute,
+    with full parse tree, giving caller access to all URI components identified
+    in IETF RFC.
+
+4) Add query_form method providing access to hash based on "?var1=abc&var2=def"
+    query section for CGI type applications.
+
+5) Add 'validating' attribute that, when set to true, tells the URI module to
+    fail parsing unless the entire string it is asked to parse is a URI.
+    Default is to provide Perl URI behavior and just try to parse URI from
+    passed parse string.  "is_validating"" attribute can be set as named param
+    to new.
+
+6) Pluggable grammar design with "grammar" attribute that identifies grammar
+    used to parse URI, provides access to result parse tree, and (theoretically
+    for now) allows for use of other grammars like IRI.

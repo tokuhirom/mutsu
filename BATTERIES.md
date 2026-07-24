@@ -221,10 +221,11 @@ the HTTP client on top of it.
 | Battery | Provider | Kind | License | Status | Record |
 | --- | --- | --- | --- | --- | --- |
 | TLS / HTTPS socket (foundation) | `OpenSSL` + `IO::Socket::SSL` | Adopted | MIT / MIT | **Working** — vendored + zero-config `use`; a real `https://` GET runs end-to-end. Needs system `libssl` at runtime. | [tls-openssl.md](docs/batteries/tls-openssl.md) |
-| HTTP client | `HTTP::UserAgent` (`zef:sergot`), leaning; `HTTP::Tiny` alt. | Adopted | MIT / Artistic-2.0 | Planned — sequenced after the TLS foundation | [http-client.md](docs/batteries/http-client.md) |
+| HTTP client dependency layer | `URI` + `MIME::Base64` + `HTTP::Status` + `DateTime::Parse` + `File::Directory::Tree` | Adopted | Artistic-2.0 ×4 / MIT | **Working** — vendored + zero-config `use`; all 25 upstream test files pass against the bundled copy | [http-deps.md](docs/batteries/http-deps.md) |
+| HTTP client | `HTTP::UserAgent` (`zef:sergot`), leaning; `HTTP::Tiny` alt. | Adopted | MIT / Artistic-2.0 | Planned — dependency layer above is in place; `File::Temp` and `Encode` still pending | [http-client.md](docs/batteries/http-client.md) |
 | JSON | native `to-json` / `from-json` | Native | — | Working | — |
 
 Other modules with a proven working record (Template::Mustache, File::Temp,
-File::Directory::Tree, HTTP::Parser, MIME::Base64, HTTP::Server::Tiny,
-NativeCall MVP, the Zef CLI) are tracked in `PLAN.md` §1 and are folded into this
-index as their bundling + documentation is finalized.
+HTTP::Parser, HTTP::Server::Tiny, NativeCall MVP, the Zef CLI) are tracked in
+`PLAN.md` §1 and are folded into this index as their bundling + documentation is
+finalized.

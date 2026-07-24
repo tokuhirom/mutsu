@@ -13,9 +13,10 @@ pages.yml, so the committed snapshot and the deployed page stay in step:
 
     python3 scripts/gen-batteries-manifest.py
 
-A small per-module sidecar map below carries the two facts META6.json does not:
-the battery "slot" this module fills, and the path to its mutsu selection
-record under docs/batteries/. Add an entry when you bundle a new library.
+A small per-module sidecar map below carries the facts META6.json does not: the
+battery "slot" this module fills, the path to its mutsu selection record under
+docs/batteries/, and -- only where META6.json is silent or wrong -- the license
+the dist actually ships under. Add an entry when you bundle a new library.
 """
 
 from __future__ import annotations
@@ -38,6 +39,30 @@ SIDECAR = {
     "IO::Socket::SSL": {
         "slot": "TLS / HTTPS socket (foundation)",
         "record": "docs/batteries/tls-openssl.md",
+    },
+    "URI": {
+        "slot": "HTTP client dependency layer",
+        "record": "docs/batteries/http-deps.md",
+    },
+    "MIME::Base64": {
+        "slot": "HTTP client dependency layer",
+        "record": "docs/batteries/http-deps.md",
+    },
+    "HTTP::Status": {
+        "slot": "HTTP client dependency layer",
+        "record": "docs/batteries/http-deps.md",
+        # META6.json says NOASSERTION; the README states Artistic-2.0.
+        "license": "Artistic-2.0",
+    },
+    "DateTime::Parse": {
+        "slot": "HTTP client dependency layer",
+        "record": "docs/batteries/http-deps.md",
+        # META6.json has no license key; the dist ships an MIT LICENSE file.
+        "license": "MIT",
+    },
+    "File::Directory::Tree": {
+        "slot": "HTTP client dependency layer",
+        "record": "docs/batteries/http-deps.md",
     },
 }
 
@@ -72,7 +97,7 @@ def collect() -> list[dict]:
                 "name": name,
                 "version": meta.get("version", ""),
                 "description": meta.get("description", ""),
-                "license": meta.get("license", ""),
+                "license": sidecar.get("license") or meta.get("license") or "",
                 "authors": meta.get("authors") or ([meta["author"]] if meta.get("author") else []),
                 "auth": meta.get("auth", ""),
                 "provides": sorted((meta.get("provides") or {}).keys()),

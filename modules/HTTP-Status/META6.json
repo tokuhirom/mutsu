@@ -1,0 +1,26 @@
+{
+  "auth": "zef:lizmat",
+  "authors": [
+    "Elizabeth Mattijsen"
+  ],
+  "build-depends": [
+  ],
+  "depends": [
+  ],
+  "description": "Information about HTTP Status Codes",
+  "license": "NOASSERTION",
+  "name": "HTTP::Status",
+  "perl": "6.*",
+  "provides": {
+    "HTTP::Status": "lib/HTTP/Status.rakumod"
+  },
+  "resources": [
+  ],
+  "source-url": "https://github.com/lizmat/HTTP-Status.git",
+  "tags": [
+    "HTTP"
+  ],
+  "test-depends": [
+  ],
+  "version": "0.0.5"
+}
