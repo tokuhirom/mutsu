@@ -736,52 +736,71 @@ impl Interpreter {
         if matches!(container.view(), ValueView::Array(..)) {
             return Self::delete_from_array(container, idx, hole_type);
         }
+        // QuantHash stores are `.WHICH`-keyed; drop the recorded element
+        // object together with the entry.
+        let qh_remove_set = |set: &mut crate::value::SetData, key: &Value| -> bool {
+            let (k, _) = crate::runtime::utils::quanthash_elem_entry(key);
+            let removed = set.elements.remove(&k);
+            if let Some(ok) = set.original_keys.as_mut() {
+                ok.remove(&k);
+            }
+            removed
+        };
         if let Some(removed) = container.with_set_mut(|set, _| match idx.view() {
             ValueView::Array(keys, ..) => {
                 let s = crate::value::gc_data_mut(set);
                 let removed = keys
                     .iter()
-                    .map(|key| Value::truth(s.remove(&key.to_string_value())))
+                    .map(|key| Value::truth(qh_remove_set(s, key)))
                     .collect();
                 Value::array(removed)
             }
-            _ => Value::truth(crate::value::gc_data_mut(set).remove(&idx.to_string_value())),
+            _ => Value::truth(qh_remove_set(crate::value::gc_data_mut(set), &idx)),
         }) {
             return Ok(removed);
         }
+        let qh_remove_bag =
+            |bag: &mut crate::value::BagData, key: &Value| -> Option<num_bigint::BigInt> {
+                let (k, _) = crate::runtime::utils::quanthash_elem_entry(key);
+                let removed = bag.counts.remove(&k);
+                if let Some(ok) = bag.original_keys.as_mut() {
+                    ok.remove(&k);
+                }
+                removed
+            };
         if let Some(removed) = container.with_bag_mut(|bag, _| match idx.view() {
             ValueView::Array(keys, ..) => {
                 let b = crate::value::gc_data_mut(bag);
                 let removed = keys
                     .iter()
-                    .map(|key| {
-                        Value::from_bigint(b.remove(&key.to_string_value()).unwrap_or_default())
-                    })
+                    .map(|key| Value::from_bigint(qh_remove_bag(b, key).unwrap_or_default()))
                     .collect();
                 Value::array(removed)
             }
             _ => Value::from_bigint(
-                crate::value::gc_data_mut(bag)
-                    .remove(&idx.to_string_value())
-                    .unwrap_or_default(),
+                qh_remove_bag(crate::value::gc_data_mut(bag), &idx).unwrap_or_default(),
             ),
         }) {
             return Ok(removed);
         }
+        let qh_remove_mix = |mix: &mut crate::value::MixData, key: &Value| -> Option<f64> {
+            let (k, _) = crate::runtime::utils::quanthash_elem_entry(key);
+            let removed = mix.weights.remove(&k);
+            if let Some(ok) = mix.original_keys.as_mut() {
+                ok.remove(&k);
+            }
+            removed
+        };
         if let Some(removed) = container.with_mix_mut(|mix, _| match idx.view() {
             ValueView::Array(keys, ..) => {
                 let m = crate::value::gc_data_mut(mix);
                 let removed = keys
                     .iter()
-                    .map(|key| Value::num(m.remove(&key.to_string_value()).unwrap_or(0.0)))
+                    .map(|key| Value::num(qh_remove_mix(m, key).unwrap_or(0.0)))
                     .collect();
                 Value::array(removed)
             }
-            _ => Value::num(
-                crate::value::gc_data_mut(mix)
-                    .remove(&idx.to_string_value())
-                    .unwrap_or(0.0),
-            ),
+            _ => Value::num(qh_remove_mix(crate::value::gc_data_mut(mix), &idx).unwrap_or(0.0)),
         }) {
             return Ok(removed);
         }

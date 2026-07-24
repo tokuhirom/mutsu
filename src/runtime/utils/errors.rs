@@ -217,7 +217,10 @@ pub(crate) fn value_which_key(value: &Value) -> String {
         }
         ValueView::Array(items, ..) => format!("Array|{:p}", crate::gc::Gc::as_ptr(&items)),
         ValueView::Hash(map) => format!("Hash|{:p}", crate::gc::Gc::as_ptr(&map)),
-        ValueView::Pair(k, v) => format!("Pair|{}|{}", k, value_which_key(v)),
+        // A Pair with a plain string key and a ValuePair holding a Str key are
+        // the same identity (`("x" => 1) === (:x(1))`), so both render the key
+        // through its own `.WHICH` (`Pair|Str|x|Int|1`, raku's format).
+        ValueView::Pair(k, v) => format!("Pair|Str|{}|{}", k, value_which_key(v)),
         ValueView::ValuePair(k, v) => format!("Pair|{}|{}", value_which_key(k), value_which_key(v)),
         ValueView::Enum { enum_type, key, .. } => {
             format!("{}|{}", enum_type.resolve(), key.resolve())
@@ -227,7 +230,19 @@ pub(crate) fn value_which_key(value: &Value) -> String {
         // `.WHICH` is `Str+{<role>}|quux`. Fold the (sorted) mixin type/role
         // names into the key so two different roles over the same base value are
         // distinct object-hash keys, while the same value+role collides.
+        //
+        // An allomorph (IntStr/NumStr/RatStr/ComplexStr — a numeric inner with a
+        // preserved `Str` part) keys by BOTH halves, matching raku's
+        // `IntStr|Int|1|Str|1`: `IntStr.new(1, "one")` and `IntStr.new(1, "1")`
+        // are distinct identities, which the role-name fold alone would collapse.
         ValueView::Mixin(inner, mixins) => {
+            if let Some(allo_name) = crate::value::types::allomorph_type_name(inner, mixins) {
+                let str_part = mixins
+                    .get("Str")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                return format!("{}|{}|Str|{}", allo_name, value_which_key(inner), str_part);
+            }
             let mut roles: Vec<&str> = mixins.keys().map(|s| s.as_str()).collect();
             roles.sort_unstable();
             format!(

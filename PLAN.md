@@ -1291,28 +1291,13 @@ also fixes the parens ambiguity — `return (1 and 2)` (a complete term = 2) vs
   residue: a *captured outer* variable still snapshots (no local slot to box) for both `=> $var`
   and `Pair.new` — container-repr territory ([ADR-0001]).
 
-### 8.10 Object hashes are string-keyed, not `.WHICH`-keyed (object-hash half ✅ DONE 2026-07-24; Set/Bag/Mix element identity still open)
+### 8.10 Object hashes / Set/Bag/Mix are string-keyed, not `.WHICH`-keyed — ✅ DONE 2026-07-24
 
-**Done (2026-07-24):** object hashes (`my %h{Any}`, `:{...}`, `Hash[K,V].new`) now key by the
-key object's `.WHICH` with the key objects preserved in `HashData.original_keys`. The invariant
-is enforced at the `tag_container_metadata` chokepoint (`ensure_object_hash_which_keys`);
-`:{...}` parses to an `__object_hash()` call (a `Mu`-keyed object hash, matching raku's
-`Hash[Mu,Mu]`); angle-word subscripts (`%h<42>`) are val()-allomorphic like standalone `<...>`
-words; classify/categorize return the `Hash[Mu,Mu]` shape per raku. All the doc-diff findings
-(numerics [4], hashmap [1], traps [8]) now match raku. Pin: `t/object-hash-which-keys.t`;
-details in `news/2026-07.md`.
-
-- [ ] **Remaining: Set/Bag/Mix element identity.** The QuantHash backing store is still
-      string-keyed: `(1, "1", 1.0).Set.elems` is 1 in mutsu vs 3 in raku, and `∈` over a
-      *materialized* Set compares stringifications (`<1> ∈ (1,).Set` is True in mutsu, False in
-      raku; the *list*-RHS branch is already `.WHICH`-correct via `values_identical`). Fix shape:
-      key `SetData.elements` / `BagData.counts` / `MixData.weights` by `value_which_key` with
-      `original_keys` covering every element (the object-hash pattern), then update the
-      membership/union/intersection paths and every direct consumer of the element strings
-      (`.keys`, `.pick`/`.roll`, printing via `typed_key`). Entry:
-      `src/builtins/quanthash_coerce.rs`, `src/runtime/methods_quanthash_ctor.rs`,
-      `src/vm/vm_set_ops.rs`, `src/runtime/ops_set.rs`. Coordinate with [ADR-0001]
-      container-repr; the read-side `typed_key` reconstruction already exists.
+Both halves landed: object hashes (2026-07-24 AM, `t/object-hash-which-keys.t`) and the
+Set/Bag/Mix element stores (2026-07-24 PM, `t/set-bag-mix-which-keys.t`); details in
+`news/2026-07/` (`quanthash-which-keys.md`). Element identity is now `.WHICH`-based
+end to end. Kept note: the QuantHash serde (`SerValue::Set/Bag/Mix`) now carries
+`original_keys`, and `CACHE_FORMAT_VERSION` was bumped to 7.
 
 ### 8.12 `.produce` with `last`, and `.reduce` with a destructuring signature — ✅ DONE 2026-07-23
 

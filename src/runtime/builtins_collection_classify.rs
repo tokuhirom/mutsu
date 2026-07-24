@@ -252,16 +252,31 @@ impl Interpreter {
             }
             _ => HashMap::new(),
         };
-        let mut bag_counts: Option<HashMap<String, i64>> = match into_target
-            .as_ref()
-            .map(Value::view)
-        {
-            Some(ValueView::Bag(b, _)) => Some(crate::runtime::utils::bag_counts_as_i64(&b.counts)),
-            _ => None,
-        };
+        // Bag/Mix elements are stored by `.WHICH` key with the source objects
+        // recorded in `original_keys` (see quanthash_keys.rs). Carry the
+        // into-target's original keys forward and record every category key we
+        // add, so the classified QuantHash keeps element identity (and its
+        // `.WHICH` matches a freshly-constructed one — is-deeply / eqv).
+        let mut bag_originals: HashMap<String, Value> = HashMap::new();
+        let mut mix_originals: HashMap<String, Value> = HashMap::new();
+        let mut bag_counts: Option<HashMap<String, i64>> =
+            match into_target.as_ref().map(Value::view) {
+                Some(ValueView::Bag(b, _)) => {
+                    if let Some(ref orig) = b.original_keys {
+                        bag_originals.extend(orig.iter().map(|(k, v)| (k.clone(), v.clone())));
+                    }
+                    Some(crate::runtime::utils::bag_counts_as_i64(&b.counts))
+                }
+                _ => None,
+            };
         let mut mix_counts: Option<HashMap<String, f64>> =
             match into_target.as_ref().map(Value::view) {
-                Some(ValueView::Mix(m, _)) => Some(m.weights.clone()),
+                Some(ValueView::Mix(m, _)) => {
+                    if let Some(ref orig) = m.original_keys {
+                        mix_originals.extend(orig.iter().map(|(k, v)| (k.clone(), v.clone())));
+                    }
+                    Some(m.weights.clone())
+                }
                 _ => None,
             };
 
@@ -323,11 +338,21 @@ impl Interpreter {
                             }
                         )));
                     }
-                    let key = path[0].to_string_value();
+                    let (key, elem) = crate::runtime::utils::quanthash_elem_entry(&path[0]);
                     if let Some(counts) = bag_counts.as_mut() {
+                        crate::runtime::utils::record_quanthash_original(
+                            &mut bag_originals,
+                            &key,
+                            &elem,
+                        );
                         *counts.entry(key.clone()).or_insert(0) += 1;
                     }
                     if let Some(counts) = mix_counts.as_mut() {
+                        crate::runtime::utils::record_quanthash_original(
+                            &mut mix_originals,
+                            &key,
+                            &elem,
+                        );
                         *counts.entry(key).or_insert(0.0) += 1.0;
                     }
                 }
@@ -383,9 +408,9 @@ impl Interpreter {
             if has_proxy || has_varname {
                 let mut updated: Option<Value> = None;
                 if let Some(counts) = bag_counts.clone() {
-                    updated = Some(Value::bag(counts));
+                    updated = Some(Value::bag_typed(counts, bag_originals.clone()));
                 } else if let Some(counts) = mix_counts.clone() {
-                    updated = Some(Value::mix(counts));
+                    updated = Some(Value::mix_with_original_keys(counts, mix_originals.clone()));
                 } else if into_target.is_some() {
                     updated = Some(Self::classify_finish_hash(
                         buckets.clone(),
@@ -406,10 +431,10 @@ impl Interpreter {
         }
 
         if let Some(counts) = bag_counts {
-            return Ok(Value::bag(counts));
+            return Ok(Value::bag_typed(counts, bag_originals));
         }
         if let Some(counts) = mix_counts {
-            return Ok(Value::mix(counts));
+            return Ok(Value::mix_with_original_keys(counts, mix_originals));
         }
 
         // The standalone `.classify`/`.categorize` (no `:into` target) mints a

@@ -165,13 +165,31 @@ impl Interpreter {
                 // f64 `0.12000000000000001`); lower to f64 only at the boundary.
                 use crate::builtins::quanthash_coerce::mix_pair_weight_value;
                 let mut weights: HashMap<String, Value> = HashMap::new();
+                let mut originals: HashMap<String, Value> = HashMap::new();
                 for item in &items {
                     let (key, weight) = match item.view() {
-                        ValueView::Pair(k, v) => (k.clone(), mix_pair_weight_value(v)?),
+                        ValueView::Pair(k, v) => (
+                            crate::runtime::utils::str_elem_key(k),
+                            mix_pair_weight_value(v)?,
+                        ),
                         ValueView::ValuePair(k, v) => {
-                            (k.to_string_value(), mix_pair_weight_value(v)?)
+                            let (key, elem) = crate::runtime::utils::quanthash_elem_entry(k);
+                            crate::runtime::utils::record_quanthash_original(
+                                &mut originals,
+                                &key,
+                                &elem,
+                            );
+                            (key, mix_pair_weight_value(v)?)
                         }
-                        _ => (item.to_string_value(), Value::int(1)),
+                        _ => {
+                            let (key, elem) = crate::runtime::utils::quanthash_elem_entry(item);
+                            crate::runtime::utils::record_quanthash_original(
+                                &mut originals,
+                                &key,
+                                &elem,
+                            );
+                            (key, Value::int(1))
+                        }
                     };
                     match weights.entry(key) {
                         std::collections::hash_map::Entry::Occupied(mut e) => {
@@ -186,13 +204,14 @@ impl Interpreter {
                 let weights: HashMap<String, f64> =
                     weights.into_iter().map(|(k, v)| (k, v.to_f64())).collect();
                 Ok(if type_name == "MixHash" {
-                    Value::mix_hash(weights)
+                    Value::mix_hash_with_original_keys(weights, originals)
                 } else {
-                    Value::mix(weights)
+                    Value::mix_with_original_keys(weights, originals)
                 })
             }
             "Bag" | "BagHash" => {
                 let mut counts: HashMap<String, i64> = HashMap::new();
+                let mut originals: HashMap<String, Value> = HashMap::new();
                 for item in &items {
                     let (key, count) = match item.view() {
                         ValueView::Pair(k, v) => {
@@ -201,7 +220,7 @@ impl Interpreter {
                                 ValueView::Num(n) => n as i64,
                                 _ => 1,
                             };
-                            (k.clone(), c)
+                            (crate::runtime::utils::str_elem_key(k), c)
                         }
                         ValueView::ValuePair(k, v) => {
                             let c = match v.view() {
@@ -209,50 +228,81 @@ impl Interpreter {
                                 ValueView::Num(n) => n as i64,
                                 _ => 1,
                             };
-                            (k.to_string_value(), c)
+                            let (key, elem) = crate::runtime::utils::quanthash_elem_entry(k);
+                            crate::runtime::utils::record_quanthash_original(
+                                &mut originals,
+                                &key,
+                                &elem,
+                            );
+                            (key, c)
                         }
-                        _ => (item.to_string_value(), 1),
+                        _ => {
+                            let (key, elem) = crate::runtime::utils::quanthash_elem_entry(item);
+                            crate::runtime::utils::record_quanthash_original(
+                                &mut originals,
+                                &key,
+                                &elem,
+                            );
+                            (key, 1)
+                        }
                     };
                     *counts.entry(key).or_insert(0) += count;
                 }
                 // Remove zero-count entries
                 counts.retain(|_, v| *v > 0);
                 Ok(if type_name == "BagHash" {
-                    Value::bag_hash(counts)
+                    Value::bag_hash_typed(counts, originals)
                 } else {
-                    Value::bag(counts)
+                    Value::bag_typed(counts, originals)
                 })
             }
             "Set" | "SetHash" => {
                 let mut elems = std::collections::HashSet::new();
+                let mut originals: HashMap<String, Value> = HashMap::new();
                 for item in &items {
                     match item.view() {
                         ValueView::Pair(k, v) => {
                             if v.truthy() {
-                                elems.insert(k.clone());
+                                elems.insert(crate::runtime::utils::str_elem_key(k));
                             }
                         }
                         ValueView::ValuePair(k, v) => {
                             if v.truthy() {
-                                elems.insert(k.to_string_value());
+                                crate::runtime::utils::quanthash_insert_set(
+                                    &mut elems,
+                                    &mut originals,
+                                    k,
+                                );
                             }
                         }
                         ValueView::Hash(h) => {
                             for (k, v) in h.iter() {
                                 if v.truthy() {
-                                    elems.insert(k.clone());
+                                    if h.has_typed_keys() {
+                                        crate::runtime::utils::quanthash_insert_set(
+                                            &mut elems,
+                                            &mut originals,
+                                            &h.typed_key(k),
+                                        );
+                                    } else {
+                                        elems.insert(crate::runtime::utils::str_elem_key(k));
+                                    }
                                 }
                             }
                         }
                         _ => {
-                            elems.insert(item.to_string_value());
+                            crate::runtime::utils::quanthash_insert_set(
+                                &mut elems,
+                                &mut originals,
+                                item,
+                            );
                         }
                     }
                 }
                 Ok(if type_name == "SetHash" {
-                    Value::set_hash(elems)
+                    Value::set_hash_typed(elems, originals)
                 } else {
-                    Value::set(elems)
+                    Value::set_typed(elems, originals)
                 })
             }
             _ => Err(RuntimeError::new(format!(

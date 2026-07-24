@@ -429,7 +429,32 @@ impl Interpreter {
         } else {
             idx_val
         };
-        let key = idx_val.to_string_value();
+        // QuantHash element stores are `.WHICH`-keyed (a plain hash/array keeps
+        // the display-string key); the element object goes into `original_keys`
+        // on the write side below.
+        let quanthash_target = matches!(
+            container.as_ref().map(Value::view),
+            Some(ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..))
+        ) || matches!(
+            container.as_ref().map(Value::view),
+            Some(ValueView::Package(sym))
+                if matches!(
+                    sym.resolve().as_str(),
+                    "Set" | "SetHash" | "Bag" | "BagHash" | "Mix" | "MixHash"
+                )
+        ) || matches!(
+            declared_type_incdec.as_deref(),
+            Some("SetHash" | "BagHash" | "MixHash")
+        ) || matches!(
+            declared_constraint_incdec.as_deref(),
+            Some("SetHash" | "BagHash" | "MixHash")
+        );
+        let (key, quanthash_elem) = if quanthash_target {
+            let (k, e) = crate::runtime::utils::quanthash_elem_entry(&idx_val);
+            (k, Some(e))
+        } else {
+            (idx_val.to_string_value(), None)
+        };
         // `$vec[1]++` / `$vec[1]--` on an `is Array` subclass instance held in a
         // scalar: inc/dec the element inside the backing `__mutsu_array_storage`
         // in place, so the write is visible through the shared instance cell.
@@ -775,9 +800,19 @@ impl Interpreter {
                     // Container identity (§3): write through a shared node.
                     let m = crate::value::gc_data_mut(mix);
                     if new_val.truthy() {
+                        if let Some(el) = &quanthash_elem {
+                            crate::runtime::utils::record_quanthash_original(
+                                m.original_keys.get_or_insert_with(Default::default),
+                                &key,
+                                el,
+                            );
+                        }
                         m.insert(key.clone(), weight);
                     } else {
                         m.remove(&key);
+                        if let Some(ok) = m.original_keys.as_mut() {
+                            ok.remove(&key);
+                        }
                     }
                     Ok(true)
                 })
@@ -791,9 +826,19 @@ impl Interpreter {
                     // Container identity (§3): write through a shared node.
                     let s = crate::value::gc_data_mut(set);
                     if new_val.truthy() {
+                        if let Some(el) = &quanthash_elem {
+                            crate::runtime::utils::record_quanthash_original(
+                                s.original_keys.get_or_insert_with(Default::default),
+                                &key,
+                                el,
+                            );
+                        }
                         s.insert(key.clone());
                     } else {
                         s.remove(&key);
+                        if let Some(ok) = s.original_keys.as_mut() {
+                            ok.remove(&key);
+                        }
                     }
                     Ok(true)
                 })
@@ -812,9 +857,19 @@ impl Interpreter {
                         _ => num_bigint::BigInt::from(0),
                     };
                     if num_traits::Signed::is_positive(&n) {
+                        if let Some(el) = &quanthash_elem {
+                            crate::runtime::utils::record_quanthash_original(
+                                b.original_keys.get_or_insert_with(Default::default),
+                                &key,
+                                el,
+                            );
+                        }
                         b.insert(key.clone(), n);
                     } else {
                         b.remove(&key);
+                        if let Some(ok) = b.original_keys.as_mut() {
+                            ok.remove(&key);
+                        }
                     }
                     Ok(true)
                 })
@@ -826,32 +881,53 @@ impl Interpreter {
                 match type_name.as_str() {
                     "MixHash" => {
                         let mut weights = HashMap::new();
+                        let mut originals = HashMap::new();
+                        if let Some(el) = &quanthash_elem {
+                            crate::runtime::utils::record_quanthash_original(
+                                &mut originals,
+                                &key,
+                                el,
+                            );
+                        }
                         let weight = Self::mix_assignment_weight(&new_val)?;
                         if new_val.truthy() {
                             weights.insert(key.clone(), weight);
                         }
-                        *container_value = Value::mix_hash(weights);
+                        *container_value = Value::mix_hash_with_original_keys(weights, originals);
                         true
                     }
                     "BagHash" => {
                         let mut counts = HashMap::new();
+                        let mut originals = HashMap::new();
+                        if let Some(el) = &quanthash_elem {
+                            crate::runtime::utils::record_quanthash_original(
+                                &mut originals,
+                                &key,
+                                el,
+                            );
+                        }
                         if let ValueView::Int(n) = new_val.view()
                             && n > 0
                         {
                             counts.insert(key.clone(), n);
                         }
-                        *container_value = Value::bag_hash(counts);
+                        *container_value = Value::bag_hash_typed(counts, originals);
                         true
                     }
                     "SetHash" => {
                         let mut items = std::collections::HashSet::new();
+                        let mut originals = HashMap::new();
+                        if let Some(el) = &quanthash_elem {
+                            crate::runtime::utils::record_quanthash_original(
+                                &mut originals,
+                                &key,
+                                el,
+                            );
+                        }
                         if new_val.truthy() {
                             items.insert(key.clone());
                         }
-                        *container_value = Value::set_parts(
-                            crate::gc::Gc::new(crate::value::SetData::new(items)),
-                            true,
-                        );
+                        *container_value = Value::set_hash_typed(items, originals);
                         true
                     }
                     _ => false,
@@ -886,30 +962,51 @@ impl Interpreter {
                 let new_container = match type_name {
                     "MixHash" => {
                         let mut weights = HashMap::new();
+                        let mut originals = HashMap::new();
+                        if let Some(el) = &quanthash_elem {
+                            crate::runtime::utils::record_quanthash_original(
+                                &mut originals,
+                                &key,
+                                el,
+                            );
+                        }
                         let weight = Self::mix_assignment_weight(&new_val)?;
                         if new_val.truthy() {
                             weights.insert(key.clone(), weight);
                         }
-                        Value::mix_hash(weights)
+                        Value::mix_hash_with_original_keys(weights, originals)
                     }
                     "BagHash" => {
                         let mut counts = HashMap::new();
+                        let mut originals = HashMap::new();
+                        if let Some(el) = &quanthash_elem {
+                            crate::runtime::utils::record_quanthash_original(
+                                &mut originals,
+                                &key,
+                                el,
+                            );
+                        }
                         if let ValueView::Int(n) = new_val.view()
                             && n > 0
                         {
                             counts.insert(key.clone(), n);
                         }
-                        Value::bag_hash(counts)
+                        Value::bag_hash_typed(counts, originals)
                     }
                     "SetHash" => {
                         let mut items = std::collections::HashSet::new();
+                        let mut originals = HashMap::new();
+                        if let Some(el) = &quanthash_elem {
+                            crate::runtime::utils::record_quanthash_original(
+                                &mut originals,
+                                &key,
+                                el,
+                            );
+                        }
                         if new_val.truthy() {
                             items.insert(key.clone());
                         }
-                        Value::set_parts(
-                            crate::gc::Gc::new(crate::value::SetData::new(items)),
-                            true,
-                        )
+                        Value::set_hash_typed(items, originals)
                     }
                     _ => unreachable!(),
                 };

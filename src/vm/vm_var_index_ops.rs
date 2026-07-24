@@ -1394,48 +1394,51 @@ impl Interpreter {
             }
             (ValueView::Set(s, _), ValueView::Array(keys, ..)) => Value::array(
                 keys.iter()
-                    .map(|k| Value::truth(s.contains(&k.to_string_value())))
+                    .map(|k| {
+                        let (key, _) = crate::runtime::utils::quanthash_elem_entry(k);
+                        Value::truth(s.contains(&key))
+                    })
                     .collect(),
             ),
-            (ValueView::Set(s, _), ValueView::Str(key)) => Value::truth(s.contains(key.as_str())),
             // `%set{*}` returns all values (each element's membership is True).
             (ValueView::Set(s, _), ValueView::Whatever) => {
                 Value::array(s.iter().map(|_| Value::truth(true)).collect())
             }
-            (ValueView::Set(s, _), _) => Value::truth(s.contains(&index.to_string_value())),
+            (ValueView::Set(s, _), _) => {
+                let (key, _) = crate::runtime::utils::quanthash_elem_entry(&index);
+                Value::truth(s.contains(&key))
+            }
             (ValueView::Bag(b, _), ValueView::Array(keys, ..)) => Value::array(
                 keys.iter()
                     .map(|k| {
-                        Value::from_bigint(b.get(&k.to_string_value()).cloned().unwrap_or_default())
+                        let (key, _) = crate::runtime::utils::quanthash_elem_entry(k);
+                        Value::from_bigint(b.get(&key).cloned().unwrap_or_default())
                     })
                     .collect(),
             ),
-            (ValueView::Bag(b, _), ValueView::Str(key)) => {
-                Value::from_bigint(b.get(key.as_str()).cloned().unwrap_or_default())
-            }
             // `%bag{*}` returns all values (the element weights/counts).
             (ValueView::Bag(b, _), ValueView::Whatever) => {
                 Value::array(b.values().map(|c| Value::from_bigint(c.clone())).collect())
             }
             (ValueView::Bag(b, _), _) => {
-                Value::from_bigint(b.get(&index.to_string_value()).cloned().unwrap_or_default())
+                let (key, _) = crate::runtime::utils::quanthash_elem_entry(&index);
+                Value::from_bigint(b.get(&key).cloned().unwrap_or_default())
             }
             (ValueView::Mix(m, _), ValueView::Array(keys, ..)) => Value::array(
                 keys.iter()
                     .map(|k| {
-                        Self::mix_weight_as_value(*m.get(&k.to_string_value()).unwrap_or(&0.0))
+                        let (key, _) = crate::runtime::utils::quanthash_elem_entry(k);
+                        Self::mix_weight_as_value(*m.get(&key).unwrap_or(&0.0))
                     })
                     .collect(),
             ),
-            (ValueView::Mix(m, _), ValueView::Str(key)) => {
-                Self::mix_weight_as_value(*m.get(key.as_str()).unwrap_or(&0.0))
-            }
             // `%mix{*}` returns all values (the element weights).
             (ValueView::Mix(m, _), ValueView::Whatever) => {
                 Value::array(m.values().map(|w| Self::mix_weight_as_value(*w)).collect())
             }
             (ValueView::Mix(m, _), _) => {
-                Self::mix_weight_as_value(*m.get(&index.to_string_value()).unwrap_or(&0.0))
+                let (key, _) = crate::runtime::utils::quanthash_elem_entry(&index);
+                Self::mix_weight_as_value(*m.get(&key).unwrap_or(&0.0))
             }
             // Range indexing (supports infinite ranges)
             (_, ValueView::Int(i)) if target.is_range() => {

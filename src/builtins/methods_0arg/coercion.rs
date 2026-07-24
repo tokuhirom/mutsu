@@ -905,11 +905,12 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
             named.insert("value".to_string(), v.clone());
             Ok(Value::capture(vec![], named))
         }
-        // Set.Capture → named args where each key maps to True
+        // Set.Capture → named args where each key maps to True (the named-arg
+        // name is the element's display string; store keys are `.WHICH`).
         ValueView::Set(s, _) => {
             let mut named = HashMap::new();
             for k in s.iter() {
-                named.insert(k.clone(), Value::TRUE);
+                named.insert(s.typed_key(k).to_string_value(), Value::TRUE);
             }
             Ok(Value::capture(vec![], named))
         }
@@ -917,7 +918,10 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
         ValueView::Bag(b, _) => {
             let mut named = HashMap::new();
             for (k, v) in b.iter() {
-                named.insert(k.clone(), Value::from_bigint(v.clone()));
+                named.insert(
+                    b.typed_key(k).to_string_value(),
+                    Value::from_bigint(v.clone()),
+                );
             }
             Ok(Value::capture(vec![], named))
         }
@@ -931,7 +935,7 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
                 } else {
                     Value::num(*v)
                 };
-                named.insert(k.clone(), val);
+                named.insert(m.typed_key(k).to_string_value(), val);
             }
             Ok(Value::capture(vec![], named))
         }

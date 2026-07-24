@@ -1088,42 +1088,51 @@ pub(crate) fn setbagmix_raku(v: &Value) -> Option<String> {
         ValueView::Mix(m, false) if m.is_empty() => Some("mix()".to_string()),
         ValueView::Set(s, mutable) => {
             let type_name = if mutable { "SetHash" } else { "Set" };
-            let mut keys: Vec<&String> = s.iter().collect();
-            keys.sort();
-            let elems = keys
-                .iter()
-                .map(|k| raku_value(&s.typed_key(k)))
-                .collect::<Vec<_>>()
-                .join(",");
+            let ptr = crate::gc::Gc::as_ptr(&s) as usize;
+            let elems = crate::value::with_quanthash_render_guard(ptr, || {
+                let mut keys: Vec<&String> = s.iter().collect();
+                keys.sort();
+                keys.iter()
+                    .map(|k| raku_value(&s.typed_key(k)))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            })
+            .unwrap_or_else(|| "...".to_string());
             Some(format!("{}.new({})", type_name, elems))
         }
         ValueView::Bag(b, mutable) => {
             let type_name = if mutable { "BagHash" } else { "Bag" };
-            let mut keys: Vec<(&String, &num_bigint::BigInt)> = b.iter().collect();
-            keys.sort_by_key(|(k, _)| (*k).clone());
-            let pairs = keys
-                .iter()
-                .map(|(k, w)| format!("{}=>{}", raku_value(&b.typed_key(k)), w))
-                .collect::<Vec<_>>()
-                .join(",");
+            let ptr = crate::gc::Gc::as_ptr(&b) as usize;
+            let pairs = crate::value::with_quanthash_render_guard(ptr, || {
+                let mut keys: Vec<(&String, &num_bigint::BigInt)> = b.iter().collect();
+                keys.sort_by_key(|(k, _)| (*k).clone());
+                keys.iter()
+                    .map(|(k, w)| format!("{}=>{}", raku_value(&b.typed_key(k)), w))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            })
+            .unwrap_or_else(|| "...".to_string());
             Some(format!("({}).{}", pairs, type_name))
         }
         ValueView::Mix(m, mutable) => {
             let type_name = if mutable { "MixHash" } else { "Mix" };
-            let mut keys: Vec<(&String, &f64)> = m.iter().collect();
-            keys.sort_by_key(|(k, _)| (*k).clone());
-            let pairs = keys
-                .iter()
-                .map(|(k, w)| {
-                    let w_str = if w.fract() == 0.0 {
-                        format!("{}", **w as i64)
-                    } else {
-                        format!("{}", w)
-                    };
-                    format!("{}=>{}", raku_value(&m.typed_key(k)), w_str)
-                })
-                .collect::<Vec<_>>()
-                .join(",");
+            let ptr = crate::gc::Gc::as_ptr(&m) as usize;
+            let pairs = crate::value::with_quanthash_render_guard(ptr, || {
+                let mut keys: Vec<(&String, &f64)> = m.iter().collect();
+                keys.sort_by_key(|(k, _)| (*k).clone());
+                keys.iter()
+                    .map(|(k, w)| {
+                        let w_str = if w.fract() == 0.0 {
+                            format!("{}", **w as i64)
+                        } else {
+                            format!("{}", w)
+                        };
+                        format!("{}=>{}", raku_value(&m.typed_key(k)), w_str)
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",")
+            })
+            .unwrap_or_else(|| "...".to_string());
             Some(format!("({}).{}", pairs, type_name))
         }
         _ => None,

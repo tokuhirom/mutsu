@@ -13,6 +13,47 @@ impl Interpreter {
         key: String,
         value: &Value,
     ) -> Result<(), RuntimeError> {
+        self.quanthash_set_weight_impl(code, source, key, None, value)
+    }
+
+    /// Like [`quanthash_set_weight`] but keyed by the element OBJECT (the pair
+    /// key of a `.pairs`/`.kv` writeback): computes the `.WHICH` store key and
+    /// records the element in `original_keys` on insert.
+    pub(crate) fn quanthash_set_weight_elem(
+        &mut self,
+        code: &CompiledCode,
+        source: &str,
+        elem: &Value,
+        value: &Value,
+    ) -> Result<(), RuntimeError> {
+        let (key, elem) = crate::runtime::utils::quanthash_elem_entry(elem);
+        self.quanthash_set_weight_impl(code, source, key, Some(&elem), value)
+    }
+
+    fn quanthash_set_weight_impl(
+        &mut self,
+        code: &CompiledCode,
+        source: &str,
+        key: String,
+        elem: Option<&Value>,
+        value: &Value,
+    ) -> Result<(), RuntimeError> {
+        let record = |originals: &mut Option<std::collections::HashMap<String, Value>>,
+                      key: &str| {
+            if let Some(el) = elem {
+                crate::runtime::utils::record_quanthash_original(
+                    originals.get_or_insert_with(Default::default),
+                    key,
+                    el,
+                );
+            }
+        };
+        let forget = |originals: &mut Option<std::collections::HashMap<String, Value>>,
+                      key: &str| {
+            if let Some(ok) = originals.as_mut() {
+                ok.remove(key);
+            }
+        };
         let source_val = self.get_env_with_main_alias(source);
         let updated = match source_val.as_ref().map(Value::view) {
             Some(ValueView::Bag(bag, true)) => {
@@ -23,7 +64,9 @@ impl Interpreter {
                 // unlike a Mix where a negative weight is retained.
                 if !num_traits::Signed::is_positive(&count) {
                     b.counts.remove(&key);
+                    forget(&mut b.original_keys, &key);
                 } else {
+                    record(&mut b.original_keys, &key);
                     b.counts.insert(key, count);
                 }
                 Value::bag_parts(crate::gc::Gc::new(b), true)
@@ -33,7 +76,9 @@ impl Interpreter {
                 let mut m = (**mix).clone();
                 if weight == 0.0 {
                     m.remove(&key);
+                    forget(&mut m.original_keys, &key);
                 } else {
+                    record(&mut m.original_keys, &key);
                     m.insert(key, weight);
                 }
                 Value::mix_parts(crate::gc::Gc::new(m), true)
@@ -41,9 +86,11 @@ impl Interpreter {
             Some(ValueView::Set(set, true)) => {
                 let mut s = (**set).clone();
                 if value.truthy() {
+                    record(&mut s.original_keys, &key);
                     s.elements.insert(key);
                 } else {
                     s.elements.remove(&key);
+                    forget(&mut s.original_keys, &key);
                 }
                 Value::set_parts(crate::gc::Gc::new(s), true)
             }
@@ -107,7 +154,7 @@ impl Interpreter {
             let Some(value) = self.env().get(&rw_param_names[1]).cloned() else {
                 return Ok(());
             };
-            self.quanthash_set_weight(code, source, key.to_string_value(), &value)
+            self.quanthash_set_weight_elem(code, source, &key, &value)
         } else {
             // `.values -> $v is rw`: single rw param, key by captured order.
             let var = rw_param_names

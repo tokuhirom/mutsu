@@ -165,7 +165,7 @@ pub(crate) fn native_method_2arg(
                     .map(|(k, v)| {
                         runtime::format_sprintf_args(
                             &fmt_str,
-                            &[Value::str(k.clone()), Value::from_bigint(v.clone())],
+                            &[items.typed_key(k), Value::from_bigint(v.clone())],
                         )
                     })
                     .collect::<Vec<_>>()
@@ -175,10 +175,7 @@ pub(crate) fn native_method_2arg(
                 let rendered = items
                     .iter()
                     .map(|k| {
-                        runtime::format_sprintf_args(
-                            &fmt_str,
-                            &[Value::str(k.clone()), Value::TRUE],
-                        )
+                        runtime::format_sprintf_args(&fmt_str, &[items.typed_key(k), Value::TRUE])
                     })
                     .collect::<Vec<_>>()
                     .join(&sep);
@@ -189,7 +186,7 @@ pub(crate) fn native_method_2arg(
                     .map(|(k, v)| {
                         runtime::format_sprintf_args(
                             &fmt_str,
-                            &[Value::str(k.clone()), Value::num(*v)],
+                            &[items.typed_key(k), Value::num(*v)],
                         )
                     })
                     .collect::<Vec<_>>()

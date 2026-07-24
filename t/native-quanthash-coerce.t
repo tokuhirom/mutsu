@@ -28,7 +28,7 @@ is (1, [2, 2]).Bag.total, 3, 'List flattens in .Bag';
 is [1, [2, 2]].Bag.elems, 2, 'Array whole in .Bag';
 
 # --- .Mix (Real weights) ---
-is (1.5, 2.5, 2.5).Mix<2.5>, 2, 'List.Mix counts occurrences';
+is (1.5, 2.5, 2.5).Mix{2.5}, 2, 'List.Mix counts occurrences';
 is ('a' => 1.5, 'b' => 2.5).Mix<b>, 2.5, 'Mix keeps fractional weight';
 is ('a' => 1.5, 'a' => 0.5).Mix<a>, 2.0, 'Mix sums duplicate keys';
 
@@ -36,9 +36,9 @@ is ('a' => 1.5, 'a' => 0.5).Mix<a>, 2.0, 'Mix sums duplicate keys';
 {
     my $s = (1, 2, 3).SetHash;
     ok $s ~~ SetHash, '.SetHash is a SetHash';
-    $s<4> = True;
+    $s{4} = True;
     is $s.elems, 4, 'SetHash is mutable';
-    $s<1>:delete;
+    $s{1}:delete;
     is $s.elems, 3, 'SetHash delete';
 }
 {
@@ -52,8 +52,8 @@ is ('a' => 1.5, 'a' => 0.5).Mix<a>, 2.0, 'Mix sums duplicate keys';
 {
     my $m = (1, 2, 3).MixHash;
     ok $m ~~ MixHash, '.MixHash is a MixHash';
-    $m<2> += 1.5;
-    is $m<2>, 2.5, 'MixHash mutable fractional';
+    $m{2} += 1.5;
+    is $m{2}, 2.5, 'MixHash mutable fractional';
 }
 
 # --- coercions compose with set operators (the breadth driver) ---

@@ -2,9 +2,8 @@ use crate::runtime;
 use crate::value::{Value, ValueView};
 use num_bigint::BigInt;
 use num_traits::Zero;
-use std::collections::HashMap;
 
-pub(crate) fn sample_weighted_mix_key(items: &HashMap<String, f64>) -> Option<Value> {
+pub(crate) fn sample_weighted_mix_key(items: &crate::value::MixData) -> Option<Value> {
     let mut total = 0.0;
     for weight in items.values() {
         if weight.is_finite() && *weight > 0.0 {
@@ -15,21 +14,21 @@ pub(crate) fn sample_weighted_mix_key(items: &HashMap<String, f64>) -> Option<Va
         return None;
     }
     let mut needle = crate::builtins::rng::builtin_rand() * total;
-    for (key, weight) in items {
+    for (key, weight) in items.iter() {
         if !weight.is_finite() || *weight <= 0.0 {
             continue;
         }
         if needle <= *weight {
-            return Some(Value::str(key.clone()));
+            return Some(items.typed_key(key));
         }
         needle -= *weight;
     }
     items
         .iter()
-        .find_map(|(key, weight)| (*weight > 0.0).then(|| Value::str(key.clone())))
+        .find_map(|(key, weight)| (*weight > 0.0).then(|| items.typed_key(key)))
 }
 
-pub(crate) fn sample_weighted_bag_key(items: &HashMap<String, BigInt>) -> Option<Value> {
+pub(crate) fn sample_weighted_bag_key(items: &crate::value::BagData) -> Option<Value> {
     use crate::runtime::utils::bigint_to_i128_sat;
     let mut total: i128 = 0;
     for count in items.values() {
@@ -46,19 +45,19 @@ pub(crate) fn sample_weighted_bag_key(items: &HashMap<String, BigInt>) -> Option
     if needle >= total {
         needle = total - 1;
     }
-    for (key, count) in items {
+    for (key, count) in items.iter() {
         let count = bigint_to_i128_sat(count);
         if count <= 0 {
             continue;
         }
         if needle < count {
-            return Some(Value::str(key.clone()));
+            return Some(items.typed_key(key));
         }
         needle -= count;
     }
     items
         .iter()
-        .find_map(|(key, count)| (*count > BigInt::zero()).then(|| Value::str(key.clone())))
+        .find_map(|(key, count)| (*count > BigInt::zero()).then(|| items.typed_key(key)))
 }
 
 pub(crate) fn int_to_superscript(n: i64) -> String {

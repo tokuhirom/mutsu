@@ -50,11 +50,12 @@ pub(crate) fn with_set_mutability(mut result: Value, mutable: bool) -> Value {
 /// In Raku, when the RHS is a Hash, it is treated as a Set (truthy keys
 /// with weight 1) rather than using its numeric values as weights.
 pub(crate) fn set_diff_values(left: &Value, right: &Value) -> Value {
+    let mut originals: HashMap<String, Value> = HashMap::new();
     // When the RHS is a Hash, coerce it to a Set for subtraction.
     // The Hash's truthy keys each count as weight 1.
     let right_as_set;
     let effective_right = if matches!(right.view(), ValueView::Hash(_)) {
-        right_as_set = Value::set(coerce_to_set(right));
+        right_as_set = Value::set_typed(coerce_to_set(right, &mut originals), HashMap::new());
         &right_as_set
     } else {
         right
@@ -64,8 +65,8 @@ pub(crate) fn set_diff_values(left: &Value, right: &Value) -> Value {
     match level {
         2 => {
             // Mix-level difference: include all keys, keep non-zero results
-            let a = to_mix_map(left);
-            let b = to_mix_map(effective_right);
+            let a = to_mix_map(left, &mut originals);
+            let b = to_mix_map(effective_right, &mut originals);
             let mut result = HashMap::new();
             for (k, v) in &a {
                 let bv = b.get(k).copied().unwrap_or(0.0);
@@ -79,12 +80,12 @@ pub(crate) fn set_diff_values(left: &Value, right: &Value) -> Value {
                     result.insert(k.clone(), -*v);
                 }
             }
-            Value::mix(result)
+            Value::mix_with_original_keys(result, originals)
         }
         1 => {
             // Bag-level difference: only positive results
-            let a = to_bag_map(left);
-            let b = to_bag_map(effective_right);
+            let a = to_bag_map(left, &mut originals);
+            let b = to_bag_map(effective_right, &mut originals);
             let mut result = HashMap::new();
             for (k, v) in &a {
                 let bv = b.get(k).copied().unwrap_or(0);
@@ -92,13 +93,13 @@ pub(crate) fn set_diff_values(left: &Value, right: &Value) -> Value {
                     result.insert(k.clone(), *v - bv);
                 }
             }
-            Value::bag(result)
+            Value::bag_typed(result, originals)
         }
         _ => {
             // Set-level difference
-            let a = coerce_to_set(left);
-            let b = coerce_to_set(effective_right);
-            Value::set(a.difference(&b).cloned().collect())
+            let a = coerce_to_set(left, &mut originals);
+            let b = coerce_to_set(effective_right, &mut originals);
+            Value::set_typed(a.difference(&b).cloned().collect(), originals)
         }
     }
 }
@@ -114,49 +115,61 @@ pub(crate) fn set_intersect_values(left: &Value, right: &Value) -> Value {
         }
     };
     let result_level = type_level(left).max(type_level(right));
+    let mut originals: HashMap<String, Value> = HashMap::new();
     match result_level {
         2 => {
-            let a = coerce_to_mix(left);
-            let b = coerce_to_mix(right);
+            let a = coerce_to_mix(left, &mut originals);
+            let b = coerce_to_mix(right, &mut originals);
             let mut result = HashMap::new();
             for (k, v) in a.iter() {
                 if let Some(bv) = b.get(k) {
                     result.insert(k.clone(), v.min(*bv));
                 }
             }
-            Value::mix(result)
+            Value::mix_with_original_keys(result, originals)
         }
         1 => {
-            let a = coerce_to_bag(left);
-            let b = coerce_to_bag(right);
+            let a = coerce_to_bag(left, &mut originals);
+            let b = coerce_to_bag(right, &mut originals);
             let mut result = HashMap::new();
             for (k, v) in a.iter() {
                 if let Some(bv) = b.get(k) {
                     result.insert(k.clone(), (*v).min(*bv));
                 }
             }
-            Value::bag(result)
+            Value::bag_typed(result, originals)
         }
         _ => {
-            let a = coerce_to_set(left);
-            let b = coerce_to_set(right);
-            Value::set(a.intersection(&b).cloned().collect())
+            let a = coerce_to_set(left, &mut originals);
+            let b = coerce_to_set(right, &mut originals);
+            Value::set_typed(a.intersection(&b).cloned().collect(), originals)
         }
     }
 }
 
 /// Coerce a value to a Bag (HashMap<String, i64>)
-fn coerce_to_bag(val: &Value) -> HashMap<String, i64> {
+fn coerce_to_bag(val: &Value, originals: &mut HashMap<String, Value>) -> HashMap<String, i64> {
     match val.view() {
-        ValueView::Bag(b, _) => resolve_bag_tab_keys(&b),
-        ValueView::Set(s, _) => s.iter().map(|k| (k.clone(), 1)).collect(),
-        ValueView::Mix(m, _) => m.iter().map(|(k, v)| (k.clone(), *v as i64)).collect(),
+        ValueView::Bag(b, _) => {
+            extend_quanthash_originals(originals, &b.original_keys);
+            resolve_bag_tab_keys(&b)
+        }
+        ValueView::Set(s, _) => {
+            extend_quanthash_originals(originals, &s.original_keys);
+            s.iter().map(|k| (k.clone(), 1)).collect()
+        }
+        ValueView::Mix(m, _) => {
+            extend_quanthash_originals(originals, &m.original_keys);
+            m.iter().map(|(k, v)| (k.clone(), *v as i64)).collect()
+        }
         _ => {
             // Count occurrences for list-like values
             let items = value_to_list(val);
             let mut result = HashMap::new();
             for item in &items {
-                *result.entry(item.to_string_value()).or_insert(0i64) += 1;
+                let (key, elem) = quanthash_elem_entry(item);
+                record_quanthash_original(originals, &key, &elem);
+                *result.entry(key).or_insert(0i64) += 1;
             }
             result
         }
@@ -164,20 +177,29 @@ fn coerce_to_bag(val: &Value) -> HashMap<String, i64> {
 }
 
 /// Coerce a value to a Mix (HashMap<String, f64>)
-fn coerce_to_mix(val: &Value) -> HashMap<String, f64> {
+fn coerce_to_mix(val: &Value, originals: &mut HashMap<String, Value>) -> HashMap<String, f64> {
     match val.view() {
-        ValueView::Mix(m, _) => m.weights.clone(),
+        ValueView::Mix(m, _) => {
+            extend_quanthash_originals(originals, &m.original_keys);
+            m.weights.clone()
+        }
         ValueView::Bag(b, _) => {
+            extend_quanthash_originals(originals, &b.original_keys);
             let resolved = resolve_bag_tab_keys(&b);
             resolved.into_iter().map(|(k, v)| (k, v as f64)).collect()
         }
-        ValueView::Set(s, _) => s.iter().map(|k| (k.clone(), 1.0)).collect(),
+        ValueView::Set(s, _) => {
+            extend_quanthash_originals(originals, &s.original_keys);
+            s.iter().map(|k| (k.clone(), 1.0)).collect()
+        }
         _ => {
             // Count occurrences for list-like values
             let items = value_to_list(val);
             let mut result = HashMap::new();
             for item in &items {
-                *result.entry(item.to_string_value()).or_insert(0.0f64) += 1.0;
+                let (key, elem) = quanthash_elem_entry(item);
+                record_quanthash_original(originals, &key, &elem);
+                *result.entry(key).or_insert(0.0f64) += 1.0;
             }
             result
         }
@@ -193,11 +215,12 @@ fn coerce_to_mix(val: &Value) -> HashMap<String, f64> {
 /// (entries with zero are dropped).
 pub(crate) fn set_sym_diff_values(left: &Value, right: &Value) -> Value {
     let level = set_type_level(left).max(set_type_level(right));
+    let mut originals: HashMap<String, Value> = HashMap::new();
     match level {
         2 => {
             // Mix-level symmetric difference: |a - b| for each key
-            let a = to_mix_map(left);
-            let b = to_mix_map(right);
+            let a = to_mix_map(left, &mut originals);
+            let b = to_mix_map(right, &mut originals);
             let mut result = HashMap::new();
             let mut all_keys: HashSet<String> = a.keys().cloned().collect();
             all_keys.extend(b.keys().cloned());
@@ -209,12 +232,12 @@ pub(crate) fn set_sym_diff_values(left: &Value, right: &Value) -> Value {
                     result.insert(k, diff);
                 }
             }
-            Value::mix(result)
+            Value::mix_with_original_keys(result, originals)
         }
         1 => {
             // Bag-level symmetric difference: |a - b| for each key
-            let a = to_bag_map(left);
-            let b = to_bag_map(right);
+            let a = to_bag_map(left, &mut originals);
+            let b = to_bag_map(right, &mut originals);
             let mut result = HashMap::new();
             let mut all_keys: HashSet<String> = a.keys().cloned().collect();
             all_keys.extend(b.keys().cloned());
@@ -226,13 +249,13 @@ pub(crate) fn set_sym_diff_values(left: &Value, right: &Value) -> Value {
                     result.insert(k, diff);
                 }
             }
-            Value::bag(result)
+            Value::bag_typed(result, originals)
         }
         _ => {
             // Set-level symmetric difference
-            let a = coerce_to_set(left);
-            let b = coerce_to_set(right);
-            Value::set(a.symmetric_difference(&b).cloned().collect())
+            let a = coerce_to_set(left, &mut originals);
+            let b = coerce_to_set(right, &mut originals);
+            Value::set_typed(a.symmetric_difference(&b).cloned().collect(), originals)
         }
     }
 }
@@ -241,10 +264,12 @@ pub(crate) fn set_sym_diff_values(left: &Value, right: &Value) -> Value {
 /// This is NOT a left-fold; it operates on all inputs simultaneously.
 pub(crate) fn set_sym_diff_multi(args: &[Value]) -> Value {
     let level = args.iter().map(set_type_level).max().unwrap_or(0);
+    let mut originals: HashMap<String, Value> = HashMap::new();
     match level {
         2 => {
             // Mix-level: collect all weight vectors per key, then max - second_max
-            let maps: Vec<HashMap<String, f64>> = args.iter().map(to_mix_map).collect();
+            let maps: Vec<HashMap<String, f64>> =
+                args.iter().map(|a| to_mix_map(a, &mut originals)).collect();
             let mut all_keys: HashSet<String> = HashSet::new();
             for m in &maps {
                 all_keys.extend(m.keys().cloned());
@@ -261,11 +286,12 @@ pub(crate) fn set_sym_diff_multi(args: &[Value]) -> Value {
                     result.insert(k, diff);
                 }
             }
-            Value::mix(result)
+            Value::mix_with_original_keys(result, originals)
         }
         1 => {
             // Bag-level: collect all count vectors per key, then max - second_max
-            let maps: Vec<HashMap<String, i64>> = args.iter().map(to_bag_map).collect();
+            let maps: Vec<HashMap<String, i64>> =
+                args.iter().map(|a| to_bag_map(a, &mut originals)).collect();
             let mut all_keys: HashSet<String> = HashSet::new();
             for m in &maps {
                 all_keys.extend(m.keys().cloned());
@@ -282,23 +308,27 @@ pub(crate) fn set_sym_diff_multi(args: &[Value]) -> Value {
                     result.insert(k, diff);
                 }
             }
-            Value::bag(result)
+            Value::bag_typed(result, originals)
         }
         _ => {
             // Set-level: element is in result iff it appears in exactly 1 input
-            let sets: Vec<HashSet<String>> = args.iter().map(coerce_to_set).collect();
+            let sets: Vec<HashSet<String>> = args
+                .iter()
+                .map(|a| coerce_to_set(a, &mut originals))
+                .collect();
             let mut counts: HashMap<String, usize> = HashMap::new();
             for s in &sets {
                 for k in s {
                     *counts.entry(k.clone()).or_insert(0) += 1;
                 }
             }
-            Value::set(
+            Value::set_typed(
                 counts
                     .into_iter()
                     .filter(|(_, count)| *count == 1)
                     .map(|(k, _)| k)
                     .collect(),
+                originals,
             )
         }
     }

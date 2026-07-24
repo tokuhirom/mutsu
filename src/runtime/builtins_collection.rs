@@ -136,59 +136,45 @@ impl Interpreter {
         }
         let mut elems = HashSet::new();
         let mut original_keys = HashMap::new();
-        let mut has_typed_keys = false;
 
         let insert_value = |val: &Value,
                             elems: &mut HashSet<String>,
-                            original_keys: &mut HashMap<String, Value>,
-                            has_typed_keys: &mut bool| {
-            let key = val.to_string_value();
-            if !elems.contains(&key) {
-                // Track original type for non-Str values
-                if !matches!(val.view(), ValueView::Str(_)) {
-                    original_keys.insert(key.clone(), val.clone());
-                    *has_typed_keys = true;
-                }
-                elems.insert(key);
-            }
+                            original_keys: &mut HashMap<String, Value>| {
+            crate::runtime::utils::quanthash_insert_set(elems, original_keys, val);
         };
 
         for arg in args {
             match arg.view() {
                 // Itemized arrays ($[...]) are treated as a single element
                 ValueView::Array(_, kind) if kind.is_itemized() => {
-                    insert_value(arg, &mut elems, &mut original_keys, &mut has_typed_keys);
+                    insert_value(arg, &mut elems, &mut original_keys);
                 }
                 // Regular arrays are flattened
                 ValueView::Array(items, ..) => {
                     for item in items.iter() {
-                        insert_value(item, &mut elems, &mut original_keys, &mut has_typed_keys);
+                        insert_value(item, &mut elems, &mut original_keys);
                     }
                 }
                 // Hashes are decomposed into their pairs
                 ValueView::Hash(map) => {
                     for (k, v) in map.iter() {
                         let pair = Value::pair(k.clone(), v.clone());
-                        insert_value(&pair, &mut elems, &mut original_keys, &mut has_typed_keys);
+                        insert_value(&pair, &mut elems, &mut original_keys);
                     }
                 }
                 // A Seq (e.g. from `.map`/`.comb`) is a list of elements, not one
                 // opaque value — flatten it like a regular array.
                 ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
                     for item in items.iter() {
-                        insert_value(item, &mut elems, &mut original_keys, &mut has_typed_keys);
+                        insert_value(item, &mut elems, &mut original_keys);
                     }
                 }
                 _ => {
-                    insert_value(arg, &mut elems, &mut original_keys, &mut has_typed_keys);
+                    insert_value(arg, &mut elems, &mut original_keys);
                 }
             }
         }
-        if has_typed_keys {
-            Ok(Value::set_typed(elems, original_keys))
-        } else {
-            Ok(Value::set(elems))
-        }
+        Ok(Value::set_typed(elems, original_keys))
     }
 
     pub(super) fn builtin_bag(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -203,69 +189,53 @@ impl Interpreter {
         // Each element (including pairs) is treated as an opaque value to count.
         let mut counts: HashMap<String, i64> = HashMap::new();
         let mut original_keys: HashMap<String, Value> = HashMap::new();
-        let mut has_non_str_keys = false;
 
         fn add_item(
             counts: &mut HashMap<String, i64>,
             original_keys: &mut HashMap<String, Value>,
-            has_non_str: &mut bool,
             item: &Value,
         ) {
-            let str_key = item.to_string_value();
-            if !matches!(item.view(), ValueView::Str(_)) {
-                *has_non_str = true;
-                original_keys
-                    .entry(str_key.clone())
-                    .or_insert_with(|| item.clone());
-            }
-            *counts.entry(str_key).or_insert(0) += 1;
+            let (key, elem) = crate::runtime::utils::quanthash_elem_entry(item);
+            crate::runtime::utils::record_quanthash_original(original_keys, &key, &elem);
+            *counts.entry(key).or_insert(0) += 1;
         }
 
         for arg in args {
             match arg.view() {
                 // Itemized arrays/hashes are single elements
                 ValueView::Array(_, kind) if kind.is_itemized() => {
-                    add_item(&mut counts, &mut original_keys, &mut has_non_str_keys, arg);
+                    add_item(&mut counts, &mut original_keys, arg);
                 }
                 // Regular arrays are flattened
                 ValueView::Array(items, ..) => {
                     for item in items.iter() {
-                        add_item(&mut counts, &mut original_keys, &mut has_non_str_keys, item);
+                        add_item(&mut counts, &mut original_keys, item);
                     }
                 }
                 // Hashes are flattened into their pairs (each pair is a single element)
                 ValueView::Hash(map) => {
                     for (k, v) in map.iter() {
                         let pair = Value::pair(k.clone(), v.clone());
-                        add_item(
-                            &mut counts,
-                            &mut original_keys,
-                            &mut has_non_str_keys,
-                            &pair,
-                        );
+                        add_item(&mut counts, &mut original_keys, &pair);
                     }
                 }
                 // QuantHash types are single elements
                 ValueView::Set(_, _) | ValueView::Bag(_, _) | ValueView::Mix(_, _) => {
-                    add_item(&mut counts, &mut original_keys, &mut has_non_str_keys, arg);
+                    add_item(&mut counts, &mut original_keys, arg);
                 }
                 // A Seq (e.g. from `.map`/`.comb`) is a list of elements, not one
                 // opaque value — flatten it like a regular array.
                 ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
                     for item in items.iter() {
-                        add_item(&mut counts, &mut original_keys, &mut has_non_str_keys, item);
+                        add_item(&mut counts, &mut original_keys, item);
                     }
                 }
                 _ => {
-                    add_item(&mut counts, &mut original_keys, &mut has_non_str_keys, arg);
+                    add_item(&mut counts, &mut original_keys, arg);
                 }
             }
         }
-        if has_non_str_keys {
-            Ok(Value::bag_typed(counts, original_keys))
-        } else {
-            Ok(Value::bag(counts))
-        }
+        Ok(Value::bag_typed(counts, original_keys))
     }
 
     pub(super) fn builtin_mix(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -277,18 +247,12 @@ impl Interpreter {
         }
         let mut weights: HashMap<String, f64> = HashMap::new();
         let mut original_keys: HashMap<String, Value> = HashMap::new();
-        let mut has_typed_keys = false;
 
         let insert_value = |val: &Value,
                             weights: &mut HashMap<String, f64>,
-                            original_keys: &mut HashMap<String, Value>,
-                            has_typed_keys: &mut bool| {
-            let key = val.to_string_value();
-            // Track original type for non-Str values
-            if !matches!(val.view(), ValueView::Str(_)) {
-                original_keys.insert(key.clone(), val.clone());
-                *has_typed_keys = true;
-            }
+                            original_keys: &mut HashMap<String, Value>| {
+            let (key, elem) = crate::runtime::utils::quanthash_elem_entry(val);
+            crate::runtime::utils::record_quanthash_original(original_keys, &key, &elem);
             *weights.entry(key).or_insert(0.0) += 1.0;
         };
 
@@ -296,38 +260,34 @@ impl Interpreter {
             match arg.view() {
                 // Itemized arrays ($[...]) are treated as a single element
                 ValueView::Array(_, kind) if kind.is_itemized() => {
-                    insert_value(arg, &mut weights, &mut original_keys, &mut has_typed_keys);
+                    insert_value(arg, &mut weights, &mut original_keys);
                 }
                 // Regular arrays are flattened; each element becomes a key
                 ValueView::Array(items, ..) => {
                     for item in items.iter() {
-                        insert_value(item, &mut weights, &mut original_keys, &mut has_typed_keys);
+                        insert_value(item, &mut weights, &mut original_keys);
                     }
                 }
                 // Hashes are flattened into their pairs; each pair becomes a key
                 ValueView::Hash(map) => {
                     for (k, v) in map.iter() {
                         let pair = Value::pair(k.clone(), v.clone());
-                        insert_value(&pair, &mut weights, &mut original_keys, &mut has_typed_keys);
+                        insert_value(&pair, &mut weights, &mut original_keys);
                     }
                 }
                 // A Seq (e.g. from `.map`/`.comb`) is a list of elements, not one
                 // opaque value — flatten it like a regular array.
                 ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
                     for item in items.iter() {
-                        insert_value(item, &mut weights, &mut original_keys, &mut has_typed_keys);
+                        insert_value(item, &mut weights, &mut original_keys);
                     }
                 }
                 _ => {
-                    insert_value(arg, &mut weights, &mut original_keys, &mut has_typed_keys);
+                    insert_value(arg, &mut weights, &mut original_keys);
                 }
             }
         }
-        if has_typed_keys {
-            Ok(Value::mix_with_original_keys(weights, original_keys))
-        } else {
-            Ok(Value::mix(weights))
-        }
+        Ok(Value::mix_with_original_keys(weights, original_keys))
     }
 
     /// VM-native dispatch for the pure list/coercion builtin *functions*

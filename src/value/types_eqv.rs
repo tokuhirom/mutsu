@@ -1,4 +1,3 @@
-use super::types::allomorph_type_name;
 use super::*;
 
 impl Value {
@@ -130,31 +129,16 @@ impl Value {
             // Rat/FatRat: structural equality (n == n, d == d), including NaN (0/0)
             (ValueView::Rat(n1, d1), ValueView::Rat(n2, d2))
             | (ValueView::FatRat(n1, d1), ValueView::FatRat(n2, d2)) => n1 == n2 && d1 == d2,
-            // Sets: eqv must distinguish elements that share a string key but
-            // differ in type — specifically an allomorph (e.g. the IntStr <42>)
-            // from a plain value (Int 42), which rakudo separates by `.WHICH`.
-            // We compare the allomorph kind of each typed element rather than a
-            // full type-strict eqv, because mutsu does not always retain a Set
-            // element's exact numeric type (a Rat element can fall back to its
-            // Str key), and a full eqv would wrongly split two equal Rat sets.
+            // Sets: the element store is `.WHICH`-keyed, so comparing the key
+            // sets IS element-identity comparison (an IntStr <42> and an Int 42
+            // occupy different keys, matching rakudo's `.WHICH` separation).
             // Mutability (Set vs SetHash) is part of the type, so eqv must
             // distinguish them (`Set.new(42) eqv SetHash.new(42)` is False).
             // Raku's set operators (`(|)`/`(&)` etc.) always yield an immutable
             // Set regardless of operand mutability, so comparing the flag here
             // matches values produced by those operators too.
             (ValueView::Set(a, a_mut), ValueView::Set(b, b_mut)) => {
-                fn allomorph_kind(v: &Value) -> Option<String> {
-                    match v.view() {
-                        ValueView::Mixin(inner, mixins) => allomorph_type_name(inner, mixins),
-                        _ => None,
-                    }
-                }
-                a_mut == b_mut
-                    && a.elements.len() == b.elements.len()
-                    && a.elements.iter().all(|k| {
-                        b.elements.contains(k)
-                            && allomorph_kind(&a.typed_key(k)) == allomorph_kind(&b.typed_key(k))
-                    })
+                a_mut == b_mut && a.elements == b.elements
             }
             // Bag/Mix: like Set, eqv distinguishes the immutable variant from
             // its mutable QuantHash (Bag vs BagHash, Mix vs MixHash). The data

@@ -698,13 +698,20 @@ impl Interpreter {
         match target.view() {
             ValueView::Mix(_, is_mutable) => {
                 let mut weights = std::collections::HashMap::new();
+                let mut originals = std::collections::HashMap::new();
                 for (i, item) in items.iter().enumerate() {
                     if let Some(result) = results.get(i) {
-                        let key = match item.view() {
-                            ValueView::Pair(k, _) => k.clone(),
-                            ValueView::ValuePair(k, _) => k.to_string_value(),
-                            _ => item.to_string_value(),
+                        let elem = match item.view() {
+                            ValueView::Pair(k, _) => Value::str(k.clone()),
+                            ValueView::ValuePair(k, _) => (*k).clone(),
+                            _ => item.clone(),
                         };
+                        let (key, elem) = crate::runtime::utils::quanthash_elem_entry(&elem);
+                        crate::runtime::utils::record_quanthash_original(
+                            &mut originals,
+                            &key,
+                            &elem,
+                        );
                         weights.insert(
                             key,
                             crate::runtime::utils::to_float_value(result).unwrap_or(0.0),
@@ -712,51 +719,63 @@ impl Interpreter {
                     }
                 }
                 let result = if is_mutable {
-                    Value::mix_hash(weights)
+                    Value::mix_hash_with_original_keys(weights, originals)
                 } else {
-                    Value::mix(weights)
+                    Value::mix_with_original_keys(weights, originals)
                 };
                 self.stack.push(result);
                 return Ok(());
             }
             ValueView::Bag(_, is_mutable) => {
                 let mut counts = std::collections::HashMap::new();
+                let mut originals = std::collections::HashMap::new();
                 for (i, item) in items.iter().enumerate() {
                     if let Some(result) = results.get(i) {
-                        let key = match item.view() {
-                            ValueView::Pair(k, _) => k.clone(),
-                            ValueView::ValuePair(k, _) => k.to_string_value(),
-                            _ => item.to_string_value(),
+                        let elem = match item.view() {
+                            ValueView::Pair(k, _) => Value::str(k.clone()),
+                            ValueView::ValuePair(k, _) => (*k).clone(),
+                            _ => item.clone(),
                         };
+                        let (key, elem) = crate::runtime::utils::quanthash_elem_entry(&elem);
+                        crate::runtime::utils::record_quanthash_original(
+                            &mut originals,
+                            &key,
+                            &elem,
+                        );
                         counts.insert(key, crate::runtime::utils::to_int(result));
                     }
                 }
                 let result = if is_mutable {
-                    Value::bag_hash(counts)
+                    Value::bag_hash_typed(counts, originals)
                 } else {
-                    Value::bag(counts)
+                    Value::bag_typed(counts, originals)
                 };
                 self.stack.push(result);
                 return Ok(());
             }
             ValueView::Set(_, is_mutable) => {
                 let mut elems = std::collections::HashSet::new();
+                let mut originals = std::collections::HashMap::new();
                 for (i, item) in items.iter().enumerate() {
                     if let Some(result) = results.get(i) {
-                        let key = match item.view() {
-                            ValueView::Pair(k, _) => k.clone(),
-                            ValueView::ValuePair(k, _) => k.to_string_value(),
-                            _ => item.to_string_value(),
+                        let elem = match item.view() {
+                            ValueView::Pair(k, _) => Value::str(k.clone()),
+                            ValueView::ValuePair(k, _) => (*k).clone(),
+                            _ => item.clone(),
                         };
                         if result.truthy() {
-                            elems.insert(key);
+                            crate::runtime::utils::quanthash_insert_set(
+                                &mut elems,
+                                &mut originals,
+                                &elem,
+                            );
                         }
                     }
                 }
                 let result = if is_mutable {
-                    Value::set_hash(elems)
+                    Value::set_hash_typed(elems, originals)
                 } else {
-                    Value::set(elems)
+                    Value::set_typed(elems, originals)
                 };
                 self.stack.push(result);
                 return Ok(());
@@ -1150,13 +1169,20 @@ impl Interpreter {
         match target.view() {
             ValueView::Mix(_, is_mutable) => {
                 let mut weights = std::collections::HashMap::new();
+                let mut originals = std::collections::HashMap::new();
                 for (i, item) in items.iter().enumerate() {
                     if let Some(result) = results.get(i) {
-                        let key = match item.view() {
-                            ValueView::Pair(k, _) => k.clone(),
-                            ValueView::ValuePair(k, _) => k.to_string_value(),
-                            _ => item.to_string_value(),
+                        let elem = match item.view() {
+                            ValueView::Pair(k, _) => Value::str(k.clone()),
+                            ValueView::ValuePair(k, _) => (*k).clone(),
+                            _ => item.clone(),
                         };
+                        let (key, elem) = crate::runtime::utils::quanthash_elem_entry(&elem);
+                        crate::runtime::utils::record_quanthash_original(
+                            &mut originals,
+                            &key,
+                            &elem,
+                        );
                         weights.insert(
                             key,
                             crate::runtime::utils::to_float_value(result).unwrap_or(0.0),
@@ -1164,51 +1190,63 @@ impl Interpreter {
                     }
                 }
                 let result = if is_mutable {
-                    Value::mix_hash(weights)
+                    Value::mix_hash_with_original_keys(weights, originals)
                 } else {
-                    Value::mix(weights)
+                    Value::mix_with_original_keys(weights, originals)
                 };
                 self.stack.push(result);
                 return Ok(());
             }
             ValueView::Bag(_, is_mutable) => {
                 let mut counts = std::collections::HashMap::new();
+                let mut originals = std::collections::HashMap::new();
                 for (i, item) in items.iter().enumerate() {
                     if let Some(result) = results.get(i) {
-                        let key = match item.view() {
-                            ValueView::Pair(k, _) => k.clone(),
-                            ValueView::ValuePair(k, _) => k.to_string_value(),
-                            _ => item.to_string_value(),
+                        let elem = match item.view() {
+                            ValueView::Pair(k, _) => Value::str(k.clone()),
+                            ValueView::ValuePair(k, _) => (*k).clone(),
+                            _ => item.clone(),
                         };
+                        let (key, elem) = crate::runtime::utils::quanthash_elem_entry(&elem);
+                        crate::runtime::utils::record_quanthash_original(
+                            &mut originals,
+                            &key,
+                            &elem,
+                        );
                         counts.insert(key, crate::runtime::utils::to_int(result));
                     }
                 }
                 let result = if is_mutable {
-                    Value::bag_hash(counts)
+                    Value::bag_hash_typed(counts, originals)
                 } else {
-                    Value::bag(counts)
+                    Value::bag_typed(counts, originals)
                 };
                 self.stack.push(result);
                 return Ok(());
             }
             ValueView::Set(_, is_mutable) => {
                 let mut elems = std::collections::HashSet::new();
+                let mut originals = std::collections::HashMap::new();
                 for (i, item) in items.iter().enumerate() {
                     if let Some(result) = results.get(i) {
-                        let key = match item.view() {
-                            ValueView::Pair(k, _) => k.clone(),
-                            ValueView::ValuePair(k, _) => k.to_string_value(),
-                            _ => item.to_string_value(),
+                        let elem = match item.view() {
+                            ValueView::Pair(k, _) => Value::str(k.clone()),
+                            ValueView::ValuePair(k, _) => (*k).clone(),
+                            _ => item.clone(),
                         };
                         if result.truthy() {
-                            elems.insert(key);
+                            crate::runtime::utils::quanthash_insert_set(
+                                &mut elems,
+                                &mut originals,
+                                &elem,
+                            );
                         }
                     }
                 }
                 let result = if is_mutable {
-                    Value::set_hash(elems)
+                    Value::set_hash_typed(elems, originals)
                 } else {
-                    Value::set(elems)
+                    Value::set_typed(elems, originals)
                 };
                 self.stack.push(result);
                 return Ok(());

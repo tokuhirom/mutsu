@@ -160,20 +160,20 @@ fn invert_value(target: &Value) -> Option<Value> {
             for (k, count) in items.iter() {
                 result.push(make_inverted_pair(
                     Value::from_bigint(count.clone()),
-                    Value::str(k.clone()),
+                    items.typed_key(k),
                 ));
             }
         }
         ValueView::Set(items, _) => {
             for k in items.iter() {
-                result.push(make_inverted_pair(Value::TRUE, Value::str(k.clone())));
+                result.push(make_inverted_pair(Value::TRUE, items.typed_key(k)));
             }
         }
         ValueView::Mix(items, _) => {
             for (k, weight) in items.iter() {
                 result.push(make_inverted_pair(
                     crate::value::mix_weight_to_value(*weight),
-                    Value::str(k.clone()),
+                    items.typed_key(k),
                 ));
             }
         }
@@ -313,11 +313,12 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 let mut original_keys = std::collections::HashMap::new();
                 let mut has_typed = false;
                 for k in s.iter() {
-                    map.insert(k.clone(), Value::TRUE);
                     let typed = s.typed_key(k);
-                    if !matches!(typed.view(), ValueView::Str(sv) if sv.as_ref() == k) {
+                    let display = typed.to_string_value();
+                    map.insert(display.clone(), Value::TRUE);
+                    if !matches!(typed.view(), ValueView::Str(_)) {
                         has_typed = true;
-                        original_keys.insert(k.clone(), typed);
+                        original_keys.insert(display, typed);
                     }
                 }
                 let mut result = Value::hash(map);
@@ -333,11 +334,12 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 let mut original_keys = std::collections::HashMap::new();
                 let mut has_typed = false;
                 for (k, v) in b.iter() {
-                    map.insert(k.clone(), Value::from_bigint(v.clone()));
                     let typed = b.typed_key(k);
-                    if !matches!(typed.view(), ValueView::Str(sv) if sv.as_ref() == k) {
+                    let display = typed.to_string_value();
+                    map.insert(display.clone(), Value::from_bigint(v.clone()));
+                    if !matches!(typed.view(), ValueView::Str(_)) {
                         has_typed = true;
-                        original_keys.insert(k.clone(), typed);
+                        original_keys.insert(display, typed);
                     }
                 }
                 let mut result = Value::hash(map);
@@ -352,11 +354,12 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 let mut original_keys = std::collections::HashMap::new();
                 let mut has_typed = false;
                 for (k, v) in m.iter() {
-                    map.insert(k.clone(), crate::value::mix_weight_to_value(*v));
                     let typed = m.typed_key(k);
-                    if !matches!(typed.view(), ValueView::Str(sv) if sv.as_ref() == k) {
+                    let display = typed.to_string_value();
+                    map.insert(display.clone(), crate::value::mix_weight_to_value(*v));
+                    if !matches!(typed.view(), ValueView::Str(_)) {
                         has_typed = true;
-                        original_keys.insert(k.clone(), typed);
+                        original_keys.insert(display, typed);
                     }
                 }
                 let mut result = Value::hash(map);
@@ -554,7 +557,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 ValueView::Set(s, _) => {
                     let mut kv = Vec::new();
                     for k in s.iter() {
-                        kv.push(Value::str(k.clone()));
+                        kv.push(s.typed_key(k));
                         kv.push(Value::TRUE);
                     }
                     Some(Ok(Value::seq(kv)))
@@ -562,7 +565,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 ValueView::Bag(b, _) => {
                     let mut kv = Vec::new();
                     for (k, v) in b.iter() {
-                        kv.push(Value::str(k.clone()));
+                        kv.push(b.typed_key(k));
                         kv.push(Value::from_bigint(v.clone()));
                     }
                     Some(Ok(Value::seq(kv)))
@@ -570,7 +573,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 ValueView::Mix(m, _) => {
                     let mut kv = Vec::new();
                     for (k, v) in m.iter() {
-                        kv.push(Value::str(k.clone()));
+                        kv.push(m.typed_key(k));
                         kv.push(crate::value::mix_weight_to_value(*v));
                     }
                     Some(Ok(Value::seq(kv)))
@@ -632,17 +635,29 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
                 ValueView::Set(s, _) => Some(Ok(Value::seq(
                     s.iter()
-                        .map(|k| Value::pair(k.clone(), Value::TRUE))
+                        .map(|k| {
+                            crate::runtime::utils::quanthash_typed_pair(s.typed_key(k), Value::TRUE)
+                        })
                         .collect(),
                 ))),
                 ValueView::Bag(b, _) => Some(Ok(Value::seq(
                     b.iter()
-                        .map(|(k, v)| Value::pair(k.clone(), Value::from_bigint(v.clone())))
+                        .map(|(k, v)| {
+                            crate::runtime::utils::quanthash_typed_pair(
+                                b.typed_key(k),
+                                Value::from_bigint(v.clone()),
+                            )
+                        })
                         .collect(),
                 ))),
                 ValueView::Mix(m, _) => Some(Ok(Value::seq(
                     m.iter()
-                        .map(|(k, v)| Value::pair(k.clone(), crate::value::mix_weight_to_value(*v)))
+                        .map(|(k, v)| {
+                            crate::runtime::utils::quanthash_typed_pair(
+                                m.typed_key(k),
+                                crate::value::mix_weight_to_value(*v),
+                            )
+                        })
                         .collect(),
                 ))),
                 ValueView::Pair(_, _) | ValueView::ValuePair(_, _) => {
@@ -730,14 +745,14 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     items
                         .iter()
                         .map(|(k, v)| {
-                            Value::value_pair(Value::from_bigint(v.clone()), Value::str(k.clone()))
+                            Value::value_pair(Value::from_bigint(v.clone()), items.typed_key(k))
                         })
                         .collect(),
                 ))),
                 ValueView::Set(items, _) => Some(Ok(Value::seq(
                     items
                         .iter()
-                        .map(|k| Value::value_pair(Value::TRUE, Value::str(k.clone())))
+                        .map(|k| Value::value_pair(Value::TRUE, items.typed_key(k)))
                         .collect(),
                 ))),
                 ValueView::Mix(items, _) => Some(Ok(Value::seq(
@@ -746,7 +761,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         .map(|(k, v)| {
                             Value::value_pair(
                                 crate::value::mix_weight_to_value(*v),
-                                Value::str(k.clone()),
+                                items.typed_key(k),
                             )
                         })
                         .collect(),
@@ -781,7 +796,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 for (k, count) in items.iter() {
                     let count = crate::runtime::utils::bigint_to_i64_sat(count);
                     for _ in 0..count {
-                        result.push(Value::str(k.clone()));
+                        result.push(items.typed_key(k));
                     }
                 }
                 Some(Ok(Value::array(result)))
@@ -791,7 +806,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 for (k, weight) in items.iter() {
                     let count = weight.floor() as i64;
                     for _ in 0..count.max(0) {
-                        result.push(Value::str(k.clone()));
+                        result.push(items.typed_key(k));
                     }
                 }
                 Some(Ok(Value::array(result)))

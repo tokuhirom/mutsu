@@ -86,20 +86,33 @@ impl Interpreter {
             ValueView::Hash(map) => Some((Vec::new(), map.map.clone())),
             ValueView::Set(items, _) => Some((
                 Vec::new(),
-                items.iter().map(|k| (k.clone(), Value::TRUE)).collect(),
+                items
+                    .iter()
+                    .map(|k| (items.typed_key(k).to_string_value(), Value::TRUE))
+                    .collect(),
             )),
             ValueView::Bag(items, _) => Some((
                 Vec::new(),
                 items
                     .iter()
-                    .map(|(k, v)| (k.clone(), Value::from_bigint(v.clone())))
+                    .map(|(k, v)| {
+                        (
+                            items.typed_key(k).to_string_value(),
+                            Value::from_bigint(v.clone()),
+                        )
+                    })
                     .collect(),
             )),
             ValueView::Mix(items, _) => Some((
                 Vec::new(),
                 items
                     .iter()
-                    .map(|(k, v)| (k.clone(), crate::value::mix_weight_to_value(*v)))
+                    .map(|(k, v)| {
+                        (
+                            items.typed_key(k).to_string_value(),
+                            crate::value::mix_weight_to_value(*v),
+                        )
+                    })
                     .collect(),
             )),
             ValueView::Rat(n, d) | ValueView::FatRat(n, d) => {

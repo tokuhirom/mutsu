@@ -57,7 +57,7 @@ const CACHE_MAGIC: &[u8; 4] = b"MTS2";
 /// removing the need to manually `rm` the cache after parser/compiler changes.
 fn interpreter_version() -> String {
     // Bump CACHE_FORMAT_VERSION when Stmt/Expr/Value enum variants change
-    const CACHE_FORMAT_VERSION: u32 = 6;
+    const CACHE_FORMAT_VERSION: u32 = 7;
     let exe_stamp = std::env::current_exe()
         .and_then(fs::metadata)
         .and_then(|m| m.modified())

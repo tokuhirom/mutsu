@@ -991,14 +991,17 @@ impl Interpreter {
                         | ValueView::Bag(..)
                 ) =>
             {
-                // Collect LHS elements as string keys (same representation as Set uses)
+                // Collect LHS elements as `.WHICH` store keys (the Set's own
+                // key representation).
                 let lhs_keys: std::collections::HashSet<String> = match left.view() {
-                    ValueView::Array(items, ..) => {
-                        items.iter().map(|v| v.to_string_value()).collect()
-                    }
-                    ValueView::Seq(items) | ValueView::Slip(items) => {
-                        items.iter().map(|v| v.to_string_value()).collect()
-                    }
+                    ValueView::Array(items, ..) => items
+                        .iter()
+                        .map(|v| crate::runtime::utils::quanthash_elem_entry(v).0)
+                        .collect(),
+                    ValueView::Seq(items) | ValueView::Slip(items) => items
+                        .iter()
+                        .map(|v| crate::runtime::utils::quanthash_elem_entry(v).0)
+                        .collect(),
                     ValueView::Bag(b, _) => b.keys().cloned().collect(),
                     _ => std::collections::HashSet::new(),
                 };

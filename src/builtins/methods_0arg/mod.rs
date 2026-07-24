@@ -61,7 +61,7 @@ fn raku_round_to_value(f: f64) -> Value {
     }
 }
 
-fn sample_weighted_mix_key(items: &HashMap<String, f64>) -> Option<Value> {
+fn sample_weighted_mix_key(items: &crate::value::MixData) -> Option<Value> {
     let mut total = 0.0;
     for weight in items.values() {
         if weight.is_finite() && *weight > 0.0 {
@@ -72,21 +72,21 @@ fn sample_weighted_mix_key(items: &HashMap<String, f64>) -> Option<Value> {
         return None;
     }
     let mut needle = builtin_rand() * total;
-    for (key, weight) in items {
+    for (key, weight) in items.iter() {
         if !weight.is_finite() || *weight <= 0.0 {
             continue;
         }
         if needle <= *weight {
-            return Some(Value::str(key.clone()));
+            return Some(items.typed_key(key));
         }
         needle -= *weight;
     }
     items
         .iter()
-        .find_map(|(key, weight)| (*weight > 0.0).then(|| Value::str(key.clone())))
+        .find_map(|(key, weight)| (*weight > 0.0).then(|| items.typed_key(key)))
 }
 
-fn sample_weighted_bag_key(items: &HashMap<String, num_bigint::BigInt>) -> Option<Value> {
+fn sample_weighted_bag_key(items: &crate::value::BagData) -> Option<Value> {
     use crate::runtime::utils::bigint_to_i128_sat;
     let mut total: i128 = 0;
     for count in items.values() {
@@ -103,19 +103,19 @@ fn sample_weighted_bag_key(items: &HashMap<String, num_bigint::BigInt>) -> Optio
     if needle >= total {
         needle = total - 1;
     }
-    for (key, count) in items {
+    for (key, count) in items.iter() {
         let count = bigint_to_i128_sat(count);
         if count <= 0 {
             continue;
         }
         if needle < count {
-            return Some(Value::str(key.clone()));
+            return Some(items.typed_key(key));
         }
         needle -= count;
     }
     items
         .iter()
-        .find_map(|(key, count)| count.is_positive().then(|| Value::str(key.clone())))
+        .find_map(|(key, count)| count.is_positive().then(|| items.typed_key(key)))
 }
 
 /// Normalize Unicode Nd (decimal digit) characters to their ASCII equivalents.

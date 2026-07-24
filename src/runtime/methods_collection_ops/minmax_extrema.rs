@@ -73,7 +73,12 @@ impl Interpreter {
                     let out: Vec<Value> = set
                         .elements
                         .iter()
-                        .map(|k| Value::pair(k.clone(), Value::TRUE))
+                        .map(|k| {
+                            crate::runtime::utils::quanthash_typed_pair(
+                                set.typed_key(k),
+                                Value::TRUE,
+                            )
+                        })
                         .collect();
                     Value::seq(out)
                 }
@@ -96,9 +101,15 @@ impl Interpreter {
                         if replace {
                             best_count = Some(count.clone());
                             out.clear();
-                            out.push(Value::pair(key.clone(), Value::from_bigint(count.clone())));
+                            out.push(crate::runtime::utils::quanthash_typed_pair(
+                                bag.typed_key(key),
+                                Value::from_bigint(count.clone()),
+                            ));
                         } else if ord == std::cmp::Ordering::Equal {
-                            out.push(Value::pair(key.clone(), Value::from_bigint(count.clone())));
+                            out.push(crate::runtime::utils::quanthash_typed_pair(
+                                bag.typed_key(key),
+                                Value::from_bigint(count.clone()),
+                            ));
                         }
                     }
                     Value::seq(out)
@@ -124,13 +135,13 @@ impl Interpreter {
                         if replace {
                             best_weight = Some(*weight);
                             out.clear();
-                            out.push(Value::pair(
-                                key.clone(),
+                            out.push(crate::runtime::utils::quanthash_typed_pair(
+                                mix.typed_key(key),
                                 crate::value::mix_weight_to_value(*weight),
                             ));
                         } else if ord == std::cmp::Ordering::Equal {
-                            out.push(Value::pair(
-                                key.clone(),
+                            out.push(crate::runtime::utils::quanthash_typed_pair(
+                                mix.typed_key(key),
                                 crate::value::mix_weight_to_value(*weight),
                             ));
                         }

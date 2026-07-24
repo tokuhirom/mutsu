@@ -53,21 +53,18 @@ fn sample_one_from_range(target: &Value) -> Option<Value> {
             if let Some(result) = generic_range_pick_one(start, end, excl_start, excl_end) {
                 return Some(result);
             }
-            // Float endpoints
-            if let (Some(s), Some(e)) =
-                (runtime::to_float_value(start), runtime::to_float_value(end))
-                && s.is_finite()
-                && e.is_finite()
-            {
-                let lo = if excl_start { s + 1.0 } else { s };
-                let hi = if excl_end { e - 1.0 } else { e };
-                if lo > hi {
+            // Non-integer numeric endpoints (Rat/Num/FatRat): enumerate via
+            // `.succ` semantics so the picked element keeps its endpoint type
+            // (`(1.1..3.1).roll` yields a Rat, not a Num) — reuse value_to_list,
+            // which already expands the range preserving type, then pick one.
+            if start.is_numeric() {
+                let pool = crate::runtime::utils::value_to_list(target);
+                if pool.is_empty() {
                     return Some(Value::NIL);
                 }
-                let span = hi - lo + 1.0;
-                let idx = (crate::builtins::rng::builtin_rand() * span) as i64;
-                let idx = idx.min((span - 1.0) as i64);
-                return Some(Value::num(lo + idx as f64));
+                let idx = (crate::builtins::rng::builtin_rand() * pool.len() as f64) as usize
+                    % pool.len();
+                return Some(pool[idx].clone());
             }
             None
         }
@@ -170,7 +167,7 @@ pub(super) fn dispatch(
                     if idx >= keys.len() {
                         idx = keys.len() - 1;
                     }
-                    Some(Ok(Value::str(keys[idx].clone())))
+                    Some(Ok(items.typed_key(keys[idx])))
                 }
             }
             ValueView::Hash(items) => {
@@ -231,7 +228,7 @@ pub(super) fn dispatch(
                 if idx >= keys.len() {
                     idx = keys.len() - 1;
                 }
-                return Some(Some(Ok(Value::str(keys[idx].clone()))));
+                return Some(Some(Ok(items.typed_key(keys[idx]))));
             }
             // Try efficient range sampling first
             if let Some(v) = sample_one_from_range(target) {
@@ -263,8 +260,8 @@ pub(super) fn dispatch(
                         idx = items.len() - 1;
                     }
                     let (key, count) = items.iter().nth(idx).expect("index in range");
-                    Some(Ok(Value::pair(
-                        key.clone(),
+                    Some(Ok(crate::runtime::utils::quanthash_typed_pair(
+                        items.typed_key(key),
                         Value::from_bigint(count.clone()),
                     )))
                 }
@@ -279,7 +276,10 @@ pub(super) fn dispatch(
                         idx = items.len() - 1;
                     }
                     let key = items.iter().nth(idx).expect("index in range");
-                    Some(Ok(Value::pair(key.clone(), Value::TRUE)))
+                    Some(Ok(crate::runtime::utils::quanthash_typed_pair(
+                        items.typed_key(key),
+                        Value::TRUE,
+                    )))
                 }
             }
             ValueView::Mix(items, _) => {
@@ -292,8 +292,8 @@ pub(super) fn dispatch(
                         idx = items.len() - 1;
                     }
                     let (key, weight) = items.iter().nth(idx).expect("index in range");
-                    Some(Ok(Value::pair(
-                        key.clone(),
+                    Some(Ok(crate::runtime::utils::quanthash_typed_pair(
+                        items.typed_key(key),
                         crate::value::mix_weight_to_value(*weight),
                     )))
                 }

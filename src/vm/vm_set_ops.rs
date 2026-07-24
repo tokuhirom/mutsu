@@ -135,7 +135,10 @@ impl Interpreter {
     }
 
     fn set_contains(&mut self, container: &Value, needle: &Value) -> bool {
-        let key = needle.to_string_value();
+        // Set/Bag/Mix stores are `.WHICH`-keyed: membership is element
+        // identity (`===`), so `<1> ∈ (1,).Set` is False (IntStr vs Int)
+        // and `"1" ∈ (1,).Set` is False (Str vs Int) — matching Rakudo.
+        let (key, _) = crate::runtime::utils::quanthash_elem_entry(needle);
         match container.view() {
             ValueView::Set(s, _) => s.contains(&key),
             ValueView::Bag(b, _) => b.get(&key).is_some_and(num_traits::Signed::is_positive),
@@ -222,13 +225,23 @@ impl Interpreter {
         }
     }
 
-    pub(crate) fn union_insert_set_elem(elems: &mut HashSet<String>, value: &Value) {
+    pub(crate) fn union_insert_set_elem(
+        elems: &mut HashSet<String>,
+        originals: &mut HashMap<String, Value>,
+        value: &Value,
+    ) {
+        use crate::runtime::utils::{
+            extend_quanthash_originals, quanthash_elem_entry, quanthash_insert_set,
+            record_quanthash_original, str_elem_key,
+        };
         let pair_selected = |weight: &Value| weight.truthy() || weight.is_nil();
         match value.view() {
             ValueView::Set(items, _) => {
+                extend_quanthash_originals(originals, &items.original_keys);
                 elems.extend(items.iter().cloned());
             }
             ValueView::Bag(items, _) => {
+                extend_quanthash_originals(originals, &items.original_keys);
                 for (k, v) in items.iter() {
                     if num_traits::Signed::is_positive(v) {
                         elems.insert(k.clone());
@@ -236,6 +249,7 @@ impl Interpreter {
                 }
             }
             ValueView::Mix(items, _) => {
+                extend_quanthash_originals(originals, &items.original_keys);
                 for (k, v) in items.iter() {
                     if *v != 0.0 {
                         elems.insert(k.clone());
@@ -245,28 +259,29 @@ impl Interpreter {
             ValueView::Hash(items) => {
                 for (k, v) in items.iter() {
                     if v.truthy() || v.is_nil() {
-                        elems.insert(crate::runtime::utils::hash_elem_key(&items, k));
+                        let key = crate::runtime::utils::hash_elem_key(&items, k, originals);
+                        elems.insert(key);
                     }
                 }
             }
             _ if value.as_list_items().is_some() => {
                 for item in value.as_list_items().unwrap().iter() {
-                    Self::union_insert_set_elem(elems, item);
+                    Self::union_insert_set_elem(elems, originals, item);
                 }
             }
             _ if value.is_range() => {
                 for item in runtime::value_to_list(value) {
-                    Self::union_insert_set_elem(elems, &item);
+                    Self::union_insert_set_elem(elems, originals, &item);
                 }
             }
             ValueView::Pair(key, weight) => {
                 if pair_selected(weight) {
-                    elems.insert(key.clone());
+                    elems.insert(str_elem_key(key));
                 }
             }
             ValueView::ValuePair(key, weight) => {
                 if pair_selected(weight) {
-                    elems.insert(key.to_string_value());
+                    quanthash_insert_set(elems, originals, key);
                 }
             }
             _ => {
@@ -278,27 +293,43 @@ impl Interpreter {
                 if value.is_any_type_object() {
                     return;
                 }
-                let sv = value.to_string_value();
-                if !sv.is_empty() {
-                    elems.insert(sv);
+                let (key, elem) = quanthash_elem_entry(value);
+                if !elem.to_string_value().is_empty() {
+                    record_quanthash_original(originals, &key, &elem);
+                    elems.insert(key);
                 }
             }
         }
     }
 
-    fn value_to_set_keys(value: &Value) -> Result<HashSet<String>, RuntimeError> {
+    fn value_to_set_keys(
+        value: &Value,
+        originals: &mut HashMap<String, Value>,
+    ) -> Result<HashSet<String>, RuntimeError> {
+        use crate::runtime::utils::{
+            extend_quanthash_originals, quanthash_elem_entry, record_quanthash_original,
+        };
         if Self::is_lazy_union_input(value) {
             return Err(Self::lazy_list_error());
         }
         match value.view() {
-            ValueView::Set(s, _) => Ok(s.elements.clone()),
-            ValueView::Bag(b, _) => Ok(b.keys().cloned().collect()),
-            ValueView::Mix(m, _) => Ok(m.keys().cloned().collect()),
+            ValueView::Set(s, _) => {
+                extend_quanthash_originals(originals, &s.original_keys);
+                Ok(s.elements.clone())
+            }
+            ValueView::Bag(b, _) => {
+                extend_quanthash_originals(originals, &b.original_keys);
+                Ok(b.keys().cloned().collect())
+            }
+            ValueView::Mix(m, _) => {
+                extend_quanthash_originals(originals, &m.original_keys);
+                Ok(m.keys().cloned().collect())
+            }
             ValueView::Hash(h) => Ok(h
                 .iter()
                 .filter_map(|(k, v)| {
                     if v.truthy() || v.is_nil() {
-                        Some(crate::runtime::utils::hash_elem_key(&h, k))
+                        Some(crate::runtime::utils::hash_elem_key(&h, k, originals))
                     } else {
                         None
                     }
@@ -307,20 +338,20 @@ impl Interpreter {
             _ if value.as_list_items().is_some() => {
                 let mut elems = HashSet::new();
                 for item in value.as_list_items().unwrap().iter() {
-                    Self::union_insert_set_elem(&mut elems, item);
+                    Self::union_insert_set_elem(&mut elems, originals, item);
                 }
                 Ok(elems)
             }
             _ if value.is_range() => {
                 let mut elems = HashSet::new();
                 for item in runtime::value_to_list(value) {
-                    Self::union_insert_set_elem(&mut elems, &item);
+                    Self::union_insert_set_elem(&mut elems, originals, &item);
                 }
                 Ok(elems)
             }
             ValueView::Pair(_, _) | ValueView::ValuePair(_, _) => {
                 let mut elems = HashSet::new();
-                Self::union_insert_set_elem(&mut elems, value);
+                Self::union_insert_set_elem(&mut elems, originals, value);
                 Ok(elems)
             }
             _ => {
@@ -328,9 +359,10 @@ impl Interpreter {
                 // Any type object = uninitialized-scalar seed → empty set,
                 // like the old Nil seed (see union_insert_set_elem).
                 if !value.is_any_type_object() {
-                    let sv = value.to_string_value();
-                    if !sv.is_empty() {
-                        elems.insert(sv);
+                    let (key, elem) = quanthash_elem_entry(value);
+                    if !elem.to_string_value().is_empty() {
+                        record_quanthash_original(originals, &key, &elem);
+                        elems.insert(key);
                     }
                 }
                 Ok(elems)
@@ -338,41 +370,59 @@ impl Interpreter {
         }
     }
 
-    fn value_to_bag_counts(value: &Value) -> Result<HashMap<String, i64>, RuntimeError> {
+    fn value_to_bag_counts(
+        value: &Value,
+        originals: &mut HashMap<String, Value>,
+    ) -> Result<HashMap<String, i64>, RuntimeError> {
+        use crate::runtime::utils::extend_quanthash_originals;
         if Self::is_lazy_union_input(value) {
             return Err(Self::lazy_list_error());
         }
         match value.view() {
-            ValueView::Bag(b, _) => Ok(crate::runtime::utils::bag_counts_as_i64(&b.counts)),
-            ValueView::Mix(m, _) => Ok(m
-                .iter()
-                .filter_map(|(k, w)| {
-                    if *w != 0.0 {
-                        Some((k.clone(), 1))
-                    } else {
-                        None
-                    }
-                })
-                .collect()),
+            ValueView::Bag(b, _) => {
+                extend_quanthash_originals(originals, &b.original_keys);
+                Ok(crate::runtime::utils::bag_counts_as_i64(&b.counts))
+            }
+            ValueView::Mix(m, _) => {
+                extend_quanthash_originals(originals, &m.original_keys);
+                Ok(m.iter()
+                    .filter_map(|(k, w)| {
+                        if *w != 0.0 {
+                            Some((k.clone(), 1))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect())
+            }
             _ => {
-                let set = Self::value_to_set_keys(value)?;
+                let set = Self::value_to_set_keys(value, originals)?;
                 Ok(set.into_iter().map(|k| (k, 1)).collect())
             }
         }
     }
 
-    fn value_to_mix_weights(value: &Value) -> Result<HashMap<String, f64>, RuntimeError> {
+    fn value_to_mix_weights(
+        value: &Value,
+        originals: &mut HashMap<String, Value>,
+    ) -> Result<HashMap<String, f64>, RuntimeError> {
+        use crate::runtime::utils::extend_quanthash_originals;
         if Self::is_lazy_union_input(value) {
             return Err(Self::lazy_list_error());
         }
         match value.view() {
-            ValueView::Mix(m, _) => Ok(m.weights.clone()),
-            ValueView::Bag(b, _) => Ok(b
-                .iter()
-                .map(|(k, v)| (k.clone(), crate::runtime::utils::bigint_to_f64_sat(v)))
-                .collect()),
+            ValueView::Mix(m, _) => {
+                extend_quanthash_originals(originals, &m.original_keys);
+                Ok(m.weights.clone())
+            }
+            ValueView::Bag(b, _) => {
+                extend_quanthash_originals(originals, &b.original_keys);
+                Ok(b.iter()
+                    .map(|(k, v)| (k.clone(), crate::runtime::utils::bigint_to_f64_sat(v)))
+                    .collect())
+            }
             _ => {
-                let set = Self::value_to_set_keys(value)?;
+                let set = Self::value_to_set_keys(value, originals)?;
                 Ok(set.into_iter().map(|k| (k, 1.0)).collect())
             }
         }
@@ -408,8 +458,11 @@ impl Interpreter {
         }
         let result_mutable = runtime::set_result_mutability(&left);
 
+        let mut originals: HashMap<String, Value> = HashMap::new();
         let result = match (left.view(), right.view()) {
             (ValueView::Mix(a, _), ValueView::Mix(b, _)) => {
+                crate::runtime::utils::extend_quanthash_originals(&mut originals, &a.original_keys);
+                crate::runtime::utils::extend_quanthash_originals(&mut originals, &b.original_keys);
                 let mut result = a.weights.clone();
                 for (k, v) in b.iter() {
                     // For union: if key exists in both, take max; if only in one side, take that value
@@ -419,9 +472,11 @@ impl Interpreter {
                         result.insert(k.clone(), *v);
                     }
                 }
-                Value::mix(result)
+                Value::mix_with_original_keys(result, originals)
             }
             (ValueView::Bag(a, _), ValueView::Bag(b, _)) => {
+                crate::runtime::utils::extend_quanthash_originals(&mut originals, &a.original_keys);
+                crate::runtime::utils::extend_quanthash_originals(&mut originals, &b.original_keys);
                 let mut result = a.counts.clone();
                 for (k, v) in b.iter() {
                     let e = result.entry(k.clone()).or_default();
@@ -429,21 +484,23 @@ impl Interpreter {
                         *e = v.clone();
                     }
                 }
-                Value::bag_big(result)
+                Value::bag_typed_big(result, originals)
             }
             (ValueView::Set(a, _), ValueView::Set(b, _)) => {
+                crate::runtime::utils::extend_quanthash_originals(&mut originals, &a.original_keys);
+                crate::runtime::utils::extend_quanthash_originals(&mut originals, &b.original_keys);
                 let mut result = a.elements.clone();
                 for elem in b.iter() {
                     result.insert(elem.clone());
                 }
-                Value::set(result)
+                Value::set_typed(result, originals)
             }
             (_, _)
                 if matches!(left.view(), ValueView::Mix(_, _))
                     || matches!(right.view(), ValueView::Mix(_, _)) =>
             {
-                let mut left_mix = Self::value_to_mix_weights(&left)?;
-                let right_mix = Self::value_to_mix_weights(&right)?;
+                let mut left_mix = Self::value_to_mix_weights(&left, &mut originals)?;
+                let right_mix = Self::value_to_mix_weights(&right, &mut originals)?;
                 for (k, v) in right_mix {
                     if let Some(e) = left_mix.get_mut(&k) {
                         *e = e.max(v);
@@ -451,27 +508,27 @@ impl Interpreter {
                         left_mix.insert(k, v);
                     }
                 }
-                Value::mix(left_mix)
+                Value::mix_with_original_keys(left_mix, originals)
             }
             (_, _)
                 if matches!(left.view(), ValueView::Bag(_, _))
                     || matches!(right.view(), ValueView::Bag(_, _)) =>
             {
-                let mut left_bag = Self::value_to_bag_counts(&left)?;
-                let right_bag = Self::value_to_bag_counts(&right)?;
+                let mut left_bag = Self::value_to_bag_counts(&left, &mut originals)?;
+                let right_bag = Self::value_to_bag_counts(&right, &mut originals)?;
                 for (k, v) in right_bag {
                     let e = left_bag.entry(k).or_insert(0);
                     *e = (*e).max(v);
                 }
-                Value::bag(left_bag)
+                Value::bag_typed(left_bag, originals)
             }
             (_, _) => {
-                let mut left_set = Self::value_to_set_keys(&left)?;
-                let right_set = Self::value_to_set_keys(&right)?;
+                let mut left_set = Self::value_to_set_keys(&left, &mut originals)?;
+                let right_set = Self::value_to_set_keys(&right, &mut originals)?;
                 for elem in right_set {
                     left_set.insert(elem);
                 }
-                Value::set(left_set)
+                Value::set_typed(left_set, originals)
             }
         };
         self.stack

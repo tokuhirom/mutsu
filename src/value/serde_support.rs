@@ -36,9 +36,11 @@ enum SerValue {
     FatRat(i64, i64),
     BigRat(NumBigInt, NumBigInt, bool),
     Complex(f64, f64),
-    Set(HashSet<String>),
-    Bag(HashMap<String, NumBigInt>),
-    Mix(HashMap<String, f64>),
+    // `.WHICH`-keyed element stores + the recorded element objects
+    // (`original_keys`) so a non-Str element survives the roundtrip.
+    Set(HashSet<String>, HashMap<String, Box<SerValue>>),
+    Bag(HashMap<String, NumBigInt>, HashMap<String, Box<SerValue>>),
+    Mix(HashMap<String, f64>, HashMap<String, Box<SerValue>>),
     CompUnitDepSpec {
         short_name: Symbol,
     },
@@ -119,6 +121,23 @@ enum SerJunctionKind {
     None,
 }
 
+fn ser_original_keys(
+    orig: &Option<HashMap<String, Value>>,
+) -> Result<HashMap<String, Box<SerValue>>, String> {
+    let Some(orig) = orig else {
+        return Ok(HashMap::new());
+    };
+    orig.iter()
+        .map(|(k, v)| Ok((k.clone(), Box::new(value_to_ser(v)?))))
+        .collect()
+}
+
+fn de_original_keys(orig: HashMap<String, Box<SerValue>>) -> HashMap<String, Value> {
+    orig.into_iter()
+        .map(|(k, v)| (k, ser_to_value(*v)))
+        .collect()
+}
+
 fn value_to_ser(v: &Value) -> Result<SerValue, String> {
     match v.view() {
         // A `VarRef` is a transient binder wrapper that never reaches a
@@ -161,9 +180,18 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
         ValueView::FatRat(n, d) => Ok(SerValue::FatRat(n, d)),
         ValueView::BigRat(n, d) => Ok(SerValue::BigRat(n.clone(), d.clone(), v.is_bigfatrat())),
         ValueView::Complex(r, i) => Ok(SerValue::Complex(r, i)),
-        ValueView::Set(s, _) => Ok(SerValue::Set(s.elements.clone())),
-        ValueView::Bag(b, _) => Ok(SerValue::Bag(b.counts.clone())),
-        ValueView::Mix(m, _) => Ok(SerValue::Mix(m.weights.clone())),
+        ValueView::Set(s, _) => Ok(SerValue::Set(
+            s.elements.clone(),
+            ser_original_keys(&s.original_keys)?,
+        )),
+        ValueView::Bag(b, _) => Ok(SerValue::Bag(
+            b.counts.clone(),
+            ser_original_keys(&b.original_keys)?,
+        )),
+        ValueView::Mix(m, _) => Ok(SerValue::Mix(
+            m.weights.clone(),
+            ser_original_keys(&m.original_keys)?,
+        )),
         ValueView::CompUnitDepSpec { short_name } => Ok(SerValue::CompUnitDepSpec { short_name }),
         ValueView::Package(s) => Ok(SerValue::Package(s)),
         ValueView::Routine {
@@ -350,9 +378,9 @@ fn ser_to_value(sv: SerValue) -> Value {
             }
         }
         SerValue::Complex(r, i) => Value::Complex(r, i),
-        SerValue::Set(s) => Value::set(s),
-        SerValue::Bag(b) => Value::bag_big(b),
-        SerValue::Mix(m) => Value::mix(m),
+        SerValue::Set(s, orig) => Value::set_typed(s, de_original_keys(orig)),
+        SerValue::Bag(b, orig) => Value::bag_typed_big(b, de_original_keys(orig)),
+        SerValue::Mix(m, orig) => Value::mix_with_original_keys(m, de_original_keys(orig)),
         SerValue::CompUnitDepSpec { short_name } => {
             Value::from_repr(ValueRepr::CompUnitDepSpec { short_name })
         }

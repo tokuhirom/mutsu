@@ -11,6 +11,27 @@ pub(crate) fn is_internal_anon_type_name(name: &str) -> bool {
 /// number is arbitrary, only distinct within a run). Returns the display
 /// form for those three kinds; anonymous enums (whose type displays as the
 /// empty name) and internal non-type `__ANON_*` markers return None.
+/// Cycle guard for rendering QuantHash elements: a self-referential
+/// SetHash/BagHash/MixHash (`%sh ,= 1` — rakudo#4678) holds itself as an
+/// element, and rendering decodes elements via `typed_key`, so an unguarded
+/// render recurses forever. Returns `None` when `ptr` is already being
+/// rendered on this thread (the caller substitutes a placeholder).
+pub(crate) fn with_quanthash_render_guard<R>(ptr: usize, f: impl FnOnce() -> R) -> Option<R> {
+    thread_local! {
+        static RENDERING: std::cell::RefCell<std::collections::HashSet<usize>> =
+            std::cell::RefCell::new(std::collections::HashSet::new());
+    }
+    let entered = RENDERING.with(|r| r.borrow_mut().insert(ptr));
+    if !entered {
+        return None;
+    }
+    let out = f();
+    RENDERING.with(|r| {
+        r.borrow_mut().remove(&ptr);
+    });
+    Some(out)
+}
+
 fn anon_type_display_name(name: &str) -> Option<String> {
     let inner = name.strip_suffix("__")?;
     let n = ["__ANON_CLASS_", "__ANON_GRAMMAR_", "__ANON_ROLE_"]
@@ -539,42 +560,60 @@ impl Value {
             }
             ValueView::Complex(r, i) => format_complex(r, i),
             ValueView::Set(s, _) => {
-                let mut keys: Vec<&String> = s.iter().collect();
-                keys.sort();
-                keys.iter()
-                    .map(|k| k.as_str())
-                    .collect::<Vec<_>>()
-                    .join(" ")
+                // Store keys are `.WHICH` strings — render the element objects
+                // (guarded: a self-referential SetHash must not recurse).
+                let ptr = crate::gc::Gc::as_ptr(&s) as usize;
+                with_quanthash_render_guard(ptr, || {
+                    let mut keys: Vec<String> =
+                        s.iter().map(|k| s.typed_key(k).to_string_value()).collect();
+                    keys.sort();
+                    keys.join(" ")
+                })
+                .unwrap_or_else(|| "...".to_string())
             }
             ValueView::Bag(b, _) => {
-                let mut keys: Vec<(&String, &num_bigint::BigInt)> = b.iter().collect();
-                keys.sort_by_key(|(k, _)| (*k).clone());
-                keys.iter()
-                    .map(|(k, v)| {
-                        if **v == num_bigint::BigInt::from(1) {
-                            (*k).clone()
-                        } else {
-                            format!("{}({})", k, v)
-                        }
-                    })
-                    .collect::<Vec<_>>()
-                    .join(" ")
+                let ptr = crate::gc::Gc::as_ptr(&b) as usize;
+                with_quanthash_render_guard(ptr, || {
+                    let mut keys: Vec<(String, &num_bigint::BigInt)> = b
+                        .iter()
+                        .map(|(k, v)| (b.typed_key(k).to_string_value(), v))
+                        .collect();
+                    keys.sort_by_key(|(k, _)| k.clone());
+                    keys.iter()
+                        .map(|(k, v)| {
+                            if **v == num_bigint::BigInt::from(1) {
+                                k.clone()
+                            } else {
+                                format!("{}({})", k, v)
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .unwrap_or_else(|| "...".to_string())
             }
             ValueView::Mix(m, _) => {
-                let mut keys: Vec<(&String, &f64)> = m.iter().collect();
-                keys.sort_by_key(|(k, _)| (*k).clone());
-                keys.iter()
-                    .map(|(k, v)| {
-                        if (**v - 1.0).abs() < f64::EPSILON {
-                            (*k).clone()
-                        } else if v.fract() == 0.0 {
-                            format!("{}({})", k, **v as i64)
-                        } else {
-                            format!("{}({})", k, v)
-                        }
-                    })
-                    .collect::<Vec<_>>()
-                    .join(" ")
+                let ptr = crate::gc::Gc::as_ptr(&m) as usize;
+                with_quanthash_render_guard(ptr, || {
+                    let mut keys: Vec<(String, &f64)> = m
+                        .iter()
+                        .map(|(k, v)| (m.typed_key(k).to_string_value(), v))
+                        .collect();
+                    keys.sort_by_key(|(k, _)| k.clone());
+                    keys.iter()
+                        .map(|(k, v)| {
+                            if (**v - 1.0).abs() < f64::EPSILON {
+                                k.clone()
+                            } else if v.fract() == 0.0 {
+                                format!("{}({})", k, **v as i64)
+                            } else {
+                                format!("{}({})", k, v)
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .unwrap_or_else(|| "...".to_string())
             }
             // Pair `.Str` is `key.Str ~ "\t" ~ value.Str`; an undefined type-object
             // value stringifies to "" in Str context (raku warns + empty), NOT to
