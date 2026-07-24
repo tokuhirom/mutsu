@@ -1548,35 +1548,42 @@ entangled with the assignment metaops AND has a hot-path cost:
   (low gain, real risk). The comparison + prefix fixes already captured the
   high-value, zero-hot-path-cost parts of this doc-diff.
 
-### 8.22 Positional-parameter indexing ignores named arguments written first (unblocked 2026-07-24)
+### 8.22 A native sub writes back into a `Blob` argument, clobbering the caller's value (found 2026-07-24 via OpenSSL's `04-crypt`)
 
-`args_match_param_types` matches positional parameters against *raw* argument
-slots, so a named argument written before a positional (`f(:x(1), 7)` — which is
-what forwarding a capture after adding a named, `f(:x(1), |c)`, produces)
-mis-indexes them and no candidate matches:
+NativeCall marshals a `Blob`/`Buf` argument as a byte buffer and, after the
+call, copies the (possibly callee-modified) C bytes back into the *same* Raku
+instance (`write_buf_instance_bytes`, `runtime/nativecall.rs`). That is right for
+an out-buffer but wrong for an input: a `Blob` is immutable in Raku, and the
+instance is shared with the caller's variable, so the writeback destroys it.
 
+Reproduce (needs the bundled OpenSSL battery):
+
+```raku
+use OpenSSL::CryptTools;
+my $test = Blob.new(0xf6, 0x9f, 0x24, 0x45, 0xdf, 0x4f, 0x9b, 0x17,
+                    0xad, 0x2b, 0x41, 0x7b, 0xe6, 0x6c, 0x37, 0x10);
+my $ct = encrypt($test, :aes256, :$iv, :$key);
+say $test.raku;    # raku: the original Blob   mutsu: Any (elems == 1)
 ```
-Cannot resolve caller e(Int:D); none of these signatures matches:
-    (Int $p, $y, $x)
+
+`OpenSSL::EVP` declares both the out-buffer and the plaintext as `Blob`:
+
+```raku
+our sub EVP_EncryptUpdate(OpaquePointer, Blob, CArray[int32], Blob, int32
+  --> int32) is native(&gen-lib) { ... }
 ```
 
-That is `OpenSSL::CryptTools`'s `encrypt` chain
-(`multi encrypt(:$aes256!, |c) { encrypt(:$cipher, |c) }` feeding
-`multi encrypt(Blob $plaintext, :$key, :$iv, :$cipher!)`), so the OpenSSL
-battery's `04-crypt` (1/13) cannot pass without it. The fix is small and known:
-index positional params through a precomputed list of positional argument slots,
-and give a variadic param every positional from its own index on plus every
-named.
+so the declared type cannot distinguish them — the *runtime* class can. The
+buffer `$part` is a `buf8` (mutable Buf family); the plaintext is a `Blob`
+(immutable). Restricting the writeback to a mutable Buf-family instance is the
+principled rule and matches Raku semantics, but it needs care: `write_buf_instance_bytes`
+is also reached through `Scalar`/`ContainerRef`/`VarRef` wrappers, and the
+`nativecall_pin` object-lifetime pin (ADR-less, added with the TLS battery)
+feeds it, so both the pinned and unpinned paths have to agree.
 
-**No longer blocked.** This was held back because `Test::Util`'s non-exported
-`our sub run(Str, Str, *%o)` leaked into every consumer's scope, so correcting
-the indexing made it win over the core `run` builtin and broke whitelisted
-`roast/S11-repository/cur-current-distribution.t` and `roast/S29-os/system.t`.
-That leak — a `unit module`'s routines registering into `GLOBAL::` — is fixed
-(news `2026-07/unit-module-routines-stay-in-their-package.md`), so the indexing
-fix can now land on its own merits. Re-verify those two roast files when it
-does.
-
+**Why it matters now**: `t/04-crypt.rakutest` is the OpenSSL battery's last
+failing file (6/13 as of the positional-indexing fix; the remaining failures
+are all this bug), and the battery test-suite gate is a release gate.
 
 ## Metrics
 

@@ -102,15 +102,48 @@ impl Interpreter {
             // pair or a space-parenthesized `f (a => 1)`), so it counts toward the
             // positional arity here. Without this, `multi q($x)` fails to match
             // `q("a" => 1)` / `q (a => 1)` (0 positional args counted).
-            let positional_arg_count = args
+            //
+            // Positional parameters are matched against the *positional* argument
+            // slots, not the raw ones: a named argument written before a
+            // positional (`f(:x(1), 7)` — which is what forwarding a capture after
+            // adding a named, `f(:x(1), |c)`, produces) would otherwise shift every
+            // positional param onto the wrong slot and no candidate would match.
+            let positional_indices: Vec<usize> = args
                 .iter()
-                .filter(|arg| {
+                .enumerate()
+                .filter(|(_, arg)| {
                     !matches!(
                         unwrap_varref_value((*arg).clone()).view(),
                         ValueView::Pair(..)
                     )
                 })
-                .count();
+                .map(|(idx, _)| idx)
+                .collect();
+            let positional_arg_count = positional_indices.len();
+            // Every named argument, in call order. A variadic positional (`*@a`,
+            // `|c`, a capture subsignature) is handed the positionals from its own
+            // index onward *plus* these, mirroring how a capture carries both
+            // parts.
+            let named_args: Vec<Value> = args
+                .iter()
+                .filter(|arg| {
+                    matches!(
+                        unwrap_varref_value((*arg).clone()).view(),
+                        ValueView::Pair(..)
+                    )
+                })
+                .cloned()
+                .collect();
+            let remaining_args = |from_positional: usize| -> Vec<Value> {
+                let mut out: Vec<Value> = positional_indices
+                    .get(from_positional..)
+                    .unwrap_or(&[])
+                    .iter()
+                    .map(|&idx| args[idx].clone())
+                    .collect();
+                out.extend(named_args.iter().cloned());
+                out
+            };
             let mut required_positional_count = 0usize;
             let mut positional_max_count = 0usize;
             let mut has_variadic_positional = false;
@@ -136,8 +169,12 @@ impl Interpreter {
             if !has_variadic_positional && positional_arg_count > positional_max_count {
                 return false;
             }
-            let mut i = 0usize;
+            // `p` walks the *positional* argument slots; `arg_idx` is the raw
+            // `args` index of the slot `p` names (they differ as soon as a named
+            // argument is written before a positional).
+            let mut p = 0usize;
             for pd in positional_params {
+                let arg_idx = positional_indices.get(p).copied();
                 let is_capture_param = pd.name == "_capture" || (pd.slurpy && pd.sigilless);
                 let is_subsig_capture = pd.is_capture_subsignature();
                 let mut arg_for_checks: Option<Value> = if pd.slurpy || is_capture_param {
@@ -145,8 +182,8 @@ impl Interpreter {
                         // |c capture params preserve both positional and named parts.
                         let mut positional = Vec::new();
                         let mut named = std::collections::HashMap::new();
-                        let remaining = args.get(i..).unwrap_or(&[]);
-                        for arg in remaining {
+                        let remaining = remaining_args(p);
+                        for arg in &remaining {
                             let arg = unwrap_varref_value(arg.clone());
                             if let ValueView::Pair(key, val) = arg.view() {
                                 named.insert(key.clone(), val.clone());
@@ -159,8 +196,8 @@ impl Interpreter {
                         // For single-star slurpy (*@), flatten list arguments but preserve
                         // itemized Arrays ($[...] / .item) as single positional values.
                         let mut items = Vec::new();
-                        let remaining = args.get(i..).unwrap_or(&[]);
-                        for arg in remaining {
+                        let remaining = remaining_args(p);
+                        for arg in &remaining {
                             let arg = unwrap_varref_value(arg.clone());
                             if !pd.double_slurpy {
                                 if let ValueView::Array(arr, kind) = arg.view()
@@ -188,18 +225,17 @@ impl Interpreter {
                         Some(Value::real_array(items))
                     }
                 } else if pd.name.starts_with('@') || pd.name.starts_with('%') {
-                    args.get(i).cloned().map(unwrap_varref_value)
+                    arg_idx.and_then(|idx| args.get(idx).cloned().map(unwrap_varref_value))
                 } else if is_subsig_capture {
-                    let remaining = args.get(i..).unwrap_or(&[]);
+                    let remaining = remaining_args(p);
                     Some(sub_signature_target_from_remaining_args(
                         &remaining
-                            .iter()
-                            .cloned()
+                            .into_iter()
                             .map(unwrap_varref_value)
                             .collect::<Vec<_>>(),
                     ))
                 } else {
-                    args.get(i).cloned().map(unwrap_varref_value)
+                    arg_idx.and_then(|idx| args.get(idx).cloned().map(unwrap_varref_value))
                 };
                 // Whether an actual argument was passed for this param (vs. an
                 // unsupplied optional filled with its type object below). An
@@ -226,16 +262,17 @@ impl Interpreter {
                 // Check VarRef wrapping (function calls) and pending arg sources
                 // (which may be set for method calls via arg_sources_idx).
                 if pd.traits.iter().any(|t| t == "rw") {
-                    let raw_arg = args.get(i);
+                    let raw_arg = arg_idx.and_then(|idx| args.get(idx));
                     let is_varref = raw_arg
                         .map(|a| varref_from_value(a).is_some())
                         .unwrap_or(false);
-                    let has_arg_source = self
-                        .pending_call_arg_sources
-                        .as_ref()
-                        .and_then(|sources| sources.get(i))
-                        .and_then(|name| name.as_ref())
-                        .is_some();
+                    let has_arg_source = arg_idx.is_some_and(|idx| {
+                        self.pending_call_arg_sources
+                            .as_ref()
+                            .and_then(|sources| sources.get(idx))
+                            .and_then(|name| name.as_ref())
+                            .is_some()
+                    });
                     if !is_varref && !has_arg_source {
                         return false;
                     }
@@ -279,16 +316,18 @@ impl Interpreter {
                     let dispatch_arg = self
                         .coercion_dispatch_value(&resolved_constraint, arg)
                         .unwrap_or_else(|| arg.clone());
-                    let source_name = args
-                        .get(i)
+                    let source_name = arg_idx
+                        .and_then(|idx| args.get(idx))
                         .and_then(varref_from_value)
                         .map(|(source_name, _)| source_name)
                         .or_else(|| {
-                            self.pending_call_arg_sources
-                                .as_ref()
-                                .and_then(|sources| sources.get(i))
-                                .and_then(|name| name.as_ref())
-                                .cloned()
+                            arg_idx.and_then(|idx| {
+                                self.pending_call_arg_sources
+                                    .as_ref()
+                                    .and_then(|sources| sources.get(idx))
+                                    .and_then(|name| name.as_ref())
+                                    .cloned()
+                            })
                         });
                     let source_constraint = source_name.as_deref().and_then(|source_name| {
                         self.var_type_constraint(source_name).or_else(|| {
@@ -402,8 +441,9 @@ impl Interpreter {
                     // a literal/constant argument.  Map each positional subsignature
                     // param to the corresponding raw positional arg (the subsignature
                     // consumes the capture's positional args in order, starting at
-                    // index `i`).
-                    if !self.sub_signature_rw_args_writable(sub_params, args, i) {
+                    // this param's own positional slot).
+                    let raw_start = positional_indices.get(p).copied().unwrap_or(args.len());
+                    if !self.sub_signature_rw_args_writable(sub_params, args, raw_start) {
                         return false;
                     }
                 }
@@ -484,9 +524,9 @@ impl Interpreter {
                     self.bind_param_value(&pd.name, arg.clone());
                 }
                 if is_subsig_capture {
-                    i = args.len();
+                    p = positional_indices.len();
                 } else if !pd.slurpy {
-                    i += 1;
+                    p += 1;
                 }
             }
             // A capture parameter carrying a subsignature (e.g. `|(*@all, :$really!)`
