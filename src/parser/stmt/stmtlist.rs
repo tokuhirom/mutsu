@@ -302,6 +302,37 @@ pub(crate) fn stmt_list_with_mode(
                     *body = tail_stmts;
                 }
                 Stmt::RoleDecl { body, .. } => {
+                    // Same as the `unit class` case above: `use` is compile-time
+                    // in Raku, so `unit role R; use Base; also does Base;` must
+                    // load Base before R's composition resolves. A unit-role body
+                    // runs at role-registration time, which is *after* the body's
+                    // `DoesDecl` statements are processed, so a body `use` would
+                    // load too late and composition failed with
+                    // "Unknown role: Base" — even when Base exists (PDF::Class's
+                    // roles are all written this way). Hoist the `use`/`need`/
+                    // `import` statements out to before the declaration; they stay
+                    // in the same compilation-unit scope, so imported symbols
+                    // remain visible. Only when the body actually composes
+                    // something, mirroring the class gate on `parents`.
+                    let composes = tail_stmts
+                        .iter()
+                        .any(|s| matches!(s, Stmt::DoesDecl { .. }))
+                        || body.iter().any(|s| matches!(s, Stmt::DoesDecl { .. }));
+                    if composes {
+                        let mut hoisted: Vec<Stmt> = Vec::new();
+                        tail_stmts.retain(|stmt| {
+                            if matches!(
+                                stmt,
+                                Stmt::Use { .. } | Stmt::Need { .. } | Stmt::Import { .. }
+                            ) {
+                                hoisted.push(stmt.clone());
+                                false
+                            } else {
+                                true
+                            }
+                        });
+                        stmts.extend(hoisted);
+                    }
                     // The declarator may have already recorded `does Role`
                     // composition as leading `DoesDecl` statements in `body`
                     // (e.g. `unit role R does Base;`). Keep those and append the
