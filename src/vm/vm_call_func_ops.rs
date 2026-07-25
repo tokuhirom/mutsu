@@ -1302,6 +1302,9 @@ impl Interpreter {
                 } else if let Some(result) = self.try_nativecast(name, &args) {
                     // NativeCall's `nativecast($target-type, $source)` helper.
                     result
+                } else if let Some(result) = self.try_nativesizeof(name, &args) {
+                    // NativeCall's `nativesizeof($obj-or-type)` helper.
+                    result
                 } else if let Some(result) = self.try_native_json_function(name, &args) {
                     // Dispatch JSON::Fast / JSON::Tiny `to-json` / `from-json`
                     // to the native implementation (runtime/json.rs).

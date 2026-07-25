@@ -104,8 +104,7 @@ bugs, and one of them accounts for a third of the file count on its own.
 | File | mutsu | First observed failure |
 | --- | --- | --- |
 | `02-meta.rakutest` | **PASS** | — |
-| `44-sqlite-memory` / `45-sqlite-common` / `46-sqlite-blob` / `03-lib-util` | FAIL | `NativeLibs` — `Unknown function: cannon-name`, or a failing `CHECK` inside `install-driver` |
-| `48-sqlite-errors` | FAIL | same `NativeLibs` blocker, once its role-attribute failure was fixed |
+| `44-sqlite-memory` / `45-sqlite-common` / `46-sqlite-blob` / `03-lib-util` / `48-sqlite-errors` | FAIL | `Unknown function: cannon-name`, an `our proto sub` in `NativeLibs` |
 | `01-basic` | FAIL | `No such method 'method_table' for invocant of type 'Perl6::Metamodel::PackageHOW'` |
 | `05-mock` | FAIL | 11 of a planned 16 pass, then it aborts; a row fetch yields `IterationEnd` |
 | `06-types` | FAIL | first line is only a *warning*; not yet root-caused |
@@ -123,11 +122,25 @@ A second lever, worth two more files, was role punning: `DBIish` instantiates th
 `$!last-exception`, which a punned role did not carry. Also fixed — see
 [`news/2026-07/role-pun-private-attribute.md`](../../news/2026-07/role-pun-private-attribute.md).
 
-The biggest remaining lever now accounts for five files, and it is deeper than it
-looked: not `NativeLibs` but `NativeHelpers::Blob`, whose `MoarVM::Guts::REPRs`
-needs the unimplemented `nativesizeof` builtin and then walks MoarVM's raw object
-header. `DB::SQLite`'s 0/9 has the same first cause, so it has to be solved
-either way. Filed as `todo/deep/nativehelpers-blob-moarvm-guts.md`.
+Four of those five files used to die one layer earlier, inside a `CHECK`, because
+`NativeHelpers::Blob` could not be loaded at all — its `MoarVM::Guts::REPRs`
+needs `nativesizeof`, a dereferenceable `Pointer.WHERE`, positional
+`Pointer.new`, and reads through a `nativecast`ed `CArray` handle. Those landed
+too ([`news/2026-07/nativecall-sizeof-and-pointer-where.md`](../../news/2026-07/nativecall-sizeof-and-pointer-where.md)),
+so all five now reach the same remaining blocker. `DB::SQLite`'s 0/9 has that
+same first cause, so it has to be solved either way.
+
+The part of `NativeHelpers::Blob` that hands C the address of a container's
+element buffer (`BODY_OF` / `pointer-to()`) is *not* solved and needs a stable
+native allocation behind `Blob`/`array`/`CArray` — a value-representation change
+with its own design work, kept in `todo/deep/nativehelpers-blob-moarvm-guts.md`.
+`DBDish::SQLite` does not go through it.
+
+**A caveat on all the numbers above:** `-I` does not override an installed module
+of the same name in mutsu, and `NativeLibs` is installed at 0.0.8, so these runs
+did not use the 0.0.9 the `-I` line pins. See
+`todo/tickets/dash-i-loses-to-installed-module.md`; re-measure once that is
+fixed.
 
 The remaining blockers are tracked in `todo/tickets/dbiish-blockers.md`.
 

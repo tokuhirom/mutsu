@@ -156,7 +156,16 @@ Measured against mutsu (2026-07-25, debug build):
 deliberately identity-derived, because mutsu's scalar values are unboxed and have
 no pinnable address.
 
-### Tier 1 — make it *load* (tractable, and enough for the battery)
+### Tier 1 — make it *load* — **DONE 2026-07-26**
+
+Implemented; `NativeHelpers::Blob` and `MoarVM::Guts::REPRs` now load. See
+[`news/2026-07/nativecall-sizeof-and-pointer-where.md`](../../news/2026-07/nativecall-sizeof-and-pointer-where.md)
+for what landed and the segfault trap it uncovered (the prelude's `Pointer` is
+`Foo::Pointer` inside a module, so a name-exact guard silently fell through to
+the identity-hash `.WHERE` and a binding dereferenced garbage). The rest of this
+section is the plan as written before the work; tier 2 below is still open.
+
+The original plan was:
 
 Give the four load-time contracts honest implementations, scoped to NativeCall
 types only:

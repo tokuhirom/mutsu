@@ -28,6 +28,12 @@ role Rational[::NuT = Int, ::DeT = Int] does Real {
 pub(super) const NATIVECALL_POINTER_PRELUDE: &str = r#"
 class Pointer {
     has $.address = 0;
+    multi method new(--> Pointer) { self.bless(:address(0)) }
+    multi method new(Int() $address --> Pointer) { self.bless(:$address) }
+    # Rakudo's Pointer.new takes only a positional and silently ignores a
+    # `:address` named. mutsu accepted the named form before it had the
+    # positional one, so it is kept to avoid breaking code that used it.
+    multi method new(Int() :$address! --> Pointer) { self.bless(:$address) }
     method Int(--> Int) { $!address }
     method Numeric(--> Int) { $!address }
     method Bool(--> Bool) { $!address != 0 }

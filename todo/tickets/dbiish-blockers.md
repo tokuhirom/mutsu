@@ -35,17 +35,29 @@ a bogus baseline that wastes a session.
 | File | mutsu | Blocker |
 | --- | --- | --- |
 | `02-meta.rakutest` | **PASS** | — |
-| `44-sqlite-memory` | FAIL | ② NativeLibs `install-driver` |
-| `45-sqlite-common` | FAIL | ② NativeLibs `install-driver` |
-| `46-sqlite-blob` | FAIL | ② NativeLibs `install-driver` |
-| `03-lib-util` | FAIL | ② NativeLibs `cannon-name` |
+| `44-sqlite-memory` | FAIL | ② `Unknown function: cannon-name` |
+| `45-sqlite-common` | FAIL | ② `Unknown function: cannon-name` |
+| `46-sqlite-blob` | FAIL | ② `Unknown function: cannon-name` |
+| `03-lib-util` | FAIL | ② `Unknown function: cannon-name` |
+| `48-sqlite-errors` | FAIL | ② `Unknown function: cannon-name` |
 | `01-basic` | FAIL | ③ `PackageHOW.method_table` |
-| `48-sqlite-errors` | FAIL | ② NativeLibs (was ④, now cleared) |
 | `05-mock` | FAIL | ④ one subtest: `IterationEnd` from a row fetch |
 | `06-types` | FAIL | ⑤ not root-caused |
 
 **Nothing fails inside NativeCall.** The surface `OpenSSL` needed (CStruct,
 opaque pointers, callbacks) is strictly harder than SQLite's, and it is holding.
+
+## ⚠ These numbers were taken with the wrong `NativeLibs`
+
+`-I` does **not** override an installed module of the same name in mutsu (it does
+in raku) — see
+[`todo/tickets/dash-i-loses-to-installed-module.md`](dash-i-loses-to-installed-module.md).
+`NativeLibs` is installed in the site repo at **0.0.8**, so every run above
+loaded that instead of the 0.0.9 the `-I` line pins, and 0.0.8's `cannon-name`
+has a different signature. The tell is a stack frame pointing into
+`~/.local/share/mutsu/repo/site/sources/…`.
+
+Re-measure after that is fixed before trusting ② in particular.
 
 ## ① Parse failure — FIXED, was worth four files
 
@@ -58,21 +70,36 @@ parse. Fixed — see
 All four affected files now parse and reach their TAP plan; they fail later, on
 ② below.
 
-## ② `NativeHelpers::Blob` (`03-lib-util`, `48-sqlite-errors`, the three SQLite files)
+## ② `Unknown function: cannon-name` — worth **five** files
 
-`03-lib-util` fails with `Unknown function: cannon-name`; the others fail one
-layer up, inside `NativeLibs::install-driver`, with `An exception occurred while
-evaluating a CHECK`. It is one item, and now the highest-yield blocker here —
-worth **five** files.
+All five now fail with the same message. Getting them here took two steps.
 
-Root-caused 2026-07-25 and moved to
-[`todo/deep/nativehelpers-blob-moarvm-guts.md`](../deep/nativehelpers-blob-moarvm-guts.md):
-the failure is not in `NativeLibs` (which loads fine on its own) but in
-`NativeHelpers::Blob`, whose `MoarVM::Guts::REPRs` needs the unimplemented
-`nativesizeof` builtin and then walks MoarVM's raw object header. **Do not start
-this as a slice** — implementing `nativesizeof` alone does not clear it, and the
-rest needs a design decision. The suspicion recorded here earlier (a custom `sub
-EXPORT` before `unit module`) was tested and is wrong.
+**Cleared: the `NativeHelpers::Blob` load.** Four of them used to die earlier,
+inside a `CHECK`, because `NativeHelpers::Blob` could not be loaded at all: its
+`MoarVM::Guts::REPRs` needs `nativesizeof`, a dereferenceable `Pointer.WHERE`,
+positional `Pointer.new` and reads through a `nativecast`ed `CArray` handle —
+none of which mutsu had. Those are in now; see
+[`news/2026-07/nativecall-sizeof-and-pointer-where.md`](../../news/2026-07/nativecall-sizeof-and-pointer-where.md).
+The *rest* of that module — `BODY_OF` / `pointer-to()`, which hand C the address
+of a container's element buffer — needs a stable native allocation behind
+`Blob`/`array`/`CArray`, i.e. a value-representation change with its own design
+work. That half stays in
+[`todo/deep/nativehelpers-blob-moarvm-guts.md`](../deep/nativehelpers-blob-moarvm-guts.md);
+`DBDish::SQLite` only uses `blob-from-pointer`, which does not go through it.
+
+**Remaining: `cannon-name` itself.** `NativeLibs` declares it as an `our proto
+sub` with two `multi` candidates. Reductions that do **not** reproduce (all
+checked against raku, all behave identically under both):
+
+- a plain `our proto sub` + multis in a module, called from a sibling sub;
+- the same with a custom `sub EXPORT(|)` before the `unit module` line;
+- one multi calling the proto recursively (`cannon-name($libname, Version.new($ver))`).
+
+So the earlier note here (a custom `sub EXPORT` before `unit module`) is wrong,
+and the trigger is still unidentified. **Read the ⚠ above first** — these runs
+loaded the installed `NativeLibs` 0.0.8, whose `cannon-name` is shaped
+differently from the 0.0.9 the reductions were written against, so the reduction
+may simply have been aimed at the wrong source.
 
 ## ③ `Perl6::Metamodel::PackageHOW.method_table` (`01-basic`)
 
