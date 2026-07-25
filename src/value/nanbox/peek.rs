@@ -353,6 +353,7 @@ unsafe fn view_kind<'a>(kind: Kind, bits: u64) -> ValueView<'a> {
                     parts: &v.parts,
                     plus: v.plus,
                     minus: v.minus,
+                    text: v.text.as_deref(),
                 }
             }
             Kind::Capture => {

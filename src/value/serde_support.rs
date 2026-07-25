@@ -88,6 +88,8 @@ enum SerValue {
         parts: Vec<VersionPart>,
         plus: bool,
         minus: bool,
+        #[serde(default)]
+        text: Option<Box<str>>,
     },
     Instance {
         class_name: Symbol,
@@ -258,10 +260,16 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
             let ser_items: Result<Vec<_>, _> = items.iter().map(value_to_ser).collect();
             Ok(SerValue::Slip(ser_items?))
         }
-        ValueView::Version { parts, plus, minus } => Ok(SerValue::Version {
+        ValueView::Version {
+            parts,
+            plus,
+            minus,
+            text,
+        } => Ok(SerValue::Version {
             parts: parts.clone(),
             plus,
             minus,
+            text: text.map(Box::from),
         }),
         ValueView::Instance {
             class_name,
@@ -459,9 +467,17 @@ fn ser_to_value(sv: SerValue) -> Value {
         SerValue::Slip(items) => {
             Value::Slip(Arc::new(items.into_iter().map(ser_to_value).collect()))
         }
-        SerValue::Version { parts, plus, minus } => {
-            Value::from_repr(ValueRepr::Version { parts, plus, minus })
-        }
+        SerValue::Version {
+            parts,
+            plus,
+            minus,
+            text,
+        } => Value::from_repr(ValueRepr::Version {
+            parts,
+            plus,
+            minus,
+            text,
+        }),
         SerValue::Instance {
             class_name,
             attributes,

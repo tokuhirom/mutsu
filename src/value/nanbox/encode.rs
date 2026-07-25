@@ -146,9 +146,20 @@ impl NanBox {
             ValueRepr::RaceSeq(items) => pack_arc(Kind::RaceSeq, items),
             ValueRepr::Slip(items) => pack_arc(Kind::Slip, items),
             ValueRepr::LazyList(l) => pack_gc(Kind::LazyList, l),
-            ValueRepr::Version { parts, plus, minus } => {
-                pack_arc(Kind::Version, Arc::new(VersionBox { parts, plus, minus }))
-            }
+            ValueRepr::Version {
+                parts,
+                plus,
+                minus,
+                text,
+            } => pack_arc(
+                Kind::Version,
+                Arc::new(VersionBox {
+                    parts,
+                    plus,
+                    minus,
+                    text,
+                }),
+            ),
             ValueRepr::Promise(p) => pack_gc(Kind::Promise, p.inner),
             ValueRepr::Channel(c) => pack_gc(Kind::Channel, c.inner),
             ValueRepr::Mixin(inner, overrides) => {

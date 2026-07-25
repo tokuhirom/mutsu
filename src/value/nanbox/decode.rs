@@ -131,6 +131,7 @@ unsafe fn decode_kind(kind: Kind, bits: u64) -> ValueRepr {
                 parts: v.parts,
                 plus: v.plus,
                 minus: v.minus,
+                text: v.text,
             }
         }
         Kind::Capture => {

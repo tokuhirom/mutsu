@@ -449,8 +449,15 @@ pub(super) fn dispatch(
             }
         }
         ValueView::Instance { .. } | ValueView::Enum { .. } => None,
-        ValueView::Version { parts, plus, minus } => {
-            let s = Value::version_parts_to_string(parts);
+        ValueView::Version {
+            parts,
+            plus,
+            minus,
+            text,
+        } => {
+            let s = text
+                .map(str::to_string)
+                .unwrap_or_else(|| Value::version_parts_to_string(parts));
             let suffix = if plus {
                 "+"
             } else if minus {

@@ -1231,6 +1231,12 @@ pub(in crate::value) enum ValueRepr {
         parts: Vec<VersionPart>,
         plus: bool,
         minus: bool,
+        /// The source spelling of the parts, joined by `.`, when it differs
+        /// from what `parts` alone render to — Rakudo keeps `v1.02.3` as
+        /// `"1.02.3"` while `.parts` still reports `(1, 2, 3)`. `None` for the
+        /// common case where the parts round-trip exactly. Excludes the
+        /// `+`/`-` suffix, which `plus`/`minus` carry.
+        text: Option<Box<str>>,
     },
     Promise(SharedPromise),
     Channel(SharedChannel),

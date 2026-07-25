@@ -86,6 +86,8 @@ pub enum ValueView<'a> {
         parts: &'a Vec<VersionPart>,
         plus: bool,
         minus: bool,
+        /// Source spelling of the parts (see `ValueRepr::Version::text`).
+        text: Option<&'a str>,
     },
     Promise(RefGuard<'a, SharedPromise>),
     Channel(RefGuard<'a, SharedChannel>),
@@ -271,7 +273,29 @@ impl Value {
     /// Construct a `Version` value from its parts.
     #[inline]
     pub(crate) fn version(parts: Vec<VersionPart>, plus: bool, minus: bool) -> Self {
-        Value::from_repr(ValueRepr::Version { parts, plus, minus })
+        Value::from_repr(ValueRepr::Version {
+            parts,
+            plus,
+            minus,
+            text: None,
+        })
+    }
+
+    /// Construct a `Version` value from its parts, keeping the source spelling
+    /// used for stringification (see `ValueRepr::Version::text`).
+    #[inline]
+    pub(crate) fn version_with_text(
+        parts: Vec<VersionPart>,
+        plus: bool,
+        minus: bool,
+        text: Option<Box<str>>,
+    ) -> Self {
+        Value::from_repr(ValueRepr::Version {
+            parts,
+            plus,
+            minus,
+            text,
+        })
     }
 
     /// Construct a `CompUnitDepSpec` from its short name.

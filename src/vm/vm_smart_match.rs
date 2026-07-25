@@ -124,9 +124,12 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
         }
 
         // Version ~~ Version
-        (ValueView::Version { .. }, ValueView::Version { parts, plus, minus }) => {
-            Some(Interpreter::version_smart_match(left, parts, plus, minus))
-        }
+        (
+            ValueView::Version { .. },
+            ValueView::Version {
+                parts, plus, minus, ..
+            },
+        ) => Some(Interpreter::version_smart_match(left, parts, plus, minus)),
 
         // When RHS is NaN, check if LHS is also NaN
         (_, ValueView::Num(b)) if b.is_nan() && !needs_interpreter_lhs(left) => {

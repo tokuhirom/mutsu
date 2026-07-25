@@ -108,11 +108,13 @@ impl Interpreter {
                 parts: ap,
                 plus: apl,
                 minus: ami,
+                ..
             },
             ValueView::Version {
                 parts: bp,
                 plus: bpl,
                 minus: bmi,
+                ..
             },
         ) = (left.view(), right.view())
         {

@@ -184,8 +184,7 @@ impl Interpreter {
                 if s.is_empty() {
                     return Value::version(Vec::new(), false, false);
                 }
-                let (parts, plus, minus) = Value::parse_version_string(&s);
-                Value::version(parts, plus, minus)
+                Value::version_from_str(&s)
             }
             // Version.new(*) - Whatever argument (bare * evaluates to Num(Inf))
             ValueView::Num(f) if f.is_infinite() && f.is_sign_positive() => {
