@@ -558,6 +558,7 @@ impl Interpreter {
         // For installed modules (inst# paths), use the dist JSON directly.
         // Otherwise fall back to META6.json detection.
         let saved_distribution = self.current_distribution.clone();
+        let saved_distribution_floor = self.current_distribution_frame_floor;
         // Prefer the dist JSON of the distribution resolve_module_path actually
         // selected (selectors / highest-version pick): a by-name rescan could
         // land on a DIFFERENT dist that also provides this short name. The
@@ -590,6 +591,10 @@ impl Interpreter {
         };
         if let Some(dist) = &module_dist {
             self.current_distribution = Some(dist.clone());
+            // Everything this module's own mainline runs from here on sits at or
+            // above this frame height; frames below belong to whoever triggered
+            // the load (see `build_resources_for_package`).
+            self.current_distribution_frame_floor = self.routine_stack_len();
             // Record the distribution for the module's package name
             // so OTF compilation can resolve $?DISTRIBUTION later.
             self.package_distributions
@@ -695,6 +700,7 @@ impl Interpreter {
         }
         crate::parser::set_current_language_version(&saved_language_version);
         self.current_distribution = saved_distribution;
+        self.current_distribution_frame_floor = saved_distribution_floor;
         Ok(())
     }
 
