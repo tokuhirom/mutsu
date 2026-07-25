@@ -323,11 +323,41 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 - file: DONE — runtime/test_functions/basic.rs (plan *); remaining — a
   Lingua::EN::Numbers cardinal-fraction bug (module logic).
 
-### T-037 — test_die: timeout  [impact: 1 dist]
-- dists: Test::Scheduler
+### T-037 — test_die: timeout  [impact: 1 dist]  — TWO ROOT CAUSES FIXED (#5395, #5396); blocked on PLAN §8.21
+- dists: Test::Scheduler (raku passes all three files; `t/virtualized-time.rakutest` 83/83)
 - e.g. `Test::Scheduler`: base=3 pass=1 fail=1 die=1 | t/virtualized-time.rakutest: timeout
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
+- The dist virtualizes time: `my $*SCHEDULER = Test::Scheduler.new` and then
+  `Promise.in(200)` must NOT resolve until `$*SCHEDULER.advance-by(200)`.
+- **Fixed #1 — `Promise.in`/`Promise.at` ignored `$*SCHEDULER` (#5395).** Raku
+  defines `Promise.in($t)` as `$*SCHEDULER.cue({...}, :in($t))`; mutsu went
+  straight to the shared deadline-heap timer, so swapping the scheduler had zero
+  effect and every timed promise resolved on real time. Both now route through a
+  *user-defined* scheduler (not ThreadPool/CurrentThread/FakeScheduler, and
+  providing `cue`); built-ins keep the direct heap path. `Promise.at` cues as
+  `:in($at - now)`, matching Rakudo. Also fixed: the composable `Scheduler` role
+  claimed a native `cue`, so every `class X does Scheduler` looked native-backed
+  and its own `method cue` was bypassed ("No native method 'cue' on 'X'").
+  Pin: `t/promise-in-honors-scheduler.t`.
+- **Fixed #2 — a trailing `@x` in a `:=` binding was slurpy (#5396).**
+  `method !run-due` binds `my (@now, @future) := $!lock.protect: { ... }`; the
+  trailing `@future` came back as `(@y,)` instead of `@y`, so the scheduler
+  believed work was still pending. Pin: `t/list-bind-trailing-array.t`.
+- **REMAINING — PLAN.md §8.21: `has` defaults are applied BEFORE `submethod
+  BUILD`, not after.** Rakudo runs BUILD first and then applies a `has` default
+  only for attributes BUILD did not set. The dist has
+  `has $.virtual-time = now; has $!virtual-target = $!virtual-time;` plus
+  `submethod BUILD(:$!virtual-time = now)`, so under mutsu's order
+  `$!virtual-target` is a couple of milliseconds *behind* `$!virtual-time`;
+  `advance-by($n)` then computes a target earlier than the events it should fire,
+  `!run-due` classifies everything as `future`, and the first `await` hangs.
+  Minimal repro + the full "why this is not a small fix" analysis (three
+  independent construction paths, no runtime "attribute was initialized" state,
+  slots must pre-exist for `$!x = ...` in BUILD to stick) are in PLAN.md §8.21.
+- **Status:** `t/not-time-based.rakutest` 3/3; `t/virtualized-time.rakutest`
+  reaches test 3 then hangs on §8.21; `t/synopsis.rakutest` 1/3.
+- file: DONE — runtime/methods_promise_class.rs, runtime_init.rs (#5395),
+  parser/stmt/decl/destructure.rs (#5396); remaining — PLAN.md §8.21
+  (object construction order; ADR-worthy)
 
 ### T-038 — test_fail: .text  [impact: 1 dist]  — FIXED (PR `fix-qqx-closure-interpolation`)
 - dists: PDF::Extract (t/01-san.rakutest 0/1 → 1/1)
