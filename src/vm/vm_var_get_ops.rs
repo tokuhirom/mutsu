@@ -203,17 +203,22 @@ impl Interpreter {
             } else {
                 self.compile_and_call_function_def(&def, Vec::new(), compiled_fns)?
             }
-        } else if self.has_type(name)
-            || Self::is_builtin_type(name)
-            || Self::is_type_with_smiley(name, self)
-        {
+        } else if self.has_type(name) {
             Value::package(Symbol::intern(Self::resolve_type_alias(name)))
         } else if let Some(qualified) = self.resolve_type_in_current_package(name) {
-            // A short type name declared in the (dynamically) current package —
-            // `module Foo { class Params {…}; sub mk { Params.new } }` where the
-            // class registered as `Foo::Params` and `mk` runs from another
-            // package's call site.
+            // A short type name declared in the (dynamically) current package.
+            // Checked BEFORE the built-in-type fallback so a module-local
+            // declaration shadows a built-in of the same name: `grammar Grammar`
+            // (or `class Int`) inside `module Foo` resolves to `Foo::Grammar`,
+            // matching raku where a package-local type shadows the core name —
+            // otherwise `Grammar.parse(...)` mis-dispatched on the core `Grammar`
+            // type object (ClassHOW, no `.parse`). Also the original
+            // non-collision case: `module Foo { class Params {…};
+            // sub mk { Params.new } }` reached from another package's call site,
+            // where the bareword `Params` is `Foo::Params`.
             Value::package(Symbol::intern(&qualified))
+        } else if Self::is_builtin_type(name) || Self::is_type_with_smiley(name, self) {
+            Value::package(Symbol::intern(Self::resolve_type_alias(name)))
         } else if let Some(enum_val) = self.resolve_enum_member_in_current_package(name) {
             // A bare enum member read from inside the package that declared the
             // enum (`unit class URI::Query; our enum HashFormat <… Lists>;
