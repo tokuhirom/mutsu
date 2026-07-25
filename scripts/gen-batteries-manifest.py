@@ -84,6 +84,10 @@ SIDECAR = {
         "slot": "Test helpers",
         "record": "docs/batteries/test-helpers.md",
     },
+    "Template::Mustache": {
+        "slot": "Template engine",
+        "record": "docs/batteries/templates.md",
+    },
 }
 
 

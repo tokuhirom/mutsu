@@ -130,6 +130,23 @@ fn is_nodal_list_method(name: &str) -> bool {
     )
 }
 
+/// Push one element's hyper result, flattening a `Slip` into the result list.
+///
+/// A hyper is built on `deepmap`, so a method that returns a `Slip` (`slip(...)`
+/// or `make @x.Slip`) contributes its *elements* to the result, exactly as it
+/// would from `map` — `@objs>>.made` over methods returning `slip('a', %h)` is
+/// `["a", %h, ...]`, not `[slip("a", %h), ...]`. Keeping the Slip nested also
+/// corrupted the values downstream: `.flat` then descended into it and
+/// decomposed a contained Hash into its Pairs (Template::Mustache's parse tree).
+/// An empty Slip contributes nothing, which is what `Empty` means.
+fn push_hyper_result(results: &mut Vec<Value>, result: Value) {
+    if let ValueView::Slip(elems) = result.view() {
+        results.extend(elems.iter().cloned());
+    } else {
+        results.push(result);
+    }
+}
+
 fn itemize_if_descended(source: &Value, result: Value) -> Value {
     if !matches!(
         source.view(),
@@ -622,7 +639,7 @@ impl Interpreter {
                             *item = updated;
                             v
                         };
-                        results.push(val);
+                        push_hyper_result(&mut results, val);
                     }
                 }
             }
@@ -837,7 +854,7 @@ impl Interpreter {
                 for sub in elems.iter() {
                     let (r, m) =
                         self.hyper_method_apply_recursive(sub, method, args, skip_native)?;
-                    results.push(itemize_if_descended(sub, r));
+                    push_hyper_result(&mut results, itemize_if_descended(sub, r));
                     mutated.push(m);
                 }
                 Ok((
@@ -857,7 +874,7 @@ impl Interpreter {
                 for sub in elems.iter() {
                     let (r, m) =
                         self.hyper_method_apply_recursive(sub, method, args, skip_native)?;
-                    results.push(itemize_if_descended(sub, r));
+                    push_hyper_result(&mut results, itemize_if_descended(sub, r));
                     mutated.push(m);
                 }
                 Ok((
