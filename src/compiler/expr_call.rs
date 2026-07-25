@@ -83,6 +83,31 @@ impl Compiler {
                     if matches!(l.view(), crate::value::ValueView::Str(s) if s.as_str() == key)))
     }
 
+    /// True when a *user* routine named after a container listop (`push`, `pop`,
+    /// ...) is visible — either imported by a `use` or declared in a live
+    /// lexical scope. The compile-time listop -> method rewrites below
+    /// (`pop(@a)` -> `@a.pop()`, `push(@a, v)` -> `@a.push(v)`) must not fire
+    /// then: they bake the builtin in at compile time, so the user routine can
+    /// never be dispatched to, no matter what the runtime's builtin-vs-user
+    /// preference does. Suppressing them lets the call fall through to the
+    /// generic call path, which resolves the user routine.
+    ///
+    /// `P5push` exports `push`/`pop` with Perl 5 return values; without this
+    /// guard `push @a, 42` returned the array instead of the module's element
+    /// count, and `pop @a` on an empty array surfaced the builtin's
+    /// `Cannot pop from an empty Array` Failure instead of the module's `Nil`.
+    /// Both halves are needed: the importing script sees `pop` as *imported*,
+    /// while the module's own body — which calls `pop(@*ARGS)` from one of its
+    /// `multi`s — sees it as *declared*.
+    fn listop_shadowed_by_user_routine(name: &Symbol) -> bool {
+        let n = name.resolve();
+        matches!(
+            n.as_str(),
+            "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
+        ) && (crate::parser::is_imported_function(&n)
+            || crate::parser::is_user_declared_sub_pub(&n))
+    }
+
     pub(super) fn compile_expr_call(&mut self, name: &Symbol, args: &[Expr]) {
         // `callframe`/`caller` inside N enclosing `for` blocks must report the
         // frames those blocks introduce. The block nesting is a compile-time
@@ -812,6 +837,7 @@ impl Compiler {
         else if matches!(name.resolve().as_str(), "shift" | "pop")
             && args.len() == 1
             && matches!(args[0], Expr::ArrayVar(_) | Expr::Var(_))
+            && !Self::listop_shadowed_by_user_routine(name)
         {
             let method_call = Expr::MethodCall {
                 target: Box::new(args[0].clone()),
@@ -831,6 +857,7 @@ impl Compiler {
                 "push" | "unshift" | "append" | "prepend"
             )
             && matches!(&args[0], Expr::MethodCall { args: mc_args, .. } if mc_args.is_empty())
+            && !Self::listop_shadowed_by_user_routine(name)
         {
             if let Expr::MethodCall {
                 target: mc_target,
@@ -866,6 +893,7 @@ impl Compiler {
             )
             && matches!(&args[0], Expr::DoStmt(s)
                 if matches!(s.as_ref(), Stmt::VarDecl { name: vn, .. } if vn.starts_with('@')))
+            && !Self::listop_shadowed_by_user_routine(name)
         {
             if let Expr::DoStmt(stmt) = &args[0]
                 && let Stmt::VarDecl { name: vn, .. } = stmt.as_ref()
@@ -896,6 +924,7 @@ impl Compiler {
                 "push" | "unshift" | "append" | "prepend"
             ) && args.len() >= 2
                 || name.resolve().as_str() == "splice")
+            && !Self::listop_shadowed_by_user_routine(name)
         {
             // Autovivification: when the first arg is an `Expr::Index` referring
             // to a missing slot (e.g. `push @array[2], ...` / `push %h<key>, ...`),

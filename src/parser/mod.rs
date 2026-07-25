@@ -13,6 +13,13 @@ pub(crate) fn is_imported_function(name: &str) -> bool {
     stmt::simple::is_imported_function(name)
 }
 
+/// Whether a `sub`/`multi`/`proto` with this name was declared in a still-live
+/// lexical scope. Exposed to the compiler so a user routine that shadows a
+/// builtin listop suppresses the compile-time `pop(@a)` -> `@a.pop()` rewrite.
+pub(crate) fn is_user_declared_sub_pub(name: &str) -> bool {
+    stmt::simple::is_user_declared_sub(name)
+}
+
 /// Parse a heredoc body string as an interpolated (qq-style) string expression.
 /// Used by the compiler to defer heredoc interpolation to compile time.
 pub(crate) fn interpolate_heredoc_content(content: &str) -> crate::ast::Expr {

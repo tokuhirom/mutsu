@@ -703,33 +703,6 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
   stripped). Fixed in `src/runtime/types/args_matching.rs`. Pin:
   `t/multi-optional-named-definite.t`.
 
-### T-054 — test_fail: builtin push/pop return value [P5push]  [impact: 1 dist]  — RE-MEASURED 2026-07-25: 10/14 (was: shadowed in every call form)
-- dists: P5push
-- `P5push` exports `proto sub push`/`multi sub push(@a,*@v --> Int:D){...}` and
-  `pop`.
-- **The old note ("mutsu's builtin shadows the imported subs in EVERY call form",
-  "same compile-time-import problem as Understitch's `_` operator") is now WRONG
-  and was over-broad.** The builtin-shadow dispatch fix landed for String::Rotate
-  (2026-07-25, `call_function_fallback` prefers a resolved user routine over the
-  native table — see Done) already moved this dist from failing wholesale to
-  **10 of 14 subtests passing**. `pop` works in every form the test uses,
-  including the bare `pop` that reads `@*ARGS`. Re-measure before believing any
-  remaining claim here.
-- **Remaining 4 subtests, two shapes (each needs its own diagnosis):**
-  1. tests 3/5 — `is (push @a, 42), 2` still returns the ARRAY, not the elem
-     count, so the builtin still wins for `push` specifically. `pop` (also a
-     `proto` + `multi`) does not, so this is not simply "protos bypass the
-     shadow"; `push @a, 42` parses as a plain `Call` node, so the divergence is
-     downstream of parsing. Suspect the proto path in `call_function_fallback`
-     runs before the user-routine preference added for the non-proto case.
-  2. tests 11/14 — `pop` on an EMPTY array. The module's
-     `multi sub pop(@array) { @array.elems ?? @array.pop !! Nil }` should yield
-     `Nil`, but mutsu surfaces `Cannot pop from an empty Array` (which is what
-     the BUILTIN `pop` returns as a Failure for an empty array). So either the
-     builtin is reached here, or the guarded branch is evaluated anyway.
-- file: builtin-vs-imported-sub dispatch priority — the *proto* half (the
-  non-proto half is fixed)
-
 ### T-056 — test_fail: Codepoint [P5quotemeta]  [impact: 1 dist]  — ONE ROOT CAUSE FIXED (PR `fix-subst-replacement-double-backslash`); one deferred
 - dists: P5quotemeta (5756 tests: raku 5756/5756)
 - The module is `S:g/ ( <[ …\x[…] ]> ) /\\$0/` — escape each matched char with a
@@ -1268,3 +1241,26 @@ _(move tickets here with `[claim: <branch>]` when you start)_
   lowers a known routine's bare call to `Stmt::Call`, which
   `compile_stmts_value` compiled through the sink path. See
   `news/2026-07/do-for-imported-sub-statement-call-value.md`.
+
+- **T-054 (P5push) — CLOSED at 14/14** (PR `fix-listop-rewrite-imported-shadow`)
+  — one root cause, not the two the open entry predicted. The compiler rewrites
+  the container listops into method calls at compile time (`pop(@a)` ->
+  `@a.pop()`, `push(@a, v)` -> `@a.push(v)`, also `shift`/`unshift`/`append`/
+  `prepend`/`splice`) so array mutation reaches the caller's container. That
+  rewrite was unconditional, so it baked the BUILTIN in before dispatch ever ran
+  — the runtime builtin-vs-user preference landed for String::Rotate could not
+  help, because there was no call left to dispatch. The four rewrite branches in
+  `compiler/expr_call.rs` are now guarded by `listop_shadowed_by_user_routine`.
+  Both halves of that predicate are load-bearing: the importing script sees
+  `push`/`pop` as *imported* (`parser::is_imported_function`), while the module's
+  own body sees them as *declared* (`parser::is_user_declared_sub_pub`, newly
+  exposed to the compiler) — P5push's no-arg `multi sub pop()` calls
+  `pop(@*ARGS)`, i.e. its own other candidate; without that half the final
+  subtest still surfaced the builtin's `Cannot pop from an empty Array`.
+  Pins: `t/listop-shadow-imported.t` + `t/lib/ListopShadow.rakumod`,
+  `t/listop-shadow-declared.t`. See
+  `news/2026-07/listop-rewrite-respects-user-routine-shadow.md`.
+  **Known limitation recorded, not fixed:** the predicate reads the parser's
+  lexical-scope stack, which at compile time only holds scopes that were never
+  popped (in practice the unit scope), so a *block-scoped* shadow is still
+  ignored — `todo/tickets/block-scoped-listop-shadow.md`.
