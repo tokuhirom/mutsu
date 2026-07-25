@@ -2148,6 +2148,7 @@ impl Interpreter {
             instance_type_metadata: Arc::new(RwLock::new(HashMap::new())),
             let_saves: Vec::new(),
             supply_emit_buffer: Vec::new(),
+            pending_promise_whenever_arms: Vec::new(),
             supply_emit_timed_buffer: Vec::new(),
             supply_stream_consumers: Vec::new(),
             react_active: 0,

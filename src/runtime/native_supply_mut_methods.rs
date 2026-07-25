@@ -277,6 +277,12 @@ impl Interpreter {
                     // Separate whenever subscription registrations from plain
                     // emitted values (same logic as immutable tap path).
 
+                    // A `whenever <Promise>` source becomes a stand-in supplier
+                    // first, so the supplier-backed handling below drives it
+                    // (see `normalize_promise_whenever_markers`). The promises
+                    // are armed only once those taps are registered.
+                    let emitted = self.normalize_promise_whenever_markers(emitted);
+
                     // Pre-count supplier-backed whenever subscriptions
                     let whenever_supplier_count = emitted
                         .iter()
@@ -446,6 +452,10 @@ impl Interpreter {
                             plain_values.push(item.clone());
                         }
                     }
+                    // Every rewritten `whenever <Promise>` source now has its
+                    // body registered as a tap on its stand-in supplier, so the
+                    // promises can be armed without racing the registration.
+                    self.arm_pending_promise_whenevers();
                     // A `done` that terminates the whole supply (an explicit
                     // `done` in the block body, or a `done` inside a whenever
                     // body) fires every whenever source's on-close plus the

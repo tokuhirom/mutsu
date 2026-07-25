@@ -1201,6 +1201,12 @@ pub struct Interpreter {
     /// `find_local_slot`. `None` for a non-local target (by-name fallback).
     let_saves: Vec<(String, Value, bool, Option<u32>)>,
     pub(super) supply_emit_buffer: Vec<Vec<Value>>,
+    /// `whenever <Promise>` sources inside a `supply` block, rewritten to a
+    /// stand-in supplier and waiting to be armed. A supplier keeps no backlog,
+    /// so the promise must not be armed until the consumer has registered the
+    /// taps for the rewritten subscription — see
+    /// `Interpreter::normalize_promise_whenever_markers`.
+    pub(crate) pending_promise_whenever_arms: Vec<(crate::value::SharedPromise, Value)>,
     pub(super) supply_emit_timed_buffer: Vec<Vec<(Value, crate::runtime::thread_compat::Instant)>>,
     /// Active streaming consumers for on-demand `supply { ... }` bodies driven by
     /// `react`. When a stream consumer is registered for an emitter's

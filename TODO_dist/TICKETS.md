@@ -357,21 +357,27 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
   emitted a bare `&to-run := $_`, which is "Code items cannot be rebound" and
   the compiler rejected it as X::Assignment::RO. It now desugars to a
   declaration. Pin: `t/pointy-code-param.t`.
-- **REMAINING — PLAN.md §8.23: `whenever <Promise>` inside a `supply` block
-  emits its own subscription marker.** The subscription marker
-  `[source, body_cb, [LAST…], [QUIT…]]` is recognised by the marker/value
-  separators only when `arr[0]` is a `Supply`, so a Promise source falls
-  through as an emitted value and reaches the tap as a raw 4-tuple. The dist's
-  `supply { whenever Promise.in($_) { emit 'badger' } }` therefore delivers
-  Promise objects where `'badger'` belongs. Full diagnosis, the proposed
-  normalise-to-one-shot-Supply approach, and the tap-ordering trap are in
-  PLAN.md §8.23.
+- **Fixed #5 — `whenever <Promise>` inside a `supply` block leaked its own
+  subscription marker.** The marker `[source, body_cb, [LAST…], [QUIT…]]` was
+  recognised by the marker/value separators only when `arr[0]` was a `Supply`,
+  so a Promise source fell through as an emitted value and reached the tap as a
+  raw 4-tuple. The `.tap` path now rewrites it into a stand-in supplier-backed
+  Supply and the `await` path builds a one-shot channel subscription, matching
+  Raku's "emit once, then done" semantics. Pin:
+  `t/supply-whenever-promise.t`.
+- **REMAINING — the suite hangs at `t/virtualized-time.rakutest` test 29.** Not
+  yet triaged; the dist's `timeout` combinator registers a *nested* `whenever
+  Promise.in(...)` from inside another whenever's body, i.e. after the supply
+  block's initial run, which the rewrite above does not reach (it normalises
+  only the markers the initial body registered). `t/synopsis.rakutest` still
+  fails 6/9 for the same reason.
 - **Status:** `t/not-time-based.rakutest` 3/3; `t/synopsis.rakutest` runs all 9
-  (3 pass, 6 fail on §8.23); `t/virtualized-time.rakutest` reaches test 2.
+  (3 pass); `t/virtualized-time.rakutest` reaches test 28 (was 2).
 - file: DONE — runtime/methods_promise_class.rs, runtime_init.rs (#5395),
   parser/stmt/decl/destructure.rs (#5396), runtime/attr_build_defaults.rs
-  (#5402), parser/stmt/control.rs (#5405); remaining — PLAN.md §8.23
-  (supply-block whenever on a Promise source)
+  (#5402), parser/stmt/control.rs (#5405), runtime/supply_promise.rs +
+  native_supply_mut_methods.rs (this PR); remaining — nested `whenever` on a
+  Promise source registered from inside a whenever body
 
 ### T-038 — test_fail: .text  [impact: 1 dist]  — FIXED (PR `fix-qqx-closure-interpolation`)
 - dists: PDF::Extract (t/01-san.rakutest 0/1 → 1/1)
