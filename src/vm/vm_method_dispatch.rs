@@ -1697,6 +1697,10 @@ fn merge_method_env(
                     // callee's same-named entries corrupts the caller's pending
                     // post-call writeback compare (see is_index_rw_call_temp).
                     || crate::runtime::utils::is_index_rw_call_temp(s)
+                    // `$!` is scoped per routine: the method frame reset it to
+                    // Nil on entry, so merging it back would wipe the caller's
+                    // error variable (`$!.message; $!.rc` must both see it).
+                    || crate::runtime::utils::is_routine_scoped_error_var(s)
             }) {
                 return None;
             }

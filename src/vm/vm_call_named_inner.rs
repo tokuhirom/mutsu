@@ -465,6 +465,11 @@ impl Interpreter {
             // Use declared_locals (vars declared via `my` or as params) instead
             // of all locals. Captured outer variables should propagate their
             // modifications back to the caller.
+            // `$!` is scoped per routine — this frame reset it to Nil on entry
+            // (above), so merging the callee's value back would wipe the
+            // caller's error variable. Blocks are excluded: a bare block shares
+            // its enclosing routine's `$!` and a `CATCH` writes it there.
+            let bang_is_callee_private = cf.code.is_routine;
             for (k, v) in self.env().iter() {
                 if *k == "_" || *k == "@_" || *k == "%_" {
                     continue;
@@ -473,6 +478,11 @@ impl Interpreter {
                 // caller; it identifies the current routine scope for
                 // non-local return targeting.
                 if *k == "__mutsu_callable_id" {
+                    continue;
+                }
+                if bang_is_callee_private
+                    && k.with_str(crate::runtime::utils::is_routine_scoped_error_var)
+                {
                     continue;
                 }
                 if restored_env.contains_key_sym(*k)
@@ -507,6 +517,9 @@ impl Interpreter {
                         s == "_"
                         || s == "@_"
                         || s == "%_"
+                        // `$!` is per-routine; see the merge loop above.
+                        || (bang_is_callee_private
+                            && crate::runtime::utils::is_routine_scoped_error_var(s))
                         || rw_sources.contains(s)
                         // Compiler-internal bookkeeping symbols (e.g. the
                         // `__mutsu_sigilless_readonly::p` marker emitted for a

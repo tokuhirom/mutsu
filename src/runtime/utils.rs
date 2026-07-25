@@ -55,6 +55,19 @@ pub(crate) fn is_index_rw_call_temp(name: &str) -> bool {
     name.starts_with("__mutsu_index_rw_") || name.starts_with("__mutsu_call_result_")
 }
 
+/// True for `$!`'s env key. `$!` is scoped **per routine** in raku: a sub or
+/// method gets a fresh `Nil` on entry (which every routine-entry path already
+/// does) and the CALLER's value must survive the call — so the return-side env
+/// merge has to treat `!` like the other per-routine magic names (`_`, `@_`,
+/// `%_`, `__mutsu_callable_id`) and never copy the callee's back.
+///
+/// Deliberately NOT applied on the block/closure path: a bare block shares its
+/// enclosing routine's `$!`, and a `CATCH` block *writes* it there, so skipping
+/// the merge for blocks would break `try`/`CATCH`.
+pub(crate) fn is_routine_scoped_error_var(name: &str) -> bool {
+    name == "!"
+}
+
 /// Build the `Failure` value raku yields when a count/numeric coercion is
 /// attempted on a lazy iterable (e.g. `(1..*).elems` / `.Int` / `+@a`):
 /// `X::Cannot::Lazy` with the message `Cannot .<action> a lazy list`.

@@ -526,6 +526,9 @@ impl Interpreter {
         // param of this function) persists in the caller; the function's
         // params/locals/aliases are dropped with the overlay. This replaces the
         // per-key `modified_env_keys` save/restore.
+        // `$!` is scoped per routine: the caller's value must survive the call
+        // (a block, which shares its enclosing routine's `$!`, is excluded).
+        let bang_is_callee_private = cf.code.is_routine;
         match caller_env {
             Some(caller_env) => {
                 let scoped = std::mem::replace(self.env_mut(), caller_env);
@@ -535,6 +538,8 @@ impl Interpreter {
                         || *k == "%_"
                         || *k == "__mutsu_callable_id"
                         || k.with_str(|s| s.starts_with('?'))
+                        || (bang_is_callee_private
+                            && k.with_str(crate::runtime::utils::is_routine_scoped_error_var))
                     {
                         continue;
                     }
@@ -558,6 +563,8 @@ impl Interpreter {
                             || *k == "%_"
                             || *k == "__mutsu_callable_id"
                             || k.with_str(|s| s.starts_with('?'))
+                            || (bang_is_callee_private
+                                && k.with_str(crate::runtime::utils::is_routine_scoped_error_var))
                             || cf.is_callee_local_sym(*k))
                     });
                 }
