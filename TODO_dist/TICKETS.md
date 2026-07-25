@@ -323,7 +323,7 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 - file: DONE — runtime/test_functions/basic.rs (plan *); remaining — a
   Lingua::EN::Numbers cardinal-fraction bug (module logic).
 
-### T-037 — test_die: timeout  [impact: 1 dist]  — FOUR ROOT CAUSES FIXED (#5395, #5396, #5402, #5405); blocked on PLAN §8.23
+### T-037 — test_die: timeout  [impact: 1 dist]  — FIVE ROOT CAUSES FIXED (#5395, #5396, #5402, #5405, #5409); blocked on a nested `whenever` on a Promise source
 - dists: Test::Scheduler (raku passes all three files; `t/virtualized-time.rakutest` 83/83)
 - e.g. `Test::Scheduler`: base=3 pass=1 fail=1 die=1 | t/virtualized-time.rakutest: timeout
 - The dist virtualizes time: `my $*SCHEDULER = Test::Scheduler.new` and then
@@ -1113,9 +1113,10 @@ _(move tickets here with `[claim: <branch>]` when you start)_
   **proto-token LTM tie-break bug** — mutsu dispatches `**` to the fall-through
   `path-part:sym<matcher>` (char-class) instead of the dedicated
   `path-part:sym<**>` when both match the same length. Minimal repro, ruled-out
-  code paths, and the fix direction are in **PLAN.md §8.20** (a general grammar
-  bug, load-bearing for every proto-token grammar — validate against all of
-  `S05-grammar/`). `directory-only` logic itself is correct in isolation; it only
+  code paths, and the fix direction are in
+  **`todo/deep/grammar-action-ordering-vs-inline-code-blocks.md`** (a general
+  grammar bug, load-bearing for every proto-token grammar — validate against all
+  of `S05-grammar/`). `directory-only` logic itself is correct in isolation; it only
   looks wrong because `d/**` mis-dispatches and matches `dir21`. Separate: a
   `<sym>` auto-capture is not recorded on a multi-candidate proto match (the
   action doesn't read it, so it doesn't affect File::Ignore).
