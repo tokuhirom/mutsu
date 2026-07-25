@@ -1483,6 +1483,81 @@ token path-part:sym<matcher> {
   the module builds a *wrong* pattern string (`'a'` missing its trailing ` '/'`)
   because the `a` segment's action wrongly sees `$*FINAL = True`.
 
+### 8.21 `has` attribute defaults are applied BEFORE `submethod BUILD`, not after (found 2026-07-25, Test::Scheduler)
+
+Rakudo runs a user `submethod BUILD` **first**, and only then applies a
+`has $.x = <default>` initializer — and only for attributes BUILD did **not**
+set. mutsu does the opposite: it evaluates every default first, then runs BUILD.
+Two things follow, both observable:
+
+1. a default that references a sibling attribute reads the sibling's *pre-BUILD*
+   value instead of the value BUILD gave it;
+2. a default whose initializer has a side effect runs even when BUILD sets the
+   attribute (Rakudo skips it entirely).
+
+- **Minimal repro (ordering):**
+  ```raku
+  class C {
+      has $.a = say("default-a") // 1;
+      has $.b = say("default-b") // 2;
+      submethod BUILD(:$!a = say("build-a") // 9) { say "BUILD body" }
+  }
+  C.new;
+  # raku:  build-a / BUILD body / default-b        (default-a never runs)
+  # mutsu: default-a / default-b / build-a / BUILD body
+  ```
+- **Minimal repro (sibling read — the shape that bites):**
+  ```raku
+  class D {
+      has $.x = now;
+      has $!y = $!x;
+      submethod BUILD(:$!x = now) { }
+      method show { say $!x == $!y }
+  }
+  D.new.show;    # raku: True    mutsu: False (y is ~2ms earlier than x)
+  ```
+- **Impact:** `Test::Scheduler` (`TODO_dist` T-037). Its
+  `has $!virtual-target = $!virtual-time;` ends up a fraction of a second behind
+  `$!virtual-time`, so `advance-by($n)` computes a target *earlier* than the
+  events it should fire; `!run-due` classifies every event as `future` and
+  silently runs nothing. `t/virtualized-time.rakutest` then hangs on the first
+  `await`. Any dist using the very common `has $!b = $!a;` + `submethod BUILD`
+  pattern is affected.
+- **Why this is not a small fix (ADR-worthy):**
+  - There are **three independent construction paths**, each with its own
+    "evaluate all defaults, then run BUILD" loop, that must move in lockstep:
+    the full `.new` default constructor
+    (`runtime/methods_object_dispatch_new.rs:1685-1888`, BUILD at `:1927`), the
+    native fast path (`runtime/methods_object_default_ctor.rs:152-282`, BUILD at
+    `:414`), and `bless` (`runtime/methods_dispatch_new.rs:341-405`, BUILD at
+    `:464`). A fourth, smaller one is the role-pun/mixin default eval
+    (`methods_object_dispatch_new.rs:375-386`, `:1263-1274`).
+  - **There is no runtime "attribute was initialized" state.** `ClassDef.attribute_built`
+    holds the `is built(...)` *trait*, not construction state, and nothing like a
+    `Value::UNINIT` sentinel exists. The post-BUILD `is required` check already
+    approximates "unset" as `Nil`-or-`Any`
+    (`methods_object_dispatch_new.rs:1957-1970`).
+  - **Slots must exist before BUILD runs.** `write_self_attr_cell` →
+    `attr_key_in_map` (`vm/vm_var_assign_computed_attr.rs:123-140`) silently drops
+    a write whose key is absent from the map, so "key missing" cannot be the
+    marker — the slots have to be pre-seeded anyway.
+  - Default initializers legitimately need `self` and earlier siblings
+    (`has $.c = $!a + $!b`, `has $.total = self.a + self.b`,
+    `roast/S12-attributes/defaults.t:84,97`), so the evaluation context has to
+    survive the move; today it is a *snapshot* `temp_self`, and after the move it
+    would be the real instance (an improvement, but an observable identity change).
+  - The `:D`/`:U`, `where`, and required-attribute enforcement points are ordered
+    around the current sequence and must be re-sequenced with it
+    (`methods_object_dispatch_new.rs:1633, 1899-1906, 1930-1980`;
+    `methods_object_default_ctor.rs:369-405, 417-455`).
+- **Proposed approach:** pre-seed every attribute slot with its current
+  type-object/`Any`/native-zero seed (as today) *and remember that seed*, run
+  BUILD, then apply each default only where the slot still holds exactly its
+  seed. `roast/S12-attributes/defaults.t:25-27` (which counts default-closure
+  invocations) is the load-bearing check that the skip is a real skip, not an
+  evaluate-then-discard. Pins to review when reordering:
+  `t/native-build-construct.t:24-30` and `:69-73`.
+
 
 ## Metrics
 
