@@ -1129,9 +1129,18 @@ _(move tickets here with `[claim: <branch>]` when you start)_
   pattern string. Each match of a declaring rule now gets its own binding, carried
   to its action (pin `t/grammar-per-match-dynvar-action.t`; see
   `news/2026-07/grammar-per-match-dynvar-binding.md`).
-  **`t/wildcard.rakutest` is now 44/44 and six of the seven files pass
-  completely; only `t/range.rakutest` still has 1 failure (charclass ranges,
-  un-triaged).** Separate: a `<sym>` auto-capture is not recorded on a
+  The charclass-range failure in `t/range.rakutest` is **also FIXED**
+  (2026-07-25): the module compiles `[a-w]` with
+  `$/.subst(/. <( '-' )> ./, '..', :g)`, and `.subst`'s native fast path replaced
+  the whole consumed span instead of the `<( … )>` region, so `a-w` became `..`
+  rather than `a..w` and every range-bearing rule compiled to a broken pattern
+  (pin `t/subst-capture-markers.t`).
+  **Six of the seven files now pass completely.** The last one,
+  `t/walk.rakutest`, dies with `Unknown function: recurse` — a method's nested
+  `sub` is unresolvable inside `gather` when the class holds a doubly-nested
+  package; standalone repro in
+  `todo/tickets/nested-sub-in-gather-under-doubly-nested-class.md`. Fixing that
+  closes T-050. Separate: a `<sym>` auto-capture is not recorded on a
   multi-candidate proto match (the action doesn't read it, so it doesn't affect
   File::Ignore).
 
