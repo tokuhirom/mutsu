@@ -105,8 +105,9 @@ bugs, and one of them accounts for a third of the file count on its own.
 | --- | --- | --- |
 | `02-meta.rakutest` | **PASS** | — |
 | `44-sqlite-memory` / `45-sqlite-common` / `46-sqlite-blob` / `03-lib-util` | FAIL | `NativeLibs` — `Unknown function: cannon-name`, or a failing `CHECK` inside `install-driver` |
+| `48-sqlite-errors` | FAIL | same `NativeLibs` blocker, once its role-attribute failure was fixed |
 | `01-basic` | FAIL | `No such method 'method_table' for invocant of type 'Perl6::Metamodel::PackageHOW'` |
-| `05-mock`, `48-sqlite-errors` | FAIL | `P6opaque: no such attribute '$!parent' / '$!last-exception' on type DBDish::ErrorHandling` |
+| `05-mock` | FAIL | 11 of a planned 16 pass, then it aborts; a row fetch yields `IterationEnd` |
 | `06-types` | FAIL | first line is only a *warning*; not yet root-caused |
 
 The first lever was a **parse error** that killed four files at once: a class
@@ -117,11 +118,16 @@ and `CommonTesting` dispatches on them in a `CATCH`. That is now fixed — see
 [`news/2026-07/package-nested-class-is-a-parser-type-name.md`](../../news/2026-07/package-nested-class-is-a-parser-type-name.md)
 — and all four files parse and reach their TAP plan.
 
-The biggest remaining lever is `NativeLibs`, which now accounts for the same four
-files. `DB::SQLite`'s 0/9 has the same first cause — `Unknown function:
-cannon-name`, an `our proto sub` in `NativeLibs` — so it has to be fixed either
-way; it is filed separately as
-`todo/tickets/nativelibs-our-proto-sub-unknown-function.md`.
+A second lever, worth two more files, was role punning: `DBIish` instantiates the
+`DBDish::ErrorHandling` role directly and its methods read `$!parent` /
+`$!last-exception`, which a punned role did not carry. Also fixed — see
+[`news/2026-07/role-pun-private-attribute.md`](../../news/2026-07/role-pun-private-attribute.md).
+
+The biggest remaining lever now accounts for five files, and it is deeper than it
+looked: not `NativeLibs` but `NativeHelpers::Blob`, whose `MoarVM::Guts::REPRs`
+needs the unimplemented `nativesizeof` builtin and then walks MoarVM's raw object
+header. `DB::SQLite`'s 0/9 has the same first cause, so it has to be solved
+either way. Filed as `todo/deep/nativehelpers-blob-moarvm-guts.md`.
 
 The remaining blockers are tracked in `todo/tickets/dbiish-blockers.md`.
 

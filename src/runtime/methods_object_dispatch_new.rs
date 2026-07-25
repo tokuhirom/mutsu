@@ -1260,19 +1260,44 @@ impl Interpreter {
 
                 let mut mixins = HashMap::new();
                 mixins.insert(format!("__mutsu_role__{}", class_name), Value::TRUE);
-                for (idx, (attr_name, _is_public, default_expr, _, _, _, _)) in
+                // The attribute values go into the punned instance's own cell, not
+                // only into `__mutsu_attr__` mixin markers: that cell is what a
+                // private access (`$!parent`) inside a role method reads and
+                // writes, so it has to be the store of record. The markers are
+                // still written, as the accessor path and the "is this a role
+                // mixin" checks key off them, but they are seeds — a read prefers
+                // the cell whenever the cell has the attribute.
+                let mut instance_attrs: HashMap<String, Value> = HashMap::new();
+                for (idx, (attr_name, _is_public, default_expr, _, _, sigil, _)) in
                     all_attributes.iter().enumerate()
                 {
-                    let value = if let Some(v) = named_args.get(attr_name) {
-                        v.clone()
+                    let supplied = if let Some(v) = named_args.get(attr_name) {
+                        Some(v.clone())
                     } else if let Some(v) = positional_args.get(idx) {
-                        v.clone()
+                        Some(v.clone())
                     } else if let Some(expr) = default_expr {
-                        self.eval_block_value(&[Stmt::Expr(expr.clone())])?
+                        Some(self.eval_block_value(&[Stmt::Expr(expr.clone())])?)
                     } else {
-                        Value::NIL
+                        None
                     };
-                    mixins.insert(format!("__mutsu_attr__{}", attr_name), value);
+                    mixins.insert(
+                        format!("__mutsu_attr__{}", attr_name),
+                        supplied.clone().unwrap_or(Value::NIL),
+                    );
+                    // Only scalar attributes are seeded into the cell. A `@`/`%`
+                    // role attribute is already served end-to-end by the marker
+                    // path — `has %!h handles <AT-KEY ASSIGN-KEY>` routes element
+                    // access through the delegation forwarder, which reads and
+                    // writes the marker — and seeding the cell as well gives that
+                    // path two stores to disagree about
+                    // (`t/positional-role-attr-writeback-coherence.t` catches it).
+                    // TODO: compile the container case onto the cell too, so the
+                    // marker becomes a pure seed for every sigil rather than just
+                    // for scalars. That means reworking the delegation forwarder's
+                    // attribute lookup, which is its own change.
+                    if *sigil != '@' && *sigil != '%' {
+                        instance_attrs.insert(attr_name.clone(), supplied.unwrap_or(Value::NIL));
+                    }
                 }
                 // Embed language revision from the matching candidate
                 // (no-params for bare role punning) so ^language-revision
@@ -1306,7 +1331,7 @@ impl Interpreter {
                     );
                 }
                 return Ok(Value::mixin(
-                    Value::make_instance(*class_name, HashMap::new()),
+                    Value::make_instance(*class_name, instance_attrs),
                     mixins,
                 ));
             }

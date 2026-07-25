@@ -35,6 +35,11 @@ impl Interpreter {
             // marker) or an attribute of the inner class. Apply the former to the
             // marker; forward the rest to the inner clone so `$w.clone(:id(99))`
             // on a `Widget but Named` still overrides Widget's own `$.id`.
+            // A punned role's attributes also live in the inner instance's own
+            // cell (that is what `$!attr` reads), so an override that lands on a
+            // marker must reach the cell too — otherwise the accessor, which
+            // prefers the cell, keeps serving the pre-clone value.
+            let inner_attrs = Self::self_instance_attrs(inner);
             let mut inner_args: Vec<Value> = Vec::new();
             for arg in &args {
                 if let ValueView::Pair(key, val) = arg.view()
@@ -42,7 +47,12 @@ impl Interpreter {
                         new_mixins.entry(format!("__mutsu_attr__{}", key))
                 {
                     e.insert(val.clone());
-                    continue;
+                    let in_cell = inner_attrs
+                        .as_ref()
+                        .is_some_and(|c| c.as_map().contains_key(Symbol::intern(key)));
+                    if !in_cell {
+                        continue;
+                    }
                 }
                 inner_args.push(arg.clone());
             }
@@ -84,6 +94,16 @@ impl Interpreter {
                             })
                         });
                 if is_public {
+                    // The marker is only the construction-time seed. If the
+                    // wrapped instance carries the attribute, that cell is the
+                    // store of record — a `$!foo = ...` inside a role method
+                    // writes there, and the accessor must not serve the stale
+                    // seed afterwards.
+                    if let Some(cell) = Self::self_instance_attrs(inner)
+                        && let Some(live) = cell.as_map().get(Symbol::intern(method))
+                    {
+                        return Some(Ok(live.clone()));
+                    }
                     return Some(Ok(attr_val.clone()));
                 }
             }
@@ -147,7 +167,11 @@ impl Interpreter {
                 // Start with the inner instance's own attributes (e.g. class
                 // attributes like `@.order`) so that `$.attr` accessors inside
                 // the role method see and can mutate the class's state, then
-                // overlay the role's own `__mutsu_attr__` attributes.
+                // overlay the role's own `__mutsu_attr__` attributes — but only
+                // where the instance does not already carry them. The markers are
+                // construction-time seeds; the cell is the store of record, so
+                // overlaying them unconditionally would resurrect the seed over a
+                // value a role method wrote through `$!attr`.
                 let (inner_cell, mut method_attrs) = match inner.as_ref().view() {
                     ValueView::Instance { attributes, .. } => {
                         (Some(attributes.clone()), attributes.to_map())
@@ -156,7 +180,10 @@ impl Interpreter {
                 };
                 for (key, value) in mixins.iter() {
                     if let Some(attr) = key.strip_prefix("__mutsu_attr__") {
-                        method_attrs.insert(attr, value.clone());
+                        let sym = Symbol::intern(attr);
+                        if !method_attrs.contains_key(sym) {
+                            method_attrs.insert(attr, value.clone());
+                        }
                     }
                 }
                 // Set up a method-dispatch frame so `nextsame`/`callsame` inside

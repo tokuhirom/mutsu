@@ -40,8 +40,8 @@ a bogus baseline that wastes a session.
 | `46-sqlite-blob` | FAIL | ② NativeLibs `install-driver` |
 | `03-lib-util` | FAIL | ② NativeLibs `cannon-name` |
 | `01-basic` | FAIL | ③ `PackageHOW.method_table` |
-| `05-mock` | FAIL | ④ role attribute `$!parent` |
-| `48-sqlite-errors` | FAIL | ④ role attribute `$!last-exception` |
+| `48-sqlite-errors` | FAIL | ② NativeLibs (was ④, now cleared) |
+| `05-mock` | FAIL | ④ one subtest: `IterationEnd` from a row fetch |
 | `06-types` | FAIL | ⑤ not root-caused |
 
 **Nothing fails inside NativeCall.** The surface `OpenSSL` needed (CStruct,
@@ -58,18 +58,21 @@ parse. Fixed — see
 All four affected files now parse and reach their TAP plan; they fail later, on
 ② below.
 
-## ② NativeLibs (`03-lib-util`, and the three SQLite files)
+## ② `NativeHelpers::Blob` (`03-lib-util`, `48-sqlite-errors`, the three SQLite files)
 
-`03-lib-util` fails with `Unknown function: cannon-name`; the SQLite files fail
-one layer up, inside `NativeLibs::install-driver`, with `An exception occurred
-while evaluating a CHECK`. Both point at the same module, so treat them as one
-item — it is now the highest-yield blocker here, worth four files.
+`03-lib-util` fails with `Unknown function: cannon-name`; the others fail one
+layer up, inside `NativeLibs::install-driver`, with `An exception occurred while
+evaluating a CHECK`. It is one item, and now the highest-yield blocker here —
+worth **five** files.
 
-Filed separately as
-`todo/tickets/nativelibs-our-proto-sub-unknown-function.md`. A plain `our proto
-sub` module works, so the suspect is the custom `sub EXPORT(|)` that
-`NativeLibs.rakumod` declares **before** its `unit module` line (it reaches into
-`&trait_mod:<is>.candidates`). Reduce that first.
+Root-caused 2026-07-25 and moved to
+[`todo/deep/nativehelpers-blob-moarvm-guts.md`](../deep/nativehelpers-blob-moarvm-guts.md):
+the failure is not in `NativeLibs` (which loads fine on its own) but in
+`NativeHelpers::Blob`, whose `MoarVM::Guts::REPRs` needs the unimplemented
+`nativesizeof` builtin and then walks MoarVM's raw object header. **Do not start
+this as a slice** — implementing `nativesizeof` alone does not clear it, and the
+rest needs a design decision. The suspicion recorded here earlier (a custom `sub
+EXPORT` before `unit module`) was tested and is wrong.
 
 ## ③ `Perl6::Metamodel::PackageHOW.method_table` (`01-basic`)
 
@@ -82,20 +85,33 @@ Rakudo MOP method that mutsu's `PackageHOW` does not implement. Not investigated
 beyond the message; check what the test actually asks for before implementing the
 whole MOP surface.
 
-## ④ Role attribute not seeded (`05-mock`, `48-sqlite-errors`)
+## ④ Role attribute not seeded — FIXED; `05-mock` has one subtest left
 
 ```
 P6opaque: no such attribute '$!parent' on type DBDish::ErrorHandling in a DBDish::ErrorHandling
 P6opaque: no such attribute '$!last-exception' on type DBDish::ErrorHandling in a DBDish::ErrorHandling
 ```
 
-`DBDish::ErrorHandling` is a role with `$!parent` and `$!last-exception`
-attributes; neither is present on the composed instance. Related in shape to the
-attribute-cell work in `news/2026-07/scalar-attribute-subscript-assignment.md`,
-but it is a *composition-time seeding* problem rather than a write-path one.
-`48-sqlite-errors` was previously filed as not-root-caused; once the parse
-blocker was gone it turned out to be this same attribute, so the two files share
-one fix.
+`DBIish` instantiates the `DBDish::ErrorHandling` role directly
+(`DBDish::ErrorHandling.new(:parent(Nil))`), which puns it to a class, and its
+methods read those attributes privately. A punned role kept its attributes only
+as mixin markers, so the private read found nothing. Fixed — see
+[`news/2026-07/role-pun-private-attribute.md`](../../news/2026-07/role-pun-private-attribute.md).
+
+`48-sqlite-errors` now reaches ② instead. `05-mock` went from running 0 of its
+planned 16 tests to running 12 of them, 11 passing, before aborting:
+
+```
+not ok 12 - A row      expected: 'a b 1'   got: 'IterationEnd'
+Too many positionals passed; expected 0 arguments but got 2
+```
+
+Test 12 is `is $iter.pull-one, ['a','b',1]` where `$iter = $sth.allrows.iterator`
+— pulling from a hand-obtained iterator over a user-produced `Seq` yields the
+`IterationEnd` sentinel instead of the row. The message after it comes from line
+32, `is-deeply $sth.row :hash, …` — a method call with an adverb argument
+reaching a zero-arity candidate. Two separate general bugs; neither is
+root-caused yet, and neither is `DBIish`-specific.
 
 ## ⑤ Not root-caused (`06-types`)
 
