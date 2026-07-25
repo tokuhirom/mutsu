@@ -248,7 +248,14 @@ make a real `https://` request using nothing but the shipped binary.
 | Template engine | `Template::Mustache` (`zef:raku-community-modules`) | Adopted | Artistic-2.0 | **Working** — vendored + zero-config `use`; 11/13 upstream files pass, including the whole official mustache spec suite. Chosen over `Template6` / `Jinja2` / 7 others by a measured survey | [templates.md](docs/batteries/templates.md) |
 | Test helpers | `Test::Util::ServerPort` | Adopted | Artistic-2.0 | **Working** — vendored + zero-config `use`; both upstream test files pass. Lets a bundled-only test suite bind a listener without hardcoding a port, and makes `HTTP::UserAgent`'s local-server tests gateable | [test-helpers.md](docs/batteries/test-helpers.md) |
 | JSON | native `to-json` / `from-json` | Native | — | Working | — |
+| Database (SQLite) | `DBIish` (`zef:raku-community-modules`) | Adopted | BSD-2-Clause | **Selected, not yet bundled** — chosen over `DB::SQLite` by a measured survey (449 dependents vs 0; maintained vs 2021). raku 9/9, mutsu 1/9; blockers tracked in `todo/tickets/dbiish-blockers.md`. Will need system `libsqlite3` at runtime | [database.md](docs/batteries/database.md) |
 
 Other modules with a proven working record (Template::Mustache, HTTP::Parser,
 HTTP::Server::Tiny, NativeCall MVP, the Zef CLI) are tracked in `PLAN.md` §1 and
 are folded into this index as their bundling + documentation is finalized.
+
+A row marked **Selected, not yet bundled** is a decision recorded ahead of the
+vendoring: the candidate has won its survey and the evidence is written down, but
+it does not run on mutsu yet, so shipping it would mean shipping a battery the
+release gate cannot verify. Such a row carries no `modules/` tree and no
+`batteries.lock` entry until its blockers are cleared.
