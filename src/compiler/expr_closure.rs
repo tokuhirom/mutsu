@@ -166,8 +166,13 @@ impl Compiler {
             self.code.emit(OpCode::Die);
             return;
         }
-        // Placeholders cannot appear in blocks/subs with explicit signatures
-        {
+        // Placeholders cannot appear in blocks/subs with explicit signatures.
+        // A WhateverCode is exempt: it was synthesized from `*` and owns only its
+        // `*`-derived params, so a `$^name` in its body (e.g. the `$^namespace` in
+        // `{ ... $^namespace ~ * => * }`) is a free variable belonging to the
+        // enclosing explicit block, not an override of the WhateverCode's own
+        // signature.
+        if !is_whatever_code {
             let is_placeholder_param = |p: &str| {
                 let name = p
                     .strip_prefix('&')
