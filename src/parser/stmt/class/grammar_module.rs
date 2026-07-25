@@ -173,7 +173,10 @@ pub(crate) fn grammar_decl(input: &str) -> PResult<'_, Stmt> {
     if parents.is_empty() && name != "Grammar" {
         parents.push("Grammar".to_string());
     }
-    let (rest, body) = block(r)?;
+    let (rest, body) = {
+        let _pkg = super::super::simple::push_package_path(&name);
+        block(r)?
+    };
     super::super::simple::register_user_type(&name);
     Ok((
         rest,
@@ -204,7 +207,10 @@ pub(crate) fn module_decl(input: &str) -> PResult<'_, Stmt> {
     check_pseudo_package_in_decl(&name)?;
     let (rest, traits) = parse_declarator_traits(rest)?;
     let (rest, _) = ws(rest)?;
-    let (rest, body) = block(rest)?;
+    let (rest, body) = {
+        let _pkg = super::super::simple::push_package_path(&name);
+        block(rest)?
+    };
     // Two `is export` declarations of the same symbol in one module clash.
     if let Some(clash) = find_export_name_clash(&body) {
         return Err(export_name_clash_error(&clash));

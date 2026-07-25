@@ -418,6 +418,9 @@ pub(crate) fn role_decl(input: &str) -> PResult<'_, Stmt> {
         break;
     }
 
+    // No package path is pushed for a role body: the scope inside a role is
+    // generic, so Raku refuses to install an `our`-scoped declaration there and
+    // there is no composed name to register.
     let (rest, mut body) = match block(rest) {
         Ok(ok) => ok,
         Err(e) if e.is_fatal() => return Err(e),

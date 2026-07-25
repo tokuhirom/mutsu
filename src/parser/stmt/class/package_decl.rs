@@ -461,7 +461,10 @@ pub(crate) fn package_decl_with_scope(input: &str, is_my: bool) -> PResult<'_, S
     check_pseudo_package_in_decl(&name)?;
     let (rest, _traits) = parse_declarator_traits(rest)?;
     let (rest, _) = ws(rest)?;
-    let (rest, body) = block(rest)?;
+    let (rest, body) = {
+        let _pkg = super::super::simple::push_package_path(&name);
+        block(rest)?
+    };
     Ok((
         rest,
         Stmt::Package {

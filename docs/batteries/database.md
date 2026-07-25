@@ -104,27 +104,26 @@ bugs, and one of them accounts for a third of the file count on its own.
 | File | mutsu | First observed failure |
 | --- | --- | --- |
 | `02-meta.rakutest` | **PASS** | — |
-| `44-sqlite-memory` / `45-sqlite-common` / `46-sqlite-blob` | FAIL | `Failed to parse module 'DBIish::CommonTesting': X::Comp::Group: Missing block` |
+| `44-sqlite-memory` / `45-sqlite-common` / `46-sqlite-blob` / `03-lib-util` | FAIL | `NativeLibs` — `Unknown function: cannon-name`, or a failing `CHECK` inside `install-driver` |
 | `01-basic` | FAIL | `No such method 'method_table' for invocant of type 'Perl6::Metamodel::PackageHOW'` |
-| `05-mock` | FAIL | `P6opaque: no such attribute '$!parent' on type DBDish::ErrorHandling` |
-| `03-lib-util`, `06-types`, `48-sqlite-errors` | FAIL | first line is only a *warning*; not yet root-caused |
+| `05-mock`, `48-sqlite-errors` | FAIL | `P6opaque: no such attribute '$!parent' / '$!last-exception' on type DBDish::ErrorHandling` |
+| `06-types` | FAIL | first line is only a *warning*; not yet root-caused |
 
-**The single biggest lever is the parse error**, which kills three SQLite files at
-once and is root-caused down to a five-line repro: a class declared inside a
-`package` block is not visible to the parser as a *type name*, so `when
-<that name>` fails to parse. `DBIish` declares every one of its exception types
-that way (`package GLOBAL::X::DBIish { class LibraryMissing … }`), and
-`CommonTesting` dispatches on them in a `CATCH`. Replacing the two `when`
-matchers with built-in types makes the module load. Filed as
-`todo/tickets/package-nested-class-not-a-parser-type-name.md`.
+The first lever was a **parse error** that killed four files at once: a class
+declared inside a `package` block was not visible to the parser as a *type name*,
+so `when <that name>` failed to parse. `DBIish` declares every one of its
+exception types that way (`package GLOBAL::X::DBIish { class LibraryMissing … }`),
+and `CommonTesting` dispatches on them in a `CATCH`. That is now fixed — see
+[`news/2026-07/package-nested-class-is-a-parser-type-name.md`](../../news/2026-07/package-nested-class-is-a-parser-type-name.md)
+— and all four files parse and reach their TAP plan.
+
+The biggest remaining lever is `NativeLibs`, which now accounts for the same four
+files. `DB::SQLite`'s 0/9 has the same first cause — `Unknown function:
+cannon-name`, an `our proto sub` in `NativeLibs` — so it has to be fixed either
+way; it is filed separately as
+`todo/tickets/nativelibs-our-proto-sub-unknown-function.md`.
 
 The remaining blockers are tracked in `todo/tickets/dbiish-blockers.md`.
-
-`DB::SQLite`'s 0/9 has a different first cause — `Unknown function: cannon-name`,
-an `our proto sub` in `NativeLibs`, which both candidates depend on. It is filed
-separately (`todo/tickets/nativelibs-our-proto-sub-unknown-function.md`) because
-`NativeLibs` is on `DBIish`'s dependency list too, so it has to be fixed either
-way.
 
 ## How the field was surveyed
 

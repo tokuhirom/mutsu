@@ -134,6 +134,7 @@ pub(crate) fn reset_user_subs() {
     SCOPES.with(|s| {
         *s.borrow_mut() = vec![LexicalScope::default()];
     });
+    reset_package_path();
     // Apply pre-seeded operator names (for EVAL context)
     EVAL_OPERATOR_PRESEED.with(|preseed| {
         let names = preseed.borrow();

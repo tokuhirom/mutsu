@@ -3,7 +3,8 @@
 The database battery is selected but not yet bundled; the reasoning and the
 candidate comparison are in [docs/batteries/database.md](../../docs/batteries/database.md).
 This file is the ledger of what stops `DBIish` from running on mutsu. Measured
-2026-07-25, `DBIish` 0.6.8, debug build of `main`.
+2026-07-25, `DBIish` 0.6.8, debug build of `main`, and re-measured the same day
+after the parse blocker was fixed.
 
 Only the generic and SQLite files are in scope — `libpq` / `libmysqlclient` are
 not installed on the survey machine, so the Pg/MySQL/Oracle/SQLCipher files are
@@ -34,29 +35,43 @@ a bogus baseline that wastes a session.
 | File | mutsu | Blocker |
 | --- | --- | --- |
 | `02-meta.rakutest` | **PASS** | — |
-| `44-sqlite-memory` | FAIL | ① parse |
-| `45-sqlite-common` | FAIL | ① parse |
-| `46-sqlite-blob` | FAIL | ① parse |
-| `01-basic` | FAIL | ② `PackageHOW.method_table` |
-| `05-mock` | FAIL | ③ role attribute `$!parent` |
-| `03-lib-util` | FAIL | ④ not root-caused |
-| `06-types` | FAIL | ④ not root-caused |
-| `48-sqlite-errors` | FAIL | ④ not root-caused |
+| `44-sqlite-memory` | FAIL | ② NativeLibs `install-driver` |
+| `45-sqlite-common` | FAIL | ② NativeLibs `install-driver` |
+| `46-sqlite-blob` | FAIL | ② NativeLibs `install-driver` |
+| `03-lib-util` | FAIL | ② NativeLibs `cannon-name` |
+| `01-basic` | FAIL | ③ `PackageHOW.method_table` |
+| `05-mock` | FAIL | ④ role attribute `$!parent` |
+| `48-sqlite-errors` | FAIL | ④ role attribute `$!last-exception` |
+| `06-types` | FAIL | ⑤ not root-caused |
 
 **Nothing fails inside NativeCall.** The surface `OpenSSL` needed (CStruct,
 opaque pointers, callbacks) is strictly harder than SQLite's, and it is holding.
 
-## ① Parse failure — worth three files
+## ① Parse failure — FIXED, was worth four files
 
 `Failed to parse module 'DBIish::CommonTesting': X::Comp::Group: Missing block`.
 
-Root-caused and filed separately:
-**`todo/tickets/package-nested-class-not-a-parser-type-name.md`** — a class
-declared inside a `package` block is not a type name to the parser, so the
-`when X::DBIish::LibraryMissing { … }` in `CommonTesting`'s `CATCH` cannot parse.
-Fix that first; it is the highest-yield item here.
+A class declared inside a `package` block was not a type name to the parser, so
+the `when X::DBIish::LibraryMissing { … }` in `CommonTesting`'s `CATCH` could not
+parse. Fixed — see
+[`news/2026-07/package-nested-class-is-a-parser-type-name.md`](../../news/2026-07/package-nested-class-is-a-parser-type-name.md).
+All four affected files now parse and reach their TAP plan; they fail later, on
+② below.
 
-## ② `Perl6::Metamodel::PackageHOW.method_table` (`01-basic`)
+## ② NativeLibs (`03-lib-util`, and the three SQLite files)
+
+`03-lib-util` fails with `Unknown function: cannon-name`; the SQLite files fail
+one layer up, inside `NativeLibs::install-driver`, with `An exception occurred
+while evaluating a CHECK`. Both point at the same module, so treat them as one
+item — it is now the highest-yield blocker here, worth four files.
+
+Filed separately as
+`todo/tickets/nativelibs-our-proto-sub-unknown-function.md`. A plain `our proto
+sub` module works, so the suspect is the custom `sub EXPORT(|)` that
+`NativeLibs.rakumod` declares **before** its `unit module` line (it reaches into
+`&trait_mod:<is>.candidates`). Reduce that first.
+
+## ③ `Perl6::Metamodel::PackageHOW.method_table` (`01-basic`)
 
 ```
 No such method 'method_table' for invocant of type 'Perl6::Metamodel::PackageHOW'
@@ -67,24 +82,28 @@ Rakudo MOP method that mutsu's `PackageHOW` does not implement. Not investigated
 beyond the message; check what the test actually asks for before implementing the
 whole MOP surface.
 
-## ③ Role attribute not seeded (`05-mock`)
+## ④ Role attribute not seeded (`05-mock`, `48-sqlite-errors`)
 
 ```
 P6opaque: no such attribute '$!parent' on type DBDish::ErrorHandling in a DBDish::ErrorHandling
+P6opaque: no such attribute '$!last-exception' on type DBDish::ErrorHandling in a DBDish::ErrorHandling
 ```
 
-`DBDish::ErrorHandling` is a role with a `$!parent` attribute; the attribute is
-not present on the composed instance. Related in shape to the attribute-cell work
-in `news/2026-07/scalar-attribute-subscript-assignment.md`, but it is a
-*composition-time seeding* problem rather than a write-path one.
+`DBDish::ErrorHandling` is a role with `$!parent` and `$!last-exception`
+attributes; neither is present on the composed instance. Related in shape to the
+attribute-cell work in `news/2026-07/scalar-attribute-subscript-assignment.md`,
+but it is a *composition-time seeding* problem rather than a write-path one.
+`48-sqlite-errors` was previously filed as not-root-caused; once the parse
+blocker was gone it turned out to be this same attribute, so the two files share
+one fix.
 
-## ④ Not root-caused (`03-lib-util`, `06-types`, `48-sqlite-errors`)
+## ⑤ Not root-caused (`06-types`)
 
-Their first non-TAP line is only a **warning** —
-`Use of uninitialized value of type Any in string context` / `Use of Nil in
-string context` — which is emitted by both implementations and is *not* the
-diagnosis. This exact trap already cost a session on `Template::Mustache`; get
-the real failing assertion before forming a theory.
+Its first non-TAP line is only a **warning** — `Use of uninitialized value of
+type Str in string context`, in the test file's own `BUILD` — which is emitted by
+both implementations and is *not* the diagnosis. This exact trap already cost a
+session on `Template::Mustache`; get the real failing assertion before forming a
+theory.
 
 ## When these are cleared
 

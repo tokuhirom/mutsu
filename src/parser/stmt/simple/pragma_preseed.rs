@@ -46,8 +46,57 @@ pub(crate) fn is_user_declared_sub(name: &str) -> bool {
     })
 }
 
-/// Register a user-declared type name (class, role, grammar, enum).
-pub(crate) fn register_user_type(name: &str) {
+/// Strip the `GLOBAL` pseudo-package from the head of a declared package name.
+/// `package GLOBAL::X::Foo` installs `X::Foo`; `GLOBAL` is not part of the
+/// composed name.
+fn strip_global_prefix(name: &str) -> &str {
+    name.strip_prefix("GLOBAL::").unwrap_or(name)
+}
+
+/// Push `name` as the enclosing package path while a package-like declarator's
+/// body is parsed. The returned guard pops it again, including on the error
+/// paths out of the body parser.
+#[must_use]
+pub(crate) fn push_package_path(name: &str) -> PackagePathGuard {
+    PACKAGE_PATH.with(|p| {
+        p.borrow_mut().push(strip_global_prefix(name).to_string());
+    });
+    PackagePathGuard
+}
+
+pub(crate) struct PackagePathGuard;
+
+impl Drop for PackagePathGuard {
+    fn drop(&mut self) {
+        PACKAGE_PATH.with(|p| {
+            p.borrow_mut().pop();
+        });
+    }
+}
+
+/// Clear the package path. Called from `reset_user_subs` so a parse aborted
+/// mid-body cannot leak a stale prefix into the next parse.
+pub(crate) fn reset_package_path() {
+    PACKAGE_PATH.with(|p| p.borrow_mut().clear());
+}
+
+/// The `::`-joined path of the package-like declarators currently being parsed,
+/// or `None` at the top level.
+fn current_package_prefix() -> Option<String> {
+    PACKAGE_PATH.with(|p| {
+        let path = p.borrow();
+        if path.is_empty() {
+            None
+        } else {
+            Some(path.join("::"))
+        }
+    })
+}
+
+/// Register a type name exactly as given, without composing it with the
+/// enclosing package path. Used for names that are already fully composed
+/// (e.g. those harvested from a `use`d module).
+pub(crate) fn register_user_type_verbatim(name: &str) {
     SCOPES.with(|s| {
         let mut scopes = s.borrow_mut();
         let current = scopes
@@ -55,6 +104,25 @@ pub(crate) fn register_user_type(name: &str) {
             .expect("scope stack should never be empty");
         current.user_types.insert(name.to_string());
     });
+}
+
+/// Register a user-declared type name (class, role, grammar, enum).
+pub(crate) fn register_user_type(name: &str) {
+    register_user_type_verbatim(name);
+    // A declaration nested inside `package`/`module`/`class`/`role` is installed
+    // under its composed name, and stays visible after the enclosing body ends.
+    // Register that spelling in the outermost scope so it outlives the body's
+    // lexical scope, matching where Raku installs the package-scoped name.
+    if let Some(prefix) = current_package_prefix() {
+        let composed = format!("{}::{}", prefix, name);
+        SCOPES.with(|s| {
+            let mut scopes = s.borrow_mut();
+            let outermost = scopes
+                .first_mut()
+                .expect("scope stack should never be empty");
+            outermost.user_types.insert(composed);
+        });
+    }
 }
 
 /// Check if a name was declared as a user type (class, role, grammar, enum)
