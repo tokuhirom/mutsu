@@ -477,6 +477,12 @@ impl Interpreter {
         // the exact name it was referenced with. A `my subset` is lexical and
         // must NOT get the package-qualified alias (S12-subset/type-subset.t).
         let pkg = self.current_package();
+        // The qualified name is the subset's *identity* (raku reports `Foo::RM`
+        // from `.^name` and in every type-check message), so the short name is
+        // registered as an alias pointing at it — the same shape `class`/`role`
+        // registration uses. The short key stays in `subsets` because most
+        // constraint lookups are by the exact name written at the use site.
+        let mut canonical = name.to_string();
         if !is_my && !name.contains("::") && !pkg.is_empty() && pkg != "GLOBAL" && pkg != "Main" {
             let qualified = format!("{}::{}", pkg, name);
             self.subset_predicate_cache.remove(&qualified);
@@ -487,10 +493,11 @@ impl Interpreter {
                 qualified.clone(),
                 Value::package(Symbol::intern(&qualified)),
             );
+            canonical = qualified;
         }
         self.registry_mut().subsets.insert(name.to_string(), def);
         self.env
-            .insert(name.to_string(), Value::package(Symbol::intern(name)));
+            .insert(name.to_string(), Value::package(Symbol::intern(&canonical)));
     }
 
     pub(crate) fn register_cunion_class(&mut self, name: &str) {
@@ -618,7 +625,13 @@ impl Interpreter {
             if let Some(class_def) = self.registry().classes.get(&cls)
                 && let Some(tc) = class_def.attribute_types.get(attr_name)
             {
-                return Some(tc.clone());
+                let tc = tc.clone();
+                // The declaration site writes the short name, but a type
+                // declared inside the owning package is named `Owner::Name`
+                // (raku reports that in every type-check message). Resolve it
+                // here rather than at record time: a `subset` in a class body
+                // is registered when the body runs, after `has` is recorded.
+                return Some(self.resolve_type_name_for_owner(&cls, tc));
             }
         }
         None

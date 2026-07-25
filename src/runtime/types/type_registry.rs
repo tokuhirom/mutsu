@@ -340,6 +340,13 @@ impl Interpreter {
         if name.contains("::") || name.is_empty() {
             return name;
         }
+        // A core type name is never shadowed by a package-local declaration
+        // (class registration excludes builtin short names from its aliases for
+        // the same reason), so skip the probe — it would otherwise allocate a
+        // `Owner::Int` candidate for every ordinary attribute on every `.new`.
+        if crate::runtime::Interpreter::is_builtin_type(&name) {
+            return name;
+        }
         let mut pkg = owner;
         loop {
             if pkg.is_empty() {
