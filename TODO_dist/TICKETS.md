@@ -323,7 +323,7 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 - file: DONE — runtime/test_functions/basic.rs (plan *); remaining — a
   Lingua::EN::Numbers cardinal-fraction bug (module logic).
 
-### T-037 — test_die: timeout  [impact: 1 dist]  — FIVE ROOT CAUSES FIXED (#5395, #5396, #5402, #5405, #5409); blocked on a nested `whenever` on a Promise source
+### T-037 — test_die: timeout  [impact: 1 dist]  — SIX ROOT CAUSES FIXED (#5395, #5396, #5402, #5405, #5409, + this PR); blocked on cold-supply whenever sources
 - dists: Test::Scheduler (raku passes all three files; `t/virtualized-time.rakutest` 83/83)
 - e.g. `Test::Scheduler`: base=3 pass=1 fail=1 die=1 | t/virtualized-time.rakutest: timeout
 - The dist virtualizes time: `my $*SCHEDULER = Test::Scheduler.new` and then
@@ -365,19 +365,28 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
   Supply and the `await` path builds a one-shot channel subscription, matching
   Raku's "emit once, then done" semantics. Pin:
   `t/supply-whenever-promise.t`.
-- **REMAINING — the suite hangs at `t/virtualized-time.rakutest` test 29.** Not
-  yet triaged; the dist's `timeout` combinator registers a *nested* `whenever
-  Promise.in(...)` from inside another whenever's body, i.e. after the supply
-  block's initial run, which the rewrite above does not reach (it normalises
-  only the markers the initial body registered). `t/synopsis.rakutest` still
-  fails 6/9 for the same reason.
+- **Fixed #6 — a `whenever <Promise>` nested inside another whenever's body was
+  silently dropped.** By then the supply block's own run is over, so there is no
+  emit buffer to register a marker into and `run_whenever_with_value` falls to
+  its non-react arm, which handled only a `Supply` source (via `.tap`) and an
+  `IO::Socket::Async::Listener` (via `.act`). That arm now has a promise case:
+  one-shot, LAST phasers after a kept result, QUIT phasers on a broken one. Pin:
+  `t/supply-nested-whenever-promise.t`.
+- **REMAINING — a *cold* on-demand supply used as a `whenever` source is
+  replayed synchronously instead of tapped.** The dist's `timeout` combinator
+  takes `$test-source` (itself a `supply { … whenever Promise.in($_) … }`) as its
+  whenever source; mutsu replays it rather than tapping it, so the promise
+  subscriptions its body registers are collected as emitted values and forwarded
+  to the tap as raw markers. Reproduces with no virtual scheduler at all — full
+  repro, the two things wrong, and why it is large in
+  `todo/deep/cold-supply-whenever-source-replayed-not-tapped.md`.
 - **Status:** `t/not-time-based.rakutest` 3/3; `t/synopsis.rakutest` runs all 9
   (3 pass); `t/virtualized-time.rakutest` reaches test 28 (was 2).
 - file: DONE — runtime/methods_promise_class.rs, runtime_init.rs (#5395),
   parser/stmt/decl/destructure.rs (#5396), runtime/attr_build_defaults.rs
   (#5402), parser/stmt/control.rs (#5405), runtime/supply_promise.rs +
-  native_supply_mut_methods.rs (this PR); remaining — nested `whenever` on a
-  Promise source registered from inside a whenever body
+  native_supply_mut_methods.rs (#5409), runtime/subtest.rs (this PR); remaining
+  — `todo/deep/cold-supply-whenever-source-replayed-not-tapped.md`
 
 ### T-038 — test_fail: .text  [impact: 1 dist]  — FIXED (PR `fix-qqx-closure-interpolation`)
 - dists: PDF::Extract (t/01-san.rakutest 0/1 → 1/1)

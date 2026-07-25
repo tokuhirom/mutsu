@@ -432,6 +432,36 @@ impl Interpreter {
             if let Some(name) = target_var {
                 self.env.insert(name.to_string(), tap);
             }
+        } else if let ValueView::Promise(shared) = supply_val.view() {
+            // A promise source is a one-shot supply: run the body once with the
+            // kept result, then the LAST phasers; a broken promise runs the QUIT
+            // phasers instead. This arm is what a `whenever <Promise>` nested
+            // *inside another whenever's body* lands on — by then the supply
+            // block's own run is over, so there is no emit buffer to register a
+            // subscription marker into and the sibling `Supply` arm above is the
+            // model to match. Without it the nested subscription was silently
+            // dropped (`t/supply-nested-whenever-promise.t`).
+            //
+            // The body runs on whichever thread resolves the promise, so it
+            // drives a thread clone — the same pair `promise_chain_method` uses
+            // for `.then`. Its `emit` reaches the enclosing supply block through
+            // the emitter it closed over, exactly as it does when called as a
+            // supplier tap.
+            let mut thread_interp = self.clone_for_thread();
+            let last_cb = last_callbacks.first().cloned();
+            let quit_cb = quit_callbacks.first().cloned();
+            shared.on_resolve(Box::new(move |status, result, _output, _stderr| {
+                if status == "Kept" {
+                    let ran = thread_interp.call_sub_value(callback, vec![result], true);
+                    if ran.is_ok()
+                        && let Some(last_cb) = last_cb
+                    {
+                        let _ = thread_interp.call_sub_value(last_cb, Vec::new(), true);
+                    }
+                } else if let Some(quit_cb) = quit_cb {
+                    let _ = thread_interp.call_sub_value(quit_cb, vec![result], true);
+                }
+            }));
         }
         Ok(())
     }
