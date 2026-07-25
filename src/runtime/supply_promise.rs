@@ -34,6 +34,94 @@ impl Interpreter {
         (result, emitted, body_ran_done)
     }
 
+    /// Rewrite every `whenever <Promise>` subscription marker the body just
+    /// registered into the supplier-backed `whenever <Supply>` form.
+    ///
+    /// `run_whenever_with_value` records a subscription as a 4-element marker
+    /// `[source, body, [LAST…], [QUIT…]]`, and every consumer downstream of
+    /// here recognises one only by its source being a `Supply` — a `Promise`
+    /// source fell through as an ordinary emitted value and was handed to the
+    /// tap as the raw marker array. Raku's `whenever $promise` is exactly a
+    /// one-shot supply ("emit the result once, then done"), so minting a
+    /// supplier for it here lets the existing tap / serialize-group / done-group
+    /// machinery drive it unchanged.
+    ///
+    /// The promise is NOT armed here: a supplier keeps no backlog
+    /// (`register_supplier_tap` does not replay), so an already-resolved
+    /// promise would emit into a tapless supplier and lose the value. Each arm
+    /// is parked on `pending_promise_whenever_arms` and fired by
+    /// [`Self::arm_pending_promise_whenevers`] once the consumer has registered
+    /// its taps.
+    pub(crate) fn normalize_promise_whenever_markers(&mut self, emitted: Vec<Value>) -> Vec<Value> {
+        if !emitted.iter().any(Self::is_promise_whenever_marker) {
+            return emitted;
+        }
+        emitted
+            .into_iter()
+            .map(|item| {
+                if !Self::is_promise_whenever_marker(&item) {
+                    return item;
+                }
+                let ValueView::Array(arr, ..) = item.view() else {
+                    return item;
+                };
+                let ValueView::Promise(promise) = arr[0].view() else {
+                    return item;
+                };
+                let supplier_id = next_supplier_id();
+                let supplier = Value::make_instance(Symbol::intern("Supplier"), {
+                    let mut a = HashMap::new();
+                    a.insert("emitted".to_string(), Value::array(Vec::new()));
+                    a.insert("done".to_string(), Value::FALSE);
+                    a.insert("supplier_id".to_string(), Value::int(supplier_id as i64));
+                    a
+                });
+                let supply = Value::make_instance(Symbol::intern("Supply"), {
+                    let mut a = HashMap::new();
+                    a.insert("values".to_string(), Value::array(Vec::new()));
+                    a.insert("taps".to_string(), Value::array(Vec::new()));
+                    a.insert("live".to_string(), Value::TRUE);
+                    a.insert("supplier_id".to_string(), Value::int(supplier_id as i64));
+                    a.insert("supplier_done".to_string(), Value::FALSE);
+                    a
+                });
+                self.pending_promise_whenever_arms
+                    .push((promise.clone(), supplier));
+                Value::array(vec![supply, arr[1].clone(), arr[2].clone(), arr[3].clone()])
+            })
+            .collect()
+    }
+
+    /// True for a `whenever` subscription marker whose source is a `Promise`.
+    pub(crate) fn is_promise_whenever_marker(item: &Value) -> bool {
+        matches!(item.view(), ValueView::Array(arr, ..)
+            if arr.len() == 4 && matches!(arr[0].view(), ValueView::Promise(_)))
+    }
+
+    /// Arm every promise parked by [`Self::normalize_promise_whenever_markers`]:
+    /// when the promise resolves, push its result into the supplier that now
+    /// stands in for it and immediately signal `done` (a promise fires once).
+    /// A broken promise `quit`s the stand-in, so the `whenever`'s QUIT phaser
+    /// and the tap's `quit` handler see it.
+    ///
+    /// Callers must run this only after registering the taps for the rewritten
+    /// markers. The waiter runs on whichever thread resolves the promise (or
+    /// synchronously here when it already has), so it drives a thread clone of
+    /// this interpreter — the same pair `promise_chain_method` uses for `.then`.
+    pub(crate) fn arm_pending_promise_whenevers(&mut self) {
+        for (promise, supplier) in std::mem::take(&mut self.pending_promise_whenever_arms) {
+            let mut thread_interp = self.clone_for_thread();
+            promise.on_resolve(Box::new(move |status, result, _output, _stderr| {
+                let method = if status == "Kept" { "emit" } else { "quit" };
+                let _ =
+                    thread_interp.call_method_with_values(supplier.clone(), method, vec![result]);
+                if status == "Kept" {
+                    let _ = thread_interp.call_method_with_values(supplier, "done", vec![]);
+                }
+            }));
+        }
+    }
+
     /// Extract source values from a Supply's attributes.
     pub(super) fn supply_get_values(
         &mut self,
@@ -151,7 +239,10 @@ impl Interpreter {
             } else {
                 false
             };
-            if is_supply_sub {
+            // A `whenever <Promise>` source is a subscription too; the loop
+            // below drives it through a one-shot channel, exactly as the react
+            // loop does for a promise source.
+            if is_supply_sub || Self::is_promise_whenever_marker(&item) {
                 subscriptions.push(item);
             } else {
                 plain_values.push(item);
@@ -188,6 +279,27 @@ impl Interpreter {
                     .get(3)
                     .and_then(Self::value_array_items)
                     .unwrap_or_default();
+                // A promise source fires once: feed its result through a
+                // one-shot channel followed by Done, the same shape the react
+                // loop builds for `react { whenever $promise { … } }`.
+                if let ValueView::Promise(shared) = source.view() {
+                    let (tx, rx) =
+                        crate::runtime::native_methods::supply_channel::supply_event_channel();
+                    let shared_clone = shared.clone();
+                    crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
+                        let (result, _, _) = shared_clone.wait();
+                        let _ = tx.send(crate::runtime::native_methods::SupplyEvent::Emit(result));
+                        let _ = tx.send(crate::runtime::native_methods::SupplyEvent::Done);
+                    });
+                    react_subs.push(crate::runtime::subtest::ReactSubscription {
+                        receiver: Some(rx),
+                        promise: Some(shared.clone()),
+                        last_callbacks: last_cbs,
+                        quit_callbacks: quit_cbs,
+                        ..crate::runtime::subtest::ReactSubscription::new(callback)
+                    });
+                    continue;
+                }
                 if let ValueView::Instance {
                     attributes: inner_attrs,
                     ..
