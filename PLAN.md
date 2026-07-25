@@ -324,12 +324,25 @@ sessions).
       tight `.=` (news/2026-07/ternary-branch-accepts-dot-assign.md), and a trailing
       comma before a statement modifier failed to parse, which was the whole
       `UpRooted` blocker (news/2026-07/trailing-comma-before-statement-modifier.md;
-      all 24 of its modules load now). **Remaining from that run:** `String::Utils`
-      needs an `nqp::` op layer (deep — `todo/deep/nqp-op-layer-missing.md`),
-      `Qwiratry::Test` is still a `parse_error`, `PDF::Class` reports
-      `Unknown role: PDF::COS::Tie::Hash`, `Raku::Pod::Render` times out, and
-      `RakudoContainerfileBuilder` may be a harness artefact (its CLI prints
-      `Usage:`). This is the
+      all 24 of its modules load now). Also fixed: a `unit role` body's `use` ran
+      *after* the role composed, so `also does` failed with `Unknown role` even for
+      a role that existed — the `PDF::Class` blocker
+      (news/2026-07/unit-role-body-use-hoisted-before-composition.md).
+      **Remaining from that run — only 1 is mutsu's:** `String::Utils` needs an
+      `nqp::` op layer (deep — `todo/deep/nqp-op-layer-missing.md`). The other four
+      were **mis-classified**, each verified against `raku -I lib`:
+      `PDF::Class` and `Qwiratry::Test` merely lack an uninstalled dependency
+      (`PDF::COS`, `Qwiratry::Query::Slang` — raku cannot load them here either),
+      and mutsu reported a downstream symptom instead of "Could not find", which
+      the role fix above corrects for the `PDF::Class` shape;
+      `RakudoContainerfileBuilder` and `Raku::Pod::Render` both **load fine** but
+      export a `MAIN`, which `-e 'use M'` then dispatches — the first prints its
+      usage (raku exits 2 doing the same), the second runs `npm`/`git` and so
+      hangs under the no-net sandbox. **Two follow-ups:** (a) teach
+      `scripts/dist-compat-sweep.py` to bucket an exported-`MAIN` dispatch
+      separately instead of as `runtime_error`/`timeout`, and (b) when reading a
+      sweep, verify any non-`missing_dep` bucket against `raku -I lib` before
+      treating it as a mutsu bug — 4 of 6 here were not. This is the
       execution counterpart of the signal-only
       [`docs/ecosystem-guts-dependency-survey.md`](../docs/ecosystem-guts-dependency-survey.md)
       and the highest-leverage way to widen the batteries base. Workflow per bug:
