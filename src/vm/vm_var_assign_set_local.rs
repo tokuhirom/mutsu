@@ -1125,7 +1125,21 @@ impl Interpreter {
         {
             val = self.tag_container_default(val, def);
         }
-        if let Some(constraint) = loan_env!(self, var_type_constraint(name))
+        // A scalar attribute write from inside a method (`$!x = v` / `$.x = v`)
+        // is compiled as an ordinary name assignment, so its declared type has
+        // to be pulled from the class registry rather than the name-keyed
+        // `var_type_constraints` map. Resolving it HERE — the single pre-store
+        // choke point — gives the attribute the same treatment as any other
+        // typed scalar (type check, `:D`, coercion, native wrapping) before the
+        // slot write and before the mirror into `self`'s cell. Skipped for a
+        // Nil assignment, which resets the attribute to its own type object via
+        // `reset_nil_untyped_scalar` in the `else` arm below.
+        let constraint = loan_env!(self, var_type_constraint(name)).or_else(|| {
+            (!is_bind && !val.is_nil())
+                .then(|| self.scalar_attr_type_constraint(name))
+                .flatten()
+        });
+        if let Some(constraint) = constraint
             && !name.starts_with('%')
             && !name.starts_with('@')
         {

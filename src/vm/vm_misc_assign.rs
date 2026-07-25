@@ -250,9 +250,18 @@ impl Interpreter {
         // SetLocal path -- expression-context assignment to a captured typed
         // scalar must type-check just like a statement-level one. An untyped
         // scalar resets Nil to the default type object Any.
+        // `$.x = v` / `$!x = v` inside a method reaches the name-based assign
+        // rather than a local slot; its declared type lives in the class
+        // registry, not in the name-keyed `var_type_constraints` map (see
+        // `scalar_attr_type_constraint`). Nil keeps the untyped path below,
+        // which resets the attribute to its own type object.
+        let attr_constraint = (!val.is_nil())
+            .then(|| self.scalar_attr_type_constraint(&name))
+            .flatten();
         let mut val = if !name.starts_with('@')
             && !name.starts_with('%')
-            && let Some(constraint) = loan_env!(self, var_type_constraint(&name))
+            && let Some(constraint) =
+                loan_env!(self, var_type_constraint(&name)).or(attr_constraint)
         {
             if val.is_nil() {
                 if constraint == "Mu" {

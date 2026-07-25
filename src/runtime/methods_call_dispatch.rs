@@ -520,11 +520,7 @@ impl Interpreter {
         // Failure by name).
         if matches!(method, "resume" | "throw" | "rethrow" | "fail")
             && args.is_empty()
-            && let ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } = target.view()
+            && let ValueView::Instance { class_name, .. } = target.view()
         {
             let cn = class_name.resolve();
             let mro = self.class_mro(&cn);
@@ -545,17 +541,10 @@ impl Interpreter {
                     return self.builtin_fail(std::slice::from_ref(&target));
                 }
                 // throw / rethrow: build a RuntimeError carrying this exception.
-                let msg = attributes
-                    .as_map()
-                    .get("message")
-                    .map(|v| v.to_string_value())
-                    .or_else(|| {
-                        // Try calling .message if defined as a user method.
-                        self.call_method_with_values(target.clone(), "message", vec![])
-                            .ok()
-                            .map(|v| v.to_string_value())
-                    })
-                    .unwrap_or_else(|| target.to_string_value());
+                // The text is `$exc.message` (a user `method message` wins over
+                // the stored attribute), never the raw attribute — see
+                // `exception_message_text`.
+                let msg = self.exception_message_or_died_with(&target);
                 let mut err = crate::value::RuntimeError::new(&msg);
                 // Classes doing X::Control throw as control exceptions so
                 // CONTROL blocks catch them instead of CATCH.
@@ -2083,11 +2072,7 @@ impl Interpreter {
         // .throw on user-defined Exception subclasses
         if method == "throw"
             && args.is_empty()
-            && let ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } = target.view()
+            && let ValueView::Instance { class_name, .. } = target.view()
         {
             let cn = class_name.resolve();
             let is_exception = cn == "Exception"
@@ -2102,22 +2087,7 @@ impl Interpreter {
                 // a typed exception → its formatted message) rather than the
                 // type repr (`X::AdHoc()`), which `target.to_string_value()`
                 // would yield for an exception built without a `message` attr.
-                let has_message = attributes
-                    .as_map()
-                    .get("message")
-                    .map(|v| !v.to_string_value().is_empty())
-                    .unwrap_or(false);
-                let msg = if has_message {
-                    attributes
-                        .as_map()
-                        .get("message")
-                        .map(|v| v.to_string_value())
-                        .unwrap_or_default()
-                } else {
-                    self.call_method_with_values(target.clone(), "message", vec![])
-                        .map(|v| v.to_string_value())
-                        .unwrap_or_else(|_| target.to_string_value())
-                };
+                let msg = self.exception_message_or_died_with(&target);
                 let mut err = RuntimeError::new(&msg);
                 err.exception = Some(Box::new(target.clone()));
                 return Err(err);

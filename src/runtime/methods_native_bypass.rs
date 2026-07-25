@@ -148,6 +148,13 @@ impl Interpreter {
             || (method == "Supply"
                 && matches!(target.view(), ValueView::Instance { class_name, .. }
                     if class_name == "Supplier" || class_name == "Supplier::Preserving"))
+            // `.throw`/`.gist`/`.Str` render `$exc.message`; the native fast path
+            // can only read the stored `message` attribute, which is still
+            // undefined when the class computes its message. See the twin gate in
+            // `vm_native_dispatch::try_native_method`.
+            || (matches!(method, "throw" | "rethrow" | "gist" | "Str" | "Stringy")
+                && matches!(target.view(), ValueView::Instance { class_name, .. }
+                    if self.exception_render_needs_interpreter(target, &class_name.resolve())))
             || matches!(target.view(), ValueView::Instance { class_name, .. }
                 if self.is_native_method(&class_name.resolve(), method))
             || (matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Handle")

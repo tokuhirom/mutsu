@@ -888,9 +888,28 @@ impl Interpreter {
         }
     }
 
+    /// The declared type of the scalar attribute that a local/env name refers
+    /// to (`!x` / `.x` inside a method), for the assignment type check. The
+    /// per-variable `var_type_constraints` map cannot carry this: it is keyed by
+    /// bare name and would conflate `!n` across unrelated classes, so the
+    /// constraint is resolved against the current `self`'s class instead.
+    ///
+    /// `None` for non-attribute names, for `@`/`%` attributes (whose declared
+    /// type constrains the *elements*, checked on the container paths) and for
+    /// unconstrained `Mu`/`Any` attributes, so the ordinary untyped-scalar
+    /// handling is untouched.
+    pub(crate) fn scalar_attr_type_constraint(&self, name: &str) -> Option<String> {
+        if name.starts_with('@') || name.starts_with('%') {
+            return None;
+        }
+        let (bare, _) = crate::value::attr_twigil_base(name)?;
+        let tc = self.self_attr_type_constraint(bare)?;
+        (!matches!(tc.as_str(), "Mu" | "Any")).then_some(tc)
+    }
+
     /// Look up the declared type constraint of an attribute of the current
     /// `self` instance, walking the MRO.
-    fn self_attr_type_constraint(&self, attr_name: &str) -> Option<String> {
+    pub(crate) fn self_attr_type_constraint(&self, attr_name: &str) -> Option<String> {
         let self_val = self.get_env_with_main_alias("self")?;
         let class_name = self_val.with_deref(|v| match v.view() {
             crate::value::ValueView::Instance { class_name, .. } => Some(class_name.resolve()),

@@ -913,22 +913,58 @@ impl Interpreter {
                         .iter()
                         .any(|p| p == "Exception" || p == "Failure");
                 if is_exception {
-                    // For .Str/.gist, prefer a user-defined `message` method (it may
-                    // interpolate attributes); `message` itself only reaches here when
-                    // no user method exists, so fall to the stored attr / formatted msg.
-                    if method != "message" && self.has_user_method(&cn, "message") {
+                    // This arm is only the DEFAULT implementation of
+                    // `Exception.message`/`.gist`/`.Str`. A class that defines
+                    // the method itself must win, so fall through to the normal
+                    // user-method resolution further down instead of answering
+                    // from the stored attribute. (Until 2026-07-25 the guard read
+                    // `method != "message"`, which made a user `method message`
+                    // unreachable through this path: an exception that computes
+                    // its message reported the literal text `(Any)`.)
+                    if self.has_user_method(&cn, method) {
+                        // fall through to user-method dispatch
+                    } else if method != "message" && self.has_user_method(&cn, "message") {
+                        // For .Str/.gist, prefer a user-defined `message` method
+                        // (it may interpolate attributes).
                         return self.call_method_with_values(target.clone(), "message", vec![]);
-                    }
-                    if let Some(msg) = attributes.as_map().get("message") {
+                    } else if let Some(msg) = attributes.as_map().get("message")
+                        // A declared-but-undefined `has $.message` is not a
+                        // message; rendering it would print the literal `(Any)`.
+                        // `.message` itself falls through to the accessor (raku
+                        // returns the undefined value), `.gist`/`.Str` take the
+                        // no-message rendering below.
+                        && !msg.is_nil()
+                        && !matches!(msg.view(), ValueView::Package(_))
+                    {
                         return Ok(Value::str(msg.to_string_value()));
-                    }
-                    if let Some(formatted) =
+                    } else if cn == "X::AdHoc"
+                        // `X::AdHoc` (what `die "..."` builds) carries its text in
+                        // `payload`, not `message`.
+                        && let Some(payload) = attributes.as_map().get("payload")
+                        && !payload.to_string_value().is_empty()
+                    {
+                        return Ok(Value::str(payload.to_string_value()));
+                    } else if let Some(formatted) =
                         crate::builtins::exception_message::format_exception_message(
                             &cn,
                             &(attributes).as_map(),
                         )
                     {
                         return Ok(Value::str(formatted));
+                    } else if method != "message" {
+                        // raku's `Exception.gist` for an exception with nothing
+                        // to say: it names the class instead of stringifying the
+                        // undefined `message` attribute. `.throw` stamps a
+                        // `backtrace` attribute, which is what distinguishes a
+                        // thrown exception from one that was merely constructed.
+                        // (`X::AdHoc`'s payload and the class-specific formatted
+                        // messages were already tried above.)
+                        let thrown = attributes.as_map().contains_key("backtrace");
+                        return Ok(Value::str(if thrown {
+                            format!("Died with {}", cn)
+                        } else {
+                            format!("Unthrown {} with no message", cn)
+                        }));
                     }
                 }
             }

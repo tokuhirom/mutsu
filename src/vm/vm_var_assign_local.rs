@@ -246,7 +246,13 @@ impl Interpreter {
         if name.starts_with('@') || name.starts_with('%') {
             val = self.coerce_typed_container_assignment(name, val, false)?;
         }
-        if let Some(constraint) = loan_env!(self, var_type_constraint(name))
+        // Expression-context counterpart of the `SetLocal` attribute check: a
+        // scalar attribute's declared type comes from the class registry, not
+        // from the name-keyed constraint map (see `scalar_attr_type_constraint`).
+        let attr_constraint = (!val.is_nil())
+            .then(|| self.scalar_attr_type_constraint(name))
+            .flatten();
+        if let Some(constraint) = loan_env!(self, var_type_constraint(name)).or(attr_constraint)
             && !name.starts_with('%')
             && !name.starts_with('@')
         {
