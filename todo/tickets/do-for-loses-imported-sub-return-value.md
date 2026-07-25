@@ -35,14 +35,52 @@ routine* as the loop body's last statement. The collected value is `Any`, i.e.
 the body's value is read from somewhere that the imported-sub call path does not
 write.
 
+## Three source-level workarounds, all equivalent
+
+Any of these makes it collect correctly:
+
+```raku
+do for ^2 { (plainsub('x')) }              # wrap the call in parens
+do for ^2 { my $r = plainsub('x'); $r }    # assign to a temp first
+do for ^2 { "{plainsub('x')}" }            # interpolate it
+```
+
+Only the *bare* call as the body's last statement loses the value. A trailing
+semicolon does not help (`{ plainsub('x'); }` still yields `Any`).
+
+## It is NOT a compilation difference — measured 2026-07-25
+
+`--dump-bytecode` on a file containing the parenthesized form and two bare forms
+produces **byte-identical opcode sequences** for all three loop bodies (only the
+local slot indices differ):
+
+```
+     5: ForLoop(...)         20: ForLoop(...)         35: ForLoop(...)
+     6: LoadConst(4)         21: LoadConst(4)         36: LoadConst(4)
+     7: ContainerizePair     22: ContainerizePair     37: ContainerizePair
+     8: CallFunc{name_idx:5, arity:1, arg_sources_idx:None}   (all three)
+```
+
+yet at runtime the first yields `["P:x", "P:x"]` and the other two yield
+`[Any, Any]`. The full ASTs are identical too (`--dump-ast`, ignoring `SetLine`).
+So whatever diverges is **runtime state**, not the emitted code — which rules out
+the "loop-body value capture vs. the compiled-call return path" guess this ticket
+originally recorded, and means the next investigator should NOT start in the
+compiler.
+
+Ordering is not the variable either: with four calls alternating bare/parens the
+result alternates `Nil, ok, Nil, ok`, and with four bare calls all four fail.
+
 ## Where to look
 
-`do for` collects each iteration's value; a local-sub call and a method call both
-land it where the collector reads, while the imported-sub call does not. The
-likely seam is the loop-body value capture (`vm_for_loop_*`, the `do`-prefix
-value collection) versus the return path used for a module/dynamic sub — which
-is the interpreter `call_function_def` route rather than a compiled call, and so
-publishes its result differently.
+Since the bytecode is identical, look at what the `CallFunc` execution path does
+differently for an imported routine while a `ForLoop` with `collect: true` is
+active — e.g. whether the value is left on the stack versus published through the
+topic/`_` slot that the collector reads. `vm_for_loop_*` (the collect arm) and the
+imported/dynamic-sub return path (`call_function_def` → the env merge) are the two
+sides to instrument. Do this by measuring, not by reading: put a temporary
+`eprintln` at the collect point and at the call's return and compare the two
+forms.
 
 ## Impact
 
