@@ -4,8 +4,9 @@ mutsu ships several upstream Raku libraries verbatim ("batteries" — see
 [BATTERIES.md](../../BATTERIES.md) and [vendor/README.md](../../vendor/README.md)):
 
 - `vendor/zef/` — the Zef package manager that drives `mzef`
-- `modules/OpenSSL/` — OpenSSL NativeCall bindings
-- `modules/IO-Socket-SSL/` — TLS sockets (the HTTPS foundation)
+- `modules/<Dist>/` — every bundled battery: the TLS foundation (`OpenSSL`,
+  `IO-Socket-SSL`), the HTTP client (`HTTP-UserAgent`) and its dependency layer.
+  [`batteries.lock`](../../batteries.lock) is the authoritative list.
 
 Their upstream **test suites are not vendored** (BATTERIES.md §3 — we ship only
 `lib/` + attribution). So "does the bundled copy actually work under this mutsu?"
@@ -29,6 +30,7 @@ that release build, so a regression against a shipped library blocks the publish
 | --- | --- |
 | `batteries.lock` | Which batteries, where their tests come from, the pinned upstream commit, and the extra `-I` paths each suite needs. |
 | `batteries-whitelist.txt` | The per-file baseline: `name<TAB>testfile` for every test file that currently passes. Sorted. |
+| `batteries-exclude.txt` | Files the gate must never run, same `name<TAB>testfile` shape. Skipped in both modes, so they can neither block a release nor enter the baseline. |
 | `scripts/battery-testsuite.sh` | The harness. Fetches each suite at its pinned commit, runs it against the bundled library, and enforces (or, with `--update`, regenerates) the whitelist. |
 | `release.yml` `batteries` job | Runs the harness on every release build; `needs` gates the publish job. |
 
@@ -68,6 +70,31 @@ assertions). Whitelisting exactly the files that currently pass means:
 
 A file that starts passing is reported but not required; promote it into the
 baseline by running `--update` and committing the diff.
+
+## What the gate does not run
+
+The gate blocks a release, so a test whose verdict depends on a **third-party
+service** being reachable and healthy must not be in it — an outage somewhere
+else would block a release that has nothing wrong with it. Those files are listed
+in [`batteries-exclude.txt`](../../batteries-exclude.txt) and are skipped
+entirely, in both gate and `--update` mode.
+
+The bar is deliberately narrow: the file must reach outside the machine
+*unconditionally*. Most battery suites already guard their live-network
+assertions behind `NETWORK_TESTING`, which the gate does not set, so they need no
+entry. That was measured, not assumed — every whitelisted file was re-run inside
+a loopback-only network namespace
+(`unshare -rn -- sh -c 'ip link set lo up; …'`), and only two of the 77 failed.
+Re-run that check when adding a battery whose suite talks to the network.
+
+An excluded file is not a parking spot for a genuinely failing test: it must
+still be run by hand (and it is, by the module's own record), it is simply not a
+release blocker.
+
+The gate itself still needs the network to *fetch* each suite at its pinned
+commit — that is unavoidable setup, not an assertion. A fetch failure reports
+`GATE ERROR` and exits 2, distinct from the `GATE FAILED` a real regression
+produces.
 
 ## Re-vendoring a battery
 

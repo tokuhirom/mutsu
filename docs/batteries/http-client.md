@@ -1,13 +1,54 @@
 # Battery: HTTP client
 
-**Slot:** HTTP client · **Chosen (leaning):** `HTTP::UserAgent`
-(`auth<zef:sergot>`, v1.2.0, MIT) · **Kind:** Adopted (community module, vendored
-as-is) · **Sequenced after** the [TLS / HTTPS foundation](tls-openssl.md) ·
+**Slot:** HTTP client · **Chosen:** `HTTP::UserAgent` (`auth<zef:sergot>`,
+v1.2.0, MIT) · **Kind:** Adopted (community module, vendored as-is) ·
+**Sequenced after** the [TLS / HTTPS foundation](tls-openssl.md) ·
 **Alternatives:** `HTTP::Tiny`, `Cro::HTTP::Client`, homegrown curl client
 
 This record is the **template** for battery selection records (rationale +
 alternatives + license). The client slot's decision is coupled to the TLS
 decision, so read [tls-openssl.md](tls-openssl.md) alongside it.
+
+## Status: bundled and working
+
+`HTTP::UserAgent` ships at `modules/HTTP-UserAgent/` and resolves with **zero
+config** — `use HTTP::UserAgent;` with no `-I` and no install:
+
+```raku
+use HTTP::UserAgent;
+my $res = HTTP::UserAgent.new.get('https://example.com/');
+say $res.code;          # 200 — real TLS, via the bundled OpenSSL stack
+```
+
+Its **whole upstream test suite passes: 27/27 files**, unmodified, against the
+bundled copy. Nothing was patched into the vendored sources; every gap the suite
+exposed was closed in the interpreter (see the `news/2026-07/` entries from the
+HTTP::UserAgent campaign).
+
+23 of those 27 files are in
+[`batteries-whitelist.txt`](../../batteries-whitelist.txt), so the release-time
+gate re-runs them against the shipped library on every release. The four that are
+not fall into two groups:
+
+- **`110-redirect-cookies`, `230-binary-request`, `250-issue-144`** need
+  `Test::Util::ServerPort`, a **test-only** dependency (`META6.json`
+  `test-depends`) that is deliberately not bundled and that
+  `scripts/battery-testsuite.sh` has no way to fetch — it clones only the
+  battery's own repository. They fail in the gate with `ok=0` because the module
+  is missing, not because an assertion fails. They pass locally with it on the
+  path.
+- **`082-exceptions`** is in
+  [`batteries-exclude.txt`](../../batteries-exclude.txt): it makes unguarded live
+  requests to `httpbin.org`, so its verdict depends on a third-party service and
+  it must not be able to block a release. (`httpbin.org` spent part of
+  2026-07-25 returning 503, while this battery was being bundled.) The gate skips
+  it entirely.
+
+The rest of the suite's live-network assertions are guarded by the file's own
+`NETWORK_TESTING` check, which the gate does not set, so they are deterministic
+there. That was measured rather than assumed — every whitelisted file was re-run
+inside a loopback-only network namespace and only `082-exceptions` failed; see
+[testsuite-gate.md](testsuite-gate.md).
 
 ## Decision and sequencing
 
@@ -47,11 +88,11 @@ The Raku ecosystem has **no single crowned HTTP client** (unlike Python's
 - **Dependencies:** `HTTP::Status`, `DateTime::Parse`, `Encode`, `URI`,
   `File::Temp`, `MIME::Base64`, and `IO::Socket::SSL` (→ `OpenSSL`). All
   permissive; the non-TLS ones are pure Raku.
-- **Load timing caveat:** it declares `IO::Socket::SSL` as a hard dependency, so —
-  unlike `HTTP::Tiny`'s lazy `require` — the first client battery is effectively
-  **gated on the TLS foundation landing** (verify whether its `http://` path can
-  run with `IO::Socket::SSL` merely installed-but-unused). This is the accepted
-  cost of choosing it; it is why TLS is sequenced first.
+- **Load timing caveat (resolved):** it declares `IO::Socket::SSL` as a hard
+  dependency, so — unlike `HTTP::Tiny`'s lazy `require` — the client battery was
+  **gated on the TLS foundation landing**. That is why TLS was sequenced first;
+  with the TLS stack bundled, this cost has been paid and both `http://` and
+  `https://` work.
 - **License:** MIT.
 
 ### `HTTP::Tiny` (`zef:jjatria`, v0.2.6, Artistic-2.0) — alternative / early win
@@ -99,6 +140,45 @@ the full analysis: why `IO::Socket::SSL` → `OpenSSL` is the common layer, the
 concrete NativeCall gaps mutsu must grow to run it, the packaging impact
 (`libssl3` in the Docker runtime stage), and the security-update story
 (TLS CVEs ride the OS).
+
+## Provenance and update procedure
+
+Per [BATTERIES.md §3](../../BATTERIES.md#updating-a-vendored-module-must-be-documented-per-library).
+To bump the module, re-vendor — do **not** hand-edit the vendored tree:
+
+| Module | Upstream | Pinned version | Commit |
+| --- | --- | --- | --- |
+| `HTTP::UserAgent` | <https://github.com/raku-community-modules/HTTP-UserAgent> | v1.2.0 | `1d6a31a0` (2025-05-04) |
+
+What is vendored: `lib/` plus `META6.json`, `LICENSE`, `README.md`, `Changes`
+for attribution. Upstream `t/`, `xt/`, `doc/`, `examples/`, `dist.ini`, CI config
+and `.precomp` artifacts are deliberately excluded — the release gate fetches the
+tests fresh at the pinned commit (BATTERIES.md §3).
+
+```sh
+# 1. Clone the new upstream revision, then copy the runtime tree + attribution.
+rsync -a --exclude '.precomp' <checkout>/lib/ modules/HTTP-UserAgent/lib/
+cp <checkout>/{META6.json,LICENSE,README.md,Changes} modules/HTTP-UserAgent/
+
+# 2. Bump the `commit` in batteries.lock and the table above.
+# 3. Re-run the gate and review the diff (a newly failing file is a regression
+#    to fix, not to whitelist away):
+cargo build --release && scripts/battery-testsuite.sh --update
+git diff batteries-whitelist.txt
+
+# 4. Refresh the Pages manifest:
+python3 scripts/gen-batteries-manifest.py
+```
+
+Verification after a bump — the zero-config smoke test:
+
+```sh
+mutsu -e 'use HTTP::UserAgent; say HTTP::UserAgent.new.get("https://example.com/").code'   # 200
+```
+
+A *deployed* mutsu can also take a patched module without a re-vendor —
+`mzef install HTTP::UserAgent` shadows the bundled copy. Re-vendoring is for the
+next release, so fresh installs ship the fix too.
 
 ## Security updates
 

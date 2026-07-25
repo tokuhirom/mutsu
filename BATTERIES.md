@@ -128,7 +128,9 @@ commit pinned in `batteries.lock`, runs it against the *bundled* library and the
 release `mutsu`, and blocks the publish job if any file listed in
 `batteries-whitelist.txt` regressed. It is a per-file baseline (the
 `roast-whitelist.txt` philosophy), not an all-green wall, so suites with known
-gaps still pin their passing files. Full details:
+gaps still pin their passing files. Tests that unconditionally reach a
+**third-party service** are listed in `batteries-exclude.txt` and never run
+there: a release must not be blocked by someone else's outage. Full details:
 [docs/batteries/testsuite-gate.md](docs/batteries/testsuite-gate.md).
 
 ## 4. License policy
@@ -226,14 +228,15 @@ Document, in each battery's record, which layer(s) its updates come through.
 Legend: **Adopted** = community module vendored as-is · **Dual-lived** = homegrown
 (last resort) · **Native** = provided by the interpreter core.
 
-Build order is **bottom-up**: the TLS foundation is the active first target, then
-the HTTP client on top of it.
+Build order is **bottom-up**: the TLS foundation first, then its dependency
+layer, then the HTTP client on top. All three are now bundled, so a program can
+make a real `https://` request using nothing but the shipped binary.
 
 | Battery | Provider | Kind | License | Status | Record |
 | --- | --- | --- | --- | --- | --- |
 | TLS / HTTPS socket (foundation) | `OpenSSL` + `IO::Socket::SSL` | Adopted | MIT / MIT | **Working** — vendored + zero-config `use`; a real `https://` GET runs end-to-end. Needs system `libssl` at runtime. | [tls-openssl.md](docs/batteries/tls-openssl.md) |
 | HTTP client dependency layer | `URI` + `MIME::Base64` + `HTTP::Status` + `DateTime::Parse` + `Encode` + `File::Temp` + `File::Directory::Tree` | Adopted | Artistic-2.0 ×5 / MIT / **`Encode`: pending** | **Working** — vendored + zero-config `use`; all 35 upstream test files pass against the bundled copy. ⚠️ `Encode` ships ahead of a stated license — [clarification pending upstream](https://github.com/sergot/perl6-encode/issues/17), see the record | [http-deps.md](docs/batteries/http-deps.md) |
-| HTTP client | `HTTP::UserAgent` (`zef:sergot`), leaning; `HTTP::Tiny` alt. | Adopted | MIT / Artistic-2.0 | Planned — its whole dependency layer is now bundled | [http-client.md](docs/batteries/http-client.md) |
+| HTTP client | `HTTP::UserAgent` (`zef:sergot`); `HTTP::Tiny` alt. | Adopted | MIT / Artistic-2.0 | **Working** — vendored + zero-config `use`; all 27 upstream test files pass against the bundled copy (23 are gated; 3 need a test-only dep the harness cannot fetch, 1 is network-excluded — see the record) | [http-client.md](docs/batteries/http-client.md) |
 | JSON | native `to-json` / `from-json` | Native | — | Working | — |
 
 Other modules with a proven working record (Template::Mustache, HTTP::Parser,

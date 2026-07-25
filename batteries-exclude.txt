@@ -1,0 +1,24 @@
+# Battery test files the release gate must never run.
+#
+# The gate blocks a release, so a file whose verdict depends on a THIRD-PARTY
+# SERVICE being reachable and healthy does not belong in it: an outage at
+# github.com or httpbin.org would block a release that has nothing wrong with
+# it. (httpbin.org spent part of 2026-07-25 returning 503 — that is not
+# hypothetical.) Such files are skipped entirely, in both gate and `--update`
+# mode, so they can neither fail a release nor re-enter the baseline.
+#
+# This is NOT a place to park a genuinely failing test. The bar is narrow: the
+# file must reach OUTSIDE this machine unconditionally. Most battery suites
+# already guard their live-network assertions behind `NETWORK_TESTING`, which
+# the gate does not set, so they need no entry here — that was verified by
+# re-running every whitelisted file inside a loopback-only network namespace;
+# only the two below failed.
+#
+# Format: name<TAB>testfile, the same identity batteries-whitelist.txt uses.
+# Sorted (LC_ALL=C).
+#
+# HTTP::UserAgent/082-exceptions: unguarded `$ua.get('http://httpbin.org/...')`.
+# IO::Socket::SSL/01-basic: connects to github.com:443 in its first two lines,
+#   before the file's own NETWORK_TESTING guard.
+HTTP::UserAgent	082-exceptions.rakutest
+IO::Socket::SSL	01-basic.rakutest

@@ -1,0 +1,50 @@
+{
+  "auth": "zef:raku-community-modules",
+  "authors": [
+    "Filip Sergot"
+  ],
+  "build-depends": [
+  ],
+  "depends": [
+    "HTTP::Status",
+    "File::Temp",
+    "DateTime::Parse",
+    "Encode",
+    "MIME::Base64",
+    "URI",
+    "IO::Socket::SSL:ver:<0.0.4+>:auth<raku-community-modules>"
+  ],
+  "description": "Web user agent",
+  "license": "MIT",
+  "name": "HTTP::UserAgent",
+  "perl": "6.*",
+  "provides": {
+    "HTTP::Cookie": "lib/HTTP/Cookie.rakumod",
+    "HTTP::Cookies": "lib/HTTP/Cookies.rakumod",
+    "HTTP::Header": "lib/HTTP/Header.rakumod",
+    "HTTP::Header::Field": "lib/HTTP/Header/Field.rakumod",
+    "HTTP::MediaType": "lib/HTTP/MediaType.rakumod",
+    "HTTP::Message": "lib/HTTP/Message.rakumod",
+    "HTTP::Request": "lib/HTTP/Request.rakumod",
+    "HTTP::Request::Common": "lib/HTTP/Request/Common.rakumod",
+    "HTTP::Response": "lib/HTTP/Response.rakumod",
+    "HTTP::UserAgent": "lib/HTTP/UserAgent.rakumod",
+    "HTTP::UserAgent::Common": "lib/HTTP/UserAgent/Common.rakumod",
+    "HTTP::UserAgent::Exception": "lib/HTTP/UserAgent/Exception.rakumod"
+  },
+  "raku": "6.*",
+  "resources": [
+  ],
+  "source-url": "https://github.com/raku-community-modules/HTTP-UserAgent.git",
+  "tags": [
+    "HTTP",
+    "USERAGENT",
+    "CLIENT"
+  ],
+  "test-depends": [
+    "IO::Capture::Simple",
+    "Test::Util::ServerPort",
+    "JSON::Fast"
+  ],
+  "version": "1.2.0"
+}

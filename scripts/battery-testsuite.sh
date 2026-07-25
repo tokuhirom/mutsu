@@ -8,14 +8,16 @@
 #   scripts/battery-testsuite.sh --update   # regenerate batteries-whitelist.txt
 #
 # The set of batteries and where their tests come from is batteries.lock; the
-# per-file baseline that must keep passing is batteries-whitelist.txt.
+# per-file baseline that must keep passing is batteries-whitelist.txt; files the
+# gate must never run at all are batteries-exclude.txt (see that file for why).
 #
 # Environment:
 #   MUTSU_BIN             mutsu binary to run (default: target/release/mutsu)
 #   BATTERIES_LOCK        manifest path (default: batteries.lock)
 #   BATTERIES_WHITELIST   baseline path (default: batteries-whitelist.txt)
+#   BATTERIES_EXCLUDE     exclusion list (default: batteries-exclude.txt)
 #
-# The two path overrides exist so the gate itself can be exercised against a
+# The path overrides exist so the gate itself can be exercised against a
 # scratch manifest/baseline (e.g. to verify that a regression really does fail)
 # without disturbing the committed files.
 #
@@ -29,6 +31,7 @@ ROOT="$(pwd)"
 MUTSU_BIN="${MUTSU_BIN:-target/release/mutsu}"
 LOCK="${BATTERIES_LOCK:-batteries.lock}"
 WHITELIST="${BATTERIES_WHITELIST:-batteries-whitelist.txt}"
+EXCLUDE="${BATTERIES_EXCLUDE:-batteries-exclude.txt}"
 WORK="$ROOT/tmp/battery-testsuite"
 
 MODE="gate"
@@ -85,6 +88,13 @@ lock_rows() {
   grep -vE '^[[:space:]]*#|^[[:space:]]*$' "$LOCK" | grep -vE '^name[[:space:]]'
 }
 
+# Is this test file on the do-not-run list? (`name<TAB>file`, comments allowed.)
+is_excluded() {
+  [ -f "$EXCLUDE" ] || return 1
+  grep -vE '^[[:space:]]*#|^[[:space:]]*$' "$EXCLUDE" \
+    | grep -qxF "$(printf '%s\t%s' "$1" "$2")"
+}
+
 rm -rf "$WORK"
 mkdir -p "$WORK"
 
@@ -94,6 +104,7 @@ REGRESSED=0
 SETUP_FAILED=0
 TOTAL_PASS=0
 TOTAL_FILES=0
+TOTAL_EXCLUDED=0
 
 while IFS=$'\t' read -r name bundled_lib test_url commit test_glob extra_includes; do
   [ -n "$name" ] || continue
@@ -132,6 +143,14 @@ while IFS=$'\t' read -r name bundled_lib test_url commit test_glob extra_include
     base="$(basename "$f")"
     # Address the test relative to its own repo — run_one runs it from there.
     rel="${f#"$clone"/}"
+    # Excluded files are not run at all, in either mode: their verdict depends
+    # on something outside this repository (see batteries-exclude.txt), so they
+    # can neither block a release nor enter the baseline.
+    if is_excluded "$name" "$base"; then
+      printf '  %-40s %s\n' "$base" "SKIP(excluded)"
+      TOTAL_EXCLUDED=$((TOTAL_EXCLUDED + 1))
+      continue
+    fi
     TOTAL_FILES=$((TOTAL_FILES + 1))
     verdict="$(run_one "$clone" "${inc[@]}" "$rel")"
     rc=$?
@@ -153,7 +172,7 @@ done < <(lock_rows)
 LC_ALL=C sort -o "$NEW_WHITELIST" "$NEW_WHITELIST"
 
 echo
-echo "=== summary: $TOTAL_PASS/$TOTAL_FILES test files pass ==="
+echo "=== summary: $TOTAL_PASS/$TOTAL_FILES test files pass ($TOTAL_EXCLUDED excluded) ==="
 
 if [ "$MODE" = "update" ]; then
   cp "$NEW_WHITELIST" "$WHITELIST"
@@ -164,11 +183,18 @@ if [ "$MODE" = "update" ]; then
 fi
 
 # Gate mode: also flag any whitelisted file that never ran (e.g. removed
-# upstream while still whitelisted) as a regression.
+# upstream while still whitelisted) as a regression. An *excluded* file is a
+# deliberate non-run, not a regression — it should have been dropped from the
+# whitelist by `--update`, but say so plainly rather than failing the release.
 if [ -f "$WHITELIST" ]; then
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     if ! grep -qxF "$line" "$NEW_WHITELIST"; then
+      if grep -vE '^[[:space:]]*#|^[[:space:]]*$' "$EXCLUDE" 2>/dev/null \
+         | grep -qxF "$line"; then
+        echo "  note: whitelisted '$line' is also excluded — re-run --update" >&2
+        continue
+      fi
       echo "  REGRESSION: whitelisted '$line' did not pass this run" >&2
       REGRESSED=1
     fi

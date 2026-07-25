@@ -33,3 +33,4 @@ DateTime::Parse	modules/DateTime-Parse/lib	https://github.com/sergot/datetime-pa
 Encode	modules/Encode/lib	https://github.com/sergot/perl6-encode.git	f61acc36653bfe999d6ea5b4b84ee4dbce3c61d5	t/*.t	-
 File::Directory::Tree	modules/File-Directory-Tree/lib	https://github.com/raku-community-modules/File-Directory-Tree.git	b34d800a087b5813a978151c4ce91d7e39ecc277	t/*.rakutest	-
 File::Temp	modules/File-Temp/lib	https://github.com/raku-community-modules/File-Temp.git	ad3445e0776df4685a970968fd0a4392d35e9ee1	t/*.rakutest	modules/File-Directory-Tree/lib
+HTTP::UserAgent	modules/HTTP-UserAgent/lib	https://github.com/raku-community-modules/HTTP-UserAgent.git	1d6a31a0656a422524c266831f3d27bd62a3e3d7	t/*.rakutest	{clone}/t/lib
