@@ -338,11 +338,20 @@ sessions).
       `RakudoContainerfileBuilder` and `Raku::Pod::Render` both **load fine** but
       export a `MAIN`, which `-e 'use M'` then dispatches — the first prints its
       usage (raku exits 2 doing the same), the second runs `npm`/`git` and so
-      hangs under the no-net sandbox. **Two follow-ups:** (a) teach
-      `scripts/dist-compat-sweep.py` to bucket an exported-`MAIN` dispatch
-      separately instead of as `runtime_error`/`timeout`, and (b) when reading a
-      sweep, verify any non-`missing_dep` bucket against `raku -I lib` before
-      treating it as a mutsu bug — 4 of 6 here were not. This is the
+      hangs under the no-net sandbox. **That probe is fixed:** the sweep now runs
+      `use M; exit 0`, which suppresses MAIN dispatch — and making *that* work was
+      a real mutsu bug of its own (`exit` ran MAIN afterwards, printing usage and
+      exiting 2 where raku exits 0;
+      news/2026-07/exit-skips-main-dispatch.md). Re-running with it,
+      `RakudoContainerfileBuilder` is `load_ok` and `Raku::Pod::Render`'s
+      `InstallAtomHighlighter` is too; the latter then stops on a genuinely absent
+      `URI` dependency, and the bare `X::Comp::Group: Missing block` it used to
+      report now names the culprit and the line
+      (news/2026-07/gobbled-block-error-names-and-locates.md).
+      **Standing rule when reading a sweep: verify any non-`missing_dep` bucket
+      against `raku -I lib` before treating it as a mutsu bug — 4 of 6 here were
+      not, and two "reproductions" reduced from a truncated prefix turned out to
+      be invalid Raku that raku rejects too.** This is the
       execution counterpart of the signal-only
       [`docs/ecosystem-guts-dependency-survey.md`](../docs/ecosystem-guts-dependency-survey.md)
       and the highest-leverage way to widen the batteries base. Workflow per bug:
