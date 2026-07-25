@@ -742,8 +742,7 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
   ~~IO::Path::AutoDecompress~~ (FIXED — see Done), ~~Math::Angle~~ (FIXED — see Done),
   ~~Math::PascalTriangle~~ (FIXED — see Done),
   ~~Statistics::LinearRegression~~ (FIXED — see Done),
-  String::Rotate (PARTIAL — the `method rotate` half passes via the
-  sigilless-param topic fix; see Done),
+  ~~String::Rotate~~ (FIXED — 136/136; three root causes, see Done),
   Text::CodeProcessing (PARTIAL — extraction 05/07 pass via `&Named` + frugal-`:g`
   fixes; code-eval 02/03/04/06 deferred; see Done),
   Trait::IO, WriteOnceHash, `are`, ~~`sortuk`~~ (FIXED — see Done),
@@ -752,15 +751,15 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 - These `test_die` on the current binary but were not individually reproduced.
   Split off a dedicated ticket when you pick one up.
 - Triaged 2026-07-23 (deferred, each deep — own root cause):
-  - **String::Rotate**: PARTIALLY FIXED 2026-07-25 — see Done. The 2026-07-23
-    triage note ("an imported `sub rotate` must override the builtin in all call
-    forms") was only half right: the `method rotate` half failed for an unrelated
-    reason (a sigilless param re-read the callee's reset `$_`), now fixed. The
-    `sub rotate` half is the builtin-shadow issue, and its condition is narrower
-    than "all call forms" — the user sub loses only when it has a **default
-    parameter** and the argument count matches a native builtin arity. Root cause
-    and repro: `todo/tickets/builtin-shadow-with-default-param-loses.md`. Same
-    class as T-054 (P5push).
+  - **String::Rotate**: FIXED 2026-07-25, 136/136 — see Done. Worth reading as a
+    cautionary tale: the 2026-07-23 triage note ("an imported `sub rotate` must
+    override the builtin in all call forms") named ONE cause, and there were
+    **three**, each independent. (1) the `method rotate` half failed because a
+    sigilless param re-read the callee's reset `$_`; (2) the `sub rotate` half
+    did hit the builtin shadow, but the condition was narrower than "all call
+    forms" — only with a **default parameter** and an argument count matching a
+    native builtin arity; (3) even once called, its `Str(Any) \str` parameter
+    read the `str` TYPE OBJECT. Do not trust a single-cause triage label.
   - **WriteOnceHash**: `self.BIND-KEY`/`self.ASSIGN-KEY`/`self.DELETE-KEY` don't
     dispatch on a fresh `class ... is Hash` instance (Array-subclass `self.push`
     is the same no-op) — deep container-subclass-instance self-mutation gap. DEFER
@@ -1230,8 +1229,23 @@ _(move tickets here with `[claim: <branch>]` when you start)_
   user routine (gated on the name being a builtin, so every other name is
   unchanged). Pin: `t/builtin-shadow-default-param.t`. Same class as T-054
   (P5push), which should be re-checked against this.
-  **Residual (third root cause, deferred):** the dist's signature is
-  `sub rotate (Str(Any) \str, …)`, and a sigilless parameter named after a native
-  type reads the `str` TYPE OBJECT inside a module routine —
-  `todo/tickets/sigilless-param-named-like-a-native-type.md`. String::Rotate
-  stays at 68/136 until that lands.
+  **Residual (third root cause) — FIXED, see the next entry.**
+
+- **T-057 (String::Rotate, part 3 — CLOSES the dist at 136/136)** (PR
+  `fix-sigilless-param-native-type-name`) — the third and last root cause. One
+  general bug: a sigilless parameter named after a native type (`\str`, `\int`)
+  read the TYPE OBJECT instead of its argument, in a routine compiled as a
+  separate compilation unit. The bare-word compiler resolves a sigilless binding
+  from an ENCLOSING scope by name — which is how a module body sees its own
+  signature — but carried an `&& !is_builtin_type(name)` guard, and
+  `is_builtin_type` includes the lowercase natives (`str`, `int`, `num`, `array`,
+  `int8`…`uint64`, `blob8`…`buf64`). So `\str` fell through to `GetBareWord`,
+  which consults the type registry. The same-frame branch already had this right
+  and documents why ("in Raku the lexical binding shadows the native type within
+  its scope"); the guard is now gone from the enclosing branch too
+  (`compiler/expr.rs`). Pin: `t/sigilless-param-named-like-native-type.t` +
+  `t/lib/NativeNameSigilless.rakumod`.
+  **Found while pinning (unrelated, deferred):** `do for` loses the return value
+  of an imported module sub (`do for ^2 { plainsub('x') }` collects `(Any)`,
+  while a local sub, a method, `.map` and `do given` all work) —
+  `todo/tickets/do-for-loses-imported-sub-return-value.md`.

@@ -190,9 +190,7 @@ impl Compiler {
                         let name_idx = self.code.add_constant(Value::str(name.clone()));
                         self.code.emit(OpCode::GetBareWord(name_idx));
                     }
-                } else if self.enclosing_sigilless.contains(name.as_str())
-                    && !crate::runtime::Interpreter::is_builtin_type(name)
-                {
+                } else if self.enclosing_sigilless.contains(name.as_str()) {
                     // A sigilless binding (`\thing`, `my \x`) from an ENCLOSING
                     // scope, read here from a nested — possibly escaping — closure.
                     // It IS the variable, so emit a by-name global read: GetGlobal
@@ -201,6 +199,15 @@ impl Compiler {
                     // frame's slot value. A plain GetBareWord would not be captured
                     // and would degrade to the literal string once the creating
                     // frame returns (escaping closure / `.^add_method` method body).
+                    //
+                    // This holds even when the name coincides with a builtin type
+                    // (`\str`, `\int`) — a lexical sigilless binding shadows the
+                    // type within its scope, exactly as the `sigilless_locals`
+                    // branch above already documents for the same-frame case. The
+                    // old `!is_builtin_type(name)` guard here sent `\str` to
+                    // GetBareWord, which consults the TYPE registry, so a module
+                    // sub's `Str \str` parameter read the `str` TYPE OBJECT
+                    // instead of its argument (String::Rotate's `sub rotate`).
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::GetGlobal(name_idx));
                 } else {
