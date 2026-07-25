@@ -45,6 +45,13 @@ impl Interpreter {
             self.proto_method_skip = Some(proto_name.clone());
             if rw_sources.is_some() {
                 self.set_pending_call_arg_sources(rw_sources);
+            } else if ctx.call_arg_sources.is_some() {
+                // The proto declares no rw parameter of its own (`proto method
+                // f(|) {*}` is the common shape), so nothing was rebuilt — but
+                // the ORIGINAL call site's argument sources still decide whether
+                // an `is rw` candidate is eligible. Running the proto body has
+                // long since cleared them, so restore them here.
+                self.set_pending_call_arg_sources(ctx.call_arg_sources.clone());
             }
             return self.call_method_with_values(ctx.invocant, &proto_name, args);
         }

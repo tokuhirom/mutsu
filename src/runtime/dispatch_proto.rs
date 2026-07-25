@@ -270,11 +270,13 @@ impl Interpreter {
             ValueView::Instance { attributes, .. } => attributes.as_map().clone(),
             _ => crate::value::AttrMap::new(),
         };
+        let call_arg_sources = self.pending_call_arg_sources().cloned();
         self.proto_dispatch_stack.push((
             method_name.to_string(),
             args.clone(),
             Some(ProtoMethodCtx {
                 invocant: invocant.clone(),
+                call_arg_sources,
             }),
         ));
         let result = self.run_resolved_method_compiled_or_treewalk(

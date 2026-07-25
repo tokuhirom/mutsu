@@ -173,6 +173,7 @@ fn autoviv_compound_lhs(lhs: Expr, op: CompoundAssignOp) -> Expr {
     let identity = match op {
         CompoundAssignOp::Add | CompoundAssignOp::Sub => MetaAssignIdentity::Zero,
         CompoundAssignOp::Mul | CompoundAssignOp::Power => MetaAssignIdentity::One,
+        CompoundAssignOp::Concat => MetaAssignIdentity::EmptyStr,
         CompoundAssignOp::Div => MetaAssignIdentity::NoZeroArgDiv,
         CompoundAssignOp::Mod => MetaAssignIdentity::NoZeroArgMod,
         _ => return lhs,

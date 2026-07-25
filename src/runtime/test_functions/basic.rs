@@ -124,6 +124,15 @@ impl Interpreter {
             // by that string value rather than its `.gist`.
             ValueView::Instance { class_name, .. } | ValueView::Package(class_name) => {
                 let cn = class_name.resolve().to_string();
+                // `utf8` is the one Blob type whose `.Str` decodes, so
+                // `is "bumble".encode, "bumble"` passes in rakudo.
+                if cn == "utf8"
+                    && matches!(value.view(), ValueView::Instance { .. })
+                    && let Some(Ok(decoded)) =
+                        crate::builtins::decode_buf_method(value, Some("utf-8"))
+                {
+                    return Ok(decoded.to_string_value());
+                }
                 let method = if self.has_user_method(&cn, "Stringy") {
                     Some("Stringy")
                 } else if self.has_user_method(&cn, "Str") {

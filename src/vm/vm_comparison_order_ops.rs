@@ -18,10 +18,26 @@ impl Interpreter {
         right: Value,
     ) -> Result<(Value, Value), RuntimeError> {
         let caller_code = self.current_code;
-        let left = self.coerce_stringy_operand(left)?;
-        let right = self.coerce_stringy_operand(right)?;
+        let left = Self::decode_utf8_compare_operand(self.coerce_stringy_operand(left)?);
+        let right = Self::decode_utf8_compare_operand(self.coerce_stringy_operand(right)?);
         self.reconcile_caller_after_internal_dispatch(caller_code);
         Ok((left, right))
+    }
+
+    /// `utf8` is the one Blob type with a working `.Str` (it decodes), so a
+    /// string comparison against one compares the decoded text in rakudo:
+    /// `"bumble".encode eq "bumble"` is True. Undecodable bytes fall through to
+    /// the byte-wise Buf comparison rather than erroring. Only the comparators
+    /// do this — infix `~` concatenates two Blobs into a Blob, so
+    /// `coerce_stringy_operand` itself must leave a utf8 alone.
+    fn decode_utf8_compare_operand(v: Value) -> Value {
+        if let ValueView::Instance { class_name, .. } = v.view()
+            && class_name.resolve() == "utf8"
+            && let Some(Ok(decoded)) = crate::builtins::decode_buf_method(&v, Some("utf-8"))
+        {
+            return decoded;
+        }
+        v
     }
 
     pub(super) fn exec_str_eq_op(&mut self) -> Result<(), RuntimeError> {

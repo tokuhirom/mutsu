@@ -1228,12 +1228,20 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
     }
 
-    // Buf/Blob.Str throws X::Buf::AsStr
+    // Buf/Blob.Str throws X::Buf::AsStr — except `utf8`, whose `.Str`/`.Stringy`
+    // decodes (rakudo: `utf8.new(98,117).Str` is "bu", while `Buf`, `Blob` and
+    // `Blob[uint8]` all die). Only the type object's own name matters; prefix
+    // `~` still dies for utf8 too.
     if (method == "Str" || method == "Stringy")
         && let ValueView::Instance { class_name, .. } = target.view()
         && crate::runtime::Interpreter::is_buf_value(target)
     {
         let cn = class_name.resolve();
+        if cn == "utf8"
+            && let Some(decoded) = crate::builtins::decode_buf_method(target, Some("utf-8"))
+        {
+            return Some(decoded);
+        }
         let mut err = RuntimeError::new(format!(
             "Cannot use a {cn} as a Str. You can use .decode to convert to Str.",
         ));

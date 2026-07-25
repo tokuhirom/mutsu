@@ -638,10 +638,17 @@ impl Interpreter {
     fn escape_regex_scalar_literal(input: &str) -> String {
         let mut out = String::new();
         for ch in input.chars() {
-            if ch.is_whitespace()
-                || matches!(
-                    ch,
-                    '\\' | '.'
+            // Whitespace cannot be backslash-escaped in regex source: `\ ` is the
+            // unspace form, which raku rejects ("No unspace allowed in regex").
+            // Emit the codepoint form instead so an interpolated " ", "\t" or
+            // "\r\n" still matches literally.
+            if ch.is_whitespace() {
+                out.push_str(&format!("\\x[{:02X}]", ch as u32));
+                continue;
+            }
+            if matches!(
+                ch,
+                '\\' | '.'
                         | '^'
                         | '$'
                         | '*'
@@ -666,8 +673,7 @@ impl Interpreter {
                         // `\h* % ...` separator. Escape them to force literal match.
                         | '%'
                         | '&'
-                )
-            {
+            ) {
                 out.push('\\');
             }
             out.push(ch);
