@@ -1,50 +1,57 @@
-# TODO Files by Spec Document
+# todo/ — open findings, one file per finding
 
-Each file tracks implementation status against the corresponding Raku design document (`old-design-docs/Sxx-*.pod`).
+Discovered bugs and missing features that are too large to fix right now live
+here, **one file per finding**, split into two directories by the *nature* of
+the work:
 
-## Core Language
-| File | Spec | Description |
-|------|------|-------------|
-| [S02-bits.md](S02-bits.md) | S02 | Types, literals, variables, lexical conventions |
-| [S03-operators.md](S03-operators.md) | S03 | Operators, precedence, meta-operators, junctions |
-| [S04-control.md](S04-control.md) | S04 | Control flow, phasers, exception handling |
-| [S05-regex.md](S05-regex.md) | S05 | Regexes, grammars, longest-token matching |
-| [S06-routines.md](S06-routines.md) | S06 | Subroutines, signatures, parameters |
+- **`todo/tickets/`** — small, self-contained, well-scoped items. A "TICKETS.md
+  style" slice: pick one up and finish it in a session (a missing method, a
+  parser slice, a narrow compat gap). Low risk, no design needed.
+- **`todo/deep/`** — deep, hard problems. High blast radius, multi-session,
+  needs design or an ADR before touching (dual-store decoupling, GC, large
+  refactors, gnarly semantics). Capture the analysis so a future session can
+  pick it up cold.
 
-## Data and Collections
-| File | Spec | Description |
-|------|------|-------------|
-| [S07-lists.md](S07-lists.md) | S07 | Lists, Seq, Array, iteration |
-| [S08-capture.md](S08-capture.md) | S08 | Capture type, argument binding |
-| [S09-data.md](S09-data.md) | S09 | Data structures, typed arrays, hashes |
+One file per finding (`<kebab-slug>.md`). A brand-new file conflicts with
+nothing on merge — that is the whole point. Appending these to PLAN.md collided
+constantly across the many small parallel PRs, exactly the problem the
+per-entry `news/YYYY-MM/` files already solved. So a finding is a new file,
+never an edit to a shared list.
 
-## Object System
-| File | Spec | Description |
-|------|------|-------------|
-| [S10-packages.md](S10-packages.md) | S10 | Packages, nesting, autoloading |
-| [S11-modules.md](S11-modules.md) | S11 | Modules, exportation, versioning |
-| [S12-objects.md](S12-objects.md) | S12 | Classes, methods, attributes, inheritance |
-| [S13-overloading.md](S13-overloading.md) | S13 | Operator overloading, type casting |
-| [S14-roles.md](S14-roles.md) | S14 | Roles, parametric types, traits |
+Splitting by directory lets you tally the backlog with no frontmatter and no
+script: `ls todo/tickets/ | wc -l` and `ls todo/deep/ | wc -l`.
 
-## Specialized
-| File | Spec | Description |
-|------|------|-------------|
-| [S15-unicode.md](S15-unicode.md) | S15 | Unicode, normalization, properties |
-| [S16-io.md](S16-io.md) | S16 | I/O, file operations, paths |
-| [S17-concurrency.md](S17-concurrency.md) | S17 | Promises, channels, supplies, threads |
-| [S19-commandline.md](S19-commandline.md) | S19 | CLI options, MAIN subroutine |
-| [S24-testing.md](S24-testing.md) | S24 | Test module, TAP output |
-| [S28-special-names.md](S28-special-names.md) | S28 | Special variables, twigils |
-| [S29-functions.md](S29-functions.md) | S29 | Built-in functions |
+## Format
 
-## Not Tracked (out of scope or non-implementation)
-| Spec | Reason |
-|------|--------|
-| S01-overview.pod | Overview only, no implementation items |
-| S21-calling-foreign-code.pod | FFI - out of current scope |
-| S22-package-format.pod | Package distribution format - out of scope |
-| S26-documentation.pod | Pod documentation system - low priority |
-| S27-perl-culture-draft.pod6 | Culture document, no implementation items |
-| S31-pragmatic-modules.pod | Pragmas - minimal content |
-| S99-glossary.pod | Glossary only |
+Each file: an H1 title and a prose body (no frontmatter — same as `news/`)
+covering:
+
+- **Root cause** — what actually goes wrong, and where.
+- **Affected files** — the modules/paths involved.
+- **Why it is large** — why it cannot be fixed in one sitting.
+- **Repro** — a minimal script or roast path that exhibits it.
+
+(A `deep/` entry naturally carries more analysis than a `tickets/` one.)
+
+## Lifecycle
+
+- **open** → a file under `todo/tickets/` or `todo/deep/`.
+- **resolved** → `git mv` it to `news/YYYY-MM/<slug>.md` (flat, chronological)
+  and rewrite it as an accomplishment.
+- **evaporated / no longer real** → delete it.
+- A `deep/` problem that turns out to be a quick fix can move to `tickets/`
+  first, or just be fixed directly — the split is a guide, not a wall.
+
+`todo/` holds only *open* findings. PLAN.md stays for planned strategic /
+campaign work; ad-hoc discovered findings go here.
+
+Roast per-test pass/fail status stays in its own ledger,
+`TODO_roast/BLOCKERS.md` — do not duplicate roast tracking here. (There is no
+special naming rule for roast; a genuinely deep, non-roast-specific problem you
+happen to hit via a roast test can still get a `todo/deep/` file.)
+
+## Do not file these as GitHub issues
+
+Bug records stay in-repo as files. Do not open GitHub issues for them on your
+own initiative — and never against any repository other than `tokuhirom/mutsu`
+(an AI has mis-filed a mutsu issue against a Raku-org repo before).
