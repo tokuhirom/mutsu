@@ -876,7 +876,7 @@ impl Interpreter {
                 parents: Vec::new(),
                 attributes: Vec::new(),
                 methods: HashMap::new(),
-                native_methods: ["slurp", "Str", "gist", "print", "close"]
+                native_methods: ["slurp", "slurp-rest", "Str", "gist", "print", "close"]
                     .iter()
                     .map(|s| s.to_string())
                     .collect(),

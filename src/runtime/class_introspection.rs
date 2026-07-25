@@ -66,6 +66,7 @@ impl Interpreter {
             && matches!(
                 method_name,
                 "slurp"
+                    | "slurp-rest"
                     | "Str"
                     | "gist"
                     | "encoding"

@@ -202,7 +202,7 @@ impl Interpreter {
                 }
             };
             match method {
-                "slurp" | "Str" | "gist" => {
+                "slurp" | "slurp-rest" | "Str" | "gist" => {
                     let has_bin = Self::named_bool(args, "bin");
                     let pipe_bin = matches!(
                         attributes.get("bin").map(Value::view),
@@ -314,6 +314,35 @@ impl Interpreter {
                     }
                     return Ok(Value::TRUE);
                 }
+                // `.slurp` / `.slurp-rest` read from the current cursor to the
+                // end (so `$p.out.get; $p.out.slurp-rest` yields the remainder)
+                // and leave the pipe drained, like IO::Handle.
+                "slurp" | "slurp-rest" => {
+                    let close = Self::named_bool(args, "close");
+                    let rest = {
+                        let Ok(mut map) = super::builtins_system::io_pipe_state_map().lock() else {
+                            return Ok(Value::str(String::new()));
+                        };
+                        let Some(state) = map.get_mut(&id) else {
+                            return Ok(Value::str(String::new()));
+                        };
+                        let rest = state.content[state.cursor..].to_string();
+                        state.cursor = state.content.len();
+                        if close {
+                            state.closed = true;
+                        }
+                        rest
+                    };
+                    let has_bin = Self::named_bool(args, "bin");
+                    let pipe_bin = matches!(
+                        attributes.get("bin").map(Value::view),
+                        Some(ValueView::Bool(true))
+                    );
+                    if has_bin || pipe_bin {
+                        return Ok(Self::make_buf(rest.into_bytes()));
+                    }
+                    return Ok(Value::str(rest));
+                }
                 _ => {}
             }
         }
@@ -322,7 +351,7 @@ impl Interpreter {
             .map(|v| v.to_string_value())
             .unwrap_or_default();
         match method {
-            "slurp" | "Str" | "gist" => {
+            "slurp" | "slurp-rest" | "Str" | "gist" => {
                 let has_bin = Self::named_bool(args, "bin");
                 let pipe_bin = matches!(
                     attributes.get("bin").map(Value::view),
