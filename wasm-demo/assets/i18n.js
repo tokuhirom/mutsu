@@ -108,7 +108,7 @@ const STRINGS = {
     'nav.tutorial': 'チュートリアル',
     'nav.playground': 'プレイグラウンド',
     'nav.repl': 'REPL',
-    'nav.batteries': 'バッテリー',
+    'nav.batteries': '同梱ライブラリ',
     'nav.bench': 'ベンチマーク',
     'nav.github': 'GitHub',
 
@@ -170,7 +170,7 @@ const STRINGS = {
     'repl.try': '例',
     'repl.pg-cta': '1 行に収まらないものを書くならプレイグラウンドへ →',
 
-    'bat.title': 'バッテリー（同梱ライブラリ）',
+    'bat.title': '同梱ライブラリ（バッテリー）',
     'bat.intro': 'mutsu は標準ライブラリを最初から同梱しています。これらのモジュールは' +
       'バイナリに埋め込まれるのではなくバイナリの隣に配置される形で mutsu に同梱され、' +
       'mutsu をインストールした瞬間から素の <code>use</code> で使えます' +

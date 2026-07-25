@@ -120,7 +120,7 @@ export default {
           '<code>zef install</code> なしで素の <code>use</code> がすぐ動きます。' +
           '同梱ライブラリとそのドキュメントを一覧できます。',
         href: 'batteries.html',
-        cta: 'バッテリーを見る →',
+        cta: '同梱ライブラリを見る →',
       },
       {
         title: '本家のドキュメントを読む',
