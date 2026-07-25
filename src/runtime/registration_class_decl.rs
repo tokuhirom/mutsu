@@ -2487,6 +2487,22 @@ impl Interpreter {
                 if self.get_our_var(&qualified).is_some() || self.env.contains_key(&qualified) {
                     return None;
                 }
+                // Skip the short-name binding a *nested* package declaration left
+                // in this body's env. `class O { class I { class C {} } }` binds a
+                // bare `C` (so `C` resolves inside `I`'s body), and because a class
+                // body deliberately does not restore `env` on success, that binding
+                // is still present when `O`'s body finishes — making `O` look like
+                // it declared a class-body `my C`. That in turn makes every method
+                // of `O` switch `current_package` to `O`, so a method-body `sub`
+                // registers under `O::` while a lazily-forced `gather` body resolves
+                // it under `GLOBAL::` and cannot find it. A package type object is
+                // never a class-body static unless the body really did `my $C = ...`,
+                // which `declared_statics` records.
+                if !declared_statics.contains(bare.as_str())
+                    && matches!(v.view(), ValueView::Package(_))
+                {
+                    return None;
+                }
                 Some((bare, v.clone()))
             })
             .collect();
