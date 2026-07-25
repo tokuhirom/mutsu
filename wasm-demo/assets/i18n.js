@@ -14,7 +14,7 @@ const STRINGS = {
     'nav.tutorial': 'Tutorial',
     'nav.playground': 'Playground',
     'nav.repl': 'REPL',
-    'nav.batteries': 'Batteries',
+    'nav.batteries': 'Bundled Libraries',
     'nav.bench': 'Benchmarks',
     'nav.github': 'GitHub',
 
@@ -78,7 +78,7 @@ const STRINGS = {
     'repl.try': 'Try',
     'repl.pg-cta': 'Writing something longer than a line? Open the playground →',
 
-    'bat.title': 'Batteries',
+    'bat.title': 'Bundled Libraries',
     'bat.intro': 'mutsu ships a standard library in the box. These modules are ' +
       'bundled with mutsu — installed next to the binary, not compiled into it — so ' +
       'a plain <code>use</code> works the moment you install mutsu, with no ' +
@@ -170,7 +170,7 @@ const STRINGS = {
     'repl.try': '例',
     'repl.pg-cta': '1 行に収まらないものを書くならプレイグラウンドへ →',
 
-    'bat.title': '同梱ライブラリ（バッテリー）',
+    'bat.title': '同梱ライブラリ',
     'bat.intro': 'mutsu は標準ライブラリを最初から同梱しています。これらのモジュールは' +
       'バイナリに埋め込まれるのではなくバイナリの隣に配置される形で mutsu に同梱され、' +
       'mutsu をインストールした瞬間から素の <code>use</code> で使えます' +
