@@ -61,6 +61,36 @@ pub(crate) fn should_wrap_whatevercode(expr: &Expr) -> bool {
     }
 }
 
+/// Whether a non-bareword `=>` pair with these operands should Whatever-curry
+/// into a `WhateverCode`.
+///
+/// Raku's `=>` participates in Whatever-currying for **non-bareword** keys: when
+/// either operand is (or contains) a currying `*`, the whole pair becomes a
+/// `WhateverCode` that yields the `Pair` when called. So `* => *`, `"k" => *`,
+/// `5 => *`, `* => 5`, `"x" ~ * => *` and `"k" => (* + 1)` are all
+/// `WhateverCode`, while `* xx 3 => 1` (the `xx` operand opts out) and
+/// `"k" => 5` stay plain `Pair`s.
+///
+/// This is decided at the `=>` construction site — not in `contains_whatever` —
+/// because a colonpair (`:as(*)`) and a string-keyed `=>` pair (`"as" => *`)
+/// share the same inner `Binary{FatArrow, Literal(Str), …}` AST and are only
+/// distinguishable by their caller. `contains_whatever` keeps the colonpair
+/// exemption (a bare `Binary{FatArrow}` with a string-literal LHS stays a
+/// literal `Pair`); the currying `=>` form routes through here instead. Bareword
+/// keys (`a => *`, a named-argument `Pair`) never reach this — the caller gates
+/// on `is_bareword` first.
+pub(crate) fn fat_arrow_curries(left: &Expr, right: &Expr) -> bool {
+    fn operand_curries(e: &Expr) -> bool {
+        // A bare `*` or an already-wrapped `(* …)` closure does not wrap when it
+        // stands alone (that is why `should_wrap_whatevercode` excludes them),
+        // but as a `=>` operand it does make the pair curry. Everything else
+        // defers to the shared `should_wrap_whatevercode` opt-out logic (so `xx`,
+        // `o`, smartmatch etc. still suppress currying).
+        is_whatever(e) || is_wrapped_whatevercode(e) || should_wrap_whatevercode(e)
+    }
+    operand_curries(left) || operand_curries(right)
+}
+
 fn contains_xx_with_bare_whatever(expr: &Expr) -> bool {
     match expr {
         Expr::Binary {
