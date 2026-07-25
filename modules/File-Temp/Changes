@@ -1,0 +1,19 @@
+Revision history for File::Temp
+
+{{$NEXT}}
+
+0.0.12  2025-08-03T11:56:30+02:00
+    - Modernized META6.json and documentation
+    - Coverage testing at 100%
+    - Added initial source SBOM
+
+0.0.11  2024-03-12T13:33:00+01:00
+    - prepare for zef:raku-community-modules release
+    - Convert to README generated from README.rakudoc
+    - Add 3-OS badges
+    - Add tempdir example to README
+    - document previous releases
+
+0.0.10  2021-12-01
+    - TODO get detail of the last version number 
+      identified

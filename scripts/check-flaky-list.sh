@@ -19,6 +19,14 @@
 
 set -uo pipefail
 
+# Byte order, not locale order, for the sortedness check below. `[[ a < b ]]`
+# collates by the caller's locale, and en_US.UTF-8 ignores punctuation while C
+# does not -- so `bag.t` vs `baghash.t` orders differently on a developer's
+# machine than in a C-locale CI runner, and the same committed file would be
+# "unsorted" in exactly one of the two. Pin it so there is one right answer, the
+# same one `LC_ALL=C sort` gives (matching how roast-whitelist.txt is checked).
+export LC_ALL=C
+
 LIST="${1:-flaky-tests.txt}"
 TODAY="${FLAKY_TODAY:-$(date -u +%Y-%m-%d)}"
 

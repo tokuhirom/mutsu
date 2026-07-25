@@ -60,6 +60,33 @@
       "readme": "[![Actions Status](https://github.com/raku-community-modules/File-Directory-Tree/actions/workflows/linux.yml/badge.svg)](https://github.com/raku-community-modules/File-Directory-Tree/actions) [![Actions Status](https://github.com/raku-community-modules/File-Directory-Tree/actions/workflows/macos.yml/badge.svg)](https://github.com/raku-community-modules/File-Directory-Tree/actions) [![Actions Status](https://github.com/raku-community-modules/File-Directory-Tree/actions/workflows/windows.yml/badge.svg)](https://github.com/raku-community-modules/File-Directory-Tree/actions)\n\nNAME\n====\n\nFile::Directory::Tree - Create, delete and empty directories\n\nSYNOPSIS\n========\n\n```raku\nuse File::Directory::Tree;\n\n# make a new directory tree\nmktree \"foo/bar/baz/quux\";\n\n# delete what you just made\nrmtree \"foo\";\n\n# clean up your /tmp -- but don't delete /tmp itself\nempty-directory \"/tmp\";\n```\n\nDESCRIPTION\n===========\n\nThe `File::Directory::Tree` distributin provides recursive versions of `mkdir` and `rmdir`, as well as an `empty-directory` subroutine for emptying out directories.\n\nSUBROUTINES\n===========\n\nmktree\n------\n\n```raku\n# make a new directory tree\nmktree \"foo/bar/baz/quux\";\n```\n\nMakes a directory tree with the given path (which can either be a string or an `IO::Path` object). If any elements of the tree do not already exist, this will make new directories.\n\nAccepts an optional second argument, the permissions mask. This is supplied to `mkdir`, and used for all of the directories it makes; the default is `0o777` (`a+rwx`). It takes an integer, but you really should supply something in octal like `0o755` or `:8('500')`.\n\nReturns `True` if successful.\n\nrmtree\n------\n\n```raku\n# delete everything below the directory \"foo\" and \"foo\" itself\nrmtree \"foo\";\n```\n\nThis deletes all files under a directory tree with the given path (which can either be a string or an `IO::Path` object) before deleting the directory itself. It will recursively call `unlink` and `rmdir` until everything under the path is deleted.\n\nReturns True if successful, and False if it cannot delete a file or remove a directory.\n\nempty-directory\n---------------\n\n```raku\n# clean up your /tmp -- but don't delete /tmp itself\nempty-directory \"/tmp\";\n```\n\nDeletes all items in a given directory (which can be specified either by a string or by an `IO::Path` object), but leaves the directory itself intact. After running this, the only thing in the directory should be '.' and '..'.\n\nReturns True if successful, and False if it cannot delete a file or a directory.\n\nAUTHORS\n=======\n\n  * Brent Laabs\n\n  * Paul Cochrane\n\n  * Zoffix Znet\n\nSource can be located at: https://github.com/raku-community-modules/File-Directory-Tree . Comments and Pull Requests are welcome.\n\nCOPYRIGHT AND LICENSE\n=====================\n\nCopyright 2013 - 2024 Brent Laabs\n\nCopyright 2025 Raku Community\n\nThis library is free software; you can redistribute it and/or modify it under the Artistic License 2.0.\n\n"
     },
     {
+      "name": "File::Temp",
+      "version": "0.0.12",
+      "description": "Create temporary files & directories",
+      "license": "Artistic-2.0",
+      "authors": [
+        "Jonathan Scott Duff",
+        "Rod Taylor",
+        "Márton Polgár",
+        "Tom Browder"
+      ],
+      "auth": "zef:raku-community-modules",
+      "provides": [
+        "File::Temp"
+      ],
+      "depends": {
+        "runtime": {
+          "requires": [
+            "File::Directory::Tree:ver<0.2+>:auth<zef:raku-community-modules>"
+          ]
+        }
+      },
+      "upstream": "https://github.com/raku-community-modules/File-Temp",
+      "slot": "HTTP client dependency layer",
+      "record": "docs/batteries/http-deps.md",
+      "readme": "[![Actions Status](https://github.com/raku-community-modules/File-Temp/actions/workflows/linux.yml/badge.svg)](https://github.com/raku-community-modules/File-Temp/actions) [![Actions Status](https://github.com/raku-community-modules/File-Temp/actions/workflows/macos.yml/badge.svg)](https://github.com/raku-community-modules/File-Temp/actions) [![Actions Status](https://github.com/raku-community-modules/File-Temp/actions/workflows/windows.yml/badge.svg)](https://github.com/raku-community-modules/File-Temp/actions)\n\nNAME\n====\n\nFile::Temp - Create temporary files & directories\n\nSYNOPSIS\n========\n\n```raku\n# Generate a temporary directory\nmy $tmpdir = tempdir;\n\n# Generate a temporary file in a temporary dir\nmy ($filename, $filehandle) = tempfile;\n\n# specify a template for the filename\n#  * are replaced with random characters\nmy ($filename, $filehandle) = tempfile(\"******\");\n\n# Automatically unlink files at end of program (this is the default)\nmy ($filename, $filehandle) = tempfile(\"******\", :unlink);\n\n# Specify the directory where the tempfile will be created\nmy ($filename, $filehandle) = tempfile(:tempdir(\"/path/to/my/dir\"));\n\n# don't unlink this one\nmy ($filename, $filehandle) = tempfile(:tempdir('.'), :!unlink);\n\n# specify a prefix and suffix for the filename\nmy ($filename, $filehandle) = tempfile(:prefix('foo'), :suffix(\".txt\"));\n```\n\nDESCRIPTION\n===========\n\n\n\nThis module exports two routines:\n\n  * tempfile Creates a temporary file and returns a filehandle to that file opened for writing and the filename of that temporary file\n\n  * tempdir Creates a temporary directory and returns the directory name\n\nAUTHORS\n=======\n\n  * Jonathan Scott Duff\n\n  * Rod Taylor\n\n  * Polgár Márton\n\n  * Tom Browder\n\nSource can be located at: https://github.com/raku-community-modules/File-Temp . Comments and Pull Requests are welcome.\n\nCOPYRIGHT AND LICENSE\n=====================\n\nCopyright 2012 - 2017 Jonathan Scott Duff\n\nCopyright 2018 - 2021 Rod Taylor\n\nCopyright 2022 - 2025 Raku Community\n\nThis library is free software; you can redistribute it and/or modify it under the Artistic License 2.0.\n\n"
+    },
+    {
       "name": "HTTP::Status",
       "version": "0.0.5",
       "description": "Information about HTTP Status Codes",

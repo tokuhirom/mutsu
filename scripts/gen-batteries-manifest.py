@@ -68,6 +68,10 @@ SIDECAR = {
         # rather than leaving the chip blank (BATTERIES.md 4).
         "license": "license pending",
     },
+    "File::Temp": {
+        "slot": "HTTP client dependency layer",
+        "record": "docs/batteries/http-deps.md",
+    },
     "File::Directory::Tree": {
         "slot": "HTTP client dependency layer",
         "record": "docs/batteries/http-deps.md",

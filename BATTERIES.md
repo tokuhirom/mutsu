@@ -232,11 +232,10 @@ the HTTP client on top of it.
 | Battery | Provider | Kind | License | Status | Record |
 | --- | --- | --- | --- | --- | --- |
 | TLS / HTTPS socket (foundation) | `OpenSSL` + `IO::Socket::SSL` | Adopted | MIT / MIT | **Working** — vendored + zero-config `use`; a real `https://` GET runs end-to-end. Needs system `libssl` at runtime. | [tls-openssl.md](docs/batteries/tls-openssl.md) |
-| HTTP client dependency layer | `URI` + `MIME::Base64` + `HTTP::Status` + `DateTime::Parse` + `Encode` + `File::Directory::Tree` | Adopted | Artistic-2.0 ×4 / MIT / **`Encode`: pending** | **Working** — vendored + zero-config `use`; all 32 upstream test files pass against the bundled copy. ⚠️ `Encode` ships ahead of a stated license — [clarification pending upstream](https://github.com/sergot/perl6-encode/issues/17), see the record | [http-deps.md](docs/batteries/http-deps.md) |
-| HTTP client | `HTTP::UserAgent` (`zef:sergot`), leaning; `HTTP::Tiny` alt. | Adopted | MIT / Artistic-2.0 | Planned — dependency layer above is in place; `File::Temp` follows | [http-client.md](docs/batteries/http-client.md) |
+| HTTP client dependency layer | `URI` + `MIME::Base64` + `HTTP::Status` + `DateTime::Parse` + `Encode` + `File::Temp` + `File::Directory::Tree` | Adopted | Artistic-2.0 ×5 / MIT / **`Encode`: pending** | **Working** — vendored + zero-config `use`; all 35 upstream test files pass against the bundled copy. ⚠️ `Encode` ships ahead of a stated license — [clarification pending upstream](https://github.com/sergot/perl6-encode/issues/17), see the record | [http-deps.md](docs/batteries/http-deps.md) |
+| HTTP client | `HTTP::UserAgent` (`zef:sergot`), leaning; `HTTP::Tiny` alt. | Adopted | MIT / Artistic-2.0 | Planned — its whole dependency layer is now bundled | [http-client.md](docs/batteries/http-client.md) |
 | JSON | native `to-json` / `from-json` | Native | — | Working | — |
 
-Other modules with a proven working record (Template::Mustache, File::Temp,
-HTTP::Parser, HTTP::Server::Tiny, NativeCall MVP, the Zef CLI) are tracked in
-`PLAN.md` §1 and are folded into this index as their bundling + documentation is
-finalized.
+Other modules with a proven working record (Template::Mustache, HTTP::Parser,
+HTTP::Server::Tiny, NativeCall MVP, the Zef CLI) are tracked in `PLAN.md` §1 and
+are folded into this index as their bundling + documentation is finalized.

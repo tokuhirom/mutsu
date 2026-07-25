@@ -1,0 +1,43 @@
+{
+  "auth": "zef:raku-community-modules",
+  "authors": [
+    "Jonathan Scott Duff",
+    "Rod Taylor",
+    "Márton Polgár",
+    "Tom Browder"
+  ],
+  "build-depends": [
+  ],
+  "depends": {
+    "runtime": {
+      "requires": [
+        "File::Directory::Tree:ver<0.2+>:auth<zef:raku-community-modules>"
+      ]
+    }
+  },
+  "description": "Create temporary files & directories",
+  "license": "Artistic-2.0",
+  "meta-version": "0",
+  "name": "File::Temp",
+  "perl": "6.d",
+  "provides": {
+    "File::Temp": "lib/File/Temp.rakumod"
+  },
+  "raku": "6.d",
+  "resources": [
+  ],
+  "source-url": "https://github.com/raku-community-modules/File-Temp.git",
+  "support": {
+    "bugtracker": "https://github.com/raku-community-modules/File-Temp/issues",
+    "email": "community@raku.org",
+    "source": "https://github.com/raku-community-modules/File-Temp.git"
+  },
+  "tags": [
+    "FILE",
+    "TEMPFILE",
+    "TEMPDIR"
+  ],
+  "test-depends": [
+  ],
+  "version": "0.0.12"
+}
