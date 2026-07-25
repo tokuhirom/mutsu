@@ -385,8 +385,8 @@ impl Interpreter {
                     &pkg,
                 ) {
                     return Some((
-                        map_pos(start, &pos_map, orig_len),
-                        map_pos(end, &pos_map, orig_len),
+                        map_pos(caps.capture_start.unwrap_or(start), &pos_map, orig_len),
+                        map_pos(caps.capture_end.unwrap_or(end), &pos_map, orig_len),
                         caps.positional,
                     ));
                 }
@@ -398,7 +398,17 @@ impl Interpreter {
             if let Some((end, caps)) =
                 self.regex_match_end_from_caps_in_pkg(&parsed, &orig_chars, start, &pkg)
             {
-                return Some((start, end, caps.positional));
+                // `<( … )>` narrows the reported match to the marked region even
+                // though the pattern consumed more, exactly as the other match
+                // entry points do. `.subst`'s native fast path spans a
+                // replacement with what this returns, so ignoring the markers
+                // would overwrite the context the pattern only looked at
+                // (`'xaby'.subst(/a <( b )>/, 'Z')` is `xaZy`, not `xZy`).
+                return Some((
+                    caps.capture_start.unwrap_or(start),
+                    caps.capture_end.unwrap_or(end),
+                    caps.positional,
+                ));
             }
         }
         None
