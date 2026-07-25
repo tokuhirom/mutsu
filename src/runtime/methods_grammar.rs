@@ -13,7 +13,7 @@ impl Interpreter {
     /// prior values so the caller can restore them when the parse ends.
     fn establish_grammar_dynamic_vars(&mut self, package: &str) -> Vec<(String, Option<Value>)> {
         // Collect the grammar's rule patterns (this package + ancestors).
-        let mut patterns: Vec<String> = Vec::new();
+        let mut patterns: Vec<(String, String)> = Vec::new();
         {
             let mut packages = vec![package.to_string()];
             packages.extend(
@@ -22,7 +22,7 @@ impl Interpreter {
                     .filter(|p| p != package),
             );
             let prefixes: Vec<String> = packages.iter().map(|p| format!("{p}::")).collect();
-            let defs: Vec<std::sync::Arc<FunctionDef>> = self
+            let defs: Vec<(String, std::sync::Arc<FunctionDef>)> = self
                 .registry()
                 .token_defs
                 .iter()
@@ -30,18 +30,40 @@ impl Interpreter {
                     let ks = k.resolve();
                     prefixes.iter().any(|pre| ks.starts_with(pre.as_str()))
                 })
-                .flat_map(|(_, v)| v.iter().cloned())
+                .flat_map(|(k, v)| {
+                    // `Pkg::rule` / `Pkg::rule:sym<x>` -> the bare rule name a
+                    // capture is stored under (`rule`).
+                    let ks = k.resolve();
+                    let bare = ks.rsplit("::").next().unwrap_or(&ks);
+                    let bare = bare.split(':').next().unwrap_or(bare).to_string();
+                    v.iter().map(move |d| (bare.clone(), d.clone()))
+                })
                 .collect();
-            for def in &defs {
+            for (rule, def) in &defs {
                 if let Some(pat) = Self::token_pattern_from_def(def) {
-                    patterns.push(pat);
+                    patterns.push((rule.clone(), pat));
                 }
             }
         }
         // Extract `:my $*/%*/@*NAME = INIT;` declarations from the patterns.
         let mut decls: Vec<String> = Vec::new();
-        for pat in &patterns {
+        for (_, pat) in &patterns {
             Self::collect_dynamic_var_decls(pat, &mut decls);
+        }
+        // Remember which RULE declared what, so the reduce walk can give each
+        // match of a declaring rule its own binding instead of letting every
+        // match share the one parse-wide slot established below. Keyed by the
+        // bare rule name, which is what a capture is stored under.
+        {
+            let mut per_rule: HashMap<String, Vec<String>> = HashMap::new();
+            for (rule, pat) in &patterns {
+                let mut rule_decls: Vec<String> = Vec::new();
+                Self::collect_dynamic_var_decls(pat, &mut rule_decls);
+                if !rule_decls.is_empty() {
+                    per_rule.entry(rule.clone()).or_default().extend(rule_decls);
+                }
+            }
+            self.grammar_rule_dynvar_decls = per_rule;
         }
         // Evaluate each declaration in `self.env`, saving the prior value.
         let mut saved: Vec<(String, Option<Value>)> = Vec::new();
@@ -96,7 +118,7 @@ impl Interpreter {
 
     /// The env key (`%*PLAYED` → `%*PLAYED`) declared by a `my $*/%*/@*NAME …`
     /// declaration string, or `None` if it is not a simple dynamic declaration.
-    fn dynamic_decl_var_key(decl: &str) -> Option<String> {
+    pub(crate) fn dynamic_decl_var_key(decl: &str) -> Option<String> {
         let rest = decl
             .strip_prefix("my ")
             .or_else(|| decl.strip_prefix("our "))?;
@@ -895,6 +917,28 @@ impl Interpreter {
         let saved_topic = self.env.get("_").cloned();
         self.env.insert("_".to_string(), match_obj.clone());
 
+        // Re-install this match's own `:my $*x` bindings with the values they
+        // held when IT reduced. Actions run in a second pass over the finished
+        // tree, so without this every match of a declaring rule would read the
+        // value the last-reducing one left in the shared env (rakudo runs an
+        // action the moment its subrule reduces, so each sees its own).
+        let saved_reduce_vars: Vec<(String, Option<Value>)> = if let Some(ValueView::Hash(vars)) =
+            updated_attrs
+                .as_map()
+                .get("reduce_time_vars")
+                .map(Value::view)
+        {
+            vars.iter()
+                .map(|(k, v)| {
+                    let prev = self.env.get(k).cloned();
+                    self.env.insert(k.clone(), v.clone());
+                    (k.clone(), prev)
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+
         // For protoregex :sym<> variants, try dispatching to the specific
         // action method (e.g., alt:sym<baz>) first.
         let sym_method_name = if let Some(ValueView::Str(sym_val)) =
@@ -958,6 +1002,17 @@ impl Interpreter {
             self.env.insert("_".to_string(), old_topic);
         } else {
             self.env.remove("_");
+        }
+        // Restore whatever this match's `:my` bindings shadowed
+        for (k, prev) in saved_reduce_vars {
+            match prev {
+                Some(v) => {
+                    self.env.insert(k, v);
+                }
+                None => {
+                    self.env.remove(&k);
+                }
+            }
         }
         // Restore named capture env vars from parent scope
         {

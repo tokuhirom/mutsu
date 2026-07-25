@@ -1123,16 +1123,17 @@ _(move tickets here with `[claim: <branch>]` when you start)_
   `path-part:sym<matcher>` (char-class) instead of the dedicated
   `path-part:sym<**>` when both match the same length. **That LTM bug is FIXED**
   (2026-07-25, pin `t/proto-token-ltm-tiebreak.t`; 36/44 → 38/44). The remaining
-  6 (`a/**/b`) have a different root cause: a rule's `:my $*FINAL` is one
-  parse-wide binding rather than one per match, so every `path-part` action reads
-  the LAST segment's value. Measured diagnosis, two ruled-out approaches, and the
-  fix direction are in
-  **`todo/deep/grammar-rule-my-dynvar-is-parse-wide-not-per-match.md`**
-  (a general grammar bug — validate against all of `S05-grammar/`).
-  `directory-only` logic itself is correct in isolation; it only
-  looks wrong because `d/**` mis-dispatches and matches `dir21`. Separate: a
-  `<sym>` auto-capture is not recorded on a multi-candidate proto match (the
-  action doesn't read it, so it doesn't affect File::Ignore).
+  6 (`a/**/b`) had a different root cause, **also FIXED** (2026-07-25): a rule's
+  `:my $*FINAL` was one parse-wide binding rather than one per match, so every
+  `path-part` action read the LAST segment's value and the module built a wrong
+  pattern string. Each match of a declaring rule now gets its own binding, carried
+  to its action (pin `t/grammar-per-match-dynvar-action.t`; see
+  `news/2026-07/grammar-per-match-dynvar-binding.md`).
+  **`t/wildcard.rakutest` is now 44/44 and six of the seven files pass
+  completely; only `t/range.rakutest` still has 1 failure (charclass ranges,
+  un-triaged).** Separate: a `<sym>` auto-capture is not recorded on a
+  multi-candidate proto match (the action doesn't read it, so it doesn't affect
+  File::Ignore).
 
 - **T-057 (SortUk)** (PR `fix-array-is-copy-list-arg`) — test_die → t/01-basic.t
   4/4 (00-meta.t needs the uninstalled `Test::META` dep, same as raku). One general

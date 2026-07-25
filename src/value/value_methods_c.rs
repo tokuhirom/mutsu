@@ -187,6 +187,18 @@ impl Value {
             if let Some(ref ast) = caps.ast {
                 attrs.insert("ast".to_string(), ast.clone());
             }
+            // What this rule's own `:my $*x` declarations held at THIS match's
+            // reduce. The action walk re-installs them around this node's action
+            // so a per-match dynamic variable is not read as the last match's
+            // value (see `Interpreter::reduce_regex_captures_made_for_rule`).
+            if !caps.regex_vars.is_empty() {
+                let vars: HashMap<String, Value> = caps
+                    .regex_vars
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect();
+                attrs.insert("reduce_time_vars".to_string(), Value::hash(vars));
+            }
             if !caps.capture_alias_map.is_empty() {
                 let alias_hash: HashMap<String, Value> = caps
                     .capture_alias_map

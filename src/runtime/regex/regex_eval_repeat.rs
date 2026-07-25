@@ -358,10 +358,34 @@ impl Interpreter {
         caps: &mut RegexCaptures,
         orig: Option<&str>,
     ) {
+        self.reduce_regex_captures_made_for_rule(caps, orig, None);
+    }
+
+    /// [`Self::reduce_regex_captures_made`] with the name of the rule this node
+    /// matched, which the parent knows (it is the capture key the node is stored
+    /// under). A rule that declares `:my $*x` gets a **fresh binding per match**
+    /// here: installed before its subtree reduces, read back onto the node
+    /// afterwards, and carried to that node's action. Without it every match
+    /// shares the one parse-wide slot `establish_grammar_dynamic_vars` set up, so
+    /// the last code block to write wins for every reader
+    /// (`t/grammar-per-match-dynvar-action.t`).
+    pub(in crate::runtime) fn reduce_regex_captures_made_for_rule(
+        &mut self,
+        caps: &mut RegexCaptures,
+        orig: Option<&str>,
+        rule_name: Option<&str>,
+    ) {
+        // A fresh binding for THIS match, installed before the subtree reduces so
+        // a child's code block accumulates into this match's binding (the
+        // `:my %*PLAYED = (); <card>+` shape) rather than a sibling match's.
+        let declared_keys = self.install_fresh_rule_dynvars(rule_name);
         // Children first so a parent block reading a child's `.made` sees it.
-        for scs in caps.named_subcaps.values_mut() {
+        for (key, scs) in caps.named_subcaps.iter_mut() {
+            let child_rule = Self::reduce_child_rule_name(key);
             for sc in scs.iter_mut() {
-                self.reduce_regex_captures_made(Arc::make_mut(sc), orig);
+                let sc = Arc::make_mut(sc);
+                let child_rule = sc.action_name.clone().unwrap_or(child_rule.clone());
+                self.reduce_regex_captures_made_for_rule(sc, orig, Some(&child_rule));
             }
         }
         for sc in caps.positional_subcaps.iter_mut().flatten() {
@@ -375,6 +399,10 @@ impl Interpreter {
             }
         }
         if caps.code_blocks.is_empty() {
+            // Even with no code blocks of its own, a declaring match must record
+            // what its binding holds — its action still reads it, and a sibling
+            // that DOES have a block would otherwise decide the value.
+            self.record_rule_dynvars(caps, &declared_keys);
             return;
         }
         // Build this node's Match so `$<name>` can carry the children's asts. The
@@ -424,8 +452,63 @@ impl Interpreter {
             self.eval_regex_code_block_body(&stmts);
         }
         caps.ast = self.env.get("made").cloned();
+        self.record_rule_dynvars(caps, &declared_keys);
         if let Some(m) = saved_match {
             self.env.insert("/".to_string(), m);
+        }
+    }
+
+    /// The rule name a `named_subcaps` key stands for. A silent-action capture
+    /// (`<.foo>`) is stored under a marker-prefixed key; everything else is
+    /// stored under the capture name, which for a plain `<foo>` IS the rule.
+    fn reduce_child_rule_name(key: &str) -> String {
+        key.strip_prefix(crate::runtime::SILENT_ACTION_MARKER_PREFIX)
+            .unwrap_or(key)
+            .to_string()
+    }
+
+    /// Re-evaluate `rule_name`'s own `:my $*x = …;` declarations into the env, so
+    /// this match starts from the declared value rather than from whatever an
+    /// earlier match of the same rule left behind. Returns the env keys it bound
+    /// (empty — and free — for the overwhelmingly common rule that declares
+    /// nothing). The previous values are deliberately NOT restored afterwards:
+    /// a rule that declares nothing still reads the parse-wide slot in its own
+    /// action, and that behaviour is load-bearing (t/grammar-reduce-time-dynvar.t).
+    fn install_fresh_rule_dynvars(&mut self, rule_name: Option<&str>) -> Vec<String> {
+        if self.grammar_rule_dynvar_decls.is_empty() {
+            return Vec::new();
+        }
+        let Some(decls) = rule_name
+            .and_then(|r| self.grammar_rule_dynvar_decls.get(r))
+            .cloned()
+        else {
+            return Vec::new();
+        };
+        let mut keys = Vec::new();
+        for decl in &decls {
+            let Some(key) = Self::dynamic_decl_var_key(decl) else {
+                continue;
+            };
+            if let Ok((stmts, _)) = crate::parse_dispatch::parse_source(&format!("{decl};")) {
+                let _ = self.eval_block_value(&stmts);
+            }
+            // A `$`-sigil dynamic variable lives in env WITHOUT its sigil
+            // (`$*S` -> `*S`), while `@*A` / `%*H` keep theirs — match what a
+            // `my $*x` declaration actually stores, or the install below writes
+            // a key nothing reads.
+            keys.push(key.strip_prefix('$').unwrap_or(&key).to_string());
+        }
+        keys
+    }
+
+    /// Copy the current value of each key bound by
+    /// [`Self::install_fresh_rule_dynvars`] onto this node, for the action walk
+    /// (a separate, later pass) to re-install around this node's action.
+    fn record_rule_dynvars(&mut self, caps: &mut RegexCaptures, keys: &[String]) {
+        for key in keys {
+            if let Some(v) = self.env.get(key).cloned() {
+                caps.regex_vars.insert(key.clone(), v);
+            }
         }
     }
 }
