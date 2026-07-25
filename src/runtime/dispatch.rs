@@ -159,6 +159,7 @@ impl Interpreter {
         // match — which executes nothing — so the "does this candidate match at
         // all?" filter is unchanged for those.
         let mut candidates: Vec<(usize, String)> = Vec::new(); // (prefix_match_len, pattern)
+        let mut rejected: Vec<String> = Vec::new();
         for def in defs {
             if let Some(pattern) = self.eval_token_def(&def, arg_values)? {
                 if let Some(ref text) = subject {
@@ -169,7 +170,7 @@ impl Interpreter {
                         // last) and let the real match decide.
                         (None, true) => candidates.push((0, pattern)),
                         // A fully declarative candidate that does not match at all.
-                        (None, false) => {}
+                        (None, false) => rejected.push(pattern),
                     }
                 } else {
                     candidates.push((0, pattern));
@@ -181,6 +182,19 @@ impl Interpreter {
         candidates.sort_by_key(|c| std::cmp::Reverse(c.0));
         if let Some((_, pattern)) = candidates.into_iter().next() {
             return Ok(Some(pattern));
+        }
+        // Nothing matched declaratively. Normally that is a cheap "this rule
+        // cannot match" verdict and the real match is skipped — but during a
+        // `Grammar.parse(:actions(...))` the real match has OBSERVABLE side
+        // effects: Rakudo dispatches an action the moment a subrule reduces, so
+        // even a doomed match leaves the actions of its matched subrules behind.
+        // With a single (non-proto) candidate there is nothing to select between,
+        // so hand it back and let the real match run and fail.
+        if rejected.len() == 1
+            && self.current_grammar_actions.is_some()
+            && !self.has_proto_token(name)
+        {
+            return Ok(rejected.pop());
         }
         if self.has_proto_token(name) {
             return Err(RuntimeError::new(format!(

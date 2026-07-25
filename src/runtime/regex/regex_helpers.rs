@@ -63,6 +63,89 @@ thread_local! {
     /// actually depends on a dynamic variable. The reduce-time action hook only
     /// fires when this is true, so ordinary (non-dyn-var) grammars pay nothing.
     pub(crate) static REGEX_GRAMMAR_DYNVAR_SEEN: Cell<bool> = const { Cell::new(false) };
+    /// Log of every named subrule that *reduced* (matched successfully) during the
+    /// live `Grammar.parse(:actions(...))`, in reduce order (children before their
+    /// parent, since the matcher recurses). Rakudo dispatches an action method the
+    /// moment its rule matches and never un-dispatches it when the surrounding
+    /// pattern later backtracks; mutsu instead walks the finished match tree, so a
+    /// parse that FAILS overall used to run no actions at all even though several
+    /// subrules had matched. This log lets the failure path replay them. `Some`
+    /// only while an action-driven parse is live.
+    pub(crate) static REDUCED_SUBRULES: RefCell<Option<ReducedSubruleLog>> = const { RefCell::new(None) };
+}
+
+/// Hard cap on `ReducedSubruleLog` entries. The log only feeds the *failure*
+/// replay, so dropping the tail of a pathologically large parse costs nothing
+/// but keeps a long action-driven parse from accumulating unbounded memory.
+const REDUCED_SUBRULE_LOG_CAP: usize = 20_000;
+
+/// Reduce-order log of named-subrule matches — see `REDUCED_SUBRULES`.
+#[derive(Default)]
+pub(crate) struct ReducedSubruleLog {
+    /// `(rule name to dispatch the action under, that rule's captures)`.
+    entries: Vec<(String, std::sync::Arc<RegexCaptures>)>,
+    /// De-dups `(rule, from, to)`: mutsu's matcher enumerates every candidate end
+    /// position of a subrule, so the same reduce is often produced repeatedly.
+    seen: std::collections::HashSet<(String, usize, usize)>,
+}
+
+impl ReducedSubruleLog {
+    pub(crate) fn into_entries(self) -> Vec<(String, std::sync::Arc<RegexCaptures>)> {
+        self.entries
+    }
+}
+
+/// Record a named subrule's successful match for the failure-path action replay.
+/// No-op unless an action-driven parse is live, and never while the matcher is
+/// only *measuring* a declarative prefix or probing the failure position
+/// (ADR-0009: those passes must have no observable side effects).
+pub(crate) fn record_reduced_subrule(rule: &str, caps: &std::sync::Arc<RegexCaptures>) {
+    if LTM_DECLARATIVE_MODE.with(Cell::get) || CODE_ATOMS_INERT.with(Cell::get) {
+        return;
+    }
+    REDUCED_SUBRULES.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let Some(log) = slot.as_mut() else {
+            return;
+        };
+        if log.entries.len() >= REDUCED_SUBRULE_LOG_CAP {
+            return;
+        }
+        if log.seen.insert((rule.to_string(), caps.from, caps.to)) {
+            log.entries.push((rule.to_string(), caps.clone()));
+        }
+    });
+}
+
+/// Activates the reduce log for one `Grammar.parse(:actions(...))`, restoring any
+/// enclosing parse's log on drop.
+pub(crate) struct ReducedSubruleGuard {
+    prev: Option<ReducedSubruleLog>,
+}
+
+impl ReducedSubruleGuard {
+    pub(crate) fn activate() -> Self {
+        let prev =
+            REDUCED_SUBRULES.with(|slot| slot.borrow_mut().replace(ReducedSubruleLog::default()));
+        ReducedSubruleGuard { prev }
+    }
+
+    /// Take the entries logged so far, leaving a fresh empty log in place.
+    pub(crate) fn take_entries() -> Vec<(String, std::sync::Arc<RegexCaptures>)> {
+        REDUCED_SUBRULES.with(|slot| {
+            let mut slot = slot.borrow_mut();
+            match slot.as_mut() {
+                Some(log) => std::mem::take(log).into_entries(),
+                None => Vec::new(),
+            }
+        })
+    }
+}
+
+impl Drop for ReducedSubruleGuard {
+    fn drop(&mut self) {
+        REDUCED_SUBRULES.with(|slot| *slot.borrow_mut() = self.prev.take());
+    }
 }
 
 /// Look up a `$*` dynamic var in the reduce-time overlay (see

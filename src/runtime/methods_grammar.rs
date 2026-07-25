@@ -283,6 +283,13 @@ impl Interpreter {
         let _dynvar_overlay_guard = actions_obj
             .is_some()
             .then(super::regex::regex_helpers::RegexDynvarOverlayGuard::activate);
+        // Log every subrule reduce so that a parse which fails overall can still
+        // dispatch the actions of the subrules that DID match — Rakudo dispatches
+        // at reduce time and does not undo it on backtracking, whereas mutsu's
+        // post-pass walks the (nonexistent) final tree. See `REDUCED_SUBRULES`.
+        let _reduced_subrule_guard = actions_obj
+            .is_some()
+            .then(super::regex::regex_helpers::ReducedSubruleGuard::activate);
         // Establish any `:my $*/%*/@*… = …;` dynamic variables the grammar's rules
         // declare, so action methods run during the match share them (`%*PLAYED`).
         let saved_grammar_dynvars = self.establish_grammar_dynamic_vars(package_name);
@@ -341,8 +348,16 @@ impl Interpreter {
             if want_eager {
                 self.enable_eager_code_blocks();
             }
+            // When `.parse` fails because the start rule matched only a PREFIX,
+            // that prefix's match tree is still what Rakudo dispatched actions
+            // over at reduce time, so keep it instead of throwing it away.
+            let mut partial_match: Option<RegexCaptures> = None;
             let captures = if method == "parse" || method == "parsefile" {
-                self.regex_match_with_captures_full_from_start(&pattern, &text)
+                self.regex_match_with_captures_full_from_start_tracking_partial(
+                    &pattern,
+                    &text,
+                    &mut partial_match,
+                )
             } else if let Some(pos) = start_pos {
                 // `:pos(N)` — subparse anchored to begin exactly at N.
                 self.regex_match_with_captures_at(&pattern, &text, pos)
@@ -368,6 +383,24 @@ impl Interpreter {
             let Some(mut captures) = captures else {
                 if !eager_blocks.is_empty() {
                     self.execute_regex_code_blocks(&eager_blocks);
+                }
+                // The parse failed, but subrules reduced along the way — raku
+                // already ran their actions. Dispatch the longest partial tree
+                // (which includes the start rule's own action) when there is one,
+                // then replay whatever reduced outside it.
+                if let Some(ref mut actions) = actions_obj {
+                    match partial_match.take() {
+                        Some(mut caps) => {
+                            self.reduce_regex_captures_made(&mut caps, Some(&text));
+                            self.dispatch_partial_parse_actions(
+                                &caps,
+                                actions,
+                                &start_rule,
+                                &text,
+                            )?;
+                        }
+                        None => self.replay_backtracked_reduce_actions(actions, None, &text)?,
+                    }
                 }
                 let goal = Self::take_pending_goal_failure().or_else(|| {
                     self.parse_regex(&pattern)
@@ -408,6 +441,9 @@ impl Interpreter {
             if let Some(want) = required_from
                 && captures.from != want
             {
+                if let Some(ref mut actions) = actions_obj {
+                    self.replay_backtracked_reduce_actions(actions, None, &text)?;
+                }
                 self.env.insert("/".to_string(), Value::NIL);
                 if is_full_parse {
                     return Ok(self.parse_failure_for_pattern(&text, Some(&pattern)));
@@ -415,6 +451,14 @@ impl Interpreter {
                 return Ok(self.make_failed_match_value(&text, start_pos.unwrap_or(0)));
             }
             if (method == "parse" || method == "parsefile") && captures.to != text.chars().count() {
+                // The start rule matched a PREFIX of the text, so `.parse` fails —
+                // but raku ran every action along the way, including the start
+                // rule's own. Dispatch the partial tree, then replay the reduces
+                // that fell outside it (the trailing attempt that made the parse
+                // stop short is exactly one of those).
+                if let Some(ref mut actions) = actions_obj {
+                    self.dispatch_partial_parse_actions(&captures, actions, &start_rule, &text)?;
+                }
                 self.env.insert("/".to_string(), Value::NIL);
                 return Ok(self.make_parse_failure_value(&text, captures.to));
             }
@@ -556,6 +600,124 @@ impl Interpreter {
             && class_name == "Failure"
         {
             return Ok(Value::NIL);
+        }
+        result
+    }
+
+    /// Build the Match object a capture node describes, with `orig` set to the
+    /// whole parse text so `.orig`/`.prematch` work on it.
+    fn match_object_from_captures(caps: &RegexCaptures, text: &str) -> Value {
+        Value::make_match_object_full_q(
+            caps.matched.clone(),
+            caps.from as i64,
+            caps.to as i64,
+            &caps.positional,
+            &caps.named,
+            &caps.named_subcaps,
+            &caps.positional_subcaps,
+            &caps.positional_quantified,
+            &caps.positional_nil,
+            Some(text),
+            &caps.named_quantified,
+        )
+    }
+
+    /// Run the actions over the match tree of a parse that FAILED because the
+    /// start rule covered only part of the input: Rakudo dispatched every one of
+    /// them at reduce time, including the start rule's own. Anything that reduced
+    /// outside that tree (the trailing attempt that made the parse stop short) is
+    /// replayed afterwards.
+    fn dispatch_partial_parse_actions(
+        &mut self,
+        caps: &RegexCaptures,
+        actions: &mut Value,
+        start_rule: &str,
+        text: &str,
+    ) -> Result<(), RuntimeError> {
+        let covered = (caps.from, caps.to);
+        let partial = Self::match_object_from_captures(caps, text);
+        let saved_self = self.env.get("self").cloned();
+        let dispatched = self.invoke_grammar_actions(partial, actions, start_rule);
+        match saved_self {
+            Some(s) => {
+                self.env.insert("self".to_string(), s);
+            }
+            None => {
+                self.env.remove("self");
+            }
+        }
+        dispatched?;
+        self.replay_backtracked_reduce_actions(actions, Some(covered), text)
+    }
+
+    /// Dispatch the action methods of subrules that reduced during a parse whose
+    /// OVERALL verdict is failure.
+    ///
+    /// Rakudo calls an action the moment its rule matches and never un-calls it
+    /// when the enclosing pattern backtracks past it, so a failed `.parse` still
+    /// leaves every matched subrule's action effects behind. mutsu instead walks
+    /// the finished match tree, which on a failed parse is either absent or covers
+    /// only a prefix — so those actions were never run at all. `REDUCED_SUBRULES`
+    /// logs each reduce during matching and this replays the ones the surviving
+    /// tree does not already account for.
+    ///
+    /// `covered` is the span of the surviving (partial) match: its own action walk
+    /// handles everything inside, so entries there are skipped. Of the rest only
+    /// the *maximal* spans are dispatched — a nested subrule is reached by its
+    /// parent's `invoke_grammar_actions` walk, which also gives it the bottom-up
+    /// order and `.made` propagation Rakudo has.
+    pub(crate) fn replay_backtracked_reduce_actions(
+        &mut self,
+        actions: &mut Value,
+        covered: Option<(usize, usize)>,
+        text: &str,
+    ) -> Result<(), RuntimeError> {
+        let entries = super::regex::regex_helpers::ReducedSubruleGuard::take_entries();
+        if entries.is_empty() {
+            return Ok(());
+        }
+        let outside: Vec<(String, std::sync::Arc<RegexCaptures>)> = entries
+            .into_iter()
+            .filter(|(_, caps)| {
+                !covered.is_some_and(|(from, to)| caps.from >= from && caps.to <= to)
+            })
+            .collect();
+        // Keep only spans not contained in another survivor. Equal spans (e.g.
+        // `token a { <b> }` where both cover the same text) keep the LAST logged
+        // one, which is the outer rule: the matcher recurses, so children are
+        // logged before their parent.
+        let maximal: Vec<&(String, std::sync::Arc<RegexCaptures>)> = outside
+            .iter()
+            .enumerate()
+            .filter(|(i, (_, e))| {
+                !outside.iter().enumerate().any(|(j, (_, f))| {
+                    j != *i
+                        && f.from <= e.from
+                        && e.to <= f.to
+                        && ((f.from, f.to) != (e.from, e.to) || j > *i)
+                })
+            })
+            .map(|(_, entry)| entry)
+            .collect();
+        let saved_self = self.env.get("self").cloned();
+        let mut result = Ok(());
+        for (rule, caps) in maximal {
+            let mut caps = (**caps).clone();
+            self.reduce_regex_captures_made(&mut caps, Some(text));
+            let match_obj = Self::match_object_from_captures(&caps, text);
+            let dispatch = Self::get_action_name(&match_obj).unwrap_or_else(|| rule.clone());
+            if let Err(e) = self.invoke_grammar_actions(match_obj, actions, &dispatch) {
+                result = Err(e);
+                break;
+            }
+        }
+        match saved_self {
+            Some(s) => {
+                self.env.insert("self".to_string(), s);
+            }
+            None => {
+                self.env.remove("self");
+            }
         }
         result
     }

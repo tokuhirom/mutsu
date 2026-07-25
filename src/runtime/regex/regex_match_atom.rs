@@ -776,11 +776,16 @@ impl Interpreter {
                     && !spec.alias_replaces_original
                     && capture_name != spec.lookup_name;
                 let original_subcap = also_under_original.then(|| subcap.clone());
+                let subcap = std::sync::Arc::new(subcap);
+                // This subrule has just REDUCED. Log it so a parse that fails
+                // overall can still run its action, the way Rakudo (which
+                // dispatches at reduce time) does — see `REDUCED_SUBRULES`.
+                super::regex_helpers::record_reduced_subrule(&spec.lookup_name, &subcap);
                 new_caps
                     .named_subcaps
                     .entry(capture_name.to_string())
                     .or_default()
-                    .push(std::sync::Arc::new(subcap));
+                    .push(subcap);
                 new_caps
                     .named
                     .entry(capture_name.to_string())
@@ -842,11 +847,13 @@ impl Interpreter {
                     crate::runtime::SILENT_ACTION_MARKER_PREFIX,
                     spec.lookup_name
                 );
+                let subcap = std::sync::Arc::new(subcap);
+                super::regex_helpers::record_reduced_subrule(&spec.lookup_name, &subcap);
                 new_caps
                     .named_subcaps
                     .entry(marker)
                     .or_default()
-                    .push(std::sync::Arc::new(subcap));
+                    .push(subcap);
             } else {
                 // Childless silent subrule (`<.ws>`, `<.CRLF>`, `<.sym>`, ...): no
                 // nested captures and (in practice) no action of interest, so keep
