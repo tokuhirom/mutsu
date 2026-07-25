@@ -76,6 +76,14 @@ SIDECAR = {
         "slot": "HTTP client dependency layer",
         "record": "docs/batteries/http-deps.md",
     },
+    "HTTP::UserAgent": {
+        "slot": "HTTP client",
+        "record": "docs/batteries/http-client.md",
+    },
+    "Test::Util::ServerPort": {
+        "slot": "Test helpers",
+        "record": "docs/batteries/test-helpers.md",
+    },
 }
 
 

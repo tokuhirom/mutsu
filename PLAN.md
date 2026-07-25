@@ -339,24 +339,6 @@ sessions).
       fire in the default configuration, so basic serving is unaffected.
 - [ ] **Template::Mustache remainder** (91/92 specs): delimiter persistence / inheritable partials /
       a lambda + first-spec-only `+$spec.value`=0 subtest/Seq-consumption bug.
-- [ ] **HTTP::UserAgent battery (HTTP client slot, `docs/batteries/http-client.md`).** The whole
-      dependency tree — `HTTP::Status`, `MIME::Base64`, `URI`, `Encode`, `DateTime::Parse`,
-      `File::Temp` (+ `File::Directory::Tree`) — **loads and works on mutsu as-is** (verified: URI
-      parse, base64 round-trip, tempfile, etc.), so those are ready to vendor into `modules/`.
-      `HTTP::UserAgent` itself constructs but a real request is blocked by interpreter bugs surfaced
-      one after another. **Fixed so far (PR #5346):** (1) a named-hash-slurpy multi candidate
-      `(Bool :$bin, *%args)` lost dispatch to a bare `()` (so `HTTP::Request.new(GET => $url)` dropped
-      the URL); (2) a cross-module `proto method` delegation clobbered the enclosing invocant to `Any`
-      (`HTTP::Message.field` → `HTTP::Header.field`). **(bug #3) FIXED** — a module-level scalar
-      `my $CRLF` in a child class was not registered as a class-body static when the same bare name had
-      already leaked into the persistent mainline env from the parent module's `my $CRLF`, so the child
-      class's methods fell back to the bare-name global (which the third module's `constant CRLF =
-      Buf.new(13,10)` had clobbered). `register_class_decl` now recognizes a name a class body
-      *explicitly* `my`/`state`-declares as a static regardless of any pre-existing leaked binding, so
-      `package_scope_lexical` resolves each class's `$CRLF` to its own value. `HTTP::Request.new(GET =>
-      $url).Str` now renders `\r\n` as `Str`. Pin: `t/constant-scalar-my-bare-name-collision.t`
-      (fixtures `t/lib/Crlf*.rakumod`); see news/2026-07/constant-scalar-my-bare-name-collision.md.
-      Likely more request/response-parsing bugs behind it — continue exercising a real request next.
 - [ ] Stored Regex `<$var>` lexical capture loss (found via Tubu; separate axis).
 - 📌 The off-the-shelf `DBDish::SQLite` depends on `MoarVM::Guts::REPRs` (direct emulation of MoarVM
   internal representations) and cannot work in principle = a de-facto wall. Practical SQLite goes

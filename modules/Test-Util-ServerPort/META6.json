@@ -1,0 +1,35 @@
+{
+  "description": "Get a free server port for testing with",
+  "meta-version": "1",
+  "provides": {
+    "Test::Util::ServerPort": "lib/Test/Util/ServerPort.rakumod"
+  },
+  "license": "Artistic-2.0",
+  "support": {
+    "source": "git://github.com/jonathanstowe/Test-Util-ServerPort.git"
+  },
+  "raku": "6.*",
+  "authors": [
+    "Jonathan Stowe <jns+git@gellyfish.co.uk>"
+  ],
+  "depends": [
+  ],
+  "build-depends": [
+  ],
+  "test-depends": [
+    "Test"
+  ],
+  "auth": "zef:jonathanstowe",
+  "api": "1.0",
+  "version": "0.0.5",
+  "resources": [
+  ],
+  "name": "Test::Util::ServerPort",
+  "tags": [
+    "network",
+    "server",
+    "test",
+    "util"
+  ],
+  "source-url": "git://github.com/jonathanstowe/Test-Util-ServerPort.git"
+}
