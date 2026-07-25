@@ -421,6 +421,9 @@ pub(in crate::parser::stmt) fn need_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, module) = qualified_ident(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, _) = opt_char(rest, ';');
+    // `need` loads the module without importing, so its types become visible
+    // while its exported subs do not. Scan for the type names only.
+    super::super::simple::register_module_type_names(&module);
     Ok((rest, Stmt::Need { module }))
 }
 

@@ -59,11 +59,13 @@ pub(in crate::parser) use control_stmts::is_known_call;
 pub(in crate::parser) use lib_paths::try_add_parse_time_lib_path;
 pub(in crate::parser) use module_exports::{
     import_inline_module_exports, register_inline_module_exports, register_module_exports,
+    register_module_type_names,
 };
 pub(in crate::parser) use pragma_preseed::{
-    current_attributes_pragma, is_user_declared_sub, is_user_declared_type, register_user_type,
-    set_attributes_pragma, set_eval_imported_function_preseed, set_eval_operator_assoc_preseed,
-    set_eval_operator_preseed, set_eval_user_sub_preseed,
+    current_attributes_pragma, is_user_declared_sub, is_user_declared_type, push_package_path,
+    register_user_type, register_user_type_verbatim, reset_package_path, set_attributes_pragma,
+    set_eval_imported_function_preseed, set_eval_operator_assoc_preseed, set_eval_operator_preseed,
+    set_eval_user_sub_preseed,
 };
 pub(in crate::parser) use registry::{
     lookup_custom_infix_precedence, lookup_postfix_precedence, lookup_prefix_precedence,
@@ -126,6 +128,13 @@ thread_local! {
     /// `sub` declarations and `use` imports register names into the current (innermost) scope.
     /// Lookups search from innermost to outermost.
     static SCOPES: RefCell<Vec<LexicalScope>> = RefCell::new(vec![LexicalScope::default()]);
+
+    /// Enclosing package path while a package-like declarator's body is parsed.
+    /// `package X::Foo { class Missing { } }` pushes `X::Foo` for the duration of
+    /// the body, so the nested `class` can also register its composed name
+    /// `X::Foo::Missing` as a known type. Raku installs nested declarations under
+    /// the composed name, so the parser must recognise that spelling too.
+    static PACKAGE_PATH: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 
     /// Library search paths set before parsing, mirroring the runtime's lib_paths.
     static LIB_PATHS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };

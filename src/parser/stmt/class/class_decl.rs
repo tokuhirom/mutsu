@@ -432,7 +432,10 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
         break;
     }
 
-    let (rest, mut body) = block(r)?;
+    let (rest, mut body) = {
+        let _pkg = super::super::simple::push_package_path(&name);
+        block(r)?
+    };
     reject_no_self_in_subs(&body)?;
     reject_no_self_in_attr_where(&body)?;
     reject_no_twigil_attr_at_body_level(&body)?;

@@ -156,6 +156,25 @@ pub(crate) fn import_inline_module_exports(module: &str) {
 }
 
 /// Find a module file and extract its exported function names.
+/// Scan a module for the type names it declares, without importing its exports.
+/// This is what `need Module;` does: the module is loaded — so its `our`-scoped
+/// and `package`-installed types become visible — but nothing is imported into
+/// the caller's lexical scope. The type registration is a side effect of
+/// `extract_exported_names`, so the returned export list is simply discarded.
+pub(crate) fn register_module_type_names(module: &str) {
+    let already_loading = LOADING_MODULES.with(|m| m.borrow().contains(module));
+    if already_loading {
+        return;
+    }
+    LOADING_MODULES.with(|m| {
+        m.borrow_mut().insert(module.to_string());
+    });
+    let _ = find_and_extract_exports(module);
+    LOADING_MODULES.with(|m| {
+        m.borrow_mut().remove(module);
+    });
+}
+
 fn find_and_extract_exports(module: &str) -> Vec<InlineModuleExport> {
     let path = find_module_file(module);
     match path {
@@ -229,6 +248,19 @@ pub(crate) fn extract_exported_names(source: &str) -> Vec<InlineModuleExport> {
     // Save the language version — parsing the module may change it via `use v6.*`
     let saved_language_version = current_language_version();
     let (stmts, _) = crate::parser::parse_program_partial(source);
+    // A `package X::Foo { }` block installs its contents into GLOBAL, so the
+    // types it declares are visible to whoever loads the module — including
+    // through an intermediate module that merely `use`d it. Those transitive
+    // names are not in `stmts` (they belong to a module this one used), but the
+    // nested parse did register them, so harvest them before the scopes are
+    // dropped and re-register them into the importer's scope below.
+    let transitive_types: Vec<String> = SCOPES.with(|s| {
+        s.borrow()
+            .iter()
+            .flat_map(|scope| scope.user_types.iter().cloned())
+            .filter(|name| name.contains("::"))
+            .collect()
+    });
     // Restore scopes and language version
     SCOPES.with(|s| {
         *s.borrow_mut() = saved_scopes;
@@ -245,10 +277,12 @@ pub(crate) fn extract_exported_names(source: &str) -> Vec<InlineModuleExport> {
     // the names land in the importer's current scope, not the module's discarded
     // parse scope.
     {
-        let mut type_names: Vec<String> = Vec::new();
+        let mut type_names: Vec<String> = transitive_types;
         collect_module_type_names(&stmts, &mut type_names);
         for name in &type_names {
-            register_user_type(name);
+            // The names are already fully composed; a `use` that appears inside
+            // a package block must not compose them a second time.
+            register_user_type_verbatim(name);
         }
     }
     let mut exports: HashMap<String, InlineModuleExport> = HashMap::new();
@@ -329,19 +363,46 @@ pub(crate) fn extract_exported_names(source: &str) -> Vec<InlineModuleExport> {
 /// captured too. These names are registered into the importer's scope so the
 /// parser knows they are declared types rather than undeclared barewords.
 fn collect_module_type_names(stmts: &[Stmt], out: &mut Vec<String>) {
+    collect_module_type_names_under(stmts, "", out);
+}
+
+/// `prefix` is the `::`-joined path of the enclosing package-like declarators.
+/// A nested declaration is installed under its composed name, so both spellings
+/// are collected: the literal one (visible inside the declaring body) and
+/// `<prefix>::<name>` (how the importer must spell it).
+fn collect_module_type_names_under(stmts: &[Stmt], prefix: &str, out: &mut Vec<String>) {
+    let compose = |name: &str| {
+        if prefix.is_empty() {
+            name.to_string()
+        } else {
+            format!("{}::{}", prefix, name)
+        }
+    };
     for stmt in stmts {
         match stmt {
-            Stmt::ClassDecl { name, .. }
-            | Stmt::RoleDecl { name, .. }
-            | Stmt::EnumDecl { name, .. } => {
-                out.push(name.resolve());
+            Stmt::EnumDecl { name, .. } => {
+                let name = name.resolve();
+                out.push(compose(&name));
+                out.push(name);
+            }
+            Stmt::ClassDecl { name, body, .. } | Stmt::RoleDecl { name, body, .. } => {
+                let name = name.resolve();
+                let composed = compose(&name);
+                collect_module_type_names_under(body, &composed, out);
+                out.push(composed);
+                out.push(name);
             }
             Stmt::Package { name, body, .. } => {
                 // `grammar Foo { ... }` is a Package with kind Grammar; its name
                 // is itself a type. `module`/`package` names are namespaces, but
                 // registering them is harmless and covers grammar declarations.
-                out.push(name.resolve());
-                collect_module_type_names(body, out);
+                let name = name.resolve();
+                // `GLOBAL` is a pseudo-package: `package GLOBAL::X::Foo` installs
+                // `X::Foo`, so it must not appear in the composed name.
+                let composed = compose(name.strip_prefix("GLOBAL::").unwrap_or(&name));
+                collect_module_type_names_under(body, &composed, out);
+                out.push(composed);
+                out.push(name);
             }
             _ => {}
         }
