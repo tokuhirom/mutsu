@@ -351,7 +351,16 @@ sessions).
       **Standing rule when reading a sweep: verify any non-`missing_dep` bucket
       against `raku -I lib` before treating it as a mutsu bug — 4 of 6 here were
       not, and two "reproductions" reduced from a truncated prefix turned out to
-      be invalid Raku that raku rejects too.** This is the
+      be invalid Raku that raku rejects too.**
+      **★The `--run-tests` axis is the sharper frontier — work it next.** Running
+      each loading dist's own suite with raku as the baseline (2026-07-25, same
+      sample): of 28 `load_ok` dists only **7 pass their suite, 5 fail, 14 die**
+      (27% of graded). One is already fixed — `Prime::Factor` needed multi dispatch
+      to honour a named parameter's aliases
+      (news/2026-07/multi-dispatch-honours-named-param-aliases.md) and now matches
+      raku across all four of its files. The remaining 18, with three already
+      triaged (`String::Splice` ×2, `Text::Sorensen`, `Locale::Dates`), are in
+      `todo/tickets/dist-test-suite-failures-batch.md`. This is the
       execution counterpart of the signal-only
       [`docs/ecosystem-guts-dependency-survey.md`](../docs/ecosystem-guts-dependency-survey.md)
       and the highest-leverage way to widen the batteries base. Workflow per bug:

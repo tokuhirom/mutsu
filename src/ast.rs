@@ -91,6 +91,42 @@ impl ParamDef {
             && self.sigilless
     }
 
+    /// Every external key a *named* parameter answers to, sigil- and
+    /// colon-stripped. A named parameter may carry aliases, which the parser
+    /// records as nested named entries in `sub_signature`: `:s(:$sort)` becomes
+    /// `ParamDef { name: "s", named: true, sub_signature: [ParamDef { name:
+    /// "sort", named: true }] }`, and the call may use either `:s(…)` or
+    /// `:sort(…)`.
+    ///
+    /// Callers that match a named argument against a signature must consult all
+    /// of them. Binding already did (`types/signature.rs`); multi-candidate
+    /// matching did not, so `multi f($n, :s(:$sort) = False)` rejected
+    /// `f(1, :sort(True))` with "No matching candidates" while the same
+    /// signature on a plain `sub` accepted it (`Prime::Factor`'s `divisors`
+    /// re-dispatches with `:sort($sort)`).
+    ///
+    /// Returns an empty vector for a non-named parameter.
+    pub(crate) fn named_external_keys(&self) -> Vec<String> {
+        if !self.named {
+            return Vec::new();
+        }
+        let strip = |n: &str| {
+            n.trim_start_matches(|c: char| "$@%&:".contains(c))
+                .trim_start_matches(['!', '.'])
+                .to_string()
+        };
+        let mut keys = vec![strip(&self.name)];
+        if let Some(aliases) = &self.sub_signature {
+            keys.extend(
+                aliases
+                    .iter()
+                    .filter(|a| a.named && !a.slurpy)
+                    .map(|a| strip(&a.name)),
+            );
+        }
+        keys
+    }
+
     /// Mark this param (and every nested sub-signature param) as belonging to
     /// a block, so an unpassed untyped optional seeds Mu instead of Any.
     pub(crate) fn mark_block_param(&mut self) {
