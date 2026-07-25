@@ -561,8 +561,10 @@ impl Interpreter {
                     if let ValueView::Pair(key, _) = arg.view() {
                         let consumed = param_defs.iter().any(|pd| {
                             if pd.named {
-                                let bare = pd.name.trim_start_matches(|c| "$@%&".contains(c));
-                                bare == key
+                                // All of the parameter's external keys, so an
+                                // aliased named param (`:s(:$sort)`) is consumed
+                                // by either spelling.
+                                pd.named_external_keys().iter().any(|k| k == key)
                             } else {
                                 pd.name == format!(":{}", key)
                             }
@@ -586,16 +588,15 @@ impl Interpreter {
                 })
                 .collect();
             for pd in param_defs.iter().filter(|pd| pd.named) {
-                // Strip the sigil AND any twigil: an attribute-binding named param
-                // `:$!size` / `:$.size` has external named key `size`, so its `!`/`.`
-                // twigil must be dropped to match the call's `size => ...` arg.
-                let bare_name = pd
-                    .name
-                    .trim_start_matches(|c: char| "$@%&".contains(c))
-                    .trim_start_matches(['!', '.']);
+                // Every external key this parameter answers to. The sigil and any
+                // twigil are stripped (an attribute-binding named param `:$!size`
+                // / `:$.size` has external key `size`), and an aliased param
+                // (`:s(:$sort)`) matches either spelling — see
+                // `ParamDef::named_external_keys`.
+                let keys = pd.named_external_keys();
                 let arg_val = named_args
                     .iter()
-                    .find(|(k, _)| k == bare_name)
+                    .find(|(k, _)| keys.iter().any(|n| n == k))
                     .map(|(_, v)| v.clone());
 
                 // Check required named params have corresponding args
