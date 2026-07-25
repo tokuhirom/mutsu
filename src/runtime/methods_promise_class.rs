@@ -42,6 +42,81 @@ impl Interpreter {
         );
     }
 
+    /// The `$*SCHEDULER` currently in effect, but only when it is a
+    /// *user-defined* scheduler — a class that is not one of the built-ins.
+    ///
+    /// Raku defines `Promise.in($t)` as `$*SCHEDULER.cue({ ... }, :in($t))`, so
+    /// swapping `$*SCHEDULER` (e.g. for `Test::Scheduler`'s virtual time)
+    /// redirects every timed promise. mutsu drives the built-in schedulers
+    /// straight off the shared deadline heap, which is much cheaper and
+    /// observationally identical, so only a user scheduler needs the real
+    /// `.cue` dispatch.
+    fn user_scheduler(&mut self) -> Option<Value> {
+        let sched = self.env().get("*SCHEDULER")?.clone();
+        let ValueView::Instance { class_name, .. } = sched.view() else {
+            return None;
+        };
+        let name = class_name.resolve();
+        if matches!(
+            name.as_str(),
+            "Scheduler" | "ThreadPoolScheduler" | "CurrentThreadScheduler" | "FakeScheduler"
+        ) {
+            return None;
+        }
+        // Only a scheduler that actually provides `cue` can drive the promise.
+        self.class_has_method(&name, "cue").then_some(sched)
+    }
+
+    /// Hand `promise` to a user `$*SCHEDULER` via `.cue(&keeper, :$in)`, where
+    /// `&keeper` is a synthesized zero-arg block whose body is
+    /// `$promise.keep(True)`. Returns the scheduler's cancellation value, which
+    /// the caller discards (`Promise.in` returns the promise itself).
+    fn cue_promise_on_scheduler(
+        &mut self,
+        scheduler: Value,
+        promise: &SharedPromise,
+        delay_key: &str,
+        delay: f64,
+    ) -> Result<Value, RuntimeError> {
+        let keeper = Self::promise_keeper_block(promise);
+        let named = Value::pair(delay_key.to_string(), Value::num(delay));
+        self.call_method_with_values(scheduler, "cue", vec![keeper, named])
+    }
+
+    /// A zero-arg block that keeps `promise` with `True`, as a first-class
+    /// `Callable` a user scheduler can store and invoke later.
+    fn promise_keeper_block(promise: &SharedPromise) -> Value {
+        let body = vec![crate::ast::Stmt::Expr(crate::ast::Expr::MethodCall {
+            target: Box::new(crate::ast::Expr::Literal(Value::promise(promise.clone()))),
+            name: Symbol::intern("keep"),
+            args: vec![crate::ast::Expr::Literal(Value::TRUE)],
+            modifier: None,
+            quoted: false,
+        })];
+        Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
+            package: Symbol::intern("GLOBAL"),
+            name: Symbol::intern(""),
+            params: Vec::new(),
+            param_defs: Vec::new(),
+            body,
+            is_rw: false,
+            is_raw: false,
+            env: Env::new(),
+            assumed_positional: Vec::new(),
+            assumed_named: std::collections::HashMap::new(),
+            id: crate::value::next_instance_id(),
+            empty_sig: false,
+            is_bare_block: true,
+            compiled_code: None,
+            deprecated_message: None,
+            source_line: None,
+            source_file: None,
+            owned_captures: Vec::new(),
+            authoritative_captures: Vec::new(),
+            upvalues: Vec::new(),
+        }))
+    }
+
     /// Promise.in dispatch
     pub(super) fn dispatch_promise_in(
         &mut self,
@@ -52,6 +127,12 @@ impl Interpreter {
             let secs = args.first().map(|v| v.to_f64()).unwrap_or(0.0);
             let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
             let ret = Value::promise(promise.clone());
+            if let Some(scheduler) = self.user_scheduler() {
+                if let Err(e) = self.cue_promise_on_scheduler(scheduler, &promise, "in", secs) {
+                    return Some(Err(e));
+                }
+                return Some(Ok(ret));
+            }
             Self::keep_promise_after(promise, secs);
             return Some(Ok(ret));
         }
@@ -90,6 +171,15 @@ impl Interpreter {
             let delay = at_time - now;
             let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
             let ret = Value::promise(promise.clone());
+            if let Some(scheduler) = self.user_scheduler() {
+                // Rakudo's `Promise.at` cues with `:in($at - now)`, not `:at`,
+                // so a virtual-time scheduler measures the delay from its own
+                // clock. Match that.
+                if let Err(e) = self.cue_promise_on_scheduler(scheduler, &promise, "in", delay) {
+                    return Some(Err(e));
+                }
+                return Some(Ok(ret));
+            }
             Self::keep_promise_after(promise, delay);
             return Some(Ok(ret));
         }

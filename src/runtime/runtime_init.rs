@@ -462,7 +462,14 @@ impl Interpreter {
                 parents: Vec::new(),
                 attributes: Vec::new(),
                 methods: HashMap::new(),
-                native_methods: ["cue"].iter().map(|s| s.to_string()).collect(),
+                // `Scheduler` is a composable role (`class Test::Scheduler does
+                // Scheduler {...}`) with NO native implementation of its own --
+                // only the concrete schedulers below have one, and each lists
+                // `cue` itself. Claiming a native `cue` here made every user
+                // class that composes the role look native-backed, so its own
+                // `method cue` was bypassed and dispatch died with
+                // "No native method 'cue' on 'MyScheduler'".
+                native_methods: HashSet::new(),
                 mro: sym_mro(&["Scheduler"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
