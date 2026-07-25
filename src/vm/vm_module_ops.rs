@@ -155,7 +155,22 @@ impl Interpreter {
         _code: &CompiledCode,
     ) -> Result<(), RuntimeError> {
         let value = self.stack.pop().unwrap_or(Value::NIL);
-        let path = value.to_string_value();
+        // `use lib` takes a *list* of repository specs (`use lib <a b>`,
+        // `use lib "a", "b"`, `use lib @paths`); each element is its own spec,
+        // so never stringify the list as a whole.
+        let specs: Vec<Value> = match value.view() {
+            ValueView::Array(items, ..) => items.iter().cloned().collect(),
+            ValueView::Seq(items) | ValueView::Slip(items) => items.iter().cloned().collect(),
+            _ => vec![value.clone()],
+        };
+        for spec in specs {
+            self.add_one_lib_path(spec.to_string_value())?;
+        }
+        Ok(())
+    }
+
+    /// Register a single `use lib` repository spec.
+    fn add_one_lib_path(&mut self, path: String) -> Result<(), RuntimeError> {
         if path.is_empty() {
             return Err(RuntimeError::new(
                 "X::LibEmpty: Repository specification can not be an empty string",
