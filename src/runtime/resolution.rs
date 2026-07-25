@@ -1,6 +1,13 @@
 use super::*;
 use crate::symbol::Symbol;
 
+/// Monotonic counter stamped onto each `token`/`rule` `FunctionDef` at
+/// registration time (`insert_token_def`) to record declaration order. Rakudo
+/// breaks an equal-length Longest-Token-Match tie between proto candidates by
+/// declaration order, so the resolver sorts sym-variant candidates by this
+/// value instead of alphabetically.
+static NEXT_TOKEN_DECL_ORDER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
 impl Interpreter {
     pub(crate) const LAZY_GATHER_TAKE_LIMIT_SIGNAL: &str =
         "__mutsu_lazy_gather_take_limit_reached__";
@@ -128,8 +135,13 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn insert_token_def(&mut self, name: &str, def: FunctionDef, multi: bool) {
+    pub(super) fn insert_token_def(&mut self, name: &str, mut def: FunctionDef, multi: bool) {
         let key = Symbol::intern(&format!("{}::{}", self.current_package(), name));
+        // Stamp declaration order: grammar bodies register their `token`s
+        // top-to-bottom, so a monotonic counter captures declaration order,
+        // which is Rakudo's tie-break for an equal-length LTM tie between
+        // proto candidates (`token pp:sym<**>` before `token pp:sym<m>`).
+        def.decl_order = NEXT_TOKEN_DECL_ORDER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let def = std::sync::Arc::new(def);
         if multi {
             self.registry_mut()
@@ -150,6 +162,29 @@ impl Interpreter {
     /// Candidate identity of a token def: the def's own name when it is a
     /// proto candidate of `token_name` (`statement:sym<expr>`), else the bare
     /// `token_name`.
+    /// Declaration order of a token key's candidates (the earliest-declared
+    /// one), for sorting proto sym-variant candidates by Rakudo's LTM
+    /// declaration-order tie-break. Unknown keys sort last (`u64::MAX`), then
+    /// alphabetically as a stable fallback.
+    pub(crate) fn token_key_decl_order(&self, key: &str) -> u64 {
+        self.registry()
+            .token_defs
+            .get(&Symbol::intern(key))
+            .and_then(|defs| defs.iter().map(|d| d.decl_order).min())
+            .unwrap_or(u64::MAX)
+    }
+
+    /// Sort resolved `:sym<>` variant keys by declaration order (Rakudo's LTM
+    /// tie-break), falling back to alphabetical order for keys that share a
+    /// declaration order or are unregistered — keeping the result deterministic.
+    pub(crate) fn sort_sym_keys_by_decl_order(&self, sym_keys: &mut [String]) {
+        sym_keys.sort_by(|a, b| {
+            self.token_key_decl_order(a)
+                .cmp(&self.token_key_decl_order(b))
+                .then_with(|| a.cmp(b))
+        });
+    }
+
     pub(crate) fn token_def_identity(def_name: &str, token_name: &str) -> String {
         if def_name
             .strip_prefix(token_name)
@@ -192,7 +227,7 @@ impl Interpreter {
             .map(|key| key.resolve())
             .filter(|key| key.starts_with(&sym_prefix_angle) || key.starts_with(&sym_prefix_french))
             .collect();
-        sym_keys.sort();
+        self.sort_sym_keys_by_decl_order(&mut sym_keys);
         for key in &sym_keys {
             let identity = &key[scope_prefix_len..];
             if seen.contains(identity) {
@@ -224,7 +259,7 @@ impl Interpreter {
             .map(|key| key.resolve())
             .filter(|key| key.starts_with(&sym_prefix_angle) || key.starts_with(&sym_prefix_french))
             .collect();
-        sym_keys.sort();
+        self.sort_sym_keys_by_decl_order(&mut sym_keys);
         for key in &sym_keys {
             if let Some(sym_defs) = self.registry().token_defs.get(&Symbol::intern(key)) {
                 defs.extend(sym_defs.clone());
@@ -298,7 +333,7 @@ impl Interpreter {
                     key.starts_with(&sym_prefix_angle) || key.starts_with(&sym_prefix_french)
                 })
                 .collect();
-            sym_keys.sort();
+            self.sort_sym_keys_by_decl_order(&mut sym_keys);
             for key in &sym_keys {
                 if let Some(sym_defs) = self.registry().token_defs.get(&Symbol::intern(key)) {
                     defs.extend(sym_defs.clone());

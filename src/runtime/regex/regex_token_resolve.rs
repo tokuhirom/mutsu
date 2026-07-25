@@ -241,7 +241,7 @@ impl Interpreter {
                     key.starts_with(&sym_prefix_angle) || key.starts_with(&sym_prefix_french)
                 })
                 .collect();
-            sym_keys.sort();
+            self.sort_sym_keys_by_decl_order(&mut sym_keys);
             for key in &sym_keys {
                 if let Some(defs) = self.registry().token_defs.get(&Symbol::intern(key)) {
                     out.extend(defs.clone());
