@@ -323,7 +323,7 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 - file: DONE — runtime/test_functions/basic.rs (plan *); remaining — a
   Lingua::EN::Numbers cardinal-fraction bug (module logic).
 
-### T-037 — test_die: timeout  [impact: 1 dist]  — TWO ROOT CAUSES FIXED (#5395, #5396); blocked on PLAN §8.21
+### T-037 — test_die: timeout  [impact: 1 dist]  — FOUR ROOT CAUSES FIXED (#5395, #5396, #5402, #5405); blocked on PLAN §8.23
 - dists: Test::Scheduler (raku passes all three files; `t/virtualized-time.rakutest` 83/83)
 - e.g. `Test::Scheduler`: base=3 pass=1 fail=1 die=1 | t/virtualized-time.rakutest: timeout
 - The dist virtualizes time: `my $*SCHEDULER = Test::Scheduler.new` and then
@@ -342,22 +342,36 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
   `method !run-due` binds `my (@now, @future) := $!lock.protect: { ... }`; the
   trailing `@future` came back as `(@y,)` instead of `@y`, so the scheduler
   believed work was still pending. Pin: `t/list-bind-trailing-array.t`.
-- **REMAINING — PLAN.md §8.21: `has` defaults are applied BEFORE `submethod
-  BUILD`, not after.** Rakudo runs BUILD first and then applies a `has` default
-  only for attributes BUILD did not set. The dist has
+- **Fixed #3 — `has` defaults were applied BEFORE `submethod BUILD` (#5402).**
+  Rakudo runs BUILD first and then applies a `has` initializer only for
+  attributes BUILD did not set. The dist has
   `has $.virtual-time = now; has $!virtual-target = $!virtual-time;` plus
-  `submethod BUILD(:$!virtual-time = now)`, so under mutsu's order
-  `$!virtual-target` is a couple of milliseconds *behind* `$!virtual-time`;
-  `advance-by($n)` then computes a target earlier than the events it should fire,
-  `!run-due` classifies everything as `future`, and the first `await` hangs.
-  Minimal repro + the full "why this is not a small fix" analysis (three
-  independent construction paths, no runtime "attribute was initialized" state,
-  slots must pre-exist for `$!x = ...` in BUILD to stick) are in PLAN.md §8.21.
-- **Status:** `t/not-time-based.rakutest` 3/3; `t/virtualized-time.rakutest`
-  reaches test 3 then hangs on §8.21; `t/synopsis.rakutest` 1/3.
+  `submethod BUILD(:$!virtual-time = now)`, so under mutsu's old order
+  `$!virtual-target` sat a couple of milliseconds *behind* `$!virtual-time`;
+  `advance-by($n)` computed a target earlier than the events it should fire,
+  `!run-due` classified everything as `future`, and the first `await` hung.
+  Construction is now seed / defer / apply (`runtime/attr_build_defaults.rs`).
+  Pin: `t/build-attr-default-order.t`.
+- **Fixed #4 — a `&`-sigil pointy parameter on `given` died (#5405).**
+  `!run-due` does `given .schedulee -> &to-run { … }`; the `given` desugar
+  emitted a bare `&to-run := $_`, which is "Code items cannot be rebound" and
+  the compiler rejected it as X::Assignment::RO. It now desugars to a
+  declaration. Pin: `t/pointy-code-param.t`.
+- **REMAINING — PLAN.md §8.23: `whenever <Promise>` inside a `supply` block
+  emits its own subscription marker.** The subscription marker
+  `[source, body_cb, [LAST…], [QUIT…]]` is recognised by the marker/value
+  separators only when `arr[0]` is a `Supply`, so a Promise source falls
+  through as an emitted value and reaches the tap as a raw 4-tuple. The dist's
+  `supply { whenever Promise.in($_) { emit 'badger' } }` therefore delivers
+  Promise objects where `'badger'` belongs. Full diagnosis, the proposed
+  normalise-to-one-shot-Supply approach, and the tap-ordering trap are in
+  PLAN.md §8.23.
+- **Status:** `t/not-time-based.rakutest` 3/3; `t/synopsis.rakutest` runs all 9
+  (3 pass, 6 fail on §8.23); `t/virtualized-time.rakutest` reaches test 2.
 - file: DONE — runtime/methods_promise_class.rs, runtime_init.rs (#5395),
-  parser/stmt/decl/destructure.rs (#5396); remaining — PLAN.md §8.21
-  (object construction order; ADR-worthy)
+  parser/stmt/decl/destructure.rs (#5396), runtime/attr_build_defaults.rs
+  (#5402), parser/stmt/control.rs (#5405); remaining — PLAN.md §8.23
+  (supply-block whenever on a Promise source)
 
 ### T-038 — test_fail: .text  [impact: 1 dist]  — FIXED (PR `fix-qqx-closure-interpolation`)
 - dists: PDF::Extract (t/01-san.rakutest 0/1 → 1/1)

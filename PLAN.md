@@ -1541,6 +1541,55 @@ token path-part:sym<matcher> {
   deliberately reaches the enclosing frame — the scope boundary has to
   admit `$_` while excluding ordinary `my` declarations.
 
+### 8.23 `whenever <Promise>` inside a `supply` block emits its own subscription marker (found 2026-07-25, Test::Scheduler)
+
+- **Minimal repro:**
+  ```raku
+  my $s = supply { whenever Promise.in(0.05) { emit 'badger' } }
+  my @r;
+  $s.tap: { @r.push($_) };
+  sleep 0.3;
+  say @r.raku;
+  # raku:  ["badger"]
+  # mutsu: [(Promise.new(…, status => PromiseStatus::Kept), , (), ()),]
+  ```
+  `whenever <Supply>` inside a `supply` block is fine, and
+  `react { whenever Promise.in(…) { … } }` is fine — it is specifically a
+  **Promise source inside a `supply` block**.
+- **Diagnosis:** `run_whenever_with_value`
+  (`src/runtime/subtest.rs:366`) registers a subscription by pushing a
+  4-element marker array `[source, body_cb, [LAST…], [QUIT…]]` onto the
+  active `supply_emit_buffer` frame. Every consumer that later separates
+  markers from genuinely emitted values recognises a marker only when
+  `arr[0]` is a **`Supply`** instance:
+  `supply_promise.rs:53` (`supply_get_values`), `supply_promise.rs:150`
+  (`supply_promise_on_demand`), and `native_supply_mut_methods.rs:291`
+  and `:319` (the `.tap` path). A `Promise`-sourced marker matches none
+  of them, so it falls through as an ordinary emitted value and is handed
+  straight to the tap — which is the raw 4-tuple the repro prints. The
+  react loop is unaffected because it consumes its own frame and already
+  models a promise source (`ReactSubscription.promise`).
+- **Proposed approach:** normalise a Promise source into a one-shot
+  supplier-backed `Supply` at marker-consumption time — Raku's semantics
+  for `whenever $promise` are exactly "emit the result once, then done" —
+  so the whole existing supplier/tap/serialize-group machinery applies
+  unchanged. `SharedPromise::on_resolve` plus `clone_for_thread()` is the
+  mechanism (the same pair `promise_chain_method` uses for `.then`,
+  `src/runtime/methods_promise.rs:89-118`).
+- **The ordering trap:** a supplier keeps no backlog —
+  `register_supplier_tap` does not replay past emissions — so the
+  `on_resolve` waiter must be armed **after** the consumer's
+  tap-registration loop has run, or an already-resolved (or
+  quickly-resolved) promise emits into a tapless supplier and the value
+  is lost. So the conversion cannot be done purely inside
+  `run_on_demand_body`: it has to record the pending arm and let each
+  consumer fire it once its taps are in place.
+- **Impact:** `Test::Scheduler` (`TODO_dist` T-037). With PLAN 8.21 and
+  the `&`-pointy-param fix landed, its `t/not-time-based.rakutest` passes
+  3/3 and `t/synopsis.rakutest` runs all 9 planned tests, but 6 of them
+  fail because `@received` collects these markers instead of the emitted
+  values. This is the last known blocker for that dist.
+
 
 ## Metrics
 
