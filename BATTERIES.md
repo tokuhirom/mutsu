@@ -71,6 +71,14 @@ this order:
 Record how these applied in the library's selection record; the alternatives you
 rejected, and *why*, are as important as the winner.
 
+**The procedure that turns these criteria into numbers is
+[docs/batteries/selection-method.md](docs/batteries/selection-method.md)** — how
+to enumerate the field from the Zef indices, which metrics to collect (including
+the reverse-dependency count), and the rule that a `raku` baseline is measured
+*before* mutsu so a dead upstream module is never mistaken for a mutsu bug.
+Follow it for every new slot; a readiness claim nobody just re-measured is not
+evidence.
+
 ## 3. Vendoring and resolution
 
 - **Vendor unchanged, with attribution.** Copy the upstream `lib/` (plus
@@ -237,6 +245,7 @@ make a real `https://` request using nothing but the shipped binary.
 | TLS / HTTPS socket (foundation) | `OpenSSL` + `IO::Socket::SSL` | Adopted | MIT / MIT | **Working** — vendored + zero-config `use`; a real `https://` GET runs end-to-end. Needs system `libssl` at runtime. | [tls-openssl.md](docs/batteries/tls-openssl.md) |
 | HTTP client dependency layer | `URI` + `MIME::Base64` + `HTTP::Status` + `DateTime::Parse` + `Encode` + `File::Temp` + `File::Directory::Tree` | Adopted | Artistic-2.0 ×5 / MIT / **`Encode`: pending** | **Working** — vendored + zero-config `use`; all 35 upstream test files pass against the bundled copy. ⚠️ `Encode` ships ahead of a stated license — [clarification pending upstream](https://github.com/sergot/perl6-encode/issues/17), see the record | [http-deps.md](docs/batteries/http-deps.md) |
 | HTTP client | `HTTP::UserAgent` (`zef:sergot`); `HTTP::Tiny` alt. | Adopted | MIT / Artistic-2.0 | **Working** — vendored + zero-config `use`; all 27 upstream test files pass against the bundled copy (23 are gated; 3 need a test-only dep the harness cannot fetch, 1 is network-excluded — see the record) | [http-client.md](docs/batteries/http-client.md) |
+| Template engine | `Template::Mustache` (`zef:raku-community-modules`) | Adopted | Artistic-2.0 | **Working** — vendored + zero-config `use`; 11/13 upstream files pass, including the whole official mustache spec suite. Chosen over `Template6` / `Jinja2` / 7 others by a measured survey | [templates.md](docs/batteries/templates.md) |
 | Test helpers | `Test::Util::ServerPort` | Adopted | Artistic-2.0 | **Working** — vendored + zero-config `use`; both upstream test files pass. Lets a bundled-only test suite bind a listener without hardcoding a port, and makes `HTTP::UserAgent`'s local-server tests gateable | [test-helpers.md](docs/batteries/test-helpers.md) |
 | JSON | native `to-json` / `from-json` | Native | — | Working | — |
 

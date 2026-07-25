@@ -33,7 +33,15 @@ per_file_timeout() {
       # default 30s budget times it out mid-file (exit 124, Failed: 0)
       # while the gc-stress job's 2x-scaled 60s budget passes. Same
       # rationale as S17-promise/start.t above.
-      echo 60
+      #
+      # 2026-07-25: 60s was still not enough — CI run 30152469426 killed it
+      # mid-file at 70 of 90 subtests ("Failed 20/90"), in the `test` job only,
+      # with gc-stress and jit-stress green on the same commit and CI's own
+      # serial re-run of the file passing 90/90. Locally it is a DETERMINISTIC
+      # PASS (scripts/flake-repro.sh -n 20 -l 6, 20/20). Raising the budget is
+      # the precise fix the flaky-test policy asks for, in preference to a
+      # retry: the file is not wrong, it is slow under contention.
+      echo 120
       ;;
     roast/S17-promise/allof.t)
       # This test uses sleep 2*$_ with $_ up to 9, parallel start blocks take ~18s.

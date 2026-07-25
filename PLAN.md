@@ -337,8 +337,6 @@ sessions).
       request bodies, and `done`/`last` control signals inside `whenever $conn.Supply(...)` (the tap
       callback runs on a worker thread, disconnected from the react control-flow frame). These do not
       fire in the default configuration, so basic serving is unaffected.
-- [ ] **Template::Mustache remainder** (91/92 specs): delimiter persistence / inheritable partials /
-      a lambda + first-spec-only `+$spec.value`=0 subtest/Seq-consumption bug.
 - [ ] Stored Regex `<$var>` lexical capture loss (found via Tubu; separate axis).
 - 📌 The off-the-shelf `DBDish::SQLite` depends on `MoarVM::Guts::REPRs` (direct emulation of MoarVM
   internal representations) and cannot work in principle = a de-facto wall. Practical SQLite goes

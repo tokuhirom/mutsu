@@ -130,6 +130,23 @@ fn is_nodal_list_method(name: &str) -> bool {
     )
 }
 
+/// Push one element's hyper result, flattening a `Slip` into the result list.
+///
+/// A hyper is built on `deepmap`, so a method that returns a `Slip` (`slip(...)`
+/// or `make @x.Slip`) contributes its *elements* to the result, exactly as it
+/// would from `map` — `@objs>>.made` over methods returning `slip('a', %h)` is
+/// `["a", %h, ...]`, not `[slip("a", %h), ...]`. Keeping the Slip nested also
+/// corrupted the values downstream: `.flat` then descended into it and
+/// decomposed a contained Hash into its Pairs (Template::Mustache's parse tree).
+/// An empty Slip contributes nothing, which is what `Empty` means.
+fn push_hyper_result(results: &mut Vec<Value>, result: Value) {
+    if let ValueView::Slip(elems) = result.view() {
+        results.extend(elems.iter().cloned());
+    } else {
+        results.push(result);
+    }
+}
+
 fn itemize_if_descended(source: &Value, result: Value) -> Value {
     if !matches!(
         source.view(),
@@ -622,7 +639,16 @@ impl Interpreter {
                             *item = updated;
                             v
                         };
-                        results.push(val);
+                        // A *nodal* method's result is that node's own value and
+                        // stays one element: `(1, (2,3), (4,[5,6]))>>.Slip` is
+                        // `((2 3) (4 [5 6]))`, not a flattened `(2 3 4 [5 6])`
+                        // (roast S03-metaops/hyper.t "`.Slip` is nodal"). Only a
+                        // leaf application slips.
+                        if is_list_native_method {
+                            results.push(val);
+                        } else {
+                            push_hyper_result(&mut results, val);
+                        }
                     }
                 }
             }
@@ -837,7 +863,7 @@ impl Interpreter {
                 for sub in elems.iter() {
                     let (r, m) =
                         self.hyper_method_apply_recursive(sub, method, args, skip_native)?;
-                    results.push(itemize_if_descended(sub, r));
+                    push_hyper_result(&mut results, itemize_if_descended(sub, r));
                     mutated.push(m);
                 }
                 Ok((
@@ -857,7 +883,7 @@ impl Interpreter {
                 for sub in elems.iter() {
                     let (r, m) =
                         self.hyper_method_apply_recursive(sub, method, args, skip_native)?;
-                    results.push(itemize_if_descended(sub, r));
+                    push_hyper_result(&mut results, itemize_if_descended(sub, r));
                     mutated.push(m);
                 }
                 Ok((
@@ -929,7 +955,7 @@ impl Interpreter {
                 let mut results = Vec::with_capacity(elems.len());
                 for sub in elems.iter() {
                     let r = self.hyper_sub_apply_recursive(callable, sub, extra_args, modifier)?;
-                    results.push(itemize_if_descended(sub, r));
+                    push_hyper_result(&mut results, itemize_if_descended(sub, r));
                 }
                 Ok(Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(results)),
@@ -940,7 +966,7 @@ impl Interpreter {
                 let mut results = Vec::with_capacity(elems.len());
                 for sub in elems.iter() {
                     let r = self.hyper_sub_apply_recursive(callable, sub, extra_args, modifier)?;
-                    results.push(itemize_if_descended(sub, r));
+                    push_hyper_result(&mut results, itemize_if_descended(sub, r));
                 }
                 Ok(Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(results)),
@@ -1077,7 +1103,7 @@ impl Interpreter {
                     continue;
                 }
                 let r = self.hyper_sub_apply_recursive(&name_val, item, &item_args, modifier)?;
-                results.push(itemize_if_descended(item, r));
+                push_hyper_result(&mut results, itemize_if_descended(item, r));
                 continue;
             }
             let method = method

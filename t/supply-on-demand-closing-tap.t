@@ -27,7 +27,13 @@ plan 4;
         -> $s { start { $s.emit(1); $s.done } },
         closing => { $closed++ };
     $sod.tap(-> $v { });
-    sleep 0.5;
+    # Wait for the condition, not for a fixed duration: the body runs on a
+    # worker thread, so a hardcoded `sleep` is a bet on scheduler latency that a
+    # loaded CI runner loses. Poll up to 10s, but return as soon as it fires.
+    for ^1000 {
+        last if $closed;
+        sleep 0.01;
+    }
     ok $closed, 'closing fires for an async (start-block) on-demand supply tapped with .tap';
 }
 

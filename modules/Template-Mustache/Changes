@@ -1,0 +1,39 @@
+Revision history for Template-Mustache
+
+1.2.6  2026-01-12T14:43:14+01:00
+    - Todo deeply nested test: for some reason this appears to be
+      dependent on the concatenation of two Junctions where one of
+      the Junctions contains another (embedded) Junction.  However,
+      this has never worked in Rakudo (since 2017.09 it at least
+      creates a Junction if all eigenstates are strings).  So not
+      sure why it was possible to pass tests in 2025.10.
+
+1.2.5  2025-11-06T18:25:39+01:00
+    - Fix incorrect signature, habere-et-dispertire++
+    - Some minor internal tweaks
+
+1.2.4  2025-11-02T19:57:46+01:00
+    - First version as a Raku Community Module
+    - Use modern test file extensions
+    - Add coverage tests (still incomplete)
+    - Add CI badge for each OS
+
+1.2.3  2021-03-19T02:00:29-04:00
+    - Fix {{.}} lookup in scalar sections
+    - Update spec tests with upstream changes
+
+1.2.2  2020-07-24T23:53:15-04:00
+    - Add :pragma<KEEP-UNUSED-VARIABLES> feature
+    - Fix logging feature compatibility with rakudo-2019.11.01
+
+1.2.1  2020-07-17T01:40:07-04:00
+    - Add Template::Mustache::Logger class to control logging detail
+    - Prefer `:log-level<Warn>` instead of `:warn` option for `.render`
+    - The source repository is now called raku-Template-Mustache
+
+1.2.0  2020-07-15T23:33:07-04:00
+    - Cache everything, including files, partials and lambdas
+    - Template inheritance: Partials that can override values from parent
+
+1.1.4  2020-05-06T17:49:36-04:00
+    - Initial CPAN version, see source repository for history
