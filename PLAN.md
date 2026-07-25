@@ -1589,6 +1589,55 @@ token path-part:sym<matcher> {
   3/3 and `t/synopsis.rakutest` runs all 9 planned tests, but 6 of them
   fail because `@received` collects these markers instead of the emitted
   values. This is the last known blocker for that dist.
+### 8.24 A user `method message` on an exception never runs, and fixing it exposes a `$!attr` self-recursion (found 2026-07-25, HTTP::UserAgent)
+
+An exception class that COMPUTES its message reports the literal text `(Any)`:
+
+```raku
+class X::HTTP is Exception { has $.rc }
+class X::HTTP::Response is X::HTTP {
+    has $.message;
+    method message { $!message //= "Response error: '$.rc'" }
+}
+X::HTTP::Response.new(:rc('404 Not Found')).throw;
+# raku:  Response error: '404 Not Found'
+# mutsu: (Any)
+```
+
+- **Root cause (located).** `methods_instance_ops.rs:905` answers
+  `gist`/`Str`/`Stringy`/`message` for any exception-ish instance straight from
+  the stored `message` attribute. Its comment claims "`message` itself only
+  reaches here when no user method exists", but user-method resolution happens
+  ~300 lines LATER in the same function (`:1204`, via
+  `resolve_user_method_or_accessor`), so the arm always wins. `has $.message`
+  leaves the cell `Any` until the method computes it, and stringifying that is
+  `(Any)`. The obvious fix — skip the arm when
+  `self.has_user_method(&cn, method)` — is one line and does make the direct
+  case correct.
+- **Why it is not a one-liner.** With that fix in place, a *write* to the
+  private attribute inside the same-named method recurses forever:
+  ```raku
+  class X::B is Exception { has $.message; method message { $!message = "W"; "R" } }
+  try { X::B.new.throw; CATCH { default { say .message } } }   # mutsu: hangs
+  ```
+  Reading (`my $x = $!message`) is fine; only the write loops, i.e. the `$!attr`
+  store path re-enters accessor/method dispatch for `message` instead of writing
+  the cell directly. That is the same family of defect as §8.21 (`$!attr = v`
+  bypassing the declared type check) — the private-attribute write path — and
+  the two should be fixed together, at the single pre-store choke point §8.21
+  already argues for.
+- **Also involved (secondary, each independently correct):** the `.throw`
+  message is derived from the `message` ATTRIBUTE in three places
+  (`builtins/methods_0arg/mod.rs:1621`, `methods_call_dispatch.rs:548` and
+  `:2121`); each treats a present-but-undefined cell as a message and none asks
+  a user `method message`. The native fast path has no registry access, so the
+  decision belongs in the bypass gates (`should_bypass_native_fastpath`,
+  `vm_native_dispatch.rs::try_native_method`). `throws-like` has the same shape:
+  it reads the attribute for its `message => …` matcher, whereas raku evaluates
+  `$exception."$key"()`.
+- **Impact:** HTTP::UserAgent `t/082-exceptions` subtest 3 (the last non-network
+  failure in that suite, which is otherwise 25/27), and every module that
+  computes an exception message from its attributes.
 
 
 ## Metrics
