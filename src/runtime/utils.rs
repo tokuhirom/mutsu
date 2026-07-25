@@ -170,6 +170,26 @@ pub(crate) fn strip_utf8_bom(s: String) -> String {
     }
 }
 
+/// Translate the CRLF line ending to LF, as Raku's decoder does on every
+/// *text-mode* read (the handle's default `nl-in` is `["\n", "\r\n"]`, and a
+/// matched ending is normalized to `"\n"`). It applies to whole-file reads too,
+/// not just the chomping routines: `"f".IO.slurp` on `"a\r\nb"` yields
+/// `"a\nb"`, while `:bin` and `Blob.decode` keep the bytes verbatim. A lone
+/// `\r` is NOT a line ending and stays as it is.
+pub(crate) fn translate_nl_in(s: String) -> String {
+    if s.contains('\r') {
+        s.replace("\r\n", "\n")
+    } else {
+        s
+    }
+}
+
+/// The standard text-mode decode fixups Raku applies to file content: strip a
+/// leading BOM, then normalize CRLF line endings.
+pub(crate) fn decode_text_content(s: String) -> String {
+    translate_nl_in(strip_utf8_bom(s))
+}
+
 /// Check if a class name represents a (mutable) Buf-like type (Buf, Buf[uint8],
 /// buf8, etc.). The encoding types (utf8/utf16/...) are immutable Blobs, not
 /// Bufs, so they are excluded here (see `is_blob_like_class`).

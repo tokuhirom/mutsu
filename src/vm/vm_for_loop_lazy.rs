@@ -39,10 +39,7 @@ impl Interpreter {
                 ValueView::Str(s) => s.to_string(),
                 _ => unreachable!("ForLoop param must be a string constant"),
             });
-        let saved_topic = spec
-            .restore_topic
-            .then(|| self.env().get("_").cloned())
-            .flatten();
+        let saved_topic = self.env().get("_").cloned();
         let saved_topic_source = self.topic_source_var.take();
         let was_topic_readonly = self.is_readonly("_");
 
@@ -193,16 +190,7 @@ impl Interpreter {
                             self.unmark_readonly("_");
                         }
                         self.topic_source_var = saved_topic_source;
-                        if spec.restore_topic {
-                            match saved_topic {
-                                Some(v) => {
-                                    self.env_mut().insert("_".to_string(), v);
-                                }
-                                None => {
-                                    self.env_mut().remove("_");
-                                }
-                            }
-                        }
+                        self.restore_loop_topic(saved_topic);
                         return Err(e);
                     }
                     Err(e) => {
@@ -214,16 +202,7 @@ impl Interpreter {
                         if !was_topic_readonly {
                             self.unmark_readonly("_");
                         }
-                        if spec.restore_topic {
-                            match saved_topic.clone() {
-                                Some(v) => {
-                                    self.env_mut().insert("_".to_string(), v);
-                                }
-                                None => {
-                                    self.env_mut().remove("_");
-                                }
-                            }
-                        }
+                        self.restore_loop_topic(saved_topic.clone());
                         return Err(e);
                     }
                 }
@@ -242,16 +221,7 @@ impl Interpreter {
             self.unmark_readonly("_");
         }
         self.topic_source_var = saved_topic_source;
-        if spec.restore_topic {
-            match saved_topic {
-                Some(v) => {
-                    self.env_mut().insert("_".to_string(), v);
-                }
-                None => {
-                    self.env_mut().remove("_");
-                }
-            }
-        }
+        self.restore_loop_topic(saved_topic);
         Ok(())
     }
 
@@ -279,10 +249,7 @@ impl Interpreter {
         let arity = spec.arity.max(1) as usize;
         let _writes_back_topic =
             spec.param_idx.is_none() && spec.param_local.is_none() && spec.arity <= 1;
-        let saved_topic = spec
-            .restore_topic
-            .then(|| self.env().get("_").cloned())
-            .flatten();
+        let saved_topic = self.env().get("_").cloned();
         let saved_topic_source = self.topic_source_var.take();
         let mut collected = if spec.collect { Some(Vec::new()) } else { None };
         let stack_base = if spec.collect {
@@ -397,16 +364,7 @@ impl Interpreter {
                         {
                             self.unmark_readonly(name);
                         }
-                        if spec.restore_topic {
-                            match saved_topic.clone() {
-                                Some(v) => {
-                                    self.env_mut().insert("_".to_string(), v);
-                                }
-                                None => {
-                                    self.env_mut().remove("_");
-                                }
-                            }
-                        }
+                        self.restore_loop_topic(saved_topic.clone());
                         return Err(e);
                     }
                 }
@@ -423,16 +381,7 @@ impl Interpreter {
             self.unmark_readonly(name);
         }
         self.topic_source_var = saved_topic_source;
-        if spec.restore_topic {
-            match saved_topic {
-                Some(v) => {
-                    self.env_mut().insert("_".to_string(), v);
-                }
-                None => {
-                    self.env_mut().remove("_");
-                }
-            }
-        }
+        self.restore_loop_topic(saved_topic);
         if let Some(coll) = collected {
             self.stack.push(Value::array(coll));
         }

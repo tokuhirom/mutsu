@@ -1856,11 +1856,6 @@ impl Compiler {
                 }
                 let (pre_stmts, loop_body, post_stmts) =
                     self.expand_loop_phasers(body, label.as_deref());
-                let non_setline_count = body
-                    .iter()
-                    .filter(|s| !matches!(s, Stmt::SetLine(_)))
-                    .count();
-                let restore_topic = param.is_none() && params.is_empty() && non_setline_count == 1;
                 for s in &pre_stmts {
                     self.compile_stmt(s);
                 }
@@ -2019,7 +2014,6 @@ impl Compiler {
                             label: label.clone(),
                             arity,
                             collect: false,
-                            restore_topic,
                             threaded: matches!(
                                 *mode,
                                 crate::ast::ForMode::Race | crate::ast::ForMode::Hyper

@@ -166,7 +166,9 @@ impl IoHandleState {
         let mut bytes = Vec::new();
         file.read_to_end(&mut bytes)
             .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
-        Ok(String::from_utf8_lossy(&bytes).to_string())
+        Ok(crate::runtime::utils::translate_nl_in(
+            String::from_utf8_lossy(&bytes).to_string(),
+        ))
     }
 
     /// VM-native `.read` on a `File` handle (PR-D2): `count > 0` reads up to
@@ -212,11 +214,12 @@ impl IoHandleState {
             return Err(RuntimeError::io_closed("handle operation"));
         }
         self.read_attempted = true;
+        let is_bin = self.bin;
         let file = self
             .file
             .as_mut()
             .ok_or_else(|| RuntimeError::new("IO::Handle is not attached to a file"))?;
-        match count {
+        let out = match count {
             Some(limit) => {
                 if limit == 0 {
                     return Ok(String::new());
@@ -228,15 +231,22 @@ impl IoHandleState {
                     };
                     out.push_str(&ch);
                 }
-                Ok(out)
+                out
             }
             None => {
                 let mut bytes = Vec::new();
                 file.read_to_end(&mut bytes)
                     .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
-                Ok(String::from_utf8_lossy(&bytes).to_string())
+                String::from_utf8_lossy(&bytes).to_string()
             }
-        }
+        };
+        // A text-mode read decodes CRLF to a single "\n"; a binary handle keeps
+        // the bytes verbatim.
+        Ok(if is_bin {
+            out
+        } else {
+            crate::runtime::utils::translate_nl_in(out)
+        })
     }
 
     /// VM-native grapheme read for `.getc`/`.readchars` on a seekable File+UTF8
@@ -286,7 +296,13 @@ impl IoHandleState {
             }
             out.push_str(&cluster);
         }
-        Ok(out)
+        // `\r\n` is a single grapheme cluster, so normalizing it to "\n" for a
+        // text-mode read preserves the requested cluster count.
+        Ok(if is_bin {
+            out
+        } else {
+            crate::runtime::utils::translate_nl_in(out)
+        })
     }
 
     /// Add to this handle's `bytes_written` counter. Used by the VM's Stdout

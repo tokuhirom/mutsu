@@ -2,6 +2,23 @@ use super::vm_control_ops::ForLoopSpec;
 use super::*;
 
 impl Interpreter {
+    /// Put the enclosing `$_` back after a `for` loop. A `for` block owns its
+    /// topic — raku binds `$_` as the block's own implicit parameter — so the
+    /// loop's topic must never survive into the enclosing scope. mutsu keeps the
+    /// topic in env, so every exit path (normal, `last`/`next`, error) restores
+    /// the value captured before the loop, or removes the key when there was
+    /// none.
+    pub(super) fn restore_loop_topic(&mut self, saved: Option<Value>) {
+        match saved {
+            Some(v) => {
+                self.env_mut().insert("_".to_string(), v);
+            }
+            None => {
+                self.env_mut().remove("_");
+            }
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_for_loop_body(
         &mut self,
@@ -72,10 +89,10 @@ impl Interpreter {
         };
         let mut collected = if spec.collect { Some(Vec::new()) } else { None };
         let mut deferred_container_refs: Vec<(usize, String)> = Vec::new();
-        let saved_topic = spec
-            .restore_topic
-            .then(|| self.env().get("_").cloned())
-            .flatten();
+        // A `for` block owns its topic (raku binds `$_` as the block's own
+        // implicit parameter), so the enclosing `$_` is restored on every exit —
+        // normal, `last`/`next`, and error.
+        let saved_topic = self.env().get("_").cloned();
         let saved_topic_source = self.topic_source_var.take();
         let saved_quanthash_bind = std::mem::take(&mut self.quanthash_bind_params);
         // The tagged source name plus its compile-time-baked local slot (§1.5):
@@ -635,16 +652,7 @@ impl Interpreter {
                         }
                         self.topic_source_var = saved_topic_source;
                         self.quanthash_bind_params = saved_quanthash_bind.clone();
-                        if spec.restore_topic {
-                            match saved_topic {
-                                Some(v) => {
-                                    self.env_mut().insert("_".to_string(), v);
-                                }
-                                None => {
-                                    self.env_mut().remove("_");
-                                }
-                            }
-                        }
+                        self.restore_loop_topic(saved_topic);
                         self.pop_loop_local_scope(code);
                         return Err(e);
                     }
@@ -659,16 +667,7 @@ impl Interpreter {
                         {
                             self.unmark_readonly(name);
                         }
-                        if spec.restore_topic {
-                            match saved_topic.clone() {
-                                Some(v) => {
-                                    self.env_mut().insert("_".to_string(), v);
-                                }
-                                None => {
-                                    self.env_mut().remove("_");
-                                }
-                            }
-                        }
+                        self.restore_loop_topic(saved_topic.clone());
                         self.pop_loop_local_scope(code);
                         return Err(e);
                     }
@@ -757,16 +756,7 @@ impl Interpreter {
         }
         self.topic_source_var = saved_topic_source;
         self.quanthash_bind_params = saved_quanthash_bind.clone();
-        if spec.restore_topic {
-            match saved_topic {
-                Some(v) => {
-                    self.env_mut().insert("_".to_string(), v);
-                }
-                None => {
-                    self.env_mut().remove("_");
-                }
-            }
-        }
+        self.restore_loop_topic(saved_topic);
         if let Some(coll) = collected {
             let mut coll = coll;
             for (idx, name) in deferred_container_refs {

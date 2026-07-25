@@ -57,12 +57,14 @@ Template::Mustache	02-file.rakutest
 Template::Mustache	03-cascade.rakutest
 Template::Mustache	04-lambda.rakutest
 Template::Mustache	05-promise.rakutest
+Template::Mustache	06-logging.rakutest
 Template::Mustache	10-objects.rakutest
 Template::Mustache	11-iterable.rakutest
 Template::Mustache	12-inheritence.rakutest
 Template::Mustache	13-pragmas.rakutest
 Template::Mustache	50-readme.rakutest
 Template::Mustache	91-specs.rakutest
+Template::Mustache	92-specs-file.rakutest
 Test::Util::ServerPort	001-meta.t
 Test::Util::ServerPort	010-basic.t
 URI	01.rakutest

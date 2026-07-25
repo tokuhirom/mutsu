@@ -411,7 +411,9 @@ impl Interpreter {
         self.write_self_attr_cell(name, val);
     }
 
-    /// True if `name` is an array/hash attribute twigil (`@!`/`@.`/`%!`/`%.`).
+    /// True if `name` is an array/hash attribute twigil (`@!`/`@.`/`%!`/`%.`) —
+    /// an attribute whose whole container value lives in env, so a mutating op
+    /// keyed by the name operates on the env copy.
     pub(crate) fn is_array_hash_attr_twigil(name: &str) -> bool {
         (name.starts_with("@!")
             || name.starts_with("@.")
@@ -420,8 +422,22 @@ impl Interpreter {
             && Self::attr_twigil_base(name).is_some()
     }
 
+    /// True for the twigils a *subscript* op may target: the array/hash forms
+    /// above plus the sigilless scalar forms (`!x`/`.x`), because a scalar
+    /// attribute can itself hold a Hash/Array that `$!h<k> = v` mutates.
+    ///
+    /// Deliberately NOT used by the whole-value ops (`SetGlobal`, `CallMethodMut`,
+    /// `ArrayPush`). A scalar attribute is cell-direct: those ops already reach
+    /// the cell through the scalar read/write path — `$!a.push(1)` mutates the
+    /// container the cell holds in place — so routing them through this env↔cell
+    /// sync would buy nothing and would put a stale env copy in the path of a
+    /// concurrent cell write from another thread.
+    pub(crate) fn is_subscriptable_attr_twigil(name: &str) -> bool {
+        Self::attr_twigil_base(name).is_some()
+    }
+
     /// Snapshot the env/shared value of an array/hash attribute variable before a
-    /// mutating op, so [`mirror_array_hash_attr_to_cell`] can tell a genuine
+    /// mutating op, so [`Self::mirror_attr_env_to_cell`] can tell a genuine
     /// mutation (env value changed) from a non-mutating method call (`@!a.join`)
     /// on a stale env copy — mirroring the stale copy would clobber a cross-frame
     /// cell mutation. Returns `None` for non-attribute targets (cheap fast path).
@@ -432,13 +448,35 @@ impl Interpreter {
     /// clobber keys written by earlier calls — `%!h{$k} = $v` inside a returned
     /// closure kept only the last write. After the refresh the op starts from
     /// the live cell value and the mirror's pre-snapshot is that same value.
-    pub(super) fn array_hash_attr_env_snapshot(
+    pub(super) fn attr_env_snapshot(
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
     ) -> Option<Value> {
+        self.attr_env_snapshot_matching(code, name_idx, Self::is_array_hash_attr_twigil)
+    }
+
+    /// [`Self::attr_env_snapshot`] for the subscript ops, which also cover a
+    /// scalar attribute holding a container. Such a slot is populated lazily by a
+    /// cell-direct *read*, so an element assignment with no preceding read
+    /// (`$!h<k> = 1` as the first touch in a method) would otherwise find no
+    /// env/slot entry and autovivify a fresh container that never reaches the cell.
+    pub(super) fn attr_elem_env_snapshot(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Option<Value> {
+        self.attr_env_snapshot_matching(code, name_idx, Self::is_subscriptable_attr_twigil)
+    }
+
+    fn attr_env_snapshot_matching(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        applies: fn(&str) -> bool,
+    ) -> Option<Value> {
         let name = Self::const_str(code, name_idx);
-        if !Self::is_array_hash_attr_twigil(name) {
+        if !applies(name) {
             return None;
         }
         let name = name.to_string();
@@ -486,14 +524,40 @@ impl Interpreter {
     /// env/shared keyed by `name`. Only fires for `@!`/`@.`/`%!`/`%.` twigils and
     /// only when the env value actually changed from `pre` (so a non-mutating
     /// method like `@!a.join` on a stale env copy does not clobber the cell).
-    pub(super) fn mirror_array_hash_attr_to_cell(
+    pub(super) fn mirror_attr_env_to_cell(
         &self,
         code: &CompiledCode,
         name_idx: u32,
         pre: Option<Value>,
     ) {
+        self.mirror_attr_env_to_cell_matching(code, name_idx, pre, Self::is_array_hash_attr_twigil);
+    }
+
+    /// [`Self::mirror_attr_env_to_cell`] for the subscript ops, which also cover
+    /// a scalar attribute holding a container (`$!h<k> = v`).
+    pub(super) fn mirror_attr_elem_env_to_cell(
+        &self,
+        code: &CompiledCode,
+        name_idx: u32,
+        pre: Option<Value>,
+    ) {
+        self.mirror_attr_env_to_cell_matching(
+            code,
+            name_idx,
+            pre,
+            Self::is_subscriptable_attr_twigil,
+        );
+    }
+
+    fn mirror_attr_env_to_cell_matching(
+        &self,
+        code: &CompiledCode,
+        name_idx: u32,
+        pre: Option<Value>,
+        applies: fn(&str) -> bool,
+    ) {
         let name = Self::const_str(code, name_idx);
-        if !Self::is_array_hash_attr_twigil(name) {
+        if !applies(name) {
             return;
         }
         let name = name.to_string();

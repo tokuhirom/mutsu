@@ -90,9 +90,9 @@ impl Interpreter {
             };
             self.stack.push(fresh);
             self.stack.push(key.clone());
-            let pre = self.array_hash_attr_env_snapshot(code, name_idx);
+            let pre = self.attr_elem_env_snapshot(code, name_idx);
             self.exec_index_assign_expr_named_op(code, name_idx, is_positional, target_slot)?;
-            self.mirror_array_hash_attr_to_cell(code, name_idx, pre);
+            self.mirror_attr_elem_env_to_cell(code, name_idx, pre);
             let assigned = self.stack.pop().unwrap_or(Value::NIL);
             let mut container = self.get_env_with_main_alias(&name).unwrap_or(Value::NIL);
             if let ValueView::ContainerRef(cell) = container.view() {

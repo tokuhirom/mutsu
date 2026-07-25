@@ -228,11 +228,11 @@ impl Interpreter {
             let bytes = fs::read(&path)
                 .map_err(|err| RuntimeError::new(format!("Failed to slurp '{}': {}", path, err)))?;
             let decoded = self.decode_with_encoding(&bytes, enc.as_ref().unwrap())?;
-            Ok(Value::str(decoded))
+            Ok(Value::str(super::utils::translate_nl_in(decoded)))
         } else {
             let content = fs::read_to_string(&path)
                 .map_err(|err| RuntimeError::new(format!("Failed to slurp '{}': {}", path, err)))?;
-            let content = super::utils::strip_utf8_bom(content);
+            let content = super::utils::decode_text_content(content);
             Ok(Value::str(content))
         }
     }

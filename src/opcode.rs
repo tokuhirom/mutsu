@@ -126,8 +126,6 @@ pub(crate) struct ForLoopSpec {
     pub(crate) label: Option<String>,
     pub(crate) arity: u32,
     pub(crate) collect: bool,
-    /// Restore outer `$_` after loop execution (used by postfix/do-for semantics).
-    pub(crate) restore_topic: bool,
     /// When true, run the loop body in a spawned thread (race for / hyper for).
     pub(crate) threaded: bool,
     /// When true, the named param is writable (via `<->`, `is rw`, or `is copy`).
