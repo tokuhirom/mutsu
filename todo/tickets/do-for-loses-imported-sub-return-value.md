@@ -71,16 +71,40 @@ compiler.
 Ordering is not the variable either: with four calls alternating bare/parens the
 result alternates `Nil, ok, Nil, ok`, and with four bare calls all four fail.
 
+## Measured further: the call is fine, the value is replaced afterwards
+
+Two temporary `eprintln`s — one after `OpCode::CallFunc` in `vm_exec_dispatch.rs`,
+one at the collect point in `vm_for_loop_body.rs` (`if let Some(ref mut coll) =
+collected`) — printing the stack top, over the three-loop file above:
+
+```
+[DBG-callfunc] plainsub -> top=Some("P:x")     [DBG-collect] stack_len=1 base=0 top=Some("P:x")   # parens: OK
+[DBG-callfunc] plainsub -> top=Some("P:x")     [DBG-collect] stack_len=1 base=0 top=Some("")      # bare:   LOST
+[DBG-callfunc] plainsub -> top=Some("P:x")     [DBG-collect] stack_len=1 base=0 top=Some("")      # semi:   LOST
+```
+
+So:
+
+- **`CallFunc` pushes the correct value in every case** — the imported-sub call
+  path is not at fault, and neither is the collector (it faithfully collects
+  whatever is on top).
+- Between the call and the collect point, the stack still has exactly **one**
+  element (`stack_len=1 base=0` in all six iterations) but in the bare case that
+  single element has been **replaced** by `Any`.
+
+Nothing is popped and re-pushed — the count never changes — so whatever runs
+between the two points overwrites the slot in place, or the pushed value is an
+alias (a `ContainerRef`/topic cell) whose target is reset by the loop epilogue.
+`spec.restore_topic` is `true` for this loop, and the epilogue also runs
+`write_back_for_topic_item` / `write_back_to_source_var`; those are the first
+things to check. Why the parenthesized form escapes it is still unexplained and
+is the crux.
+
 ## Where to look
 
-Since the bytecode is identical, look at what the `CallFunc` execution path does
-differently for an imported routine while a `ForLoop` with `collect: true` is
-active — e.g. whether the value is left on the stack versus published through the
-topic/`_` slot that the collector reads. `vm_for_loop_*` (the collect arm) and the
-imported/dynamic-sub return path (`call_function_def` → the env merge) are the two
-sides to instrument. Do this by measuring, not by reading: put a temporary
-`eprintln` at the collect point and at the call's return and compare the two
-forms.
+`vm_for_loop_body.rs`, between the body's last op and the `collected` push: the
+topic restore and the two writeback helpers. Instrument the stack top after each
+of them.
 
 ## Impact
 
