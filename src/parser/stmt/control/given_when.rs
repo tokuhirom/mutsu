@@ -47,7 +47,7 @@ pub(crate) fn when_stmt(input: &str) -> PResult<'_, Stmt> {
         && !crate::runtime::utils::is_known_compound_type(name)
         && !crate::parser::stmt::simple::is_user_declared_type(name)
     {
-        return Err(gobbled_block_error(name));
+        return Err(gobbled_block_error(name, rest.len()));
     }
     let (rest, body) = block(rest)?;
     Ok((rest, Stmt::When { cond, body }))
@@ -55,7 +55,15 @@ pub(crate) fn when_stmt(input: &str) -> PResult<'_, Stmt> {
 
 /// Build the `X::Comp::Group` raised when an undeclared bareword gobbles the
 /// block that a surrounding construct (e.g. `when`) required.
-fn gobbled_block_error(name: &str) -> PError {
+///
+/// `remaining_len` is the length of the still-unparsed input at the offending
+/// `when`, so the CLI can report a line/column. Both matter for diagnosability:
+/// the message used to be the bare `X::Comp::Group: Missing block` with no name
+/// and no location, which in a 1300-line module (`Raku::Pod::Render`'s
+/// `ProcessedPod`, whose `when X::LibCurl { … }` is undeclared because its
+/// `LibCurl::Easy` dependency is absent) said nothing about where to look. raku
+/// names the routine and the line; now so does mutsu.
+fn gobbled_block_error(name: &str, remaining_len: usize) -> PError {
     let sorrow = Value::make_exception(
         "X::Syntax::BlockGobbled",
         &[
@@ -89,7 +97,16 @@ fn gobbled_block_error(name: &str) -> PError {
         vec![sorrow],
         vec![],
     );
-    PError::fatal_with_exception("X::Comp::Group: Missing block".to_string(), Box::new(group))
+    let mut err = PError::fatal_with_exception(
+        format!(
+            "X::Comp::Group: Function '{name}' needs parens to avoid gobbling block \
+             (or perhaps it's a class that's not declared or available in this scope?)\n\
+             Missing block (apparently claimed by '{name}')"
+        ),
+        Box::new(group),
+    );
+    err.remaining_len = Some(remaining_len);
+    err
 }
 
 pub(crate) fn default_stmt(input: &str) -> PResult<'_, Stmt> {
