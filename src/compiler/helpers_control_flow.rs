@@ -96,6 +96,17 @@ impl Compiler {
                             is_bind: matches!(op, crate::ast::AssignOp::Bind),
                         });
                     }
+                    // A bare call the parser resolved to a *statement* call
+                    // (`Stmt::Call`, chosen when the name is a known routine —
+                    // e.g. a sub imported by an already-parsed `use`) must still
+                    // yield its return value in value-final position. Without
+                    // this arm it fell to the sink path below (`SinkPop` + Nil),
+                    // so `do for ^2 { imported_sub() }` collected `Nil` per
+                    // iteration while the parenthesized form — which parses as
+                    // `Stmt::Expr` — collected correctly.
+                    Stmt::Call { name, args } => {
+                        self.compile_tail_stmt_call_value(*name, args);
+                    }
                     _ => {
                         self.compile_stmt(stmt);
                         self.emit_nil_value();

@@ -21,9 +21,10 @@ is rot('Rakudo', 3), 'udoRak', 'the coercion + defaulted-sigilless shape works';
 is rot('Rakudo'),    'akudoR', 'and takes its default';
 is rot('Rakudo', -1), 'oRakud', 'and a negative rotation';
 
-# The loop-topic form the dist actually uses. (Collected by hand rather than with
-# `do for`, which loses an imported sub's return value — a separate bug, see
-# todo/tickets/do-for-loses-imported-sub-return-value.md.)
+# The loop-topic form the dist actually uses. (`do for` used to lose an imported
+# sub's return value here; fixed separately — see
+# news/2026-07/do-for-imported-sub-statement-call-value.md — and pinned by
+# t/do-for-imported-sub-value.t, so collect by hand to keep this test focused.)
 my $str = 'Rakudo';
 my @got;
 for ^3 { @got.push: rot($str, $_) }

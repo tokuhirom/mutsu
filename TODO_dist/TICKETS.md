@@ -1262,7 +1262,9 @@ _(move tickets here with `[claim: <branch>]` when you start)_
   its scope"); the guard is now gone from the enclosing branch too
   (`compiler/expr.rs`). Pin: `t/sigilless-param-named-like-native-type.t` +
   `t/lib/NativeNameSigilless.rakumod`.
-  **Found while pinning (unrelated, deferred):** `do for` loses the return value
-  of an imported module sub (`do for ^2 { plainsub('x') }` collects `(Any)`,
-  while a local sub, a method, `.map` and `do given` all work) —
-  `todo/tickets/do-for-loses-imported-sub-return-value.md`.
+  **Found while pinning (unrelated), now fixed:** `do for` lost the return value
+  of an imported module sub (`do for ^2 { plainsub('x') }` collected `(Any)`,
+  while a local sub, a method, `.map` and `do given` all worked) — the parser
+  lowers a known routine's bare call to `Stmt::Call`, which
+  `compile_stmts_value` compiled through the sink path. See
+  `news/2026-07/do-for-imported-sub-statement-call-value.md`.
