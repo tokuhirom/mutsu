@@ -12,7 +12,8 @@
 //! `$s.done` raced the poll).
 use super::*;
 use crate::runtime::native_methods::{
-    SupplyEvent, supplier_sink_register, supplier_sink_unregister, take_promise_combinator_sources,
+    SupplyEvent, supplier_sink_unregister, supplier_sinks_register_batch,
+    take_promise_combinator_sources,
 };
 use crate::runtime::subtest::{ReactSubscription, SupplyDrivePolicy};
 use crate::value::waker::{ReactWaker, SinkEvent};
@@ -208,14 +209,18 @@ impl Interpreter {
         }
 
         let waker = ReactWaker::new();
-        // Supplier-backed subscriptions: register push sinks (this also
-        // replays any already-buffered values into the queue).
-        let mut sink_regs: Vec<(u64, u64)> = Vec::new();
-        for (i, sub) in react_subs.iter().enumerate() {
-            if let Some(sid) = sub.supplier_id {
-                sink_regs.push((sid, supplier_sink_register(sid, i, &waker)));
-            }
-        }
+        // Supplier-backed subscriptions: register push sinks in one batch so
+        // any already-buffered values across sibling derived supplies (e.g. two
+        // `whenever $s.grep(...)`) replay merged in true emit order, not one
+        // supplier's whole buffer at a time (PLAN.md 8.19). Registering them
+        // one at a time would interleave-lose the order when a producer thread
+        // races ahead of this registration and buffers values first.
+        let regs: Vec<(u64, usize)> = react_subs
+            .iter()
+            .enumerate()
+            .filter_map(|(i, sub)| sub.supplier_id.map(|sid| (sid, i)))
+            .collect();
+        let sink_regs: Vec<(u64, u64)> = supplier_sinks_register_batch(&regs, &waker);
         // Promise / channel / mpsc-receiver sources still deliver their
         // payloads through the existing receiver / poll paths, but wake the
         // loop instantly instead of waiting out the idle cap.

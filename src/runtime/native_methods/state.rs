@@ -155,11 +155,34 @@ pub(in crate::runtime) fn supply_channel_map_pub() -> &'static SupplyChannelMap 
     supply_channel_map()
 }
 
+/// Global monotonic emit sequence, stamped on every `supplier_emit` /
+/// `supplier_done` / `supplier_quit`. Buffered values across *different*
+/// suppliers (e.g. two `whenever $s.grep(...)` derived supplies) carry
+/// comparable sequence numbers, so a batch sink registration can replay them
+/// merged in true emit order rather than one whole supplier's buffer at a time
+/// (see `supplier_sinks_register_batch`).
+fn next_emit_seq() -> u64 {
+    static EMIT_SEQ: AtomicU64 = AtomicU64::new(1);
+    EMIT_SEQ.fetch_add(1, Ordering::Relaxed)
+}
+
+fn next_sink_id() -> u64 {
+    static SINK_IDS: AtomicU64 = AtomicU64::new(1);
+    SINK_IDS.fetch_add(1, Ordering::Relaxed)
+}
+
 #[derive(Debug, Default)]
 struct SupplierRuntimeState {
     emitted: Vec<Value>,
+    /// Global emit sequence for each entry in `emitted` (parallel vector), used
+    /// to merge buffered values across suppliers in true emit order at sink
+    /// registration.
+    emitted_seq: Vec<u64>,
     done: bool,
     quit_reason: Option<Value>,
+    /// Global emit sequence of the terminal (done/quit) event, so a replay can
+    /// order it relative to buffered emits of sibling suppliers.
+    terminal_seq: Option<u64>,
     pending_promises: Vec<SharedPromise>,
     /// Push sinks registered by consuming drive loops (react / `await
     /// $supply` / control waits). Every emit/done/quit is pushed to each
@@ -202,8 +225,7 @@ pub(crate) fn supplier_sink_register(
     key: usize,
     waker: &crate::value::waker::ReactWaker,
 ) -> u64 {
-    static SINK_IDS: AtomicU64 = AtomicU64::new(1);
-    let sink_id = SINK_IDS.fetch_add(1, Ordering::Relaxed);
+    let sink_id = next_sink_id();
     if let Ok(mut map) = supplier_state_map().lock() {
         let state = map.entry(supplier_id).or_default();
         for v in &state.emitted {
@@ -221,6 +243,67 @@ pub(crate) fn supplier_sink_register(
         });
     }
     sink_id
+}
+
+/// Register push sinks on several suppliers at once, replaying their buffered
+/// events **merged in global emit order** rather than one supplier's whole
+/// buffer at a time.
+///
+/// A single [`supplier_sink_register`] replays exactly one supplier's buffer,
+/// so registering N sibling derived supplies (e.g. two `whenever $s.grep(...)`)
+/// one after another emits `p1,p2,p3` then `n1,n2,n3` — losing the interleaved
+/// order the values were actually emitted in. That is only observable when a
+/// producer (a `whenever start { emit … }` thread) races ahead of the react
+/// drive loop's sink registration and buffers values before the sinks exist
+/// (PLAN.md 8.19). By holding the registry lock across every subscribe, reading
+/// each buffer with its per-value [`next_emit_seq`] stamp, then replaying the
+/// combined set sorted by that stamp, sibling supplies interleave in true emit
+/// order. Future live emits (pushed after this returns) are naturally later.
+///
+/// `regs` is `(supplier_id, consumer key)`; returns `(supplier_id, sink_id)`
+/// pairs for [`supplier_sink_unregister`].
+pub(crate) fn supplier_sinks_register_batch(
+    regs: &[(u64, usize)],
+    waker: &crate::value::waker::ReactWaker,
+) -> Vec<(u64, u64)> {
+    let mut sink_ids = Vec::with_capacity(regs.len());
+    let mut replay: Vec<(u64, usize, crate::value::waker::SinkEvent)> = Vec::new();
+    if let Ok(mut map) = supplier_state_map().lock() {
+        for &(supplier_id, key) in regs {
+            let sink_id = next_sink_id();
+            let state = map.entry(supplier_id).or_default();
+            for (i, v) in state.emitted.iter().enumerate() {
+                let seq = state.emitted_seq.get(i).copied().unwrap_or(0);
+                replay.push((seq, key, crate::value::waker::SinkEvent::Emit(v.clone())));
+            }
+            // A terminal event follows all of this supplier's own emits; give it
+            // the recorded terminal sequence (or, defensively, one past the last
+            // buffered emit) so it sorts after them but relative to siblings.
+            if state.quit_reason.is_some() || state.done {
+                let seq = state
+                    .terminal_seq
+                    .unwrap_or_else(|| state.emitted_seq.last().map(|s| s + 1).unwrap_or(0));
+                let event = if let Some(reason) = &state.quit_reason {
+                    crate::value::waker::SinkEvent::Quit(reason.clone())
+                } else {
+                    crate::value::waker::SinkEvent::Done
+                };
+                replay.push((seq, key, event));
+            }
+            state.sinks.push(SupplierSink {
+                sink_id,
+                key,
+                waker: waker.clone(),
+            });
+            sink_ids.push((supplier_id, sink_id));
+        }
+        // Stable sort keeps same-sequence ties in registration order.
+        replay.sort_by_key(|(seq, _, _)| *seq);
+        for (_, key, event) in replay {
+            waker.push(key, event);
+        }
+    }
+    sink_ids
 }
 
 pub(crate) fn supplier_sink_unregister(supplier_id: u64, sink_id: u64) {
@@ -393,6 +476,7 @@ pub(in crate::runtime) fn supplier_emit(supplier_id: u64, value: Value) {
                 .push(s.key, crate::value::waker::SinkEvent::Emit(value.clone()));
         }
         state.emitted.push(value);
+        state.emitted_seq.push(next_emit_seq());
     }
 }
 
@@ -403,6 +487,7 @@ pub(in crate::runtime) fn supplier_done(supplier_id: u64) {
             return;
         }
         state.done = true;
+        state.terminal_seq = Some(next_emit_seq());
         for s in &state.sinks {
             s.waker.push(s.key, crate::value::waker::SinkEvent::Done);
         }
@@ -426,6 +511,7 @@ pub(in crate::runtime) fn supplier_done_deferred(
             return Vec::new();
         }
         state.done = true;
+        state.terminal_seq = Some(next_emit_seq());
         for s in &state.sinks {
             s.waker.push(s.key, crate::value::waker::SinkEvent::Done);
         }
@@ -444,6 +530,7 @@ pub(in crate::runtime) fn supplier_quit(supplier_id: u64, reason: Value) {
             return;
         }
         state.quit_reason = Some(reason.clone());
+        state.terminal_seq = Some(next_emit_seq());
         for s in &state.sinks {
             s.waker
                 .push(s.key, crate::value::waker::SinkEvent::Quit(reason.clone()));
@@ -462,7 +549,9 @@ pub(in crate::runtime) fn supplier_reset(supplier_id: u64) {
     {
         state.done = false;
         state.quit_reason = None;
+        state.terminal_seq = None;
         state.emitted.clear();
+        state.emitted_seq.clear();
     }
 }
 

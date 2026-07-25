@@ -255,6 +255,33 @@ impl Interpreter {
         Ok(v)
     }
 
+    /// Recursively descend through arbitrarily-nested list structure, collecting
+    /// each leaf as a normalized await target. `await` must wait on *every*
+    /// Promise no matter how deeply it is nested inside list literals — the old
+    /// code only descended two list levels, so promises nested deeper (e.g.
+    /// `await (((p(), (p(), (p(),))), ...), ...)`) were pushed as raw values and
+    /// never `.wait()`ed, intermittently returning before their side effects
+    /// landed (S17-promise/nonblocking-await.t test 28). A Promise/Channel is a
+    /// leaf even if some list helper could peek inside it, so it is never
+    /// descended.
+    fn await_collect_targets(
+        &mut self,
+        v: Value,
+        out: &mut Vec<Value>,
+    ) -> Result<(), RuntimeError> {
+        if !matches!(v.view(), ValueView::Promise(_) | ValueView::Channel(_))
+            && let Some(items) = v.as_list_items()
+        {
+            let items: Vec<Value> = items.to_vec();
+            for it in items {
+                self.await_collect_targets(it, out)?;
+            }
+            return Ok(());
+        }
+        out.push(self.await_normalize(v)?);
+        Ok(())
+    }
+
     pub(super) fn builtin_await(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         if args.is_empty() {
             return Err(RuntimeError::new(
@@ -263,15 +290,7 @@ impl Interpreter {
         }
         let mut await_targets: Vec<Value> = Vec::new();
         for arg in args {
-            if let Some(items) = arg.as_list_items() {
-                let items: Vec<Value> = items.to_vec();
-                for it in items {
-                    await_targets.push(self.await_normalize(it)?);
-                }
-            } else {
-                let normalized = self.await_normalize(arg.clone())?;
-                await_targets.push(normalized);
-            }
+            self.await_collect_targets(arg.clone(), &mut await_targets)?;
         }
         let mut results = Vec::new();
         for arg in &await_targets {
