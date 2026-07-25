@@ -103,7 +103,17 @@ impl Compiler {
         let Expr::Binary { left, op, right } = expr else {
             return false;
         };
-        let Expr::Var(left_name) = left.as_ref() else {
+        // `$x OP= rhs` wraps its LHS in the METAOP_ASSIGN identity seed; carry it
+        // into the fused op so the fused and unfused forms agree on an undefined
+        // container. A literal `$x = $x OP rhs` has no wrapper and no seed.
+        let (left, identity) = match left.as_ref() {
+            Expr::Unary {
+                op: TokenKind::MetaAssignIdentity(identity),
+                expr,
+            } => (expr.as_ref(), Some(*identity)),
+            other => (other, None),
+        };
+        let Expr::Var(left_name) = left else {
             return false;
         };
         if left_name != name {
@@ -123,6 +133,7 @@ impl Compiler {
         self.code.emit(OpCode::AtomicCompoundVar {
             name_idx,
             op: compound_op,
+            identity,
         });
         true
     }

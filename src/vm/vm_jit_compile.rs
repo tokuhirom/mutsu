@@ -368,6 +368,68 @@ fn build(
                     check_status(&mut b, status);
                 }
             }
+            // Fused local read + METAOP_ASSIGN identity seed: keep the Tier B
+            // inline slot read (a plain `step` here would cost more than the
+            // unfused pair it replaces) and add one small shim for the seed.
+            OpCode::GetLocalMetaAssign { slot, identity } => {
+                if let Some(tb) = &tier_b
+                    && get_local_tier_b_eligible(code, *slot as usize)
+                {
+                    tb.emit_get_local(
+                        &mut b,
+                        codep,
+                        *slot,
+                        helpers::get_local as *const () as usize,
+                    );
+                } else {
+                    let idxv = b.ins().iconst(types::I32, *slot as i64);
+                    let status = call_helper(
+                        &mut b,
+                        sigs.s_code_u32,
+                        helpers::get_local as *const () as usize,
+                        &[interp, codep, idxv],
+                    )?;
+                    check_status(&mut b, status);
+                }
+                if identity.is_infallible() {
+                    let slow_fn = helpers::meta_assign_identity as *const () as usize;
+                    if let Some(tb) = &tier_b {
+                        tb.emit_meta_assign_identity(&mut b, codep, identity.as_u32(), slow_fn);
+                    } else {
+                        let idv = b.ins().iconst(types::I32, identity.as_u32() as i64);
+                        call_helper(&mut b, sigs.v_code_u32, slow_fn, &[interp, codep, idv]);
+                    }
+                } else {
+                    let idv = b.ins().iconst(types::I32, identity.as_u32() as i64);
+                    let status = call_helper(
+                        &mut b,
+                        sigs.s_code_u32,
+                        helpers::meta_assign_identity_fallible as *const () as usize,
+                        &[interp, codep, idv],
+                    )?;
+                    check_status(&mut b, status);
+                }
+            }
+            OpCode::MetaAssignIdentity(identity) => {
+                if identity.is_infallible() {
+                    let slow_fn = helpers::meta_assign_identity as *const () as usize;
+                    if let Some(tb) = &tier_b {
+                        tb.emit_meta_assign_identity(&mut b, codep, identity.as_u32(), slow_fn);
+                    } else {
+                        let idv = b.ins().iconst(types::I32, identity.as_u32() as i64);
+                        call_helper(&mut b, sigs.v_code_u32, slow_fn, &[interp, codep, idv]);
+                    }
+                } else {
+                    let idv = b.ins().iconst(types::I32, identity.as_u32() as i64);
+                    let status = call_helper(
+                        &mut b,
+                        sigs.s_code_u32,
+                        helpers::meta_assign_identity_fallible as *const () as usize,
+                        &[interp, codep, idv],
+                    )?;
+                    check_status(&mut b, status);
+                }
+            }
             OpCode::SetLocal(idx) => {
                 let idxv = b.ins().iconst(types::I32, *idx as i64);
                 let status = call_helper(

@@ -8,10 +8,9 @@ use Test;
 # `<=>` silently coerced the type object to 0 (so `Int == 0` wrongly returned
 # True), and the relational ops threw a bare X::AdHoc instead of the typed error.
 #
-# NOTE: the arithmetic ops (`+ - * / % **`) are deliberately NOT covered here.
-# `Int + 1` should also throw in rakudo, but mutsu desugars the assignment
-# metaop `$a += 0.1` to the same `Add` opcode as bare infix, and that form must
-# keep working (METAOP_ASSIGN identity semantics). See PLAN.md.
+# The arithmetic ops (`+ - * / % **`) throw the same way; they live in
+# t/numeric-uninitialized-arith.t together with the METAOP_ASSIGN identity
+# semantics that keep `my Int $a; $a += 1` working.
 
 plan 24;
 

@@ -1,4 +1,5 @@
 use super::*;
+use crate::vm::vm_arith_ops::seed_meta_assign_identity;
 use std::collections::HashMap;
 
 impl Interpreter {
@@ -65,6 +66,7 @@ impl Interpreter {
         code: &CompiledCode,
         name_idx: u32,
         op: crate::opcode::CompoundBaseOp,
+        identity: Option<crate::token_kind::MetaAssignIdentity>,
     ) -> Result<(), RuntimeError> {
         let rhs = self.stack.pop().unwrap();
         self.resolve_pending_alias_binds(code);
@@ -97,7 +99,7 @@ impl Interpreter {
             // (a concrete value), and the base op operates only on `old`/`rhs`, so
             // it never re-enters this cell — no deadlock.
             let mut guard = arc.lock().unwrap();
-            let old = guard.clone();
+            let old = seed_meta_assign_identity(guard.clone(), identity)?;
             let new_val = self.apply_compound_base_op(op, old, rhs)?;
             *guard = new_val.clone();
             drop(guard);
@@ -109,6 +111,7 @@ impl Interpreter {
             && !storer.is_nil()
         {
             let fetched = loan_env!(self, auto_fetch_proxy(&raw_val))?;
+            let fetched = seed_meta_assign_identity(fetched, identity)?;
             let new_val = self.apply_compound_base_op(op, fetched, rhs)?;
             loan_env!(self, assign_proxy_lvalue(raw_val, new_val.clone()))?;
             self.stack.push(new_val);
@@ -116,6 +119,7 @@ impl Interpreter {
         }
         // Plain env scalar: compute old OP rhs, store via the shared `++` tail so
         // METHOD captured-outer propagation is identical to `++` by construction.
+        let raw_val = seed_meta_assign_identity(raw_val, identity)?;
         let new_val = self.apply_compound_base_op(op, raw_val, rhs)?;
         // `AtomicCompoundVar` is only emitted for a NON-local target (the compiler
         // skips it when `local_map` has the name), so there is no baked slot here.

@@ -77,11 +77,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 modifier: None,
                 quoted: false,
             };
-            let updated_value = Expr::Binary {
-                left: Box::new(current_value),
-                op: op.token_kind(),
-                right: Box::new(rhs),
-            };
+            let updated_value = compound_assigned_value_expr(current_value, op, rhs);
             let assign_call = Expr::Call {
                 name: Symbol::intern("__mutsu_assign_method_lvalue"),
                 args: vec![

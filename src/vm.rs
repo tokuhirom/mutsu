@@ -186,6 +186,8 @@ mod vm_jit_support;
 mod vm_jit_tier_b;
 #[cfg(feature = "jit")]
 mod vm_jit_tier_b_flow;
+#[cfg(feature = "jit")]
+mod vm_jit_tier_b_metaop;
 mod vm_loop_cstyle_repeat;
 mod vm_loop_writeback;
 mod vm_loop_writeback_quant;

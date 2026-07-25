@@ -230,6 +230,14 @@ pub(crate) enum OpCode {
 
     // -- Variables --
     GetLocal(u32),
+    /// Fused `GetLocal(slot); MetaAssignIdentity(identity)` (emit-time peephole,
+    /// same shape as `SetLocalDecl`). `$i += 1` on a local is the single most
+    /// common compound assignment, so the metaop's identity seed must not cost
+    /// it an extra dispatch.
+    GetLocalMetaAssign {
+        slot: u32,
+        identity: crate::token_kind::MetaAssignIdentity,
+    },
     /// Like GetLocal but does NOT resolve HashEntryRef values.
     /// Used by `=:=` to compare raw container references.
     GetLocalRaw(u32),
@@ -923,6 +931,13 @@ pub(crate) enum OpCode {
     StrCoerce,
     UptoRange,
 
+    /// METAOP_ASSIGN identity substitution for the LHS of `$x OP= $y`: replace a
+    /// top-of-stack type object with the operator's zero-argument value (`0` for
+    /// `+`/`-`, `1` for `*`/`**`), or throw for the operators that have none
+    /// (`/`, `%`). A no-op for a concrete value. This is what keeps the bare
+    /// arithmetic infixes free to reject an uninitialized operand outright.
+    MetaAssignIdentity(crate::token_kind::MetaAssignIdentity),
+
     // -- Prefix increment/decrement (returns NEW value) --
     // Optional second field: the compile-time-resolved local slot for the named
     // scalar (§1.5, mirrors PostIncrement/PostDecrement — docs/lexical-scope-slot-
@@ -1015,9 +1030,15 @@ pub(crate) enum OpCode {
     /// `ContainerRef` cell (Track C cross-thread atomicity), and leaves the
     /// new value on the stack. Emitted only for plain env-named scalars
     /// (local slots and literal `$x = $x + y` are excluded for perf).
+    ///
+    /// `identity` carries the METAOP_ASSIGN zero-argument seed the unfused form
+    /// would have applied through `OpCode::MetaAssignIdentity`; it is `None`
+    /// for a literal `$x = $x OP y` (which has no metaop semantics) and for the
+    /// operators that have no identity of their own (`~=`, `min=`, ...).
     AtomicCompoundVar {
         name_idx: u32,
         op: CompoundBaseOp,
+        identity: Option<crate::token_kind::MetaAssignIdentity>,
     },
     /// Nested index assignment: `var[outer][inner] = value` (sigil included in name).
     /// `outer_positional` is true if the outer subscript was `[...]` (positional),
@@ -3788,6 +3809,18 @@ impl CompiledCode {
             && let Some(fused) = self.fuse_decl_markers(slot)
         {
             return fused;
+        }
+        // Same peephole for the METAOP_ASSIGN identity seed: `$i += 1` on a local
+        // compiles to `GetLocal(slot); MetaAssignIdentity(Zero); ...`, and the two
+        // are always emitted back-to-back by `compile_expr_unary`, so no jump can
+        // target the second one.
+        if let OpCode::MetaAssignIdentity(identity) = op
+            && let Some(OpCode::GetLocal(slot)) = self.ops.last()
+        {
+            let slot = *slot;
+            let idx = self.ops.len() - 1;
+            self.ops[idx] = OpCode::GetLocalMetaAssign { slot, identity };
+            return idx;
         }
         let idx = self.ops.len();
         self.ops.push(op);

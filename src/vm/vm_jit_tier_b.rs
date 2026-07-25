@@ -122,17 +122,17 @@ impl TierB {
     }
 
     /// `word >> 48` — the 16-bit page.
-    fn page(&self, b: &mut FunctionBuilder, word: CVal) -> CVal {
+    pub(super) fn page(&self, b: &mut FunctionBuilder, word: CVal) -> CVal {
         b.ins().ushr_imm(word, w::PAGE_SHIFT as i64)
     }
 
     /// `page == INT_PAGE` (small inline Int; boxed Ints go slow-path).
-    fn is_int_page(&self, b: &mut FunctionBuilder, page: CVal) -> CVal {
+    pub(super) fn is_int_page(&self, b: &mut FunctionBuilder, page: CVal) -> CVal {
         b.ins().icmp_imm(IntCC::Equal, page, w::INT_PAGE as i64)
     }
 
     /// `NUM_PAGE_MIN <= page <= NUM_PAGE_MAX` (encoded f64).
-    fn is_num_page(&self, b: &mut FunctionBuilder, page: CVal) -> CVal {
+    pub(super) fn is_num_page(&self, b: &mut FunctionBuilder, page: CVal) -> CVal {
         let shifted = b.ins().iadd_imm(page, -(w::NUM_PAGE_MIN as i64));
         b.ins().icmp_imm(
             IntCC::UnsignedLessThanOrEqual,

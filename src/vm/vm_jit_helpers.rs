@@ -72,6 +72,38 @@ pub(super) unsafe extern "C" fn get_local(
     }
 }
 
+/// The METAOP_ASSIGN identity seed of `OpCode::MetaAssignIdentity` and of the
+/// fused `OpCode::GetLocalMetaAssign`, for the two *infallible* identities
+/// (`Zero` / `One`) — the overwhelmingly common ones, and the reason this is a
+/// void shim: the caller then needs no status check or error block around it.
+/// `identity` is the `MetaAssignIdentity` discriminant; the `code` pointer is
+/// unused (the signature is shared with the other `(interp, code, u32)` shims).
+pub(super) unsafe extern "C" fn meta_assign_identity(
+    interp: *mut Interpreter,
+    _code: *const CompiledCode,
+    identity: u32,
+) {
+    let interp = unsafe { &mut *interp };
+    let _ = interp
+        .exec_meta_assign_identity_op(crate::token_kind::MetaAssignIdentity::from_u32(identity));
+}
+
+/// The fallible half: `/=` and `%=` have no zero-argument meaning, so seeding an
+/// undefined container throws.
+pub(super) unsafe extern "C" fn meta_assign_identity_fallible(
+    interp: *mut Interpreter,
+    _code: *const CompiledCode,
+    identity: u32,
+) -> u32 {
+    let interp = unsafe { &mut *interp };
+    match interp
+        .exec_meta_assign_identity_op(crate::token_kind::MetaAssignIdentity::from_u32(identity))
+    {
+        Ok(()) => JIT_STATUS_OK,
+        Err(e) => park_err(interp, e),
+    }
+}
+
 /// `OpCode::SetLocal`
 pub(super) unsafe extern "C" fn set_local(
     interp: *mut Interpreter,
