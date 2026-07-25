@@ -6,8 +6,17 @@ impl Interpreter {
     pub(crate) fn test_fn_throws_like(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let code_val =
             Self::positional_value_required(args, 0, "throws-like expects code")?.clone();
-        let expected =
-            Self::positional_value_required(args, 1, "throws-like expects type")?.to_string_value();
+        let matcher_val =
+            Self::positional_value_required(args, 1, "throws-like expects type")?.clone();
+        // `throws-like` smart-matches the thrown exception against whatever was
+        // passed as the "type" (`$_ ~~ $ex_type` in Test.rakumod), so a Regex is
+        // a legal matcher and is checked against the exception's stringification
+        // rather than treated as a type name.
+        let matcher_is_regex = matches!(
+            matcher_val.view(),
+            ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)
+        );
+        let expected = matcher_val.to_string_value();
         let desc = Self::positional_string(args, 2);
         let result = match code_val.view() {
             ValueView::Sub(data) => {
@@ -301,9 +310,11 @@ impl Interpreter {
                         }
                     }
                 });
-                let type_matched = if expected_normalized.is_empty()
-                    || expected_normalized == "Exception"
-                {
+                let type_matched = if matcher_is_regex {
+                    let actual = err.exception.as_ref().map(|e| e.as_ref().clone());
+                    let message = err.message.clone();
+                    self.matcher_accepts(&matcher_val, &message, actual.as_ref())
+                } else if expected_normalized.is_empty() || expected_normalized == "Exception" {
                     true
                 } else if let Some(cls) = &ex_class {
                     cls == expected_normalized

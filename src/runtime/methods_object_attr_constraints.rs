@@ -102,12 +102,20 @@ impl Interpreter {
         let mut constraints = HashMap::new();
         let mro = self.class_mro(class_name);
         for owner in mro.iter() {
-            if let Some(class_def) = self.registry().classes.get(owner.as_str()) {
-                for (attr_name, tc) in &class_def.attribute_types {
-                    constraints
-                        .entry(attr_name.clone())
-                        .or_insert_with(|| tc.clone());
-                }
+            let owned: Vec<(String, String)> = match self.registry().classes.get(owner.as_str()) {
+                Some(class_def) => class_def
+                    .attribute_types
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+                None => continue,
+            };
+            for (attr_name, tc) in owned {
+                // See `get_attr_type_constraint`: a type declared in the owning
+                // package is named `Owner::Name`, and the short name recorded at
+                // the declaration site has to be resolved to it.
+                let tc = self.resolve_type_name_for_owner(owner.as_str(), tc);
+                constraints.entry(attr_name).or_insert(tc);
             }
         }
         constraints
