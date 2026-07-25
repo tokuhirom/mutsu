@@ -220,6 +220,11 @@ impl Interpreter {
         // When has_locals is false, saved_env is None and no restore is needed
         // (functions without locals cannot leak local variables into the
         // caller's env — any env writes they do are intentional global state).
+        // `$!` is scoped per routine: the callee got a fresh `Nil` on entry, so
+        // its value must not be merged back over the caller's. A block shares
+        // its enclosing routine's `$!` (a `CATCH` writes it there), so this only
+        // applies to routine frames.
+        let bang_is_callee_private = cf.code.is_routine;
         if let Some(caller_env) = caller_env {
             // Scoped path: restore the caller env, then merge the callee's
             // overlay (its own writes only) back, dropping callee-local writes.
@@ -228,9 +233,15 @@ impl Interpreter {
             // `call_compiled_function_positional_light`).
             let scoped = std::mem::replace(self.env_mut(), caller_env);
             for (k, v) in scoped.overlay_iter() {
-                // The callee's private topic / arg array / routine-id must not
-                // leak to the caller (the caller env already holds its own).
-                if *k == "_" || *k == "@_" || *k == "%_" || *k == "__mutsu_callable_id" {
+                // The callee's private topic / arg array / routine-id / `$!` must
+                // not leak to the caller (the caller env already holds its own).
+                if *k == "_"
+                    || *k == "@_"
+                    || *k == "%_"
+                    || *k == "__mutsu_callable_id"
+                    || (bang_is_callee_private
+                        && k.with_str(crate::runtime::utils::is_routine_scoped_error_var))
+                {
                     continue;
                 }
                 if !cf.is_callee_local_sym(*k) {
@@ -245,6 +256,11 @@ impl Interpreter {
                 // Captured outer variables should propagate their modifications.
                 let mut restored_env = saved_env;
                 for (k, v) in self.env().iter() {
+                    if bang_is_callee_private
+                        && k.with_str(crate::runtime::utils::is_routine_scoped_error_var)
+                    {
+                        continue;
+                    }
                     if !cf.is_callee_local_sym(*k) {
                         restored_env.insert_sym(*k, v.clone());
                     }

@@ -332,6 +332,11 @@ impl Interpreter {
         // back: a write to a captured outer variable (not a declared local of
         // this function) persists in the caller; the function's params/locals are
         // dropped with the overlay. This replaces the prior per-name save/restore.
+        // `$!` is scoped per routine: the caller's value must survive the call,
+        // so a callee routine's own `$!` (e.g. from an inner `try`) is never
+        // merged back. A block shares its enclosing routine's `$!` (a `CATCH`
+        // writes it there), so this applies to routine frames only.
+        let bang_is_callee_private = cf.code.is_routine;
         match caller_env {
             Some(caller_env) => {
                 // The callee-local test reads the compile-time `Symbol` set
@@ -351,6 +356,8 @@ impl Interpreter {
                         || *k == "%_"
                         || *k == "__mutsu_callable_id"
                         || k.with_str(|s| s.starts_with('?'))
+                        || (bang_is_callee_private
+                            && k.with_str(crate::runtime::utils::is_routine_scoped_error_var))
                     {
                         continue;
                     }
@@ -375,6 +382,8 @@ impl Interpreter {
                             || *k == "%_"
                             || *k == "__mutsu_callable_id"
                             || k.with_str(|s| s.starts_with('?'))
+                            || (bang_is_callee_private
+                                && k.with_str(crate::runtime::utils::is_routine_scoped_error_var))
                             || cf.is_callee_local_sym(*k))
                     });
                 }
