@@ -692,6 +692,72 @@ impl Interpreter {
             return Err(err);
         }
 
+        // Invoking a *class* type object coerces: `Foo($x)` is `Foo.COERCE($x)`
+        // when the class defines COERCE, else `Foo.new($x)`, else
+        // X::Coerce::Impossible — the same protocol the role branch below
+        // implements after punning. Built-in types (`Int("42")`), roles and enums
+        // already went through their own paths; a user-declared class had none, so
+        // `Locale::Dates($locale)` died with "Unknown function: Dates".
+        //
+        // `CALL-ME` wins over both: a type object carrying one is invocable
+        // rather than coercive.
+        // `!has_role`: coercing a role puns it to a class, so after the first
+        // `R1("x")` the pun makes `has_class("R1")` true and this branch would
+        // shadow the role branch below for every later call. The role branch owns
+        // roles (it also handles the `does`-RHS Pair form), so defer to it.
+        if self.has_class(name) && !self.has_role(name) && !args.is_empty() {
+            if self.class_has_method(name, "CALL-ME") {
+                return self.call_method_with_values(
+                    Value::package(Symbol::intern(name)),
+                    "CALL-ME",
+                    args.to_vec(),
+                );
+            }
+            // A coercion takes ONE value: `B("q", "r")` coerces the List, it does
+            // not splat two arguments. raku shows this by rejecting
+            // `class B { method new($x, $y) {…} }; B("q","r")` with "Impossible
+            // coercion from 'List'" while accepting it for `new($x)`.
+            let coercee = if args.len() == 1 {
+                vec![args[0].clone()]
+            } else {
+                vec![Value::array(args.to_vec())]
+            };
+            // COERCE first, then `new` — and fall back from a COERCE that has no
+            // matching candidate to `new`, which is what raku does (a class may
+            // declare `multi method COERCE(Str)` and `multi method new(Int)` and
+            // accept both spellings). Mirrors the role branch below.
+            if self.class_has_method(name, "COERCE") {
+                let coerced = self.call_method_with_values(
+                    Value::package(Symbol::intern(name)),
+                    "COERCE",
+                    coercee.clone(),
+                );
+                if coerced.is_ok() || !self.class_has_method(name, "new") {
+                    return coerced;
+                }
+            }
+            if self.class_has_method(name, "new") {
+                return self.call_method_with_values(
+                    Value::package(Symbol::intern(name)),
+                    "new",
+                    coercee,
+                );
+            }
+            let source_type = crate::runtime::value_type_name(&args[0]).to_string();
+            let msg = format!(
+                "Impossible coercion from '{}' into '{}': no acceptable coercion method found",
+                source_type, name
+            );
+            return Err(RuntimeError::typed(
+                "X::Coerce::Impossible",
+                std::collections::HashMap::from([
+                    ("target-type".to_string(), Value::str(name.to_string())),
+                    ("from-type".to_string(), Value::str(source_type)),
+                    ("message".to_string(), Value::str(msg)),
+                ]),
+            ));
+        }
+
         if self.has_role(name) {
             // If the role has CALL-ME, dispatch to it on the type object
             if self.role_has_method(name, "CALL-ME") {
