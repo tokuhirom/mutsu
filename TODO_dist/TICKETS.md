@@ -481,11 +481,50 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 - repro: _(fill in a minimal repro + raku baseline before fixing)_
 - file: _(suspected parser/runtime file)_
 
-### T-046 — test_fail: die when given version  [impact: 1 dist]
+### T-046 — test_fail: die when given version  [impact: 1 dist]  — THREE ROOT CAUSES FIXED (#5390, #5392, #5393); blocked on `$*W`
 - dists: RakudoPrereq
 - e.g. `RakudoPrereq`: base=2 pass=1 fail=1 die=0 | xt/01-operation.rakutest: die when given version
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
+- `xt/01-operation.rakutest` runs nine subtests, each spawning a subprocess that
+  `EVAL`s a `use RakudoPrereq <args>` against a faked `$*RAKU`, then asserting on
+  the child's stdout/stderr. Every subtest reported "ran 0 tests"; three
+  independent general bugs were behind it.
+- **Fixed #1 — `IO::Pipe.slurp-rest` was unimplemented (#5390).** Each subtest
+  reads the child with `.out.slurp-rest(:close)`, which died with "No native
+  method 'slurp-rest' on IO::Pipe" and aborted the subtest before any assertion.
+  Added `slurp-rest` on all three pipe shapes, and made `slurp`/`slurp-rest` on a
+  buffered pipe cursor-aware (read from the cursor to the end, leaving it
+  drained) like `IO::Handle`. Pin: `t/io-pipe-slurp-rest.t`.
+- **Fixed #2 — `Version` dropped the source spelling of its parts (#5392).**
+  The test asserts the message contains ` v2017.03.290`; mutsu rendered
+  `v2017.3.290` because a Version was stored purely as its parsed parts and every
+  stringification rebuilt the text from them. Rakudo keeps the original text of
+  each part while `.parts` still reports the Ints. Two follow-ons fell out:
+  `.WHICH` had no Version arm (`Version|1` from the global-counter fallback, now
+  `Version|<canonical string>`), and `===` fell back to `eqv` (so
+  `v1.02.3 === v1.2.3` was True, now False). Pin: `t/version-source-spelling.t`.
+- **Fixed #3 — `use Module a, b, c` passed only the first argument (#5393).**
+  RakudoPrereq's entire API is the `use`-line arguments
+  (`use RakudoPrereq v2021.04, 'msg', 'rakudo-only'`), and `expression()` stops at
+  a comma, so the 2nd/3rd args became bare constants in sink context and
+  `sub EXPORT` saw one argument. The same gap broke `use lib "a", "b"` (2nd path
+  dropped) and `use lib <a b>` (the word list stringified into one bogus spec
+  `"a b"`). Pin: `t/use-multiple-export-args.t`.
+- **Status:** subtests 6/7/8 pass (was 0/9); 1/2/3/4/5/9 remain.
+- **REMAINING (out of scope — Rakudo compiler internal): `$*W.current_file`.**
+  The module builds its "at <location>" suffix from `(try $*W.current_file) //
+  '<unknown file>'`; `$*W` is Rakudo's World object, and under raku it yields
+  `.../EVAL_0` during the EVAL'd `use`. Six of the nine subtests assert the
+  message `.contains('EVAL')`, so they cannot pass without emulating `$*W`.
+  mutsu reports `<unknown file>` (the module's own graceful fallback), which is
+  correct behavior for a non-Rakudo compiler. Deliberately not implemented.
+- **Also noted (separate, not chased):** mutsu runs a module's `sub EXPORT` only
+  once per process, so a second `use` of an already-loaded module does not re-run
+  it; raku re-runs `EXPORT` per `use` line.
+- file: DONE — runtime/native_io/io_pipe.rs, class_introspection.rs,
+  runtime_init.rs (#5390); value/{mod,view,display,serde_support}.rs,
+  value/nanbox/*, builtins/methods_0arg/dispatch_core_{coerce,repr}.rs,
+  runtime/utils/shaped.rs (#5392); parser/stmt/decl/use_decl.rs,
+  vm/vm_module_ops.rs (#5393); remaining — `$*W` (won't do)
 
 ### T-048 — test_fail: TimeUnit (nested-alias FIXED #5146; blocked on enum-vs-sub)  [impact: 1 dist]
 - dists: TimeUnit
