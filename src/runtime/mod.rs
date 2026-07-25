@@ -184,6 +184,7 @@ mod dispatch_proto_call;
 mod dispatch_proto_rewrite;
 mod dispatch_resolve;
 mod eval_check;
+mod exception_message;
 mod gc_roots;
 mod handle;
 mod handle_io;

@@ -171,6 +171,20 @@ impl Interpreter {
                 {
                     return None;
                 }
+                // `.throw`/`.rethrow`/`.gist`/`.Str` render the exception's
+                // message, and the native fast path can only read the stored
+                // `message` ATTRIBUTE. A class that COMPUTES its message
+                // (`method message { $!message //= … }`) leaves that attribute
+                // undefined until the method runs, so the fast path would report
+                // the literal text `(Any)`. Only the interpreter can see the
+                // class registry, so defer the decision to it.
+                if matches!(
+                    method_name.as_str(),
+                    "throw" | "rethrow" | "gist" | "Str" | "Stringy"
+                ) && self.exception_render_needs_interpreter(target, &cn)
+                {
+                    return None;
+                }
                 // Native method on instance class
                 if self.is_native_method(&cn, &method_name) {
                     return None;

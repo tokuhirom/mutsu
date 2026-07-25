@@ -1340,7 +1340,15 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                             format!("{}\n{}", msg, bt)
                         }
                     };
-                    if let Some(msg) = attributes.as_map().get("message") {
+                    // A declared-but-undefined `has $.message` is not a message —
+                    // rendering it would print the literal `(Any)`. (Such a class
+                    // is routed to the interpreter by the render gate in
+                    // `try_native_method`; this keeps the arm honest regardless.)
+                    if let Some(msg) = attributes
+                        .as_map()
+                        .get("message")
+                        .filter(|v| !v.is_nil() && !matches!(v.view(), ValueView::Package(_)))
+                    {
                         let msg_str = msg.to_string_value();
                         if !msg_str.is_empty() {
                             return Some(Ok(Value::str(append_bt(msg_str))));
@@ -1372,7 +1380,11 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     return Some(Ok(Value::str(append_bt(format!("{} with no message", cn)))));
                 }
                 "Str" => {
-                    if let Some(msg) = attributes.as_map().get("message") {
+                    if let Some(msg) = attributes
+                        .as_map()
+                        .get("message")
+                        .filter(|v| !v.is_nil() && !matches!(v.view(), ValueView::Package(_)))
+                    {
                         let msg_str = msg.to_string_value();
                         if !msg_str.is_empty() {
                             return Some(Ok(Value::str(msg_str)));
@@ -1618,9 +1630,16 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             // and a typed exception's message is built from its attributes —
             // rather than the type repr (`X::AdHoc()`) that
             // `target.to_string_value()` would yield.
+            // A declared-but-undefined `has $.message` is NOT a message: it is
+            // the state a computing `method message` starts from, and rendering
+            // it would print the literal `(Any)`. (Such a class is routed to the
+            // interpreter by the `throw`/`rethrow` gate in
+            // `try_native_method`, which can see the user method; this filter
+            // keeps the pure-attribute classes honest too.)
             let msg = attributes
                 .as_map()
                 .get("message")
+                .filter(|v| !v.is_nil() && !matches!(v.view(), ValueView::Package(_)))
                 .map(|v| v.to_string_value())
                 .filter(|s| !s.is_empty())
                 .or_else(|| {
