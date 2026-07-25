@@ -1,0 +1,13 @@
+{
+  "name": "ResCaller",
+  "description": "Fixture distribution that `require`s another distribution from inside a method",
+  "version": "0.0.1",
+  "auth": "zef:mutsu",
+  "perl": "6.d",
+  "provides": {
+    "ResRequirer": "lib/ResRequirer.rakumod"
+  },
+  "resources": [],
+  "depends": [],
+  "license": "Artistic-2.0"
+}

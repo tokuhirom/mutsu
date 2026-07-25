@@ -1,0 +1,15 @@
+{
+  "name": "ResDist",
+  "description": "Fixture distribution whose module reads %?RESOURCES at BEGIN time",
+  "version": "0.0.1",
+  "auth": "zef:mutsu",
+  "perl": "6.d",
+  "provides": {
+    "ResDist": "lib/ResDist.rakumod"
+  },
+  "resources": [],
+  "depends": [
+    "ResInner"
+  ],
+  "license": "Artistic-2.0"
+}

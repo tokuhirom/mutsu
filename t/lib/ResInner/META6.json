@@ -1,0 +1,15 @@
+{
+  "name": "ResInner",
+  "description": "Fixture distribution whose module reads %?RESOURCES at BEGIN time",
+  "version": "0.0.1",
+  "auth": "zef:mutsu",
+  "perl": "6.d",
+  "provides": {
+    "ResInner": "lib/ResInner.rakumod"
+  },
+  "resources": [
+    "greeting.txt"
+  ],
+  "depends": [],
+  "license": "Artistic-2.0"
+}

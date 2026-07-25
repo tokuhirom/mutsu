@@ -2105,6 +2105,7 @@ impl Interpreter {
             private_zeroarg_method_cache: HashMap::new(),
             module_load_stack: Vec::new(),
             current_distribution: None,
+            current_distribution_frame_floor: 0,
             package_distributions: HashMap::new(),
             exported_subs: HashMap::new(),
             exported_sub_values: HashMap::new(),

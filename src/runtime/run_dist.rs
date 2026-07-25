@@ -18,7 +18,17 @@ impl Interpreter {
         // would otherwise (incorrectly) point at the outer module's dist.
         //
         // Priority 1: the executing routine's defining package (innermost first).
-        for frame in self.routine_stack.iter().rev() {
+        // Only frames pushed since the in-progress module load began count: a
+        // module's own mainline / `BEGIN` runs with NO frame of its own, so the
+        // innermost frame is then the caller that triggered the load (e.g. the
+        // routine running `require`), whose distribution is the wrong answer.
+        // `OpenSSL::NativeLib`'s `BEGIN … %?RESOURCES<libraries.json>.slurp` is
+        // exactly that shape, and it is what stopped HTTP::UserAgent from
+        // loading IO::Socket::SSL for an https request.
+        let floor = self
+            .current_distribution_frame_floor
+            .min(self.routine_stack.len());
+        for frame in self.routine_stack[floor..].iter().rev() {
             if let Some(dist) = self.package_distributions.get(&frame.package) {
                 return self.build_resources_from_dist(&dist.clone());
             }

@@ -244,6 +244,7 @@ impl Interpreter {
             private_zeroarg_method_cache: HashMap::new(),
             module_load_stack: Vec::new(),
             current_distribution: self.current_distribution.clone(),
+            current_distribution_frame_floor: 0,
             package_distributions: self.package_distributions.clone(),
             exported_subs: self.exported_subs.clone(),
             exported_vars: self.exported_vars.clone(),

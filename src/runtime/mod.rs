@@ -998,6 +998,13 @@ pub struct Interpreter {
     module_load_stack: Vec<String>,
     /// The current distribution context ($?DISTRIBUTION).
     pub(crate) current_distribution: Option<Value>,
+    /// `routine_stack` height when the in-progress module load established
+    /// `current_distribution`. Frames at or above it were pushed by code the
+    /// loading module called, so they are the ones whose own distribution owns a
+    /// `%?RESOURCES` they read; frames below belong to whoever triggered the
+    /// load and must not shadow the module being loaded. See
+    /// `build_resources_for_package`.
+    pub(crate) current_distribution_frame_floor: usize,
     /// Maps package names to their distribution context.
     /// Populated during module loading so OTF compilation can resolve $?DISTRIBUTION.
     pub(crate) package_distributions: HashMap<String, Value>,
