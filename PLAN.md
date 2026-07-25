@@ -1513,6 +1513,34 @@ token path-part:sym<matcher> {
   method"); more broadly, every typed attribute in every class is unenforced
   from inside its own methods.
 
+### 8.22 A `given` / `with` block is not a lexical scope for `my` (found 2026-07-25)
+
+- **Minimal repro:**
+  ```raku
+  my $z = 1;
+  given 1 { my $z = 5; say $z }   # 5 in both
+  say $z;                          # raku: 1     mutsu: 5
+
+  my $x = 1;
+  given 5 -> $x { }
+  say $x;                          # raku: 1     mutsu: 5
+  ```
+- **Diagnosis:** a `my` declaration inside a `given` / `with` body writes
+  through to the enclosing scope instead of shadowing there, so both an
+  explicit `my` and the pointy-parameter head statement
+  (`pointy_topic_bind`, `src/parser/stmt/control.rs`) leak. Sigil-blind —
+  `$`, `@`, `%` and `&` all leak the same way. A bare `{ … }` block scopes
+  correctly, so it is the `given`/`with` body specifically that is not
+  compiled as its own scope.
+- **Impact:** silent clobbering of a same-named outer lexical, which is
+  hard to spot precisely because the block's own behaviour is correct.
+  Not currently known to break a dist, but it is a real divergence and
+  the shape (`my $x` inside `given`) is common.
+- **Why it needs care:** `given` bodies are shared with `when`/`default`
+  and with the statement-modifier forms, and the topic (`$_`) binding
+  deliberately reaches the enclosing frame — the scope boundary has to
+  admit `$_` while excluding ordinary `my` declarations.
+
 
 ## Metrics
 
