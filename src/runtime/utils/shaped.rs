@@ -280,6 +280,13 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
                 a_id == b_id
             }
         }
+        // A Version's identity is its canonical string (`.WHICH` is
+        // `Version|1.02.3`), so two versions that compare equal but are spelled
+        // differently are NOT `===`: `v1.02.3 == v1.2.3` and they are `eqv`,
+        // but `v1.02.3 === v1.2.3` is False.
+        (ValueView::Version { .. }, ValueView::Version { .. }) => {
+            left.to_string_value() == right.to_string_value()
+        }
         // Junction identity: each junction object is unique
         (
             ValueView::Junction { values: a_vals, .. },

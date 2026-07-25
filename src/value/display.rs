@@ -948,8 +948,15 @@ impl Value {
                 }
                 format!("m{prefix}/{pattern}/")
             }
-            ValueView::Version { parts, plus, minus } => {
-                let s = Self::version_parts_to_string(parts);
+            ValueView::Version {
+                parts,
+                plus,
+                minus,
+                text,
+            } => {
+                let s = text
+                    .map(str::to_string)
+                    .unwrap_or_else(|| Self::version_parts_to_string(parts));
                 if plus {
                     format!("{}+", s)
                 } else if minus {
@@ -1057,6 +1064,29 @@ impl Value {
     /// - Transitions between digits and non-digit/non-separator chars create implicit splits
     /// - Leading zeros stripped from numeric parts
     pub(crate) fn parse_version_string(s: &str) -> (Vec<VersionPart>, bool, bool) {
+        let (parts, _, plus, minus) = Self::parse_version_string_spelled(s);
+        (parts, plus, minus)
+    }
+
+    /// Build a `Version` from its string form, preserving the *source spelling*
+    /// of every part for stringification.
+    ///
+    /// Rakudo keeps the original text of each part: `Version.new("1.02.3").Str`
+    /// is `"1.02.3"` (not `"1.2.3"`) while `.parts` still reports `(1, 2, 3)`.
+    /// Only the separators are normalized to `.`.
+    pub(crate) fn version_from_str(s: &str) -> Value {
+        let (parts, spellings, plus, minus) = Self::parse_version_string_spelled(s);
+        let spelled = spellings.join(".");
+        // Only carry the text when it differs from what the parts alone render
+        // to, so the overwhelmingly common `v1.2.3` case stays allocation-free.
+        let text =
+            (spelled != Self::version_parts_to_string(&parts)).then(|| spelled.into_boxed_str());
+        Value::version_with_text(parts, plus, minus, text)
+    }
+
+    /// `parse_version_string` plus the source spelling of each produced part
+    /// (parallel to `parts`, so `spellings[i]` is the text `parts[i]` came from).
+    fn parse_version_string_spelled(s: &str) -> (Vec<VersionPart>, Vec<String>, bool, bool) {
         let mut plus = false;
         let mut minus = false;
         let mut raw = s;
@@ -1069,32 +1099,38 @@ impl Value {
         }
 
         let mut parts = Vec::new();
+        let mut spellings: Vec<String> = Vec::new();
         let mut current = String::new();
         let mut is_digit_run = false;
+        let flush = |parts: &mut Vec<VersionPart>,
+                     spellings: &mut Vec<String>,
+                     current: &mut String,
+                     is_digit: bool| {
+            parts.push(Self::make_version_part(current, is_digit));
+            spellings.push(std::mem::take(current));
+        };
 
         for ch in raw.chars() {
             match ch {
                 '.' | '-' | '+' | '/' => {
                     if !current.is_empty() {
-                        parts.push(Self::make_version_part(&current, is_digit_run));
-                        current.clear();
+                        flush(&mut parts, &mut spellings, &mut current, is_digit_run);
                     }
                     is_digit_run = false;
                 }
                 '_' => {
                     if !current.is_empty() {
-                        parts.push(Self::make_version_part(&current, is_digit_run));
-                        current.clear();
+                        flush(&mut parts, &mut spellings, &mut current, is_digit_run);
                     }
                     // _ by itself is a "whatever" separator part
                     parts.push(VersionPart::Str("_".to_string()));
+                    spellings.push("_".to_string());
                     is_digit_run = false;
                 }
                 c if c.is_ascii_digit() => {
                     if !current.is_empty() && !is_digit_run {
                         // Transition from alpha to digit
-                        parts.push(Self::make_version_part(&current, false));
-                        current.clear();
+                        flush(&mut parts, &mut spellings, &mut current, false);
                     }
                     current.push(c);
                     is_digit_run = true;
@@ -1102,8 +1138,7 @@ impl Value {
                 c => {
                     if !current.is_empty() && is_digit_run {
                         // Transition from digit to alpha
-                        parts.push(Self::make_version_part(&current, true));
-                        current.clear();
+                        flush(&mut parts, &mut spellings, &mut current, true);
                     }
                     current.push(c);
                     is_digit_run = false;
@@ -1111,14 +1146,15 @@ impl Value {
             }
         }
         if !current.is_empty() {
-            parts.push(Self::make_version_part(&current, is_digit_run));
+            flush(&mut parts, &mut spellings, &mut current, is_digit_run);
         }
 
         if parts.is_empty() {
             parts.push(VersionPart::Num(0));
+            spellings.push("0".to_string());
         }
 
-        (parts, plus, minus)
+        (parts, spellings, plus, minus)
     }
 
     fn make_version_part(s: &str, is_digit: bool) -> VersionPart {

@@ -302,11 +302,13 @@ impl Interpreter {
                     parts: ap,
                     plus: apl,
                     minus: ami,
+                    ..
                 },
                 ValueView::Version {
                     parts: bp,
                     plus: bpl,
                     minus: bmi,
+                    ..
                 },
             ) => runtime::version_cmp(ap, apl, ami, bp, bpl, bmi),
             // Enum values: compare by their integer value

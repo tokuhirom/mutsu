@@ -106,9 +106,12 @@ impl Interpreter {
                     crate::builtins::methods_0arg::temporal::date_attrs(&(right_attrs).as_map());
                 y == ry && m == rm && d == rd
             }
-            (ValueView::Version { .. }, ValueView::Version { parts, plus, minus }) => {
-                Self::version_smart_match(left, parts, plus, minus)
-            }
+            (
+                ValueView::Version { .. },
+                ValueView::Version {
+                    parts, plus, minus, ..
+                },
+            ) => Self::version_smart_match(left, parts, plus, minus),
             // When RHS is a callable (Sub), invoke it with LHS as argument and
             // return truthiness of the result.  If the sub accepts no parameters,
             // call it with no arguments (simple closure truth).

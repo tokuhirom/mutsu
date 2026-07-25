@@ -460,6 +460,7 @@ fn every_variant_roundtrips_losslessly() {
             ],
             plus: true,
             minus: false,
+            text: Some("01.beta.*".into()),
         },
         ValueRepr::Nil,
         ValueRepr::Whatever,

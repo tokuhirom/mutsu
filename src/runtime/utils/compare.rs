@@ -179,11 +179,13 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
                 parts: ap,
                 plus: apl,
                 minus: ami,
+                ..
             },
             ValueView::Version {
                 parts: bp,
                 plus: bpl,
                 minus: bmi,
+                ..
             },
         ) => crate::runtime::version_cmp(ap, apl, ami, bp, bpl, bmi) as i32,
         (ValueView::Int(a), ValueView::Int(b)) => a.cmp(&b) as i32,

@@ -246,11 +246,13 @@ impl PartialEq for Value {
                     parts: ap,
                     plus: aplus,
                     minus: aminus,
+                    ..
                 },
                 ValueView::Version {
                     parts: bp,
                     plus: bplus,
                     minus: bminus,
+                    ..
                 },
             ) => {
                 if aplus != bplus || aminus != bminus {

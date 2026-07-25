@@ -56,6 +56,7 @@ pub(in crate::value) struct VersionBox {
     pub(in crate::value) parts: Vec<VersionPart>,
     pub(in crate::value) plus: bool,
     pub(in crate::value) minus: bool,
+    pub(in crate::value) text: Option<Box<str>>,
 }
 
 #[derive(Debug, Clone)]

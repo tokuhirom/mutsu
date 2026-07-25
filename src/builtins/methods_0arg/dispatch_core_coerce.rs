@@ -360,6 +360,7 @@ pub(super) fn dispatch(
                     | ValueView::RangeExclStart(..)
                     | ValueView::RangeExclBoth(..)
                     | ValueView::GenericRange { .. }
+                    | ValueView::Version { .. }
             );
             let which_str = match target.view() {
                 ValueView::Package(name) => format!(
@@ -399,6 +400,10 @@ pub(super) fn dispatch(
                     enum_type, index, ..
                 } => format!("{}|{}", enum_type.resolve(), index),
                 ValueView::Nil => format!("Nil|U{}", Symbol::intern("Nil").id()),
+                // A Version's identity is its canonical string (raku:
+                // `v1.02.3.WHICH` is `Version|1.02.3`), so two versions
+                // spelled differently are NOT `===` even when they `==`.
+                ValueView::Version { .. } => format!("Version|{}", target.to_string_value()),
                 ValueView::Set(set, _) => {
                     let mut keys: Vec<&String> = set.iter().collect();
                     keys.sort();
@@ -832,8 +837,7 @@ pub(super) fn dispatch(
                 if s.is_empty() {
                     Some(Some(Ok(Value::version(Vec::new(), false, false))))
                 } else {
-                    let (parts, plus, minus) = Value::parse_version_string(&s);
-                    Some(Some(Ok(Value::version(parts, plus, minus))))
+                    Some(Some(Ok(Value::version_from_str(&s))))
                 }
             }
             _ => None,
