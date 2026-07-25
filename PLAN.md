@@ -1486,20 +1486,31 @@ token path-part:sym<matcher> {
   hypotheses: mutsu builds the whole match tree first and only then walks it
   bottom-up (`invoke_grammar_actions`, called from `methods_grammar.rs` after
   the match returns), whereas raku runs an action method the moment its subrule
-  reduces. The same defect has a second, sharper symptom: **when the overall
-  parse FAILS, mutsu runs no actions at all**, while raku has already run every
-  action whose subrule matched — including ones later undone by backtracking.
-  HTTP::Header::parse depends on exactly that:
-  ```raku
-  grammar G { token TOP { [ <message-header> \r?\n ]* } ... }
-  # `$h.parse('ETag: W/"1201-…"')` has no trailing newline, so TOP matches ""
-  # and .parse fails — but raku has already fired the message-header action,
-  # which is what populates the header object. mutsu fires nothing.
-  ```
-  Blocks HTTP::UserAgent's `t/010-headers` (3 subtests) and `t/050-response`
-  (1 subtest). Fixing it means invoking actions at subrule-reduce time inside
-  the matcher instead of in a post-pass — a real regex-engine change, and the
-  single remaining lever for both this and the `$*FINAL` symptom above.
+  reduces.
+- **Failed-parse half: FIXED 2026-07-25.** The sharper symptom — *when the
+  overall parse FAILS, mutsu ran no actions at all* — is done. The matcher now
+  logs every named-subrule reduce (`REDUCED_SUBRULES` in
+  `regex/regex_helpers.rs`), `.parse` keeps the longest partial match instead of
+  discarding it, and the failure path dispatches that partial tree plus the
+  reduces that fell outside it. That took HTTP::UserAgent's upstream suite
+  23/27 → 25/27 (`t/010-headers`, `t/050-response`). Pin:
+  `t/grammar-actions-on-failed-parse.t`.
+- **What is left is only the ORDERING half (the `$*FINAL` repro above).** New
+  diagnosis: it does **not** need actions moved into the matcher. On a
+  *successful* parse mutsu makes two separate bottom-up passes over the finished
+  tree — `reduce_regex_captures_made` runs every node's inline `{ … }` code
+  blocks, and only then does `invoke_grammar_actions` run every node's action.
+  So by the time `part`'s action for segment `a` runs, segment `c`'s
+  `{ $*FINAL = True }` has already executed. Interleaving the two into a single
+  bottom-up walk (per node: code blocks, then that node's action) reproduces
+  raku's order — `mid:a|mid:b|FIN:c` — without touching the regex engine. The
+  work is that `reduce_regex_captures_made` walks `RegexCaptures` while
+  `invoke_grammar_actions` walks the built Match `Value`, so the merged walk has
+  to build each node's Match object as it descends and mark nodes whose action
+  already ran so the outer pass cannot double-dispatch (the hazard
+  `dispatch_silent_action_caps` already documents).
+- **Impact of the remainder:** the 6 `File::Ignore` `wildcard.rakutest`
+  `a/**/b` failures.
 
 ### 8.21 `$!attr = v` inside a method skips the attribute's declared type check (found 2026-07-25, HTTP::Request)
 

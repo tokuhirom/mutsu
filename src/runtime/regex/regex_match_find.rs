@@ -16,10 +16,17 @@ impl Interpreter {
         )
     }
 
-    pub(in crate::runtime) fn regex_match_with_captures_full_from_start(
+    /// Match `pattern` anchored at the start of `text` and require it to cover the
+    /// whole text (what `Grammar.parse` needs). When it only matches a PREFIX —
+    /// so the parse fails — the best-ranked partial match is written to `partial`.
+    /// `Grammar.parse(:actions(...))` needs that: Rakudo dispatches the start
+    /// rule's action whenever the start rule matched, even though the parse as a
+    /// whole then fails on the leftover text.
+    pub(in crate::runtime) fn regex_match_with_captures_full_from_start_tracking_partial(
         &mut self,
         pattern: &str,
         text: &str,
+        partial: &mut Option<RegexCaptures>,
     ) -> Option<RegexCaptures> {
         let parsed = self.parse_regex(pattern)?;
         let pkg = self.current_package();
@@ -60,9 +67,20 @@ impl Interpreter {
         // then take the first full match, so equal-key `||`/`|` ties keep the
         // highest-priority alternative instead of inverting it via `.rev()`.
         matches.sort_by(|a, b| Self::full_match_rank(b).cmp(&Self::full_match_rank(a)));
-        let (end, mut caps) = matches
-            .into_iter()
-            .find(|(end, _)| *end == orig_chars.len())?;
+        let Some(full_idx) = matches.iter().position(|(end, _)| *end == orig_chars.len()) else {
+            // No full match, so `.parse` fails — but hand the longest partial
+            // match back so an action-driven parse can still dispatch what the
+            // start rule DID match, the way Rakudo's reduce-time dispatch does.
+            if !matches.is_empty() {
+                let (end, mut caps) = matches.swap_remove(0);
+                caps.from = caps.capture_start.unwrap_or(0);
+                caps.to = caps.capture_end.unwrap_or(end);
+                caps.matched = orig_chars[caps.from..caps.to].iter().collect();
+                *partial = Some(caps);
+            }
+            return None;
+        };
+        let (end, mut caps) = matches.swap_remove(full_idx);
         caps.from = caps.capture_start.unwrap_or(0);
         caps.to = caps.capture_end.unwrap_or(end);
         caps.matched = orig_chars[caps.from..caps.to].iter().collect();

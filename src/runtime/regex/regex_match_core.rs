@@ -673,7 +673,12 @@ impl Interpreter {
                     subcap.matched = captured.clone();
                     subcap.from = current;
                     subcap.to = end;
-                    store.push_named_subcap(&capture_name, std::sync::Arc::new(subcap));
+                    let subcap = std::sync::Arc::new(subcap);
+                    // This subrule iteration has REDUCED — log it for the
+                    // failed-parse action replay, exactly as the general
+                    // `build_named_candidates_from_inner` path does.
+                    super::regex_helpers::record_reduced_subrule(&capture_name, &subcap);
+                    store.push_named_subcap(&capture_name, subcap);
                     store.push_named(&capture_name, captured);
                 }
                 current = end;
