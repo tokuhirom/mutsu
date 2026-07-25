@@ -23,6 +23,13 @@ impl Interpreter {
         if !matches!(value.view(), ValueView::Instance { .. }) {
             return Ok(value);
         }
+        // A Buf/Blob is Positional too, so it numifies to its element count in
+        // exactly the same way: `Buf.new(1,2,3,4,5) == 5` is True (rakudo), and
+        // `+$buf` already agrees. TestServer's
+        // `if $in-buf.subbuf($header-end + 4) == $length` relies on it.
+        if Self::is_buf_value(&value) {
+            return Ok(Value::int(Self::extract_buf_bytes(&value).len() as i64));
+        }
         // Unhandled Failure: throw the stored exception.
         if let Some(err) = self.failure_to_runtime_error_if_unhandled(&value) {
             return Err(err);

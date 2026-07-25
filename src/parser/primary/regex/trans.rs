@@ -56,7 +56,12 @@ pub(super) fn parse_trans_adverbs(
     let open_ch = rest.chars().next()?;
     // `(` directly after `tr`/`TR` (or its adverbs) is call syntax, never a
     // delimiter — Raku requires whitespace before a paren delimiter.
-    if open_ch.is_alphanumeric() || open_ch == '_' || open_ch.is_whitespace() || open_ch == '(' {
+    if open_ch.is_alphanumeric()
+        || open_ch == '_'
+        || open_ch.is_whitespace()
+        || open_ch == '('
+        || crate::parser::helpers::delim_is_identifier_continuation(rest)
+    {
         return None;
     }
     let (close_ch, is_paired) = match open_ch {

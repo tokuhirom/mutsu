@@ -75,18 +75,28 @@ impl Interpreter {
             }
         }
 
-        if !host.is_empty() && port == 0 {
+        // A `host:port` string is ALWAYS split, even when `:port` is also given
+        // — rakudo's `IO::Socket::INET.new` splits the host and only defaults
+        // the port from it (`%args<port> //= $port`), so an explicit `:port`
+        // wins but the host never keeps its `:port` suffix. HTTP::UserAgent
+        // passes both (`$request.host` is "localhost:8080" and `$request.port`
+        // is 8080), which used to be resolved as "localhost:8080:8080".
+        if !host.is_empty() {
             let (parsed_host, parsed_port) = Self::split_host_port_literal(&host);
             if let Some(p) = parsed_port {
                 host = parsed_host;
-                port = p;
+                if port == 0 {
+                    port = p;
+                }
             }
         }
-        if !localhost.is_empty() && localport == 0 {
+        if !localhost.is_empty() {
             let (parsed_host, parsed_port) = Self::split_host_port_literal(&localhost);
             if let Some(p) = parsed_port {
                 localhost = parsed_host;
-                localport = p;
+                if localport == 0 {
+                    localport = p;
+                }
             }
         }
 

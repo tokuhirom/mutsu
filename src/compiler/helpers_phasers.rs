@@ -5,8 +5,24 @@ impl Compiler {
     /// If the body throws, the error is wrapped in X::Comp::BeginTime.
     pub(super) fn compile_check_phaser(&mut self, body: &[Stmt]) {
         let start_idx = self.code.emit(OpCode::CheckPhaserStart { end_ip: 0 });
-        for s in body {
-            self.compile_stmt(s);
+        // A `CATCH` in the phaser body handles that body's exceptions, including
+        // ones thrown from a call inside it. Compiled inline into the enclosing
+        // (mainline) code, the handler covered only a `die` executed at this
+        // statement level — an exception unwinding out of a call escaped it and
+        // surfaced as `X::Comp::BeginTime`. Giving the body its own block scope
+        // installs the handler over the whole phaser, which is also the scope
+        // raku gives it (a `my` inside `BEGIN { … }` is block-scoped either
+        // way). Only done when a handler is present, so the common phaser keeps
+        // its inline, scope-less shape.
+        let has_handler = body
+            .iter()
+            .any(|s| matches!(s, Stmt::Catch(_) | Stmt::Control(_)));
+        if has_handler {
+            self.compile_stmt(&Stmt::Block(body.to_vec()));
+        } else {
+            for s in body {
+                self.compile_stmt(s);
+            }
         }
         self.code.emit(OpCode::CheckPhaserEnd);
         // Patch the end_ip to point to after the CheckPhaserEnd

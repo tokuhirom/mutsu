@@ -10,7 +10,9 @@
 
 use crate::ast::Expr;
 use crate::parser::expr::expression;
-use crate::parser::helpers::{consume_unspace, split_angle_words, ws};
+use crate::parser::helpers::{
+    consume_unspace, delim_is_identifier_continuation, split_angle_words, ws,
+};
 use crate::parser::parse_result::{PError, PResult, parse_char, parse_tag, take_while1};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
@@ -145,7 +147,8 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
             && open_ch != '_'
             && open_ch != ':'
             && !open_ch.is_whitespace()
-            && (open_ch != '(' || had_ws);
+            && (open_ch != '(' || had_ws)
+            && !delim_is_identifier_continuation(spec);
         // Don't treat `rx.method` as a regex with a `.` delimiter when the `.`
         // is followed by an identifier (a method call on a bare `rx`).
         let looks_like_method = open_ch == '.'
@@ -290,7 +293,8 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
             let is_delim = !open_ch.is_alphanumeric()
                 && open_ch != '_'
                 && !open_ch.is_whitespace()
-                && (open_ch != '(' || had_ws);
+                && (open_ch != '(' || had_ws)
+                && !delim_is_identifier_continuation(spec);
             let looks_like_method = open_ch == '.'
                 && spec.len() > 2
                 && spec[1..].starts_with(|c: char| c.is_alphabetic() || c == '_')
@@ -412,7 +416,8 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
             let is_delim = !open_ch.is_alphanumeric()
                 && open_ch != '_'
                 && !open_ch.is_whitespace()
-                && (open_ch != '(' || had_ws);
+                && (open_ch != '(' || had_ws)
+                && !delim_is_identifier_continuation(spec);
             // Don't treat s.identifier as substitution when the identifier is 2+ chars
             // (likely a method call on bare 's'). Single-char like s.a.b. is still valid regex.
             let looks_like_method = open_ch == '.'
@@ -618,7 +623,8 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
             let is_delim = !open_ch.is_alphanumeric()
                 && open_ch != '_'
                 && !open_ch.is_whitespace()
-                && (open_ch != '(' || had_ws);
+                && (open_ch != '(' || had_ws)
+                && !delim_is_identifier_continuation(spec);
             let looks_like_method = open_ch == '.'
                 && spec.len() > 2
                 && spec[1..].starts_with(|c: char| c.is_alphabetic() || c == '_')
@@ -913,7 +919,8 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
             let is_delim = !open_ch.is_alphanumeric()
                 && open_ch != '_'
                 && !open_ch.is_whitespace()
-                && (open_ch != '(' || had_ws);
+                && (open_ch != '(' || had_ws)
+                && !delim_is_identifier_continuation(spec);
             if is_delim {
                 let (close_ch, is_paired) = match open_ch {
                     '{' => ('}', true),

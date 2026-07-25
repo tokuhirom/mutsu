@@ -38,6 +38,11 @@ pub(crate) fn big_q_string(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("Q string"));
     }
 
+    // `Q-a-b` is the routine `Q-a-b` — see the `q` parser below.
+    if crate::parser::helpers::delim_is_identifier_continuation(rest) {
+        return Err(PError::expected("Q string"));
+    }
+
     if let Some((open, close)) = quote_delimiters(rest) {
         flags.quote_open = Some(open);
         flags.quote_close = Some(close);
@@ -231,6 +236,12 @@ pub(crate) fn q_string(input: &str) -> PResult<'_, Expr> {
     // `q => ...` is the pair key `q`, not a `q`-quote with `=` as its delimiter.
     // (rakudo accepts `=` as a delimiter for `q=foo=`, but `=>` is a fat arrow.)
     if trimmed_after_q.starts_with("=>") {
+        return Err(PError::expected("q string"));
+    }
+
+    // `q-a-b` is the routine `q-a-b`, not `q` with a `-` delimiter: `-`/`'`
+    // continue an identifier when an alphabetic follows.
+    if crate::parser::helpers::delim_is_identifier_continuation(after_q) {
         return Err(PError::expected("q string"));
     }
 
