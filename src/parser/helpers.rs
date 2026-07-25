@@ -852,3 +852,22 @@ mod tests {
         assert_eq!(words, vec!["a\u{00A0}b"]);
     }
 }
+
+/// Whether `spec` (the text starting at a quoting construct's would-be opening
+/// delimiter) is really the tail of an *identifier*, not a delimiter.
+///
+/// A raku identifier may contain `-` and `'` when the next character is
+/// alphabetic or `_`, and the quoting constructs lose to that rule: `m-meta-ok`
+/// is a call to the routine `m-meta-ok` (raku), never `m` with a `-` delimiter,
+/// while `m-1-` IS a match (a digit cannot continue an identifier). Same for
+/// `q-a-b`, `tr-a-b-c`, `s'x'y'`, ...
+pub(crate) fn delim_is_identifier_continuation(spec: &str) -> bool {
+    let mut chars = spec.chars();
+    let Some(open) = chars.next() else {
+        return false;
+    };
+    if open != '-' && open != '\'' {
+        return false;
+    }
+    chars.next().is_some_and(|c| c.is_alphabetic() || c == '_')
+}

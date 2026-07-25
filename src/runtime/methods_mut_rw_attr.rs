@@ -12,8 +12,20 @@ impl Interpreter {
         }
     }
 
+    /// The attribute an `is rw` method exposes as its assignable lvalue: the
+    /// bare `$!attr` (or `return-rw $!attr`) its body evaluates to.
+    ///
+    /// An `is rw` routine returns its *last* expression's container, so the
+    /// last statement is what decides — the earlier ones are ordinary code that
+    /// still has to run (HTTP::Request's
+    /// `multi method scheme(--> Str:D) is rw { without $!scheme { … }; $!scheme }`
+    /// lazily defaults the attribute before exposing it). Every caller invokes
+    /// the method anyway to read its current value, so those side effects
+    /// happen. An explicit `return-rw $!attr` anywhere in the body also counts:
+    /// it decides the return value wherever it sits.
     pub(crate) fn rw_method_attribute_target(body: &[Stmt]) -> Option<String> {
-        let first = body.iter().find(|s| !matches!(s, Stmt::SetLine(_)))?;
+        let significant = || body.iter().filter(|s| !matches!(s, Stmt::SetLine(_)));
+        let last = significant().next_back()?;
         let extract_attr = |expr: &Expr| -> Option<String> {
             match expr {
                 Expr::Var(name) if name.starts_with('!') && name.len() > 1 => {
@@ -31,10 +43,15 @@ impl Interpreter {
                 _ => None,
             }
         };
-        match first {
+        let attr_of = |stmt: &Stmt| match stmt {
             Stmt::Expr(expr) | Stmt::Return(expr) => extract_attr(expr),
             _ => None,
-        }
+        };
+        attr_of(last).or_else(|| {
+            significant()
+                .find(|s| Self::stmt_contains_return_rw_call(s))
+                .and_then(attr_of)
+        })
     }
 
     /// Detect an `is rw` method whose body returns an *indexed* attribute

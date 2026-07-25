@@ -485,7 +485,10 @@ impl Interpreter {
             {
                 self.loaded_modules.remove(module);
             }
-            self.use_module(module)?;
+            let saved = std::mem::replace(&mut self.require_propagates_missing_module, true);
+            let result = self.use_module(module);
+            self.require_propagates_missing_module = saved;
+            result?;
         } else {
             return Err(RuntimeError::new("require expects a module name"));
         }

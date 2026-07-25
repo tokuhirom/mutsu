@@ -217,10 +217,13 @@ impl Interpreter {
         } else if module == "Test::Tap" {
             // Handle Test::Tap as built-in
             Ok(())
-        } else if module.starts_with("Test::") {
+        } else if module.starts_with("Test::") && !self.require_propagates_missing_module {
             // Load Test:: submodules from source as regular modules.
             // Parse errors should propagate like other `use` failures.
-            // Missing helper modules remain non-fatal for compatibility.
+            // Missing helper modules remain non-fatal for compatibility —
+            // except under `require`, whose whole contract is that a missing
+            // module is a catchable X::CompUnit::UnsatisfiedDependency
+            // (HTTP::UserAgent's `t/001-meta` skips itself that way).
             match self.load_module(module) {
                 Ok(()) => Ok(()),
                 Err(err) if err.is_unsatisfied_dependency() => Ok(()),

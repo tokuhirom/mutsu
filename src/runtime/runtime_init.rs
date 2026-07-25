@@ -1827,6 +1827,7 @@ impl Interpreter {
             constructing_class: None,
             defining_class: None,
             pending_call_arg_sources: None,
+            require_propagates_missing_module: false,
             pending_call_arg_source_slots: std::collections::HashMap::new(),
             pending_rw_writeback_slots: std::collections::HashMap::new(),
             test_pending_callsite_line: None,

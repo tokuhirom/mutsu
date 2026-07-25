@@ -811,6 +811,10 @@ pub struct Interpreter {
     /// `X::Attribute::NoPackage`.
     pub(crate) defining_class: Option<String>,
     pending_call_arg_sources: Option<Vec<Option<String>>>,
+    /// Set while `require` resolves a module: a missing `Test::`-namespace
+    /// module must surface as a catchable X::CompUnit::UnsatisfiedDependency
+    /// instead of the silent no-op `use Test::Util` relies on.
+    pub(crate) require_propagates_missing_module: bool,
     /// Companion to `pending_call_arg_sources` (§1.4/§1.5): the compiler-baked
     /// `arg-source name -> caller local slot` for the current call, decoded from the
     /// `Pair(name, Int(slot))` arg-source entries. Set alongside the names by
