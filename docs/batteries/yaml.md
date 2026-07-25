@@ -117,14 +117,16 @@ currently a two-bug load path, not five independent failures.
    Whatever)`, which `.map` rejected with `X::Cannot::Map: Cannot map a Pair to a
    Seq`, aborting the `use`. Fixed at the `=>` construction site.
 
-1.5. **A placeholder var inside a nested `WhateverCode` is mis-collected as its
-   parameter** — the *new* load blocker exposed once #1 was fixed. In the same
-   `flatten-tags` line, `$^namespace` is a placeholder of the outer block but the
-   inner `$^namespace ~ * => *` now curries, and mutsu sweeps `$^namespace` into
-   the inner WhateverCode's signature, dying with `Placeholder variable
-   '$^namespace' cannot override existing signature`. Filed:
-   `todo/tickets/placeholder-var-inside-nested-whatevercode.md`. This is a
-   placeholder-scoping bug, independent of `=>`.
+1.5. **A placeholder var inside a nested `WhateverCode` was mis-collected as its
+   parameter** — exposed once #1 was fixed, now **FIXED**
+   (`news/2026-07/placeholder-var-inside-nested-whatevercode.md`,
+   `t/placeholder-in-nested-whatevercode.t`). In the same `flatten-tags` line,
+   `$^namespace` is a placeholder of the outer block, but the inner
+   `$^namespace ~ * => *` curries and mutsu swept `$^namespace` into the inner
+   WhateverCode's signature (`Placeholder variable '$^namespace' cannot override
+   existing signature`). Fixed by descending `collect_placeholders_shallow`
+   through WhateverCode closures and skipping the override check for their
+   bodies. **With #1 and #1.5, `use YAMLish` now loads.**
 
 2. **`Grammar.parse($input)` fails to dispatch inside the full module** —
    deeper, not yet root-caused. After the load blocker is patched past locally,

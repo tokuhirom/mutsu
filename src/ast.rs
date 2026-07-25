@@ -2151,7 +2151,26 @@ fn collect_ph_expr_shallow(expr: &Expr, out: &mut Vec<String>) {
                 collect_ph_expr_shallow(e, out);
             }
         }
-        // Stop at closure boundaries: these define their own placeholder scope.
+        // A WhateverCode (`is_whatever_code`) is synthesized from `*` and owns
+        // only its `*`-derived params; it does NOT capture `$^name` placeholders,
+        // which belong to the nearest enclosing *explicit* block. So descend
+        // through it to attribute e.g. `$^namespace` in
+        // `{ ... $^namespace ~ * => * }` to the outer block, matching Rakudo.
+        Expr::AnonSubParams {
+            body,
+            is_whatever_code: true,
+            ..
+        }
+        | Expr::Lambda {
+            body,
+            is_whatever_code: true,
+            ..
+        } => {
+            for s in body {
+                collect_ph_stmt_shallow(s, out);
+            }
+        }
+        // Stop at real closure boundaries: these define their own placeholder scope.
         Expr::AnonSub { .. } | Expr::AnonSubParams { .. } | Expr::Lambda { .. } => {}
         Expr::Block(stmts) | Expr::Gather(stmts) => {
             for s in stmts {

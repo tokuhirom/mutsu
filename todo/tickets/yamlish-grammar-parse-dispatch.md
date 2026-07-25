@@ -1,72 +1,61 @@
-# `Grammar.parse` fails to dispatch inside the full `YAMLish` module
+# A user type named like a built-in resolves to the built-in inside a module
 
-Blocker #2 for the `YAMLish` battery candidate (`docs/batteries/yaml.md`), and
-it is **not yet root-caused**.
+Blocker #2 for the `YAMLish` battery candidate (`docs/batteries/yaml.md`), now
+**root-caused**.
 
-After the module-load blocker
-(`todo/tickets/whatever-curry-through-fatarrow.md`) is patched past locally,
-`load-yaml` reaches:
+Inside a `unit module`, a user-declared type whose name collides with a built-in
+type name (here `grammar Grammar`, colliding with the core `Grammar` type)
+resolves — when referenced by its **unqualified** bareword name from a sub in the
+same module — to the **built-in** type object, not the module-local declaration.
+
+## Isolated repro
+
+`lib/GMod.rakumod`:
 
 ```raku
-our sub load-yaml(Str $input, ...) is export {
-    my $match = Grammar.parse($input);   # lib/YAMLish.rakumod:944
-    ...
+unit module GMod;
+grammar Grammar {
+    token TOP { \d+ }
+}
+our sub do-parse(Str $input) is export {
+    say "Grammar is: ", Grammar.^name;      # raku: GMod::Grammar   mutsu: Grammar
+    say "Grammar.HOW: ", Grammar.HOW.^name;  # raku: GrammarHOW      mutsu: ClassHOW
+    return Grammar.parse($input);
 }
 ```
 
-and dies with:
-
-```
-Couldn't parse YAML: X::Method::NotFound: Unknown method value dispatch (fallback disabled): parse
-```
-
-## Not the obvious hypothesis
-
-The tempting explanation — "the user declared `grammar Grammar {…}`, which
-shadows the built-in `Grammar` type, and mutsu resolves the name to the core
-type object that has no `.parse`" — is **wrong**, or at least incomplete. An
-isolated repro works:
-
 ```raku
-grammar Grammar { token TOP { \d+ } }
-say Grammar.parse("123");   # mutsu: 「123」 — dispatches fine
+use GMod;
+say do-parse("123");
+# raku:  ｢123｣
+# mutsu: X::Method::NotFound: Unknown method value dispatch (fallback disabled): parse
 ```
 
-So the failure is **context-dependent**. `YAMLish` defines four grammars with
-inheritance — `Grammar` (lib/YAMLish.rakumod:150), `Schema::JSON` (784),
-`Schema::Core is Schema::JSON` (839), `Schema::Extra is Schema::Core` (885) —
-plus heavy inline `{ make … }` actions and a large token set. The dispatch
-failure needs reduction against that fuller context before a fix.
+Renaming the grammar to `MyGrammar` makes it work, and the same
+`grammar Grammar {…}` in the **mainline** (no module) also works — the bug is
+specifically **unqualified type-name resolution inside a module preferring a
+built-in over a module-local declaration of the same name**.
 
-Note the error text `Unknown method value dispatch (fallback disabled)` is a
-**recurring mutsu pattern** — the same shape blocks `Template::Classic` in the
-template survey (`docs/batteries/templates.md`) — so root-causing it may pay off
-beyond YAML.
+## Mechanism
 
-## How to reproduce
+`Grammar` resolves to the built-in `Grammar` type object (`.HOW` = `ClassHOW`,
+not `GrammarHOW`), so `.parse` is routed to `dispatch_classhow_method`
+(`src/runtime/methods_classhow_dispatch.rs`) as a meta-method, falls through its
+match, and raises `X::Method::NotFound: Unknown method value dispatch (fallback
+disabled): parse` (the catch-all at ~line 1114). raku instead resolves `Grammar`
+to `GMod::Grammar` (a `GrammarHOW`) whose inherited `.parse` runs.
 
-The whole module is load-blocked by bug #1, so to see this bug today you must
-first get past the load: take `lib/YAMLish.rakumod`, replace the `flatten-tags`
-body (line 939) with an explicit two-arg-block equivalent:
+The fix is in bareword type-name resolution: an unqualified name referenced
+inside `module Foo` must prefer a lexically-visible / module-local (`Foo::Name`)
+type/grammar/class declaration over a built-in type of the same name. This is a
+general name-resolution ordering bug, not grammar-specific (a `class Int {…}`
+inside a module would shadow the built-in `Int` the same way).
 
-```raku
-return %tags.kv.map(-> $ns, %v { |%v.kv.map(-> $k, $val { ($ns ~ $k) => $val }) });
-```
+## Impact
 
-then:
-
-```sh
-echo 'use YAMLish; say load-yaml("foo: 1");' \
-  | mutsu -I <patched-lib> -I modules/MIME-Base64/lib -
-# -> Couldn't parse YAML: X::Method::NotFound: … parse
-```
-
-Once bug #1 is fixed in the interpreter, the patch is unnecessary and this
-reproduces directly on the vendored module.
-
-## Next step
-
-Reduce: define `Grammar` alongside a `Schema::JSON`/`Schema::Core` inheritance
-chain and inline actions, and bisect toward the minimal shape that makes
-`Grammar.parse` mis-dispatch. Do **not** assume the name-shadow theory without a
-reducing case that actually fails.
+`YAMLish` is `unit module YAMLish` and declares `grammar Grammar` (plus
+`Schema::JSON` / `Schema::Core` / `Schema::Extra`); `load-yaml` calls
+`Grammar.parse($input)` unqualified (lib/YAMLish.rakumod:944). With blockers #1
+and #1.5 fixed the module now loads, and this is the next failure on the
+`load-yaml` path. Further grammar-feature gaps may surface after it, since the
+YAML grammar (lib/YAMLish.rakumod:150–783) is large and action-heavy.
