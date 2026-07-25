@@ -35,6 +35,10 @@ impl Compiler {
                 self.compile_expr(expr);
                 self.code.emit(OpCode::UptoRange);
             }
+            TokenKind::MetaAssignIdentity(identity) => {
+                self.compile_expr(expr);
+                self.code.emit(OpCode::MetaAssignIdentity(*identity));
+            }
             TokenKind::Ident(name) if name == "so" => {
                 self.compile_expr(expr);
                 self.code.emit(OpCode::BoolCoerce);

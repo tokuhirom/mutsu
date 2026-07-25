@@ -85,15 +85,15 @@ pub(crate) fn build_compound_assign_expr(
             // This becomes: { let _ = ($x = $x + 2); $x = $x * 3 }
             Expr::AssignExpr {
                 name: name.clone(),
-                expr: Box::new(Expr::Binary {
-                    left: Box::new(Expr::AssignExpr {
+                expr: Box::new(compound_assigned_value_expr(
+                    Expr::AssignExpr {
                         name,
                         expr,
                         is_bind: false,
-                    }),
-                    op: op.token_kind(),
-                    right: Box::new(rhs),
-                }),
+                    },
+                    op,
+                    rhs,
+                )),
                 is_bind: false,
             }
         }

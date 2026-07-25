@@ -3471,6 +3471,15 @@ impl Interpreter {
                 self.exec_upto_range_op();
                 *ip += 1;
             }
+            OpCode::MetaAssignIdentity(identity) => {
+                // Only the (cold) no-zero-argument operators throw, so pay the
+                // line sync on the error path rather than every `$i += 1`.
+                self.exec_meta_assign_identity_op(*identity)
+                    .inspect_err(|_| {
+                        self.sync_source_line(code, *ip);
+                    })?;
+                *ip += 1;
+            }
 
             // -- Prefix increment/decrement --
             OpCode::PreIncrement(name_idx, slot) => {
@@ -3509,8 +3518,12 @@ impl Interpreter {
                 self.exec_topic_dot_assign_op(code, *name_idx)?;
                 *ip += 1;
             }
-            OpCode::AtomicCompoundVar { name_idx, op } => {
-                self.exec_atomic_compound_var_op(code, *name_idx, *op)?;
+            OpCode::AtomicCompoundVar {
+                name_idx,
+                op,
+                identity,
+            } => {
+                self.exec_atomic_compound_var_op(code, *name_idx, *op, *identity)?;
                 *ip += 1;
             }
 
@@ -4390,6 +4403,14 @@ impl Interpreter {
             // -- Local variables --
             OpCode::GetLocal(idx) => {
                 self.exec_get_local_op(code, *idx)?;
+                *ip += 1;
+            }
+            OpCode::GetLocalMetaAssign { slot, identity } => {
+                self.exec_get_local_op(code, *slot)?;
+                self.exec_meta_assign_identity_op(*identity)
+                    .inspect_err(|_| {
+                        self.sync_source_line(code, *ip);
+                    })?;
                 *ip += 1;
             }
             OpCode::GetLocalRaw(idx) => {

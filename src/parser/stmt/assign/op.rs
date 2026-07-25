@@ -156,35 +156,30 @@ impl CompoundAssignOp {
     }
 }
 
+/// Wrap the LHS of a desugared `$x OP= $y` in the METAOP_ASSIGN identity
+/// substitution for the *arithmetic* operators.
+///
+/// `$x OP= $y` never applies the base infix to an undefined `$x`: rakudo's
+/// `METAOP_ASSIGN` substitutes the operator's zero-argument value first (`0`
+/// for `+`/`-`, `1` for `*`/`**`) and throws for the operators that have no
+/// zero-argument candidate (`/`, `%`). Isolating that here is what lets the
+/// bare infix ops stay strict about type-object operands — `Int + 1` throws
+/// `X::Numeric::Uninitialized`, while `my Int $a; $a += 1` still yields `1`.
+///
+/// Emitted as a synthetic prefix op rather than a `defined($x) ?? $x !! 0`
+/// ternary so the substitution costs one opcode instead of a `defined` call
+/// plus a branch, and so the LHS expression is evaluated exactly once.
 fn autoviv_compound_lhs(lhs: Expr, op: CompoundAssignOp) -> Expr {
-    if matches!(op, CompoundAssignOp::Mul | CompoundAssignOp::Power) {
-        Expr::Ternary {
-            cond: Box::new(Expr::Call {
-                name: Symbol::intern("defined"),
-                args: vec![lhs.clone()],
-            }),
-            then_expr: Box::new(lhs),
-            else_expr: Box::new(Expr::Literal(Value::int(1))),
-        }
-    } else if matches!(op, CompoundAssignOp::Mod) {
-        // `$x op= $y` on an undefined `$x` seeds the container with the
-        // operator's zero-arg identity value. `infix:<%>` has no zero-arg
-        // meaning, so `$x %= $y` on an undefined `$x` throws.
-        Expr::Ternary {
-            cond: Box::new(Expr::Call {
-                name: Symbol::intern("defined"),
-                args: vec![lhs.clone()],
-            }),
-            then_expr: Box::new(lhs),
-            else_expr: Box::new(Expr::Call {
-                name: Symbol::intern("die"),
-                args: vec![Expr::Literal(Value::str(
-                    "No zero-arg meaning for infix:<%>".to_string(),
-                ))],
-            }),
-        }
-    } else {
-        lhs
+    let identity = match op {
+        CompoundAssignOp::Add | CompoundAssignOp::Sub => MetaAssignIdentity::Zero,
+        CompoundAssignOp::Mul | CompoundAssignOp::Power => MetaAssignIdentity::One,
+        CompoundAssignOp::Div => MetaAssignIdentity::NoZeroArgDiv,
+        CompoundAssignOp::Mod => MetaAssignIdentity::NoZeroArgMod,
+        _ => return lhs,
+    };
+    Expr::Unary {
+        op: TokenKind::MetaAssignIdentity(identity),
+        expr: Box::new(lhs),
     }
 }
 
@@ -276,9 +271,13 @@ pub(crate) fn compound_assigned_value_expr(lhs: Expr, op: CompoundAssignOp, rhs:
         // the original `OP=` spelling left for the compiler to dispatch on, so
         // the override must be recognized here, while parsing still knows
         // this was compound-assignment syntax.
+        // No METAOP_ASSIGN identity seeding here: a user `infix:<OP=>` replaces
+        // the metaop wholesale, so it receives the container as-is — an
+        // undefined `$x` reaches the sub's `is rw` parameter untouched
+        // (verified against rakudo).
         Expr::Call {
             name: Symbol::intern(&user_op_name),
-            args: vec![autoviv_compound_lhs(lhs, op), rhs],
+            args: vec![lhs, rhs],
         }
     } else {
         Expr::Binary {

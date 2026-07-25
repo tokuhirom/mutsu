@@ -9,6 +9,58 @@ pub(crate) enum DStrPart {
     Block(String),
 }
 
+/// The zero-argument ("identity") meaning of an infix operator, used by the
+/// assignment metaop `$x OP= $y`.
+///
+/// Rakudo's `METAOP_ASSIGN` never feeds an undefined container to the base
+/// infix: when `$x` holds a type object it substitutes the operator's
+/// zero-argument value (`infix:<+>()` is `0`, `infix:<*>()` is `1`) and applies
+/// the operator to *that*. Operators with no zero-argument candidate throw
+/// instead. Keeping the substitution in its own step is what lets the bare
+/// infix ops stay strict — `Int + 1` throws `X::Numeric::Uninitialized` while
+/// `my Int $a; $a += 1` still yields `1`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) enum MetaAssignIdentity {
+    /// `infix:<+>()` / `infix:<->()` are `0`.
+    Zero,
+    /// `infix:<*>()` / `infix:<**>()` are `1`.
+    One,
+    /// `infix:</>` has no zero-argument candidate.
+    NoZeroArgDiv,
+    /// `infix:<%>` has no zero-argument candidate.
+    NoZeroArgMod,
+}
+
+impl MetaAssignIdentity {
+    /// Discriminant, so the JIT can pass the identity to its shim as a plain
+    /// `u32` argument instead of re-reading the opcode.
+    pub(crate) fn as_u32(self) -> u32 {
+        match self {
+            MetaAssignIdentity::Zero => 0,
+            MetaAssignIdentity::One => 1,
+            MetaAssignIdentity::NoZeroArgDiv => 2,
+            MetaAssignIdentity::NoZeroArgMod => 3,
+        }
+    }
+
+    /// Whether seeding this identity can never throw (`Zero` / `One`). The JIT
+    /// emits a void shim with no status check for these.
+    pub(crate) fn is_infallible(self) -> bool {
+        matches!(self, MetaAssignIdentity::Zero | MetaAssignIdentity::One)
+    }
+
+    /// Inverse of [`Self::as_u32`]. Only ever called with a value this module
+    /// produced, so an out-of-range code is treated as the harmless `Zero`.
+    pub(crate) fn from_u32(v: u32) -> Self {
+        match v {
+            1 => MetaAssignIdentity::One,
+            2 => MetaAssignIdentity::NoZeroArgDiv,
+            3 => MetaAssignIdentity::NoZeroArgMod,
+            _ => MetaAssignIdentity::Zero,
+        }
+    }
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum TokenKind {
@@ -100,6 +152,10 @@ pub(crate) enum TokenKind {
     BitAnd,
     BitOr,
     BitXor,
+    /// Synthetic prefix op (never lexed): wraps the LHS of a desugared
+    /// `$x OP= $y` so the compiler can emit the METAOP_ASSIGN identity
+    /// substitution. See [`MetaAssignIdentity`].
+    MetaAssignIdentity(MetaAssignIdentity),
     IntBitNeg,  // +^ prefix integer bitwise negation
     BoolBitNeg, // ?^ prefix boolean bitwise negation
     StrBitNeg,  // ~^ prefix string/buffer bitwise negation

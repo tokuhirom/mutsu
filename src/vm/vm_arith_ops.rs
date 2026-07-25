@@ -1,4 +1,40 @@
 use super::*;
+use crate::token_kind::MetaAssignIdentity;
+
+/// Whether the assignment metaop must seed this LHS with the operator's
+/// zero-argument value. Mirrors rakudo's `nqp::isconcrete` test: type objects
+/// (and `Nil`, which resets a container to its type object) are seeded; every
+/// concrete value — including a `Failure` — is left alone.
+fn is_meta_assign_undefined(v: &Value) -> bool {
+    match v.view() {
+        ValueView::Package(_) | ValueView::Nil => true,
+        ValueView::ContainerRef(cell) => is_meta_assign_undefined(&cell.lock().unwrap()),
+        _ => false,
+    }
+}
+
+/// Replace an undefined `$x` with the zero-argument value of the operator in
+/// `$x OP= $y`, or throw for the operators that have none. `identity` is `None`
+/// wherever METAOP_ASSIGN semantics do not apply (a literal `$x = $x OP $y`, or
+/// an operator with no identity of its own such as `~`), in which case the
+/// value passes through untouched.
+pub(super) fn seed_meta_assign_identity(
+    value: Value,
+    identity: Option<MetaAssignIdentity>,
+) -> Result<Value, RuntimeError> {
+    let Some(identity) = identity else {
+        return Ok(value);
+    };
+    if !is_meta_assign_undefined(&value) {
+        return Ok(value);
+    }
+    match identity {
+        MetaAssignIdentity::Zero => Ok(Value::int(0)),
+        MetaAssignIdentity::One => Ok(Value::int(1)),
+        MetaAssignIdentity::NoZeroArgDiv => Err(RuntimeError::no_zero_arg_meaning("infix:</>")),
+        MetaAssignIdentity::NoZeroArgMod => Err(RuntimeError::no_zero_arg_meaning("infix:<%>")),
+    }
+}
 
 impl Interpreter {
     /// Whether a user-declared `sub infix:<op>` is in scope for `canon`
@@ -7,6 +43,27 @@ impl Interpreter {
     #[inline]
     fn user_infix_override(&self, canon: &str) -> bool {
         !self.user_declared_infix_ops.is_empty() && self.user_declared_infix_ops.contains(canon)
+    }
+
+    /// METAOP_ASSIGN identity substitution (`$x OP= $y` with an undefined `$x`).
+    ///
+    /// Rakudo applies the base infix to the operator's zero-argument value
+    /// rather than to the type object the container holds, so `my Int $a;
+    /// $a += 1` is `0 + 1` and `$a *= 5` is `1 * 5`. Only a *type object* (a
+    /// non-concrete value) is substituted — a `Failure` is concrete and stays
+    /// on the stack so the following operator throws it, matching rakudo.
+    pub(super) fn exec_meta_assign_identity_op(
+        &mut self,
+        identity: MetaAssignIdentity,
+    ) -> Result<(), RuntimeError> {
+        let Some(top) = self.stack.last() else {
+            return Ok(());
+        };
+        if !is_meta_assign_undefined(top) {
+            return Ok(());
+        }
+        *self.stack.last_mut().unwrap() = seed_meta_assign_identity(Value::NIL, Some(identity))?;
+        Ok(())
     }
 
     pub(super) fn exec_add_op(&mut self) -> Result<(), RuntimeError> {

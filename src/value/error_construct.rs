@@ -98,6 +98,21 @@ impl RuntimeError {
         err
     }
 
+    /// X::NoZeroArgMeaning — the assignment metaop `$x OP= $y` seeds an
+    /// undefined `$x` with `OP`'s zero-argument value, but `infix:</>` and
+    /// `infix:<%>` have no zero-argument candidate. `name` is the operator's
+    /// long name (`infix:</>`), matching Rakudo's `$!name` attribute.
+    pub(crate) fn no_zero_arg_meaning(op_long_name: &str) -> Self {
+        let mut attrs = HashMap::new();
+        let msg = format!("No zero-argument meaning for: {op_long_name}");
+        attrs.insert("message".to_string(), Value::str_from(&msg));
+        attrs.insert("name".to_string(), Value::str_from(op_long_name));
+        let ex = Value::make_instance(Symbol::intern("X::NoZeroArgMeaning"), attrs);
+        let mut err = Self::new(&msg);
+        err.exception = Some(Box::new(ex));
+        err
+    }
+
     /// Create a Failure value wrapping an X::Numeric::DivideByZero exception
     /// for a method call on a zero-denominator Rational (e.g. `.floor`, `.Int`).
     pub(crate) fn divide_by_zero_failure_for_method(method: &str, type_name: &str) -> Value {

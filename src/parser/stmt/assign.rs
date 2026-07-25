@@ -12,7 +12,7 @@ use super::super::primary::parse_call_arg_list;
 
 use crate::ast::{AssignOp, Expr, Stmt};
 use crate::symbol::Symbol;
-use crate::token_kind::TokenKind;
+use crate::token_kind::{MetaAssignIdentity, TokenKind};
 use crate::value::Value;
 
 use super::{ident, parse_statement_modifier, var_name};

@@ -119,6 +119,11 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::Gcd
             | OpCode::Lcm
             | OpCode::NumCoerce
+            // METAOP_ASSIGN identity seed -- straight-line; throws only for the
+            // `/=` / `%=` no-zero-argument case, which propagates like any other
+            // fallible step shim. Must stay listed: it sits in every `$i += 1`.
+            | OpCode::MetaAssignIdentity(_)
+            | OpCode::GetLocalMetaAssign { .. }
             // Sink context (forces lazies / throws unhandled Failures)
             | OpCode::SinkPop(_)
             // Topic / context markers
