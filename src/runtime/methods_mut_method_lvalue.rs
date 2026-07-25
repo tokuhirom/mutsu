@@ -2,6 +2,29 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    /// Mirror an accessor write to a role-mixin attribute into the wrapped
+    /// instance's own cell.
+    ///
+    /// The `__mutsu_attr__` mixin entries are construction-time seeds; the cell
+    /// is the store of record, because that is what a private access (`$!attr`)
+    /// inside a role method reads and writes. A write that only updated the
+    /// mixin map would be invisible to `$!attr`, and the next accessor read —
+    /// which prefers the cell — would serve the stale seed.
+    fn sync_mixin_attr_to_instance(inner: &Value, attr: &str, value: &Value) {
+        let Some(cell) = Self::self_instance_attrs(inner) else {
+            return;
+        };
+        let sym = Symbol::intern(attr);
+        // Only mirror an attribute the instance already carries: a `but Role`
+        // mixin over an unrelated object must not gain attributes it never had.
+        if !cell.as_map().contains_key(sym) {
+            return;
+        }
+        let mut map = cell.to_map();
+        map.insert(attr, value.clone());
+        cell.commit_attrs(map);
+    }
+
     /// Whether the role attribute backing a mixin override key
     /// (`__mutsu_attr__{method}`) is declared `is rw`. Scans the mixin's
     /// `__mutsu_role__*` entries for a role that declares the attribute; an
@@ -887,6 +910,7 @@ impl Interpreter {
                     }
                     let mut updated = (**mixins).clone();
                     updated.insert(mixin_attr_key, value.clone());
+                    Self::sync_mixin_attr_to_instance(minner, method, &value);
                     *cell.lock().unwrap() =
                         Value::mixin_parts(minner.clone(), std::sync::Arc::new(updated));
                     return Ok(value);
@@ -927,6 +951,7 @@ impl Interpreter {
                         },
                         value.clone(),
                     );
+                    Self::sync_mixin_attr_to_instance(inner, method, &value);
                     let new_mixin =
                         Value::mixin_parts(inner.clone(), std::sync::Arc::new(updated_mixins));
                     if let Some(var_name) = target_var {
@@ -950,6 +975,7 @@ impl Interpreter {
             if mixins.contains_key(&mixin_attr_key) {
                 let mut updated_mixins = (**mixins).clone();
                 updated_mixins.insert(mixin_attr_key, value.clone());
+                Self::sync_mixin_attr_to_instance(inner, method, &value);
                 let new_mixin =
                     Value::mixin_parts(inner.clone(), std::sync::Arc::new(updated_mixins));
                 if let Some(var_name) = target_var {
