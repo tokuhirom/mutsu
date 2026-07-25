@@ -323,7 +323,15 @@ impl Interpreter {
         }
         let invocant_for_dispatch = make_invocant_for_dispatch(&invocant, attributes);
         let remaining = build_remaining(self, &method_def);
-        let pushed_dispatch = !remaining.is_empty();
+        // A user-overridden grammar `parse`/`subparse`/`parsefile` still needs an MRO
+        // frame even with no further USER candidate, so a `nextsame`/`nextwith` inside
+        // it can defer to the NATIVE grammar parse — the base candidate that is not a
+        // `MethodDef` and so never appears in `remaining` (YAMLish's `method parse`
+        // does `nextwith($input, :actions(Actions))`).
+        let grammar_parse_fallback = remaining.is_empty()
+            && matches!(method_name, "parse" | "subparse" | "parsefile")
+            && self.class_is_grammar(receiver_class_name);
+        let pushed_dispatch = !remaining.is_empty() || grammar_parse_fallback;
         self.push_method_samewith_context(
             receiver_class_name,
             method_name,
