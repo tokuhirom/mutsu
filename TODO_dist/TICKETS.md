@@ -738,7 +738,7 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 ### T-057 — test_die batch (seed-555, un-triaged)  [impact: several dists]
 - dists (each its own root cause; triage individually before claiming, confirm the
   raku `-I lib` baseline first): ~~Attribute::Predicate~~ (FIXED — see Done),
-  File::Ignore (PARTIAL — module now loads via Regex.ACCEPTS fix; see Done),
+  ~~File::Ignore~~ (FIXED — all 7 files 103/103; see Done),
   ~~IO::Path::AutoDecompress~~ (FIXED — see Done), ~~Math::Angle~~ (FIXED — see Done),
   ~~Math::PascalTriangle~~ (FIXED — see Done),
   ~~Statistics::LinearRegression~~ (FIXED — see Done), String::Rotate,
@@ -1135,14 +1135,17 @@ _(move tickets here with `[claim: <branch>]` when you start)_
   the whole consumed span instead of the `<( … )>` region, so `a-w` became `..`
   rather than `a..w` and every range-bearing rule compiled to a broken pattern
   (pin `t/subst-capture-markers.t`).
-  **Six of the seven files now pass completely.** The last one,
-  `t/walk.rakutest`, dies with `Unknown function: recurse` — a method's nested
-  `sub` is unresolvable inside `gather` when the class holds a doubly-nested
-  package; standalone repro in
-  `todo/tickets/nested-sub-in-gather-under-doubly-nested-class.md`. Fixing that
-  closes T-050. Separate: a `<sym>` auto-capture is not recorded on a
-  multi-candidate proto match (the action doesn't read it, so it doesn't affect
-  File::Ignore).
+  The last file, `t/walk.rakutest`, died with `Unknown function: recurse`; that
+  is **also FIXED** (2026-07-25): a package declared two levels deep leaked its
+  short name into the enclosing class body's env and was mistaken for a
+  class-body `my` static, which made every method of that class switch
+  `current_package` to the class — so a method-body `sub` registered under
+  `Outer::` while the lazily-forced `gather` body resolved it under `GLOBAL::`
+  (pin `t/nested-package-not-a-class-static.t`; see
+  `news/2026-07/nested-package-short-name-not-a-class-static.md`).
+  **All seven files pass (103/103) — File::Ignore is DONE.** Separate leftover:
+  a `<sym>` auto-capture is not recorded on a multi-candidate proto match (the
+  action doesn't read it, so it doesn't affect File::Ignore).
 
 - **T-057 (SortUk)** (PR `fix-array-is-copy-list-arg`) — test_die → t/01-basic.t
   4/4 (00-meta.t needs the uninstalled `Test::META` dep, same as raku). One general
