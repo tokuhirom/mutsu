@@ -317,12 +317,19 @@ sessions).
       Live ledger: [`docs/dist-compat-sweep.md`](../docs/dist-compat-sweep.md)
       (regenerate: `scripts/dist-compat-sweep.py`; **sandboxed via `bwrap` — no net,
       read-only FS, throwaway HOME**, since dist code runs arbitrary load-time code).
-      First run (n=60, 2026-07-19): of the pure-Raku, dep-satisfiable dists, **~half
-      load, ~half hit a real mutsu bug on `use` alone**. The top recurring blocker
-      (`Assignment operators inside ?? !! are too loose`, 2 dists) is **fixed**
-      — the guard was firing on a valid tight `.=` in a ternary branch
-      (news/2026-07/ternary-branch-accepts-dot-assign.md); re-run the sweep to pick
-      the next one. This is the
+      **Re-run 2026-07-25 (same n=60 / seed 20260719): 19 load_ok, 20 missing_dep,
+      and only 6 real mutsu failures (2 parse_error, 3 runtime_error, 1 timeout)** —
+      the original "~half hit a real mutsu bug on `use` alone" figure is stale.
+      Cleared since: the `?? !!` "assignment too loose" guard was firing on a valid
+      tight `.=` (news/2026-07/ternary-branch-accepts-dot-assign.md), and a trailing
+      comma before a statement modifier failed to parse, which was the whole
+      `UpRooted` blocker (news/2026-07/trailing-comma-before-statement-modifier.md;
+      all 24 of its modules load now). **Remaining from that run:** `String::Utils`
+      needs an `nqp::` op layer (deep — `todo/deep/nqp-op-layer-missing.md`),
+      `Qwiratry::Test` is still a `parse_error`, `PDF::Class` reports
+      `Unknown role: PDF::COS::Tie::Hash`, `Raku::Pod::Render` times out, and
+      `RakudoContainerfileBuilder` may be a harness artefact (its CLI prints
+      `Usage:`). This is the
       execution counterpart of the signal-only
       [`docs/ecosystem-guts-dependency-survey.md`](../docs/ecosystem-guts-dependency-survey.md)
       and the highest-leverage way to widen the batteries base. Workflow per bug:
