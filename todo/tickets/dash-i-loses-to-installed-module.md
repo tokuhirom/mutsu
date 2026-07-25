@@ -35,19 +35,45 @@ that had an installed copy present is suspect and needs re-measuring.
 The same trap applies to every battery survey and to any bug report reduced with
 `-I` on a machine that has run `mzef install`.
 
-## Where to look
+## Where it is
 
-Module resolution for `use` at run time, and the parse-time scan in
-`src/parser/stmt/simple/module_exports.rs` (`find_module_file`, which searches
-`LIB_PATHS` — those two must agree on precedence, or the parser and the runtime
-can disagree about which file a module is).
+`Interpreter::find_module_path` in `src/runtime/run_modules.rs`. The ordering
+data is already right — `add_default_site_repo` *appends* the site repository to
+`lib_paths` as an `inst#` entry, so `-I` paths come first in the vector. The
+resolver then throws that ordering away:
+
+```rust
+// Check inst# paths (CompUnit::Repository::Installation) first.
+let mut inst_candidates: Vec<(std::path::PathBuf, String)> = Vec::new();
+for base in &self.lib_paths {
+    if let Some(prefix) = base.strip_prefix("inst#") { … }
+}
+```
+
+It makes a full pass over `lib_paths` collecting every `inst#` candidate and
+resolves those before ever looking at the plain directories — the exact
+inversion of Raku's precedence. The fix is to walk `lib_paths` **once, in
+order**, treating each entry as either an installed repository or a plain
+directory, rather than hoisting all the `inst#` ones.
 
 Raku's precedence is: `-I` paths (in order) → `RAKULIB`/`MUTSULIB` → installed
 repositories (`site`, `vendor`, `core`). mutsu already documents the `-I` over
 `MUTSULIB` half in CLAUDE.md; the installed-repo half is what is missing.
 
-## Check while fixing
+Also check the parse-time scan, `find_module_file` in
+`src/parser/stmt/simple/module_exports.rs`, which searches `LIB_PATHS`: the
+parser and the runtime must agree on which file a module is, or the parser can
+extract exports from one file while the runtime loads another.
 
-A precompiled/installed distribution may also be selected by version/auth
-criteria (`use NativeLibs:ver<0.0.9>`), which is a separate question from path
-precedence — but a plain `use` must still prefer `-I`.
+## Keep these while fixing
+
+- **Candidate selection within one installed repo.** Several installed dists can
+  provide the same short name, and the `use` statement's `:ver`/`:auth`/`:api`
+  selectors plus the highest-version tie-break apply *within* an `inst#` entry.
+  That is a separate concern from path precedence and should not change.
+- **`bundled_lib_paths` stays lowest.** It is deliberately last so that an
+  `mzef`-installed version shadows a bundled battery (`run_modules.rs` says so).
+  The battery test-suite gate (`scripts/battery-testsuite.sh`) is the check that
+  this still holds.
+- A plain `use` must prefer `-I` even when the installed copy has a *higher*
+  version — the flag is not a version hint.
