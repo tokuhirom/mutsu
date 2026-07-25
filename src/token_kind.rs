@@ -25,6 +25,10 @@ pub(crate) enum MetaAssignIdentity {
     Zero,
     /// `infix:<*>()` / `infix:<**>()` are `1`.
     One,
+    /// `infix:<~>()` is the empty string. Seeding it is also what keeps
+    /// `my $x; $x ~= "a"` from emitting the "uninitialized value in string
+    /// context" warning that the bare `$x ~ "a"` still does.
+    EmptyStr,
     /// `infix:</>` has no zero-argument candidate.
     NoZeroArgDiv,
     /// `infix:<%>` has no zero-argument candidate.
@@ -40,13 +44,17 @@ impl MetaAssignIdentity {
             MetaAssignIdentity::One => 1,
             MetaAssignIdentity::NoZeroArgDiv => 2,
             MetaAssignIdentity::NoZeroArgMod => 3,
+            MetaAssignIdentity::EmptyStr => 4,
         }
     }
 
     /// Whether seeding this identity can never throw (`Zero` / `One`). The JIT
     /// emits a void shim with no status check for these.
     pub(crate) fn is_infallible(self) -> bool {
-        matches!(self, MetaAssignIdentity::Zero | MetaAssignIdentity::One)
+        matches!(
+            self,
+            MetaAssignIdentity::Zero | MetaAssignIdentity::One | MetaAssignIdentity::EmptyStr
+        )
     }
 
     /// Inverse of [`Self::as_u32`]. Only ever called with a value this module
@@ -56,6 +64,7 @@ impl MetaAssignIdentity {
             1 => MetaAssignIdentity::One,
             2 => MetaAssignIdentity::NoZeroArgDiv,
             3 => MetaAssignIdentity::NoZeroArgMod,
+            4 => MetaAssignIdentity::EmptyStr,
             _ => MetaAssignIdentity::Zero,
         }
     }

@@ -443,6 +443,11 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     ] {
         if input.starts_with(kw)
             && !input[kw_len..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
+            // `LEAVE($x)` — the keyword immediately followed by `(` — is a call
+            // to a routine of that name, not the phaser. Raku splits on exactly
+            // that space (`BEGIN (1+2)` is the phaser, `BEGIN(1+2)` a call);
+            // mirrors the statement-level check in `phaser_stmt`.
+            && !input[kw_len..].starts_with('(')
         {
             let r = &input[kw_len..];
             let (r, _) = ws(r)?;

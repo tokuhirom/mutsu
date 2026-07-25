@@ -130,6 +130,13 @@ pub(crate) struct MethodDef {
 #[derive(Debug, Clone)]
 pub(crate) struct ProtoMethodCtx {
     pub(crate) invocant: Value,
+    /// The caller's `pending_call_arg_sources` as seen at the original call
+    /// site, captured before the proto body runs. `{*}` restores it so the
+    /// multi-candidate selection can still tell that an argument came from a
+    /// writable variable — an `is rw` candidate is otherwise unmatchable
+    /// through a `proto method f(|) {*}` (the proto's own signature declares no
+    /// rw parameter, so `proto_rw_redispatch_args` rebuilds nothing).
+    pub(crate) call_arg_sources: Option<Vec<Option<String>>>,
 }
 
 /// One entry of `multi_dispatch_stack`: (function_name, remaining_candidates,

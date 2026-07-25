@@ -247,7 +247,11 @@ impl Interpreter {
             //        Positional/Associative/Callable constraint, so `(@x, @y)` is
             //        narrower than `($a, $b)` for two array args (matching the sub
             //        dispatch's `typed_param_count`, which also counts sigils).
-            let narrowness = |def: &MethodDef| -> (usize, usize) {
+            //   .2 = `is rw`/`is raw` params — the trait demands a writable
+            //        container, so `(Int $b is rw)` is narrower than `(Int $b)`
+            //        for a variable argument (matching `candidate_specificity_rank`,
+            //        which counts the same traits on the sub-dispatch side).
+            let narrowness = |def: &MethodDef| -> (usize, usize, usize) {
                 let where_subset = def
                     .param_defs
                     .iter()
@@ -272,13 +276,18 @@ impl Interpreter {
                                 || p.name.starts_with('&'))
                     })
                     .count();
-                (where_subset, sigil_typed)
+                let rw_typed = def
+                    .param_defs
+                    .iter()
+                    .filter(|p| !p.is_invocant && p.traits.iter().any(|t| t == "rw" || t == "raw"))
+                    .count();
+                (where_subset, sigil_typed, rw_typed)
             };
             let best_where = tied
                 .iter()
                 .map(|&i| narrowness(&all_matches[i].1))
                 .max()
-                .unwrap_or((0, 0));
+                .unwrap_or((0, 0, 0));
             let mut narrowed: Vec<usize> = tied
                 .iter()
                 .copied()

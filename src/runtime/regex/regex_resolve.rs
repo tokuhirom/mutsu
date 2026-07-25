@@ -32,6 +32,10 @@ impl Interpreter {
         for ch in text.chars() {
             if ch.is_ascii_alphanumeric() || ch == '_' {
                 out.push(ch);
+            } else if ch.is_whitespace() {
+                // `\ ` is the unspace form, not an escaped literal — see
+                // `escape_regex_scalar_literal`.
+                out.push_str(&format!("\\x[{:02X}]", ch as u32));
             } else {
                 out.push('\\');
                 out.push(ch);

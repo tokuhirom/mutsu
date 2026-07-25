@@ -246,6 +246,10 @@ pub(crate) fn phaser_stmt(input: &str) -> PResult<'_, Stmt> {
         // behavior — consume the block and emit nothing — rather than running the
         // block inline (which `BareWord("TEMP")` + a bare `{ ... }` block would
         // do, wrongly executing the body).
+        if r.starts_with('(') {
+            // `TEMP(...)` is a call, not the phaser — see the `(`-check below.
+            return Err(PError::expected("phaser keyword"));
+        }
         let (r, _) = ws(r)?;
         let (r, _body) = if r.starts_with('{') {
             block(r)?
@@ -257,6 +261,15 @@ pub(crate) fn phaser_stmt(input: &str) -> PResult<'_, Stmt> {
     } else {
         return Err(PError::expected("phaser keyword"));
     };
+    // `POST($x)` — the keyword immediately followed by `(`, with no space — is a
+    // call to a routine of that name, not a phaser. Raku decides on the space:
+    // `BEGIN (1+2)` is the phaser over a parenthesised statement, `BEGIN(1+2)`
+    // is an (undeclared) call. HTTP::Request::Common's exported `POST`/`PUT`
+    // subs recurse as `POST($uri, ...)`, which mutsu swallowed as a POST phaser
+    // — the routine silently returned Nil.
+    if rest.starts_with('(') {
+        return Err(PError::expected("phaser keyword"));
+    }
     let (rest, _) = ws(rest)?;
     let (rest, body) = if rest.starts_with('{') {
         block(rest)?

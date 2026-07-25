@@ -10,18 +10,148 @@ fn collect_declared_type_names(
     packages: &mut std::collections::HashSet<String>,
     classes: &mut std::collections::HashSet<String>,
 ) {
+    collect_declared_type_names_with(None, &[], stmts, out, packages, classes)
+}
+
+/// Type names a `use`d module declares, harvested straight from its source text.
+///
+/// The parameter-type pre-pass runs *before* the mainline executes, so a `use`
+/// has not loaded anything yet and a class the module exports is invisible to
+/// the runtime registry — `use URI; sub f(URI $u)` was rejected as an invalid
+/// typename. Fully parsing every used module here would duplicate the load the
+/// mainline is about to do, so this scans the source for declaration keywords
+/// instead. Over-collecting is harmless (the set only ever *widens* what the
+/// check accepts, and a genuine typo still will not appear in any module's
+/// source); under-collecting just restores the old behaviour.
+fn collect_use_declared_type_names(
+    interp: &Interpreter,
+    module: &str,
+    extra_dirs: &[String],
+    out: &mut std::collections::HashSet<String>,
+) {
+    let path = module_source_in_dirs(module, extra_dirs)
+        .or_else(|| interp.resolve_module_path(module).map(|(p, _)| p));
+    let Some(path) = path else {
+        return;
+    };
+    let Ok(source) = std::fs::read_to_string(&path) else {
+        return;
+    };
+    const DECLARATORS: [&str; 5] = ["class", "role", "grammar", "enum", "subset"];
+    let bytes: Vec<char> = source.chars().collect();
+    let is_ident = |c: char| c.is_alphanumeric() || c == '_' || c == '-';
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if i > 0 && is_ident(bytes[i - 1]) {
+            i += 1;
+            continue;
+        }
+        let rest: String = bytes[i..bytes.len().min(i + 8)].iter().collect();
+        let Some(kw) = DECLARATORS.iter().find(|kw| {
+            rest.starts_with(**kw) && !is_ident(*bytes.get(i + kw.len()).unwrap_or(&' '))
+        }) else {
+            i += 1;
+            continue;
+        };
+        let mut j = i + kw.len();
+        while j < bytes.len() && (bytes[j] == ' ' || bytes[j] == '\t') {
+            j += 1;
+        }
+        let start = j;
+        while j < bytes.len() && (is_ident(bytes[j]) || bytes[j] == ':') {
+            j += 1;
+        }
+        if j > start {
+            let name: String = bytes[start..j].iter().collect();
+            if name.starts_with(|c: char| c.is_ascii_uppercase()) {
+                out.insert(name);
+            }
+        }
+        i = (i + kw.len()).max(j);
+    }
+}
+
+/// Locate `module`'s source under one of `dirs` (or its `lib/` subdirectory).
+/// Covers the `use lib '...'` paths, which the runtime has not registered yet
+/// when this compile-time pre-pass runs.
+fn module_source_in_dirs(module: &str, dirs: &[String]) -> Option<std::path::PathBuf> {
+    let base = module.replace("::", "/");
+    for dir in dirs {
+        for ext in [".rakumod", ".pm6", ".pm"] {
+            let name = format!("{}{}", base, ext);
+            let root = std::path::Path::new(dir);
+            for candidate in [root.join(&name), root.join("lib").join(&name)] {
+                if candidate.is_file() {
+                    return Some(candidate);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// The literal paths a `use lib '...'` in this unit adds to the search path.
+fn collect_use_lib_dirs(stmts: &[Stmt], out: &mut Vec<String>) {
+    fn push_literals(expr: &crate::ast::Expr, out: &mut Vec<String>) {
+        use crate::ast::Expr;
+        match expr {
+            Expr::Literal(v) => {
+                if let ValueView::Str(s) = v.view() {
+                    out.push(s.to_string());
+                }
+            }
+            Expr::ArrayLiteral(items) => {
+                for item in items {
+                    push_literals(item, out);
+                }
+            }
+            Expr::Grouped(inner) => push_literals(inner, out),
+            _ => {}
+        }
+    }
     for stmt in stmts {
+        match stmt {
+            Stmt::Use {
+                module,
+                arg: Some(arg),
+                ..
+            } if module == "lib" => push_literals(arg, out),
+            Stmt::Block(body) | Stmt::SyntheticBlock(body) | Stmt::Package { body, .. } => {
+                collect_use_lib_dirs(body, out);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn collect_declared_type_names_with(
+    interp: Option<&Interpreter>,
+    extra_dirs: &[String],
+    stmts: &[Stmt],
+    out: &mut std::collections::HashSet<String>,
+    packages: &mut std::collections::HashSet<String>,
+    classes: &mut std::collections::HashSet<String>,
+) {
+    for stmt in stmts {
+        if let Some(interp) = interp {
+            match stmt {
+                Stmt::Use { module, .. } | Stmt::Need { module } => {
+                    collect_use_declared_type_names(interp, module, extra_dirs, out);
+                }
+                _ => {}
+            }
+        }
         match stmt {
             Stmt::ClassDecl { name, body, .. } => {
                 // A plain `class` is type-like but NOT parametric (parameterizing
                 // it with `[T]`/`of T` is X::NotParametric); roles ARE parametric.
                 out.insert(name.resolve().to_string());
                 classes.insert(name.resolve().to_string());
-                collect_declared_type_names(body, out, packages, classes);
+                collect_declared_type_names_with(interp, extra_dirs, body, out, packages, classes);
             }
             Stmt::RoleDecl { name, body, .. } => {
                 out.insert(name.resolve().to_string());
-                collect_declared_type_names(body, out, packages, classes);
+                collect_declared_type_names_with(interp, extra_dirs, body, out, packages, classes);
             }
             Stmt::EnumDecl { name, variants, .. } => {
                 out.insert(name.resolve().to_string());
@@ -47,10 +177,10 @@ fn collect_declared_type_names(
                 } else {
                     out.insert(name.resolve().to_string());
                 }
-                collect_declared_type_names(body, out, packages, classes);
+                collect_declared_type_names_with(interp, extra_dirs, body, out, packages, classes);
             }
             Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
-                collect_declared_type_names(body, out, packages, classes);
+                collect_declared_type_names_with(interp, extra_dirs, body, out, packages, classes);
             }
             _ => {}
         }
@@ -225,7 +355,16 @@ impl Interpreter {
         let mut declared = std::collections::HashSet::new();
         let mut packages = std::collections::HashSet::new();
         let mut classes = std::collections::HashSet::new();
-        collect_declared_type_names(stmts, &mut declared, &mut packages, &mut classes);
+        let mut lib_dirs = Vec::new();
+        collect_use_lib_dirs(stmts, &mut lib_dirs);
+        collect_declared_type_names_with(
+            Some(self),
+            &lib_dirs,
+            stmts,
+            &mut declared,
+            &mut packages,
+            &mut classes,
+        );
         walk_validate_sub_param_types(self, stmts, &declared, &packages, &classes)
     }
 

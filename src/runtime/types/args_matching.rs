@@ -298,7 +298,24 @@ impl Interpreter {
                 if let Some(constraint) = &pd.type_constraint
                     && let Some(arg) = arg_for_checks.as_ref()
                 {
-                    let resolved_constraint = self.resolved_type_capture_name(constraint);
+                    let mut resolved_constraint = self.resolved_type_capture_name(constraint);
+                    // An unsupplied optional binds its default (or, with no
+                    // default, the bare type object), and `arg_for_checks` above
+                    // stands in the type object either way. A `:D` smiley tested
+                    // against that stand-in would reject a candidate raku
+                    // happily selects — `multi method new(Int:D $code = 200)`
+                    // matches `.new()`, and even `Int:D $x?` matches at dispatch
+                    // and only fails later, at bind time. So drop the
+                    // definedness smiley when nothing was passed; the nominal
+                    // type still discriminates candidates.
+                    if !arg_was_supplied {
+                        let (base, smiley) =
+                            crate::runtime::types::strip_type_smiley(&resolved_constraint);
+                        if smiley.is_some() {
+                            resolved_constraint = base.to_string();
+                        }
+                    }
+                    let resolved_constraint = resolved_constraint;
                     if pd.name.starts_with('&') {
                         if !self.type_matches_value("Callable", arg) {
                             return false;
