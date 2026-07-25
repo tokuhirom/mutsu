@@ -8,8 +8,10 @@ plan 5;
 throws-like 'my Int $x = "foo"', X::TypeCheck::Assignment,
     got => 'foo', expected => Int, symbol => '$x';
 
+# Rakudo's wording: `expected X but got Y (repr)`, with the offending value's
+# short representation appended.
 throws-like 'my Int $x = "foo"', X::TypeCheck::Assignment,
-    message => /:s expected Int, got Str/;
+    message => /:s expected Int but got Str \(\"foo\"\)/;
 
 # A different expected type / value.
 throws-like 'my Str $s = 42', X::TypeCheck::Assignment,
