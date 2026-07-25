@@ -149,6 +149,30 @@ impl Interpreter {
         }
     }
 
+    /// When a user-overridden grammar `parse`/`subparse`/`parsefile` calls
+    /// `nextsame`/`nextwith` (or `callsame`/`callwith`) and the user MRO is
+    /// exhausted, the NATIVE grammar parse is the final base candidate. It is not
+    /// a `MethodDef`, so the regular MRO chain never reaches it (mirrors
+    /// `native_metamodel_next_candidate`). YAMLish relies on this: its
+    /// `method parse` wraps the native parse to inject `:actions(Actions)`.
+    fn native_grammar_parse_next_candidate(
+        &mut self,
+        override_args: Option<&[Value]>,
+    ) -> Option<Result<Value, RuntimeError>> {
+        let method_name = self.samewith_context_stack.last().map(|(n, _)| n.clone())?;
+        if !matches!(method_name.as_str(), "parse" | "subparse" | "parsefile") {
+            return None;
+        }
+        let frame = self.method_dispatch_stack.last()?;
+        let receiver_class = frame.receiver_class.clone();
+        let orig_args = frame.args.clone();
+        if !self.class_is_grammar(&receiver_class) {
+            return None;
+        }
+        let args: Vec<Value> = override_args.map(<[Value]>::to_vec).unwrap_or(orig_args);
+        Some(self.dispatch_package_parse(&receiver_class, &method_name, &args))
+    }
+
     /// Shared implementation for callsame/nextsame/callwith/nextwith.
     /// `override_args`: if Some, use these args instead of the original.
     /// `tail_call`: if true, raise a return-control exception with the result.
@@ -295,14 +319,19 @@ impl Interpreter {
             let (receiver_class, invocant, mut call_args, owner_class, mut method_def, rw_params) = {
                 let frame = &mut self.method_dispatch_stack[frame_idx];
                 let Some((owner_class, method_def)) = frame.remaining.first().cloned() else {
-                    // User MRO exhausted: a metamodel-HOW dispatch falls through
-                    // to the native metamodel implementation as the last
-                    // candidate before giving up.
-                    let result =
+                    // User MRO exhausted: a grammar `parse`/`subparse` override or a
+                    // metamodel-HOW dispatch falls through to the native
+                    // implementation as the last candidate before giving up.
+                    let result = if let Some(res) =
+                        self.native_grammar_parse_next_candidate(override_args.as_deref())
+                    {
+                        res?
+                    } else {
                         match self.native_metamodel_next_candidate(override_args.as_deref()) {
                             Some(res) => res?,
                             None => Value::NIL,
-                        };
+                        }
+                    };
                     if tail_call {
                         return Err(RuntimeError {
                             return_value: Some(result),

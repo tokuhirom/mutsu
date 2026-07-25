@@ -379,8 +379,12 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
             }
             break;
         }
-        // Default parent is Grammar if no `is` clause
-        if parents.is_empty() && name != "Grammar" {
+        // Default parent is Grammar if no `is` clause. A module-local
+        // `grammar Grammar` (qualified to `Mod::Grammar`) must still inherit the
+        // built-in Grammar; only a genuine top-level `grammar Grammar` that IS
+        // the built-in would self-parent, and that is dropped at registration
+        // (see the self-parent filter in `exec_register_class_op`).
+        if parents.is_empty() {
             parents.push("Grammar".to_string());
         }
         let (r, _) = opt_char(r, ';');

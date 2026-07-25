@@ -695,13 +695,23 @@ impl Interpreter {
             args,
             Some(invocant.clone()),
         );
+        // A user-overridden grammar `parse`/`subparse`/`parsefile` needs an MRO frame
+        // even with a single user candidate, so a `nextsame`/`nextwith` inside it can
+        // defer to the NATIVE grammar parse — the base candidate that is not a
+        // `MethodDef` and so never appears in the dispatch candidates (YAMLish's
+        // `method parse` does `nextwith($input, :actions(Actions))`).
+        let grammar_parse_override = matches!(method_name, "parse" | "subparse" | "parsefile")
+            && self.class_is_grammar(receiver_class)
+            && self.has_user_method(receiver_class, method_name);
         // Fast path: a name with at most one *structural* dispatch candidate across
         // the MRO can never produce a deferral frame (arg-matching only reduces the
         // candidate count), so skip the per-call `resolve_all_methods_with_owner`
         // MRO walk + MethodDef clones. The structural shape depends only on
         // (class, method), so it is memoized in `dispatch_multi_candidate` and
         // invalidated with the other method caches on any registry change.
-        if !self.has_multiple_dispatch_candidates(receiver_class, method_name) {
+        if !grammar_parse_override
+            && !self.has_multiple_dispatch_candidates(receiver_class, method_name)
+        {
             return false;
         }
         let all_candidates = self.resolve_all_methods_with_owner(receiver_class, method_name, args);
@@ -711,7 +721,9 @@ impl Interpreter {
         // per-call `function_body_fingerprint` work below — which Debug-traverses the
         // whole method body AST to derive a candidate identity — for the overwhelmingly
         // common single-method case. Mirrors `push_multi_dispatch_frame`'s `<= 1` guard.
-        if all_candidates.len() <= 1 {
+        // A grammar parse override still pushes a frame (empty `remaining`) so its
+        // `nextsame`/`nextwith` reaches the native fallback.
+        if !grammar_parse_override && all_candidates.len() <= 1 {
             return false;
         }
         // Identify the chosen candidate and skip exactly that one
@@ -732,7 +744,7 @@ impl Interpreter {
             }
             remaining.push((owner.resolve(), def));
         }
-        let pushed = !remaining.is_empty();
+        let pushed = !remaining.is_empty() || grammar_parse_override;
         if pushed {
             let rw_params = chosen
                 .as_ref()

@@ -147,6 +147,15 @@ impl Interpreter {
                 // is the enclosing module — the child class name reaches
                 // `register_class_decl` without its module prefix.
                 .map(|p| self.qualify_sibling_parent_name(&p))
+                // Drop the auto-added `Grammar` default parent from a genuine
+                // top-level `grammar Grammar` (qualified name exactly `Grammar`,
+                // which would otherwise list itself as its own parent and loop the
+                // MRO walk). A module-local `grammar Grammar` qualifies to
+                // `Mod::Grammar`, so its `Grammar` parent (the built-in) is NOT
+                // itself and is kept — that is how the parser can unconditionally
+                // add the `Grammar` default parent. An EXPLICIT `class Foo is Foo`
+                // is left intact so it still raises the self-inheritance error.
+                .filter(|p| !(p == "Grammar" && qualified_name == "Grammar"))
                 .collect();
             let mapped_hidden_parents: Vec<String> = hidden_parents
                 .iter()
