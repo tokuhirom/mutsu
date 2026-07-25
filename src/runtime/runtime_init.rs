@@ -2148,6 +2148,7 @@ impl Interpreter {
             var_hash_key_constraints: HashMap::new(),
             instance_type_metadata: Arc::new(RwLock::new(HashMap::new())),
             let_saves: Vec::new(),
+            grammar_rule_dynvar_decls: HashMap::new(),
             supply_emit_buffer: Vec::new(),
             pending_promise_whenever_arms: Vec::new(),
             supply_emit_timed_buffer: Vec::new(),

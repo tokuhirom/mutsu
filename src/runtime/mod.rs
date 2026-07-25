@@ -1208,6 +1208,13 @@ pub struct Interpreter {
     /// directly instead of resolving the name to the OUTER slot via
     /// `find_local_slot`. `None` for a non-local target (by-name fallback).
     let_saves: Vec<(String, Value, bool, Option<u32>)>,
+    /// `rule name -> its own `:my $*/%*/@*x = …;` declarations`, for the grammar
+    /// currently being parsed. `establish_grammar_dynamic_vars` also evaluates
+    /// them once into `env` (a parse-wide slot, which is what a non-declaring
+    /// rule's action reads); this map is what lets the reduce walk give each
+    /// *match* of a declaring rule its own binding on top of that, so a
+    /// per-match `:my $*FINAL` is not read as the last match's value.
+    pub(crate) grammar_rule_dynvar_decls: HashMap<String, Vec<String>>,
     pub(super) supply_emit_buffer: Vec<Vec<Value>>,
     /// `whenever <Promise>` sources inside a `supply` block, rewritten to a
     /// stand-in supplier and waiting to be armed. A supplier keeps no backlog,

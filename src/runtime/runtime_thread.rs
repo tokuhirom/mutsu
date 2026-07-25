@@ -304,6 +304,7 @@ impl Interpreter {
                 self.instance_type_metadata.read().unwrap().clone(),
             )),
             let_saves: Vec::new(),
+            grammar_rule_dynvar_decls: HashMap::new(),
             supply_emit_buffer: Vec::new(),
             pending_promise_whenever_arms: Vec::new(),
             supply_emit_timed_buffer: Vec::new(),
