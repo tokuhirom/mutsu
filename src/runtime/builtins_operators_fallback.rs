@@ -298,8 +298,23 @@ impl Interpreter {
         {
             return self.builtin_zip_with(args);
         }
-        if let Some(native_result) =
-            crate::builtins::native_function(crate::symbol::Symbol::intern(name), args)
+        // A user-declared routine SHADOWS a same-named builtin: in raku a lexical
+        // `sub abs` (declared here or imported from a module) wins over CORE's.
+        // The native table is consulted below, so without this check the builtin
+        // silently ran instead — and only for some shapes, which made it look
+        // arbitrary: the VM's named-call path normally runs the user def directly
+        // and only falls through to here when its strict builtin-shadow gate
+        // (`def_is_otf_compilable`, which rejects a DEFAULT parameter for
+        // name-cache reasons — PR #3546) says the def cannot be OTF-compiled. So
+        // `sub rotate (Str $s, Int $n = 1) is export` lost every call while the
+        // same sub without the default won. Resolution happens through the normal
+        // registry lookup, so a name with no user routine costs one miss and
+        // reaches the native table exactly as before.
+        let user_shadows_builtin = Self::is_builtin_function(name)
+            && self.resolve_function_with_alias(name, args).is_some();
+        if !user_shadows_builtin
+            && let Some(native_result) =
+                crate::builtins::native_function(crate::symbol::Symbol::intern(name), args)
         {
             return native_result;
         }

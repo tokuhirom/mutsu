@@ -1217,3 +1217,21 @@ _(move tickets here with `[claim: <branch>]` when you start)_
   shadows a builtin loses the call when it has a default parameter and the
   argument count matches a native builtin arity
   (`todo/tickets/builtin-shadow-with-default-param-loses.md`).
+
+- **T-057 (String::Rotate, part 2)** (PR `fix-builtin-shadow-default-param`) —
+  the `sub rotate` half. One general bug: a user-declared routine that shadows a
+  same-named builtin lost the call whenever its signature had a **default
+  parameter** and the argument count matched a native builtin arity. The VM's
+  named-call path applies a deliberately strict gate to a builtin shadow
+  (`def_is_otf_compilable`, which rejects defaults — name-cache hazard, PR
+  #3546); that rejection is right, but control then fell through to
+  `call_function_fallback`, which consults the NATIVE table before resolving a
+  user routine, so the builtin ran silently. The fallback now prefers a resolved
+  user routine (gated on the name being a builtin, so every other name is
+  unchanged). Pin: `t/builtin-shadow-default-param.t`. Same class as T-054
+  (P5push), which should be re-checked against this.
+  **Residual (third root cause, deferred):** the dist's signature is
+  `sub rotate (Str(Any) \str, …)`, and a sigilless parameter named after a native
+  type reads the `str` TYPE OBJECT inside a module routine —
+  `todo/tickets/sigilless-param-named-like-a-native-type.md`. String::Rotate
+  stays at 68/136 until that lands.
