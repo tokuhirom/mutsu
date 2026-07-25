@@ -340,6 +340,8 @@ impl Interpreter {
         let plan = self.native_ctor_plan(class_name);
         let cn_resolved = class_name.as_str();
         let mut attributes = AttrMap::new();
+        let mut deferred_defaults: Vec<super::attr_build_defaults::DeferredAttrDefault> =
+            Vec::new();
         for ((attr_name, _is_public, default, _is_rw, _, sigil, _), &attr_sym) in
             plan.class_attrs.iter().zip(plan.attr_syms.iter())
         {
@@ -357,11 +359,15 @@ impl Interpreter {
             {
                 continue;
             }
-            let val = if let Some(Expr::Literal(lit_val)) = default {
+            // With a BUILD phase the initializer runs AFTER BUILD and only where
+            // BUILD left the attribute alone, so the slot is seeded with the
+            // no-initializer value now (runtime/attr_build_defaults.rs).
+            let is_deferred = plan.has_build && default.is_some();
+            let val = if !is_deferred && let Some(Expr::Literal(lit_val)) = default {
                 // Fast path: simple literal defaults (e.g. native type
                 // defaults like Int(0)) don't need interpretation.
                 lit_val.clone()
-            } else if let Some(expr) = default {
+            } else if !is_deferred && let Some(expr) = default {
                 self.eval_block_value(&[Stmt::Expr(expr.clone())])?
             } else if *sigil == '@' {
                 // A `@`-sigil attribute with no default is an empty Array,
@@ -403,6 +409,15 @@ impl Interpreter {
                     None => Value::package(crate::symbol::Symbol::intern("Any")),
                 }
             };
+            if is_deferred {
+                deferred_defaults.push(super::attr_build_defaults::DeferredAttrDefault {
+                    name: attr_name.clone(),
+                    sigil: *sigil,
+                    default: default.clone(),
+                    build_override: None,
+                    seed: val.clone(),
+                });
+            }
             attributes.insert(attr_sym, val);
         }
         // Override with named args from bless call. A key that names a declared
@@ -429,6 +444,8 @@ impl Interpreter {
                     }
                     None => attributes.insert(key.clone(), value.clone()),
                 };
+                // An attribute the caller supplied never gets its initializer.
+                deferred_defaults.retain(|d| d.name.as_str() != &**key);
             }
         }
         // Array-subclass construction: an `is Array` subclass reaches the base
@@ -461,7 +478,21 @@ impl Interpreter {
         // walk (per-MRO-class registry probes + role-submethod ordering) is
         // skipped when the plan says no class or composed role declares one.
         if plan.has_build {
-            self.run_bless_build_phase(class_name, &inv, &args)?;
+            self.push_build_write_frame(&inv);
+            let build_result = self.run_bless_build_phase(class_name, &inv, &args);
+            let build_writes = self.pop_build_write_frame();
+            build_result?;
+            // Now that BUILD has had its say, apply the initializers it left
+            // untouched (raku's order; see runtime/attr_build_defaults.rs).
+            if !deferred_defaults.is_empty() {
+                self.apply_post_build_attr_defaults(
+                    cn_resolved,
+                    class_name,
+                    &inv,
+                    &deferred_defaults,
+                    &build_writes,
+                )?;
+            }
         }
         // `bless` passes its named arguments through to BUILD and TWEAK (as
         // `BUILDALL` does), so a `submethod BUILD(:$!attr!)` with a required named

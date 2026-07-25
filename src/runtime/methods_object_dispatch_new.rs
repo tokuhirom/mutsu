@@ -1518,6 +1518,19 @@ impl Interpreter {
                             .and_then(|def| def.methods.get("BUILD"))
                             .is_some()
                 });
+                // Role-composed BUILD submethods count as a BUILD phase too, for
+                // the attribute-initializer ordering below (not for the
+                // named-arg mapping above, which only a class BUILD takes over).
+                let any_role_build = class_mro.iter().map(|s| s.as_str()).any(|cn| {
+                    cn != "Any"
+                        && cn != "Mu"
+                        && !self
+                            .ordered_role_submethods_for_class(cn, "BUILD")
+                            .is_empty()
+                });
+                let has_build_phase = any_build || any_role_build;
+                let mut deferred_defaults: Vec<super::attr_build_defaults::DeferredAttrDefault> =
+                    Vec::new();
                 for val in &args {
                     match val.view() {
                         ValueView::Pair(k, v) => {
@@ -1695,6 +1708,26 @@ impl Interpreter {
                         .attribute_build_overrides
                         .get(&(class_key.to_string(), attr_name.clone()))
                         .cloned();
+                    // With a BUILD phase the initializer runs AFTER BUILD and
+                    // only if BUILD left the attribute alone, so seed the slot
+                    // now and postpone the initializer (see attr_build_defaults).
+                    if has_build_phase && (build_override.is_some() || default.is_some()) {
+                        let seed = self.seed_attr_value(
+                            class_key,
+                            &attr_name,
+                            sigil,
+                            &attr_type_constraints,
+                        );
+                        deferred_defaults.push(super::attr_build_defaults::DeferredAttrDefault {
+                            name: attr_name.clone(),
+                            sigil,
+                            default,
+                            build_override,
+                            seed: seed.clone(),
+                        });
+                        attrs.insert(attr_name, seed);
+                        continue;
+                    }
                     let val = if let Some(build_override) = build_override {
                         let val = self.call_sub_value(build_override, Vec::new(), false)?;
                         Self::coerce_attr_value_by_sigil(val, sigil)
@@ -1705,176 +1738,20 @@ impl Interpreter {
                         if let Expr::Literal(ref lit_val) = expr {
                             Self::coerce_attr_value_by_sigil(lit_val.clone(), sigil)
                         } else {
+                            // Before BUILD the evaluation context is a snapshot
+                            // instance carrying the attributes settled so far.
                             let temp_self = Value::make_instance(*class_name, attrs.clone());
-                            let old_self = self.env.get("self").cloned();
-                            self.env.insert("self".to_string(), temp_self);
-                            // `::?CLASS` in a default (e.g. `has $.Version =
-                            // ::?CLASS.^ver` composed from a role) resolves through
-                            // `?CLASS`; bind it to the class being built.
-                            let old_class = self.env.get("?CLASS").cloned();
-                            self.env
-                                .insert("?CLASS".to_string(), Value::package(*class_name));
-                            // Set !attr_name and .attr_name in env so that $!a / $.a
-                            // references in default expressions resolve to already-
-                            // initialized attributes (e.g. `has $.c = $!a + $!b`).
-                            let mut saved_attr_env: Vec<(String, Option<Value>)> = Vec::new();
-                            for (a_name, a_val) in &attrs {
-                                let bang = format!("!{}", a_name);
-                                let dot = format!(".{}", a_name);
-                                saved_attr_env.push((bang.clone(), self.env.get(&bang).cloned()));
-                                saved_attr_env.push((dot.clone(), self.env.get(&dot).cloned()));
-                                self.env.insert(bang, a_val.clone());
-                                self.env.insert(dot, a_val.clone());
-                            }
-                            // Temporarily switch to the class package so that
-                            // class-scoped subs (e.g. `sub inner`) are found
-                            // when evaluating attribute default expressions.
-                            let saved_package = self.current_package();
-                            self.set_current_package(class_key.to_string());
-                            let result = self.eval_block_value(&[Stmt::Expr(expr)]);
-                            self.set_current_package(saved_package);
-                            // Restore previous env state for attribute variables
-                            for (key, old_val) in saved_attr_env {
-                                if let Some(v) = old_val {
-                                    self.env.insert(key, v);
-                                } else {
-                                    self.env.remove(&key);
-                                }
-                            }
-                            if let Some(old) = old_self {
-                                self.env.insert("self".to_string(), old);
-                            } else {
-                                self.env.remove("self");
-                            }
-                            if let Some(old) = old_class {
-                                self.env.insert("?CLASS".to_string(), old);
-                            } else {
-                                self.env.remove("?CLASS");
-                            }
-                            let val = result?;
+                            let val = self.eval_attr_default_expr(
+                                class_key,
+                                *class_name,
+                                &expr,
+                                &temp_self,
+                                &attrs,
+                            )?;
                             Self::coerce_attr_value_by_sigil(val, sigil)
                         }
                     } else {
-                        match sigil {
-                            '@' => {
-                                // Check for `is Type` trait (e.g. `has @.a is Buf`)
-                                let is_type = self
-                                    .registry()
-                                    .class_attribute_is_types
-                                    .get(&(class_key.to_string(), attr_name.clone()))
-                                    .cloned();
-                                if let Some(type_name) = is_type {
-                                    // For a parameterized container type (`is Array[Rat]`),
-                                    // build the empty array directly with type metadata so
-                                    // `.WHAT` / `~~ Array[Rat]` see the declared element type
-                                    // (a `Package` built from the string name loses its
-                                    // type parameter when `.new` is dispatched).
-                                    if let Some(inner) = type_name
-                                        .strip_prefix("Array[")
-                                        .or_else(|| type_name.strip_prefix("array["))
-                                        .and_then(|s| s.strip_suffix(']'))
-                                    {
-                                        let mut arr = Value::real_array(Vec::new());
-                                        arr = self.tag_container_metadata(
-                                            arr,
-                                            super::ContainerTypeInfo {
-                                                value_type: inner.trim().to_string(),
-                                                key_type: None,
-                                                declared_type: Some(type_name.clone()),
-                                            },
-                                        );
-                                        arr
-                                    } else {
-                                        let type_obj = Value::package(
-                                            crate::symbol::Symbol::intern(&type_name),
-                                        );
-                                        match self.call_method_with_values(type_obj, "new", vec![])
-                                        {
-                                            Ok(v) => v,
-                                            Err(_) => Value::real_array(Vec::new()),
-                                        }
-                                    }
-                                } else {
-                                    let mut arr = Value::real_array(Vec::new());
-                                    // Register element type constraint for typed array attributes
-                                    let tc = self
-                                        .registry()
-                                        .classes
-                                        .get(class_key)
-                                        .and_then(|cd| cd.attribute_types.get(&attr_name))
-                                        .cloned();
-                                    if let Some(tc) = tc {
-                                        arr = self.tag_container_metadata(
-                                            arr,
-                                            super::ContainerTypeInfo {
-                                                value_type: tc,
-                                                key_type: None,
-                                                declared_type: None,
-                                            },
-                                        );
-                                    }
-                                    arr
-                                }
-                            }
-                            '%' => {
-                                // Check for `is Type` trait (e.g. `has %.h is BagHash`)
-                                let is_type = self
-                                    .registry()
-                                    .class_attribute_is_types
-                                    .get(&(class_key.to_string(), attr_name.clone()))
-                                    .cloned();
-                                if let Some(type_name) = is_type {
-                                    let type_obj =
-                                        Value::package(crate::symbol::Symbol::intern(&type_name));
-                                    match self.call_method_with_values(type_obj, "new", vec![]) {
-                                        Ok(v) => v,
-                                        Err(_) => Value::hash(HashMap::new()),
-                                    }
-                                } else {
-                                    let h = Value::hash(HashMap::new());
-                                    // Register value type constraint for typed hash attributes
-                                    let tc = self
-                                        .registry()
-                                        .classes
-                                        .get(class_key)
-                                        .and_then(|cd| cd.attribute_types.get(&attr_name))
-                                        .cloned();
-                                    if let Some(tc) = tc {
-                                        self.tag_container_metadata(
-                                            h,
-                                            super::ContainerTypeInfo {
-                                                value_type: tc,
-                                                key_type: None,
-                                                declared_type: None,
-                                            },
-                                        )
-                                    } else {
-                                        h
-                                    }
-                                }
-                            }
-                            _ => {
-                                // A scalar attribute with no default seeds its
-                                // nominal type object (`has $!z` reads as Any,
-                                // `has Int $!x` as Int) — not Nil — matching
-                                // raku. Native types keep zero/empty defaults.
-                                match attr_type_constraints.get(&attr_name).map(String::as_str) {
-                                    Some(
-                                        "int" | "int8" | "int16" | "int32" | "int64" | "uint"
-                                        | "uint8" | "uint16" | "uint32" | "uint64" | "byte"
-                                        | "atomicint",
-                                    ) => Value::int(0),
-                                    Some("num" | "num32" | "num64") => Value::num(0.0),
-                                    Some("str") => Value::str("".to_string()),
-                                    Some(tc) => {
-                                        let nominal =
-                                            self.nominal_type_object_name_for_constraint(tc);
-                                        Value::package(crate::symbol::Symbol::intern(&nominal))
-                                    }
-                                    None => Value::package(crate::symbol::Symbol::intern("Any")),
-                                }
-                            }
-                        }
+                        self.seed_attr_value(class_key, &attr_name, sigil, &attr_type_constraints)
                     };
                     // A coercion-typed attribute (`has Int() $.x = "42"`) coerces
                     // its evaluated default through the target type, just like a
@@ -1896,14 +1773,39 @@ impl Interpreter {
                 self.apply_container_attribute_defaults(class_key, &mut attrs);
                 // Add alias metadata for `has $x` (no twigil) attributes
                 self.add_alias_attribute_metadata(class_key, &mut attrs);
-                self.enforce_attribute_where_constraints(class_key, &class_attrs_info, &attrs)?;
-                self.enforce_attribute_smiley_constraints(
-                    class_key,
-                    &attrs,
-                    // With a BUILD submethod the pre-BUILD attrs are not final;
-                    // the provided-and-undefined `:D` check must wait.
-                    (!any_build).then_some(&provided_attr_names),
-                )?;
+                // An attribute whose initializer is deferred still holds its seed
+                // here, so it is exempt from both checks — they run again on the
+                // final attributes after the BUILD phase (a deferred initializer
+                // implies a BUILD phase, so that pass always happens).
+                {
+                    let deferred_names: std::collections::HashSet<&str> =
+                        deferred_defaults.iter().map(|d| d.name.as_str()).collect();
+                    let pruned_info: Vec<ClassAttributeDef>;
+                    let pruned_attrs: AttrMap;
+                    let (check_info, check_attrs) = if deferred_names.is_empty() {
+                        (&class_attrs_info[..], &attrs)
+                    } else {
+                        pruned_info = class_attrs_info
+                            .iter()
+                            .filter(|a| !deferred_names.contains(a.0.as_str()))
+                            .cloned()
+                            .collect();
+                        let mut pruned = attrs.clone();
+                        for name in &deferred_names {
+                            pruned.remove(*name);
+                        }
+                        pruned_attrs = pruned;
+                        (&pruned_info[..], &pruned_attrs)
+                    };
+                    self.enforce_attribute_where_constraints(class_key, check_info, check_attrs)?;
+                    self.enforce_attribute_smiley_constraints(
+                        class_key,
+                        check_attrs,
+                        // With a BUILD submethod the pre-BUILD attrs are not final;
+                        // the provided-and-undefined `:D` check must wait.
+                        (!any_build).then_some(&provided_attr_names),
+                    )?;
+                }
                 // Restore env after default evaluation, but preserve side effects
                 // on variables that already existed in the caller environment.
                 let mut restored_env = saved_default_env.clone();
@@ -1924,30 +1826,26 @@ impl Interpreter {
                 let inv_cell = Self::self_instance_attrs(&inv)
                     .expect("a freshly built instance has an attribute cell");
                 let mro = self.class_mro(class_key);
-                match self.run_build_phase(*class_name, &inv, &args)? {
+                self.push_build_write_frame(&inv);
+                let build_result = self.run_build_phase(*class_name, &inv, &args);
+                let build_writes = self.pop_build_write_frame();
+                match build_result? {
                     Ok(()) => {}
                     Err(failure) => return Ok(failure),
                 }
+                // Now that BUILD has had its say, apply the initializers it left
+                // untouched (raku's order; see runtime/attr_build_defaults.rs).
+                if !deferred_defaults.is_empty() {
+                    self.apply_post_build_attr_defaults(
+                        class_key,
+                        *class_name,
+                        &inv,
+                        &deferred_defaults,
+                        &build_writes,
+                    )?;
+                }
                 // Check required attributes after all BUILDs have run
-                let any_build = mro.iter().map(|s| s.as_str()).any(|cn| {
-                    cn != "Any"
-                        && cn != "Mu"
-                        && self
-                            .registry()
-                            .classes
-                            .get(cn)
-                            .and_then(|def| def.methods.get("BUILD"))
-                            .is_some()
-                });
-                // Also check role BUILD submethods for required attribute enforcement
-                let any_role_build = mro.iter().map(|s| s.as_str()).any(|cn| {
-                    cn != "Any"
-                        && cn != "Mu"
-                        && !self
-                            .ordered_role_submethods_for_class(cn, "BUILD")
-                            .is_empty()
-                });
-                if any_build || any_role_build {
+                if has_build_phase {
                     let attrs = inv_cell.to_map();
                     for (attr_name, _is_public, _default, _is_rw, is_required, _sigil, _) in
                         &class_attrs_info

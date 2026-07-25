@@ -127,6 +127,7 @@ mod accessors_resolve;
 mod accessors_stack;
 mod accessors_stash;
 mod accessors_state;
+mod attr_build_defaults;
 mod builtins;
 mod builtins_atomic;
 mod builtins_atomic_cas;
@@ -719,6 +720,16 @@ pub(crate) struct CurRepoState {
     pending_global_symbols: HashSet<String>,
 }
 
+/// One instance's worth of "attributes BUILD assigned", pushed for the duration
+/// of that instance's BUILD phase (see `Interpreter::build_attr_writes`).
+pub(crate) struct BuildWriteFrame {
+    /// Address of the instance's shared attribute cell, used to attribute a
+    /// write to the right frame when BUILD constructs further objects.
+    pub(crate) cell_addr: usize,
+    /// Attribute cell keys written while this frame was live.
+    pub(crate) written: HashSet<crate::symbol::Symbol>,
+}
+
 pub struct Interpreter {
     env: Env,
     /// Program output sink — stdout/stderr buffers, the immediate-flush flag,
@@ -803,6 +814,15 @@ pub struct Interpreter {
     /// evaluating typed-attribute default type objects so a suppressed nested
     /// class name resolves within its owning class (see `resolve_suppressed_type`).
     constructing_class: Option<String>,
+    /// Attribute writes observed through an instance's shared cell while its
+    /// BUILD phase runs, one frame per instance under construction (BUILD may
+    /// itself construct objects, so the frames nest). A frame is keyed by the
+    /// cell's address; `write_attr_cell_by_key` records into the matching frame.
+    /// Raku applies a `has $.x = <default>` initializer *after* BUILD and only
+    /// for attributes BUILD did not set, so this is what "BUILD set it" means
+    /// (an explicit `$!x = Any` counts, exactly like rakudo's null check).
+    /// Interior mutability: the write path takes `&self`.
+    pub(crate) build_attr_writes: std::cell::RefCell<Vec<BuildWriteFrame>>,
     /// The class whose body is currently being registered, set only while
     /// executing `BEGIN`/`EVAL` code inside a class body (see
     /// `register_class_decl`). Lets a `has`-attribute declaration that reaches
