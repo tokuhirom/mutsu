@@ -44,9 +44,11 @@ own repository, so the files died with `ok=0` (module missing, not a failing
 assertion). Rather than leave the redirect and binary-upload paths ungated —
 exactly the paths most likely to regress — that helper is now bundled too; see
 [test-helpers.md](../../docs/batteries/test-helpers.md) for why it earns its
-place beyond this suite. `HTTP::UserAgent`'s two other `test-depends`,
-`IO::Capture::Simple` and `JSON::Fast`, needed nothing: mutsu already provides
-`Test::IO::Capture` and `JSON::Fast`.
+place beyond this suite. `HTTP::UserAgent`'s two other `test-depends` needed no
+bundling, though for different reasons: `JSON::Fast` really is provided
+natively (`runtime/json.rs`), whereas `IO::Capture::Simple` is not —
+`070-ua-simple` passes only because its whole body sits behind
+`NETWORK_TESTING` and mutsu tolerates a missing `Test::*` module at `use` time.
 
 ## New: the gate never runs third-party-service tests
 

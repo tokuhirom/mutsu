@@ -39,10 +39,14 @@ test-only dependency that is not bundled is simply unavailable and the files die
 with `ok=0`. Bundling the helper turns them into real, offline, deterministic
 gate coverage.
 
-`HTTP::UserAgent`'s two other `test-depends`, `IO::Capture::Simple` and
-`JSON::Fast`, need no bundling — mutsu already provides `Test::IO::Capture` and
-`JSON::Fast`, which is why `070-ua-simple` and `080-ua` were gated from the
-start.
+`HTTP::UserAgent`'s two other `test-depends` did not need bundling, but for
+different reasons. `JSON::Fast` really is provided — natively, by
+`runtime/json.rs` — so `080-ua` exercises it for real. `IO::Capture::Simple` is
+**not**: `070-ua-simple` passes because its entire body sits behind
+`NETWORK_TESTING`, and mutsu tolerates a missing `Test::*` module at `use` time
+(`runtime/runtime_module.rs`), so the unresolved `use Test::IO::Capture` never
+bites. Setting `NETWORK_TESTING` would fail on `prints-stdout-ok`. That
+tolerance is a wart worth revisiting, not a feature to rely on.
 
 ## Provenance and update procedure
 
