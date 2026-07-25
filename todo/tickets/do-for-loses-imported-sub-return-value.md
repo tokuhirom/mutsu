@@ -100,11 +100,45 @@ alias (a `ContainerRef`/topic cell) whose target is reset by the loop epilogue.
 things to check. Why the parenthesized form escapes it is still unexplained and
 is the crux.
 
+## ROOT CAUSE FOUND (2026-07-25): the executed body contains a `SinkPop`
+
+Printing the *executed* op range at the top of the epilogue
+(`run_start..loop_end` plus the opcodes in it) gives:
+
+```
+parens (OK):   range=6..9    ops=["LoadConst(4)", "ContainerizePair", "CallFunc{…}"]
+bare (LOST):   range=21..26  ops=["LoadConst(4)", "ContainerizePair", "CallFunc{…}", "SinkPop(false)", "LoadConst(9)"]
+```
+
+The bare form's loop body runs a **`SinkPop`** after the call — which discards
+the value — while the parenthesized form does not. `compile_stmt`'s
+`Stmt::Expr` arm emits `SinkPop`; `compile_stmts_value`'s `is_last` arm (the
+value-collecting path a `do for` body should use) does not. So the body's last
+statement is being compiled through the **sink-statement** path instead of the
+value path.
+
+### Why the earlier "identical bytecode" measurement was wrong
+
+`--dump-bytecode` on the same file shows op 24 as `SetLocalDecl`, but the
+*executed* op 24 is `SinkPop(false)`. **The dumped and executed bytecode differ**
+— the mainline is recompiled at runtime (after `use` has loaded the module), and
+only the recompiled chunk carries the `SinkPop`. The earlier full-file bytecode
+diff also used an `-e` program with no `use`, where the imported name is unknown
+and no recompile happens; that is why both forms looked identical. **Do not trust
+`--dump-bytecode` for a program that `use`s a module — dump the executed range
+instead.**
+
+That also explains every observation: it is not "imported vs local" per se, it is
+"this statement was recompiled through the sink path". Parens/temp/interpolation
+all change the last statement's shape enough to avoid it.
+
 ## Where to look
 
-`vm_for_loop_body.rs`, between the body's last op and the `collected` push: the
-topic restore and the two writeback helpers. Instrument the stack top after each
-of them.
+The runtime recompile path (`compile_block_raw` / whatever recompiles the
+mainline after a module load) and how it chooses `compile_stmt` vs
+`compile_stmts_value` for a value-collecting `do for` body — the `collect: true`
+context must reach it. `compiler/stmt.rs:489` (`Stmt::Expr` → `SinkPop`) versus
+`compiler/helpers_control_flow.rs:33` (`compile_stmts_value`).
 
 ## Impact
 
