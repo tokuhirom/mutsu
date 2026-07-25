@@ -329,7 +329,7 @@ impl Interpreter {
             && let ValueView::Str(name) = code.constants[name_idx as usize].view()
         {
             if name.starts_with('@') || name.starts_with('%') {
-                self.mirror_array_hash_attr_to_cell(code, name_idx, None);
+                self.mirror_attr_env_to_cell(code, name_idx, None);
             } else {
                 let name = name.to_string();
                 self.mirror_attr_value_to_cell_by_name(code, &name);

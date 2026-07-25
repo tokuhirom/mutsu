@@ -344,7 +344,7 @@ pub(super) unsafe extern "C" fn call_method_mut(
         unreachable!("jit call_method_mut shim on a non-CallMethodMut opcode")
     };
     interp.sync_source_line(code, op_idx as usize);
-    let pre = interp.array_hash_attr_env_snapshot(code, *target_name_idx);
+    let pre = interp.attr_env_snapshot(code, *target_name_idx);
     // The receiver's env binding before the call, so the writeback below can
     // tell whether this method actually rebound it. Mirrors the interpreter's
     // `CallMethodMut` arm (vm_exec_dispatch.rs): only push the receiver for a
@@ -389,7 +389,7 @@ pub(super) unsafe extern "C" fn call_method_mut(
             }
             interp.apply_pending_rw_writeback(code);
             interp.drain_pending_local_updates_after_call(code);
-            interp.mirror_array_hash_attr_to_cell(code, *target_name_idx, pre);
+            interp.mirror_attr_env_to_cell(code, *target_name_idx, pre);
             if interp.is_halted() {
                 JIT_STATUS_HALT
             } else {

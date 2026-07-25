@@ -274,7 +274,6 @@ impl Compiler {
                 label: label.clone(),
                 arity,
                 collect: true,
-                restore_topic: true,
                 threaded: false,
                 is_rw: has_rw,
                 do_writeback: has_rw,

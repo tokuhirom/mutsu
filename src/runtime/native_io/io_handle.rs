@@ -742,16 +742,18 @@ impl Interpreter {
                     && handle_encoding != "utf-8"
                     && handle_encoding != "utf8"
                     && handle_encoding != "bin";
-                if needs_decode {
-                    let decoded = self.decode_with_encoding(&all_bytes, &handle_encoding)?;
-                    Ok(Value::str(decoded))
+                // Every text-mode decode normalizes CRLF to LF, whatever the
+                // encoding (`translate_nl_in`).
+                let text = if needs_decode {
+                    self.decode_with_encoding(&all_bytes, &handle_encoding)?
                 } else {
                     // Strict UTF-8, matching `IO::Path.slurp` (`read_to_string`)
                     // and Rakudo: a malformed byte throws rather than silently
                     // becoming U+FFFD. Non-utf8 encodings (incl. the lenient
                     // `utf8-c8`) took the `decode_with_encoding` branch above.
-                    Ok(Value::str(decode_utf8_strict(all_bytes)?))
-                }
+                    decode_utf8_strict(all_bytes)?
+                };
+                Ok(Value::str(crate::runtime::utils::translate_nl_in(text)))
             }
             "split" => {
                 // Slurp the handle, optionally close it, then delegate to the
@@ -773,7 +775,9 @@ impl Interpreter {
                     }
                     all_bytes.extend(chunk);
                 }
-                let text = String::from_utf8_lossy(&all_bytes).to_string();
+                let text = crate::runtime::utils::translate_nl_in(
+                    String::from_utf8_lossy(&all_bytes).to_string(),
+                );
                 if close {
                     let _ = self.close_handle_value(&target_val)?;
                 }
@@ -799,7 +803,9 @@ impl Interpreter {
                     }
                     all_bytes.extend(chunk);
                 }
-                let text = String::from_utf8_lossy(&all_bytes).to_string();
+                let text = crate::runtime::utils::translate_nl_in(
+                    String::from_utf8_lossy(&all_bytes).to_string(),
+                );
                 if close {
                     let _ = self.close_handle_value(&target_val)?;
                 }

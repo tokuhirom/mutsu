@@ -140,6 +140,17 @@ impl Interpreter {
         handle_value: &Value,
         count: Option<usize>,
     ) -> Result<String, RuntimeError> {
+        let out = self.read_chars_from_handle_value_raw(handle_value, count)?;
+        // A text-mode read decodes CRLF to a single "\n" (see `translate_nl_in`),
+        // so `.readchars(4)` of "a\r\nb\r\n" yields "a\nb\n" like Rakudo.
+        Ok(crate::runtime::utils::translate_nl_in(out))
+    }
+
+    fn read_chars_from_handle_value_raw(
+        &mut self,
+        handle_value: &Value,
+        count: Option<usize>,
+    ) -> Result<String, RuntimeError> {
         self.with_handle_mut(handle_value, |state| {
             if state.closed {
                 return Err(RuntimeError::io_closed("handle operation"));
@@ -361,7 +372,9 @@ impl Interpreter {
                 }
                 out.push_str(&cluster);
             }
-            Ok(Some(out))
+            // `\r\n` is a single grapheme cluster, so the requested cluster count
+            // is preserved when the text-mode decode normalizes it to "\n".
+            Ok(Some(crate::runtime::utils::translate_nl_in(out)))
         })
     }
 }

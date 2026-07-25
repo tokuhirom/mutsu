@@ -66,18 +66,18 @@ impl Interpreter {
                         RuntimeError::new(format!("Failed to slurp '{}': {}", p, err))
                     })?;
                     let decoded = self.decode_with_encoding(&bytes, enc.as_ref().unwrap())?;
-                    Ok(Value::str(decoded))
+                    Ok(Value::str(super::utils::translate_nl_in(decoded)))
                 } else {
                     let content = fs::read_to_string(&path_buf).map_err(|err| {
                         RuntimeError::new(format!("Failed to slurp '{}': {}", p, err))
                     })?;
-                    Ok(Value::str(super::utils::strip_utf8_bom(content)))
+                    Ok(Value::str(super::utils::decode_text_content(content)))
                 }
             }
             "lines" => {
                 let content = fs::read_to_string(&path_buf)
                     .map_err(|err| RuntimeError::new(format!("Failed to read '{}': {}", p, err)))?;
-                let content = super::utils::strip_utf8_bom(content);
+                let content = super::utils::decode_text_content(content);
                 let (_, _, _, _, chomp, nl_in, _, _, _, _, _) = self.parse_io_flags_values(args);
                 let mut parts = Self::split_content_by_separators(&content, &nl_in, chomp);
                 if let Some(n) = args.iter().find_map(numeric_limit_arg) {
@@ -88,7 +88,7 @@ impl Interpreter {
             "words" => {
                 let content = fs::read_to_string(&path_buf)
                     .map_err(|err| RuntimeError::new(format!("Failed to read '{}': {}", p, err)))?;
-                let content = super::utils::strip_utf8_bom(content);
+                let content = super::utils::decode_text_content(content);
                 let mut parts: Vec<Value> = content
                     .split_whitespace()
                     .map(|token| Value::str(token.to_string()))
@@ -197,7 +197,7 @@ impl Interpreter {
             .unwrap_or_default();
         let path_buf = self.resolve_io_path_buf(attributes, &p);
         let content = match fs::read_to_string(&path_buf) {
-            Ok(c) => super::utils::strip_utf8_bom(c),
+            Ok(c) => super::utils::decode_text_content(c),
             Err(err) => {
                 return Some(Err(RuntimeError::new(format!(
                     "Failed to read '{}': {}",

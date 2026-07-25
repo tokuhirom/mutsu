@@ -22,10 +22,7 @@ impl Interpreter {
                 ValueView::Str(s) => s.to_string(),
                 _ => unreachable!("ForLoop param must be a string constant"),
             });
-        let saved_topic = spec
-            .restore_topic
-            .then(|| self.env().get("_").cloned())
-            .flatten();
+        let saved_topic = self.env().get("_").cloned();
         let saved_topic_source = self.topic_source_var.take();
         let was_topic_readonly = self.is_readonly("_");
 
@@ -246,16 +243,7 @@ impl Interpreter {
                             self.unmark_readonly("_");
                         }
                         self.topic_source_var = saved_topic_source;
-                        if spec.restore_topic {
-                            match saved_topic {
-                                Some(v) => {
-                                    self.env_mut().insert("_".to_string(), v);
-                                }
-                                None => {
-                                    self.env_mut().remove("_");
-                                }
-                            }
-                        }
+                        self.restore_loop_topic(saved_topic);
                         // Gather suspend: pop (body resumes and re-pushes).
                         self.pop_loop_local_scope(code);
                         return Err(e);
@@ -269,16 +257,7 @@ impl Interpreter {
                         if !was_topic_readonly {
                             self.unmark_readonly("_");
                         }
-                        if spec.restore_topic {
-                            match saved_topic.clone() {
-                                Some(v) => {
-                                    self.env_mut().insert("_".to_string(), v);
-                                }
-                                None => {
-                                    self.env_mut().remove("_");
-                                }
-                            }
-                        }
+                        self.restore_loop_topic(saved_topic.clone());
                         self.pop_loop_local_scope(code);
                         return Err(e);
                     }
@@ -303,16 +282,7 @@ impl Interpreter {
             self.unmark_readonly("_");
         }
         self.topic_source_var = saved_topic_source;
-        if spec.restore_topic {
-            match saved_topic {
-                Some(v) => {
-                    self.env_mut().insert("_".to_string(), v);
-                }
-                None => {
-                    self.env_mut().remove("_");
-                }
-            }
-        }
+        self.restore_loop_topic(saved_topic);
         // Defer restoring the named loop param's prior binding to the paired
         // `RestoreForParam` opcode (after the post/LAST phasers), matching
         // `exec_for_loop_body`. Only reached on normal completion / `last` /

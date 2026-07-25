@@ -1566,7 +1566,7 @@ impl Interpreter {
                 // reaches the cell — so the write was silently lost (a same-method
                 // `@!a` read goes cell-direct and saw the unchanged default). This
                 // is a cheap prefix-check no-op for every non-attribute name.
-                self.mirror_array_hash_attr_to_cell(code, *name_idx, None);
+                self.mirror_attr_env_to_cell(code, *name_idx, None);
                 *ip += 1;
             }
             OpCode::SetVarType { name_idx, tc_idx } => {
@@ -3008,7 +3008,7 @@ impl Interpreter {
                 modifier_idx,
             } => {
                 self.sync_source_line(code, *ip);
-                let pre = self.array_hash_attr_env_snapshot(code, *target_name_idx);
+                let pre = self.attr_env_snapshot(code, *target_name_idx);
                 match self.exec_call_method_dynamic_mut_op(
                     code,
                     *arity,
@@ -3025,7 +3025,7 @@ impl Interpreter {
                 }
                 self.apply_pending_rw_writeback(code);
                 self.drain_pending_local_updates_after_call(code);
-                self.mirror_array_hash_attr_to_cell(code, *target_name_idx, pre);
+                self.mirror_attr_env_to_cell(code, *target_name_idx, pre);
                 *ip += 1;
             }
             OpCode::ArrayPush {
@@ -3033,9 +3033,9 @@ impl Interpreter {
                 value_source_idx,
             } => {
                 self.sync_source_line(code, *ip);
-                let pre = self.array_hash_attr_env_snapshot(code, *target_name_idx);
+                let pre = self.attr_env_snapshot(code, *target_name_idx);
                 self.exec_array_push_op(code, *target_name_idx, *value_source_idx)?;
-                self.mirror_array_hash_attr_to_cell(code, *target_name_idx, pre);
+                self.mirror_attr_env_to_cell(code, *target_name_idx, pre);
                 *ip += 1;
             }
             OpCode::CallMethodMut {
@@ -3047,7 +3047,7 @@ impl Interpreter {
                 arg_sources_idx,
             } => {
                 self.sync_source_line(code, *ip);
-                let pre = self.array_hash_attr_env_snapshot(code, *target_name_idx);
+                let pre = self.attr_env_snapshot(code, *target_name_idx);
                 // The receiver's env binding before the call, so the writeback
                 // below can tell whether this method actually rebound it (see
                 // there). Compared with `same_binding` — O(1), and it never walks
@@ -3120,7 +3120,7 @@ impl Interpreter {
                 }
                 self.apply_pending_rw_writeback(code);
                 self.drain_pending_local_updates_after_call(code);
-                self.mirror_array_hash_attr_to_cell(code, *target_name_idx, pre);
+                self.mirror_attr_env_to_cell(code, *target_name_idx, pre);
                 *ip += 1;
             }
             OpCode::CallOnValue {
@@ -3222,9 +3222,9 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::DeleteIndexNamed(name_idx, slot) => {
-                let pre = self.array_hash_attr_env_snapshot(code, *name_idx);
+                let pre = self.attr_elem_env_snapshot(code, *name_idx);
                 self.exec_delete_index_named_op(code, *name_idx, *slot)?;
-                self.mirror_array_hash_attr_to_cell(code, *name_idx, pre);
+                self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
                 *ip += 1;
             }
             OpCode::DeleteIndexExpr => {
@@ -3236,9 +3236,9 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::MultiDimIndexAssign { name_idx, ndims } => {
-                let pre = self.array_hash_attr_env_snapshot(code, *name_idx);
+                let pre = self.attr_elem_env_snapshot(code, *name_idx);
                 self.exec_multi_dim_index_assign_op(code, *name_idx, *ndims)?;
-                self.mirror_array_hash_attr_to_cell(code, *name_idx, pre);
+                self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
                 *ip += 1;
             }
             OpCode::MultiDimIndexAssignGeneric(ndims) => {
@@ -3379,11 +3379,15 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::PostIncrementIndex(name_idx) => {
+                let pre = self.attr_elem_env_snapshot(code, *name_idx);
                 self.exec_post_increment_index_op(code, *name_idx)?;
+                self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
                 *ip += 1;
             }
             OpCode::PostDecrementIndex(name_idx) => {
+                let pre = self.attr_elem_env_snapshot(code, *name_idx);
                 self.exec_post_decrement_index_op(code, *name_idx)?;
+                self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
                 *ip += 1;
             }
             OpCode::IndexAssignExprNamed {
@@ -3391,14 +3395,14 @@ impl Interpreter {
                 is_positional,
                 target_slot,
             } => {
-                let pre = self.array_hash_attr_env_snapshot(code, *name_idx);
+                let pre = self.attr_elem_env_snapshot(code, *name_idx);
                 self.exec_index_assign_expr_named_op(
                     code,
                     *name_idx,
                     *is_positional,
                     *target_slot,
                 )?;
-                self.mirror_array_hash_attr_to_cell(code, *name_idx, pre);
+                self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
                 *ip += 1;
             }
             OpCode::IndexElemAutoviv {
@@ -3408,6 +3412,7 @@ impl Interpreter {
                 autoviv,
                 viv_hash,
             } => {
+                let pre = self.attr_elem_env_snapshot(code, *name_idx);
                 self.exec_index_elem_autoviv_op(
                     code,
                     *name_idx,
@@ -3416,6 +3421,7 @@ impl Interpreter {
                     *autoviv,
                     *viv_hash,
                 )?;
+                self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
                 *ip += 1;
             }
             OpCode::IndexAssignPseudoStashNamed {
@@ -3434,12 +3440,14 @@ impl Interpreter {
                 outer_positional,
                 inner_positional,
             } => {
+                let pre = self.attr_elem_env_snapshot(code, *name_idx);
                 self.exec_index_assign_expr_nested_op(
                     code,
                     *name_idx,
                     *outer_positional,
                     *inner_positional,
                 )?;
+                self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
                 *ip += 1;
             }
             OpCode::IndexAssignDeepNested {
@@ -3447,12 +3455,14 @@ impl Interpreter {
                 depth,
                 positional_flags_idx,
             } => {
+                let pre = self.attr_elem_env_snapshot(code, *name_idx);
                 self.exec_index_assign_deep_nested_op(
                     code,
                     *name_idx,
                     *depth,
                     *positional_flags_idx,
                 )?;
+                self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
                 *ip += 1;
             }
 

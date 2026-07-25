@@ -32,11 +32,11 @@ logic-free — which is the safer default for a blog, where the program supplies
 the logic. It also implements a **cross-language format**, so a template written
 against it is not mutsu-specific knowledge.
 
-11 of its 13 upstream files pass, **including the whole official mustache spec
-suite** (`91-specs`, 10/10). The two that do not are tracked in
-`todo/tickets/mustache-remaining-two-files.md`; per the
-[gate's per-file baseline philosophy](testsuite-gate.md) the passing files are
-pinned now and the rest is ordinary follow-up.
+**All 13 upstream files pass**, including both official mustache spec suites
+(`91-specs` from strings and `92-specs-file` from files, 10/10 each). The two
+that were still failing when the module was first bundled were fixed on
+2026-07-25 and are pinned in `batteries-whitelist.txt` like the rest, so a
+regression in any of them fails a release.
 
 ## The field it was chosen from
 
@@ -48,7 +48,7 @@ plain checkout of the dist with `-I lib`.
 
 | Candidate | Version | Released | License | Runtime deps | Dependents¹ | raku | **mutsu** |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| **`Template::Mustache`** | 1.2.6 | 2026-01-12 | Artistic-2.0 | **0** | **11** | 11/13² | **11/13** ⬆ |
+| **`Template::Mustache`** | 1.2.6 | 2026-01-12 | Artistic-2.0 | **0** | **11** | 11/13² | **13/13** ⬆ |
 | `Template6` | 0.16.0 | 2026-02-04³ | Artistic-2.0 | **0** | 7 | **12/12** | **0/12** |
 | `Template::Jinja2` | 0.2.0 | 2026-04-29 | Artistic-2.0 | 1 (`JSON::Fast`, native) | 2 | 22/23 | **0/23** |
 | `Template::Mojo` | 0.2.2 | 2023-07-31 | MIT | **0** | 3 | **5/5** | **0/5** |
@@ -64,7 +64,12 @@ interpreter bug behind it was fixed: a hyper method call (`@objs>>.made`) did no
 flatten a `Slip` returned by the method, so the parse tree came out with each
 hunk's `Slip` nested — and `.flat` then decomposed the `Hash` inside it into
 Pairs. The whole official mustache spec suite (`91-specs`, 10/10) passes now.
-Pin: `t/hyper-method-slip-result.t`.
+Pin: `t/hyper-method-slip-result.t`. The last two files followed the same day
+(**11/13 → 13/13**) from three more general fixes: a subscript assignment through
+a `$`-sigil attribute (`$!h<k> = 1`) reaching the instance, a `for` block no
+longer leaking its topic into the enclosing `$_`, and text-mode file reads
+decoding CRLF to LF. Pins: `t/attr-subscript-assignment.t`,
+`t/for-topic-restore.t`, `t/io-crlf-translation.t`.
 
 ¹ Distributions in the ecosystem index that declare a dependency on it —
 computed over the 2506 distinct dist names in the local REA + fez indices
