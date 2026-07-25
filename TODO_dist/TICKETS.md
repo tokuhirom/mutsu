@@ -1121,11 +1121,15 @@ _(move tickets here with `[claim: <branch>]` when you start)_
   globstar `**` (and the `dir*/`-ignores-a-file / `a/**/b` failures) is a
   **proto-token LTM tie-break bug** — mutsu dispatches `**` to the fall-through
   `path-part:sym<matcher>` (char-class) instead of the dedicated
-  `path-part:sym<**>` when both match the same length. Minimal repro, ruled-out
-  code paths, and the fix direction are in
-  **`todo/deep/grammar-action-ordering-vs-inline-code-blocks.md`** (a general
-  grammar bug, load-bearing for every proto-token grammar — validate against all
-  of `S05-grammar/`). `directory-only` logic itself is correct in isolation; it only
+  `path-part:sym<**>` when both match the same length. **That LTM bug is FIXED**
+  (2026-07-25, pin `t/proto-token-ltm-tiebreak.t`; 36/44 → 38/44). The remaining
+  6 (`a/**/b`) have a different root cause: a rule's `:my $*FINAL` is one
+  parse-wide binding rather than one per match, so every `path-part` action reads
+  the LAST segment's value. Measured diagnosis, two ruled-out approaches, and the
+  fix direction are in
+  **`todo/deep/grammar-rule-my-dynvar-is-parse-wide-not-per-match.md`**
+  (a general grammar bug — validate against all of `S05-grammar/`).
+  `directory-only` logic itself is correct in isolation; it only
   looks wrong because `d/**` mis-dispatches and matches `dir21`. Separate: a
   `<sym>` auto-capture is not recorded on a multi-candidate proto match (the
   action doesn't read it, so it doesn't affect File::Ignore).
