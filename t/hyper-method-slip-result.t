@@ -1,6 +1,6 @@
 use Test;
 
-plan 12;
+plan 16;
 
 # A hyper is built on `deepmap`, so a method that returns a `Slip` contributes
 # its *elements* to the result, exactly as it would from `map`.
@@ -37,3 +37,18 @@ is @objs>>.plain.raku, @objs.map(*.plain).List.Array.raku,
 my @nested = [C.new(n => 3),], [C.new(n => 4),];
 is @nested>>.flat-v.elems, 2, 'descending keeps one result per source element';
 is @nested>>.flat-v.raku, '[["v3"], ["v4"]]', 'and keeps the nesting';
+
+# A *nodal* method's result is that node's own value and stays ONE element, even
+# though it is a Slip — only a leaf application slips (roast S03-metaops/hyper.t
+# "`.Slip` is nodal"). This is the boundary the flattening must not cross.
+is [[2, 3], [4, [5, 6]]]».Slip.gist, '((2 3) (4 [5 6]))',
+    '.Slip is nodal: each node stays one element';
+is [[2, 3], [4, [5, 6]]]».List.gist, '((2 3) (4 [5 6]))',
+    '.List is nodal too';
+
+# The callable hyper `>>.&…` is never nodal, so it always slips.
+my @n = 1, 2;
+is (@n>>.&{ slip($_, $_ * 10) }).raku, '[1, 10, 2, 20]',
+    'a callable hyper flattens a Slip too';
+is (@n>>.&{ $_ * 2 }).raku, '[2, 4]',
+    'and a non-Slip callable result is unaffected';

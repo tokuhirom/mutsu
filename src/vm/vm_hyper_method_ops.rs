@@ -639,7 +639,16 @@ impl Interpreter {
                             *item = updated;
                             v
                         };
-                        push_hyper_result(&mut results, val);
+                        // A *nodal* method's result is that node's own value and
+                        // stays one element: `(1, (2,3), (4,[5,6]))>>.Slip` is
+                        // `((2 3) (4 [5 6]))`, not a flattened `(2 3 4 [5 6])`
+                        // (roast S03-metaops/hyper.t "`.Slip` is nodal"). Only a
+                        // leaf application slips.
+                        if is_list_native_method {
+                            results.push(val);
+                        } else {
+                            push_hyper_result(&mut results, val);
+                        }
                     }
                 }
             }
@@ -946,7 +955,7 @@ impl Interpreter {
                 let mut results = Vec::with_capacity(elems.len());
                 for sub in elems.iter() {
                     let r = self.hyper_sub_apply_recursive(callable, sub, extra_args, modifier)?;
-                    results.push(itemize_if_descended(sub, r));
+                    push_hyper_result(&mut results, itemize_if_descended(sub, r));
                 }
                 Ok(Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(results)),
@@ -957,7 +966,7 @@ impl Interpreter {
                 let mut results = Vec::with_capacity(elems.len());
                 for sub in elems.iter() {
                     let r = self.hyper_sub_apply_recursive(callable, sub, extra_args, modifier)?;
-                    results.push(itemize_if_descended(sub, r));
+                    push_hyper_result(&mut results, itemize_if_descended(sub, r));
                 }
                 Ok(Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(results)),
@@ -1094,7 +1103,7 @@ impl Interpreter {
                     continue;
                 }
                 let r = self.hyper_sub_apply_recursive(&name_val, item, &item_args, modifier)?;
-                results.push(itemize_if_descended(item, r));
+                push_hyper_result(&mut results, itemize_if_descended(item, r));
                 continue;
             }
             let method = method
