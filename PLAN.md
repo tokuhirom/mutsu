@@ -309,8 +309,11 @@ sessions).
       (regenerate: `scripts/dist-compat-sweep.py`; **sandboxed via `bwrap` — no net,
       read-only FS, throwaway HOME**, since dist code runs arbitrary load-time code).
       First run (n=60, 2026-07-19): of the pure-Raku, dep-satisfiable dists, **~half
-      load, ~half hit a real mutsu bug on `use` alone**. Top recurring blocker:
-      `Assignment operators inside ?? !! are too loose` (2 dists). This is the
+      load, ~half hit a real mutsu bug on `use` alone**. The top recurring blocker
+      (`Assignment operators inside ?? !! are too loose`, 2 dists) is **fixed**
+      — the guard was firing on a valid tight `.=` in a ternary branch
+      (news/2026-07/ternary-branch-accepts-dot-assign.md); re-run the sweep to pick
+      the next one. This is the
       execution counterpart of the signal-only
       [`docs/ecosystem-guts-dependency-survey.md`](../docs/ecosystem-guts-dependency-survey.md)
       and the highest-leverage way to widen the batteries base. Workflow per bug:

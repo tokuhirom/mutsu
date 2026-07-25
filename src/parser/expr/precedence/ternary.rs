@@ -7,6 +7,42 @@ pub(crate) fn is_assignment_expr(expr: &Expr) -> bool {
     )
 }
 
+/// Whether the assignment at the start of `src` used a *tight* operator, i.e.
+/// the mutating method call `.=` (`$v .= uc`, `$v.=uc`). `.=` sits at method
+/// postfix / dotty-infix precedence, which is much tighter than the conditional
+/// `?? !!`, so it is legal inside a ternary branch — unlike `=` and the compound
+/// assignments, which are looser and must be parenthesized.
+///
+/// This has to read the source because the parser lowers `$v .= uc` to exactly
+/// the same `Expr::AssignExpr { name: "v", expr: MethodCall { target: Var("v"),
+/// … } }` that `$v = $v.uc` produces (`postfix::dot_assign::wrap_dot_assign`),
+/// so the AST alone cannot tell the tight operator from the loose one.
+/// TODO: record the operator in the AST (an `AssignExpr` discriminant) and drop
+/// this text scan; that is a ~170-construction-site change, so it is deferred.
+///
+/// `src` is the branch's source text, starting at its first token: a sigil
+/// variable, whose name is skipped before looking for the operator. Anything
+/// else is reported as loose, preserving the previous behaviour.
+pub(crate) fn assign_operator_is_tight(src: &str) -> bool {
+    let src = src.trim_start();
+    let mut chars = src.char_indices();
+    let Some((_, sigil)) = chars.next() else {
+        return false;
+    };
+    if !matches!(sigil, '$' | '@' | '%' | '&') {
+        return false;
+    }
+    let mut end = sigil.len_utf8();
+    for (idx, ch) in chars {
+        if ch.is_alphanumeric() || ch == '_' || ch == '-' || ch == '\'' || ch == ':' {
+            end = idx + ch.len_utf8();
+        } else {
+            break;
+        }
+    }
+    src[end..].trim_start().starts_with(".=")
+}
+
 pub(crate) fn comparison_nonassoc_key(op: &TokenKind) -> Option<&'static str> {
     match op {
         TokenKind::LtEqGt => Some("<=>"),
@@ -171,6 +207,10 @@ pub(crate) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     let (rest_ws, _) = ws(rest)?;
     if let Ok((input, _)) = parse_tag(rest_ws, "??") {
         let (input, _) = ws(input)?;
+        // Source text of the then-branch, kept so the too-loose guard below can
+        // tell which assignment operator produced an `Expr::AssignExpr` (see
+        // `assign_operator_is_tight`).
+        let then_src = input;
         // Parse then-expr at ternary precedence (stops before `!!`)
         let (input, then_expr) = if mode == ExprMode::Full {
             ternary_mode(input, mode).map_err(|err| {
@@ -217,6 +257,7 @@ pub(crate) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         // parses as `(cond ?? t !! lhs) = rhs` (an lvalue-ternary assignment),
         // not as an assignment nested inside the else-branch. Parsing the
         // else-branch no-assign leaves `= rhs` for the trailing handler below.
+        let else_src = input;
         let (input, else_expr) = if mode == ExprMode::Full {
             ternary_no_assign(input).map_err(|err| {
                 enrich_expected_error(err, "expected else-expression after '!!'", input.len())
@@ -227,7 +268,13 @@ pub(crate) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         // A then-branch assignment is a genuine error (the `=` would sit between
         // `??` and `!!`); raku rejects it too. In non-Full modes the else-branch
         // may still have greedily taken an assignment, which is likewise too loose.
-        if is_assignment_expr(&then_expr) || is_assignment_expr(&else_expr) {
+        // Only the LOOSE assignment operators count: `.=` is a mutating method
+        // call at method-postfix precedence (operators.rakudoc "Method call" /
+        // "Dotty infix"), far tighter than `?? !!`, so `1 ?? $v .= uc !! 9` is
+        // legal and must not be rejected.
+        if (is_assignment_expr(&then_expr) && !assign_operator_is_tight(then_src))
+            || (is_assignment_expr(&else_expr) && !assign_operator_is_tight(else_src))
+        {
             return Err(conditional_precedence_too_loose_error());
         }
         let ternary_expr = if let Expr::Binary { left, op, right } = cond {

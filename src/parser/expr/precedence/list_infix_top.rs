@@ -1,5 +1,5 @@
 use super::list_infix::{attach_trailing_adverbs, wrap_left_exclusive_sequence};
-use super::ternary::is_assignment_expr;
+use super::ternary::{assign_operator_is_tight, is_assignment_expr};
 use super::*;
 
 /// The "item" level: Z/X's operand precedence.
@@ -59,7 +59,12 @@ pub(crate) fn item_expr(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     let (rest, else_expr) = item_expr(after_bang, mode).map_err(|err| {
         enrich_expected_error(err, "expected else-expression after '!!'", after_bang.len())
     })?;
-    if is_assignment_expr(&then_expr) || is_assignment_expr(&else_expr) {
+    // Only a LOOSE assignment is an error here; the mutating method call `.=` is
+    // at method-postfix precedence and is legal inside `?? !!` (see
+    // `assign_operator_is_tight`).
+    if (is_assignment_expr(&then_expr) && !assign_operator_is_tight(after_q))
+        || (is_assignment_expr(&else_expr) && !assign_operator_is_tight(after_bang))
+    {
         return Err(conditional_precedence_too_loose_error());
     }
     Ok((
