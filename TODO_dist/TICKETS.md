@@ -741,7 +741,9 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
   ~~File::Ignore~~ (FIXED — all 7 files 103/103; see Done),
   ~~IO::Path::AutoDecompress~~ (FIXED — see Done), ~~Math::Angle~~ (FIXED — see Done),
   ~~Math::PascalTriangle~~ (FIXED — see Done),
-  ~~Statistics::LinearRegression~~ (FIXED — see Done), String::Rotate,
+  ~~Statistics::LinearRegression~~ (FIXED — see Done),
+  String::Rotate (PARTIAL — the `method rotate` half passes via the
+  sigilless-param topic fix; see Done),
   Text::CodeProcessing (PARTIAL — extraction 05/07 pass via `&Named` + frugal-`:g`
   fixes; code-eval 02/03/04/06 deferred; see Done),
   Trait::IO, WriteOnceHash, `are`, ~~`sortuk`~~ (FIXED — see Done),
@@ -750,9 +752,15 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 - These `test_die` on the current binary but were not individually reproduced.
   Split off a dedicated ticket when you pick one up.
 - Triaged 2026-07-23 (deferred, each deep — own root cause):
-  - **String::Rotate**: an imported `sub rotate` must override the builtin `rotate`
-    listop (mutsu's builtin shadows it in all call forms) — same class as T-054
-    (P5push) builtin-vs-imported-sub dispatch. DEFER.
+  - **String::Rotate**: PARTIALLY FIXED 2026-07-25 — see Done. The 2026-07-23
+    triage note ("an imported `sub rotate` must override the builtin in all call
+    forms") was only half right: the `method rotate` half failed for an unrelated
+    reason (a sigilless param re-read the callee's reset `$_`), now fixed. The
+    `sub rotate` half is the builtin-shadow issue, and its condition is narrower
+    than "all call forms" — the user sub loses only when it has a **default
+    parameter** and the argument count matches a native builtin arity. Root cause
+    and repro: `todo/tickets/builtin-shadow-with-default-param-loses.md`. Same
+    class as T-054 (P5push).
   - **WriteOnceHash**: `self.BIND-KEY`/`self.ASSIGN-KEY`/`self.DELETE-KEY` don't
     dispatch on a fresh `class ... is Hash` instance (Array-subclass `self.push`
     is the same no-op) — deep container-subclass-instance self-mutation gap. DEFER
@@ -1191,3 +1199,21 @@ _(move tickets here with `[claim: <branch>]` when you start)_
   **Residual (FIXED above):** Tree::Binary defines
   `class Iterator does Iterator` inside `package Tree::Binary`, where the second
   `Iterator` is the **core Raku `Iterator` role**.
+
+- **T-057 (String::Rotate)** (PR `fix-sigilless-param-magic-source`) — test_die
+  (0 of 136 ran) → 68/136, the whole `method rotate` half. One general bug: a
+  sigilless parameter (`\ch`) is bound by re-reading its argument from the
+  CALLEE's env under the argument's source name (so a later `ch := …` writes
+  through), and that reread did not exclude the per-routine magic names. By
+  binding time the frame has already reset `$_` to Any and `$!` to Nil and
+  rebound `@_`/`%_`, so `$str.rotate($_)` bound the blanked topic — a type error
+  for `Int \ch`, a silent `Any` for an untyped `\ch`. The `?`-prefixed
+  compile-time pseudo-variables were already excluded for exactly this reason;
+  `_`/`!`/`@_`/`%_` joined them (`runtime/types/binding_signature.rs`).
+  The apparent dependence on the invocant smiley (`Str:D:` failed, `Str:` worked)
+  was the source-name list lining up with the positional index only in some
+  signature shapes. Pin: `t/sigilless-param-magic-source.t`.
+  **Residual (own root cause, deferred):** the `sub rotate` half — a user sub that
+  shadows a builtin loses the call when it has a default parameter and the
+  argument count matches a native builtin arity
+  (`todo/tickets/builtin-shadow-with-default-param-loses.md`).

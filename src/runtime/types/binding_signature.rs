@@ -1388,10 +1388,20 @@ impl Interpreter {
                             // should NOT be re-resolved from the callee's env because the
                             // env may have already overwritten them (e.g., ?CLASS is set to
                             // the method's owner class). Use the argument value as-is.
+                            //
+                            // The per-routine magic names are the same hazard and were
+                            // missing: this frame has ALREADY reset `$_` to Any and `$!`
+                            // to Nil, and rebound `@_`/`%_` to its own arguments, before
+                            // binding runs. So `f($_)` into a sigilless `\x` re-read the
+                            // callee's freshly-blanked `_` and bound the Any type object
+                            // — a plain `$x` param, which does not re-read, got the real
+                            // value (`method m (K:D: Int \ch)` called as `$k.m($_)`).
                             let is_compile_time_pseudo = source_name.starts_with('?');
+                            let is_routine_reset_magic =
+                                matches!(source_name.as_str(), "_" | "!" | "@_" | "%_");
                             let resolved_source =
                                 self.resolve_sigilless_alias_source_name(&source_name);
-                            if is_compile_time_pseudo {
+                            if is_compile_time_pseudo || is_routine_reset_magic {
                                 self.env.remove(&alias_key);
                                 self.env.insert(readonly_key, Value::TRUE);
                             } else if let Some(source_val) = self.env.get(&resolved_source).cloned()
