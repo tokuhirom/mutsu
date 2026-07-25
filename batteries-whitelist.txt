@@ -28,6 +28,7 @@ HTTP::UserAgent	080-ua.rakutest
 HTTP::UserAgent	085-auth.rakutest
 HTTP::UserAgent	090-ua-ssl.rakutest
 HTTP::UserAgent	100-redirect-ssl.rakutest
+HTTP::UserAgent	110-redirect-cookies.rakutest
 HTTP::UserAgent	150-issue-64.rakutest
 HTTP::UserAgent	160-issue-67.rakutest
 HTTP::UserAgent	170-request-common.rakutest
@@ -36,6 +37,8 @@ HTTP::UserAgent	190-issue-116.rakutest
 HTTP::UserAgent	200-w3-test-encodings.rakutest
 HTTP::UserAgent	210-content-encoding.rakutest
 HTTP::UserAgent	220-binary-content.rakutest
+HTTP::UserAgent	230-binary-request.rakutest
+HTTP::UserAgent	250-issue-144.rakutest
 HTTP::UserAgent	260-no-proxy.rakutest
 HTTP::UserAgent	270-issue-212.rakutest
 MIME::Base64	basic.rakutest
@@ -49,6 +52,8 @@ OpenSSL	05-digest.rakutest
 OpenSSL	06-digest-md5.rakutest
 OpenSSL	07-version.rakutest
 OpenSSL	10-client-ca-file.rakutest
+Test::Util::ServerPort	001-meta.t
+Test::Util::ServerPort	010-basic.t
 URI	01.rakutest
 URI	authority.rakutest
 URI	directory.rakutest

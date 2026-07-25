@@ -83,9 +83,16 @@ The bar is deliberately narrow: the file must reach outside the machine
 *unconditionally*. Most battery suites already guard their live-network
 assertions behind `NETWORK_TESTING`, which the gate does not set, so they need no
 entry. That was measured, not assumed — every whitelisted file was re-run inside
-a loopback-only network namespace
-(`unshare -rn -- sh -c 'ip link set lo up; …'`), and only two of the 77 failed.
-Re-run that check when adding a battery whose suite talks to the network.
+a loopback-only network namespace:
+
+```sh
+unshare -rn -- sh -c "ip link set lo up; cd <clone>; exec mutsu <-I…> <test>"
+```
+
+Only two files failed, and they are the two in the exclusion list. With them
+excluded, **every file in the baseline passes offline** — the gate's verdict does
+not depend on any third-party service. Re-run that check when adding a battery
+whose suite talks to the network, and keep it true.
 
 An excluded file is not a parking spot for a genuinely failing test: it must
 still be run by hand (and it is, by the module's own record), it is simply not a

@@ -33,19 +33,24 @@ already `cp -R modules` into `share/mutsu/modules`.
 ## The release gate
 
 `batteries.lock` gained an `HTTP::UserAgent` row pinned at upstream `1d6a31a0`
-(v1.2.0, 2025-05-04), and `batteries-whitelist.txt` grew from 53 to **75** files.
+(v1.2.0, 2025-05-04), and `batteries-whitelist.txt` grew from 53 to **80** files
+— every one of which passes.
 
-23 of the suite's 27 files are gated. Three — `110-redirect-cookies`,
-`230-binary-request`, `250-issue-144` — pass locally but need
-`Test::Util::ServerPort`, a **test-only** dependency (`META6.json`
-`test-depends`) that is deliberately not bundled and that
-`scripts/battery-testsuite.sh` cannot fetch: the harness clones only the
-battery's own repository. They fail in the gate with `ok=0` because the module is
-missing, not because an assertion fails.
+**26 of the suite's 27 files are gated.** Three of them almost were not:
+`110-redirect-cookies`, `230-binary-request` and `250-issue-144` need
+`Test::Util::ServerPort`, a **test-only** dependency, and
+`scripts/battery-testsuite.sh` cannot fetch one — it clones only the battery's
+own repository, so the files died with `ok=0` (module missing, not a failing
+assertion). Rather than leave the redirect and binary-upload paths ungated —
+exactly the paths most likely to regress — that helper is now bundled too; see
+[test-helpers.md](../../docs/batteries/test-helpers.md) for why it earns its
+place beyond this suite. `HTTP::UserAgent`'s two other `test-depends`,
+`IO::Capture::Simple` and `JSON::Fast`, needed nothing: mutsu already provides
+`Test::IO::Capture` and `JSON::Fast`.
 
 ## New: the gate never runs third-party-service tests
 
-The fourth ungated file, `082-exceptions`, exposed a real hole in the gate. It
+The one ungated file, `082-exceptions`, exposed a real hole in the gate. It
 makes **unguarded live requests to `httpbin.org`** — and `httpbin.org` spent part
 of 2026-07-25 returning 503, exactly while this battery was being bundled. A file
 like that in a release-blocking gate means someone else's outage can block a
@@ -61,12 +66,13 @@ manifest/baseline).
 
 Which files belong there was **measured, not guessed**: every whitelisted file
 was re-run inside a loopback-only network namespace
-(`unshare -rn -- sh -c 'ip link set lo up; …'`). Only two of the 77 failed —
+(`unshare -rn -- sh -c 'ip link set lo up; …'`). Exactly two failed —
 `HTTP::UserAgent/082-exceptions`, and `IO::Socket::SSL/01-basic`, which connects
 to `github.com:443` in its first two lines, *before* its own `NETWORK_TESTING`
 guard. Everything else already routes its live-network assertions through
-`NETWORK_TESTING`, which the gate does not set, so the rest of the gate is
-deterministic. Those two are the whole exclusion list.
+`NETWORK_TESTING`, which the gate does not set. Those two are the whole
+exclusion list, and with them out, **all 80 baseline files pass offline** — the
+gate's verdict no longer depends on any third-party service.
 
 Fetching each suite at its pinned commit still needs the network, of course —
 that is setup, and a fetch failure reports `GATE ERROR` (exit 2), distinct from

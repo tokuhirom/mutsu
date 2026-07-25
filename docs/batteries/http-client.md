@@ -25,18 +25,11 @@ bundled copy. Nothing was patched into the vendored sources; every gap the suite
 exposed was closed in the interpreter (see the `news/2026-07/` entries from the
 HTTP::UserAgent campaign).
 
-23 of those 27 files are in
+26 of those 27 files are in
 [`batteries-whitelist.txt`](../../batteries-whitelist.txt), so the release-time
-gate re-runs them against the shipped library on every release. The four that are
-not fall into two groups:
+gate re-runs them against the shipped library on every release. The only one that
+is not:
 
-- **`110-redirect-cookies`, `230-binary-request`, `250-issue-144`** need
-  `Test::Util::ServerPort`, a **test-only** dependency (`META6.json`
-  `test-depends`) that is deliberately not bundled and that
-  `scripts/battery-testsuite.sh` has no way to fetch — it clones only the
-  battery's own repository. They fail in the gate with `ok=0` because the module
-  is missing, not because an assertion fails. They pass locally with it on the
-  path.
 - **`082-exceptions`** is in
   [`batteries-exclude.txt`](../../batteries-exclude.txt): it makes unguarded live
   requests to `httpbin.org`, so its verdict depends on a third-party service and
@@ -47,8 +40,13 @@ not fall into two groups:
 The rest of the suite's live-network assertions are guarded by the file's own
 `NETWORK_TESTING` check, which the gate does not set, so they are deterministic
 there. That was measured rather than assumed — every whitelisted file was re-run
-inside a loopback-only network namespace and only `082-exceptions` failed; see
-[testsuite-gate.md](testsuite-gate.md).
+inside a loopback-only network namespace and only `082-exceptions` failed; the
+other 26 pass with no network at all. See [testsuite-gate.md](testsuite-gate.md).
+
+The three local-`TestServer` files (`110-redirect-cookies`, `230-binary-request`,
+`250-issue-144`) are gated because their one missing piece, the test-only
+`Test::Util::ServerPort`, is now bundled as well —
+[test-helpers.md](test-helpers.md).
 
 ## Decision and sequencing
 
