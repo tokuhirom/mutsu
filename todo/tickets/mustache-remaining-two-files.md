@@ -1,53 +1,88 @@
 # `Template::Mustache`: the last two upstream test files
 
 The template battery passes 11 of its 13 upstream test files under mutsu,
-including the whole official mustache spec suite (`91-specs`, 10/10). Two remain,
-and both pass under raku.
+including the whole official mustache spec suite (`91-specs`, 10/10). Two remain.
+Both pass under raku. **Both have been root-caused far enough to start coding.**
 
-## `06-logging.rakutest` — 2/3
+## Reproducing
 
+The dist is bundled, but the *tests* are not vendored — fetch them at the pinned
+commit:
+
+```sh
+curl -sSL 'https://raw.githubusercontent.com/raku/REA/main/archive/T/Template%3A%3AMustache/Template%3A%3AMustache%3Aver%3C1.2.6%3E%3Aauth%3Czef%3Araku-community-modules%3E%3Aapi%3C1.2.0%3E.tar.gz' \
+  | tar xz -C tmp/
+cd tmp/Template::Mustache*/
+mutsu -I lib t/06-logging.rakutest
+mutsu -I lib t/92-specs-file.rakutest
+raku  -I lib t/06-logging.rakutest      # the baseline: both pass
 ```
-ok 1 - Warn missing field(s)
-ok 2 - Warn missing . field
-not ok 3 - Set log routine for Warn level to &die
-```
 
-The failing assertion is:
+Run from the dist's own directory — the tests reach for `t/…` fixtures by
+relative path.
+
+---
+
+## 1. `06-logging.rakutest` — 2/3 — **root cause found**
+
+**It is `todo/tickets/scalar-attribute-subscript-assignment-lost.md`.** Fix that
+and this file should follow.
+
+The module's `Logger` (lib/Template/Mustache.rakumod:14-38) declares
 
 ```raku
-my $m = Template::Mustache.new: :log-level<Info>;
-$m.logger.routines<Warn> = &die;
-dies-ok { $m.render: '{{missing}}', {} }, "Set log routine for Warn level to \&die";
+class LoggersMap is Hash does Associative[Callable, LogLevel] { }
+has LoggersMap $.routines;
+submethod BUILD(LoggersMap :$!routines = LoggersMap.new, …) {
+    for LogLevels.pairs { $!routines{.key} ||= … }
+}
 ```
 
-i.e. replacing an entry in the logger's `%.routines` with `&die` must make the
-render throw. The obvious reduction — storing `&die` in a hash of routines and
-calling it directly or through a sub — **behaves correctly** in mutsu (verified
-against raku), so the divergence is further in: the module's `proto method log` /
-`multi method log(LogLevel :$level, *@msgs)` dispatch, or the `LogLevel` enum
-constraint, is not reaching the replaced routine.
-
-## `92-specs-file.rakutest` — 1/10
-
-Every `subtest` plans its N tests and then runs **0** of them:
+Under mutsu `$!routines` comes out **empty** — subscript assignment through a
+`$`-sigil attribute is silently dropped. Observed directly:
 
 ```
-# Subtest: comments.json
-    1..11
-    # You planned 11 tests, but ran 0
-not ok 2 - comments.json
+raku:  routines-before: Audit,Debug,Error,Fatal,Info,Trace,Trace2,Verbose,Warn
+mutsu: routines-before: (empty)
 ```
 
-So the subtest body dies before its first assertion. The individual pieces have
-been checked in isolation and all work: `load-specs` from the test's own
-`Template::Mustache::TestUtil`, the anonymous state counter `++$` used to build a
-unique directory, `.mkdir`, and the two-at-a-time
-`for 'name', $_<template>, |$_<partials>.kv -> $name, $text` loop. The remaining
-suspects are the `LEAVE` block inside the loop body, or `$m.render` with the
-`:from` file-lookup path plus the partial cache.
+so the test's `$m.logger.routines<Warn> = &die` lands in a map nothing reads,
+`render` does not throw, and `dies-ok` fails. mutsu prints
+`Error while logging [Field not found ❮missing❯]:` instead.
 
-`91-specs.rakutest` — the same spec corpus rendered from *strings* rather than
-files — passes 10/10, which localises this to the file/partial loading path.
+---
+
+## 2. `92-specs-file.rakutest` — 1/10 — **narrowed to `:from` path resolution**
+
+Every `subtest` plans its N tests and runs **0** — the body dies before the first
+assertion. The exception is:
+
+```
+X::IO::Resolve: /…/tmp/spec-partials/comments.json/1
+```
+
+i.e. `$m.render: 'specs-file-main', :$from, …` fails to resolve the *relative*
+`:from` directory. The test builds it as
+`views.basename.IO.add($subdir)` → `spec-partials/comments.json/1`, while the
+files were written under `t/spec-partials/comments.json/1`, so raku and mutsu
+evidently resolve that relative path against **different bases**. Compare how
+each resolves a relative `IO::Path` inside the module's `get-template` /
+`parse-template` (`lib/Template/Mustache.rakumod:331`, `:370`) — `$*CWD` vs the
+script's directory is the first thing to check.
+
+Already ruled out, each verified in isolation against raku:
+
+- `load-specs` from the test's own `Template::Mustache::TestUtil`
+- the anonymous state counter `++$` used to build a unique directory
+- `.mkdir`, and the two-at-a-time
+  `for 'name', $_<template>, |$_<partials>.kv -> $name, $text` loop
+- the partial **cache** — the module holds it in `has %!cache` (a `%`-sigil
+  attribute), so bug 1 above does not touch it
+
+`91-specs.rakutest` renders the *same* spec corpus from **strings** and passes
+10/10, which localises this squarely to the file/partial loading path.
+
+---
 
 ## Status
 
