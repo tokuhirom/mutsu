@@ -124,7 +124,7 @@ export default {
           'binary, ready for a plain <code>use</code> with no <code>zef install</code>. ' +
           'Browse the bundled libraries and their docs.',
         href: 'batteries.html',
-        cta: 'Browse the batteries →',
+        cta: 'Browse the bundled libraries →',
       },
       {
         title: 'Read the real docs',

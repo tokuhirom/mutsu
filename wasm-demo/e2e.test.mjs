@@ -207,7 +207,7 @@ try {
 
   assert(await page.locator('.site-nav .nav-links a').count() >= 5,
          'the nav now includes the batteries page');
-  assert(await page.textContent('.site-nav a[aria-current="page"]') === 'Batteries',
+  assert(await page.textContent('.site-nav a[aria-current="page"]') === 'Bundled Libraries',
          'with itself marked as the current page');
   assert(await page.locator('.bat-card').count() === battManifest.libraries.length,
          `every bundled library has a card (${battManifest.libraries.length})`);
