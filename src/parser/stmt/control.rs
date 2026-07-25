@@ -147,6 +147,24 @@ fn pointy_topic_bind(pd: &ParamDef) -> Stmt {
             op: AssignOp::Assign,
             expr,
         }
+    } else if pd.name.starts_with('&') {
+        // A `&`-sigil parameter (`given $code -> &to-run { … }`) declares a
+        // fresh lexical code alias. It must NOT go out as a bare `&f := $_`:
+        // that is `Code items cannot be rebound` in Raku, and mutsu's compiler
+        // rejects it as such (`OpCode::AssignReadOnly`). A code alias has no
+        // writeback semantics to lose, so a declaration is the exact form.
+        Stmt::VarDecl {
+            name: pd.name.clone(),
+            expr: topic,
+            type_constraint: None,
+            is_state: false,
+            is_our: false,
+            is_dynamic: false,
+            is_export: false,
+            export_tags: Vec::new(),
+            custom_traits: Vec::new(),
+            where_constraint: None,
+        }
     } else {
         // Aliasing parameter: `:=` so the compiler/VM writes the parameter's
         // final value back to the topic source.
