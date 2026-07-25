@@ -379,6 +379,50 @@ fn make_pointer_value(addr: usize) -> Value {
     make_native_handle("Pointer", addr)
 }
 
+/// Words in the block [`native_object_where`] hands out. The payload sits in
+/// word 0; the rest are zero so a binding that probes a few words past it reads
+/// its own memory rather than faulting.
+const WHERE_BLOCK_WORDS: usize = 16;
+
+/// The address of a small, readable block whose first word holds `payload` —
+/// what `.WHERE` returns for a NativeCall `Pointer`.
+///
+/// mutsu's values are unboxed and have no pinnable address, so `.WHERE` is
+/// normally derived from the object's identity (see
+/// `builtins::methods_0arg::dispatch_core_coerce`). That is fine until a binding
+/// *dereferences* it: `MoarVM::Guts::REPRs` builds a `Pointer` holding a known
+/// sentinel, reads `.WHERE` as an array of machine words, and scans for the
+/// sentinel to learn how far into an object its payload lives. Handing it a hash
+/// would make it read wild memory.
+///
+/// So mutsu materialises the payload for real, and the answer the probe gets is
+/// **0**: mutsu's `.WHERE` points straight at the payload, with no object header
+/// in front of it. That is the contract, and it is the one a future
+/// representation change should keep.
+///
+/// Blocks are memoised by payload, so repeated `.WHERE` on equal pointers is
+/// allocation-free and the arena stays bounded by the number of distinct pointer
+/// values a program probes. Because the block's content *is* its key, two
+/// `Pointer` objects with the same address share one block — an identity
+/// distinction Rakudo would make and mutsu does not. Nothing reads `.WHERE` for
+/// object identity (that is `.WHICH`), and the alternative is an unbounded leak.
+pub(crate) fn native_object_where(payload: usize) -> usize {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    static BLOCKS: OnceLock<Mutex<HashMap<usize, usize>>> = OnceLock::new();
+    let mut blocks = BLOCKS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    *blocks.entry(payload).or_insert_with(|| {
+        let mut block = vec![0usize; WHERE_BLOCK_WORDS];
+        block[0] = payload;
+        // Leaked on purpose: the address must stay valid for the rest of the
+        // process, since C code may hold it. The memo bounds how many there are.
+        Box::leak(block.into_boxed_slice()).as_ptr() as usize
+    })
+}
+
 /// Wrap a native pointer as an instance of `class` — a user-declared
 /// `is repr('CStruct')` class (an opaque native handle, e.g. `SSL_CTX`) or the
 /// builtin `Pointer`. The address is carried in an `address` attribute so it

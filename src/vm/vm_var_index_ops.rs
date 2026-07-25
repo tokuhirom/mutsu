@@ -1114,6 +1114,38 @@ impl Interpreter {
                     result
                 }
             }
+            // A `CArray[T]` *native handle* — what `nativecast(CArray[T], $ptr)`
+            // returns — is a C pointer, not a Raku array: read element `i` out of
+            // native memory. This is the same trust NativeCall already extends to
+            // a declared signature (`cstruct_layout::read_field`): a wrong
+            // declaration is undefined behaviour in Rakudo too.
+            (
+                ValueView::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                },
+                ValueView::Int(i),
+            ) if i >= 0
+                && attributes.contains_key("address")
+                && class_name.resolve().starts_with("CArray[") =>
+            {
+                let cn = class_name.resolve();
+                let elem = cn
+                    .strip_prefix("CArray[")
+                    .and_then(|s| s.strip_suffix(']'))
+                    .unwrap_or_default()
+                    .to_string();
+                let base = attributes
+                    .as_map()
+                    .get("address")
+                    .map(|v| crate::runtime::to_int(v) as usize)
+                    .unwrap_or(0);
+                match self.native_carray_element(&elem, base, i as usize) {
+                    Some(v) => v,
+                    None => Value::NIL,
+                }
+            }
             (ValueView::Instance { .. }, ValueView::Int(i)) => {
                 let fallback = target.clone();
                 let result = self

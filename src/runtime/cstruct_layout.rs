@@ -272,6 +272,93 @@ impl crate::runtime::Interpreter {
         ))
     }
 
+    /// The number of bytes a value of `type_name` occupies in C: the width of a
+    /// native scalar, one pointer for anything C holds by reference, or the
+    /// padded total size of a `is repr('CStruct')` class. `None` for a type
+    /// NativeCall cannot marshal.
+    pub(crate) fn native_size_of_type(&mut self, type_name: &str) -> Option<usize> {
+        // A CStruct is checked first: as a *field* it is one pointer, but
+        // `nativesizeof` asks for the struct's own size.
+        if self.is_cstruct_class(type_name) {
+            let layout = self.cstruct_layout(type_name)?;
+            let last = layout.last()?;
+            let end = last.offset + last.ty.size();
+            // C rounds a struct up to its strictest member's alignment, so an
+            // array of them keeps every element aligned.
+            let align = layout.iter().map(|f| f.ty.align()).max().unwrap_or(1);
+            return Some(end.div_ceil(align) * align);
+        }
+        let short = type_name.rsplit("::").next().unwrap_or(type_name);
+        FieldType::from_type_name(short, |n| self.is_native_handle_class(n)).map(FieldType::size)
+    }
+
+    /// Read element `index` of a `CArray[elem]` that is a **native handle** —
+    /// what `nativecast(CArray[T], $ptr)` produces, a bare C pointer with no
+    /// Raku-side storage. `None` when the element type is not one NativeCall can
+    /// marshal, so the caller can fall back instead of reading garbage.
+    ///
+    /// A `CArray` carries no length in C, so there is no bound to check: this is
+    /// the same trust `read_field` documents. Reading past the array is
+    /// undefined behaviour here exactly as it is in Rakudo.
+    pub(crate) fn native_carray_element(
+        &mut self,
+        elem: &str,
+        base: usize,
+        index: usize,
+    ) -> Option<crate::value::Value> {
+        if base == 0 {
+            return None;
+        }
+        let ty = FieldType::from_type_name(elem, |n| self.is_native_handle_class(n))?;
+        let field = FieldLayout {
+            name: String::new(),
+            ty,
+            offset: index.checked_mul(ty.size())?,
+        };
+        // SAFETY: `base` came from C (or from `native_object_where`) as the start
+        // of an array of `elem`, and the caller vouches for the index being in
+        // bounds — the contract NativeCall extends to every declared signature.
+        Some(unsafe { read_field(base, &field) })
+    }
+
+    /// `nativesizeof($obj-or-type)` — NativeCall's own helper, reporting how
+    /// many bytes the argument's type takes in C. Both a type object
+    /// (`nativesizeof(uint32)`) and an instance are accepted, matching Rakudo.
+    pub(crate) fn try_nativesizeof(
+        &mut self,
+        name: &str,
+        args: &[crate::value::Value],
+    ) -> Option<Result<crate::value::Value, crate::value::RuntimeError>> {
+        use crate::value::{RuntimeError, ValueView};
+        if name != "nativesizeof" {
+            return None;
+        }
+        if args.len() != 1 {
+            return Some(Err(RuntimeError::new(format!(
+                "nativesizeof() expects 1 argument, got {}",
+                args.len()
+            ))));
+        }
+        let arg = crate::runtime::types::unwrap_varref_value(args[0].clone());
+        let type_name = match arg.view() {
+            ValueView::Package(n) => n.resolve().to_string(),
+            ValueView::Instance { class_name, .. } => class_name.resolve().to_string(),
+            _ => {
+                return Some(Err(RuntimeError::new(
+                    "nativesizeof() expects a native type or a native object",
+                )));
+            }
+        };
+        Some(match self.native_size_of_type(&type_name) {
+            Some(size) => Ok(crate::value::Value::int(size as i64)),
+            // Rakudo's wording, so a binding that greps the message still works.
+            None => Err(RuntimeError::new(format!(
+                "NativeCall op sizeof expected type with CPointer, CStruct, CArray, P6int or P6num representation, but got a P6opaque ({})",
+                type_name
+            ))),
+        })
+    }
+
     /// `nativecast($target-type, $source)` — reinterpret the C pointer carried
     /// by `$source` as `$target-type`. NativeCall's own helper, and the only
     /// way to reach the fields of a struct a C function handed back as an

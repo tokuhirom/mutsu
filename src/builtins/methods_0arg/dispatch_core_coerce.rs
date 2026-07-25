@@ -534,6 +534,38 @@ pub(super) fn dispatch(
             ))))
         }
         "WHERE" => {
+            // A NativeCall `Pointer` reports a *real, readable* address: bindings
+            // legitimately walk the object's memory through it. `NativeHelpers`'
+            // `MoarVM::Guts::REPRs` does exactly that to derive the offset of an
+            // object's payload from its start, by scanning `.WHERE` for the
+            // pointer value it just stored. See `native_object_where`.
+            // The class is matched on its last `::` component: the prelude's
+            // `Pointer` picks up the enclosing package when it is prepended
+            // inside a module (`Probe::Pointer`), the same "one class, several
+            // spellings" problem `cstruct_class_name` documents. Getting this
+            // wrong is not a cosmetic miss — `.WHERE` would fall through to the
+            // identity hash, and a binding that dereferences the result reads
+            // wild memory.
+            if let ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } = target.view()
+                && class_name
+                    .as_str()
+                    .rsplit("::")
+                    .next()
+                    .is_some_and(|short| short == "Pointer")
+            {
+                let addr = attributes
+                    .as_map()
+                    .get("address")
+                    .map(|v| runtime::to_int(v) as usize)
+                    .unwrap_or(0);
+                return Some(Some(Ok(Value::int(
+                    runtime::nativecall::native_object_where(addr) as i64,
+                ))));
+            }
             // Rakudo: `.WHERE` is the object's memory address as an Int.
             // mutsu's scalar values are unboxed (no stable address to report),
             // so derive a per-identity-stable Int from the WHICH identity

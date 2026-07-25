@@ -25,6 +25,31 @@ impl Interpreter {
         value
     }
 
+    /// The type a `constant` type alias names, if `name` is one.
+    ///
+    /// `constant intptr = uint64;` makes `intptr` usable wherever a type is
+    /// expected, so a declared constraint written `CArray[intptr]` has to be
+    /// compared against `CArray[uint64]` — the spelling the *value* already
+    /// carries, because evaluating `CArray[intptr]` resolves the alias.
+    /// (`NativeHelpers`' `MoarVM::Guts::REPRs` picks its word type this way.)
+    ///
+    /// Only a name currently bound to a plain type object counts, and never one
+    /// that is already a type name in its own right, so an ordinary
+    /// parameterization such as `CArray[uint64]` is left untouched.
+    fn type_alias_target(&self, name: &str) -> Option<String> {
+        if name.is_empty()
+            || crate::runtime::utils::is_known_type_constraint(name)
+            || self.registry().classes.contains_key(name)
+            || self.registry().roles.contains_key(name)
+        {
+            return None;
+        }
+        match self.env.get(name)?.view() {
+            ValueView::Package(target) => Some(target.resolve()),
+            _ => None,
+        }
+    }
+
     pub(crate) fn resolved_type_capture_name(&self, constraint: &str) -> String {
         if self.has_type_capture_binding(constraint)
             && let Some(value) = self.env.get(constraint)
@@ -81,7 +106,8 @@ impl Interpreter {
                     if resolved != arg {
                         resolved
                     } else {
-                        arg.to_string()
+                        self.type_alias_target(arg)
+                            .unwrap_or_else(|| arg.to_string())
                     }
                 })
                 .collect();
@@ -482,6 +508,20 @@ impl Interpreter {
                             inner,
                             &Value::package(Symbol::intern(&metadata.value_type)),
                         );
+                    }
+                    // A `nativecast(CArray[T], $ptr)` handle is an Instance
+                    // carrying a bare C address, not a backed Array — its element
+                    // type lives in its class name. Compare the two element
+                    // types, resolving a `constant` type alias on the declared
+                    // side (`CArray[intptr]` vs the handle's `CArray[uint64]`).
+                    if let ValueView::Instance { class_name, .. } = value.view()
+                        && let Some((value_base, value_inner)) =
+                            Self::parse_generic_constraint(&class_name.resolve())
+                        && value_base == "CArray"
+                    {
+                        let want = self.resolved_type_capture_name(inner);
+                        let want = self.type_alias_target(&want).unwrap_or(want);
+                        return want == value_inner || Self::type_matches(&want, value_inner);
                     }
                     return false;
                 }
@@ -1198,6 +1238,18 @@ impl Interpreter {
         // static `type_matches` name table (Phase 3).
         if matches!(value.view(), ValueView::RakuAst(_)) && constraint.starts_with("RakuAST::") {
             return value.isa_check(constraint);
+        }
+        // Last resort: a parameterization whose type argument is a `constant`
+        // type alias (`constant intptr = uint64; my CArray[intptr] $x`). The
+        // *value* already carries the resolved spelling, because evaluating
+        // `CArray[intptr]` resolves the alias, so the two only differ in the
+        // declared constraint. Resolving here rather than on entry keeps the hot
+        // path free of the env lookup — nothing that already matched reaches it.
+        if constraint.contains('[') {
+            let resolved = self.resolved_type_capture_name(constraint);
+            if resolved != constraint {
+                return self.type_matches_value(&resolved, value);
+            }
         }
         // For Package (type object) values, use the package name as the type
         // so that e.g. Junction (which is Mu, not Any) is correctly rejected
