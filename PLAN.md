@@ -1482,6 +1482,55 @@ token path-part:sym<matcher> {
   `/^ 'a' '/' [ <-[/]>+ [ '/' | $ ] ]* 'b' <?before "/" | $> /` matches in mutsu);
   the module builds a *wrong* pattern string (`'a'` missing its trailing ` '/'`)
   because the `a` segment's action wrongly sees `$*FINAL = True`.
+- **Confirmed root cause (2026-07-25, HTTP::Header).** It is the first of the two
+  hypotheses: mutsu builds the whole match tree first and only then walks it
+  bottom-up (`invoke_grammar_actions`, called from `methods_grammar.rs` after
+  the match returns), whereas raku runs an action method the moment its subrule
+  reduces. The same defect has a second, sharper symptom: **when the overall
+  parse FAILS, mutsu runs no actions at all**, while raku has already run every
+  action whose subrule matched — including ones later undone by backtracking.
+  HTTP::Header::parse depends on exactly that:
+  ```raku
+  grammar G { token TOP { [ <message-header> \r?\n ]* } ... }
+  # `$h.parse('ETag: W/"1201-…"')` has no trailing newline, so TOP matches ""
+  # and .parse fails — but raku has already fired the message-header action,
+  # which is what populates the header object. mutsu fires nothing.
+  ```
+  Blocks HTTP::UserAgent's `t/010-headers` (3 subtests) and `t/050-response`
+  (1 subtest). Fixing it means invoking actions at subrule-reduce time inside
+  the matcher instead of in a post-pass — a real regex-engine change, and the
+  single remaining lever for both this and the `$*FINAL` symptom above.
+
+### 8.21 `$!attr = v` inside a method skips the attribute's declared type check (found 2026-07-25, HTTP::Request)
+
+- **Minimal repro:**
+  ```raku
+  class R { has Int $.n is rw; method f($v) { $!n = $v } }
+  my $r = R.new(n => 1);
+  $r.f("nope");   # raku: X::TypeCheck::Assignment; mutsu: silently stores "nope"
+  $r.n = "nope";  # both throw — only the in-method twigil forms are affected
+  ```
+  `$.attr = v` (the public rw accessor written with the `.` twigil) has the same
+  hole; `self.attr = v` correctly throws. A `subset` constraint behaves the same
+  as a plain type, so HTTP::Request's
+  `subset RequestMethod of Str where any(<GET POST …>)` accepted `set-method('TEST')`.
+- **Diagnosis:** the rw-accessor lvalue path checks
+  `get_attr_type_constraint` (`methods_mut_method_lvalue.rs`), but a `$!attr` /
+  `$.attr` write is compiled as an ordinary name assignment and lands in a local
+  slot / env with a separate mirror into the instance's attribute cell
+  (`write_self_attr_cell` and friends). None of those write paths consults the
+  attribute's declared type.
+- **Why it is not a small fix:** there are several write paths (`SetLocal`,
+  `SetGlobal`, the name-based assign, post-inc/dec, the smartmatch topic
+  writeback), the shared tail `write_attr_cell_by_key` takes `&self` and returns
+  `()` so it cannot raise, and the check has to run *before* the slot write or a
+  caught failure leaves the slot holding the rejected value. The existing
+  `var_type_constraints` map is name-keyed and would conflate `!n` across
+  classes, so it cannot be reused as-is. Needs a per-class attribute-constraint
+  lookup threaded into a single pre-store choke point.
+- **Impact:** HTTP::UserAgent `t/040-request` subtest 18 ("rejects wrong
+  method"); more broadly, every typed attribute in every class is unenforced
+  from inside its own methods.
 
 
 ## Metrics
