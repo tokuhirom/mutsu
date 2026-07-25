@@ -32,6 +32,7 @@ pub(in crate::parser) use postfix::{QuotedMethodName, parse_quoted_method_name};
 use precedence::ternary;
 
 // Re-exports for WhateverCode detection (`whatever.rs`).
+use whatever::fat_arrow_curries;
 pub(in crate::parser) use whatever::should_wrap_whatevercode;
 pub(super) use whatever::{contains_whatever, is_whatever};
 pub(crate) use whatever::{count_whatever, expr_contains_topic, exprs_structurally_eq};
@@ -109,11 +110,7 @@ pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
             };
             // Non-bareword keys (quoted strings, expressions) produce positional pairs,
             // not named arguments. Bareword keys (a => 3) are named arguments.
-            let result = if is_bareword {
-                pair
-            } else {
-                Expr::PositionalPair(Box::new(pair))
-            };
+            let result = fat_arrow_result(is_bareword, pair);
             return Ok((r, result));
         }
         expr = wrap_composition_operands(expr);
@@ -175,11 +172,7 @@ pub(in crate::parser) fn expression_no_assign(input: &str) -> PResult<'_, Expr> 
             op: TokenKind::FatArrow,
             right: Box::new(value),
         };
-        let result = if is_bareword {
-            pair
-        } else {
-            Expr::PositionalPair(Box::new(pair))
-        };
+        let result = fat_arrow_result(is_bareword, pair);
         return Ok((r, result));
     }
     expr = wrap_composition_operands(expr);
@@ -240,11 +233,7 @@ pub(in crate::parser) fn expression_no_word_logical(input: &str) -> PResult<'_, 
             op: TokenKind::FatArrow,
             right: Box::new(value),
         };
-        let result = if is_bareword {
-            pair
-        } else {
-            Expr::PositionalPair(Box::new(pair))
-        };
+        let result = fat_arrow_result(is_bareword, pair);
         return Ok((r, result));
     }
     expr = wrap_composition_operands(expr);
@@ -296,11 +285,7 @@ pub(in crate::parser) fn expression_no_sequence(input: &str) -> PResult<'_, Expr
             op: TokenKind::FatArrow,
             right: Box::new(value),
         };
-        let result = if is_bareword {
-            pair
-        } else {
-            Expr::PositionalPair(Box::new(pair))
-        };
+        let result = fat_arrow_result(is_bareword, pair);
         return Ok((r, result));
     }
     expr = wrap_composition_operands(expr);
@@ -356,11 +341,7 @@ pub(in crate::parser) fn listop_arg_expr(input: &str) -> PResult<'_, Expr> {
             op: TokenKind::FatArrow,
             right: Box::new(value),
         };
-        let result = if is_bareword {
-            pair
-        } else {
-            Expr::PositionalPair(Box::new(pair))
-        };
+        let result = fat_arrow_result(is_bareword, pair);
         return Ok((r, result));
     }
     expr = wrap_composition_operands(expr);
@@ -424,11 +405,7 @@ pub(in crate::parser) fn call_arg_expr(input: &str) -> PResult<'_, Expr> {
             op: TokenKind::FatArrow,
             right: Box::new(value),
         };
-        let result = if is_bareword {
-            pair
-        } else {
-            Expr::PositionalPair(Box::new(pair))
-        };
+        let result = fat_arrow_result(is_bareword, pair);
         return Ok((r, result));
     }
     expr = wrap_composition_operands(expr);
@@ -446,6 +423,24 @@ pub(in crate::parser) fn call_arg_expr(input: &str) -> PResult<'_, Expr> {
         };
     }
     Ok((rest, expr))
+}
+
+/// Turn a freshly-built `=>` pair into its final AST node.
+///
+/// A bareword key (`a => 3`) is a named-argument `Pair`. A non-bareword key is a
+/// positional pair — unless it Whatever-curries (`* => *`, `"k" => *`,
+/// `"x" ~ * => *`), in which case Raku makes the whole pair a `WhateverCode` that
+/// yields the `Pair` when called (see [`fat_arrow_curries`]).
+fn fat_arrow_result(is_bareword: bool, pair: Expr) -> Expr {
+    if is_bareword {
+        return pair;
+    }
+    if let Expr::Binary { left, right, .. } = &pair
+        && fat_arrow_curries(left, right)
+    {
+        return wrap_whatevercode(&pair);
+    }
+    Expr::PositionalPair(Box::new(pair))
 }
 
 pub(in crate::parser) fn parse_fat_arrow_value(input: &str) -> PResult<'_, Expr> {
