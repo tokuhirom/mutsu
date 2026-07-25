@@ -703,15 +703,32 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
   stripped). Fixed in `src/runtime/types/args_matching.rs`. Pin:
   `t/multi-optional-named-definite.t`.
 
-### T-054 — test_fail: builtin push/pop return value [P5push]  [impact: 1 dist]
+### T-054 — test_fail: builtin push/pop return value [P5push]  [impact: 1 dist]  — RE-MEASURED 2026-07-25: 10/14 (was: shadowed in every call form)
 - dists: P5push
 - `P5push` exports `proto sub push`/`multi sub push(@a,*@v --> Int:D){...}` and
-  `pop`. mutsu's builtin `push`/`pop` shadow the imported subs in EVERY call form
-  (`push @a,x`, `push(@a,x)`, `&push(@a,x)`), so `push @a, 42` returns the array,
-  not the new elem count. **DEFER**: an imported `sub push` overriding the builtin
-  listop is the same compile-time-import problem as Understitch's `_` operator
-  (mutsu processes `use` at runtime); poor ROI.
-- file: builtin-vs-imported-sub dispatch priority (deep)
+  `pop`.
+- **The old note ("mutsu's builtin shadows the imported subs in EVERY call form",
+  "same compile-time-import problem as Understitch's `_` operator") is now WRONG
+  and was over-broad.** The builtin-shadow dispatch fix landed for String::Rotate
+  (2026-07-25, `call_function_fallback` prefers a resolved user routine over the
+  native table — see Done) already moved this dist from failing wholesale to
+  **10 of 14 subtests passing**. `pop` works in every form the test uses,
+  including the bare `pop` that reads `@*ARGS`. Re-measure before believing any
+  remaining claim here.
+- **Remaining 4 subtests, two shapes (each needs its own diagnosis):**
+  1. tests 3/5 — `is (push @a, 42), 2` still returns the ARRAY, not the elem
+     count, so the builtin still wins for `push` specifically. `pop` (also a
+     `proto` + `multi`) does not, so this is not simply "protos bypass the
+     shadow"; `push @a, 42` parses as a plain `Call` node, so the divergence is
+     downstream of parsing. Suspect the proto path in `call_function_fallback`
+     runs before the user-routine preference added for the non-proto case.
+  2. tests 11/14 — `pop` on an EMPTY array. The module's
+     `multi sub pop(@array) { @array.elems ?? @array.pop !! Nil }` should yield
+     `Nil`, but mutsu surfaces `Cannot pop from an empty Array` (which is what
+     the BUILTIN `pop` returns as a Failure for an empty array). So either the
+     builtin is reached here, or the guarded branch is evaluated anyway.
+- file: builtin-vs-imported-sub dispatch priority — the *proto* half (the
+  non-proto half is fixed)
 
 ### T-056 — test_fail: Codepoint [P5quotemeta]  [impact: 1 dist]  — ONE ROOT CAUSE FIXED (PR `fix-subst-replacement-double-backslash`); one deferred
 - dists: P5quotemeta (5756 tests: raku 5756/5756)
