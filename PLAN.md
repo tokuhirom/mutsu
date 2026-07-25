@@ -1428,50 +1428,60 @@ garbage until the page rebuilds the interpreter.
   recorded native output rather than a trap. Removing those flags is the acceptance test
   for this item; `wasm-demo/e2e.test.mjs` sweeps every non-flagged lesson in a real browser.
 
-### 8.20 Proto-token LTM ignores literal-vs-charclass specificity on an equal-length tie (found 2026-07-24, File::Ignore)
+### 8.20 Grammar `:my $*FINAL` per-match dynamic var leaks to earlier candidates' actions (found 2026-07-25, File::Ignore)
 
-When a `proto token` has two `:sym<>` candidates that match the SAME length at a
-position, Rakudo's Longest-Token-Matching breaks the tie by declaration order /
-specificity (a literal `<sym>` candidate outranks a character-class one). mutsu
-picks the wrong candidate, so a globstar `**` in a `.gitignore`-style grammar is
-dispatched to the fall-through `matcher` candidate instead of the dedicated `**`
-candidate.
+*(The original 8.20 — proto-token LTM equal-length tie-break — was FIXED
+2026-07-25: the resolver sorted `:sym<>` candidates alphabetically instead of by
+declaration order, and the quantified-subrule LTM dedup kept the LAST candidate
+on a tie. Fix: stamp `FunctionDef.decl_order` at `insert_token_def`, sort
+sym-variant keys by it (`sort_sym_keys_by_decl_order`), and keep the
+first-declared candidate on an equal-length tie in `regex_match_atom.rs`. Pin:
+`t/proto-token-ltm-tiebreak.t`. That took `File::Ignore` `wildcard.rakutest`
+36/44 → 38/44. The remaining 6 (`a/**/b` mid-path globstar) are THIS separate
+bug.)*
 
-- **Minimal repro** (both candidates match `**`, 2 chars):
+`File::Ignore`'s grammar declares a per-match dynamic variable and sets it inside
+a lookahead, then reads it in the action method to decide whether a path segment
+is the final one:
+
+```raku
+token path-part:sym<matcher> {
+    :my $*FINAL;
+    <matcher>+ {}
+    [<?before '/'? $> { $*FINAL = True }]?   # sets $*FINAL only for the LAST segment
+}
+```
+
+- **Minimal repro:**
   ```raku
   grammar G {
-      token TOP { <pp>+ % '/' }
-      proto token pp {*}
-      token pp:sym<**> { <sym> }        # literal, declared first
-      token pp:sym<m>  { <-[/]>+ }      # char-class fall-through
+      token TOP { <part>+ % '/' }
+      token part {
+          :my $*FINAL;
+          \w+ {}
+          [<?before '/'? $> { $*FINAL = True }]?
+      }
   }
-  class Act {
-      method TOP($/) { make $<pp>.map(*.ast).join('|') }
-      method pp:sym<**>($/) { make 'GLOBSTAR' }
-      method pp:sym<m>($/)  { make "M:$/" }
+  class A {
+      method TOP($/) { make $<part>.map(*.ast).join('|') }
+      method part($/) { make ($*FINAL ?? "FIN" !! "mid") ~ ":$/" }
   }
-  say G.parse('d/**', :actions(Act)).ast;
-  # raku:  M:d|GLOBSTAR      mutsu: M:d|M:**   (dispatched to the wrong sym)
+  say G.parse('a/b/c', :actions(A)).ast;
+  # raku:  mid:a|mid:b|FIN:c      mutsu: FIN:a|FIN:b|FIN:c
   ```
-- **Confirmed:** a SOLE `pp:sym<**>` candidate matches `**` fine (so `<sym>`
-  literal escaping is correct); the bug is purely the multi-candidate tie-break.
-  raku's tie-break is declaration order — swapping the two `token` lines makes
-  raku pick `m` too; mutsu picks `m` regardless of order.
-- **Code paths ruled out during triage:** the tie-break is NOT in
-  `regex_match_public.rs` `parse_anchored_single_subrule` LTM loop (never entered
-  for a `<pp>` inside `<pp>+ % '/'`) nor the `regex_match_capture.rs:453`
-  "keep-longest inner_end / first-on-tie" subrule loop (a `MUTSU_DBG_LTM` probe in
-  both produced zero output for this grammar). The live path is a third
-  proto-token dispatch — likely via `regex_match_ends_from_caps_in_pkg` /
-  `regex_token_method.rs` (or wherever `parsed_subrule_candidates` for a proto is
-  actually consumed). Find that path first; the fix is to break an equal-length
-  tie by candidate declaration order (and/or literal-over-charclass specificity),
-  matching Rakudo. Validate against the whole `S05-grammar/` roast set — this is
-  load-bearing for every proto-token grammar.
-- **Impact:** unblocks the `File::Ignore` distribution's `**` globstar patterns
-  (T-057): `wildcard.rakutest` 36/44 → (expected) full, plus `negated`/`range`
-  partials that also stem from globstar. `path`/`charclass`/`literal` already pass.
-  Also a general grammar-correctness fix.
+- **Diagnosis:** each `part` match should get its OWN `$*FINAL` binding
+  (`:my $*FINAL` inside the token), True only for the segment whose
+  `<?before '/'? $>` lookahead succeeds (the last). In mutsu every segment's
+  action reads `FIN` — the value set during the LAST segment's match leaks back
+  to the earlier segments' action methods. Either action methods are run
+  *after* the whole parse (so `$*FINAL` reads its final value) rather than at
+  reduce time, or `:my $*FINAL` is not creating a fresh per-match binding. This
+  is a grammar dynamic-variable / action-timing bug, unrelated to LTM.
+- **Impact:** the 6 remaining `File::Ignore` `wildcard.rakutest` `a/**/b`
+  failures. The mid-path globstar's compiled regex is correct (a direct
+  `/^ 'a' '/' [ <-[/]>+ [ '/' | $ ] ]* 'b' <?before "/" | $> /` matches in mutsu);
+  the module builds a *wrong* pattern string (`'a'` missing its trailing ` '/'`)
+  because the `a` segment's action wrongly sees `$*FINAL = True`.
 
 
 ## Metrics

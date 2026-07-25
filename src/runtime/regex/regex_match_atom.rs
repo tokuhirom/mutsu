@@ -471,12 +471,19 @@ impl Interpreter {
 
                     // Sort/dedup into HIGHEST FIRST order.
                     let deduped_raw: Vec<(usize, RegexCaptures)> = if has_proto {
-                        // LTM: sort by end ascending, dedup, then reverse → HIGHEST (longest) FIRST.
+                        // LTM: stable-sort by end ascending, dedup, then reverse
+                        // → HIGHEST (longest) FIRST. On an equal-length tie,
+                        // Rakudo's LTM breaks the tie by candidate declaration
+                        // order — the FIRST-declared candidate wins. `raw_out`
+                        // preserves declaration order (candidates.iter()) and
+                        // the sort is stable, so on a tie the first-declared
+                        // candidate appears first among equal ends; keep it and
+                        // skip the rest (do NOT pop/replace with the later one).
                         raw_out.sort_by_key(|(e, _)| *e);
                         let mut tmp: Vec<(usize, RegexCaptures)> = Vec::new();
                         for item in raw_out {
                             if tmp.last().is_some_and(|(e, _)| *e == item.0) {
-                                tmp.pop();
+                                continue;
                             }
                             tmp.push(item);
                         }

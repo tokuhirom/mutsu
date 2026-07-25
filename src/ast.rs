@@ -138,6 +138,13 @@ pub(crate) struct FunctionDef {
     /// can report the module file (integration/error-reporting.t test 15).
     #[serde(default)]
     pub(crate) source_file: Option<String>,
+    /// Monotonic declaration/registration order, stamped when a `token`/`rule`
+    /// is registered (`insert_token_def`). Used to break an equal-length
+    /// Longest-Token-Match tie between proto candidates by declaration order,
+    /// matching Rakudo (`token pp:sym<**>` declared before `token pp:sym<m>`
+    /// wins the tie). 0 for defs that are not proto-token candidates.
+    #[serde(default)]
+    pub(crate) decl_order: u64,
 }
 
 /// A `fmt::Write` sink that streams formatted bytes straight into a `Hasher`,
