@@ -1520,10 +1520,19 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 }
                 let r3 = &r3[1..];
                 let (r3, _) = ws(r3)?;
+                // Trailing comma: the comma just consumed had no argument after
+                // it, so the argument list ends here. A statement modifier counts
+                // as a terminator — `die sprintf "%s", 1, if @c;` is legal Raku
+                // (the trailing comma is an empty list slot), and `parse_arg`
+                // would otherwise try to read `if` as a term. The generic
+                // user-sub listop loop in `listop.rs` already does this; the
+                // builtin-listop loop here did not, so only builtin heads
+                // (`sprintf`, `join`, ...) rejected the shape.
                 if r3.starts_with(';')
                     || r3.starts_with('}')
                     || r3.starts_with(')')
                     || r3.is_empty()
+                    || is_stmt_modifier_ahead(r3)
                 {
                     break;
                 }
@@ -1713,10 +1722,15 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 }
                 let r3 = &r3[1..];
                 let (r3, _) = ws(r3)?;
+                // Trailing comma ends the argument list; a statement modifier is
+                // one of its terminators (`die sprintf "%s", 1, if @c;` — the
+                // comma is an empty list slot). See the same guard in the
+                // builtin-listop loop above and in `listop.rs`.
                 if r3.starts_with(';')
                     || r3.starts_with('}')
                     || r3.starts_with(')')
                     || r3.is_empty()
+                    || is_stmt_modifier_ahead(r3)
                 {
                     break;
                 }

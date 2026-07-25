@@ -160,6 +160,17 @@ pub(super) fn is_stmt_modifier_keyword(input: &str) -> bool {
     leading_modifier_keyword(input).is_some()
 }
 
+/// A statement-modifier keyword sitting right after a *trailing comma*
+/// (`die "x", if @c;` / `return 1, if 0;` — legal Raku, the trailing comma is an
+/// empty list slot). Rejects a same-named **pair key** (`1, with => 2`) so a
+/// legal comma list is never truncated at its last element.
+pub(in crate::parser) fn is_stmt_modifier_after_trailing_comma(input: &str) -> bool {
+    let Some(kw) = leading_modifier_keyword(input) else {
+        return false;
+    };
+    !input[kw.len()..].trim_start().starts_with("=>")
+}
+
 /// The statement-modifier keyword at the start of `input`, if any.
 fn leading_modifier_keyword(input: &str) -> Option<&'static str> {
     [
@@ -234,6 +245,24 @@ fn block_follows_modifier_condition(r: &str) -> bool {
 /// Supports chaining: `expr if cond for list` parses as `for list { expr if cond }`.
 pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, Stmt> {
     let (rest, _) = ws(input)?;
+    // A trailing comma in the statement's argument list is an empty list slot, not
+    // a syntax error: `die "x", if @c;` is legal Raku. Statements that parse a
+    // single argument expression (`die`/`fail`, via `expression_no_word_logical`,
+    // which does not consume commas) leave that comma here, so skip it when a
+    // statement modifier follows. A comma before anything else is left alone so
+    // real errors still surface. (The comma-list statements — `return` and
+    // friends, via `parse_comma_or_expr*` — never reach here with the comma
+    // pending: that parser ends the list itself, see `comma.rs`.)
+    let rest = if let Some(after_comma) = rest.strip_prefix(',') {
+        let (after_ws, _) = ws(after_comma)?;
+        if is_stmt_modifier_after_trailing_comma(after_ws) {
+            after_ws
+        } else {
+            rest
+        }
+    } else {
+        rest
+    };
     // Blocks: never attach a statement modifier across a newline.
     if matches!(stmt, Stmt::Block(_)) {
         let consumed_len = input.len().saturating_sub(rest.len());

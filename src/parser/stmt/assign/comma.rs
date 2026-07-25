@@ -1,4 +1,19 @@
 use super::*;
+use crate::parser::stmt::modifier::is_stmt_modifier_after_trailing_comma;
+
+/// Whether a comma list ends here — i.e. the comma just consumed was a TRAILING
+/// comma (an empty list slot). Besides the obvious terminators, a statement
+/// modifier ends it: `return 1, if 0;` and `take 1, for @a;` are legal Raku, and
+/// without this the element parser would try to read `if`/`for` as a term and
+/// fail with a bogus "expected expression" (`UpRooted::Table` writes
+/// `die sprintf(...), $a, $b,\n\tif ...;`).
+fn comma_list_ends_here(r: &str) -> bool {
+    r.starts_with(';')
+        || r.is_empty()
+        || r.starts_with('}')
+        || r.starts_with(')')
+        || is_stmt_modifier_after_trailing_comma(r)
+}
 
 /// Parse a comma expression (may produce a list).
 pub(in crate::parser) fn parse_comma_or_expr(input: &str) -> PResult<'_, Expr> {
@@ -11,7 +26,7 @@ fn parse_comma_or_expr_impl(input: &str, item_context: bool) -> PResult<'_, Expr
     if r.starts_with(',') && !r.starts_with(",,") {
         let (r, _) = parse_char(r, ',')?;
         let (r, _) = ws(r)?;
-        if r.starts_with(';') || r.is_empty() || r.starts_with('}') || r.starts_with(')') {
+        if comma_list_ends_here(r) {
             // Single element with a trailing comma. In list context this is a
             // 1-element list (`@a = 1..5,` keeps the Range unflattened); in item
             // context it collapses to the element (`return 5,` -> `5`).
@@ -31,7 +46,7 @@ fn parse_comma_or_expr_impl(input: &str, item_context: bool) -> PResult<'_, Expr
             }
             let (r2, _) = parse_char(r2, ',')?;
             let (r2, _) = ws(r2)?;
-            if r2.starts_with(';') || r2.is_empty() || r2.starts_with('}') || r2.starts_with(')') {
+            if comma_list_ends_here(r2) {
                 let items = normalize_comma_list_items(items);
                 return Ok((r2, finalize_list(items)));
             }
@@ -68,7 +83,7 @@ fn parse_comma_or_expr_no_wl_impl(input: &str, item_context: bool) -> PResult<'_
     if r.starts_with(',') && !r.starts_with(",,") {
         let (r, _) = parse_char(r, ',')?;
         let (r, _) = ws(r)?;
-        if r.starts_with(';') || r.is_empty() || r.starts_with('}') || r.starts_with(')') {
+        if comma_list_ends_here(r) {
             if item_context {
                 return Ok((r, first));
             }
@@ -85,7 +100,7 @@ fn parse_comma_or_expr_no_wl_impl(input: &str, item_context: bool) -> PResult<'_
             }
             let (r2, _) = parse_char(r2, ',')?;
             let (r2, _) = ws(r2)?;
-            if r2.starts_with(';') || r2.is_empty() || r2.starts_with('}') || r2.starts_with(')') {
+            if comma_list_ends_here(r2) {
                 let items = normalize_comma_list_items(items);
                 return Ok((r2, finalize_list(items)));
             }
