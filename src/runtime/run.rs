@@ -239,8 +239,14 @@ impl Interpreter {
         self.check_unresolved_stubs()?;
 
         // Auto-call MAIN sub if defined, with CLI argument parsing. Skipped when
-        // the program already drove MAIN itself via an explicit `RUN-MAIN`.
-        if !self.explicit_run_main {
+        // the program already drove MAIN itself via an explicit `RUN-MAIN`, and
+        // when the mainline called `exit`: `exit` terminates the process, so a
+        // MAIN (or its usage message and exit code 2) must not run afterwards.
+        // Without the `halted` guard, `sub MAIN(Str :$r!) { }; exit 0` printed
+        // `Usage:` and exited 2 where raku exits 0 silently — which also made
+        // `use <dist>; exit 0` an unusable probe for the dist-compatibility sweep,
+        // since every dist exporting a MAIN dispatched it.
+        if !self.explicit_run_main && !self.halted {
             self.dispatch_main(&compiled_fns)?;
         }
         self.finish()?;

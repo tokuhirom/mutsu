@@ -335,7 +335,14 @@ def sweep_dist(name, meta, mutsu, extra_libs, timeout, include_guts, include_nat
         os.makedirs(sbx_home, exist_ok=True)
         rows = []
         for module in sorted(provides):
-            base = [mutsu] + libs + ["-e", f"use {module}"]
+            # `exit 0` after the load: this probe measures whether the module
+            # LOADS, and a dist that exports a `MAIN` would otherwise have it
+            # dispatched by the `-e` program — printing usage and exiting 2
+            # (RakudoContainerfileBuilder) or shelling out to npm/git and hanging
+            # (Raku::Pod::Render's InstallAtomHighlighter), neither of which is a
+            # mutsu bug. `exit` terminates before MAIN dispatch in raku, and now
+            # in mutsu too (news/2026-07/exit-skips-main-dispatch.md).
+            base = [mutsu] + libs + ["-e", f"use {module}; exit 0"]
             cmd = sandbox_wrap(base, root, sbx_home) if sandbox else base
             try:
                 p = subprocess.run(cmd, capture_output=True, text=True,
