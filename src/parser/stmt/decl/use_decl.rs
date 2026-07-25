@@ -152,16 +152,50 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
         let (r, expr) = super::super::super::primary::primary(rest)?;
         (r, Some(expr))
     } else {
-        let (r, expr) = expression(rest)?;
-        (r, Some(expr))
+        // A `use` may carry a comma-separated argument list
+        // (`use RakudoPrereq v2021.04, 'too old', 'rakudo-only'`); each element
+        // is a separate positional argument to the module's `sub EXPORT`.
+        // `expression` stops at the comma (it is a statement-level list op), so
+        // collect the elements here and hand them on as an `ArrayLiteral`, which
+        // the compiler already flattens into positional `use` arguments.
+        let (mut r, first) = expression(rest)?;
+        let mut items = vec![first];
+        loop {
+            let (after_ws, _) = ws(r)?;
+            let Some(after_comma) = after_ws.strip_prefix(',') else {
+                break;
+            };
+            let (next, _) = ws(after_comma)?;
+            // A trailing comma (`use Foo 1, ;`) ends the list.
+            if next.is_empty() || next.starts_with(';') || next.starts_with('}') {
+                r = next;
+                break;
+            }
+            let (after_expr, expr) = expression(next)?;
+            items.push(expr);
+            r = after_expr;
+        }
+        if items.len() == 1 {
+            (r, items.pop())
+        } else {
+            (r, Some(Expr::ArrayLiteral(items)))
+        }
     };
     let (rest, _) = ws(rest)?;
     let (rest, _) = opt_char(rest, ';');
-    // Handle `use lib "path"` or `use lib $*PROGRAM.parent(N).add("path")` at parse time
+    // Handle `use lib "path"` or `use lib $*PROGRAM.parent(N).add("path")` at
+    // parse time. A list (`use lib "a", "b"` / `use lib <a b>`) adds each path.
     if module == "lib"
         && let Some(ref expr) = arg
     {
-        super::super::simple::try_add_parse_time_lib_path(expr);
+        match expr {
+            Expr::ArrayLiteral(items) => {
+                for item in items {
+                    super::super::simple::try_add_parse_time_lib_path(item);
+                }
+            }
+            other => super::super::simple::try_add_parse_time_lib_path(other),
+        }
     }
     // Register exported function names so they are recognized as calls without parens.
     super::super::simple::register_module_exports(&module);
