@@ -351,7 +351,28 @@ impl Interpreter {
             self.attr_key_in_map(bare, is_private, &map)
         };
         if let Some(key) = key {
+            self.record_build_attr_write(&attributes, key);
             attributes.insert(key, val);
+        }
+    }
+
+    /// Note that `key` was assigned on `attributes` while that instance's BUILD
+    /// phase is running, so the post-BUILD default pass knows to leave it alone
+    /// (raku applies a `has $.x = <default>` only to attributes BUILD did not
+    /// set — an explicit `$!x = Any` counts as set). Costs one `RefCell` borrow
+    /// of an empty `Vec` outside construction.
+    pub(crate) fn record_build_attr_write(
+        &self,
+        attributes: &crate::gc::Gc<crate::value::InstanceAttrs>,
+        key: crate::symbol::Symbol,
+    ) {
+        let mut frames = self.build_attr_writes.borrow_mut();
+        if frames.is_empty() {
+            return;
+        }
+        let addr = crate::gc::Gc::as_ptr(attributes) as usize;
+        if let Some(frame) = frames.iter_mut().rev().find(|f| f.cell_addr == addr) {
+            frame.written.insert(key);
         }
     }
 

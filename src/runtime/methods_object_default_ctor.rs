@@ -137,6 +137,20 @@ impl Interpreter {
                 return None;
             }
         }
+        // With a BUILD phase an attribute initializer must run AFTER BUILD and
+        // only where BUILD left the attribute alone (raku's order — see
+        // runtime/attr_build_defaults.rs). That seed-defer-apply dance needs the
+        // interpreter's constructor, so hand any such class over to it rather
+        // than filling the defaults eagerly here.
+        if has_build
+            && class_attrs.iter().zip(plan.attr_syms.iter()).any(
+                |((_, _, default_expr, _, _, _, _), &sym)| {
+                    default_expr.is_some() && !attrs.contains_key(sym)
+                },
+            )
+        {
+            return None;
+        }
 
         // Fill defaults for missing attributes. Mirror the interpreter's
         // constructor structure: a *literal* default — the common case, since the
