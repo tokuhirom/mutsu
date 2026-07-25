@@ -144,12 +144,14 @@ impl Interpreter {
                 } else if !self.type_matches_value(constraint, value)
                     && !self.is_container_subclass(constraint)
                 {
-                    return Err(RuntimeError::new(format!(
-                        "Type check failed in assignment to $!{}; expected {}, got {}",
-                        attr_name,
+                    // Rakudo raises a typed X::TypeCheck::Assignment here (with
+                    // the `expected X but got Y (repr)` wording), not an
+                    // untyped AdHoc.
+                    return Err(crate::runtime::utils::type_check_assignment_typed_error(
+                        &format!("$!{}", attr_name),
                         constraint,
-                        super::value_type_name(value)
-                    )));
+                        value,
+                    ));
                 }
             }
             let Some(pred) = where_constraint else {

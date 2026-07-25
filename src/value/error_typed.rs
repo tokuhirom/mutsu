@@ -250,15 +250,25 @@ impl RuntimeError {
         symbol: Option<&str>,
     ) -> Self {
         let got_type = crate::value::types::what_type_name(got_value);
+        // Rakudo's wording is `expected X but got Y (repr)` — the `(repr)` tail
+        // is present for any value with a short representation. Kept identical
+        // to `runtime::utils::type_check_assignment_error`, which builds the
+        // same message on the other assignment paths.
+        let repr = crate::runtime::utils::value_short_repr(got_value);
+        let got = if repr.is_empty() {
+            got_type.to_string()
+        } else {
+            format!("{} {}", got_type, repr)
+        };
         let msg = if let Some(sym) = symbol {
             format!(
-                "Type check failed in assignment to {}; expected {}, got {}",
-                sym, expected, got_type
+                "Type check failed in assignment to {}; expected {} but got {}",
+                sym, expected, got
             )
         } else {
             format!(
-                "Type check failed in assignment; expected {}, got {}",
-                expected, got_type
+                "Type check failed in assignment; expected {} but got {}",
+                expected, got
             )
         };
         let mut attrs = HashMap::new();

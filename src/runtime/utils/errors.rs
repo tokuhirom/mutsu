@@ -41,6 +41,21 @@ pub(crate) fn value_short_repr(val: &Value) -> String {
 /// Format the variable name for error messages, adding `$` sigil for
 /// scalar variables that don't already have a sigil prefix.
 pub(crate) fn format_var_name_for_error(name: &str) -> String {
+    // Rakudo always names the ATTRIBUTE in an assignment error, whichever syntax
+    // wrote it: `$.n = $v` (through the `is rw` accessor) reports `$!n`, exactly
+    // as a direct `$!n = $v` does. Normalize the `.`-twigil accessor form here so
+    // every assignment path agrees without each having to remember.
+    let name = match name.as_bytes() {
+        [b'$' | b'@' | b'%' | b'&', b'.', ..] => {
+            let mut normalized = String::with_capacity(name.len());
+            normalized.push(name.as_bytes()[0] as char);
+            normalized.push('!');
+            normalized.push_str(&name[2..]);
+            return normalized;
+        }
+        [b'.', rest @ ..] if !rest.is_empty() => return format!("$!{}", &name[1..]),
+        _ => name,
+    };
     if name.starts_with('$')
         || name.starts_with('@')
         || name.starts_with('%')
