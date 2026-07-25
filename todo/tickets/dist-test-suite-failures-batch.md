@@ -59,12 +59,17 @@ Reaches subtest 4 of 21, then dies with
 `No such method 'value' for invocant of type 'Any'` at `t/01-basic.t:15`. Whatever
 the code expects to be a `Pair` there is `Any` in mutsu. Needs reduction.
 
-### `Locale::Dates` — `Unknown function: Dates`
+### ~~`Locale::Dates` — `Unknown function: Dates`~~ — FIXED
 
-`t/01-basic.rakutest` plans 8 and runs 0, dying with `Unknown function: Dates` at
-line 9 — a name-resolution failure that mangles the package name
-(`Locale::Dates`) into a call to `Dates`. `t/02-create.rakutest` passes 16/16, so
-it is specific to what line 9 does. Needs reduction.
+Was `Locale::Dates($locale)`, i.e. invoking a user class as a coercion. mutsu had
+that path for built-in types, roles and enums but not for user classes. Fixed in
+`news/2026-07/class-type-object-coercion-call.md`; both of its files now match
+raku (24 subtests).
+
+**Left over from that fix:** the same call form on a **subset** is still
+unsupported — `subset Sm of Int where * < 10; Sm(5)` returns 5 in raku,
+`Unknown function: Sm` in mutsu. Different mechanism (coerce to the base type,
+then check the constraint).
 
 ## Un-triaged `test_die` / `test_fail`
 
