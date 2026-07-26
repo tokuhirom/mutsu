@@ -1,0 +1,11 @@
+{
+    "name": "PrecProbe",
+    "version": "9.9.9",
+    "auth": "zef:mutsu",
+    "api": "0",
+    "provides": {
+        "PrecProbe": {
+            "file": "precprobe-installed"
+        }
+    }
+}

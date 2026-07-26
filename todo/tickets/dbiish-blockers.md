@@ -47,17 +47,21 @@ a bogus baseline that wastes a session.
 **Nothing fails inside NativeCall.** The surface `OpenSSL` needed (CStruct,
 opaque pointers, callbacks) is strictly harder than SQLite's, and it is holding.
 
-## ⚠ These numbers were taken with the wrong `NativeLibs`
+## The first round of these numbers was taken with the wrong `NativeLibs`
 
-`-I` does **not** override an installed module of the same name in mutsu (it does
-in raku) — see
-[`todo/tickets/dash-i-loses-to-installed-module.md`](dash-i-loses-to-installed-module.md).
-`NativeLibs` is installed in the site repo at **0.0.8**, so every run above
-loaded that instead of the 0.0.9 the `-I` line pins, and 0.0.8's `cannon-name`
-has a different signature. The tell is a stack frame pointing into
-`~/.local/share/mutsu/repo/site/sources/…`.
+`-I` used not to override an installed module of the same name (raku's does), so
+every run in the first survey loaded the site repo's `NativeLibs` **0.0.8**
+instead of the 0.0.9 the `-I` line pins — a differently-shaped `cannon-name`.
+That is fixed
+([`news/2026-07/dash-i-beats-installed-modules.md`](../../news/2026-07/dash-i-beats-installed-modules.md));
+the tell was a stack frame pointing into
+`~/.local/share/mutsu/repo/site/sources/…`, and those frames now name
+`../NativeLibs-0.0.9/lib/NativeLibs.rakumod`.
 
-Re-measure after that is fixed before trusting ② in particular.
+`45-sqlite-common` was re-measured after the fix: still `Unknown function:
+cannon-name`, so ② is a real blocker and not an artifact of the wrong source —
+but every *reduction* under ② was written against 0.0.8 and needs redoing
+against 0.0.9.
 
 ## ① Parse failure — FIXED, was worth four files
 
@@ -96,10 +100,11 @@ checked against raku, all behave identically under both):
 - one multi calling the proto recursively (`cannon-name($libname, Version.new($ver))`).
 
 So the earlier note here (a custom `sub EXPORT` before `unit module`) is wrong,
-and the trigger is still unidentified. **Read the ⚠ above first** — these runs
-loaded the installed `NativeLibs` 0.0.8, whose `cannon-name` is shaped
-differently from the 0.0.9 the reductions were written against, so the reduction
-may simply have been aimed at the wrong source.
+and the trigger is still unidentified. **These reductions were aimed at the wrong
+source** — see the section above: they were checked while the installed
+`NativeLibs` 0.0.8 was being loaded. Redo them against 0.0.9, whose
+`cannon-name` is `our proto sub cannon-name(|) {*}` with a
+`(Str:D, Version?)` and a `(Str, Cool)` candidate.
 
 ## ③ `Perl6::Metamodel::PackageHOW.method_table` (`01-basic`)
 

@@ -29,7 +29,8 @@ fn print_help(program: &str) {
     println!();
     println!("Environment variables:");
     println!("  MUTSULIB       Colon-separated list of module search paths");
-    println!("                 (added before -I paths, so -I takes priority)");
+    println!("                 (searched after -I paths, so -I takes priority;");
+    println!("                 both are searched before installed modules)");
 }
 
 fn print_negation_error(option: &str) -> ! {
@@ -235,16 +236,16 @@ fn run_main() {
         }
     }
 
-    // MUTSULIB env var: colon-separated paths added before -I paths
-    // (so -I takes priority since later paths are searched first)
+    // MUTSULIB env var: colon-separated paths appended AFTER the -I paths.
+    // Search order is first-listed-first, so this is what makes an explicit
+    // `-I` win over an inherited MUTSULIB entry, as raku's -I does over RAKULIB.
     if let Ok(mutsulib) = env::var("MUTSULIB") {
-        let mut env_paths: Vec<String> = mutsulib
-            .split(':')
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_string())
-            .collect();
-        env_paths.append(&mut lib_paths);
-        lib_paths = env_paths;
+        lib_paths.extend(
+            mutsulib
+                .split(':')
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string()),
+        );
     }
 
     #[cfg(feature = "native")]

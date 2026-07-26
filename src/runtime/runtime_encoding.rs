@@ -357,9 +357,36 @@ impl Interpreter {
             .insert("@*ARGS".to_string(), Value::real_array(args));
     }
 
+    /// Add a search path (`-I`, `MUTSULIB`) to the chain, keeping the default
+    /// site repository last. `Interpreter::new` registers that repository before
+    /// the caller ever sees the interpreter, so a plain push would leave every
+    /// explicit path *behind* the installed modules — the exact inversion of
+    /// what `-I` is for. Paths added here keep their relative order.
     pub fn add_lib_path(&mut self, path: String) {
+        if path.is_empty() {
+            return;
+        }
+        let at = self
+            .default_site_repo_position()
+            .unwrap_or(self.lib_paths.len());
+        self.lib_paths.insert(at, path);
+    }
+
+    /// Index of the entry `add_default_site_repo` registered, if it is still in
+    /// the chain. Everything the user adds explicitly belongs in front of it.
+    fn default_site_repo_position(&self) -> Option<usize> {
+        let dir = Self::default_repo_dir("site")?;
+        let marker = format!("inst#{}", dir.display());
+        self.lib_paths.iter().position(|p| *p == marker)
+    }
+
+    /// Insert a search path at the FRONT of the chain, ahead of everything set up
+    /// before it. This is `use lib`'s semantics: Raku unshifts the repository onto
+    /// `$*REPO`'s chain, so a `use lib` outranks `-I`/`MUTSULIB` and the installed
+    /// repositories, and within one statement the last-listed path ends up first.
+    pub fn prepend_lib_path(&mut self, path: String) {
         if !path.is_empty() {
-            self.lib_paths.push(path);
+            self.lib_paths.insert(0, path);
         }
     }
 }

@@ -56,6 +56,17 @@ Or set the `MUTSULIB` environment variable (colon-separated):
 MUTSULIB=/path/to/lib1:/path/to/lib2 mutsu script.raku
 ```
 
+Search order is, highest priority first:
+
+1. `use lib` paths, most recently added first
+2. `-I` paths, in the order given
+3. `MUTSULIB` paths, in the order given
+4. installed modules (the `site` repository `mzef install` writes to)
+5. bundled batteries
+
+So `-I` always shadows an installed module of the same name, whatever version
+that installed copy has — the flag is not a version hint.
+
 ### Pre-loading modules with `-M`
 
 ```bash

@@ -15,7 +15,7 @@ This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpr
 - Run a single roast test: `cargo build && MUTSU_FUDGE=1 prove -e 'target/debug/mutsu' roast/<path>.t` (or `MUTSU_BIN=target/debug/mutsu prove -e 'scripts/run-roast-test.sh' roast/<path>.t`). **`MUTSU_FUDGE=1` is required for roast tests** — fudge directives (`#?rakudo skip/todo`, `#?DOES`, `#?v6`) are only preprocessed when it is set. Without it, fudge-dependent tests fail or produce wrong counts. `make roast` sets it automatically via `scripts/run-roast-test.sh`. Never set `MUTSU_FUDGE` when running ordinary (non-roast) scripts — it would let a stray `#?rakudo skip` comment drop the next statement.
 - Pre-commit hooks (lefthook): `cargo clippy -- -D warnings` and `cargo fmt` run automatically on commit.
 - Temporary test scripts: write to `tmp/` (gitignored) using the Write tool (not cat/heredoc). Build first, then run with `./target/debug/mutsu ./tmp/<file>`.
-- Module search paths: use `-I <path>` to add a module search path, or set the `MUTSULIB` environment variable (colon-separated paths). `-I` paths take priority over `MUTSULIB` paths.
+- Module search paths: use `-I <path>` to add a module search path, or set the `MUTSULIB` environment variable (colon-separated paths). Precedence, highest first: `use lib` (most recent first) → `-I` (in order) → `MUTSULIB` → installed modules (the `mzef` site repo) → bundled batteries. `-I` therefore shadows an installed module of the same name regardless of its version (pinned by `t/lib-path-precedence.t`).
   - Example: `cargo run -- -I lib script.raku`
   - Example: `MUTSULIB=/path/to/lib1:/path/to/lib2 cargo run -- script.raku`
 - Help: `cargo run -- --help`
