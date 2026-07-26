@@ -190,6 +190,18 @@ impl Interpreter {
             ValueView::Num(f) if f.is_infinite() && f.is_sign_positive() => {
                 Value::version(vec![VersionPart::Whatever], false, false)
             }
+            // An undefined argument gives a part-less `Version.new`, like raku's
+            // `Version.new(Any)`. Stringifying the type object instead produced
+            // the nonsense `Version.new('(Any)')` -- reachable from a computed
+            // declarator adverb such as
+            // `unit class C:ver($?DISTRIBUTION.meta<ver>)` when there is no
+            // distribution.
+            ValueView::Nil => Value::version(Vec::new(), false, false),
+            ValueView::Package(name)
+                if matches!(name.resolve().as_str(), "Any" | "Mu" | "Nil" | "Version") =>
+            {
+                Value::version(Vec::new(), false, false)
+            }
             _ => {
                 let s = arg.to_string_value();
                 Self::version_from_value(Value::str(s))

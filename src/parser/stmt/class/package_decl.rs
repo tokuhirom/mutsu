@@ -141,6 +141,32 @@ pub(crate) fn check_pseudo_package_in_decl(name: &str) -> Result<(), PError> {
     Ok(())
 }
 
+/// The `__MUTSU_SET_META__` calls for a declarator's `:ver`/`:auth`/`:api`
+/// adverbs. Other adverbs are not metadata and are dropped here, as they are in
+/// the block forms.
+fn decl_adverb_meta_stmts(name: &str, adverbs: Vec<(String, crate::ast::Expr)>) -> Vec<Stmt> {
+    adverbs
+        .into_iter()
+        .filter(|(k, _)| matches!(k.as_str(), "ver" | "auth" | "api"))
+        .map(|(k, v)| super::class_decl::meta_setter_stmt(name, &k, v))
+        .collect()
+}
+
+/// Pair a `unit class`/`unit role`/`unit grammar` declaration with the metadata
+/// setters its declarator adverbs produced. A `SyntheticBlock` is a non-lexical
+/// statement sequence, so the declaration keeps its compilation-unit scope; the
+/// declaration is always its *last* element, which is what `stmt_list` relies on
+/// when it absorbs the rest of the file into the declaration's body. Returns the
+/// bare declaration when there are no adverbs, so the overwhelmingly common
+/// shape is untouched.
+fn with_meta_stmts(mut meta_stmts: Vec<Stmt>, decl: Stmt) -> Stmt {
+    if meta_stmts.is_empty() {
+        return decl;
+    }
+    meta_stmts.push(decl);
+    Stmt::SyntheticBlock(meta_stmts)
+}
+
 /// Parse `unit module` or `unit class` statement.
 pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("unit", input).ok_or_else(|| PError::expected("unit statement"))?;
@@ -151,9 +177,10 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = ws1(r)?;
         let (r, name) = qualified_ident(r)?;
         check_pseudo_package_in_decl(&name)?;
-        // Skip optional type adverbs (:ver<...>, :auth<...>, :api<...>)
-        let (r, _traits) = parse_declarator_traits(r)?;
+        // Optional type adverbs (:ver<...>, :auth<...>, :api<...>)
+        let (r, traits) = parse_declarator_traits(r)?;
         let (r, _) = ws(r)?;
+        let meta_stmts = decl_adverb_meta_stmts(&name, traits);
         // Parse `is Parent` and `does Role` clauses before the semicolon
         let mut parents = Vec::new();
         let mut does_parents = Vec::new();
@@ -223,22 +250,25 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = opt_char(r, ';');
         return Ok((
             r,
-            Stmt::ClassDecl {
-                name: Symbol::intern(&name),
-                name_expr: None,
-                parents,
-                class_is_rw,
-                is_hidden,
-                is_lexical: false,
-                hidden_parents,
-                does_parents,
-                repr: None,
-                body: Vec::new(),
-                language_version: super::super::simple::current_language_version(),
-                custom_traits: Vec::new(),
-                is_unit: true,
-                decl_id: crate::ast::next_class_decl_id(),
-            },
+            with_meta_stmts(
+                meta_stmts,
+                Stmt::ClassDecl {
+                    name: Symbol::intern(&name),
+                    name_expr: None,
+                    parents,
+                    class_is_rw,
+                    is_hidden,
+                    is_lexical: false,
+                    hidden_parents,
+                    does_parents,
+                    repr: None,
+                    body: Vec::new(),
+                    language_version: super::super::simple::current_language_version(),
+                    custom_traits: Vec::new(),
+                    is_unit: true,
+                    decl_id: crate::ast::next_class_decl_id(),
+                },
+            ),
         ));
     }
     // unit role Name;  — declare a role at the file scope.
@@ -250,8 +280,9 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         let (mut r, (mut type_params, mut type_param_defs)) =
             super::role_decl::parse_optional_role_type_params(r)?;
         // Optional type adverbs (:ver<...>, :auth<...>, :api<...>).
-        let (r2, _adverbs) = parse_declarator_traits(r)?;
+        let (r2, adverbs) = parse_declarator_traits(r)?;
         let (r2, _) = ws(r2)?;
+        let meta_stmts = decl_adverb_meta_stmts(&name, adverbs);
         r = r2;
         // The signature may also FOLLOW the adverbs — the order Raku itself uses:
         // `unit role Algorithm::Treap:ver<0.10.3>:auth<zef:titsuki>[::KeyT];`.
@@ -326,17 +357,20 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         }
         return Ok((
             r,
-            Stmt::RoleDecl {
-                name: Symbol::intern(&name),
-                type_params,
-                type_param_defs,
-                is_export,
-                export_tags,
-                body,
-                is_rw: role_is_rw,
-                language_version: super::super::simple::current_language_version(),
-                custom_traits,
-            },
+            with_meta_stmts(
+                meta_stmts,
+                Stmt::RoleDecl {
+                    name: Symbol::intern(&name),
+                    type_params,
+                    type_param_defs,
+                    is_export,
+                    export_tags,
+                    body,
+                    is_rw: role_is_rw,
+                    language_version: super::super::simple::current_language_version(),
+                    custom_traits,
+                },
+            ),
         ));
     }
     // unit grammar Name;  — declare a grammar at the file scope.
@@ -349,8 +383,9 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         // on the grammar name before the `is`/`does` parent clauses, e.g.
         // `unit grammar Foo:ver<0.3.8> is Bar;`. Without this, the adverb blocks
         // the `is Bar` parent from being parsed (parent silently dropped).
-        let (r, _traits) = parse_declarator_traits(r)?;
+        let (r, traits) = parse_declarator_traits(r)?;
         let (r, _) = ws(r)?;
+        let meta_stmts = decl_adverb_meta_stmts(&name, traits);
         let mut r = r;
         let mut parents = Vec::new();
         let mut does_parents = Vec::new();
@@ -391,22 +426,25 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         super::super::simple::register_user_type(&name);
         return Ok((
             r,
-            Stmt::ClassDecl {
-                name: Symbol::intern(&name),
-                name_expr: None,
-                parents,
-                class_is_rw: false,
-                is_hidden: false,
-                is_lexical: false,
-                hidden_parents: vec![],
-                does_parents,
-                repr: None,
-                body: Vec::new(),
-                language_version: super::super::simple::current_language_version(),
-                custom_traits: Vec::new(),
-                is_unit: true,
-                decl_id: crate::ast::next_class_decl_id(),
-            },
+            with_meta_stmts(
+                meta_stmts,
+                Stmt::ClassDecl {
+                    name: Symbol::intern(&name),
+                    name_expr: None,
+                    parents,
+                    class_is_rw: false,
+                    is_hidden: false,
+                    is_lexical: false,
+                    hidden_parents: vec![],
+                    does_parents,
+                    repr: None,
+                    body: Vec::new(),
+                    language_version: super::super::simple::current_language_version(),
+                    custom_traits: Vec::new(),
+                    is_unit: true,
+                    decl_id: crate::ast::next_class_decl_id(),
+                },
+            ),
         ));
     }
     // Accept both `unit module Foo;` and `unit package Foo;`

@@ -30,28 +30,29 @@ mutsu $INC t/45-sqlite-common.rakutest
 `raku $INC …` passes one giant argument and every file "fails" under raku too —
 a bogus baseline that wastes a session.
 
-## Status: mutsu 3/9
+## Status: mutsu 6/9 (raku parity on 6 of the 9)
 
 Re-measured **2026-07-26** with `tmp/dbiish-survey.sh` (in this repo's `tmp/`,
 recreate it from the recipe above), debug build, both interpreters on the same
-`-I` line, **after ② was fixed**.
+`-I` line, **after ② and ⑥ were fixed**.
 
 | File | raku | mutsu | Blocker |
 | --- | --- | --- | --- |
 | `02-meta` | PASS 1/1 | **PASS 1/1** | — |
 | `46-sqlite-blob` | PASS 18/18 | **PASS 18/18** | — |
 | `48-sqlite-errors` | PASS 17/17 | **PASS 17/17** | — |
-| `03-lib-util` | 1 subtest fails | 1 fail of 5 | ⑥ same count as raku; confirm it is the *same* subtest |
-| `44-sqlite-memory` | 1 subtest fails* | 1 fail of 109 | ⑥ `.^ver` of a class declared `:ver(<expr>)` |
-| `45-sqlite-common` | 1 subtest fails* | 1 fail of 109 | ⑥ `.^ver` of a class declared `:ver(<expr>)` |
+| `44-sqlite-memory` | 1 fail of 109* | **PASS 109/109** | — |
+| `45-sqlite-common` | 1 fail of 109* | **PASS 109/109** | — |
+| `03-lib-util` | 1 fail of 5* | 1 fail of 5* | — (same subtest as raku) |
 | `01-basic` | PASS 35/35 | ran 0/35, dies | ③ `PackageHOW.method_table` |
 | `05-mock` | PASS 16/16 | 1 fail of 13 run | ④ `IterationEnd` from a row fetch, then `Too many positionals passed; expected 0 arguments but got 2` |
 | `06-types` | PASS 12/12 | 2 fail of 3 run | ⑤ `Int is builtin` / `So not defined`; mutsu suggests `Did you mean 'invert'?` |
 
-\* raku is not clean on `03-lib-util`, `44-` and `45-` either: one subtest each —
-but **not the same subtest as mutsu's**. raku's is test 52, a `# TODO`-marked
-`rows()` capability check; mutsu's is test 2, ⑥ below. Do not chase raku's — the
-achievable target is raku parity, not 109/109.
+\* Those raku failures are `# TODO`-marked and environment-dependent, not bugs:
+`03-lib-util` test 5 fails on both because `libpq` is not installed on the survey
+machine, and `44-`/`45-` test 52 is a `rows()` capability check raku itself marks
+`# TODO`. mutsu passes test 52. The achievable target is raku parity, not
+109/109 — six files are now there.
 
 **Nothing fails inside NativeCall**: the surface `OpenSSL` needs (CStruct,
 opaque pointers, callbacks) is strictly harder than SQLite's, and it is holding.
@@ -172,10 +173,12 @@ both implementations and is *not* the diagnosis. This exact trap already cost a
 session on `Template::Mustache`; get the real failing assertion before forming a
 theory.
 
-## ⑥ `.^ver` of a class declared with a computed `:ver(<expr>)` (`44-`, `45-`)
+## ⑥ `.^ver` of a class declared with a computed `:ver(<expr>)` — FIXED
 
-The one subtest each that mutsu still fails on `44-sqlite-memory` and
-`45-sqlite-common` is test 2 of `DBIish::CommonTesting`:
+Was the one subtest each that mutsu failed on `44-sqlite-memory` and
+`45-sqlite-common`; both now pass 109/109. Fixed — see
+[`news/2026-07/computed-declarator-adverb.md`](../../news/2026-07/computed-declarator-adverb.md).
+The failing assertion was test 2 of `DBIish::CommonTesting`:
 
 ```raku
 my $aversion = $drh.Version;
@@ -194,15 +197,13 @@ Note the plain `class A {}` case: raku's `A.^ver` really is `Mu`, so the fix is
 specifically "an explicit `:ver(<expr>)` always yields a `Version`", not "default
 `.^ver` to something defined".
 
-The actual defect is one level down: **mutsu does not evaluate the `:ver(...)`
-expression at all, it stores its source text.** `class C:ver($v) {}` gives
-`Version.new('$v')` and `class B:ver(Nil) {}` gives `Version.new('Nil')`, where
-raku evaluates both at declaration time (and yields `Version.new` for an
-undefined result). The storage site is `type_metadata[name]["ver"]`, read by
-`dispatch_classhow_method`'s `"ver"` arm in
-`src/runtime/methods_classhow_dispatch.rs`.
+The defect was one level down: **mutsu did not evaluate the `:ver(...)`
+expression at all, it stored its source text** — and the `unit class` form threw
+the adverbs away outright.
 
-Aside, seen in the same runs: `$*VM.config<nativecall_backend>` is missing, so
+## ⑦ `$*VM.config<nativecall_backend>` is missing
+
+Seen in every `DBIish` run: `$*VM.config<nativecall_backend>` is missing, so
 `NativeLibs`' `my \dyncall = $*VM.config<nativecall_backend> eq 'dyncall'` warns
 `Use of uninitialized value of type Any in string context` on every run that
 loads it. mutsu's `$*VM.config` has exactly two keys (`be`, `name`); raku answers

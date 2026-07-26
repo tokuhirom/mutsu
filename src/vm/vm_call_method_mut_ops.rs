@@ -1778,6 +1778,17 @@ impl Interpreter {
         } else {
             target
         };
+        // Nil absorbs a method it does not define (raku's `Nil.FALLBACK`), the
+        // same verdict the scalar `CallMethod` opcode and the hyper path reach
+        // via `nil_absorbs_method`. This opcode — a method call on a *named*
+        // receiver — never applied it, so `$?DISTRIBUTION.meta<ver>` outside a
+        // distribution died with "No such method 'meta'" where raku answers Nil.
+        // (`is_nil` is strictly `Nil`, so an uninitialised `Any` receiver still
+        // errors as before.)
+        if target.is_nil() && crate::vm::vm_call_method_ops::nil_absorbs_method(&method) {
+            self.stack.push(Value::NIL);
+            return Ok(());
+        }
         // For .* and .+ modifiers, skip the single-dispatch call and go
         // directly to the all-methods-in-MRO path to avoid double execution.
         match modifier {
