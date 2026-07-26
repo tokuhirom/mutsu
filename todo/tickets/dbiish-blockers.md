@@ -30,22 +30,31 @@ mutsu $INC t/45-sqlite-common.rakutest
 `raku $INC …` passes one giant argument and every file "fails" under raku too —
 a bogus baseline that wastes a session.
 
-## Status: mutsu 1/9, raku 9/9
+## Status: mutsu 1/9
 
-| File | mutsu | Blocker |
-| --- | --- | --- |
-| `02-meta.rakutest` | **PASS** | — |
-| `44-sqlite-memory` | FAIL | ② `Unknown function: cannon-name` |
-| `45-sqlite-common` | FAIL | ② `Unknown function: cannon-name` |
-| `46-sqlite-blob` | FAIL | ② `Unknown function: cannon-name` |
-| `03-lib-util` | FAIL | ② `Unknown function: cannon-name` |
-| `48-sqlite-errors` | FAIL | ② `Unknown function: cannon-name` |
-| `01-basic` | FAIL | ③ `PackageHOW.method_table` |
-| `05-mock` | FAIL | ④ one subtest: `IterationEnd` from a row fetch |
-| `06-types` | FAIL | ⑤ not root-caused |
+Re-measured **2026-07-26** with `tmp/dbiish-survey.sh` (in this repo's `tmp/`,
+recreate it from the recipe above), debug build, both interpreters on the same
+`-I` line. This is the first survey whose `-I` was actually honoured — see the
+section below — so it supersedes everything measured before it.
 
-**Nothing fails inside NativeCall.** The surface `OpenSSL` needed (CStruct,
-opaque pointers, callbacks) is strictly harder than SQLite's, and it is holding.
+| File | raku | mutsu | Blocker |
+| --- | --- | --- | --- |
+| `02-meta` | PASS 1/1 | **PASS 1/1** | — |
+| `03-lib-util` | 1 subtest fails | ran 3/5, dies | ② `Unknown function: cannon-name` |
+| `44-sqlite-memory` | 1 subtest fails* | ran 0/109, dies | ② `Unknown function: cannon-name` |
+| `45-sqlite-common` | 1 subtest fails* | ran 0/109, dies | ② `Unknown function: cannon-name` |
+| `46-sqlite-blob` | PASS 18/18 | ran 0/18, dies | ② `Unknown function: cannon-name` |
+| `48-sqlite-errors` | PASS 17/17 | ran 2/17, dies | ② `Unknown function: cannon-name` |
+| `01-basic` | PASS 35/35 | ran 0/35, dies | ③ `PackageHOW.method_table` |
+| `05-mock` | PASS 16/16 | 1 fail of 13 run | ④ `IterationEnd` from a row fetch, then `Too many positionals passed; expected 0 arguments but got 2` |
+| `06-types` | PASS 12/12 | 2 fail of 3 run | ⑤ `Int is builtin` / `So not defined`; mutsu suggests `Did you mean 'invert'?` |
+
+\* raku is not clean on `03-lib-util`, `44-` and `45-` either: one subtest each.
+Do not chase those — the achievable target is raku parity, not 109/109.
+
+**② is worth five files and is now root-caused** (below). **Nothing fails inside
+NativeCall**: the surface `OpenSSL` needs (CStruct, opaque pointers, callbacks)
+is strictly harder than SQLite's, and it is holding.
 
 ## The first round of these numbers was taken with the wrong `NativeLibs`
 
@@ -56,12 +65,7 @@ That is fixed
 ([`news/2026-07/dash-i-beats-installed-modules.md`](../../news/2026-07/dash-i-beats-installed-modules.md));
 the tell was a stack frame pointing into
 `~/.local/share/mutsu/repo/site/sources/…`, and those frames now name
-`../NativeLibs-0.0.9/lib/NativeLibs.rakumod`.
-
-`45-sqlite-common` was re-measured after the fix: still `Unknown function:
-cannon-name`, so ② is a real blocker and not an artifact of the wrong source —
-but every *reduction* under ② was written against 0.0.8 and needs redoing
-against 0.0.9.
+`../NativeLibs-0.0.9/lib/NativeLibs.rakumod`. The table above is the re-run.
 
 ## ① Parse failure — FIXED, was worth four files
 
@@ -91,20 +95,30 @@ work. That half stays in
 [`todo/deep/nativehelpers-blob-moarvm-guts.md`](../deep/nativehelpers-blob-moarvm-guts.md);
 `DBDish::SQLite` only uses `blob-from-pointer`, which does not go through it.
 
-**Remaining: `cannon-name` itself.** `NativeLibs` declares it as an `our proto
-sub` with two `multi` candidates. Reductions that do **not** reproduce (all
-checked against raku, all behave identically under both):
+**Remaining: `cannon-name` itself — ROOT-CAUSED 2026-07-26.** It has nothing to
+do with `proto`/`multi`, `sub EXPORT`, or NativeCall. `cannon-name` is only ever
+called from *inside* `NativeLibs.rakumod`, at lines 131 and 134, which are in a
+method of `class Searcher` — and **a class declared inside a `module` cannot see
+that module's subs**:
 
-- a plain `our proto sub` + multis in a module, called from a sibling sub;
-- the same with a custom `sub EXPORT(|)` before the `unit module` line;
-- one multi calling the proto recursively (`cannon-name($libname, Version.new($ver))`).
+```raku
+unit module NL;
+our sub cannon-name($libname) { "cn:$libname" }
+class Searcher {
+    method try-versions($libname) { cannon-name($libname) }   # Unknown function
+}
+```
 
-So the earlier note here (a custom `sub EXPORT` before `unit module`) is wrong,
-and the trigger is still unidentified. **These reductions were aimed at the wrong
-source** — see the section above: they were checked while the installed
-`NativeLibs` 0.0.8 was being loaded. Redo them against 0.0.9, whose
-`cannon-name` is `our proto sub cannon-name(|) {*}` with a
-`(Str:D, Version?)` and a `(Str, Cool)` candidate.
+The full variant matrix, the diagnosis (the module-scope *variable* is visible
+and the *qualified* call works, so bare-name function lookup is not walking the
+enclosing package chain) and the suggested fix are in
+[`class-in-module-cannot-see-module-subs.md`](class-in-module-cannot-see-module-subs.md).
+**That ticket is the next thing to do here: it is worth five of the nine files.**
+
+The earlier reductions recorded here were not wrong so much as aimed one row off
+the failing case — they all call from a sibling *sub*, which works. (They were
+also checked while the installed 0.0.8 was being loaded; the matrix in the new
+ticket was measured against 0.0.9 with a working `-I`.)
 
 ## ③ `Perl6::Metamodel::PackageHOW.method_table` (`01-basic`)
 
@@ -116,6 +130,21 @@ No such method 'method_table' for invocant of type 'Perl6::Metamodel::PackageHOW
 Rakudo MOP method that mutsu's `PackageHOW` does not implement. Not investigated
 beyond the message; check what the test actually asks for before implementing the
 whole MOP surface.
+
+## ④ `05-mock` — one subtest, then a hard stop
+
+`A row` expects `'a b 1'` and gets `'IterationEnd'`, and the file then dies at
+line 32 with `Too many positionals passed; expected 0 arguments but got 2`
+(13 of 16 tests run). raku is 16/16. Two separate symptoms, both unexamined —
+the `IterationEnd` leak out of a row fetch is the interesting one and smells
+like the `Seq`/iterator-exhaustion family.
+
+## ⑤ `06-types` — `Int is builtin` / `So not defined`
+
+Two of the three tests that run fail, and mutsu volunteers `Did you mean
+'invert'?`, so a method the test calls is unresolved and being spell-corrected.
+raku is 12/12. Not root-caused; start by reading lines 19-21 of the file and
+finding which call produces that suggestion.
 
 ## ④ Role attribute not seeded — FIXED; `05-mock` has one subtest left
 
