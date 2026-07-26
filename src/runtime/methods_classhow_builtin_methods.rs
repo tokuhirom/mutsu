@@ -36,6 +36,15 @@ impl Interpreter {
 
         let mut result = Vec::new();
 
+        // RakuAST model classes are native type objects rather than entries in
+        // the user-class registry.  Expose the constructors/accessors that the
+        // model layer really implements so `.^methods(:local)` is useful (and
+        // does not fall through to an empty built-in method list).
+        if local && let Some(names) = crate::rakuast::local_method_names(&class_name) {
+            self.push_native_method_objects(&names, &mut result);
+            return Ok(Value::array(result));
+        }
+
         // Extract mixin role names from the invocant for runtime role method collection
         let mixin_role_names: Vec<String> = if let ValueView::Mixin(_, mixins) = invocant.view() {
             mixins
