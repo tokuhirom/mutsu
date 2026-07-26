@@ -51,18 +51,12 @@ impl Interpreter {
                 .get(&Symbol::intern(name))
                 .cloned();
         }
-        // Try multi-dispatch with arity first
-        let multi_local = format!("{}::{}/{}", self.current_package(), name, arity);
-        if let Some(def) = self.registry().functions.get(&Symbol::intern(&multi_local)) {
-            return Some(def.clone());
-        }
-        let multi_global = format!("GLOBAL::{}/{}", name, arity);
-        if let Some(def) = self
-            .registry()
-            .functions
-            .get(&Symbol::intern(&multi_global))
-        {
-            return Some(def.clone());
+        // Try multi-dispatch with arity first, innermost package outwards.
+        for pkg in self.bare_name_packages() {
+            let multi_key = format!("{}::{}/{}", pkg, name, arity);
+            if let Some(def) = self.registry().functions.get(&Symbol::intern(&multi_key)) {
+                return Some(def.clone());
+            }
         }
         // Fall back to regular lookup
         self.resolve_function(name)
@@ -246,30 +240,27 @@ impl Interpreter {
             }
             return None;
         }
-        let exact_local = format!("{}::{}", self.current_package(), name);
-        if let Some(def) = self
-            .registry()
-            .functions
-            .get(&Symbol::intern(&exact_local))
-            .cloned()
-        {
-            return Some(def);
+        // Bare name: search the current package, then each enclosing package,
+        // then GLOBAL (see `bare_name_packages`).
+        let search_pkgs = self.bare_name_packages();
+        for pkg in &search_pkgs {
+            if let Some(def) = self
+                .registry()
+                .functions
+                .get(&Symbol::intern(&format!("{}::{}", pkg, name)))
+                .cloned()
+            {
+                return Some(def);
+            }
         }
-        let exact_global = format!("GLOBAL::{}", name);
-        if let Some(def) = self
-            .registry()
-            .functions
-            .get(&Symbol::intern(&exact_global))
-            .cloned()
-        {
-            return Some(def);
-        }
-        let prefix_local = format!("{}::{}/{}:", self.current_package(), name, arity);
-        let prefix_global = format!("GLOBAL::{}/{}:", name, arity);
-        let generic_keys = [
-            format!("{}::{}/{}", self.current_package(), name, arity),
-            format!("GLOBAL::{}/{}", name, arity),
-        ];
+        let typed_prefixes: Vec<String> = search_pkgs
+            .iter()
+            .map(|pkg| format!("{}::{}/{}:", pkg, name, arity))
+            .collect();
+        let generic_keys: Vec<String> = search_pkgs
+            .iter()
+            .map(|pkg| format!("{}::{}/{}", pkg, name, arity))
+            .collect();
         let mut found_multi_candidates = false;
         let mut candidates: Vec<(String, Arc<FunctionDef>)> = self
             .registry()
@@ -277,7 +268,7 @@ impl Interpreter {
             .iter()
             .filter(|(key, _)| {
                 let ks = key.resolve();
-                ks.starts_with(&prefix_local) || ks.starts_with(&prefix_global)
+                typed_prefixes.iter().any(|p| ks.starts_with(p))
             })
             .map(|(key, def)| (key.resolve(), def.clone()))
             .collect();
@@ -302,10 +293,10 @@ impl Interpreter {
         }
         // Try optional/default candidates with different arities.
         // These can match calls with fewer positional arguments.
-        let optional_prefixes = [
-            format!("{}::{}/", self.current_package(), name),
-            format!("GLOBAL::{}/", name),
-        ];
+        let optional_prefixes: Vec<String> = search_pkgs
+            .iter()
+            .map(|pkg| format!("{}::{}/", pkg, name))
+            .collect();
         let mut optional_candidates: Vec<(String, Arc<FunctionDef>)> = self
             .registry()
             .functions
@@ -342,10 +333,7 @@ impl Interpreter {
         }
         // Try slurpy candidates with different arities (slurpy params accept
         // variable number of args, so the registered arity may differ from call arity).
-        let slurpy_prefixes = [
-            format!("{}::{}/", self.current_package(), name),
-            format!("GLOBAL::{}/", name),
-        ];
+        let slurpy_prefixes = &optional_prefixes;
         let mut slurpy_candidates: Vec<(String, Arc<FunctionDef>)> = self
             .registry()
             .functions
@@ -370,10 +358,7 @@ impl Interpreter {
         }
         // Try candidates from other arities (e.g., optional/default positional params).
         // This allows calls with fewer args to match signatures like `$x = ...`.
-        let any_arity_prefixes = [
-            format!("{}::{name}/", self.current_package()),
-            format!("GLOBAL::{name}/"),
-        ];
+        let any_arity_prefixes = &optional_prefixes;
         let mut any_arity_candidates: Vec<(String, Arc<FunctionDef>)> = self
             .registry()
             .functions
@@ -415,11 +400,14 @@ impl Interpreter {
         let arity = arg_values.len();
         let mut all_matches = Vec::new();
 
+        let search_pkgs = self.bare_name_packages();
+
         // Collect from typed candidates
-        for prefix_base in [
-            format!("{}::{}/{}:", self.current_package(), name, arity),
-            format!("GLOBAL::{}/{}:", name, arity),
-        ] {
+        let typed_prefixes: Vec<String> = search_pkgs
+            .iter()
+            .map(|pkg| format!("{}::{}/{}:", pkg, name, arity))
+            .collect();
+        for prefix_base in typed_prefixes {
             let candidates: Vec<FunctionDef> = self
                 .registry()
                 .functions
@@ -435,10 +423,10 @@ impl Interpreter {
         }
 
         // Collect from generic (untyped) candidates
-        let generic_keys = [
-            format!("{}::{}/{}", self.current_package(), name, arity),
-            format!("GLOBAL::{}/{}", name, arity),
-        ];
+        let generic_keys: Vec<String> = search_pkgs
+            .iter()
+            .map(|pkg| format!("{}::{}/{}", pkg, name, arity))
+            .collect();
         for key in &generic_keys {
             let key_sym = Symbol::intern(key);
             let m_prefix = format!("{}__m", key);
@@ -472,10 +460,10 @@ impl Interpreter {
         }
 
         // Collect from slurpy candidates
-        let slurpy_prefixes = [
-            format!("{}::{}/", self.current_package(), name),
-            format!("GLOBAL::{}/", name),
-        ];
+        let slurpy_prefixes: Vec<String> = search_pkgs
+            .iter()
+            .map(|pkg| format!("{}::{}/", pkg, name))
+            .collect();
         let mut slurpy_candidates: Vec<(String, Arc<FunctionDef>)> = self
             .registry()
             .functions

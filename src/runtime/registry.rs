@@ -531,13 +531,16 @@ impl Registry {
     }
 
     /// Whether any `multi` candidate (any arity) exists for `name`, visible from
-    /// the `current_package` scope. Pure registry+scope read, shared by
+    /// any of the bare-name search `packages` (see
+    /// `Interpreter::bare_name_packages`). Pure registry+scope read, shared by
     /// `Interpreter::has_multi_candidates` and the VM's native dispatch path.
-    pub(crate) fn has_multi_candidates(&self, current_package: &str, name: &str) -> bool {
-        let prefixes = [
-            format!("{}::{}/", current_package, name),
-            format!("GLOBAL::{}/", name),
-        ];
+    /// Takes the whole search list so the registry is scanned once, not once per
+    /// enclosing package.
+    pub(crate) fn has_multi_candidates(&self, packages: &[String], name: &str) -> bool {
+        let prefixes: Vec<String> = packages
+            .iter()
+            .map(|pkg| format!("{}::{}/", pkg, name))
+            .collect();
         self.functions.keys().any(|k| {
             let ks = k.resolve();
             prefixes.iter().any(|p| ks.starts_with(p))
@@ -555,13 +558,18 @@ impl Registry {
     }
 
     /// Whether a `multi`-dispatched function `name` exists at any arity, visible
-    /// from the `current_package` scope. Pure registry+scope read, shared by
-    /// `Interpreter::has_multi_function` and the VM's native dispatch path.
-    pub(crate) fn has_multi_function(&self, current_package: &str, name: &str) -> bool {
-        let fq_slash = format!("{}::{}/", current_package, name);
-        self.functions
-            .keys()
-            .any(|k| k.resolve().starts_with(&fq_slash))
+    /// from any of the bare-name search `packages`. Pure registry+scope read,
+    /// shared by `Interpreter::has_multi_function` and the VM's native dispatch
+    /// path. Takes the whole search list so the registry is scanned once.
+    pub(crate) fn has_multi_function(&self, packages: &[String], name: &str) -> bool {
+        let prefixes: Vec<String> = packages
+            .iter()
+            .map(|pkg| format!("{}::{}/", pkg, name))
+            .collect();
+        self.functions.keys().any(|k| {
+            let ks = k.resolve();
+            prefixes.iter().any(|p| ks.starts_with(p))
+        })
     }
 
     /// Whether `name` is marked `is hidden` (excluded from `.^mro` etc.).

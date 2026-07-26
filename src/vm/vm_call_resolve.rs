@@ -116,20 +116,21 @@ impl Interpreter {
                     .filter(|a| !matches!(a.view(), ValueView::Pair(..)))
                     .count()
             };
-            found_key = probe(&format!(
-                "{}::{}/{}:{}",
-                pkg,
-                name,
-                arity,
-                type_sig.join(",")
-            ))
-            .or_else(|| {
-                probe(&format!(
-                    "{}::{}/{}#{:x}",
-                    pkg, name, arity, expected_fingerprint
-                ))
-            })
-            .or_else(|| probe(&format!("{}::{}/{}", pkg, name, arity)));
+            // Innermost package first, then each enclosing package, then GLOBAL:
+            // a method of `NL::Searcher` calling a bare name must reach `NL`'s
+            // compiled routine (see `bare_name_packages`). The GLOBAL fallback
+            // below stays as it was — the walk only fills in the packages
+            // between the current one and GLOBAL, which used to be skipped.
+            found_key = self.bare_name_packages().iter().find_map(|p| {
+                probe(&format!("{}::{}/{}:{}", p, name, arity, type_sig.join(",")))
+                    .or_else(|| {
+                        probe(&format!(
+                            "{}::{}/{}#{:x}",
+                            p, name, arity, expected_fingerprint
+                        ))
+                    })
+                    .or_else(|| probe(&format!("{}::{}/{}", p, name, arity)))
+            });
             if found_key.is_none() {
                 // `key_simple` (`Pkg::name`) and the positional-only-arity key are
                 // probed but their match is intentionally *not* kept here: the

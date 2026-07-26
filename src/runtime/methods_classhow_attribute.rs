@@ -347,7 +347,8 @@ impl Interpreter {
                 .registry()
                 .proto_subs
                 .contains(&format!("{}::{}", pkg, name));
-            if local_proto || self.registry().has_multi_function(pkg, name) {
+            let probe = [pkg.to_string()];
+            if local_proto || self.registry().has_multi_function(&probe, name) {
                 return Some(pkg.to_string());
             }
             match pkg.rsplit_once("::") {
@@ -355,8 +356,9 @@ impl Interpreter {
                 None => break,
             }
         }
+        let global = ["GLOBAL".to_string()];
         (self.registry().has_proto("GLOBAL", name)
-            || self.registry().has_multi_candidates("GLOBAL", name))
+            || self.registry().has_multi_candidates(&global, name))
         .then(|| current.clone())
     }
 

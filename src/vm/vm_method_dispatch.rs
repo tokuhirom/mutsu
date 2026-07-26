@@ -297,6 +297,12 @@ impl Interpreter {
             // The class body declared `my` statics; set current_package to the
             // owner class so a method read resolves them via package_scope_lexical.
             self.set_current_package(owner_class.to_string());
+        } else if owner_class.contains("::") {
+            // The class is declared inside a package (`class Searcher` inside
+            // `unit module NL` registers as `NL::Searcher`). Anchor the package
+            // to the owner so bare-name lookup can walk outwards to the
+            // enclosing module's routines — see `bare_name_packages`.
+            self.set_current_package(owner_class.to_string());
         }
 
         // Set self and __ANON_STATE__ (used by `$.foo` desugaring inside methods)
@@ -1084,6 +1090,14 @@ impl Interpreter {
         } else if self.class_has_package_lexicals(owner_class) {
             // The class body declared `my` statics; set current_package to the
             // owner class so a method read resolves them via package_scope_lexical.
+            let saved = self.current_package();
+            self.set_current_package(owner_class.to_string());
+            Some(saved)
+        } else if owner_class.contains("::") {
+            // The class is declared inside a package (`class Searcher` inside
+            // `unit module NL` registers as `NL::Searcher`). Anchor the package
+            // to the owner so bare-name lookup can walk outwards to the
+            // enclosing module's routines — see `bare_name_packages`.
             let saved = self.current_package();
             self.set_current_package(owner_class.to_string());
             Some(saved)

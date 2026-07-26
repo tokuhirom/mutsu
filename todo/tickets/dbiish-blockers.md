@@ -30,31 +30,31 @@ mutsu $INC t/45-sqlite-common.rakutest
 `raku $INC …` passes one giant argument and every file "fails" under raku too —
 a bogus baseline that wastes a session.
 
-## Status: mutsu 1/9
+## Status: mutsu 3/9
 
 Re-measured **2026-07-26** with `tmp/dbiish-survey.sh` (in this repo's `tmp/`,
 recreate it from the recipe above), debug build, both interpreters on the same
-`-I` line. This is the first survey whose `-I` was actually honoured — see the
-section below — so it supersedes everything measured before it.
+`-I` line, **after ② was fixed**.
 
 | File | raku | mutsu | Blocker |
 | --- | --- | --- | --- |
 | `02-meta` | PASS 1/1 | **PASS 1/1** | — |
-| `03-lib-util` | 1 subtest fails | ran 3/5, dies | ② `Unknown function: cannon-name` |
-| `44-sqlite-memory` | 1 subtest fails* | ran 0/109, dies | ② `Unknown function: cannon-name` |
-| `45-sqlite-common` | 1 subtest fails* | ran 0/109, dies | ② `Unknown function: cannon-name` |
-| `46-sqlite-blob` | PASS 18/18 | ran 0/18, dies | ② `Unknown function: cannon-name` |
-| `48-sqlite-errors` | PASS 17/17 | ran 2/17, dies | ② `Unknown function: cannon-name` |
+| `46-sqlite-blob` | PASS 18/18 | **PASS 18/18** | — |
+| `48-sqlite-errors` | PASS 17/17 | **PASS 17/17** | — |
+| `03-lib-util` | 1 subtest fails | 1 fail of 5 | ⑥ same count as raku; confirm it is the *same* subtest |
+| `44-sqlite-memory` | 1 subtest fails* | 1 fail of 109 | ⑥ `.^ver` of a class declared `:ver(<expr>)` |
+| `45-sqlite-common` | 1 subtest fails* | 1 fail of 109 | ⑥ `.^ver` of a class declared `:ver(<expr>)` |
 | `01-basic` | PASS 35/35 | ran 0/35, dies | ③ `PackageHOW.method_table` |
 | `05-mock` | PASS 16/16 | 1 fail of 13 run | ④ `IterationEnd` from a row fetch, then `Too many positionals passed; expected 0 arguments but got 2` |
 | `06-types` | PASS 12/12 | 2 fail of 3 run | ⑤ `Int is builtin` / `So not defined`; mutsu suggests `Did you mean 'invert'?` |
 
-\* raku is not clean on `03-lib-util`, `44-` and `45-` either: one subtest each.
-Do not chase those — the achievable target is raku parity, not 109/109.
+\* raku is not clean on `03-lib-util`, `44-` and `45-` either: one subtest each —
+but **not the same subtest as mutsu's**. raku's is test 52, a `# TODO`-marked
+`rows()` capability check; mutsu's is test 2, ⑥ below. Do not chase raku's — the
+achievable target is raku parity, not 109/109.
 
-**② is worth five files and is now root-caused** (below). **Nothing fails inside
-NativeCall**: the surface `OpenSSL` needs (CStruct, opaque pointers, callbacks)
-is strictly harder than SQLite's, and it is holding.
+**Nothing fails inside NativeCall**: the surface `OpenSSL` needs (CStruct,
+opaque pointers, callbacks) is strictly harder than SQLite's, and it is holding.
 
 ## The first round of these numbers was taken with the wrong `NativeLibs`
 
@@ -95,30 +95,20 @@ work. That half stays in
 [`todo/deep/nativehelpers-blob-moarvm-guts.md`](../deep/nativehelpers-blob-moarvm-guts.md);
 `DBDish::SQLite` only uses `blob-from-pointer`, which does not go through it.
 
-**Remaining: `cannon-name` itself — ROOT-CAUSED 2026-07-26.** It has nothing to
-do with `proto`/`multi`, `sub EXPORT`, or NativeCall. `cannon-name` is only ever
-called from *inside* `NativeLibs.rakumod`, at lines 131 and 134, which are in a
-method of `class Searcher` — and **a class declared inside a `module` cannot see
-that module's subs**:
-
-```raku
-unit module NL;
-our sub cannon-name($libname) { "cn:$libname" }
-class Searcher {
-    method try-versions($libname) { cannon-name($libname) }   # Unknown function
-}
-```
-
-The full variant matrix, the diagnosis (the module-scope *variable* is visible
-and the *qualified* call works, so bare-name function lookup is not walking the
-enclosing package chain) and the suggested fix are in
-[`class-in-module-cannot-see-module-subs.md`](class-in-module-cannot-see-module-subs.md).
-**That ticket is the next thing to do here: it is worth five of the nine files.**
+**Cleared: `cannon-name` itself — FIXED 2026-07-26.** It had nothing to do with
+`proto`/`multi`, `sub EXPORT`, or NativeCall. `cannon-name` is only ever called
+from *inside* `NativeLibs.rakumod`, at lines 131 and 134, which are in a method
+of `class Searcher`, and **a class declared inside a `module` could not see that
+module's subs**: bare-name lookup jumped straight from the current package to
+`GLOBAL`, and a method body did not even run under its own class's package. Both
+are fixed — see
+[`news/2026-07/class-in-module-sees-module-subs.md`](../../news/2026-07/class-in-module-sees-module-subs.md).
+All five files moved off this blocker; two of them (`46-sqlite-blob`,
+`48-sqlite-errors`) now pass outright.
 
 The earlier reductions recorded here were not wrong so much as aimed one row off
 the failing case — they all call from a sibling *sub*, which works. (They were
-also checked while the installed 0.0.8 was being loaded; the matrix in the new
-ticket was measured against 0.0.9 with a working `-I`.)
+also checked while the installed 0.0.8 was being loaded.)
 
 ## ③ `Perl6::Metamodel::PackageHOW.method_table` (`01-basic`)
 
@@ -181,6 +171,43 @@ type Str in string context`, in the test file's own `BUILD` — which is emitted
 both implementations and is *not* the diagnosis. This exact trap already cost a
 session on `Template::Mustache`; get the real failing assertion before forming a
 theory.
+
+## ⑥ `.^ver` of a class declared with a computed `:ver(<expr>)` (`44-`, `45-`)
+
+The one subtest each that mutsu still fails on `44-sqlite-memory` and
+`45-sqlite-common` is test 2 of `DBIish::CommonTesting`:
+
+```raku
+my $aversion = $drh.Version;
+ok $aversion ~~ Version:D, "DBDish::{$.dbd} version $aversion";
+```
+
+`$.Version` comes from `role DBDish::Driver`'s `has $.Version = ::?CLASS.^ver`,
+and `DBDish::SQLite` is declared
+`unit class DBDish::SQLite:ver($?DISTRIBUTION.meta<ver>):api(...):auth(...)`.
+With a plain `-I lib` there is no distribution, so the `:ver` expression
+evaluates to an undefined value — raku still hands back a **defined** `Version`
+(`Version.new('*')` here, `Version.new` for `:ver(Nil)`), mutsu hands back `Mu`,
+so the `Version:D` check fails and the description renders empty. `.^ver` for a
+*literal* `:ver<1.2.3>` is correct in mutsu; only the computed form is wrong.
+Note the plain `class A {}` case: raku's `A.^ver` really is `Mu`, so the fix is
+specifically "an explicit `:ver(<expr>)` always yields a `Version`", not "default
+`.^ver` to something defined".
+
+The actual defect is one level down: **mutsu does not evaluate the `:ver(...)`
+expression at all, it stores its source text.** `class C:ver($v) {}` gives
+`Version.new('$v')` and `class B:ver(Nil) {}` gives `Version.new('Nil')`, where
+raku evaluates both at declaration time (and yields `Version.new` for an
+undefined result). The storage site is `type_metadata[name]["ver"]`, read by
+`dispatch_classhow_method`'s `"ver"` arm in
+`src/runtime/methods_classhow_dispatch.rs`.
+
+Aside, seen in the same runs: `$*VM.config<nativecall_backend>` is missing, so
+`NativeLibs`' `my \dyncall = $*VM.config<nativecall_backend> eq 'dyncall'` warns
+`Use of uninitialized value of type Any in string context` on every run that
+loads it. mutsu's `$*VM.config` has exactly two keys (`be`, `name`); raku answers
+`dyncall`. Harmless — `dyncall` ends up `False`, which is what mutsu wants — but
+it is noise in every `DBIish` run and a one-line fix.
 
 ## When these are cleared
 

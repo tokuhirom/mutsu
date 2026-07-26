@@ -834,8 +834,9 @@ impl Interpreter {
     }
 
     pub(crate) fn has_declared_function(&self, name: &str) -> bool {
-        let pkg = self.current_package();
-        self.registry().has_declared_function(&pkg, name)
+        self.bare_name_packages()
+            .iter()
+            .any(|pkg| self.registry().has_declared_function(pkg, name))
     }
 
     pub(crate) fn is_implicit_zero_arg_builtin(name: &str) -> bool {
@@ -844,8 +845,8 @@ impl Interpreter {
 
     /// Check if a multi-dispatched function with the given name exists (any arity).
     pub(crate) fn has_multi_function(&self, name: &str) -> bool {
-        let pkg = self.current_package();
-        self.registry().has_multi_function(&pkg, name)
+        self.registry()
+            .has_multi_function(&self.bare_name_packages(), name)
     }
 
     /// Check if a user-defined function with the given name can accept the
