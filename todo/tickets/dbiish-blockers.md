@@ -111,37 +111,109 @@ The earlier reductions recorded here were not wrong so much as aimed one row off
 the failing case — they all call from a sibling *sub*, which works. (They were
 also checked while the installed 0.0.8 was being loaded.)
 
-## ③ `Perl6::Metamodel::PackageHOW.method_table` (`01-basic`)
+## All four remaining blockers, reduced (2026-07-26)
 
+Each of ③④⑤⑦ now has a standalone repro that does not involve `DBIish`,
+`NativeLibs` or a database. Keep them here rather than in `tmp/` — that directory
+is gitignored and the LXC container is disposable. Paste the block into a file
+and run it under both interpreters; raku prints every line without dying.
+
+```raku
+# --- (4a) a bare adverb on a listop argument swallows the rest of the list ---
+class H { method row(:$hash) { $hash ?? 'HASH' !! 'LIST' } }
+my $h = H.new;
+sub show(*@a) { @a.join('|') }
+say "4a-control: ", (try show($h.row(:hash), 'x', 'y')) // "DIED: $!";
+say "4a-bare   : ", (try show($h.row :hash, 'x', 'y')) // "DIED: $!";
+
+# --- (4b) pull-one on an iterator taken from a user-produced Seq ---
+class S { method allrows() { gather { take ['a','b',1]; take ['d','e',2] } } }
+my \a = S.new.allrows;
+say "4b-isa    : ", a.^name;
+say "4b-pullone: ", (try a.iterator.pull-one.raku) // "DIED: $!";
+
+# --- (3) ClassHOW.method_table ---
+class M { method connect() { }; method install-driver() { } }
+say "3-mtable  : ", (try M.^method_table<connect>:exists) // "DIED: $!";
+
+# --- (7) $*VM.config<nativecall_backend> ---
+say "7-nc-back : ", (try $*VM.config<nativecall_backend>.raku) // "DIED: $!";
+say "7-keys    : ", $*VM.config.keys.sort.join(',');
 ```
-No such method 'method_table' for invocant of type 'Perl6::Metamodel::PackageHOW'
+
+| line | raku | mutsu |
+| --- | --- | --- |
+| `4a-control` | `HASH\|x\|y` | `HASH\|x\|y` |
+| `4a-bare` | `HASH\|x\|y` | **DIED: Too many positionals passed; expected 0 arguments but got 2** |
+| `4b-isa` | `Seq` | `Seq` |
+| `4b-pullone` | `["a", "b", 1]` | **`"IterationEnd"`** |
+| `3-mtable` | `True` | **DIED: No such method 'method_table'** |
+| `7-nc-back` | `"dyncall"` | **`Any`** |
+| `7-keys` | ~200 keys | `be,name` |
+
+### ④a A bare adverb on a listop argument swallows the rest of the argument list
+
+`is-deeply $sth.row :hash, hash(...), 'desc'` must parse as
+`is-deeply($sth.row(:hash), hash(...), 'desc')` — the adverb binds to the method
+call, and the comma continues the *listop's* argument list. mutsu instead hands
+`.row` the two following arguments, so a zero-positional signature reports
+`Too many positionals passed; expected 0 arguments but got 2`. Parenthesising the
+adverb (`$h.row(:hash)`) works, which pins this to the bare-adverb parse. This is
+a parser precedence bug with nothing to do with `DBIish`; it aborts `05-mock` at
+line 32 after 13 of 16 tests.
+
+### ④b `pull-one` on a hand-obtained iterator yields the `IterationEnd` sentinel
+
+Three lines of `gather`/`take` reproduce it: `a.iterator.pull-one` answers the
+string `IterationEnd` instead of the first element. The sentinel is leaking out
+as an ordinary value rather than terminating iteration — the `Seq`/iterator
+exhaustion family. This is `05-mock` test 12.
+
+### ③ `.^method_table` is not implemented
+
+Not a `PackageHOW`-only gap as first recorded: the repro raises it on a plain
+`ClassHOW` too. `src/runtime/methods_classhow_dispatch.rs` implements
+`submethod_table` but not `method_table`; the sibling arm is the model (walk
+`registry().classes[type].methods`, return a `Hash` of name → method). `01-basic`
+uses it as `DBIish.^method_table{$_}:exists`, so name → anything defined is
+enough for that file, but Rakudo returns the method objects.
+
+### ⑤ `06-types` — object hash keyed by type objects
+
+Not a spell-correction problem. The role under test is
+
+```raku
+role TypeConverter does Associative {
+    has Callable %!Conversions{Mu:U} handles <AT-KEY EXISTS-KEY>;
+    ...
+}
 ```
 
-`01-basic` walks the metamodel to check the driver interface. `method_table` is a
-Rakudo MOP method that mutsu's `PackageHOW` does not implement. Not investigated
-beyond the message; check what the test actually asks for before implementing the
-whole MOP surface.
+and the test declares `has %.Converter is DBDish::TypeConverter;`, then
+`%!Converter{Str} = self.^find_method('test-str')`. So the file needs: an
+**object hash keyed by `Mu:U`** (type objects as keys), `handles <AT-KEY
+EXISTS-KEY>` delegation on a private attribute, an attribute typed with a role,
+`.^find_method`, and the indirect method call `$test.$sub('test')`. Start by
+checking which of those five mutsu lacks — the `Did you mean 'invert'?`
+suggestion is the *symptom* of an unresolved delegated `AT-KEY`, not a typo.
 
-## ④ `05-mock` — one subtest, then a hard stop
+Note the object-hash requirement overlaps the deferred "object-hash `WHICH`"
+item in the doc-diff DEEP bucket (`docs/doc-diff-backlog.md`).
 
-`A row` expects `'a b 1'` and gets `'IterationEnd'`, and the file then dies at
-line 32 with `Too many positionals passed; expected 0 arguments but got 2`
-(13 of 16 tests run). raku is 16/16. Two separate symptoms, both unexamined —
-the `IterationEnd` leak out of a row fetch is the interesting one and smells
-like the `Seq`/iterator-exhaustion family.
+### ⑦ `$*VM.config` has two keys
 
-## ⑤ `06-types` — `Int is builtin` / `So not defined`
+mutsu's `$*VM.config` answers only `be` and `name`; raku's MoarVM config has
+around 200. `NativeLibs` reads
+`my \dyncall = $*VM.config<nativecall_backend> eq 'dyncall'` and so warns
+`Use of uninitialized value of type Any in string context` on every run that
+loads it. Harmless — `dyncall` ends up `False`, which is what mutsu wants — but
+it is noise in every `DBIish` run. Adding `nativecall_backend` alone is a
+one-line fix; deciding how much of the config surface to synthesise is not.
 
-Two of the three tests that run fail, and mutsu volunteers `Did you mean
-'invert'?`, so a method the test calls is unresolved and being spell-corrected.
-raku is 12/12. Not root-caused; start by reading lines 19-21 of the file and
-finding which call produces that suggestion.
-
-## ④ Role attribute not seeded — FIXED; `05-mock` has one subtest left
+## Role attribute not seeded — FIXED
 
 ```
 P6opaque: no such attribute '$!parent' on type DBDish::ErrorHandling in a DBDish::ErrorHandling
-P6opaque: no such attribute '$!last-exception' on type DBDish::ErrorHandling in a DBDish::ErrorHandling
 ```
 
 `DBIish` instantiates the `DBDish::ErrorHandling` role directly
@@ -150,28 +222,10 @@ methods read those attributes privately. A punned role kept its attributes only
 as mixin markers, so the private read found nothing. Fixed — see
 [`news/2026-07/role-pun-private-attribute.md`](../../news/2026-07/role-pun-private-attribute.md).
 
-`48-sqlite-errors` now reaches ② instead. `05-mock` went from running 0 of its
-planned 16 tests to running 12 of them, 11 passing, before aborting:
-
-```
-not ok 12 - A row      expected: 'a b 1'   got: 'IterationEnd'
-Too many positionals passed; expected 0 arguments but got 2
-```
-
-Test 12 is `is $iter.pull-one, ['a','b',1]` where `$iter = $sth.allrows.iterator`
-— pulling from a hand-obtained iterator over a user-produced `Seq` yields the
-`IterationEnd` sentinel instead of the row. The message after it comes from line
-32, `is-deeply $sth.row :hash, …` — a method call with an adverb argument
-reaching a zero-arity candidate. Two separate general bugs; neither is
-root-caused yet, and neither is `DBIish`-specific.
-
-## ⑤ Not root-caused (`06-types`)
-
-Its first non-TAP line is only a **warning** — `Use of uninitialized value of
-type Str in string context`, in the test file's own `BUILD` — which is emitted by
-both implementations and is *not* the diagnosis. This exact trap already cost a
-session on `Template::Mustache`; get the real failing assertion before forming a
-theory.
+**Read this before forming a theory about ⑤:** its first non-TAP line is only a
+*warning* (`Use of uninitialized value of type Str in string context`, from the
+test file's own `BUILD`), emitted by both implementations. The same trap already
+cost a session on `Template::Mustache` — get the real failing assertion first.
 
 ## ⑥ `.^ver` of a class declared with a computed `:ver(<expr>)` — FIXED
 
@@ -201,14 +255,20 @@ The defect was one level down: **mutsu did not evaluate the `:ver(...)`
 expression at all, it stored its source text** — and the `unit class` form threw
 the adverbs away outright.
 
-## ⑦ `$*VM.config<nativecall_backend>` is missing
+## Suggested order for the next session
 
-Seen in every `DBIish` run: `$*VM.config<nativecall_backend>` is missing, so
-`NativeLibs`' `my \dyncall = $*VM.config<nativecall_backend> eq 'dyncall'` warns
-`Use of uninitialized value of type Any in string context` on every run that
-loads it. mutsu's `$*VM.config` has exactly two keys (`be`, `name`); raku answers
-`dyncall`. Harmless — `dyncall` ends up `False`, which is what mutsu wants — but
-it is noise in every `DBIish` run and a one-line fix.
+Cheapest first, and none of them depends on another:
+
+1. **⑦** — one line, and it removes the warning that has twice been mistaken for
+   a diagnosis in this file.
+2. **③** — `submethod_table` next door is the model; worth one file (`01-basic`).
+3. **④a** — a parser precedence fix, self-contained, and the thing that aborts
+   `05-mock` two thirds of the way through.
+4. **④b** — the `IterationEnd` leak. Same file as ④a, but a different subsystem
+   (`Seq`/iterator exhaustion); do it as its own change.
+5. **⑤** — the largest: an object hash keyed by type objects, plus `handles`
+   delegation from a private attribute. Confirm which of the five features listed
+   above is actually missing before scoping it.
 
 ## When these are cleared
 
