@@ -254,7 +254,18 @@ pub(crate) fn stmt_list_with_mode(
         // X::Attribute::NoPackage. (`unit module`/`unit package` are excluded:
         // the compiler keeps their package context for the rest of the scope.)
         if allow_mainline_capture && starts_unit_class_role_grammar(r) {
-            let (after_decl, mut decl) = class::unit_module_stmt(r)?;
+            let (after_decl, decl0) = class::unit_module_stmt(r)?;
+            // `unit class Foo:ver(...)` comes back as a non-lexical
+            // `SyntheticBlock` of `:ver`/`:auth`/`:api` metadata setters with the
+            // declaration itself last. Work on the declaration and re-emit the
+            // setters ahead of it.
+            let (mut meta_stmts, mut decl) = match decl0 {
+                Stmt::SyntheticBlock(mut inner) => {
+                    let decl = inner.pop().expect("declaration is the last element");
+                    (inner, decl)
+                }
+                other => (Vec::new(), other),
+            };
             let (tail_rest, mut tail_stmts) = stmt_list_with_mode(after_decl, false, emit_setline)?;
             match &mut decl {
                 Stmt::ClassDecl {
@@ -343,6 +354,7 @@ pub(crate) fn stmt_list_with_mode(
                 }
                 _ => {}
             }
+            stmts.append(&mut meta_stmts);
             stmts.push(decl);
             return Ok((tail_rest, stmts));
         }

@@ -372,6 +372,15 @@ impl Interpreter {
         quoted: bool,
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
+        // Whether the receiver is `Nil`, read before the impl consumes the
+        // operands (the stack is `[.., target, args...]` here, so the target is
+        // `arity` slots below the top). Used for the Nil-absorb fallback below.
+        let receiver_is_nil = self
+            .stack
+            .len()
+            .checked_sub(arity as usize + 1)
+            .and_then(|i| self.stack.get(i))
+            .is_some_and(Value::is_nil);
         let result = self.exec_call_method_mut_op_impl(
             code,
             name_idx,
@@ -381,6 +390,26 @@ impl Interpreter {
             quoted,
             arg_sources_idx,
         );
+        // Nil absorbs a method it does not define (raku's `Nil.FALLBACK`), the
+        // same verdict the scalar `CallMethod` opcode and the hyper path reach.
+        // This opcode -- a method call on a *named* receiver -- never applied
+        // it, so `$?DISTRIBUTION.meta<ver>` outside a distribution died with
+        // "No such method 'meta'" where raku answers Nil.
+        //
+        // Applied only *after* normal dispatch fails to find the method, not as
+        // a pre-dispatch shortcut: `Nil` really does define control-flow and
+        // introspection methods (`&?BLOCK.leave` on a Nil block, the exception
+        // accessors), and short-circuiting those to Nil silently skipped them
+        // (S04-statements/leave.t, S32-exceptions/misc.t). Falling back on the
+        // not-found error is what `FALLBACK` means. `is_nil` is strictly `Nil`,
+        // so an uninitialised `Any` receiver still errors as before.
+        let result = match result {
+            Err(e) if receiver_is_nil && Self::is_method_not_found_error(&e) => {
+                self.stack.push(Value::NIL);
+                Ok(())
+            }
+            other => other,
+        };
         // The pending arg-source names/slots are scoped to THIS dispatch: a
         // callee signature bind consumes them, but a native/builtin dispatch
         // never binds and would leave them behind. A later bind with no

@@ -88,6 +88,18 @@ impl Interpreter {
                 ));
             }
         }
+        // A package-qualified `&Pkg::name` that resolves to nothing is the `Any`
+        // type object in raku, not `Nil` — a package's symbol table simply has
+        // no such entry, which is a different thing from "explicitly absent".
+        // The distinction is observable through method dispatch: `Any.assuming`
+        // raises X::Method::NotFound naming `assuming`, whereas `Nil` absorbs
+        // any method it does not define (S32-exceptions/misc.t asserts the
+        // former for `&A::b.assuming($a)`, where `b` is a *method* and so is not
+        // in `A`'s `&`-symbols). Unqualified `&name` keeps returning Nil — custom
+        // `EXPORT` routines probe it that way.
+        if val.is_nil() && name.contains("::") {
+            val = Value::package(crate::symbol::Symbol::intern("Any"));
+        }
         self.stack.push(val);
         Ok(())
     }

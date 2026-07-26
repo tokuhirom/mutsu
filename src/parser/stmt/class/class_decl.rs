@@ -11,7 +11,16 @@ use crate::parser::parse_result::{PError, PResult, opt_char, take_while1};
 use crate::parser::stmt::sub::parse_indirect_decl_name;
 use crate::parser::stmt::{block, keyword, qualified_ident};
 
-pub(crate) fn parse_declarator_traits(input: &str) -> PResult<'_, Vec<(String, Value)>> {
+/// Parse the `:ver<...>` / `:auth(...)` / `:api(...)` adverbs that follow a type
+/// name in its declarator.
+///
+/// The value is an `Expr`, not a `Value`, because the parenthesised form is a
+/// full expression that Raku evaluates at declaration time — `unit class
+/// DBDish::SQLite:ver($?DISTRIBUTION.meta<ver>)` is a real declaration in the
+/// wild. Storing the source text as a `Str` (which is what this used to do)
+/// made `DBDish::SQLite.^ver` answer `Version.new('$?DISTRIBUTION.meta<ver>')`.
+/// The angle form stays a literal string, as its Raku semantics require.
+pub(crate) fn parse_declarator_traits(input: &str) -> PResult<'_, Vec<(String, Expr)>> {
     let mut traits = Vec::new();
     let (mut rest, _) = ws(input)?;
     loop {
@@ -21,18 +30,24 @@ pub(crate) fn parse_declarator_traits(input: &str) -> PResult<'_, Vec<(String, V
         rest = &rest[1..];
         let (r, name) = take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
         rest = r;
-        let mut value = Value::TRUE;
+        let mut value = Expr::Literal(Value::TRUE);
         if let Some(inner) = rest.strip_prefix('<') {
             if let Some(end) = inner.find('>') {
-                value = Value::str(inner[..end].to_string());
+                value = Expr::Literal(Value::str(inner[..end].to_string()));
                 rest = &inner[end + 1..];
             } else {
                 return Err(PError::expected("closing '>' in trait value"));
             }
         } else if rest.starts_with('(') {
             let after = skip_balanced_parens(rest);
-            let body = &rest[1..rest.len() - after.len() - 1];
-            value = Value::str(body.trim().to_string());
+            let body = rest[1..rest.len() - after.len() - 1].trim();
+            // An empty `()` and anything the expression parser cannot consume
+            // whole keep the old literal-text behaviour rather than failing the
+            // whole declaration.
+            value = match expression(body) {
+                Ok((tail, expr)) if tail.trim().is_empty() => expr,
+                _ => Expr::Literal(Value::str(body.to_string())),
+            };
             rest = after;
         }
         traits.push((name.to_string(), value));
@@ -95,13 +110,13 @@ pub(crate) fn export_type_stmt(type_name: &str, tags: &[String]) -> Stmt {
     })
 }
 
-pub(crate) fn meta_setter_stmt(type_name: &str, key: &str, value: Value) -> Stmt {
+pub(crate) fn meta_setter_stmt(type_name: &str, key: &str, value: Expr) -> Stmt {
     Stmt::Expr(Expr::Call {
         name: Symbol::intern("__MUTSU_SET_META__"),
         args: vec![
             Expr::Literal(Value::str(type_name.to_string())),
             Expr::Literal(Value::str(key.to_string())),
-            Expr::Literal(value),
+            value,
         ],
     })
 }
@@ -452,16 +467,12 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
     });
     // Extract repr from `is repr(...)` or from declarator traits
     let repr = is_repr.or_else(|| {
-        traits.iter().find_map(|(k, v)| {
-            if k == "repr" {
-                if let ValueView::Str(s) = v.view() {
-                    Some(s.to_string())
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
+        traits.iter().find_map(|(k, v)| match v {
+            Expr::Literal(lit) if k == "repr" => match lit.view() {
+                ValueView::Str(s) => Some(s.to_string()),
+                _ => None,
+            },
+            _ => None,
         })
     });
     // Register the class name so the parser can disambiguate identifiers
