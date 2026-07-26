@@ -199,7 +199,12 @@ earlier ones.
     `StatementList` shape as Rakudo. The constructor validates child node kinds, exposes
     `.name` / `.signature` / `.body` through model introspection, and the resulting named routine
     lowers through the existing compiler under `EVAL`. Tests in `t/rakuast-construct-sub.t`.
-    Next: signature/parameter and variable-declaration constructors.
+  - **Slice 8 (plain positional signatures) — done.** `RakuAST::ParameterTarget::Var.new`,
+    `RakuAST::Parameter.new`, and `RakuAST::Signature.new` construct the target → parameter →
+    signature model chain. `Sub.new(:signature)` validates and retains that signature, and the
+    constructed routine lowers through the existing compiler under `EVAL`. Empty signatures default
+    to an empty parameter list. Tests in `t/rakuast-construct-signature.t`.
+    Next: variable-declaration constructors and richer parameter shapes.
 - **Phase 5 — EVAL / compilation.** `lower(RakuAstNode) -> Vec<Stmt>/Expr`, then the
   **existing** compiler. `EVAL($rakuast)` and any code that yields a RakuAST tree runs
   through this. No new execution engine.

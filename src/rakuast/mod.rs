@@ -538,6 +538,10 @@ pub fn construct(
         if let Some(value) = &name {
             require_rakuast_class(value, RakuAstClass::Name, "RakuAST::Sub.new")?;
         }
+        let signature = named_arg(args, "signature");
+        if let Some(value) = &signature {
+            require_rakuast_class(value, RakuAstClass::Signature, "RakuAST::Sub.new")?;
+        }
         let body = match named_arg(args, "body") {
             Some(value) => {
                 require_rakuast_class(&value, RakuAstClass::Blockoid, "RakuAST::Sub.new")?;
@@ -545,11 +549,17 @@ pub fn construct(
             }
             None => empty_blockoid(),
         };
-        let mut fields = Vec::with_capacity(2);
+        let mut fields = Vec::with_capacity(3);
         if let Some(name) = name {
             fields.push(RakuAstField {
                 name: Some("name"),
                 value: RakuAstFieldValue::Node(name),
+            });
+        }
+        if let Some(signature) = signature {
+            fields.push(RakuAstField {
+                name: Some("signature"),
+                value: RakuAstFieldValue::Node(signature),
             });
         }
         fields.push(RakuAstField {
@@ -559,6 +569,26 @@ pub fn construct(
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
             class: RakuAstClass::Sub,
             fields,
+        }))));
+    }
+    if class_name == "RakuAST::Signature" && method == "new" {
+        let parameters = named_arg(args, "parameters")
+            .map(|value| {
+                value.as_list_items().map(<[Value]>::to_vec).ok_or_else(|| {
+                    RuntimeError::new("RakuAST::Signature.new expects `parameters` to be a list")
+                })
+            })
+            .transpose()?
+            .unwrap_or_default();
+        for parameter in &parameters {
+            require_rakuast_class(parameter, RakuAstClass::Parameter, "RakuAST::Signature.new")?;
+        }
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::Signature,
+            fields: vec![RakuAstField {
+                name: Some("parameters"),
+                value: RakuAstFieldValue::List(parameters),
+            }],
         }))));
     }
     // Single-positional-argument constructors: the literals, `Name.from-identifier`,
@@ -661,6 +691,10 @@ fn multi_field_schema(
         }
         ("RakuAST::Postfix", "new") => (RakuAstClass::Postfix, &["operator"][..]),
         ("RakuAST::Block", "new") => (RakuAstClass::Block, &["body"][..]),
+        ("RakuAST::ParameterTarget::Var", "new") => {
+            (RakuAstClass::ParameterTargetVar, &["name"][..])
+        }
+        ("RakuAST::Parameter", "new") => (RakuAstClass::Parameter, &["target"][..]),
         _ => return None,
     })
 }
@@ -775,6 +809,9 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::Block
             | RakuAstClass::Blockoid
             | RakuAstClass::Sub
+            | RakuAstClass::Signature
+            | RakuAstClass::Parameter
+            | RakuAstClass::ParameterTargetVar
     )
 }
 
@@ -792,6 +829,9 @@ fn accessor_names(class: RakuAstClass) -> &'static [&'static str] {
         Block => &["body"],
         Blockoid => &["statement-list"],
         Sub => &["name", "signature", "body"],
+        Signature => &["parameters"],
+        Parameter => &["target"],
+        ParameterTargetVar => &["name"],
         _ => &[],
     }
 }
