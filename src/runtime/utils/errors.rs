@@ -34,8 +34,85 @@ pub(crate) fn value_short_repr(val: &Value) -> String {
         ValueView::BigRat(n, d) => format!("({}/{})", n, d),
         ValueView::FatRat(n, d) => format!("(FatRat.new({}, {}))", n, d),
         ValueView::Nil => "(Nil)".to_string(),
+        // A type object reprs as its own name: rakudo says
+        // `expected Int:D but got Int (Int)`.
+        ValueView::Package(sym) => format!("({})", sym.resolve()),
         _ => String::new(),
     }
+}
+
+/// The type name to report as `got` in a type-check message. A type object
+/// names ITSELF (`Int`), not the `Package` its runtime representation is —
+/// rakudo says `but got Int (Int)`.
+pub(crate) fn got_type_name(val: &Value) -> String {
+    match val.view() {
+        ValueView::Package(sym) => sym.resolve().to_string(),
+        _ => value_type_name(val).to_string(),
+    }
+}
+
+/// True when `val` is the type object of the constraint's own nominal type —
+/// the shape rakudo appends its "perhaps Nil" hint to. `my Str:D $x = Nil`
+/// resets the container to `Str`, so the reported `got` is `Str` and the hint
+/// applies; `my Str:D $x = Int` reports `Int` and gets no hint.
+pub(crate) fn is_nominal_type_object_of(constraint: &str, val: &Value) -> bool {
+    let ValueView::Package(sym) = val.view() else {
+        return false;
+    };
+    let nominal = constraint
+        .split_once(':')
+        .map(|(base, _)| base)
+        .unwrap_or(constraint);
+    sym.resolve() == nominal
+}
+
+/// The `X::TypeCheck::Assignment` rakudo raises when a `:D`-constrained slot
+/// ends up holding a type object, e.g.
+/// `Type check failed in assignment to $!n; expected Int:D but got Int (Int)
+///  (perhaps Nil was assigned to a :D which had no default?)`.
+/// `constraint` carries the smiley (`Int:D`).
+pub(crate) fn definite_type_check_assignment_error(
+    var_name: &str,
+    constraint: &str,
+    val: &Value,
+) -> RuntimeError {
+    let mut msg = type_check_assignment_error(var_name, constraint, val);
+    if is_nominal_type_object_of(constraint, val) {
+        msg.push_str(" (perhaps Nil was assigned to a :D which had no default?)");
+    }
+    assignment_error_with_message(var_name, constraint, val, msg)
+}
+
+/// The compile-time-shaped `X::TypeCheck::Attribute::Default` rakudo raises for
+/// an attribute initializer that can never satisfy the constraint, e.g.
+/// `Can never assign default value Str ("str") to attribute '$!n', it expects: Int:D`.
+pub(crate) fn attribute_default_never_assign_error(
+    attr_name: &str,
+    constraint: &str,
+    val: &Value,
+) -> RuntimeError {
+    let repr = value_short_repr(val);
+    let got = got_type_name(val);
+    let msg = if repr.is_empty() {
+        format!(
+            "Can never assign default value {} to attribute '$!{}', it expects: {}",
+            got, attr_name, constraint
+        )
+    } else {
+        format!(
+            "Can never assign default value {} {} to attribute '$!{}', it expects: {}",
+            got, repr, attr_name, constraint
+        )
+    };
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("name".to_string(), Value::str(format!("$!{}", attr_name)));
+    attrs.insert(
+        "expected".to_string(),
+        crate::value::expected_type_object(constraint),
+    );
+    attrs.insert("got".to_string(), val.clone());
+    attrs.insert("message".to_string(), Value::str(msg));
+    RuntimeError::typed("X::TypeCheck::Attribute::Default", attrs)
 }
 
 /// Format the variable name for error messages, adding `$` sigil for
@@ -71,7 +148,7 @@ pub(crate) fn format_var_name_for_error(name: &str) -> String {
 /// `Type check failed in assignment to $x; expected Int but got Str ("hello")`
 pub(crate) fn type_check_assignment_error(var_name: &str, expected: &str, val: &Value) -> String {
     let display_name = format_var_name_for_error(var_name);
-    let got_type = value_type_name(val);
+    let got_type = got_type_name(val);
     let repr = value_short_repr(val);
     if repr.is_empty() {
         format!(
@@ -90,7 +167,7 @@ pub(crate) fn type_check_assignment_error(var_name: &str, expected: &str, val: &
 /// typed scalar (e.g. `my Str $x := 3`), matching Raku's format:
 /// `Type check failed in binding; expected Str but got Int (3)`
 pub(crate) fn type_check_binding_typed_error(expected: &str, val: &Value) -> RuntimeError {
-    let got_type = value_type_name(val);
+    let got_type = got_type_name(val);
     let repr = value_short_repr(val);
     // `.message` / `.Str` carry no class-name prefix (that is `.gist`'s job);
     // Rakudo's message is exactly `Type check failed in binding; expected ...`.
@@ -152,6 +229,17 @@ pub(crate) fn type_check_assignment_typed_error(
     val: &Value,
 ) -> RuntimeError {
     let msg = type_check_assignment_error(var_name, expected, val);
+    assignment_error_with_message(var_name, expected, val, msg)
+}
+
+/// Shared body of the `X::TypeCheck::Assignment` builders: same attributes,
+/// caller-supplied message (the `:D` path appends rakudo's "perhaps Nil" hint).
+fn assignment_error_with_message(
+    var_name: &str,
+    expected: &str,
+    val: &Value,
+    msg: String,
+) -> RuntimeError {
     let display_name = format_var_name_for_error(var_name);
     let mut attrs = std::collections::HashMap::new();
     // raku exposes `.expected` as the expected type OBJECT and `.got` as the
@@ -163,7 +251,7 @@ pub(crate) fn type_check_assignment_typed_error(
     );
     attrs.insert("got".to_string(), val.clone());
     attrs.insert("symbol".to_string(), Value::str(display_name));
-    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    attrs.insert("message".to_string(), Value::str(msg));
     RuntimeError::typed("X::TypeCheck::Assignment", attrs)
 }
 
@@ -171,7 +259,7 @@ pub(crate) fn type_check_assignment_typed_error(
 /// `Type check failed for an element of @a; expected Int but got Str ("hi")`
 pub(crate) fn type_check_element_error(var_name: &str, expected: &str, val: &Value) -> String {
     let display_name = format_var_name_for_error(var_name);
-    let got_type = value_type_name(val);
+    let got_type = got_type_name(val);
     let repr = value_short_repr(val);
     if repr.is_empty() {
         format!(

@@ -171,6 +171,14 @@ impl Interpreter {
                 continue;
             }
             match default_expr {
+                // Raku: assigning `Nil` resets a container to its declared
+                // type's default, so `has Str $.n = Nil` holds `Str` — exactly
+                // what the no-initializer form holds — not `Nil`.
+                Some(Expr::Literal(lit_val)) if lit_val.is_nil() => {
+                    let seeded =
+                        self.seed_attr_value(cn_resolved, attr_name, *sigil, type_constraints);
+                    attrs.insert(attr_sym, seeded);
+                }
                 // Fast path: a literal default needs no evaluation or binding.
                 // The interpreter stores it without a type check, so we do too.
                 Some(Expr::Literal(lit_val)) => {

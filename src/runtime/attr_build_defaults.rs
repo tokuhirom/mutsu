@@ -139,6 +139,16 @@ impl Interpreter {
             } else {
                 val
             };
+            // Raku: assigning `Nil` resets a container to its declared type's
+            // default — the nominal type object (`Any` when untyped). An
+            // attribute initializer is an assignment too, so `has Str $.n = Nil`
+            // reads back as `Str`, not `Nil` (and a `:D` violation then reports
+            // `got Str`, the way rakudo does).
+            let val = if val.is_nil() {
+                self.seed_attr_value(class_key, &d.name, d.sigil, &attr_type_constraints)
+            } else {
+                val
+            };
             cell.insert(key, val);
         }
         Ok(())

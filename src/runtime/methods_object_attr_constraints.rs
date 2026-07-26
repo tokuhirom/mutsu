@@ -146,10 +146,13 @@ impl Interpreter {
                 {
                     // Rakudo raises a typed X::TypeCheck::Assignment here (with
                     // the `expected X but got Y (repr)` wording), not an
-                    // untyped AdHoc.
+                    // untyped AdHoc. The reported type carries the attribute's
+                    // smiley (`Str:D`), which the constraint map drops.
+                    let reported =
+                        self.attribute_reported_constraint(class_name, attr_name, constraint);
                     return Err(crate::runtime::utils::type_check_assignment_typed_error(
                         &format!("$!{}", attr_name),
-                        constraint,
+                        &reported,
                         value,
                     ));
                 }
@@ -182,6 +185,58 @@ impl Interpreter {
     /// required check (X::Attribute::Required). Pass `None` post-BUILD or when
     /// the arg list is unavailable — then required attrs are skipped entirely
     /// (the old behavior).
+    /// The attribute's declared type with its smiley reattached (`Int:D`), the
+    /// form rakudo names in a type-check message. `Any` when the attribute is
+    /// untyped; the bare type when the smiley is `_` (no constraint).
+    pub(crate) fn attribute_constraint_with_smiley(
+        &self,
+        class_name: &str,
+        attr_name: &str,
+        smiley: &str,
+    ) -> String {
+        let base = self
+            .registry()
+            .classes
+            .get(class_name)
+            .and_then(|cd| cd.attribute_types.get(attr_name))
+            .cloned()
+            .unwrap_or_else(|| "Any".to_string());
+        Self::join_constraint_smiley(&base, smiley)
+    }
+
+    /// Same, for a caller that already resolved the constraint (possibly from a
+    /// parent class): look the smiley up by attribute name and reattach it.
+    pub(crate) fn attribute_reported_constraint(
+        &mut self,
+        class_name: &str,
+        attr_name: &str,
+        constraint: &str,
+    ) -> String {
+        let smiley = self
+            .class_mro(class_name)
+            .iter()
+            .find_map(|c| {
+                self.registry()
+                    .classes
+                    .get(c.as_str())
+                    .and_then(|cd| cd.attribute_smileys.get(attr_name))
+                    .cloned()
+            })
+            .unwrap_or_else(|| "_".to_string());
+        Self::join_constraint_smiley(constraint, &smiley)
+    }
+
+    pub(crate) fn join_constraint_smiley(base: &str, smiley: &str) -> String {
+        let base = base
+            .trim_end_matches(":D")
+            .trim_end_matches(":U")
+            .trim_end_matches(":_");
+        match smiley {
+            "D" | "U" => format!("{}:{}", base, smiley),
+            _ => base.to_string(),
+        }
+    }
+
     pub(crate) fn enforce_attribute_smiley_constraints(
         &mut self,
         class_name: &str,
@@ -220,96 +275,40 @@ impl Interpreter {
                     && let Some(value) = attrs.get(attr_name)
                     && !super::types::value_is_defined(value)
                 {
-                    let base_type = self
-                        .registry()
-                        .classes
-                        .get(class_name)
-                        .and_then(|cd| cd.attribute_types.get(attr_name))
-                        .cloned()
-                        .unwrap_or_else(|| "Any".to_string());
-                    let got_type = super::value_type_name(value).to_string();
-                    let msg = format!(
-                        "Type check failed in assignment to $!{}; expected {}:D but got {} ({}) (perhaps Nil was assigned to a :D which had no default?)",
-                        attr_name,
-                        base_type.trim_end_matches(":D").trim_end_matches(":U"),
-                        got_type,
-                        crate::runtime::utils::gist_value(value),
-                    );
-                    let mut ex_attrs = HashMap::new();
-                    ex_attrs.insert("message".to_string(), Value::str(msg.clone()));
-                    ex_attrs.insert("operation".to_string(), Value::str_from("assignment"));
-                    ex_attrs.insert("got".to_string(), value.clone());
-                    ex_attrs.insert(
-                        "expected".to_string(),
-                        Value::package(Symbol::intern(&format!("{base_type}:D"))),
-                    );
-                    let ex =
-                        Value::make_instance(Symbol::intern("X::TypeCheck::Assignment"), ex_attrs);
-                    let mut err = RuntimeError::new(msg);
-                    err.exception = Some(Box::new(ex));
-                    return Err(err);
+                    let constraint =
+                        self.attribute_constraint_with_smiley(class_name, attr_name, smiley);
+                    return Err(crate::runtime::utils::definite_type_check_assignment_error(
+                        &format!("$!{}", attr_name),
+                        &constraint,
+                        value,
+                    ));
                 }
                 continue;
             }
             let Some(value) = attrs.get(attr_name) else {
                 continue;
             };
+            let constraint = self.attribute_constraint_with_smiley(class_name, attr_name, smiley);
             match smiley.as_str() {
-                "U" => {
-                    // :U means the value must be undefined (type object)
-                    if super::types::value_is_defined(value) {
-                        let mut ex_attrs = HashMap::new();
-                        ex_attrs.insert("name".to_string(), Value::str(format!("$!{}", attr_name)));
-                        ex_attrs.insert(
-                            "message".to_string(),
-                            Value::str(format!(
-                                "Type check failed in default value of attribute $!{}; expected {}, got {}",
-                                attr_name,
-                                self.registry().classes.get(class_name)
-                                    .and_then(|cd| cd.attribute_types.get(attr_name))
-                                    .map(|t| format!("{}:U", t))
-                                    .unwrap_or_else(|| "Any:U".to_string()),
-                                super::value_type_name(value),
-                            )),
-                        );
-                        let ex = Value::make_instance(
-                            Symbol::intern("X::TypeCheck::Attribute::Default"),
-                            ex_attrs,
-                        );
-                        let mut err = RuntimeError::new(format!(
-                            "Type check failed in default value of attribute $!{}",
-                            attr_name
-                        ));
-                        err.exception = Some(Box::new(ex));
-                        return Err(err);
-                    }
-                }
-                // :D means the value must be defined
-                "D" if !super::types::value_is_defined(value) => {
-                    let mut ex_attrs = HashMap::new();
-                    ex_attrs.insert("name".to_string(), Value::str(format!("$!{}", attr_name)));
-                    ex_attrs.insert(
-                        "message".to_string(),
-                        Value::str(format!(
-                            "Type check failed in default value of attribute $!{}; expected {}, got {}",
-                            attr_name,
-                            self.registry().classes.get(class_name)
-                                .and_then(|cd| cd.attribute_types.get(attr_name))
-                                .map(|t| format!("{}:D", t))
-                                .unwrap_or_else(|| "Any:D".to_string()),
-                            super::value_type_name(value),
-                        )),
-                    );
-                    let ex = Value::make_instance(
-                        Symbol::intern("X::TypeCheck::Attribute::Default"),
-                        ex_attrs,
-                    );
-                    let mut err = RuntimeError::new(format!(
-                        "Type check failed in default value of attribute $!{}",
-                        attr_name
+                // `:U` wants a type object. A *defined* value can never satisfy
+                // it, which rakudo reports as the attribute-default error
+                // ("Can never assign default value ..."), not an assignment
+                // failure.
+                "U" if super::types::value_is_defined(value) => {
+                    return Err(crate::runtime::utils::attribute_default_never_assign_error(
+                        attr_name,
+                        &constraint,
+                        value,
                     ));
-                    err.exception = Some(Box::new(ex));
-                    return Err(err);
+                }
+                // `:D` wants a defined value; a type object reaching the slot is
+                // the ordinary assignment type-check failure.
+                "D" if !super::types::value_is_defined(value) => {
+                    return Err(crate::runtime::utils::definite_type_check_assignment_error(
+                        &format!("$!{}", attr_name),
+                        &constraint,
+                        value,
+                    ));
                 }
                 _ => {} // "_" or anything else: no constraint
             }
