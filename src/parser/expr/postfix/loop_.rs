@@ -1042,7 +1042,13 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                             r_inner = r5;
                             continue;
                         }
-                        if !r4.starts_with(',') {
+                        // A space-separated adverb (`$sth.row :hash`) binds only
+                        // adverbs; the comma after it belongs to whatever list
+                        // encloses the call, so `is-deeply $sth.row :hash,
+                        // $want, 'desc'` passes two arguments to `is-deeply`,
+                        // not to `.row`. Only the colon-call form (`.m: a, b`)
+                        // takes the list.
+                        if has_space_before_colon || !r4.starts_with(',') {
                             break;
                         }
                         let r4 = &r4[1..];
@@ -2768,7 +2774,9 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                             r_inner = r5;
                             continue;
                         }
-                        if !r4.starts_with(',') {
+                        // As for the plain method call above: a space-separated
+                        // adverb takes no positional list after the comma.
+                        if has_space_before_colon || !r4.starts_with(',') {
                             break;
                         }
                         let r4 = &r4[1..];

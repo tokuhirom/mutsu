@@ -1095,6 +1095,14 @@ impl Interpreter {
                 };
                 Ok(Value::str(letter))
             }
+            "method_table" if !args.is_empty() => {
+                let type_name = match args[0].view() {
+                    ValueView::Package(name) => name.resolve(),
+                    ValueView::Instance { class_name, .. } => class_name.resolve(),
+                    _ => value_type_name(&args[0]).to_string(),
+                };
+                Ok(Value::hash(self.class_method_table(&type_name)))
+            }
             "submethod_table" if !args.is_empty() => {
                 let type_name = match args[0].view() {
                     ValueView::Package(name) => name.resolve(),

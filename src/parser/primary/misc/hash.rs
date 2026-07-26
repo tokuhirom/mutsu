@@ -91,9 +91,13 @@ pub(crate) fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
                 continue;
             }
 
-            // If followed by R=> (reverse fat arrow meta-operator), don't treat as
-            // simple key — fall through to expression parsing which handles R=> correctly.
-            if !after_key.starts_with("R=>") {
+            // A bare key only stands alone when the element ends right here
+            // (`{ a, 1 }`). Otherwise it is the start of a larger expression —
+            // `{ 'a' ~ 'b' => 1 }` is one pair with a computed key, not the key
+            // `a` followed by `~ 'b' => 1` — so fall through to the general
+            // expression parse below. `R=>` (the reverse fatarrow metaop) needs
+            // the same treatment.
+            if after_key.starts_with([',', ';', '}']) || after_key.is_empty() {
                 pending_key = Some(key);
                 let (r_key, _) = ws_inner(r_key);
                 if let Some(stripped) = r_key.strip_prefix(',') {

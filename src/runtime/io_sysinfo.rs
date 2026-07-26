@@ -399,6 +399,12 @@ impl Interpreter {
             "0"
         };
         config.insert("be".to_string(), Value::str_from(be_val));
+        // nativecall_backend names the FFI implementation behind NativeCall.
+        // Modules branch on it to decide whether the dyncall-only extensions are
+        // available (`NativeLibs` does `$*VM.config<nativecall_backend> eq
+        // 'dyncall'`); mutsu's is libffi, which is also what a modern MoarVM
+        // reports, and reading it must not warn about an undefined value.
+        config.insert("nativecall_backend".to_string(), Value::str_from("libffi"));
         attrs.insert("config".to_string(), Value::hash(config));
         Value::make_instance(Symbol::intern("VM"), attrs)
     }

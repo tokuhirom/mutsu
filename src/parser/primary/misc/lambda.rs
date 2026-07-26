@@ -446,11 +446,48 @@ fn body_references_topic(input: &str) -> bool {
             {
                 return true;
             }
+            // An invocant-less method call (`.key`, `.^name`) is a topic
+            // reference too: rakudo keeps `{ .key => 1 }` and `{ a => .key }`
+            // blocks. Only outside a string — a `.^name` inside an
+            // interpolation belongs to that interpolation's own closure, which
+            // is why `{ "{ .^name }X" => 1 }` stays a hash.
+            b'.' if depth == 1 && is_implicit_topic_call(bytes, i) => return true,
             _ => {}
         }
         i += 1;
     }
     false
+}
+
+/// Whether the `.` at `at` starts a method call with no invocant before it,
+/// i.e. one that takes `$_` as its invocant.
+fn is_implicit_topic_call(bytes: &[u8], at: usize) -> bool {
+    // A name (`.key`, `.^name`, `.?maybe`, `.&f`) or a postcircumfix
+    // (`.[0]`, `.{'k'}`, `.<k>`, `.(1)`). `.5` is a number, `..`/`...` a range
+    // and `.=` an assignment metaop, so none of those qualify.
+    let starts_call = bytes.get(at + 1).is_some_and(|c| {
+        c.is_ascii_alphabetic()
+            || matches!(c, b'_' | b'^' | b'?' | b'&' | b'[' | b'{' | b'<' | b'(')
+    });
+    if !starts_call {
+        return false;
+    }
+    let mut p = at;
+    while p > 0 && bytes[p - 1].is_ascii_whitespace() {
+        p -= 1;
+    }
+    let Some(prev) = p.checked_sub(1).map(|q| bytes[q]) else {
+        return true; // the body starts with the call
+    };
+    match prev {
+        // A term ends here, so the call has a real invocant.
+        b')' | b']' | b'}' | b'\'' | b'"' | b'.' => false,
+        b'>' => {
+            // `a => .key` has no invocant; `%h<a>.key` does.
+            matches!(p.checked_sub(2).map(|q| bytes[q]), Some(b'='))
+        }
+        c => !(c.is_ascii_alphanumeric() || c == b'_'),
+    }
 }
 
 fn body_has_placeholder_vars(input: &str) -> bool {
@@ -590,5 +627,156 @@ fn is_hash_literal_start(input: &str) -> bool {
             return true;
         }
     }
+    // General case: an arbitrary expression can produce the key, as in
+    // `{ +(SQLT_CHR) => Str }` or `{ "a" ~ "b" => 1 }`. Rakudo decides on the
+    // *first element of the first statement*: if its top level is a fatarrow
+    // pair, the braces compose a hash. `{ 1, 2 => 3 }` and `{ (1 => 2) }` are
+    // therefore blocks — the `=>` is not at the first element's top level.
+    first_element_has_toplevel_fatarrow(input)
+}
+
+/// Whether the first comma-element of the first statement in a block body is a
+/// `=>` (or `R=>`) pair, i.e. the fatarrow is the element's outermost operator.
+fn first_element_has_toplevel_fatarrow(input: &str) -> bool {
+    if !body_may_hold_toplevel_fatarrow(input) {
+        return false;
+    }
+    // The scan above only proves a `=>` is in reach; whether it is the element's
+    // *outermost* operator is a question for the expression grammar. `{ group-of
+    // 1 => 'x' }` passes the scan yet is a listop call whose argument happens to
+    // be a pair.
+    let Ok((_, expr)) = crate::parser::expr::expression(input) else {
+        return false;
+    };
+    let first = match &expr {
+        Expr::ArrayLiteral(items) => match items.first() {
+            Some(item) => item,
+            None => return false,
+        },
+        other => other,
+    };
+    let first = match first {
+        Expr::PositionalPair(inner) => inner.as_ref(),
+        other => other,
+    };
+    matches!(
+        first,
+        Expr::Binary {
+            op: crate::token_kind::TokenKind::FatArrow,
+            ..
+        }
+    )
+}
+
+/// A cheap pre-scan for the expensive check above: whether a `=>` can be the
+/// outermost operator of the first element at all. Anything that would sit
+/// above it answers no — a statement keyword, an assignment (`{ my %h = a => 1
+/// }` assigns a pair, it is not one), a listop colon call (`{ $o.m: a => 1 }`),
+/// a ternary, or a preceding top-level comma or semicolon.
+fn body_may_hold_toplevel_fatarrow(input: &str) -> bool {
+    if starts_with_statement_keyword(input) {
+        return false;
+    }
+    let bytes = input.as_bytes();
+    let mut depth = 0usize;
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let c = bytes[i];
+        match c {
+            b'(' | b'[' | b'{' => depth += 1,
+            b')' | b']' => depth = depth.saturating_sub(1),
+            b'}' => {
+                if depth == 0 {
+                    return false;
+                }
+                depth -= 1;
+            }
+            b',' | b';' if depth == 0 => return false,
+            // `?? !!` — the pair would be a ternary branch, not the top level.
+            b'?' | b'!' if depth == 0 && bytes.get(i + 1) == Some(&c) => return false,
+            // `$o.m: a => 1` passes the pair to the listop.
+            b':' if depth == 0
+                && bytes.get(i + 1).is_some_and(|c| c.is_ascii_whitespace())
+                && !matches!(i.checked_sub(1).map(|p| bytes[p]), Some(b':')) =>
+            {
+                return false;
+            }
+            b'\'' | b'"' => {
+                let quote = c;
+                i += 1;
+                while i < bytes.len() && bytes[i] != quote {
+                    if bytes[i] == b'\\' {
+                        i += 1;
+                    }
+                    i += 1;
+                }
+            }
+            b'#' => {
+                // A comment runs to the end of the line; its text must not be
+                // mistaken for a fatarrow.
+                while i < bytes.len() && bytes[i] != b'\n' {
+                    i += 1;
+                }
+                continue;
+            }
+            b'=' if depth == 0 => {
+                let prev = i.checked_sub(1).map(|p| bytes[p]);
+                if bytes.get(i + 1) == Some(&b'>') {
+                    // `<=>` and `==>` merely end in `=>` and form no pair.
+                    if !matches!(prev, Some(b'<') | Some(b'=')) {
+                        return true;
+                    }
+                    i += 1;
+                } else if bytes.get(i + 1) == Some(&b'=')
+                    || matches!(prev, Some(b'=') | Some(b'!') | Some(b'<') | Some(b'>'))
+                {
+                    // A comparison (`==`, `!=`, `<=`, `>=`), not an assignment.
+                } else {
+                    // Assignment (`=`, `:=`, `+=`, `.=` …) binds looser than or
+                    // equal to `=>`, so any pair to its right is nested.
+                    return false;
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
     false
+}
+
+/// Whether a block body opens with a keyword that can only start a statement,
+/// which rules out the hash-composer reading outright.
+fn starts_with_statement_keyword(input: &str) -> bool {
+    let Ok((rest, word)) = crate::parser::stmt::ident_pub(input) else {
+        return false;
+    };
+    if !rest.starts_with(|c: char| c.is_whitespace()) {
+        return false;
+    }
+    matches!(
+        word.as_str(),
+        "my" | "our"
+            | "state"
+            | "has"
+            | "constant"
+            | "sub"
+            | "method"
+            | "return"
+            | "take"
+            | "if"
+            | "unless"
+            | "with"
+            | "without"
+            | "for"
+            | "while"
+            | "until"
+            | "repeat"
+            | "loop"
+            | "given"
+            | "when"
+            | "use"
+            | "need"
+            | "require"
+            | "do"
+    )
 }
