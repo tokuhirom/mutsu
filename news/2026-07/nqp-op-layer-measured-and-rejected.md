@@ -1,13 +1,15 @@
-# `nqp::` leftovers: a qualified call still aliases a builtin
+# An `nqp::` op layer, measured and rejected — and the three fixes that closed the question
 
-**Status: the `nqp::sha1` half is done** (news/2026-07/nqp-sha1.md). What
-remains open in this file is "Open 2" at the bottom — the package-prefix strip
-outside `nqp::`. The measurements are kept because they are the reason not to
-build an `nqp::` op layer.
+This started as `todo/deep/nqp-op-layer-missing.md`, whose framing ("build an
+`nqp::` op layer, ~53 ops missing, needs an ADR") did not survive measurement.
+What follows is what was actually measured on 2026-07-26, the conclusion it
+forced, and the three changes that closed every item it opened:
 
-Supersedes `todo/deep/nqp-op-layer-missing.md`, whose framing ("build an `nqp::`
-op layer, ~53 ops missing, needs an ADR") did not survive measurement. What
-follows is what was actually measured on 2026-07-26.
+- **`nqp::sha1` implemented** — news/2026-07/nqp-sha1.md
+- **an unimplemented `nqp::` op errors instead of aliasing a builtin** —
+  news/2026-07/nqp-unimplemented-op-errors.md
+- **a package-qualified call no longer becomes a builtin** (the wider shape) —
+  news/2026-07/qualified-call-no-longer-aliases-a-builtin.md
 
 ## Measured: how big is the `nqp::` question, really
 
@@ -94,22 +96,15 @@ Useful context for anyone weighing "bundle vs implement":
   native for unrelated reasons — the data they work on is already an internal
   representation.
 
-## Open 2 — a qualified call still falls back to a builtin (wider than nqp)
+## Done — a qualified call falling back to a builtin (was Open 2)
 
-Same mechanism, outside `nqp::`:
-
-```raku
-say Foo::Bar::index("hello", "l");
-# raku:  Could not find symbol '&index' in 'GLOBAL::Foo::Bar'
-# mutsu: 2
-```
-
-The short-name retry in `call_function_fallback` is load-bearing — it is how a
-call qualified with a package mutsu did not register still finds its routine — so
-narrowing it needs a measurement of what actually depends on it. Note the
-obvious guard does **not** work: `index` is dispatched by a hand-written arm in
-`call_function`, not via `BUILTIN_FUNCTION_NAMES`, so `is_builtin_function` does
-not recognise it. Deferred for that reason, not because it is unimportant.
+The same mechanism, outside `nqp::`: `Foo::Bar::index("hello", "l")` returned 2
+where raku says `Could not find symbol '&index' in 'GLOBAL::Foo::Bar'`. It was
+deferred once because the obvious guard does not work — `index` is dispatched by
+a hand-written arm of `call_function`, not via `BUILTIN_FUNCTION_NAMES`, so
+`is_builtin_function` misses it. The fix inverts the question and asks whether
+anything is *declared* under the short name instead; write-up in
+news/2026-07/qualified-call-no-longer-aliases-a-builtin.md.
 
 ## Files
 

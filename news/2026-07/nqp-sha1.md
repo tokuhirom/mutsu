@@ -4,7 +4,7 @@ mutsu had no SHA-1 anywhere: nothing in tree, and no `sha`/`digest` crate in
 `Cargo.toml`. That made `nqp::sha1` the single unimplemented `nqp::` op with
 real demand inside our own tree — a demand measured, not guessed, while deciding
 whether to build an `nqp::` op layer at all (the answer was no; see
-`todo/tickets/nqp-op-aliasing-and-sha1.md`):
+`news/2026-07/nqp-op-layer-measured-and-rejected.md`):
 
 - **vendored zef** — `Zef::Distribution.id` is `nqp::sha1(self.Str)`, and
   `Zef::CLI`'s `locate` derives installed-source paths from it. That is the mzef

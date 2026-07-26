@@ -39,10 +39,14 @@ throws-like 'use nqp; nqp::substr("hello", 1, 3)', X::AdHoc,
     is M::f(), 42, 'a qualified user sub still resolves';
 }
 
-{
-    my $out = EVAL 'Foo::Bar::index("hello", "l")';
-    is $out, 2, 'a non-nqp qualified call still falls back to the short name';
-}
+# A non-`nqp` qualified call whose short name resolves to nothing fails too now
+# — it used to reach Raku's `index` and return 2
+# (news/2026-07/qualified-call-no-longer-aliases-a-builtin.md) — but it reports
+# raku's own error, not this file's nqp-specific one, so the guard above stays
+# scoped to `nqp::`.
+throws-like 'Foo::Bar::index("hello", "l")', X::AdHoc,
+    message => /"Could not find symbol '&index' in 'GLOBAL::Foo::Bar'"/,
+    'a non-nqp qualified call reports raku\'s error, not the nqp one';
 
 # `use nqp` itself stays a no-op pragma.
 {

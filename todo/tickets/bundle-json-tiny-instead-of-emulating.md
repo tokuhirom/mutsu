@@ -80,7 +80,7 @@ functions at all. And per dist this is a **threshold function** — implementing
 Weigh that against what it buys: `JSON::Fast` carries 1439 reverse-deps (12.6% of
 all ecosystem dependency weight), but mutsu **already answers `use JSON::Fast`
 natively**, so implementing the 42 ops would change nothing a user can observe.
-See `todo/tickets/nqp-op-aliasing-and-sha1.md` for the full measurement and the
+See `news/2026-07/nqp-op-layer-measured-and-rejected.md` for the full measurement and the
 conclusion that bundling/emulating the few nqp-heavy hubs is the cheaper
 strategy.
 
