@@ -55,6 +55,15 @@ impl Interpreter {
     /// single dispatcher entry.
     pub(super) fn class_method_table(&self, class_name: &str) -> HashMap<String, Value> {
         let mut table = HashMap::new();
+        // RakuAST model classes are native type objects and therefore have no
+        // ClassDef entry. Keep method_table in lockstep with
+        // `.^methods(:local)` by deriving both from the same model metadata.
+        if let Some(names) = crate::rakuast::local_method_names(class_name) {
+            for name in names {
+                table.insert(name.to_string(), self.make_native_method_object(name));
+            }
+            return table;
+        }
         let registry = self.registry();
         let Some(class_def) = registry.classes.get(class_name) else {
             return table;

@@ -1109,6 +1109,7 @@ impl Interpreter {
                 let type_name = match args[0].view() {
                     ValueView::Package(name) => name.resolve(),
                     ValueView::Instance { class_name, .. } => class_name.resolve(),
+                    ValueView::RakuAst(node) => node.class.printed_name().to_string(),
                     _ => value_type_name(&args[0]).to_string(),
                 };
                 Ok(Value::hash(self.class_method_table(&type_name)))
