@@ -1160,7 +1160,10 @@ so it is tracked separately from the roast backlog.
   - [x] Slice 7: parameter-less `Sub.new`, with an optional name and an empty `Blockoid` default,
         including accessors, model introspection, and lowering through `EVAL`. Tests in
         `t/rakuast-construct-sub.t`.
-  - [ ] Slice 8+: signature/parameter and variable-declaration constructors.
+  - [x] Slice 8: plain positional signature constructors (`ParameterTarget::Var.new`,
+        `Parameter.new`, `Signature.new`) and `Sub.new(:signature)`. Tests in
+        `t/rakuast-construct-signature.t`.
+  - [ ] Slice 9+: variable-declaration constructors and richer parameter shapes.
 - **Phase 5 (in progress)** — EVAL: lower RakuAST → internal AST → existing compiler (no new engine).
   - [x] Slices 1–37 done (PRs #4736–#4804): literals, all common operators + ternary, the full
         control-flow set, sub declarations (typed/default/named/slurpy params) + calls + method calls,
