@@ -912,7 +912,29 @@ impl Interpreter {
             return self.call_method_with_values(target, "comb", method_args);
         }
 
-        // Try stripping package prefix (e.g., "Main::foo" -> "foo")
+        // An `nqp::` op mutsu does not implement must NOT fall through to the
+        // package-prefix strip below, because Raku almost always has a same-named
+        // builtin with *different* semantics — `nqp::index("hello", "z")` reached
+        // Raku's `index` and returned Nil where nqp yields -1. A silent wrong
+        // answer is worse than an error, and nqp code branches on exactly these
+        // values (`!= -1`). The ops mutsu really does implement (`nqp::atkey`,
+        // `nqp::atpos`, `nqp::ordat`, `nqp::gethostname`, `nqp::bindattr`) are
+        // matched earlier under their full name, so they are unaffected.
+        //
+        // The `nqp::` namespace is reserved and its op set is documented, so
+        // rejecting an unimplemented one is safe. (The general case —
+        // `Foo::Bar::index(…)` also reaching the builtin, where raku says "Could
+        // not find symbol '&index' in 'GLOBAL::Foo::Bar'" — is the same shape but
+        // a wider blast radius; see todo/tickets/nqp-op-aliasing-and-sha1.md.)
+        if let Some(op) = name.strip_prefix("nqp::") {
+            return Err(RuntimeError::new(format!(
+                "Unsupported nqp:: op: nqp::{op}"
+            )));
+        }
+
+        // Try stripping the package prefix (e.g. "Main::foo" -> "foo"). This is
+        // how a call qualified with a package mutsu did not register still finds
+        // its routine.
         if let Some(pos) = name.rfind("::") {
             let short_name = &name[pos + 2..];
             return self.call_function(short_name, args.to_vec());

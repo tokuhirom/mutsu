@@ -27,14 +27,62 @@ module's own exception class not matching. Fix that and the dist is a clean
 `modules/JSON-Tiny/` battery with its own `batteries.lock` row, at which point
 `use JSON::Tiny` runs genuine community code instead of an emulation.
 
+**Re-verified 2026-07-26** (zero `nqp::`; 01-parse 92/93, 02 10/10, 03 4/4, 04
+17/17, 05 2/2 — same picture).
+
+### …but measure the speed before switching the default
+
+**Correctness is not the blocker; throughput is.** Parsing a 3 KB META-shaped
+document 200 times:
+
+| implementation | time |
+| --- | --- |
+| native built-in (`runtime/json.rs`) | **0.49 s** |
+| the real JSON::Tiny (grammar + actions) | **did not finish in 600 s** |
+
+i.e. **>1000x slower**, because it is a Raku grammar running on mutsu's regex
+engine rather than a Rust parser. JSON sits on zef's metadata path (every
+`META6.json`, every index read), so swapping the *default* `use JSON::Tiny` to
+the vendored source would be a serious regression even though every test passes.
+
+**Measurement trap** (cost an hour on 2026-07-26): `runtime_module.rs` intercepts
+`use JSON::Fast` / `use JSON::Tiny` **before** the `-I` search path, so
+`mutsu -I <dist>/lib` still runs the built-in. Any "does the real one work / how
+fast is it" check must rename the module first (e.g. `JSON::Tiny` → `JT::Real`)
+to bypass the interception. Both of this session's first-pass conclusions about
+JSON were wrong because of it.
+
+So the realistic shape is: vendor the real `JSON::Tiny` as a battery **and keep
+the native implementation as the fast path**, rather than deleting the emulation
+— or make the swap conditional on mutsu's grammar/regex engine getting much
+faster. That is a decision to take deliberately, not a cleanup.
+
 ## `JSON::Fast` — a real campaign, not a slice
 
 Upstream <https://github.com/timo/json_fast> is the opposite: `lib/JSON/Fast.pm6`
-contains **389 `nqp::` calls across 52 distinct ops**. They are individually
-simple (`iseq_i`, `add_i`, `push_s`, `bindpos`, `ordat`, `eqat`, `substr`,
-`chars`, `splice`, `list_i`, `create`, `while`, `stmts`, …) — low-level int /
-str / array primitives rather than exotic VM internals — so this is bounded
-work, but it is an `nqp::` op-surface project, not a vendoring task.
+contains **389 `nqp::` calls across 52 distinct ops**, and it is an `nqp::`
+op-surface project, not a vendoring task.
+
+**Corrected 2026-07-26 — "individually simple / bounded work" was wrong.** Of the
+51 ops it uses, **42 are missing**, and they do not all belong to the easy tier:
+
+| tier | n | examples | difficulty |
+| --- | --- | --- | --- |
+| A. pure data ops | 19 | `add_i` `concat` `substr` `eqat` | mechanical, one small function each |
+| B. native typed arrays | 10 | `list_i` `push_i` `bindpos` `splice` | needs a native buffer representation |
+| C. **control structures** | 6 | `if` `unless` `while` `until` `stmts` `ifnull` | take *thunks* — **cannot be builtins**, needs compiler lowering |
+| D. **representation / meta** | 7 | `null` `create` `getattr` `p6bindattrinvres` | needs a null sentinel distinct from Nil/Any, and uninitialised P6opaque storage |
+
+`while` and `stmts` were listed above as "individually simple"; they are not
+functions at all. And per dist this is a **threshold function** — implementing
+80% of the ops still leaves the module dead — so there is no cheap partial win.
+
+Weigh that against what it buys: `JSON::Fast` carries 1439 reverse-deps (12.6% of
+all ecosystem dependency weight), but mutsu **already answers `use JSON::Fast`
+natively**, so implementing the 42 ops would change nothing a user can observe.
+See `todo/tickets/nqp-op-aliasing-and-sha1.md` for the full measurement and the
+conclusion that bundling/emulating the few nqp-heavy hubs is the cheaper
+strategy.
 
 It also matters more than `JSON::Tiny`: `JSON::Fast` is what the ecosystem
 actually depends on (`modules/OpenSSL`, `modules/HTTP-UserAgent` and
