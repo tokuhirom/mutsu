@@ -514,6 +514,25 @@ pub fn construct(
             fields: Vec::new(),
         }))));
     }
+    if class_name == "RakuAST::Blockoid" && method == "new" {
+        if args.len() != 1 {
+            return Err(RuntimeError::new(
+                "RakuAST::Blockoid.new expects a single StatementList argument",
+            ));
+        }
+        require_rakuast_class(
+            &args[0],
+            RakuAstClass::StatementList,
+            "RakuAST::Blockoid.new",
+        )?;
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::Blockoid,
+            fields: vec![RakuAstField {
+                name: None,
+                value: RakuAstFieldValue::Node(args[0].clone()),
+            }],
+        }))));
+    }
     // Single-positional-argument constructors: the literals, `Name.from-identifier`,
     // and the bare operator nodes (`Infix.new("+")`).
     if let Some(class) = single_positional_class(class_name, method) {
@@ -553,6 +572,20 @@ pub fn construct(
     Ok(None)
 }
 
+fn require_rakuast_class(
+    value: &Value,
+    expected: RakuAstClass,
+    constructor: &str,
+) -> Result<(), RuntimeError> {
+    match value.view() {
+        ValueView::RakuAst(node) if node.class == expected => Ok(()),
+        _ => Err(RuntimeError::new(format!(
+            "{constructor} expects a {} node",
+            expected.printed_name()
+        ))),
+    }
+}
+
 /// The class for a single-positional-argument constructor, or `None`.
 fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClass> {
     Some(match (class_name, method) {
@@ -585,6 +618,7 @@ fn multi_field_schema(
             (RakuAstClass::ApplyPostfix, &["operand", "postfix"][..])
         }
         ("RakuAST::Postfix", "new") => (RakuAstClass::Postfix, &["operator"][..]),
+        ("RakuAST::Block", "new") => (RakuAstClass::Block, &["body"][..]),
         _ => return None,
     })
 }
@@ -625,6 +659,7 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
             Some("value")
         }
         RakuAstClass::VarLexical => Some("name"),
+        RakuAstClass::Blockoid => Some("statement-list"),
         _ => None,
     };
     if positional_name == Some(method)
@@ -695,6 +730,8 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::ApplyPrefix
             | RakuAstClass::ApplyPostfix
             | RakuAstClass::Postfix
+            | RakuAstClass::Block
+            | RakuAstClass::Blockoid
     )
 }
 
@@ -709,6 +746,8 @@ fn accessor_names(class: RakuAstClass) -> &'static [&'static str] {
         ApplyPrefix => &["prefix", "operand"],
         ApplyPostfix => &["operand", "postfix"],
         Postfix => &["operator"],
+        Block => &["body"],
+        Blockoid => &["statement-list"],
         _ => &[],
     }
 }
