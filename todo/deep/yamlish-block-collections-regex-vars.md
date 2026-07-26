@@ -44,30 +44,26 @@ quantifiers (`' ' ** { 0..* }`), `$<sp>=[...]` captures, and separated
 quantifiers (`+ % [ <.newline> $indent ]`) all already work. What does *not*
 work:
 
-### (a) Match-time interpolation of a `:my`-declared regex var as a literal
+### (a) Match-time interpolation of a `:my`-declared regex var — DONE
 
 ```raku
 grammar G { token TOP { :my $v = 'ab'; $v 'c' } }
-G.parse("abc")   # raku: MATCH ; mutsu: NO
+G.parse("abc")   # now MATCHes
 ```
 
-`interpolate_bound_regex_scalars` (`src/runtime/regex/regex_interpolate.rs:247`)
-substitutes `$var` from `self.env` at **pre-match** time. A regex-local `:my`
-var isn't in `env` (it's set at match time by the `VarDecl` atom into
-`caps.regex_vars`), so `$v` is left literal and then mis-parsed as the literal
-text `$v` (or errors "Null regex"/"Use of Nil"). Bare `$var` interpolation must
-become a **deferred** atom that at match time reads `current_caps.regex_vars`
-(then `env`) and matches the string value literally, like `NamedBackref`
-(`src/runtime/regex/regex_match_capture.rs:368`) does for `$<name>`.
+Implemented: a bare `$name` naming an in-regex `:my`/`:let` var lowers to
+`RegexAtom::VarInterp(name)`, which at match time reads `caps.regex_vars` (then
+`env`) and matches the string value literally (undefined → empty/zero-width),
+mirroring `NamedBackref` (`src/runtime/regex/regex_match_capture.rs`). The parser
+tracks `declared_regex_vars` (`regex_parse_core.rs`) and both interpolation
+pre-passes (`interpolate_regex_scalars` in `regex_parse_modifier.rs`) leave a
+declared name verbatim for this lowering. Pin: `t/regex-my-var-interpolation.t`.
+Known gap: an outer lexical sharing the `:my` var's name can still be
+pre-substituted on a secondary parse path (raku uses the `:my` shadow) — obscure,
+not needed for YAMLish.
 
-Sketch: add `RegexAtom::VarInterp(String)`; in the parser track a
-`declared_regex_vars: HashSet<String>` (populate from each `:my`/`:let`
-`VarDecl`'s code — the name is the first `$ident` after `my `), and in Match mode
-emit `VarInterp(name)` for a bare `$name` when `name` is in that set instead of
-falling through to literal handling (`regex_parse_core.rs:875`). This alone is a
-clean, general Raku feature worth landing even before (b) — but it does **not**
-unblock YAMLish by itself, because `root-block` uses `:my $new-indent;` with **no
-initializer** and computes the value in a code block (needs (b)).
+This does **not** unblock YAMLish by itself: `root-block` uses `:my $new-indent;`
+with **no initializer** and computes the value in a code block (needs (b)).
 
 ### (b) Inline execution of `{ code }` side-effect blocks during matching
 
@@ -90,8 +86,7 @@ blast radius (touches every regex with a `{ }` block).
 
 ## Order / recommendation
 
-1. Land (a) standalone first — general, self-contained, low risk. Pin:
-   `:my $v = 'ab'; $v` matches, and `:my $v = ''; $v` matches empty.
+1. ✅ (a) DONE — `t/regex-my-var-interpolation.t`.
 2. Then design (b): inline side-effect code blocks with backtrack-safe
    `regex_vars` writes, keeping `make` deferral intact. With (a)+(b),
    `Grammar.parse` of `- 1\n- 2` / `a: 1` should reduce, and `load-yaml` should
