@@ -151,6 +151,18 @@ pub(crate) struct Registry {
     /// `class_attribute_is_types` at composition (`has @.a is G::A` in a
     /// parametric role) so the attribute's element type is enforced.
     pub(crate) role_attribute_is_types: HashMap<(String, String), String>,
+    /// Per-attribute declared type constraint on a *role* attribute
+    /// (`role R { has Int $.x }`, `has Callable %!c{Mu:U}`): (role, attr) ->
+    /// type constraint, in the same `ValueType{KeyType}` encoding a class
+    /// attribute uses. Roles keep their own table because a role is registered
+    /// before it is known which class will consume it; at composition (and when
+    /// a role is punned to a class) the entries are copied — with role type
+    /// parameters substituted — into the class's `attribute_types`.
+    pub(crate) role_attribute_types: HashMap<(String, String), String>,
+    /// Per-attribute definiteness smiley on a *role* attribute
+    /// (`role R { has Int:D $.x }`): (role, attr) -> "D"/"U"/"_". Copied
+    /// alongside `role_attribute_types`.
+    pub(crate) role_attribute_smileys: HashMap<(String, String), String>,
     /// Per-attribute `does Role` traits: (class, attr) -> role names mixed into
     /// the attribute's container (`has $.x does Foo`). Applied to the attribute's
     /// value at construction so `$o.x` does the role.

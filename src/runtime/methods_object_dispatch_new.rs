@@ -1225,6 +1225,7 @@ impl Interpreter {
 
                 // Collect attributes from this role and all composed parent roles
                 let mut all_attributes = role.attributes.clone();
+                let mut visited = vec![class_name.resolve()];
                 if let Some(parent_names) = self
                     .registry()
                     .role_parents
@@ -1232,7 +1233,6 @@ impl Interpreter {
                     .cloned()
                 {
                     let mut role_stack: Vec<String> = parent_names;
-                    let mut visited = vec![class_name.resolve()];
                     while let Some(parent_role_name) = role_stack.pop() {
                         if !visited.contains(&parent_role_name) {
                             visited.push(parent_role_name.clone());
@@ -1258,6 +1258,24 @@ impl Interpreter {
                     }
                 }
 
+                // The declared types of those attributes, keyed by attribute name.
+                // A role records them per (role, attr) since it has no ClassDef
+                // to hold `attribute_types`; parent roles are folded in first so
+                // this role's own declaration wins on a name clash.
+                let role_attr_types: HashMap<String, String> = {
+                    let cn = class_name.resolve();
+                    let mut m: HashMap<String, String> = HashMap::new();
+                    for owner in visited.iter().rev() {
+                        let base = owner.split_once('[').map(|(b, _)| b).unwrap_or(owner);
+                        for ((r, attr), tc) in &self.registry().role_attribute_types {
+                            if r == base {
+                                m.insert(attr.clone(), tc.replace("::?CLASS", &cn));
+                            }
+                        }
+                    }
+                    m
+                };
+
                 let mut mixins = HashMap::new();
                 mixins.insert(format!("__mutsu_role__{}", class_name), Value::TRUE);
                 // The attribute values go into the punned instance's own cell, not
@@ -1271,15 +1289,46 @@ impl Interpreter {
                 for (idx, (attr_name, _is_public, default_expr, _, _, sigil, _)) in
                     all_attributes.iter().enumerate()
                 {
-                    let supplied = if let Some(v) = named_args.get(attr_name) {
-                        Some(v.clone())
+                    // `type_checked` is false for the positional-by-index seeding:
+                    // that is a heuristic this path applies even when the role
+                    // declares its own `method new` (which raku would have run
+                    // instead — see `todo/tickets/punned-role-ignores-user-new.md`),
+                    // so type-checking it would turn that pre-existing gap into a
+                    // hard error.
+                    let (supplied, type_checked) = if let Some(v) = named_args.get(attr_name) {
+                        (Some(v.clone()), true)
                     } else if let Some(v) = positional_args.get(idx) {
-                        Some(v.clone())
+                        (Some(v.clone()), false)
                     } else if let Some(expr) = default_expr {
-                        Some(self.eval_block_value(&[Stmt::Expr(expr.clone())])?)
+                        (
+                            Some(self.eval_block_value(&[Stmt::Expr(expr.clone())])?),
+                            true,
+                        )
                     } else {
-                        None
+                        (None, true)
                     };
+                    // A punned role type-checks its attributes exactly like the
+                    // consuming-class path (`enforce_attribute_where_constraints`):
+                    // the constraint lives in `role_attribute_types` because the
+                    // role has no ClassDef of its own at declaration time. As
+                    // there, a `@`/`%` constraint names the *element* type and is
+                    // enforced at element assignment, not here.
+                    if type_checked
+                        && let Some(value) = supplied.as_ref()
+                        && !value.is_nil()
+                        && *sigil != '@'
+                        && *sigil != '%'
+                        && let Some(tc) = role_attr_types.get(attr_name)
+                        && (tc.starts_with(char::is_uppercase) || tc.starts_with("::"))
+                        && !self.type_matches_value(tc, value)
+                        && !self.is_container_subclass(tc)
+                    {
+                        return Err(crate::runtime::utils::type_check_assignment_typed_error(
+                            &format!("$!{}", attr_name),
+                            tc,
+                            value,
+                        ));
+                    }
                     mixins.insert(
                         format!("__mutsu_attr__{}", attr_name),
                         supplied.clone().unwrap_or(Value::NIL),

@@ -387,12 +387,37 @@ impl Interpreter {
         if let Some(ValueView::Str(tc)) = self.env.get(&meta_key).map(Value::view) {
             return Some(tc.to_string());
         }
-        self.var_hash_key_constraints.get(key).cloned()
+        if let Some(tc) = self.var_hash_key_constraints.get(key) {
+            return Some(tc.clone());
+        }
+        self.attr_hash_key_constraint(name)
+    }
+
+    /// The key type of an object-hash *attribute* (`has Callable %!Conv{Mu:U}`)
+    /// referenced as `%!Conv` / `%.Conv` inside a method. The per-variable
+    /// `var_hash_key_constraints` map cannot carry this — it is keyed by bare
+    /// name and the attribute's declared type lives in the class registry — so
+    /// resolve it against the current `self`'s class, exactly as
+    /// `scalar_attr_type_constraint` does for typed scalar attributes. The
+    /// declared type is stored as `ValueType{KeyType}` (see
+    /// `parser::stmt::decl::has_decl`), so the key part is split back out here.
+    fn attr_hash_key_constraint(&self, name: &str) -> Option<String> {
+        if !name.starts_with('%') {
+            return None;
+        }
+        let (bare, _) = crate::value::attr_twigil_base(name)?;
+        let tc = self.self_attr_type_constraint(bare)?;
+        let (_, key_type) = crate::runtime::types::split_object_hash_constraint(&tc);
+        key_type.map(str::to_string)
     }
 
     /// Fast check for hash key constraint — only checks the HashMap,
     /// skipping the `format!("__mutsu_hash_key_type::...")` + env lookup.
+    /// Object-hash attributes still have to take the slow path, so they are
+    /// resolved through the class registry here too (only for `%`-sigil
+    /// attribute names, which never appear on the hot local-variable path).
     pub(crate) fn var_hash_key_constraint_fast(&self, name: &str) -> bool {
         self.var_hash_key_constraints.contains_key(name)
+            || self.attr_hash_key_constraint(name).is_some()
     }
 }
