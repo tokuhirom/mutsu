@@ -328,8 +328,17 @@ sessions).
       *after* the role composed, so `also does` failed with `Unknown role` even for
       a role that existed — the `PDF::Class` blocker
       (news/2026-07/unit-role-body-use-hoisted-before-composition.md).
-      **Remaining from that run — only 1 is mutsu's:** `String::Utils` needs an
-      `nqp::` op layer (deep — `todo/deep/nqp-op-layer-missing.md`). The other four
+      **Remaining from that run — only 1 is mutsu's:** `String::Utils` needs
+      `nqp::` ops. **Measured 2026-07-26: do NOT build an `nqp::` layer** — the
+      20% reverse-dependency weight it appears to carry is dominated by
+      `JSON::Fast`, which mutsu already *bundles*, so implementing its 42 missing
+      ops would change nothing observable; and per dist the op set is a threshold
+      function (80% of a module's ops still leaves it dead) spanning thunk-taking
+      control ops and a null sentinel. Bundling the few nqp-heavy hub modules is
+      much cheaper. The one real `nqp::` demand found is **`nqp::sha1`, which
+      blocks the vendored zef install path** (`Zef::Distribution.id`) — small and
+      on the mzef critical path. Details and the measurements:
+      `todo/tickets/nqp-op-aliasing-and-sha1.md`. The other four
       were **mis-classified**, each verified against `raku -I lib`:
       `PDF::Class` and `Qwiratry::Test` merely lack an uninstalled dependency
       (`PDF::COS`, `Qwiratry::Query::Slang` — raku cannot load them here either),
