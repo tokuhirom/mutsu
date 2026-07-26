@@ -312,7 +312,9 @@ pub fn type_object_isa(actual: &str, expected: &str) -> bool {
     }
     match expected {
         "RakuAST::Expression" => {
-            actual == "RakuAST::Term" || semantic_type_object_ancestors(actual).contains(&expected)
+            actual == "RakuAST::Term"
+                || actual.starts_with("RakuAST::Term::")
+                || semantic_type_object_ancestors(actual).contains(&expected)
         }
         "RakuAST::Term" => semantic_type_object_ancestors(actual).contains(&expected),
         _ => false,
@@ -357,6 +359,7 @@ fn is_registered_type_object(class_name: &str) -> bool {
             | "RakuAST::Type"
             | "RakuAST::Trait"
             | "RakuAST::ParameterTarget"
+            | "RakuAST::Parameter::Slurpy"
             | "RakuAST::Postcircumfix"
             | "RakuAST::Circumfix"
             | "RakuAST::StatementPrefix"
