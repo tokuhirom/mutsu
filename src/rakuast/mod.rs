@@ -321,6 +321,46 @@ pub fn type_object_isa(actual: &str, expected: &str) -> bool {
     }
 }
 
+/// The model-layer MRO for a registered RakuAST type object. This intentionally
+/// reflects mutsu's documented RakuAST hierarchy rather than pretending these
+/// model types are ordinary entries in the runtime class registry.
+pub fn type_object_mro(class_name: &str) -> Option<Vec<String>> {
+    if !is_registered_type_object(class_name) {
+        return None;
+    }
+
+    let mut mro = vec![class_name.to_string()];
+    let mut namespace = class_name;
+    while let Some((parent, _)) = namespace.rsplit_once("::") {
+        if parent == "RakuAST" {
+            break;
+        }
+        if is_registered_type_object(parent) && !mro.iter().any(|name| name == parent) {
+            mro.push(parent.to_string());
+        }
+        namespace = parent;
+    }
+    for ancestor in semantic_type_object_ancestors(class_name) {
+        if !mro.iter().any(|name| name == ancestor) {
+            mro.push((*ancestor).to_string());
+        }
+    }
+    if class_name == "RakuAST::Term" && !mro.iter().any(|name| name == "RakuAST::Expression") {
+        mro.push("RakuAST::Expression".to_string());
+    }
+    if class_name != "RakuAST::Node" {
+        mro.push("RakuAST::Node".to_string());
+    }
+    mro.push("Any".to_string());
+    mro.push("Mu".to_string());
+    Some(mro)
+}
+
+/// The immediate parent in mutsu's linearized RakuAST model hierarchy.
+pub fn type_object_direct_parent(class_name: &str) -> Option<String> {
+    type_object_mro(class_name)?.into_iter().nth(1)
+}
+
 fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
     const TERM: &[&str] = &["RakuAST::Term", "RakuAST::Expression"];
     const EXPR: &[&str] = &["RakuAST::Expression"];

@@ -16,6 +16,7 @@ impl Interpreter {
         let tree = has_flag("tree");
         let class_name = match args[0].view() {
             ValueView::Package(name) => name.resolve(),
+            ValueView::RakuAst(node) => node.class.printed_name().to_string(),
             ValueView::Instance { class_name, .. } => class_name.resolve(),
             _ => value_type_name(&args[0]).to_string(),
         };
@@ -94,6 +95,9 @@ impl Interpreter {
     /// `Any` inherits `Mu`; `Mu` is the root (no parents). Composed roles are
     /// excluded — only parent classes participate in the tree.
     fn tree_effective_parents(&self, class_name: &str) -> Vec<String> {
+        if let Some(parent) = crate::rakuast::type_object_direct_parent(class_name) {
+            return vec![parent];
+        }
         let registered: Vec<String> = self
             .registry()
             .classes

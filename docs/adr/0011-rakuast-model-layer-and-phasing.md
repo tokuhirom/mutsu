@@ -157,6 +157,9 @@ earlier ones.
   - **Slice 6 (`.isa` / `.^isa` parity) — done.** Both ordinary and metaobject `isa` dispatch on
     registered type objects and node values use the same namespace and semantic hierarchy as
     smartmatch, including `IntLiteral` → `Term` → `Expression`.
+  - **Slice 7 (`.^mro` / `.^parents`) — done.** Registered type objects and concrete node values
+    expose the model layer's namespace and semantic hierarchy through ClassHOW introspection,
+    including `:local`, `:all`, and parent-tree traversal.
 - **Phase 4 — Construction.** `.new` (and `.from-identifier`, …) on RakuAST type objects
   build `Value::RakuAst`, validating args against the per-class field schema.
   - **Slice 1 (literals) — done.** `RakuAST::IntLiteral.new(42)` / `RatLiteral.new(3.5)` /
