@@ -119,6 +119,14 @@ export default {
         cta: 'Open the REPL →',
       },
       {
+        title: 'Run it on your machine',
+        body: 'The manual: installing mutsu, the command line, where it looks for ' +
+          'modules, the bundled <code>mzef</code> package manager, and an honest ' +
+          'account of how far the Raku support goes.',
+        href: 'manual.html',
+        cta: 'Read the manual →',
+      },
+      {
         title: 'See what ships in the box',
         body: 'mutsu is batteries-included: TLS, HTTP and more are bundled alongside the ' +
           'binary, ready for a plain <code>use</code> with no <code>zef install</code>. ' +

@@ -5,7 +5,9 @@ A Raku (Perl 6) interpreter written in Rust, using a bytecode VM architecture.
 mutsu parses Raku source into an AST, compiles it to bytecode, and executes it on a custom VM. It is under active development and improving rapidly, but is **not yet suitable for production use**.
 
 **https://tokuhirom.github.io/mutsu/** (English / 日本語) introduces the project and
-the language, with a [hands-on Raku tutorial](https://tokuhirom.github.io/mutsu/tutorial.html)
+the language, with the [manual](https://tokuhirom.github.io/mutsu/manual.html) (installing
+and running mutsu, the module search path, `mzef`, compatibility), a
+[hands-on Raku tutorial](https://tokuhirom.github.io/mutsu/tutorial.html)
 and a [playground](https://tokuhirom.github.io/mutsu/playground.html). Everything on
 it runs locally as WebAssembly — the site is running mutsu itself.
 
@@ -251,11 +253,14 @@ Usage:
 
 ## Known Limitations
 
-- **Single-threaded execution.** `start`/`await` work but run on a single thread.
-- **Incomplete container semantics.** Some binding and container behaviors differ from Rakudo.
-- **Limited exception types.** Not all `X::` exception classes are implemented.
+- **Some compile-time diagnostics are missing.** Most visibly, an undeclared variable is not rejected at compile time the way strict mode requires.
+- **Limited exception types.** Not all `X::` exception classes are implemented, so a `CATCH` matching a rare one may not fire.
 - **The package manager is young.** Zef ships bundled as `mzef` and runs on mutsu, but installing arbitrary ecosystem distributions is not yet dependable.
-- **Some advanced features are missing or incomplete.** Certain meta-programming, NativeCall, and supply/react patterns are not yet supported.
+- **`RakuAST` exists but is far from complete**, and feeds spanning multiple lines do not parse yet.
+
+The [manual](https://tokuhirom.github.io/mutsu/manual.html#compat) keeps the current
+account of what works and what does not — including the things people assume are
+missing and are not (real threads, NativeCall, `supply`/`react`, grammar actions).
 
 ## Building
 
@@ -268,7 +273,7 @@ make roast               # Run official Raku spec tests
 
 ## Requirements
 
-- Rust 1.92.0+ (edition 2024)
+- Rust 1.94.0+ (edition 2024)
 - A C compiler (for pcre2-sys)
 
 ## Architecture

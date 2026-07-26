@@ -17,6 +17,8 @@ import { existsSync, readFileSync, writeFileSync, rmSync } from 'fs';
 
 import { parseCorpus } from './assets/corpus.js';
 import landingEn from './content/landing.en.js';
+import manualEn from './content/manual.en.js';
+import manualJa from './content/manual.ja.js';
 import INSTALL from './content/install.js';
 
 const PORT = 18765;
@@ -248,6 +250,49 @@ try {
          'switching to Japanese re-renders the heading');
   assert(await page.locator('.bat-card').count() === battManifest.libraries.length,
          'and the library cards survive the re-render');
+  await page.click('.lang-switch button[data-lang="en"]');
+
+  /* =============================================================== *
+   * Manual — mutsu's own user documentation (no WASM needed)
+   * =============================================================== */
+
+  console.log('Test: manual sections and contents');
+  await page.goto(`${BASE}/manual.html?lang=en`, { waitUntil: 'networkidle' });
+  await page.waitForFunction(() => document.body.dataset.ready === '1', { timeout: 15000 });
+
+  assert(await page.textContent('.site-nav a[aria-current="page"]') === 'Manual',
+         'the nav includes the manual and marks it current');
+  assert(await page.locator('.manual-section').count() === manualEn.sections.length,
+         `every section renders (${manualEn.sections.length})`);
+  assert(await page.locator('.toc .lesson-link').count() === manualEn.sections.length,
+         'the contents list one entry per section');
+  // The ids are the URL fragments and the contents keys, so the two languages
+  // must agree on them or a shared link breaks on a language switch.
+  assert(manualJa.sections.map(s => s.id).join() === manualEn.sections.map(s => s.id).join(),
+         'the Japanese manual has the same sections, in the same order');
+  assert(await page.locator('#modules .opt-table, #modules ol').count() > 0,
+         'the module-path section documents the search order');
+  assert((await page.textContent('#compat')).includes('roast'),
+         'the compatibility section names the spec suite');
+  assert(!(await page.textContent('#manual-body')).includes('{roast'),
+         'the roast figures are substituted, not left as placeholders');
+  assert(await page.evaluate(() =>
+    document.documentElement.scrollWidth <= document.documentElement.clientWidth),
+    'the manual does not scroll sideways');
+
+  console.log('Test: manual contents track the reader');
+  await page.evaluate(() => document.getElementById('modules').scrollIntoView());
+  await page.waitForTimeout(200);
+  assert(await page.getAttribute('.toc .lesson-link[aria-current="true"]', 'data-section')
+           === 'modules',
+         'scrolling to a section marks it in the contents');
+
+  console.log('Test: manual language switch');
+  await page.click('.lang-switch button[data-lang="ja"]');
+  assert(await page.textContent('#manual-title') === manualJa.title,
+         'switching to Japanese re-renders the manual');
+  assert(await page.locator('.manual-section').count() === manualJa.sections.length,
+         'and every section is still there');
   await page.click('.lang-switch button[data-lang="en"]');
 
   /* =============================================================== *
