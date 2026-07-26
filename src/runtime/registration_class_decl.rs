@@ -213,6 +213,13 @@ impl Interpreter {
         if class_def.attributes.iter().any(|(n, ..)| n == attr_name) {
             return Ok(());
         }
+        self.validate_static_attribute_default(
+            attr_name,
+            spec.sigil,
+            spec.default.as_ref(),
+            spec.type_constraint.as_deref(),
+            spec.type_smiley.as_deref(),
+        )?;
         let effective_is_rw = !spec.is_readonly && spec.is_rw;
         class_def.attributes.push((
             attr_name.clone(),
@@ -242,6 +249,46 @@ impl Interpreter {
             .insert(class_name.to_string(), class_def);
         self.clear_private_zeroarg_method_cache();
         Ok(())
+    }
+
+    /// Rakudo decides at *compile* time that an attribute initializer can never
+    /// satisfy its constraint and reports X::TypeCheck::Attribute::Default
+    /// ("Can never assign default value ..."). The decidable case is a *defined*
+    /// literal default: of the wrong type, or any defined value under `:U`. A
+    /// type-object default is NOT decidable here — `has Int:D $.n = Int` is a
+    /// construction-time X::TypeCheck::Assignment — so it is left to the
+    /// smiley check that runs when the instance is built.
+    fn validate_static_attribute_default(
+        &mut self,
+        attr_name: &str,
+        sigil: char,
+        default: Option<&Expr>,
+        type_constraint: Option<&str>,
+        type_smiley: Option<&str>,
+    ) -> Result<(), RuntimeError> {
+        // `@`/`%` constraints apply to the elements, not the container.
+        if sigil != '$' {
+            return Ok(());
+        }
+        let Some(Expr::Literal(val)) = default else {
+            return Ok(());
+        };
+        if !crate::runtime::types::value_is_defined(val) {
+            return Ok(());
+        }
+        let Some(base) = type_constraint.map(str::to_string) else {
+            return Ok(());
+        };
+        let smiley = type_smiley.unwrap_or("_");
+        if smiley != "U" && self.type_matches_value(&base, val) {
+            return Ok(());
+        }
+        let constraint = Self::join_constraint_smiley(&base, smiley);
+        Err(crate::runtime::utils::attribute_default_never_assign_error(
+            attr_name,
+            &constraint,
+            val,
+        ))
     }
 
     /// Rename a class declared inside a parametric role body to its
@@ -1477,6 +1524,20 @@ impl Interpreter {
                     unknown_traits,
                 } => {
                     let attr_name_str = attr_name.resolve();
+
+                    // An initializer that can never satisfy the constraint is a
+                    // declaration-time error in rakudo, before anything is built.
+                    if let Err(err) = self.validate_static_attribute_default(
+                        &attr_name_str,
+                        *sigil,
+                        default.as_ref(),
+                        type_constraint.as_deref(),
+                        type_smiley.as_deref(),
+                    ) {
+                        self.set_current_package(saved_package);
+                        self.env = saved_env;
+                        return Err(err);
+                    }
 
                     // Handle unknown traits. If a user-defined `trait_mod:<is>`
                     // (or `trait_mod:<will>`, etc.) can handle the trait, dispatch
