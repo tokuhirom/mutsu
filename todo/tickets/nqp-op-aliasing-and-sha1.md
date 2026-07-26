@@ -1,4 +1,9 @@
-# `nqp::` leftovers: `nqp::sha1` blocks vendored zef, and qualified calls still alias builtins
+# `nqp::` leftovers: a qualified call still aliases a builtin
+
+**Status: the `nqp::sha1` half is done** (news/2026-07/nqp-sha1.md). What
+remains open in this file is "Open 2" at the bottom — the package-prefix strip
+outside `nqp::`. The measurements are kept because they are the reason not to
+build an `nqp::` op layer.
 
 Supersedes `todo/deep/nqp-op-layer-missing.md`, whose framing ("build an `nqp::`
 op layer, ~53 ops missing, needs an ADR") did not survive measurement. What
@@ -49,9 +54,12 @@ yields **-1** — a silent wrong answer, and nqp code branches on exactly that
 `Unsupported nqp:: op: nqp::<name>`. Pinned by
 `t/nqp-unimplemented-op-errors.t`.
 
-## Open 1 — `nqp::sha1` is needed by TWO things we already ship
+## Done — `nqp::sha1` (was Open 1)
 
-This is the one *real* demand found, and it is entirely in our own tree:
+Implemented 2026-07-26: `src/builtins/sha1.rs` (in-tree SHA-1, no new crate)
+wired as the `nqp::sha1` builtin arm beside `nqp::ordat`. Pinned by
+`t/nqp-sha1.t`, which passes unchanged under rakudo too. Write-up:
+news/2026-07/nqp-sha1.md. The demand it served, for the record:
 
 ```
 vendor/zef/lib/Zef/Distribution.rakumod:230       return nqp::sha1(self.Str);
@@ -65,15 +73,9 @@ modules/OpenSSL/lib/OpenSSL/NativeLib.rakumod:33  my $content-id = nqp::sha1($re
   unmangled copy under `$*TMPDIR`. `use OpenSSL` succeeds today only because that
   sub is not called at load time.
 
-mutsu has no SHA-1 at all — nothing in tree and no `sha`/`digest` crate in
-`Cargo.toml` — so this needs either ~60 lines of SHA-1 or a dependency, then
-wiring `nqp::sha1` as a full-name builtin beside `nqp::ordat` /
-`nqp::gethostname` / `nqp::bindattr`.
-
-Small, self-contained, and unblocks a north-star path in code we already ship.
-**Best next `nqp::` work by far** — and note the contrast: the "obvious" target
-(`JSON::Fast`, 42 ops) would unlock nothing, while this one op unblocks two
-shipped components.
+Note the contrast that made this the right pick: the "obvious" target
+(`JSON::Fast`, 42 ops) would have unlocked nothing, while this one op serves two
+components we already ship.
 
 ## Which bundled modules exist, and why (measured 2026-07-26)
 

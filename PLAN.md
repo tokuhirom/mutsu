@@ -335,9 +335,10 @@ sessions).
       ops would change nothing observable; and per dist the op set is a threshold
       function (80% of a module's ops still leaves it dead) spanning thunk-taking
       control ops and a null sentinel. Bundling the few nqp-heavy hub modules is
-      much cheaper. The one real `nqp::` demand found is **`nqp::sha1`, which
-      blocks the vendored zef install path** (`Zef::Distribution.id`) — small and
-      on the mzef critical path. Details and the measurements:
+      much cheaper. The one real `nqp::` demand found was **`nqp::sha1`, which
+      blocked the vendored zef install path** (`Zef::Distribution.id`) — now
+      implemented (news/2026-07/nqp-sha1.md); `Zef::Distribution.id` matches
+      rakudo's digest exactly. Details and the measurements:
       `todo/tickets/nqp-op-aliasing-and-sha1.md`. The other four
       were **mis-classified**, each verified against `raku -I lib`:
       `PDF::Class` and `Qwiratry::Test` merely lack an uninstalled dependency

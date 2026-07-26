@@ -657,6 +657,19 @@ impl Interpreter {
                     .unwrap_or(-1);
                 Ok(Value::int(cp))
             }
+            // nqp::sha1($str): the SHA-1 digest of the string's UTF-8 encoding,
+            // as 40 uppercase hex digits. Needed by two components mutsu ships:
+            // the vendored zef (`Zef::Distribution.id` and the source-path
+            // computation) and bundled OpenSSL's `dll-resource()`.
+            "nqp::sha1" => {
+                let s = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                Ok(Value::str(crate::builtins::sha1::sha1_hex_uppercase(
+                    s.as_bytes(),
+                )))
+            }
             // nqp::gethostname(): the system hostname as a native str. Used by
             // Sys::Hostname's `hostname` sub (`nqp::gethostname.subst(...)`).
             "nqp::gethostname" => Ok(Value::str(Self::hostname())),
