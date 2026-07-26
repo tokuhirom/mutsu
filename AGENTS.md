@@ -69,6 +69,9 @@ Existing interpreter fallbacks are technical debt. When you encounter one while 
 - PRs should include: concise problem statement, approach, and test evidence (`make test` / `make roast` results).
 - Link related issues/PRs when applicable (for example, `(#150)`).
 - Ensure CI passes format, clippy, unit tests, TAP tests, and roast checks before merge.
+- After completing and validating an implementation, proactively create and publish its PR without
+  waiting for a separate user request. Treat PR publication as part of finishing the implementation
+  unless the user explicitly asks to keep the changes local.
 - When asked to open a PR, create it as **ready for review (`draft: false`) from the start** and
   enable GitHub auto-merge after opening it unless the user explicitly asks not to. Do not create a
   draft PR and then convert it to ready: GitHub cannot enable auto-merge on draft PRs. Branch
