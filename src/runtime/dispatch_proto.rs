@@ -6,10 +6,11 @@ impl Interpreter {
     /// callwith(), which may re-dispatch with different arguments.
     pub(crate) fn resolve_all_multi_candidates(&self, name: &str) -> Vec<Arc<FunctionDef>> {
         let mut all: Vec<(String, Arc<FunctionDef>)> = Vec::new();
-        let prefixes = [
-            format!("{}::{}/", self.current_package(), name),
-            format!("GLOBAL::{}/", name),
-        ];
+        let prefixes: Vec<String> = self
+            .bare_name_packages()
+            .iter()
+            .map(|pkg| format!("{}::{}/", pkg, name))
+            .collect();
         let mut seen_fps = Vec::new();
         for prefix in &prefixes {
             let candidates: Vec<(String, Arc<FunctionDef>)> = self
@@ -45,14 +46,15 @@ impl Interpreter {
     }
 
     pub(crate) fn has_proto(&self, name: &str) -> bool {
-        let pkg = self.current_package();
-        self.registry().has_proto(&pkg, name)
+        self.bare_name_packages()
+            .iter()
+            .any(|pkg| self.registry().has_proto(pkg, name))
     }
 
     /// Check if any multi candidates exist for this function name (any arity).
     pub(crate) fn has_multi_candidates(&self, name: &str) -> bool {
-        let pkg = self.current_package();
-        self.registry().has_multi_candidates(&pkg, name)
+        self.registry()
+            .has_multi_candidates(&self.bare_name_packages(), name)
     }
 
     pub(super) fn resolve_proto_function_with_alias(
@@ -81,14 +83,16 @@ impl Interpreter {
                 .get(&Symbol::intern(name))
                 .map(|def| (**def).clone());
         }
-        let local = format!("{}::{}", self.current_package(), name);
-        if let Some(def) = self.registry().proto_functions.get(&Symbol::intern(&local)) {
-            return Some((**def).clone());
+        for pkg in self.bare_name_packages() {
+            if let Some(def) = self
+                .registry()
+                .proto_functions
+                .get(&Symbol::intern(&format!("{}::{}", pkg, name)))
+            {
+                return Some((**def).clone());
+            }
         }
-        self.registry()
-            .proto_functions
-            .get(&Symbol::intern(&format!("GLOBAL::{}", name)))
-            .map(|def| (**def).clone())
+        None
     }
 
     pub(super) fn call_proto_function(

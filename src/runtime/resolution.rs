@@ -63,22 +63,16 @@ impl Interpreter {
             return None;
         }
         let cur_pkg = self.current_package();
-        let local = format!("{}::{}", cur_pkg, name);
-        if let Some(def) = self
-            .registry()
-            .functions
-            .get(&Symbol::intern(&local))
-            .cloned()
-        {
-            return Some(def);
-        }
-        if let Some(def) = self
-            .registry()
-            .functions
-            .get(&Symbol::intern(&format!("GLOBAL::{}", name)))
-            .cloned()
-        {
-            return Some(def);
+        // Innermost package first, then each enclosing one, ending at GLOBAL.
+        for pkg in self.bare_name_packages() {
+            if let Some(def) = self
+                .registry()
+                .functions
+                .get(&Symbol::intern(&format!("{}::{}", pkg, name)))
+                .cloned()
+            {
+                return Some(def);
+            }
         }
         // A module's tagged export (`sub foo is export(:tag)`) that the importing
         // program did not request is hidden by renaming `GLOBAL::foo` to

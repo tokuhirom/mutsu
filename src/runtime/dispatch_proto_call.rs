@@ -171,12 +171,15 @@ impl Interpreter {
             .iter()
             .filter(|v| !matches!(v.view(), ValueView::Pair(..)))
             .count();
-        let prefix_local = format!("{}::{}/{}:", self.current_package(), name, arity);
-        let prefix_global = format!("GLOBAL::{}/{}:", name, arity);
-        let generic_keys = [
-            format!("{}::{}/{}", self.current_package(), name, arity),
-            format!("GLOBAL::{}/{}", name, arity),
-        ];
+        let search_pkgs = self.bare_name_packages();
+        let typed_prefixes: Vec<String> = search_pkgs
+            .iter()
+            .map(|pkg| format!("{}::{}/{}:", pkg, name, arity))
+            .collect();
+        let generic_keys: Vec<String> = search_pkgs
+            .iter()
+            .map(|pkg| format!("{}::{}/{}", pkg, name, arity))
+            .collect();
         // Collect all candidates (typed + generic) like resolve_function_with_types
         let mut candidates: Vec<(String, Arc<FunctionDef>)> = self
             .registry()
@@ -184,7 +187,7 @@ impl Interpreter {
             .iter()
             .filter(|(key, _)| {
                 let ks = key.resolve();
-                ks.starts_with(&prefix_local) || ks.starts_with(&prefix_global)
+                typed_prefixes.iter().any(|p| ks.starts_with(p))
             })
             .map(|(key, def)| (key.resolve(), def.clone()))
             .collect();

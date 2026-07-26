@@ -246,6 +246,51 @@ impl Interpreter {
         *self.current_package.write().unwrap() = pkg;
     }
 
+    /// The packages a *bare* (unqualified) routine name is looked up in, from
+    /// innermost outwards and always ending at `GLOBAL`.
+    ///
+    /// A `class` declared inside a `module` is registered under the
+    /// module-qualified name (`NL::Searcher` for `class Searcher` in
+    /// `unit module NL`), so stripping one `::` segment at a time reproduces the
+    /// lexical nesting the declaration came from: a method of `NL::Searcher`
+    /// calling a bare `cannon-name` must find `NL`'s `cannon-name`, exactly as
+    /// raku's lexical lookup does. Before this existed, bare-name lookup jumped
+    /// straight from the current package to `GLOBAL`, so the module's own subs
+    /// were invisible to its classes' methods (the `NativeLibs`/`DBIish`
+    /// blocker).
+    ///
+    /// The common case — mainline code under `GLOBAL` — returns a single
+    /// element, so callers pay one small `Vec` for what used to be two
+    /// hard-coded `format!`s.
+    pub(crate) fn bare_name_packages(&self) -> Vec<String> {
+        let cur = self.current_package();
+        if cur == "GLOBAL" {
+            return vec![cur];
+        }
+        // A `state`-variable scope key is not a package at all; treat it as
+        // GLOBAL-only rather than walking its mangled segments.
+        if cur.starts_with("__state_") {
+            return vec![cur, "GLOBAL".to_string()];
+        }
+        // A mangled sub/closure scope (`Pkg::&name/2`, `Pkg::&<closure>/7`)
+        // carries its real package as the part before `::&`. Walk outwards from
+        // that, not from the mangled key.
+        let head = cur.split("::&").next().unwrap_or("").to_string();
+        let mut out = vec![cur];
+        let mut probe = head;
+        while !probe.is_empty() && probe != "GLOBAL" {
+            if probe != out[0] {
+                out.push(probe.clone());
+            }
+            match probe.rsplit_once("::") {
+                Some((outer, _)) => probe = outer.to_string(),
+                None => break,
+            }
+        }
+        out.push("GLOBAL".to_string());
+        out
+    }
+
     /// Interior-mutable variant for the `&self` regex matcher: the package is
     /// stored behind a RwLock, so a temporary switch (e.g. into a cross-package
     /// grammar subrule's defining package while parsing its body) does not need
