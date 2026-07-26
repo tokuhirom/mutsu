@@ -1157,7 +1157,10 @@ so it is tracked separately from the roast backlog.
         `t/rakuast-construct-statement-list.t`.
   - [x] Slice 6: `Blockoid.new(StatementList)` and `Block.new(body => Blockoid)`, including
         accessors and model introspection. Tests in `t/rakuast-construct-block.t`.
-  - [ ] Slice 7+: sub/declaration constructors.
+  - [x] Slice 7: parameter-less `Sub.new`, with an optional name and an empty `Blockoid` default,
+        including accessors, model introspection, and lowering through `EVAL`. Tests in
+        `t/rakuast-construct-sub.t`.
+  - [ ] Slice 8+: signature/parameter and variable-declaration constructors.
 - **Phase 5 (in progress)** — EVAL: lower RakuAST → internal AST → existing compiler (no new engine).
   - [x] Slices 1–37 done (PRs #4736–#4804): literals, all common operators + ternary, the full
         control-flow set, sub declarations (typed/default/named/slurpy params) + calls + method calls,
