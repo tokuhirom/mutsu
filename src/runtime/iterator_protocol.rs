@@ -132,7 +132,60 @@ pub(crate) fn step(
     Some(step)
 }
 
+/// How many elements of `items` a protocol call needs to see before it can
+/// answer, or `None` when the method wants the whole source.
+fn needed_len(method: &str, index: usize, args: &[Value]) -> Option<usize> {
+    let arg_int = |v: Option<&Value>, default: i64| -> usize {
+        v.map(crate::runtime::to_int).unwrap_or(default).max(0) as usize
+    };
+    match method {
+        "pull-one" | "skip-one" => Some(index + 1),
+        "push-exactly" | "push-at-least" => Some(index + arg_int(args.get(1), 1)),
+        "skip-at-least" => Some(index + arg_int(args.first(), 0)),
+        // The value *after* the skipped run, so one more than the skip itself.
+        "skip-at-least-pull-one" => Some(index + arg_int(args.first(), 0) + 1),
+        // `push-until-lazy` exists precisely to stop at a lazy boundary, so it
+        // must not force; the rest consume the source to exhaustion.
+        "push-all" | "sink-all" => None,
+        _ => Some(index),
+    }
+}
+
 impl crate::Interpreter {
+    /// Top up an `Iterator` instance's materialised prefix from the lazy source
+    /// it was built from, so a protocol call sees the elements it needs.
+    ///
+    /// `.iterator` snapshots whatever the source has produced so far. For a
+    /// `gather` that has never been forced that is nothing, so `pull-one`
+    /// stepped straight past the end and handed back the `IterationEnd`
+    /// sentinel as an ordinary value — `S.new.allrows.iterator.pull-one`
+    /// answered `"IterationEnd"` instead of the first row (`DBIish`
+    /// `t/05-mock.rakutest` test 12). The pull is bounded by what the call
+    /// actually needs, so an infinite source stays lazy.
+    ///
+    /// Returns the topped-up items, or `None` when there was nothing to do.
+    pub(crate) fn iterator_topup_from_lazy_source(
+        &mut self,
+        source: Option<&Value>,
+        method: &str,
+        index: usize,
+        args: &[Value],
+        have: usize,
+    ) -> Option<Vec<Value>> {
+        let ValueView::LazyList(list) = source?.view() else {
+            return None;
+        };
+        let pulled = match needed_len(method, index, args) {
+            Some(need) if need <= have => return None,
+            Some(need) => self.force_lazy_list_vm_n(&list, need),
+            None => self.force_lazy_list_bridge(&list),
+        };
+        // A source that cannot be forced (an infinite pipe answers
+        // X::Cannot::Lazy) leaves the prefix as it was; the step then reports
+        // exhaustion exactly as before.
+        pulled.ok().filter(|items| items.len() > have)
+    }
+
     /// Append `vals` to the array passed as the `push-*` family's first
     /// argument, updating every binding that shares the array's identity.
     pub(crate) fn iterator_append_to_array_arg(&mut self, args: &[Value], vals: &[Value]) {

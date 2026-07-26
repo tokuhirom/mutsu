@@ -2335,7 +2335,7 @@ impl Interpreter {
                     return Ok(ret);
                 }
 
-                let items = match updated.get("items").map(Value::view) {
+                let mut items = match updated.get("items").map(Value::view) {
                     Some(ValueView::Array(values, ..)) => values.to_vec(),
                     _ => Vec::new(),
                 };
@@ -2343,6 +2343,20 @@ impl Interpreter {
                     Some(ValueView::Int(i)) if i >= 0 => i as usize,
                     _ => 0,
                 };
+                // A lazy source may not have produced the elements this call
+                // needs yet; pull them and keep the grown prefix on the
+                // instance, so the next call starts from it.
+                let lazy_source = updated.get("lazy_source").cloned();
+                if let Some(more) = self.iterator_topup_from_lazy_source(
+                    lazy_source.as_ref(),
+                    method,
+                    index,
+                    &args,
+                    items.len(),
+                ) {
+                    items = more;
+                    updated.insert("items".to_string(), Value::array(items.clone()));
+                }
                 let len = items.len();
                 // A known logical count (set for `LHS xx N` lazy repeats) overrides
                 // the materialized prefix length, so `.count-only` / `.bool-only`

@@ -1001,7 +1001,7 @@ impl Interpreter {
             // temporary, but the `push-*` family still appends to its array
             // argument. Shares the single stepping implementation with the
             // mutating (variable receiver) path.
-            let items = match attributes.as_map().get("items").map(|v| v.view()) {
+            let mut items = match attributes.as_map().get("items").map(|v| v.view()) {
                 Some(ValueView::Array(values, ..)) => values.to_vec(),
                 _ => Vec::new(),
             };
@@ -1009,6 +1009,19 @@ impl Interpreter {
                 Some(ValueView::Int(i)) if i >= 0 => i as usize,
                 _ => 0,
             };
+            // A lazy source may not have produced the elements this call needs
+            // yet. The cursor is discarded with this temporary receiver, but the
+            // pulled elements still have to reach the step below.
+            let lazy_source = attributes.as_map().get("lazy_source").cloned();
+            if let Some(more) = self.iterator_topup_from_lazy_source(
+                lazy_source.as_ref(),
+                method,
+                index,
+                &args,
+                items.len(),
+            ) {
+                items = more;
+            }
             if let Some(step) = super::iterator_protocol::step(method, &items, index, &args) {
                 if let Some(range) = step.append {
                     let vals = items[range].to_vec();
