@@ -44,8 +44,8 @@ recreate it from the recipe above), debug build, both interpreters on the same
 | `44-sqlite-memory` | 1 fail of 109* | **PASS 109/109** | — |
 | `45-sqlite-common` | 1 fail of 109* | **PASS 109/109** | — |
 | `03-lib-util` | 1 fail of 5* | 1 fail of 5* | — (same subtest as raku) |
-| `01-basic` | PASS 35/35 | ran 0/35, dies | ③ `PackageHOW.method_table` |
-| `05-mock` | PASS 16/16 | 1 fail of 13 run | ④ `IterationEnd` from a row fetch, then `Too many positionals passed; expected 0 arguments but got 2` |
+| `01-basic` | PASS 35/35 | 3 fail of 18 run | ⑧ a second `require ::($m)` of a driver loses `NativeLibs`' exports |
+| `05-mock` | PASS 16/16 | 1 fail of 16 | ④b `IterationEnd` from a row fetch (test 12) |
 | `06-types` | PASS 12/12 | 2 fail of 3 run | ⑤ `Int is builtin` / `So not defined`; mutsu suggests `Did you mean 'invert'?` |
 
 \* Those raku failures are `# TODO`-marked and environment-dependent, not bugs:
@@ -144,39 +144,55 @@ say "7-keys    : ", $*VM.config.keys.sort.join(',');
 | line | raku | mutsu |
 | --- | --- | --- |
 | `4a-control` | `HASH\|x\|y` | `HASH\|x\|y` |
-| `4a-bare` | `HASH\|x\|y` | **DIED: Too many positionals passed; expected 0 arguments but got 2** |
+| `4a-bare` | `HASH\|x\|y` | `HASH\|x\|y` (fixed) |
 | `4b-isa` | `Seq` | `Seq` |
 | `4b-pullone` | `["a", "b", 1]` | **`"IterationEnd"`** |
-| `3-mtable` | `True` | **DIED: No such method 'method_table'** |
-| `7-nc-back` | `"dyncall"` | **`Any`** |
-| `7-keys` | ~200 keys | `be,name` |
+| `3-mtable` | `True` | `True` (fixed) |
+| `7-nc-back` | `"dyncall"` | `"libffi"` (fixed) |
+| `7-keys` | ~200 keys | `be,name,nativecall_backend` |
 
-### ④a A bare adverb on a listop argument swallows the rest of the argument list
+### ④a A bare adverb on a listop argument — FIXED
 
-`is-deeply $sth.row :hash, hash(...), 'desc'` must parse as
-`is-deeply($sth.row(:hash), hash(...), 'desc')` — the adverb binds to the method
-call, and the comma continues the *listop's* argument list. mutsu instead hands
-`.row` the two following arguments, so a zero-positional signature reports
-`Too many positionals passed; expected 0 arguments but got 2`. Parenthesising the
-adverb (`$h.row(:hash)`) works, which pins this to the bare-adverb parse. This is
-a parser precedence bug with nothing to do with `DBIish`; it aborts `05-mock` at
-line 32 after 13 of 16 tests.
+`is-deeply $sth.row :hash, hash(...), 'desc'` handed `.row` the two following
+arguments instead of leaving them to the listop. The method-call parser already
+told the colon call (`.m: a, b`, which does take the comma list) apart from the
+space-separated adverb, but both shared one continuation loop that kept
+consuming `, next`. Fixed — see
+[`news/2026-07/method-table-and-hash-composer-parse.md`](../../news/2026-07/method-table-and-hash-composer-parse.md).
 
 ### ④b `pull-one` on a hand-obtained iterator yields the `IterationEnd` sentinel
 
 Three lines of `gather`/`take` reproduce it: `a.iterator.pull-one` answers the
-string `IterationEnd` instead of the first element. The sentinel is leaking out
-as an ordinary value rather than terminating iteration — the `Seq`/iterator
-exhaustion family. This is `05-mock` test 12.
+string `IterationEnd` instead of the first element. This is `05-mock` test 12.
 
-### ③ `.^method_table` is not implemented
+Reduced further 2026-07-26: it is specific to a **lazy, not-yet-materialised**
+source. `(1,2,3).Seq.iterator.pull-one`, `@a.iterator.pull-one` and
+`(1..3).map(*+1).iterator.pull-one` are all correct; only `gather`/`take` fails,
+and forcing it first (`$s.elems; $s.iterator.pull-one`) makes it correct too. The
+cause is that `builtins::iterator_construct::build_iterator_instance` snapshots
+`value_to_list(target)` into an `items` array — for a lazy gather that prefix is
+empty, so `runtime/iterator_protocol.rs` steps straight past the end. The real
+fix is an `Iterator` that pulls from its source on demand rather than from a
+materialised prefix; eagerly forcing the source instead would hang on an
+infinite lazy list.
 
-Not a `PackageHOW`-only gap as first recorded: the repro raises it on a plain
-`ClassHOW` too. `src/runtime/methods_classhow_dispatch.rs` implements
-`submethod_table` but not `method_table`; the sibling arm is the model (walk
-`registry().classes[type].methods`, return a `Hash` of name → method). `01-basic`
-uses it as `DBIish.^method_table{$_}:exists`, so name → anything defined is
-enough for that file, but Rakudo returns the method objects.
+### ③ `.^method_table` — FIXED
+
+Not a `PackageHOW`-only gap as first recorded — a plain `ClassHOW` had the same
+hole. Fixed, with `Method` objects as the values, matching rakudo. See
+[`news/2026-07/method-table-and-hash-composer-parse.md`](../../news/2026-07/method-table-and-hash-composer-parse.md).
+
+### ⑧ A repeat `require ::($module)` loses `NativeLibs`' re-exports
+
+New, and what `01-basic` stops on now. Installing the drivers one at a time works
+(`DBIish.install-driver('SQLite')` on its own returns `DBDish::SQLite`), but the
+file's `for <Oracle Pg SQLite TestMock mysql>` loop fails on the third and fifth:
+`Could not find symbol '&is-win' in 'NativeLibs'` for SQLite and `Type 'ulong' is
+not declared` for mysql, both raised from inside `NativeLibs`' `CHECK for
+NativeCall::EXPORT::.keys { UNIT::EXPORT::{$_} := … }`. So a second `require
+::($module)` in the same process re-runs that `CHECK` against a registry that no
+longer holds the first load's exports — the same export/registry-rewind family as
+`news/2026-07/`'s subtest and `EVAL` entries.
 
 ### ⑤ `06-types` — object hash keyed by type objects
 
@@ -200,15 +216,17 @@ suggestion is the *symptom* of an unresolved delegated `AT-KEY`, not a typo.
 Note the object-hash requirement overlaps the deferred "object-hash `WHICH`"
 item in the doc-diff DEEP bucket (`docs/doc-diff-backlog.md`).
 
-### ⑦ `$*VM.config` has two keys
+### ⑦ `$*VM.config` — `nativecall_backend` added, the rest of the surface is not
 
-mutsu's `$*VM.config` answers only `be` and `name`; raku's MoarVM config has
-around 200. `NativeLibs` reads
-`my \dyncall = $*VM.config<nativecall_backend> eq 'dyncall'` and so warns
+`NativeLibs` reads
+`my \dyncall = $*VM.config<nativecall_backend> eq 'dyncall'` and used to warn
 `Use of uninitialized value of type Any in string context` on every run that
-loads it. Harmless — `dyncall` ends up `False`, which is what mutsu wants — but
-it is noise in every `DBIish` run. Adding `nativecall_backend` alone is a
-one-line fix; deciding how much of the config surface to synthesise is not.
+loads it — noise that had twice been mistaken for a diagnosis in this file. That
+key now answers `"libffi"`, which is what mutsu's FFI actually is and what a
+modern MoarVM reports (`dyncall` still ends up `False`, which is what mutsu
+wants). The config still has three keys against raku's ~200; deciding how much
+of that surface to synthesise is a separate question, and nothing in `DBIish`
+needs it.
 
 ## Role attribute not seeded — FIXED
 
@@ -257,16 +275,14 @@ the adverbs away outright.
 
 ## Suggested order for the next session
 
-Cheapest first, and none of them depends on another:
+⑦, ③ and ④a are done. What is left, cheapest first; none depends on another:
 
-1. **⑦** — one line, and it removes the warning that has twice been mistaken for
-   a diagnosis in this file.
-2. **③** — `submethod_table` next door is the model; worth one file (`01-basic`).
-3. **④a** — a parser precedence fix, self-contained, and the thing that aborts
-   `05-mock` two thirds of the way through.
-4. **④b** — the `IterationEnd` leak. Same file as ④a, but a different subsystem
-   (`Seq`/iterator exhaustion); do it as its own change.
-5. **⑤** — the largest: an object hash keyed by type objects, plus `handles`
+1. **④b** — the `IterationEnd` leak, now reduced to "a lazy source hands the
+   `Iterator` an empty materialised prefix". Needs a pull-on-demand `Iterator`,
+   so it is a real slice, not a one-liner.
+2. **⑧** — a repeat `require ::($m)` losing `NativeLibs`' re-exports. Related
+   registry-rewind bugs have been fixed twice before, so there is a model.
+3. **⑤** — the largest: an object hash keyed by type objects, plus `handles`
    delegation from a private attribute. Confirm which of the five features listed
    above is actually missing before scoping it.
 

@@ -52,6 +52,7 @@ impl Interpreter {
                 | "parameterize"
                 | "pun"
                 | "language-revision"
+                | "method_table"
                 | "submethod_table"
         )
     }

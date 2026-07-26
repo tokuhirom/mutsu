@@ -46,6 +46,52 @@ impl Interpreter {
         }
     }
 
+    /// Build the class's own method table (`.^method_table`): the methods
+    /// declared directly on `class_name`, keyed by name.
+    ///
+    /// Rakudo keeps submethods in `.^submethod_table` and private methods in
+    /// `.^private_method_table`, so neither appears here; public attribute
+    /// accessors and role-composed methods do, and a `multi` contributes a
+    /// single dispatcher entry.
+    pub(super) fn class_method_table(&self, class_name: &str) -> HashMap<String, Value> {
+        let mut table = HashMap::new();
+        let registry = self.registry();
+        let Some(class_def) = registry.classes.get(class_name) else {
+            return table;
+        };
+        for (attr_name, is_public, ..) in &class_def.attributes {
+            if *is_public && !class_def.methods.contains_key(attr_name) {
+                table.insert(attr_name.clone(), self.make_native_method_object(attr_name));
+            }
+        }
+        for (method_name, overloads) in &class_def.methods {
+            let Some(first) = overloads.first() else {
+                continue;
+            };
+            if first.is_private || first.is_submethod {
+                continue;
+            }
+            table.insert(
+                method_name.clone(),
+                self.make_method_object_with_owner(
+                    method_name,
+                    first,
+                    overloads.len() > 1,
+                    first.return_type.clone(),
+                    Some(overloads),
+                    Some(class_name),
+                ),
+            );
+        }
+        for native_name in &class_def.native_methods {
+            table.insert(
+                native_name.clone(),
+                self.make_native_method_object(native_name),
+            );
+        }
+        table
+    }
+
     /// Collect methods from a runtime-mixed-in role definition.
     pub(super) fn collect_role_methods(
         &self,

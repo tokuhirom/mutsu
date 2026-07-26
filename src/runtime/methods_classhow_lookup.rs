@@ -340,6 +340,7 @@ impl Interpreter {
                 | "curried_role"
                 | "pun"
                 | "language-revision"
+                | "method_table"
                 | "submethod_table"
         ) {
             return Some(Value::str(method_name.to_string()));
