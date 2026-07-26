@@ -69,6 +69,9 @@ Existing interpreter fallbacks are technical debt. When you encounter one while 
 - PRs should include: concise problem statement, approach, and test evidence (`make test` / `make roast` results).
 - Link related issues/PRs when applicable (for example, `(#150)`).
 - Ensure CI passes format, clippy, unit tests, TAP tests, and roast checks before merge.
+- When asked to open a PR, enable GitHub auto-merge after opening it unless the user explicitly
+  asks not to. Branch protection remains the merge gate, so the PR merges only after required
+  checks and reviews pass.
 
 ## External Repository Policy
 - Do not create PRs or Issues against Raku org repositories (including `roast` and `raku-doc`) from this workspace.
