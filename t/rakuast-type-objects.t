@@ -3,7 +3,7 @@ use experimental :rakuast;
 
 # RakuAST Phase 3 slice 5 (ADR-0011): registered type objects and `.WHAT`.
 
-plan 16;
+plan 24;
 
 my $literal = Q[42].AST.statements[0].expression;
 
@@ -29,3 +29,16 @@ ok RakuAST::Parameter::Slurpy::Flattened ~~ RakuAST::Parameter::Slurpy,
     'Flattened slurpy type isa its namespace parent';
 ok RakuAST::Parameter::Slurpy::Unflattened ~~ RakuAST::Parameter::Slurpy,
     'Unflattened slurpy type isa its namespace parent';
+
+ok RakuAST::IntLiteral.isa(RakuAST::Term), 'type-object .isa follows semantic hierarchy';
+ok RakuAST::Term.isa(RakuAST::Expression), 'abstract type-object .isa is transitive';
+nok RakuAST::Statement::If.isa(RakuAST::Expression),
+    'type-object .isa rejects unrelated semantic type';
+
+is RakuAST::IntLiteral.^isa(RakuAST::Term), 1, 'type-object .^isa follows semantic hierarchy';
+is RakuAST::Term.^isa(RakuAST::Expression), 1, 'abstract type-object .^isa is transitive';
+is RakuAST::Statement::If.^isa(RakuAST::Expression), 0,
+    'type-object .^isa rejects unrelated semantic type';
+
+is $literal.^isa(RakuAST::Term), 1, 'node .^isa follows semantic hierarchy';
+is $literal.^isa(RakuAST::Statement), 0, 'node .^isa rejects unrelated node type';

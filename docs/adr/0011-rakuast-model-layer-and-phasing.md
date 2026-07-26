@@ -154,6 +154,9 @@ earlier ones.
     (`IntLiteral isa Term isa Expression isa Node`). The registry rejects unknown `RakuAST::*`
     package names rather than treating the namespace prefix as sufficient. Tests in
     `t/rakuast-type-objects.t`.
+  - **Slice 6 (`.isa` / `.^isa` parity) — done.** Both ordinary and metaobject `isa` dispatch on
+    registered type objects and node values use the same namespace and semantic hierarchy as
+    smartmatch, including `IntLiteral` → `Term` → `Expression`.
 - **Phase 4 — Construction.** `.new` (and `.from-identifier`, …) on RakuAST type objects
   build `Value::RakuAst`, validating args against the per-class field schema.
   - **Slice 1 (literals) — done.** `RakuAST::IntLiteral.new(42)` / `RatLiteral.new(3.5)` /

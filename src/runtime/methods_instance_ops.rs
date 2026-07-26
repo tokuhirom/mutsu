@@ -1870,6 +1870,12 @@ impl Interpreter {
                 if pkg_name == target_name {
                     return Ok(Value::TRUE);
                 }
+                if pkg_name.starts_with("RakuAST::") && target_name.starts_with("RakuAST::") {
+                    return Ok(Value::truth(crate::rakuast::type_object_isa(
+                        &pkg_name,
+                        &target_name,
+                    )));
+                }
                 if let Some(mut base) = self
                     .registry()
                     .subsets

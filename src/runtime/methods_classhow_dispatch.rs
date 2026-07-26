@@ -273,21 +273,31 @@ impl Interpreter {
                 // boolean directly), not a Bool.
                 // Allow calling .^isa on an instance: use the instance's class.
                 let class_name = match args[0].view() {
-                    ValueView::Package(name) => name,
-                    ValueView::Instance { class_name, .. } => class_name,
+                    ValueView::Package(name) => name.resolve(),
+                    ValueView::Instance { class_name, .. } => class_name.resolve(),
+                    ValueView::RakuAst(node) => node.class.printed_name().to_string(),
                     _ => return Ok(Value::int(0)),
                 };
                 let other_name = match args[1].view() {
-                    ValueView::Package(name) => name,
-                    ValueView::Instance { class_name, .. } => class_name,
+                    ValueView::Package(name) => name.resolve(),
+                    ValueView::Instance { class_name, .. } => class_name.resolve(),
+                    ValueView::RakuAst(node) => node.class.printed_name().to_string(),
                     _ => return Ok(Value::int(0)),
                 };
                 let is_same = class_name == other_name;
                 if is_same {
                     return Ok(Value::int(1));
                 }
-                let class_resolved = class_name.resolve();
-                let other_resolved = other_name.resolve();
+                let class_resolved = class_name;
+                let other_resolved = other_name;
+                if class_resolved.starts_with("RakuAST::")
+                    && other_resolved.starts_with("RakuAST::")
+                {
+                    return Ok(Value::int(crate::rakuast::type_object_isa(
+                        &class_resolved,
+                        &other_resolved,
+                    ) as i64));
+                }
                 // Clone the base out per step so the registry read guard never spans
                 // iterations (recursive read locks may deadlock).
                 if let Some(mut base) = self
@@ -311,7 +321,7 @@ impl Interpreter {
                         base = parent_base;
                     }
                 }
-                let mro = self.class_mro(&class_name.resolve());
+                let mro = self.class_mro(&class_resolved);
                 Ok(Value::int(
                     mro.iter().any(|p| p.as_str() == other_resolved) as i64
                 ))
