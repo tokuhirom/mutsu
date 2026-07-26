@@ -1,5 +1,14 @@
 # Repository Guidelines
 
+## Repository Knowledge
+- Before planning or changing code, read `CLAUDE.md` in full. It is the repository's living
+  development knowledge base and its architecture, testing, debugging, planning, and PR workflow
+  guidance applies to Codex as well as Claude.
+- Re-read the task-relevant sections and linked ADRs or design documents before acting; do not rely
+  only on this shorter file.
+- If `AGENTS.md` and `CLAUDE.md` conflict, follow `AGENTS.md`. Adapt instructions that name
+  Claude-specific tools to the equivalent tools available in the current environment.
+
 ## Project Structure & Module Organization
 `mutsu` is a Rust-based Raku compatibility interpreter.
 
