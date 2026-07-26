@@ -5,10 +5,13 @@ impl Interpreter {
     pub(super) fn classhow_mro_names(&mut self, invocant: &Value) -> Vec<String> {
         let class_name = match invocant.view() {
             ValueView::Package(name) => name.resolve(),
+            ValueView::RakuAst(node) => node.class.printed_name().to_string(),
             ValueView::Instance { class_name, .. } => class_name.resolve(),
             _ => value_type_name(invocant).to_string(),
         };
-        let mut mro = if self.registry().classes.contains_key(&class_name) {
+        let mut mro = if let Some(mro) = crate::rakuast::type_object_mro(&class_name) {
+            mro
+        } else if self.registry().classes.contains_key(&class_name) {
             self.class_mro(&class_name)
                 .iter()
                 .map(|s| s.resolve())
