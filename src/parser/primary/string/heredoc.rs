@@ -141,12 +141,17 @@ pub(crate) fn parse_to_heredoc_with_flags<'a>(
         } else if flags.has_interpolation() || flags.words || flags.backslash {
             // Use flags-based processing for heredoc with adverbs
             process_content_with_flags(&content, flags)
-        } else if content.contains("\\qq") {
+        } else if flags.q_mode && content.contains("\\qq") {
+            // `\qq[...]` re-enables interpolation inside a `q` heredoc. `Q` has
+            // no escapes at all, so there the sequence is literal text.
             parse_single_quote_qq(&content)
-        } else {
+        } else if flags.q_mode {
             // q:heredoc processes \\ → \ (same as single-quoted strings)
             let processed = process_q_escapes(&content, '\0');
             Expr::Literal(Value::str(processed))
+        } else {
+            // `Q:to/.../` is verbatim: no interpolation, no escape processing.
+            Expr::Literal(Value::str(content))
         };
 
         // Apply word splitting if :w
