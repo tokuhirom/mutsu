@@ -189,7 +189,11 @@ earlier ones.
     boundary; the native one-argument method path performs the mutation without a tree-walking
     fallback. Constructed lists render, expose `new`/`add-statement` through introspection, and lower
     through the existing compiler under `EVAL`. Tests in `t/rakuast-construct-statement-list.t`.
-    Next: block/sub/declaration constructors.
+  - **Slice 6 (blocks) — done.** `RakuAST::Blockoid.new($statement-list)` wraps a mutable
+    `StatementList` positionally, and `RakuAST::Block.new(body => $blockoid)` builds the enclosing
+    block node. Both constructors render like Rakudo, expose their children through
+    `.statement-list` / `.body`, and advertise the constructor and accessor through
+    `.^methods(:local)`. Tests in `t/rakuast-construct-block.t`. Next: sub/declaration constructors.
 - **Phase 5 — EVAL / compilation.** `lower(RakuAstNode) -> Vec<Stmt>/Expr`, then the
   **existing** compiler. `EVAL($rakuast)` and any code that yields a RakuAST tree runs
   through this. No new execution engine.

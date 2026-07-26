@@ -1155,7 +1155,9 @@ so it is tracked separately from the roast backlog.
   - [x] Slice 5: mutable `StatementList.new` + `.add-statement`; aliases share appended children,
         and constructed lists lower through `EVAL`. Tests in
         `t/rakuast-construct-statement-list.t`.
-  - [ ] Slice 6+: block/sub/declaration constructors.
+  - [x] Slice 6: `Blockoid.new(StatementList)` and `Block.new(body => Blockoid)`, including
+        accessors and model introspection. Tests in `t/rakuast-construct-block.t`.
+  - [ ] Slice 7+: sub/declaration constructors.
 - **Phase 5 (in progress)** — EVAL: lower RakuAST → internal AST → existing compiler (no new engine).
   - [x] Slices 1–37 done (PRs #4736–#4804): literals, all common operators + ternary, the full
         control-flow set, sub declarations (typed/default/named/slurpy params) + calls + method calls,
