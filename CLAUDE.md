@@ -363,7 +363,7 @@ The `t/` TAP suite is **fatal** in CI (`prove ... t/`, no `|| echo` fallback) �
 Running the entire roast suite locally is wasteful and slow — **let CI run the full `make roast`.** Locally, run only the specific tests relevant to your change:
 
 - Run individual roast tests with `MUTSU_FUDGE=1 prove -e 'target/debug/mutsu' roast/<path>.t` (the `MUTSU_FUDGE=1` is required — see the build/run section above), or the exact files you touched / suspect regressed.
-- CI runs `make test` and `make roast` on a clean machine with the **release build** (`cargo build --release`, `MUTSU_BIN=target/release/mutsu`). Local debug builds are much slower, so a local timeout on a heavy test does not necessarily indicate a real failure — confirm with a release build (`target/release/mutsu`) before assuming a regression, and otherwise trust CI's verdict.
+- CI does not invoke `make test`; its `test` job runs the steps individually and runs the **TAP suite (`prove t/`) on the `debug` binary** (`MUTSU_BIN=target/debug/mutsu`), reserving the **release build** (`cargo build --release`, `MUTSU_BIN=target/release/mutsu`) for **`make roast`**. Local `make test` matches this — it runs `t/` on debug too (see `docs/adr/0014-make-test-runs-tap-on-debug-binary.md`); only roast uses release. Debug builds are much slower at runtime, so a local *roast* timeout on a heavy test does not necessarily indicate a real failure — confirm with a release build (`target/release/mutsu`) before assuming a regression, and otherwise trust CI's verdict.
 - Push the branch and rely on CI for the comprehensive roast result rather than running the whole suite locally.
 
 ### Use the DEBUG build to iterate on `MUTSU_VM_STATS` counters — release is for wall-clock only

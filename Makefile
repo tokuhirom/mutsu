@@ -21,9 +21,16 @@ PROVE_JOBS ?= 4
 #
 # `prove -e scripts/run-t-test.sh`: routes t/ through the same per-file timeout
 # + flaky-quarantine wrapper the roast suite uses (docs/flaky-test-policy.md).
+#
+# `MUTSU_BIN=.../debug/mutsu`: run t/ on the DEBUG binary, matching CI's TAP
+# step (ci.yml runs `prove t/` on target/debug/mutsu). The release build is
+# reserved for `make roast`. Building release here too cost ~19 min (a full
+# optimized recompile of the mutsu crate) for only a ~4 min t/ runtime saving
+# vs debug — it dominated `make test` wall-clock for no correctness gain. See
+# docs/adr/0014-make-test-runs-tap-on-debug-binary.md.
 test: check-value-wall check-flaky-list
 	@mkdir -p tmp
-	(cargo build && cargo test -- --test-threads=1 && cargo build --release && MUTSU_BIN='$(MUTSU_BIN)' MUTSU_T_TIMEOUT=60 prove -e 'scripts/run-t-test.sh' t/) 2>&1 | tee tmp/make-test.log
+	(cargo build && cargo test -- --test-threads=1 && MUTSU_BIN='$(CARGO_TARGET_DIR)/debug/mutsu' MUTSU_T_TIMEOUT=60 prove -e 'scripts/run-t-test.sh' t/) 2>&1 | tee tmp/make-test.log
 
 check-value-wall:
 	scripts/check-value-wall.sh
