@@ -1251,11 +1251,17 @@ impl Interpreter {
                 return self.type_matches_value(&resolved, value);
             }
         }
-        // For Package (type object) values, use the package name as the type
-        // so that e.g. Junction (which is Mu, not Any) is correctly rejected
-        // when the constraint is Any.
+        // Registered RakuAST type objects have their own hierarchy, including
+        // semantic ancestors (`IntLiteral` isa `Term` isa `Expression`) that
+        // cannot be derived from namespace spelling alone.
         if let ValueView::Package(package_name) = value.view() {
             let resolved = package_name.resolve();
+            if resolved.starts_with("RakuAST::") && constraint.starts_with("RakuAST::") {
+                return value.isa_check(constraint);
+            }
+            // For other Package (type object) values, use the package name as
+            // the type so that e.g. Junction (which is Mu, not Any) is correctly
+            // rejected when the constraint is Any.
             return Self::type_matches(constraint, &resolved);
         }
         let value_type = crate::runtime::value_type_name(value);

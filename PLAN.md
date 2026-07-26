@@ -1130,7 +1130,10 @@ so it is tracked separately from the roast backlog.
         `t/rakuast-leaf-accessors.t`.
   - [x] Slice 4: semantic Expression/Term hierarchy (`IntLiteral isa RakuAST::Expression`/`Term`,
         `ApplyInfix isa Expression`). Tests in `t/rakuast-semantic-hierarchy.t`.
-  - [ ] Slice 5+: registering `RakuAST::*` as first-class type objects; `.WHAT`.
+  - [x] Slice 5: registered `RakuAST::*` type objects and `.WHAT` — a node's `.WHAT` is the
+        corresponding type object, and concrete/abstract type objects participate in the same
+        namespace + semantic hierarchy under `.isa`/`~~`. Tests in `t/rakuast-type-objects.t`.
+  - [ ] Slice 6+: remaining type-object metaobject operations.
 - **Phase 4 (in progress)** — construction (`.new`).
   - [x] Slice 1: literal constructors (`RakuAST::IntLiteral.new(42)`, `StrLiteral`, `RatLiteral`).
         Tests in `t/rakuast-construct.t`.

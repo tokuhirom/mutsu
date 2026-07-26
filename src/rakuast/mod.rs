@@ -294,6 +294,150 @@ impl RakuAstClass {
     }
 }
 
+/// Whether a registered RakuAST type object is a subtype of another RakuAST
+/// type object. This mirrors [`Value::isa_check`] for node instances while also
+/// covering abstract registry entries such as `RakuAST::Node` and
+/// `RakuAST::Expression`.
+pub fn type_object_isa(actual: &str, expected: &str) -> bool {
+    if !is_registered_type_object(actual) || !is_registered_type_object(expected) {
+        return false;
+    }
+    if actual == expected || expected == "RakuAST::Node" {
+        return true;
+    }
+    if let Some(rest) = actual.strip_prefix(expected)
+        && rest.starts_with("::")
+    {
+        return true;
+    }
+    match expected {
+        "RakuAST::Expression" => {
+            actual == "RakuAST::Term" || semantic_type_object_ancestors(actual).contains(&expected)
+        }
+        "RakuAST::Term" => semantic_type_object_ancestors(actual).contains(&expected),
+        _ => false,
+    }
+}
+
+fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
+    const TERM: &[&str] = &["RakuAST::Term", "RakuAST::Expression"];
+    const EXPR: &[&str] = &["RakuAST::Expression"];
+    match class_name {
+        "RakuAST::IntLiteral"
+        | "RakuAST::RatLiteral"
+        | "RakuAST::StrLiteral"
+        | "RakuAST::QuotedString"
+        | "RakuAST::Var::Lexical"
+        | "RakuAST::Term::Reduce"
+        | "RakuAST::Sub"
+        | "RakuAST::Block"
+        | "RakuAST::PointyBlock"
+        | "RakuAST::Call::Name"
+        | "RakuAST::Call::Name::WithoutParentheses" => TERM,
+        "RakuAST::ApplyInfix"
+        | "RakuAST::ApplyPrefix"
+        | "RakuAST::ApplyPostfix"
+        | "RakuAST::ApplyListInfix"
+        | "RakuAST::Ternary" => EXPR,
+        _ => &[],
+    }
+}
+
+fn is_registered_type_object(class_name: &str) -> bool {
+    if matches!(
+        class_name,
+        "RakuAST::Node"
+            | "RakuAST::Expression"
+            | "RakuAST::Term"
+            | "RakuAST::Statement"
+            | "RakuAST::Call"
+            | "RakuAST::Var"
+            | "RakuAST::VarDeclaration"
+            | "RakuAST::Initializer"
+            | "RakuAST::Type"
+            | "RakuAST::Trait"
+            | "RakuAST::ParameterTarget"
+            | "RakuAST::Postcircumfix"
+            | "RakuAST::Circumfix"
+            | "RakuAST::StatementPrefix"
+            | "RakuAST::MetaPostfix"
+    ) {
+        return true;
+    }
+    RAKUAST_CLASSES
+        .iter()
+        .any(|class| class.printed_name() == class_name)
+}
+
+const RAKUAST_CLASSES: &[RakuAstClass] = &[
+    RakuAstClass::StatementList,
+    RakuAstClass::StatementExpression,
+    RakuAstClass::IntLiteral,
+    RakuAstClass::RatLiteral,
+    RakuAstClass::StrLiteral,
+    RakuAstClass::QuotedString,
+    RakuAstClass::CallName,
+    RakuAstClass::CallNameWithoutParentheses,
+    RakuAstClass::Name,
+    RakuAstClass::ArgList,
+    RakuAstClass::VarLexical,
+    RakuAstClass::VarDeclarationSimple,
+    RakuAstClass::InitializerAssign,
+    RakuAstClass::ApplyInfix,
+    RakuAstClass::Infix,
+    RakuAstClass::ApplyPrefix,
+    RakuAstClass::Prefix,
+    RakuAstClass::ApplyPostfix,
+    RakuAstClass::Postfix,
+    RakuAstClass::Assignment,
+    RakuAstClass::CallMethod,
+    RakuAstClass::CallQuotedMethod,
+    RakuAstClass::MetaPostfixHyper,
+    RakuAstClass::Block,
+    RakuAstClass::Blockoid,
+    RakuAstClass::PointyBlock,
+    RakuAstClass::Signature,
+    RakuAstClass::Parameter,
+    RakuAstClass::ParameterTargetVar,
+    RakuAstClass::StatementIf,
+    RakuAstClass::StatementLoopWhile,
+    RakuAstClass::StatementLoop,
+    RakuAstClass::StatementElsif,
+    RakuAstClass::StatementFor,
+    RakuAstClass::Sub,
+    RakuAstClass::TypeSetting,
+    RakuAstClass::StatementLoopRepeatWhile,
+    RakuAstClass::ApplyListInfix,
+    RakuAstClass::TypeSimple,
+    RakuAstClass::TypeDefinedness,
+    RakuAstClass::TraitWillBuild,
+    RakuAstClass::TypeParameterized,
+    RakuAstClass::TypeCoercion,
+    RakuAstClass::Class,
+    RakuAstClass::Method,
+    RakuAstClass::Role,
+    RakuAstClass::RoleBody,
+    RakuAstClass::Label,
+    RakuAstClass::StatementGiven,
+    RakuAstClass::StatementWhen,
+    RakuAstClass::StatementDefault,
+    RakuAstClass::Ternary,
+    RakuAstClass::SemiList,
+    RakuAstClass::PostcircumfixArrayIndex,
+    RakuAstClass::TermReduce,
+    RakuAstClass::TermEnum,
+    RakuAstClass::CircumfixParentheses,
+    RakuAstClass::ParameterSlurpyFlattened,
+    RakuAstClass::ParameterSlurpyUnflattened,
+    RakuAstClass::CircumfixArrayComposer,
+    RakuAstClass::TermWhatever,
+    RakuAstClass::FatArrow,
+    RakuAstClass::StatementPrefixDo,
+    RakuAstClass::StatementPrefixTry,
+    RakuAstClass::StatementPrefixGather,
+    RakuAstClass::CallTerm,
+];
+
 /// Entry point for `Str.AST`: parse the source, convert, wrap in `Value::RakuAst`.
 pub fn str_dot_ast(source: &str) -> Result<Value, RuntimeError> {
     let (stmts, _finish) = crate::parse_dispatch::parse_source(source)?;
