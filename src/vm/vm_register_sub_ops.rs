@@ -43,7 +43,7 @@ impl Interpreter {
                 .map(|l| l as u32)
                 .or_else(|| self.current_source_line());
             let val = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
-                package: Symbol::intern(&self.current_package()),
+                package: Symbol::intern(&self.lexical_closure_package()),
                 name: Symbol::intern(""),
                 params: params.clone(),
                 param_defs: param_defs.clone(),
@@ -93,7 +93,7 @@ impl Interpreter {
                 .map(|l| l as u32)
                 .or_else(|| self.current_source_line());
             let val = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
-                package: Symbol::intern(&self.current_package()),
+                package: Symbol::intern(&self.lexical_closure_package()),
                 name: Symbol::intern(""),
                 params: vec![],
                 param_defs: Vec::new(),
