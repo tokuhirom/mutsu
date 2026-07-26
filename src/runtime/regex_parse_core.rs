@@ -126,6 +126,19 @@ fn scan_angle_assertion_body(rest: &[char], honor_quotes: bool) -> AngleBodyScan
     }
 }
 
+/// True when `s` (the text after the `?`/`!` prefix of a `<?…>` / `<!…>`
+/// assertion) names a subrule that a general zero-width lookahead can wrap: an
+/// identifier-led rule name, optionally prefixed with `.` for a non-capturing
+/// call (`<?.foo>`). Excludes the special forms already handled elsewhere —
+/// char classes (`[`), code blocks (`{`), Unicode props (`:`), variables
+/// (`$`/`@`), and empty bodies — so those never fall through to a subrule call.
+fn is_subrule_lookahead_name(s: &str) -> bool {
+    let s = s.strip_prefix('.').unwrap_or(s);
+    s.chars()
+        .next()
+        .is_some_and(|c| c.is_alphabetic() || c == '_')
+}
+
 impl Interpreter {
     /// Build the alternation atom for a `<@var>` array-variable subrule: look up
     /// the array variable named by `env_key` (including its `@` sigil) and
@@ -160,6 +173,45 @@ impl Interpreter {
             try_collapse_alternation_to_charclass(&alt_patterns)
                 .unwrap_or(RegexAtom::Alternation(alt_patterns)),
         )
+    }
+
+    /// Build a zero-width lookahead assertion wrapping a *named subrule* call:
+    /// `<?subrule>` / `<!subrule>`. The `subrule` string is the bare name (with
+    /// any args and an optional leading `.` for a non-capturing call) after the
+    /// `?`/`!` prefix has been stripped. This is the general twin of the special
+    /// `<?before ...>` / `<?[...]>` / `<?alpha>` forms: any other `<?name>` /
+    /// `<!name>` where `name` names a subrule is a zero-width assertion that the
+    /// subrule matches (or, negated, fails) at the current position. YAMLish's
+    /// grammar relies on it (`'-' <?break>` in `list-entry`).
+    fn subrule_lookaround_atom(
+        &self,
+        subrule: &str,
+        negated: bool,
+        ignore_case: bool,
+        ignore_mark: bool,
+    ) -> RegexAtom {
+        let inner_pattern = RegexPattern {
+            tokens: vec![RegexToken {
+                atom: RegexAtom::Named(subrule.to_string()),
+                quant: RegexQuant::One,
+                named_capture: None,
+                hash_capture: None,
+                secondary_named_capture: None,
+                force_list_capture: false,
+                ratchet: false,
+                frugal: false,
+                separator: None,
+            }],
+            anchor_start: false,
+            anchor_end: false,
+            ignore_case,
+            ignore_mark,
+        };
+        RegexAtom::Lookaround {
+            pattern: inner_pattern,
+            negated,
+            is_behind: false,
+        }
     }
 
     /// Owned-`RegexPattern` parse used by the parser's own recursion (sub-pattern
@@ -2105,7 +2157,18 @@ impl Interpreter {
                                                 | "ws"
                                                 | "ident"
                                         );
-                                        if is_known {
+                                        if !is_known && is_subrule_lookahead_name(negated_name) {
+                                            // <!subrule> — general zero-width *negative*
+                                            // lookahead of a named subrule (the twin of the
+                                            // positive `<?subrule>` below): assert the subrule
+                                            // does NOT match at the current position.
+                                            self.subrule_lookaround_atom(
+                                                negated_name,
+                                                true,
+                                                ignore_case,
+                                                ignore_mark,
+                                            )
+                                        } else if is_known {
                                             let inner_atom = if clean_name == "ident" {
                                                 RegexAtom::Group(RegexPattern {
                                                     tokens: vec![
@@ -2482,6 +2545,19 @@ impl Interpreter {
                                     } else {
                                         RegexAtom::Named(name)
                                     }
+                                } else if let Some(sub) = trimmed
+                                    .strip_prefix('?')
+                                    .filter(|s| is_subrule_lookahead_name(s))
+                                {
+                                    // <?subrule> — general zero-width positive lookahead of a
+                                    // named subrule (the twin of `<?before …>`/`<?alpha>` for
+                                    // any other rule name, e.g. YAMLish's `<?break>`).
+                                    self.subrule_lookaround_atom(
+                                        sub,
+                                        false,
+                                        ignore_case,
+                                        ignore_mark,
+                                    )
                                 } else {
                                     // Strip dot prefix for non-capturing named calls
                                     // <.alpha> is the same as <alpha> but without named capture
