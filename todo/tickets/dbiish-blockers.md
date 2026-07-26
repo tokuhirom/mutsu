@@ -30,7 +30,7 @@ mutsu $INC t/45-sqlite-common.rakutest
 `raku $INC …` passes one giant argument and every file "fails" under raku too —
 a bogus baseline that wastes a session.
 
-## Status: mutsu 6/9 (raku parity on 6 of the 9)
+## Status: mutsu 7/9 (raku parity on 7 of the 9)
 
 Re-measured **2026-07-26** with `tmp/dbiish-survey.sh` (in this repo's `tmp/`,
 recreate it from the recipe above), debug build, both interpreters on the same
@@ -45,14 +45,14 @@ recreate it from the recipe above), debug build, both interpreters on the same
 | `45-sqlite-common` | 1 fail of 109* | **PASS 109/109** | — |
 | `03-lib-util` | 1 fail of 5* | 1 fail of 5* | — (same subtest as raku) |
 | `01-basic` | PASS 35/35 | 3 fail of 18 run | ⑧ a second `require ::($m)` of a driver loses `NativeLibs`' exports |
-| `05-mock` | PASS 16/16 | 1 fail of 16 | ④b `IterationEnd` from a row fetch (test 12) |
+| `05-mock` | PASS 16/16 | **PASS 16/16** | — |
 | `06-types` | PASS 12/12 | 2 fail of 3 run | ⑤ `Int is builtin` / `So not defined`; mutsu suggests `Did you mean 'invert'?` |
 
 \* Those raku failures are `# TODO`-marked and environment-dependent, not bugs:
 `03-lib-util` test 5 fails on both because `libpq` is not installed on the survey
 machine, and `44-`/`45-` test 52 is a `rows()` capability check raku itself marks
 `# TODO`. mutsu passes test 52. The achievable target is raku parity, not
-109/109 — six files are now there.
+109/109 — seven files are now there.
 
 **Nothing fails inside NativeCall**: the surface `OpenSSL` needs (CStruct,
 opaque pointers, callbacks) is strictly harder than SQLite's, and it is holding.
@@ -146,7 +146,7 @@ say "7-keys    : ", $*VM.config.keys.sort.join(',');
 | `4a-control` | `HASH\|x\|y` | `HASH\|x\|y` |
 | `4a-bare` | `HASH\|x\|y` | `HASH\|x\|y` (fixed) |
 | `4b-isa` | `Seq` | `Seq` |
-| `4b-pullone` | `["a", "b", 1]` | **`"IterationEnd"`** |
+| `4b-pullone` | `["a", "b", 1]` | `["a", "b", 1]` (fixed) |
 | `3-mtable` | `True` | `True` (fixed) |
 | `7-nc-back` | `"dyncall"` | `"libffi"` (fixed) |
 | `7-keys` | ~200 keys | `be,name,nativecall_backend` |
@@ -160,21 +160,19 @@ space-separated adverb, but both shared one continuation loop that kept
 consuming `, next`. Fixed — see
 [`news/2026-07/method-table-and-hash-composer-parse.md`](../../news/2026-07/method-table-and-hash-composer-parse.md).
 
-### ④b `pull-one` on a hand-obtained iterator yields the `IterationEnd` sentinel
+### ④b `pull-one` on a hand-obtained iterator yielded the `IterationEnd` sentinel — FIXED
 
-Three lines of `gather`/`take` reproduce it: `a.iterator.pull-one` answers the
-string `IterationEnd` instead of the first element. This is `05-mock` test 12.
+It was specific to a **lazy, not-yet-materialised** source.
+`(1,2,3).Seq.iterator.pull-one`, `@a.iterator.pull-one` and
+`(1..3).map(*+1).iterator.pull-one` were all correct; only `gather`/`take`
+failed, and forcing it first (`$s.elems; $s.iterator.pull-one`) made it correct
+too. `build_iterator_instance` snapshotted `value_to_list(target)` into an
+`items` array — for an unforced gather that prefix is empty, so
+`runtime/iterator_protocol.rs` stepped straight past the end.
 
-Reduced further 2026-07-26: it is specific to a **lazy, not-yet-materialised**
-source. `(1,2,3).Seq.iterator.pull-one`, `@a.iterator.pull-one` and
-`(1..3).map(*+1).iterator.pull-one` are all correct; only `gather`/`take` fails,
-and forcing it first (`$s.elems; $s.iterator.pull-one`) makes it correct too. The
-cause is that `builtins::iterator_construct::build_iterator_instance` snapshots
-`value_to_list(target)` into an `items` array — for a lazy gather that prefix is
-empty, so `runtime/iterator_protocol.rs` steps straight past the end. The real
-fix is an `Iterator` that pulls from its source on demand rather than from a
-materialised prefix; eagerly forcing the source instead would hang on an
-infinite lazy list.
+Fixed — the `Iterator` keeps its lazy source and the protocol methods pull from
+it, bounded by what the call needs, so an infinite source stays lazy. See
+[`news/2026-07/iterator-pulls-from-its-lazy-source.md`](../../news/2026-07/iterator-pulls-from-its-lazy-source.md).
 
 ### ③ `.^method_table` — FIXED
 
@@ -275,14 +273,12 @@ the adverbs away outright.
 
 ## Suggested order for the next session
 
-⑦, ③ and ④a are done. What is left, cheapest first; none depends on another:
+⑦, ③, ④a and ④b are done, which takes `05-mock` to raku parity (16/16). Two
+left; neither depends on the other:
 
-1. **④b** — the `IterationEnd` leak, now reduced to "a lazy source hands the
-   `Iterator` an empty materialised prefix". Needs a pull-on-demand `Iterator`,
-   so it is a real slice, not a one-liner.
-2. **⑧** — a repeat `require ::($m)` losing `NativeLibs`' re-exports. Related
+1. **⑧** — a repeat `require ::($m)` losing `NativeLibs`' re-exports. Related
    registry-rewind bugs have been fixed twice before, so there is a model.
-3. **⑤** — the largest: an object hash keyed by type objects, plus `handles`
+2. **⑤** — the largest: an object hash keyed by type objects, plus `handles`
    delegation from a private attribute. Confirm which of the five features listed
    above is actually missing before scoping it.
 

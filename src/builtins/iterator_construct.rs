@@ -61,6 +61,14 @@ pub(crate) fn build_iterator_instance(target: &Value) -> Value {
     attrs.insert("index".to_string(), Value::int(0));
     if lazy {
         attrs.insert("is_lazy".to_string(), Value::TRUE);
+        // `items` above is only whatever prefix the source has produced so far —
+        // for a `gather` that has never been forced, nothing at all. Keep the
+        // source so the protocol methods can pull more on demand instead of
+        // reporting the sentinel as though it were exhausted (see
+        // `Interpreter::iterator_topup_from_lazy_source`).
+        if matches!(target.view(), ValueView::LazyList(_)) {
+            attrs.insert("lazy_source".to_string(), target.clone());
+        }
     }
     if let Some(count) = known_count {
         attrs.insert("known_count".to_string(), count);
