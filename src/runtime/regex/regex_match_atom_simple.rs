@@ -333,7 +333,7 @@ impl Interpreter {
             RegexAtom::CaptureStartMarker | RegexAtom::CaptureEndMarker => {
                 return Some(pos);
             }
-            RegexAtom::Backref(_) | RegexAtom::NamedBackref(_) => {
+            RegexAtom::Backref(_) | RegexAtom::NamedBackref(_) | RegexAtom::VarInterp(_) => {
                 return None;
             }
             RegexAtom::Lookaround {
@@ -690,6 +690,7 @@ impl Interpreter {
             | RegexAtom::CaptureEndMarker
             | RegexAtom::Backref(_)
             | RegexAtom::NamedBackref(_)
+            | RegexAtom::VarInterp(_)
             | RegexAtom::VarDecl { .. }
             | RegexAtom::ClosureInterpolation { .. }
             | RegexAtom::LeftWordBoundary

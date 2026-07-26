@@ -381,6 +381,37 @@ impl Interpreter {
                 }
                 return None;
             }
+            RegexAtom::VarInterp(name) => {
+                // Read the in-regex `:my $name …` lexical from the running
+                // `regex_vars` (set by an earlier `VarDecl` / code block), falling
+                // back to the outer env, and match its string value literally. An
+                // undefined value matches nothing (zero-width, like an empty
+                // literal) rather than failing.
+                let val = current_caps
+                    .regex_vars
+                    .get(name.as_str())
+                    .or_else(|| current_caps.regex_vars.get(&format!("${name}")))
+                    .cloned()
+                    .or_else(|| self.env.get(name).cloned())
+                    .or_else(|| self.env.get(&format!("${name}")).cloned());
+                // An undefined value (Nil or a bare type object) interpolates as
+                // the empty string — a zero-width match — rather than its
+                // `.gist`; a defined value matches its string form literally.
+                let ref_text = match val {
+                    Some(v) => match v.view() {
+                        ValueView::Nil | ValueView::Package(_) => String::new(),
+                        _ => v.to_string_value(),
+                    },
+                    None => String::new(),
+                };
+                let ref_chars: Vec<char> = ref_text.chars().collect();
+                if pos + ref_chars.len() <= chars.len()
+                    && chars[pos..pos + ref_chars.len()] == ref_chars[..]
+                {
+                    return Some((pos + ref_chars.len(), RegexCaptures::default()));
+                }
+                return None;
+            }
             RegexAtom::VarDecl { code } => {
                 let source = format!("{};", code);
                 if let Ok((stmts, _)) = crate::parse_dispatch::parse_source(&source) {

@@ -129,6 +129,14 @@ impl Interpreter {
         let chars: Vec<char> = pattern.chars().collect();
         let mut out = String::new();
         let mut i = 0usize;
+        // Scalar names introduced by an in-pattern `:my $v …` / `:let $v …`. A
+        // later bare `$v` must NOT be pre-substituted from the outer `env` here —
+        // its value is a *match-time* lexical (often set by a code block), so it
+        // is left verbatim for the structural parser to lower to a `VarInterp`
+        // atom (read from `caps.regex_vars` while matching). Tracked
+        // left-to-right; a `:my` always precedes its uses.
+        let mut declared_my_vars: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
         while i < chars.len() {
             let ch = chars[i];
             // # starts a comment — skip without interpolation.
@@ -194,12 +202,23 @@ impl Interpreter {
                     || rest.starts_with("let ")
                     || rest.starts_with("temp ")
                 {
+                    let decl_start = i;
                     while i < chars.len() {
                         let c = chars[i];
                         out.push(c);
                         i += 1;
                         if c == ';' {
                             break;
+                        }
+                    }
+                    // Record the scalar names this declaration introduces so a
+                    // later bare `$name` is preserved for match-time interpolation
+                    // (only `:my`/`:let` introduce a fresh regex-local lexical;
+                    // `:our`/`:constant`/`:temp` refer to existing storage).
+                    if rest.starts_with("my ") || rest.starts_with("let ") {
+                        let decl: String = chars[decl_start..i].iter().collect();
+                        for name in super::regex_parse_core::scalar_names_in_decl(&decl) {
+                            declared_my_vars.insert(name);
                         }
                     }
                     continue;
@@ -321,6 +340,13 @@ impl Interpreter {
                             continue;
                         }
                         let name: String = chars[name_start..j].iter().collect();
+                        // A `:my`-declared regex-local var: leave `${name}`
+                        // verbatim for the parser's match-time `VarInterp` lowering.
+                        if declared_my_vars.contains(&name) {
+                            out.extend(chars[i..=j].iter());
+                            i = j + 1;
+                            continue;
+                        }
                         let value = self
                             .env
                             .get(&name)
@@ -370,6 +396,14 @@ impl Interpreter {
                         continue;
                     }
                     let name: String = chars[name_start..j].iter().collect();
+                    // A `:my`-declared regex-local var: leave `$name` verbatim so
+                    // the structural parser lowers it to a match-time `VarInterp`
+                    // atom instead of pre-substituting an outer-scope value here.
+                    if declared_my_vars.contains(&name) {
+                        out.extend(chars[i..j].iter());
+                        i = j;
+                        continue;
+                    }
                     // Reduce-time dyn-var overlay: a `$*` var written by a grammar
                     // action mid-parse takes precedence over `self.env` so the next
                     // subrule matches with the updated value (see REGEX_DYNVAR_OVERLAY).

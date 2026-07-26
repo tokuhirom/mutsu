@@ -139,6 +139,41 @@ fn is_subrule_lookahead_name(s: &str) -> bool {
         .is_some_and(|c| c.is_alphabetic() || c == '_')
 }
 
+/// Extract the scalar variable names introduced by an in-regex declaration such
+/// as `my $x = ''`, `my $new-indent`, or `my ($a, $b)`. Returns the bare names
+/// without the `$` sigil (`x`, `new-indent`, `a`, `b`). Only `$`-sigil names are
+/// collected — `@`/`%` interpolations are not handled as literal backreferences.
+pub(super) fn scalar_names_in_decl(code: &str) -> Vec<String> {
+    let chars: Vec<char> = code.chars().collect();
+    let mut names = Vec::new();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '$' {
+            let mut j = i + 1;
+            let start = j;
+            while j < chars.len() {
+                let ch = chars[j];
+                let kebab = ch == '-'
+                    && chars
+                        .get(j + 1)
+                        .is_some_and(|n| n.is_alphabetic() || *n == '_');
+                if ch.is_alphanumeric() || ch == '_' || kebab {
+                    j += 1;
+                } else {
+                    break;
+                }
+            }
+            if j > start {
+                names.push(chars[start..j].iter().collect());
+            }
+            i = j;
+        } else {
+            i += 1;
+        }
+    }
+    names
+}
+
 impl Interpreter {
     /// Build the alternation atom for a `<@var>` array-variable subrule: look up
     /// the array variable named by `env_key` (including its `@` sigil) and
@@ -625,6 +660,13 @@ impl Interpreter {
         let mut pending_named_capture_is_array = false;
         let mut pending_builtin_named_capture: Option<String> = None;
         let mut pending_hash_capture: Option<String> = None;
+        // Scalar names declared by an in-regex `:my $v …` / `:let $v …`. A bare
+        // `$v` later in the same pattern is then a *match-time* interpolation of
+        // that lexical (read from `caps.regex_vars`), NOT a pre-substituted
+        // outer variable — the `:my` value is only known while matching. Tracked
+        // left-to-right; a `:my` always precedes its uses (Raku scoping).
+        let mut declared_regex_vars: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
         while let Some(c) = chars.next() {
             // In Raku, unescaped whitespace in regex is insignificant
             if c.is_whitespace() {
@@ -827,6 +869,51 @@ impl Interpreter {
                     separator: None,
                 });
                 continue;
+            }
+            // Bare `$name` interpolating an in-regex `:my $name …` lexical: a
+            // match-time interpolation of that variable's string value as a
+            // literal (Raku semantics). Pre-substitution from `env`
+            // (`interpolate_bound_regex_scalars`) can't do this — the value is
+            // only set while matching (often by a code block), so it is read from
+            // `caps.regex_vars` at match time via the `VarInterp` atom. Only fires
+            // for names this pattern declared with `:my`/`:let` (tracked above);
+            // outer-scope `$var` still goes through pre-substitution.
+            if mode == RegexParseMode::Match
+                && c == '$'
+                && chars
+                    .peek()
+                    .is_some_and(|ch| ch.is_alphabetic() || *ch == '_')
+            {
+                let mut probe = chars.clone();
+                let mut var_name = String::new();
+                while let Some(&ch) = probe.peek() {
+                    let kebab = ch == '-' && {
+                        let mut after = probe.clone();
+                        after.next();
+                        after.peek().is_some_and(|n| n.is_alphabetic() || *n == '_')
+                    };
+                    if ch.is_alphanumeric() || ch == '_' || kebab {
+                        var_name.push(ch);
+                        probe.next();
+                    } else {
+                        break;
+                    }
+                }
+                if declared_regex_vars.contains(&var_name) {
+                    chars = probe;
+                    tokens.push(RegexToken {
+                        atom: RegexAtom::VarInterp(var_name),
+                        quant: RegexQuant::One,
+                        named_capture: pending_named_capture.take(),
+                        hash_capture: None,
+                        secondary_named_capture: None,
+                        force_list_capture: false,
+                        ratchet,
+                        frugal: false,
+                        separator: None,
+                    });
+                    continue;
+                }
             }
             // `@<name>=(...)` — array capture alias. Behaves like the scalar
             // `$<name>=` alias (routes the following atom's capture to `name`),
@@ -1067,6 +1154,12 @@ impl Interpreter {
                             break;
                         }
                         decl_code.push(ch);
+                    }
+                    // Record each scalar name this declaration introduces so a
+                    // later bare `$name` becomes a match-time interpolation of the
+                    // regex-local lexical rather than an outer-scope substitution.
+                    for name in scalar_names_in_decl(&decl_code) {
+                        declared_regex_vars.insert(name);
                     }
                     tokens.push(RegexToken {
                         atom: RegexAtom::VarDecl { code: decl_code },
