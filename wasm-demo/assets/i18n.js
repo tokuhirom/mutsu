@@ -11,6 +11,7 @@ export const LANGS = ['en', 'ja'];
 const STRINGS = {
   en: {
     'nav.home': 'Home',
+    'nav.manual': 'Manual',
     'nav.tutorial': 'Tutorial',
     'nav.playground': 'Playground',
     'nav.repl': 'REPL',
@@ -105,6 +106,7 @@ const STRINGS = {
   },
   ja: {
     'nav.home': 'ホーム',
+    'nav.manual': 'マニュアル',
     'nav.tutorial': 'チュートリアル',
     'nav.playground': 'プレイグラウンド',
     'nav.repl': 'REPL',
@@ -240,6 +242,7 @@ export function langHref(path) {
 
 const NAV = [
   { key: 'nav.home', href: 'index.html', page: 'home' },
+  { key: 'nav.manual', href: 'manual.html', page: 'manual' },
   { key: 'nav.tutorial', href: 'tutorial.html', page: 'tutorial' },
   { key: 'nav.playground', href: 'playground.html', page: 'playground' },
   { key: 'nav.repl', href: 'repl.html', page: 'repl' },

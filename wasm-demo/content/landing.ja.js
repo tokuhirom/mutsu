@@ -115,6 +115,14 @@ export default {
         cta: 'REPL へ →',
       },
       {
+        title: '手元で動かす',
+        body: 'マニュアルです。インストール、コマンドライン、モジュールの探索場所、' +
+          '同梱パッケージマネージャ <code>mzef</code>、そして Raku 互換性が' +
+          'どこまで来ているかを正直に。',
+        href: 'manual.html',
+        cta: 'マニュアルを読む →',
+      },
+      {
         title: '同梱されているものを見る',
         body: 'mutsu はバッテリー同梱です。TLS や HTTP などがバイナリと一緒に同梱されていて、' +
           '<code>zef install</code> なしで素の <code>use</code> がすぐ動きます。' +

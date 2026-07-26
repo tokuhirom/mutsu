@@ -754,3 +754,75 @@ details.expected pre {
 @media (max-width: 640px) {
   .bat-meta-key { min-width: 100%; }
 }
+
+/* ------------------------------------------------------------------ *
+ * Manual page
+ * ------------------------------------------------------------------ */
+
+.manual { min-width: 0; }
+.manual > h1 { font-size: 1.7rem; margin: 0.25rem 0 0.6rem; }
+.manual > .page-intro { max-width: 52rem; margin-bottom: 1.6rem; }
+
+.manual-section { scroll-margin-top: 4.2rem; margin-bottom: 2.2rem; }
+.manual-section > h2 {
+  font-size: 1.25rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.8rem;
+}
+.manual-section > h2 a { color: var(--text); text-decoration: none; }
+.manual-section > h2 a:hover { color: var(--pink); }
+
+.manual-body { max-width: 52rem; }
+.manual-body h3 {
+  font-size: 1rem;
+  color: var(--syn-type);
+  margin: 1.3rem 0 0.5rem;
+}
+.manual-body p { margin: 0.6rem 0; }
+.manual-body ul, .manual-body ol { margin: 0.6rem 0 0.6rem 1.4rem; }
+.manual-body li { margin: 0.3rem 0; }
+.manual-body strong { color: var(--text); }
+.manual-body code {
+  font-family: var(--mono);
+  font-size: 0.86em;
+  background: var(--console-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  padding: 0.05rem 0.3rem;
+  color: var(--syn-string);
+}
+.manual-body pre {
+  background: var(--console-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.7rem 0.9rem;
+  margin: 0.7rem 0;
+  overflow-x: auto;
+}
+.manual-body pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text);
+  font-size: 0.84rem;
+  line-height: 1.55;
+  white-space: pre;
+}
+.manual-body .manual-note {
+  border-left: 2px solid var(--pink);
+  padding-left: 0.8rem;
+  color: var(--dim);
+  font-size: 0.9rem;
+}
+
+/* Option / environment-variable reference tables. The first column is the
+   flag, so it must not wrap mid-token; the description takes the rest. */
+.opt-table { width: 100%; border-collapse: collapse; margin: 0.8rem 0; display: block; overflow-x: auto; }
+.opt-table td {
+  border-top: 1px solid var(--border);
+  padding: 0.45rem 0.7rem 0.45rem 0;
+  font-size: 0.9rem;
+  vertical-align: baseline;
+}
+.opt-table td:first-child { white-space: nowrap; padding-right: 1.1rem; }

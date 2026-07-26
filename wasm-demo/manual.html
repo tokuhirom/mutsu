@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Manual — mutsu</title>
+<meta name="description" content="The mutsu manual: installing the interpreter, the command-line options, the module search path, the bundled mzef package manager, the bundled libraries, and how compatible mutsu is with Rakudo.">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+
+<nav class="site-nav"></nav>
+
+<div class="tutorial-layout">
+  <aside class="toc">
+    <p class="toc-intro" id="toc-intro"></p>
+    <h2 id="toc-title"></h2>
+    <div id="toc-body"></div>
+  </aside>
+
+  <main class="manual">
+    <h1 id="manual-title"></h1>
+    <p class="page-intro" id="manual-intro"></p>
+    <div id="manual-body"></div>
+  </main>
+</div>
+
+<footer class="site-footer"></footer>
+
+<script type="module">
+import { renderChrome, currentLang } from './assets/i18n.js';
+
+import manualEn from './content/manual.en.js';
+import manualJa from './content/manual.ja.js';
+
+const TEXT = { en: manualEn, ja: manualJa };
+
+/* The compatibility section quotes the roast figure. pages.yml writes
+   content/stats.json at deploy time by counting roast-whitelist.txt against
+   roast/, exactly as the landing page does, so the number on this page cannot
+   drift away from the suite. These values are the fallback for a local
+   checkout, where that file does not exist. */
+let STATS = { roastPass: 1432, roastTotal: 1464 };
+
+function fillStats(html) {
+  const pct = (100 * STATS.roastPass / STATS.roastTotal).toFixed(1);
+  const fmt = new Intl.NumberFormat(currentLang() === 'ja' ? 'ja' : 'en');
+  return html
+    .replaceAll('{roastPass}', fmt.format(STATS.roastPass))
+    .replaceAll('{roastTotal}', fmt.format(STATS.roastTotal))
+    .replaceAll('{roastPct}', pct);
+}
+
+const bodyEl = document.getElementById('manual-body');
+const tocEl = document.getElementById('toc-body');
+
+function paint() {
+  const T = TEXT[currentLang()];
+
+  document.title = `${T.title} — mutsu`;
+  document.getElementById('manual-title').textContent = T.title;
+  // Prose comes from the content modules in this repository, never user input.
+  document.getElementById('manual-intro').innerHTML = T.intro;
+  document.getElementById('toc-intro').textContent = T.tocIntro;
+  document.getElementById('toc-title').textContent = T.tocTitle;
+
+  bodyEl.textContent = '';
+  tocEl.textContent = '';
+
+  T.sections.forEach((section, i) => {
+    const el = document.createElement('section');
+    el.className = 'manual-section';
+    el.id = section.id;
+
+    const h = document.createElement('h2');
+    // A self-link, so a reader can hand someone the exact section.
+    const anchor = document.createElement('a');
+    anchor.href = `#${section.id}`;
+    anchor.textContent = section.title;
+    h.appendChild(anchor);
+
+    const body = document.createElement('div');
+    body.className = 'manual-body';
+    body.innerHTML = fillStats(section.body);
+
+    el.append(h, body);
+    bodyEl.appendChild(el);
+
+    const link = document.createElement('a');
+    link.className = 'lesson-link';
+    link.href = `#${section.id}`;
+    link.dataset.section = section.id;
+    link.textContent = `${i + 1}. ${section.title}`;
+    tocEl.appendChild(link);
+  });
+
+  markCurrentSection();
+}
+
+/* ---- which section am I reading? --------------------------------- */
+
+/**
+ * Mark the last section whose heading has scrolled past the top of the
+ * viewport — the one the reader is actually inside. (An IntersectionObserver
+ * marks the *first* section still touching the viewport, which is the previous
+ * one's tail whenever a heading sits at the top of the screen.)
+ */
+function markCurrentSection() {
+  const sections = [...bodyEl.querySelectorAll('.manual-section')];
+  let current = sections[0];
+  for (const el of sections) {
+    if (el.getBoundingClientRect().top <= 90) current = el;
+  }
+  // The last section can never reach the top of the viewport, so at the end of
+  // the page mark it regardless — otherwise it is unreachable in the contents.
+  const atBottom = window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 4;
+  if (atBottom) current = sections[sections.length - 1] ?? current;
+  for (const link of tocEl.querySelectorAll('.lesson-link')) {
+    if (link.dataset.section === current?.id) link.setAttribute('aria-current', 'true');
+    else link.removeAttribute('aria-current');
+  }
+}
+
+let scrollQueued = false;
+window.addEventListener('scroll', () => {
+  if (scrollQueued) return;
+  scrollQueued = true;
+  requestAnimationFrame(() => { scrollQueued = false; markCurrentSection(); });
+}, { passive: true });
+
+renderChrome('manual');
+paint();
+window.addEventListener('langchange', () => {
+  paint();
+  // Keep the reader where they were: the ids are shared across languages.
+  if (location.hash) document.querySelector(location.hash)?.scrollIntoView();
+});
+
+async function loadStats() {
+  try {
+    const res = await fetch('content/stats.json');
+    if (!res.ok) return;                       // not deployed: keep the fallback
+    const s = await res.json();
+    if (s.roastPass > 0 && s.roastTotal > 0) {
+      STATS = s;
+      paint();
+    }
+  } catch { /* absent or unparsable: keep the fallback */ }
+}
+
+await loadStats();
+if (location.hash) document.querySelector(location.hash)?.scrollIntoView();
+document.body.dataset.ready = '1';
+</script>
+
+</body>
+</html>
