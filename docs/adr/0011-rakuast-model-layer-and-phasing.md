@@ -182,9 +182,14 @@ earlier ones.
   - **Slice 4 (more operators) — done.** `Var::Lexical.new("$x")` (positional), `ApplyPrefix.new(
     prefix => …, operand => …)`, `ApplyPostfix.new(operand => …, postfix => …)`, and `Postfix.new(
     operator => …)` (whose `operator` is a *named* string field). Tests in
-    `t/rakuast-construct-more.t`. Next: `StatementList` (its children are added via the `.add-statement`
-    *mutator*, which needs a mutable-node path), block/sub/declaration constructors — then Phase 5
-    (EVAL) can lower a fully-constructed tree.
+    `t/rakuast-construct-more.t`.
+  - **Slice 5 (`StatementList`) — done.** `RakuAST::StatementList.new` builds an empty list and
+    `.add-statement($node)` appends in place, returns the added node, and is visible through every
+    alias of the list. The exceptional shared-node write is centralized behind the NanBox value
+    boundary; the native one-argument method path performs the mutation without a tree-walking
+    fallback. Constructed lists render, expose `new`/`add-statement` through introspection, and lower
+    through the existing compiler under `EVAL`. Tests in `t/rakuast-construct-statement-list.t`.
+    Next: block/sub/declaration constructors.
 - **Phase 5 — EVAL / compilation.** `lower(RakuAstNode) -> Vec<Stmt>/Expr`, then the
   **existing** compiler. `EVAL($rakuast)` and any code that yields a RakuAST tree runs
   through this. No new execution engine.

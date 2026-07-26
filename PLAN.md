@@ -1152,8 +1152,10 @@ so it is tracked separately from the roast backlog.
         `ApplyInfix.new(:left, :infix, :right)`). Tests in `t/rakuast-construct-multi.t`.
   - [x] Slice 4: `Var::Lexical.new`, `ApplyPrefix`/`ApplyPostfix`, `Postfix.new(:operator)`. Tests in
         `t/rakuast-construct-more.t`.
-  - [ ] Slice 5+: `StatementList` (children via `.add-statement` mutator — needs a mutable-node path),
-        block/sub/declaration constructors.
+  - [x] Slice 5: mutable `StatementList.new` + `.add-statement`; aliases share appended children,
+        and constructed lists lower through `EVAL`. Tests in
+        `t/rakuast-construct-statement-list.t`.
+  - [ ] Slice 6+: block/sub/declaration constructors.
 - **Phase 5 (in progress)** — EVAL: lower RakuAST → internal AST → existing compiler (no new engine).
   - [x] Slices 1–37 done (PRs #4736–#4804): literals, all common operators + ternary, the full
         control-flow set, sub declarations (typed/default/named/slurpy params) + calls + method calls,

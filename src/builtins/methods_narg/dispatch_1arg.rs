@@ -32,6 +32,11 @@ pub(crate) fn native_method_1arg(
 
     // Scalar containers are transparent for method dispatch (no .VAR at this arity).
     let target = target.descalarize();
+    if method == "add-statement"
+        && let Some(result) = target.rakuast_add_statement(arg.clone())
+    {
+        return Some(result);
+    }
     // Instance with __baggy_data__: delegate to the inner Bag/Set for collection methods
     if let ValueView::Instance { attributes, .. } = target.view()
         && let Some(inner) = attributes.as_map().get("__baggy_data__")

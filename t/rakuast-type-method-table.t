@@ -17,8 +17,8 @@ is %apply-methods.keys.sort.join(','), 'infix,left,new,right',
 
 is RakuAST::Name.^method_table.keys.sort.join(','), 'from-identifier',
     'named constructor appears in the method table';
-is RakuAST::StatementList.^method_table.keys.sort.join(','), 'statements',
-    'read-only model class exposes its accessor';
+is RakuAST::StatementList.^method_table.keys.sort.join(','), 'add-statement,new,statements',
+    'mutable model class exposes construction, mutation, and its accessor';
 is RakuAST::Assignment.^method_table.elems, 0,
     'class without an implemented model API has an empty table';
 

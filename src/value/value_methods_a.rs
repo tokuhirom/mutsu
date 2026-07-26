@@ -36,6 +36,29 @@ impl Value {
     pub fn rakuast(node: Box<crate::rakuast::RakuAstNode>) -> Self {
         Value::RakuAst(node)
     }
+
+    pub(crate) fn rakuast_add_statement(
+        &self,
+        statement: Value,
+    ) -> Option<Result<Value, RuntimeError>> {
+        self.0.with_rakuast_inplace(|node| {
+            if node.class != crate::rakuast::RakuAstClass::StatementList {
+                return Err(RuntimeError::new(
+                    "add-statement is only available on RakuAST::StatementList",
+                ));
+            }
+            if !matches!(statement.view(), ValueView::RakuAst(_)) {
+                return Err(RuntimeError::new(
+                    "RakuAST::StatementList.add-statement expects a RakuAST node",
+                ));
+            }
+            node.fields.push(crate::rakuast::RakuAstField {
+                name: None,
+                value: crate::rakuast::RakuAstFieldValue::Node(statement.clone()),
+            });
+            Ok(statement)
+        })
+    }
     pub fn mixin(inner: Value, overrides: HashMap<String, Value>) -> Self {
         Value::Mixin(Arc::new(inner), Arc::new(overrides))
     }
