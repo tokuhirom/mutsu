@@ -126,6 +126,12 @@ impl Interpreter {
             } else if module == "fatal" {
                 self.fatal_mode = true;
             }
+            // The module stays loaded, so this `use` is a no-op — but a scope
+            // that restored `env` wholesale since the load (a sub call around a
+            // `require`, a block, an `EVAL`) may have taken its `our` globals
+            // with it. Put them back, or this no-op leaves the caller unable to
+            // reach a symbol the module really does define.
+            self.reinstate_module_package_globals(module);
             // Propagate package declarations from the already-loaded module
             // into the current chain so that chain_has_package_decl checks
             // correctly detect namespace contributions from transitive deps.
@@ -533,6 +539,22 @@ impl Interpreter {
                 .copied()
                 .collect();
             self.module_registered_functions.extend(module_funcs);
+            // Same for the module's `our` package variables, which live in `env`
+            // rather than the routine registry. Collected BEFORE `import_module`
+            // so the bare aliases it installs — lexical to the importing scope —
+            // are excluded, exactly as for the routines above.
+            let package_globals: Vec<(Symbol, Value)> = self
+                .env
+                .keys()
+                .filter(|k| !env_snapshot.contains(k) && k.resolve().contains("::"))
+                .filter_map(|k| self.env.get_sym(*k).map(|v| (*k, v.clone())))
+                .collect();
+            if !package_globals.is_empty() {
+                self.module_package_globals
+                    .entry(module.to_string())
+                    .or_default()
+                    .extend(package_globals);
+            }
             if let Err(err) = self.import_module(module, tags)
                 && !err.message.starts_with("No exports found for module:")
             {

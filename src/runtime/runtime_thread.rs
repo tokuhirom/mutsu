@@ -230,6 +230,7 @@ impl Interpreter {
             chroot_root: self.chroot_root.clone(),
             loaded_modules: self.loaded_modules.clone(),
             module_registered_functions: self.module_registered_functions.clone(),
+            module_package_globals: self.module_package_globals.clone(),
             need_hidden_classes: self.need_hidden_classes.clone(),
             cur_repo: self.cur_repo.clone(),
             package_stash_hidden: self.package_stash_hidden.clone(),

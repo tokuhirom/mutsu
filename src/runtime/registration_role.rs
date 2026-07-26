@@ -876,6 +876,12 @@ impl Interpreter {
                             let self_short = name.rsplit_once("::").map(|(_, s)| s).unwrap_or(name);
                             let resolvable = tc_base == name
                                 || tc_base == self_short
+                                // A role type parameter carrying a definiteness
+                                // smiley (`role R[::T] { method f(T:D $x) }`,
+                                // NativeHelpers::CStruct's `LinearArray`). The
+                                // bare-`T` check above compares the whole
+                                // constraint, so only the base name matches here.
+                                || type_params.iter().any(|tp| tp == tc_base)
                                 // A type declared in this role's own body (`my enum`,
                                 // `my subset`, ...) is not registered until the body
                                 // runs; accept its name here.

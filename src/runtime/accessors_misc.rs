@@ -129,6 +129,22 @@ impl Interpreter {
         }
     }
 
+    /// Put back any `our` package global of `module` that has gone missing from
+    /// `env` since the module was loaded. See `module_package_globals`.
+    pub(crate) fn reinstate_module_package_globals(&mut self, module: &str) {
+        let Some(globals) = self.module_package_globals.get(module) else {
+            return;
+        };
+        let missing: Vec<(Symbol, Value)> = globals
+            .iter()
+            .filter(|(key, _)| self.env.get_sym(*key).is_none())
+            .cloned()
+            .collect();
+        for (key, value) in missing {
+            self.env.insert_sym(key, value);
+        }
+    }
+
     pub(crate) fn snapshot_routine_registry(&self) -> RoutineRegistrySnapshot {
         // Single guard for all six reads (avoids stacking read guards).
         let registry = self.registry();

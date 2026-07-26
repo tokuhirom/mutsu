@@ -18,6 +18,18 @@ pub(crate) const NATIVE_INT_TYPES: &[&str] = &[
     "int",
     "uint",
     "atomicint",
+    // The C-width aliases `NativeCall::Types` exports. The marshalling layer
+    // (`runtime/nativecall.rs`) already maps every one of these to `CType::I64`
+    // / `CType::U64`; declaring them here is what lets a signature or attribute
+    // actually *name* one (`has ulong $.length`, `our ulong constant zero = 0`
+    // in `DBDish::mysql::Native`). All are 64-bit, matching what MoarVM reports
+    // via `nativesizeof` on the platforms mutsu targets (LP64 / LLP64-with-long
+    // is not among them).
+    "long",
+    "ulong",
+    "longlong",
+    "ulonglong",
+    "size_t",
 ];
 
 /// Returns true if `name` is a native integer type.
@@ -48,7 +60,8 @@ pub(crate) fn unbox_bool_to_native_int(val: crate::value::Value) -> crate::value
 /// `uint16` -> `uint`, `num32` -> `num`).
 pub(crate) fn native_family_name(name: &str) -> &'static str {
     match name {
-        "uint" | "uint8" | "uint16" | "uint32" | "uint64" | "byte" => "uint",
+        "uint" | "uint8" | "uint16" | "uint32" | "uint64" | "byte" | "ulong" | "ulonglong"
+        | "size_t" => "uint",
         "num" | "num32" | "num64" => "num",
         "str" => "str",
         _ => "int",
@@ -66,14 +79,14 @@ pub(crate) fn native_int_bounds(type_name: &str) -> Option<(NumBigInt, NumBigInt
             NumBigInt::from(-2147483648i64),
             NumBigInt::from(2147483647i64),
         )),
-        "int64" | "int" | "atomicint" => Some((
+        "int64" | "int" | "atomicint" | "long" | "longlong" => Some((
             NumBigInt::from(-9223372036854775808i64),
             NumBigInt::from(9223372036854775807i64),
         )),
         "uint8" | "byte" => Some((NumBigInt::from(0u64), NumBigInt::from(255u64))),
         "uint16" => Some((NumBigInt::from(0u64), NumBigInt::from(65535u64))),
         "uint32" => Some((NumBigInt::from(0u64), NumBigInt::from(4294967295u64))),
-        "uint64" | "uint" => Some((
+        "uint64" | "uint" | "ulong" | "ulonglong" | "size_t" => Some((
             NumBigInt::from(0u64),
             NumBigInt::from(18446744073709551615u128),
         )),
@@ -87,14 +100,18 @@ fn native_type_bits(type_name: &str) -> Option<u32> {
         "int8" | "uint8" | "byte" => Some(8),
         "int16" | "uint16" => Some(16),
         "int32" | "uint32" => Some(32),
-        "int64" | "uint64" | "int" | "uint" => Some(64),
+        "int64" | "uint64" | "int" | "uint" | "long" | "ulong" | "longlong" | "ulonglong"
+        | "size_t" => Some(64),
         _ => None,
     }
 }
 
 /// Whether the native type is signed.
 fn is_signed_native(type_name: &str) -> bool {
-    matches!(type_name, "int8" | "int16" | "int32" | "int64" | "int")
+    matches!(
+        type_name,
+        "int8" | "int16" | "int32" | "int64" | "int" | "long" | "longlong"
+    )
 }
 
 /// Wrap a BigInt value to fit within the native type's range.

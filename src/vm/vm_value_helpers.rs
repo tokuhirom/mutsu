@@ -431,6 +431,15 @@ impl Interpreter {
                 | "int"
                 | "uint"
                 | "atomicint"
+                // The C-width aliases from `NativeCall::Types` (see
+                // `runtime::native_types::NATIVE_INT_TYPES`): naming one as a
+                // term has to yield the type object, or `nativesizeof(ulong)`
+                // sees a bare string.
+                | "long"
+                | "ulong"
+                | "longlong"
+                | "ulonglong"
+                | "size_t"
                 | "num"
                 | "num32"
                 | "num64"

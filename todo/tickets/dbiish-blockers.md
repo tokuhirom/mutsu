@@ -44,7 +44,7 @@ recreate it from the recipe above), debug build, both interpreters on the same
 | `44-sqlite-memory` | 1 fail of 109* | **PASS 109/109** | — |
 | `45-sqlite-common` | 1 fail of 109* | **PASS 109/109** | — |
 | `03-lib-util` | 1 fail of 5* | 1 fail of 5* | — (same subtest as raku) |
-| `01-basic` | PASS 35/35 | 3 fail of 18 run | ⑧ a second `require ::($m)` of a driver loses `NativeLibs`' exports |
+| `01-basic` | PASS 35/35 | 3 fail of 30 run | ⑨ the `mysql` driver needs `BODY_OF` (deferred deep item) |
 | `05-mock` | PASS 16/16 | **PASS 16/16** | — |
 | `06-types` | PASS 12/12 | 2 fail of 3 run | ⑤ `Int is builtin` / `So not defined`; mutsu suggests `Did you mean 'invert'?` |
 
@@ -180,17 +180,43 @@ Not a `PackageHOW`-only gap as first recorded — a plain `ClassHOW` had the sam
 hole. Fixed, with `Method` objects as the values, matching rakudo. See
 [`news/2026-07/method-table-and-hash-composer-parse.md`](../../news/2026-07/method-table-and-hash-composer-parse.md).
 
-### ⑧ A repeat `require ::($module)` loses `NativeLibs`' re-exports
+### ⑧ `Could not find symbol '&is-win' in 'NativeLibs'` — FIXED
 
-New, and what `01-basic` stops on now. Installing the drivers one at a time works
-(`DBIish.install-driver('SQLite')` on its own returns `DBDish::SQLite`), but the
-file's `for <Oracle Pg SQLite TestMock mysql>` loop fails on the third and fifth:
-`Could not find symbol '&is-win' in 'NativeLibs'` for SQLite and `Type 'ulong' is
-not declared` for mysql, both raised from inside `NativeLibs`' `CHECK for
-NativeCall::EXPORT::.keys { UNIT::EXPORT::{$_} := … }`. So a second `require
-::($module)` in the same process re-runs that `CHECK` against a registry that no
-longer holds the first load's exports — the same export/registry-rewind family as
-`news/2026-07/`'s subtest and `EVAL` entries.
+The first reading here ("a second `require` re-runs `NativeLibs`' `CHECK` against
+a rewound registry") was aimed one level off. It was not about `require` being
+repeated, nor about the `CHECK`: **a module's `our` package variables did not
+survive the scope that loaded it.** `our` compiles to a `SetGlobal`, so those
+live in `env`, and a sub call restores `env` wholesale on return —
+`install-driver` does its `require` inside a method, so `NativeLibs`' `our
+constant is-win` went with it, while `loaded_modules` kept the module marked
+loaded so the next driver's `use NativeLibs` was a no-op. Three lines reproduce
+it with no database:
+
+```raku
+sub f() { my \M = (require ::('Base')); }   # Base has `our constant flag = 7`
+f();
+use Base;
+say Base::flag;          # raku: 7    mutsu (before): could not find symbol
+```
+
+Fixed, along with two gaps it was masking (`ulong` and friends were not
+declarable; a role type parameter could not carry a definiteness smiley, which
+kept `NativeHelpers::CStruct` from loading at all) — see
+[`news/2026-07/module-our-globals-outlive-the-loading-scope.md`](../../news/2026-07/module-our-globals-outlive-the-loading-scope.md).
+`01-basic` went from 18 of 35 to 30.
+
+### ⑨ `01-basic`'s last three failures are the `mysql` driver, gated on `BODY_OF`
+
+Not a new bug so much as a pointer to the deferred deep item.
+`DBDish::mysql::StatementHandle` uses `BPointer(...)`, which is
+`NativeHelpers::Blob`'s `pointer-to` and needs `BODY_OF` — the address of a
+container's element buffer, stable across calls. That is
+[`todo/deep/nativehelpers-blob-moarvm-guts.md`](../deep/nativehelpers-blob-moarvm-guts.md),
+which wants an ADR first. The visible symptom is a parse failure in
+`StatementHandle` (`Unexpected block in infix position`), because the undeclared
+`BPointer` derails the rest of the file — check `use NativeHelpers::Blob; BPointer(Buf.new(1))`
+before chasing the parser. `DBDish::SQLite` does not go through `BODY_OF`, which
+is why the other eight files are unaffected.
 
 ### ⑤ `06-types` — object hash keyed by type objects
 
@@ -273,14 +299,17 @@ the adverbs away outright.
 
 ## Suggested order for the next session
 
-⑦, ③, ④a and ④b are done, which takes `05-mock` to raku parity (16/16). Two
-left; neither depends on the other:
+⑦, ③, ④a, ④b and ⑧ are done. `05-mock` is at raku parity (16/16) and `01-basic`
+is at 30 of 35. Two left:
 
-1. **⑧** — a repeat `require ::($m)` losing `NativeLibs`' re-exports. Related
-   registry-rewind bugs have been fixed twice before, so there is a model.
-2. **⑤** — the largest: an object hash keyed by type objects, plus `handles`
+1. **⑤** — `06-types`: an object hash keyed by type objects, plus `handles`
    delegation from a private attribute. Confirm which of the five features listed
-   above is actually missing before scoping it.
+   above is actually missing before scoping it. This is the only remaining file
+   whose blockers are ordinary interpreter work.
+2. **⑨** — the `mysql` driver, and with it `01-basic`'s last three subtests. Do
+   not start it as a `DBIish` task: it is
+   [`todo/deep/nativehelpers-blob-moarvm-guts.md`](../deep/nativehelpers-blob-moarvm-guts.md),
+   which wants an ADR first.
 
 ## When these are cleared
 
