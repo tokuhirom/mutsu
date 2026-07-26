@@ -433,6 +433,22 @@ impl Interpreter {
         self.method_class_stack.pop();
     }
 
+    /// The package a closure created right now is lexically inside. A closure
+    /// declared in a method of `C` is still lexically inside `C` — `self!priv`
+    /// from its body is an in-class call, and it must stay legal when the Sub is
+    /// invoked later from a foreign frame. `current_package` is only switched to
+    /// the class for some method shapes (class-scoped subs, package lexicals, a
+    /// `::`-qualified owner), so fall back to the running method's class.
+    pub(crate) fn lexical_closure_package(&self) -> String {
+        let pkg = self.current_package();
+        if (pkg.is_empty() || pkg == "GLOBAL")
+            && let Some(class) = self.method_class_stack.last()
+        {
+            return class.clone();
+        }
+        pkg
+    }
+
     pub(crate) fn method_class_stack_top(&self) -> Option<String> {
         self.method_class_stack.last().cloned()
     }

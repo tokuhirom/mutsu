@@ -143,7 +143,7 @@ impl Interpreter {
                 .map(|l| l as u32)
                 .or_else(|| self.current_source_line());
             let val = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
-                package: Symbol::intern(&self.current_package()),
+                package: Symbol::intern(&self.lexical_closure_package()),
                 name: Symbol::intern(""),
                 params,
                 param_defs: Vec::new(),
@@ -221,7 +221,7 @@ impl Interpreter {
                 .map(|l| l as u32)
                 .or_else(|| self.current_source_line());
             let val = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
-                package: Symbol::intern(&self.current_package()),
+                package: Symbol::intern(&self.lexical_closure_package()),
                 // Anonymous closures pool a SubDecl with an empty name; a
                 // named `anon sub NAME` decl carries its name through here.
                 name: *name,
