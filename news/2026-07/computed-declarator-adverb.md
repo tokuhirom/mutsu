@@ -46,13 +46,23 @@ Two supporting corrections fell out of making the expression actually run:
 - **A method call on a `Nil` *named* receiver absorbs to `Nil`.** raku's
   `Nil.FALLBACK` makes `$?DISTRIBUTION.meta<ver>` safe when there is no
   distribution. mutsu applied that verdict in the scalar `CallMethod` opcode and
-  in the hyper path (both via `nil_absorbs_method`) but not in `CallMethodMut`,
-  the opcode used when the receiver is a named variable — so
-  `$?DISTRIBUTION.meta` died with `No such method 'meta'`. Without this, making
-  the adverb evaluate would have turned a silently-wrong `.^ver` into a hard
-  failure for any module using the idiom from a directory with no `META6.json`.
-  `is_nil` is strictly `Nil`, so an uninitialised `Any` receiver still errors as
-  before.
+  in the hyper path but not in `CallMethodMut`, the opcode used when the receiver
+  is a named variable — so `$?DISTRIBUTION.meta` died with
+  `No such method 'meta'`. Without this, making the adverb evaluate would have
+  turned a silently-wrong `.^ver` into a hard failure for any module using the
+  idiom from a directory with no `META6.json`. It is applied *after* normal
+  dispatch fails to find the method, not as a pre-dispatch shortcut: `Nil` really
+  does define control-flow and introspection methods (`&?BLOCK.leave` on a Nil
+  block), and short-circuiting those silently skipped them. Falling back on the
+  not-found error is what `FALLBACK` means. `is_nil` is strictly `Nil`, so an
+  uninitialised `Any` receiver still errors as before.
+- **An unresolved package-qualified `&Pkg::name` is `Any`, not `Nil`.** A package
+  symbol table with no such entry is a different thing from an explicitly absent
+  value, and the difference is observable exactly through the rule above:
+  `Any.assuming` raises `X::Method::NotFound` naming `assuming`, whereas `Nil`
+  absorbs it. `S32-exceptions/misc.t` asserts the former for `&A::b.assuming($a)`
+  — `b` is a *method*, so it is not among `A`'s `&`-symbols. Unqualified `&name`
+  still returns `Nil`; custom `EXPORT` routines probe it that way.
 
 ## Effect on `DBIish`
 
