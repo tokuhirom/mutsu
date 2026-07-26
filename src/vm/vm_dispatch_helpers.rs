@@ -578,6 +578,24 @@ impl Interpreter {
             return self.vm_call_on_value(inner.as_ref().clone(), args, compiled_fns);
         }
 
+        // Invoking a *type object* is a coercion, not a `CALL-ME` call:
+        // `Int("123")` is 123 and `Foo($x)` is `Foo.COERCE($x)` / `Foo.new($x)`.
+        // The bare-name call path implements that whole protocol, but a type
+        // object reached through a variable (`my $t = Int; $t("123")`, or
+        // `$type($datum)` in a coercion table) landed here and died with
+        // "No such method 'CALL-ME'". A type that really declares `CALL-ME`
+        // keeps it — that wins over coercion.
+        if let ValueView::Package(sym) = target.view()
+            && !args.is_empty()
+        {
+            let name = sym.resolve();
+            if !self.class_has_method(&name, "CALL-ME")
+                && (self.has_class(&name) || self.has_role(&name) || Self::is_builtin_type(&name))
+            {
+                return self.call_function(&name, args);
+            }
+        }
+
         // Instance or Package (type object): CALL-ME -- try compiled method path first
         if matches!(
             target.view(),

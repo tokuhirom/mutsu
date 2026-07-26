@@ -1644,51 +1644,31 @@ impl Interpreter {
                         }
                     }
                 }
-                if let Some(current) = self.env().get(&var_name).cloned()
-                    && let ValueView::Mixin(inner, mixins) = current.view()
+                // An attribute (`%!x`) is not materialized into env — its reads are
+                // cell-direct — so resolve it from `self`'s cell here. Without this
+                // an `is <Role>` container attribute (`has %.x is TypeConverter`)
+                // never reaches the delegation branch below and the element
+                // assignment silently replaced the role object with a plain Hash.
+                let current_target = self
+                    .read_self_attr_cell(&var_name)
+                    .or_else(|| self.env().get(&var_name).cloned())
+                    .map(|v| match v.view() {
+                        ValueView::ContainerRef(_) => v.deref_container(),
+                        _ => v,
+                    });
+                if let Some(current) = current_target
+                    && let Some(rebuilt) =
+                        self.assign_role_mixin_element(&current, &idx, &val, &range_slice)?
                 {
-                    let (inner, mixins) = (inner.clone(), mixins.clone());
-                    let mut updated_mixins = (*mixins).clone();
-                    let mut assigned_object_slot = false;
-                    let delegated_attr_key = if matches!(idx.view(), ValueView::Str(_)) {
-                        self.delegated_mixin_attr_key(&updated_mixins, "ASSIGN-KEY")
-                    } else {
-                        self.delegated_mixin_attr_key(&updated_mixins, "ASSIGN-POS")
-                    };
-                    if let Some(attr_key) = delegated_attr_key
-                        && let Some(attr_value) = updated_mixins.get_mut(&attr_key)
-                    {
-                        assigned_object_slot = Self::assign_mixin_container_slot(
-                            attr_value,
-                            &idx,
-                            &val,
-                            &range_slice,
-                        )?;
+                    // The rebuilt Mixin only matters for a plain lexical: when the
+                    // object is held in an attribute the cell write inside the
+                    // helper already reached every alias, and inserting an env entry
+                    // under an attribute name would shadow the cell.
+                    if Self::attr_twigil_base(&var_name).is_none() {
+                        self.env_mut().insert(var_name.clone(), rebuilt);
                     }
-                    if !assigned_object_slot {
-                        for (key, attr_value) in updated_mixins.iter_mut() {
-                            if !key.starts_with("__mutsu_attr__") {
-                                continue;
-                            }
-                            if Self::assign_mixin_container_slot(
-                                attr_value,
-                                &idx,
-                                &val,
-                                &range_slice,
-                            )? {
-                                assigned_object_slot = true;
-                                break;
-                            }
-                        }
-                    }
-                    if assigned_object_slot {
-                        self.env_mut().insert(
-                            var_name.clone(),
-                            Value::mixin_parts(inner, Arc::new(updated_mixins)),
-                        );
-                        self.stack.push(val);
-                        return Ok(());
-                    }
+                    self.stack.push(val);
+                    return Ok(());
                 }
                 let mut range_initialized_marks: Vec<String> = Vec::new();
                 let mut pending_varref_update: Option<(String, Option<usize>, Value)> = None;

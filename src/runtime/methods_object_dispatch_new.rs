@@ -1329,24 +1329,32 @@ impl Interpreter {
                             value,
                         ));
                     }
-                    mixins.insert(
-                        format!("__mutsu_attr__{}", attr_name),
-                        supplied.clone().unwrap_or(Value::NIL),
-                    );
-                    // Only scalar attributes are seeded into the cell. A `@`/`%`
-                    // role attribute is already served end-to-end by the marker
-                    // path — `has %!h handles <AT-KEY ASSIGN-KEY>` routes element
-                    // access through the delegation forwarder, which reads and
-                    // writes the marker — and seeding the cell as well gives that
-                    // path two stores to disagree about
-                    // (`t/positional-role-attr-writeback-coherence.t` catches it).
-                    // TODO: compile the container case onto the cell too, so the
-                    // marker becomes a pure seed for every sigil rather than just
-                    // for scalars. That means reworking the delegation forwarder's
-                    // attribute lookup, which is its own change.
-                    if *sigil != '@' && *sigil != '%' {
-                        instance_attrs.insert(attr_name.clone(), supplied.unwrap_or(Value::NIL));
-                    }
+                    // Every attribute is seeded into the cell, containers
+                    // included: an unsupplied `@`/`%` seeds an empty container
+                    // rather than `Nil`, matching what the class path's
+                    // `seed_attr_value` produces, so `%!h<k> = 1` inside a role
+                    // method has something to write to. The marker keeps the same
+                    // value; the cell is the store of record and the marker-side
+                    // paths refresh from it.
+                    let seeded = match supplied {
+                        Some(v) => v,
+                        None if *sigil == '@' => Value::real_array(Vec::new()),
+                        None if *sigil == '%' => Value::hash(HashMap::new()),
+                        None => Value::NIL,
+                    };
+                    // Tag the container with its declared element/key types, the
+                    // same way the class path's `seed_attr_value` does — without
+                    // it a `has Callable %!c{Mu:U}` in a punned role is a plain
+                    // hash, so type-object keys collide on the empty string.
+                    let seeded = if matches!(sigil, '@' | '%')
+                        && let Some(tc) = role_attr_types.get(attr_name)
+                    {
+                        self.finalize_typed_container_attr(attr_name, *sigil, &tc.clone(), seeded)?
+                    } else {
+                        seeded
+                    };
+                    mixins.insert(format!("__mutsu_attr__{}", attr_name), seeded.clone());
+                    instance_attrs.insert(attr_name.clone(), seeded);
                 }
                 // Embed language revision from the matching candidate
                 // (no-params for bare role punning) so ^language-revision

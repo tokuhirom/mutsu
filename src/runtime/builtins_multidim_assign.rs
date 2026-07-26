@@ -70,6 +70,28 @@ impl Interpreter {
             }
         }
 
+        // The accessor returned a punned ROLE object (`has %.Converter is
+        // DBDish::TypeConverter`, then `$obj.Converter{Int} = $sub`). Its
+        // subscript is served by the container attribute the role delegates
+        // AT-KEY/ASSIGN-KEY to, and the mutation travels through the wrapped
+        // instance's shared attribute cell, so nothing has to be written back
+        // here. Without this the object was replaced by a plain Hash.
+        if matches!(current.view(), ValueView::Mixin(..)) {
+            let idx_arg = match index.view() {
+                ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
+                ValueView::Seq(items) | ValueView::Slip(items) if items.len() == 1 => {
+                    items[0].clone()
+                }
+                _ => index.clone(),
+            };
+            if self
+                .assign_role_mixin_element(&current, &idx_arg, &value, &None)?
+                .is_some()
+            {
+                return Ok(value);
+            }
+        }
+
         // Save Arc pointers before modifying (for shared container propagation)
         let old_array_arc = match current.view() {
             ValueView::Array(arc, ..) => Some(arc.clone()),

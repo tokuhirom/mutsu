@@ -634,6 +634,19 @@ impl Interpreter {
                 return Some(self.resolve_type_name_for_owner(&cls, tc));
             }
         }
+        // A role instantiated directly (`R.new`) has no ClassDef until something
+        // puns it, but its instances still report the role as their class — so
+        // resolve the attribute's declared type from the role registry. Punning
+        // eagerly instead would change how a later `class C does R` composes.
+        if self.registry().roles.contains_key(class_name)
+            && let Some(tc) = self
+                .registry()
+                .role_attribute_types
+                .get(&(class_name.to_string(), attr_name.to_string()))
+        {
+            let tc = tc.clone();
+            return Some(self.resolve_type_name_for_owner(class_name, tc));
+        }
         None
     }
 

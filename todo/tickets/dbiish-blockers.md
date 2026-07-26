@@ -30,7 +30,13 @@ mutsu $INC t/45-sqlite-common.rakutest
 `raku $INC …` passes one giant argument and every file "fails" under raku too —
 a bogus baseline that wastes a session.
 
-## Status: mutsu 7/9 (raku parity on 7 of the 9)
+## Status: mutsu 8/9 (raku parity on 8 of the 9)
+
+**Updated 2026-07-26 (late):** `06-types` now passes 12/12 — see
+[`news/2026-07/punned-role-container-attribute-store.md`](../../news/2026-07/punned-role-container-attribute-store.md).
+Only `01-basic` is left, and it is ⑨ (`BODY_OF`, a deferred deep item). The
+table below is the earlier survey; its `06-types` row is superseded.
+
 
 Re-measured **2026-07-26** with `tmp/dbiish-survey.sh` (in this repo's `tmp/`,
 recreate it from the recipe above), debug build, both interpreters on the same
@@ -329,11 +335,9 @@ the adverbs away outright.
 ⑦, ③, ④a, ④b and ⑧ are done. `05-mock` is at raku parity (16/16) and `01-basic`
 is at 30 of 35. Two left:
 
-1. **⑤** — `06-types`: reduced to a single blocker,
-   [`todo/deep/punned-role-container-attribute-store.md`](../deep/punned-role-container-attribute-store.md)
-   (the object-hash and role-attribute-type halves are fixed). It is a real
-   refactor rather than a slice: the punned role's container attributes and the
-   `handles` delegation forwarder have to converge on the instance cell.
+1. ~~**⑤** — `06-types`~~ **DONE 2026-07-26.** The punned role's container
+   attributes and the `handles` delegation path converged on the instance cell;
+   see [`news/2026-07/punned-role-container-attribute-store.md`](../../news/2026-07/punned-role-container-attribute-store.md).
 2. **⑨** — the `mysql` driver, and with it `01-basic`'s last three subtests. Do
    not start it as a `DBIish` task: it is
    [`todo/deep/nativehelpers-blob-moarvm-guts.md`](../deep/nativehelpers-blob-moarvm-guts.md),

@@ -1353,6 +1353,20 @@ impl Interpreter {
                     if result.is_nil() { default } else { result }
                 }
             }
+            // An object-hash key is an arbitrary object, not a `Str`: a type
+            // object (`$conv{Str}` on a `%!c{Mu:U}` delegate) or an instance.
+            // Only the `Str` arm above dispatched `AT-KEY`, so those subscripts
+            // used to read as `Nil`. The delegate hash owns the keying rule, so
+            // hand it the key object untouched.
+            (ValueView::Mixin(..), ValueView::Package(_) | ValueView::Instance { .. })
+                if !is_positional =>
+            {
+                let default = self.typed_container_default(&target);
+                let result = self
+                    .try_compiled_method_or_interpret(target.clone(), "AT-KEY", vec![index.clone()])
+                    .unwrap_or(Value::NIL);
+                if result.is_nil() { default } else { result }
+            }
             (ValueView::Mixin(..), ValueView::Array(keys, ..)) => {
                 let mut results = Vec::with_capacity(keys.len());
                 let delegated_attr: Option<Value> =
