@@ -360,8 +360,32 @@ fn scan_to_delim_inner(
                 // doesn't prematurely close the angle brackets.
                 let mut angle_depth = 1u32;
                 let mut paren_depth = 0u32;
+                // Inside a LOOKAROUND the body is a regex, so a quoted literal
+                // there may contain the angle brackets themselves —
+                // `<!before '%>' >` and `<!before '<%' >` are both ordinary
+                // Raku, and their quoted content must not move the angle depth.
+                // Only lookarounds get this treatment: in a word-list
+                // alternation (`< a ' b >`) or a character class a quote
+                // character is just a literal, and skipping to a "terminator"
+                // that never comes would swallow the rest of the regex.
+                let honor_quotes = [
+                    "before ", "?before ", "!before ", ".before ", "after ", "?after ", "!after ",
+                    ".after ",
+                ]
+                .iter()
+                .any(|kw| remaining.starts_with(kw));
                 loop {
                     match chars.next() {
+                        Some((_, q)) if honor_quotes && is_regex_quote_open(q) => loop {
+                            match chars.next() {
+                                Some((_, '\\')) => {
+                                    chars.next();
+                                }
+                                Some((_, ch)) if is_regex_quote_terminator(q, ch) => break,
+                                Some(_) => {}
+                                None => return None,
+                            }
+                        },
                         Some((_, '(')) => paren_depth += 1,
                         Some((_, ')')) => paren_depth = paren_depth.saturating_sub(1),
                         Some((_, '<')) if paren_depth == 0 => angle_depth += 1,
