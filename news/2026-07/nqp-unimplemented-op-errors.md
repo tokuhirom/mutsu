@@ -28,7 +28,7 @@ The guard is deliberately scoped to `nqp::`. The same shape exists more widely â
 is load-bearing there, and the obvious guard does not work: `index` is dispatched
 by a hand-written arm in `call_function`, not via `BUILTIN_FUNCTION_NAMES`, so
 `is_builtin_function` does not even recognise it. That case is recorded in
-`todo/tickets/nqp-op-aliasing-and-sha1.md` rather than changed blind.
+`news/2026-07/nqp-op-layer-measured-and-rejected.md` rather than changed blind.
 
 ## Why this, and not an `nqp::` layer
 

@@ -339,7 +339,7 @@ sessions).
       blocked the vendored zef install path** (`Zef::Distribution.id`) — now
       implemented (news/2026-07/nqp-sha1.md); `Zef::Distribution.id` matches
       rakudo's digest exactly. Details and the measurements:
-      `todo/tickets/nqp-op-aliasing-and-sha1.md`. The other four
+      `news/2026-07/nqp-op-layer-measured-and-rejected.md`. The other four
       were **mis-classified**, each verified against `raku -I lib`:
       `PDF::Class` and `Qwiratry::Test` merely lack an uninstalled dependency
       (`PDF::COS`, `Qwiratry::Query::Slang` — raku cannot load them here either),
