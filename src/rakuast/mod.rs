@@ -625,6 +625,79 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     None
 }
 
+/// Native methods currently exposed directly by a RakuAST model class.
+///
+/// This intentionally describes mutsu's implemented model API rather than
+/// copying Rakudo's compiler-internal `IMPL-*` methods.  The result feeds
+/// `.^methods(:local)`, so callers can discover constructors and accessors
+/// without the RakuAST classes having ordinary registry entries.
+pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
+    let class = class_from_name(class_name)?;
+    let mut names = Vec::new();
+
+    match class.constructor() {
+        Constructor::FromIdentifier
+            if matches!(class, RakuAstClass::Name | RakuAstClass::TermEnum) =>
+        {
+            names.push("from-identifier");
+        }
+        Constructor::New if constructor_is_supported(class) => names.push("new"),
+        _ => {}
+    }
+
+    names.extend(accessor_names(class));
+    names.sort_unstable();
+    names.dedup();
+    Some(names)
+}
+
+/// Model fields declared directly by a RakuAST class, for `.^attributes(:local)`.
+///
+/// As with [`local_method_names`], these are mutsu's public model fields rather
+/// than Rakudo's backend storage slots.
+pub fn local_attribute_names(class_name: &str) -> Option<&'static [&'static str]> {
+    class_from_name(class_name).map(accessor_names)
+}
+
+fn class_from_name(class_name: &str) -> Option<RakuAstClass> {
+    RAKUAST_CLASSES
+        .iter()
+        .copied()
+        .find(|class| class.printed_name() == class_name)
+}
+
+fn constructor_is_supported(class: RakuAstClass) -> bool {
+    matches!(
+        class,
+        RakuAstClass::IntLiteral
+            | RakuAstClass::RatLiteral
+            | RakuAstClass::StrLiteral
+            | RakuAstClass::Infix
+            | RakuAstClass::Prefix
+            | RakuAstClass::VarLexical
+            | RakuAstClass::StatementExpression
+            | RakuAstClass::ApplyInfix
+            | RakuAstClass::ApplyPrefix
+            | RakuAstClass::ApplyPostfix
+            | RakuAstClass::Postfix
+    )
+}
+
+fn accessor_names(class: RakuAstClass) -> &'static [&'static str] {
+    use RakuAstClass::*;
+    match class {
+        StatementList => &["statements"],
+        StatementExpression => &["expression"],
+        IntLiteral | RatLiteral | StrLiteral => &["value"],
+        VarLexical => &["name"],
+        ApplyInfix => &["left", "infix", "right"],
+        ApplyPrefix => &["prefix", "operand"],
+        ApplyPostfix => &["operand", "postfix"],
+        Postfix => &["operator"],
+        _ => &[],
+    }
+}
+
 fn field_to_value(fv: &RakuAstFieldValue) -> Value {
     match fv {
         RakuAstFieldValue::Node(v) => v.clone(),

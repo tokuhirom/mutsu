@@ -1137,7 +1137,13 @@ so it is tracked separately from the roast backlog.
         namespace + semantic hierarchy as `~~`. Tests extended in `t/rakuast-type-objects.t`.
   - [x] Slice 7: `.^mro` / `.^parents` on registered type objects and node values expose the
         namespace + semantic model hierarchy. Tests extended in `t/rakuast-type-objects.t`.
-  - [ ] Slice 8+: remaining type-object metaobject operations.
+  - [x] Slice 8: `.^methods(:local)` on registered type objects and node values exposes the
+        constructors/accessors implemented by mutsu's model layer (without Rakudo's compiler-private
+        `IMPL-*` surface). Tests in `t/rakuast-type-methods.t`.
+  - [x] Slice 9: `.^attributes(:local)` exposes model fields as ordinary `Attribute` introspection
+        objects on both registered type objects and node values. Tests in
+        `t/rakuast-type-attributes.t`.
+  - [ ] Slice 10+: remaining type-object metaobject operations.
 - **Phase 4 (in progress)** — construction (`.new`).
   - [x] Slice 1: literal constructors (`RakuAST::IntLiteral.new(42)`, `StrLiteral`, `RatLiteral`).
         Tests in `t/rakuast-construct.t`.
