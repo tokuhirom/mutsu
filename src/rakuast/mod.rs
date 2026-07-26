@@ -533,6 +533,34 @@ pub fn construct(
             }],
         }))));
     }
+    if class_name == "RakuAST::Sub" && method == "new" {
+        let name = named_arg(args, "name");
+        if let Some(value) = &name {
+            require_rakuast_class(value, RakuAstClass::Name, "RakuAST::Sub.new")?;
+        }
+        let body = match named_arg(args, "body") {
+            Some(value) => {
+                require_rakuast_class(&value, RakuAstClass::Blockoid, "RakuAST::Sub.new")?;
+                value
+            }
+            None => empty_blockoid(),
+        };
+        let mut fields = Vec::with_capacity(2);
+        if let Some(name) = name {
+            fields.push(RakuAstField {
+                name: Some("name"),
+                value: RakuAstFieldValue::Node(name),
+            });
+        }
+        fields.push(RakuAstField {
+            name: Some("body"),
+            value: RakuAstFieldValue::Node(body),
+        });
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::Sub,
+            fields,
+        }))));
+    }
     // Single-positional-argument constructors: the literals, `Name.from-identifier`,
     // and the bare operator nodes (`Infix.new("+")`).
     if let Some(class) = single_positional_class(class_name, method) {
@@ -570,6 +598,20 @@ pub fn construct(
         }))));
     }
     Ok(None)
+}
+
+fn empty_blockoid() -> Value {
+    let statements = Value::rakuast(Box::new(RakuAstNode {
+        class: RakuAstClass::StatementList,
+        fields: Vec::new(),
+    }));
+    Value::rakuast(Box::new(RakuAstNode {
+        class: RakuAstClass::Blockoid,
+        fields: vec![RakuAstField {
+            name: None,
+            value: RakuAstFieldValue::Node(statements),
+        }],
+    }))
 }
 
 fn require_rakuast_class(
@@ -732,6 +774,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::Postfix
             | RakuAstClass::Block
             | RakuAstClass::Blockoid
+            | RakuAstClass::Sub
     )
 }
 
@@ -748,6 +791,7 @@ fn accessor_names(class: RakuAstClass) -> &'static [&'static str] {
         Postfix => &["operator"],
         Block => &["body"],
         Blockoid => &["statement-list"],
+        Sub => &["name", "signature", "body"],
         _ => &[],
     }
 }

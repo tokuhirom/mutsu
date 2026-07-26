@@ -193,7 +193,13 @@ earlier ones.
     `StatementList` positionally, and `RakuAST::Block.new(body => $blockoid)` builds the enclosing
     block node. Both constructors render like Rakudo, expose their children through
     `.statement-list` / `.body`, and advertise the constructor and accessor through
-    `.^methods(:local)`. Tests in `t/rakuast-construct-block.t`. Next: sub/declaration constructors.
+    `.^methods(:local)`. Tests in `t/rakuast-construct-block.t`.
+  - **Slice 7 (`Sub`) — done.** `RakuAST::Sub.new` builds a parameter-less routine with an optional
+    `Name` and `Blockoid` body. Omitting the body creates the same empty `Blockoid` /
+    `StatementList` shape as Rakudo. The constructor validates child node kinds, exposes
+    `.name` / `.signature` / `.body` through model introspection, and the resulting named routine
+    lowers through the existing compiler under `EVAL`. Tests in `t/rakuast-construct-sub.t`.
+    Next: signature/parameter and variable-declaration constructors.
 - **Phase 5 — EVAL / compilation.** `lower(RakuAstNode) -> Vec<Stmt>/Expr`, then the
   **existing** compiler. `EVAL($rakuast)` and any code that yields a RakuAST tree runs
   through this. No new execution engine.
