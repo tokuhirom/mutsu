@@ -812,6 +812,48 @@ impl Interpreter {
                 }
                 // Not an alias — fall through to generic `@` handling below.
             }
+            // A bare `$` end-of-string anchor is not an interpolation, so Match
+            // mode's interpolation pass never substitutes it and it reaches the
+            // parser here (`$$`, `$0`, `$<name>` and a trailing `$` were handled
+            // above). Give it the same EndOfLine treatment the Validate branch
+            // below does; without this it fell through to a literal `$`, so a `$`
+            // followed by any further atom (`… $ { code }`, `… $ <?{…}>`) demanded
+            // a literal `$` in the input and never matched (YAMLish `Schema::Core`
+            // `token plain { ^ .* $ { make … } }`; t/regex-end-anchor-then-atom.t).
+            if mode == RegexParseMode::Match && c == '$' {
+                let next = chars.peek().copied();
+                let is_interp = next.is_some_and(|ch| {
+                    ch.is_alphabetic()
+                        || ch == '_'
+                        || ch == '{'
+                        || ch == '('
+                        || ch == '*'
+                        || ch == '?'
+                        || ch == '^'
+                        || ch == '.'
+                });
+                if !is_interp {
+                    if next == Some('+') {
+                        PENDING_REGEX_ERROR
+                            .with(|e| *e.borrow_mut() = Some(make_non_quantifiable_error()));
+                        return None;
+                    }
+                    tokens.push(RegexToken {
+                        atom: RegexAtom::EndOfLine,
+                        quant: RegexQuant::One,
+                        named_capture: None,
+                        hash_capture: None,
+                        secondary_named_capture: None,
+                        force_list_capture: false,
+                        ratchet,
+                        frugal: false,
+                        separator: None,
+                    });
+                    continue;
+                }
+                // A surviving `$`-interpolation falls through to the existing
+                // literal handling below (unchanged prior behavior).
+            }
             // Validate mode handling of `$` / `@` that was NOT recognized as an
             // anchor (`$$`, trailing `$`) or backreference (`$0`, `$<name>`)
             // above. In `Match` mode interpolation already substituted these, so
@@ -2426,6 +2468,11 @@ impl Interpreter {
                                     RegexAtom::SameAssertion { negated: false }
                                 } else if trimmed == "?wb" || trimmed == "?.wb" {
                                     // <?wb> — zero-width assertion: at a word boundary
+                                    RegexAtom::WordBoundary { negated: false }
+                                } else if trimmed == "|w" {
+                                    // <|w> — zero-width assertion at a boundary of the
+                                    // word (`\w`) character class, i.e. `\b`. (YAMLish's
+                                    // `Schema::JSON` uses it to terminate a numeric token.)
                                     RegexAtom::WordBoundary { negated: false }
                                 } else if trimmed.starts_with("at(") && trimmed.ends_with(')') {
                                     // <at(N)> — zero-width assertion: match at position N

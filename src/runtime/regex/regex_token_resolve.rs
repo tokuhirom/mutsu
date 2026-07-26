@@ -230,15 +230,14 @@ impl Interpreter {
             if let Some(defs) = self.registry().token_defs.get(&Symbol::intern(name)) {
                 out.extend(defs.clone());
             }
-            let sym_prefix_angle = format!("{name}:sym<");
-            let sym_prefix_french = format!("{name}:sym\u{ab}");
             let mut sym_keys: Vec<String> = self
                 .registry()
                 .token_defs
                 .keys()
                 .map(|key| key.resolve())
                 .filter(|key| {
-                    key.starts_with(&sym_prefix_angle) || key.starts_with(&sym_prefix_french)
+                    key.strip_prefix(name)
+                        .is_some_and(crate::runtime::resolution::is_proto_variant_suffix)
                 })
                 .collect();
             self.sort_sym_keys_by_decl_order(&mut sym_keys);
