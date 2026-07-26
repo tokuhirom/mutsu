@@ -2091,6 +2091,7 @@ impl Interpreter {
             chroot_root: None,
             loaded_modules: HashSet::new(),
             module_registered_functions: HashSet::new(),
+            module_package_globals: HashMap::new(),
             need_hidden_classes: HashSet::new(),
             cur_repo: Box::new(CurRepoState::default()),
             package_stash_hidden: HashSet::new(),

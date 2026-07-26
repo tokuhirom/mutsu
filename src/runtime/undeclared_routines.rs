@@ -44,6 +44,10 @@ const NATIVE_TYPE_NAMES: &[&str] = &[
     "complex",
     "size_t",
     "ssize_t",
+    "long",
+    "ulong",
+    "longlong",
+    "ulonglong",
 ];
 
 /// Callables the compiler special-cases into dedicated opcodes, so they never

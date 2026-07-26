@@ -942,6 +942,17 @@ pub struct Interpreter {
     /// routines are gone, and a re-`use` — being a no-op — could not bring them
     /// back. See `reinstate_module_functions`.
     module_registered_functions: HashSet<Symbol>,
+    /// The package-qualified globals (`Base::flag`, `$NativeLibs::config`) each
+    /// loaded module declared with `our`, keyed by module name.
+    ///
+    /// The routine-registry counterpart above cannot cover these: `our`
+    /// variables live in `env`, and every scope that restores `env` wholesale —
+    /// a sub call, a block, an `EVAL` — drops the ones a module load nested
+    /// inside it created. `loaded_modules` is never rolled back, so a later
+    /// `use` of that module is a no-op and could not bring them back. The
+    /// already-loaded path of `use_module_with_tags_inner` reinstates whatever
+    /// is missing from here instead.
+    module_package_globals: HashMap<String, Vec<(Symbol, Value)>>,
     need_hidden_classes: HashSet<String>,
     /// CompUnit::Repository::Installation state (`.loaded` units and the symbols
     /// pulled in by `.need` but not yet merged into GLOBAL).
