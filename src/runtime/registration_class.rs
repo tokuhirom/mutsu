@@ -443,6 +443,19 @@ impl Interpreter {
         if parent.contains("::") || parent.contains('[') {
             return parent.to_string();
         }
+        // The `Grammar` metatype, when it appears as an inheritance parent, is the
+        // implicit default parent the parser auto-adds to every grammar. In Raku a
+        // grammar with no explicit `is` clause always inherits the *core* `Grammar`
+        // Cursor, even inside a `module M` that declares its own `grammar Grammar`
+        // (which qualifies to `M::Grammar`). Without this guard a sibling grammar
+        // like `grammar Schema::JSON` in the same module would qualify its default
+        // `Grammar` parent to `M::Grammar` and wrongly inherit that user grammar's
+        // tokens/actions/`parse` override (the YAMLish `Schema::*` reduce bug).
+        // Direct references (`Grammar.parse`) still resolve to the module-local
+        // grammar via bare-word resolution, so the module-local shadow is intact.
+        if parent == "Grammar" {
+            return parent.to_string();
+        }
         let pkg = self.current_package();
         if pkg.is_empty() || pkg == "GLOBAL" {
             return parent.to_string();
