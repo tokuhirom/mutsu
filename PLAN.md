@@ -1143,7 +1143,10 @@ so it is tracked separately from the roast backlog.
   - [x] Slice 9: `.^attributes(:local)` exposes model fields as ordinary `Attribute` introspection
         objects on both registered type objects and node values. Tests in
         `t/rakuast-type-attributes.t`.
-  - [ ] Slice 10+: remaining type-object metaobject operations.
+  - [x] Slice 10: `.^method_table` exposes the same implemented model API as
+        `.^methods(:local)`, keyed by method name, on registered type objects and node values.
+        Tests in `t/rakuast-type-method-table.t`.
+  - [ ] Slice 11+: remaining type-object metaobject operations.
 - **Phase 4 (in progress)** — construction (`.new`).
   - [x] Slice 1: literal constructors (`RakuAST::IntLiteral.new(42)`, `StrLiteral`, `RatLiteral`).
         Tests in `t/rakuast-construct.t`.
