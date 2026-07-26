@@ -8,6 +8,19 @@ use crate::symbol::Symbol;
 /// value instead of alphabetically.
 static NEXT_TOKEN_DECL_ORDER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
+/// True when `rest` (the portion of a `token_defs` key AFTER the proto's
+/// fully-qualified name) begins a proto-regex variant adverb. Both the explicit
+/// `:sym<int>` / `:sym«int»` form and its `:<int>` / `:«int»` shorthand register
+/// a candidate under the proto — they differ only in that the shorthand does not
+/// auto-match a `<sym>` literal. A resolver that recognized only `:sym<` dropped
+/// every `token element:<int> {...}` candidate (YAMLish's `Schema::JSON`).
+pub(crate) fn is_proto_variant_suffix(rest: &str) -> bool {
+    rest.starts_with(":sym<")
+        || rest.starts_with(":sym\u{ab}")
+        || rest.starts_with(":<")
+        || rest.starts_with(":\u{ab}")
+}
+
 impl Interpreter {
     pub(crate) const LAZY_GATHER_TAKE_LIMIT_SIGNAL: &str =
         "__mutsu_lazy_gather_take_limit_reached__";
@@ -218,14 +231,16 @@ impl Interpreter {
             seen.insert(name.to_string());
         }
         let scope_prefix_len = scope.len() + 2;
-        let sym_prefix_angle = format!("{scope}::{name}:sym<");
-        let sym_prefix_french = format!("{scope}::{name}:sym\u{ab}");
+        let variant_prefix = format!("{scope}::{name}");
         let mut sym_keys: Vec<String> = self
             .registry()
             .token_defs
             .keys()
             .map(|key| key.resolve())
-            .filter(|key| key.starts_with(&sym_prefix_angle) || key.starts_with(&sym_prefix_french))
+            .filter(|key| {
+                key.strip_prefix(&variant_prefix)
+                    .is_some_and(is_proto_variant_suffix)
+            })
             .collect();
         self.sort_sym_keys_by_decl_order(&mut sym_keys);
         for key in &sym_keys {
@@ -250,14 +265,16 @@ impl Interpreter {
         if let Some(exact) = self.registry().token_defs.get(&Symbol::intern(&exact_key)) {
             defs.extend(exact.clone());
         }
-        let sym_prefix_angle = format!("{scope}::{name}:sym<");
-        let sym_prefix_french = format!("{scope}::{name}:sym\u{ab}");
+        let variant_prefix = format!("{scope}::{name}");
         let mut sym_keys: Vec<String> = self
             .registry()
             .token_defs
             .keys()
             .map(|key| key.resolve())
-            .filter(|key| key.starts_with(&sym_prefix_angle) || key.starts_with(&sym_prefix_french))
+            .filter(|key| {
+                key.strip_prefix(&variant_prefix)
+                    .is_some_and(is_proto_variant_suffix)
+            })
             .collect();
         self.sort_sym_keys_by_decl_order(&mut sym_keys);
         for key in &sym_keys {
@@ -322,16 +339,12 @@ impl Interpreter {
             if let Some(exact) = self.registry().token_defs.get(&Symbol::intern(name)) {
                 defs.extend(exact.clone());
             }
-            let sym_prefix_angle = format!("{name}:sym<");
-            let sym_prefix_french = format!("{name}:sym\u{ab}");
             let mut sym_keys: Vec<String> = self
                 .registry()
                 .token_defs
                 .keys()
                 .map(|key| key.resolve())
-                .filter(|key| {
-                    key.starts_with(&sym_prefix_angle) || key.starts_with(&sym_prefix_french)
-                })
+                .filter(|key| key.strip_prefix(name).is_some_and(is_proto_variant_suffix))
                 .collect();
             self.sort_sym_keys_by_decl_order(&mut sym_keys);
             for key in &sym_keys {

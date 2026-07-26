@@ -60,6 +60,29 @@ impl Interpreter {
         Some(rest[..end].to_string())
     }
 
+    /// Proto-candidate identity of a token key for dedup: the adverb value of
+    /// both the `:sym<int>` form (via [`Self::extract_sym_adverb`]) and its
+    /// `:<int>` / `:«int»` shorthand. The shorthand differs only in that it does
+    /// NOT bind a `<sym>` literal (so `instantiate_token_pattern` — which stays
+    /// on `extract_sym_adverb` — leaves the shorthand body untouched), but its
+    /// candidates must still get a distinct identity or the dedup walk collapses
+    /// `element:<int>` and `element:<word>` into one (YAMLish `Schema::JSON`).
+    pub(super) fn extract_variant_ident(name: &str) -> Option<String> {
+        if let Some(v) = Self::extract_sym_adverb(name) {
+            return Some(v);
+        }
+        let french = ":\u{ab}";
+        if let Some(i) = name.find(french) {
+            let rest = &name[i + french.len()..];
+            let end = rest.find('\u{bb}')?;
+            return Some(rest[..end].to_string());
+        }
+        let i = name.find(":<")?;
+        let rest = &name[i + 2..];
+        let end = rest.find('>')?;
+        Some(rest[..end].to_string())
+    }
+
     /// Check if a regex pattern's own token list has a bare code block `{}`.
     ///
     /// Gates the eager-code-block buffer (`enable_eager_code_blocks`), which makes a
@@ -201,18 +224,20 @@ impl Interpreter {
                 }
             }
         }
-        let sym_prefix_angle = format!("{scope}::{name}:sym<");
-        let sym_prefix_french = format!("{scope}::{name}:sym\u{ab}");
+        let variant_prefix = format!("{scope}::{name}");
         let mut sym_keys: Vec<String> = self
             .registry()
             .token_defs
             .keys()
             .map(|key| key.resolve())
-            .filter(|key| key.starts_with(&sym_prefix_angle) || key.starts_with(&sym_prefix_french))
+            .filter(|key| {
+                key.strip_prefix(&variant_prefix)
+                    .is_some_and(crate::runtime::resolution::is_proto_variant_suffix)
+            })
             .collect();
         self.sort_sym_keys_by_decl_order(&mut sym_keys);
         for key in &sym_keys {
-            let sym_val = Self::extract_sym_adverb(key);
+            let sym_val = Self::extract_variant_ident(key);
             if let Some(defs) = self.registry().token_defs.get(&Symbol::intern(key)) {
                 for def in defs {
                     if let Some(p) = Self::token_pattern_from_def(def) {

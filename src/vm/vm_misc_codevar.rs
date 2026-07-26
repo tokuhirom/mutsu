@@ -17,7 +17,16 @@ impl Interpreter {
         let val = if let Some(v) = self.env().get(name).cloned() {
             v
         } else if let Some(key) = name.strip_prefix('<').and_then(|s| s.strip_suffix('>'))
-            && let Some(match_val) = self.env().get("/").cloned()
+            // `$<name>` is sugar for `$/<name>`, so it must read `$/` the same way
+            // the `$/` variable itself does: the local slot when one exists (e.g.
+            // a `method foo($/)` parameter), falling back to env. Reading env
+            // directly diverged from `$/` — a nested regex op (`.subst`, `~~`)
+            // inside an action writes env `/` to its own (possibly failed) match,
+            // clobbering `$<name>` to `Any` while `$/<name>` still saw the intact
+            // param slot (YAMLish `plain` action; t/capture-var-topic-slot.t).
+            && let Some(match_val) = self
+                .locals_get_by_name(code, "/")
+                .or_else(|| self.env().get("/").cloned())
         {
             match match_val.view() {
                 ValueView::Hash(map) => map.get(key).cloned().unwrap_or(Value::NIL),

@@ -243,52 +243,35 @@ impl Interpreter {
     /// textual position during matching (so a mid-rule `{ … $/ … }` sees the
     /// prefix matched so far, not the whole rule).
     fn setup_regex_code_block_env(&mut self, ctx: &CodeBlockContext) {
-        // Set up $/ as a match object for the matched-so-far text
-        let match_obj = Value::make_match_object_with_captures(
-            ctx.matched_so_far.clone(),
-            0,
-            ctx.matched_so_far.chars().count() as i64,
-            &[],
-            &HashMap::new(),
-        );
-        self.env.insert("/".to_string(), match_obj.clone());
-        // Set up $¢ (current match cursor) — same as $/ for in-progress match
-        self.env.insert("\u{00A2}".to_string(), match_obj);
-        // Set up positional captures ($0, $1, ...)
-        for (i, val) in ctx.positional.iter().enumerate() {
-            let pos_match = Value::make_match_object_with_captures(
-                val.clone(),
+        let ast_hint = self.env.get("made").cloned().unwrap_or(Value::NIL);
+        let to_match_with_ast = |text: &str, ast: &Value| -> Value {
+            let match_obj = Value::make_match_object_with_captures(
+                text.to_string(),
                 0,
-                val.chars().count() as i64,
+                text.chars().count() as i64,
                 &[],
                 &HashMap::new(),
             );
-            self.env.insert(i.to_string(), pos_match);
-        }
-        // Set up named captures as $<name> variables
-        let ast_hint = self.env.get("made").cloned().unwrap_or(Value::NIL);
+            if let ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } = match_obj.view()
+            {
+                let attrs = attributes.as_ref().clone();
+                attrs.insert("ast".to_string(), ast.clone());
+                Value::make_instance(class_name, (attrs).to_map())
+            } else {
+                match_obj
+            }
+        };
+        // Build the named-capture submatches once, so they can be installed BOTH
+        // as `$<name>` variables AND into the `$/` match object's `named`
+        // attribute — otherwise `$/.hash` / `$/.values` (and hence
+        // `{ make $/.values[0].ast }`, as YAMLish's `Schema::JSON` TOP does) see
+        // an empty match at reduce time while `$<name>` alone worked.
+        let mut named_map: HashMap<String, Value> = HashMap::new();
         for (k, v) in &ctx.named {
-            let to_match_with_ast = |text: &str, ast: &Value| -> Value {
-                let match_obj = Value::make_match_object_with_captures(
-                    text.to_string(),
-                    0,
-                    text.chars().count() as i64,
-                    &[],
-                    &HashMap::new(),
-                );
-                if let ValueView::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                } = match_obj.view()
-                {
-                    let attrs = attributes.as_ref().clone();
-                    attrs.insert("ast".to_string(), ast.clone());
-                    Value::make_instance(class_name, (attrs).to_map())
-                } else {
-                    match_obj
-                }
-            };
             let value = if v.len() == 1 {
                 to_match_with_ast(&v[0], &ast_hint)
             } else {
@@ -298,8 +281,49 @@ impl Interpreter {
                         .collect::<Vec<_>>(),
                 )
             };
-            self.env.insert(format!("<{}>", k), value);
+            self.env.insert(format!("<{}>", k), value.clone());
+            named_map.insert(k.clone(), value);
         }
+        // Positional submatches ($0, $1, ...), also folded into `$/.list`.
+        let mut pos_list: Vec<Value> = Vec::with_capacity(ctx.positional.len());
+        for (i, val) in ctx.positional.iter().enumerate() {
+            let pos_match = Value::make_match_object_with_captures(
+                val.clone(),
+                0,
+                val.chars().count() as i64,
+                &[],
+                &HashMap::new(),
+            );
+            self.env.insert(i.to_string(), pos_match.clone());
+            pos_list.push(pos_match);
+        }
+        // Set up $/ as a match object for the matched-so-far text, carrying the
+        // named/positional captures so `$/.hash`/`$/.values`/`$/<name>` all work.
+        let match_obj = Value::make_match_object_with_captures(
+            ctx.matched_so_far.clone(),
+            0,
+            ctx.matched_so_far.chars().count() as i64,
+            &[],
+            &HashMap::new(),
+        );
+        let match_obj = if let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = match_obj.view()
+        {
+            let attrs = attributes.as_ref().clone();
+            attrs.insert("named".to_string(), Value::hash(named_map));
+            if !pos_list.is_empty() {
+                attrs.insert("list".to_string(), Value::array(pos_list));
+            }
+            Value::make_instance(class_name, attrs.to_map())
+        } else {
+            match_obj
+        };
+        self.env.insert("/".to_string(), match_obj.clone());
+        // Set up $¢ (current match cursor) — same as $/ for in-progress match
+        self.env.insert("\u{00A2}".to_string(), match_obj);
     }
 
     /// Evaluate one already-parsed regex `{ … }` code block body, snapshotting
@@ -448,6 +472,26 @@ impl Interpreter {
             // `$<sub>.made` / `$<sub>».made` resolve to the produced values.
             for (k, v) in &ast_named {
                 self.env.insert(format!("<{}>", k), v.clone());
+            }
+            // Fold the same ast-carrying children into `$/`'s `named` attribute so
+            // `$/.hash` / `$/.values` (e.g. `{ make $/.values[0].ast }`) also see
+            // the produced values — `setup_regex_code_block_env` only had the raw
+            // matched text and a single `made` hint. `$/.str`/from/to still come
+            // from the block's matched-so-far context (mid-rule `{ … $/ … }`).
+            if !ast_named.is_empty()
+                && let Some(cur) = self.env.get("/").cloned()
+                && let ValueView::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } = cur.view()
+            {
+                let attrs = attributes.as_ref().clone();
+                let named_hash: HashMap<String, Value> = ast_named.iter().cloned().collect();
+                attrs.insert("named".to_string(), Value::hash(named_hash));
+                let updated = Value::make_instance(class_name, attrs.to_map());
+                self.env.insert("/".to_string(), updated.clone());
+                self.env.insert("\u{00A2}".to_string(), updated);
             }
             self.eval_regex_code_block_body(&stmts);
         }
