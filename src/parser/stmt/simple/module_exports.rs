@@ -194,13 +194,22 @@ fn find_and_extract_exports(module: &str) -> Vec<InlineModuleExport> {
 fn find_module_file(module: &str) -> Option<String> {
     let base_name = module.replace("::", "/");
     let extensions = [".rakumod", ".pm6", ".pm"];
-    // First, search configured lib paths
+    // First, search configured lib paths. Iterate path-major (and extension-minor
+    // within one path), matching `Interpreter::resolve_module_path`: the parser
+    // and the runtime must agree on which file a module is, or the parser can
+    // extract exports from one file while the runtime loads another. An `inst#`
+    // entry names an installed repository, not a directory; the runtime resolves
+    // those through the dist metadata, which this scan does not do yet, so skip
+    // them rather than probing a path that can never exist.
     let result = LIB_PATHS.with(|paths| {
         let paths = paths.borrow();
-        for ext in &extensions {
-            let filename = format!("{}{}", base_name, ext);
-            for base in paths.iter() {
-                let base_path = std::path::Path::new(base);
+        for base in paths.iter() {
+            if base.starts_with("inst#") {
+                continue;
+            }
+            let base_path = std::path::Path::new(base);
+            for ext in &extensions {
+                let filename = format!("{}{}", base_name, ext);
                 let candidate = base_path.join(&filename);
                 if candidate.exists() {
                     return Some(candidate.to_string_lossy().into_owned());

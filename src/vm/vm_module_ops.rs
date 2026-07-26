@@ -187,7 +187,9 @@ impl Interpreter {
                 Value::make_instance(Symbol::intern("CompUnit::Repository::Installation"), attrs);
             self.env_mut().insert("*REPO".to_string(), repo);
         }
-        self.add_lib_path(path);
+        // Prepended, mirroring the `$*REPO` chaining just above: a `use lib` path
+        // takes precedence over `-I`, `MUTSULIB` and the installed repositories.
+        self.prepend_lib_path(path);
         Ok(())
     }
 

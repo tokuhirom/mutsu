@@ -11,105 +11,37 @@ impl Interpreter {
         let base_name = module.replace("::", "/");
         let extensions = [".rakumod", ".pm6", ".pm"];
 
-        // Check inst# paths (CompUnit::Repository::Installation) first.
-        // Several installed dists may provide the same short name (two
-        // JSON::Class dists exist on fez, by different authors). Collect every
-        // candidate, filter by the `use` statement's dist selectors
-        // (`:ver`/`:auth`/`:api`, in pending_dist_selectors), and pick the
-        // highest version — the first-JSON-found behavior this replaces
-        // effectively loaded a random one.
-        let mut inst_candidates: Vec<(std::path::PathBuf, String)> = Vec::new();
+        // Walk `lib_paths` ONCE, in order. Plain directories (`use lib`, `-I`,
+        // `MUTSULIB`) and installed repositories (`inst#`, appended by
+        // `add_default_site_repo`) share a single precedence chain, exactly like
+        // Raku's repository chain. Resolving every `inst#` entry up front — as
+        // this used to — inverts that chain, so an installed module shadowed an
+        // explicit `-I` path, which is the one thing the flag exists to prevent.
+        let mut had_plain_lib_path = false;
         for base in &self.lib_paths {
             if let Some(prefix) = base.strip_prefix("inst#") {
-                let prefix_path = Path::new(prefix);
-                let dist_dir = prefix_path.join("dist");
-                if !dist_dir.is_dir() {
-                    continue;
-                }
-                let Ok(entries) = std::fs::read_dir(&dist_dir) else {
-                    continue;
-                };
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.extension().and_then(|e| e.to_str()) != Some("json") {
-                        continue;
-                    }
-                    let Ok(json_str) = std::fs::read_to_string(&path) else {
-                        continue;
-                    };
-                    if let Some(file_id) = Self::find_module_file_id_in_dist_json(&json_str, module)
-                    {
-                        let source_path = prefix_path.join("sources").join(&file_id);
-                        if source_path.exists() {
-                            inst_candidates.push((source_path, json_str));
-                        }
-                    }
-                }
-            }
-        }
-        if !inst_candidates.is_empty() {
-            if let Some((source_path, json_str)) =
-                self.select_dist_candidate(inst_candidates, &self.pending_dist_selectors)
-            {
-                return Some((source_path, Some(json_str)));
-            }
-            // Candidates existed but none matched the selectors: the dependency
-            // is unsatisfied, not "pick a wrong one".
-            return None;
-        }
-
-        let mut candidates: Vec<std::path::PathBuf> = Vec::new();
-        for base in &self.lib_paths {
-            if let Some(prefix) = base.strip_prefix("inst#") {
-                // Installation repo: sources are stored as {prefix}/sources/{hash_id}
-                // Look in dist JSON files for provides[module][file] entry
-                let prefix_path = Path::new(prefix);
-                let dist_dir = prefix_path.join("dist");
-                let sources_dir = prefix_path.join("sources");
-                if dist_dir.is_dir()
-                    && let Ok(entries) = std::fs::read_dir(&dist_dir)
-                {
-                    for entry in entries.flatten() {
-                        let path = entry.path();
-                        if path.extension().and_then(|e| e.to_str()) != Some("json") {
-                            continue;
-                        }
-                        let Ok(json_str) = std::fs::read_to_string(&path) else {
-                            continue;
-                        };
-                        let Ok(meta) = self.parse_json_to_value(&json_str) else {
-                            continue;
-                        };
-                        if let Some(provides) = meta.hash_get_str("provides")
-                            && let Some(entry_val) = provides.hash_get_str(module)
-                        {
-                            // entry_val is either {"file": "hash_id"} or just a string
-                            let hash_id = match entry_val.view() {
-                                ValueView::Hash(map) => map
-                                    .get("file")
-                                    .map(|v| v.to_string_value())
-                                    .unwrap_or_default(),
-                                _ => entry_val.to_string_value(),
-                            };
-                            if !hash_id.is_empty() {
-                                let source_path = sources_dir.join(&hash_id);
-                                if source_path.exists() {
-                                    return Some((source_path, None));
-                                }
-                            }
-                        }
-                    }
+                if let Some(found) = self.resolve_in_inst_repo(prefix, module) {
+                    return Some(found);
                 }
                 continue; // Don't try inst# path as a filesystem path
             }
+            had_plain_lib_path = true;
+            let base_path = Path::new(base.as_str());
             for ext in &extensions {
                 let filename = format!("{}{}", base_name, ext);
-                let base_path = Path::new(base.as_str());
-                candidates.push(base_path.join(&filename));
-                candidates.push(base_path.join("lib").join(&filename));
+                for candidate in [
+                    base_path.join(&filename),
+                    base_path.join("lib").join(&filename),
+                ] {
+                    if candidate.exists() {
+                        return Some((candidate, None));
+                    }
+                }
             }
         }
-        if candidates.is_empty()
+
+        let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+        if !had_plain_lib_path
             && let Some(path) = &self.program_path
             && let Some(parent) = Path::new(path).parent()
             && !parent.as_os_str().is_empty()
@@ -161,6 +93,85 @@ impl Interpreter {
             .into_iter()
             .find(|path| path.exists())
             .map(|p| (p, None))
+    }
+
+    /// Resolve `module` inside ONE installed repository (`inst#<prefix>`), whose
+    /// sources live at `<prefix>/sources/<file_id>` and whose dist metadata lives
+    /// in `<prefix>/dist/*.json`. Returns the source path plus the dist JSON it
+    /// came from, or `None` when this repository cannot satisfy the request — in
+    /// which case the caller moves on to the next link of the search chain.
+    ///
+    /// Several installed dists may provide the same short name (two JSON::Class
+    /// dists exist on fez, by different authors), so every candidate *within this
+    /// repository* is collected, filtered by the `use` statement's dist selectors
+    /// (`:ver`/`:auth`/`:api`, in `pending_dist_selectors`), and the highest
+    /// version wins. That candidate selection is per-repository and is unrelated
+    /// to path precedence: it must not reach across repositories.
+    fn resolve_in_inst_repo(
+        &self,
+        prefix: &str,
+        module: &str,
+    ) -> Option<(std::path::PathBuf, Option<String>)> {
+        let prefix_path = Path::new(prefix);
+        let dist_dir = prefix_path.join("dist");
+        if !dist_dir.is_dir() {
+            return None;
+        }
+        let entries = std::fs::read_dir(&dist_dir).ok()?;
+        let mut candidates: Vec<(std::path::PathBuf, String)> = Vec::new();
+        let mut unmatched_metas: Vec<String> = Vec::new();
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+            let Ok(json_str) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            if let Some(file_id) = Self::find_module_file_id_in_dist_json(&json_str, module) {
+                let source_path = prefix_path.join("sources").join(&file_id);
+                if source_path.exists() {
+                    candidates.push((source_path, json_str));
+                    continue;
+                }
+            }
+            unmatched_metas.push(json_str);
+        }
+        if !candidates.is_empty() {
+            return self
+                .select_dist_candidate(candidates, &self.pending_dist_selectors)
+                .map(|(source_path, json_str)| (source_path, Some(json_str)));
+        }
+        // `find_module_file_id_in_dist_json` is a hand-rolled scan that only
+        // understands `"provides": {"M": {"file": id}}`. Fall back to a real JSON
+        // parse for dists that spell `provides` differently (a bare string value).
+        for json_str in unmatched_metas {
+            let Ok(meta) = self.parse_json_to_value(&json_str) else {
+                continue;
+            };
+            let Some(provides) = meta.hash_get_str("provides") else {
+                continue;
+            };
+            let Some(entry_val) = provides.hash_get_str(module) else {
+                continue;
+            };
+            // entry_val is either {"file": "hash_id"} or just a string
+            let hash_id = match entry_val.view() {
+                ValueView::Hash(map) => map
+                    .get("file")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default(),
+                _ => entry_val.to_string_value(),
+            };
+            if hash_id.is_empty() {
+                continue;
+            }
+            let source_path = prefix_path.join("sources").join(&hash_id);
+            if source_path.exists() {
+                return Some((source_path, None));
+            }
+        }
+        None
     }
 
     /// Pick one installed dist among several that provide the requested module:
@@ -468,7 +479,13 @@ impl Interpreter {
     /// and build a distribution Value. Returns None if the module is not from an inst# repo.
     fn detect_inst_distribution(&self, module: &str) -> Option<Value> {
         for base in &self.lib_paths {
-            let prefix = base.strip_prefix("inst#")?;
+            // Skip plain directories rather than giving up on the whole search:
+            // `-I` paths normally sit in front of the site repository, so bailing
+            // out at the first non-`inst#` entry meant this never looked at the
+            // installed repositories at all.
+            let Some(prefix) = base.strip_prefix("inst#") else {
+                continue;
+            };
             let prefix_path = Path::new(prefix);
             let dist_dir = prefix_path.join("dist");
             if !dist_dir.is_dir() {
