@@ -26,10 +26,12 @@ plan 9;
 {
     my $ex;
     try {
+        # Inside a CATCH block the exception is the TOPIC; `$!` is Nil there
+        # (it is only written when the `try` completes).
         die "in-block";
-        CATCH { default { $ex = $! } }
+        CATCH { default { $ex = $_ } }
     };
-    isa-ok $ex, X::AdHoc, '$! from untyped die is X::AdHoc';
+    isa-ok $ex, X::AdHoc, 'an untyped die seen from a CATCH block is X::AdHoc';
 }
 
 # A *typed* error keeps its specific type (regression guard: the default must
