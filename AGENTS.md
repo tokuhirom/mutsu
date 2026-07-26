@@ -69,9 +69,12 @@ Existing interpreter fallbacks are technical debt. When you encounter one while 
 - PRs should include: concise problem statement, approach, and test evidence (`make test` / `make roast` results).
 - Link related issues/PRs when applicable (for example, `(#150)`).
 - Ensure CI passes format, clippy, unit tests, TAP tests, and roast checks before merge.
-- When asked to open a PR, enable GitHub auto-merge after opening it unless the user explicitly
-  asks not to. Branch protection remains the merge gate, so the PR merges only after required
-  checks and reviews pass.
+- When asked to open a PR, create it as **ready for review (`draft: false`) from the start** and
+  enable GitHub auto-merge after opening it unless the user explicitly asks not to. Do not create a
+  draft PR and then convert it to ready: GitHub cannot enable auto-merge on draft PRs. Branch
+  protection remains the merge gate, so the PR merges only after required checks and reviews pass.
+- Do not report PR publication as complete until both conditions are verified on GitHub:
+  `isDraft == false` and auto-merge is enabled.
 
 ## External Repository Policy
 - Do not create PRs or Issues against Raku org repositories (including `roast` and `raku-doc`) from this workspace.
