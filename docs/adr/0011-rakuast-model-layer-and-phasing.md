@@ -147,8 +147,13 @@ earlier ones.
     blocks/`Call::Name` are Terms-and-Expressions; `Apply*`/`Ternary` are Expressions-only; `Name`/
     `ArgList`/`Signature`/statements/types are neither) is consulted by `isa_check`. Conservative:
     only verified classes are listed, so an unlisted expression node is a missed match, never a
-    false positive. Tests in `t/rakuast-semantic-hierarchy.t`. Still pending: registering `RakuAST::*`
-    as first-class type objects (they currently resolve as bare type names).
+    false positive. Tests in `t/rakuast-semantic-hierarchy.t`.
+  - **Slice 5 (registered type objects + `.WHAT`) — done.** A node's `.WHAT` returns the
+    corresponding `RakuAST::*` type object, and concrete and abstract RakuAST type objects now
+    participate in the same namespace and semantic hierarchy under `.isa` and `~~`
+    (`IntLiteral isa Term isa Expression isa Node`). The registry rejects unknown `RakuAST::*`
+    package names rather than treating the namespace prefix as sufficient. Tests in
+    `t/rakuast-type-objects.t`.
 - **Phase 4 — Construction.** `.new` (and `.from-identifier`, …) on RakuAST type objects
   build `Value::RakuAst`, validating args against the per-class field schema.
   - **Slice 1 (literals) — done.** `RakuAST::IntLiteral.new(42)` / `RatLiteral.new(3.5)` /

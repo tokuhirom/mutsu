@@ -152,6 +152,12 @@ impl Value {
         if my_type == type_name {
             return true;
         }
+        if let ValueView::Package(name) = self.view() {
+            let actual = name.resolve();
+            if actual.starts_with("RakuAST::") && type_name.starts_with("RakuAST::") {
+                return crate::rakuast::type_object_isa(&actual, type_name);
+            }
+        }
         // RakuAST node hierarchy (Phase 3): every node isa `RakuAST::Node`, a node
         // isa any `::`-namespace ancestor of its printed class name (e.g.
         // `Statement::If` isa `RakuAST::Statement`; the `::` boundary avoids a
