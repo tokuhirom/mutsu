@@ -130,6 +130,10 @@ impl Interpreter {
                         failure_exception = Some(exc.clone());
                     }
                 }
+                // TODO: Raku actually leaves the `Any` type object here, not `Nil`
+                // (`Nil` is only the *initial* `$!` of a scope). Making that change
+                // needs the strict-mode undeclared-variable error first — see
+                // todo/tickets/successful-try-leaves-any-not-nil.md.
                 self.env_mut()
                     .insert("!".to_string(), failure_exception.unwrap_or(Value::NIL));
                 *ip = end;
@@ -364,8 +368,13 @@ impl Interpreter {
                 // before the `try`. Remember that prior value so the handled paths
                 // below can restore it.
                 let prior_bang = self.env().get("!").cloned();
-                self.env_mut().insert("!".to_string(), err_val.clone());
-                self.env_mut().insert("_".to_string(), err_val);
+                // The CATCH block gets its own `$!`, which starts out `Nil`: inside
+                // the handler the exception is the *topic* (`$_`), and the enclosing
+                // scope's `$!` has not been written yet. It is only updated below,
+                // once the handler is done and the exception turns out to be
+                // unhandled (an implicit `try` trap swallows it into `$!`).
+                self.env_mut().insert("!".to_string(), Value::NIL);
+                self.env_mut().insert("_".to_string(), err_val.clone());
                 let saved_when = self.when_matched();
                 loan_env!(self, set_when_matched(false));
                 let catch_stack_base = self.stack.len();
@@ -424,6 +433,12 @@ impl Interpreter {
                 if when_handled {
                     self.env_mut()
                         .insert("!".to_string(), prior_bang.unwrap_or(Value::NIL));
+                } else {
+                    // Nothing matched: the exception is still live, so publish it in
+                    // the enclosing `$!` now that the handler (which saw `Nil`) is
+                    // done. An explicit CATCH re-throws just below; an implicit
+                    // `try` trap swallows it with the exception left in `$!`.
+                    self.env_mut().insert("!".to_string(), err_val);
                 }
                 // If there's an explicit CATCH block but no `when`/`default`
                 // matched, re-throw the exception (Raku semantics).

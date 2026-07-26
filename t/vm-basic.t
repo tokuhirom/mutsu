@@ -592,8 +592,8 @@ ok $try_result === Any, 'try/catch catches error';
 my $try_ok = try { 42 };
 is $try_ok, 42, 'try without error returns value';
 
-# try with $! access
-try { die "boom"; CATCH { default { is $!, "boom", 'try/catch sets $!' } } };
+# try with exception access: inside CATCH the exception is the topic, not `$!`
+try { die "boom"; CATCH { default { is $_, "boom", 'the CATCH topic is the exception' } } };
 
 # === Block inlining ===
 

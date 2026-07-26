@@ -28,7 +28,9 @@ plan 8;
     ok $!.backtrace.defined, '$!.backtrace is defined';
 }
 
-# When $! is Nil (no error), methods return Nil
+# When $! is Nil (no error), methods return Nil.
+# NOTE: raku leaves the `Any` type object here, where these calls would die
+# instead — see todo/tickets/successful-try-leaves-any-not-nil.md.
 {
     try { 1 + 1 };
     ok !$!.message.defined, '$!.message is Nil when no error';
