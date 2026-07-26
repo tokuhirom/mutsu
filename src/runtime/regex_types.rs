@@ -215,6 +215,13 @@ pub(crate) enum RegexAtom {
     Backref(usize),
     /// `$<name>` — backreference to named capture group
     NamedBackref(String),
+    /// Bare `$name` interpolating an in-regex `:my $name …` lexical: a match-time
+    /// interpolation of the variable's string value as a literal. The value is
+    /// read from `caps.regex_vars` (falling back to `env`) when the atom is
+    /// matched, so it reflects assignments made earlier in the same match (e.g.
+    /// a captured indentation string). Distinct from `NamedBackref` (which reads
+    /// a capture) and from pre-substituted outer-scope `$var` interpolation.
+    VarInterp(String),
     /// `<?same>` / `<!same>` — zero-width assertion: adjacent chars are same/different
     SameAssertion {
         negated: bool,
