@@ -59,6 +59,29 @@ impl NanBox {
         }
     }
 
+    /// Run `f` on the shared RakuAST node payload in place.
+    ///
+    /// RakuAST model nodes are otherwise immutable, but builder methods such as
+    /// `StatementList.add-statement` deliberately mutate the node shared by all
+    /// holders. Keep that exceptional aliased write behind the NanBox wall so
+    /// the payload kind check and raw-address access live in one place.
+    #[inline]
+    pub(in crate::value) fn with_rakuast_inplace<R>(
+        &self,
+        f: impl FnOnce(&mut crate::rakuast::RakuAstNode) -> R,
+    ) -> Option<R> {
+        let bits = self.0.get();
+        if !matches!(classify(bits), Classified::Kind(Kind::RakuAst)) {
+            return None;
+        }
+        // SAFETY: a RakuAST payload is an Arc<RakuAstNode>. Native model
+        // mutators execute synchronously and do not re-enter the VM while this
+        // borrow is live. The mutation must write through the shared node (COW
+        // would make aliases observe different ASTs).
+        let node = unsafe { &mut *std::ptr::with_exposed_provenance_mut(addr_of_payload(bits)) };
+        Some(f(node))
+    }
+
     /// True iff this is a big-integer-backed rational tagged as a FatRat.
     #[inline]
     pub(in crate::value) fn is_bigfatrat(&self) -> bool {

@@ -503,6 +503,17 @@ pub fn construct(
     method: &str,
     args: &[Value],
 ) -> Result<Option<Value>, RuntimeError> {
+    if class_name == "RakuAST::StatementList" && method == "new" {
+        if !args.is_empty() {
+            return Err(RuntimeError::new(
+                "RakuAST::StatementList.new expects no arguments",
+            ));
+        }
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::StatementList,
+            fields: Vec::new(),
+        }))));
+    }
     // Single-positional-argument constructors: the literals, `Name.from-identifier`,
     // and the bare operator nodes (`Infix.new("+")`).
     if let Some(class) = single_positional_class(class_name, method) {
@@ -646,6 +657,9 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
     }
 
     names.extend(accessor_names(class));
+    if class == RakuAstClass::StatementList {
+        names.push("add-statement");
+    }
     names.sort_unstable();
     names.dedup();
     Some(names)
@@ -669,7 +683,8 @@ fn class_from_name(class_name: &str) -> Option<RakuAstClass> {
 fn constructor_is_supported(class: RakuAstClass) -> bool {
     matches!(
         class,
-        RakuAstClass::IntLiteral
+        RakuAstClass::StatementList
+            | RakuAstClass::IntLiteral
             | RakuAstClass::RatLiteral
             | RakuAstClass::StrLiteral
             | RakuAstClass::Infix
