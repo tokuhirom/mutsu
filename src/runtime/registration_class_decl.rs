@@ -905,6 +905,37 @@ impl Interpreter {
                         .entry((name.to_string(), attr))
                         .or_insert(ty);
                 }
+                // Carry each composed-role attribute's declared type constraint
+                // (`role R { has Int $.x }`) onto the consuming class, so it is
+                // enforced and introspectable exactly like a class-declared one.
+                // `::?CLASS` in a role attribute names the consuming class, and
+                // a role type parameter (`has T $.v`) resolves to this
+                // composition's argument.
+                let role_attr_types: Vec<(String, String)> = self
+                    .registry()
+                    .role_attribute_types
+                    .iter()
+                    .filter(|((r, _), _)| r == base_role_name)
+                    .map(|((_, attr), tc)| {
+                        (
+                            attr.clone(),
+                            substitute_type_param_tokens(&tc.replace("::?CLASS", name), &type_subs),
+                        )
+                    })
+                    .collect();
+                for (attr, tc) in role_attr_types {
+                    class_def.attribute_types.entry(attr).or_insert(tc);
+                }
+                let role_attr_smileys: Vec<(String, String)> = self
+                    .registry()
+                    .role_attribute_smileys
+                    .iter()
+                    .filter(|((r, _), _)| r == base_role_name)
+                    .map(|((_, attr), s)| (attr.clone(), s.clone()))
+                    .collect();
+                for (attr, s) in role_attr_smileys {
+                    class_def.attribute_smileys.entry(attr).or_insert(s);
+                }
                 for (mname, overloads) in &role.methods {
                     // Skip methods declared with `my` scope -- they are role-private
                     // and should not be composed into consuming classes.

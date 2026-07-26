@@ -659,6 +659,7 @@ impl Interpreter {
         // Collect attributes and methods from the role itself and all composed parent roles
         let mut all_attributes = role_def.attributes.clone();
         let mut all_methods: HashMap<String, Vec<MethodDef>> = role_def.methods.clone();
+        let mut all_wildcard_handles = role_def.wildcard_handles.clone();
         let mut composed_roles_list = vec![role_name.to_string()];
         if let Some(parent_names) = self.registry().role_parents.get(role_name).cloned() {
             let mut role_stack: Vec<String> = parent_names;
@@ -679,6 +680,11 @@ impl Interpreter {
                                 .or_default()
                                 .extend(method_defs.clone());
                         }
+                        for wh in &parent_role.wildcard_handles {
+                            if !all_wildcard_handles.contains(wh) {
+                                all_wildcard_handles.push(wh.clone());
+                            }
+                        }
                     }
                     // Also recurse into grandparent roles
                     if let Some(grandparents) =
@@ -693,16 +699,35 @@ impl Interpreter {
                 }
             }
         }
+        // A punned role's attributes keep their declared types: the pun IS the
+        // class here, so `::?CLASS` resolves to the role's own name. Parent
+        // roles' entries are collected first so the punned role's own
+        // declaration wins on a name clash.
+        let mut attribute_types: HashMap<String, String> = HashMap::new();
+        let mut attribute_smileys: HashMap<String, String> = HashMap::new();
+        for owner in composed_roles_list.iter().rev() {
+            let base = owner.split_once('[').map(|(b, _)| b).unwrap_or(owner);
+            for ((r, attr), tc) in &self.registry().role_attribute_types {
+                if r == base {
+                    attribute_types.insert(attr.clone(), tc.replace("::?CLASS", role_name));
+                }
+            }
+            for ((r, attr), s) in &self.registry().role_attribute_smileys {
+                if r == base {
+                    attribute_smileys.insert(attr.clone(), s.clone());
+                }
+            }
+        }
         let punned_class = ClassDef {
             parents: Vec::new(),
             attributes: all_attributes,
-            attribute_types: HashMap::new(),
-            attribute_smileys: HashMap::new(),
+            attribute_types,
+            attribute_smileys,
             attribute_built: HashMap::new(),
             methods: all_methods,
             native_methods: HashSet::new(),
             mro: super::sym_mro(&[role_name, "Any", "Mu"]),
-            wildcard_handles: Vec::new(),
+            wildcard_handles: all_wildcard_handles,
             alias_attributes: HashSet::new(),
             class_level_attrs: HashMap::new(),
         };

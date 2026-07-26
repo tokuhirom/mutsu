@@ -467,8 +467,8 @@ impl Interpreter {
                     handles,
                     is_rw,
                     is_readonly,
-                    type_constraint: _,
-                    type_smiley: _,
+                    type_constraint,
+                    type_smiley,
                     is_required,
                     sigil,
                     where_constraint,
@@ -502,6 +502,22 @@ impl Interpreter {
                         self.registry_mut()
                             .role_attribute_is_types
                             .insert((name.to_string(), attr_name_str.clone()), it.clone());
+                    }
+                    // The declared type of a role attribute (`has Int $.x`,
+                    // `has Callable %!c{Mu:U}`) is recorded per (role, attr) and
+                    // copied onto every consuming/punned class, since a role has
+                    // no class of its own to hold `attribute_types`. `::?CLASS`
+                    // stays unresolved here — it names the *consuming* class, so
+                    // it is substituted at composition.
+                    if let Some(tc) = type_constraint {
+                        self.registry_mut()
+                            .role_attribute_types
+                            .insert((name.to_string(), attr_name_str.clone()), tc.clone());
+                    }
+                    if let Some(ts) = type_smiley {
+                        self.registry_mut()
+                            .role_attribute_smileys
+                            .insert((name.to_string(), attr_name_str.clone()), ts.clone());
                     }
                     // `is default(...)` on a role attribute can reference the role's
                     // type parameters (`is default(T)`), so it cannot be evaluated

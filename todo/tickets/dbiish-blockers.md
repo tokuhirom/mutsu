@@ -233,9 +233,36 @@ and the test declares `has %.Converter is DBDish::TypeConverter;`, then
 `%!Converter{Str} = self.^find_method('test-str')`. So the file needs: an
 **object hash keyed by `Mu:U`** (type objects as keys), `handles <AT-KEY
 EXISTS-KEY>` delegation on a private attribute, an attribute typed with a role,
-`.^find_method`, and the indirect method call `$test.$sub('test')`. Start by
-checking which of those five mutsu lacks — the `Did you mean 'invert'?`
-suggestion is the *symptom* of an unresolved delegated `AT-KEY`, not a typo.
+`.^find_method`, and the indirect method call `$test.$sub('test')`.
+
+**All five were measured separately 2026-07-26** (the `Did you mean 'invert'?`
+suggestion is the *symptom* of `$test.Converter` still being a plain `Hash`, not
+a typo, and the file's first non-TAP line is only a warning — see the note at
+the end of this file). Three are done and two remain:
+
+- **Object hash keyed by `Mu:U`** — worked for a lexical `my %h{Mu:U}` but not
+  for an attribute: every element assignment stringified the key. Fixed, along
+  with role attributes having no declared type at all, in
+  [`news/2026-07/role-attribute-type-constraints.md`](../../news/2026-07/role-attribute-type-constraints.md).
+- **`.^find_method`** and **the indirect method call `$obj.$sub('x')`** — both
+  already correct.
+- **`handles <AT-KEY EXISTS-KEY>` on a private attribute** — correct on a class.
+  On a *punned role* it goes through a second, incompatible store, which is the
+  remaining blocker below.
+- **An attribute typed with a role** (`has %.Converter is TypeConverter`) — the
+  `is Type` trait itself works (`Type.new` seeds the attribute), but for a role
+  that means a punned-role object living inside an attribute, which is precisely
+  where the second store cannot be reached.
+
+So what is left of ⑤ is one thing:
+[`todo/deep/punned-role-container-attribute-store.md`](../deep/punned-role-container-attribute-store.md).
+A punned role keeps its `@`/`%` attributes in `__mutsu_attr__` mixin markers
+instead of the instance's attribute cell, so an ordinary `%!h<k> = 1` inside a
+role method is dropped, while the `handles` delegation path mutates the marker
+and writes the rebuilt `Mixin` back into the *caller's env variable* — a
+writeback that cannot reach an object held in an attribute. The code carries its
+own `TODO` for this. It wants the cell to become the single store for every
+sigil; ~36 `__mutsu_attr__` sites are involved.
 
 Note the object-hash requirement overlaps the deferred "object-hash `WHICH`"
 item in the doc-diff DEEP bucket (`docs/doc-diff-backlog.md`).
@@ -302,10 +329,11 @@ the adverbs away outright.
 ⑦, ③, ④a, ④b and ⑧ are done. `05-mock` is at raku parity (16/16) and `01-basic`
 is at 30 of 35. Two left:
 
-1. **⑤** — `06-types`: an object hash keyed by type objects, plus `handles`
-   delegation from a private attribute. Confirm which of the five features listed
-   above is actually missing before scoping it. This is the only remaining file
-   whose blockers are ordinary interpreter work.
+1. **⑤** — `06-types`: reduced to a single blocker,
+   [`todo/deep/punned-role-container-attribute-store.md`](../deep/punned-role-container-attribute-store.md)
+   (the object-hash and role-attribute-type halves are fixed). It is a real
+   refactor rather than a slice: the punned role's container attributes and the
+   `handles` delegation forwarder have to converge on the instance cell.
 2. **⑨** — the `mysql` driver, and with it `01-basic`'s last three subtests. Do
    not start it as a `DBIish` task: it is
    [`todo/deep/nativehelpers-blob-moarvm-guts.md`](../deep/nativehelpers-blob-moarvm-guts.md),
