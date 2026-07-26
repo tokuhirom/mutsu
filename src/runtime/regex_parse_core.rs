@@ -1923,6 +1923,11 @@ impl Interpreter {
                             // Read the inner pattern up to the closing '>'.
                             let mut inner = String::new();
                             let mut angle_depth = 1usize;
+                            // A quoted literal inside the assertion may contain
+                            // the angle brackets themselves (`<!before '%>' >`,
+                            // `<!before '<%' >`), so its content must not move
+                            // the angle-depth count.
+                            let mut quote: Option<char> = None;
                             while let Some(ch) = chars.next() {
                                 if ch == '\\' {
                                     // Keep an escaped char (and its backslash)
@@ -1936,7 +1941,17 @@ impl Interpreter {
                                     }
                                     continue;
                                 }
-                                if ch == '<' {
+                                if let Some(q) = quote {
+                                    if ch == q {
+                                        quote = None;
+                                    }
+                                    inner.push(ch);
+                                    continue;
+                                }
+                                if ch == '\'' || ch == '"' {
+                                    quote = Some(ch);
+                                    inner.push(ch);
+                                } else if ch == '<' {
                                     angle_depth += 1;
                                     inner.push(ch);
                                 } else if ch == '>' {
