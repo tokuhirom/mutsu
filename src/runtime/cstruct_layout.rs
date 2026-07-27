@@ -12,9 +12,9 @@
 //! attributes using the platform's C alignment rules, and reads a field out of
 //! the pointed-to memory.
 //!
-//! Only *reads* through a pointer that C gave us are supported. Writing fields,
-//! `HAS`-embedded structs/arrays, and allocating a struct from Raku
-//! (`MyStruct.new`) remain follow-up work.
+//! Reads and writes go through a pointer that C gave us. `HAS`-embedded
+//! structs/arrays and allocating a struct from Raku (`MyStruct.new`) remain
+//! follow-up work.
 
 /// The C type of one CStruct field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -154,6 +154,82 @@ pub(crate) unsafe fn read_field(base: usize, field: &FieldLayout) -> crate::valu
     }
 }
 
+/// The address of a process-lifetime C string holding `s`, for a `Str`-typed
+/// CStruct field.
+///
+/// A `char*` field stores a pointer, so the bytes have to outlive the
+/// assignment — C reads them whenever it likes, and a `CString` dropped at the
+/// end of the call would leave the struct pointing at freed memory. Rakudo keeps
+/// the Raku `Str` alive through the struct's `child_objs`; mutsu has no such
+/// back-reference, so the strings are interned by content and live for the rest
+/// of the process. That bounds the arena by the number of *distinct* strings a
+/// program writes into struct fields (a handful, in practice) instead of by the
+/// number of writes — the same trade `nativecall::native_object_where` already
+/// makes for `.WHERE` blocks.
+fn interned_c_string(s: &str) -> *const std::ffi::c_char {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    static STRINGS: OnceLock<Mutex<HashMap<String, usize>>> = OnceLock::new();
+    let mut map = STRINGS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let addr = *map.entry(s.to_string()).or_insert_with(|| {
+        // A NUL in the middle truncates, as it does for every other `Str`
+        // argument NativeCall marshals.
+        let owned = std::ffi::CString::new(s)
+            .unwrap_or_else(|e| {
+                let bytes = e.into_vec();
+                let upto = bytes.iter().position(|b| *b == 0).unwrap_or(bytes.len());
+                std::ffi::CString::new(&bytes[..upto]).unwrap_or_default()
+            })
+            .into_raw();
+        owned as usize
+    });
+    addr as *const std::ffi::c_char
+}
+
+/// Write `value` into the field at `base + offset` in native memory.
+///
+/// # Safety
+/// Same contract as [`read_field`]: `base` must point at a live C struct of the
+/// laid-out type. A wrong declaration corrupts memory here exactly as it does in
+/// Rakudo.
+pub(crate) unsafe fn write_field(base: usize, field: &FieldLayout, value: &crate::value::Value) {
+    let to_int = crate::runtime::to_int;
+    let to_num = |v: &crate::value::Value| crate::runtime::utils::to_float_value(v).unwrap_or(0.0);
+    let ptr = (base + field.offset) as *mut u8;
+    unsafe {
+        match field.ty {
+            FieldType::I8 => ptr.cast::<i8>().write_unaligned(to_int(value) as i8),
+            FieldType::I16 => ptr.cast::<i16>().write_unaligned(to_int(value) as i16),
+            FieldType::I32 => ptr.cast::<i32>().write_unaligned(to_int(value) as i32),
+            FieldType::I64 => ptr.cast::<i64>().write_unaligned(to_int(value)),
+            FieldType::U8 => ptr.write_unaligned(to_int(value) as u8),
+            FieldType::U16 => ptr.cast::<u16>().write_unaligned(to_int(value) as u16),
+            FieldType::U32 => ptr.cast::<u32>().write_unaligned(to_int(value) as u32),
+            FieldType::U64 => ptr.cast::<u64>().write_unaligned(to_int(value) as u64),
+            FieldType::F32 => ptr.cast::<f32>().write_unaligned(to_num(value) as f32),
+            FieldType::F64 => ptr.cast::<f64>().write_unaligned(to_num(value)),
+            FieldType::Str => {
+                // An undefined value is a NULL `char*`, matching the way a `Str`
+                // *argument* is marshalled.
+                let s = if crate::runtime::types::value_is_defined(value) {
+                    interned_c_string(&value.to_string_value())
+                } else {
+                    std::ptr::null()
+                };
+                ptr.cast::<*const std::ffi::c_char>().write_unaligned(s);
+            }
+            // A `Pointer`, another CStruct handle, a `CArray[T]` handle, or a
+            // bare address as an `Int` — all carry their address the same way.
+            FieldType::Pointer => ptr
+                .cast::<usize>()
+                .write_unaligned(crate::runtime::nativecall::value_c_address(value)),
+        }
+    }
+}
+
 impl crate::runtime::Interpreter {
     /// The registered name of the `is repr('CStruct')` class `name` refers to,
     /// or `None` if it is not one.
@@ -270,6 +346,52 @@ impl crate::runtime::Interpreter {
             },
             addr,
         ))
+    }
+
+    /// Write `value` into field `name` of the C struct `target` points at.
+    /// Returns `false` — leaving the caller to its ordinary attribute path — if
+    /// `target` is not a CStruct handle carrying an address, or the class does
+    /// not declare that field.
+    ///
+    /// This is the write half of [`Self::cstruct_field_value`]. Without it an
+    /// assignment through a handle (`$bind.buffer = $addr`) reported success and
+    /// went nowhere, because a CStruct handle stores no Raku attributes to
+    /// receive it — the struct in C memory is the only storage there is.
+    pub(crate) fn cstruct_field_assign(
+        &mut self,
+        target: &crate::value::Value,
+        name: &str,
+        value: &crate::value::Value,
+    ) -> bool {
+        use crate::value::ValueView;
+        let (class_name, address) = match target.view() {
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } => {
+                let addr = match attributes.as_map().get("address").map(|v| v.view()) {
+                    Some(ValueView::Int(a)) if a > 0 => a as usize,
+                    _ => return false,
+                };
+                (class_name.resolve().to_string(), addr)
+            }
+            _ => return false,
+        };
+        let Some(registered) = self.cstruct_class_name(&class_name) else {
+            return false;
+        };
+        let Some(layout) = self.cstruct_layout(&registered) else {
+            return false;
+        };
+        let Some(field) = layout.iter().find(|f| f.name == name) else {
+            return false;
+        };
+        // SAFETY: `address` came from C as a pointer to a struct of this
+        // declared type and the instance is alive, so the field is in bounds —
+        // the same trust `cstruct_field_value` documents for the read.
+        unsafe { write_field(address, field, value) };
+        true
     }
 
     /// The number of bytes a value of `type_name` occupies in C: the width of a

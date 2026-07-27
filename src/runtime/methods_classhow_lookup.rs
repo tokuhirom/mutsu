@@ -316,6 +316,7 @@ impl Interpreter {
             method_name,
             "name"
                 | "shortname"
+                | "array_type"
                 | "ver"
                 | "auth"
                 | "api"

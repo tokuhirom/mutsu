@@ -126,6 +126,16 @@ impl Interpreter {
             let repr = cur.to_string_value();
             return Err(RuntimeError::assignment_ro_typename(&typename, &repr));
         }
+        // An `is repr('CStruct')` handle keeps no Raku attributes: its fields
+        // live in the C struct its `address` points at, so an assignment has to
+        // write native memory (`$bind.buffer = $addr`). Without this the write
+        // fell through to the ordinary attribute path, which stored it in a map
+        // nothing reads — the assignment reported success and the struct never
+        // changed. The guard is tight: only an instance carrying a non-null
+        // `address` whose class is a registered CStruct declaring that field.
+        if method_args.is_empty() && self.cstruct_field_assign(&target, method, &value) {
+            return Ok(value);
+        }
         // Handle AT-POS lvalue assignment: @arr.AT-POS(idx...) = v  =>  ASSIGN-POS(idx..., v)
         if method == "AT-POS"
             && !method_args.is_empty()

@@ -25,6 +25,30 @@ fn shorten_type_name(name: &str) -> String {
     out
 }
 
+/// The element type `.^array_type` reports for the type named `type_name`.
+///
+/// A parameterised container names its element type outright
+/// (`Buf[uint64]` -> `uint64`, `array[num32]` -> `num32`,
+/// `CArray[int32]` -> `int32`). An unparameterised byte-buffer type carries its
+/// element width in its own name (`utf16` -> `uint16`), and a bare `Buf`/`Blob`
+/// is `uint8`. Anything else is `Mu`, which is what Rakudo's `ClassHOW` answers
+/// for a type that is not an array (`Str.^array_type` is `Mu`).
+fn array_element_type_name(type_name: &str) -> &str {
+    if let Some(inner) = type_name
+        .split_once('[')
+        .and_then(|(_, rest)| rest.strip_suffix(']'))
+    {
+        return inner;
+    }
+    match type_name {
+        "Buf" | "Blob" | "buf8" | "blob8" | "utf8" | "utf8-c8" => "uint8",
+        "buf16" | "blob16" | "utf16" => "uint16",
+        "buf32" | "blob32" | "utf32" => "uint32",
+        "buf64" | "blob64" => "uint64",
+        _ => "Mu",
+    }
+}
+
 impl Interpreter {
     /// Resolve a nominalizable type name to its nominal base type
     /// (`^nominalize`): strip `:D`/`:U`/`:_` definiteness, unwrap a coercion
@@ -149,6 +173,19 @@ impl Interpreter {
                 }
                 _ => value_type_name(&args[0]).to_string(),
             })),
+            "array_type" if !args.is_empty() => {
+                // The element type of a native array-ish container. Derived from
+                // the same name `.^name` reports — `dispatch_caret_name`, which
+                // is where a `CArray[int32]` / `array[uint8]` gets its
+                // parameterised spelling from the container metadata — so the
+                // two can never disagree. `NativeHelpers::Blob` asks every
+                // container it is handed for this and feeds the answer to
+                // `nativesizeof` and `nativecast(Pointer[T], …)`.
+                let name = self.dispatch_caret_name(&args[0])?.to_string_value();
+                Ok(Value::package(crate::symbol::Symbol::intern(
+                    array_element_type_name(&name),
+                )))
+            }
             "shortname" if !args.is_empty() => {
                 let full = self
                     .dispatch_classhow_method("name", vec![args[0].clone()])?
