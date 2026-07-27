@@ -1,5 +1,7 @@
 use super::*;
 
+static TAKE_VALUE_COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 /// Parse `return` statement.
 pub(crate) fn return_stmt(input: &str) -> PResult<'_, Stmt> {
     // If "return" is a declared term symbol (e.g. sigilless variable \return),
@@ -187,9 +189,37 @@ pub(crate) fn take_stmt(input: &str) -> PResult<'_, Stmt> {
     }
     let rest = keyword("take", input).ok_or_else(|| PError::expected("take statement"))?;
     let (rest, _) = ws1(rest)?;
-    let (rest, expr) = parse_comma_or_expr(rest)?;
+    // `take` is value-producing and binds tighter than the loose word-logicals:
+    // `take X and Y` is `(take X) and Y`. Capture X once because it may have
+    // side effects, then use that same taken value to drive the short-circuit.
+    let (rest, expr) = crate::parser::stmt::assign::parse_comma_or_expr_no_word_logical(rest)?;
     let expr = unwrap_single_trailing_comma(expr);
-    parse_statement_modifier(rest, Stmt::Take(expr, false))
+    let (r, _) = ws(rest)?;
+    let stmt = if crate::parser::expr::starts_with_loose_word_logical(r) {
+        let id = TAKE_VALUE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let tmp_name = format!("__mutsu_take_value_{id}");
+        let tmp_var = Expr::Var(tmp_name.clone());
+        let (rest, tail) = crate::parser::expr::word_logical_tail_pub(r, tmp_var.clone())?;
+        let capture = Stmt::VarDecl {
+            name: tmp_name,
+            expr,
+            type_constraint: None,
+            is_state: false,
+            is_our: false,
+            is_dynamic: false,
+            is_export: false,
+            export_tags: Vec::new(),
+            custom_traits: Vec::new(),
+            where_constraint: None,
+        };
+        return parse_statement_modifier(
+            rest,
+            Stmt::SyntheticBlock(vec![capture, Stmt::Take(tmp_var, false), Stmt::Expr(tail)]),
+        );
+    } else {
+        Stmt::Take(expr, false)
+    };
+    parse_statement_modifier(rest, stmt)
 }
 
 /// Parse CATCH/CONTROL blocks.

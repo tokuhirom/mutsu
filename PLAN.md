@@ -1115,14 +1115,6 @@ do not trust an older survey after fixes have merged. Remaining known findings i
       fails. Corpus = `Type/X*.rakudoc` + `throws-like`-style assertions. Good QA is "fails
       correctly", not only "works".
 
-### 8.9 `take X and Y` still binds the word-logical too tightly
-
-- [ ] `take` is value-producing, so `(take X) and Y`
-      must run `Y` with `take`'s *returned* value driving the short-circuit — the re-read-seed
-      trick used for assignment does not apply (there is no variable to re-read, and re-evaluating
-      `X` would double any side effect). Needs a taken-value capture. Currently `take X and Y`
-      still parses as `take (X and Y)`. Very rare; deferred.
-
 ### Ad-hoc discovered findings now live in `todo/`, not here
 
 Bugs and gaps found in passing (the former 8.15 / 8.18 / 8.20 / 8.21 / 8.22
