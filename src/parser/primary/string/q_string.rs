@@ -14,6 +14,10 @@ pub(crate) fn big_q_string(input: &str) -> PResult<'_, Expr> {
     let rest = input
         .strip_prefix('Q')
         .ok_or_else(|| PError::expected("Q string"))?;
+    // `Q::Name` is a package-qualified identifier, not a quote construct.
+    if rest.starts_with("::") {
+        return Err(PError::expected("Q string"));
+    }
 
     // Parse fused adverbs (Qs, Qa, Qb, etc.)
     let mut flags = QuoteFlags::bare_q_big();
@@ -169,6 +173,11 @@ pub(crate) fn q_string(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("q string"));
     }
     let mut after_q = &input[1..];
+    // `q::Name` and `qq::Name` are package-qualified identifiers, not quote
+    // constructs. Check before `qq` detection and colon-adverb parsing.
+    if after_q.starts_with("::") || after_q.starts_with("q::") {
+        return Err(PError::expected("q string"));
+    }
 
     // q:nfc, q:nfd, q:nfkc, q:nfkd — Unicode normalization adverbs
     for nf_form in &[":nfkc", ":nfkd", ":nfc", ":nfd"] {
