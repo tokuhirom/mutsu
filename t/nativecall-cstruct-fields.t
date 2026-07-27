@@ -5,7 +5,7 @@ use NativeCall;
 # attributes must read the field out of that struct, at the offset the C ABI
 # gives it. Before this, every such accessor answered Nil.
 
-plan 12;
+plan 15;
 
 # POSIX `struct tm` — its first nine members are ints in this order on every
 # platform mutsu targets.
@@ -55,3 +55,27 @@ ok $lc.thousands_sep.defined, 'a pointer field comes back as a Pointer';
 # Casting the same address twice gives equal field reads: the cast is a
 # reinterpretation, not a copy.
 is nativecast(Tm, $p).tm_year, $tm.tm_year, 'nativecast reinterprets in place';
+
+# A generated CStruct field accessor shadows inherited builtin methods. The
+# field lookup must happen before native builtin dispatch, including for names
+# normally excluded from the ordinary attribute fast path.
+class BuiltinCollision is repr('CStruct') {
+    has int64 $.first is rw;
+    has int64 $.gist is rw;
+}
+
+sub calloc(size_t, size_t --> Pointer) is native { * }
+
+my $collision = nativecast(BuiltinCollision, calloc(1, 16));
+$collision.first = 7;
+$collision.gist = 11;
+is $collision.first, 7, 'a CStruct field shadows the builtin first method';
+is $collision.gist, 11, 'a CStruct field shadows an excluded builtin method';
+
+class ExplicitMethodWins is repr('CStruct') {
+    has int64 $.first is rw;
+    method first { 99 }
+}
+
+my $explicit = nativecast(ExplicitMethodWins, calloc(1, 8));
+is $explicit.first, 99, 'an explicit method still shadows its CStruct field accessor';
