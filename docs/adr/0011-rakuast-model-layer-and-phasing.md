@@ -204,7 +204,12 @@ earlier ones.
     signature model chain. `Sub.new(:signature)` validates and retains that signature, and the
     constructed routine lowers through the existing compiler under `EVAL`. Empty signatures default
     to an empty parameter list. Tests in `t/rakuast-construct-signature.t`.
-    Next: variable-declaration constructors and richer parameter shapes.
+  - **Slice 9 (plain variable declarations) — done.** `RakuAST::Initializer::Assign.new($expr)`
+    and `RakuAST::VarDeclaration::Simple.new(:sigil, :desigilname, :initializer)` construct the
+    initializer and declaration model chain. Constructors validate child node kinds, expose their
+    fields through model accessors and introspection, render like Rakudo, and lower through the
+    existing compiler under `EVAL`. Tests in `t/rakuast-construct-vardecl.t`.
+    Next: richer parameter shapes.
 - **Phase 5 — EVAL / compilation.** `lower(RakuAstNode) -> Vec<Stmt>/Expr`, then the
   **existing** compiler. `EVAL($rakuast)` and any code that yields a RakuAST tree runs
   through this. No new execution engine.
