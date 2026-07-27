@@ -44,6 +44,10 @@ class Pointer {
     }
     method Str(--> Str) { self.gist }
 }
+# NativeCall's `void`: what an untyped `Pointer.of` reports. Only ever used as a
+# type object to compare against (`ptr.of ~~ void` in NativeHelpers::Blob's
+# `blob-from-pointer`), so an empty class is the whole of it.
+class void { }
 "#;
 
 /// Builtin `IO::Socket` role. Raku's socket classes (`IO::Socket::INET`,

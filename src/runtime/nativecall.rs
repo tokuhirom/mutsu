@@ -431,6 +431,22 @@ pub(crate) fn native_object_where(payload: usize) -> usize {
 /// object (undefined) so `.defined` / boolean checks — the OpenSSL binding's
 /// `try {...} || try {...}` fallback pattern — behave like Rakudo, where a null
 /// CStruct return is a type object.
+/// A `Pointer[T]` — an ordinary `Pointer` object that also remembers what it
+/// points at, so `.of` can report `T` and `.deref` can read through it. Kept as
+/// class `Pointer` rather than a class named "Pointer[T]" so every existing
+/// `Pointer` method and the marshalling layer's `address` read keep working.
+/// A NULL address is still a defined object here: unlike an opaque CStruct
+/// handle, `Pointer.new(0)` is a legitimate value in Rakudo too.
+pub(crate) fn make_typed_pointer(addr: usize, of: &str) -> Value {
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("address".to_string(), Value::int(addr as i64));
+    attrs.insert(
+        "of".to_string(),
+        Value::package(crate::symbol::Symbol::intern(of)),
+    );
+    Value::make_instance(crate::symbol::Symbol::intern("Pointer"), attrs)
+}
+
 pub(crate) fn make_native_handle(class: &str, addr: usize) -> Value {
     if addr == 0 {
         return Value::package(crate::symbol::Symbol::intern(class));
