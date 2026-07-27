@@ -167,6 +167,20 @@ impl Interpreter {
         else {
             return None;
         };
+        let cn = class_name.resolve();
+        // CStruct fields live in native memory rather than the instance's
+        // attribute map. Resolve their generated accessors before the builtin
+        // method-name exclusions below, so fields such as `first` and `gist`
+        // shadow inherited methods just like ordinary public attributes do.
+        // An explicit method with the same name still wins the resolver race.
+        if self.is_cstruct_class(&cn)
+            && matches!(
+                self.resolve_user_method_or_accessor(&cn, method),
+                Some(crate::runtime::UserMethodOrAccessor::Accessor)
+            )
+        {
+            return self.cstruct_field_value(target, method);
+        }
         if matches!(
             method,
             "new"
@@ -205,14 +219,6 @@ impl Interpreter {
                 | "handled"
                 | "bytes"
         ) {
-            return None;
-        }
-        let cn = class_name.resolve();
-        // An `is repr('CStruct')` handle stores no Raku attributes: its fields
-        // live in the C struct the instance's `address` points at, so the
-        // accessor must read them out of native memory rather than return the
-        // absent (Nil) slot. Bail to the interpreter path, which does that.
-        if self.is_cstruct_class(&cn) {
             return None;
         }
         // The fast accessor read proceeds only when the public attribute
