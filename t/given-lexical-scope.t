@@ -3,7 +3,7 @@ use Test;
 # A block-form given/when/default body is a lexical scope. A statement
 # modifier is not: its declaration belongs to the surrounding statement list.
 
-plan 15;
+plan 16;
 
 {
     my $x = 1;
@@ -59,3 +59,7 @@ given 5 -> int $native {
     given 2 { $outer = 9 }
     is $outer, 9, 'plain assignment to an outer lexical still survives given';
 }
+
+given 'a' -> $_ is copy { }
+is-deeply (S:g/FAIL// with 'foo'), 'foo',
+    'expression-form with updates a pre-existing topic local slot';

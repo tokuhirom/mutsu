@@ -216,6 +216,13 @@ impl Interpreter {
         let end = body_end as usize;
 
         let saved_topic = self.env().get("_").cloned();
+        // A prior lexical `$_` declaration (for example, from
+        // `given ... -> $_ is copy`) gives topic reads a local slot. Keep that
+        // slot synchronized with the expression-form topic just as `Given`
+        // does, otherwise a following `S/// with EXPR` reads the stale lexical
+        // value instead of EXPR.
+        let topic_local_slot = self.find_local_slot(code, "_");
+        let saved_local_topic = topic_local_slot.map(|s| self.locals[s].clone());
         let saved_when = self.when_matched();
         // Consume the topic's `TagContainerRef` signal (emitted right before this
         // op by `do given @c`). It must NOT survive into the body: a nested
@@ -237,6 +244,9 @@ impl Interpreter {
             if src.starts_with('@') || src.starts_with('%') {
                 self.topic_container_source = Some(src.clone());
             }
+        }
+        if let Some(slot) = topic_local_slot {
+            self.locals[slot] = topic.clone();
         }
         self.env_mut().insert("_".to_string(), topic);
         loan_env!(self, set_when_matched(false));
@@ -268,6 +278,9 @@ impl Interpreter {
                 } else {
                     self.env_mut().remove("_");
                 }
+                if let Some(slot) = topic_local_slot {
+                    self.locals[slot] = saved_local_topic.clone().unwrap_or(Value::NIL);
+                }
                 self.topic_source_var = saved_topic_source;
                 self.topic_container_source = saved_container_source;
                 return Err(e);
@@ -279,6 +292,9 @@ impl Interpreter {
             self.env_mut().insert("_".to_string(), v);
         } else {
             self.env_mut().remove("_");
+        }
+        if let Some(slot) = topic_local_slot {
+            self.locals[slot] = saved_local_topic.unwrap_or(Value::NIL);
         }
         self.topic_source_var = saved_topic_source;
         self.topic_container_source = saved_container_source;
