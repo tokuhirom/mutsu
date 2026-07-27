@@ -218,7 +218,10 @@ Not a new bug so much as a pointer to the deferred deep item.
 `NativeHelpers::Blob`'s `pointer-to` and needs `BODY_OF` — the address of a
 container's element buffer, stable across calls. That is
 [`todo/deep/nativehelpers-blob-moarvm-guts.md`](../deep/nativehelpers-blob-moarvm-guts.md),
-which wants an ADR first. The visible symptom is a parse failure in
+whose ADR is now written:
+[ADR-0015](../../docs/adr/0015-native-backed-container-storage-and-repr-bodies.md)
+(Proposed — its P0/P1 are small NativeCall fixes that can start immediately;
+P2/P3 are the representation change and need a decision). The visible symptom is a parse failure in
 `StatementHandle` (`Unexpected block in infix position`), because the undeclared
 `BPointer` derails the rest of the file — check `use NativeHelpers::Blob; BPointer(Buf.new(1))`
 before chasing the parser. `DBDish::SQLite` does not go through `BODY_OF`, which
