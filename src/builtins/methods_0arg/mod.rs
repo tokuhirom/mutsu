@@ -1691,10 +1691,13 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
     }
 
-    // IO::Path::Parts does Associative, Positional and Iterable: `.hash`/`.Hash`
-    // give the parts as a Map, while `.list`/`.List`/`.flat`/`.pairs`/`.kv`/
-    // iteration expose them as an ordered list of `key => part` Pairs; `.keys`/
-    // `.values`/`.elems` follow the same fixed volume/dirname/basename order.
+    // IO::Path::Parts does Associative, Positional, and Iterable, but Rakudo's
+    // inherited fallback methods itemize the object: `.list`/`.List`/`.values`
+    // contain self, `.keys` contains 0, `.pairs`/`.kv` use 0 => self, and
+    // `.elems` is 1.
+    // Its explicit `.flat`/`.Slip`/`.cache`/`.eager` methods still expose the
+    // three ordered part Pairs, while `.hash`/`.Hash`/`.Map` expose the parts
+    // by name.
     if let ValueView::Instance {
         class_name,
         attributes,
@@ -1722,27 +1725,29 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     keys.iter().map(|k| (k.to_string(), part(k))).collect();
                 return Some(Ok(Value::hash(map)));
             }
-            "list" | "List" | "flat" | "pairs" | "Slip" | "cache" | "eager" | "Array" => {
+            "list" | "List" | "Array" => {
+                return Some(Ok(make_list(vec![target.clone()])));
+            }
+            "flat" | "Slip" | "cache" | "eager" => {
                 return Some(Ok(make_list(pairs())));
             }
             "keys" => {
-                return Some(Ok(make_list(
-                    keys.iter().map(|k| Value::str_from(k)).collect(),
-                )));
+                return Some(Ok(make_list(vec![Value::int(0)])));
             }
             "values" => {
-                return Some(Ok(make_list(keys.iter().map(|k| part(k)).collect())));
+                return Some(Ok(make_list(vec![target.clone()])));
+            }
+            "pairs" => {
+                return Some(Ok(make_list(vec![Value::value_pair(
+                    Value::int(0),
+                    target.clone(),
+                )])));
             }
             "kv" => {
-                let mut kv = Vec::with_capacity(keys.len() * 2);
-                for k in keys {
-                    kv.push(Value::str_from(k));
-                    kv.push(part(k));
-                }
-                return Some(Ok(make_list(kv)));
+                return Some(Ok(make_list(vec![Value::int(0), target.clone()])));
             }
             "elems" => {
-                return Some(Ok(Value::int(keys.len() as i64)));
+                return Some(Ok(Value::int(1)));
             }
             _ => {}
         }

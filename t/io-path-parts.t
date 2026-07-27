@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 24;
+plan 30;
 
 # IO::Path::Parts.new(\volume, \dirname, \basename) — direct construction.
 my $p = IO::Path::Parts.new('C:', '/some/dir', 'foo.txt');
@@ -26,12 +26,22 @@ is $p[0].gist, 'volume => C:', '[0] is the volume pair';
 is $p[1].gist, 'dirname => /some/dir', '[1] is the dirname pair';
 is $p[2].gist, 'basename => foo.txt', '[2] is the basename pair';
 
-# Iterable: the zen slice / .list yields the three pairs in order.
-is-deeply $p[].map(*.gist).List, ('volume => C:', 'dirname => /some/dir', 'basename => foo.txt'),
-    'zen slice yields the ordered pairs';
-is $p.elems, 3, '.elems is 3';
-is-deeply $p.keys.List, ('volume', 'dirname', 'basename'), '.keys in order';
-is-deeply $p.values.List, ('C:', '/some/dir', 'foo.txt'), '.values in order';
+# Rakudo's inherited single-item fallbacks deliberately itemize the object,
+# despite IO::Path::Parts also exposing its three parts positionally.
+is-deeply $p.list, ($p,), '.list contains self';
+is-deeply $p.List, ($p,), '.List contains self';
+is $p.elems, 1, '.elems is 1';
+is-deeply $p.keys.List, (0,), '.keys contains the positional fallback key';
+is-deeply $p.values.List, ($p,), '.values contains self';
+is-deeply $p.pairs.map(*.gist).List,
+    ('0 => IO::Path::Parts.new("C:","/some/dir","foo.txt")',),
+    '.pairs contains 0 => self';
+is $p.pairs[0].key.^name, 'Int', '.pairs fallback key is an Int';
+is-deeply $p.kv.List, (0, $p), '.kv contains 0 and self';
+my @seen;
+for $p { @seen.push($_) }
+is @seen.elems, 1, 'iteration visits once';
+is @seen[0].raku, $p.raku, 'iteration visits self';
 
 # .hash round-trips to a Map keyed by part name.
 my %h = $p.hash;
