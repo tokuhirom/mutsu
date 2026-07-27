@@ -31,10 +31,9 @@ which the punned class had also been dropping.
 
 The punned construction path builds its instance directly instead of going
 through the class constructor, so it grew the same type check the class path
-does in `enforce_attribute_where_constraints`. It deliberately does *not* check
-a value that was seeded positionally: that seeding fires even when the role
-declares its own `method new`, which raku would have run instead — a separate
-gap now written down in `todo/tickets/punned-role-ignores-user-new.md`.
+does in `enforce_attribute_where_constraints`. Punned roles now run their own
+`new`, and their default constructor rejects positional arguments like an
+ordinary class.
 
 ## An object hash declared as an attribute stringified its keys
 
