@@ -67,6 +67,131 @@ impl Interpreter {
         self.delegated_role_attr_key_from_mixins(mixins, method_name)
     }
 
+    /// Element-assign into a punned role object (`$obj{k} = v` / `$obj[i] = v`)
+    /// by mutating the container attribute its role delegates the subscript to.
+    ///
+    /// The wrapped instance's shared attribute cell is the store of record for a
+    /// punned role's attributes (every sigil is seeded into it), so the mutated
+    /// container is written there: that is what the delegation forwarder reads,
+    /// and it reaches every alias — including an object held in an attribute or a
+    /// collection element, which the caller-side env writeback never could.
+    ///
+    /// Returns the rebuilt `Mixin` when the assignment applied (the caller stores
+    /// it back if the object lives in a plain lexical), `None` when `target` is
+    /// not a role mixin or no delegated container accepted the index.
+    pub(crate) fn assign_role_mixin_element(
+        &mut self,
+        target: &Value,
+        idx: &Value,
+        val: &Value,
+        range_slice: &Option<(Vec<usize>, Vec<Value>)>,
+    ) -> Result<Option<Value>, RuntimeError> {
+        let ValueView::Mixin(inner, mixins) = target.view() else {
+            return Ok(None);
+        };
+        let (inner, mixins) = (inner.clone(), mixins.clone());
+        let mut updated_mixins = (*mixins).clone();
+        // Refresh each `__mutsu_attr__` marker from the cell before mutating, so
+        // an element write made directly inside a role method (`%!h<k> = 1`,
+        // which goes to the cell) is not overwritten by a stale marker.
+        let inst_attrs = Self::self_instance_attrs(&inner);
+        if let Some(attrs) = &inst_attrs {
+            let map = attrs.as_map();
+            for (key, attr_value) in updated_mixins.iter_mut() {
+                if let Some(bare) = key.strip_prefix("__mutsu_attr__")
+                    && let Some(cur) = map.get(Symbol::intern(bare))
+                {
+                    *attr_value = cur.clone();
+                }
+            }
+        }
+        // Which delegation applies is decided by the *delegate container*, not by
+        // the index's Rust type: an object-hash key (`$conv{Str} = ...`) is a
+        // `Package`, and testing `idx` for `Str` sent it down the ASSIGN-POS
+        // branch and then out of this path entirely, replacing the role object
+        // with a plain Hash. `handles <AT-KEY>` alone is also enough to make the
+        // subscript assignable — raku's `AT-KEY` yields the delegate hash's own rw
+        // container — and `DBDish::TypeConverter` delegates exactly
+        // `<AT-KEY EXISTS-KEY>` and relies on that.
+        let hash_delegate = |me: &Self, name: &str| {
+            me.delegated_mixin_attr_key(&updated_mixins, name)
+                .filter(|k| {
+                    matches!(
+                        updated_mixins.get(k).map(Value::view),
+                        Some(ValueView::Hash(_))
+                    )
+                })
+        };
+        let delegated_attr_key =
+            match hash_delegate(self, "ASSIGN-KEY").or_else(|| hash_delegate(self, "AT-KEY")) {
+                Some(k) => Some(k),
+                None if matches!(idx.view(), ValueView::Str(_)) => self
+                    .delegated_mixin_attr_key(&updated_mixins, "ASSIGN-KEY")
+                    .or_else(|| self.delegated_mixin_attr_key(&updated_mixins, "AT-KEY")),
+                None => self
+                    .delegated_mixin_attr_key(&updated_mixins, "ASSIGN-POS")
+                    .or_else(|| self.delegated_mixin_attr_key(&updated_mixins, "AT-POS")),
+            };
+        let mut assigned_key: Option<String> = None;
+        if let Some(attr_key) = delegated_attr_key {
+            // The delegate hash owns the keying rule: an object hash is
+            // `.WHICH`-keyed, a plain hash stringifies (a bare type object with
+            // Rakudo's string-context warning).
+            let delegate_key = match updated_mixins.get(&attr_key).map(Value::view) {
+                Some(ValueView::Hash(hd)) if hd.key_type.is_some() => {
+                    Some(Value::str(crate::runtime::utils::value_which_key(idx)))
+                }
+                Some(ValueView::Hash(_)) if !matches!(idx.view(), ValueView::Str(_)) => {
+                    Some(Value::str(self.coerce_type_object_hash_key(idx)?))
+                }
+                _ => None,
+            };
+            let effective_idx = delegate_key.as_ref().unwrap_or(idx);
+            if let Some(attr_value) = updated_mixins.get_mut(&attr_key)
+                && Self::assign_mixin_container_slot(attr_value, effective_idx, val, range_slice)?
+            {
+                // An object-hash delegate also records the original key object, so
+                // `.keys` answers the type object rather than its `.WHICH` string.
+                if let Some(dk) = &delegate_key
+                    && let Some(attr_value) = updated_mixins.get_mut(&attr_key)
+                    && matches!(attr_value.view(), ValueView::Hash(hd) if hd.key_type.is_some())
+                {
+                    attr_value.with_hash_mut(|arc| {
+                        crate::gc::Gc::make_mut(arc)
+                            .original_keys
+                            .get_or_insert_with(Default::default)
+                            .insert(dk.to_string_value(), idx.clone());
+                    });
+                }
+                assigned_key = Some(attr_key);
+            }
+        }
+        if assigned_key.is_none() {
+            for (key, attr_value) in updated_mixins.iter_mut() {
+                if !key.starts_with("__mutsu_attr__") {
+                    continue;
+                }
+                if Self::assign_mixin_container_slot(attr_value, idx, val, range_slice)? {
+                    assigned_key = Some(key.clone());
+                    break;
+                }
+            }
+        }
+        let Some(assigned_key) = assigned_key else {
+            return Ok(None);
+        };
+        if let Some(attrs) = &inst_attrs
+            && let Some(bare) = assigned_key.strip_prefix("__mutsu_attr__")
+            && let Some(new_value) = updated_mixins.get(&assigned_key)
+        {
+            attrs.insert(Symbol::intern(bare), new_value.clone());
+        }
+        Ok(Some(Value::mixin_parts(
+            inner,
+            std::sync::Arc::new(updated_mixins),
+        )))
+    }
+
     pub(crate) fn assign_mixin_container_slot(
         attr_value: &mut Value,
         idx: &Value,

@@ -14,7 +14,7 @@ pub(crate) enum UserMethodOrAccessor {
 }
 
 impl Interpreter {
-    pub(super) fn class_has_method(&mut self, class_name: &str, method_name: &str) -> bool {
+    pub(crate) fn class_has_method(&mut self, class_name: &str, method_name: &str) -> bool {
         self.registry_mut()
             .class_has_method(class_name, method_name)
     }
