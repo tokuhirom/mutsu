@@ -424,6 +424,7 @@ unsafe fn view_kind<'a>(kind: Kind, bits: u64) -> ValueView<'a> {
                     handle: &l.handle,
                     kv: l.kv,
                     words: l.words,
+                    consumed: &l.consumed,
                 }
             }
             Kind::HashEntryRef => {

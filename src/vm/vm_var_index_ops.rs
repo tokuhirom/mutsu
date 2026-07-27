@@ -407,7 +407,10 @@ impl Interpreter {
             self.stack.push(target);
             return Ok(());
         }
-        if let ValueView::LazyIoLines { handle, kv, words } = target.view() {
+        if let ValueView::LazyIoLines {
+            handle, kv, words, ..
+        } = target.view()
+        {
             // Determine the maximum index requested so we only read the
             // minimum number of lines from the handle, leaving the rest
             // available for subsequent reads.

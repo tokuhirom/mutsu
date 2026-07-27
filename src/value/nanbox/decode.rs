@@ -179,6 +179,7 @@ unsafe fn decode_kind(kind: Kind, bits: u64) -> ValueRepr {
                 handle: l.handle,
                 kv: l.kv,
                 words: l.words,
+                consumed: l.consumed,
             }
         }
         Kind::HashEntryRef => {

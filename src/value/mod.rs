@@ -1316,6 +1316,9 @@ pub(in crate::value) enum ValueRepr {
         /// (via `read_word_from_handle_value`) rather than lines. Used by
         /// `words($fh)` so a partial consumer leaves the handle open.
         words: bool,
+        /// Shared one-shot guard. Clones and lazy-preserving views (such as
+        /// `.kv`) must compete for the same underlying iterator.
+        consumed: Arc<std::sync::atomic::AtomicBool>,
     },
     /// A deferred write-through reference to a (possibly not-yet-existent) hash
     /// entry reached by `path` from `hash`. This is the sole survivor of the old

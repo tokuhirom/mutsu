@@ -121,6 +121,7 @@ pub(in crate::value) struct LazyIoLinesBox {
     pub(in crate::value) handle: Box<Value>,
     pub(in crate::value) kv: bool,
     pub(in crate::value) words: bool,
+    pub(in crate::value) consumed: Arc<std::sync::atomic::AtomicBool>,
 }
 
 #[derive(Debug, Clone)]

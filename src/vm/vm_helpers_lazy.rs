@@ -1,10 +1,19 @@
 use super::*;
 
 impl Interpreter {
-    /// If the value is a `LazyIoLines`, force it into an eager array by reading
-    /// all remaining lines from the file handle. Otherwise return the value as-is.
+    /// If the value is a `LazyIoLines`, consume it into a reified `Seq` by
+    /// reading all remaining records. Otherwise return the value as-is.
     pub(super) fn force_if_lazy_io_lines(&mut self, val: Value) -> Result<Value, RuntimeError> {
-        if let ValueView::LazyIoLines { handle, kv, words } = val.view() {
+        if let ValueView::LazyIoLines {
+            handle,
+            kv,
+            words,
+            consumed,
+        } = val.view()
+        {
+            if consumed.swap(true, std::sync::atomic::Ordering::AcqRel) {
+                return Err(crate::value::seq_consumed_error());
+            }
             let forced = loan_env!(self, force_lazy_io_lines(handle, words))?;
             if kv {
                 // Apply .kv transformation on the forced array
@@ -14,9 +23,9 @@ impl Interpreter {
                     kv_items.push(Value::int(i as i64));
                     kv_items.push(v.clone());
                 }
-                Ok(Value::array(kv_items))
+                Ok(Value::seq(kv_items))
             } else {
-                Ok(forced)
+                Ok(Value::seq(crate::runtime::utils::value_to_list(&forced)))
             }
         } else {
             Ok(val)

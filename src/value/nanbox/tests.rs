@@ -521,6 +521,7 @@ fn every_variant_roundtrips_losslessly() {
             handle: Box::new(Value::NIL),
             kv: true,
             words: false,
+            consumed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         },
         ValueRepr::HashEntryRef {
             hash: Gc::new(HashData::default()),
