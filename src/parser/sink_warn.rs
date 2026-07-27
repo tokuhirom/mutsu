@@ -96,7 +96,7 @@ fn scan_gathers_stmt(stmt: &Stmt) {
             scan_gathers_expr(iterable);
             scan_gathers_stmts(body);
         }
-        Stmt::Given { topic, body } => {
+        Stmt::Given { topic, body, .. } => {
             scan_gathers_expr(topic);
             scan_gathers_stmts(body);
         }

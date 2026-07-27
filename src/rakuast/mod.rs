@@ -120,6 +120,7 @@ pub enum RakuAstClass {
     StatementGiven,
     StatementWhen,
     StatementDefault,
+    StatementModifierGiven,
     // Phase 2 slice 19: ternary.
     Ternary,
     // Phase 2 slice 22: positional subscripts.
@@ -212,6 +213,7 @@ impl RakuAstClass {
             StatementGiven => "RakuAST::Statement::Given",
             StatementWhen => "RakuAST::Statement::When",
             StatementDefault => "RakuAST::Statement::Default",
+            StatementModifierGiven => "RakuAST::StatementModifier::Given",
             Ternary => "RakuAST::Ternary",
             SemiList => "RakuAST::SemiList",
             PostcircumfixArrayIndex => "RakuAST::Postcircumfix::ArrayIndex",
@@ -404,6 +406,7 @@ fn is_registered_type_object(class_name: &str) -> bool {
             | "RakuAST::Parameter::Slurpy"
             | "RakuAST::Postcircumfix"
             | "RakuAST::Circumfix"
+            | "RakuAST::StatementModifier"
             | "RakuAST::StatementPrefix"
             | "RakuAST::MetaPostfix"
     ) {
@@ -466,6 +469,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StatementGiven,
     RakuAstClass::StatementWhen,
     RakuAstClass::StatementDefault,
+    RakuAstClass::StatementModifierGiven,
     RakuAstClass::Ternary,
     RakuAstClass::SemiList,
     RakuAstClass::PostcircumfixArrayIndex,
@@ -1012,7 +1016,7 @@ fn accessor_names(class: RakuAstClass) -> &'static [&'static str] {
     use RakuAstClass::*;
     match class {
         StatementList => &["statements"],
-        StatementExpression => &["expression"],
+        StatementExpression => &["expression", "loop-modifier"],
         IntLiteral | RatLiteral | StrLiteral => &["value"],
         VarLexical => &["name"],
         ApplyInfix => &["left", "infix", "right"],

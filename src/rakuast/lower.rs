@@ -37,7 +37,21 @@ fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     match node.class {
         // A declaration wrapped in Statement::Expression lowers to its own
         // statement (a `my $x = …` is a `Stmt::VarDecl`, not a `Stmt::Expr`).
-        RakuAstClass::StatementExpression => lower_stmt_inner(named_child(node, "expression")?),
+        RakuAstClass::StatementExpression => {
+            let statement = lower_stmt_inner(named_child(node, "expression")?)?;
+            if let Some(modifier) = node.fields.iter().find(|f| f.name == Some("loop-modifier")) {
+                let modifier = child_node(&modifier.value)?;
+                if modifier.class == RakuAstClass::StatementModifierGiven {
+                    return Ok(Stmt::Given {
+                        topic: lower_expr(named_child_or_positional(modifier)?)?,
+                        body: vec![statement],
+                        is_statement_modifier: true,
+                    });
+                }
+                return Err(unsupported(modifier));
+            }
+            Ok(statement)
+        }
         _ => lower_stmt_inner(node),
     }
 }
@@ -66,6 +80,7 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::StatementGiven => Ok(Stmt::Given {
             topic: lower_expr(named_child(node, "source")?)?,
             body: lower_block(named_child(node, "body")?)?,
+            is_statement_modifier: false,
         }),
         RakuAstClass::StatementWhen => Ok(Stmt::When {
             cond: lower_expr(named_child(node, "condition")?)?,

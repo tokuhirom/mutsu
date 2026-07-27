@@ -654,7 +654,10 @@ earlier ones.
   `Statement::Given(source, body => topic Block)` (the given body is a topic-taking `Block`, marked
   `implicit-topic`/`required-topic`). `when Y { ... }` (`Stmt::When`) → `Statement::When(condition,
   body => plain Block)`; `default { ... }` (`Stmt::Default`) → `Statement::Default(body => plain
-  Block)`. All reuse the existing `topic_block_node`/`block_node` helpers.
+  Block)`. All reuse the existing `topic_block_node`/`block_node` helpers. A postfix
+  `STMT given EXPR` remains distinct in the internal AST and converts to Rakudo's
+  `Statement::Expression(loop-modifier => StatementModifier::Given(EXPR))`; this distinction is
+  semantically significant because the modifier does not introduce a lexical scope.
 - **Method-call modifiers (Phase 2 slice 15).** `$x.?foo` / `$x.+foo` / `$x.*foo` (`Expr::MethodCall`
   with a `modifier: Option<char>`) add a `dispatch => ".?"` / `".+"` / `".*"` leaf to the
   `Call::Method`, after `name` and any `args`. A quoted method name (`."$n"()`) remains the boundary.

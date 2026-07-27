@@ -251,7 +251,7 @@ impl Interpreter {
                         scan_stmt(s, positional, named);
                     }
                 }
-                Stmt::Given { topic, body } => {
+                Stmt::Given { topic, body, .. } => {
                     scan_expr(topic, positional, named);
                     for s in body {
                         scan_stmt(s, positional, named);

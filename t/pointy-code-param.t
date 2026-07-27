@@ -1,6 +1,6 @@
 use Test;
 
-plan 8;
+plan 9;
 
 # A `&`-sigil pointy-block parameter declares a fresh lexical code alias.
 # `given $code -> &f { … }` used to desugar to a bare `&f := $_`, which Raku
@@ -26,14 +26,13 @@ for ($code,) -> &h {
 sub takes(&i) { i() }
 is takes($code), 'called', 'a sub signature &param still works';
 
-# Inside the block the alias shadows an outer routine of that name. (That it
-# should also stop shadowing at the closing brace is a separate, pre-existing
-# gap: mutsu's `given` block does not open a lexical scope for `my` at all, so
-# `given 1 { my $z = 5 }` leaks `$z` too — see PLAN 8.22.)
+# Inside the block the alias shadows an outer routine of that name and stops
+# shadowing when the given block's lexical scope exits.
 sub named() { 'outer' }
 given { 'inner' } -> &named {
     is named(), 'inner', 'the block alias shadows an outer sub of that name';
 }
+is named(), 'outer', 'the code alias stops shadowing after the given body';
 
 # Arguments pass through the alias.
 given -> $x, $y { $x ~ $y } -> &joiner {

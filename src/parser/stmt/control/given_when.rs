@@ -19,7 +19,14 @@ pub(crate) fn given_stmt(input: &str) -> PResult<'_, Stmt> {
     if let Some(pd) = pointy_param {
         body.insert(0, pointy_topic_bind(&pd));
     }
-    Ok((rest, Stmt::Given { topic, body }))
+    Ok((
+        rest,
+        Stmt::Given {
+            topic,
+            body,
+            is_statement_modifier: false,
+        },
+    ))
 }
 
 pub(crate) fn when_stmt(input: &str) -> PResult<'_, Stmt> {

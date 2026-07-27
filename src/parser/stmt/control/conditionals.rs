@@ -295,6 +295,7 @@ pub(crate) fn parse_elsif_chain(
             let orwith_then = vec![Stmt::Given {
                 topic: orwith_cond_expr.clone(),
                 body: orwith_given_body,
+                is_statement_modifier: false,
             }];
             // orwith uses .defined as the condition
             last_orwith_cond = Some(orwith_cond_expr.clone());
@@ -362,6 +363,7 @@ pub(crate) fn parse_elsif_chain(
             body = vec![Stmt::Given {
                 topic: orwith_expr.clone(),
                 body: given_body,
+                is_statement_modifier: false,
             }];
         }
         return Ok((

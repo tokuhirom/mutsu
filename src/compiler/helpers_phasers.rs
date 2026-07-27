@@ -520,6 +520,7 @@ impl Compiler {
             loop_body.push(Stmt::Given {
                 topic: post_topic,
                 body: post_body,
+                is_statement_modifier: false,
             });
         }
         // LEAVE runs before KEEP/UNDO (in reverse declaration order)
@@ -553,6 +554,7 @@ impl Compiler {
             let given_stmt = Stmt::Given {
                 topic: Expr::Var(last_topic_var),
                 body: last_ph,
+                is_statement_modifier: false,
             };
             vec![Stmt::If {
                 cond: Expr::Var(ran_var),

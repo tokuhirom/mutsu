@@ -86,7 +86,8 @@ impl Interpreter {
         // makes `@p` a fully-writable alias of the source (`@p = (...)`,
         // `@p[0]=v`, and `@p.push` all propagate). So when a pointy param is
         // present, don't mark `$_` read-only: that would propagate read-only to
-        // `@p` through its `@p := $_` bind and block element assignment.
+        // `@p` through its synthetic bound declaration and block element
+        // assignment.
         let mark_ro = topic_readonly && pointy_param.is_none() && !self.is_readonly("_");
         if mark_ro {
             self.mark_readonly("_");
@@ -132,9 +133,9 @@ impl Interpreter {
             if let Some(slot) = topic_local_slot {
                 this.locals[slot] = saved_local_topic.clone().unwrap_or(Value::NIL);
             }
-            // A pointy parameter (`-> @p`) is block-scoped in Raku, but mutsu
-            // desugars it to a global `@p := $_` whose alias/bound markers would
-            // otherwise leak past this block. Clear them so a later block reusing
+            // A pointy parameter (`-> @p`) is block-scoped in Raku, but its
+            // runtime alias/bound markers would otherwise leak past this block.
+            // Clear them so a later block reusing
             // the name (e.g. `given @c -> @p is copy { ... }`, a plain assign that
             // would otherwise follow the stale `__mutsu_sigilless_alias::@p` and
             // corrupt `$_`) starts clean. Done after the writeback above, which
@@ -215,6 +216,13 @@ impl Interpreter {
         let end = body_end as usize;
 
         let saved_topic = self.env().get("_").cloned();
+        // A prior lexical `$_` declaration (for example, from
+        // `given ... -> $_ is copy`) gives topic reads a local slot. Keep that
+        // slot synchronized with the expression-form topic just as `Given`
+        // does, otherwise a following `S/// with EXPR` reads the stale lexical
+        // value instead of EXPR.
+        let topic_local_slot = self.find_local_slot(code, "_");
+        let saved_local_topic = topic_local_slot.map(|s| self.locals[s].clone());
         let saved_when = self.when_matched();
         // Consume the topic's `TagContainerRef` signal (emitted right before this
         // op by `do given @c`). It must NOT survive into the body: a nested
@@ -236,6 +244,9 @@ impl Interpreter {
             if src.starts_with('@') || src.starts_with('%') {
                 self.topic_container_source = Some(src.clone());
             }
+        }
+        if let Some(slot) = topic_local_slot {
+            self.locals[slot] = topic.clone();
         }
         self.env_mut().insert("_".to_string(), topic);
         loan_env!(self, set_when_matched(false));
@@ -267,6 +278,9 @@ impl Interpreter {
                 } else {
                     self.env_mut().remove("_");
                 }
+                if let Some(slot) = topic_local_slot {
+                    self.locals[slot] = saved_local_topic.clone().unwrap_or(Value::NIL);
+                }
                 self.topic_source_var = saved_topic_source;
                 self.topic_container_source = saved_container_source;
                 return Err(e);
@@ -278,6 +292,9 @@ impl Interpreter {
             self.env_mut().insert("_".to_string(), v);
         } else {
             self.env_mut().remove("_");
+        }
+        if let Some(slot) = topic_local_slot {
+            self.locals[slot] = saved_local_topic.unwrap_or(Value::NIL);
         }
         self.topic_source_var = saved_topic_source;
         self.topic_container_source = saved_container_source;

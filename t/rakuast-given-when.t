@@ -7,7 +7,7 @@ use Test;
 # Expected gists captured verbatim from Rakudo; this file passes under BOTH
 # mutsu and raku.
 
-plan 4;
+plan 5;
 
 # --- given + when -----------------------------------------------------------
 is Q[given 1 { when 2 { 3 } }].AST.gist, q:to/END/.chomp, 'given/when -> Given(source, topic Block) + When';
@@ -52,3 +52,20 @@ ok $g.contains('RakuAST::Statement::When.new(')
     && $g.contains('condition => RakuAST::IntLiteral.new(2)')
     && $g.index('RakuAST::Statement::When') < $g.index('IntLiteral.new(3)'),
     'when -> Statement::When(condition, body)';
+
+# --- statement modifier is not a Statement::Given block --------------------
+is Q[say 2 given 1].AST.gist, q:to/END/.chomp, 'postfix given -> StatementModifier::Given on the modified statement';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression    => RakuAST::Call::Name::WithoutParentheses.new(
+          name => RakuAST::Name.from-identifier("say"),
+          args => RakuAST::ArgList.new(
+            RakuAST::IntLiteral.new(2)
+          )
+        ),
+        loop-modifier => RakuAST::StatementModifier::Given.new(
+          RakuAST::IntLiteral.new(1)
+        )
+      )
+    )
+    END

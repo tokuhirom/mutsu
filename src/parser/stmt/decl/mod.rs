@@ -107,6 +107,7 @@ fn wrap_with_will_leave(
         let phaser_body = vec![Stmt::Given {
             topic: topic_expr,
             body,
+            is_statement_modifier: false,
         }];
         stmts.push(Stmt::Phaser {
             kind,
