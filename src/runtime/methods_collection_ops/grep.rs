@@ -57,7 +57,7 @@ impl Interpreter {
                 Stmt::Whenever { supply, body, .. } => {
                     expr_contains_last(supply) || body.iter().any(stmt_contains_last)
                 }
-                Stmt::Given { topic, body } => {
+                Stmt::Given { topic, body, .. } => {
                     expr_contains_last(topic) || body.iter().any(stmt_contains_last)
                 }
                 Stmt::When { cond, body } => {

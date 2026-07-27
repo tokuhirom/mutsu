@@ -253,7 +253,7 @@ fn lift_phasers_from_stmt(
         Stmt::Loop { body, .. } | Stmt::React { body } => {
             lift_phasers_from_closure_stmts(body, begin, check, init);
         }
-        Stmt::Given { topic, body } => {
+        Stmt::Given { topic, body, .. } => {
             lift_phasers_from_expr(topic, begin, check, init);
             lift_phasers_from_closure_stmts(body, begin, check, init);
         }
@@ -639,7 +639,7 @@ fn lift_phasers_from_closure_stmt(
             lift_phasers_from_expr(iterable, begin, check, init);
             lift_phasers_from_closure_stmts(body, begin, check, init);
         }
-        Stmt::Given { topic, body } => {
+        Stmt::Given { topic, body, .. } => {
             lift_phasers_from_expr(topic, begin, check, init);
             lift_phasers_from_closure_stmts(body, begin, check, init);
         }
@@ -1008,7 +1008,7 @@ fn recurse_into_stmt(stmt: &mut Stmt) {
         Stmt::Loop { body, .. } | Stmt::React { body } => {
             reorder_recursive(body, false);
         }
-        Stmt::Given { topic, body } => {
+        Stmt::Given { topic, body, .. } => {
             recurse_into_expr(topic);
             reorder_recursive(body, false);
         }

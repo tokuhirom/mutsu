@@ -187,9 +187,14 @@ fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
             rw_block,
             explicit_zero_params,
         },
-        Stmt::Given { topic, body } => Stmt::Given {
+        Stmt::Given {
+            topic,
+            body,
+            is_statement_modifier,
+        } => Stmt::Given {
             topic,
             body: rewrite_supply_body(body, emitter_name),
+            is_statement_modifier,
         },
         Stmt::When { cond, body } => Stmt::When {
             cond,

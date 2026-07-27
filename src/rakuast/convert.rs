@@ -284,13 +284,35 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             }))
         }
         // `given X { ... }` -> Statement::Given(source, body => topic Block).
-        Stmt::Given { topic, body } => Ok(Some(RakuAstNode {
-            class: RakuAstClass::StatementGiven,
-            fields: vec![
-                node_field(Some("source"), convert_expr(topic)?),
-                node_field(Some("body"), topic_block_node(body)?),
-            ],
-        })),
+        Stmt::Given {
+            topic,
+            body,
+            is_statement_modifier,
+        } => {
+            if *is_statement_modifier {
+                let [modified] = body.as_slice() else {
+                    return Err(unsupported("multi-statement given modifier body"));
+                };
+                let mut statement = convert_stmt(modified)?
+                    .ok_or_else(|| unsupported("empty given modifier body"))?;
+                statement.fields.push(node_field(
+                    Some("loop-modifier"),
+                    RakuAstNode {
+                        class: RakuAstClass::StatementModifierGiven,
+                        fields: vec![node_field(None, convert_expr(topic)?)],
+                    },
+                ));
+                Ok(Some(statement))
+            } else {
+                Ok(Some(RakuAstNode {
+                    class: RakuAstClass::StatementGiven,
+                    fields: vec![
+                        node_field(Some("source"), convert_expr(topic)?),
+                        node_field(Some("body"), topic_block_node(body)?),
+                    ],
+                }))
+            }
+        }
         // `when Y { ... }` -> Statement::When(condition, body => plain Block).
         Stmt::When { cond, body } => Ok(Some(RakuAstNode {
             class: RakuAstClass::StatementWhen,

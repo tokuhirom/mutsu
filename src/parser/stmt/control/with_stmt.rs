@@ -237,16 +237,19 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
         with_body = vec![Stmt::Given {
             topic: cond_expr.clone(),
             body: given_body,
+            is_statement_modifier: false,
         }];
     } else if route_through_given_tmp {
         with_body = vec![Stmt::Given {
             topic: tmp_var.clone(),
             body,
+            is_statement_modifier: false,
         }];
     } else if route_literal_through_given {
         with_body = vec![Stmt::Given {
             topic: cond_expr.clone(),
             body,
+            is_statement_modifier: false,
         }];
     } else {
         with_body.extend(body);
@@ -354,6 +357,7 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
             let else_with_topic = vec![Stmt::Given {
                 topic: tmp_var.clone(),
                 body: else_given_body,
+                is_statement_modifier: false,
             }];
             (r, else_with_topic)
         } else {

@@ -852,6 +852,9 @@ pub(crate) enum Stmt {
     Given {
         topic: Expr,
         body: Vec<Stmt>,
+        /// True for postfix statement-modifier `STMT given EXPR`. Unlike the
+        /// block form, a modifier does not introduce a lexical scope.
+        is_statement_modifier: bool,
     },
     When {
         cond: Expr,
@@ -1697,7 +1700,7 @@ fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
                 collect_ph_stmt(s, out);
             }
         }
-        Stmt::Given { topic, body } => {
+        Stmt::Given { topic, body, .. } => {
             collect_ph_expr(topic, out);
             for s in body {
                 collect_ph_stmt(s, out);
@@ -2041,7 +2044,7 @@ fn collect_ph_stmt_shallow(stmt: &Stmt, out: &mut Vec<String>) {
                 collect_ph_stmt_shallow(s, out);
             }
         }
-        Stmt::Given { topic, body } => {
+        Stmt::Given { topic, body, .. } => {
             collect_ph_expr_shallow(topic, out);
             for s in body {
                 collect_ph_stmt_shallow(s, out);

@@ -385,7 +385,7 @@ fn walk_stmt(stmt: &Stmt, scan: &mut Scan) {
             walk_params(params, params_def, scan);
             walk_stmts(body, scan);
         }
-        Stmt::Given { topic, body } => {
+        Stmt::Given { topic, body, .. } => {
             walk_expr(topic, scan);
             walk_stmts(body, scan);
         }

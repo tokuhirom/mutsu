@@ -1111,8 +1111,8 @@ pub(crate) enum OpCode {
         /// parameter aliased to the topic. When set, the topic-source writeback
         /// reads this parameter's final value (instead of `$_`) and writes it
         /// back to the source, so `@p.push` / `@p[0]=v` propagate to `@a`. The
-        /// parser desugars `-> @p` into `@p := $_` at the body head and the
-        /// compiler records the bound name here. `None` for non-pointy `given`.
+        /// parser emits a synthetic bound declaration at the body head and the
+        /// compiler records the declared name here. `None` for non-pointy `given`.
         pointy_param_idx: Option<u32>,
     },
     When {

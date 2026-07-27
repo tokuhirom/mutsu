@@ -53,7 +53,7 @@ impl Compiler {
             {
                 self.compile_do_if_expr_bound(cond, then_branch, else_branch, binding_var);
             }
-            Stmt::Given { topic, body } => {
+            Stmt::Given { topic, body, .. } => {
                 self.compile_expr(topic);
                 if let Some(source_name) = match topic {
                     Expr::Var(name) => Some(name.clone()),

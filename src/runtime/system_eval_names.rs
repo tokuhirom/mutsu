@@ -489,7 +489,7 @@ impl Interpreter {
                     Self::collect_type_refs_in_stmt(s, out);
                 }
             }
-            Stmt::Given { topic, body } => {
+            Stmt::Given { topic, body, .. } => {
                 Self::collect_type_refs_in_expr(topic, out);
                 for s in body {
                     Self::collect_type_refs_in_stmt(s, out);

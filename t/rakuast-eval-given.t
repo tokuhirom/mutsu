@@ -8,7 +8,7 @@ use Test;
 # clauses, so a `given` block runs and yields the matched clause's value.
 # Verified against Rakudo; passes under BOTH mutsu and raku.
 
-plan 5;
+plan 6;
 
 # --- given as the tail value: a matching `when` yields its value ------------
 is EVAL(Q[my $x = 2; given $x { when 1 { 10 }; when 2 { 20 }; default { 30 } }].AST), 20,
@@ -27,3 +27,7 @@ is EVAL(Q[my $out = 0; given 2 { when 1 { $out = 100 }; when 2 { $out = 200 }; d
 # --- given inside a sub -----------------------------------------------------
 is EVAL(Q[sub classify($n) { given $n { when 0 { "zero" }; default { "nonzero" } } }; classify(0)].AST), 'zero',
     'given inside a sub returns the matched clause value';
+
+# --- modifier-form RakuAST retains its enclosing lexical scope --------------
+is EVAL(Q[(my $modifier = 9) given 2; $modifier].AST), 9,
+    'given statement modifier round-trips without introducing a lexical block';

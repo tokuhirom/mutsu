@@ -142,10 +142,40 @@ fn pointy_topic_bind(pd: &ParamDef) -> Stmt {
         } else {
             topic
         };
-        Stmt::Assign {
+        Stmt::VarDecl {
             name: pd.name.clone(),
-            op: AssignOp::Assign,
             expr,
+            type_constraint: pd.type_constraint.clone(),
+            is_state: false,
+            is_our: false,
+            is_dynamic: false,
+            is_export: false,
+            export_tags: Vec::new(),
+            custom_traits: vec![
+                ("__has_initializer".to_string(), None),
+                ("__pointy_copy".to_string(), None),
+            ],
+            where_constraint: None,
+        }
+    } else if pd
+        .type_constraint
+        .as_deref()
+        .is_some_and(|ty| ty.starts_with(|c: char| c.is_ascii_lowercase()))
+    {
+        // Native-typed lexicals cannot participate in `:=` binding. A native
+        // pointy parameter receives a checked/unboxed value in its own lexical
+        // container, matching ordinary native routine parameters.
+        Stmt::VarDecl {
+            name: pd.name.clone(),
+            expr: topic,
+            type_constraint: pd.type_constraint.clone(),
+            is_state: false,
+            is_our: false,
+            is_dynamic: false,
+            is_export: false,
+            export_tags: Vec::new(),
+            custom_traits: vec![("__has_initializer".to_string(), None)],
+            where_constraint: None,
         }
     } else if pd.name.starts_with('&') {
         // A `&`-sigil parameter (`given $code -> &to-run { … }`) declares a
@@ -166,13 +196,25 @@ fn pointy_topic_bind(pd: &ParamDef) -> Stmt {
             where_constraint: None,
         }
     } else {
-        // Aliasing parameter: `:=` so the compiler/VM writes the parameter's
-        // final value back to the topic source.
-        Stmt::Assign {
-            name: pd.name.clone(),
-            op: AssignOp::Bind,
-            expr: topic,
-        }
+        // A pointy parameter is a declaration, not an assignment to an
+        // enclosing same-named lexical. Use the same MarkBind + VarDecl form as
+        // `my $x := EXPR`; this both preserves aliasing and lets block-scope
+        // tracking restore the outer binding when the given body exits.
+        Stmt::SyntheticBlock(vec![
+            Stmt::MarkBind,
+            Stmt::VarDecl {
+                name: pd.name.clone(),
+                expr: topic,
+                type_constraint: pd.type_constraint.clone(),
+                is_state: false,
+                is_our: false,
+                is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
+                custom_traits: vec![("__has_initializer".to_string(), None)],
+                where_constraint: None,
+            },
+        ])
     }
 }
 

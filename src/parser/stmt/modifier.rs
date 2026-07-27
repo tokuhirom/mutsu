@@ -603,6 +603,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             Stmt::Given {
                 topic,
                 body: vec![given_stmt],
+                is_statement_modifier: true,
             },
         )));
     }
@@ -632,6 +633,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                     cond,
                     body: vec![stmt],
                 }],
+                is_statement_modifier: true,
             },
         )));
     }
@@ -691,6 +693,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             let given_stmt = Stmt::Given {
                 topic: cond,
                 body: vec![Stmt::Expr(Expr::DoStmt(Box::new(if_stmt)))],
+                is_statement_modifier: true,
             };
             return Ok(Some((
                 r_tail,
@@ -711,6 +714,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 else_branch: Vec::new(),
                 binding_var: None,
             }],
+            is_statement_modifier: true,
         };
         return Ok(Some((r_tail, given_stmt)));
     }
@@ -766,6 +770,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             let given_stmt = Stmt::Given {
                 topic: cond,
                 body: vec![Stmt::Expr(Expr::DoStmt(Box::new(if_stmt)))],
+                is_statement_modifier: true,
             };
             return Ok(Some((
                 r_tail,
@@ -780,6 +785,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 else_branch: Vec::new(),
                 binding_var: None,
             }],
+            is_statement_modifier: true,
         };
         return Ok(Some((r_tail, given_stmt)));
     }

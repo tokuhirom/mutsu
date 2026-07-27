@@ -2336,19 +2336,25 @@ impl Compiler {
                 self.code.emit(OpCode::AssignReadOnly);
             }
             // Given/When/Default
-            Stmt::Given { topic, body } => {
-                // A pointy `-> $_ is copy` block is desugared by the parser into a
-                // `$_ = $_` head (see `pointy_topic_bind`): the topic becomes a
-                // fresh, writable copy with NO writeback to the source. Detect that
-                // head so the topic is not marked read-only (`given 42 -> $_ is copy`
-                // must allow `$_ = ...`) and so a bare-variable topic is not tagged
-                // for writeback (`given $x -> $_ is copy { $_ = ... }` leaves `$x`
-                // untouched).
-                let is_copy_topic = matches!(
-                    body.first(),
-                    Some(Stmt::Assign { name, op: AssignOp::Assign, expr: Expr::Var(t) })
-                        if name == "_" && t == "_"
-                );
+            Stmt::Given {
+                topic,
+                body,
+                is_statement_modifier,
+            } => {
+                // A pointy `-> $_ is copy` block starts with a parser-generated
+                // lexical declaration carrying the `__pointy_copy` marker: the
+                // topic becomes a fresh, writable copy with NO writeback to the
+                // source. Detect that declaration so the topic is not marked
+                // read-only (`given 42 -> $_ is copy` must allow `$_ = ...`) and
+                // so a bare-variable topic is not tagged for writeback
+                // (`given $x -> $_ is copy { $_ = ... }` leaves `$x` untouched).
+                let is_copy_topic = body.first().is_some_and(|stmt| {
+                    matches!(
+                        stmt,
+                        Stmt::VarDecl { custom_traits, .. }
+                            if custom_traits.iter().any(|(name, _)| name == "__pointy_copy")
+                    )
+                });
                 // An lvalue container *element* topic (`given %h<k>` /
                 // `given @a[i]`) aliases that element rw: both `$_ = ...` and
                 // container mutations (`.push`) propagate to the element. Push
@@ -2430,32 +2436,42 @@ impl Compiler {
                         && !matches!(topic, Expr::Var(_))
                         && topic_decl_scalar.is_none();
                 }
-                // A pointy block (`given @a -> @p { ... }`) is desugared by the
-                // parser into `@p := $_` at the body head. Record that bound
-                // parameter so the topic-source writeback reads its final value
-                // (e.g. after `@p.push`) instead of `$_`, propagating the
-                // mutation back to the source. `is copy` desugars to `@p = $_`
-                // (an Assign, not a Bind), so it is not detected here and does
-                // not write back.
-                let pointy_param_idx = match body.first() {
-                    Some(Stmt::Assign {
-                        name,
-                        op: AssignOp::Bind,
-                        expr: Expr::Var(topic),
-                    }) if topic == "_"
-                        && !name.starts_with('!')
-                        && !name.starts_with('.')
-                        && !name.starts_with('&') =>
+                // A pointy block (`given @a -> @p { ... }`) starts with a
+                // parser-generated synthetic declaration containing MarkBind.
+                // Record that bound parameter so topic-source writeback reads its
+                // final value (e.g. after `@p.push`) instead of `$_`, propagating
+                // the mutation back to the source. `is copy` carries a declaration
+                // marker instead, so it is not detected here and does not write
+                // back.
+                let pointy_param_name = match body.first() {
+                    Some(Stmt::SyntheticBlock(inner))
+                        if inner.iter().any(|s| matches!(s, Stmt::MarkBind)) =>
                     {
-                        Some(self.code.add_constant(Value::str(name.clone())))
+                        inner.iter().find_map(|s| match s {
+                            Stmt::VarDecl { name, .. }
+                                if !name.starts_with('!')
+                                    && !name.starts_with('.')
+                                    && !name.starts_with('&') =>
+                            {
+                                Some(name.clone())
+                            }
+                            _ => None,
+                        })
                     }
                     _ => None,
                 };
+                let pointy_param_idx =
+                    pointy_param_name.map(|name| self.code.add_constant(Value::str(name)));
                 let given_idx = self.code.emit(OpCode::Given {
                     body_end: 0,
                     topic_readonly,
                     pointy_param_idx,
                 });
+                let block_local_idx = (!*is_statement_modifier
+                    && Self::branch_declares_block_local(body))
+                .then(|| self.code.emit(OpCode::BlockLocalScope { body_end: 0 }));
+                let saved_scope =
+                    (!*is_statement_modifier).then(|| self.push_dynamic_scope_lexical());
                 if Self::has_catch_or_control(body) {
                     self.compile_try(body, &None);
                     self.code.emit(OpCode::Pop);
@@ -2471,11 +2487,20 @@ impl Compiler {
                         }
                     }
                 }
+                if let Some(saved) = saved_scope {
+                    self.pop_dynamic_scope_lexical(saved);
+                }
+                if let Some(idx) = block_local_idx {
+                    self.code.patch_block_local_body_end(idx);
+                }
                 self.code.patch_body_end(given_idx);
             }
             Stmt::When { cond, body } => {
                 self.compile_expr(cond);
                 let when_idx = self.code.emit(OpCode::When { body_end: 0 });
+                let block_local_idx = Self::branch_declares_block_local(body)
+                    .then(|| self.code.emit(OpCode::BlockLocalScope { body_end: 0 }));
+                let saved_scope = self.push_dynamic_scope_lexical();
                 for (i, s) in body.iter().enumerate() {
                     let is_last = i == body.len() - 1;
                     if is_last {
@@ -2486,10 +2511,17 @@ impl Compiler {
                         self.compile_stmt(s);
                     }
                 }
+                self.pop_dynamic_scope_lexical(saved_scope);
+                if let Some(idx) = block_local_idx {
+                    self.code.patch_block_local_body_end(idx);
+                }
                 self.code.patch_body_end(when_idx);
             }
             Stmt::Default(body) => {
                 let default_idx = self.code.emit(OpCode::Default { body_end: 0 });
+                let block_local_idx = Self::branch_declares_block_local(body)
+                    .then(|| self.code.emit(OpCode::BlockLocalScope { body_end: 0 }));
+                let saved_scope = self.push_dynamic_scope_lexical();
                 if Self::has_catch_or_control(body) {
                     self.compile_try(body, &None);
                     self.code.emit(OpCode::Pop);
@@ -2504,6 +2536,10 @@ impl Compiler {
                             self.compile_stmt(s);
                         }
                     }
+                }
+                self.pop_dynamic_scope_lexical(saved_scope);
+                if let Some(idx) = block_local_idx {
+                    self.code.patch_block_local_body_end(idx);
                 }
                 self.code.patch_body_end(default_idx);
             }

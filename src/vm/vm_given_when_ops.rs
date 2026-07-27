@@ -86,7 +86,8 @@ impl Interpreter {
         // makes `@p` a fully-writable alias of the source (`@p = (...)`,
         // `@p[0]=v`, and `@p.push` all propagate). So when a pointy param is
         // present, don't mark `$_` read-only: that would propagate read-only to
-        // `@p` through its `@p := $_` bind and block element assignment.
+        // `@p` through its synthetic bound declaration and block element
+        // assignment.
         let mark_ro = topic_readonly && pointy_param.is_none() && !self.is_readonly("_");
         if mark_ro {
             self.mark_readonly("_");
@@ -132,9 +133,9 @@ impl Interpreter {
             if let Some(slot) = topic_local_slot {
                 this.locals[slot] = saved_local_topic.clone().unwrap_or(Value::NIL);
             }
-            // A pointy parameter (`-> @p`) is block-scoped in Raku, but mutsu
-            // desugars it to a global `@p := $_` whose alias/bound markers would
-            // otherwise leak past this block. Clear them so a later block reusing
+            // A pointy parameter (`-> @p`) is block-scoped in Raku, but its
+            // runtime alias/bound markers would otherwise leak past this block.
+            // Clear them so a later block reusing
             // the name (e.g. `given @c -> @p is copy { ... }`, a plain assign that
             // would otherwise follow the stale `__mutsu_sigilless_alias::@p` and
             // corrupt `$_`) starts clean. Done after the writeback above, which
