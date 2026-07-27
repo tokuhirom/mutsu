@@ -591,6 +591,77 @@ pub fn construct(
             }],
         }))));
     }
+    if class_name == "RakuAST::Parameter" && method == "new" {
+        let target = named_arg(args, "target").ok_or_else(|| {
+            RuntimeError::new("RakuAST::Parameter.new requires a `target` argument")
+        })?;
+        require_rakuast_class(
+            &target,
+            RakuAstClass::ParameterTargetVar,
+            "RakuAST::Parameter.new",
+        )?;
+        let mut fields = Vec::with_capacity(5);
+        if let Some(type_node) = named_arg(args, "type") {
+            require_rakuast_type(&type_node, "RakuAST::Parameter.new")?;
+            fields.push(RakuAstField {
+                name: Some("type"),
+                value: RakuAstFieldValue::Node(type_node),
+            });
+        }
+        if let Some(names) = named_arg(args, "names") {
+            let names = names
+                .as_list_items()
+                .map(<[Value]>::to_vec)
+                .ok_or_else(|| {
+                    RuntimeError::new("RakuAST::Parameter.new expects `names` to be a list")
+                })?;
+            if names
+                .iter()
+                .any(|name| !matches!(name.view(), ValueView::Str(_)))
+            {
+                return Err(RuntimeError::new(
+                    "RakuAST::Parameter.new expects `names` to contain strings",
+                ));
+            }
+            fields.push(RakuAstField {
+                name: Some("names"),
+                value: RakuAstFieldValue::List(names),
+            });
+        }
+        fields.push(RakuAstField {
+            name: Some("target"),
+            value: RakuAstFieldValue::Node(target),
+        });
+        if let Some(optional) = named_arg(args, "optional") {
+            if !matches!(optional.view(), ValueView::Bool(_)) {
+                return Err(RuntimeError::new(
+                    "RakuAST::Parameter.new expects `optional` to be Bool",
+                ));
+            }
+            fields.push(RakuAstField {
+                name: Some("optional"),
+                value: RakuAstFieldValue::Node(optional),
+            });
+        }
+        if let Some(default) = named_arg(args, "default") {
+            require_any_rakuast(&default, "RakuAST::Parameter.new", "default")?;
+            fields.push(RakuAstField {
+                name: Some("default"),
+                value: RakuAstFieldValue::Node(default),
+            });
+        }
+        if let Some(slurpy) = named_arg(args, "slurpy") {
+            let slurpy = normalize_slurpy_marker(slurpy)?;
+            fields.push(RakuAstField {
+                name: Some("slurpy"),
+                value: RakuAstFieldValue::Node(slurpy),
+            });
+        }
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::Parameter,
+            fields,
+        }))));
+    }
     if class_name == "RakuAST::VarDeclaration::Simple" && method == "new" {
         let sigil = named_arg(args, "sigil").ok_or_else(|| {
             RuntimeError::new("RakuAST::VarDeclaration::Simple.new requires a `sigil` argument")
@@ -698,6 +769,71 @@ fn require_rakuast_class(
     }
 }
 
+fn require_any_rakuast(
+    value: &Value,
+    constructor: &str,
+    argument: &str,
+) -> Result<(), RuntimeError> {
+    if matches!(value.view(), ValueView::RakuAst(_)) {
+        Ok(())
+    } else {
+        Err(RuntimeError::new(format!(
+            "{constructor} expects `{argument}` to be a RakuAST node"
+        )))
+    }
+}
+
+fn require_rakuast_type(value: &Value, constructor: &str) -> Result<(), RuntimeError> {
+    match value.view() {
+        ValueView::RakuAst(node)
+            if matches!(
+                node.class,
+                RakuAstClass::TypeSimple
+                    | RakuAstClass::TypeSetting
+                    | RakuAstClass::TypeDefinedness
+                    | RakuAstClass::TypeParameterized
+                    | RakuAstClass::TypeCoercion
+            ) =>
+        {
+            Ok(())
+        }
+        _ => Err(RuntimeError::new(format!(
+            "{constructor} expects `type` to be a RakuAST type node"
+        ))),
+    }
+}
+
+fn normalize_slurpy_marker(value: Value) -> Result<Value, RuntimeError> {
+    let class = match value.view() {
+        ValueView::RakuAst(node)
+            if matches!(
+                node.class,
+                RakuAstClass::ParameterSlurpyFlattened | RakuAstClass::ParameterSlurpyUnflattened
+            ) =>
+        {
+            return Ok(value);
+        }
+        ValueView::Package(name) => match name.resolve().as_str() {
+            "RakuAST::Parameter::Slurpy::Flattened" => RakuAstClass::ParameterSlurpyFlattened,
+            "RakuAST::Parameter::Slurpy::Unflattened" => RakuAstClass::ParameterSlurpyUnflattened,
+            _ => {
+                return Err(RuntimeError::new(
+                    "RakuAST::Parameter.new expects a RakuAST slurpy marker",
+                ));
+            }
+        },
+        _ => {
+            return Err(RuntimeError::new(
+                "RakuAST::Parameter.new expects a RakuAST slurpy marker",
+            ));
+        }
+    };
+    Ok(Value::rakuast(Box::new(RakuAstNode {
+        class,
+        fields: Vec::new(),
+    })))
+}
+
 /// The class for a single-positional-argument constructor, or `None`.
 fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClass> {
     Some(match (class_name, method) {
@@ -710,6 +846,8 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::Prefix", "new") => RakuAstClass::Prefix,
         ("RakuAST::Var::Lexical", "new") => RakuAstClass::VarLexical,
         ("RakuAST::Initializer::Assign", "new") => RakuAstClass::InitializerAssign,
+        ("RakuAST::Type::Simple", "new") => RakuAstClass::TypeSimple,
+        ("RakuAST::Type::Setting", "new") => RakuAstClass::TypeSetting,
         _ => return None,
     })
 }
@@ -735,7 +873,6 @@ fn multi_field_schema(
         ("RakuAST::ParameterTarget::Var", "new") => {
             (RakuAstClass::ParameterTargetVar, &["name"][..])
         }
-        ("RakuAST::Parameter", "new") => (RakuAstClass::Parameter, &["target"][..]),
         _ => return None,
     })
 }
@@ -778,6 +915,7 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
         RakuAstClass::VarLexical => Some("name"),
         RakuAstClass::Blockoid => Some("statement-list"),
         RakuAstClass::InitializerAssign => Some("expression"),
+        RakuAstClass::TypeSimple | RakuAstClass::TypeSetting => Some("name"),
         _ => None,
     };
     if positional_name == Some(method)
@@ -856,6 +994,8 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::ParameterTargetVar
             | RakuAstClass::VarDeclarationSimple
             | RakuAstClass::InitializerAssign
+            | RakuAstClass::TypeSimple
+            | RakuAstClass::TypeSetting
     )
 }
 
@@ -874,10 +1014,11 @@ fn accessor_names(class: RakuAstClass) -> &'static [&'static str] {
         Blockoid => &["statement-list"],
         Sub => &["name", "signature", "body"],
         Signature => &["parameters"],
-        Parameter => &["target"],
+        Parameter => &["type", "names", "target", "optional", "default", "slurpy"],
         ParameterTargetVar => &["name"],
         VarDeclarationSimple => &["sigil", "desigilname", "initializer"],
         InitializerAssign => &["expression"],
+        TypeSimple | TypeSetting => &["name"],
         _ => &[],
     }
 }

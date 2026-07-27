@@ -229,11 +229,6 @@ fn signature_positional_params(
         let ValueView::RakuAst(p) = v.view() else {
             return Err(unsupported(node));
         };
-        // An explicitly-optional parameter carries richer shape; defer.
-        // `named`/`slurpy`/`default` are handled below.
-        if p.fields.iter().any(|f| f.name == Some("optional_marker")) {
-            return Err(unsupported(node));
-        }
         let target = named_child(p, "target")?;
         if target.class != RakuAstClass::ParameterTargetVar {
             return Err(unsupported(node));
@@ -246,6 +241,18 @@ fn signature_positional_params(
         if p.fields.iter().any(|f| f.name == Some("names")) {
             def.named = true;
             def.required = false;
+        }
+        // `optional => True` makes a positional parameter optional. For named
+        // parameters, an explicit False marks it required.
+        if let Some(optional) = p.fields.iter().find(|f| f.name == Some("optional")) {
+            let RakuAstFieldValue::Node(value) = &optional.value else {
+                return Err(unsupported(node));
+            };
+            let ValueView::Bool(is_optional) = value.view() else {
+                return Err(unsupported(node));
+            };
+            def.required = !is_optional;
+            def.optional_marker = is_optional;
         }
         // A slurpy parameter `*@a` / `**@a` carries a `slurpy` marker node.
         if let Some(s) = p.fields.iter().find(|f| f.name == Some("slurpy")) {

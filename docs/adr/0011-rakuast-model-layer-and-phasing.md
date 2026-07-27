@@ -209,7 +209,14 @@ earlier ones.
     initializer and declaration model chain. Constructors validate child node kinds, expose their
     fields through model accessors and introspection, render like Rakudo, and lower through the
     existing compiler under `EVAL`. Tests in `t/rakuast-construct-vardecl.t`.
-    Next: richer parameter shapes.
+  - **Slice 10 (common richer parameter shapes) — done.** `RakuAST::Type::Simple.new(Name)` and
+    `Type::Setting.new(Name)` construct type nodes, while `RakuAST::Parameter.new` accepts typed,
+    defaulted, explicitly optional, named, and flattened/unflattened slurpy fields. Constructors
+    validate child shapes, normalize Rakudo's slurpy type-object marker into the model node, expose
+    every field through accessors/introspection, and lower constructed signatures through the
+    existing compiler under `EVAL`. Tests in `t/rakuast-construct-rich-parameters.t`.
+    Next: advanced shapes (`where`, sub-signatures, type captures, array shapes, signature
+    constraints).
 - **Phase 5 — EVAL / compilation.** `lower(RakuAstNode) -> Vec<Stmt>/Expr`, then the
   **existing** compiler. `EVAL($rakuast)` and any code that yields a RakuAST tree runs
   through this. No new execution engine.
