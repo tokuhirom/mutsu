@@ -31,7 +31,28 @@ impl Interpreter {
 
     pub(crate) fn check_eval_undeclared_vars(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
         let mut declared: HashSet<String> = HashSet::new();
+        let mut strict = true;
         for stmt in stmts {
+            match stmt {
+                Stmt::No { module, .. } if module == "strict" => {
+                    strict = false;
+                    continue;
+                }
+                Stmt::Use { module, .. } if module == "strict" => {
+                    strict = true;
+                    continue;
+                }
+                _ => {}
+            }
+            if !strict {
+                // Under `no strict`, assignment auto-declares a package variable.
+                // Remember it in case this EVAL unit turns strict back on later.
+                if let Stmt::Assign { name, .. } = stmt {
+                    declared.insert(name.clone());
+                }
+                Self::collect_declared_vars(stmt, &mut declared);
+                continue;
+            }
             Self::check_self_referential_init(stmt)?;
             Self::collect_declared_vars(stmt, &mut declared);
             if let Some((sigil, var_name, suggestions)) =
@@ -147,9 +168,6 @@ impl Interpreter {
                 out.insert(name.clone());
                 Self::collect_declared_vars_in_expr(expr, out);
             }
-            Stmt::Assign { name, .. } => {
-                out.insert(name.clone());
-            }
             Stmt::SyntheticBlock(body) => {
                 for s in body {
                     Self::collect_declared_vars(s, out);
@@ -231,9 +249,12 @@ impl Interpreter {
             // an embedded `my $x` only brings `x` into scope for references that
             // follow it.
             Stmt::Assign { name, expr, .. } => {
-                let mut local = declared.clone();
-                local.insert(name.clone());
-                self.find_undeclared_var_ordered(expr, &mut local)
+                let lhs = Self::assign_lhs_expr(name);
+                self.find_undeclared_var_in_expr(&lhs, declared)
+                    .or_else(|| {
+                        let mut local = declared.clone();
+                        self.find_undeclared_var_ordered(expr, &mut local)
+                    })
             }
             // A bare block `{ ... }` is a nested lexical scope. Inside it, an
             // assignment to a variable that was never declared (`{ $var = 42 }`)
@@ -577,6 +598,7 @@ impl Interpreter {
                 if name == "_"
                     || name == "/"
                     || name == "!"
+                    || name == "self"
                     || name.starts_with('*')
                     || name.starts_with('?')
                     || name.starts_with('^')
@@ -610,7 +632,24 @@ impl Interpreter {
                 {
                     return None;
                 }
-                let suggestions = Self::suggest_declared_vars(&sigiled, declared);
+                let mut suggestions = Self::suggest_declared_vars(&sigiled, declared);
+                // A same-spelling type is the useful suggestion for a short
+                // scalar typo (`$foo` when class `Foo` exists). This mirrors the
+                // runtime strict-mode assignment error while retaining the
+                // edit-distance filter for genuinely strange variable names.
+                if suggestions.is_empty() {
+                    let mut chars = name.chars();
+                    if let Some(first) = chars.next() {
+                        let type_name = format!(
+                            "{}{}",
+                            first.to_uppercase().collect::<String>(),
+                            chars.as_str()
+                        );
+                        if self.has_class(&type_name) {
+                            suggestions.push(type_name);
+                        }
+                    }
+                }
                 Some(("$", name.clone(), suggestions))
             }
             Expr::ArrayVar(name) => {

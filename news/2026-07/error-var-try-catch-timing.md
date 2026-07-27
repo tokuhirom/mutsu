@@ -39,20 +39,26 @@ to read the topic instead: `t/untyped-error-adhoc.t` (`$ex = $!` inside CATCH)
 and `t/vm-basic.t` (`is $!, "boom"` inside CATCH). Both assert the same thing
 about the exception; they just read it from where raku puts it.
 
-Pin: `t/error-var-try-catch-timing.t` (13 assertions, each verified against raku
+Pin: `t/error-var-try-catch-timing.t` (15 assertions, each verified against raku
 first): the initial and fresh-routine `$!`, an untrapped `die`, a handled CATCH
 in both `try` and bare-block form, `$!` and the topic inside a CATCH block, an
-inner `try` publishing to the enclosing body, and an unmatched CATCH rethrowing.
+inner `try` publishing to the enclosing body, an unmatched CATCH rethrowing,
+and successful tries resetting `$!` to `Any`.
 
-## The other half is split out, and it found a second gap
+## Successful tries now leave `Any`
 
-The same note also reported that a *successful* `try` leaves `Nil` where raku
-leaves the `Any` type object. That change was implemented and then reverted: it
-regresses the whitelisted `roast/S32-exceptions/misc2.t`, because `Nil.foo`
-returns `Nil` while `Any.foo` dies — so it un-masks a place where mutsu fails to
-raise an error at all. **mutsu has no strict-mode undeclared-variable error**
-(`mutsu -e '$x = 5; say $x'` prints `5`), so that file's
-`try EVAL('$i-just-made-this-up = "yup"')` succeeds, leaves `$!` unset, and only
-passed because `+Nil` is `0`. Both findings are recorded in
-`todo/tickets/successful-try-leaves-any-not-nil.md`, with the one-line change
-and the pins to re-add once the strict-mode prerequisite exists.
+The remaining divergence was a successful `try` leaving `Nil` where Raku
+leaves the `Any` type object. The first attempted fix exposed an undeclared
+variable assignment in the whitelisted `roast/S32-exceptions/misc2.t`: the
+existing EVAL strict-mode checker incorrectly treated a top-level assignment
+as a declaration.
+
+EVAL assignment targets are now checked against real declarations and the
+outer environment, so assignment no longer declares a variable in strict mode.
+With that prerequisite fixed, a normally completed `try` stores `Any` in `$!`;
+a soft `Failure` result still stores its exception. CATCH-local initialization
+and restoration of a handled CATCH continue to use `Nil`, since those are
+separate semantics.
+
+Pins: `t/eval-undeclared-block-assign.t`,
+`t/error-var-try-catch-timing.t`, and `t/exception-methods.t`.

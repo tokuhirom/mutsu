@@ -1,6 +1,6 @@
 use Test;
 
-plan 13;
+plan 15;
 
 # `$!` is written when a `try` *completes*, not while a CATCH block runs.
 # Inside CATCH the exception is the topic (`$_`); that block's own `$!` is Nil.
@@ -12,9 +12,11 @@ is fresh(), 'Nil', 'a routine starts with a fresh Nil $!';
 
 # --- what a completed try leaves behind ---------------------------------
 
-# NOTE: what a *successful* `try` leaves in `$!` (raku: the `Any` type object,
-# mutsu: `Nil`) is deliberately not pinned here — see
-# todo/tickets/successful-try-leaves-any-not-nil.md.
+sub ok-try() { try { 1 }; $!.^name }
+is ok-try(), 'Any', 'a try that completes without an error leaves Any';
+
+sub ok-after-failing() { try { die "boom" }; try { 1 }; $!.^name }
+is ok-after-failing(), 'Any', 'a successful try clears an earlier exception to Any';
 
 sub failing-try() { try { die "boom" }; $!.^name }
 is failing-try(), 'X::AdHoc', 'an untrapped die in a try leaves the exception';

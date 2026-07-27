@@ -1,9 +1,18 @@
 use Test;
 
-plan 8;
+plan 11;
 
 # In strict mode (the Raku default), assignment never declares. Inside a bare
 # block, assigning to a variable that was never declared is X::Undeclared.
+
+throws-like { EVAL '$var = 42' }, X::Undeclared,
+    'top-level assignment to an undeclared scalar dies';
+
+throws-like { EVAL '@arr = 1, 2, 3' }, X::Undeclared,
+    'top-level assignment to an undeclared array dies';
+
+throws-like { EVAL '%hash = a => 1' }, X::Undeclared,
+    'top-level assignment to an undeclared hash dies';
 
 throws-like { EVAL '{ $var = 42 }' }, X::Undeclared,
     'assignment to an undeclared scalar inside a block dies';
