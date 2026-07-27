@@ -215,8 +215,11 @@ earlier ones.
     validate child shapes, normalize Rakudo's slurpy type-object marker into the model node, expose
     every field through accessors/introspection, and lower constructed signatures through the
     existing compiler under `EVAL`. Tests in `t/rakuast-construct-rich-parameters.t`.
-    Next: advanced shapes (`where`, sub-signatures, type captures, array shapes, signature
-    constraints).
+  - **Slice 11 (`where` constraints) — done.** `RakuAST::Parameter.new(:where)` validates and
+    retains a constraint node, exposes it through `.where` and model introspection, renders the
+    constructor form like Rakudo, and lowers it to the existing `ParamDef.where_constraint` path
+    through `EVAL`. Tests in `t/rakuast-construct-where.t`. Next: sub-signatures, type captures,
+    array shapes, and signature constraints.
 - **Phase 5 — EVAL / compilation.** `lower(RakuAstNode) -> Vec<Stmt>/Expr`, then the
   **existing** compiler. `EVAL($rakuast)` and any code that yields a RakuAST tree runs
   through this. No new execution engine.
