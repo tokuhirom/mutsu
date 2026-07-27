@@ -528,13 +528,6 @@ answer cannot be confirmed), or *awaiting infrastructure* (6.e generics for
 `S02-types/generics.t`). The genuinely ★achievable ones are few and each
 needs its own unrelated feature:
 
-- [ ] `S02-types/array-shapes.t` — aborts at 36/43 (full oracle: raku is 43/43 with fudge). T43
-      (`my Int @a[2.5]` Rat shape, #4730) and general `Z=` (element-wise zip-assign, #4733) are done.
-      Remaining: (1) **native-typed shaped `Z=`** (`my int @a[2;3] Z= 0..5`) — the typed-array element
-      coercion does not recurse into shaped rows when the value's top `ArrayKind` is normalized to
-      `Array`, and the two obvious fixes both make `deep-recursion-initing-native-array.t` ~150× slower
-      (keeping the array on the `kind==Shaped` path); needs a recurse-without-kind==Shaped rework.
-      (2) **T31** multi-dim `.pairs` `.value=` writeback (tuple key vs 1-D `key.parse::<usize>()`).
 - [ ] `6.c/APPENDICES/A04-experimental/01-misc.t` — 16/19. `:D`/`:U` DefiniteHow coercion.
 
 **Implication for planning: roast is no longer the productive axis.** Prefer §1 (Batteries /

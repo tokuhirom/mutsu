@@ -577,6 +577,46 @@ impl Interpreter {
                     }
                 }
 
+                // A multidimensional shaped-array pair has an Array key such as
+                // `(0, 1)`, not a stringifiable one-dimensional index. Locate
+                // the unique backing shaped array by that full index tuple and
+                // current leaf value, then rebuild it through the existing
+                // multidimensional assignment path.
+                if selected_array.is_none()
+                    && let ValueView::Array(indices, _) = key_elem.view()
+                {
+                    let dims: Option<Vec<usize>> = indices
+                        .iter()
+                        .map(|index| usize::try_from(crate::runtime::to_int(index)).ok())
+                        .collect();
+                    if let Some(dims) = dims {
+                        let dims_i64: Vec<i64> = dims.iter().map(|&index| index as i64).collect();
+                        let mut candidates = self.env.values().filter_map(|bound| {
+                            let ValueView::Array(arr, kind) = bound.view() else {
+                                return None;
+                            };
+                            if !crate::runtime::utils::is_shaped_array(bound) {
+                                return None;
+                            }
+                            crate::runtime::utils::shaped_array_indexed_leaves(bound)
+                                .into_iter()
+                                .find(|(index, leaf)| {
+                                    index == &dims_i64 && leaf == current_value.as_ref()
+                                })
+                                .map(|_| (arr.clone(), kind, bound.clone()))
+                        });
+                        if let Some(first) = candidates.next()
+                            && candidates
+                                .all(|(other, _, _)| crate::gc::Gc::ptr_eq(&first.0, &other))
+                        {
+                            let replacement =
+                                Self::multidim_assign_nested(first.2, &dims, value.clone())?;
+                            self.overwrite_array_bindings_by_identity(&first.0, replacement);
+                            return Ok(value);
+                        }
+                    }
+                }
+
                 if let Some(source_hash) = selected_hash {
                     let mut updated = (*source_hash).clone();
                     updated.insert(key, value.clone());

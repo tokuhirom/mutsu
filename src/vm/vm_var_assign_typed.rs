@@ -376,9 +376,14 @@ impl Interpreter {
                 }
                 continue;
             }
-            // For shaped arrays, sub-arrays are structural — recurse into them
-            if kind == crate::value::ArrayKind::Shaped
-                && let ValueView::Array(sub_items, sub_kind) = item.view()
+            // For shaped arrays, sub-arrays are structural — recurse into them.
+            // Assignment normalization may demote only the outer array to
+            // `Array` (notably for `Z=`), while its shaped rows retain their
+            // kind. Recognize either side so those rows are not type-checked as
+            // scalar elements.
+            if let ValueView::Array(sub_items, sub_kind) = item.view()
+                && (kind == crate::value::ArrayKind::Shaped
+                    || sub_kind == crate::value::ArrayKind::Shaped)
             {
                 let sub_coerced = self.coerce_typed_array_elements(
                     var_name,
