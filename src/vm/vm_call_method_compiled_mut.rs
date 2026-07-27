@@ -38,6 +38,7 @@ impl Interpreter {
         // Native QuantHash construction (mut path twin of the above).
         if method == "new"
             && let ValueView::Package(class_name) = target.view()
+            && !self.user_declared_classes.contains(&class_name.resolve())
             && let Some(result) = self.try_native_quanthash_construct_for_package(class_name, &args)
         {
             self.method_dispatch_pure = true;
@@ -46,6 +47,7 @@ impl Interpreter {
         // Native aggregate construction (mut path twin of the above).
         if method == "new"
             && let ValueView::Package(class_name) = target.view()
+            && !self.user_declared_classes.contains(&class_name.resolve())
             && let Some(result) = self.try_native_aggregate_construct_for_package(class_name, &args)
         {
             self.method_dispatch_pure = true;
