@@ -186,12 +186,8 @@ impl Interpreter {
                     return Some(Ok(self.format_callable(&fmt, count)));
                 }
                 ("Formatter", "AST") => {
-                    // `Formatter.AST` returns a `RakuAST::Node` describing the
-                    // format. mutsu has no RakuAST subsystem, so we cannot build
-                    // a genuine node; return `Nil` (an honest "not available")
-                    // rather than throwing, so the rest of the file can run.
-                    // TODO: return a real RakuAST::Node once RakuAST exists.
-                    return Some(Ok(Value::NIL));
+                    let fmt = args.first().map(Value::to_string_value).unwrap_or_default();
+                    return Some(Ok(crate::rakuast::formatter_ast(&fmt)));
                 }
                 _ => {}
             }

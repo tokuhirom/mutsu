@@ -518,14 +518,14 @@ Raku programs closest to the project goal. The last one, `advent2013-day18.t`, l
 ①(stack overflow) / ②(unparseable) / ③(hang) / ④(error-message) clusters are all cleared —
 history in [news/2026-07.md](news/2026-07.md).
 
-**Re-measured 2026-07-17** — the 33 remaining, by area: `6.c/` 4, `S02-names` (pseudo-package)
-3, `S12-*` 6, `S05-*` 5, `S32-str` 2, `S10-packages` 2, `S06-advanced` 2, `APPENDICES` 2,
+**Re-measured 2026-07-27** — the 32 remaining, by area: `6.c/` 4, `S02-names` (pseudo-package)
+3, `S12-*` 6, `S05-*` 5, `S32-str` 1, `S10-packages` 2, `S06-advanced` 2, `APPENDICES` 2,
 `roast/t/` 2 (roast's own Perl 5 tooling — non-goal by definition), and 5 singletons.
 
 **There is no cluster left to attack.** Per the BLOCKERS.md classification nearly all of
 these are *non-goal* (rakudo itself fails), *no oracle* (local raku SORRYs, so the correct
-answer cannot be confirmed), or *awaiting infrastructure* (RakuAST for `S32-str/format.t`,
-6.e generics for `S02-types/generics.t`). The genuinely ★achievable ones are few and each
+answer cannot be confirmed), or *awaiting infrastructure* (6.e generics for
+`S02-types/generics.t`). The genuinely ★achievable ones are few and each
 needs its own unrelated feature:
 
 - [ ] `S02-types/array-shapes.t` — aborts at 36/43 (full oracle: raku is 43/43 with fudge). T43

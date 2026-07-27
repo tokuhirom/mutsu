@@ -11,9 +11,11 @@
 //! phasing (construction, EVAL, macros are later phases).
 
 mod convert;
+mod formatter;
 mod lower;
 mod render;
 
+pub use formatter::formatter_ast;
 pub use lower::lower;
 
 use crate::value::{RuntimeError, Value, ValueView};

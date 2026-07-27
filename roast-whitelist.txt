@@ -1245,6 +1245,7 @@ roast/S32-str/encode.t
 roast/S32-str/ends-with.t
 roast/S32-str/fc.t
 roast/S32-str/flip.t
+roast/S32-str/format.t
 roast/S32-str/gb18030-encode-decode.t
 roast/S32-str/gb2312-encode-decode.t
 roast/S32-str/indent.t
