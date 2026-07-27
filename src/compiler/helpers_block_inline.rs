@@ -487,7 +487,7 @@ impl Compiler {
                 Self::find_undeclared_heredoc_var(&resolved, block_locals, &self.local_map)
             }
             // Recurse into subexpressions that might contain a heredoc
-            Expr::Call { args, .. } => {
+            Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
                 for arg in args {
                     if let Some(name) = self.find_heredoc_in_expr(arg, block_locals) {
                         return Some(name);

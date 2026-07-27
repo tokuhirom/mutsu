@@ -781,7 +781,9 @@ fn statement_expression(expr: RakuAstNode) -> RakuAstNode {
 fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     match expr {
         Expr::Literal(v) | Expr::LiteralSrc(v, _) => convert_literal(v),
-        Expr::Call { name, args } => Ok(call_name(name.as_str(), args, false)?),
+        Expr::Call { name, args } | Expr::UserRoutineCall { name, args } => {
+            Ok(call_name(name.as_str(), args, false)?)
+        }
         Expr::Var(name) => Ok(var_lexical("$", name)),
         // Calling a term `$f(1, 2)` -> ApplyPostfix(operand, Call::Term(args)).
         Expr::CallOn { target, args } => {

@@ -564,9 +564,30 @@ pub(crate) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
             return Err(PError::expected("known function call"));
         }
     }
-    let stmt = Stmt::Call {
-        name: Symbol::intern(&name),
-        args,
+    let shadows_listop = matches!(
+        name.as_str(),
+        "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
+    ) && (is_imported_function(&name) || is_user_declared_sub(&name));
+    let stmt = if shadows_listop
+        && args
+            .iter()
+            .all(|arg| matches!(arg, crate::ast::CallArg::Positional(_)))
+    {
+        Stmt::Expr(Expr::UserRoutineCall {
+            name: Symbol::intern(&name),
+            args: args
+                .into_iter()
+                .filter_map(|arg| match arg {
+                    crate::ast::CallArg::Positional(expr) => Some(expr),
+                    _ => None,
+                })
+                .collect(),
+        })
+    } else {
+        Stmt::Call {
+            name: Symbol::intern(&name),
+            args,
+        }
     };
     parse_statement_modifier(rest, stmt)
 }

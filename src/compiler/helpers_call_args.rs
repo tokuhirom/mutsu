@@ -468,7 +468,9 @@ impl Compiler {
                     || Self::expr_has_placeholder(then_expr)
                     || Self::expr_has_placeholder(else_expr)
             }
-            Expr::Call { args, .. } => args.iter().any(Self::expr_has_placeholder),
+            Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
+                args.iter().any(Self::expr_has_placeholder)
+            }
             Expr::MethodCall { target, args, .. }
             | Expr::DynamicMethodCall { target, args, .. }
             | Expr::HyperMethodCall { target, args, .. }

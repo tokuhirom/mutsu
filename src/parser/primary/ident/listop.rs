@@ -33,9 +33,21 @@ pub(crate) fn attach_test_callsite_line(name: &str, input: &str, mut args: Vec<E
 }
 
 pub(crate) fn make_call_expr(name: String, input: &str, args: Vec<Expr>) -> Expr {
+    let call_args = attach_test_callsite_line(&name, input, args);
+    if matches!(
+        name.as_str(),
+        "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
+    ) && (crate::parser::stmt::simple::is_imported_function(&name)
+        || crate::parser::stmt::simple::is_user_declared_sub(&name))
+    {
+        return Expr::UserRoutineCall {
+            name: Symbol::intern(&name),
+            args: call_args,
+        };
+    }
     Expr::Call {
         name: Symbol::intern(&name),
-        args: attach_test_callsite_line(&name, input, args),
+        args: call_args,
     }
 }
 

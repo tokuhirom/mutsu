@@ -17,6 +17,7 @@ pub(crate) enum OuterStash {
 pub(super) struct LexicalScopeSnapshot {
     dynamic_scope_all: bool,
     dynamic_scope_names: Option<std::collections::HashSet<String>>,
+    user_listop_shadows: std::collections::HashSet<String>,
     constant_vars_in_scope: std::collections::HashSet<String>,
     constant_vars_current_scope: std::collections::HashSet<String>,
     constant_values: std::collections::HashMap<String, Value>,
@@ -39,6 +40,7 @@ impl Compiler {
         LexicalScopeSnapshot {
             dynamic_scope_all: self.dynamic_scope_all,
             dynamic_scope_names: self.dynamic_scope_names.clone(),
+            user_listop_shadows: self.user_listop_shadows.clone(),
             constant_vars_in_scope: self.constant_vars_in_scope.clone(),
             constant_vars_current_scope: std::mem::take(&mut self.constant_vars_current_scope),
             // Inlinable constant values follow the same lifecycle: one declared
@@ -60,6 +62,7 @@ impl Compiler {
         self.pop_local_scope();
         self.dynamic_scope_all = saved.dynamic_scope_all;
         self.dynamic_scope_names = saved.dynamic_scope_names;
+        self.user_listop_shadows = saved.user_listop_shadows;
         // Constants declared inside the exiting block are `our`-scoped: they stay
         // installed in the package, but their lexical local slot is no longer
         // valid, so drop them from the in-scope set. Subsequent bare-word access

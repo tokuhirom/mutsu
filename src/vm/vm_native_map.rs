@@ -342,7 +342,7 @@ fn classify_expr(expr: &Expr) -> Option<bool> {
         // The `.=`-on-topic marker (`$_ .= meth` / `.=meth`) mutates `$_`, exactly
         // like the `Stmt::Assign { name: "_" }` case in `classify_stmt`.
         Expr::Call { name, .. } if name.resolve() == "__mutsu_topic_dotassign" => Some(true),
-        Expr::Call { args, .. } => classify_exprs(args),
+        Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => classify_exprs(args),
         Expr::StringInterpolation(items)
         | Expr::ArrayLiteral(items)
         | Expr::BracketArray(items, _)

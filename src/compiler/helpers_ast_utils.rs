@@ -377,7 +377,23 @@ impl Compiler {
     /// the normal SubDecl handling will compile the body. Compiling here
     /// would cause the compiled_functions map (which is flat) to be overwritten
     /// by later hoists from other scopes.
+    pub(super) fn seed_user_listop_shadows(&mut self, stmts: &[Stmt]) {
+        for stmt in stmts {
+            let name = match stmt {
+                Stmt::SubDecl { name, .. } | Stmt::ProtoDecl { name, .. } => name.resolve(),
+                _ => continue,
+            };
+            if matches!(
+                name.as_str(),
+                "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
+            ) {
+                self.user_listop_shadows.insert(name);
+            }
+        }
+    }
+
     pub(super) fn hoist_sub_decls(&mut self, stmts: &[Stmt], lexical_hoist: bool) {
+        self.seed_user_listop_shadows(stmts);
         for stmt in stmts {
             if let Stmt::SubDecl { .. } = stmt {
                 let mut hoisted = stmt.clone();

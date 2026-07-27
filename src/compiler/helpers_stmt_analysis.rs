@@ -93,7 +93,9 @@ impl Compiler {
         match expr {
             Expr::DoBlock { body, .. } => Self::has_real_let_deep(body),
             Expr::Try { body, .. } => Self::has_real_let_deep(body),
-            Expr::Call { args, .. } => args.iter().any(Self::expr_has_real_let_deep),
+            Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
+                args.iter().any(Self::expr_has_real_let_deep)
+            }
             Expr::MethodCall { args, target, .. }
             | Expr::DynamicMethodCall { args, target, .. }
             | Expr::HyperMethodCall { args, target, .. }

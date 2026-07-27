@@ -537,6 +537,7 @@ impl Interpreter {
                 }
             }
             Expr::Call { args, .. }
+            | Expr::UserRoutineCall { args, .. }
             | Expr::ArrayLiteral(args)
             | Expr::BracketArray(args, _)
             | Expr::CaptureLiteral(args)
@@ -792,6 +793,7 @@ impl Interpreter {
                 self.check_private_calls_exist_expr(class_name, class_def, index)?;
             }
             Expr::Call { args, .. }
+            | Expr::UserRoutineCall { args, .. }
             | Expr::ArrayLiteral(args)
             | Expr::BracketArray(args, _)
             | Expr::StringInterpolation(args) => {

@@ -118,6 +118,10 @@ pub(crate) struct Compiler {
     tmp_counter: usize,
     dynamic_scope_all: bool,
     dynamic_scope_names: Option<std::collections::HashSet<String>>,
+    /// User routines named like container listops that are visible in the
+    /// current compiler lexical scope. Seeded by the sub-hoist pass so a call
+    /// before its textual declaration resolves like Rakudo.
+    user_listop_shadows: std::collections::HashSet<String>,
     /// Track dynamic variable accesses (names starting with '*') for postdeclaration check
     accessed_dynamic_vars: std::collections::HashSet<String>,
     /// Number of enclosing `for`-loop blocks between the code currently being
@@ -325,6 +329,7 @@ impl Compiler {
             tmp_counter: 0,
             dynamic_scope_all: false,
             dynamic_scope_names: None,
+            user_listop_shadows: std::collections::HashSet::new(),
             accessed_dynamic_vars: std::collections::HashSet::new(),
             callframe_block_depth: 0,
             is_routine: false,

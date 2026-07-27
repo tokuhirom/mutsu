@@ -612,7 +612,9 @@ impl Compiler {
             Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
                 Self::expr_has_enter_phaser(target) || args.iter().any(Self::expr_has_enter_phaser)
             }
-            Expr::Call { args, .. } => args.iter().any(Self::expr_has_enter_phaser),
+            Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
+                args.iter().any(Self::expr_has_enter_phaser)
+            }
             _ => false,
         }
     }

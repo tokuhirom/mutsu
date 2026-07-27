@@ -202,7 +202,8 @@ fn expr_ends_with_block(expr: &Expr) -> bool {
         Expr::MethodCall { args, .. }
         | Expr::HyperMethodCall { args, .. }
         | Expr::DynamicMethodCall { args, .. }
-        | Expr::Call { args, .. } => {
+        | Expr::Call { args, .. }
+        | Expr::UserRoutineCall { args, .. } => {
             matches!(args.last(), Some(Expr::AnonSub { is_block: true, .. }))
         }
         _ => false,

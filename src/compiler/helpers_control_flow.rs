@@ -270,7 +270,9 @@ impl Compiler {
                 Expr::MethodCall { target, args, .. } => {
                     expr_rebinds_topic(target) || args.iter().any(expr_rebinds_topic)
                 }
-                Expr::Call { args, .. } => args.iter().any(expr_rebinds_topic),
+                Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
+                    args.iter().any(expr_rebinds_topic)
+                }
                 _ => false,
             }
         }

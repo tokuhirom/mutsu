@@ -132,7 +132,9 @@ impl Interpreter {
                 Expr::CallOn { target, args } => {
                     expr_contains_last(target) || args.iter().any(expr_contains_last)
                 }
-                Expr::Call { args, .. } => args.iter().any(expr_contains_last),
+                Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
+                    args.iter().any(expr_contains_last)
+                }
                 Expr::StringInterpolation(items)
                 | Expr::ArrayLiteral(items)
                 | Expr::BracketArray(items, _)

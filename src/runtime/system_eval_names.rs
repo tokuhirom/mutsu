@@ -341,7 +341,7 @@ impl Interpreter {
 
     fn collect_call_names_in_expr(expr: &Expr, out: &mut HashSet<String>) {
         match expr {
-            Expr::Call { name, args } => {
+            Expr::Call { name, args } | Expr::UserRoutineCall { name, args } => {
                 out.insert(name.resolve());
                 for a in args {
                     Self::collect_call_names_in_expr(a, out);
@@ -520,7 +520,7 @@ impl Interpreter {
                     Self::collect_type_refs_in_expr(a, out);
                 }
             }
-            Expr::Call { args, .. } => {
+            Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
                 for a in args {
                     Self::collect_type_refs_in_expr(a, out);
                 }

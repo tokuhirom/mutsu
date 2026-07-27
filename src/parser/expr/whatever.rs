@@ -117,7 +117,9 @@ fn contains_xx_with_bare_whatever(expr: &Expr) -> bool {
         Expr::Index { target, index, .. } => {
             contains_xx_with_bare_whatever(target) || contains_xx_with_bare_whatever(index)
         }
-        Expr::Call { args, .. } => args.iter().any(contains_xx_with_bare_whatever),
+        Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
+            args.iter().any(contains_xx_with_bare_whatever)
+        }
         Expr::CallOn { target, args } => {
             contains_xx_with_bare_whatever(target)
                 || args.iter().any(contains_xx_with_bare_whatever)

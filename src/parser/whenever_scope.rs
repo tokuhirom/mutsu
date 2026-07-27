@@ -141,7 +141,7 @@ fn walk_expr(expr: &Expr, in_scope: bool, line: &mut i64, found: &mut Option<i64
 
         // Call / method-call arguments may carry the supply emitter closure or
         // other block arguments.
-        Expr::Call { args, .. } => {
+        Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
             for a in args {
                 walk_expr(a, in_scope, line, found);
             }

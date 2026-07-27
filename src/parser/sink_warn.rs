@@ -187,7 +187,7 @@ fn scan_gathers_expr(expr: &Expr) {
                 scan_gathers_expr(a);
             }
         }
-        Expr::Call { args, .. } => {
+        Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
             for a in args {
                 scan_gathers_expr(a);
             }
