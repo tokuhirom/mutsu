@@ -509,19 +509,10 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
             {
                 return value_to_list(frames);
             }
-            // IO::Path::Parts is Iterable: list context yields its parts as an
-            // ordered list of `volume`/`dirname`/`basename` Pairs.
+            // Rakudo itemizes IO::Path::Parts in list context despite the type
+            // doing Iterable; its explicit `.flat` method exposes the parts.
             if class_name.resolve() == "IO::Path::Parts" {
-                let attrs = attributes.as_map();
-                return crate::runtime::io_path_parts_keys()
-                    .iter()
-                    .map(|k| {
-                        Value::pair(
-                            (*k).to_string(),
-                            attrs.get(*k).cloned().unwrap_or(Value::NIL),
-                        )
-                    })
-                    .collect();
+                return vec![val.clone()];
             }
             if let Some(ValueView::Array(items, ..)) =
                 attributes.as_map().get("__array_items").map(Value::view)

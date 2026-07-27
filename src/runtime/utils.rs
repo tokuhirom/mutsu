@@ -374,8 +374,8 @@ pub(crate) fn make_order(ord: std::cmp::Ordering) -> Value {
     }
 }
 
-/// The three parts of an `IO::Path::Parts`, in the fixed order they are exposed
-/// positionally (`$parts[0]`/`[1]`/`[2]`) and by iteration (`.list`/`$parts[]`).
+/// The three parts of an `IO::Path::Parts`, in the fixed order used by
+/// positional indexing (`$parts[0]`/`[1]`/`[2]`), `.flat`, and map coercion.
 pub(crate) fn io_path_parts_keys() -> &'static [&'static str] {
     &["volume", "dirname", "basename"]
 }
