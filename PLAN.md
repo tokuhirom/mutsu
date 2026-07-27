@@ -1041,164 +1041,6 @@ unification / the malloc clusters from `Value` clone/drop and attribute material
 
 ---
 
-## 7. RakuAST — user-facing AST (new capability track)
-
-Design and phasing are fixed in **[docs/adr/0011](docs/adr/0011-rakuast-model-layer-and-phasing.md)**.
-RakuAST is a **reflection/model layer bidirectionally convertible with the internal `Expr`/`Stmt`
-AST** — NOT a frontend rewrite. Near-zero roast payoff today (this is a new-capability direction),
-so it is tracked separately from the roast backlog.
-
-- [ ] **Phase 1 — introspection MVP**: `Value::RakuAst` + `RakuAstClass` enum + class-metadata table;
-      `Q|...|.AST` on `Str` for the literal + say-call cluster; `.gist`/`.raku`/`.^name` renderer
-      matching raku exactly. Tests in `t/rakuast-ast.t`.
-- **Phase 2 (in progress)** — read-coverage expansion.
-  - [x] Slice 1: Var::Lexical (all sigils), VarDeclaration::Simple + Initializer::Assign (plain
-        `my $x [= expr]`), ApplyInfix/ApplyPrefix/ApplyPostfix + Infix/Prefix/Postfix. Tests in
-        `t/rakuast-expr.t`.
-  - [x] Slice 2: `=` assignment (`Assignment` node, `:item` for scalar targets) and method
-        calls (`Call::Method` as an `ApplyPostfix`). Tests in `t/rakuast-calls-assign.t`.
-  - [x] Slice 3: bare blocks (`Block`/`Blockoid`) and pointy blocks (`PointyBlock`/`Signature`/
-        `Parameter`/`ParameterTarget::Var`, plain positional params only). Tests in
-        `t/rakuast-blocks.t`. (PR #4684.)
-  - [x] Slice 4: `if`/`if...else`, `while`, and bare `loop` (`Statement::If`, `Statement::Loop::
-        While`, `Statement::Loop`), condition + `then`/`else`/`body` = `Block`. Tests in
-        `t/rakuast-control.t`. (mutsu desugars `unless`→`if !` and `until`→`while !`, so those
-        render with a negated condition — documented divergence, ADR-0011.)
-  - [x] Slice 5: `elsif` chains — mutsu nests each `elsif` as a single `if` in the else-branch;
-        flattened into raku's `elsifs` list (`Statement::Elsif`) with any trailing `else` block.
-        Tests in `t/rakuast-elsif.t`.
-  - [x] Slice 6: implicit-topic `for` (`Statement::For` with topic-taking `Block` marked
-        `implicit-topic`/`required-topic`). Tests in `t/rakuast-for.t`. (`with`/`without` are
-        desugared by mutsu into temp-var + `.defined` + `if`, so no `Statement::With` node to
-        recover — deferred, documented in ADR-0011.)
-  - [x] Slice 7: named sub declarations (`RakuAST::Sub`, reusing `Signature`/`Parameter`; sub
-        params carry an implicit `type => RakuAST::Type::Setting(Any)`). Tests in `t/rakuast-sub.t`.
-  - [x] Slice 8: C-style loops (`Statement::Loop` with setup/condition/increment) and `repeat`
-        loops (`Statement::Loop::RepeatWhile`). Tests in `t/rakuast-loop.t`.
-  - [x] Slice 9: bare comma lists (`ApplyListInfix`) and `:=` binding (`ApplyInfix` over a plain
-        `Infix(":=")`). Tests in `t/rakuast-listinfix-bind.t`. (Parenthesised lists and compound
-        `+=` are desugared/dropped by mutsu — deferred, documented in ADR-0011.)
-  - [x] Slice 10: scoped/typed declarations — `my`/`our`/`state` with an optional simple type
-        (`VarDeclaration::Simple` gains `scope` + `type => Type::Simple`). Tests in
-        `t/rakuast-vardecl-scoped.t`.
-  - [x] Slice 11: anonymous parameter-less `sub { }` (`RakuAST::Sub` with no name). Tests in
-        `t/rakuast-anon-sub.t`. (`sub ($x)` shares `AnonSubParams` with pointy blocks, still
-        deferred.)
-  - [x] Slice 12: explicit-signature `for @a -> $x` (body becomes a `PointyBlock` carrying the
-        signature). Tests in `t/rakuast-for-signature.t`.
-  - [x] Slice 13: class and method declarations (`RakuAST::Class`, `RakuAST::Method`; class body is
-        an ordinary `Block`, methods reuse the `Sub` routine helper). Tests in `t/rakuast-class.t`.
-        (Attributes `has $.x`, inheritance, roles/grammars deferred.)
-  - [x] Slice 14: class attributes `has [Type] $.x` (`VarDeclaration::Simple` with `scope => "has"`
-        and a `twigil`). Tests in `t/rakuast-attribute.t`. (Explicit defaults → `Trait::WillBuild`,
-        deferred.)
-  - [x] Slice 15: method-call modifiers `.?`/`.+`/`.*` (`Call::Method` gains a `dispatch` field).
-        Tests in `t/rakuast-method-modifier.t`.
-  - [x] Slice 16: role declarations (`RakuAST::Role` with a distinct `RoleBody`). Tests in
-        `t/rakuast-role.t`. (Grammars are `ClassDecl`+`parents=["Grammar"]` in mutsu — no distinct
-        node — so they defer.)
-  - [x] Slice 17: loop labels (`LABEL: while/for/loop` → `labels => (Label(...),)`). Tests in
-        `t/rakuast-loop-label.t`. (Labelled `repeat`/C-style loops use a separate `Stmt::Label`
-        node, deferred.)
-  - [x] Slice 18: given / when / default (`Statement::Given`/`When`/`Default`). Tests in
-        `t/rakuast-given-when.t`.
-  - [x] Slice 19: the ternary `?? !!` operator (`RakuAST::Ternary`). Tests in `t/rakuast-ternary.t`.
-  - [x] Slice 20: definite types `Int:D`/`Int:U` (`Type::Definedness` over a `Type::Simple` base).
-        Tests in `t/rakuast-type-definite.t`.
-  - [x] Slice 21: parameterised types `Array[Int]`/`Hash[Str, Int]` (`Type::Parameterized` with an
-        `ArgList` of type args). Tests in `t/rakuast-type-parameterized.t`.
-  - [x] Slice 22: positional subscripts `@x[EXPR]` (`Postcircumfix::ArrayIndex` + `SemiList`). Tests
-        in `t/rakuast-subscript.t`. (Associative `%h{...}`/`%h<...>` deferred — indistinguishable.)
-  - [x] Slice 23: quoted method names `$x."foo"()` (`Call::QuotedMethod`). Tests in
-        `t/rakuast-quoted-method.t`.
-  - [x] Slice 24: list-associative infixes `andthen`/`orelse`/`notandthen` (flat `ApplyListInfix`).
-        Tests in `t/rakuast-list-infix.t`.
-  - [x] Slice 25: reduction metaoperator `[+]`/`[\+]` (`Term::Reduce`). Tests in
-        `t/rakuast-reduction.t`.
-  - [x] Slice 26: hyper method calls `@a>>.method` (`MetaPostfix::Hyper`). Tests in
-        `t/rakuast-hyper-method.t`.
-  - [x] Slice 27: attribute build-time defaults `has $.x = 5` (`Trait::WillBuild` + initializer).
-        Tests in `t/rakuast-attribute-default.t`.
-  - [x] Slice 28: labelled `repeat` loops (`Stmt::Label`-wrapped). Tests in
-        `t/rakuast-labelled-repeat.t`.
-  - [x] Slice 29: coercion types `Int()` (`Type::Coercion`). Tests in `t/rakuast-type-coercion.t`.
-  - Phase 2 read-coverage is complete (slices 1–29); user chose the Phase 3 pivot (2026-07-18).
-    Remaining Phase 2 constructs (`.=`, hyper `<<.m`/`>>+<<`, signature return types) carry mutsu
-    desugar divergences and are deferred.
-- **Phase 3 (in progress)** — `RakuAST::*` type-object registry + introspection dispatch.
-  - [x] Slice 1: node accessors — `.condition`/`.expression`/`.args`/… return field values, and
-        `.statements` returns a `StatementList`'s children as a `List`, so the tree is walkable.
-        Tests in `t/rakuast-accessors.t`.
-  - [x] Slice 2: `~~ RakuAST::Node` / `.isa` hierarchy — base `RakuAST::Node` + `::`-namespace
-        ancestors (`Statement::If isa RakuAST::Statement`). Tests in `t/rakuast-smartmatch.t`.
-        (`use experimental :rakuast` already parsed as a no-op.)
-  - [x] Slice 3: positional-leaf accessors (`IntLiteral.value`, `Var::Lexical.name`). Tests in
-        `t/rakuast-leaf-accessors.t`.
-  - [x] Slice 4: semantic Expression/Term hierarchy (`IntLiteral isa RakuAST::Expression`/`Term`,
-        `ApplyInfix isa Expression`). Tests in `t/rakuast-semantic-hierarchy.t`.
-  - [x] Slice 5: registered `RakuAST::*` type objects and `.WHAT` — a node's `.WHAT` is the
-        corresponding type object, and concrete/abstract type objects participate in the same
-        namespace + semantic hierarchy under `.isa`/`~~`. Tests in `t/rakuast-type-objects.t`.
-  - [x] Slice 6: `.isa` and `.^isa` on registered type objects and node values use the same
-        namespace + semantic hierarchy as `~~`. Tests extended in `t/rakuast-type-objects.t`.
-  - [x] Slice 7: `.^mro` / `.^parents` on registered type objects and node values expose the
-        namespace + semantic model hierarchy. Tests extended in `t/rakuast-type-objects.t`.
-  - [x] Slice 8: `.^methods(:local)` on registered type objects and node values exposes the
-        constructors/accessors implemented by mutsu's model layer (without Rakudo's compiler-private
-        `IMPL-*` surface). Tests in `t/rakuast-type-methods.t`.
-  - [x] Slice 9: `.^attributes(:local)` exposes model fields as ordinary `Attribute` introspection
-        objects on both registered type objects and node values. Tests in
-        `t/rakuast-type-attributes.t`.
-  - [x] Slice 10: `.^can` discovers supported constructors, accessors, and mutators from the same
-        model metadata as `.^methods(:local)` and `.^method_table`, on both registered type objects
-        and node values. Tests in `t/rakuast-type-can.t`.
-  - [ ] Slice 11+: remaining type-object metaobject operations.
-- **Phase 4 (in progress)** — construction (`.new`).
-  - [x] Slice 1: literal constructors (`RakuAST::IntLiteral.new(42)`, `StrLiteral`, `RatLiteral`).
-        Tests in `t/rakuast-construct.t`.
-  - [x] Slice 2: `RakuAST::Name.from-identifier("x")`. Tests in `t/rakuast-construct-name.t`.
-  - [x] Slice 3: multi-field constructors (`Infix.new("+")`, `Statement::Expression.new(:expression)`,
-        `ApplyInfix.new(:left, :infix, :right)`). Tests in `t/rakuast-construct-multi.t`.
-  - [x] Slice 4: `Var::Lexical.new`, `ApplyPrefix`/`ApplyPostfix`, `Postfix.new(:operator)`. Tests in
-        `t/rakuast-construct-more.t`.
-  - [x] Slice 5: mutable `StatementList.new` + `.add-statement`; aliases share appended children,
-        and constructed lists lower through `EVAL`. Tests in
-        `t/rakuast-construct-statement-list.t`.
-  - [x] Slice 6: `Blockoid.new(StatementList)` and `Block.new(body => Blockoid)`, including
-        accessors and model introspection. Tests in `t/rakuast-construct-block.t`.
-  - [x] Slice 7: parameter-less `Sub.new`, with an optional name and an empty `Blockoid` default,
-        including accessors, model introspection, and lowering through `EVAL`. Tests in
-        `t/rakuast-construct-sub.t`.
-  - [x] Slice 8: plain positional signature constructors (`ParameterTarget::Var.new`,
-        `Parameter.new`, `Signature.new`) and `Sub.new(:signature)`. Tests in
-        `t/rakuast-construct-signature.t`.
-  - [x] Slice 9: plain variable-declaration constructors (`VarDeclaration::Simple.new` and
-        `Initializer::Assign.new`), including accessors, introspection, validation, and lowering
-        through `EVAL`. Tests in `t/rakuast-construct-vardecl.t`.
-  - [x] Slice 10: common richer parameter shapes — `Type::Simple.new` /
-        `Type::Setting.new`, plus `Parameter.new` with typed, defaulted, optional, named, and
-        flattened/unflattened slurpy fields. Constructed signatures lower through `EVAL`. Tests in
-        `t/rakuast-construct-rich-parameters.t`.
-  - [x] Slice 11: `Parameter.new(:where)` constructs, exposes, renders, and lowers parameter
-        constraints through `EVAL`. Tests in `t/rakuast-construct-where.t`.
-  - [ ] Slice 12+: advanced parameter shapes (sub-signatures, type captures, array shapes, and
-        signature constraints).
-- **Phase 5 (in progress)** — EVAL: lower RakuAST → internal AST → existing compiler (no new engine).
-  - [x] Slices 1–37 done (PRs #4736–#4804): literals, all common operators + ternary, the full
-        control-flow set, sub declarations (typed/default/named/slurpy params) + calls + method calls,
-        control-flow calls (`return`/`last`/`next`/`die`/`fail`/`take`), the `do`/`try`/`gather`
-        statement prefixes, and first-class code values (blocks / pointy / anon subs, `.map`/`.grep`
-        callbacks). Coverage + boundary summary: `docs/adr/0011-…` Phase 5 "Status summary";
-        campaign write-up in `news/2026-07.md`.
-  - [ ] Slice 38+: the deferred constructs are blocked by representation mismatches, not effort —
-        placeholder blocks (`{ $^a }`), `with`/`without`, list assignment, `constant` (all desugared),
-        associative subscripts (`%h<a>` vs `%h{"a"}`, indistinguishable), CATCH blocks, WhateverCode
-        (`* + 1`), code-block interpolation, regexes. Each needs its own design, not an incremental
-        slice; pick one deliberately rather than by cadence.
-- [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).
-
----
-
 ## 8. QA & finalization — closing the compatibility gap roast no longer sees
 
 **Why this section exists.** roast is mined out (§4: the whitelist is at its ceiling and the 33
@@ -1222,52 +1064,17 @@ was "effective with Rakudo 2026.01"). Prefer the stronger signal **"mutsu differ
 the documented expectation"** over a raw raku diff, so version skew and aspirational docs do not flood
 the backlog.
 
-### 8.1 Differential harness (the backbone) — ✅ prototype landed
+### 8.1 Differential harness (the backbone)
 
-- [x] **`scripts/doc-diff-harness.raku`** — a `raku`-vs-`mutsu` differential runner: feeds each
-      extracted `raku-doc` example to both, uses raku as the oracle (compares only blocks raku runs
-      cleanly), and reports mismatches as ready-made minimal repros, bucketing `raku-drift-from-doc`
-      (version drift) separately from true `output-mismatch` / `mutsu-error`. See
-      [docs/qa-doc-diff-harness.md](docs/qa-doc-diff-harness.md).
-      **Signal gate passed** (2026-07-18, 8 core Type files): 270 raku-clean comparisons → **50
-      high-signal divergences (18.5%)**, genuine and clustering by root cause. The premise holds; the
-      campaign is justified.
-- [x] Reusable substrate for 8.2 / 8.3 / 8.4 — the harness is parallel-safe (per-PID scratch file) and
-      `scripts/doc-diff-sweep.sh` fans the whole corpus out across worker processes. **Latest full-corpus
-      sweep (2026-07-22, main ≈ `ecaee240`): 444 files, 130 with signal — 228 output-mismatch +
-      133 mutsu-crash + 133 raku-drift** (down from the 2026-07-21 scan's 271/179 as the operator/regex/
-      numeric slices and the big-FatRat split #5238 landed). The ranked, tracked backlog is
-      [docs/doc-diff-backlog.md](docs/doc-diff-backlog.md) (the QA analogue of BLOCKERS.md), and the **raw
-      per-file minimal-repro reports for this scan are committed under
-      [docs/doc-diff-sweep/](docs/doc-diff-sweep/)** so a future session can read them without re-running
-      the ~15-minute sweep. Both tools (`scripts/doc-diff-harness.raku`, `scripts/doc-diff-sweep.sh`) are
-      in-repo and runnable directly. Still TODO: a real-module corpus, and growing the non-determinism /
-      error-example skip heuristics as new noise shows up.
-- **Top of the ranked backlog (2026-07-22 scan, high-signal `mism`/`crash` first):** `regexes` (12/3),
-      `traps` (9/2), `variables` (8/2), `control` (4/6), `list` (6/3), `IO/Path` (7/1), `Any` (4/3),
-      `objects` (4/3), `Iterator` (2/5), `typesystem` (5/1), `IO/Handle` (5/1). Full ranked table +
-      per-file repros in [docs/doc-diff-backlog.md](docs/doc-diff-backlog.md) / [docs/doc-diff-sweep/](docs/doc-diff-sweep/).
-      What dominates these files is analysed in the "Campaign status" bullet below (deep buckets, not
-      one-liners).
-- **Leftover from the first backlog batch — closed 2026-07-23:** the sequence/lazy
-      argument truncation (`@foo.prepend: 1,3...11`, `600.polymod(lazy …)`), `.Slip` hole
-      rendering, empty-`Array` `pop` → `X::Cannot::Empty`, and lazy `.elems` → `X::Cannot::Lazy`
-      all match raku, and the last divergence (autoviv-hole `.List` rendering `(Any)` where raku
-      gives `Nil`) was fixed by Nil-vs-Any campaign step 1 (#5256; `@a.cache` returning a List
-      instead of the Array itself fell in the step-4 slice).
-- **Campaign status (paused 2026-07-22).** After many slice sessions the *shallow,
-      interp-shaped* wins (missing method aliases, single-behaviour mismatches) are largely
-      **exhausted**. A fresh full-corpus re-sweep on the current `main` is the first step to resume —
-      note the older `tmp/sweep` report can go stale after a merge, so always re-sweep before trusting
-      a survey row. The **remaining findings cluster into deep buckets**, not one-liners:
-  - **Nil-vs-Any identity knot — RESOLVED 2026-07-23** (campaign steps 1-4, see
-    [news/2026-07.md](news/2026-07.md)): `Nil.^name`/`Nil.WHAT`/`Nil === Any`/`Nil eqv Any`
-    now match raku and the `types_eqv` crutch is gone. The `perl-nutshell.rakudoc` `no strict`
-    autoviv examples it drove should be re-swept.
-  - **Object-hash `WHICH` keys** — `my %h{Any}; %h<42>:exists` must be `False` (allomorph
-    `IntStr` key ≠ `Int` key); mutsu returns `True`. QuantHash/object-hash WHICH-keyed storage
-    rework. Recurs in `numerics.rakudoc` and `hashmap.rakudoc`.
-  - **Loose word-logical precedence** (§8.9) — `and`/`or`/`andthen`/… bind too tightly.
+`scripts/doc-diff-harness.raku` compares extracted `raku-doc` examples under `raku` and
+`mutsu`; `scripts/doc-diff-sweep.sh` runs the corpus in parallel. Usage and triage rules are in
+[docs/qa-doc-diff-harness.md](docs/qa-doc-diff-harness.md). The ranked backlog and its committed
+minimal-repro reports live in [docs/doc-diff-backlog.md](docs/doc-diff-backlog.md) and
+[docs/doc-diff-sweep/](docs/doc-diff-sweep/).
+
+A fresh full-corpus sweep on the current `main` is the first step when resuming this campaign;
+do not trust an older survey after fixes have merged. Remaining known findings include:
+
   - Niche/parser one-offs (lower priority): extended identifiers in variable names
     (`my $foo:bar<baz>`), Win32 `IO::Path` backslash semantics, `Thread.run`/`Thread.start`,
     declarator-pod `.WHY` on a `&sub`, `X::AdHoc+{X::Promise::Broken}` role-mixin in `.^name`.
@@ -1315,96 +1122,13 @@ the backlog.
       fails. Corpus = `Type/X*.rakudoc` + `throws-like`-style assertions. Good QA is "fails
       correctly", not only "works".
 
-### 8.5 Nil-vs-Any identity knot — RESOLVED 2026-07-23
+### 8.9 `take X and Y` still binds the word-logical too tightly
 
-- The four-step campaign landed in full (#5256 → #5264 → #5273/#5280 → step 4); the
-  `types_eqv` `(Nil, Package("Any"))` crutch is deleted and `Nil.^name`/`Nil.WHAT`/
-  `Nil === Any`/`Nil eqv Any`/`Nil.gist` all match raku. Full history, mechanisms, and
-  the per-step knock-on lists are recorded in [news/2026-07.md](news/2026-07.md)
-  (2026-07-23 entry) and the memory note `project-nil-any-identity-knot`.
-
-### 8.6 `.WHO`/`.HOW` render without their metamodel detail — mostly done; internals leftover
-
-- The dispatch half landed 2026-07-22: `.WHO` on a *builtin value* (`42.WHO`, `@a.WHO`) now
-      returns the type's `Stash` (was a plain `Hash`, so `(@a>>.WHO).WHAT` was `(Hash)`), and
-      `Stash.raku` renders the symbols hash literal (`{:Bar(Foo::Bar)}`, `{}`) instead of
-      `Stash.new`. Pin: `t/who-stash.t`.
-- The metamodel-accessor half landed 2026-07-23: `.^shortname` implemented
-      (`Foo::Bar` → `Bar`, qualifier-stripping inside type args too, `R[M2::N]` → `R[N]`);
-      `.^ver` answers `"6.c"` (a Str, as Rakudo) for builtin types/values and `Mu` for
-      unversioned modules/roles/enums instead of throwing; `.^auth`/`.^api` answer `""` for
-      any undeclared type/value (bare `package` still throws — PackageHOW has no
-      ver/auth/api); `.^isa` returns the nqp-boolean Int 1/0 like Rakudo, not Bool.
-      Pin: `t/metamodel-shortname-ver-auth.t`.
-- [x] **Anonymous class display name** — done 2026-07-23: `__ANON_{CLASS,GRAMMAR,ROLE}_N__`
-      now display as Rakudo's `<anon|N+1>` via `user_facing_type_name` (returns `Cow` now),
-      covering `.^name`/`.^shortname`/gist/raku/say/`.WHICH`/X::Method::NotFound; anonymous
-      enums keep the empty display name. Pin: `t/anon-class-display-name.t`.
-- [ ] **Leftover (Rakudo-metamodel-internal, cosmetic):** the *content* of a builtin type's
-      stash — raku's `Array.WHO` lists implementation subclasses
-      `{:Element(Array::Element), :Shaped(Array::Shaped), ...}` that do not exist in mutsu —
-      and `Array.HOW.raku`'s anonymous-mixin rendering (`ClassHOW+{<anon>}+{<anon>}.new`).
-      Faking either means hardcoding Rakudo internals; only worth doing if a real program is
-      ever found to introspect them.
-
-### 8.9 The word-logical operators `and`/`or`/`andthen`/`orelse`/`xor` bind too tightly — ✅ DONE 2026-07-23
-
-The loose word-logicals are now the *loosest* operators — looser than item assignment
-(`=`), compound assignment (`+=`, `div=`, …), the comma, and `return`/`die`/`fail`. So
-`my $x = 1 and 2` is `(my $x = 1) and 2`, `$x += 5 or die` is `($x += 5) or die`, and
-`return True and False` fires the `return` with `True` (the tail is dead). Details in
-`news/2026-07.md`; pin `t/word-logical-loosest-precedence.t` (+ `t/compound-assign-precedence.t`
-which continues to pass).
-
-Implementation: rather than a whole new top-of-precedence layer, the hand-rolled
-statement-level RHS/argument parsers now parse *no-word-logical* (new
-`expression_no_word_logical` / `parse_comma_or_expr_no_word_logical` /
-`parse_assign_expr_or_comma_no_word_logical`, entering at the `list_infix_top` tier just
-below the word-logicals) and re-attach a trailing `... and ...` via a scopeless
-`SyntheticBlock` whose second statement re-reads the assigned variable and applies the
-word-logical tail (`word_logical_tail` in `expr/precedence/logic.rs`,
-`wrap_trailing_word_logical` in `stmt/word_logical_split.rs`). `return`/`die`/`fail` parse
-their argument the same way and discard the (unreachable) tail. Parsing no-word-logical
-also fixes the parens ambiguity — `return (1 and 2)` (a complete term = 2) vs
-`return 1 and 2` (`(return 1) and 2`) — which a post-parse tree rewrite could not.
-
-- [ ] **Leftover (niche): `take X and Y`.** `take` is value-producing, so `(take X) and Y`
+- [ ] `take` is value-producing, so `(take X) and Y`
       must run `Y` with `take`'s *returned* value driving the short-circuit — the re-read-seed
       trick used for assignment does not apply (there is no variable to re-read, and re-evaluating
       `X` would double any side effect). Needs a taken-value capture. Currently `take X and Y`
       still parses as `take (X and Y)`. Very rare; deferred.
-- Cross-ref: the related `traps.rakudoc` list-element **container aliasing** cases. The **List**
-  cases ([5]/[6]/[9]: `($a, ++$a)` / `@arr.push: ($a,$b)` reflect later mutations) were fixed
-  2026-07-23 in #5290 (a List `(...)` boxes each scalar-var element into a shared `ContainerRef`;
-  the three list/hash/metaop consumers are cell-aware). The last case, **[7]
-  `Pair.new('a', $v)`**, was fixed 2026-07-24 (the value argument is `WrapVarRef`-tagged and the
-  CallMethodMut exec boxes the source local into a shared cell — the fat-arrow `MakePair`
-  mechanism; pin `t/pair-new-container-alias.t`, details in `news/2026-07/`). Known shared
-  residue: a *captured outer* variable still snapshots (no local slot to box) for both `=> $var`
-  and `Pair.new` — container-repr territory ([ADR-0001]).
-
-### 8.10 Object hashes / Set/Bag/Mix are string-keyed, not `.WHICH`-keyed — ✅ DONE 2026-07-24
-
-Both halves landed: object hashes (2026-07-24 AM, `t/object-hash-which-keys.t`) and the
-Set/Bag/Mix element stores (2026-07-24 PM, `t/set-bag-mix-which-keys.t`); details in
-`news/2026-07/` (`quanthash-which-keys.md`). Element identity is now `.WHICH`-based
-end to end. Kept note: the QuantHash serde (`SerValue::Set/Bag/Mix`) now carries
-`original_keys`, and `CACHE_FORMAT_VERSION` was bumped to 7.
-
-### 8.12 `.produce` with `last`, and `.reduce` with a destructuring signature — ✅ DONE 2026-07-23
-
-Both items landed (pins `t/produce-last.t`, `t/reduce-destructuring-signature.t`; details in
-`news/2026-07.md`). Kept note: `rotor(3, 'a'..'h')` as a *function* is `v6.e.PREVIEW`-only; the
-reference `raku` (6.d) also `SORRY`s on it, so it is not a divergence — do not chase.
-
-### 8.14 `state` variables in feed-lowered `map` blocks collide across blocks — ✅ DONE 2026-07-23
-
-Fixed exactly along the mapped route: `load_state_locals`/`sync_state_locals`(`_in_range`)
-now resolve through `scoped_state_key` like `StateVarInit`/`Guard`/`reset` (a no-op where
-`state_scope_id` is None), and every inline fresh-recompile loop (map, rw-map, grep, first —
-including the `try_native_array_map`-fed rw path) sets `state_scope_id = Some(data.id)`.
-Pin: `t/state-var-per-block-in-feed-map.t`; details in `news/2026-07.md`. This was the
-remaining Chemistry::Elements `t/010`/`t/020` blocker.
 
 ### Ad-hoc discovered findings now live in `todo/`, not here
 
