@@ -160,6 +160,10 @@ earlier ones.
   - **Slice 7 (`.^mro` / `.^parents`) — done.** Registered type objects and concrete node values
     expose the model layer's namespace and semantic hierarchy through ClassHOW introspection,
     including `:local`, `:all`, and parent-tree traversal.
+  - **Slice 10 (`.^can`) — done.** Registered type objects and concrete node values discover the
+    constructors, accessors, and mutators implemented by mutsu's model layer. The lookup shares
+    `local_method_names` with `.^methods(:local)` and `.^method_table`, so the three introspection
+    surfaces cannot drift independently.
 - **Phase 4 — Construction.** `.new` (and `.from-identifier`, …) on RakuAST type objects
   build `Value::RakuAst`, validating args against the per-class field schema.
   - **Slice 1 (literals) — done.** `RakuAST::IntLiteral.new(42)` / `RatLiteral.new(3.5)` /

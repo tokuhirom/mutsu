@@ -1149,7 +1149,10 @@ so it is tracked separately from the roast backlog.
   - [x] Slice 9: `.^attributes(:local)` exposes model fields as ordinary `Attribute` introspection
         objects on both registered type objects and node values. Tests in
         `t/rakuast-type-attributes.t`.
-  - [ ] Slice 10+: remaining type-object metaobject operations.
+  - [x] Slice 10: `.^can` discovers supported constructors, accessors, and mutators from the same
+        model metadata as `.^methods(:local)` and `.^method_table`, on both registered type objects
+        and node values. Tests in `t/rakuast-type-can.t`.
+  - [ ] Slice 11+: remaining type-object metaobject operations.
 - **Phase 4 (in progress)** — construction (`.new`).
   - [x] Slice 1: literal constructors (`RakuAST::IntLiteral.new(42)`, `StrLiteral`, `RatLiteral`).
         Tests in `t/rakuast-construct.t`.

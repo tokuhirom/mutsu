@@ -288,9 +288,24 @@ impl Interpreter {
         let class_name = match target.view() {
             ValueView::Instance { class_name, .. } => class_name.resolve(),
             ValueView::Package(name) => name.resolve(),
+            ValueView::RakuAst(node) => node.class.printed_name().to_string(),
             ValueView::Enum { enum_type, .. } => enum_type.resolve(),
             _ => utils::value_type_name(target).to_string(),
         };
+        // RakuAST model classes are native type objects rather than ordinary
+        // ClassDef entries. Keep `.^can` in lockstep with `.^methods(:local)`
+        // and `.^method_table` by consulting their shared model metadata.
+        if let Some(names) = crate::rakuast::local_method_names(&class_name) {
+            return if names.contains(&method_name) {
+                vec![Value::routine_parts(
+                    Symbol::intern(&class_name),
+                    Symbol::intern(method_name),
+                    false,
+                )]
+            } else {
+                Vec::new()
+            };
+        }
         let mro = self.classhow_mro_unhidden_names(target);
         let mut results = Vec::new();
         for cn in &mro {
