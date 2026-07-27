@@ -1145,10 +1145,13 @@ impl Interpreter {
         {
             if val.is_nil() && self.is_definite_constraint(&constraint) {
                 if has_explicit_initializer {
-                    return Err(runtime::utils::type_check_assignment_typed_error(
+                    let nominal =
+                        loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
+                    let reset_value = Value::package(Symbol::intern(&nominal));
+                    return Err(runtime::utils::definite_type_check_assignment_error(
                         name,
                         &constraint,
-                        &val,
+                        &reset_value,
                     ));
                 }
                 // A subset (named or anon-from-`where`) whose base is `:D` does not
