@@ -349,6 +349,9 @@ impl Compiler {
             Expr::Call { name, args } => {
                 self.compile_expr_call(name, args);
             }
+            Expr::UserRoutineCall { name, args } => {
+                self.compile_expr_user_routine_call(name, args);
+            }
             // Method call on mutable variable target (needs writeback)
             Expr::MethodCall {
                 target,

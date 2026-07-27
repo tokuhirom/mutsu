@@ -141,6 +141,7 @@ impl Interpreter {
                 }
             }
             Expr::Call { args, .. }
+            | Expr::UserRoutineCall { args, .. }
             | Expr::ArrayLiteral(args)
             | Expr::BracketArray(args, _)
             | Expr::StringInterpolation(args) => {

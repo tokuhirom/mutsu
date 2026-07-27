@@ -27,7 +27,7 @@ pub(crate) fn auto_invoke_bareword_method_target(expr: Expr) -> Expr {
 
 pub(crate) fn append_call_arg(expr: &mut Expr, arg: Expr) -> bool {
     match expr {
-        Expr::Call { args, .. } => {
+        Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
             args.push(arg);
             true
         }

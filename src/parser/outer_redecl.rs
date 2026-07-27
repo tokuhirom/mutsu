@@ -430,7 +430,7 @@ fn walk_expr(expr: &Expr, ctx: &mut Ctx) {
                 walk_expr(a, ctx);
             }
         }
-        Expr::Call { args, .. } => {
+        Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
             for a in args {
                 walk_expr(a, ctx);
             }

@@ -438,7 +438,7 @@ fn walk_call_arg(arg: &CallArg, scan: &mut Scan) {
 
 fn walk_expr(expr: &Expr, scan: &mut Scan) {
     match expr {
-        Expr::Call { name, args } => {
+        Expr::Call { name, args } | Expr::UserRoutineCall { name, args } => {
             scan.record_call(&name.resolve());
             for a in args {
                 walk_expr(a, scan);

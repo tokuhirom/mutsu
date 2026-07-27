@@ -15,16 +15,17 @@ it baked the builtin in before dispatch ever ran — the runtime's
 builtin-vs-user-routine preference (fixed earlier for `String::Rotate`) could not
 help, because by then there was no call left to dispatch.
 
-The four rewrite branches are now guarded by
-`listop_shadowed_by_user_routine`, which suppresses the rewrite when a user
-routine of that name is visible; the call then falls through to the generic call
-path, which resolves it. Both halves of the predicate are load-bearing:
+The parser now records a resolved user-routine call in the AST when an imported
+or already-declared routine shadows one of these listops. The compiler also
+tracks hoisted listop declarations in its own lexical scope state, so a call
+before the textual `my sub push` declaration is suppressed as well. The call
+then falls through to the generic call path, which resolves the user routine.
+Both halves are load-bearing:
 
 - the importing script sees `push`/`pop` as **imported**
-  (`parser::is_imported_function`), and
-- the module's own body sees them as **declared**
-  (`parser::is_user_declared_sub_pub`, newly exposed to the compiler) — P5push's
-  no-arg `multi sub pop()` calls `pop(@*ARGS)`, i.e. its own other candidate.
+  while the parser's lexical scope is live, and
+- declared routines are seeded during compiler sub hoisting — P5push's no-arg
+  `multi sub pop()` calls `pop(@*ARGS)`, i.e. its own other candidate.
 
 Without the second half, the last subtest (a bare `pop` on an exhausted
 `@*ARGS`) still surfaced the builtin's `Cannot pop from an empty Array`.
@@ -32,17 +33,8 @@ Without the second half, the last subtest (a bare `pop` on an exhausted
 The ledger listed the two remaining failure shapes as needing separate
 diagnoses; they turned out to be one root cause.
 
-## Scope / known limitation
-
-The predicate reads the parser's lexical-scope stack, which at compile time only
-still holds scopes that were never popped — in practice the unit scope. So a
-listop shadow declared or imported **inside a block** (`{ my sub push {...}; push
-@x, 1 }`, or a block-scoped `use`) is still not honoured; mutsu calls the builtin
-there. That is pre-existing behaviour, unchanged by this fix, and is recorded in
-`todo/tickets/block-scoped-listop-shadow.md`.
-
 Pins: `t/listop-shadow-imported.t` (fixture `t/lib/ListopShadow.rakumod`) for the
-imported half, `t/listop-shadow-declared.t` for the declared half. Both verified
-identical under `raku`. `roast/S32-array/{pop,push,shift,splice,unshift,perl}.t`
-and `roast/S02-types/array.t` stay green, confirming the unshadowed builtin path
-is untouched.
+imported half, `t/listop-shadow-declared.t` for the declared half, and
+`t/listop-shadow-block-scoped.t` for block-local declaration hoisting, nested
+visibility, import scoping, and restoration of the builtin outside the block.
+All are verified identical under `raku`.

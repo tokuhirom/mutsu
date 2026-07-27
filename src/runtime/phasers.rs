@@ -478,7 +478,7 @@ fn lift_phasers_from_expr(
                 lift_phasers_from_expr(a, begin, check, init);
             }
         }
-        Expr::Call { args, .. } => {
+        Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
             for a in args.iter_mut() {
                 lift_phasers_from_expr(a, begin, check, init);
             }
@@ -1067,7 +1067,7 @@ fn recurse_into_expr(expr: &mut Expr) {
                 recurse_into_expr(a);
             }
         }
-        Expr::Call { args, .. } => {
+        Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
             for a in args.iter_mut() {
                 recurse_into_expr(a);
             }

@@ -534,6 +534,7 @@ impl Compiler {
                     return;
                 }
                 let saved_dynamic_scope = self.push_dynamic_scope_lexical();
+                self.seed_user_listop_shadows(stmts);
                 // Snapshot the sigilless bindings that name a native lowercase
                 // type (`str`/`int`/...). A `my \str` declared *inside* this block
                 // is lexically scoped to it, so it must stop shadowing the native

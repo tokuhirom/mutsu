@@ -298,7 +298,9 @@ fn expr_is_droppable(expr: &Expr) -> bool {
         Expr::StringInterpolation(parts) => parts.iter().all(expr_is_droppable),
         Expr::Unary { expr, .. } => expr_is_droppable(expr),
         Expr::Binary { left, right, .. } => expr_is_droppable(left) && expr_is_droppable(right),
-        Expr::Call { args, .. } => args.iter().all(expr_is_droppable),
+        Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
+            args.iter().all(expr_is_droppable)
+        }
         _ => false,
     }
 }

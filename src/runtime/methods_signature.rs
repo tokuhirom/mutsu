@@ -334,7 +334,7 @@ impl Interpreter {
                         scan_expr(a, positional, named);
                     }
                 }
-                Expr::Call { args, .. } => {
+                Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
                     for a in args {
                         scan_expr(a, positional, named);
                     }

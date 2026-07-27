@@ -277,6 +277,14 @@ pub(crate) enum Expr {
     Whatever,
     HyperWhatever,
     BareWord(String),
+    /// A function call that the parser resolved to a user-declared or imported
+    /// routine shadowing a container listop.  This parse-time resolution must
+    /// survive until compilation because the parser's lexical scope stack no
+    /// longer exists when the compiler runs.
+    UserRoutineCall {
+        name: Symbol,
+        args: Vec<Expr>,
+    },
     StringInterpolation(Vec<Expr>),
     /// Deferred heredoc interpolation: stores raw content to be interpolated
     /// at compile time in the scope where the AST node appears, not where
@@ -1421,7 +1429,7 @@ fn collect_unattached_ph_expr(expr: &Expr, out: &mut Vec<String>) {
                 collect_unattached_ph_expr(a, out);
             }
         }
-        Expr::Call { args, .. } => {
+        Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
             for a in args {
                 collect_unattached_ph_expr(a, out);
             }
@@ -1506,7 +1514,7 @@ fn collect_virtual_call_expr(expr: &Expr, out: &mut Option<String>) {
                 collect_virtual_call_expr(a, out);
             }
         }
-        Expr::Call { args, .. } => {
+        Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
             for a in args {
                 collect_virtual_call_expr(a, out);
             }
@@ -1839,7 +1847,7 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
                 collect_ph_expr(a, out);
             }
         }
-        Expr::Call { args, .. } => {
+        Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
             for a in args {
                 collect_ph_expr(a, out);
             }
@@ -2146,7 +2154,7 @@ fn collect_ph_expr_shallow(expr: &Expr, out: &mut Vec<String>) {
                 collect_ph_expr_shallow(a, out);
             }
         }
-        Expr::Call { args, .. } => {
+        Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
             for a in args {
                 collect_ph_expr_shallow(a, out);
             }
@@ -2373,7 +2381,7 @@ fn check_bare_var_expr(expr: &Expr, bare_name: &str, found: &mut bool) {
                 check_bare_var_expr(a, bare_name, found);
             }
         }
-        Expr::Call { args, .. } => {
+        Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
             for a in args {
                 check_bare_var_expr(a, bare_name, found);
             }
