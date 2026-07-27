@@ -156,6 +156,42 @@ Measured against mutsu (2026-07-25, debug build):
 deliberately identity-derived, because mutsu's scalar values are unboxed and have
 no pinnable address.
 
+### Measuring the remaining gaps yourself
+
+Two self-contained probes, no database and no `NativeHelpers` involved. They are
+kept here rather than in `tmp/` because that directory is gitignored and the LXC
+container is disposable. Run each under both interpreters.
+
+```raku
+# --- what `BODY_OF` dispatches on: .REPR, .WHERE, .^array_type ---
+use NativeCall;
+my $b = Buf.new(1,2,3,4);
+say "Buf.REPR        : ", (try $b.REPR) // "DIED: $!";
+say "Buf.^array_type : ", (try $b.^array_type.^name) // "DIED: $!";
+my $c = CArray[uint8].new; $c[0] = 1;
+say "CArray.REPR     : ", (try $c.REPR) // "DIED: $!";
+my array[uint8] $a .= new(1,2,3);
+say "array.REPR      : ", (try $a.REPR) // "DIED: $!";
+class S is repr('CStruct') { has int32 $.x; }
+say "CStruct.REPR    : ", (try S.new.REPR) // "DIED: $!";
+```
+
+raku answers `VMArray` / `uint8` / `CArray` / `VMArray` / `CStruct`; mutsu
+answers `P6opaque` four times and `No such method 'array_type'`.
+
+```raku
+# --- a CStruct field write through a native handle is silently dropped ---
+use NativeCall;
+class Pair2 is repr('CStruct') { has int64 $.a is rw; has int64 $.b is rw; }
+sub calloc(size_t, size_t --> Pointer) is native {*}
+my $s = nativecast(Pair2, calloc(1, 16));
+$s.a = 42;
+say "read back a     : ", $s.a;      # raku: 42    mutsu: 0
+```
+
+`cstruct_layout.rs` has `read_field` and no `write_field`, so the assignment
+"succeeds" and goes nowhere.
+
 ### Tier 1 — make it *load* — **DONE 2026-07-26**
 
 Implemented; `NativeHelpers::Blob` and `MoarVM::Guts::REPRs` now load. See
@@ -186,7 +222,13 @@ None of these is a fake: each is a NativeCall compatibility gap worth closing on
 its own. With them, everything that does not call `BODY_OF` works — including
 `blob-from-pointer`, the only entry point `DBDish::SQLite` uses.
 
-### Tier 2 — real `BODY_OF` (blocked on the value representation)
+### Tier 2 — real `BODY_OF` — **designed 2026-07-27, see [ADR-0015](../../docs/adr/0015-native-backed-container-storage-and-repr-bodies.md)**
+
+The design work this section asked for is done and is now
+[ADR-0015](../../docs/adr/0015-native-backed-container-storage-and-repr-bodies.md)
+(**Accepted** 2026-07-27 — all four phases approved, including the
+representation change). Read the ADR rather than this section for the plan; what
+follows is the finding it rests on.
 
 `BODY_OF` reads a REPR body struct and `pointer-to()` pulls the **element buffer
 pointer** out of it to hand to C. That is only sound if the container's elements
@@ -194,7 +236,7 @@ live in a stable native allocation.
 
 For `CArray` and `CStruct` mutsu could almost supply this today — it already
 carries a real C pointer for a nativecast handle, so `CArrayB.storage` /
-`CStructB.cstruct` would be that pointer, not a copy.
+`CStructB.cstruct` would be that pointer, not a copy. (ADR-0015 P1.)
 
 For `VMArray` (Raku `Blob` / `array`) it cannot. `src/runtime/nativecall.rs`
 marshals a numeric `CArray`/`Blob` by **copying into a temporary C buffer for the
@@ -207,22 +249,38 @@ duration of the call and copying back afterwards**:
 
 So there is no buffer that outlives a call, and a shadow buffer handed out via
 `.WHERE` would be a *copy*: a C write through `pointer-to()` would land in it and
-never reach mutsu's `Vec`, silently. That is precisely the "correct only under an
-incomplete analysis, therefore flaky" shape CLAUDE.md says to prefer against.
+never reach mutsu's `Vec`, silently.
 
-Doing tier 2 properly means backing `Blob`/`array`/`CArray` with a stable native
-allocation — a **value-representation change**, which is ADR-0001 layer 3a/3b
-territory. The project is willing to make that change (confirmed 2026-07-25), but
-**it needs its own design and an ADR first; do not start it as a slice.** Open
-questions for that design: who owns and pins the allocation across GC; how a
-Raku-side `push` that reallocates is reconciled with an outstanding C pointer;
-whether `.REPR` should start reporting `VMArray`/`CArray`/`CStruct`; and whether
-the body structs become a documented part of mutsu's ABI or stay an internal
-detail exposed only to this module.
+**Proof that no copy-back scheme can work here** (measured 2026-07-27, and the
+argument that decided the ADR): `DBDish::mysql::StatementHandle` allocates an
+out-buffer and stores only its *address*, into a C struct —
+
+```raku
+@!out-bufs[$col] = blob-allocate(Buf, $!out-lengths[$col]);
+.buffer = BPointer(@!out-bufs[$col]).Int;   # into a MYSQL_BIND
+```
+
+`mysql_stmt_fetch` fills that buffer later. The `Buf` is never an argument of the
+call that writes it, so there is **no call boundary at which a mirror could be
+copied back**, and nothing that could even detect the write. This is the "correct
+only under an incomplete analysis, therefore flaky" shape CLAUDE.md says to
+prefer against, in its sharpest form.
+
+Two adjacent gaps were measured at the same time and are ADR-0015's P0 — small,
+self-contained NativeCall bugs, not representation work:
+
+- **A CStruct field write through a native handle is silently dropped.**
+  `nativecast(Pair2, $p).a = 42` "succeeds" and reads back 0
+  (`cstruct_layout.rs` has `read_field` and no `write_field`). The mysql path
+  needs it for `$!binds[$col].buffer = …`.
+- **`.^array_type` does not exist** (`No such method 'array_type' for … ClassHOW`);
+  `pointer-to` and `sizeof(Mu:D)` both call it.
 
 Replacing `NativeHelpers::Blob` with a native mutsu implementation is explicitly
 **not** the plan: the batteries policy (`docs/batteries/`) is to adopt community
 code as-is and grow mutsu's core, with private reimplementation as a last resort.
+15 further distributions in the fez index depend on `NativeHelpers::Blob`
+directly, so the module itself is the thing worth making work.
 
 ## Note on the diagnostic
 

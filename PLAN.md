@@ -111,11 +111,13 @@ section.
       client gap needs investigation).
 - [ ] **Bundle the database battery — `DBIish` (SQLite).** The slot is **selected** and its survey is
       recorded in [docs/batteries/database.md](docs/batteries/database.md) (`DBIish` over `DB::SQLite`:
-      449 dependents vs 0, maintained vs 2021, fewer deps, one API for several engines). It is **not
-      yet bundled** because it does not run: raku 9/9, mutsu 1/9. Clear the blockers in
-      `todo/tickets/dbiish-blockers.md` — the parser one
-      (`package`-nested classes are not type names) is worth 3 of the 9 files on its own — then
-      vendor `DBIish` + `NativeLibs` + `NativeHelpers::Blob` and baseline the release gate.
+      449 dependents vs 0, maintained vs 2021, fewer deps, one API for several engines). It now runs
+      at **8/9 files, raku parity on 8** (it was 1/9 when the slot was chosen); the ledger is
+      `todo/tickets/dbiish-blockers.md`. The last file is the `mysql` driver, gated on
+      [ADR-0015](docs/adr/0015-native-backed-container-storage-and-repr-bodies.md) — `DBDish::SQLite`
+      does not need it, so bundling SQLite support is not blocked on that ADR (which is Accepted, and
+      whose P0-P3 are the route to 9/9). Next: vendor
+      `DBIish` + `NativeLibs` + `NativeHelpers::Blob` and baseline the release gate.
       This is the next step toward "a web blog can be written with the bundle alone": the bundle can
       already fetch, render and parse JSON, but it cannot store.
 - [ ] **Vendoring mechanism**: vendor the bundled modules into the source tree (e.g. `modules/`) so
@@ -398,9 +400,13 @@ sessions).
       callback runs on a worker thread, disconnected from the react control-flow frame). These do not
       fire in the default configuration, so basic serving is unaffected.
 - [ ] Stored Regex `<$var>` lexical capture loss (found via Tubu; separate axis).
-- 📌 The off-the-shelf `DBDish::SQLite` depends on `MoarVM::Guts::REPRs` (direct emulation of MoarVM
-  internal representations) and cannot work in principle = a de-facto wall. Practical SQLite goes
-  through DBDishLite + NativeCall (investigation conclusion = news/2026-06.md).
+- 📌 **Correction (2026-07-27): the "`MoarVM::Guts::REPRs` is a de-facto wall" verdict recorded here
+  (investigation conclusion = news/2026-06.md) is false.** The guts module loads, and the
+  off-the-shelf `DBDish::SQLite` passes 8 of `DBIish`'s 9 files at raku parity without going near
+  `BODY_OF`. What is genuinely left is the `mysql` driver, which needs a stable native buffer behind
+  `Blob`/`array`/`CArray` — designed in
+  [ADR-0015](docs/adr/0015-native-backed-container-storage-and-repr-bodies.md) (Proposed), findings in
+  `todo/deep/nativehelpers-blob-moarvm-guts.md`.
   A general parse bug found as a side effect (unfixed): greediness of the ternary then-branch in
   `constant NAME is export = <cond> ?? <Type> !! <Type>`.
 
