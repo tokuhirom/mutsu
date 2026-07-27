@@ -34,6 +34,7 @@ impl Interpreter {
                 | "nominalize"
                 | "name"
                 | "shortname"
+                | "array_type"
                 | "set_name"
                 | "ver"
                 | "auth"
