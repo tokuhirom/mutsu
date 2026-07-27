@@ -33,4 +33,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0012](0012-libffi-macos-arm64-vendored-bump.md) | libffi on macOS arm64 — bump the vendored build, do not switch to system libffi | Accepted |
 | [0013](0013-container-interior-mutability-cellvalue.md) | Container interior mutability — kill the `gc_contents_mut` provenance UB with a `GcCell` newtype | Proposed |
 | [0014](0014-make-test-runs-tap-on-debug-binary.md) | `make test` runs the TAP (`t/`) suite on the debug binary, not release | Accepted |
-| [0015](0015-native-backed-container-storage-and-repr-bodies.md) | Native-backed container storage and synthesised REPR bodies (`BODY_OF`) | Proposed |
+| [0015](0015-native-backed-container-storage-and-repr-bodies.md) | Native-backed container storage and synthesised REPR bodies (`BODY_OF`) | Accepted |

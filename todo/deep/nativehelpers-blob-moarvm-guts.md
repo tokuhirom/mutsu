@@ -226,9 +226,9 @@ its own. With them, everything that does not call `BODY_OF` works — including
 
 The design work this section asked for is done and is now
 [ADR-0015](../../docs/adr/0015-native-backed-container-storage-and-repr-bodies.md)
-(status: **Proposed** — P0/P1 are safe to start, P2/P3 need a decision). Read the
-ADR rather than this section for the plan; what follows is the finding it rests
-on.
+(**Accepted** 2026-07-27 — all four phases approved, including the
+representation change). Read the ADR rather than this section for the plan; what
+follows is the finding it rests on.
 
 `BODY_OF` reads a REPR body struct and `pointer-to()` pulls the **element buffer
 pointer** out of it to hand to C. That is only sound if the container's elements

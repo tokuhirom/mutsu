@@ -115,7 +115,8 @@ section.
       at **8/9 files, raku parity on 8** (it was 1/9 when the slot was chosen); the ledger is
       `todo/tickets/dbiish-blockers.md`. The last file is the `mysql` driver, gated on
       [ADR-0015](docs/adr/0015-native-backed-container-storage-and-repr-bodies.md) — `DBDish::SQLite`
-      does not need it, so bundling SQLite support is not blocked on that ADR. Next: vendor
+      does not need it, so bundling SQLite support is not blocked on that ADR (which is Accepted, and
+      whose P0-P3 are the route to 9/9). Next: vendor
       `DBIish` + `NativeLibs` + `NativeHelpers::Blob` and baseline the release gate.
       This is the next step toward "a web blog can be written with the bundle alone": the bundle can
       already fetch, render and parse JSON, but it cannot store.

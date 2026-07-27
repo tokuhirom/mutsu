@@ -1,6 +1,8 @@
 # ADR-0015: Native-backed container storage and synthesised REPR bodies (`BODY_OF`)
 
-- **Status**: Proposed
+- **Status**: Accepted (2026-07-27 — tokuhirom: *make `DBIish` work even if it means changing mutsu's
+  internals; move mutsu itself closer rather than building a compatibility layer that costs
+  performance.* All five Open Questions resolved in §5 accordingly.)
 - **Date**: 2026-07-27
 - **Deciders**: tokuhirom, Claude
 - **Related**: [ADR-0001](0001-gc-strategy-and-phasing.md) (non-moving GC — what makes a stable address possible at all; the container type filter this ADR extends), [ADR-0013](0013-container-interior-mutability-cellvalue.md) (interior mutability — the write path into a shared container node), [ADR-0005](0005-nanbox-representation-encoding.md) (NaN-boxing — a new container kind must fit the existing tag scheme), [todo/deep/nativehelpers-blob-moarvm-guts.md](../../todo/deep/nativehelpers-blob-moarvm-guts.md) (the finding this ADR answers), [todo/tickets/dbiish-blockers.md](../../todo/tickets/dbiish-blockers.md) ⑨, PLAN.md §1 B1 (database battery) / §1 B4 (NativeCall remainder)
@@ -132,6 +134,13 @@ REPR body structs honestly for the four kinds `NativeHelpers` knows, backed by
 genuine object-owned native storage — and roll it out by REPR kind, cheapest and
 already-real first.**
 
+The governing principle, stated by tokuhirom when approving this ADR: **move
+mutsu's own representation closer to what a Raku implementation is expected to
+be, rather than bolting on a compatibility layer that costs performance.** Every
+fork below is decided that way — where an option "emulates" a stable buffer while
+keeping the boxed representation, it is rejected even when its diff is smaller,
+because the emulation is both slower and only conditionally correct.
+
 Four contracts mutsu commits to:
 
 1. **Offset = 0.** `.WHERE` points straight at the object's payload; mutsu has no
@@ -212,7 +221,7 @@ the identity hash and a binding dereferenced garbage).
 | C. Promote to native storage lazily, on first address escape | ✓ if a single store stays authoritative | adds a dual representation | Rejected as the design; permitted as an *allocation* strategy (§5.2) |
 | D. Reimplement `NativeHelpers::Blob` natively / shim `BODY_OF` | n/a | private reimplementation | Rejected |
 | E. Emulate a real MoarVM object header (`Offset != 0`) | ✓ | invents an internal detail nobody reads | Rejected |
-| F. Do nothing — ship `DBIish` SQLite-only | n/a | leaves the mirror in place | Rejected, cost recorded (§6) |
+| F. Do nothing — ship `DBIish` SQLite-only | n/a | leaves the mirror in place | Rejected, cost recorded (§4) |
 
 - **B** is the cheap-looking one and the reason this ADR exists: it is wrong in
   the one case the battery needs, and wrong *silently*.
@@ -257,32 +266,59 @@ the identity hash and a binding dereferenced garbage).
 
 ---
 
-## 5. Open questions (the real forks for the deciders)
+## 5. Open questions — all resolved 2026-07-27
 
-1. **Approve the representation change at all?** P0+P1 are small, uncontroversial
-   NativeCall bug fixes. P2/P3 are the commitment. Stopping after P1 is a real
-   option (§6/F) and leaves `pointer-to(Blob)` — the mysql path — unsupported.
-2. **Where does the native buffer live?** A new payload-only GC container kind
-   (recommended: it makes the buffer the object's storage, traced by nothing, and
-   reachable from `array[T]`/`CArray[T]` too), or an opaque native block hung off
-   the instance's attribute cell (the pin registry's shape minus the mirror —
-   smaller diff, but keeps `Buf` a box-per-byte `Array` and so gives up the perf
-   win and the `array[T]` reuse).
-3. **Realloc contract:** Rakudo parity ("valid until resized", recommended), or
-   additionally pin-on-escape — a container whose address has escaped grows by
-   copy and keeps the old block alive until it dies? The latter is strictly safer
-   and strictly more memory; no surveyed dist needs it.
-4. **Does `array[T]` (native shaped arrays) ride in P3**, or go with the shaped-array
-   work (`array-shapes.t` T36-38) as its own slice? They are the same
-   representation problem approached from two directions.
-5. **How far does `.REPR` truthfulness go?** This ADR proposes exactly the four
-   kinds that get bodies. Answering honestly for every type (raku reports
-   `P6opaque`, `P6int`, `P6num`, `P6str`, …) is a separate, larger compatibility
-   question with no known consumer.
+1. **Approve the representation change at all?** ✅ **RESOLVED: yes, P0-P3.**
+   tokuhirom: changing mutsu's internals is in scope, and is preferred over a
+   compatibility layer that costs performance. Stopping after P1 (option F) is
+   off the table: it would leave `pointer-to(Blob)` — the mysql path — permanently
+   unsupported and keep the mirror alive.
+2. **Where does the native buffer live?** ✅ **RESOLVED: a new payload-only GC
+   container kind.** It makes the buffer *be* the object's storage, holds no
+   `Value`s (so `Trace` is a no-op and the ADR-0001 type filter keeps paying
+   zero), and is reused verbatim by `array[T]` and `CArray[T]`. The alternative —
+   an opaque native block hung off the instance's attribute cell — has a smaller
+   diff but keeps `Buf` a box-per-byte `Array`, i.e. it is exactly the
+   "compatibility layer that costs performance" the governing principle rejects:
+   the bytes would exist twice, and every native call would still pay a copy.
+3. **Realloc contract:** ✅ **RESOLVED: Rakudo parity — "valid until the container
+   is resized or dies".** MoarVM's `VMArray` reallocates too, so pin-on-escape
+   would make mutsu *stricter* than the implementation these modules were written
+   against, at the cost of holding dead blocks alive. Revisit only if a real dist
+   trips on it.
+4. **Does `array[T]` ride in P3?** ✅ **RESOLVED: yes.** It is the same node and
+   the same marshalling path, and it is independently the fix for the native-typed
+   shaped-array defect (`array-shapes.t` T36-38: broken coercion, ~150× slower
+   than it should be) — which is the same "boxed where it should be native"
+   problem seen from the other side.
+5. **How far does `.REPR` truthfulness go?** ✅ **RESOLVED: exactly the four kinds
+   that get bodies**, everything else stays `P6opaque`. Answering honestly for
+   every type (`P6int`, `P6num`, `P6str`, …) has no known consumer, and under the
+   §2.1 ordering rule each honest answer is a promise that a body exists behind
+   it — a promise not to make idly.
 
 ---
 
-*Status is `Proposed`: P0 and P1 are safe to start on their own merits, but P2/P3
-change how a core container is represented and should not begin before the
-mechanism and Open Questions 1-3 are settled. If the judgment changes later,
-supersede this ADR rather than rewriting it.*
+## 6. What starting looks like
+
+P0 is unblocked and self-contained; P1 follows it; P2 is the campaign. Concretely:
+
+- **P0a** `cstruct_layout::write_field` — the mirror of the existing `read_field`,
+  wired into the assignment path for a native-handle instance so
+  `$handle.field = $v` writes memory instead of being dropped. Pin: extend
+  `t/nativecall-*.t` with the calloc round-trip from the finding.
+- **P0b** `.^array_type` on `Blob` / `array` / `CArray` metaobjects.
+- **P1** a per-object body block (the shape `native_object_where` already
+  established) filled as `CStructB` / `CArrayB` from the handle's address, plus
+  `.REPR` for those two kinds in the same commit. Acceptance: `LinearArray` from
+  `NativeHelpers::CStruct` allocates, indexes and disposes under mutsu.
+- **P2** the node, the two accessors, the ~91 `"bytes"` sites, `MVMArrayB`,
+  `.REPR = VMArray`, delete `nativecall_pin.rs`. Acceptance: `DBIish` `01-basic`
+  reaches raku parity (35/35) and the battery test-suite gate stays green.
+- **P3** the same node for `CArray[T]` / `array[T]`; delete the copy-in/copy-out
+  in `marshal_carray_arg`. Acceptance: `t/nativecall-carray.t` unchanged and
+  green, plus a test that C writes through a retained pointer are visible in Raku
+  with no intervening call.
+
+*Status is `Accepted`. If the judgment changes later, supersede this ADR rather
+than rewriting it.*
