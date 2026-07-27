@@ -1199,8 +1199,6 @@ impl Interpreter {
                     return Ok(self.tag_container_metadata(result, info));
                 }
             }
-            // Hoist clone to a `let` so the guard drops before the body re-enters
-            // (eval_block_value for attribute defaults).
             let role = self.registry().roles.get(&class_name.resolve()).cloned();
             if let Some(role) = role {
                 // Check for attribute conflicts detected during role composition
@@ -1213,6 +1211,45 @@ impl Interpreter {
                         role_b
                     )));
                 }
+                if role.methods.contains_key("new") {
+                    let role_name = class_name.resolve();
+                    self.ensure_role_punned_to_class(&role_name);
+                    let dispatched = self.run_instance_method(
+                        &class_name.resolve(),
+                        AttrMap::new(),
+                        "new",
+                        args.clone(),
+                        None,
+                    );
+                    self.registry_mut().classes.remove(&role_name);
+                    self.registry_mut().hidden_classes.remove(&role_name);
+                    self.registry_mut().class_composed_roles.remove(&role_name);
+                    self.clear_private_zeroarg_method_cache();
+                    match dispatched {
+                        Ok((result, _)) => {
+                            if let ValueView::Instance {
+                                class_name: result_class,
+                                attributes,
+                                ..
+                            } = result.view()
+                                && result_class.resolve() == role_name
+                            {
+                                let mut mixins = HashMap::new();
+                                mixins.insert(format!("__mutsu_role__{}", role_name), Value::TRUE);
+                                for (name, value) in attributes.as_map().iter() {
+                                    mixins.insert(
+                                        format!("__mutsu_attr__{}", name.resolve()),
+                                        value.clone(),
+                                    );
+                                }
+                                return Ok(Value::mixin(result, mixins));
+                            }
+                            return Ok(result);
+                        }
+                        Err(e) if e.is_multi_no_match() => {}
+                        Err(e) => return Err(e),
+                    }
+                }
                 let mut named_args: HashMap<String, Value> = HashMap::new();
                 let mut positional_args: Vec<Value> = Vec::new();
                 for arg in &args {
@@ -1221,6 +1258,9 @@ impl Interpreter {
                     } else {
                         positional_args.push(arg.clone());
                     }
+                }
+                if !positional_args.is_empty() {
+                    return Err(constructor_positional_error(&class_name.resolve()));
                 }
 
                 // Collect attributes from this role and all composed parent roles
@@ -1286,26 +1326,13 @@ impl Interpreter {
                 // mixin" checks key off them, but they are seeds — a read prefers
                 // the cell whenever the cell has the attribute.
                 let mut instance_attrs: HashMap<String, Value> = HashMap::new();
-                for (idx, (attr_name, _is_public, default_expr, _, _, sigil, _)) in
-                    all_attributes.iter().enumerate()
-                {
-                    // `type_checked` is false for the positional-by-index seeding:
-                    // that is a heuristic this path applies even when the role
-                    // declares its own `method new` (which raku would have run
-                    // instead — see `todo/tickets/punned-role-ignores-user-new.md`),
-                    // so type-checking it would turn that pre-existing gap into a
-                    // hard error.
-                    let (supplied, type_checked) = if let Some(v) = named_args.get(attr_name) {
-                        (Some(v.clone()), true)
-                    } else if let Some(v) = positional_args.get(idx) {
-                        (Some(v.clone()), false)
+                for (attr_name, _is_public, default_expr, _, _, sigil, _) in &all_attributes {
+                    let supplied = if let Some(v) = named_args.get(attr_name) {
+                        Some(v.clone())
                     } else if let Some(expr) = default_expr {
-                        (
-                            Some(self.eval_block_value(&[Stmt::Expr(expr.clone())])?),
-                            true,
-                        )
+                        Some(self.eval_block_value(&[Stmt::Expr(expr.clone())])?)
                     } else {
-                        (None, true)
+                        None
                     };
                     // A punned role type-checks its attributes exactly like the
                     // consuming-class path (`enforce_attribute_where_constraints`):
@@ -1313,8 +1340,7 @@ impl Interpreter {
                     // role has no ClassDef of its own at declaration time. As
                     // there, a `@`/`%` constraint names the *element* type and is
                     // enforced at element assignment, not here.
-                    if type_checked
-                        && let Some(value) = supplied.as_ref()
+                    if let Some(value) = supplied.as_ref()
                         && !value.is_nil()
                         && *sigil != '@'
                         && *sigil != '%'
