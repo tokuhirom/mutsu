@@ -170,9 +170,9 @@ impl Interpreter {
 
     pub(crate) fn class_inherits_from_immutable_setty(&self, name: &str) -> bool {
         const IMMUTABLE_SETTY: &[&str] = &["Set", "Bag", "Mix"];
-        if IMMUTABLE_SETTY.contains(&name) {
-            return true;
-        }
+        // A lexical user declaration shadows a builtin with the same name.
+        // Resolve a registered declaration through its parents before treating
+        // an otherwise-unresolved bare name as an immutable builtin QuantHash.
         // Clone out the parents under a single guard, then recurse without holding it.
         let parents = {
             let reg = self.registry();
@@ -188,15 +188,13 @@ impl Interpreter {
         };
         if let Some(parents) = parents {
             for parent in &parents {
-                if IMMUTABLE_SETTY.contains(&parent.as_str()) {
-                    return true;
-                }
                 if self.class_inherits_from_immutable_setty(parent) {
                     return true;
                 }
             }
+            return false;
         }
-        false
+        IMMUTABLE_SETTY.contains(&name)
     }
 
     /// Whether a user-declared class inherits (transitively) from Array or

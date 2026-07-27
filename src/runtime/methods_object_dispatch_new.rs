@@ -462,6 +462,15 @@ impl Interpreter {
             } else {
                 base_class_name
             };
+            // A user declaration shadows a same-named builtin. Keep the
+            // original base name for the generic class path below, but bypass
+            // this builtin-constructor match so `class Set is Hash {}` creates
+            // a Set instance rather than an immutable builtin QuantHash.
+            let constructor_dispatch_name = if self.user_declared_classes.contains(&cn_resolved) {
+                "__mutsu_user_class__"
+            } else {
+                base_class_name
+            };
             let is_datetime_subclass = cn_resolved != "DateTime"
                 && self
                     .class_mro(class_key)
@@ -564,7 +573,7 @@ impl Interpreter {
             if is_cathandle_like && !self.has_user_method(class_key, "new") {
                 return Ok(self.build_io_cathandle(*class_name, &args));
             }
-            match base_class_name {
+            match constructor_dispatch_name {
                 "IO::CatHandle" if !self.has_user_method(class_key, "new") => {
                     return Ok(self.build_io_cathandle(*class_name, &args));
                 }

@@ -655,7 +655,12 @@ impl Interpreter {
         // dedicated readonly-`%`-constant path further below produces. Defer to
         // that path for a readonly, non-`:=`-bound `%`-constant hash; only a
         // genuine bound Map value (`:=`) uses the container-level message here.
-        if declared_type.as_deref().is_some_and(|t| t == "Map") {
+        let is_shadowing_user_class = matches!(
+            self.env().get(&var_name).map(Value::view),
+            Some(ValueView::Instance { class_name, .. })
+                if self.is_container_subclass(&class_name.resolve())
+        );
+        if declared_type.as_deref().is_some_and(|t| t == "Map") && !is_shadowing_user_class {
             let is_ro_constant_hash = var_name.starts_with('%')
                 && self.is_readonly(&var_name)
                 && !self
