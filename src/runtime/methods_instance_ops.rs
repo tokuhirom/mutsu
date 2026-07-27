@@ -1273,6 +1273,11 @@ impl Interpreter {
                 if let Some(field) = self.cstruct_field_value(&target, method) {
                     return Ok(field);
                 }
+                // `$ptr.of` / `$ptr.deref` on a NativeCall `Pointer`. The prelude
+                // class declares neither, so they arrive here.
+                if let Some(result) = self.try_pointer_method(&target, method) {
+                    return result;
+                }
                 let cn = class_name.resolve();
                 let class_attrs = self.collect_class_attributes(&cn);
                 // For a *user-declared* class the collected public-attribute list is

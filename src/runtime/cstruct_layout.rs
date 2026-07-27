@@ -57,9 +57,16 @@ impl FieldType {
             "Str" => FieldType::Str,
             "Pointer" | "OpaquePointer" => FieldType::Pointer,
             other => {
-                // `CArray[T]`, and any class C holds by reference (another
-                // CStruct, possibly package-qualified: `OpenSSL::Bio::BIO`).
-                if other.starts_with("CArray[") || is_known_struct(other) {
+                // `CArray[T]`, a typed `Pointer[T]`, and any class C holds by
+                // reference (another CStruct, possibly package-qualified:
+                // `OpenSSL::Bio::BIO`). A typed pointer is still one pointer —
+                // missing it aborted the whole layout, so a struct with a single
+                // `has Pointer[my_bool] $.error;` (DBIish's `MYSQL_BIND`) had no
+                // layout at all and every field access on it failed.
+                if other.starts_with("CArray[")
+                    || other.starts_with("Pointer[")
+                    || is_known_struct(other)
+                {
                     FieldType::Pointer
                 } else {
                     return None;
@@ -152,6 +159,14 @@ pub(crate) unsafe fn read_field(base: usize, field: &FieldLayout) -> crate::valu
             FieldType::Pointer => Value::int(ptr.cast::<usize>().read_unaligned() as i64),
         }
     }
+}
+
+/// The element type of a parameterised `Pointer[T]` spelling, or `None` for a
+/// plain `Pointer`.
+fn pointer_parameter(type_name: &str) -> Option<&str> {
+    type_name
+        .strip_prefix("Pointer[")
+        .and_then(|rest| rest.strip_suffix(']'))
 }
 
 /// The address of a process-lifetime C string holding `s`, for a `Str`-typed
@@ -338,6 +353,18 @@ impl crate::runtime::Interpreter {
         }
         let declared = self.get_attr_type_constraint(&registered, name)?;
         let addr = crate::runtime::to_int(&raw) as usize;
+        // A `Pointer`-typed field is a `Pointer` object even when it is NULL:
+        // unlike a CStruct handle (where a null return is a type object, so
+        // `.defined` behaves like Rakudo's), `Pointer.new(0)` is a defined value
+        // in Rakudo too, and reading a null field as a type object made
+        // `$s.field.Int` empty instead of 0. A parameterised field keeps its
+        // parameter, so `.of` / `.deref` work on the value that comes out.
+        if declared == "Pointer" || declared.starts_with("Pointer[") {
+            return Some(crate::runtime::nativecall::make_typed_pointer(
+                addr,
+                pointer_parameter(&declared).unwrap_or("void"),
+            ));
+        }
         Some(crate::runtime::nativecall::make_native_handle(
             if self.is_cstruct_class(&declared) {
                 declared.rsplit("::").next().unwrap_or(&declared)
@@ -516,9 +543,89 @@ impl crate::runtime::Interpreter {
         };
         let addr = crate::runtime::nativecall::value_c_address(&args[1]);
         let short = target.rsplit("::").next().unwrap_or(&target);
+        // `Pointer[T]` stays an ordinary `Pointer` object and remembers `T` in
+        // an `of` attribute, rather than becoming an instance of a class named
+        // "Pointer[T]" — every `Pointer` method (`.Int`, `.gist`, the
+        // marshalling layer's `address` read) keeps working unchanged, and `.of`
+        // / `.deref` read the parameter from there.
+        if let Some(of) = pointer_parameter(short) {
+            return Some(Ok(crate::runtime::nativecall::make_typed_pointer(addr, of)));
+        }
         Some(Ok(crate::runtime::nativecall::make_native_handle(
             short, addr,
         )))
+    }
+
+    /// `$ptr.of` — what a typed `Pointer[T]` points at, `void` for an untyped
+    /// one, as in Rakudo. `NativeHelpers::Blob`'s `blob-from-pointer` branches
+    /// on exactly this (`ptr.of ~~ void ?? $type.of !! ptr.of`).
+    ///
+    /// `$ptr.deref` — the thing at the address. A pointer to a struct yields a
+    /// handle onto that same address (C holds structs by reference, so
+    /// `nativecast(Pointer[SomeStruct], $p).deref.field` reads the struct in
+    /// place); a pointer to a native scalar reads the value there, which is
+    /// element 0 of the equivalent `CArray[T]`.
+    pub(crate) fn try_pointer_method(
+        &mut self,
+        target: &crate::value::Value,
+        method: &str,
+    ) -> Option<Result<crate::value::Value, crate::value::RuntimeError>> {
+        use crate::value::{RuntimeError, Value, ValueView};
+        if !matches!(method, "of" | "deref") {
+            return None;
+        }
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target.view()
+        else {
+            return None;
+        };
+        // The prelude's `Pointer` picks up the enclosing package when it is
+        // prepended inside a module (`Foo::Pointer`), so match on the last `::`
+        // component — the same "one class, several spellings" problem
+        // `cstruct_class_name` documents.
+        if class_name.as_str().rsplit("::").next() != Some("Pointer") {
+            return None;
+        }
+        let of: Option<String> = attributes
+            .as_map()
+            .get("of")
+            .map(|v| match v.view() {
+                ValueView::Package(n) => n.resolve(),
+                _ => v.to_string_value(),
+            })
+            .filter(|n| !n.is_empty() && n != "void");
+        if method == "of" {
+            return Some(Ok(Value::package(crate::symbol::Symbol::intern(
+                of.as_deref().unwrap_or("void"),
+            ))));
+        }
+        let addr = attributes
+            .as_map()
+            .get("address")
+            .map(|v| crate::runtime::to_int(v) as usize)
+            .unwrap_or(0);
+        let Some(of) = of else {
+            // Rakudo: "Internal error: unhandled target type".
+            return Some(Err(RuntimeError::new(
+                "Cannot dereference an untyped Pointer (no `of` type to read)",
+            )));
+        };
+        if self.is_cstruct_class(&of) || self.is_native_handle_class(&of) {
+            let short = of.rsplit("::").next().unwrap_or(&of);
+            return Some(Ok(crate::runtime::nativecall::make_native_handle(
+                short, addr,
+            )));
+        }
+        Some(match self.native_carray_element(&of, addr, 0) {
+            Some(v) => Ok(v),
+            None => Err(RuntimeError::new(format!(
+                "Cannot dereference a Pointer[{}]: not a type NativeCall can read",
+                of
+            ))),
+        })
     }
 }
 

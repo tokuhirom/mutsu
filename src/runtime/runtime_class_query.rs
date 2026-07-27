@@ -65,6 +65,9 @@ impl Interpreter {
                 | "Positional"
                 | "Associative"
                 | "Iterable"
+                // NativeCall's `Pointer[T]` — a pointer that remembers what it
+                // points at, so `.of` can report it and `.deref` can read it.
+                | "Pointer"
         );
         !parametric_builtin
             && !self.is_role(name)
