@@ -459,11 +459,14 @@ impl Interpreter {
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("Interpreter stack underflow in CallMethod target".to_string())
         })?;
-        // Force LazyIoLines into an eager array when calling methods on it,
-        // unless the method preserves laziness (e.g., .kv).
+        // Force LazyIoLines for methods that need its elements. Introspection
+        // must not consume the underlying handle: IO::Handle.lines/words return
+        // a lazy Seq, so asking for its type is side-effect free.
         let target = if matches!(target.view(), ValueView::LazyIoLines { .. })
-            && !matches!(method, "kv" | "iterator" | "lazy")
-        {
+            && !matches!(
+                method,
+                "kv" | "iterator" | "lazy" | "WHAT" | "^name" | "does" | "isa"
+            ) {
             self.force_if_lazy_io_lines(target)?
         } else {
             target

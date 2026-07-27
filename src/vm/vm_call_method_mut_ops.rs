@@ -58,8 +58,10 @@ impl Interpreter {
         let method_name_str = Self::dynamic_method_name(&name_val);
         let method = Self::rewrite_method_name(&method_name_str, modifier);
         let target = if matches!(target.view(), ValueView::LazyIoLines { .. })
-            && !matches!(method.as_str(), "kv" | "iterator" | "lazy")
-        {
+            && !matches!(
+                method.as_str(),
+                "kv" | "iterator" | "lazy" | "WHAT" | "^name" | "does" | "isa"
+            ) {
             self.force_if_lazy_io_lines(target)?
         } else {
             target
@@ -516,8 +518,10 @@ impl Interpreter {
         }
         // Force lazy IO lines for non-lazy-preserving methods
         let target = if matches!(target.view(), ValueView::LazyIoLines { .. })
-            && !matches!(method.as_str(), "kv" | "iterator" | "lazy")
-        {
+            && !matches!(
+                method.as_str(),
+                "kv" | "iterator" | "lazy" | "WHAT" | "^name" | "does" | "isa"
+            ) {
             self.force_if_lazy_io_lines(target)?
         } else {
             target

@@ -583,10 +583,20 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     value.to_value(),
                 ]))),
                 ValueView::Package(_) => None, // let runtime handle (may be enum type)
-                ValueView::LazyIoLines { handle, words, .. } => {
+                ValueView::LazyIoLines {
+                    handle,
+                    words,
+                    consumed,
+                    ..
+                } => {
                     // Wrap the lazy IO lines with kv flag so the for-loop can
                     // iterate lazily producing index-value pairs.
-                    Some(Ok(Value::lazy_io_lines(handle.clone(), true, words)))
+                    Some(Ok(Value::lazy_io_lines_view(
+                        handle.clone(),
+                        true,
+                        words,
+                        consumed.clone(),
+                    )))
                 }
                 _ if target.is_range() => Some(Ok(Value::seq(positional_kv(
                     &crate::runtime::utils::value_to_list(target),

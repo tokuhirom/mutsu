@@ -137,7 +137,16 @@ impl Interpreter {
 
         // Handle lazy IO lines: iterate by pulling one line at a time
         // so that $fh.tell reflects the current read position.
-        if let ValueView::LazyIoLines { handle, kv, words } = iterable.view() {
+        if let ValueView::LazyIoLines {
+            handle,
+            kv,
+            words,
+            consumed,
+        } = iterable.view()
+        {
+            if consumed.swap(true, std::sync::atomic::Ordering::AcqRel) {
+                return Err(crate::value::seq_consumed_error());
+            }
             let body_start = *ip + 1;
             let loop_end = spec.body_end as usize;
             self.exec_for_loop_lazy_io_lines(

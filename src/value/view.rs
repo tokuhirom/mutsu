@@ -127,6 +127,7 @@ pub enum ValueView<'a> {
         handle: &'a Value,
         kv: bool,
         words: bool,
+        consumed: &'a Arc<std::sync::atomic::AtomicBool>,
     },
     HashEntryRef {
         hash: &'a Gc<HashData>,
@@ -460,6 +461,21 @@ impl Value {
             handle: Box::new(handle),
             kv,
             words,
+            consumed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        })
+    }
+
+    pub(crate) fn lazy_io_lines_view(
+        handle: Value,
+        kv: bool,
+        words: bool,
+        consumed: Arc<std::sync::atomic::AtomicBool>,
+    ) -> Self {
+        Value::from_repr(ValueRepr::LazyIoLines {
+            handle: Box::new(handle),
+            kv,
+            words,
+            consumed,
         })
     }
 
