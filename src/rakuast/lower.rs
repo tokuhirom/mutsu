@@ -304,6 +304,16 @@ fn signature_positional_params(
             def.default = Some(lower_expr(default_node)?);
             def.required = false;
         }
+        if let Some(w) = p.fields.iter().find(|f| f.name == Some("where")) {
+            let where_node = match &w.value {
+                RakuAstFieldValue::Node(val) => match val.view() {
+                    ValueView::RakuAst(child) => child,
+                    _ => return Err(unsupported(node)),
+                },
+                _ => return Err(unsupported(node)),
+            };
+            def.where_constraint = Some(Box::new(lower_expr(where_node)?));
+        }
         names.push(name);
         defs.push(def);
     }

@@ -650,6 +650,13 @@ pub fn construct(
                 value: RakuAstFieldValue::Node(default),
             });
         }
+        if let Some(where_constraint) = named_arg(args, "where") {
+            require_any_rakuast(&where_constraint, "RakuAST::Parameter.new", "where")?;
+            fields.push(RakuAstField {
+                name: Some("where"),
+                value: RakuAstFieldValue::Node(where_constraint),
+            });
+        }
         if let Some(slurpy) = named_arg(args, "slurpy") {
             let slurpy = normalize_slurpy_marker(slurpy)?;
             fields.push(RakuAstField {
@@ -1014,7 +1021,9 @@ fn accessor_names(class: RakuAstClass) -> &'static [&'static str] {
         Blockoid => &["statement-list"],
         Sub => &["name", "signature", "body"],
         Signature => &["parameters"],
-        Parameter => &["type", "names", "target", "optional", "default", "slurpy"],
+        Parameter => &[
+            "type", "names", "target", "optional", "default", "where", "slurpy",
+        ],
         ParameterTargetVar => &["name"],
         VarDeclarationSimple => &["sigil", "desigilname", "initializer"],
         InitializerAssign => &["expression"],

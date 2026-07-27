@@ -1176,8 +1176,10 @@ so it is tracked separately from the roast backlog.
         `Type::Setting.new`, plus `Parameter.new` with typed, defaulted, optional, named, and
         flattened/unflattened slurpy fields. Constructed signatures lower through `EVAL`. Tests in
         `t/rakuast-construct-rich-parameters.t`.
-  - [ ] Slice 11+: advanced parameter shapes (`where`, sub-signatures, type captures, array shapes,
-        and signature constraints).
+  - [x] Slice 11: `Parameter.new(:where)` constructs, exposes, renders, and lowers parameter
+        constraints through `EVAL`. Tests in `t/rakuast-construct-where.t`.
+  - [ ] Slice 12+: advanced parameter shapes (sub-signatures, type captures, array shapes, and
+        signature constraints).
 - **Phase 5 (in progress)** — EVAL: lower RakuAST → internal AST → existing compiler (no new engine).
   - [x] Slices 1–37 done (PRs #4736–#4804): literals, all common operators + ternary, the full
         control-flow set, sub declarations (typed/default/named/slurpy params) + calls + method calls,
