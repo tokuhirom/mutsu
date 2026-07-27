@@ -1172,7 +1172,12 @@ so it is tracked separately from the roast backlog.
   - [x] Slice 9: plain variable-declaration constructors (`VarDeclaration::Simple.new` and
         `Initializer::Assign.new`), including accessors, introspection, validation, and lowering
         through `EVAL`. Tests in `t/rakuast-construct-vardecl.t`.
-  - [ ] Slice 10+: richer parameter shapes.
+  - [x] Slice 10: common richer parameter shapes — `Type::Simple.new` /
+        `Type::Setting.new`, plus `Parameter.new` with typed, defaulted, optional, named, and
+        flattened/unflattened slurpy fields. Constructed signatures lower through `EVAL`. Tests in
+        `t/rakuast-construct-rich-parameters.t`.
+  - [ ] Slice 11+: advanced parameter shapes (`where`, sub-signatures, type captures, array shapes,
+        and signature constraints).
 - **Phase 5 (in progress)** — EVAL: lower RakuAST → internal AST → existing compiler (no new engine).
   - [x] Slices 1–37 done (PRs #4736–#4804): literals, all common operators + ternary, the full
         control-flow set, sub declarations (typed/default/named/slurpy params) + calls + method calls,
