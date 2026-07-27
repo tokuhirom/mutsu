@@ -251,11 +251,19 @@ impl Interpreter {
                             &value,
                         ));
                     }
-                    return Err(RuntimeError::typecheck_assignment(
-                        base_constraint,
-                        &value,
-                        var_name,
-                    ));
+                    return Err(if let Some(var_name) = var_name {
+                        if self.is_definite_constraint(constraint) {
+                            crate::runtime::utils::definite_type_check_assignment_error(
+                                var_name, constraint, &value,
+                            )
+                        } else {
+                            crate::runtime::utils::type_check_assignment_typed_error(
+                                var_name, constraint, &value,
+                            )
+                        }
+                    } else {
+                        RuntimeError::typecheck_assignment(constraint, &value, None)
+                    });
                 }
             }
         } else if !self.has_type(declared_constraint)
