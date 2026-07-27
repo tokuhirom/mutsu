@@ -591,6 +591,46 @@ pub fn construct(
             }],
         }))));
     }
+    if class_name == "RakuAST::VarDeclaration::Simple" && method == "new" {
+        let sigil = named_arg(args, "sigil").ok_or_else(|| {
+            RuntimeError::new("RakuAST::VarDeclaration::Simple.new requires a `sigil` argument")
+        })?;
+        let desigilname = named_arg(args, "desigilname").ok_or_else(|| {
+            RuntimeError::new(
+                "RakuAST::VarDeclaration::Simple.new requires a `desigilname` argument",
+            )
+        })?;
+        require_rakuast_class(
+            &desigilname,
+            RakuAstClass::Name,
+            "RakuAST::VarDeclaration::Simple.new",
+        )?;
+        let mut fields = vec![
+            RakuAstField {
+                name: Some("sigil"),
+                value: RakuAstFieldValue::Node(sigil),
+            },
+            RakuAstField {
+                name: Some("desigilname"),
+                value: RakuAstFieldValue::Node(desigilname),
+            },
+        ];
+        if let Some(initializer) = named_arg(args, "initializer") {
+            require_rakuast_class(
+                &initializer,
+                RakuAstClass::InitializerAssign,
+                "RakuAST::VarDeclaration::Simple.new",
+            )?;
+            fields.push(RakuAstField {
+                name: Some("initializer"),
+                value: RakuAstFieldValue::Node(initializer),
+            });
+        }
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::VarDeclarationSimple,
+            fields,
+        }))));
+    }
     // Single-positional-argument constructors: the literals, `Name.from-identifier`,
     // and the bare operator nodes (`Infix.new("+")`).
     if let Some(class) = single_positional_class(class_name, method) {
@@ -669,6 +709,7 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::Infix", "new") => RakuAstClass::Infix,
         ("RakuAST::Prefix", "new") => RakuAstClass::Prefix,
         ("RakuAST::Var::Lexical", "new") => RakuAstClass::VarLexical,
+        ("RakuAST::Initializer::Assign", "new") => RakuAstClass::InitializerAssign,
         _ => return None,
     })
 }
@@ -736,6 +777,7 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
         }
         RakuAstClass::VarLexical => Some("name"),
         RakuAstClass::Blockoid => Some("statement-list"),
+        RakuAstClass::InitializerAssign => Some("expression"),
         _ => None,
     };
     if positional_name == Some(method)
@@ -812,6 +854,8 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::Signature
             | RakuAstClass::Parameter
             | RakuAstClass::ParameterTargetVar
+            | RakuAstClass::VarDeclarationSimple
+            | RakuAstClass::InitializerAssign
     )
 }
 
@@ -832,6 +876,8 @@ fn accessor_names(class: RakuAstClass) -> &'static [&'static str] {
         Signature => &["parameters"],
         Parameter => &["target"],
         ParameterTargetVar => &["name"],
+        VarDeclarationSimple => &["sigil", "desigilname", "initializer"],
+        InitializerAssign => &["expression"],
         _ => &[],
     }
 }
