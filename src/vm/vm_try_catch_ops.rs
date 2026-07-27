@@ -117,8 +117,9 @@ impl Interpreter {
                 // (e.g. the result of an expression that returned a Failure rather
                 // than throwing) handles that Failure: its value is now "caught",
                 // so subsequent uses must not re-throw the stored exception. Per
-                // Raku semantics `$!` is then set to that Failure's exception
-                // (a successful try with a non-Failure result resets `$!` to Nil).
+                // Raku semantics `$!` is then set to that Failure's exception.
+                // A successful try with a non-Failure result resets `$!` to the
+                // `Any` type object (`Nil` is only the initial value of `$!`).
                 let mut failure_exception = None;
                 if let Some(top) = self.stack.last()
                     && matches!(top.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
@@ -130,12 +131,10 @@ impl Interpreter {
                         failure_exception = Some(exc.clone());
                     }
                 }
-                // TODO: Raku actually leaves the `Any` type object here, not `Nil`
-                // (`Nil` is only the *initial* `$!` of a scope). Making that change
-                // needs the strict-mode undeclared-variable error first — see
-                // todo/tickets/successful-try-leaves-any-not-nil.md.
-                self.env_mut()
-                    .insert("!".to_string(), failure_exception.unwrap_or(Value::NIL));
+                self.env_mut().insert(
+                    "!".to_string(),
+                    failure_exception.unwrap_or_else(|| Value::package(Symbol::intern("Any"))),
+                );
                 *ip = end;
                 Ok(())
             }

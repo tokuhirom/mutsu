@@ -28,13 +28,12 @@ plan 8;
     ok $!.backtrace.defined, '$!.backtrace is defined';
 }
 
-# When $! is Nil (no error), methods return Nil.
-# NOTE: raku leaves the `Any` type object here, where these calls would die
-# instead — see todo/tickets/successful-try-leaves-any-not-nil.md.
+# A successful try leaves the Any type object in $!. Exception-only methods
+# therefore fail instead of silently returning Nil.
 {
     try { 1 + 1 };
-    ok !$!.message.defined, '$!.message is Nil when no error';
-    ok !$!.line.defined, '$!.line is Nil when no error';
+    is $!.^name, 'Any', '$! is Any when there was no error';
+    dies-ok { $!.message }, '$!.message dies when there was no error';
 }
 
 done-testing;
