@@ -693,15 +693,32 @@ impl Interpreter {
         // Only pun what actually resolves to a role candidate; anything else
         // (an unknown name, a parametric *class*) keeps its existing handling.
         let candidate = self.resolve_role_candidate(&pun_name).ok().flatten();
-        let (role, ..) = candidate?;
+        let (role, _, resolved_args) = candidate?;
         if role.is_stub_role {
             return None;
         }
+        // Composition is driven by the *name* `R[...]`, so this path is only
+        // sound when the arguments survive the round trip through it. They do
+        // not for a type argument with no faithful spelling — notably the
+        // anonymous role a defaulted parameter can carry (`role R[::T = my role
+        // { ... }]`), which comes back as a plain Str and would bind `T` to a
+        // string. Fall back to the caller's own path for those.
+        if resolved_args != type_args {
+            return None;
+        }
+        // `^language-revision` on the pun must report the revision of the
+        // *matched* candidate, not whichever one happened to register last
+        // (`VerRole[Str].new` is 6.d even when a 6.e candidate exists).
         let language_version = self
-            .type_metadata
+            .registry()
+            .role_candidates
             .get(base_name)
-            .and_then(|m| m.get("language-revision"))
-            .map(|v| format!("6.{}", v.to_string_value()))
+            .and_then(|candidates| {
+                candidates
+                    .iter()
+                    .find(|c| c.role_def.role_id == role.role_id)
+                    .map(|c| c.language_version.clone())
+            })
             .unwrap_or_else(crate::parser::current_language_version);
         let parents = [pun_name.clone()];
         let modifiers = super::registration_class::ClassDeclModifiers {
@@ -714,6 +731,7 @@ impl Interpreter {
         };
         self.register_class_decl(&pun_name, &parents, modifiers, &[])
             .ok()?;
+        self.store_language_revision_from_version(&pun_name, &language_version);
         Some(pun_name)
     }
 
