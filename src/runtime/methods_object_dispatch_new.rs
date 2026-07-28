@@ -246,6 +246,15 @@ impl Interpreter {
         } = target.view()
         {
             let base_name_str = base_name.resolve();
+            // Punning a *parameterised* role: build a real class that composes
+            // the concrete parameterisation and construct through it, exactly as
+            // `class C does R[Int] { }` does. Composition is what runs the role's
+            // deferred body statements with the type parameters bound and pulls
+            // in its `BUILD`/`new`; the ad-hoc mixin instance built below has
+            // neither, so `R[Int].new` used to skip `BUILD` entirely.
+            if let Some(punned) = self.ensure_parametric_role_pun_class(&base_name_str, type_args) {
+                return self.dispatch_new(Value::package(Symbol::intern(&punned)), args);
+            }
             self.ensure_role_punned_to_class(&base_name_str);
             let mut selected_role = self.registry().roles.get(&base_name_str).cloned();
             let mut matched_lang_version: Option<String> = None;

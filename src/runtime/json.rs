@@ -91,6 +91,24 @@ fn indent(out: &mut String, opts: &ToJsonOpts, level: usize) {
     }
 }
 
+/// Is `class_name` the `Rational` role's pun — either the bare role name or one
+/// of its parameterisations (`Rational[Int,Int]`)?
+fn rational_pun_class(class_name: &str) -> bool {
+    class_name
+        .split_once('[')
+        .map(|(base, _)| base)
+        .unwrap_or(class_name)
+        == "Rational"
+}
+
+/// The `Rat` a Rational pun's numerator/denominator pair denotes.
+fn rational_as_rat(numerator: &Value, denominator: &Value) -> Value {
+    crate::value::make_rat(
+        numerator.as_int().unwrap_or(0),
+        denominator.as_int().unwrap_or(1).max(1),
+    )
+}
+
 fn jsonify(val: &Value, opts: &ToJsonOpts, level: usize, out: &mut String) {
     match val.view() {
         ValueView::Bool(b) => out.push_str(if b { "true" } else { "false" }),
@@ -136,16 +154,14 @@ fn jsonify(val: &Value, opts: &ToJsonOpts, level: usize, out: &mut String) {
         ValueView::Mixin(inner, mixins) => {
             // A punned Rational-role instance is Real; JSON::Fast's Real:D
             // candidate serializes it numerically (0.3), not as an opaque
-            // string. Its attrs ride in the mixin map.
+            // string. A bare-role pun keeps its attrs in the mixin map.
             if mixins.contains_key("__mutsu_role__Rational")
                 && let (Some(n), Some(d)) = (
                     mixins.get("__mutsu_attr__numerator"),
                     mixins.get("__mutsu_attr__denominator"),
                 )
             {
-                let rat =
-                    crate::value::make_rat(n.as_int().unwrap_or(0), d.as_int().unwrap_or(1).max(1));
-                jsonify(&rat, opts, level, out);
+                jsonify(&rational_as_rat(n, d), opts, level, out);
             } else {
                 jsonify(inner, opts, level, out);
             }
@@ -208,6 +224,20 @@ fn jsonify(val: &Value, opts: &ToJsonOpts, level: usize, out: &mut String) {
             out.push('"');
             escape_str(&iso, out);
             out.push('"');
+        }
+        // The *parameterised* Rational pun (`Rational[Int,Int].new(3, 10)`) is a
+        // real instance of the punned class, so its numerator/denominator are
+        // ordinary attributes rather than the mixin markers handled above.
+        ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } if rational_pun_class(&class_name.resolve()) => {
+            let attrs = attributes.as_map();
+            match (attrs.get("numerator"), attrs.get("denominator")) {
+                (Some(n), Some(d)) => jsonify(&rational_as_rat(n, d), opts, level, out),
+                _ => out.push_str("null"),
+            }
         }
         // Duration is Real (a Rat-backed instance: `value` attr); JSON::Fast's
         // Real:D candidate serializes it numerically as a Num (`57e0`).

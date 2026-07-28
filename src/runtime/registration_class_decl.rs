@@ -573,8 +573,12 @@ impl Interpreter {
             // A `does`-role of the class's own short name resolves to the like-named
             // CORE/existing role (a class cannot compose itself), so it is neither a
             // self-inheritance error nor a real inheritance parent.
+            // The parameterised pun of a role (`R[Int]` composing `R[Int]`, built
+            // by `ensure_parametric_role_pun_class`) collides on the *full* name,
+            // which the short-name test above misses because it strips the type
+            // arguments off the parent but not off the class.
             let is_self_named_does_role = does_parents.contains(parent)
-                && short_of(resolved_parent) == self_short
+                && (short_of(resolved_parent) == self_short || resolved_parent_name == name)
                 && self.registry().roles.contains_key(resolved_parent);
             if is_self_named_does_role {
                 self_named_does_roles.insert(parent.clone());

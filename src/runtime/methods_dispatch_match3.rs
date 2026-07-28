@@ -367,6 +367,7 @@ impl Interpreter {
             "keys" if args.is_empty() => self.dispatch_keys_method(target),
             "values" if args.is_empty() => Some(self.dispatch_values_method(target)),
             "AT-KEY" if args.len() == 1 => self.dispatch_at_key_method(&target, &args),
+            "ASSIGN-KEY" if args.len() == 2 => self.dispatch_assign_key_method(&target, &args),
             "EXISTS-KEY" if args.len() == 1 => self.dispatch_match_exists_key(&target, &args),
             "EXISTS-POS" if args.len() == 1 => self.dispatch_match_exists_pos(&target, &args),
             "rotate" => {
@@ -895,6 +896,43 @@ impl Interpreter {
     }
 
     /// Dispatch "AT-KEY" method.
+    /// `%h.ASSIGN-KEY($k, $v)` on a plain Hash.
+    ///
+    /// The VM has its own arm for this (`vm_call_method_mut_ops`), but the
+    /// interpreter dispatch had none, so any route that does not go through a
+    /// named variable — notably a `handles <AT-KEY ASSIGN-KEY>` delegation to a
+    /// `%!attr` — died with "No such method 'ASSIGN-KEY' for invocant of type
+    /// 'Hash'". Mutation is published the same way the sibling `ASSIGN-POS` arm
+    /// does it: rewrite every binding that holds this same hash.
+    ///
+    /// `BIND-KEY` is deliberately not handled here: its shared-cell install
+    /// needs the caller's argument sources, which this path does not carry.
+    fn dispatch_assign_key_method(
+        &mut self,
+        target: &Value,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let ValueView::Hash(map) = target.view() else {
+            return None;
+        };
+        let value = args[1].clone();
+        let mut data = (**map).clone();
+        // An object hash keys by `.WHICH` and remembers the key object.
+        let key = if data.key_type.is_some() {
+            let which = crate::runtime::utils::value_which_key(&args[0]);
+            data.original_keys
+                .get_or_insert_with(std::collections::HashMap::new)
+                .insert(which.clone(), args[0].clone());
+            which
+        } else {
+            args[0].to_string_value()
+        };
+        data.map.insert(key, value.clone());
+        let replacement = Value::hash(data);
+        self.overwrite_hash_bindings_by_identity(&map, replacement);
+        Some(Ok(value))
+    }
+
     fn dispatch_at_key_method(
         &self,
         target: &Value,

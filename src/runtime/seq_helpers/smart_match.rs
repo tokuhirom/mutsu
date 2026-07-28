@@ -1170,6 +1170,21 @@ impl Interpreter {
                     let full_name = format!("{}[{}]", rhs_base, args_str);
                     return self.type_matches_value(&full_name, left_value);
                 }
+                // A plain instance carries no role markers: which parameterisation
+                // it satisfies is recorded on the *class* that composed the role
+                // (`class W does R[Int]`, and the punned class `R[Int]` that backs
+                // `R[Int].new`). `does_check` only sees mixin markers and the
+                // registry-free `isa` parents, so it cannot answer this — consult
+                // the class's composed roles before letting it reject the match.
+                if let ValueView::Instance { class_name, .. } = left_value.view()
+                    && self.class_composes_parameterised_role(
+                        &class_name.resolve(),
+                        &rhs_base.resolve(),
+                        rhs_args,
+                    )
+                {
+                    return true;
+                }
                 if !left_value.does_check(&rhs_base.resolve()) {
                     return false;
                 }
