@@ -247,6 +247,21 @@ impl Interpreter {
                 } else {
                     self.env_mut().insert_sym(*k, v.clone());
                 }
+            } else if k.with_str(|s| s == "self") {
+                // `self` is LEXICAL in Raku: a block has no invocant of its own, so
+                // a `self` inside it resolves outwards to the enclosing method's
+                // invocant — the one this closure captured. The don't-overwrite
+                // default made it *dynamic* instead, so a block that escapes into
+                // another object's method saw that object:
+                //
+                //     method execute() { $!parent.protect: { $!stmt } }
+                //
+                // ran the block inside `Conn.protect`, where the live env `self`
+                // is the Conn, and the `$!stmt` read blew up with "no such
+                // attribute on type Conn" (DBDish::mysql::StatementHandle).
+                // A method's own invocant is bound from its args further below,
+                // after this merge, so it still wins over the captured value.
+                self.env_mut().insert_sym(*k, v.clone());
             } else {
                 self.env_mut().entry_or_insert_sym(*k, v.clone());
             }

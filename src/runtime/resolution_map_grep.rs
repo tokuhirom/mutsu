@@ -365,6 +365,13 @@ impl Interpreter {
                 touched_keys.push(dollar_topic.clone());
             }
             push_block_declared_keys(&mut touched_keys, &code);
+            // `self` is lexical: the block's captured invocant must win over the
+            // one the caller happens to hold (see `call_compiled_closure`). It is
+            // normally already in the running env, so the loop above did not list
+            // it — add it here so the overwrite below is undone on exit.
+            if data.env.get("self").is_some() && !touched_keys.iter().any(|k| k == "self") {
+                touched_keys.push("self".to_string());
+            }
             let saved: Vec<(String, Option<Value>)> = touched_keys
                 .iter()
                 .map(|k| (k.clone(), self.env.get(k).cloned()))
@@ -372,7 +379,7 @@ impl Interpreter {
 
             // Pre-insert closure env
             for (k, v) in &data.env {
-                if !self.env.contains_key_sym(*k) {
+                if k.with_str(|s| s == "self") || !self.env.contains_key_sym(*k) {
                     self.env.insert_sym(*k, v.clone());
                 }
             }
@@ -620,6 +627,13 @@ impl Interpreter {
             touched_keys.push(dollar_topic.clone());
         }
         push_block_declared_keys(&mut touched_keys, &code);
+        // The pre-insert below overwrites every captured name, `self` included
+        // (it is lexical — see `call_compiled_closure`). `self` is normally
+        // already in the running env, so the loop above did not list it; add it
+        // so the caller's invocant is put back on exit.
+        if data.env.get("self").is_some() && !touched_keys.iter().any(|k| k == "self") {
+            touched_keys.push("self".to_string());
+        }
         let saved: Vec<(String, Option<Value>)> = touched_keys
             .iter()
             .map(|k| (k.clone(), self.env.get(k).cloned()))

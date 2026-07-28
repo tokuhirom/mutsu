@@ -38,14 +38,16 @@ NativeCall/dispatch fixes
 ([one](../../news/2026-07/nativecall-cglobal-and-native-methods.md),
 [two](../../news/2026-07/cstruct-handles-carry-their-registered-name.md)).
 `DBDish::mysql.new.connect(…)` returns a `DBDish::mysql::Connection` and
-`.prepare` returns a real `StatementHandle`. Two things remain before a query
-runs, both recorded with the exact failing line:
-[`self-not-restored-after-a-private-method-chain.md`](self-not-restored-after-a-private-method-chain.md)
-(`execute` reads `$!stmt` with the wrong invocant) and
-[`require-loaded-module-loses-use-imports.md`](require-loaded-module-loses-use-imports.md)
-(`DBIish.connect(…)`'s own front door). `DBDish::Pg` shares
-`DBDish::StatementHandle`, so it will hit the first one at the same line —
-fixing it is the shortest path to Postgres.
+`.prepare` returns a real `StatementHandle`.
+
+`execute` reading `$!stmt` with the wrong invocant is fixed:
+[`self` is lexical inside a block](../../news/2026-07/self-is-lexical-in-blocks.md)
+even when the block runs inside another object's method, which is what
+`$!parent.protect-connection: { $!stmt… }` does. `DBDish::Pg` shares
+`DBDish::StatementHandle`, so it was going to hit the same line.
+
+Still open before `DBIish.connect(…)` works through its own front door:
+[`require-loaded-module-loses-use-imports.md`](require-loaded-module-loses-use-imports.md).
 
 The three fixes that closed the last file are recorded in
 [`news/2026-07/buf-repr-body-and-native-storage.md`](../../news/2026-07/buf-repr-body-and-native-storage.md),
