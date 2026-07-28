@@ -86,12 +86,18 @@ impl Interpreter {
             let qualified_name = if let Some(stripped) = resolved_name.strip_prefix("GLOBAL::") {
                 // `class GLOBAL::Foo` declares Foo in the global namespace
                 stripped.to_string()
-            } else if resolved_name.contains("::")
-                || current_package == "GLOBAL"
+            } else if current_package == "GLOBAL"
                 || resolved_name == current_package
+                || resolved_name.starts_with(&format!("{current_package}::"))
             {
                 resolved_name.clone()
             } else {
+                // A *nested* declared name is qualified by the enclosing package
+                // like any other: `module M { class A::B { } }` declares
+                // `M::A::B`, and `A::B` is not visible on its own. Registering it
+                // under the bare `A::B` both leaked it into GLOBAL and left
+                // `M::A::B.new` unable to find its own ClassDef (`.^name` already
+                // reported the qualified name).
                 format!("{current_package}::{resolved_name}")
             };
             // A lexical (`my`) class is stored in the registry under a *storage
@@ -216,6 +222,20 @@ impl Interpreter {
                 qualified_name.clone(),
                 Value::package(Symbol::intern(&storage_name)),
             );
+            // A *nested* declared name stays reachable under the name as written,
+            // too. Rakudo installs `class X::Imported::Boom` inside
+            // `unit module M` into the already-existing outer `X::` package while
+            // recording `M::X::Imported::Boom` as its `.^name`, so a consumer of
+            // `M` refers to it as plain `X::Imported::Boom`
+            // (`t/imported-exception-when.t`, the shape Zef uses). Register the
+            // written name as an alias for the qualified declaration rather than
+            // modelling that installation rule, and never over an existing entry.
+            if resolved_name != qualified_name && resolved_name.contains("::") {
+                let storage = storage_name.clone();
+                env.entry_or_insert_with(resolved_name.clone(), || {
+                    Value::package(Symbol::intern(&storage))
+                });
+            }
             // When a nested class is registered inside another class (e.g. class B inside class A
             // becomes A::B), suppress the short name (B) so it cannot be used outside.
             // Only suppress when the parent package is itself a class, not a module.
