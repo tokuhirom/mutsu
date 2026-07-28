@@ -203,16 +203,26 @@ the ratio is usable:
 | `bench-grammar-parse-deep` | 0.311 | 0.320 | **0.250** |
 | `bench-yaml-parse` | 117.4 | 116.9 | **121.5** |
 
-So ≈−20% on both grammar benchmarks and ≈+4% on the YAML one. **Hypothesis for the
-split, to be confirmed at the start of P2:** `REDUCED_SUBRULES` is only armed for a
-`.parse(:actions(...))`. The grammar benchmarks pass no actions, so their subcap `Arc`s
-were unshared and the old rebase's `Arc::make_mut` was already in-place — P1 saves them
-the whole O(subtree) walk. YAMLish's `load-yaml` *does* pass actions, so its nodes stay
-shared with the log; the deep copy P1 removed from the rebase may simply have **moved**
-to `reduce_regex_captures_made_for_rule`, which does `Arc::make_mut(sc)` on every child
-and now takes the copy-on-write path where the (already-copied) node used to be
-unshared. If so the fix is structural, not a tweak: a stored node must be immutable, with
-`ast`/`made` attached without cloning it — which is P2's job.
+So ≈−20% on both grammar benchmarks and ≈+4% on the YAML one. The −20% is well
+supported (two independent pre-change points agree to 1%, and both grammar benchmarks
+move the same way); the +4% is a single point and within the noise this benchmark shows
+locally, so **treat it as "no measured change", not as a regression** until more
+`bench-data` rows accumulate.
+
+*A first hypothesis for the split was tested and rejected.* `REDUCED_SUBRULES` is armed
+only for a `.parse(:actions(...))`, which YAMLish uses and the grammar benchmarks do not
+— so it was plausible that P1's deep copy had merely **moved** to
+`reduce_regex_captures_made_for_rule` (which does `Arc::make_mut(sc)` on every child)
+because the log keeps every node shared. Measured with an env gate that makes
+`record_reduced_subrule` a no-op, interleaved and pinned to one core, 5 pairs:
+median **4.11 s with the log vs 4.15 s without** — no difference. The control
+(`bench-grammar-parse`, no actions, where the gate must be inert) behaved as expected.
+So the log is not a measurable cost here, and that mechanism does not explain the split.
+Note the experiment does not disprove reduce-walk copying in general: `snapshot()` also
+clones the `Vec<Arc<..>>` per complete match, so nodes are shared with or without the
+log. **P2's first task is therefore to count, not guess** — instrument the reduce walk
+with an `Arc::strong_count(sc) > 1` counter before each `make_mut` and report it under
+`MUTSU_VM_STATS`.
 
 (`bench-yaml-parse` was checked to be a valid instrument for match time: `use YAMLish`
 alone is 0.04 s of its ~4.07 s, so it is not module-load dominated.)
@@ -222,13 +232,21 @@ alone is 0.04 s of its ~4.07 s, so it is not module-load dominated.)
 collapses its child collections to a single `None` (`children: Option<Box<CapChildren>>`),
 which is where the order-of-magnitude shrink comes from; it also takes the
 `Vec<(usize, RegexCaptures)>` candidate-list memmove with it.
-**Start by confirming P1's `bench-yaml-parse` hypothesis above**, because it constrains
-the design: every remaining `Arc::make_mut` on a *stored* node
-(`reduce_regex_captures_made_for_rule`, the `action_name` write in
-`build_named_candidates_from_inner`) is a deep copy whenever the reduce log holds the
-node. A `CapNode` that is genuinely immutable — with `ast`/`made` and `action_name`
-attached out-of-band (a side table keyed by node identity, or interior mutability via
-`OnceCell`) rather than written through the `Arc` — removes that class outright.
+**Start by counting the reduce-walk copies** (see P1's measurement note — guessing at
+this already cost one rejected hypothesis): every `Arc::make_mut` on a *stored* node is a
+deep copy whenever anything else holds a handle, and `snapshot()` alone is enough to make
+that so. Two such sites exist today — `reduce_regex_captures_made_for_rule`'s per-child
+`make_mut`, and the `action_name` write in `build_named_candidates_from_inner`, which
+happens *after* `Arc::new` and after `record_reduced_subrule` has cloned the handle, so
+for every aliased subrule capture (`<str=single-bare>`, which YAMLish uses heavily) it is
+a guaranteed subtree copy. That one is avoidable outright by setting `action_name` before
+`Arc::new`: the value is `spec.lookup_name`, the same name the log records, so the
+failure-path replay (`get_action_name()` falling back to the logged rule name) is
+unaffected. Fold it into P2 rather than shipping it as a perf claim — the log experiment
+suggests this class may sit below measurement noise, and the `CapNode` design removes it
+structurally anyway: a genuinely immutable node with `ast`/`made` and `action_name`
+attached out-of-band (a side table keyed by node identity, or `OnceCell`) rather than
+written through the `Arc`.
 
 **P3 — Spans, not text.** Introduce `MatchTarget`; `CapNode` carries `(from, to)` only.
 Delete `chars[a..b].iter().collect()` at capture sites, the `captured.clone()` duplicates,
