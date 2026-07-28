@@ -318,10 +318,7 @@ impl Interpreter {
             };
             let mut bytes = Self::extract_buf_bytes(&left);
             bytes.extend(Self::extract_buf_bytes(&right));
-            return crate::value::value_buf::make_buf(
-                result_class,
-                crate::value::value_buf::bytes_to_elems(&bytes),
-            );
+            return crate::value::value_buf::make_buf_from_bytes(result_class, &bytes);
         }
         // Buf ~ non-Buf or non-Buf ~ Buf: decode the Buf and produce a Str
         if Self::is_buf_value(&left) || Self::is_buf_value(&right) {
@@ -374,18 +371,8 @@ impl Interpreter {
     }
 
     pub fn extract_buf_bytes(val: &Value) -> Vec<u8> {
-        if let ValueView::Instance { attributes, .. } = val.view()
-            && let Some(bytes) = crate::value::value_buf::with_buf_elems(&attributes, |items| {
-                items
-                    .iter()
-                    .map(|v| match v.view() {
-                        ValueView::Int(i) => i as u8,
-                        _ => 0,
-                    })
-                    .collect::<Vec<u8>>()
-            })
-        {
-            return bytes;
+        if let ValueView::Instance { attributes, .. } = val.view() {
+            return crate::value::value_buf::buf_bytes_or_empty(&attributes);
         }
         Vec::new()
     }

@@ -15,13 +15,22 @@
 //! `Buf.REPR` can honestly answer `VMArray` and NativeCall can hand C a real
 //! `MVMArrayB` body) a change to *this file* rather than to its callers.
 //!
-//! Two levels are offered deliberately:
+//! Three levels are offered deliberately:
 //!
 //! - the **element** functions ([`buf_elems`], [`set_buf_elems`], …) decode to
 //!   and from `Vec<Value>`; under P2 they become the encode/decode boundary;
+//! - the **byte** functions ([`buf_bytes`], [`with_buf_bytes`], [`buf_len`], …)
+//!   speak the representation P2 will actually store, so a caller that only
+//!   wants bytes or a count never round-trips through boxed `Value`s;
 //! - the **storage** functions ([`buf_storage`], [`set_buf_storage`]) move the
 //!   container across without decoding it, for the coercions that only re-tag a
 //!   buffer (`.Buf`, `.Blob`); under P2 they become a node share.
+//!
+//! [`buf_elem_width`] is the fourth thing P2 needs and the one that is *not*
+//! stored in the data at all today: the element width lives only in the class
+//! name (`Buf[uint16]`), and four separate places used to re-derive it with
+//! their own `cn.contains("16")` ladder. It is derived here now, so P2 has one
+//! place to move it from the name into the node.
 //!
 //! [`is_buf_or_blob_class`](crate::runtime::utils::is_buf_or_blob_class) stays
 //! the companion class-name filter: this module answers "what is in there", not
@@ -101,7 +110,7 @@ pub(crate) fn make_buf(class_name: Symbol, elems: Vec<Value>) -> Value {
 /// A fresh plain `Buf` over raw bytes — the commonest construction of all (I/O
 /// reads, socket receives, `Proc::Async` chunks). Under P2 this stops boxing.
 pub(crate) fn make_buf_from_u8(bytes: &[u8]) -> Value {
-    make_buf(Symbol::intern("Buf"), bytes_to_elems(bytes))
+    make_buf_from_bytes(Symbol::intern("Buf"), bytes)
 }
 
 /// Raw bytes as the boxed element list this representation stores.
@@ -157,6 +166,113 @@ pub(crate) fn buf_elems_as_array(map: &AttrMap, kind: super::ArrayKind) -> Optio
     }
 }
 
+// ---------------------------------------------------------------------------
+// Byte-level access — what P2 will actually store.
+// ---------------------------------------------------------------------------
+
+/// One element, as the byte it occupies in a width-1 buffer.
+///
+/// **Truncating**, which is the convention Raku itself stores by: `Buf.new(300)`
+/// holds `0x2C` and `Buf.new(-1)` holds `0xFF` in both mutsu and Rakudo, and
+/// every mutation path (`.new`, `[i] =`, `push`, `append`, `unshift`, `splice`)
+/// already masks on the way in. Three different conventions used to be spelled
+/// out at the call sites — this one, a `.clamp(0, 255)` one, and one going via
+/// `to_int` — and they could only disagree about a buffer whose elements exceed
+/// its width, which the masking makes unreachable. For a wider buffer this is
+/// the low byte of the element, matching what the truncating sites did.
+pub(crate) fn elem_to_u8(v: &Value) -> u8 {
+    match v.view() {
+        ValueView::Int(i) => i as u8,
+        ValueView::Num(f) => f as i64 as u8,
+        ValueView::BigInt(n) => {
+            use num_traits::ToPrimitive;
+            // `to_u64` is `None` for a negative or oversized value; fall back to
+            // the low 64 bits so this stays a truncation rather than a zero.
+            n.as_ref()
+                .to_u64()
+                .unwrap_or_else(|| n.as_ref().to_i64().unwrap_or(0) as u64) as u8
+        }
+        _ => 0,
+    }
+}
+
+/// The number of **elements**, without decoding any of them. Not the number of
+/// bytes — see [`buf_elem_width`], and `.bytes` is `elems * width`.
+pub(crate) fn buf_len(attrs: &InstanceAttrs) -> Option<usize> {
+    with_buf_elems(attrs, <[Value]>::len)
+}
+
+/// [`buf_len`] with an absent buffer read as empty.
+pub(crate) fn buf_len_or_zero(attrs: &InstanceAttrs) -> usize {
+    buf_len(attrs).unwrap_or(0)
+}
+
+/// The elements as one truncated byte each ([`elem_to_u8`]).
+///
+/// `None` when the instance carries no element storage, exactly as
+/// [`buf_elems`]. For a width-1 buffer — every `Buf`/`Blob`/`utf8` — these are
+/// the buffer's real bytes, and P2 hands them over without decoding anything.
+pub(crate) fn buf_bytes(attrs: &InstanceAttrs) -> Option<Vec<u8>> {
+    with_buf_bytes(attrs, <[u8]>::to_vec)
+}
+
+/// [`buf_bytes`] with an absent buffer read as empty.
+pub(crate) fn buf_bytes_or_empty(attrs: &InstanceAttrs) -> Vec<u8> {
+    buf_bytes(attrs).unwrap_or_default()
+}
+
+/// [`buf_bytes`] against an attribute map already in hand.
+pub(crate) fn buf_bytes_in(map: &AttrMap) -> Option<Vec<u8>> {
+    Some(buf_elems_in(map)?.iter().map(elem_to_u8).collect())
+}
+
+/// Run `f` over the bytes without handing out an owned `Vec`.
+///
+/// Today the slice is a temporary this function builds; under P2 a width-1
+/// buffer passes its storage straight through. Callers that go on to mutate the
+/// bytes want [`buf_bytes`] instead.
+pub(crate) fn with_buf_bytes<R>(attrs: &InstanceAttrs, f: impl FnOnce(&[u8]) -> R) -> Option<R> {
+    let bytes = with_buf_elems(attrs, |items| {
+        items.iter().map(elem_to_u8).collect::<Vec<u8>>()
+    })?;
+    Some(f(&bytes))
+}
+
+/// Store raw bytes into a map being built or updated.
+pub(crate) fn set_buf_bytes(map: &mut AttrMap, bytes: &[u8]) {
+    set_buf_elems(map, bytes_to_elems(bytes));
+}
+
+/// Store raw bytes into a **live** instance, through its shared attribute cell.
+pub(crate) fn store_buf_bytes(attrs: &InstanceAttrs, bytes: &[u8]) {
+    store_buf_elems(attrs, bytes_to_elems(bytes));
+}
+
+/// A fresh `Buf`/`Blob`-shaped instance of `class_name` over raw bytes.
+pub(crate) fn make_buf_from_bytes(class_name: Symbol, bytes: &[u8]) -> Value {
+    make_buf(class_name, bytes_to_elems(bytes))
+}
+
+/// How many bytes one element of a `Buf`/`Blob`-shaped class occupies.
+///
+/// The width is **not in the data**: it lives only in the class name, which is
+/// why this is a string probe rather than a field read. `Buf`, `Blob`, `utf8`
+/// and the `uint8`/`int8` parameterisations are 1; `utf16` and anything naming
+/// 16/32/64 widen accordingly. Moving this into the node is P2's job — and the
+/// reason it is a single function now is so that P2 changes it here rather than
+/// in the four places that each had their own `contains` ladder.
+pub(crate) fn buf_elem_width(class_name: &str) -> usize {
+    if class_name.contains("64") {
+        8
+    } else if class_name.contains("32") {
+        4
+    } else if class_name.contains("16") {
+        2
+    } else {
+        1
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -202,6 +318,60 @@ mod tests {
         let alias = attrs_of(&b);
         with_buf_elems_mut(&attrs_of(&b), |items| items.push(Value::int(9)));
         assert_eq!(buf_elems(&alias), Some(vec![Value::int(1), Value::int(9)]));
+    }
+
+    #[test]
+    fn byte_view_matches_the_element_view() {
+        let b = buf_of(bytes_to_elems(&[0, 1, 254, 255]));
+        assert_eq!(buf_bytes(&attrs_of(&b)), Some(vec![0, 1, 254, 255]));
+        assert_eq!(buf_len(&attrs_of(&b)), Some(4));
+        assert_eq!(with_buf_bytes(&attrs_of(&b), <[u8]>::len), Some(4));
+
+        let bare = Value::make_instance(Symbol::intern("Buf"), AttrMap::new());
+        assert_eq!(buf_bytes(&attrs_of(&bare)), None);
+        assert_eq!(buf_bytes_or_empty(&attrs_of(&bare)), Vec::<u8>::new());
+        assert_eq!(buf_len_or_zero(&attrs_of(&bare)), 0);
+    }
+
+    /// The unified convention truncates rather than clamping — the same thing
+    /// Raku does on the way in, so `Buf.new(300)` is `0x2C` and not `0xFF`. It
+    /// only becomes observable for a wider buffer, whose elements legitimately
+    /// exceed a byte; there it is the element's low byte.
+    #[test]
+    fn bytes_truncate_rather_than_clamp() {
+        assert_eq!(elem_to_u8(&Value::int(300)), 0x2C);
+        assert_eq!(elem_to_u8(&Value::int(-1)), 0xFF);
+        assert_eq!(elem_to_u8(&Value::int(0x1170)), 0x70);
+        assert_eq!(elem_to_u8(&Value::num(300.9)), 0x2C);
+        assert_eq!(elem_to_u8(&Value::str("nope".to_string())), 0);
+
+        let wide = make_buf(Symbol::intern("Buf[uint16]"), vec![Value::int(0x1170)]);
+        assert_eq!(buf_bytes(&attrs_of(&wide)), Some(vec![0x70]));
+    }
+
+    #[test]
+    fn element_width_comes_from_the_class_name() {
+        for name in ["Buf", "Blob", "utf8", "Buf[uint8]", "Blob[int8]"] {
+            assert_eq!(buf_elem_width(name), 1, "{name}");
+        }
+        assert_eq!(buf_elem_width("utf16"), 2);
+        assert_eq!(buf_elem_width("Buf[uint16]"), 2);
+        assert_eq!(buf_elem_width("blob32"), 4);
+        assert_eq!(buf_elem_width("Buf[int64]"), 8);
+    }
+
+    #[test]
+    fn bytes_round_trip_through_the_write_side() {
+        let mut map = AttrMap::new();
+        set_buf_bytes(&mut map, &[1, 2, 3]);
+        let b = Value::make_instance(Symbol::intern("Buf"), map);
+        assert_eq!(buf_bytes(&attrs_of(&b)), Some(vec![1, 2, 3]));
+
+        store_buf_bytes(&attrs_of(&b), &[9]);
+        assert_eq!(buf_bytes(&attrs_of(&b)), Some(vec![9]));
+
+        let fresh = make_buf_from_bytes(Symbol::intern("Blob"), &[4, 5]);
+        assert_eq!(buf_bytes(&attrs_of(&fresh)), Some(vec![4, 5]));
     }
 
     #[test]

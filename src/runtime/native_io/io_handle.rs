@@ -857,9 +857,9 @@ impl Interpreter {
                     break;
                 }
                 for chunk in bytes.chunks(size) {
-                    values.push(crate::value::value_buf::make_buf(
+                    values.push(crate::value::value_buf::make_buf_from_bytes(
                         Symbol::intern("Buf[uint8]"),
-                        crate::value::value_buf::bytes_to_elems(chunk),
+                        chunk,
                     ));
                 }
                 if bytes.len() < size {

@@ -128,10 +128,7 @@ pub(super) fn dispatch(
                     attributes,
                     ..
                 } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-                    Value::int(
-                        crate::value::value_buf::with_buf_elems(&attributes, <[Value]>::len)
-                            .unwrap_or(0) as i64,
-                    )
+                    Value::int(crate::value::value_buf::buf_len_or_zero(&attributes) as i64)
                 }
                 ValueView::Channel(_) => {
                     return Some(Some(Err(RuntimeError::new(

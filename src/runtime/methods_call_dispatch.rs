@@ -11,7 +11,7 @@ use crate::symbol::Symbol;
 use crate::value::ValueView;
 use crate::value::signature::extract_sig_info;
 use crate::value::value_buf::{
-    buf_elems_or_empty, bytes_to_elems, make_buf, set_buf_elems, with_buf_elems,
+    buf_bytes_or_empty, buf_elems_or_empty, make_buf, set_buf_bytes, with_buf_bytes,
 };
 
 impl Interpreter {
@@ -646,15 +646,8 @@ impl Interpreter {
                         attributes,
                         ..
                     } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-                        with_buf_elems(&attributes, |items| {
-                            let bytes: Vec<u8> = items
-                                .iter()
-                                .map(|v| match v.view() {
-                                    ValueView::Int(n) => n as u8,
-                                    _ => v.to_string_value().parse::<u8>().unwrap_or(0),
-                                })
-                                .collect();
-                            String::from_utf8_lossy(&bytes).to_string()
+                        with_buf_bytes(&attributes, |bytes| {
+                            String::from_utf8_lossy(bytes).to_string()
                         })
                         .unwrap_or_default()
                     }
@@ -773,17 +766,7 @@ impl Interpreter {
                     } => {
                         let cn = class_name.resolve();
                         if crate::runtime::utils::is_buf_or_blob_class(&cn) {
-                            let v = with_buf_elems(&attributes, |items| {
-                                items
-                                    .iter()
-                                    .map(|it| match it.view() {
-                                        ValueView::Int(i) => i.clamp(0, 255) as u8,
-                                        ValueView::Num(f) => (f as i64).clamp(0, 255) as u8,
-                                        _ => 0,
-                                    })
-                                    .collect::<Vec<u8>>()
-                            })
-                            .unwrap_or_default();
+                            let v = buf_bytes_or_empty(&attributes);
                             (
                                 true,
                                 Some(cn),
@@ -831,7 +814,7 @@ impl Interpreter {
                     let id = id_opt.unwrap();
                     let updated_cell = attrs_opt.unwrap();
                     let mut updated_map = updated_cell.to_map();
-                    set_buf_elems(&mut updated_map, bytes_to_elems(&bytes));
+                    set_buf_bytes(&mut updated_map, &bytes);
                     return Ok(Value::write_back_sharing(
                         &updated_cell,
                         class_sym,
@@ -868,17 +851,7 @@ impl Interpreter {
                     } => {
                         let cn = class_name.resolve();
                         if crate::runtime::utils::is_buf_or_blob_class(&cn) {
-                            let v = with_buf_elems(&attributes, |items| {
-                                items
-                                    .iter()
-                                    .map(|it| match it.view() {
-                                        ValueView::Int(i) => i.clamp(0, 255) as u8,
-                                        ValueView::Num(f) => (f as i64).clamp(0, 255) as u8,
-                                        _ => 0,
-                                    })
-                                    .collect::<Vec<u8>>()
-                            })
-                            .unwrap_or_default();
+                            let v = buf_bytes_or_empty(&attributes);
                             (
                                 true,
                                 Some(cn),
@@ -926,7 +899,7 @@ impl Interpreter {
                     let id = id_opt.unwrap();
                     let updated_cell = attrs_opt.unwrap();
                     let mut updated_map = updated_cell.to_map();
-                    set_buf_elems(&mut updated_map, bytes_to_elems(&bytes));
+                    set_buf_bytes(&mut updated_map, &bytes);
                     return Ok(Value::write_back_sharing(
                         &updated_cell,
                         class_sym,

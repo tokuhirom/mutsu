@@ -2628,21 +2628,7 @@ impl Interpreter {
         if cn == "Blob" || cn.starts_with("Blob[") || cn.starts_with("blob") {
             return None;
         }
-        // Extract the current bytes (same clamping the interpreter uses).
-        let mut bytes: Vec<u8> = Vec::new();
-        crate::value::value_buf::with_buf_elems(&attributes, |items| {
-            bytes.reserve(items.len());
-            for it in items.iter() {
-                bytes.push(match it.view() {
-                    ValueView::Int(i) => i.clamp(0, 255) as u8,
-                    ValueView::Num(f) => (f as i64).clamp(0, 255) as u8,
-                    ValueView::BigInt(bi) => num_traits::ToPrimitive::to_i64(bi.as_ref())
-                        .unwrap_or(0)
-                        .clamp(0, 255) as u8,
-                    _ => 0,
-                });
-            }
-        });
+        let mut bytes = crate::value::value_buf::buf_bytes_or_empty(&attributes);
         // Compute the new bytes via the shared pure transform.
         let new_bytes: Vec<u8> = if is_write_bits {
             if args.len() != 3 {
@@ -2691,10 +2677,7 @@ impl Interpreter {
         // (so aliases observing the same buf see the mutation), then refresh the
         // receiver binding to match the interpreter's `env.insert(target_var, ...)`.
         let mut updated_attrs = attributes.to_map();
-        crate::value::value_buf::set_buf_elems(
-            &mut updated_attrs,
-            crate::value::value_buf::bytes_to_elems(&new_bytes),
-        );
+        crate::value::value_buf::set_buf_bytes(&mut updated_attrs, &new_bytes);
         let updated = Value::write_back_sharing(&attributes, class_name, updated_attrs, id);
         self.env_mut()
             .insert(target_name.to_string(), updated.clone());

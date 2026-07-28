@@ -2,7 +2,7 @@
 /// Num, Real, Numeric, Bridge
 use crate::runtime;
 use crate::symbol::Symbol;
-use crate::value::value_buf::{buf_storage, set_buf_storage, with_buf_elems};
+use crate::value::value_buf::{buf_len_or_zero, buf_storage, set_buf_storage};
 use crate::value::{RuntimeError, Value, ValueView};
 use num_traits::{ToPrimitive, Zero};
 use std::sync::Arc;
@@ -752,7 +752,7 @@ pub(super) fn dispatch(
                     attributes,
                     ..
                 } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-                    Value::int(with_buf_elems(&attributes, <[Value]>::len).unwrap_or(0) as i64)
+                    Value::int(buf_len_or_zero(&attributes) as i64)
                 }
                 // A StrDistance's `.Int` is the edit distance between its
                 // before/after strings, matching `+$str-dist` / `.Numeric`.
@@ -1089,7 +1089,7 @@ pub(super) fn dispatch(
                     attributes,
                     ..
                 } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-                    Value::int(with_buf_elems(&attributes, <[Value]>::len).unwrap_or(0) as i64)
+                    Value::int(buf_len_or_zero(&attributes) as i64)
                 }
                 ValueView::Instance {
                     class_name,

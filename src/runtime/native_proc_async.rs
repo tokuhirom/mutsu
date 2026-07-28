@@ -669,16 +669,7 @@ impl Interpreter {
                             || cn.starts_with("Blob[")
                     } =>
                     {
-                        crate::value::value_buf::with_buf_elems(&attributes, |items| {
-                            items
-                                .iter()
-                                .map(|v| match v.view() {
-                                    ValueView::Int(i) => i as u8,
-                                    _ => 0,
-                                })
-                                .collect::<Vec<u8>>()
-                        })
-                        .unwrap_or_default()
+                        crate::value::value_buf::buf_bytes_or_empty(&attributes)
                     }
                     ValueView::Str(s) => {
                         let enc = attrs

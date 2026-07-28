@@ -308,16 +308,8 @@ pub(super) fn dispatch(
                     if bytes.is_empty() {
                         Some(Ok(Value::str(format!("{}:0x<>", class_name))))
                     } else {
-                        let cn = class_name.resolve();
-                        let hex_width = if cn.contains("64") {
-                            16
-                        } else if cn.contains("32") {
-                            8
-                        } else if cn.contains("16") {
-                            4
-                        } else {
-                            2
-                        };
+                        let hex_width =
+                            2 * crate::value::value_buf::buf_elem_width(&class_name.resolve());
                         let truncated = bytes.len() > 100;
                         let display_bytes = if truncated { &bytes[..100] } else { &bytes[..] };
                         let mut hex: Vec<String> = display_bytes

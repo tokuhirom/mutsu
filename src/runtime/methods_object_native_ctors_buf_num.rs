@@ -47,10 +47,11 @@ impl Interpreter {
             .collect();
         // Mask values to unsigned range based on element size. For uint64, use
         // BigInt-aware conversion to preserve values > i64::MAX.
+        let width = crate::value::value_buf::buf_elem_width(&cn);
         let byte_vals: Vec<Value> = raw_vals
             .into_iter()
-            .map(|v| {
-                if cn.contains("64") {
+            .map(|v| match width {
+                8 => {
                     let u = match v.view() {
                         ValueView::BigInt(n) => {
                             use num_traits::ToPrimitive;
@@ -59,13 +60,10 @@ impl Interpreter {
                         _ => to_int(&v) as u64,
                     };
                     Value::int(u as i64)
-                } else if cn.contains("32") {
-                    Value::int(to_int(&v) as u32 as i64)
-                } else if cn.contains("16") {
-                    Value::int(to_int(&v) as u16 as i64)
-                } else {
-                    Value::int(to_int(&v) as u8 as i64)
                 }
+                4 => Value::int(to_int(&v) as u32 as i64),
+                2 => Value::int(to_int(&v) as u16 as i64),
+                _ => Value::int(to_int(&v) as u8 as i64),
             })
             .collect();
         // Normalize short buf/blob names to canonical forms.

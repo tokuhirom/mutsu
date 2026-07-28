@@ -1,5 +1,5 @@
 use super::*;
-use crate::value::value_buf::{buf_elems, buf_elems_in, with_buf_elems};
+use crate::value::value_buf::{buf_elems, buf_elems_in, buf_len_or_zero};
 
 impl Interpreter {
     /// Wrap a value in item (scalar) context if it's a List/Array,
@@ -1751,7 +1751,7 @@ impl Interpreter {
                 // `list` of positional captures so `$/[*-1]` resolves `*-1` to
                 // the last capture (`m/ (\d) <?{ $/[*-1] < 5 }> /`).
                 let len = if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) {
-                    with_buf_elems(&attributes, <[Value]>::len).unwrap_or(0) as i64
+                    buf_len_or_zero(&attributes) as i64
                 } else if let Some(ValueView::Array(list, ..)) =
                     attributes.as_map().get("list").map(Value::view)
                 {

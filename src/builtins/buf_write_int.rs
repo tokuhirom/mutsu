@@ -6,7 +6,7 @@
 //   (similarly for write-int8, write-uint16, ..., write-int128)
 
 use crate::symbol::Symbol;
-use crate::value::value_buf::{bytes_to_elems, set_buf_elems, with_buf_elems};
+use crate::value::value_buf::{buf_bytes_or_empty, set_buf_bytes};
 use crate::value::{InstanceAttrs, RuntimeError, Value, ValueView};
 
 /// Returns Some((byte_size, is_signed)) if the method is a write-int/uint method.
@@ -186,16 +186,7 @@ pub(crate) fn try_native_buf_write(
             if !crate::runtime::utils::is_buf_or_blob_class(&cn) {
                 return None;
             }
-            with_buf_elems(&attributes, |items| {
-                bytes.reserve(items.len());
-                for it in items.iter() {
-                    bytes.push(match it.view() {
-                        ValueView::Int(i) => i.clamp(0, 255) as u8,
-                        ValueView::Num(f) => (f as i64).clamp(0, 255) as u8,
-                        _ => 0,
-                    });
-                }
-            });
+            bytes = buf_bytes_or_empty(&attributes);
             inst = Some(BufWriteCell {
                 attributes: attributes.clone(),
                 class_sym: class_name,
@@ -235,7 +226,7 @@ pub(crate) fn try_native_buf_write(
     match inst {
         Some(cell) => {
             let mut updated_map = cell.attributes.to_map();
-            set_buf_elems(&mut updated_map, bytes_to_elems(&bytes));
+            set_buf_bytes(&mut updated_map, &bytes);
             Some(Ok(Value::write_back_sharing(
                 &cell.attributes,
                 cell.class_sym,
