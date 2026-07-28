@@ -104,18 +104,20 @@ impl Interpreter {
         let Some(parsed) = self.parse_regex(&pattern) else {
             return Ok(Value::NIL);
         };
-        let tail_chars: Vec<char> = tail.chars().collect();
-        let matches = self.regex_match_ends_from_caps_in_pkg(&parsed, &tail_chars, 0, pkg);
+        // Matched against the whole subject from `pos` (ADR-0016 P1), so the
+        // captures this publishes are already in absolute coordinates.
+        let all_chars: Vec<char> = text.chars().collect();
+        let matches = self.regex_match_ends_from_caps_in_pkg(&parsed, &all_chars, pos, pkg);
         // Matches come HIGHEST FIRST: the first entry is the token's best
         // (ratcheted) match, which is what a cursor method call returns.
-        let Some((end_rel, caps)) = matches.into_iter().next() else {
+        let Some((end, caps)) = matches.into_iter().next() else {
             return Ok(Value::NIL);
         };
-        let matched: String = tail_chars[..end_rel].iter().collect();
+        let matched: String = all_chars[pos..end].iter().collect();
         let m = Value::make_match_object_full_q(
             matched,
             pos as i64,
-            (pos + end_rel) as i64,
+            end as i64,
             &caps.positional,
             &caps.named,
             &caps.named_subcaps,
@@ -130,7 +132,7 @@ impl Interpreter {
                 pkg: pkg.to_string(),
                 name: name.to_string(),
                 from: pos,
-                to: pos + end_rel,
+                to: end,
                 caps,
             });
         });
@@ -255,13 +257,14 @@ impl Interpreter {
             }
             _ => RegexCaptures {
                 matched: chars[pos..to_abs].iter().collect(),
-                to: to_abs - pos,
+                from: pos,
+                to: to_abs,
                 ..RegexCaptures::default()
             },
         };
         let sym = inner_caps.sym.clone();
         Some(Self::build_named_candidates_from_inner(
-            vec![(to_abs - pos, inner_caps)],
+            vec![(to_abs, inner_caps)],
             pos,
             chars,
             spec,

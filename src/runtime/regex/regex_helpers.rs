@@ -37,15 +37,6 @@ thread_local! {
     /// probe wants the longest prefix the pattern's declarative skeleton accepts, so
     /// both kinds of code atom simply become no-ops.
     pub(crate) static CODE_ATOMS_INERT: Cell<bool> = const { Cell::new(false) };
-    /// The character immediately preceding the start of the text currently being
-    /// matched. A subrule (`<foo>`) is matched against a *slice* `chars[pos..]`
-    /// in a fresh sub-interpreter, so position 0 of that slice is not necessarily
-    /// the start of a line in the original text. Look-behind anchors (`^^`, `^`)
-    /// consult this to decide whether slice-position 0 is a real line/string
-    /// start: `None` means it truly is the start of the parse text, `Some(c)`
-    /// means `c` was the char just before the slice. Saved/restored around each
-    /// subrule dispatch so nesting threads correctly.
-    pub(crate) static REGEX_PRECEDING_CHAR: Cell<Option<char>> = const { Cell::new(None) };
     /// Parse-scoped overlay of `$*` dynamic-variable values written by grammar
     /// action methods that run at *reduce time* (during matching). The regex
     /// match engine is `&self`, so an action's dyn-var write (e.g.
@@ -402,17 +393,6 @@ impl Drop for RegexDynvarOverlayGuard {
     fn drop(&mut self) {
         REGEX_DYNVAR_OVERLAY.with(|slot| *slot.borrow_mut() = self.prev_overlay.take());
         REGEX_GRAMMAR_DYNVAR_SEEN.with(|c| c.set(self.prev_seen));
-    }
-}
-
-/// Restores `REGEX_PRECEDING_CHAR` to a saved value when dropped, so a subrule
-/// dispatch can publish the slice's preceding char for the duration of the match
-/// and have it restored on every exit path (including early returns).
-pub(crate) struct RegexPrecedingCharGuard(pub(crate) Option<char>);
-
-impl Drop for RegexPrecedingCharGuard {
-    fn drop(&mut self) {
-        REGEX_PRECEDING_CHAR.with(|c| c.set(self.0));
     }
 }
 

@@ -539,31 +539,19 @@ impl Interpreter {
             };
             // Resolve + parse the candidates once (memoized for the
             // argument-less common case). Patterns are matched in place with
-            // `self` against the `&chars[pos..]` borrow — the previous
-            // implementation built a fresh scratch sub-interpreter (plus a
-            // tail-text `String`) per candidate per call, which dominated
-            // nested-grammar matching.
+            // `self` against the whole `chars` starting at `pos` (ADR-0016 P1) —
+            // an earlier implementation built a fresh scratch sub-interpreter
+            // (plus a tail-text `String`) per candidate per call, and the one
+            // after that re-sliced to `&chars[pos..]`, which made every inner
+            // offset slice-relative and forced a deep rebase of the whole
+            // capture subtree afterwards.
             let (candidates, _raw_empty) = self.parsed_subrule_candidates(&spec, pkg, &arg_values);
             if !candidates.is_empty() {
-                let tail = &chars[pos..];
-                // The subrule matches a slice starting at `pos`, where
-                // slice-position 0 is not the original text start. Publish the
-                // char before the slice so look-behind anchors (`^^`) in the
-                // subrule see the real context. At `pos == 0` inherit the
-                // current value (this slice may itself be a nested subrule).
-                let saved_prev = super::regex_helpers::REGEX_PRECEDING_CHAR.with(|c| c.get());
-                let slice_prev = if pos > 0 {
-                    Some(chars[pos - 1])
-                } else {
-                    saved_prev
-                };
-                super::regex_helpers::REGEX_PRECEDING_CHAR.with(|c| c.set(slice_prev));
-                let _restore_prev = super::regex_helpers::RegexPrecedingCharGuard(saved_prev);
                 let mut best: Option<(usize, RegexCaptures)> = None;
                 let mut best_sym: Option<String> = None;
                 for (parsed, sub_pkg, sym_key) in candidates.iter() {
                     if let Some((inner_end, inner_caps)) =
-                        self.regex_match_end_from_caps_in_pkg(parsed, tail, 0, sub_pkg)
+                        self.regex_match_end_from_caps_in_pkg(parsed, chars, pos, sub_pkg)
                     {
                         let better = best
                             .as_ref()
@@ -571,7 +559,7 @@ impl Interpreter {
                             .unwrap_or(true);
                         if better {
                             let mut inner_caps = inner_caps;
-                            inner_caps.from = 0;
+                            inner_caps.from = pos;
                             inner_caps.to = inner_end;
                             best = Some((inner_end, inner_caps));
                             best_sym = sym_key.clone();

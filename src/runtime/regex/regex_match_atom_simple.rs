@@ -256,16 +256,11 @@ impl Interpreter {
                 };
             }
             RegexAtom::StartOfLine => {
-                // The char immediately before `pos`. At slice-position 0 this is
-                // not necessarily the start of the original parse text: a subrule
-                // is matched against `chars[pos..]` in a sub-interpreter, so
-                // consult `REGEX_PRECEDING_CHAR` (the char before this slice). It
-                // is `None` only at the true start of the parse text.
-                let prev = if pos > 0 {
-                    Some(chars[pos - 1])
-                } else {
-                    super::regex_helpers::REGEX_PRECEDING_CHAR.with(|c| c.get())
-                };
+                // The char immediately before `pos`. `chars` is always the whole
+                // subject (ADR-0016 P1 — subrules are matched in place, not
+                // against a re-slice), so `pos == 0` really is the start of the
+                // parse text.
+                let prev = if pos > 0 { Some(chars[pos - 1]) } else { None };
                 let Some(prev) = prev else {
                     // True start of the parse text — a line start.
                     return Some(pos);

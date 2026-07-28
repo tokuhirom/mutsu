@@ -1,0 +1,252 @@
+# ADR-0016: Span-based regex captures and lazily materialized `Match` objects
+
+- **Status**: Proposed (2026-07-28)
+- **Context**: ADR-0001 Phase A (single-thread speed catch-up, before GC/JIT).
+  Direct follow-on to ADR-0007, which removed the *accumulated-state* clone from the
+  matcher and explicitly deferred the remaining "**per-subrule ceremony**" — captured-text
+  `String`s, `Arc<RegexCaptures>` subcap allocations, `RegexCaptures::default` zeroing,
+  one `snapshot()` per complete inner end. This ADR is the decision about how that
+  ceremony is removed.
+- **Ticket**: `todo/tickets/yaml-parse-throughput.md`. Benchmarks:
+  `benchmarks/bench-yaml-parse.raku`, `benchmarks/bench-grammar-parse{,-deep}.raku`.
+
+## Problem
+
+After three targeted fixes (regex code-block writeback by identity, grammar-action
+dispatch pre-check, `.orig` `Arc` sharing) a clean profile of a grammar parse has **no
+single dominant function left**. It is dominated by libc:
+
+| symbol | share |
+|---|---:|
+| `__memcmp_avx2_movbe` | 11.0% |
+| `_int_free` | 7.5% |
+| `malloc` | 5.4% |
+| `_int_malloc` | 5.3% |
+| `__memmove_avx_unaligned_erms` | 5.2% |
+| `cfree` | 2.9% |
+| `realloc` | 2.7% |
+| `malloc_consolidate` | 1.7% |
+| `unlink_chunk` / `__rdl_alloc` | 2.2% |
+
+(`benchmarks/bench-yaml-parse.raku`, `--profile profiling`, `perf -F 4000`, 20 184
+samples, on an idle box — "idle" is load-bearing here; see the measurement caveat in
+`todo/tickets/yaml-parse-throughput.md` for the session whose local A/B numbers a
+3-day-old CPU spinner invalidated. Shares are *shape* evidence, not an A/B claim;
+magnitudes for any fix must come from `bench-history.tsv` on `bench-data`.)
+
+**≈28% allocator + ≈5% bulk memmove + ≈11% memcmp.** That is not a hot function to fix;
+it is a data model that allocates and copies per match step. This ADR names the five
+structural causes and commits to the target representation.
+
+### Cause 1 — the subject string is re-sliced per subrule, so every capture subtree is deep-copied to rebase it
+
+A subrule call matches its body against `&chars[pos..]` with `start = 0`
+(`regex_match_atom.rs:377`, `regex_match_capture.rs:548`). Every offset the body
+produces is therefore **slice-relative**, and the caller rebases the whole result:
+
+```rust
+Self::shift_capture_descendants(&mut subcap, pos);   // regex_match_atom.rs:764
+```
+
+which recurses with `Arc::make_mut(sub)` over every nested named/positional subcapture.
+Those `Arc`s are **already shared** — `record_reduced_subrule` clones each one into the
+`REDUCED_SUBRULES` thread-local at the moment it is built — so `make_mut` is not the
+cheap unshared path: it **deep-clones the entire descendant subtree, at every level of
+nesting, on every candidate**, including candidates that go on to lose. A depth-`d`
+parse copies its capture tree `d` times.
+
+Two more workarounds exist only because of the slicing: `REGEX_PRECEDING_CHAR` (a
+thread-local + RAII guard whose entire job is to tell a slice what character preceded
+it, so `^^` keeps working) and the slice-relative `capture_start`/`capture_end` rebasing.
+Everything the workaround does *not* cover is simply **wrong** under it: `<<`/`>>`/`<?wb>`
+read `chars[pos - 1]`, which is "nothing" at slice position 0, so a word boundary fires
+mid-word; a look-behind inside a subrule cannot see text before the subrule's start; and
+`<at(N)>` means "position N in the current slice" rather than in the subject. All four
+were verified against `raku` and fixed by P1.
+
+### Cause 2 — captures store text, not spans, so positions are recovered by searching
+
+`RegexCaptures::named` is `HashMap<String, Vec<String>>` — a named capture keeps its
+**matched text** and no offsets. So the Match builder searches for the text in the
+subject to recover them (`value_methods_c.rs`, `make_capture_match`):
+
+```rust
+let needle: Vec<char> = s.chars().collect();
+for start in search_from..=haystack.len().saturating_sub(needle.len()) {
+    if haystack[start..start + needle.len()] == needle[..] { ... }
+}
+```
+
+A fresh `Vec<char>` per leaf, and a linear scan that is O(document) when the text does
+not occur near `search_from` — over a leaf-heavy tree (YAMLish produces one leaf per
+matched character in a run of spaces) that is O(captures × document) `memcmp`. It is
+also **semantically wrong**: it finds the first occurrence at or after a heuristic start,
+not the span that actually matched, so repeated text yields wrong `.from`/`.to`.
+
+The positional axis already records exact spans in `positional_offsets` — **and the Match
+builder ignores them and searches anyway.**
+
+A gated experiment (skip the search, keep everything else) moves `__memcmp_avx2_movbe`
+from 11.0% to 6.9% of samples at equal wall clock, so the search is worth ≈4 points on
+its own. The remaining ≈7% is the *other* string comparison in this model: owned `String`
+capture-name keys compared on every `HashMap` probe and trail record (Cause 4). Neither is
+a single fix — which is the point.
+
+The band-aid this grew: `store_apply_named_capture` synthesizes a whole
+`Arc<RegexCaptures>` per named capture *purely as an offset carrier* ("Record a minimal
+sub-capture carrying the exact (from, to) span"), because `named` has nowhere to put two
+integers.
+
+### Cause 3 — one struct plays two roles, so a stored leaf node costs ~600 bytes
+
+`RegexCaptures` is simultaneously
+
+- the engine's **mutable accumulator** for the current pattern run — `code_blocks`,
+  `regex_vars`, `match_from`, `capture_start`/`capture_end`, and the trail's target; and
+- an immutable **stored capture node** — what an `Arc<RegexCaptures>` subcap is.
+
+A stored node needs `from`, `to`, its children, `ast`, `sym`, `action_name`. It gets all
+14 fields: 5 `HashMap`s + 1 `HashSet` + 7 `Vec`s + a `String` ≈ 600 bytes, zeroed by
+`RegexCaptures::default()`, moved by value inside `Vec<(usize, RegexCaptures)>` candidate
+lists, heap-allocated per subcap, and `clone()`d once per complete match (`snapshot()`).
+That is the `memmove` and a large part of the `malloc`/`free`.
+
+### Cause 4 — six parallel vectors per axis
+
+The positional axis is `positional` ‖ `positional_subcaps` ‖ `positional_quantified` ‖
+`positional_offsets` ‖ `positional_nil` ‖ `positional_slots`; the named axis is `named` ‖
+`named_subcaps` ‖ `named_quantified`. Six allocations, six trail-record families, six
+truncate/extend paths per rewind — and manual alignment invariants of the form "pad with
+`false` up to the current `positional` length before pushing `true`". Every capture name
+is stored as an owned `String`, re-allocated per `entry(key.to_string())` and per trail
+record.
+
+### Cause 5 — the `Match` tree is materialized eagerly, in the heaviest possible shape
+
+Every capture — including a leaf that matched one space — becomes a full
+`Value::Instance("Match")`: a `HashMap<String, Value>` of six entries (`str`, `from`,
+`to`, `list`, `named`, `orig`) built with six `String` key allocations, converted to a
+`Symbol`-keyed `AttrMap`, wrapped in a GC-managed `InstanceAttrs`, plus an empty `list`
+array and an empty `named` hash **per leaf**. Nothing is lazy: the entire tree is built
+whether or not user code ever looks at it.
+
+The consumer side then pays for that shape again. `invoke_grammar_actions` walks the
+finished tree and, per node, does `attributes.as_ref().clone()` (full `AttrMap` copy) and
+`named_hash.as_ref().clone()` (full `HashData` copy) to rebuild the node immutably — an
+O(node) copy per node, i.e. O(n²) over the tree, for a walk that in the common case
+changes nothing (ADR round 2 established that most nodes have no action method at all).
+
+## Decision
+
+Adopt the representation NQP/MoarVM uses and that Raku's own semantics assume: **the
+matcher carries spans into one shared, immutable subject; the Raku-level `Match` object is
+materialized lazily and only where it is observed.**
+
+Concretely, the target state is:
+
+1. **Absolute positions everywhere.** The subject is never re-sliced. A subrule is matched
+   against the full `chars` with an explicit start position. Offsets are absolute from
+   birth; nothing is ever rebased.
+2. **One shared subject.** `MatchTarget { text: Arc<String>, chars: Arc<[char]> }`, created
+   once per top-level match/parse and referenced by every node. `.orig` is a refcount bump;
+   any capture's text is `&target.chars[from..to]`, materialized on demand.
+3. **A capture node distinct from the engine's accumulator.** `CapNode` — the immutable
+   stored node: `{ from: u32, to: u32, children: Option<Box<CapChildren>>, ast, sym,
+   action_name }` — split out of `RegexCaptures`, which keeps only the per-run mutable
+   state (`code_blocks`, `regex_vars`, `capture_start`/`capture_end`, `match_from`) and the
+   in-progress children. A leaf `CapNode` is a handful of words, not ~600 bytes.
+4. **One list per axis, spans not text.** `positional: Vec<PosSlot>` and
+   `named: HashMap<Symbol, Vec<Arc<CapNode>>>` replace the six/three parallel collections.
+   The text axis disappears (it is derivable), which is what makes the collapse possible.
+   Capture names are interned `Symbol`s, not re-allocated `String`s.
+5. **Lazy `Match`.** A dedicated `ValueRepr::Match(Gc<MatchNode>)` holding the target, the
+   span, and the `Arc<CapNode>`; `.list`/`.hash`/`.Str` are derived on first access and
+   memoized. A capture nobody inspects costs nothing. The grammar-action walk runs over
+   `CapNode` and materializes a `Match` only for nodes that actually have an action method.
+
+### Non-goals
+
+- No change to the backtracking algorithm. ADR-0007's trail/`CapStore` stays; this ADR
+  changes *what* the trail records, not *how* backtracking works.
+- No change to observable Raku semantics, except where the current model is provably
+  wrong — search-recovered offsets for repeated text, and the four subrule-boundary
+  constructs above — which become correct.
+- Not a compiled-regex VM. That remains the eventual ceiling (ADR-0007's own framing) and
+  is easier to reach on top of this representation, not instead of it.
+
+## Phasing
+
+Each phase is independently shippable, roast-gated, and measured from `bench-history.tsv`
+on the `bench-data` branch — never from a local A/B.
+
+**P1 — Absolute positions.** Pass `(chars, pos)` instead of `(&chars[pos..], 0)` at the two
+subrule call sites; delete `shift_capture_descendants` / `shift_capture_tree` and the
+`Arc::make_mut` subtree deep-copy they exist to perform, and `REGEX_PRECEDING_CHAR` with
+its guard.
+*Why first:* it is the largest single copy source, it is localized (two call sites plus the
+shared `build_named_candidates_from_inner` wrapper), and **spans are meaningless until
+positions are absolute**, so P3 depends on it.
+**Landed 2026-07-28** (`news/2026-07/regex-subrule-absolute-positions.md`): net −104
+lines, and the four subrule-boundary constructs above now agree with `raku`, pinned by
+`t/regex-subrule-absolute-position.t`.
+
+**P2 — `CapNode` / `RegexCaptures` split.** Extract the immutable stored-node fields into
+`CapNode`; `Arc<CapNode>` replaces `Arc<RegexCaptures>` in both subcap axes. Shrinks the
+per-subcap allocation by roughly an order of magnitude and takes the `Vec<(usize,
+RegexCaptures)>` candidate-list memmove with it.
+
+**P3 — Spans, not text.** Introduce `MatchTarget`; `CapNode` carries `(from, to)` only.
+Delete `chars[a..b].iter().collect()` at capture sites, the `captured.clone()` duplicates,
+and `make_capture_match`'s search entirely — the Match builder reads the recorded span.
+Fixes the repeated-text offset bug.
+
+**P4 — One list per axis + interned names.** Collapse the parallel vectors/maps into
+`Vec<PosSlot>` and `HashMap<Symbol, Vec<Arc<CapNode>>>`, and shrink the trail's undo
+vocabulary accordingly (the alignment invariants become structural rather than asserted in
+comments).
+
+**P5 — Lazy `Match`.** First a pure refactor: funnel the ~34 `class_name == "Match"`
+consumer sites through accessor helpers (`match_str` / `match_span` / `match_list` /
+`match_named`) with no behavior change. Then swap the representation behind them to
+`ValueRepr::Match(Gc<MatchNode>)` with `OnceCell`-memoized derived views, and rewrite
+`invoke_grammar_actions` to walk `CapNode` and materialize only where `has_user_method`
+already says an action exists — which removes the per-node `AttrMap`/`HashData` clone as
+a side effect.
+
+## Consequences
+
+- **Gain** (per CLAUDE.md's definition — moving toward the correct architecture): the
+  per-match-step allocation and copying are removed *structurally*, not shaved. There is no
+  per-capture text copy to regress, no subtree to rebase, no offset to re-derive by
+  searching, and no `Match` object for a node nobody reads. Five real compatibility bugs
+  are fixed on the way (the four subrule-boundary constructs, plus search-recovered
+  offsets for repeated text). The representation is also the one a future compiled-regex VM and JIT
+  want (spans + a shared subject + a lazy user-facing object).
+- **Risk**: high blast radius across `src/runtime/regex/` (~10k lines) and, in P5, across
+  the ~34 `Match`-consuming sites. The semantics surface is wide (capture markers
+  `<( )>`, silent-action channel, aliases, `@<>`/`%<>` sigil captures, `$N=`, LTM / `||` /
+  `&`, ratchet, frugal, separated `%`/`%%`, code blocks, backrefs, left recursion). The
+  mitigation is the standing one: CI's roast S05/S12 suites plus the `t/` grammar/match
+  suite, land per phase on a branch, fix forward. A temporary red CI on a feature branch is
+  not a risk (CLAUDE.md, "Refactor boldly").
+- **Rejected alternatives**:
+  - *Keep the eager `Instance` tree, just build the `AttrMap` directly with pre-interned
+    `Symbol`s.* A real but shallow win (six `String` allocations per leaf) that leaves every
+    structural cause in place and entrenches the eager tree. Fold it into P5 instead of
+    shipping it as the answer.
+  - *Add a parallel `named_offsets` map so the builder can stop searching.* Fixes the
+    symptom by adding a seventh parallel collection — the exact anti-pattern P4 exists to
+    remove.
+  - *Persistent/immutable capture structures (HAMT) instead of the trail.* Already rejected
+    in ADR-0007 and unchanged here: worse constant factor for the small maps involved.
+  - *Jump straight to a compiled-regex VM.* Larger than this ADR and strictly easier on top
+    of it; the representation is the prerequisite, not the competitor.
+
+## References
+
+- ADR-0007 (trail matcher) — the immediate predecessor; its "residual per-subrule ceremony"
+  paragraph is the problem this ADR solves.
+- ADR-0001 — phase order: this is Phase A work, not blocked on GC or Track B.
+- `todo/tickets/yaml-parse-throughput.md` — measurements and the three landed rounds.
+- `news/2026-07/match-object-orig-arc-share.md`, `.../regex-code-block-writeback-by-identity.md`,
+  `.../grammar-actions-skip-dispatch-for-missing-methods.md`.
