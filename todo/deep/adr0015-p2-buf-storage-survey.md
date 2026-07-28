@@ -27,7 +27,8 @@ because a contiguous `Vec<u8>` cannot be interpreted without it.
 `src/value/value_buf.rs` and all 104 touches route through it
 (see [`news/2026-07/buf-storage-accessor-chokepoint.md`](../../news/2026-07/buf-storage-accessor-chokepoint.md)).
 Sections 2 and 5 below are now historical: read them for *why* the campaign was
-needed, not as work still to do. Steps 2 and 3 are open.
+needed, not as work still to do. Step 2 (the byte view and the width probe) is
+done too; steps 3 and 4 are open.
 
 ## 2. The `"bytes"` campaign is 104 sites, not 91 (done — historical)
 
@@ -178,14 +179,26 @@ ADR §4 promises — does not exist yet and is part of P2.
    become a node share). `buf_elems` returns `Option` because "no storage at
    all" (a `Blob` type object) and "empty buffer" are distinguished at several
    call sites, `has_buf_elems` being the probe.
-2. **The node**, behind those accessors: contiguous `Vec<u8>` + element width,
-   with the encode/decode the accessors now hide. Note the three *different*
-   byte-decoding conventions the callers keep (truncating `as u8`,
-   `.clamp(0, 255) as u8`, `to_f64() as u8`) — they were deliberately not
-   unified in step 1, so step 2 must decide which one the native node's byte
-   view implements and migrate the others explicitly, as a behaviour change with
-   its own tests.
-3. **The body and the honest `.REPR`**, in one commit with the `MVMArrayB` test,
+2. **The byte view and the width probe.** **DONE** — see
+   [`news/2026-07/buf-byte-and-width-accessors.md`](../../news/2026-07/buf-byte-and-width-accessors.md).
+   `value_buf` now also answers in bytes (`buf_bytes`, `with_buf_bytes`,
+   `set_buf_bytes`, …) and in counts (`buf_len`), which is what the majority of
+   the element-accessor callers actually wanted; and `buf_elem_width` replaced
+   the four separate `cn.contains("16")` ladders, so the element width — the one
+   part of a `Buf`'s type that is not in its data at all — is derived in one
+   place ready to move into the node.
+
+   The three byte-decoding conventions are resolved to **truncation**: it is
+   what Raku itself stores by (`Buf.new(300)` is `0x2C`, `Buf.new(-1)` is
+   `0xFF`), every mutation path masks on the way in, and for a wider buffer
+   Rakudo agrees with neither convention anyway.
+
+3. **The node**, behind those accessors: contiguous `Vec<u8>` + element width,
+   with the encode/decode the accessors now hide. Signedness has to ride along
+   with the width — mutsu stores every element unsigned today, so
+   `Blob[int8].new(-1)[0]` answers `255` where raku answers `-1`, and the node
+   is where that stops being true.
+4. **The body and the honest `.REPR`**, in one commit with the `MVMArrayB` test,
    plus the deletion of `nativecall_pin.rs` and its three helpers.
 
-Steps 2 and 3 are where the judgment is.
+Steps 3 and 4 are where the judgment is.
