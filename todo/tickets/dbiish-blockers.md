@@ -221,11 +221,22 @@ container's element buffer, stable across calls. That is
 whose ADR is now written and accepted:
 [ADR-0015](../../docs/adr/0015-native-backed-container-storage-and-repr-bodies.md)
 (P0 = two small NativeCall fixes, P1 = bodies over handles, P2/P3 = native-backed
-container storage). The visible symptom is a parse failure in
-`StatementHandle` (`Unexpected block in infix position`), because the undeclared
-`BPointer` derails the rest of the file — check `use NativeHelpers::Blob; BPointer(Buf.new(1))`
-before chasing the parser. `DBDish::SQLite` does not go through `BODY_OF`, which
-is why the other eight files are unaffected.
+container storage). `DBDish::SQLite` does not go through `BODY_OF`, which is why
+the other eight files are unaffected.
+
+**Update: ADR-0015 P0/P1 are landed and `BODY_OF` works.** The recorded symptom
+above — a parse failure in `StatementHandle` (`Unexpected block in infix
+position`) caused by an undeclared `BPointer` — is stale. `BPointer` now
+resolves and runs all the way into `BODY_OF`, and
+`NativeHelpers::CStruct`'s `LinearArray` matches raku's output exactly
+(allocates, computes its stride, indexes, nativecasts, assigns element fields,
+disposes). What it hits now is one concrete, unrelated bug with a six-line
+repro: a `unit module` qualifies an *imported* type so `Pointer[t]` inside
+`NativeHelpers::Blob` resolves to `NativeHelpers::Blob::Pointer` and cannot be
+parameterized — see
+[`unit-module-qualifies-imported-type-parameterization.md`](unit-module-qualifies-imported-type-parameterization.md).
+Check `use NativeHelpers::Blob; BPointer(Buf.new(1,2,3))` to see where it stands
+before chasing anything else.
 
 ### ⑤ `06-types` — object hash keyed by type objects
 
@@ -341,10 +352,11 @@ is at 30 of 35. Two left:
 1. ~~**⑤** — `06-types`~~ **DONE 2026-07-26.** The punned role's container
    attributes and the `handles` delegation path converged on the instance cell;
    see [`news/2026-07/punned-role-container-attribute-store.md`](../../news/2026-07/punned-role-container-attribute-store.md).
-2. **⑨** — the `mysql` driver, and with it `01-basic`'s last three subtests. Do
-   not start it as a `DBIish` task: it is
-   [`todo/deep/nativehelpers-blob-moarvm-guts.md`](../deep/nativehelpers-blob-moarvm-guts.md),
-   which wants an ADR first.
+2. **⑨** — the `mysql` driver, and with it `01-basic`'s last three subtests.
+   The ADR it wanted is written and accepted (ADR-0015), and its P0/P1 have
+   landed, so `BODY_OF` and `LinearArray` now work. What remains is a single
+   named bug with a six-line repro:
+   [`unit-module-qualifies-imported-type-parameterization.md`](unit-module-qualifies-imported-type-parameterization.md).
 
 ## When these are cleared
 
