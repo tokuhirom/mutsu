@@ -216,3 +216,39 @@ impl Interpreter {
         None
     }
 }
+
+impl Interpreter {
+    /// Read a native-handle instance's declared CStruct fields out of C memory
+    /// and into its attribute cell, so `$!field` inside the class's own methods
+    /// resolves.
+    ///
+    /// A no-op — and one registry probe — for every ordinary class. Values are
+    /// refreshed on each method entry rather than cached once, because the
+    /// authoritative copy is the C struct and only that copy is written by the
+    /// callee of a native call.
+    pub(crate) fn seed_cstruct_fields_for_method(
+        &mut self,
+        receiver_class_name: &str,
+        invocant: Option<&Value>,
+    ) {
+        let Some(invocant) = invocant else { return };
+        let ValueView::Instance { attributes, .. } = invocant.view() else {
+            return;
+        };
+        if !attributes.contains_key("address") {
+            return;
+        }
+        let Some(registered) = self.cstruct_class_name(receiver_class_name) else {
+            return;
+        };
+        let Some(layout) = self.cstruct_layout(&registered) else {
+            return;
+        };
+        for field in &layout {
+            let name = field.name.clone();
+            if let Some(value) = self.cstruct_field_value(invocant, &name) {
+                attributes.insert(name.as_str(), value);
+            }
+        }
+    }
+}

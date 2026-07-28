@@ -113,25 +113,15 @@ variable compiles to `CallMethodMut` while `Type.meth` compiles to `CallMethod`.
 
 ## What is still between this and a query
 
-`$dbh.prepare` gets as far as `MoarVM::Guts::REPRs`' `MVMArrayB.realstart` and
-stops, for one reason with a clean repro: **`nativecast` tags a handle with the
-class's short base name**, so a CStruct declared inside a module does not match
-its own registration.
+`$dbh.prepare` needed `MoarVM::Guts::REPRs`' `MVMArrayB.realstart` to be
+reachable and able to read its own fields; both landed alongside this — see
+[cstruct-handles-carry-their-registered-name.md](cstruct-handles-carry-their-registered-name.md).
 
-```raku
-# M4.rakumod --- unit module M4; my class BB is repr('CStruct') { … method realstart { … } }
-say BB.^name;             # M4::BB   (both)
-say mkBB($p).^name;       # raku: M4::BB    mutsu: BB
-say mkBB($p).realstart;   # raku: works     mutsu: No such method
-```
-
-Recorded as
-[todo/tickets/nativecast-tags-handles-with-the-short-class-name.md](../../todo/tickets/nativecast-tags-handles-with-the-short-class-name.md),
-along with its sibling: `$!attr` inside a CStruct class's own method does not
-read native memory (only the generated `$obj.attr` accessor does).
-
-The other open item is `DBIish.connect(…)`'s front door: `install-driver` loads
-the driver with `require`, and a `require`d module's methods do not see the
-types its `use` imported —
-[todo/tickets/require-loaded-module-loses-use-imports.md](../../todo/tickets/require-loaded-module-loses-use-imports.md).
+What remains is a `:$stmt` colonpair losing sight of the `with … -> $stmt`
+binding it names
+([todo/tickets/colonpair-shorthand-loses-an-outer-pointy-binding.md](../../todo/tickets/colonpair-shorthand-loses-an-outer-pointy-binding.md)),
+and `DBIish.connect(…)`'s front door: `install-driver` loads the driver with
+`require`, and a `require`d module's methods do not see the types its `use`
+imported
+([todo/tickets/require-loaded-module-loses-use-imports.md](../../todo/tickets/require-loaded-module-loses-use-imports.md)).
 The `use` path above is unaffected.
