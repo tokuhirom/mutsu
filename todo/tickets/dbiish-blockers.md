@@ -30,7 +30,16 @@ mutsu $INC t/45-sqlite-common.rakutest
 `raku $INC …` passes one giant argument and every file "fails" under raku too —
 a bogus baseline that wastes a session.
 
-## Status: mutsu 8/9 (raku parity on 8 of the 9), the ninth one assertion short
+## Status: **9/9 — raku parity on every file** (2026-07-28)
+
+The three fixes that closed the last file are recorded in
+[`news/2026-07/buf-repr-body-and-native-storage.md`](../../news/2026-07/buf-repr-body-and-native-storage.md),
+[`ternary-then-branch-enum-value.md`](../../news/2026-07/ternary-then-branch-enum-value.md)
+and
+[`hyper-descends-into-an-itemized-list.md`](../../news/2026-07/hyper-descends-into-an-itemized-list.md).
+What follows is the history of how it got here; nothing below is open work.
+
+### Earlier status: mutsu 8/9 (raku parity on 8 of the 9)
 
 **Updated 2026-07-26 (late):** `06-types` now passes 12/12 — see
 [`news/2026-07/punned-role-container-attribute-store.md`](../../news/2026-07/punned-role-container-attribute-store.md).
@@ -269,12 +278,12 @@ build a Junction, so the module read a junction instead of a body).
 The mysql driver installs now and `01-basic` runs its full plan: **34 of 35**,
 up from 3 failed of 30 run.
 
-**⑨ is now one assertion, and it is neither of those.** `$installed>>.key.sort`
-returns a nested one-element list, because a hyper method call on an itemized
-list treats it as a single element instead of descending — 
-[`hyper-method-call-on-itemized-list.md`](hyper-method-call-on-itemized-list.md).
-That is the last thing between `01-basic` and raku parity, and with it the last
-thing between `DBIish` and 9/9.
+**⑨ is closed.** The last assertion, `$installed>>.key.sort`, returned a nested
+one-element list because a hyper method call on an itemized list treated it as a
+single element instead of descending — fixed in
+[`news/2026-07/hyper-descends-into-an-itemized-list.md`](../../news/2026-07/hyper-descends-into-an-itemized-list.md).
+`01-basic` is **35/35, raku parity**, and with it `DBIish` is at raku parity on
+all nine files.
 
 ### ⑤ `06-types` — object hash keyed by type objects
 

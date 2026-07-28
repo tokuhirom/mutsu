@@ -112,12 +112,11 @@ section.
 - [ ] **Bundle the database battery — `DBIish` (SQLite).** The slot is **selected** and its survey is
       recorded in [docs/batteries/database.md](docs/batteries/database.md) (`DBIish` over `DB::SQLite`:
       449 dependents vs 0, maintained vs 2021, fewer deps, one API for several engines). It now runs
-      at **8/9 files, raku parity on 8** (it was 1/9 when the slot was chosen); the ledger is
-      `todo/tickets/dbiish-blockers.md`. The last file is the `mysql` driver, gated on
+      at **9/9 files, raku parity on every one** as of 2026-07-28 (it was 1/9 when the slot was
+      chosen); the ledger is `todo/tickets/dbiish-blockers.md`. The last file was the `mysql` driver, gated on
       [ADR-0015](docs/adr/0015-native-backed-container-storage-and-repr-bodies.md) — `DBDish::SQLite`
       does not need it, so bundling SQLite support is not blocked on that ADR (which is Accepted;
-      P0-P2 are landed, P3 remains). The mysql driver installs now; `01-basic` is one assertion short
-      of raku parity, on `todo/tickets/hyper-method-call-on-itemized-list.md`. Next: vendor
+      P0-P2 are landed, P3 remains). The mysql driver now runs at parity too. Next: vendor
       `DBIish` + `NativeLibs` + `NativeHelpers::Blob` and baseline the release gate.
       This is the next step toward "a web blog can be written with the bundle alone": the bundle can
       already fetch, render and parse JSON, but it cannot store.
@@ -408,10 +407,9 @@ sessions).
   `Blob`/`array`/`CArray` — designed in
   [ADR-0015](docs/adr/0015-native-backed-container-storage-and-repr-bodies.md) (Accepted), findings in
   `todo/deep/nativehelpers-blob-moarvm-guts.md`. **P2 (native-backed `Buf`/`Blob`) landed 2026-07-28**
-  and `pointer-to(Blob)` now works; the parser bug that followed is fixed too, so the mysql driver
-  installs and `01-basic` is one assertion short of parity
-  (`todo/tickets/hyper-method-call-on-itemized-list.md`). P3 (Raku-side `CArray[T]` / `array[T]`)
-  is still open.
+  and `pointer-to(Blob)` now works; the two follow-on bugs (a ternary then-branch enum value, and a
+  hyper not descending into an itemized list) are fixed too, so `DBIish` is at raku parity on all
+  nine files. P3 (Raku-side `CArray[T]` / `array[T]`) is still open.
 
 ---
 

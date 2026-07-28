@@ -1,13 +1,27 @@
 use super::*;
 use crate::symbol::Symbol;
 
-/// Itemize the hyper result of an element the hyper *descended into*.
+/// The elements a hyper walks over.
 ///
-/// Rakudo's `deepmap` (which non-nodal `>>.foo` is built on) recurses into an
-/// element that is `Iterable` and itemizes what comes back, but applies the
-/// method directly to a leaf and leaves that result alone. So `((1,),)>>.succ`
-/// is `($(2,),)` while `(1,2)>>.Array` stays `([1], [2])` — the deciding factor
-/// is the *source* element's shape, not the result's.
+/// This is deliberately **not** `value_to_list`, which answers a different
+/// question: how many elements a value contributes to a flattening list
+/// assignment. There an itemized list is one element, and rightly so — `my @x =
+/// $(1, 2)` has one. But itemization is a property of the *container* the value
+/// sits in, not of the list `>>` is walking, so Rakudo hypers straight into it:
+/// `$(:a(1), :b(2))>>.key` is `("a", "b")`, where reading it as a single element
+/// gave the one-element `($("a", "b"),)` and every downstream operation then saw
+/// one thing (`.sort` on it is a no-op — how `DBIish`'s `$installed>>.key.sort`
+/// came out unsorted).
+///
+/// Nested itemization is untouched: the *elements* keep theirs, because
+/// [`itemize_if_descended`] restores it per element.
+fn hyper_source_items(target: &Value) -> Vec<Value> {
+    match target.view() {
+        ValueView::Array(items, kind) if kind.is_itemized() => items.to_vec(),
+        _ => crate::runtime::value_to_list(target),
+    }
+}
+
 /// Whether a hyper subscript index is a *slice* (a Range or multi-element list),
 /// as opposed to a single scalar key/position. `@a>>.[0..2]` / `%h>>.{1,2}`
 /// desugar to `AT-POS`/`AT-KEY`, but a slice index must apply the postcircumfix
@@ -147,6 +161,13 @@ fn push_hyper_result(results: &mut Vec<Value>, result: Value) {
     }
 }
 
+/// Itemize the hyper result of an element the hyper *descended into*.
+///
+/// Rakudo's `deepmap` (which non-nodal `>>.foo` is built on) recurses into an
+/// element that is `Iterable` and itemizes what comes back, but applies the
+/// method directly to a leaf and leaves that result alone. So `((1,),)>>.succ`
+/// is `($(2,),)` while `(1,2)>>.Array` stays `([1], [2])` — the deciding factor
+/// is the *source* element's shape, not the result's.
 fn itemize_if_descended(source: &Value, result: Value) -> Value {
     if !matches!(
         source.view(),
@@ -354,7 +375,7 @@ impl Interpreter {
         {
             crate::value::value_buf::buf_elems_or_empty(&attributes)
         } else {
-            crate::runtime::value_to_list(&target)
+            hyper_source_items(&target)
         };
         let mut results = Vec::with_capacity(items.len());
         // A "nodal" hyper method (one natively defined on the list type, e.g.
@@ -1033,7 +1054,7 @@ impl Interpreter {
                 .map(|k| map.get(k).cloned().unwrap_or(Value::NIL))
                 .collect()
         } else {
-            crate::runtime::value_to_list(&target)
+            hyper_source_items(&target)
         };
         let mut results = Vec::with_capacity(items.len());
         let method = (!matches!(
