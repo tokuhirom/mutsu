@@ -385,16 +385,16 @@ impl Interpreter {
         if Self::is_buf_value(&val) {
             let bytes = Self::extract_buf_bytes(&val);
             let negated: Vec<Value> = bytes.iter().map(|b| Value::int((!b) as i64)).collect();
-            let mut attrs = std::collections::HashMap::new();
-            attrs.insert("bytes".to_string(), Value::array(negated));
             // Determine result type: if input is utf8, result is utf8; otherwise Buf
             let result_type = if let ValueView::Instance { class_name, .. } = val.view() {
                 class_name.resolve().to_string()
             } else {
                 "Buf".to_string()
             };
-            self.stack
-                .push(Value::make_instance(Symbol::intern(&result_type), attrs));
+            self.stack.push(crate::value::value_buf::make_buf(
+                Symbol::intern(&result_type),
+                negated,
+            ));
         } else {
             let s = crate::runtime::utils::coerce_to_str(&val);
             let negated: Vec<u8> = s.as_bytes().iter().map(|b| !b).collect();

@@ -1260,11 +1260,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         && let ValueView::Instance { attributes, .. } = target.view()
         && crate::runtime::Interpreter::is_buf_value(target)
     {
-        if let Some(ValueView::Array(bytes, ..)) = attributes.as_map().get("bytes").map(Value::view)
-        {
-            return Some(Ok(Value::array(bytes.to_vec())));
-        }
-        return Some(Ok(Value::array(Vec::new())));
+        return Some(Ok(Value::array(
+            crate::value::value_buf::buf_elems_or_empty(&attributes),
+        )));
     }
 
     // CX::Warn methods: message, resume

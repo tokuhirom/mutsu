@@ -54,15 +54,13 @@ impl Interpreter {
                 out.push(op(a, b) as u8);
             }
             let byte_vals: Vec<Value> = out.into_iter().map(|b| Value::int(b as i64)).collect();
-            let mut attrs = std::collections::HashMap::new();
-            attrs.insert("bytes".to_string(), Value::array(byte_vals));
             let result_type = match (Self::buf_class_name(left), Self::buf_class_name(right)) {
                 (Some(l), Some(r)) if l == r => l,
                 _ => "Buf".to_string(),
             };
-            Ok(Value::make_instance(
+            Ok(crate::value::value_buf::make_buf(
                 crate::symbol::Symbol::intern(&result_type),
-                attrs,
+                byte_vals,
             ))
         } else {
             // For strings, operate on Unicode codepoints (ordinal values)

@@ -1,5 +1,6 @@
 /// List/sequence operations: end, flat, sort, reverse, unique, repeated, floor,
 /// ceiling, round, truncate, narrow, sqrt
+use crate::value::value_buf::{buf_elems_or_empty, make_buf, with_buf_elems};
 use crate::value::{RuntimeError, Value, ValueView};
 use num_traits::{Signed, Zero};
 
@@ -31,13 +32,8 @@ pub(super) fn dispatch(
                     attributes,
                     ..
                 } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-                    if let Some(ValueView::Array(bytes, ..)) =
-                        attributes.as_map().get("bytes").map(Value::view)
-                    {
-                        Some(Ok(Value::int(bytes.len() as i64 - 1)))
-                    } else {
-                        Some(Ok(Value::int(-1)))
-                    }
+                    let len = with_buf_elems(&attributes, <[Value]>::len).unwrap_or(0);
+                    Some(Ok(Value::int(len as i64 - 1)))
                 }
                 ValueView::LazyList(_) => None,
                 _ => Some(Ok(Value::int(0))),
@@ -166,17 +162,9 @@ pub(super) fn dispatch(
                 attributes,
                 ..
             } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-                let mut bytes = if let Some(ValueView::Array(items, ..)) =
-                    attributes.as_map().get("bytes").map(Value::view)
-                {
-                    items.to_vec()
-                } else {
-                    Vec::new()
-                };
+                let mut bytes = buf_elems_or_empty(&attributes);
                 bytes.reverse();
-                let mut attrs = std::collections::HashMap::new();
-                attrs.insert("bytes".to_string(), Value::array(bytes));
-                Some(Ok(Value::make_instance(class_name, attrs)))
+                Some(Ok(make_buf(class_name, bytes)))
             }
             _ => None,
         }),

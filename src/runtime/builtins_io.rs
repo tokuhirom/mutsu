@@ -215,9 +215,10 @@ impl Interpreter {
                 .into_iter()
                 .map(|b| Value::int(i64::from(b)))
                 .collect();
-            let mut attrs = HashMap::new();
-            attrs.insert("bytes".to_string(), Value::array(byte_vals));
-            return Ok(Value::make_instance(Symbol::intern("Buf[uint8]"), attrs));
+            return Ok(crate::value::value_buf::make_buf(
+                Symbol::intern("Buf[uint8]"),
+                byte_vals,
+            ));
         }
         // If a non-UTF-8 encoding is specified, read raw bytes and decode
         let needs_non_utf8 = enc.as_ref().is_some_and(|e| {

@@ -51,9 +51,10 @@ impl Interpreter {
                         .into_iter()
                         .map(|b| Value::int(i64::from(b)))
                         .collect();
-                    let mut attrs = HashMap::new();
-                    attrs.insert("bytes".to_string(), Value::array(byte_vals));
-                    return Ok(Value::make_instance(Symbol::intern("Buf[uint8]"), attrs));
+                    return Ok(crate::value::value_buf::make_buf(
+                        Symbol::intern("Buf[uint8]"),
+                        byte_vals,
+                    ));
                 }
                 // A non-utf-8 encoding reads raw bytes and decodes; utf-8 reads
                 // the string directly (stripping a leading BOM).

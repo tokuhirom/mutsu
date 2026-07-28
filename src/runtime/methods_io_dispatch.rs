@@ -1,6 +1,9 @@
 use super::*;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
+use crate::value::value_buf::{
+    buf_elems_or_empty, bytes_to_elems, make_buf, set_buf_elems, with_buf_elems,
+};
 
 impl Interpreter {
     /// Interpreter-native `.encode` (a `Cool` scalar -> `Buf`) and `.decode`
@@ -141,14 +144,14 @@ impl Interpreter {
             None => raw_input,
         };
         let translated = self.translate_newlines_for_encode(&input);
-        let mut attrs = HashMap::new();
+        let mut attrs = crate::value::AttrMap::new();
         let type_name = match normalized_encoding.as_str() {
             "utf-16" | "utf16" => {
                 let units: Vec<Value> = translated
                     .encode_utf16()
                     .map(|u| Value::int(u as i64))
                     .collect();
-                attrs.insert("bytes".to_string(), Value::array(units));
+                set_buf_elems(&mut attrs, units);
                 "utf16"
             }
             _ => {
@@ -157,9 +160,7 @@ impl Interpreter {
                     &encoding,
                     replacement.as_deref(),
                 )?;
-                let bytes_vals: Vec<Value> =
-                    bytes.into_iter().map(|b| Value::int(b as i64)).collect();
-                attrs.insert("bytes".to_string(), Value::array(bytes_vals));
+                set_buf_elems(&mut attrs, bytes_to_elems(&bytes));
                 match normalized_encoding.as_str() {
                     "utf-8" | "utf8" => "utf8",
                     _ => "Blob[uint8]",
@@ -201,9 +202,7 @@ impl Interpreter {
                 .map(|e| e.name.as_str().to_lowercase())
                 .unwrap_or_else(|| encoding.to_lowercase());
             let bytes = if is_wide {
-                if let Some(ValueView::Array(items, ..)) =
-                    attributes.as_map().get("bytes").map(|v| v.view())
-                {
+                with_buf_elems(&attributes, |items| {
                     let use_be = normalized_encoding == "utf-16be";
                     let mut out = Vec::with_capacity(items.len() * 2);
                     for item in items.iter() {
@@ -219,21 +218,19 @@ impl Interpreter {
                         out.extend_from_slice(&pair);
                     }
                     out
-                } else {
-                    Vec::new()
-                }
-            } else if let Some(ValueView::Array(items, ..)) =
-                attributes.as_map().get("bytes").map(|v| v.view())
-            {
-                items
-                    .iter()
-                    .map(|v| match v.view() {
-                        ValueView::Int(i) => i as u8,
-                        _ => 0,
-                    })
-                    .collect()
+                })
+                .unwrap_or_default()
             } else {
-                Vec::new()
+                with_buf_elems(&attributes, |items| {
+                    items
+                        .iter()
+                        .map(|v| match v.view() {
+                            ValueView::Int(i) => i as u8,
+                            _ => 0,
+                        })
+                        .collect::<Vec<u8>>()
+                })
+                .unwrap_or_default()
             };
             let decoded = match self.decode_with_encoding_and_replacement(
                 &bytes,
@@ -261,13 +258,7 @@ impl Interpreter {
         } = target.view()
             && (class_name == "Buf" || class_name == "Blob")
         {
-            let bytes = if let Some(ValueView::Array(items, ..)) =
-                attributes.as_map().get("bytes").map(|v| v.view())
-            {
-                items.to_vec()
-            } else {
-                Vec::new()
-            };
+            let bytes = buf_elems_or_empty(&attributes);
             let len = bytes.len();
             let start_raw = args
                 .first()
@@ -295,12 +286,7 @@ impl Interpreter {
             } else {
                 len
             };
-            let mut attrs = HashMap::new();
-            attrs.insert(
-                "bytes".to_string(),
-                Value::array(bytes[start..end].to_vec()),
-            );
-            return Some(Ok(Value::make_instance(class_name, attrs)));
+            return Some(Ok(make_buf(class_name, bytes[start..end].to_vec())));
         }
         None
     }

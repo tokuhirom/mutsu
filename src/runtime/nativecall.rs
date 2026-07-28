@@ -800,15 +800,12 @@ fn marshal_arg(ps: &ParamSpec, raw: &Value) -> Result<(libffi::middle::Type, Arg
 fn buf_instance_bytes(v: &Value) -> Option<Vec<u8>> {
     match v.view() {
         ValueView::Instance { attributes, .. } => {
-            match attributes.as_map().get("bytes").map(|b| b.view()) {
-                Some(ValueView::Array(items, ..)) => Some(
-                    items
-                        .iter()
-                        .map(|b| crate::runtime::to_int(b) as u8)
-                        .collect(),
-                ),
-                _ => None,
-            }
+            crate::value::value_buf::with_buf_elems(&attributes, |items| {
+                items
+                    .iter()
+                    .map(|b| crate::runtime::to_int(b) as u8)
+                    .collect::<Vec<u8>>()
+            })
         }
         ValueView::Scalar(inner) => buf_instance_bytes(inner),
         ValueView::ContainerRef(cell) => cell.lock().ok().and_then(|g| buf_instance_bytes(&g)),
@@ -841,8 +838,10 @@ fn buf_instance_pin_key(v: &Value) -> Option<usize> {
 fn write_buf_instance_bytes(v: &Value, bytes: &[u8]) {
     match v.view() {
         ValueView::Instance { attributes, .. } => {
-            let byte_vals: Vec<Value> = bytes.iter().map(|b| Value::int(*b as i64)).collect();
-            attributes.insert("bytes".to_string(), Value::array(byte_vals));
+            crate::value::value_buf::store_buf_elems(
+                &attributes,
+                crate::value::value_buf::bytes_to_elems(bytes),
+            );
         }
         ValueView::Scalar(inner) => write_buf_instance_bytes(inner, bytes),
         ValueView::ContainerRef(cell) => {

@@ -20,18 +20,16 @@ impl Interpreter {
                     || cn.starts_with("Blob[")
             } =>
             {
-                if let Some(ValueView::Array(items, ..)) =
-                    attributes.as_map().get("bytes").map(Value::view)
-                {
-                    Some(
-                        items
-                            .iter()
-                            .map(|v| match v.view() {
-                                ValueView::Int(i) => i as u8,
-                                _ => 0,
-                            })
-                            .collect(),
-                    )
+                if let Some(bytes) = crate::value::value_buf::with_buf_elems(&attributes, |items| {
+                    items
+                        .iter()
+                        .map(|v| match v.view() {
+                            ValueView::Int(i) => i as u8,
+                            _ => 0,
+                        })
+                        .collect::<Vec<u8>>()
+                }) {
+                    Some(bytes)
                 } else {
                     Some(Vec::new())
                 }
@@ -265,9 +263,9 @@ impl Interpreter {
 
     /// Create a Buf instance from raw bytes
     pub(crate) fn make_buf(bytes: Vec<u8>) -> Value {
-        let byte_vals: Vec<Value> = bytes.into_iter().map(|b| Value::int(b as i64)).collect();
-        let mut attrs = HashMap::new();
-        attrs.insert("bytes".to_string(), Value::array(byte_vals));
-        Value::make_instance(crate::symbol::Symbol::intern("Buf[uint8]"), attrs)
+        crate::value::value_buf::make_buf(
+            crate::symbol::Symbol::intern("Buf[uint8]"),
+            crate::value::value_buf::bytes_to_elems(&bytes),
+        )
     }
 }

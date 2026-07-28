@@ -10,6 +10,9 @@ use super::*;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
 use crate::value::signature::extract_sig_info;
+use crate::value::value_buf::{
+    buf_elems_or_empty, bytes_to_elems, make_buf, set_buf_elems, with_buf_elems,
+};
 
 impl Interpreter {
     /// A `.raku`-legal identifier derived from a `rakuseen` id, used for the
@@ -643,9 +646,7 @@ impl Interpreter {
                         attributes,
                         ..
                     } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-                        if let Some(ValueView::Array(items, _)) =
-                            attributes.as_map().get("bytes").map(|b| b.view())
-                        {
+                        with_buf_elems(&attributes, |items| {
                             let bytes: Vec<u8> = items
                                 .iter()
                                 .map(|v| match v.view() {
@@ -654,9 +655,8 @@ impl Interpreter {
                                 })
                                 .collect();
                             String::from_utf8_lossy(&bytes).to_string()
-                        } else {
-                            String::new()
-                        }
+                        })
+                        .unwrap_or_default()
                     }
                     _ => v.to_string_value(),
                 },
@@ -773,19 +773,17 @@ impl Interpreter {
                     } => {
                         let cn = class_name.resolve();
                         if crate::runtime::utils::is_buf_or_blob_class(&cn) {
-                            let mut v: Vec<u8> = Vec::new();
-                            if let Some(ValueView::Array(items, ..)) =
-                                attributes.as_map().get("bytes").map(|b| b.view())
-                            {
-                                v.reserve(items.len());
-                                for it in items.iter() {
-                                    v.push(match it.view() {
+                            let v = with_buf_elems(&attributes, |items| {
+                                items
+                                    .iter()
+                                    .map(|it| match it.view() {
                                         ValueView::Int(i) => i.clamp(0, 255) as u8,
                                         ValueView::Num(f) => (f as i64).clamp(0, 255) as u8,
                                         _ => 0,
-                                    });
-                                }
-                            }
+                                    })
+                                    .collect::<Vec<u8>>()
+                            })
+                            .unwrap_or_default();
                             (
                                 true,
                                 Some(cn),
@@ -833,10 +831,7 @@ impl Interpreter {
                     let id = id_opt.unwrap();
                     let updated_cell = attrs_opt.unwrap();
                     let mut updated_map = updated_cell.to_map();
-                    updated_map.insert(
-                        "bytes".to_string(),
-                        Value::array(bytes.into_iter().map(|b| Value::int(b as i64)).collect()),
-                    );
+                    set_buf_elems(&mut updated_map, bytes_to_elems(&bytes));
                     return Ok(Value::write_back_sharing(
                         &updated_cell,
                         class_sym,
@@ -873,19 +868,17 @@ impl Interpreter {
                     } => {
                         let cn = class_name.resolve();
                         if crate::runtime::utils::is_buf_or_blob_class(&cn) {
-                            let mut v: Vec<u8> = Vec::new();
-                            if let Some(ValueView::Array(items, ..)) =
-                                attributes.as_map().get("bytes").map(|b| b.view())
-                            {
-                                v.reserve(items.len());
-                                for it in items.iter() {
-                                    v.push(match it.view() {
+                            let v = with_buf_elems(&attributes, |items| {
+                                items
+                                    .iter()
+                                    .map(|it| match it.view() {
                                         ValueView::Int(i) => i.clamp(0, 255) as u8,
                                         ValueView::Num(f) => (f as i64).clamp(0, 255) as u8,
                                         _ => 0,
-                                    });
-                                }
-                            }
+                                    })
+                                    .collect::<Vec<u8>>()
+                            })
+                            .unwrap_or_default();
                             (
                                 true,
                                 Some(cn),
@@ -933,10 +926,7 @@ impl Interpreter {
                     let id = id_opt.unwrap();
                     let updated_cell = attrs_opt.unwrap();
                     let mut updated_map = updated_cell.to_map();
-                    updated_map.insert(
-                        "bytes".to_string(),
-                        Value::array(bytes.into_iter().map(|b| Value::int(b as i64)).collect()),
-                    );
+                    set_buf_elems(&mut updated_map, bytes_to_elems(&bytes));
                     return Ok(Value::write_back_sharing(
                         &updated_cell,
                         class_sym,
@@ -1922,19 +1912,11 @@ impl Interpreter {
                     Some(v) => super::to_int(v) as usize,
                     None => 0,
                 };
-                let mut bytes = if let Some(ValueView::Array(items, ..)) =
-                    attributes.as_map().get("bytes").map(|b| b.view())
-                {
-                    items.to_vec()
-                } else {
-                    Vec::new()
-                };
+                let mut bytes = buf_elems_or_empty(&attributes);
                 // When growing, fill with zeros; when shrinking, truncate
                 // After reallocate(0).reallocate(N), the new bytes should be zeros
                 bytes.resize(new_size, Value::int(0));
-                let mut attrs = std::collections::HashMap::new();
-                attrs.insert("bytes".to_string(), Value::array(bytes));
-                return Ok(Value::make_instance(class_name, attrs));
+                return Ok(make_buf(class_name, bytes));
             }
         }
         // Buf/Blob push/append/unshift/prepend on non-variable (rvalue) targets,
@@ -1976,13 +1958,7 @@ impl Interpreter {
                         return Err(err);
                     }
                 }
-                let mut bytes = if let Some(ValueView::Array(items, ..)) =
-                    attributes.as_map().get("bytes").map(|b| b.view())
-                {
-                    items.to_vec()
-                } else {
-                    Vec::new()
-                };
+                let mut bytes = buf_elems_or_empty(&attributes);
                 let new_items = Self::flatten_buf_args(args);
                 match method {
                     "append" | "push" => bytes.extend(new_items),
@@ -1993,9 +1969,7 @@ impl Interpreter {
                     }
                     _ => unreachable!(),
                 }
-                let mut attrs = std::collections::HashMap::new();
-                attrs.insert("bytes".to_string(), Value::array(bytes));
-                return Ok(Value::make_instance(class_name, attrs));
+                return Ok(make_buf(class_name, bytes));
             }
         }
         // Buf/Blob pop/shift on non-variable targets (e.g. Buf.new.pop throws X::Cannot::Empty)
@@ -2014,13 +1988,7 @@ impl Interpreter {
                         cn, method
                     )));
                 }
-                let bytes = if let Some(ValueView::Array(items, ..)) =
-                    attributes.as_map().get("bytes").map(|b| b.view())
-                {
-                    items.to_vec()
-                } else {
-                    Vec::new()
-                };
+                let bytes = buf_elems_or_empty(&attributes);
                 if bytes.is_empty() {
                     let mut ex_attrs = std::collections::HashMap::new();
                     ex_attrs.insert("action".to_string(), Value::str(method.to_string()));

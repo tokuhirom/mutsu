@@ -211,16 +211,16 @@ impl Interpreter {
                     || cn.starts_with("Blob[")
             } =>
             {
-                if let Some(bytes_v) = attributes.as_map().get("bytes")
-                    && let ValueView::Array(items, ..) = bytes_v.view()
-                {
-                    return items
+                if let Some(bytes) = crate::value::value_buf::with_buf_elems(&attributes, |items| {
+                    items
                         .iter()
                         .map(|v| match v.view() {
                             ValueView::Int(i) => i as u8,
                             _ => 0,
                         })
-                        .collect();
+                        .collect::<Vec<u8>>()
+                }) {
+                    return bytes;
                 }
                 Vec::new()
             }
@@ -229,9 +229,7 @@ impl Interpreter {
                 attributes,
                 ..
             } if class_name == "utf16" => {
-                if let Some(bytes_v) = attributes.as_map().get("bytes")
-                    && let ValueView::Array(items, ..) = bytes_v.view()
-                {
+                if let Some(items) = crate::value::value_buf::buf_elems(&attributes) {
                     let use_be = normalized == "utf-16be";
                     let mut bytes = Vec::with_capacity(items.len() * 2);
                     for item in items.iter() {

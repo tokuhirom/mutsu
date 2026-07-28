@@ -308,13 +308,11 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     || cn.starts_with("blob")
             } =>
             {
-                if let Some(ValueView::Array(items, ..)) =
-                    attributes.as_map().get("bytes").map(Value::view)
-                {
-                    Some(Ok(Value::array_with_kind(
-                        items.clone(),
-                        crate::value::ArrayKind::List,
-                    )))
+                if let Some(list) = crate::value::value_buf::buf_elems_as_array(
+                    &attributes.as_map(),
+                    crate::value::ArrayKind::List,
+                ) {
+                    Some(Ok(list))
                 } else {
                     Some(Ok(Value::array_with_kind(
                         crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
@@ -563,11 +561,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         || cn.starts_with("blob")
                 } =>
                 {
-                    let bytes = match attributes.as_map().get("bytes").map(Value::view) {
-                        Some(ValueView::Array(items, ..)) => items.to_vec(),
-                        _ => Vec::new(),
-                    };
-                    Some(Ok(wrap(bytes)))
+                    Some(Ok(wrap(crate::value::value_buf::buf_elems_or_empty(
+                        &attributes,
+                    ))))
                 }
                 // A shaped array falls through to the slow path (flatten + Nil
                 // → type-default). Non-shaped arrays keep the fast path.
@@ -847,10 +843,7 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
                 || cn.starts_with("blob")
         } =>
         {
-            let positional = match attributes.as_map().get("bytes").map(Value::view) {
-                Some(ValueView::Array(items, ..)) => items.iter().cloned().collect(),
-                _ => vec![],
-            };
+            let positional = crate::value::value_buf::buf_elems_or_empty(&attributes);
             Ok(Value::capture(positional, HashMap::new()))
         }
         // Numeric types follow Mu.Capture: public attributes become nameds.

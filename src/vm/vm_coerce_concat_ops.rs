@@ -318,10 +318,10 @@ impl Interpreter {
             };
             let mut bytes = Self::extract_buf_bytes(&left);
             bytes.extend(Self::extract_buf_bytes(&right));
-            let byte_vals: Vec<Value> = bytes.into_iter().map(|b| Value::int(b as i64)).collect();
-            let mut attrs = std::collections::HashMap::new();
-            attrs.insert("bytes".to_string(), Value::array(byte_vals));
-            return Value::make_instance(result_class, attrs);
+            return crate::value::value_buf::make_buf(
+                result_class,
+                crate::value::value_buf::bytes_to_elems(&bytes),
+            );
         }
         // Buf ~ non-Buf or non-Buf ~ Buf: decode the Buf and produce a Str
         if Self::is_buf_value(&left) || Self::is_buf_value(&right) {
@@ -375,16 +375,17 @@ impl Interpreter {
 
     pub fn extract_buf_bytes(val: &Value) -> Vec<u8> {
         if let ValueView::Instance { attributes, .. } = val.view()
-            && let Some(ValueView::Array(items, ..)) =
-                attributes.as_map().get("bytes").map(Value::view)
+            && let Some(bytes) = crate::value::value_buf::with_buf_elems(&attributes, |items| {
+                items
+                    .iter()
+                    .map(|v| match v.view() {
+                        ValueView::Int(i) => i as u8,
+                        _ => 0,
+                    })
+                    .collect::<Vec<u8>>()
+            })
         {
-            return items
-                .iter()
-                .map(|v| match v.view() {
-                    ValueView::Int(i) => i as u8,
-                    _ => 0,
-                })
-                .collect();
+            return bytes;
         }
         Vec::new()
     }

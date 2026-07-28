@@ -515,10 +515,12 @@ pub(crate) fn native_method_1arg(
                         attributes,
                         ..
                     } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-                        if let Some(ValueView::Array(bytes, ..)) =
-                            attributes.as_map().get("bytes").map(Value::view)
+                        if let Some(b) =
+                            crate::value::value_buf::with_buf_elems(&attributes, |items| {
+                                items.get(idx).cloned().unwrap_or(Value::int(0))
+                            })
                         {
-                            return Some(Ok(bytes.get(idx).cloned().unwrap_or(Value::int(0))));
+                            return Some(Ok(b));
                         }
                         Some(Ok(Value::int(0)))
                     }

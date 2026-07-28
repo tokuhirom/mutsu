@@ -724,9 +724,7 @@ impl Interpreter {
                         if !class_ok {
                             return false;
                         }
-                        if let Some(ValueView::Array(items, ..)) =
-                            attributes.as_map().get("bytes").map(Value::view)
-                        {
+                        if let Some(items) = crate::value::value_buf::buf_elems(&attributes) {
                             return items.iter().all(|v| self.type_matches_value(inner, v));
                         }
                     }

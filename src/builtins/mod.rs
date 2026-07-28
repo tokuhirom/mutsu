@@ -285,9 +285,10 @@ fn decode_buf_target_bytes(target: &Value, encoding_name: &str) -> Option<Vec<u8
     }
 
     let map = attributes.as_map();
-    let ValueView::Array(items, ..) = map.get("bytes")?.view() else {
-        return Some(Vec::new());
-    };
+    if !crate::value::value_buf::has_buf_elems_in(&map) {
+        return None;
+    }
+    let items = crate::value::value_buf::buf_elems_in(&map).unwrap_or_default();
 
     let cn = class_name.resolve();
     // buf16 / Buf[uint16] / utf16 store 16-bit code units; expand each to 2 bytes

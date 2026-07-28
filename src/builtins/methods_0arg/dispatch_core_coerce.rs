@@ -2,6 +2,7 @@
 /// Num, Real, Numeric, Bridge
 use crate::runtime;
 use crate::symbol::Symbol;
+use crate::value::value_buf::{buf_storage, set_buf_storage, with_buf_elems};
 use crate::value::{RuntimeError, Value, ValueView};
 use num_traits::{ToPrimitive, Zero};
 use std::sync::Arc;
@@ -137,13 +138,11 @@ pub(super) fn dispatch(
         } = target.view()
         && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
     {
-        let bytes = attributes
-            .as_map()
-            .get("bytes")
-            .cloned()
-            .unwrap_or_else(|| Value::array(Vec::new()));
-        let mut attrs = std::collections::HashMap::new();
-        attrs.insert("bytes".to_string(), bytes);
+        let mut attrs = crate::value::AttrMap::new();
+        set_buf_storage(
+            &mut attrs,
+            buf_storage(&attributes.as_map()).unwrap_or_else(|| Value::array(Vec::new())),
+        );
         let target_class = if method == "Buf" { "Buf" } else { "Blob" };
         return Some(Some(Ok(Value::make_instance(
             Symbol::intern(target_class),
@@ -753,13 +752,7 @@ pub(super) fn dispatch(
                     attributes,
                     ..
                 } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-                    if let Some(ValueView::Array(bytes, ..)) =
-                        attributes.as_map().get("bytes").map(Value::view)
-                    {
-                        Value::int(bytes.len() as i64)
-                    } else {
-                        Value::int(0)
-                    }
+                    Value::int(with_buf_elems(&attributes, <[Value]>::len).unwrap_or(0) as i64)
                 }
                 // A StrDistance's `.Int` is the edit distance between its
                 // before/after strings, matching `+$str-dist` / `.Numeric`.
@@ -1096,13 +1089,7 @@ pub(super) fn dispatch(
                     attributes,
                     ..
                 } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-                    if let Some(ValueView::Array(bytes, ..)) =
-                        attributes.as_map().get("bytes").map(Value::view)
-                    {
-                        Value::int(bytes.len() as i64)
-                    } else {
-                        Value::int(0)
-                    }
+                    Value::int(with_buf_elems(&attributes, <[Value]>::len).unwrap_or(0) as i64)
                 }
                 ValueView::Instance {
                     class_name,

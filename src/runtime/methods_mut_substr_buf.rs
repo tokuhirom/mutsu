@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::value_buf::{buf_attrs, buf_elems, buf_elems_or_empty, make_buf};
 
 impl Interpreter {
     pub(crate) fn assign_substr_rw(
@@ -109,11 +110,8 @@ impl Interpreter {
         method_args: Vec<Value>,
         value: Value,
     ) -> Result<Value, RuntimeError> {
-        let mut items = if let ValueView::Instance { attributes, .. } = target.view()
-            && let Some(ValueView::Array(items, ..)) =
-                attributes.as_map().get("bytes").map(Value::view)
-        {
-            items.to_vec()
+        let mut items = if let ValueView::Instance { attributes, .. } = target.view() {
+            buf_elems_or_empty(&attributes)
         } else {
             Vec::new()
         };
@@ -133,11 +131,8 @@ impl Interpreter {
             None => items.len() - from,
         };
 
-        let new_bytes = if let ValueView::Instance { attributes, .. } = value.view()
-            && let Some(ValueView::Array(new_items, ..)) =
-                attributes.as_map().get("bytes").map(Value::view)
-        {
-            new_items.to_vec()
+        let new_bytes = if let ValueView::Instance { attributes, .. } = value.view() {
+            buf_elems_or_empty(&attributes)
         } else {
             Vec::new()
         };
@@ -151,9 +146,7 @@ impl Interpreter {
         } else {
             "Buf".to_string()
         };
-        let mut attrs = HashMap::new();
-        attrs.insert("bytes".to_string(), Value::array(items));
-        let new_buf = Value::make_instance(Symbol::intern(&class_name), attrs);
+        let new_buf = make_buf(Symbol::intern(&class_name), items);
 
         if let Some(var) = target_var {
             self.env.insert(var.to_string(), new_buf.clone());
@@ -182,13 +175,7 @@ impl Interpreter {
                     cn
                 )));
             }
-            let items = if let Some(ValueView::Array(items, ..)) =
-                attributes.as_map().get("bytes").map(Value::view)
-            {
-                items.to_vec()
-            } else {
-                Vec::new()
-            };
+            let items = buf_elems_or_empty(&attributes);
             (class_name, items, id, attributes.clone())
         } else {
             return Err(RuntimeError::new("Not a Buf".to_string()));
@@ -202,9 +189,8 @@ impl Interpreter {
         // uncatchable abort; `truncate` then handles the shrink case.
         Self::autoviv_resize(&mut bytes, new_size, Value::int(0))?;
         bytes.truncate(new_size);
-        let mut attrs = HashMap::new();
-        attrs.insert("bytes".to_string(), Value::array(bytes));
-        let updated = Value::write_back_sharing(&attrs_cell, class_name_sym, attrs, orig_id);
+        let updated =
+            Value::write_back_sharing(&attrs_cell, class_name_sym, buf_attrs(bytes), orig_id);
         self.env.insert(target_var.to_string(), updated.clone());
         Ok(updated)
     }
@@ -231,11 +217,7 @@ impl Interpreter {
                     attributes,
                     ..
                 } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-                    if let Some(ValueView::Array(items, ..)) =
-                        attributes.as_map().get("bytes").map(Value::view)
-                    {
-                        result.extend(items.to_vec());
-                    }
+                    result.extend(buf_elems_or_empty(&attributes));
                     true
                 }
                 _ => false,
@@ -277,14 +259,12 @@ impl Interpreter {
             ..
         } = target.view()
         {
-            let items = if let Some(ValueView::Array(items, ..)) =
-                attributes.as_map().get("bytes").map(Value::view)
-            {
-                items.to_vec()
-            } else {
-                Vec::new()
-            };
-            (class_name, items, id, attributes.clone())
+            (
+                class_name,
+                buf_elems_or_empty(&attributes),
+                id,
+                attributes.clone(),
+            )
         } else {
             return Err(RuntimeError::new("Not a Buf".to_string()));
         };
@@ -319,9 +299,8 @@ impl Interpreter {
             _ => unreachable!(),
         }
 
-        let mut attrs = HashMap::new();
-        attrs.insert("bytes".to_string(), Value::array(bytes));
-        let updated = Value::write_back_sharing(&attrs_cell, class_name_sym, attrs, orig_id);
+        let updated =
+            Value::write_back_sharing(&attrs_cell, class_name_sym, buf_attrs(bytes), orig_id);
         self.env.insert(target_var.to_string(), updated.clone());
         Ok(updated)
     }
@@ -348,14 +327,12 @@ impl Interpreter {
                     cn, method
                 )));
             }
-            let items = if let Some(ValueView::Array(items, ..)) =
-                attributes.as_map().get("bytes").map(Value::view)
-            {
-                items.to_vec()
-            } else {
-                Vec::new()
-            };
-            (class_name, items, id, attributes.clone())
+            (
+                class_name,
+                buf_elems_or_empty(&attributes),
+                id,
+                attributes.clone(),
+            )
         } else {
             return Err(RuntimeError::new("Not a Buf".to_string()));
         };
@@ -379,10 +356,12 @@ impl Interpreter {
                     return Err(err);
                 }
                 let popped = bytes.pop().unwrap();
-                let mut attrs = HashMap::new();
-                attrs.insert("bytes".to_string(), Value::array(bytes));
-                let updated =
-                    Value::write_back_sharing(&attrs_cell, class_name_sym, attrs, orig_id);
+                let updated = Value::write_back_sharing(
+                    &attrs_cell,
+                    class_name_sym,
+                    buf_attrs(bytes),
+                    orig_id,
+                );
                 self.env.insert(target_var.to_string(), updated);
                 Ok(popped)
             }
@@ -404,10 +383,12 @@ impl Interpreter {
                     return Err(err);
                 }
                 let shifted = bytes.remove(0);
-                let mut attrs = HashMap::new();
-                attrs.insert("bytes".to_string(), Value::array(bytes));
-                let updated =
-                    Value::write_back_sharing(&attrs_cell, class_name_sym, attrs, orig_id);
+                let updated = Value::write_back_sharing(
+                    &attrs_cell,
+                    class_name_sym,
+                    buf_attrs(bytes),
+                    orig_id,
+                );
                 self.env.insert(target_var.to_string(), updated);
                 Ok(shifted)
             }
@@ -453,16 +434,9 @@ impl Interpreter {
                 for arg in args.iter().skip(2) {
                     match arg.view() {
                         ValueView::Instance { attributes, .. }
-                            if matches!(
-                                attributes.as_map().get("bytes").map(Value::view),
-                                Some(ValueView::Array(..))
-                            ) =>
+                            if buf_elems(&attributes).is_some() =>
                         {
-                            if let Some(ValueView::Array(items, ..)) =
-                                attributes.as_map().get("bytes").map(Value::view)
-                            {
-                                replacement.extend(items.iter().cloned());
-                            }
+                            replacement.extend(buf_elems_or_empty(&attributes));
                         }
                         // A plain list/array of replacement values (`<3 2 1>`,
                         // `(3, 2, 1)`): coerce each element to a byte, matching
@@ -474,14 +448,14 @@ impl Interpreter {
                     }
                 }
                 let removed: Vec<Value> = bytes.splice(start..end, replacement).collect();
-                let mut attrs = HashMap::new();
-                attrs.insert("bytes".to_string(), Value::array(bytes));
-                let updated =
-                    Value::write_back_sharing(&attrs_cell, class_name_sym, attrs, orig_id);
+                let updated = Value::write_back_sharing(
+                    &attrs_cell,
+                    class_name_sym,
+                    buf_attrs(bytes),
+                    orig_id,
+                );
                 self.env.insert(target_var.to_string(), updated);
-                let mut result_attrs = HashMap::new();
-                result_attrs.insert("bytes".to_string(), Value::array(removed));
-                Ok(Value::make_instance(class_name_sym, result_attrs))
+                Ok(make_buf(class_name_sym, removed))
             }
             _ => unreachable!(),
         }

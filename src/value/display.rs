@@ -718,9 +718,7 @@ impl Value {
                 attributes,
                 ..
             } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-                if let Some(ValueView::Array(bytes, ..)) =
-                    attributes.as_map().get("bytes").map(Value::view)
-                {
+                crate::value::value_buf::with_buf_elems(&attributes, |bytes| {
                     if bytes.is_empty() {
                         // An empty Blob/Buf *instance* gists as `Blob:0x<>` (the
                         // hex body is just empty), not `Blob()` — that spelling
@@ -758,9 +756,8 @@ impl Value {
                             .collect();
                         format!("{}:0x<{}>", class_name, hex.join(" "))
                     }
-                } else {
-                    format!("{}()", class_name)
-                }
+                })
+                .unwrap_or_else(|| format!("{}()", class_name))
             }
             ValueView::Instance {
                 class_name,

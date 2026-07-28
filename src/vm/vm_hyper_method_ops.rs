@@ -352,13 +352,7 @@ impl Interpreter {
         } = target.view()
             && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
         {
-            if let Some(ValueView::Array(bytes, ..)) =
-                attributes.as_map().get("bytes").map(Value::view)
-            {
-                bytes.to_vec()
-            } else {
-                Vec::new()
-            }
+            crate::value::value_buf::buf_elems_or_empty(&attributes)
         } else {
             crate::runtime::value_to_list(&target)
         };

@@ -30,8 +30,10 @@ fn extend_buffer_from_value(out: &mut Vec<u8>, v: &Value) {
             }
         }
         ValueView::Instance { attributes, .. } => {
-            if let Some(bytes_val) = attributes.as_map().get("bytes") {
-                extend_buffer_from_value(out, bytes_val);
+            for item in crate::value::value_buf::buf_elems_or_empty(&attributes) {
+                if let Some(b) = value_to_byte(&item) {
+                    out.push(b);
+                }
             }
         }
         _ => {}
@@ -198,9 +200,10 @@ impl Interpreter {
                     }
                 }
 
-                let mut attrs = HashMap::new();
-                attrs.insert("bytes".to_string(), Value::array(bytes));
-                Ok(Value::make_instance(Symbol::intern("Blob[uint8]"), attrs))
+                Ok(crate::value::value_buf::make_buf(
+                    Symbol::intern("Blob[uint8]"),
+                    bytes,
+                ))
             }
             "WHAT" => Ok(Value::package(Symbol::intern("Encoding::Encoder"))),
             _ => Ok(Value::NIL),

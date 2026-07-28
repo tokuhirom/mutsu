@@ -811,10 +811,10 @@ impl Interpreter {
             }
         }
         // Buf/Blob element and slice assignment (`$b[i] = v` / `$b[i,j] = v,w`):
-        // mutate the underlying "bytes" array in place through the instance's
+        // mutate the element storage in place through the instance's
         // shared attribute cell. Buf identity lives in that cell (not the
         // variable slot it happens to be stored in), so no `env_root_descended_mut`
-        // rebind is needed — a `with_attr_mut` write is visible to every alias.
+        // rebind is needed — a `with_buf_elems_mut` write is visible to every alias.
         // `:=`-binding to a Buf index is not handled here (falls through to the
         // generic path below, unchanged from before this fix).
         if !bind_mode
@@ -842,20 +842,17 @@ impl Interpreter {
                     let max_idx = indices.iter().copied().max().unwrap_or(0);
                     let mut resize_err = None;
                     let mut assigned = Vec::new();
-                    attributes.with_attr_mut("bytes", |bytes_val| {
-                        let _ = bytes_val.with_array_mut(|items, _| {
-                            let arr = crate::gc::Gc::make_mut(items);
-                            if let Err(e) = Self::autoviv_resize(arr, max_idx + 1, Value::int(0)) {
-                                resize_err = Some(e);
-                                return;
-                            }
-                            for (i, &pos) in indices.iter().enumerate() {
-                                let v = vals.get(i).cloned().unwrap_or(Value::NIL);
-                                let byte = crate::runtime::to_int(&v) & 0xff;
-                                arr[pos] = Value::int(byte);
-                                assigned.push(Value::int(byte));
-                            }
-                        });
+                    crate::value::value_buf::with_buf_elems_mut(&attributes, |arr| {
+                        if let Err(e) = Self::autoviv_resize(arr, max_idx + 1, Value::int(0)) {
+                            resize_err = Some(e);
+                            return;
+                        }
+                        for (i, &pos) in indices.iter().enumerate() {
+                            let v = vals.get(i).cloned().unwrap_or(Value::NIL);
+                            let byte = crate::runtime::to_int(&v) & 0xff;
+                            arr[pos] = Value::int(byte);
+                            assigned.push(Value::int(byte));
+                        }
                     });
                     if let Some(e) = resize_err {
                         return Err(e);
@@ -865,15 +862,12 @@ impl Interpreter {
                 } else if let Some(pos) = Self::index_to_usize(&idx) {
                     let byte = crate::runtime::to_int(&val) & 0xff;
                     let mut resize_err = None;
-                    attributes.with_attr_mut("bytes", |bytes_val| {
-                        let _ = bytes_val.with_array_mut(|items, _| {
-                            let arr = crate::gc::Gc::make_mut(items);
-                            if let Err(e) = Self::autoviv_resize(arr, pos + 1, Value::int(0)) {
-                                resize_err = Some(e);
-                                return;
-                            }
-                            arr[pos] = Value::int(byte);
-                        });
+                    crate::value::value_buf::with_buf_elems_mut(&attributes, |arr| {
+                        if let Err(e) = Self::autoviv_resize(arr, pos + 1, Value::int(0)) {
+                            resize_err = Some(e);
+                            return;
+                        }
+                        arr[pos] = Value::int(byte);
                     });
                     if let Some(e) = resize_err {
                         return Err(e);
