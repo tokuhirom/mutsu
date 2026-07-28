@@ -469,7 +469,14 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
             'g' | 'G' => {
                 let f = float_val();
                 if f.is_infinite() || f.is_nan() {
-                    format_inf_nan(f, plus_sign, space_flag)
+                    let rendered = format_inf_nan(f, plus_sign, space_flag);
+                    // 6.e: `%G` uppercases the special values (`INF`/`NAN`);
+                    // 6.d and earlier render them in `Inf`/`NaN` casing like `%g`.
+                    if v6e && spec == 'G' {
+                        rendered.to_ascii_uppercase()
+                    } else {
+                        rendered
+                    }
                 } else if z_mode {
                     // zprintf %g/%G: precision means decimal places (like %f),
                     // uses e/E notation for large/small numbers.

@@ -86,7 +86,7 @@ impl Interpreter {
         self.cur_source_line = 1;
         crate::parser::set_parser_lib_paths(self.lib_paths.clone());
         crate::parser::set_parser_program_path(self.program_path.clone());
-        let parse_result = crate::parse_dispatch::parse_source(&preprocessed);
+        let parse_result = crate::parse_dispatch::parse_compilation_unit(&preprocessed);
         crate::parser::clear_parser_lib_paths();
         // Emit any parse warnings (e.g. duplicate traits)
         for warning in crate::parser::take_parse_warnings() {

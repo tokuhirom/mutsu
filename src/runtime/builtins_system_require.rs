@@ -82,7 +82,7 @@ impl Interpreter {
         let preprocessed = Self::maybe_preprocess_roast_directives(&code);
         crate::parser::set_parser_lib_paths(self.lib_paths.clone());
         crate::parser::set_parser_program_path(self.program_path.clone());
-        let result = parse_dispatch::parse_source(&preprocessed);
+        let result = parse_dispatch::parse_compilation_unit(&preprocessed);
         crate::parser::clear_parser_lib_paths();
         for warning in crate::parser::take_parse_warnings() {
             self.write_warn_to_stderr(&warning);
