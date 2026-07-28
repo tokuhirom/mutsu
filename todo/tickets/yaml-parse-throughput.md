@@ -5,7 +5,9 @@ is **slow**, and the cost is in *matching*, not module load. This is the
 match-time twin of `grammar-heavy-module-load-slower-than-raku.md`; that ticket
 measures `use`, this one measures the parse itself.
 
-**Two rounds of this have already landed.**
+**Three rounds of this have already landed** (see the important measurement
+caveat right after them — most of this session's local A/B numbers turned out
+to be unreliable).
 
 Round 1 (`news/2026-07/regex-code-block-writeback-by-identity.md`):
 `eval_regex_code_block_body` used to snapshot the whole env with
@@ -31,7 +33,71 @@ document showed the dispatch cluster (and its `malloc`/`format!` downstream)
 shrink to a small residual, with total profiled samples for the same input
 roughly halving.
 
-What is below is what remains *after both* fixes.
+Round 3 (`news/2026-07/match-object-orig-arc-share.md`): `make_match_object_full_q`
+(the Match-object builder used by grammar parsing, `~~`, substitution, and
+`split`) re-derived the `.orig` string and the position-search haystack from
+scratch — `orig.chars().collect()` and `orig.to_string()` — inside its
+per-leaf-capture helpers, so a leaf-heavy match tree (again, one leaf per
+matched character in a quoted scalar's space run) re-collected/re-cloned the
+*entire original document* once per leaf. Both are now computed once per
+`.parse()`/match and shared via `Arc` (`Value::str_arc`) and a borrowed
+`&[char]` slice instead. This is a correct, tested, real reduction in
+allocation — but see the measurement caveat below for why its wall-clock
+contribution could not actually be confirmed this session.
+
+## Measurement caveat: a 3-day-old CPU-spinner corrupted this session's local A/B
+
+Partway through round 3, `ps -eo pid,pcpu,comm --sort=-pcpu` turned up eight
+`sh -c 'for i in $(seq 1 8); do (while :; do :; done) & done; sleep 12; kill
+...'` processes (PIDs 694193-694201), each pinned near 73% CPU, running
+continuously since 2026-07-25 — over 2 days. The `sleep 12; kill` clearly
+intended to self-terminate but the backgrounded `while :; do :; done` loops
+outlived it (job-control artifact of a non-interactive shell), leaving ~6
+cores' worth of pure busy-loop competing with everything else on a 12-thread,
+hybrid P-core/E-core (13th Gen i7-1355U) laptop chip for 3 days straight.
+
+This made every local wall-clock and even `perf record` sample-count
+comparison in this session **unreliable**, not just noisy: on a hybrid CPU,
+which core type (fast P-core vs slow E-core) the scheduler assigns a run to
+under contention swings effective speed by 2-4x on its own, independent of
+any code change. Concretely: the "round 2 roughly halves total samples"
+finding cited above (and in its own news entry) was measured under this
+contention and looked like a ~2x win; after killing the spinners and
+re-measuring the SAME two binaries (pre-round-2 vs round-2+3) pinned to one
+core (`taskset -c 0`), both took the same ~17.5s task-clock for
+`basic.rakutest`'s worst subtest, and a plain (unpinned, but now
+spinner-free) comparison on `dump_n9.raku` (the `todo/tickets/...`
+reproduce-script case at n=9) also showed no measurable difference
+(~6.0-6.5s both ways over 3 runs each). Rounds 2 and 3 are still correct,
+safe, tested fixes for real inefficiencies (verified by reading the code and
+by the `perf` self-time cluster disappearing/never reappearing in a **clean**
+profile — see below) — they are just smaller in absolute wall-clock terms
+than this session initially believed, and **not** the dominant cost for this
+document shape.
+
+A clean (spinner-free, `-F 4000` for better sample resolution) `perf record`
+self-time sort of `dump_n9.raku` under the round-2+3 binary shows **no single
+dominant function** — `malloc` leads at under 9%, with `__memcmp_avx2_movbe`/
+`_int_free`/`cfree`/`_int_malloc`/`__memmove_avx_unaligned_erms` close behind
+and a long tail of small (`~1%` or less) mutsu functions. This is "death by a
+thousand small allocations" rather than one fixable call site — consistent
+with, but now actually *confirmed* rather than assumed, item 4 below.
+
+**Lesson for future sessions on this box**: before trusting ANY local A/B
+timing (wall-clock OR `perf` sample counts) here, run `ps -eo
+pid,pcpu,comm --sort=-pcpu | head` and look for anything pinned near a fixed
+high `%CPU` for an implausibly long `TIME`/elapsed — a busy-loop artifact
+looks exactly like that, is easy to miss among normal `cargo`/`rustc` churn,
+and (as demonstrated here) can silently invalidate an entire session's
+"confirmed" perf findings. `taskset -c <core>` reduces (not eliminates)
+remaining variance from thermal/frequency scaling once the machine is
+actually idle.
+
+**A `benchmarks/bench-yaml-parse.raku` file now exists** (this exact
+space-heavy block-sequence shape, sized for CI's `BENCH_TIMEOUT`), so future
+rounds on this ticket get tracked automatically in `bench-history.tsv` on the
+`bench-data` branch — use that history, not a local run, to judge whether a
+future change actually helped.
 
 ## Measurement (2026-07-28, release build, pre-round-2)
 
@@ -127,17 +193,32 @@ The `MUTSU_VM_STATS` counters are useless here: only ~25k opcodes run for a
 3. **Candidate enumeration.** The `_all_` atom enumerations return every end
    position; with a deeply nested indentation grammar the branching multiplies.
    Not yet measured directly — still open.
-4. **Residual `malloc`/`_int_free`/`__memcmp_avx2_movbe` cost.** After round 2,
-   these plain allocator/libc symbols are the largest entries in a `perf`
-   self-time sort of the space-heavy synthetic (no single mutsu function
-   dominates). This is consistent with genuine O(n) `Match`/capture object
-   construction — one per matched space character, since each is its own
-   quantified `<str=space>` capture — rather than a single fixable call site.
-   Reducing it would mean cutting per-attempt allocation in the regex engine's
-   capture-construction path itself (e.g. `make_subcap_match`,
-   `RegexCaptures` cloning in the `Alternation` match-merge loop in
-   `regex_match_atom.rs`), which is a different, deeper investigation than
-   either round so far.
+4. **Residual `malloc`/`_int_free`/`__memcmp_avx2_movbe` cost — confirmed, not
+   just hypothesized, on a clean machine (see the measurement caveat above).**
+   After rounds 2+3, these plain allocator/libc symbols are still the largest
+   entries in a `perf` self-time sort of the space-heavy synthetic, and no
+   single mutsu function stands out (each is ~1% or less). This is genuine
+   O(n) `Match`/capture object construction — one per matched space
+   character, since each is its own quantified `<str=space>` capture, and
+   each such capture builds a fresh `HashMap` (str/from/to/list/named/orig)
+   plus a GC-managed `Instance` via `Value::make_instance`. Reducing this
+   is NOT a single call-site fix like rounds 2/3 — candidates worth
+   investigating, roughly in order of invasiveness:
+   - Avoid building a full `Match` **object** for a quantified list element
+     that is never actually accessed as a `Match` (only `.Str`-ified) — hard
+     to prove safely in general since Raku lets any element be inspected.
+   - Reduce the *shape* of the per-element `HashMap`/`Instance` (e.g. a
+     smaller specialized repr for "leaf capture, no subcaps" instead of the
+     same general Match shape as a top-level richly-nested one).
+   - Look at `RegexCaptures` cloning in the `Alternation` match-merge loop in
+     `regex_match_atom.rs` (`regex_match_ends_from_caps_in_pkg`) — every
+     `<str=single-bare> | <str=single-quotes> | ...` alternative attempt
+     clones `RegexCaptures` (named/positional maps) on each candidate tried,
+     which is itself allocation-heavy per position even before a `Match`
+     object is ever built.
+   This is a different, deeper investigation than any of rounds 1-3 — treat
+   it as its own slice, and validate with `benchmarks/bench-yaml-parse.raku`
+   via `bench-data` (not a local run) once a candidate fix exists.
 
 ## Why it matters
 
