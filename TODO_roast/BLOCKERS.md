@@ -74,7 +74,7 @@ Concretely:
 
 ## Current assumptions
 
-- The whitelist stands at **1431 / 1463** (2026-07-17, `wc -l roast-whitelist.txt`) = **32** files not whitelisted.
+- The whitelist stands at **1435 / 1463** (2026-07-28, `wc -l roast-whitelist.txt`) = **28** files not whitelisted.
 - **The S\* files (per-synopsis feature tests) are exhausted.** All of the former large campaigns
   (true lazy arrays / desugaring of dispatch and operator sugar / S17 concurrency & async /
   first-class-container container identity / cross-thread lexical writeback) are complete, and
@@ -134,7 +134,6 @@ noted.
 | Non-goal | `S12-meta/exporthow.t` | aborts at 1/12 | ABORT at 2/12 | rakudo itself dies at line 22 (`ClassHOW` has no `tryit`) |
 | Non-goal | `S12-traits/basic.t` | 0 at parse | SORRY (removed) | Removed `trait_auxiliary` syntax. raku also rejects it |
 | Non-goal | `S12-traits/parameterized.t` | aborts at 6/8 | SORRY (removed) | Same as above (the `trait_auxiliary:<is>` category has been removed from the language) |
-| Non-goal | `S32-str/sprintf.t` | 170/174 (fails 101-104) | SORRY (`zprintf` undefined; same on v2026.06) | The remaining 101-104 are a raku quirk of zero-padded `%g` sci notation (`34.1e+30`). The reference raku lacks `zprintf`, so the correct algorithm cannot be verified |
 | Unpassable | `S32-temporal/time.t` | 8/10, notok 2 | SORRY | The test contains 2 deliberate `flunk("FIXME ...")` failures, plus raku also has `gmtime`/`localtime`/`times` undefined |
 
 ### Investigation notes (carried over from the retired S*.md files)
@@ -187,12 +186,6 @@ completed fix history lives in `news/`.
   multi-dimensional EXISTS-POS with Failure from a negative index; 64 needs a `but` mixin with a
   role implementing AT-POS + `substr-rw`. (BIND-POS/DELETE-POS and the shared-cell BIND-POS are
   done — pin: t/bind-pos-shared-cell.t.)
-- **`S32-str/sprintf.t`** — tests 101-104 (`%020.2g`/`%020.2G`) expect mantissa `34.1e+30` from
-  a 3.1415e30 input under zero-padding — a raku zero-pad-%g-sci quirk that shifts the decimal
-  point; the algorithm is unverifiable (`zprintf` is 6.e-only, absent from the reference raku).
-  Test 172 is a 90-assertion subtest of `zprintf` with type objects (Num/Int/Rat/Complex/Str ×
-  18 formats) — needs every format to coerce a type object to 0/empty with a quietly-suppressed
-  warning.
 - **`S12-meta/exporthow.t`** — test 1 passes (X::EXPORTHOW::InvalidDirective validation on
   module load). The rest needs EXPORTHOW SUPERSEDE of a custom meta-type HOW (a `tryit` method
   added to ClassHOW), which reference rakudo also lacks — blocks the whitelist regardless of

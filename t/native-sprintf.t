@@ -5,7 +5,7 @@ use Test;
 # falling back to Interpreter::call_function. This must preserve every sprintf
 # semantic the interpreter implementation had.
 
-plan 18;
+plan 22;
 
 is sprintf("%d", 42), "42", 'integer';
 is sprintf("%05.2f", 3.14159), "03.14", 'float width+precision';
@@ -14,6 +14,10 @@ is sprintf("%x", 255), "ff", 'hex';
 is sprintf("%o", 8), "10", 'octal';
 is sprintf("%b", 5), "101", 'binary';
 is sprintf("%e", 12345.678), "1.234568e+04", 'scientific';
+is sprintf("%g", Inf), "Inf", '%g preserves Inf casing';
+is sprintf("%G", Inf), "INF", '%G uppercases Inf';
+is sprintf("%g", -Inf), "-Inf", '%g preserves negative Inf casing';
+is sprintf("%G", -Inf), "-INF", '%G uppercases negative Inf';
 is sprintf("%-10s|", "hi"), "hi        |", 'left-justify';
 is sprintf("%2\$s %1\$s", "a", "b"), "b a", 'positional args';
 is sprintf("%d", [42]), "42", 'single-array flatten, one elem';
