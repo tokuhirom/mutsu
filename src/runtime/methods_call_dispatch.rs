@@ -2682,9 +2682,44 @@ impl Interpreter {
                         role.methods.contains_key(method) || is_public_attr_accessor
                     })
                     .unwrap_or(false);
+                // Punning by *constructing* runs the role's own `new` with no
+                // arguments. A role whose `new` takes a required parameter
+                // therefore lost the arguments of every *other* method called
+                // on the pun — `LinearArray[T].elems` died with "Too few
+                // positionals passed" (NativeHelpers::CStruct):
+                //
+                //     role C {
+                //         method new(Int $size) { self.bless }
+                //         method other(Int $size) { "other:$size" }
+                //     }
+                //     C.other(3);
+                //
+                // raku puns onto the class's *type object* and never constructs
+                // at all. Do that here for a role that declares its own `new`,
+                // where constructing cannot work. (Switching the no-`new` case
+                // over too is the correct end state but not yet sound: the
+                // punned class ends up with a consumed role's multi candidates
+                // twice — see todo/tickets/role-pun-should-not-construct.md.)
+                //
+                // Punning registers a class under the same name, so the retry
+                // falls through to ordinary class dispatch rather than
+                // re-entering here.
+                let role_declares_new = self
+                    .registry()
+                    .roles
+                    .get(&role_name.resolve())
+                    .is_some_and(|role| role.methods.contains_key("new"));
                 if should_dispatch {
-                    let instance = self.dispatch_new(target.clone(), Vec::new())?;
-                    return self.call_method_with_values(instance, method, args);
+                    if !role_declares_new {
+                        let instance = self.dispatch_new(target.clone(), Vec::new())?;
+                        return self.call_method_with_values(instance, method, args);
+                    }
+                    // Already punned: fall through to ordinary class dispatch,
+                    // which is what makes the retry below terminate.
+                    if !self.registry().classes.contains_key(&role_name.resolve()) {
+                        self.ensure_role_punned_to_class(&role_name.resolve());
+                        return self.call_method_with_values(target.clone(), method, args);
+                    }
                 }
             } else if let ValueView::ParametricRole {
                 base_name,
@@ -2699,6 +2734,20 @@ impl Interpreter {
                         .iter()
                         .any(|(attr_name, is_public, ..)| *is_public && attr_name == method);
                 if role.methods.contains_key(method) || is_public_attr_accessor {
+                    // Same as the unparameterised branch above: a role that
+                    // declares its own `new` cannot be punned by constructing,
+                    // so run the method on the punned class's type object.
+                    let base = base_name.resolve();
+                    if role.methods.contains_key("new")
+                        && let Some(punned) =
+                            self.ensure_parametric_role_pun_class(&base, type_args)
+                    {
+                        return self.call_method_with_values(
+                            Value::package(Symbol::intern(&punned)),
+                            method,
+                            args,
+                        );
+                    }
                     let instance = self.dispatch_new(target.clone(), Vec::new())?;
                     return self.call_method_with_values(instance, method, args);
                 }
