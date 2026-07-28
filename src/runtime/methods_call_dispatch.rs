@@ -65,6 +65,17 @@ impl Interpreter {
         {
             return Ok(v.clone());
         }
+        // `.REPR` / `.WHERE` on a NativeCall handle. Both need the class
+        // registry to tell a `nativecast`ed CStruct/CUnion/CArray from an
+        // ordinary instance, so they cannot be answered on the pure native fast
+        // path — and they must not reach it, since its `.WHERE` is an identity
+        // hash that a module would go on to dereference.
+        if args.is_empty()
+            && matches!(method, "REPR" | "WHERE")
+            && let Some(v) = self.try_native_handle_repr_where(&target, method)
+        {
+            return Ok(v);
+        }
         // .emit on any value: push to the supply emit buffer if inside a
         // supply block, otherwise raise CX::Emit like the `emit` sub.
         if method == "emit"

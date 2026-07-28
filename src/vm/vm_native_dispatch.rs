@@ -48,6 +48,18 @@ impl Interpreter {
         {
             return None;
         }
+        // `.REPR` / `.WHERE` on a NativeCall handle. Telling a `nativecast`ed
+        // CStruct/CUnion/CArray from an ordinary instance needs the class
+        // registry, so the pure native path cannot answer these — and it must
+        // not be allowed to: its `.WHERE` is an identity hash, and a module that
+        // trusted an honest `.REPR` would go on to *dereference* that hash.
+        // (Measured: doing this the other way round segfaults.)
+        if args.is_empty()
+            && matches!(method_name.as_str(), "REPR" | "WHERE")
+            && let Some(v) = self.try_native_handle_repr_where(target, method_name.as_str())
+        {
+            return Some(Ok(v));
+        }
         // `.Capture` that must call user methods / drain a live source (Channel/
         // Supply, or a non-Str Pair key needing `.Str`) is interpreter-aware; other
         // targets fall through to the pure native `value_to_capture` below.
