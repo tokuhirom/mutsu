@@ -117,9 +117,10 @@ variable compiles to `CallMethodMut` while `Type.meth` compiles to `CallMethod`.
 reachable and able to read its own fields; both landed alongside this — see
 [cstruct-handles-carry-their-registered-name.md](cstruct-handles-carry-their-registered-name.md).
 
-What remains is a `:$stmt` colonpair losing sight of the `with … -> $stmt`
-binding it names
-([todo/tickets/colonpair-shorthand-loses-an-outer-pointy-binding.md](../../todo/tickets/colonpair-shorthand-loses-an-outer-pointy-binding.md)),
+What remains is `self` not being restored after a private-method call chain, so
+the `if $!stmt` at the top of `StatementHandle.execute` reads with the wrong
+invocant
+([todo/tickets/self-not-restored-after-a-private-method-chain.md](../../todo/tickets/self-not-restored-after-a-private-method-chain.md)),
 and `DBIish.connect(…)`'s front door: `install-driver` loads the driver with
 `require`, and a `require`d module's methods do not see the types its `use`
 imported
