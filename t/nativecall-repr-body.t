@@ -11,7 +11,7 @@ use NativeCall;
 # body is read at `.WHERE` itself. The bodies below are the same hand-written
 # CStruct mirrors that module declares.
 
-plan 15;
+plan 20;
 
 sub calloc(size_t, size_t --> Pointer) is native { * }
 sub free(Pointer) is native { * }
@@ -19,6 +19,12 @@ sub free(Pointer) is native { * }
 class CStructB is repr('CStruct') {
     has Pointer          $.cstruct;
     has Pointer[Pointer] $.child_objs;
+}
+class MVMArrayB is repr('CStruct') {
+    has uint64  $.elems;
+    has uint64  $.start;
+    has uint64  $.ssize;
+    has Pointer $.any;
 }
 class CArrayB is repr('CStruct') {
     has Pointer          $.storage;
@@ -73,19 +79,37 @@ is $cb.elems, 0,                  'and carries no element count';
 
 free($blk);
 
+# --- a Buf, which owns its storage outright (ADR-0015 P2) ---
+# Unlike the two above, this object was built in Raku. Its bytes are contiguous
+# native memory, so the `VMArray` body describing them is real and `.REPR` says
+# so — which is what makes `NativeHelpers::Blob`'s `pointer-to` work.
+my $buf = Buf.new(11, 22, 33);
+is $buf.REPR, 'VMArray',          'a Buf reports VMArray';
+my $boff = body-offset($buf.WHERE, 3);
+ok $boff.defined,                 'the VMArray body is found within ten words';
+my $ab = nativecast(MVMArrayB, Pointer.new($buf.WHERE + $boff));
+is $ab.elems, 3,                  'the body reports the element count';
+is $ab.start, 0,                  'mutsu storage has no unused prefix';
+
+# `.realstart` in MoarVM::Guts::REPRs is `$!any` when `start` is 0, and that
+# pointer must address the buffer's own bytes -- not a copy of them.
+is nativecast(CArray[uint8], $ab.any)[1], 22,
+                                  'the body points at the buffer\'s own bytes';
+
+# The body block is allocated once per buffer and stays put, so a C structure
+# that captured the address keeps reading a live element pointer.
+is $buf.WHERE, $buf.WHERE,        'a Buf keeps one body block';
+
 # --- what deliberately does NOT get a body ---
-# The three assertions below pin a *deliberate under-report*, so they are the
-# one part of this file that does not match raku: raku answers `CStruct` and
-# `VMArray` here, because those objects have C storage and mutsu's do not yet.
-# Reporting the honest name without a body is the one thing that must never
-# happen — `BODY_OF` would dereference whatever `.WHERE` returned. Under-report
-# and it refuses loudly instead. Giving these objects real storage (and with it
-# the honest name) is ADR-0015's P2/P3.
+# The two assertions below pin a *deliberate under-report*: raku answers
+# `CStruct` for the first, because that object has C storage and mutsu's does
+# not yet. Reporting the honest name without a body is the one thing that must
+# never happen — `BODY_OF` would dereference whatever `.WHERE` returned.
+# Under-report and it refuses loudly instead. Giving a Raku-constructed CStruct
+# real storage is ADR-0015's P3.
 is Rec.new.REPR, 'P6opaque',      'a Raku-constructed CStruct has no body yet';
 
 class Plain { has $.address = 12345; }
 is Plain.new.REPR, 'P6opaque',    'an ordinary class is untouched';
 isnt Plain.new.WHERE, Plain.new.WHERE,
                                   'and keeps identity-derived WHERE';
-is Buf.new(1, 2, 3).REPR, 'P6opaque',
-                                  'a Buf has no body yet either';

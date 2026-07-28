@@ -1,13 +1,22 @@
 # ADR-0015 P2 (native-backed `Buf`/`Blob`) — implementation survey
 
-P2 is the only thing left between mutsu and `DBIish`'s mysql driver: `BODY_OF`
-runs, and stops on `Buf.REPR` answering `P6opaque` where raku answers `VMArray`
-(see the ⑨ row of [`../tickets/dbiish-blockers.md`](../tickets/dbiish-blockers.md)).
-This file is the measured survey of what P2 actually costs, taken 2026-07-28
-against `main`. It **refines** [ADR-0015](../../docs/adr/0015-native-backed-container-storage-and-repr-bodies.md)
+**P2 is complete** — all four steps landed; the outcome is
+[buf-repr-body-and-native-storage.md](buf-repr-body-and-native-storage.md) and
+the compatibility surface is
+[docs/nativecall-repr-bodies.md](../../docs/nativecall-repr-bodies.md). This
+file is kept as the record of what the campaign was measured to cost before it
+started, because the measurements are what shaped the slicing — read it that
+way, not as work still to do.
+
+P2 was the only thing left between mutsu and `DBIish`'s mysql driver: `BODY_OF`
+ran, and stopped on `Buf.REPR` answering `P6opaque` where raku answers `VMArray`
+(see the ⑨ row of
+[`../../todo/tickets/dbiish-blockers.md`](../../todo/tickets/dbiish-blockers.md)).
+The survey was taken 2026-07-28 against `main`. It **refines**
+[ADR-0015](../../docs/adr/0015-native-backed-container-storage-and-repr-bodies.md)
 §6; it does not change any decision in it, so the ADR is left as `Accepted`
 rather than superseded. Three of the numbers and one of the mechanisms in §6
-turn out to be wrong, and the third one is the reason this is written down.
+turn out to be wrong, and the third one is the reason this was written down.
 
 ## 1. `Buf`/`Blob` today
 
@@ -25,11 +34,11 @@ because a contiguous `Vec<u8>` cannot be interpreted without it.
 
 **Status: step 1 of the slicing below is DONE** — the accessor chokepoint is
 `src/value/value_buf.rs` and all 104 touches route through it
-(see [`news/2026-07/buf-storage-accessor-chokepoint.md`](../../news/2026-07/buf-storage-accessor-chokepoint.md)).
+(see [`buf-storage-accessor-chokepoint.md`](buf-storage-accessor-chokepoint.md)).
 Sections 2 and 5 below are now historical: read them for *why* the campaign was
 needed, not as work still to do. Step 2 (the byte view and the width probe) is
-done too, as is step 3 (the node). Only step 4 — the body and the honest
-`.REPR` — is open.
+done too, as is step 3 (the node), and so is step 4 (the body and the honest
+`.REPR`).
 
 ## 2. The `"bytes"` campaign is 104 sites, not 91 (done — historical)
 
@@ -181,7 +190,7 @@ ADR §4 promises — does not exist yet and is part of P2.
    all" (a `Blob` type object) and "empty buffer" are distinguished at several
    call sites, `has_buf_elems` being the probe.
 2. **The byte view and the width probe.** **DONE** — see
-   [`news/2026-07/buf-byte-and-width-accessors.md`](../../news/2026-07/buf-byte-and-width-accessors.md).
+   [`buf-byte-and-width-accessors.md`](buf-byte-and-width-accessors.md).
    `value_buf` now also answers in bytes (`buf_bytes`, `with_buf_bytes`,
    `set_buf_bytes`, …) and in counts (`buf_len`), which is what the majority of
    the element-accessor callers actually wanted; and `buf_elem_width` replaced
@@ -195,14 +204,22 @@ ADR §4 promises — does not exist yet and is part of P2.
    Rakudo agrees with neither convention anyway.
 
 3. **The node.** **DONE** — see
-   [`news/2026-07/buf-native-byte-node.md`](../../news/2026-07/buf-native-byte-node.md).
+   [`buf-native-byte-node.md`](buf-native-byte-node.md).
    `ValueRepr::BufStorage(Gc<BufData>)`: contiguous little-endian bytes plus the
    element width and signedness, behind the accessors from steps 1 and 2. Adding
    the variant reached exactly six exhaustive matches plus `==` and `eqv`.
    Reads take no class name (the node carries the type); the ~20 *construction*
    sites do, since the name is the only place Raku keeps it. Closed the
    signedness and `uint64` readback gaps as a side effect.
-4. **The body and the honest `.REPR`**, in one commit with the `MVMArrayB` test,
-   plus the deletion of `nativecall_pin.rs` and its three helpers.
+4. **The body and the honest `.REPR`.** **DONE** — see
+   [`buf-repr-body-and-native-storage.md`](buf-repr-body-and-native-storage.md).
+   In one commit with the `MVMArrayB` test, plus the deletion of
+   `nativecall_pin.rs` and its three helpers. §4's per-object/mutable/owned
+   requirement is met by putting the block in the storage node itself
+   (`src/value/value_buf_repr.rs`), which also gave the write path a reason to
+   mutate the node in place rather than replace it.
 
-Step 4 is what `DBIish`'s mysql driver is actually waiting for.
+`DBIish`'s mysql driver turned out to need one more thing after this, and it is
+not a representation problem: its `StatementHandle` does not parse, because a
+ternary's then-branch cannot be an enum value imported from another module
+([`../../todo/tickets/ternary-then-branch-enum-value.md`](../../todo/tickets/ternary-then-branch-enum-value.md)).

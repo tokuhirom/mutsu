@@ -353,11 +353,7 @@ fn ser_to_value(sv: SerValue) -> Value {
     match sv {
         SerValue::Int(n) => Value::Int(n),
         SerValue::BufStorage(bytes, width, signed) => Value::from_repr(ValueRepr::BufStorage(
-            crate::gc::Gc::new(crate::value::BufData {
-                bytes,
-                width,
-                signed,
-            }),
+            crate::gc::Gc::new(crate::value::BufData::new(bytes, width, signed)),
         )),
         SerValue::BigInt(n) => Value::BigInt(Arc::new(n)),
         SerValue::Num(n) => Value::Num(n),

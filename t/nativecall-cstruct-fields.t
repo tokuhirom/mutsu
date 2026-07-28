@@ -5,7 +5,7 @@ use NativeCall;
 # attributes must read the field out of that struct, at the offset the C ABI
 # gives it. Before this, every such accessor answered Nil.
 
-plan 15;
+plan 17;
 
 # POSIX `struct tm` — its first nine members are ints in this order on every
 # platform mutsu targets.
@@ -79,3 +79,22 @@ class ExplicitMethodWins is repr('CStruct') {
 
 my $explicit = nativecast(ExplicitMethodWins, calloc(1, 8));
 is $explicit.first, 99, 'an explicit method still shadows its CStruct field accessor';
+
+# The same shadowing must hold for a CStruct declared inside a module. A
+# `nativecast` handle is tagged with the class's *short* name, so the accessor
+# lookup has to go through the registered (fully qualified) name -- otherwise it
+# finds no attribute and the builtin wins. This is what made
+# `MoarVM::Guts::REPRs`' `MVMArrayB.elems` answer `1` and `.any` build a
+# Junction, so `NativeHelpers::Blob` read a junction instead of a REPR body.
+module Guts {
+    our class Body is repr('CStruct') {
+        has int64 $.elems is rw;
+        has int64 $.any is rw;
+    }
+}
+
+my $qualified = nativecast(Guts::Body, calloc(1, 16));
+$qualified.elems = 3;
+$qualified.any = 5;
+is $qualified.elems, 3, 'a module-scoped CStruct field shadows the builtin elems';
+is $qualified.any, 5, 'and shadows the builtin any';

@@ -173,9 +173,17 @@ impl Interpreter {
         // method-name exclusions below, so fields such as `first` and `gist`
         // shadow inherited methods just like ordinary public attributes do.
         // An explicit method with the same name still wins the resolver race.
-        if self.is_cstruct_class(&cn)
+        //
+        // The accessor is looked up under the class's *registered* name, not the
+        // handle's: `nativecast` tags a handle with the short base name, so a
+        // CStruct declared inside a module (`MoarVM::Guts::REPRs::MVMArrayB`) is
+        // reached as `MVMArrayB` and the attribute lookup would miss. Only field
+        // names that also name a builtin ever noticed — `MVMArrayB.elems`
+        // answered `1` and `.any` built a Junction, which is how
+        // `NativeHelpers::Blob` came away with a junction instead of a body.
+        if let Some(registered) = self.cstruct_class_name(&cn)
             && matches!(
-                self.resolve_user_method_or_accessor(&cn, method),
+                self.resolve_user_method_or_accessor(&registered, method),
                 Some(crate::runtime::UserMethodOrAccessor::Accessor)
             )
         {

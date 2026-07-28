@@ -15,12 +15,13 @@
 //! it contained: the attribute name is private to it, and every read, write,
 //! probe and construction goes through one of the functions below, so the ~170
 //! call sites across forty files did not have to know the representation
-//! changed. What remains of
+//! changed. Those contiguous bytes are what
 //! [ADR-0015](../../docs/adr/0015-native-backed-container-storage-and-repr-bodies.md)
-//! P2 — the synthesised `MVMArrayB` body and an honest `Buf.REPR` of `VMArray`,
-//! which is what `NativeHelpers::Blob`'s `BODY_OF` needs — builds on this node.
+//! P2 hands C directly: [`buf_storage_node`] is the pointer a native call
+//! marshals, and [`buf_repr_body_address`] is the `MVMArrayB` body behind an
+//! honest `Buf.REPR` of `VMArray` (see [`super::value_buf_repr`]).
 //!
-//! Three levels are offered deliberately:
+//! Four levels are offered deliberately:
 //!
 //! - the **element** functions ([`buf_elems`], [`set_buf_elems`], …) are the
 //!   encode/decode boundary: they hand out and take back `Vec<Value>`;
@@ -29,7 +30,10 @@
 //!   never round-trips through boxed `Value`s;
 //! - the **storage** functions ([`buf_storage`], [`set_buf_storage`]) move the
 //!   node across without decoding it, for the coercions that only re-tag a
-//!   buffer (`.Buf`, `.Blob`).
+//!   buffer (`.Buf`, `.Blob`);
+//! - the **native** functions ([`buf_storage_node`], [`buf_repr_body_address`])
+//!   hand out the node itself and the address of its REPR body, which is what a
+//!   `void*` argument and `.WHERE` are.
 //!
 //! **Reads need no class name; construction does.** The node carries the
 //! element type, so everything that reads a buffer — including
@@ -139,11 +143,9 @@ fn decode_elems(data: &BufData) -> Vec<Value> {
 
 /// The storage `Value` a buffer instance keeps under [`ELEMS_ATTR`].
 fn storage_value(bytes: Vec<u8>, width: u8, signed: bool) -> Value {
-    Value::from_repr(ValueRepr::BufStorage(Gc::new(BufData {
-        bytes,
-        width,
-        signed,
-    })))
+    Value::from_repr(ValueRepr::BufStorage(Gc::new(BufData::new(
+        bytes, width, signed,
+    ))))
 }
 
 /// The node behind a buffer instance's storage attribute, if it has one.
@@ -232,14 +234,41 @@ pub(crate) fn set_buf_elems(map: &mut AttrMap, class_name: Symbol, elems: Vec<Va
     );
 }
 
-/// Store `elems` into a **live** instance, through its shared attribute cell —
-/// visible to every alias, no rebind of the holding variable needed.
-pub(crate) fn store_buf_elems(attrs: &InstanceAttrs, class_name: Symbol, elems: Vec<Value>) {
-    let (width, signed) = elem_type(&class_name.resolve());
-    attrs.insert(
-        ELEMS_ATTR,
-        storage_value(encode_elems(&elems, width), width, signed),
-    );
+/// Put `bytes` into a live instance's storage, through its shared attribute
+/// cell — visible to every alias, no rebind of the holding variable needed.
+///
+/// Writes **through** the existing node whenever this instance is its only
+/// holder, rather than swapping a fresh node in. That is what makes ADR-0015 §2
+/// contract 3 hold: a C structure handed `pointer-to($buf)` keeps a valid
+/// pointer across an ordinary Raku-side write, and the node's REPR body block
+/// stays put. (Growing past the allocation still reallocates and invalidates
+/// the pointer — the same contract Rakudo's `VMArray` offers, no more.)
+///
+/// A **shared** node is replaced instead: `.Buf`/`.Blob` re-tag one buffer's
+/// storage under another name without copying it, and Raku's copy semantics
+/// mean a write to one must not be seen by the other.
+fn put_bytes(attrs: &InstanceAttrs, bytes: Vec<u8>, width: u8, signed: bool) {
+    {
+        let map = attrs.as_map();
+        if let Some(node) = node_in(&map)
+            && node.strong_count() == 1
+        {
+            // SAFETY: audited aliased in-place container write (see
+            // `value::aliased_mut`). The node is unshared, no borrow into it is
+            // live across the write, and the read guard above covers only the
+            // attribute map — which is not what is being mutated.
+            let data = unsafe { crate::value::gc_contents_mut(&node) };
+            // `clear` + `extend` rather than an assignment, so the allocation —
+            // and with it the address C may be holding — survives a same-size
+            // or shrinking write.
+            data.bytes.clear();
+            data.bytes.extend_from_slice(&bytes);
+            data.width = width;
+            data.signed = signed;
+            return;
+        }
+    }
+    attrs.insert(ELEMS_ATTR, storage_value(bytes, width, signed));
 }
 
 /// Mutate the elements in place through the shared cell, without decoding the
@@ -258,10 +287,7 @@ pub(crate) fn with_buf_elems_mut<R>(
     };
     drop(map);
     let out = f(&mut elems);
-    attrs.insert(
-        ELEMS_ATTR,
-        storage_value(encode_elems(&elems, width), width, signed),
-    );
+    put_bytes(attrs, encode_elems(&elems, width), width, signed);
     Some(out)
 }
 
@@ -289,7 +315,38 @@ pub(crate) fn buf_elems_as_array(map: &AttrMap, kind: super::ArrayKind) -> Optio
 }
 
 // ---------------------------------------------------------------------------
-// Byte-level access — what P2 will actually store.
+// Native access — the buffer as C sees it.
+// ---------------------------------------------------------------------------
+
+/// The address of this buffer's synthesised `VMArray` REPR body, which is what
+/// its `.WHERE` answers (ADR-0015 §2; see
+/// [`ReprBody`](super::value_buf_repr::ReprBody)).
+///
+/// `None` for an instance with no element storage, whose `.REPR` therefore
+/// stays `P6opaque` — under-reporting is safe, claiming `VMArray` without a body
+/// behind it is not.
+pub(crate) fn buf_repr_body_address(attrs: &InstanceAttrs) -> Option<usize> {
+    let map = attrs.as_map();
+    let node = node_in(&map)?;
+    Some(node.body.address(&node))
+}
+
+/// This buffer's storage node, with a reference of its own.
+///
+/// What a native call marshals a `Blob`/`Buf` argument through: C is handed
+/// `bytes.as_mut_ptr()` of the returned node — the object's *actual* storage,
+/// not a copy — so a callee that writes into the buffer is writing into the
+/// Raku object, and one that retains the pointer keeps seeing live memory.
+/// Holding the returned `Gc` is what guarantees the latter for the duration of
+/// the call.
+pub(crate) fn buf_storage_node(attrs: &InstanceAttrs) -> Option<Gc<BufData>> {
+    let map = attrs.as_map();
+    let node = node_in(&map)?;
+    Some((*node).clone())
+}
+
+// ---------------------------------------------------------------------------
+// Byte-level access.
 // ---------------------------------------------------------------------------
 
 /// One element as the fixed-width hex digits a `Buf` gists with
@@ -377,11 +434,6 @@ pub(crate) fn with_buf_bytes<R>(attrs: &InstanceAttrs, f: impl FnOnce(&[u8]) -> 
 /// Store raw bytes into a map being built or updated, one byte per element.
 pub(crate) fn set_buf_bytes(map: &mut AttrMap, class_name: Symbol, bytes: &[u8]) {
     set_buf_elems(map, class_name, bytes_to_elems(bytes));
-}
-
-/// Store raw bytes into a **live** instance, through its shared attribute cell.
-pub(crate) fn store_buf_bytes(attrs: &InstanceAttrs, class_name: Symbol, bytes: &[u8]) {
-    store_buf_elems(attrs, class_name, bytes_to_elems(bytes));
 }
 
 /// A fresh `Buf`/`Blob`-shaped instance of `class_name` over raw bytes.
@@ -504,7 +556,7 @@ mod tests {
         let b = Value::make_instance(buf, map);
         assert_eq!(buf_bytes(&attrs_of(&b)), Some(vec![1, 2, 3]));
 
-        store_buf_bytes(&attrs_of(&b), buf, &[9]);
+        with_buf_elems_mut(&attrs_of(&b), |items| *items = bytes_to_elems(&[9]));
         assert_eq!(buf_bytes(&attrs_of(&b)), Some(vec![9]));
 
         let fresh = make_buf_from_bytes(Symbol::intern("Blob"), &[4, 5]);
