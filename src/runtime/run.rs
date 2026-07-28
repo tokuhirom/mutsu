@@ -4,8 +4,16 @@ use crate::ast::Stmt;
 /// Source for builtin parametric roles that are not yet representable as native
 /// `RoleDef`s. These are parsed once and prepended to programs that reference
 /// them, so they register through the ordinary RoleDecl path.
+///
+/// Every prelude declaration is written `GLOBAL::Name` on purpose: a prelude is
+/// spliced into the compunit that references it, and for a `unit module M` file
+/// the runtime package switch is emitted at the top of the unit — so a bare
+/// `role Rational` would register as `M::Rational`, a *different* type from the
+/// builtin (`Pointer[T]` then failed with "M::Pointer cannot be parameterized").
+/// The `GLOBAL::` prefix is stripped by class/role registration, pinning these
+/// to the global namespace whatever package the host file declares.
 pub(super) const RATIONAL_ROLE_PRELUDE: &str = r#"
-role Rational[::NuT = Int, ::DeT = Int] does Real {
+role GLOBAL::Rational[::NuT = Int, ::DeT = Int] does Real {
     has NuT $.numerator = 0;
     has DeT $.denominator = 1;
     method new(NuT \nu = 0, DeT \de = 1) {
@@ -26,7 +34,7 @@ role Rational[::NuT = Int, ::DeT = Int] does Real {
 /// address back here). The `.gist`/`.Str` form mirrors Rakudo's
 /// `NativeCall::Types::Pointer<...>` rendering.
 pub(super) const NATIVECALL_POINTER_PRELUDE: &str = r#"
-class Pointer {
+class GLOBAL::Pointer {
     has $.address = 0;
     multi method new(--> Pointer) { self.bless(:address(0)) }
     multi method new(Int() $address --> Pointer) { self.bless(:$address) }
@@ -47,7 +55,7 @@ class Pointer {
 # NativeCall's `void`: what an untyped `Pointer.of` reports. Only ever used as a
 # type object to compare against (`ptr.of ~~ void` in NativeHelpers::Blob's
 # `blob-from-pointer`), so an empty class is the whole of it.
-class void { }
+class GLOBAL::void { }
 "#;
 
 /// Builtin `IO::Socket` role. Raku's socket classes (`IO::Socket::INET`,
@@ -58,7 +66,7 @@ class void { }
 /// newline-separator accessors the SSL class reads) is enough to make the
 /// composition succeed; parsed once and prepended like the other preludes.
 pub(super) const IO_SOCKET_ROLE_PRELUDE: &str = r#"
-role IO::Socket {
+role GLOBAL::IO::Socket {
     has $.nl-in is rw = "\n";
     has $.nl-out is rw = "\n";
 }
