@@ -181,6 +181,35 @@ struct CacheMetadata {
     effects: ParseEffects,
 }
 
+/// Scratch path a cache entry is written to before being renamed into place.
+///
+/// The name must be unique per *writer*, not per entry. Two mutsu processes
+/// loading the same module concurrently — `prove -j`, or a `Test::Util` parent
+/// and the child it spawns — would otherwise interleave their non-atomic
+/// `fs::write`s into one shared `<hash>.tmp` and rename the mixture into place.
+/// The rename is atomic; the write into the shared buffer is not, so sharing the
+/// buffer defeats the point of renaming.
+fn temp_cache_path(cache_file: &Path) -> PathBuf {
+    cache_file.with_extension(format!("{}.tmp", std::process::id()))
+}
+
+/// Upper bound on any single allocation a cache decode may request.
+///
+/// Decoding is fallible but *allocation* is not: `bincode` reads a length prefix
+/// and asks for that much memory before it can report a mismatch, so a corrupt
+/// entry made the allocator abort the whole process (SIGABRT) where `.ok()?`
+/// looks like it would yield a clean cache miss. A limit turns that into a
+/// `DecodeError`, i.e. a cache miss and a reparse.
+///
+/// 256 MiB is far above any real entry (the largest module ASTs are a few MiB)
+/// and far below "the machine's memory", which is the only bound the encoding
+/// itself imposes.
+const MAX_DECODE_ALLOC: usize = 256 * 1024 * 1024;
+
+fn decode_config() -> impl bincode::config::Config {
+    bincode::config::standard().with_limit::<MAX_DECODE_ALLOC>()
+}
+
 /// Try to load a cached compilation unit for the given source file.
 ///
 /// Returns `Some(unit)` if a valid cache entry exists, `None` otherwise.
@@ -216,7 +245,7 @@ pub(crate) fn load_cached_unit(source_path: &Path) -> Option<CachedUnit> {
     }
 
     let (meta, _): (CacheMetadata, usize) =
-        bincode::serde::decode_from_slice(&rest[..meta_len], bincode::config::standard()).ok()?;
+        bincode::serde::decode_from_slice(&rest[..meta_len], decode_config()).ok()?;
     let ast_data = &rest[meta_len..];
 
     // Validate that the entry actually describes this file. The cache file name
@@ -252,7 +281,7 @@ pub(crate) fn load_cached_unit(source_path: &Path) -> Option<CachedUnit> {
         return None;
     }
 
-    bincode::serde::decode_from_slice(ast_data, bincode::config::standard())
+    bincode::serde::decode_from_slice(ast_data, decode_config())
         .ok()
         .map(|(stmts, _)| CachedUnit {
             stmts,
@@ -301,10 +330,14 @@ pub(crate) fn save_cached_unit(source_path: &Path, stmts: &[Stmt], effects: &Par
     data.extend_from_slice(&meta_bytes);
     data.extend_from_slice(&ast_bytes);
 
-    // Write atomically via temp file + rename
-    let tmp_file = cache_file.with_extension("tmp");
+    // Write atomically via temp file + rename.
+    let tmp_file = temp_cache_path(&cache_file);
     if fs::write(&tmp_file, &data).is_ok() {
-        let _ = fs::rename(&tmp_file, &cache_file);
+        if fs::rename(&tmp_file, &cache_file).is_err() {
+            let _ = fs::remove_file(&tmp_file);
+        }
+    } else {
+        let _ = fs::remove_file(&tmp_file);
     }
 }
 
@@ -328,6 +361,12 @@ const MAX_CACHE_ENTRIES: usize = 4096;
 /// which a regenerated entry refreshes, making this an approximate LRU — is
 /// enough.
 ///
+/// The same sweep also removes abandoned scratch files. `save_cached_unit`
+/// cleans up its own on any failure it can observe, but a process killed between
+/// the write and the rename leaves one behind, and since the name is now
+/// per-pid (see `temp_cache_path`) it will never be reused. They are only
+/// dropped once they are old enough that no live writer could still own them.
+///
 /// Runs at most once per process, and only from the save path, so a warm run
 /// that never writes never pays for the scan.
 fn prune_cache_once(dir: &Path) {
@@ -338,9 +377,25 @@ fn prune_cache_once(dir: &Path) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
+    const STALE_TEMP_AGE: std::time::Duration = std::time::Duration::from_secs(60 * 60);
     let mut files: Vec<(SystemTime, PathBuf)> = entries
         .flatten()
-        .filter(|e| e.path().extension().is_some_and(|ext| ext == "bin"))
+        .filter(|e| {
+            let path = e.path();
+            if path.extension().is_some_and(|ext| ext == "tmp") {
+                let abandoned = e
+                    .metadata()
+                    .and_then(|m| m.modified())
+                    .ok()
+                    .and_then(|t| t.elapsed().ok())
+                    .is_some_and(|age| age > STALE_TEMP_AGE);
+                if abandoned {
+                    let _ = fs::remove_file(&path);
+                }
+                return false;
+            }
+            path.extension().is_some_and(|ext| ext == "bin")
+        })
         .filter_map(|e| {
             let modified = e.metadata().ok()?.modified().ok()?;
             Some((modified, e.path()))
@@ -566,6 +621,94 @@ mod tests {
         assert!(
             load_cached_unit(&source).is_none(),
             "an entry naming another source must not be served"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_corrupt_entry_is_a_cache_miss_not_an_abort() {
+        // Two mutsu processes writing the same entry used to share one
+        // `<hash>.tmp` and rename a mixture of both encodings into place. The
+        // reader then took a length prefix out of the middle of the other
+        // process's bytes and handed it to bincode, which *allocates before it
+        // can fail* — so the whole process died with
+        // "memory allocation of 1784363464925575909 bytes failed", not the
+        // clean `None` that `.ok()?` reads as. The temp file is unique per
+        // process now; this pins the second half of the fix, that an entry which
+        // is corrupt for any other reason still only costs a reparse.
+        let stmts = vec![Stmt::Say(vec![Expr::Literal(Value::int(11))])];
+
+        let dir = tempdir("corrupt");
+        let source = dir.join("corrupt.rakumod");
+        {
+            let mut f = fs::File::create(&source).unwrap();
+            writeln!(f, "say 11;").unwrap();
+        }
+
+        save_cached_unit(&source, &stmts, &ParseEffects::default());
+        assert!(
+            load_cached_unit(&source).is_some(),
+            "control: entry is valid"
+        );
+
+        let canonical = source.canonicalize().unwrap();
+        let cache_file = cache_dir()
+            .unwrap()
+            .join(format!("{}.bin", path_hash(&canonical)));
+
+        // Keep the magic bytes so the cheap header check passes, then hand the
+        // metadata decoder a `String` whose bincode varint length prefix claims
+        // ~1.7 exabytes -- the exact shape of the observed abort. In bincode 2's
+        // varint encoding a leading 253 means "a u64 length follows", so this is
+        // what a length prefix read out of the middle of unrelated bytes looks
+        // like. It must be a *plausible* prefix: a byte that is not a valid
+        // marker at all (0xFF) errors out before any allocation is attempted, so
+        // it would not exercise the limit.
+        let mut garbage = vec![253u8];
+        garbage.extend_from_slice(&1_784_363_464_925_575_909u64.to_le_bytes());
+        garbage.resize(64, 0);
+        let mut data = Vec::new();
+        data.extend_from_slice(CACHE_MAGIC);
+        data.extend_from_slice(&(garbage.len() as u32).to_le_bytes());
+        data.extend_from_slice(&garbage);
+        data.extend_from_slice(&garbage);
+        fs::write(&cache_file, &data).unwrap();
+
+        assert!(
+            load_cached_unit(&source).is_none(),
+            "a corrupt entry must read as a cache miss"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn concurrent_writers_do_not_share_a_temp_file() {
+        // The bug in one line: `cache_file.with_extension("tmp")` is the same
+        // path in every process. Whatever the temp name is now, it must carry
+        // something process-unique.
+        let dir = tempdir("tmpname");
+        let source = dir.join("tmpname.rakumod");
+        {
+            let mut f = fs::File::create(&source).unwrap();
+            writeln!(f, "say 13;").unwrap();
+        }
+        let canonical = source.canonicalize().unwrap();
+        let cache_file = cache_dir()
+            .unwrap()
+            .join(format!("{}.bin", path_hash(&canonical)));
+
+        let tmp = temp_cache_path(&cache_file);
+        assert_ne!(
+            tmp,
+            cache_file.with_extension("tmp"),
+            "the temp name must not be shared across processes"
+        );
+        assert!(
+            tmp.to_string_lossy()
+                .contains(&std::process::id().to_string()),
+            "the temp name must be process-unique, got {tmp:?}"
         );
 
         let _ = fs::remove_dir_all(&dir);
