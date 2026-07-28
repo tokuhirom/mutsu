@@ -124,6 +124,19 @@ fn collect_use_lib_dirs(stmts: &[Stmt], out: &mut Vec<String>) {
     }
 }
 
+/// Record a declared type/package name under every spelling it is reachable by.
+///
+/// `class GLOBAL::Foo` declares `Foo` in the global namespace (class/role
+/// registration strips the prefix), so a later `sub f(Foo $x)` must not be
+/// rejected as an invalid typename. The prefixed spelling is kept too — a
+/// parameter may legitimately be written `GLOBAL::Foo`.
+fn insert_declared_name(out: &mut std::collections::HashSet<String>, name: &str) {
+    if let Some(stripped) = name.strip_prefix("GLOBAL::") {
+        out.insert(stripped.to_string());
+    }
+    out.insert(name.to_string());
+}
+
 fn collect_declared_type_names_with(
     interp: Option<&Interpreter>,
     extra_dirs: &[String],
@@ -145,16 +158,16 @@ fn collect_declared_type_names_with(
             Stmt::ClassDecl { name, body, .. } => {
                 // A plain `class` is type-like but NOT parametric (parameterizing
                 // it with `[T]`/`of T` is X::NotParametric); roles ARE parametric.
-                out.insert(name.resolve().to_string());
-                classes.insert(name.resolve().to_string());
+                insert_declared_name(out, &name.resolve());
+                insert_declared_name(classes, &name.resolve());
                 collect_declared_type_names_with(interp, extra_dirs, body, out, packages, classes);
             }
             Stmt::RoleDecl { name, body, .. } => {
-                out.insert(name.resolve().to_string());
+                insert_declared_name(out, &name.resolve());
                 collect_declared_type_names_with(interp, extra_dirs, body, out, packages, classes);
             }
             Stmt::EnumDecl { name, variants, .. } => {
-                out.insert(name.resolve().to_string());
+                insert_declared_name(out, &name.resolve());
                 // Enum values are valid value-params (`sub f(SomeEnumValue)`),
                 // and serve as suggestions for a mistyped one.
                 for (vname, _) in variants {
@@ -162,7 +175,7 @@ fn collect_declared_type_names_with(
                 }
             }
             Stmt::SubsetDecl { name, .. } => {
-                out.insert(name.resolve().to_string());
+                insert_declared_name(out, &name.resolve());
             }
             Stmt::Package {
                 name, kind, body, ..
@@ -173,9 +186,9 @@ fn collect_declared_type_names_with(
                     kind,
                     crate::ast::PackageKind::Module | crate::ast::PackageKind::Package
                 ) {
-                    packages.insert(name.resolve().to_string());
+                    insert_declared_name(packages, &name.resolve());
                 } else {
-                    out.insert(name.resolve().to_string());
+                    insert_declared_name(out, &name.resolve());
                 }
                 collect_declared_type_names_with(interp, extra_dirs, body, out, packages, classes);
             }

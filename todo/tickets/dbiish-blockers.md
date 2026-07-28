@@ -230,13 +230,29 @@ position`) caused by an undeclared `BPointer` — is stale. `BPointer` now
 resolves and runs all the way into `BODY_OF`, and
 `NativeHelpers::CStruct`'s `LinearArray` matches raku's output exactly
 (allocates, computes its stride, indexes, nativecasts, assigns element fields,
-disposes). What it hits now is one concrete, unrelated bug with a six-line
-repro: a `unit module` qualifies an *imported* type so `Pointer[t]` inside
-`NativeHelpers::Blob` resolves to `NativeHelpers::Blob::Pointer` and cannot be
-parameterized — see
-[`unit-module-qualifies-imported-type-parameterization.md`](unit-module-qualifies-imported-type-parameterization.md).
-Check `use NativeHelpers::Blob; BPointer(Buf.new(1,2,3))` to see where it stands
-before chasing anything else.
+disposes).
+
+**Update 2026-07-28: the type-qualification bug that followed is fixed** — the
+builtin preludes were being captured by the host `unit module`'s package, so
+`Pointer[t]` inside `NativeHelpers::Blob` named `NativeHelpers::Blob::Pointer`
+and could not be parameterized (see
+[`news/2026-07/unit-module-no-longer-captures-the-builtin-preludes.md`](../../news/2026-07/unit-module-no-longer-captures-the-builtin-preludes.md)).
+`BPointer` now runs all the way into `BODY_OF`'s last line and stops there:
+
+```
+$ mutsu -I <NativeHelpers-Blob>/lib -e 'use NativeHelpers::Blob; BPointer(Buf.new(1,2,3))'
+Cannot dereference a Pointer[Any]: not a type NativeCall can read
+  in sub BODY_OF ... in sub pointer-to ... in sub BPointer ...
+```
+
+That is **ADR-0015 P2 and nothing else**: `BODY_OF` looks the body type up as
+`%known-bodies{any.REPR}`, and `Buf`/`Blob` still answer `P6opaque` where raku
+answers `VMArray`, so the lookup misses and `Pointer[Any]` is what gets
+dereferenced. (The module's own `die "Can only handle …"` guard does not fire —
+it tests `type ~~ Nil`, and a missing hash key is `Any`.) There is no smaller
+intermediate step left: making `.REPR` answer `VMArray` without the body behind
+it is exactly what ADR-0015 §2.1's ordering rule forbids. Re-measure with the
+one-liner above before chasing anything else.
 
 ### ⑤ `06-types` — object hash keyed by type objects
 
@@ -353,10 +369,13 @@ is at 30 of 35. Two left:
    attributes and the `handles` delegation path converged on the instance cell;
    see [`news/2026-07/punned-role-container-attribute-store.md`](../../news/2026-07/punned-role-container-attribute-store.md).
 2. **⑨** — the `mysql` driver, and with it `01-basic`'s last three subtests.
-   The ADR it wanted is written and accepted (ADR-0015), and its P0/P1 have
-   landed, so `BODY_OF` and `LinearArray` now work. What remains is a single
-   named bug with a six-line repro:
-   [`unit-module-qualifies-imported-type-parameterization.md`](unit-module-qualifies-imported-type-parameterization.md).
+   The ADR it wanted is written and accepted (ADR-0015); P0/P1 have landed, and
+   as of 2026-07-28 so has the last of the small named bugs in front of it (the
+   `unit module` prelude capture). **The only thing left is ADR-0015 P2** —
+   native-backed `Buf`/`Blob` with an honest `VMArray` `.REPR` and an `MVMArrayB`
+   body. That is the campaign, not a slice: a new payload-only GC node, the two
+   `buf_bytes` accessors over the ~91 direct `"bytes"` touches, and the deletion
+   of `runtime/nativecall_pin.rs`. See ⑨ above for the exact current failure.
 
 ## When these are cleared
 
