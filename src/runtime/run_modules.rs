@@ -462,6 +462,7 @@ impl Interpreter {
         // sees the main source, so a NativeCall binding distributed as a module
         // would otherwise hit an undeclared `Pointer`.
         Self::inject_nativecall_prelude(&preprocessed, &mut stmts);
+        Self::inject_cglobal_prelude(&preprocessed, &mut stmts);
         Self::inject_iosocket_prelude(&preprocessed, &mut stmts);
 
         // Save to precompilation cache when the module is eligible.

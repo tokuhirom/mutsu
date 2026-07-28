@@ -1,4 +1,7 @@
-use super::run::{IO_SOCKET_ROLE_PRELUDE, NATIVECALL_POINTER_PRELUDE, RATIONAL_ROLE_PRELUDE};
+use super::run::{
+    IO_SOCKET_ROLE_PRELUDE, NATIVECALL_CGLOBAL_PRELUDE, NATIVECALL_POINTER_PRELUDE,
+    RATIONAL_ROLE_PRELUDE,
+};
 use super::*;
 
 impl Interpreter {
@@ -41,6 +44,37 @@ impl Interpreter {
         static POINTER_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
         let prelude = POINTER_STMTS.get_or_init(|| {
             crate::parse_dispatch::parse_source(NATIVECALL_POINTER_PRELUDE)
+                .map(|(s, _)| s)
+                .unwrap_or_default()
+        });
+        if prelude.is_empty() {
+            return;
+        }
+        let mut combined = prelude.clone();
+        combined.append(stmts);
+        *stmts = combined;
+    }
+
+    /// Prepend NativeCall's `cglobal` when a program that uses NativeCall calls
+    /// it without declaring its own.
+    ///
+    /// `cglobal` is **not** a Raku builtin — Rakudo exports it from
+    /// `NativeCall.rakumod` — so it is injected with the module's other
+    /// definitions rather than made a global function. Its body is Raku because
+    /// the contract is a `Proxy` ("redirects all its accesses",
+    /// `Language/nativecall.rakudoc`), and only the one fetch behind it is
+    /// native (see [`runtime::nativecall_global`](crate::runtime::nativecall_global)).
+    pub(super) fn inject_cglobal_prelude(source: &str, stmts: &mut Vec<Stmt>) {
+        if !source.contains("NativeCall")
+            || !source.contains("cglobal")
+            || source.contains("sub cglobal")
+        {
+            return;
+        }
+        use std::sync::OnceLock;
+        static CGLOBAL_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
+        let prelude = CGLOBAL_STMTS.get_or_init(|| {
+            crate::parse_dispatch::parse_source(NATIVECALL_CGLOBAL_PRELUDE)
                 .map(|(s, _)| s)
                 .unwrap_or_default()
         });

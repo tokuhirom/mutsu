@@ -118,7 +118,7 @@ pub struct NativeCallSpec {
 /// symlink (`libfoo.so`) is often a linker script or absent on a runtime-only
 /// system, while the versioned runtime object (`libfoo.so.N`) is present.
 #[cfg(feature = "libffi")]
-fn resolve_library_candidates(library: &Option<String>) -> Vec<String> {
+pub(crate) fn resolve_library_candidates(library: &Option<String>) -> Vec<String> {
     let stem = match library {
         // No argument, or the conventional "c" alias → the C runtime.
         None => return vec!["libc.so.6".to_string()],
@@ -146,6 +146,42 @@ fn resolve_library_candidates(library: &Option<String>) -> Vec<String> {
     ]
 }
 
+/// This process's own symbol space — `dlopen(NULL)`, which resolves a symbol
+/// from the executable and from **every** shared object already loaded into it.
+///
+/// That is what `is native` with no library — or with an *undefined* one, `is
+/// native(Str)` — means in Rakudo, and it is load-bearing rather than a corner
+/// case: `DBDish::mysql::Native` declares its entire surface `is native(LIB)`
+/// with `constant LIB = Rakudo::Internals.IS-WIN ?? 'mysql' !! Str`, having
+/// dlopened the client library itself first through `NativeLibs::Loader`.
+/// Resolving those symbols in `libc` instead — which is what mutsu used to do
+/// for "no library" — finds nothing.
+#[cfg(all(feature = "libffi", unix))]
+pub(crate) fn process_library() -> &'static libloading::Library {
+    use std::sync::OnceLock;
+    static THIS: OnceLock<&'static libloading::Library> = OnceLock::new();
+    THIS.get_or_init(|| {
+        let lib: libloading::Library = libloading::os::unix::Library::this().into();
+        // Leaked on purpose, like every other handle here: a dropped handle
+        // would `dlclose` and invalidate every pointer obtained through it.
+        Box::leak(Box::new(lib))
+    })
+}
+
+/// The library a native call resolves its symbol in: the process itself when no
+/// library was named, otherwise the first of the candidate file names that
+/// loads.
+#[cfg(feature = "libffi")]
+pub(crate) fn load_declared_library(
+    library: &Option<String>,
+) -> Result<(&'static libloading::Library, &'static str), RuntimeError> {
+    #[cfg(unix)]
+    if library.as_deref().is_none_or(str::is_empty) {
+        return Ok((process_library(), "this process"));
+    }
+    load_library_cached(&resolve_library_candidates(library))
+}
+
 /// Process-lifetime cache of dlopen'd libraries, keyed by the candidate name
 /// that successfully loaded. **Loading must persist across calls**: a `Library`
 /// dropped at the end of a call `dlclose`s it, and for a library that was not
@@ -155,7 +191,7 @@ fn resolve_library_candidates(library: &Option<String>) -> Vec<String> {
 /// `'static` keeps each library mapped for the program's lifetime, matching
 /// Rakudo's NativeCall (which never unloads).
 #[cfg(feature = "libffi")]
-fn load_library_cached(
+pub(crate) fn load_library_cached(
     candidates: &[String],
 ) -> Result<(&'static libloading::Library, &'static str), RuntimeError> {
     use std::collections::HashMap;
@@ -207,8 +243,7 @@ pub fn call_native(spec: &NativeCallSpec, args: &[Value]) -> Result<Value, Runti
         )));
     }
 
-    let candidates = resolve_library_candidates(&spec.library);
-    let (lib, lib_name) = load_library_cached(&candidates)?;
+    let (lib, lib_name) = load_declared_library(&spec.library)?;
     let func_ptr: *const std::ffi::c_void = unsafe {
         let sym: libloading::Symbol<*const std::ffi::c_void> =
             lib.get(spec.symbol.as_bytes()).map_err(|e| {
@@ -421,12 +456,20 @@ pub(crate) fn native_object_where(payload: usize) -> usize {
 /// A NULL address is still a defined object here: unlike an opaque CStruct
 /// handle, `Pointer.new(0)` is a legitimate value in Rakudo too.
 pub(crate) fn make_typed_pointer(addr: usize, of: &str) -> Value {
+    let ptr = make_pointer_object(addr);
+    if let ValueView::Instance { attributes, .. } = ptr.view() {
+        attributes.insert("of", Value::package(crate::symbol::Symbol::intern(of)));
+    }
+    ptr
+}
+
+/// A plain `Pointer` holding `addr`, **defined even at 0** — `Pointer.new(0)` is
+/// a legitimate value in Rakudo, unlike the NULL *return* of a native call,
+/// which is the declared class's type object so the caller's `unless defined`
+/// guard fires ([`make_native_handle`]).
+pub(crate) fn make_pointer_object(addr: usize) -> Value {
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("address".to_string(), Value::int(addr as i64));
-    attrs.insert(
-        "of".to_string(),
-        Value::package(crate::symbol::Symbol::intern(of)),
-    );
     Value::make_instance(crate::symbol::Symbol::intern("Pointer"), attrs)
 }
 

@@ -1,0 +1,254 @@
+//! `cglobal` — reading a library's exported (`extern`) variables.
+//!
+//! ```raku
+//! my $errno := cglobal('libc.so.6', 'errno', int32);
+//! ```
+//!
+//! Raku's `cglobal` returns a [`Proxy`] that "redirects all its accesses" to the
+//! named symbol (`Language/nativecall.rakudoc`), so it re-reads on every fetch —
+//! which is the whole point for a variable C keeps changing underneath you. That
+//! `Proxy` is built in the NativeCall prelude; this module is the primitive
+//! behind its `FETCH`, `__mutsu_cglobal_fetch($libname, $symbol, $target-type)`.
+//!
+//! **It dereferences.** The symbol's address is where the variable *lives*, and
+//! the value is read from it — `cglobal('libc.so.6', 'optind', int32)` is `1`,
+//! not the address of `optind`. (Verified against Rakudo.) A missing library or
+//! symbol throws, which is what lets the common existence probe work:
+//!
+//! ```raku
+//! (try cglobal($candidate, $well-known-symbol, Pointer)) ~~ Pointer
+//! ```
+//!
+//! That probe is how `NativeLibs::Searcher` finds a versioned shared object, and
+//! through it how `DBIish`'s `mysql` and `Pg` drivers locate their client
+//! libraries — the reason this exists. Note what it implies: the symbol probed
+//! is usually a *function* (`mysql_init`), so the dereference reads the first
+//! word of its machine code. That is meaningless as a pointer and deliberately
+//! unused; only "did the lookup throw" is being asked.
+
+use crate::value::{RuntimeError, Value, ValueView};
+
+use super::Interpreter;
+
+/// The name a `Proxy` in the NativeCall prelude calls to perform one fetch.
+pub(crate) const CGLOBAL_FETCH: &str = "__mutsu_cglobal_fetch";
+
+impl Interpreter {
+    /// `__mutsu_cglobal_fetch($libname, $symbol, $target-type)` — one read of a
+    /// C global. `None` for any other function name, so the caller falls
+    /// through to its remaining dispatch.
+    pub(crate) fn try_cglobal_fetch(
+        &mut self,
+        name: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if name != CGLOBAL_FETCH {
+            return None;
+        }
+        let args: Vec<Value> = args
+            .iter()
+            .cloned()
+            .map(crate::runtime::types::unwrap_varref_value)
+            .collect();
+        if args.len() != 3 {
+            return Some(Err(RuntimeError::new(format!(
+                "cglobal() expects 3 arguments, got {}",
+                args.len()
+            ))));
+        }
+        let symbol = args[1].to_string_value();
+        let target = match args[2].view() {
+            ValueView::Package(n) => n.resolve().to_string(),
+            ValueView::Instance { class_name, .. } => class_name.resolve().to_string(),
+            _ => {
+                return Some(Err(RuntimeError::new(
+                    "cglobal() expects a type object as its third argument",
+                )));
+            }
+        };
+        Some(self.cglobal_fetch(&args[0], &symbol, &target))
+    }
+
+    #[cfg(feature = "libffi")]
+    fn cglobal_fetch(
+        &mut self,
+        library: &Value,
+        symbol: &str,
+        target: &str,
+    ) -> Result<Value, RuntimeError> {
+        use crate::runtime::cstruct_layout::{FieldLayout, FieldType, read_field, short_base_name};
+
+        // `is native(&lib-name)` may supply the library through a code object;
+        // `cglobal` takes the library "in the same ways that they can be to the
+        // native trait" (nativecall.rakudoc), so resolve a callable the same way.
+        let lib_name = match library.view() {
+            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => self
+                .call_sub_value(library.clone(), Vec::new(), true)?
+                .to_string_value(),
+            _ => library.to_string_value(),
+        };
+        let (lib, lib_name) = crate::runtime::nativecall::load_declared_library(&Some(lib_name))?;
+        // SAFETY: looking a symbol up in a dlopen'd library. The handle is
+        // leaked to `'static` by `load_library_cached`, so the address stays
+        // valid for the rest of the process.
+        let addr: usize = unsafe {
+            let sym: libloading::Symbol<*const std::ffi::c_void> =
+                lib.get(symbol.as_bytes()).map_err(|e| {
+                    RuntimeError::new(format!(
+                        "cglobal: symbol '{symbol}' not found in '{lib_name}': {e}"
+                    ))
+                })?;
+            *sym.into_raw() as usize
+        };
+
+        let short = short_base_name(target);
+        // A pointer-shaped target reads a `void*` out of the variable and wraps
+        // it. `Pointer.new(0)` is a legitimate defined value, so unlike a native
+        // call's NULL *return* (which is the class's type object) a null global
+        // stays a defined `Pointer` holding 0.
+        if short == "Pointer" || short.starts_with("Pointer[") {
+            // SAFETY: as above — `addr` is a live symbol address, and the
+            // declared type says a pointer lives there. Same trust every
+            // NativeCall signature already gets.
+            let held = unsafe { (addr as *const usize).read_unaligned() };
+            return Ok(crate::runtime::nativecall::make_pointer_object(held));
+        }
+        // A CStruct/CUnion/CPointer target: the variable holds a pointer to the
+        // struct, and the handle is that address wrapped as the declared class.
+        if self.is_cstruct_class(target) {
+            // SAFETY: as above.
+            let held = unsafe { (addr as *const usize).read_unaligned() };
+            return Ok(crate::runtime::nativecall::make_native_handle(short, held));
+        }
+        let ty =
+            FieldType::from_type_name(target, |n| self.is_cstruct_class(n)).ok_or_else(|| {
+                RuntimeError::new(format!(
+                    "cglobal: '{target}' is not a type NativeCall can read"
+                ))
+            })?;
+        let field = FieldLayout {
+            name: symbol.to_string(),
+            ty,
+            offset: 0,
+        };
+        // SAFETY: as above. Reading the declared type out of the variable the
+        // symbol names is exactly what `cglobal` is for; a wrong declaration is
+        // undefined behaviour in Rakudo too.
+        Ok(unsafe { read_field(addr, &field) })
+    }
+
+    #[cfg(not(feature = "libffi"))]
+    fn cglobal_fetch(
+        &mut self,
+        _library: &Value,
+        _symbol: &str,
+        _target: &str,
+    ) -> Result<Value, RuntimeError> {
+        Err(RuntimeError::new(
+            "cglobal() requires NativeCall support, which this build does not have",
+        ))
+    }
+}
+
+impl Interpreter {
+    /// Route a resolved `is native(...)` **method** to NativeCall, with the
+    /// invocant marshalled as the first C argument.
+    ///
+    /// `None` when `class.method` carries no native descriptor, which is every
+    /// ordinary method — so this is one hash lookup on the method-dispatch path
+    /// and nothing else.
+    pub(crate) fn try_native_call_method(
+        &mut self,
+        class_name: &str,
+        method: &str,
+        invocant: &Value,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if self.native_call_specs.is_empty() {
+            return None;
+        }
+        let spec = self
+            .native_call_specs
+            .get(&Self::native_method_key(class_name, method))
+            .or_else(|| {
+                let short = class_name.rsplit("::").next().unwrap_or(class_name);
+                self.native_call_specs
+                    .get(&Self::native_method_key(short, method))
+            })?
+            .clone();
+        let mut call_args = Vec::with_capacity(args.len() + 1);
+        call_args.push(invocant.clone());
+        call_args.extend(args.iter().cloned());
+        Some(crate::runtime::nativecall::call_native(&spec, &call_args))
+    }
+
+    /// [`try_native_call_method`] from a call site that knows only the
+    /// receiver, resolving the declaring class across the MRO the way ordinary
+    /// method resolution does (a native method can be inherited).
+    ///
+    /// Guarded twice before it costs anything: no native descriptors at all, or
+    /// a receiver that is neither an instance nor a type object, and it is a
+    /// single `is_empty` check.
+    pub(crate) fn try_native_method_on_receiver(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if self.native_call_specs.is_empty() {
+            return None;
+        }
+        let class_name = match target.view() {
+            ValueView::Instance { class_name, .. } => class_name.resolve().to_string(),
+            ValueView::Package(name) => name.resolve().to_string(),
+            _ => return None,
+        };
+        let mro: Vec<String> = self
+            .class_mro(&class_name)
+            .iter()
+            .map(|s| s.resolve().to_string())
+            .collect();
+        for cn in mro {
+            if let Some(result) = self.try_native_call_method(&cn, method, target, args) {
+                return Some(result);
+            }
+        }
+        None
+    }
+}
+
+impl Interpreter {
+    /// Read a native-handle instance's declared CStruct fields out of C memory
+    /// and into its attribute cell, so `$!field` inside the class's own methods
+    /// resolves.
+    ///
+    /// A no-op — and one registry probe — for every ordinary class. Values are
+    /// refreshed on each method entry rather than cached once, because the
+    /// authoritative copy is the C struct and only that copy is written by the
+    /// callee of a native call.
+    pub(crate) fn seed_cstruct_fields_for_method(
+        &mut self,
+        receiver_class_name: &str,
+        invocant: Option<&Value>,
+    ) {
+        let Some(invocant) = invocant else { return };
+        let ValueView::Instance { attributes, .. } = invocant.view() else {
+            return;
+        };
+        if !attributes.contains_key("address") {
+            return;
+        }
+        let Some(registered) = self.cstruct_class_name(receiver_class_name) else {
+            return;
+        };
+        let Some(layout) = self.cstruct_layout(&registered) else {
+            return;
+        };
+        for field in &layout {
+            let name = field.name.clone();
+            if let Some(value) = self.cstruct_field_value(invocant, &name) {
+                attributes.insert(name.as_str(), value);
+            }
+        }
+    }
+}

@@ -572,8 +572,20 @@ impl crate::runtime::Interpreter {
         if let Some(of) = pointer_parameter(short) {
             return Some(Ok(crate::runtime::nativecall::make_typed_pointer(addr, of)));
         }
+        // Tag the handle with the class's **registered** name, not the short
+        // one. A CStruct/CPointer/CUnion declared inside a module is registered
+        // as `M::BB` while `short_base_name` says `BB`, and a handle carrying
+        // the short name matches neither its own class for method resolution
+        // (`MoarVM::Guts::REPRs`' hand-written `MVMArrayB.realstart` was
+        // unreachable) nor raku's `.^name`. The shortening still applies to the
+        // *parameter* forms above, which is what it was introduced for.
+        let tag = match self.cstruct_class_name(&target) {
+            Some(registered) => registered,
+            None if self.registry().classes.contains_key(&target) => target.clone(),
+            None => short.to_string(),
+        };
         Some(Ok(crate::runtime::nativecall::make_native_handle(
-            short, addr,
+            &tag, addr,
         )))
     }
 

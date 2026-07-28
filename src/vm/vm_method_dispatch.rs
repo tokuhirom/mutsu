@@ -434,6 +434,15 @@ impl Interpreter {
             }
         }
 
+        // A CStruct/CUnion handle keeps its fields in native memory, not in the
+        // attribute cell, so `$!field` inside the class's own method would read
+        // nothing. (`$obj.field` works: the generated accessor goes through
+        // `cstruct_field_value`.) Materialise the declared fields for the
+        // duration of the call — re-read on every entry, so a value C changed
+        // in between is picked up. `MoarVM::Guts::REPRs`' `MVMArrayB.realstart`
+        // is exactly this shape: `+$!start ?? … !! $!any`.
+        self.seed_cstruct_fields_for_method(receiver_class_name, Some(&base));
+
         // Bind attributes
         for (attr_name, attr_val) in attributes {
             let attr_name = attr_name.as_str();

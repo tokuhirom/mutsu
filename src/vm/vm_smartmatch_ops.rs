@@ -16,7 +16,13 @@ impl Interpreter {
         rhs_pure_regex: bool,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
+        // Smartmatching *reads* the left operand, and reading a `Proxy` means
+        // FETCH: `cglobal(...) ~~ Pointer` asks about the value in the C global,
+        // not about the Proxy standing in for it (`NativeLibs::Searcher` probes
+        // a library exactly that way). Without this the match sees a `Proxy` and
+        // answers False for every type — including the one the FETCH returns.
         let left = self.stack.pop().unwrap();
+        let left = loan_env!(self, auto_fetch_proxy(&left))?;
         let rhs_start = *ip + 1;
         let rhs_end = rhs_end as usize;
         // Slice 6.3 step 2: clear the regex engine's caller-variable write log so

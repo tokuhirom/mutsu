@@ -526,6 +526,18 @@ impl Interpreter {
         } else {
             target
         };
+        // An `is native(...)` method: the call belongs to NativeCall, not to the
+        // `{ * }` stub the declaration gives it. Both method-call opcodes need
+        // this — a class's methods are compiled to bytecode and dispatched
+        // without reaching the resolver, and `$obj.meth` on a variable compiles
+        // to the *mut* opcode.
+        if let Some(result) = loan_env!(
+            self,
+            try_native_method_on_receiver(&target, method.as_str(), &args)
+        ) {
+            self.stack.push(result?);
+            return Ok(());
+        }
         // A `Seq.new($iterator)` stores its iterator deferred (empty backing vec).
         // Mut-path list methods (`.sort`, comparator `.map`/`.grep`, ...) read that
         // empty vec directly, so pull every element from the iterator first. The

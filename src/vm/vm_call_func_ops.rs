@@ -1305,6 +1305,10 @@ impl Interpreter {
                 } else if let Some(result) = self.try_nativesizeof(name, &args) {
                     // NativeCall's `nativesizeof($obj-or-type)` helper.
                     result
+                } else if let Some(result) = self.try_cglobal_fetch(name, &args) {
+                    // One fetch behind the `Proxy` NativeCall's `cglobal`
+                    // returns (see runtime::nativecall_global).
+                    result
                 } else if let Some(result) = self.try_native_json_function(name, &args) {
                     // Dispatch JSON::Fast / JSON::Tiny `to-json` / `from-json`
                     // to the native implementation (runtime/json.rs).
