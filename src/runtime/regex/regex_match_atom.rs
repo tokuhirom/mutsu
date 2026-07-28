@@ -372,25 +372,16 @@ impl Interpreter {
                 return result;
             }
             if !candidates.is_empty() {
-                // Borrow the remaining text — a `.to_vec()` copy here cost
-                // O(remaining) per subrule reference (O(n^2) over a parse).
-                let tail = &chars[pos..];
-                // The subrule candidates match `tail` (a slice from `pos`) at
-                // position 0, so publish the char before the slice for look-behind
-                // anchors (`^^`). At `pos == 0` inherit the current value (this
-                // slice may itself be a nested subrule's tail). Restored on every
-                // exit path by the guard.
-                let saved_prev = super::regex_helpers::REGEX_PRECEDING_CHAR.with(|c| c.get());
-                let slice_prev = if pos > 0 {
-                    Some(chars[pos - 1])
-                } else {
-                    saved_prev
-                };
-                super::regex_helpers::REGEX_PRECEDING_CHAR.with(|c| c.set(slice_prev));
-                let _restore_prev = super::regex_helpers::RegexPrecedingCharGuard(saved_prev);
+                // The subrule body is matched against the WHOLE subject starting
+                // at `pos` (ADR-0016 P1), not against a `&chars[pos..]` re-slice.
+                // Every offset it produces is therefore already absolute, so
+                // nothing has to be rebased afterwards — the old re-slice forced
+                // a deep copy of the entire descendant capture subtree at every
+                // nesting level — and look-behind/`<<`/`^^`/`<at(N)>` see the real
+                // text before the subrule instead of a slice boundary.
 
                 // Left-recursion detection using (name+args, remaining_chars_count)
-                // as key. remaining = chars.len() - pos = tail.len().
+                // as key. remaining = chars.len() - pos.
                 // When rule r calls <&r> recursively at the same position, both calls
                 // will have the same remaining count, allowing us to detect and break
                 // the left-recursion cycle. The argument values are part of the rule
@@ -407,7 +398,7 @@ impl Interpreter {
                     }
                     n
                 };
-                let lr_key = (lr_name, tail.len());
+                let lr_key = (lr_name, chars.len() - pos);
 
                 // Check if this call is currently active (left recursion detected).
                 let is_active = LR_ACTIVE.with(|a| a.borrow().contains_key(&lr_key));
@@ -416,7 +407,8 @@ impl Interpreter {
                     // its own seed, so the owner must keep growing it.
                     LR_SEED_READ.with(|s| s.borrow_mut().insert(lr_key.clone()));
                     // Return the current seed for this (name, position).
-                    // The seed is stored in HIGHEST FIRST order (raw inner positions relative to tail).
+                    // The seed is stored in HIGHEST FIRST order (raw inner
+                    // matches, absolute positions).
                     let seed =
                         LR_MEMO.with(|m| m.borrow().get(&lr_key).cloned().unwrap_or_default());
                     // Wrap seed into outer captures. build_named_candidates_from_inner
@@ -431,8 +423,8 @@ impl Interpreter {
 
                 // Not currently active: run the growing-seed algorithm.
                 //
-                // Seed storage: raw (un-wrapped) inner matches in HIGHEST FIRST order,
-                // with positions relative to `tail` (0-based from pos).
+                // Seed storage: raw (un-wrapped) inner matches in HIGHEST FIRST
+                // order, with absolute positions.
                 // When is_active branch reads the seed, it passes them to
                 // build_named_candidates_from_inner which adds the outer wrapping.
                 //
@@ -460,7 +452,7 @@ impl Interpreter {
                             has_proto = true;
                         }
                         let all_matches =
-                            self.regex_match_ends_from_caps_in_pkg(parsed, tail, 0, sub_pkg);
+                            self.regex_match_ends_from_caps_in_pkg(parsed, chars, pos, sub_pkg);
                         // all_matches: HIGHEST FIRST.
                         let matches_to_use: Vec<_> = if sym_key.is_some() {
                             all_matches.into_iter().take(1).collect()
@@ -671,59 +663,9 @@ impl Interpreter {
         }
     }
 
-    /// Shift every offset in a capture subtree by `delta`, including this node's
-    /// own `from`/`to`. Used when re-rooting an inner match (matched against a
-    /// `&chars[pos..]` slice, so its offsets are slice-relative) into the parent's
-    /// absolute coordinate system.
-    pub(super) fn shift_capture_tree(caps: &mut RegexCaptures, delta: usize) {
-        if delta == 0 {
-            return;
-        }
-        caps.from += delta;
-        caps.to += delta;
-        Self::shift_capture_descendants(caps, delta);
-    }
-
-    /// Shift the offsets of a capture node's descendants (its own positional
-    /// captures and every nested named/positional subcapture) by `delta`, WITHOUT
-    /// touching this node's own `from`/`to`. `build_named_candidates_from_inner`
-    /// sets the wrapper node's `from`/`to` explicitly (respecting `<( )>` capture
-    /// markers), then calls this so the slice-relative child offsets become
-    /// absolute — matching Rakudo, whose `.from`/`.to` are always absolute to the
-    /// original string even for a subrule matched deep inside a repetition.
-    pub(super) fn shift_capture_descendants(caps: &mut RegexCaptures, delta: usize) {
-        if delta == 0 {
-            return;
-        }
-        for (f, t) in caps.positional_offsets.iter_mut() {
-            *f += delta;
-            *t += delta;
-        }
-        for slot in caps.positional_slots.iter_mut().flatten() {
-            slot.1 += delta;
-            slot.2 += delta;
-        }
-        for entry in caps
-            .positional_quantified
-            .iter_mut()
-            .flatten()
-            .flat_map(|list| list.iter_mut())
-        {
-            entry.1 += delta;
-            entry.2 += delta;
-            if let Some(nested) = entry.3.as_mut() {
-                Self::shift_capture_tree(std::sync::Arc::make_mut(nested), delta);
-            }
-        }
-        for sub in caps.named_subcaps.values_mut().flat_map(|v| v.iter_mut()) {
-            Self::shift_capture_tree(std::sync::Arc::make_mut(sub), delta);
-        }
-        for sub in caps.positional_subcaps.iter_mut().flatten() {
-            Self::shift_capture_tree(std::sync::Arc::make_mut(sub), delta);
-        }
-    }
-
-    /// Build named regex candidates from inner match results (positions relative to tail).
+    /// Build named regex candidates from inner match results. Inner positions are
+    /// already absolute (ADR-0016 P1: the subrule body was matched against the whole
+    /// subject starting at `pos`, not a re-slice), so nothing is rebased here.
     /// Wraps each inner match in the appropriate capture structure for the named regex call.
     /// `pos` is the position of the named atom in `chars`. Each candidate is a
     /// capture DELTA relative to an empty baseline (ADR-0007).
@@ -735,8 +677,7 @@ impl Interpreter {
         sym_key: Option<&String>,
     ) -> Vec<(usize, RegexCaptures)> {
         let mut out = Vec::new();
-        for (inner_end, inner_caps) in inner_matches {
-            let end = pos + inner_end;
+        for (end, inner_caps) in inner_matches {
             let mut new_caps = RegexCaptures::default();
             let capture_name = spec
                 .capture_name
@@ -745,23 +686,15 @@ impl Interpreter {
             if let Some(capture_name) = capture_name {
                 // Apply the subrule's own capture markers (`<(` / `)>`): a token
                 // like `token foo { 12345 <( 67890 }` restricts its `<foo>`
-                // submatch to `67890`. The subrule body is matched against the
-                // tail starting at `pos`, so its `capture_start`/`capture_end` are
-                // tail-relative (0-based); rebase them by `pos`. They are `None`
-                // when the subrule used no markers, so this is a no-op otherwise.
-                let inner_len = end - pos;
-                let cs = (pos + inner_caps.capture_start.unwrap_or(0)).clamp(pos, end);
-                let ce = (pos + inner_caps.capture_end.unwrap_or(inner_len)).clamp(cs, end);
+                // submatch to `67890`. They are already absolute, and `None` when
+                // the subrule used no markers, so this is a no-op otherwise.
+                let cs = inner_caps.capture_start.unwrap_or(pos).clamp(pos, end);
+                let ce = inner_caps.capture_end.unwrap_or(end).clamp(cs, end);
                 let captured: String = chars[cs..ce].iter().collect();
                 let mut subcap = inner_caps;
                 subcap.matched = captured.clone();
                 subcap.from = cs;
                 subcap.to = ce;
-                // The subrule body was matched against `&chars[pos..]`, so every
-                // descendant offset (its own $0/$1 positional captures and any
-                // nested subrule captures) is slice-relative. Rebase them by `pos`
-                // so `.from`/`.to` are absolute like Rakudo's.
-                Self::shift_capture_descendants(&mut subcap, pos);
                 // sym is already set on subcap from raw_out collection loop.
                 // Fall back to sym_key parameter for the is_active (seed) path.
                 if subcap.sym.is_none() && sym_key.is_some() {
@@ -834,16 +767,13 @@ impl Interpreter {
                 // `.hash`; the grammar action walk recurses into them. This replaces
                 // the older "flatten direct children into the parent" hack, which
                 // lost the rule's own action and over-exposed children in `.hash`.
-                let inner_len = end - pos;
-                let cs = (pos + inner_caps.capture_start.unwrap_or(0)).clamp(pos, end);
-                let ce = (pos + inner_caps.capture_end.unwrap_or(inner_len)).clamp(cs, end);
+                let cs = inner_caps.capture_start.unwrap_or(pos).clamp(pos, end);
+                let ce = inner_caps.capture_end.unwrap_or(end).clamp(cs, end);
                 let captured: String = chars[cs..ce].iter().collect();
                 let mut subcap = inner_caps;
                 subcap.matched = captured;
                 subcap.from = cs;
                 subcap.to = ce;
-                // Rebase slice-relative descendant offsets to absolute (see above).
-                Self::shift_capture_descendants(&mut subcap, pos);
                 if subcap.sym.is_none() && sym_key.is_some() {
                     subcap.sym = sym_key.cloned();
                 }

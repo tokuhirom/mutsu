@@ -220,6 +220,30 @@ The `MUTSU_VM_STATS` counters are useless here: only ~25k opcodes run for a
    it as its own slice, and validate with `benchmarks/bench-yaml-parse.raku`
    via `bench-data` (not a local run) once a candidate fix exists.
 
+   **Done (2026-07-28): that investigation produced
+   `docs/adr/0016-span-based-captures-and-lazy-match.md`.** It names five
+   structural causes and commits to spans-into-a-shared-subject plus a lazily
+   materialized `Match`, phased P1-P5. Two findings correct the guesses above:
+   - The biggest copy source was not the `Alternation` merge loop (that path
+     already `drain`s rather than clones, post-ADR-0007). It was the **subrule
+     re-slice**: matching a subrule body against `&chars[pos..]` made every inner
+     offset slice-relative, and the rebase (`shift_capture_descendants`) went
+     through `Arc::make_mut` on `Arc`s that `record_reduced_subrule` had already
+     shared — so every subrule call deep-copied its whole descendant subtree, at
+     every nesting level, for every candidate. **P1 removed it** (see
+     `news/2026-07/regex-subrule-absolute-positions.md`), and fixed three
+     look-behind/word-boundary compatibility bugs on the way.
+   - The 11% `__memcmp_avx2_movbe` is two things, not one. A gated experiment
+     (skip the leaf-capture position search, change nothing else) moved it to
+     6.9% at equal wall clock: ≈4 points are the Match builder recovering leaf
+     offsets by **searching the subject for the captured text** (it does this even
+     for positional captures, whose exact spans are already recorded in
+     `positional_offsets` and simply ignored — ADR-0016 P3). The remaining ≈7% is
+     owned `String` capture-name keys compared on every `HashMap` probe and trail
+     record (P4: intern them as `Symbol`).
+
+   Remaining phases are tracked in the ADR, not here.
+
 ## Why it matters
 
 A bundled battery is loaded and *used* on every run of a program that needs it.
