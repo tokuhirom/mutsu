@@ -144,6 +144,25 @@ jobs:
         env:
           MUTSU_BIN: target/release/mutsu
 
+      - name: Roast tests (warm precomp cache)
+        # The step above deliberately starts from an empty precomp cache, and CI
+        # runners are fresh anyway, so until now the *warm* cache path was never
+        # exercised here at all — a default-on mechanism the project's
+        # comprehensive safety net structurally could not test. A cache hit skips
+        # a module's parse, so any parser state the entry fails to replay becomes
+        # a bug that only shows up on the second run of a program; that is exactly
+        # how the S14-roles/versioning.t language-revision bug reached main.
+        #
+        # The full run above just warmed the cache for every module the suite
+        # loads, so re-running the module-sensitive slice of the whitelist now
+        # covers the hit path. Small subset, seconds of wall clock.
+        run: |
+          set -o pipefail
+          prove -j4 --merge -e 'scripts/run-roast-test.sh' \
+            $(grep -E '/(S10-packages|S11-modules|S14-roles)/' roast-whitelist.txt)
+        env:
+          MUTSU_BIN: target/release/mutsu
+
       - name: Flaky quarantine retries used
         if: always()
         run: scripts/report-flaky-retries.sh

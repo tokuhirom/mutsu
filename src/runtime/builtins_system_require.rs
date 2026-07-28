@@ -71,12 +71,14 @@ impl Interpreter {
         None
     }
 
-    /// Parse a source file for require, returning the merged AST.
+    /// Parse a source file for require, returning the merged AST together with
+    /// the parser state the parse left behind (see `precomp::ParseEffects`), so
+    /// the cache can replay it on a later hit.
     fn parse_require_source(
         &mut self,
         file: &str,
         path: &std::path::Path,
-    ) -> Result<Vec<crate::ast::Stmt>, RuntimeError> {
+    ) -> Result<(Vec<crate::ast::Stmt>, crate::precomp::ParseEffects), RuntimeError> {
         let code = std::fs::read_to_string(path)
             .map_err(|e| RuntimeError::new(format!("Failed to read module {}: {}", file, e)))?;
         let preprocessed = Self::maybe_preprocess_roast_directives(&code);
@@ -84,8 +86,12 @@ impl Interpreter {
         crate::parser::set_parser_program_path(self.program_path.clone());
         let result = parse_dispatch::parse_compilation_unit(&preprocessed);
         crate::parser::clear_parser_lib_paths();
-        for warning in crate::parser::take_parse_warnings() {
-            self.write_warn_to_stderr(&warning);
+        let effects = crate::precomp::ParseEffects {
+            language_version: crate::parser::current_language_version(),
+            warnings: crate::parser::take_parse_warnings(),
+        };
+        for warning in &effects.warnings {
+            self.write_warn_to_stderr(warning);
         }
         let stmts = result.map(|(stmts, _)| stmts).map_err(|mut err| {
             err.message = format!("Failed to parse module '{}': {}", file, err.message);
@@ -94,7 +100,7 @@ impl Interpreter {
         // `unit class`/`unit role`/`unit grammar` bodies are already merged at
         // parse time (see `parser::stmt::stmtlist` unit-capture), so the parsed
         // statements need no post-parse surgery.
-        Ok(stmts)
+        Ok((stmts, effects))
     }
 
     fn require_load_from_file(
@@ -106,17 +112,22 @@ impl Interpreter {
             .resolve_require_file_path(file)
             .ok_or_else(|| RuntimeError::unsatisfied_dependency(file))?;
 
-        // Try loading from precompilation cache
+        // Try loading from precompilation cache. A hit skips the parse, so replay
+        // the parser state it would have produced (see `precomp::ParseEffects`).
         let stmts = if self.precomp_enabled {
-            if let Some(cached) = crate::precomp::load_cached_ast(&path) {
-                cached
+            if let Some(unit) = crate::precomp::load_cached_unit(&path) {
+                crate::parser::set_current_language_version(&unit.effects.language_version);
+                for warning in &unit.effects.warnings {
+                    self.write_warn_to_stderr(warning);
+                }
+                unit.stmts
             } else {
-                let parsed = self.parse_require_source(file, &path)?;
-                crate::precomp::save_cached_ast(&path, &parsed);
+                let (parsed, effects) = self.parse_require_source(file, &path)?;
+                crate::precomp::save_cached_unit(&path, &parsed, &effects);
                 parsed
             }
         } else {
-            self.parse_require_source(file, &path)?
+            self.parse_require_source(file, &path)?.0
         };
         let saved_package = self.current_package();
         let before_function_keys: std::collections::HashSet<Symbol> =

@@ -423,9 +423,17 @@ impl Interpreter {
         let precomp_eligible =
             self.precomp_enabled && !has_no_precompilation && !dependency_disables_precomp;
 
-        // Try loading from precompilation cache when eligible.
-        if precomp_eligible && let Some(stmts) = crate::precomp::load_cached_ast(source_path) {
-            return Ok((stmts, true));
+        // Try loading from precompilation cache when eligible. A hit skips the
+        // parse, so the parser state the parse would have left behind must be
+        // replayed from the entry — otherwise the module's mainline runs under
+        // the *importer's* language revision and the module's warnings never
+        // appear. See `precomp::ParseEffects`.
+        if precomp_eligible && let Some(unit) = crate::precomp::load_cached_unit(source_path) {
+            crate::parser::set_current_language_version(&unit.effects.language_version);
+            for warning in &unit.effects.warnings {
+                self.write_warn_to_stderr(warning);
+            }
+            return Ok((unit.stmts, true));
         }
 
         let preprocessed = Self::maybe_preprocess_roast_directives(&code);
@@ -433,8 +441,14 @@ impl Interpreter {
         crate::parser::set_parser_program_path(self.program_path.clone());
         let result = parse_dispatch::parse_compilation_unit(&preprocessed);
         crate::parser::clear_parser_lib_paths();
-        for warning in crate::parser::take_parse_warnings() {
-            self.write_warn_to_stderr(&warning);
+        // Capture exactly what a later cache hit will have to replay, before
+        // anything downstream can disturb it.
+        let effects = crate::precomp::ParseEffects {
+            language_version: crate::parser::current_language_version(),
+            warnings: crate::parser::take_parse_warnings(),
+        };
+        for warning in &effects.warnings {
+            self.write_warn_to_stderr(warning);
         }
         // `unit class`/`unit role`/`unit grammar` bodies are already merged at
         // parse time by the statement-list unit-capture (see
@@ -452,7 +466,7 @@ impl Interpreter {
 
         // Save to precompilation cache when the module is eligible.
         if precomp_eligible {
-            crate::precomp::save_cached_ast(source_path, &stmts);
+            crate::precomp::save_cached_unit(source_path, &stmts, &effects);
         }
 
         Ok((stmts, precomp_eligible))
