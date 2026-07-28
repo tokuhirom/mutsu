@@ -373,9 +373,14 @@ is at 30 of 35. Two left:
    as of 2026-07-28 so has the last of the small named bugs in front of it (the
    `unit module` prelude capture). **The only thing left is ADR-0015 P2** —
    native-backed `Buf`/`Blob` with an honest `VMArray` `.REPR` and an `MVMArrayB`
-   body. That is the campaign, not a slice: a new payload-only GC node, the two
-   `buf_bytes` accessors over the ~91 direct `"bytes"` touches, and the deletion
-   of `runtime/nativecall_pin.rs`. See ⑨ above for the exact current failure.
+   body. That is the campaign, not a slice. It has been surveyed against `main`:
+   [`todo/deep/adr0015-p2-buf-storage-survey.md`](../deep/adr0015-p2-buf-storage-survey.md)
+   has the measured touch count (104, not the ADR's ~91), the `.REPR` machinery
+   P1 already left in place, and — the load-bearing correction —
+   **`native_object_where` cannot be extended into `MVMArrayB`**: it is memoised
+   by payload address, immutable and leaked, which only works because the
+   CStruct/CArray bodies are all-zero past word 0. Read it before starting. See
+   ⑨ above for the exact current failure.
 
 ## When these are cleared
 
