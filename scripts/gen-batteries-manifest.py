@@ -88,6 +88,10 @@ SIDECAR = {
         "slot": "Template engine",
         "record": "docs/batteries/templates.md",
     },
+    "YAMLish": {
+        "slot": "YAML",
+        "record": "docs/batteries/yaml.md",
+    },
 }
 
 

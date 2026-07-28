@@ -169,6 +169,41 @@ pub(crate) fn declared_regex_var_names(pattern: &str) -> std::collections::HashS
     names
 }
 
+/// Recognise the lookaround assertions — `<before …>`, `<?before …>`,
+/// `<!after …>`, `<.before …>` — from the text that follows the opening `<`.
+/// Returns `(negated, is_behind, head_len)`, where `head_len` spans the optional
+/// `?`/`!`/`.` prefix, the keyword and the whitespace separating it from the
+/// body. That separator may be a newline, not just a space: YAMLish's
+/// `block-string` writes its lookahead across several source lines.
+pub(super) fn lookaround_keyword(inner: &str) -> Option<(bool, bool, usize)> {
+    let (negated, prefix_len) = match inner.as_bytes().first() {
+        Some(b'?') | Some(b'.') => (false, 1),
+        Some(b'!') => (true, 1),
+        _ => (false, 0),
+    };
+    let rest = &inner[prefix_len..];
+    for (keyword, is_behind) in [("before", false), ("after", true)] {
+        let Some(after) = rest.strip_prefix(keyword) else {
+            continue;
+        };
+        let ws: usize = after
+            .chars()
+            .take_while(|c| c.is_whitespace())
+            .map(char::len_utf8)
+            .sum();
+        if ws > 0 {
+            return Some((negated, is_behind, prefix_len + keyword.len() + ws));
+        }
+    }
+    None
+}
+
+/// [`lookaround_keyword`]'s head length alone, for callers that only need to
+/// split the keyword off the body.
+pub(super) fn lookaround_keyword_len(inner: &str) -> Option<usize> {
+    lookaround_keyword(inner).map(|(_, _, head)| head)
+}
+
 pub(super) fn scalar_names_in_decl(code: &str) -> Vec<String> {
     let chars: Vec<char> = code.chars().collect();
     let mut names = Vec::new();
@@ -691,8 +726,11 @@ impl Interpreter {
         // that lexical (read from `caps.regex_vars`), NOT a pre-substituted
         // outer variable — the `:my` value is only known while matching. Tracked
         // left-to-right; a `:my` always precedes its uses (Raku scoping).
-        let mut declared_regex_vars: std::collections::HashSet<String> =
-            std::collections::HashSet::new();
+        // Seeded from the enclosing pattern(s) still being parsed: this call may
+        // be a nested parse of one of their sub-patterns (see
+        // `ENCLOSING_REGEX_VARS`). The guard restores that set on the way out.
+        let (_enclosing_vars_guard, mut declared_regex_vars) =
+            super::regex::regex_helpers::EnclosingRegexVarsGuard::enter();
         while let Some(c) = chars.next() {
             // In Raku, unescaped whitespace in regex is insignificant
             if c.is_whitespace() {
@@ -1004,7 +1042,7 @@ impl Interpreter {
                         return None;
                     }
                     tokens.push(RegexToken {
-                        atom: RegexAtom::EndOfLine,
+                        atom: RegexAtom::EndOfString,
                         quant: RegexQuant::One,
                         named_capture: None,
                         hash_capture: None,
@@ -1083,7 +1121,7 @@ impl Interpreter {
                         return None;
                     }
                     tokens.push(RegexToken {
-                        atom: RegexAtom::EndOfLine,
+                        atom: RegexAtom::EndOfString,
                         quant: RegexQuant::One,
                         named_capture: None,
                         hash_capture: None,
@@ -1185,6 +1223,7 @@ impl Interpreter {
                     // later bare `$name` becomes a match-time interpolation of the
                     // regex-local lexical rather than an outer-scope substitution.
                     for name in scalar_names_in_decl(&decl_code) {
+                        super::regex::regex_helpers::declare_enclosing_regex_var(&name);
                         declared_regex_vars.insert(name);
                     }
                     tokens.push(RegexToken {
@@ -1933,35 +1972,12 @@ impl Interpreter {
                             } else {
                                 continue;
                             }
-                        } else if peek_str.starts_with("before ")
-                            || peek_str.starts_with(".before ")
-                            || peek_str.starts_with("?before ")
-                            || peek_str.starts_with("!before ")
-                            || peek_str.starts_with("after ")
-                            || peek_str.starts_with(".after ")
-                            || peek_str.starts_with("?after ")
-                            || peek_str.starts_with("!after ")
+                        } else if let Some((negated, is_behind, head_len)) =
+                            lookaround_keyword(&peek_str)
                         {
-                            let (negated, is_behind, keyword) = if peek_str.starts_with("before ") {
-                                (false, false, "before ")
-                            } else if peek_str.starts_with(".before ") {
-                                chars.next();
-                                (false, false, "before ")
-                            } else if peek_str.starts_with("after ") {
-                                (false, true, "after ")
-                            } else if peek_str.starts_with(".after ") {
-                                chars.next();
-                                (false, true, "after ")
-                            } else {
-                                let negated = peek_str.starts_with('!');
-                                // Skip '?' or '!'
-                                chars.next();
-                                let is_behind = peek_str[1..].starts_with("after ");
-                                let keyword = if is_behind { "after " } else { "before " };
-                                (negated, is_behind, keyword)
-                            };
-                            // Skip keyword
-                            for _ in 0..keyword.len() {
+                            // Skip the optional `?`/`!`/`.`, the keyword and the
+                            // whitespace that separates it from the body.
+                            for _ in 0..peek_str[..head_len].chars().count() {
                                 chars.next();
                             }
                             // Read the inner pattern up to the closing '>'.
@@ -2008,10 +2024,27 @@ impl Interpreter {
                                     inner.push(ch);
                                 }
                             }
-                            // Parse the inner pattern as a regex
-                            let Some(inner_pattern) = self.parse_regex_with_mode(&inner, mode)
-                            else {
-                                continue;
+                            // Parse the inner pattern as a regex. In `Match` mode
+                            // the body has already been interpolated, so an empty
+                            // one means a bound variable interpolated to "" —
+                            // a zero-width, always-true assertion, NOT the
+                            // null-regex *syntax* error (which `Validate` mode
+                            // still reports against the uninterpolated source).
+                            let inner_pattern = if mode == RegexParseMode::Match
+                                && inner.trim().is_empty()
+                            {
+                                RegexPattern {
+                                    tokens: Vec::new(),
+                                    anchor_start: false,
+                                    anchor_end: false,
+                                    ignore_case,
+                                    ignore_mark,
+                                }
+                            } else {
+                                let Some(parsed) = self.parse_regex_with_mode(&inner, mode) else {
+                                    continue;
+                                };
+                                parsed
                             };
                             RegexAtom::Lookaround {
                                 pattern: inner_pattern,

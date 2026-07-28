@@ -35,11 +35,24 @@ impl Interpreter {
             RegexAtom::Named(name) => {
                 let spec = Self::parse_named_regex_lookup_spec(name);
                 if !spec.silent {
-                    let cap = spec
-                        .capture_name
-                        .unwrap_or_else(|| spec.lookup_name.clone());
-                    if !cap.is_empty() {
-                        out.insert(cap);
+                    // A non-suppressing alias captures under BOTH names (see
+                    // `also_under_original` in `regex_match_atom.rs`), so both are
+                    // quantified here — `[ <tags=tag-directive> ]+` must leave
+                    // `$/<tag-directive>` a LIST, not a bare Match (YAMLish reads
+                    // it back as `@<tag-directive>».ast.list`).
+                    let alias = spec.capture_name.clone();
+                    if let Some(alias) = alias {
+                        if !alias.is_empty() {
+                            out.insert(alias.clone());
+                        }
+                        if !spec.alias_replaces_original
+                            && alias != spec.lookup_name
+                            && !spec.lookup_name.is_empty()
+                        {
+                            out.insert(spec.lookup_name.clone());
+                        }
+                    } else if !spec.lookup_name.is_empty() {
+                        out.insert(spec.lookup_name.clone());
                     }
                 }
             }
@@ -411,8 +424,18 @@ impl Interpreter {
         // match the atom with the separator interleaved between iterations,
         // accumulating each side's captures into its own (folded) group.
         if token.separator.is_some() {
-            let cands =
-                self.match_separated_quantifier(token, ctx.chars, pos, ctx.pkg, ctx.pattern);
+            // Cloned because the matcher takes `&mut self` while `store` is
+            // borrowed; the separated quantifier only READS it (backrefs, and the
+            // `:my` lexicals its atom sub-patterns inherit).
+            let current_caps = store.caps().clone();
+            let cands = self.match_separated_quantifier(
+                token,
+                ctx.chars,
+                pos,
+                ctx.pkg,
+                ctx.pattern,
+                &current_caps,
+            );
             // Candidates come lowest-priority first; try highest first.
             for (next, delta) in cands.into_iter().rev() {
                 let m = store.mark();

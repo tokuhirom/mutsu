@@ -197,6 +197,7 @@ impl Interpreter {
             | RegexAtom::WordBoundary { .. }
             | RegexAtom::StartOfLine
             | RegexAtom::EndOfLine
+            | RegexAtom::EndOfString
             | RegexAtom::WsRule
             | RegexAtom::SameAssertion { .. }
             | RegexAtom::AtPosition(_) => {

@@ -135,8 +135,13 @@ impl Interpreter {
         // is left verbatim for the structural parser to lower to a `VarInterp`
         // atom (read from `caps.regex_vars` while matching). Tracked
         // left-to-right; a `:my` always precedes its uses.
+        // A `:my` of an *enclosing* pattern counts too: this text may be one of
+        // its sub-patterns, parsed by a nested call (see `ENCLOSING_REGEX_VARS`).
         let mut declared_my_vars: std::collections::HashSet<String> =
             std::collections::HashSet::new();
+        let is_regex_local = |name: &String, declared: &std::collections::HashSet<String>| {
+            declared.contains(name) || super::regex::regex_helpers::is_enclosing_regex_var(name)
+        };
         while i < chars.len() {
             let ch = chars[i];
             // # starts a comment — skip without interpolation.
@@ -342,7 +347,7 @@ impl Interpreter {
                         let name: String = chars[name_start..j].iter().collect();
                         // A `:my`-declared regex-local var: leave `${name}`
                         // verbatim for the parser's match-time `VarInterp` lowering.
-                        if declared_my_vars.contains(&name) {
+                        if is_regex_local(&name, &declared_my_vars) {
                             out.extend(chars[i..=j].iter());
                             i = j + 1;
                             continue;
@@ -399,7 +404,7 @@ impl Interpreter {
                     // A `:my`-declared regex-local var: leave `$name` verbatim so
                     // the structural parser lowers it to a match-time `VarInterp`
                     // atom instead of pre-substituting an outer-scope value here.
-                    if declared_my_vars.contains(&name) {
+                    if is_regex_local(&name, &declared_my_vars) {
                         out.extend(chars[i..j].iter());
                         i = j;
                         continue;

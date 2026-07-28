@@ -81,6 +81,11 @@ URI	rel2abs.rakutest
 URI	require.rakutest
 URI	rfc-3986-examples.rakutest
 URI	utf8-c8.rakutest
+YAMLish	anchor-alias.rakutest
+YAMLish	basic.rakutest
+YAMLish	p5-tests.rakutest
+YAMLish	roundtrip.rakutest
+YAMLish	test-harness.rakutest
 zef	00-load.rakutest
 zef	build.rakutest
 zef	distribution-depends-parsing.rakutest

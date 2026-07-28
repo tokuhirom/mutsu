@@ -69,6 +69,64 @@ impl Interpreter {
         )
     }
 
+    /// Scan a `<…>` construct whose `<` sits at `chars[start]`. Returns the body
+    /// between the delimiters, whether a matching `>` was found, and the index
+    /// just past the construct.
+    fn scan_angle_construct(chars: &[char], start: usize) -> (String, bool, usize) {
+        let mut depth = 1usize;
+        let mut inner = String::new();
+        let mut i = start + 1;
+        let mut paren = 0usize;
+        let mut bracket = 0usize;
+        let mut brace = 0usize;
+        let mut quote: Option<char> = None;
+        let mut esc = false;
+        while i < chars.len() {
+            let c = chars[i];
+            if let Some(q) = quote {
+                if esc {
+                    esc = false;
+                } else if c == '\\' {
+                    esc = true;
+                } else if c == q {
+                    quote = None;
+                }
+            } else {
+                match c {
+                    '\'' | '"' => quote = Some(c),
+                    '(' => paren += 1,
+                    ')' => paren = paren.saturating_sub(1),
+                    '[' => bracket += 1,
+                    ']' => bracket = bracket.saturating_sub(1),
+                    '{' => brace += 1,
+                    '}' => brace = brace.saturating_sub(1),
+                    '<' if paren == 0 && bracket == 0 && brace == 0 => depth += 1,
+                    '>' if paren == 0 && bracket == 0 && brace == 0 => {
+                        depth -= 1;
+                        if depth == 0 {
+                            return (inner, true, i + 1);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            inner.push(c);
+            i += 1;
+        }
+        (inner, false, i)
+    }
+
+    /// A `<…>` whose body is a *sub-pattern of the same regex* — the lookaround
+    /// assertions. Split into `(keyword, body)` so a caller that rewrites the
+    /// pattern text (baking bound params, interpolating them) can descend into
+    /// the body. Everything else in angle brackets — `<[…]>` character classes,
+    /// `<{code}>` / `<$var>` interpolations, subrule calls — is opaque here and
+    /// must be left verbatim.
+    fn split_lookaround_body(inner: &str) -> Option<(&str, &str)> {
+        let head = super::super::regex_parse_core::lookaround_keyword_len(inner)?;
+        Some(inner.split_at(head))
+    }
+
     /// Walk a regex pattern source and, inside each top-level `{ ... }` code
     /// block, replace bare `$name` references for `param_names` with a
     /// parenthesised literal of the value bound in `self.env`. This lets
@@ -87,42 +145,25 @@ impl Interpreter {
         let mut i = 0usize;
         while i < chars.len() {
             let ch = chars[i];
-            // Skip <...> assertions / subrule calls; we only rewrite code blocks.
+            // Subrule calls / character classes are opaque, but a lookaround's
+            // body is a sub-pattern of this same regex and its `{ … }` blocks
+            // need the same baking (YAMLish's `block` computes its indent in a
+            // `{ … }` inside a `<?before … >`).
             if ch == '<' {
-                let mut depth = 1usize;
-                out.push(ch);
-                i += 1;
-                let mut paren = 0usize;
-                let mut bracket = 0usize;
-                let mut brace = 0usize;
-                let mut quote: Option<char> = None;
-                let mut esc = false;
-                while i < chars.len() && depth > 0 {
-                    let c = chars[i];
-                    if let Some(q) = quote {
-                        if esc {
-                            esc = false;
-                        } else if c == '\\' {
-                            esc = true;
-                        } else if c == q {
-                            quote = None;
-                        }
-                    } else {
-                        match c {
-                            '\'' | '"' => quote = Some(c),
-                            '(' => paren += 1,
-                            ')' => paren = paren.saturating_sub(1),
-                            '[' => bracket += 1,
-                            ']' => bracket = bracket.saturating_sub(1),
-                            '{' => brace += 1,
-                            '}' => brace = brace.saturating_sub(1),
-                            '<' if paren == 0 && bracket == 0 && brace == 0 => depth += 1,
-                            '>' if paren == 0 && bracket == 0 && brace == 0 => depth -= 1,
-                            _ => {}
-                        }
+                let (inner, closed, next) = Self::scan_angle_construct(&chars, i);
+                i = next;
+                out.push('<');
+                match Self::split_lookaround_body(&inner) {
+                    Some((keyword, body)) => {
+                        out.push_str(keyword);
+                        out.push_str(
+                            &self.bake_bound_params_into_regex_code_blocks(body, param_names),
+                        );
                     }
-                    out.push(c);
-                    i += 1;
+                    None => out.push_str(&inner),
+                }
+                if closed {
+                    out.push('>');
                 }
                 continue;
             }
@@ -266,41 +307,22 @@ impl Interpreter {
                 }
                 continue;
             }
+            // As in `bake_bound_params_into_regex_code_blocks`: opaque except for
+            // a lookaround, whose body is a sub-pattern of this same regex and so
+            // may name the bound parameters (`<?before $indent …>`).
             if ch == '<' {
-                let mut depth = 1usize;
-                out.push(ch);
-                i += 1;
-                let mut paren = 0usize;
-                let mut bracket = 0usize;
-                let mut brace = 0usize;
-                let mut quote: Option<char> = None;
-                let mut esc = false;
-                while i < chars.len() && depth > 0 {
-                    let c = chars[i];
-                    if let Some(q) = quote {
-                        if esc {
-                            esc = false;
-                        } else if c == '\\' {
-                            esc = true;
-                        } else if c == q {
-                            quote = None;
-                        }
-                    } else {
-                        match c {
-                            '\'' | '"' => quote = Some(c),
-                            '(' => paren += 1,
-                            ')' => paren = paren.saturating_sub(1),
-                            '[' => bracket += 1,
-                            ']' => bracket = bracket.saturating_sub(1),
-                            '{' => brace += 1,
-                            '}' => brace = brace.saturating_sub(1),
-                            '<' if paren == 0 && bracket == 0 && brace == 0 => depth += 1,
-                            '>' if paren == 0 && bracket == 0 && brace == 0 => depth -= 1,
-                            _ => {}
-                        }
+                let (inner, closed, next) = Self::scan_angle_construct(&chars, i);
+                i = next;
+                out.push('<');
+                match Self::split_lookaround_body(&inner) {
+                    Some((keyword, body)) => {
+                        out.push_str(keyword);
+                        out.push_str(&self.interpolate_bound_regex_scalars(body));
                     }
-                    out.push(c);
-                    i += 1;
+                    None => out.push_str(&inner),
+                }
+                if closed {
+                    out.push('>');
                 }
                 continue;
             }

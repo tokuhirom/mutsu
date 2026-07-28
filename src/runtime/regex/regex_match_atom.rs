@@ -249,6 +249,13 @@ impl Interpreter {
                     out.push((goal_end, new_caps));
                 }
             }
+            // As for `Group` above: the inner/goal enumerations come
+            // highest-priority first, while this function's contract is
+            // lowest-priority first (the engine iterates in reverse). Without the
+            // flip a goalpost stopped at the FIRST possible closer instead of the
+            // greedy one — `'ab''cd'` under `"'" ~ "'" [ … | "''" ]*` matched only
+            // `'ab'`.
+            out.reverse();
             return out;
         }
         if let RegexAtom::CaptureGroup(pattern) = atom {

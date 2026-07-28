@@ -1,17 +1,14 @@
-# YAMLish battery: block collections — RESOLVED
+# YAMLish block collections parse identically to raku
 
-**Status 2026-07-28: closed.** Everything this ticket tracked is fixed.
-`load-yaml` round-trips block sequences and mappings identically to raku. The
-regex half (`(a)`, `(b)`, plus `(c)` and two gaps they exposed) landed as PR
-#5510; the three downstream gaps are listed at the bottom. What remains for the
-battery is **packaging**, tracked in
-[[project-yaml-battery-campaign]] — see "Remaining after the regex work".
+`load-yaml` round-trips block sequences (`- 1\n- 2`) and block mappings
+(`a: 1\nb: 2`) exactly as raku does. This entry keeps the full blocker chain that
+got there, because it is the clearest record of how mutsu's regex engine handles
+an indentation-driven grammar. The remaining packaging work — vendoring the
+module, the release gate, the docs — landed alongside
+`yamlish-upstream-suite-passes.md`.
 
-This file should be `git mv`d to `news/2026-07/` once the packaging slice starts,
-per `todo/README.md`; it is kept here only so the next session has the full
-blocker chain in one place.
-
-
+The regex half landed as PR #5510; the three downstream gaps are listed at the
+bottom.
 
 Blocker chain for the **YAMLish** battery (`zef:leont`, safe-by-default YAML, 459
 dependents — `docs/batteries/yaml.md`). The **scalar path now works**:

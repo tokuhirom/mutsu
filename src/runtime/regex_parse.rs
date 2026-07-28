@@ -795,7 +795,9 @@ pub(super) fn quantifier_context_error(tokens: &[RegexToken], anchor_start: bool
             }
         }
         Some(t) => match &t.atom {
-            RegexAtom::StartOfLine | RegexAtom::EndOfLine => make_non_quantifiable_error(),
+            RegexAtom::StartOfLine | RegexAtom::EndOfLine | RegexAtom::EndOfString => {
+                make_non_quantifiable_error()
+            }
             RegexAtom::TildeMarker => make_solitary_quantifier_error(),
             RegexAtom::CodeAssertion { .. }
             | RegexAtom::VarDecl { .. }
