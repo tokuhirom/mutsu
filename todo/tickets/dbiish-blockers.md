@@ -30,7 +30,7 @@ mutsu $INC t/45-sqlite-common.rakutest
 `raku $INC …` passes one giant argument and every file "fails" under raku too —
 a bogus baseline that wastes a session.
 
-## Status: mutsu 8/9 (raku parity on 8 of the 9)
+## Status: mutsu 8/9 (raku parity on 8 of the 9), the ninth one assertion short
 
 **Updated 2026-07-26 (late):** `06-types` now passes 12/12 — see
 [`news/2026-07/punned-role-container-attribute-store.md`](../../news/2026-07/punned-role-container-attribute-store.md).
@@ -260,21 +260,21 @@ CStruct field accessor being shadowed by a builtin whenever the class was
 declared inside a module (which made `MVMArrayB.elems` answer `1` and `.any`
 build a Junction, so the module read a junction instead of a body).
 
-**⑨ is now a parser blocker, not a representation one.**
-`DBDish::mysql::StatementHandle` fails to parse:
+**The parser blocker that followed is fixed too.**
+`DBDish::mysql::StatementHandle` did not parse, on
+`.buffer_type = @!column-type[$col] ~~ Blob ?? MYSQL_TYPE_BLOB !! MYSQL_TYPE_STRING`
+— a ternary whose then-branch is a value of an `enum` exported by
+`DBDish::mysql::Native`. See
+[`news/2026-07/ternary-then-branch-enum-value.md`](../../news/2026-07/ternary-then-branch-enum-value.md).
+The mysql driver installs now and `01-basic` runs its full plan: **34 of 35**,
+up from 3 failed of 30 run.
 
-```
-Failed to parse module 'DBDish::mysql::StatementHandle':
-Unexpected block in infix position (missing statement control word before the expression?)
-```
-
-The construct is `.buffer_type = @!column-type[$col] ~~ Blob ?? MYSQL_TYPE_BLOB
-!! MYSQL_TYPE_STRING`, where both names are values of an `enum` exported by
-`DBDish::mysql::Native`. mutsu rejects a bare identifier in a ternary's
-then-branch unless it can tell the name is a complete term, and an imported enum
-value is not currently something it can tell. Minimal repro and the shape of the
-fix: [`ternary-then-branch-enum-value.md`](ternary-then-branch-enum-value.md).
-That is the last thing between `01-basic` and raku parity.
+**⑨ is now one assertion, and it is neither of those.** `$installed>>.key.sort`
+returns a nested one-element list, because a hyper method call on an itemized
+list treats it as a single element instead of descending — 
+[`hyper-method-call-on-itemized-list.md`](hyper-method-call-on-itemized-list.md).
+That is the last thing between `01-basic` and raku parity, and with it the last
+thing between `DBIish` and 9/9.
 
 ### ⑤ `06-types` — object hash keyed by type objects
 
