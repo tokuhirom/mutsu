@@ -183,6 +183,14 @@ impl Interpreter {
                 ),
             );
         };
+        // An `is native(...)` method: its body is the `{ * }` stub, and the
+        // call belongs to NativeCall. Keyed by the class that *declared* it, so
+        // an inherited native method resolves to the owner's descriptor.
+        if let Some(result) =
+            self.try_native_call_method(&owner_class.resolve(), method_name, &inv_value, &args)
+        {
+            return result.map(|v| (v, None));
+        }
         // Ambiguous multi dispatch: two or more candidates were equally
         // specific. Raise X::Multi::Ambiguous rather than silently choosing.
         if self.dispatch_ambiguous {

@@ -311,6 +311,51 @@ impl Interpreter {
         return_type: Option<&String>,
         custom_traits: &[(String, Option<crate::ast::Expr>)],
     ) -> Result<(), RuntimeError> {
+        self.register_native_call_routine(name, None, param_defs, return_type, custom_traits)
+    }
+
+    /// The same, for an `is native(...)` **method**.
+    ///
+    /// A native method's invocant is its first C argument — `method
+    /// mysql_query(MYSQL:D: Str $sql --> int32)` is `mysql_query(MYSQL*, const
+    /// char*)` — so the descriptor gains a leading pointer parameter that the
+    /// declared signature does not spell. This is how `DBDish::mysql::Native`
+    /// declares its entire surface, and (unlike `DBDish::SQLite`, which uses
+    /// plain subs) nothing in that driver runs without it.
+    ///
+    /// The descriptor is keyed by `<class>.<method>` under both the class's
+    /// declared name and its short one, because a `nativecast`ed handle carries
+    /// the short name while the declaration is package-qualified.
+    pub(crate) fn register_native_call_method(
+        &mut self,
+        class_name: &str,
+        name: &str,
+        param_defs: &[crate::ast::ParamDef],
+        return_type: Option<&String>,
+        custom_traits: &[(String, Option<crate::ast::Expr>)],
+    ) -> Result<(), RuntimeError> {
+        self.register_native_call_routine(
+            name,
+            Some(class_name),
+            param_defs,
+            return_type,
+            custom_traits,
+        )
+    }
+
+    /// The key a native method's descriptor is stored and looked up under.
+    pub(crate) fn native_method_key(class_name: &str, method: &str) -> String {
+        format!("{class_name}.{method}")
+    }
+
+    fn register_native_call_routine(
+        &mut self,
+        name: &str,
+        invocant_class: Option<&str>,
+        param_defs: &[crate::ast::ParamDef],
+        return_type: Option<&String>,
+        custom_traits: &[(String, Option<crate::ast::Expr>)],
+    ) -> Result<(), RuntimeError> {
         use crate::runtime::nativecall::{CType, NativeCallSpec, ParamSpec};
 
         // Evaluate a trait's argument expression to a String, if present.
@@ -332,7 +377,20 @@ impl Interpreter {
                             } else {
                                 val
                             };
-                            Some(resolved.to_string_value())
+                            // An UNDEFINED library is "no library" — Rakudo's
+                            // `guess_library_name` maps it to a NULL handle, i.e.
+                            // this process's own symbol space. It is written
+                            // deliberately: `DBDish::mysql::Native` declares
+                            // `constant LIB = Rakudo::Internals.IS-WIN ?? 'mysql' !! Str`
+                            // and every one of its subs `is native(LIB)`, having
+                            // dlopened the client library itself first.
+                            // Stringifying the type object instead produced the
+                            // nonsense name `lib(Str).so`.
+                            if !crate::runtime::types::value_is_defined(&resolved) {
+                                None
+                            } else {
+                                Some(resolved.to_string_value())
+                            }
                         }
                         None => None,
                     });
@@ -349,6 +407,20 @@ impl Interpreter {
         // the failure surfaces clearly rather than mis-calling.
         let mut params = Vec::with_capacity(param_defs.len());
         for pd in param_defs {
+            // A method's invocant is its first C argument, passed by pointer —
+            // a handle's address for `:D:`, NULL for `:U:` (`MYSQL.mysql_init`
+            // deliberately calls `mysql_init(NULL)`). The parser already hands
+            // it over as a leading `is_invocant` parameter, so it needs no
+            // synthesis here — only the right C type, which its declared
+            // constraint (`MYSQL:D`, smiley and all) would not map to.
+            if pd.is_invocant {
+                params.push(ParamSpec {
+                    ct: CType::Pointer,
+                    is_rw: false,
+                    elem: None,
+                });
+                continue;
+            }
             let Some(tc) = pd.type_constraint.as_deref() else {
                 return Ok(());
             };
@@ -428,6 +500,18 @@ impl Interpreter {
             ret,
             ret_struct,
         };
+        if let Some(class_name) = invocant_class {
+            // Both spellings: the declaration is package-qualified while a
+            // `nativecast`ed handle carries only the short class name.
+            let short = Self::native_struct_class_name(class_name);
+            if short != class_name {
+                self.native_call_specs
+                    .insert(Self::native_method_key(&short, name), spec.clone());
+            }
+            self.native_call_specs
+                .insert(Self::native_method_key(class_name, name), spec);
+            return Ok(());
+        }
         // Key the descriptor under the sub's short name. An `our sub` declared
         // inside a `module`/`package` (e.g. `OpenSSL::Method::TLS_client_method`)
         // is also called by its package-qualified name, and the callsite looks

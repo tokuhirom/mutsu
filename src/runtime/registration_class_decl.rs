@@ -1974,6 +1974,20 @@ impl Interpreter {
                             );
                         }
                     }
+                    // An `is native(...)` method routes calls through NativeCall
+                    // instead of its `{ * }` body, exactly as an `is native` sub
+                    // does — with the invocant as the first C argument. This is
+                    // how a whole C API is usually bound (`DBDish::mysql::Native`
+                    // declares every one of its ~40 entry points this way).
+                    if method_custom_traits.iter().any(|(t, _)| t == "native") {
+                        self.register_native_call_method(
+                            name,
+                            &resolved_method_name,
+                            param_defs,
+                            return_type.as_ref(),
+                            method_custom_traits,
+                        )?;
+                    }
                     // Apply custom trait_mod:<is> for each non-builtin trait on methods
                     if !method_custom_traits.is_empty() {
                         let has_trait_mod = self.has_proto("trait_mod:<is>")

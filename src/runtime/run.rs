@@ -58,6 +58,25 @@ class GLOBAL::Pointer {
 class GLOBAL::void { }
 "#;
 
+/// NativeCall's `cglobal`, which is a module export in Rakudo rather than a
+/// builtin — hence a Raku definition injected with the rest of NativeCall's
+/// surface, not a global function.
+///
+/// The `Proxy` is the contract, not an implementation detail: the documented
+/// behaviour is that the returned object "redirects all its accesses" to the
+/// named symbol (`Language/nativecall.rakudoc`), so every read must re-fetch.
+/// The documented example is `errno`, which is exactly the case a snapshot
+/// would get wrong. Only that one fetch is native
+/// (`runtime::nativecall_global`); writing is NYI in Rakudo too.
+pub(super) const NATIVECALL_CGLOBAL_PRELUDE: &str = r#"
+our sub cglobal($libname, $symbol, $target-type) is rw {
+    Proxy.new(
+        FETCH => -> $ { __mutsu_cglobal_fetch($libname, $symbol, $target-type) },
+        STORE => -> $, $ { die "Writing to C globals NYI" }
+    )
+}
+"#;
+
 /// Builtin `IO::Socket` role. Raku's socket classes (`IO::Socket::INET`,
 /// `IO::Socket::Async`) are native in mutsu, but the base `IO::Socket` role is
 /// only needed so a *user* class can compose it — the community
@@ -109,6 +128,7 @@ impl Interpreter {
         // normal RoleDecl/VM path by prepending their statements to the body.
         Self::inject_prelude_roles(&preprocessed, &mut stmts);
         Self::inject_nativecall_prelude(&preprocessed, &mut stmts);
+        Self::inject_cglobal_prelude(&preprocessed, &mut stmts);
         Self::inject_iosocket_prelude(&preprocessed, &mut stmts);
         let (_pre_ph, enter_ph, success_ph, failure_ph, _post_ph, body_main) =
             self.split_block_phasers(&stmts);
