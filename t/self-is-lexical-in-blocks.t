@@ -1,6 +1,6 @@
 use Test;
 
-plan 14;
+plan 16;
 
 # `self` is lexical in Raku: a bare block has no invocant of its own, so `self`
 # (and the `$!attr` / `$.attr` forms that desugar through it) resolves outwards
@@ -81,3 +81,32 @@ is $client.m-grep, '2,3', 'grep block keeps its lexical self';
 is $client.m-first, 2, 'first block keeps its lexical self';
 is $client.m-dot, 'shh', '.() call keeps the lexical self';
 is $client.m-start, 'shh', 'start block keeps the lexical self';
+
+# ...and the caller's own `self` must survive running such a block: the
+# invocant a closure carries is its creator's lexical, never a mutation the
+# caller has to observe. This is `DBDish::Connection.protect-connection`, which
+# runs the statement handle's block and then calls its own `unlock-connection`.
+class Guard {
+    has $.state is rw = 'open';
+    method close { $!state = 'closed'; 'closed' }
+    method around(Callable $code) {
+        my $inner = $code();
+        # `self` here must still be the Guard, not whatever made $code.
+        "$inner/{self.close}";
+    }
+    method around-throwing(Callable $code) {
+        my $r = try { $code(); 'no-throw' } // 'threw';
+        "$r/{self.^name}";
+    }
+}
+
+class Caller {
+    has $.guard;
+    has $!name = 'caller';
+    method go { $!guard.around: { $!name } }
+    method go-throwing { $!guard.around-throwing: { die "boom" } }
+}
+
+my $c2 = Caller.new(guard => Guard.new);
+is $c2.go, 'caller/closed', "the caller's own self survives running the block";
+is $c2.go-throwing, 'threw/Guard', "the caller's self survives a block that dies";

@@ -946,6 +946,15 @@ impl Interpreter {
                 cc.locals_sym.iter().copied().collect();
             let underscore_sym = Symbol::intern("_");
             let at_underscore_sym = Symbol::intern("@_");
+            // `self` is the closure's own lexical invocant, force-installed at
+            // entry (see the merge above); it is never a mutation the caller
+            // must observe — `self` is read-only. Writing it back would leave
+            // the *creator's* invocant behind in the caller: a block that
+            // escapes into another object's method (`$!parent.protect: {...}`)
+            // would make the rest of that method run against the block's
+            // object. That is how `DBDish::Connection.protect-connection`
+            // called `self.unlock-connection` on the StatementHandle.
+            let self_sym = Symbol::intern("self");
             // Free variables the body did NOT touch. Their value in this frame is
             // the closure's *own captured binding*, force-installed at entry (see
             // the free-var overwrite in the merge above) — not a mutation the
@@ -979,6 +988,7 @@ impl Interpreter {
                 }
                 if *k != underscore_sym
                     && *k != at_underscore_sym
+                    && *k != self_sym
                     && !rw_sources.contains(k)
                     && !param_names.contains(k)
                     && (restored_env.contains_key_sym(*k)
