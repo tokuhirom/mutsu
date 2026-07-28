@@ -211,18 +211,7 @@ impl Interpreter {
                     || cn.starts_with("Blob[")
             } =>
             {
-                if let Some(bytes) = crate::value::value_buf::with_buf_elems(&attributes, |items| {
-                    items
-                        .iter()
-                        .map(|v| match v.view() {
-                            ValueView::Int(i) => i as u8,
-                            _ => 0,
-                        })
-                        .collect::<Vec<u8>>()
-                }) {
-                    return bytes;
-                }
-                Vec::new()
+                crate::value::value_buf::buf_bytes_or_empty(&attributes)
             }
             ValueView::Instance {
                 class_name,

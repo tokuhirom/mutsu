@@ -288,12 +288,11 @@ fn decode_buf_target_bytes(target: &Value, encoding_name: &str) -> Option<Vec<u8
     if !crate::value::value_buf::has_buf_elems_in(&map) {
         return None;
     }
-    let items = crate::value::value_buf::buf_elems_in(&map).unwrap_or_default();
-
     let cn = class_name.resolve();
     // buf16 / Buf[uint16] / utf16 store 16-bit code units; expand each to 2 bytes
     let is_wide = cn == "utf16" || cn == "buf16" || cn == "Buf[uint16]";
     if is_wide {
+        let items = crate::value::value_buf::buf_elems_in(&map).unwrap_or_default();
         let use_be = encoding_name == "utf-16be";
         let mut out = Vec::with_capacity(items.len() * 2);
         for item in items.iter() {
@@ -310,15 +309,7 @@ fn decode_buf_target_bytes(target: &Value, encoding_name: &str) -> Option<Vec<u8
         }
         Some(out)
     } else {
-        Some(
-            items
-                .iter()
-                .map(|v| match v.view() {
-                    ValueView::Int(i) => i as u8,
-                    _ => 0,
-                })
-                .collect(),
-        )
+        Some(crate::value::value_buf::buf_bytes_in(&map).unwrap_or_default())
     }
 }
 

@@ -1,6 +1,6 @@
 /// List/sequence operations: end, flat, sort, reverse, unique, repeated, floor,
 /// ceiling, round, truncate, narrow, sqrt
-use crate::value::value_buf::{buf_elems_or_empty, make_buf, with_buf_elems};
+use crate::value::value_buf::{buf_elems_or_empty, buf_len_or_zero, make_buf};
 use crate::value::{RuntimeError, Value, ValueView};
 use num_traits::{Signed, Zero};
 
@@ -32,7 +32,7 @@ pub(super) fn dispatch(
                     attributes,
                     ..
                 } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-                    let len = with_buf_elems(&attributes, <[Value]>::len).unwrap_or(0);
+                    let len = buf_len_or_zero(&attributes);
                     Some(Ok(Value::int(len as i64 - 1)))
                 }
                 ValueView::LazyList(_) => None,

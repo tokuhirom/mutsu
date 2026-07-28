@@ -838,10 +838,7 @@ fn buf_instance_pin_key(v: &Value) -> Option<usize> {
 fn write_buf_instance_bytes(v: &Value, bytes: &[u8]) {
     match v.view() {
         ValueView::Instance { attributes, .. } => {
-            crate::value::value_buf::store_buf_elems(
-                &attributes,
-                crate::value::value_buf::bytes_to_elems(bytes),
-            );
+            crate::value::value_buf::store_buf_bytes(&attributes, bytes);
         }
         ValueView::Scalar(inner) => write_buf_instance_bytes(inner, bytes),
         ValueView::ContainerRef(cell) => {

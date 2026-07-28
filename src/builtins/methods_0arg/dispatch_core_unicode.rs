@@ -28,18 +28,9 @@ pub(super) fn dispatch(
                     || cn.starts_with("blob")
             } =>
             {
-                let elems = crate::value::value_buf::with_buf_elems(&attributes, <[Value]>::len)
-                    .unwrap_or(0) as i64;
-                let cn = class_name.resolve();
-                let bytes_per_elem: i64 = if cn.contains("16") {
-                    2
-                } else if cn.contains("32") {
-                    4
-                } else if cn.contains("64") {
-                    8
-                } else {
-                    1
-                };
+                let elems = crate::value::value_buf::buf_len_or_zero(&attributes) as i64;
+                let bytes_per_elem =
+                    crate::value::value_buf::buf_elem_width(&class_name.resolve()) as i64;
                 Some(Ok(Value::int(elems * bytes_per_elem)))
             }
             ValueView::Str(s) => Some(Ok(Value::int(s.len() as i64))),

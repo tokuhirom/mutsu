@@ -1,5 +1,5 @@
 use crate::symbol::Symbol;
-use crate::value::value_buf::{buf_elems, make_buf, with_buf_elems};
+use crate::value::value_buf::{buf_bytes, buf_elems, make_buf};
 use crate::value::{RuntimeError, Value, ValueView};
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
@@ -138,17 +138,8 @@ pub(crate) fn buf_get_bytes(target: &Value) -> Option<Vec<u8>> {
         ..
     } = target.view()
         && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
-        && let Some(bytes) = with_buf_elems(&attributes, |items| {
-            items
-                .iter()
-                .map(|v| match v.view() {
-                    ValueView::Int(i) => i as u8,
-                    _ => 0,
-                })
-                .collect::<Vec<u8>>()
-        })
     {
-        return Some(bytes);
+        return buf_bytes(&attributes);
     }
     None
 }

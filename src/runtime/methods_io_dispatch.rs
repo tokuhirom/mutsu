@@ -2,7 +2,7 @@ use super::*;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
 use crate::value::value_buf::{
-    buf_elems_or_empty, bytes_to_elems, make_buf, set_buf_elems, with_buf_elems,
+    buf_bytes_or_empty, buf_elems_or_empty, make_buf, set_buf_bytes, set_buf_elems, with_buf_elems,
 };
 
 impl Interpreter {
@@ -160,7 +160,7 @@ impl Interpreter {
                     &encoding,
                     replacement.as_deref(),
                 )?;
-                set_buf_elems(&mut attrs, bytes_to_elems(&bytes));
+                set_buf_bytes(&mut attrs, &bytes);
                 match normalized_encoding.as_str() {
                     "utf-8" | "utf8" => "utf8",
                     _ => "Blob[uint8]",
@@ -221,16 +221,7 @@ impl Interpreter {
                 })
                 .unwrap_or_default()
             } else {
-                with_buf_elems(&attributes, |items| {
-                    items
-                        .iter()
-                        .map(|v| match v.view() {
-                            ValueView::Int(i) => i as u8,
-                            _ => 0,
-                        })
-                        .collect::<Vec<u8>>()
-                })
-                .unwrap_or_default()
+                buf_bytes_or_empty(&attributes)
             };
             let decoded = match self.decode_with_encoding_and_replacement(
                 &bytes,

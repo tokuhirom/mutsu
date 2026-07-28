@@ -726,17 +726,9 @@ impl Value {
                         // `(Blob)` via a separate path.
                         format!("{}:0x<>", class_name)
                     } else {
-                        // Determine hex width from element size in the class name
-                        let cn = class_name.resolve();
-                        let hex_width = if cn.contains("64") {
-                            16 // 64-bit = 8 bytes = 16 hex chars
-                        } else if cn.contains("32") {
-                            8
-                        } else if cn.contains("16") {
-                            4
-                        } else {
-                            2 // 8-bit (default)
-                        };
+                        // Two hex digits per byte of one element.
+                        let hex_width =
+                            2 * crate::value::value_buf::buf_elem_width(&class_name.resolve());
                         let hex: Vec<String> = bytes
                             .iter()
                             .map(|b| match b.view() {

@@ -605,9 +605,9 @@ pub(super) fn dispatch(
         "tree" => Some(Some(Ok(tree_to_depth(target, usize::MAX)))),
         "encode" => {
             let s = target.to_string_value();
-            Some(Some(Ok(crate::value::value_buf::make_buf(
+            Some(Some(Ok(crate::value::value_buf::make_buf_from_bytes(
                 Symbol::intern("utf8"),
-                crate::value::value_buf::bytes_to_elems(s.as_bytes()),
+                s.as_bytes(),
             ))))
         }
         "sink" => Some(match target.view() {
