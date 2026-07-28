@@ -733,9 +733,20 @@ impl crate::runtime::Interpreter {
             )));
         };
         if self.is_cstruct_class(&of) || self.is_native_handle_class(&of) {
-            let short = of.rsplit("::").next().unwrap_or(&of);
+            // Tag with the class's **registered** name, exactly as `nativecast`
+            // does (see `try_nativecast`): a CStruct declared inside a module is
+            // registered as `M::BB`, and a handle carrying the short `BB`
+            // resolves neither its own class's hand-written methods nor raku's
+            // `.^name`. `NativeHelpers::Blob` reaches its `MVMArrayB` through
+            // `nativecast(Pointer[type], …).deref`, so `.realstart` was
+            // unreachable on this path even after the `nativecast` path was
+            // fixed — only the *generated* accessors worked, via their
+            // short-name fallback.
+            let tag = self
+                .cstruct_class_name(&of)
+                .unwrap_or_else(|| of.rsplit("::").next().unwrap_or(&of).to_string());
             return Some(Ok(crate::runtime::nativecall::make_native_handle(
-                short, addr,
+                &tag, addr,
             )));
         }
         Some(match self.native_carray_element(&of, addr, 0) {
