@@ -51,6 +51,26 @@ commits to the representation NQP/MoarVM uses (spans into one shared subject, a 
 materialized `Match`) and phases it. This is P1, the phase the rest depends on: a span
 means nothing until positions are absolute.
 
-Measure from `bench-history.tsv` on the `bench-data` branch, not a local A/B — see the
-ADR and `todo/tickets/yaml-parse-throughput.md` for why local numbers on the dev box
-were not trustworthy in the previous rounds.
+## What the bench CI says
+
+Raw medians are not comparable across runs — runner speed swung ~18% between the two
+pre-P1 main commits, and P1's runner was the slow one (`int-arith` +38%, `mandelbrot`
++41%, neither touched by this change). Normalizing each benchmark by `int-arith` on its
+own runner makes the two pre-P1 points agree to within 1–3%:
+
+| benchmark (÷ `int-arith`) | `0eb479d9` | `17af2292` | `afc3475e` (this) |
+|---|---:|---:|---:|
+| `bench-grammar-parse` | 0.370 | 0.369 | **0.301** |
+| `bench-grammar-parse-deep` | 0.311 | 0.320 | **0.250** |
+| `bench-yaml-parse` | 117.4 | 116.9 | **121.5** |
+
+≈−20% on both grammar benchmarks, ≈+4% on the YAML one. The likely reason for the split
+is recorded in ADR-0016's P2 entry and is the first thing that phase must confirm:
+`REDUCED_SUBRULES` is armed only for `.parse(:actions(...))`, which YAMLish uses and the
+grammar benchmarks do not — so for the actions case the deep copy this change removed
+from the rebase may simply have moved to `reduce_regex_captures_made_for_rule`, whose
+`Arc::make_mut(sc)` now takes the copy-on-write path on nodes the log holds.
+
+Numbers come from `bench-history.tsv` on the `bench-data` branch, not a local A/B — see
+`todo/tickets/yaml-parse-throughput.md` for why local numbers on the dev box were not
+trustworthy in the previous rounds.

@@ -190,10 +190,45 @@ positions are absolute**, so P3 depends on it.
 lines, and the four subrule-boundary constructs above now agree with `raku`, pinned by
 `t/regex-subrule-absolute-position.t`.
 
+*Measured (bench CI, `bench-history.tsv` on `bench-data`, `afc3475e2` vs the two
+preceding main commits).* Raw medians are not comparable — runner speed swung ~18%
+between the two pre-P1 runs, and P1's runner was the slow one (`int-arith` +38%,
+`mandelbrot` +41%, neither of which this change can touch). Normalizing each benchmark
+by `int-arith` on its own runner makes the two pre-P1 points agree to within 1–3%, so
+the ratio is usable:
+
+| benchmark (÷ `int-arith`) | `0eb479d9` | `17af2292` | `afc3475e` (P1) |
+|---|---:|---:|---:|
+| `bench-grammar-parse` | 0.370 | 0.369 | **0.301** |
+| `bench-grammar-parse-deep` | 0.311 | 0.320 | **0.250** |
+| `bench-yaml-parse` | 117.4 | 116.9 | **121.5** |
+
+So ≈−20% on both grammar benchmarks and ≈+4% on the YAML one. **Hypothesis for the
+split, to be confirmed at the start of P2:** `REDUCED_SUBRULES` is only armed for a
+`.parse(:actions(...))`. The grammar benchmarks pass no actions, so their subcap `Arc`s
+were unshared and the old rebase's `Arc::make_mut` was already in-place — P1 saves them
+the whole O(subtree) walk. YAMLish's `load-yaml` *does* pass actions, so its nodes stay
+shared with the log; the deep copy P1 removed from the rebase may simply have **moved**
+to `reduce_regex_captures_made_for_rule`, which does `Arc::make_mut(sc)` on every child
+and now takes the copy-on-write path where the (already-copied) node used to be
+unshared. If so the fix is structural, not a tweak: a stored node must be immutable, with
+`ast`/`made` attached without cloning it — which is P2's job.
+
+(`bench-yaml-parse` was checked to be a valid instrument for match time: `use YAMLish`
+alone is 0.04 s of its ~4.07 s, so it is not module-load dominated.)
+
 **P2 — `CapNode` / `RegexCaptures` split.** Extract the immutable stored-node fields into
-`CapNode`; `Arc<CapNode>` replaces `Arc<RegexCaptures>` in both subcap axes. Shrinks the
-per-subcap allocation by roughly an order of magnitude and takes the `Vec<(usize,
-RegexCaptures)>` candidate-list memmove with it.
+`CapNode`; `Arc<CapNode>` replaces `Arc<RegexCaptures>` in both subcap axes. A *leaf* node
+collapses its child collections to a single `None` (`children: Option<Box<CapChildren>>`),
+which is where the order-of-magnitude shrink comes from; it also takes the
+`Vec<(usize, RegexCaptures)>` candidate-list memmove with it.
+**Start by confirming P1's `bench-yaml-parse` hypothesis above**, because it constrains
+the design: every remaining `Arc::make_mut` on a *stored* node
+(`reduce_regex_captures_made_for_rule`, the `action_name` write in
+`build_named_candidates_from_inner`) is a deep copy whenever the reduce log holds the
+node. A `CapNode` that is genuinely immutable — with `ast`/`made` and `action_name`
+attached out-of-band (a side table keyed by node identity, or interior mutability via
+`OnceCell`) rather than written through the `Arc` — removes that class outright.
 
 **P3 — Spans, not text.** Introduce `MatchTarget`; `CapNode` carries `(from, to)` only.
 Delete `chars[a..b].iter().collect()` at capture sites, the `captured.clone()` duplicates,
