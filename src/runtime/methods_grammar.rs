@@ -954,22 +954,56 @@ impl Interpreter {
         } else {
             None
         };
+        // Cheap existence pre-check: most match-tree nodes are low-level
+        // tokens (e.g. YAMLish's `space`, `single-bare`, `line-break`) that
+        // the actions class never defines a method for. Without this check,
+        // every one of them paid the full multi-dispatch resolution walk
+        // (has_proto/has_multi_function/resolve_function_with_types) just to
+        // get a MethodNotFound — dominating a profile of files with long
+        // quoted-scalar runs (many-char match trees), since
+        // invoke_grammar_actions calls this for EVERY named capture.
+        // `has_user_method` is a direct MRO + HashMap-by-name lookup, so the
+        // common "no action for this rule" case now costs a lookup instead of
+        // a full dispatch resolution + error.
+        let actions_class_name = match actions.view() {
+            ValueView::Instance { class_name, .. } => Some(class_name.as_str()),
+            // A stateless `:actions(Actions)` grammar action is often passed
+            // as the bare type object, not an instance.
+            ValueView::Package(name) => Some(name.as_str()),
+            _ => None,
+        };
         let method_result = if let Some(ref sym_name) = sym_method_name {
-            let result =
-                self.call_method_with_values(actions.clone(), sym_name, vec![match_obj.clone()]);
-            match result {
-                Err(e) if e.is_method_not_found() => {
-                    // Fall back to plain rule name
-                    self.call_method_with_values(
-                        actions.clone(),
-                        rule_name,
-                        vec![match_obj.clone()],
-                    )
+            let sym_exists = actions_class_name.is_none_or(|cn| self.has_user_method(cn, sym_name));
+            if sym_exists {
+                let result = self.call_method_with_values(
+                    actions.clone(),
+                    sym_name,
+                    vec![match_obj.clone()],
+                );
+                match result {
+                    Err(e) if e.is_method_not_found() => {
+                        // Fall back to plain rule name.
+                        if actions_class_name.is_none_or(|cn| self.has_user_method(cn, rule_name)) {
+                            self.call_method_with_values(
+                                actions.clone(),
+                                rule_name,
+                                vec![match_obj.clone()],
+                            )
+                        } else {
+                            Ok(match_obj.clone())
+                        }
+                    }
+                    other => other,
                 }
-                other => other,
+            } else if actions_class_name.is_none_or(|cn| self.has_user_method(cn, rule_name)) {
+                self.call_method_with_values(actions.clone(), rule_name, vec![match_obj.clone()])
+            } else {
+                Ok(match_obj.clone())
             }
-        } else {
+        } else if actions_class_name.is_none_or(|cn| self.has_user_method(cn, rule_name)) {
             self.call_method_with_values(actions.clone(), rule_name, vec![match_obj.clone()])
+        } else {
+            Ok(match_obj.clone())
         };
 
         // After the method call, if actions is an Instance, its attributes
