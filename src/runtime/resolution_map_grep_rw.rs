@@ -130,13 +130,19 @@ impl Interpreter {
                 touched_keys.push(dollar_topic.clone());
             }
             super::resolution_map_grep::push_block_declared_keys(&mut touched_keys, &code);
+            // `self` is lexical: the block's captured invocant wins over the
+            // caller's (see `call_compiled_closure`). It is normally already in
+            // the running env, so the loop above did not list it.
+            if data.env.get("self").is_some() && !touched_keys.iter().any(|k| k == "self") {
+                touched_keys.push("self".to_string());
+            }
             let saved: Vec<(String, Option<Value>)> = touched_keys
                 .iter()
                 .map(|k| (k.clone(), self.env.get(k).cloned()))
                 .collect();
 
             for (k, v) in &data.env {
-                if !self.env.contains_key_sym(*k) {
+                if k.with_str(|s| s == "self") || !self.env.contains_key_sym(*k) {
                     self.env.insert_sym(*k, v.clone());
                 }
             }
@@ -357,6 +363,12 @@ impl Interpreter {
                 touched_keys.push(topic_source_key.clone());
             }
             super::resolution_map_grep::push_block_declared_keys(&mut touched_keys, &code);
+            // The pre-insert below overwrites every captured name, `self`
+            // included (it is lexical — see `call_compiled_closure`); it is
+            // normally already in the running env, so list it for restoration.
+            if data.env.get("self").is_some() && !touched_keys.iter().any(|k| k == "self") {
+                touched_keys.push("self".to_string());
+            }
             let saved: Vec<(String, Option<Value>)> = touched_keys
                 .iter()
                 .map(|k| (k.clone(), self.env.get(k).cloned()))
