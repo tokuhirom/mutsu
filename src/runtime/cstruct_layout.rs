@@ -43,7 +43,12 @@ impl FieldType {
         name: &str,
         is_known_struct: impl Fn(&str) -> bool,
     ) -> Option<Self> {
-        Some(match name {
+        // A type written inside a module carries that module's package on the
+        // way in (`MoarVM::Guts::REPRs::Pointer[Pointer]` for a plain
+        // `Pointer[Pointer]`), so match on the base's last component — the same
+        // "one class, several spellings" problem `cstruct_class_name` documents.
+        // `is_known_struct` gets the name as written; it does its own matching.
+        Some(match short_base_name(name) {
             "int8" => FieldType::I8,
             "int16" => FieldType::I16,
             "int32" => FieldType::I32,
@@ -65,7 +70,7 @@ impl FieldType {
                 // layout at all and every field access on it failed.
                 if other.starts_with("CArray[")
                     || other.starts_with("Pointer[")
-                    || is_known_struct(other)
+                    || is_known_struct(name)
                 {
                     FieldType::Pointer
                 } else {
@@ -161,10 +166,26 @@ pub(crate) unsafe fn read_field(base: usize, field: &FieldLayout) -> crate::valu
     }
 }
 
+/// Shorten a possibly-parameterised type name to its last `::` component
+/// **without touching the type argument**: `A::B::CArray[X::Y]` stays
+/// `CArray[X::Y]`. Splitting on the last `::` of the whole string instead turned
+/// `Pointer[MoarVM::Guts::REPRs::CStructB]` into the nonsense class `CStructB]`,
+/// which is how a `nativecast` through a qualified body type silently produced
+/// an unusable handle.
+pub(crate) fn short_base_name(type_name: &str) -> &str {
+    let base_end = type_name.find('[').unwrap_or(type_name.len());
+    match type_name[..base_end].rfind("::") {
+        Some(i) => &type_name[i + 2..],
+        None => type_name,
+    }
+}
+
 /// The element type of a parameterised `Pointer[T]` spelling, or `None` for a
-/// plain `Pointer`.
+/// plain `Pointer`. The base may be qualified (`NativeCall::Types::Pointer[T]`);
+/// the parameter is returned exactly as written, since every consumer resolves
+/// a qualified type name by its last component anyway.
 fn pointer_parameter(type_name: &str) -> Option<&str> {
-    type_name
+    short_base_name(type_name)
         .strip_prefix("Pointer[")
         .and_then(|rest| rest.strip_suffix(']'))
 }
@@ -542,7 +563,7 @@ impl crate::runtime::Interpreter {
             }
         };
         let addr = crate::runtime::nativecall::value_c_address(&args[1]);
-        let short = target.rsplit("::").next().unwrap_or(&target);
+        let short = short_base_name(&target);
         // `Pointer[T]` stays an ordinary `Pointer` object and remembers `T` in
         // an `of` attribute, rather than becoming an instance of a class named
         // "Pointer[T]" — every `Pointer` method (`.Int`, `.gist`, the
@@ -554,6 +575,75 @@ impl crate::runtime::Interpreter {
         Some(Ok(crate::runtime::nativecall::make_native_handle(
             short, addr,
         )))
+    }
+
+    /// `.REPR` / `.WHERE` for a **native handle** — an instance whose whole
+    /// identity is a C address (a `nativecast`ed CStruct, CUnion or CArray).
+    /// `None` for anything else, which keeps its ordinary answers.
+    ///
+    /// These two travel together on purpose. `MoarVM::Guts::REPRs`' `BODY_OF`
+    /// dispatches on `.REPR` and then *dereferences* `.WHERE`, so answering
+    /// `.REPR` honestly is a promise that a REPR body exists at `.WHERE`.
+    /// Answering it before the body existed would hand a module the identity
+    /// hash to dereference — see ADR-0015 §2.1.
+    ///
+    /// The body itself needs no new machinery. mutsu's `.WHERE` contract is
+    /// "points straight at the payload, no object header" (`Offset` is 0), and
+    /// `native_object_where` already hands out a zero-filled block whose first
+    /// word is the address. That is byte-for-byte the CStruct body
+    /// (`{void* cstruct; void** child_objs}`) and the CArray body
+    /// (`{void* storage; void** child; i32 managed; i32 allocated; i32 elems}`)
+    /// for an unmanaged cast: storage set, `managed`/`elems` zero, which is
+    /// exactly what an unmanaged `CArray` handle is.
+    ///
+    /// A CStruct *constructed in Raku* deliberately does not qualify: it has no
+    /// C storage yet, so it keeps `P6opaque` and `BODY_OF` keeps refusing it
+    /// loudly instead of quietly reading a NULL body. Giving it real storage is
+    /// ADR-0015's P3.
+    pub(crate) fn try_native_handle_repr_where(
+        &mut self,
+        target: &crate::value::Value,
+        method: &str,
+    ) -> Option<crate::value::Value> {
+        use crate::value::{Value, ValueView};
+        if !matches!(method, "REPR" | "WHERE") {
+            return None;
+        }
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target.view()
+        else {
+            return None;
+        };
+        let addr = match attributes.as_map().get("address").map(|v| v.view()) {
+            Some(ValueView::Int(a)) if a > 0 => a as usize,
+            _ => return None,
+        };
+        let name = class_name.resolve();
+        let short = name.rsplit("::").next().unwrap_or(&name).to_string();
+        let is_cunion = {
+            let reg = self.registry();
+            reg.cunion_classes.contains(&name)
+                || reg
+                    .cunion_classes
+                    .iter()
+                    .any(|c| c.rsplit("::").next().unwrap_or(c) == short)
+        };
+        let repr = if self.is_cstruct_class(&name) {
+            "CStruct"
+        } else if is_cunion {
+            "CUnion"
+        } else if short == "CArray" || short.starts_with("CArray[") {
+            "CArray"
+        } else {
+            return None;
+        };
+        Some(match method {
+            "REPR" => Value::str_from(repr),
+            _ => Value::int(crate::runtime::nativecall::native_object_where(addr) as i64),
+        })
     }
 
     /// `$ptr.of` — what a typed `Pointer[T]` points at, `void` for an untyped
