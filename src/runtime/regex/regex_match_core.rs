@@ -153,6 +153,11 @@ impl Interpreter {
         }
         let mut store = CapStore::new(RegexCaptures {
             match_from: start,
+            // Inline sub-patterns (lookaround/group/alternative) inherit the
+            // enclosing regex's `:my`/`:let` lexicals; a subrule does not. The
+            // seed is take-once, so only the store the arming site is about to
+            // build gets it.
+            regex_vars: super::regex_helpers::take_inline_regex_vars_seed(),
             ..Default::default()
         });
         let mut matches = Vec::new();

@@ -3,6 +3,36 @@ use super::super::*;
 use super::regex_helpers::{is_word_char, matches_named_builtin, merge_regex_captures};
 
 impl Interpreter {
+    /// Is this atom an inline sub-pattern — part of the *same* regex, just matched
+    /// with its own capture store? Those inherit the enclosing regex's `:my`/`:let`
+    /// lexicals; a subrule reference (a different regex) must not.
+    fn atom_is_inline_subpattern(atom: &RegexAtom) -> bool {
+        matches!(
+            atom,
+            RegexAtom::Group(_)
+                | RegexAtom::CaptureGroup(_)
+                | RegexAtom::Alternation(_)
+                | RegexAtom::SequentialAlternation(_)
+                | RegexAtom::Conjunction(_)
+                | RegexAtom::Lookaround { .. }
+                | RegexAtom::GoalMatch { .. }
+        )
+    }
+
+    /// Publish (or deliberately withhold) the in-regex lexicals for the sub-pattern
+    /// matches this atom is about to run. See
+    /// [`super::regex_helpers::INLINE_REGEX_VARS_SEED`].
+    pub(super) fn arm_inline_vars_seed(
+        atom: &RegexAtom,
+        current_caps: &RegexCaptures,
+    ) -> super::regex_helpers::InlineVarsSeed {
+        if Self::atom_is_inline_subpattern(atom) {
+            super::regex_helpers::InlineVarsSeed::arm(&current_caps.regex_vars)
+        } else {
+            super::regex_helpers::InlineVarsSeed::arm(&HashMap::new())
+        }
+    }
+
     /// Single-candidate atom matcher: the atom's highest-priority match only.
     /// The returned captures are a DELTA relative to an EMPTY baseline
     /// (ADR-0007); `current_caps` is the engine's accumulated store, passed
@@ -16,6 +46,7 @@ impl Interpreter {
         pkg: &str,
         ignore_case: bool,
     ) -> Option<(usize, RegexCaptures)> {
+        let _vars_seed = Self::arm_inline_vars_seed(atom, current_caps);
         // Handle zero-width and group atoms before the length check
         match atom {
             RegexAtom::Group(pattern) => {
@@ -50,6 +81,10 @@ impl Interpreter {
                         if inner_caps.capture_end.is_some() {
                             new_caps.capture_end = inner_caps.capture_end;
                         }
+                        // Writes an inline `{ … }` made to the regex's `:my`
+                        // lexicals are part of the same lexical scope as the
+                        // enclosing pattern, so they leave the group with it.
+                        new_caps.regex_vars.extend(inner_caps.regex_vars);
                         (next, new_caps)
                     });
             }
@@ -102,6 +137,7 @@ impl Interpreter {
                             .positional_quantified
                             .append(&mut inner_caps.positional_quantified);
                         new_caps.code_blocks.append(&mut inner_caps.code_blocks);
+                        new_caps.regex_vars.extend(inner_caps.regex_vars);
                         let replace = best
                             .as_ref()
                             .map(|(best_next, _)| next > *best_next)
@@ -148,6 +184,7 @@ impl Interpreter {
                             .positional_quantified
                             .append(&mut inner_caps.positional_quantified);
                         new_caps.code_blocks.append(&mut inner_caps.code_blocks);
+                        new_caps.regex_vars.extend(inner_caps.regex_vars);
                         return Some((next, new_caps));
                     }
                 }
@@ -172,25 +209,39 @@ impl Interpreter {
                 negated,
                 is_behind,
             } => {
+                let mut inner_vars: HashMap<String, Value> = HashMap::new();
                 let matched = if *is_behind {
                     let mut found = false;
                     for start in 0..=pos {
-                        if self
-                            .regex_match_end_from_caps_in_pkg(pattern, chars, start, pkg)
-                            .is_some_and(|(end, _)| end == pos)
+                        if let Some((end, inner)) =
+                            self.regex_match_end_from_caps_in_pkg(pattern, chars, start, pkg)
+                            && end == pos
                         {
+                            inner_vars = inner.regex_vars;
                             found = true;
                             break;
                         }
                     }
                     found
                 } else {
-                    self.regex_match_end_from_caps_in_pkg(pattern, chars, pos, pkg)
-                        .is_some()
+                    match self.regex_match_end_from_caps_in_pkg(pattern, chars, pos, pkg) {
+                        Some((_, inner)) => {
+                            inner_vars = inner.regex_vars;
+                            true
+                        }
+                        None => false,
+                    }
                 };
                 let pass = if *negated { !matched } else { matched };
                 return if pass {
-                    Some((pos, RegexCaptures::default()))
+                    // A lookaround consumes nothing and publishes no captures, but a
+                    // `{ … }` inside it did run: its writes to the enclosing regex's
+                    // `:my` lexicals are real and must survive (YAMLish's `root-block`
+                    // measures the indent in a `<?before … { … } >` and matches it
+                    // afterwards).
+                    let mut new_caps = RegexCaptures::default();
+                    new_caps.regex_vars.extend(inner_vars);
+                    Some((pos, new_caps))
                 } else {
                     None
                 };
@@ -261,18 +312,36 @@ impl Interpreter {
                     // (ADR-0009 part B). It is therefore NOT recorded as a code block
                     // for `execute_regex_code_blocks` to replay on the winning path —
                     // that replay would run it a second time.
-                    let result =
-                        self.eval_regex_code_assertion(code, current_caps, &matched_so_far);
+                    let (value, writes) =
+                        self.eval_regex_inline_code(code, current_caps, &matched_so_far, false);
+                    let result = value.map(|v| v.truthy()).unwrap_or(false);
                     let pass = if *negated { !result } else { result };
                     if pass {
-                        return Some((pos, RegexCaptures::default()));
+                        let mut new_caps = RegexCaptures::default();
+                        new_caps.regex_vars.extend(writes);
+                        return Some((pos, new_caps));
                     } else {
                         return None;
                     }
                 }
-                // Plain { code } block — always succeeds, record for side effects
-                let mut new_caps = RegexCaptures::default();
                 let matched_so_far: String = chars[current_caps.match_from..pos].iter().collect();
+                // A plain `{ … }` block that needs nothing from the reduce-time
+                // walk is a pure side-effect block: raku runs it inline,
+                // left-to-right, during matching, so a write to an in-regex `:my`
+                // lexical is visible to the atoms that follow it (YAMLish's
+                // `root-block` computes its indent this way). Run it here instead
+                // of recording it for the reduce-time replay — recording it as
+                // well would execute it twice.
+                if !super::regex_helpers::code_block_defers_to_reduce(code) {
+                    let (_value, writes) =
+                        self.eval_regex_inline_code(code, current_caps, &matched_so_far, true);
+                    let mut new_caps = RegexCaptures::default();
+                    new_caps.regex_vars.extend(writes);
+                    return Some((pos, new_caps));
+                }
+                // A `make`- or dynamic-variable-bearing block needs the ordering
+                // the bottom-up reduce walk provides, so it stays on that path.
+                let mut new_caps = RegexCaptures::default();
                 let ctx = CodeBlockContext {
                     code: code.clone(),
                     named: current_caps.named.clone(),
@@ -424,6 +493,14 @@ impl Interpreter {
                     let _ = interp.eval_block_value(&stmts);
                     let mut new_caps = RegexCaptures::default();
                     for (k, v) in &interp.env {
+                        // The topic is not a `:my` declaration — the scratch run
+                        // leaves `$_` holding the declaration's value, and
+                        // recording it would let a later code block / assertion
+                        // (which installs `regex_vars` into its env) see that stale
+                        // value as `$_` instead of the real topic.
+                        if k.resolve() == "_" {
+                            continue;
+                        }
                         if !self.env.contains_key_sym(*k) || self.env.get_sym(*k) != Some(v) {
                             new_caps.regex_vars.insert(k.resolve(), v.clone());
                         }

@@ -72,6 +72,73 @@ thread_local! {
     /// subrules had matched. This log lets the failure path replay them. `Some`
     /// only while an action-driven parse is live.
     pub(crate) static REDUCED_SUBRULES: RefCell<Option<ReducedSubruleLog>> = const { RefCell::new(None) };
+    /// In-regex `:my`/`:let` lexicals to seed the *next* capture store with.
+    ///
+    /// A sub-pattern that is lexically part of the same regex — a lookaround, a
+    /// group, an alternative — is matched with a fresh `CapStore`, which would
+    /// otherwise lose the `:my` lexicals declared before it (YAMLish computes its
+    /// block indent in a `{ … }` inside a `<?before …>` and reads it back after).
+    /// A *subrule* is a different regex and must NOT inherit them, so every other
+    /// atom arms this *empty* for the duration of its match.
+    pub(crate) static INLINE_REGEX_VARS_SEED: RefCell<Option<HashMap<String, Value>>> = const { RefCell::new(None) };
+    /// Whether [`INLINE_REGEX_VARS_SEED`] currently holds anything. Read once per
+    /// atom match to skip the `RefCell` entirely on the overwhelmingly common path
+    /// where no regex in flight declares a `:my`/`:let` lexical.
+    pub(crate) static INLINE_REGEX_VARS_ACTIVE: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Arms the [`INLINE_REGEX_VARS_SEED`] for the duration of one atom match,
+/// restoring the enclosing atom's seed on drop. An atom that is an inline
+/// sub-pattern arms it with the lexicals in scope; every other atom — a subrule
+/// reference above all — arms it *empty*, which is what stops a `:my` lexical
+/// from leaking into a different regex.
+pub(crate) struct InlineVarsSeed {
+    prev: Option<HashMap<String, Value>>,
+    armed: bool,
+}
+
+impl InlineVarsSeed {
+    pub(crate) fn arm(vars: &HashMap<String, Value>) -> Self {
+        let active = INLINE_REGEX_VARS_ACTIVE.with(Cell::get);
+        if vars.is_empty() && !active {
+            // Nothing to publish and nothing published: the atom cannot change
+            // what any nested store would see, so leave the slot untouched.
+            return InlineVarsSeed {
+                prev: None,
+                armed: false,
+            };
+        }
+        let next = if vars.is_empty() {
+            None
+        } else {
+            Some(vars.clone())
+        };
+        INLINE_REGEX_VARS_ACTIVE.with(|f| f.set(next.is_some()));
+        let prev = INLINE_REGEX_VARS_SEED.with(|s| std::mem::replace(&mut *s.borrow_mut(), next));
+        InlineVarsSeed { prev, armed: true }
+    }
+}
+
+impl Drop for InlineVarsSeed {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+        let prev = self.prev.take();
+        INLINE_REGEX_VARS_ACTIVE.with(|f| f.set(prev.is_some()));
+        INLINE_REGEX_VARS_SEED.with(|s| *s.borrow_mut() = prev);
+    }
+}
+
+/// The in-regex lexicals a freshly built capture store should start from (see
+/// [`INLINE_REGEX_VARS_SEED`]).
+pub(crate) fn take_inline_regex_vars_seed() -> HashMap<String, Value> {
+    if !INLINE_REGEX_VARS_ACTIVE.with(Cell::get) {
+        return HashMap::new();
+    }
+    INLINE_REGEX_VARS_SEED
+        .with(|s| s.borrow().clone())
+        .unwrap_or_default()
 }
 
 /// Hard cap on `ReducedSubruleLog` entries. The log only feeds the *failure*
@@ -151,6 +218,70 @@ impl Drop for ReducedSubruleGuard {
 /// Look up a `$*` dynamic var in the reduce-time overlay (see
 /// `REGEX_DYNVAR_OVERLAY`). `name` is the env form without sigil (e.g. `*LEFT`).
 /// Returns `None` when the overlay is inactive or has no entry for the name.
+/// Must this regex `{ … }` block stay on the **reduce-time** path rather than
+/// running inline during the match?
+///
+/// Two constructs need the post-match bottom-up walk
+/// (`reduce_regex_captures_made`) and cannot be answered while matching:
+///
+/// - `make`, because a node's AST is built from its already-reduced children —
+///   that ordering is what lets `make $<child>.made` work;
+/// - a **dynamic** variable (`$*x`), because a rule's `:my $*x` is one binding
+///   per match, installed and read back around each node's reduce step
+///   (`install_fresh_rule_dynvars` / `record_rule_dynvars`) so the node's action
+///   method sees its own match's value.
+///
+/// Everything else is a pure side-effect block and runs inline, as raku does, so
+/// its writes are visible to the atoms that follow it in the same match.
+///
+/// The scan is deliberately conservative — anything that *might* be one of the
+/// two keeps the established deferred behaviour. `make` matches the bare
+/// identifier (which also covers the `$/.make(…)` method form via the trailing
+/// `.`) but not a longer identifier containing it (`maker`, `remake`) nor a
+/// variable named `$make`.
+pub(crate) fn code_block_defers_to_reduce(code: &str) -> bool {
+    if code_block_uses_dynamic_var(code) {
+        return true;
+    }
+    let bytes = code.as_bytes();
+    let mut idx = 0;
+    while let Some(rel) = code[idx..].find("make") {
+        let start = idx + rel;
+        let end = start + 4;
+        let prev_ok = match start.checked_sub(1).map(|i| bytes[i]) {
+            None => true,
+            Some(c) => {
+                !(c.is_ascii_alphanumeric()
+                    || c == b'_'
+                    || c == b'$'
+                    || c == b'@'
+                    || c == b'%'
+                    || c == b'&'
+                    || c == b'-')
+            }
+        };
+        let next_ok = match bytes.get(end).copied() {
+            None => true,
+            Some(c) => !(c.is_ascii_alphanumeric() || c == b'_' || c == b'-'),
+        };
+        if prev_ok && next_ok {
+            return true;
+        }
+        idx = end;
+    }
+    false
+}
+
+/// Does the block mention a dynamic variable (`$*x`, `@*x`, `%*x`)?
+fn code_block_uses_dynamic_var(code: &str) -> bool {
+    let bytes = code.as_bytes();
+    bytes.windows(3).any(|w| {
+        matches!(w[0], b'$' | b'@' | b'%')
+            && w[1] == b'*'
+            && (w[2].is_ascii_alphabetic() || w[2] == b'_')
+    })
+}
+
 pub(crate) fn dynvar_overlay_get(name: &str) -> Option<Value> {
     REGEX_DYNVAR_OVERLAY.with(|slot| slot.borrow().as_ref().and_then(|m| m.get(name).cloned()))
 }
