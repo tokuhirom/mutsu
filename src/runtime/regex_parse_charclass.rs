@@ -610,6 +610,7 @@ impl Interpreter {
             | RegexAtom::WsRule
             | RegexAtom::StartOfLine
             | RegexAtom::EndOfLine
+            | RegexAtom::EndOfString
             | RegexAtom::LeftWordBoundary
             | RegexAtom::RightWordBoundary
             | RegexAtom::WordBoundary { .. }

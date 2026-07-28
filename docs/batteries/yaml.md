@@ -1,4 +1,4 @@
-# Battery: YAML — `YAMLish` (selected; blocked on interpreter work)
+# Battery: YAML — `YAMLish`
 
 **Slot:** YAML parse/emit · **Chosen:** `YAMLish`
 (`auth<zef:leont>`, v0.1.3, Artistic-2.0) · **Kind:** Adopted (community module,
@@ -10,23 +10,68 @@ loading** (see [security](#security-safe_load-by-default)).
 The procedure that produced the table below is
 [selection-method.md](selection-method.md).
 
-## Status: decided, not yet bundled
+## Status: bundled
 
-`YAMLish` is the choice, but it does **not run on mutsu yet** — it must not be
-advertised as a working battery until the blocking interpreter bugs are fixed
-(per [BATTERIES.md §5](../../BATTERIES.md), only working libraries get a public
-row). Under `raku` all 5 upstream test files pass; under mutsu the module fails
-to `use` at all. This is the normal "fix mutsu first" outcome
-([selection-method.md §5](selection-method.md)): the survey's real output is a
-work list, and the winner is unambiguous.
-
-Target API once it runs:
+`YAMLish` ships at `modules/YAMLish/` and resolves with **zero config**:
 
 ```raku
 use YAMLish;
 my %data = load-yaml("name: mutsu\ntags: [raku, yaml]\n");   # safe_load-equivalent
-say to-yaml(%data);                                          # emitter
+say %data<tags>[0];                                          # raku
+say save-yaml(%data);                                        # emitter
 ```
+
+**All 5 upstream test files pass — 81 of 81 subtests, the same as `raku`** — and
+every file is pinned in `batteries-whitelist.txt`, so a regression in any of them
+blocks a release.
+
+Getting there was the normal "fix mutsu first" outcome
+([selection-method.md §5](selection-method.md)): the module started at 0/5 files
+(it would not even `use`), and the survey's real output was the work list in
+[what blocked it](#what-blocked-it-on-mutsu-the-work-list) below. Every fix landed
+in the interpreter; the vendored source is untouched.
+
+## API
+
+`YAMLish` exports four subs. `load-yaml` **is** the safe loader — there is no
+unsafe sibling (see [security](#security-safe_load-by-default)).
+
+| Sub | Purpose |
+| --- | --- |
+| `load-yaml(Str $input, :$schema = Schema::Core, :%tags)` | Parse a single-document YAML string into Raku data. |
+| `load-yamls(Str $input, :$schema = Schema::Core, :%tags)` | Parse a multi-document (`---`-separated) stream; returns a sequence of documents. |
+| `save-yaml($document, :$sorted = True)` | Serialize one value to a `---`/`...` delimited YAML document. |
+| `save-yamls(**@documents, :$sorted = True)` | Serialize several values into one multi-document stream. |
+
+```raku
+use YAMLish;
+
+# Parse: block and flow collections, quoted and block scalars, anchors/aliases.
+my %conf = load-yaml(q:to/YAML/);
+    ---
+    name: mutsu
+    versions: [0.17, 0.18]
+    description: >
+      a minimal Raku
+      implementation
+    ...
+    YAML
+say %conf<versions>[1];        # 0.18
+
+# Multi-document.
+say load-yamls("---\na: 1\n---\na: 2\n").elems;      # 2
+
+# Emit (keys sorted by default, so output is reproducible).
+say save-yaml({ b => 2, a => 1 });
+# ---
+# a: 1
+# b: 2
+# ...
+```
+
+`:%tags` lets a program add its own tag handlers; `:$schema` selects the scalar
+resolution schema (`Schema::JSON`, `Schema::Core` — the default — or
+`Schema::Extra`, which also resolves dates and datetimes).
 
 ## The field it was chosen from
 
@@ -38,7 +83,7 @@ same indices.
 
 | Candidate | Version | Released | License | Runtime deps | Dependents | raku | mutsu |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| **`YAMLish`** | 0.1.3 | 2026-07-04 | **Artistic-2.0** | `MIME::Base64` (**already bundled**) | **459** | **5/5** | **0/5** (load-blocked) |
+| **`YAMLish`** | 0.1.3 | 2026-07-04 | **Artistic-2.0** | `MIME::Base64` (**already bundled**) | **459** | **5/5** | **0/5** (load-blocked) → now **5/5** |
 | `YAML` | 0.1 | 2021-01-28 | Artistic-2.0 | `TestML` (test-only) | 2 | not measured | not measured |
 | `YAMLStar` | 0.1.17 | 2026-07-21 | **None** | 0 | 0 | — | — |
 | `LibYAML` | 0.2.1 | 2017-06-12 | Artistic-2.0 | `NativeCall` (binds system `libyaml`) | 0 | — | — |
@@ -97,15 +142,14 @@ which is exactly what a bundled default should be:
 So on the axis the user flagged, `YAMLish` is not merely acceptable — being
 safe-by-default with no unsafe-load path is a positive reason to pick it.
 
-## What blocks it on mutsu (the work list)
+## What blocked it on mutsu (the work list)
 
-Measured 2026-07-25 against `target/debug/mutsu` with `-I lib -I
-modules/MIME-Base64/lib`. All 5 files die identically at **module-load time**,
-before any test runs, so the file counts understate how close it is — it is
-currently a two-bug load path, not five independent failures.
+All five files started at 0/5 — they died identically at **module-load time**,
+before any test ran. Every item below was fixed **in the interpreter**; none of
+them was YAMLish-specific, and the vendored source was never touched.
 
-1. **`* => *` did not curry into a `WhateverCode`** — the original load blocker,
-   now **FIXED** (`news/2026-07/whatever-curry-through-fatarrow.md`,
+1. **`* => *` did not curry into a `WhateverCode`** — the original load blocker
+   (`news/2026-07/whatever-curry-through-fatarrow.md`,
    `t/whatever-curry-fatarrow.t`). `YAMLish`'s `flatten-tags` runs on `use`:
 
    ```raku
@@ -117,43 +161,80 @@ currently a two-bug load path, not five independent failures.
    Whatever)`, which `.map` rejected with `X::Cannot::Map: Cannot map a Pair to a
    Seq`, aborting the `use`. Fixed at the `=>` construction site.
 
-1.5. **A placeholder var inside a nested `WhateverCode` was mis-collected as its
-   parameter** — exposed once #1 was fixed, now **FIXED**
+2. **A placeholder var inside a nested `WhateverCode` was mis-collected as its
+   parameter** — exposed once #1 was fixed
    (`news/2026-07/placeholder-var-inside-nested-whatevercode.md`,
    `t/placeholder-in-nested-whatevercode.t`). In the same `flatten-tags` line,
    `$^namespace` is a placeholder of the outer block, but the inner
    `$^namespace ~ * => *` curries and mutsu swept `$^namespace` into the inner
-   WhateverCode's signature (`Placeholder variable '$^namespace' cannot override
-   existing signature`). Fixed by descending `collect_placeholders_shallow`
-   through WhateverCode closures and skipping the override check for their
-   bodies. **With #1 and #1.5, `use YAMLish` now loads.**
+   WhateverCode's signature. Fixed by descending `collect_placeholders_shallow`
+   through WhateverCode closures. **With #1 and #2, `use YAMLish` loaded.**
 
-2. **`Grammar.parse($input)` fails to dispatch inside the full module** —
-   deeper, not yet root-caused. After the load blocker is patched past locally,
-   `load-yaml` reaches `Grammar.parse($input)` and dies with
-   `X::Method::NotFound: Unknown method value dispatch (fallback disabled):
-   parse`. This is **not** simply "a user grammar named `Grammar` shadowing the
-   core type" — an isolated `grammar Grammar { token TOP {\d+} };
-   Grammar.parse("123")` works fine under mutsu, so the failure is
-   context-dependent (the module defines four grammars — `Grammar`,
-   `Schema::JSON`, `Schema::Core`, `Schema::Extra` — with inheritance and heavy
-   actions) and still needs reduction. Filed:
-   `todo/tickets/yamlish-grammar-parse-dispatch.md`. The YAML grammar
-   (lib/YAMLish.rakumod:150–783) is large and action-heavy, so further
-   grammar-feature gaps may surface once this one is cleared.
+3. **`Grammar.parse` did not dispatch inside the module.** `nextwith` from an
+   overridden grammar `parse` had no MRO candidate to defer to; a sibling grammar
+   did not inherit the CORE `Grammar`; module-local type shadowing resolved a
+   builtin type ahead of the package's own. Plus five grammar/regex gaps
+   (`$<name>` slot-first, proto `:<int>` variants, `<|w>`, reduce-time `$/.hash`,
+   mid-pattern `$` anchor) and general `<?subrule>` lookahead.
 
-## Provenance (for when it is vendored)
+4. **Block collections.** A `{ … }` block that does not `make` now runs *inline
+   during matching* (Rakudo semantics) rather than at reduce time, `:my` lexicals
+   thread through the capture store, and a subrule argument naming one is no
+   longer pre-rendered to `Nil`.
 
-| Module | Upstream | Pinned version | Auth |
+5. **Post-parse gaps**: a nested type name (`module M { class A::B }`) is
+   registered under its enclosing package; an `@`-sigilled parameter de-itemizes;
+   a user-defined method outranks a same-named builtin.
+
+6. **The last 53 subtests** — block scalars, anchors, the whole round-trip file,
+   `%TAG` directives — came from six more general regex bugs, written up in
+   `news/2026-07/yamlish-upstream-suite-passes.md`: a lookaround's body is part of
+   the same regex (so bound parameters interpolate into it, and its keyword may be
+   followed by a newline); `:my` lexicals reach the sub-patterns of their own
+   regex; a mid-pattern `$` is end-of-*string*; a goalpost (`~`) takes the greedy
+   inner match; a `::`-qualified subrule is resolved relative to its package; and
+   zero iterations still mark their captures as quantified.
+
+## Provenance and update procedure
+
+Per [BATTERIES.md §3](../../BATTERIES.md#updating-a-vendored-module-must-be-documented-per-library).
+To bump the module, re-vendor — do **not** hand-edit the vendored tree:
+
+| Module | Upstream | Pinned version | Commit |
 | --- | --- | --- | --- |
-| `YAMLish` | <https://github.com/Leont/yamlish> (`zef:leont`) | v0.1.3 (2026-07-04) | `zef:leont` |
+| `YAMLish` | <https://github.com/Leont/yamlish> (`zef:leont`) | v0.1.3 (2026-07-04) | `2a1d04ab` (tag `0.1.3`) |
 
-To vendor: copy `lib/` plus `META6.json`, `LICENSE`, `README.md`, `Changes`;
-exclude upstream `t/`, `xt/`, precomp artifacts (the release gate fetches the
-tests fresh). `MIME::Base64` is already bundled, so no new dependency tree.
+What is vendored: `lib/` plus `META6.json`, `LICENSE`, `README.md`, `Changes`.
+Upstream `t/`, `xt/`, `test-suite/`, `dist.ini`, `TODO.md` and `.precomp`
+artifacts are excluded — the release gate fetches the tests fresh at the pinned
+commit. `MIME::Base64` is already bundled, so this adds no new dependency tree.
+
+```sh
+rsync -a --exclude 't/' --exclude 'xt/' --exclude 'test-suite/' \
+      --exclude '.github/' --exclude '.precomp/' --exclude 'dist.ini' \
+      --exclude 'TODO.md' <checkout>/ modules/YAMLish/
+# then bump the commit in batteries.lock, re-run the gate, refresh the manifest:
+cargo build --release && scripts/battery-testsuite.sh --update
+git diff batteries-whitelist.txt
+python3 scripts/gen-batteries-manifest.py
+```
+
+Verification after a bump:
+
+```sh
+mutsu -e 'use YAMLish; say load-yaml("a: [1, 2]\n")<a>[1]'   # 2
+mutsu -e 'use YAMLish; say save-yaml({ b => 2, a => 1 })'
+```
+
+## Security updates
+
+Per [BATTERIES.md §6](../../BATTERIES.md#6-security-updates-and-independent-updatability)
+the bundled copy is the lowest-priority source, so `mzef install YAMLish`
+shadows it without a mutsu release. `YAMLish` is pure Raku and binds no system
+library, so there is no native-layer update path to track.
 
 ## License
 
 **Artistic-2.0** — declared in `META6.json` and shipped as `LICENSE`. Clears the
-[§4](../../BATTERIES.md#4-license-policy) hard gate. To be vendored verbatim with
-its `LICENSE` / `META6.json` / `README` preserved for attribution.
+[§4](../../BATTERIES.md#4-license-policy) hard gate. Vendored verbatim with its
+`LICENSE` / `META6.json` / `README` preserved for attribution, source unmodified.

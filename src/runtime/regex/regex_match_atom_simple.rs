@@ -294,6 +294,10 @@ impl Interpreter {
                 }
                 return None;
             }
+            RegexAtom::EndOfString => {
+                // Raku's `$` is end-of-STRING, unlike `$$` below.
+                return if pos == chars.len() { Some(pos) } else { None };
+            }
             RegexAtom::EndOfLine => {
                 if pos == chars.len() {
                     // At end-of-string: only match if not preceded by a newline char
@@ -699,6 +703,7 @@ impl Interpreter {
             | RegexAtom::StartOfLine
             | RegexAtom::TildeMarker
             | RegexAtom::EndOfLine
+            | RegexAtom::EndOfString
             | RegexAtom::WsRule
             | RegexAtom::SameAssertion { .. }
             | RegexAtom::AtPosition(_) => unreachable!(),

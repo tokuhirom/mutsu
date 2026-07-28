@@ -211,6 +211,11 @@ pub(crate) enum RegexAtom {
     StartOfLine,
     /// `$$` — end of line assertion (zero-width)
     EndOfLine,
+    /// A mid-pattern `$` — end of *string* assertion (zero-width). Raku's `$` is
+    /// always end-of-string; only `$$` is end-of-line. A trailing `$` sets the
+    /// pattern's `anchor_end` instead; this atom covers a `$` that is followed by
+    /// something else (`^ .* $ { make … }`).
+    EndOfString,
     /// `$0`, `$1`, etc. — backreference to positional capture group
     Backref(usize),
     /// `$<name>` — backreference to named capture group

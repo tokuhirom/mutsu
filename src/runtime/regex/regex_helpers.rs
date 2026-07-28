@@ -141,6 +141,50 @@ pub(crate) fn take_inline_regex_vars_seed() -> HashMap<String, Value> {
         .unwrap_or_default()
 }
 
+thread_local! {
+    /// Scalar names an enclosing `:my`/`:let` declared in the regex parse(s)
+    /// currently in flight. A sub-pattern — a group, an alternative, a
+    /// lookaround body — is parsed by a *nested* `parse_regex_uncached` call
+    /// that would otherwise not know about them, and would both pre-substitute
+    /// the outer-scope `$v` and fail to lower the bare `$v` to a match-time
+    /// `VarInterp` atom (YAMLish's `block-string` matches its measured indent
+    /// inside a quantified group: `[ $indent $new-indent … ]+ % <.line-break>`).
+    static ENCLOSING_REGEX_VARS: RefCell<std::collections::HashSet<String>> =
+        RefCell::new(std::collections::HashSet::new());
+}
+
+/// Restores [`ENCLOSING_REGEX_VARS`] to its entry state, so a sub-pattern's own
+/// declarations do not leak back out to the pattern that contains it.
+pub(crate) struct EnclosingRegexVarsGuard(std::collections::HashSet<String>);
+
+impl EnclosingRegexVarsGuard {
+    /// Snapshot the enclosing declarations; the returned set is what a nested
+    /// parse should start its own `declared_regex_vars` from.
+    pub(crate) fn enter() -> (Self, std::collections::HashSet<String>) {
+        let snapshot = ENCLOSING_REGEX_VARS.with(|s| s.borrow().clone());
+        (Self(snapshot.clone()), snapshot)
+    }
+}
+
+impl Drop for EnclosingRegexVarsGuard {
+    fn drop(&mut self) {
+        ENCLOSING_REGEX_VARS.with(|s| *s.borrow_mut() = std::mem::take(&mut self.0));
+    }
+}
+
+/// Publish a `:my`/`:let` scalar name to the sub-pattern parses that follow it.
+pub(crate) fn declare_enclosing_regex_var(name: &str) {
+    ENCLOSING_REGEX_VARS.with(|s| {
+        s.borrow_mut().insert(name.to_string());
+    });
+}
+
+/// Was `name` declared by a `:my`/`:let` in an enclosing pattern still being
+/// parsed? Such a name must not be pre-substituted from the outer env.
+pub(crate) fn is_enclosing_regex_var(name: &str) -> bool {
+    ENCLOSING_REGEX_VARS.with(|s| s.borrow().contains(name))
+}
+
 /// Hard cap on `ReducedSubruleLog` entries. The log only feeds the *failure*
 /// replay, so dropping the tail of a pathologically large parse costs nothing
 /// but keeps a long action-driven parse from accumulating unbounded memory.

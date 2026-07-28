@@ -248,43 +248,89 @@ impl Interpreter {
         }
     }
 
+    /// Package prefixes a `::`-qualified subrule name may be written relative
+    /// to. `<Schema::Core::element>` inside `module YAMLish` names
+    /// `YAMLish::Schema::Core::element`, so the name as written has to be tried
+    /// under the matching package and the current package (and their enclosing
+    /// scopes) before it counts as unresolvable.
+    pub(super) fn qualified_name_scopes(&self, pkg: &str) -> Vec<String> {
+        let mut scopes: Vec<String> = Vec::new();
+        for base in [pkg.to_string(), self.current_package()] {
+            let mut scope = base;
+            while !scope.is_empty() && scope != "GLOBAL" {
+                if !scopes.contains(&scope) {
+                    scopes.push(scope.clone());
+                }
+                match scope.rsplit_once("::") {
+                    Some((head, _)) => scope = head.to_string(),
+                    None => break,
+                }
+            }
+        }
+        scopes
+    }
+
     pub(crate) fn resolve_token_patterns_static_in_pkg(
         &self,
         name: &str,
         pkg: &str,
     ) -> Vec<(String, String, Option<String>)> {
-        let mut out = Vec::new();
         if name.contains("::") {
-            self.collect_token_patterns_for_scope(
-                &name[..name.rfind("::").unwrap()],
-                &name[name.rfind("::").unwrap() + 2..],
-                &mut out,
-            );
-            // Walk the MRO for qualified names, merging proto candidates from
-            // every ancestor (dedup by sym identity, derived-first).
-            if let Some(pos) = name.rfind("::") {
-                let qual_pkg = &name[..pos];
-                let token_name = &name[pos + 2..];
-                let mut seen: std::collections::HashSet<Option<String>> =
-                    out.iter().map(|e| e.2.clone()).collect();
-                let own = out.len();
-                for ancestor in self.mro_readonly(qual_pkg) {
-                    if ancestor == qual_pkg {
-                        continue;
-                    }
-                    self.collect_token_patterns_for_scope_dedup(
-                        &ancestor, token_name, &mut out, &mut seen,
-                    );
+            let mut out = self.collect_qualified_token_patterns(name);
+            for scope in self.qualified_name_scopes(pkg) {
+                if !out.is_empty() {
+                    break;
                 }
-                // Rewrite ancestor entries' dispatch package to the original
-                // qualified package so nested subrule lookups dispatch
-                // virtually through the receiver's MRO (Liskov substitution).
-                for entry in out.iter_mut().skip(own) {
-                    entry.1 = qual_pkg.to_string();
-                }
+                out = self.collect_qualified_token_patterns(&format!("{scope}::{name}"));
             }
             return out;
         }
+        self.resolve_unqualified_token_patterns_in_pkg(name, pkg)
+    }
+
+    /// The `<Pkg::rule>` half of [`Self::resolve_token_patterns_static_in_pkg`].
+    fn collect_qualified_token_patterns(
+        &self,
+        name: &str,
+    ) -> Vec<(String, String, Option<String>)> {
+        let mut out = Vec::new();
+        self.collect_token_patterns_for_scope(
+            &name[..name.rfind("::").unwrap()],
+            &name[name.rfind("::").unwrap() + 2..],
+            &mut out,
+        );
+        // Walk the MRO for qualified names, merging proto candidates from
+        // every ancestor (dedup by sym identity, derived-first).
+        if let Some(pos) = name.rfind("::") {
+            let qual_pkg = &name[..pos];
+            let token_name = &name[pos + 2..];
+            let mut seen: std::collections::HashSet<Option<String>> =
+                out.iter().map(|e| e.2.clone()).collect();
+            let own = out.len();
+            for ancestor in self.mro_readonly(qual_pkg) {
+                if ancestor == qual_pkg {
+                    continue;
+                }
+                self.collect_token_patterns_for_scope_dedup(
+                    &ancestor, token_name, &mut out, &mut seen,
+                );
+            }
+            // Rewrite ancestor entries' dispatch package to the original
+            // qualified package so nested subrule lookups dispatch
+            // virtually through the receiver's MRO (Liskov substitution).
+            for entry in out.iter_mut().skip(own) {
+                entry.1 = qual_pkg.to_string();
+            }
+        }
+        out
+    }
+
+    fn resolve_unqualified_token_patterns_in_pkg(
+        &self,
+        name: &str,
+        pkg: &str,
+    ) -> Vec<(String, String, Option<String>)> {
+        let mut out = Vec::new();
         if !pkg.is_empty() {
             // Walk the MRO of pkg, merging proto candidates from every class:
             // a derived grammar adding `rule statement:sym<repeat>` keeps the

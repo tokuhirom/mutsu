@@ -225,47 +225,72 @@ impl Interpreter {
     }
 
     pub(super) fn resolve_token_defs_in_pkg(&self, name: &str, pkg: &str) -> Vec<Arc<FunctionDef>> {
-        let mut out = Vec::new();
         if name.contains("::") {
-            if let Some(defs) = self.registry().token_defs.get(&Symbol::intern(name)) {
-                out.extend(defs.clone());
-            }
-            let mut sym_keys: Vec<String> = self
-                .registry()
-                .token_defs
-                .keys()
-                .map(|key| key.resolve())
-                .filter(|key| {
-                    key.strip_prefix(name)
-                        .is_some_and(crate::runtime::resolution::is_proto_variant_suffix)
-                })
-                .collect();
-            self.sort_sym_keys_by_decl_order(&mut sym_keys);
-            for key in &sym_keys {
-                if let Some(defs) = self.registry().token_defs.get(&Symbol::intern(key)) {
-                    out.extend(defs.clone());
+            // A qualified subrule (`<Schema::Core::element>`) is written relative
+            // to the package it appears in, so `Schema::Core` inside `module
+            // YAMLish` means `YAMLish::Schema::Core`. Try the name as written
+            // first, then under each enclosing package.
+            let mut out = self.collect_qualified_token_defs(name);
+            for scope in self.qualified_name_scopes(pkg) {
+                if !out.is_empty() {
+                    break;
                 }
-            }
-            // Walk the MRO for qualified names, merging proto candidates from
-            // every ancestor (dedup by candidate identity, derived-first).
-            if let Some(pos) = name.rfind("::") {
-                let qual_pkg = &name[..pos];
-                let token_name = &name[pos + 2..];
-                let mut seen: std::collections::HashSet<String> = out
-                    .iter()
-                    .map(|d| Self::token_def_identity(&d.name.resolve(), token_name))
-                    .collect();
-                for ancestor in self.mro_readonly(qual_pkg) {
-                    if ancestor == qual_pkg {
-                        continue;
-                    }
-                    self.collect_token_defs_for_scope_dedup(
-                        &ancestor, token_name, &mut out, &mut seen,
-                    );
-                }
+                out = self.collect_qualified_token_defs(&format!("{scope}::{name}"));
             }
             return out;
         }
+        self.resolve_unqualified_token_defs_in_pkg(name, pkg)
+    }
+
+    /// The `<Pkg::rule>` half of [`Self::resolve_token_defs_in_pkg`]: every
+    /// candidate registered under this exact qualified name, including the proto
+    /// variants and the ones the qualifier's ancestors contribute.
+    fn collect_qualified_token_defs(&self, name: &str) -> Vec<Arc<FunctionDef>> {
+        let mut out = Vec::new();
+        if let Some(defs) = self.registry().token_defs.get(&Symbol::intern(name)) {
+            out.extend(defs.clone());
+        }
+        let mut sym_keys: Vec<String> = self
+            .registry()
+            .token_defs
+            .keys()
+            .map(|key| key.resolve())
+            .filter(|key| {
+                key.strip_prefix(name)
+                    .is_some_and(crate::runtime::resolution::is_proto_variant_suffix)
+            })
+            .collect();
+        self.sort_sym_keys_by_decl_order(&mut sym_keys);
+        for key in &sym_keys {
+            if let Some(defs) = self.registry().token_defs.get(&Symbol::intern(key)) {
+                out.extend(defs.clone());
+            }
+        }
+        // Walk the MRO for qualified names, merging proto candidates from
+        // every ancestor (dedup by candidate identity, derived-first).
+        if let Some(pos) = name.rfind("::") {
+            let qual_pkg = &name[..pos];
+            let token_name = &name[pos + 2..];
+            let mut seen: std::collections::HashSet<String> = out
+                .iter()
+                .map(|d| Self::token_def_identity(&d.name.resolve(), token_name))
+                .collect();
+            for ancestor in self.mro_readonly(qual_pkg) {
+                if ancestor == qual_pkg {
+                    continue;
+                }
+                self.collect_token_defs_for_scope_dedup(&ancestor, token_name, &mut out, &mut seen);
+            }
+        }
+        out
+    }
+
+    fn resolve_unqualified_token_defs_in_pkg(
+        &self,
+        name: &str,
+        pkg: &str,
+    ) -> Vec<Arc<FunctionDef>> {
+        let mut out = Vec::new();
         if !pkg.is_empty() {
             // Walk the MRO of pkg, merging proto candidates from every class:
             // a derived grammar adding `rule statement:sym<repeat>` keeps the

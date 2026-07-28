@@ -20,9 +20,17 @@ impl Interpreter {
         start: usize,
         pkg: &str,
         pattern: &RegexPattern,
+        current_caps: &RegexCaptures,
     ) -> Vec<(usize, RegexCaptures)> {
         if token.ratchet {
-            return self.match_separated_quantifier_ratchet(token, chars, start, pkg, pattern);
+            return self.match_separated_quantifier_ratchet(
+                token,
+                chars,
+                start,
+                pkg,
+                pattern,
+                current_caps,
+            );
         }
         let sep = token.separator.as_ref().expect("separator present");
         let (min, max) = match &token.quant {
@@ -52,7 +60,8 @@ impl Interpreter {
         // performs that backtracking, returning chains highest-priority first
         // (most atoms first for a greedy quantifier; within a step, the
         // separator's own priority order from `regex_match_ends_from_caps_in_pkg`).
-        let chains = self.enumerate_separated_chains(token, chars, start, pkg, pattern, max);
+        let chains =
+            self.enumerate_separated_chains(token, chars, start, pkg, pattern, max, current_caps);
 
         // Turn each chain into result candidates (with optional trailing
         // separator for `%%`), highest-priority first, then reverse so the
@@ -99,8 +108,13 @@ impl Interpreter {
         }
         // Zero iterations (when `min == 0`) is the lowest-priority outcome for a
         // greedy quantifier, so it goes last in highest-priority-first order.
+        // The names still have to be marked quantified — `<pair>* %% ','` that
+        // matched nothing captures an EMPTY list under `$/<pair>`, not a single
+        // empty Match (`load-yaml("{}")` is an empty Hash, not `{"" => Any}`).
         if min == 0 {
-            out.push((start, RegexCaptures::default()));
+            let mut caps = RegexCaptures::default();
+            caps.named_quantified.extend(names.iter().cloned());
+            out.push((start, caps));
         }
         out.reverse();
         out
@@ -124,6 +138,7 @@ impl Interpreter {
         start: usize,
         pkg: &str,
         pattern: &RegexPattern,
+        current_caps: &RegexCaptures,
     ) -> Vec<(usize, RegexCaptures)> {
         let sep = token.separator.as_ref().expect("separator present");
         let (min, max) = match &token.quant {
@@ -138,7 +153,6 @@ impl Interpreter {
         let limit = if token.frugal { Some(min) } else { max };
         let can_extend = |count: usize| limit.is_none_or(|m| count < m);
 
-        let empty = RegexCaptures::default();
         let mut atom_caps: Vec<RegexCaptures> = Vec::new();
         let mut sep_caps: Vec<RegexCaptures> = Vec::new();
         let mut cur = start;
@@ -163,7 +177,7 @@ impl Interpreter {
                     &token.atom,
                     chars,
                     start,
-                    &empty,
+                    current_caps,
                     pkg,
                     pattern.ignore_case,
                 )
@@ -182,7 +196,7 @@ impl Interpreter {
                         &token.atom,
                         chars,
                         sep_end,
-                        &empty,
+                        current_caps,
                         pkg,
                         pattern.ignore_case,
                     )
@@ -203,7 +217,13 @@ impl Interpreter {
             return Vec::new();
         }
         if atom_caps.is_empty() {
-            return vec![(start, RegexCaptures::default())];
+            // Zero iterations still marks the quantified names, so `$/<name>` is
+            // an empty list rather than one empty Match (see the twin comment in
+            // `match_separated_quantifier`).
+            let mut caps = RegexCaptures::default();
+            caps.named_quantified
+                .extend(Self::collect_quantified_names_for_token(token));
+            return vec![(start, caps)];
         }
         let atom_stride = count_capture_groups(&token.atom);
         let sep_stride: usize = sep
@@ -244,6 +264,7 @@ impl Interpreter {
     /// highest-priority first: for a greedy quantifier the longest chains come
     /// first, and within a step separator matches follow their own priority
     /// order. `max` bounds the atom count (atom count never exceeds `max`).
+    #[allow(clippy::too_many_arguments)]
     fn enumerate_separated_chains(
         &mut self,
         token: &RegexToken,
@@ -252,9 +273,9 @@ impl Interpreter {
         pkg: &str,
         pattern: &RegexPattern,
         max: Option<usize>,
+        current_caps: &RegexCaptures,
     ) -> Vec<(Vec<RegexCaptures>, Vec<RegexCaptures>, usize)> {
         let mut chains: Vec<(Vec<RegexCaptures>, Vec<RegexCaptures>, usize)> = Vec::new();
-        let empty = RegexCaptures::default();
         // First atom: enumerate EVERY match length (highest-priority first), not
         // just the single highest-priority one. A frugal atom (`[[.]+?]`) matches
         // as few chars as possible, but an outer anchor / goalpost following the
@@ -265,7 +286,7 @@ impl Interpreter {
             &token.atom,
             chars,
             start,
-            &empty,
+            current_caps,
             pkg,
             pattern.ignore_case,
         );
@@ -293,6 +314,7 @@ impl Interpreter {
                 &mut atom_caps,
                 &mut sep_caps,
                 &mut chains,
+                current_caps,
             );
         }
         chains
@@ -315,13 +337,13 @@ impl Interpreter {
         atom_caps: &mut Vec<RegexCaptures>,
         sep_caps: &mut Vec<RegexCaptures>,
         out: &mut Vec<(Vec<RegexCaptures>, Vec<RegexCaptures>, usize)>,
+        current_caps: &RegexCaptures,
     ) {
         // Bound the chain count to avoid catastrophic backtracking on a frugal
         // separator over a long string.
         if out.len() > 20_000 {
             return;
         }
-        let empty = RegexCaptures::default();
         let can_extend = max.is_none_or(|m| atom_caps.len() < m);
         if can_extend {
             for (sep_end, scaps) in self.regex_match_ends_from_caps_in_pkg(
@@ -337,7 +359,7 @@ impl Interpreter {
                     &token.atom,
                     chars,
                     sep_end,
-                    &empty,
+                    current_caps,
                     pkg,
                     pattern.ignore_case,
                 );
@@ -348,7 +370,16 @@ impl Interpreter {
                     atom_caps.push(acaps);
                     sep_caps.push(scaps.clone());
                     self.extend_separated_chain(
-                        token, chars, atom_end, pkg, pattern, max, atom_caps, sep_caps, out,
+                        token,
+                        chars,
+                        atom_end,
+                        pkg,
+                        pattern,
+                        max,
+                        atom_caps,
+                        sep_caps,
+                        out,
+                        current_caps,
                     );
                     atom_caps.pop();
                     sep_caps.pop();
