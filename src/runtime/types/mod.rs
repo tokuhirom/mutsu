@@ -376,6 +376,19 @@ impl Interpreter {
     }
 
     pub(in crate::runtime) fn bind_param_value(&mut self, name: &str, value: Value) {
+        // An `@`-sigiled parameter is a positional binding: whatever Positional it
+        // is given becomes *the array's elements*. An attributive one
+        // (`submethod BUILD(:@!elems)`) writes straight through to the attribute,
+        // so a List handed to it has to be re-homed into an Array first — stored
+        // raw, `@!elems` ends up holding the List itself and iterating the
+        // attribute yields that List instead of its elements (YAMLish's
+        // `Sequence.new(:$elems)`, where `$elems` came out of a list-assignment
+        // destructure).
+        let value = if name.starts_with('@') {
+            Self::normalize_positional_param_value(value)
+        } else {
+            value
+        };
         self.env.insert(name.to_string(), value.clone());
         // Extract attribute name from twigil params: $!x -> "x", @!types -> "types", %!h -> "h"
         let attr_name = if let Some(a) = name.strip_prefix('!') {
@@ -419,6 +432,30 @@ impl Interpreter {
             self.env.insert(format!("&{}", bare), value);
         } else if let Some(bare) = name.strip_prefix('^') {
             self.env.insert(bare.to_string(), value);
+        }
+    }
+
+    /// The array an `@`-sigiled parameter binds to for a given argument.
+    ///
+    /// An **itemized** Positional (`$(1,2)` / `$[1,2]` — what a list-assignment
+    /// destructure such as `my ($cls, $elems) = @(...)` leaves in `$elems`)
+    /// de-itemizes: binding it to `@a` makes its elements the array's elements,
+    /// not a single element holding the list. Every other value is passed through
+    /// untouched, so an ordinary Array keeps sharing the caller's container and a
+    /// non-Positional is left for the binder's type check to reject.
+    fn normalize_positional_param_value(value: Value) -> Value {
+        match value.view() {
+            // De-itemize in place: `$[…]` becomes an `Array` and `$(…)` a `List`,
+            // so `.raku` still renders the shape the argument had.
+            ValueView::Array(items, kind @ (ArrayKind::ItemList | ArrayKind::ItemArray)) => {
+                let deitemized = if kind == ArrayKind::ItemArray {
+                    ArrayKind::Array
+                } else {
+                    ArrayKind::List
+                };
+                Value::array_with_kind(items.clone(), deitemized)
+            }
+            _ => value,
         }
     }
 

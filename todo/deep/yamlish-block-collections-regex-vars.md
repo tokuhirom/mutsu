@@ -1,10 +1,15 @@
-# YAMLish battery: block collections — regex side DONE, three downstream gaps left
+# YAMLish battery: block collections — RESOLVED
 
-**Status 2026-07-28.** The regex half of this ticket is finished: `(a)` and `(b)`
-below are both implemented, plus two gaps they exposed. `YAMLish::Grammar.parse`
-now returns the **byte-identical AST raku produces** for a block sequence
-(`- 1\n- 2`, `- x\n- y`). What is left is no longer regex work — see
-"Remaining after the regex work" at the bottom.
+**Status 2026-07-28: closed.** Everything this ticket tracked is fixed.
+`load-yaml` round-trips block sequences and mappings identically to raku. The
+regex half (`(a)`, `(b)`, plus `(c)` and two gaps they exposed) landed as PR
+#5510; the three downstream gaps are listed at the bottom. What remains for the
+battery is **packaging**, tracked in
+[[project-yaml-battery-campaign]] — see "Remaining after the regex work".
+
+This file should be `git mv`d to `news/2026-07/` once the packaging slice starts,
+per `todo/README.md`; it is kept here only so the next session has the full
+blocker chain in one place.
 
 
 
@@ -119,27 +124,40 @@ whole rule. It now sets the per-token `ratchet` flag on the token just emitted
 (`regex_parse_core.rs`); `::` / `:::` are left alone, and a `:` with no preceding
 atom still errors as raku does. Pin: `t/regex-standalone-backtrack-control.t`.
 
-## Remaining after the regex work
+## Remaining after the regex work — all three CLOSED (2026-07-28)
 
-`YAMLish::Grammar.parse("- 1\n- 2")` now yields the **same AST raku produces**,
-so the grammar is no longer the blocker. `load-yaml` still fails, on three
-independent non-regex gaps:
+`YAMLish::Grammar.parse` produced raku's AST once the regex work landed; three
+non-regex gaps stood between that and `load-yaml`, and all three are fixed:
 
-1. **`.new` on a grammar type object.** `Single.make-value` does
-   `$schema.new.parse($!value)` where `$schema` is `Schema::Core` (a grammar).
-   mutsu: `X::Method::NotFound: Unknown method value dispatch (fallback
-   disabled): new on YAMLish::Schema::Core`. Repro: `tmp/y6.raku`.
-2. **A positional attribute assigned an itemized list stays itemized.**
-   `Actions::root-block` does `my ($class, $elems) = @($<value>.ast); $class.new(:$elems)`
-   into `submethod BUILD(:@!elems)`. mutsu ends up with `@!elems` holding the
-   itemized value: `.elems` reports 2 but `for $seq.elems` iterates **once**,
-   yielding the `Array[Node]` itself, so `.map(*.concretize(…))` calls
-   `concretize` on the Array. Raku de-itemizes into the positional. Repro:
-   `tmp/y6.raku`; `tmp/y7.raku` shows the plain shapes all working, so it is
-   specific to the `:$elems`-from-a-scalar path.
-3. **The block `map` path throws.** `Grammar.parse("a: 1")` →
-   `X::Cannot::Map: Cannot map a Any to a Package` (sequences are fine). Not yet
-   root-caused. Repro: `tmp/y13.raku`.
+1. ✅ **`.new` on a nested type.** Not grammar-specific: `module M { class A::B }`
+   registered the ClassDef under the bare `A::B` while `.^name` said `M::A::B`, so
+   `M::A::B.new` could not find its own definition. PR #5511,
+   `t/nested-type-name-in-package.t`,
+   `news/2026-07/nested-type-name-qualified-by-package.md`.
+2. ✅ **An itemized list bound to a positional attribute.** `submethod
+   BUILD(:@!elems)` stored `$(1,2)` straight through, so `@!elems` held the list
+   itself and iterating it yielded that list.  An `@`-sigiled parameter now
+   de-itemizes. `t/positional-param-deitemizes.t`.
+3. ✅ **A user method losing to a same-named builtin.** The by-name dispatchers
+   (`dispatch_method_by_name_1/2/3`) key on the method name alone and ran before
+   user-method resolution, so YAMLish's action for its rule named `map` was
+   answered by the collection builtin. `t/user-method-shadows-builtin-name.t`.
+
+`load-yaml` now matches raku on every block collection:
+
+```
+- 1\n- 2    =>  [1, 2]
+a: 1        =>  {a => 1}
+a: 1\nb: 2  =>  {a => 1, b => 2}
+- x\n- y    =>  ["x", True]
+```
+
+**What is left for the battery is packaging, not interpreter work**: vendor into
+`modules/YAMLish/`, add the `batteries.lock` + `batteries-whitelist.txt` gate,
+the wasm Batteries page row, flip `docs/batteries/yaml.md` to bundled, and index
+it in BATTERIES.md §7. Worth a broader `load-yaml`/`save-yaml` sweep first (flow
+collections, block scalars, anchors/aliases, multi-document) to find what else
+the module exercises.
 
 ## Repro setup
 
