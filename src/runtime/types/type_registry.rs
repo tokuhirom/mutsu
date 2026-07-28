@@ -315,15 +315,21 @@ impl Interpreter {
             })
     }
 
-    /// Resolve a short type name against the current package chain: inside
+    /// Resolve a type name against the current package chain: inside
     /// `module Foo { class Params {…}; sub mk { Params.new } }` the sub's
     /// bareword `Params` names `Foo::Params` (registered fully qualified),
     /// even when `mk` is called from another package (JSON::Marshal's
     /// `MarshalParams`, reached through META6's `to-json`). Walks enclosing
     /// packages outward (`A::B::name`, then `A::name`); GLOBAL is the normal
     /// bare namespace, so it ends the walk.
+    ///
+    /// A *nested* name resolves the same way — `module M { class X::Decode { } }`
+    /// declares `M::X::Decode`, and a bareword `X::Decode` inside `M` has to find
+    /// it. The qualified probe running first is also what makes a package-local
+    /// declaration shadow a same-named outer one; an already-fully-qualified name
+    /// simply fails every probe and falls back to itself.
     pub(crate) fn resolve_type_in_current_package(&self, name: &str) -> Option<String> {
-        if name.contains("::") || name.is_empty() {
+        if name.is_empty() {
             return None;
         }
         let pkg_owned = self.current_package().to_string();

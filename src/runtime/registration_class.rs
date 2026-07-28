@@ -432,15 +432,20 @@ impl Interpreter {
     /// MRO links `X::Decode` to the built-in namespace (an unknown parent, so it
     /// falls back to `Any`) instead of the module-local `M::X`.
     ///
-    /// Only rewrites a bare name (no `::`, no type args) when
-    /// `{current_package}::{name}` names a registered class/role. A module-local
-    /// class lexically shadows any same-named outer or built-in type, so the
-    /// package-qualified sibling is preferred even when a bare built-in of that
-    /// name also exists (e.g. `X`, which is registered as the built-in `X::`
-    /// exception namespace class); genuine built-in and cross-package parents,
-    /// which have no current-package-qualified sibling, are left untouched.
+    /// Only rewrites a name (no type args) when `{current_package}::{name}` names
+    /// a registered class/role. A module-local class lexically shadows any
+    /// same-named outer or built-in type, so the package-qualified sibling is
+    /// preferred even when a bare built-in of that name also exists (e.g. `X`,
+    /// which is registered as the built-in `X::` exception namespace class);
+    /// genuine built-in and cross-package parents, which have no
+    /// current-package-qualified sibling, are left untouched.
+    ///
+    /// A *nested* parent name is qualified the same way — the third link of
+    /// `class X {}; class X::Decode is X {}; class X::Decode::Length is X::Decode {}`
+    /// inside a module has to reach `M::X::Decode`, not a bare `X::Decode` that
+    /// nothing declared.
     pub(crate) fn qualify_sibling_parent_name(&self, parent: &str) -> String {
-        if parent.contains("::") || parent.contains('[') {
+        if parent.contains('[') {
             return parent.to_string();
         }
         // The `Grammar` metatype, when it appears as an inheritance parent, is the
