@@ -424,12 +424,16 @@ impl Interpreter {
             let Some(tc) = pd.type_constraint.as_deref() else {
                 return Ok(());
             };
+            // `constant my_bool = int8;` — follow the alias to the type it names.
+            let resolved_tc = self.resolve_native_type_alias(tc);
+            let tc = resolved_tc.as_str();
             let is_rw = pd.traits.iter().any(|t| t == "rw");
             // `CArray[T]` — a contiguous C buffer whose element type T is
             // marshalled per-element. Unrecognized element types skip native
             // registration (so the failure surfaces clearly).
             if let Some(inner) = tc.strip_prefix("CArray[").and_then(|s| s.strip_suffix(']')) {
-                let Some(elem) = CType::from_type_name(inner) else {
+                let inner = self.resolve_native_type_alias(inner);
+                let Some(elem) = CType::from_type_name(&inner) else {
                     return Ok(());
                 };
                 params.push(ParamSpec {
@@ -480,7 +484,7 @@ impl Interpreter {
             // A returned `CArray[T]` has no length to reify into a Raku array,
             // so it is surfaced as the raw `Pointer` it carries.
             Some(rt) if rt.starts_with("CArray[") => CType::Pointer,
-            Some(rt) => match CType::from_type_name(rt) {
+            Some(rt) => match CType::from_type_name(&self.resolve_native_type_alias(rt)) {
                 Some(ct) => ct,
                 // A CStruct return (opaque native handle): wrap the returned
                 // pointer in an instance of the declared class so it round-trips
@@ -554,6 +558,39 @@ impl Interpreter {
     /// `SSL_METHOD`), matching how the class is registered by its short name.
     fn native_struct_class_name(name: &str) -> String {
         name.rsplit("::").next().unwrap_or(name).to_string()
+    }
+
+    /// Follow a `constant` type alias to the type it names.
+    ///
+    /// A C binding routinely spells its platform types as constants:
+    /// `DBDish::mysql::Native` declares `constant my_bool = int8;` and returns
+    /// `my_bool` from most of the `MYSQL_STMT` surface. The constant holds the
+    /// aliased *type object*, so read it back out of the environment and use
+    /// its name. Without this the signature type is unmappable and the whole
+    /// declaration silently skips native registration — the method then stays
+    /// the stub `{ * }` body and the call fails with "No such method".
+    ///
+    /// Bounded: an alias chain longer than a few links is treated as no alias.
+    fn resolve_native_type_alias(&self, name: &str) -> String {
+        use crate::runtime::nativecall::CType;
+        let mut current = name.to_string();
+        for _ in 0..4 {
+            if CType::from_type_name(&current).is_some() {
+                return current;
+            }
+            let Some(value) = self.get_env_with_main_alias(&current) else {
+                break;
+            };
+            let ValueView::Package(target) = value.view() else {
+                break;
+            };
+            let target = target.as_str().to_string();
+            if target == current {
+                break;
+            }
+            current = target;
+        }
+        current
     }
 
     pub(super) fn exec_register_token_op(
