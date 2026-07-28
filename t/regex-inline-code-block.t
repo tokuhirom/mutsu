@@ -1,6 +1,6 @@
 use Test;
 
-plan 13;
+plan 14;
 
 # A plain `{ … }` block inside a regex runs INLINE, left-to-right, during the
 # match (raku semantics) — not deferred until the match has finished. Its writes
@@ -95,3 +95,9 @@ is PerMatchDynvar.parse('a,b')<part>.map(*.ast).join('|'), 'set|decl',
 my $seen;
 '123' ~~ / (\d) { $seen = $/.Str } \d+ /;
 is $seen, '1', 'an inline block still writes back to a caller lexical';
+
+# 10. `$¢`, the match state at this point in the pattern, is bound too — the
+#     reduce-time replay always installed it, so running inline must as well.
+my $cursor;
+'abc' ~~ / . { $cursor = $¢ } /;
+ok defined($cursor) && defined($cursor.pos), 'an inline block sees $¢ with a usable .pos';

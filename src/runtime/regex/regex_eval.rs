@@ -219,16 +219,19 @@ impl Interpreter {
         // `<?{ … $/.lc … }>` assertion inside a `token` relies on this (the card
         // grammar's dup check does `%*PLAYED{$/.lc}++`). `$/[n]` still indexes the
         // positional captures on the Match object.
-        env.push((
-            "/".to_string(),
-            Value::make_match_object_with_captures(
-                matched_so_far.to_string(),
-                caps.match_from as i64,
-                (caps.match_from + matched_so_far.chars().count()) as i64,
-                &caps.positional,
-                &caps.named,
-            ),
-        ));
+        let cursor = Value::make_match_object_with_captures(
+            matched_so_far.to_string(),
+            caps.match_from as i64,
+            (caps.match_from + matched_so_far.chars().count()) as i64,
+            &caps.positional,
+            &caps.named,
+        );
+        // `$¢` is the current match state at this point in the pattern — the same
+        // object as `$/` here (`/ .{ $c = $¢ } /` must leave `$c` with a usable
+        // `.pos`, roast/S05-capture/match-object.t). The reduce-time replay always
+        // installed both; running inline has to as well.
+        env.push(("\u{00A2}".to_string(), cursor.clone()));
+        env.push(("/".to_string(), cursor));
         // When the assertion references `.made` AND we are inside a
         // `Grammar.parse(:actions(...))`, run the relevant action method on each
         // just-matched named capture so `$<x>.made` is available *during* the
