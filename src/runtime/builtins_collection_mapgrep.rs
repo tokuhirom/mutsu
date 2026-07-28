@@ -305,11 +305,8 @@ impl Interpreter {
                 || cn.starts_with("Blob[")
                 || cn.starts_with("buf")
                 || cn.starts_with("blob");
-            if is_blob
-                && let Some(ValueView::Array(bytes, ..)) =
-                    attributes.as_map().get("bytes").map(Value::view)
-            {
-                return Some(bytes.iter().cloned().collect());
+            if is_blob && let Some(bytes) = crate::value::value_buf::buf_elems(&attributes) {
+                return Some(bytes);
             }
         }
         None

@@ -370,6 +370,8 @@ pub(crate) mod types_eqv;
 pub(crate) mod types_isa;
 pub(crate) mod types_truthy;
 mod value_async;
+/// `Buf`/`Blob` element storage — the accessor chokepoint (ADR-0015 P2).
+pub(crate) mod value_buf;
 mod value_collections;
 mod value_enum;
 mod value_eq;

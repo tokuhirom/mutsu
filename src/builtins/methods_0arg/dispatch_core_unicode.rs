@@ -28,13 +28,8 @@ pub(super) fn dispatch(
                     || cn.starts_with("blob")
             } =>
             {
-                let elems = if let Some(ValueView::Array(bytes, ..)) =
-                    attributes.as_map().get("bytes").map(Value::view)
-                {
-                    bytes.len() as i64
-                } else {
-                    0
-                };
+                let elems = crate::value::value_buf::with_buf_elems(&attributes, <[Value]>::len)
+                    .unwrap_or(0) as i64;
                 let cn = class_name.resolve();
                 let bytes_per_elem: i64 = if cn.contains("16") {
                     2

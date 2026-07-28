@@ -409,13 +409,8 @@ impl Interpreter {
                     ..
                 } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
                     // Extract bytes from Buf/Blob instance and cycle them
-                    let pattern: Vec<Value> = if let Some(ValueView::Array(items, ..)) =
-                        attributes.as_map().get("bytes").map(Value::view)
-                    {
-                        items.to_vec()
-                    } else {
-                        Vec::new()
-                    };
+                    let pattern: Vec<Value> =
+                        crate::value::value_buf::buf_elems_or_empty(&attributes);
                     if pattern.is_empty() {
                         vec![Value::int(0); size]
                     } else {
@@ -442,9 +437,7 @@ impl Interpreter {
         } else {
             vec![Value::int(0); size]
         };
-        let mut attrs = std::collections::HashMap::new();
-        attrs.insert("bytes".to_string(), Value::array(byte_vals));
-        Ok(Value::make_instance(class_name, attrs))
+        Ok(crate::value::value_buf::make_buf(class_name, byte_vals))
     }
 
     /// Check if a builtin type inherits from a given ancestor type.

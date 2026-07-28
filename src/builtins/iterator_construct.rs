@@ -29,10 +29,7 @@ fn blob_elements(target: &Value) -> Option<Vec<Value>> {
     if !crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) {
         return None;
     }
-    match attributes.as_map().get("bytes").map(Value::view) {
-        Some(ValueView::Array(items, ..)) => Some(items.to_vec()),
-        _ => Some(Vec::new()),
-    }
+    Some(crate::value::value_buf::buf_elems_or_empty(&attributes))
 }
 
 /// Build the `Iterator` instance for a `.iterator` call on a plain receiver.

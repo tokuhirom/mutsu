@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::value_buf::{buf_elems, buf_elems_in, with_buf_elems};
 
 impl Interpreter {
     /// Wrap a value in item (scalar) context if it's a List/Array,
@@ -1203,9 +1204,7 @@ impl Interpreter {
                 | ValueView::RangeExclStart(..)
                 | ValueView::RangeExclBoth(..),
             ) if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-                if let Some(ValueView::Array(bytes, ..)) =
-                    attributes.as_map().get("bytes").map(Value::view)
-                {
+                if let Some(bytes) = buf_elems(&attributes) {
                     let len = bytes.len() as i64;
                     let (start, end_incl) = match index.view() {
                         ValueView::Range(a, b) => (
@@ -1752,13 +1751,7 @@ impl Interpreter {
                 // `list` of positional captures so `$/[*-1]` resolves `*-1` to
                 // the last capture (`m/ (\d) <?{ $/[*-1] < 5 }> /`).
                 let len = if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) {
-                    if let Some(ValueView::Array(bytes, ..)) =
-                        attributes.as_map().get("bytes").map(Value::view)
-                    {
-                        bytes.len() as i64
-                    } else {
-                        0
-                    }
+                    with_buf_elems(&attributes, <[Value]>::len).unwrap_or(0) as i64
                 } else if let Some(ValueView::Array(list, ..)) =
                     attributes.as_map().get("list").map(Value::view)
                 {
@@ -1789,8 +1782,7 @@ impl Interpreter {
                 match i {
                     Some(i) if i >= 0 => {
                         let map = attributes.as_map();
-                        if let Some(ValueView::Array(bytes, ..)) = map.get("bytes").map(Value::view)
-                        {
+                        if let Some(bytes) = buf_elems_in(&map) {
                             bytes.get(i as usize).cloned().unwrap_or(Value::NIL)
                         } else if let Some(ValueView::Array(list, ..)) =
                             map.get("list").map(Value::view)

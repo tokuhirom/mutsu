@@ -857,13 +857,9 @@ impl Interpreter {
                     break;
                 }
                 for chunk in bytes.chunks(size) {
-                    let byte_vals: Vec<Value> =
-                        chunk.iter().map(|b| Value::int(*b as i64)).collect();
-                    let mut buf_attrs = HashMap::new();
-                    buf_attrs.insert("bytes".to_string(), Value::array(byte_vals));
-                    values.push(Value::make_instance(
+                    values.push(crate::value::value_buf::make_buf(
                         Symbol::intern("Buf[uint8]"),
-                        buf_attrs,
+                        crate::value::value_buf::bytes_to_elems(chunk),
                     ));
                 }
                 if bytes.len() < size {

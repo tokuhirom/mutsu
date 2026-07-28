@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::value_buf::{buf_elems_or_empty, make_buf};
 
 impl Interpreter {
     pub(crate) fn is_native_buf_constructible(cn: &str) -> bool {
@@ -38,13 +39,7 @@ impl Interpreter {
                     || class_name.resolve().starts_with("buf")
                     || class_name.resolve().starts_with("blob") =>
                 {
-                    if let Some(ValueView::Array(items, ..)) =
-                        attributes.as_map().get("bytes").map(Value::view)
-                    {
-                        items.to_vec()
-                    } else {
-                        Vec::new()
-                    }
+                    buf_elems_or_empty(&attributes)
                 }
                 ValueView::BigInt(_) => vec![a.clone()],
                 _ => vec![Value::int(to_int(a))],
@@ -73,8 +68,6 @@ impl Interpreter {
                 }
             })
             .collect();
-        let mut attrs = HashMap::new();
-        attrs.insert("bytes".to_string(), Value::array(byte_vals));
         // Normalize short buf/blob names to canonical forms.
         let canonical_name = match cn.as_str() {
             "buf8" => Symbol::intern("Buf[uint8]"),
@@ -87,7 +80,7 @@ impl Interpreter {
             "blob64" => Symbol::intern("Blob[uint64]"),
             _ => class_name,
         };
-        Value::make_instance(canonical_name, attrs)
+        make_buf(canonical_name, byte_vals)
     }
 
     /// Build a `utf8`/`utf16` instance from `.new` arguments as pure data:
@@ -110,20 +103,12 @@ impl Interpreter {
                     attributes: ia,
                     ..
                 } if crate::runtime::utils::is_buf_or_blob_class(&cn.resolve()) => {
-                    if let Some(ValueView::Array(items, ..)) =
-                        ia.as_map().get("bytes").map(Value::view)
-                    {
-                        items.to_vec()
-                    } else {
-                        vec![]
-                    }
+                    buf_elems_or_empty(&ia)
                 }
                 _ => vec![],
             })
             .collect();
-        let mut attrs = HashMap::new();
-        attrs.insert("bytes".to_string(), Value::array(elems));
-        Value::make_instance(class_name, attrs)
+        make_buf(class_name, elems)
     }
 
     /// Build a `Uni` value from `.new` arguments as pure data: flatten each

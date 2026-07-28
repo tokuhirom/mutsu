@@ -158,16 +158,13 @@ impl Interpreter {
                         .collect(),
                     ValueView::Instance { attributes, .. } => {
                         // Extract items from an existing Buf/Blob instance
-                        if let Some(ValueView::Array(items, ..)) =
-                            attributes.as_map().get("bytes").map(Value::view)
-                        {
+                        crate::value::value_buf::with_buf_elems(&attributes, |items| {
                             items
                                 .iter()
                                 .map(|v| Value::int(crate::runtime::to_int(v)))
-                                .collect()
-                        } else {
-                            Vec::new()
-                        }
+                                .collect::<Vec<Value>>()
+                        })
+                        .unwrap_or_default()
                     }
                     _ => Vec::new(),
                 };

@@ -4,6 +4,7 @@
 //   method write-num32(::T:U: $offset, num32 $value, $endian = NativeEndian --> Buf:D)
 //   method write-num32(Buf:D: $offset, num32 $value, $endian = NativeEndian --> Buf:D)
 
+use crate::value::value_buf::bytes_to_elems;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// Returns Some(size_in_bytes) if the method is a write-num method.
@@ -88,9 +89,5 @@ pub(crate) fn apply_write_num(
 /// Build a fresh Buf instance value from a byte vector.
 pub(crate) fn make_buf_value(class_name: &str, bytes: Vec<u8>) -> Value {
     use crate::symbol::Symbol;
-    use std::collections::HashMap;
-    let items: Vec<Value> = bytes.into_iter().map(|b| Value::int(b as i64)).collect();
-    let mut attrs = HashMap::new();
-    attrs.insert("bytes".to_string(), Value::array(items));
-    Value::make_instance(Symbol::intern(class_name), attrs)
+    crate::value::value_buf::make_buf(Symbol::intern(class_name), bytes_to_elems(&bytes))
 }

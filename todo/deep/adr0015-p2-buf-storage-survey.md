@@ -23,7 +23,13 @@ and `.^array_type` re-derives it in `array_element_type_name`
 (`src/runtime/methods_classhow_dispatch.rs:36-49`). The new node has to carry it,
 because a contiguous `Vec<u8>` cannot be interpreted without it.
 
-## 2. The `"bytes"` campaign is 104 sites, not 91
+**Status: step 1 of the slicing below is DONE** — the accessor chokepoint is
+`src/value/value_buf.rs` and all 104 touches route through it
+(see [`news/2026-07/buf-storage-accessor-chokepoint.md`](../../news/2026-07/buf-storage-accessor-chokepoint.md)).
+Sections 2 and 5 below are now historical: read them for *why* the campaign was
+needed, not as work still to do. Steps 2 and 3 are open.
+
+## 2. The `"bytes"` campaign is 104 sites, not 91 (done — historical)
 
 `grep -rn '"bytes"' src/`: **110 occurrences in 45 files**, of which 6 are not
 attribute touches (method-name literals and comments). The real total is **104
@@ -164,15 +170,22 @@ ADR §4 promises — does not exist yet and is part of P2.
 
 ## Suggested slicing
 
-1. **Accessors first, no representation change.** Introduce the `buf_elems` /
-   `set_buf_elems` / `make_buf` pair and route all 104 touches through it. Purely
-   mechanical, behaviour-preserving, and a prerequisite under any sequencing —
-   the representation cannot be swapped while 40 files reach into the attribute
-   map directly.
+1. ~~**Accessors first, no representation change.**~~ **DONE.**
+   `src/value/value_buf.rs` owns the attribute name and all 104 touches go
+   through it. Two levels landed, not one: *element* accessors that decode to
+   and from `Vec<Value>` (these become the encode/decode boundary in step 2) and
+   *storage* accessors that move the container across without decoding it (these
+   become a node share). `buf_elems` returns `Option` because "no storage at
+   all" (a `Blob` type object) and "empty buffer" are distinguished at several
+   call sites, `has_buf_elems` being the probe.
 2. **The node**, behind those accessors: contiguous `Vec<u8>` + element width,
-   with the encode/decode the accessors now hide.
+   with the encode/decode the accessors now hide. Note the three *different*
+   byte-decoding conventions the callers keep (truncating `as u8`,
+   `.clamp(0, 255) as u8`, `to_f64() as u8`) — they were deliberately not
+   unified in step 1, so step 2 must decide which one the native node's byte
+   view implements and migrate the others explicitly, as a behaviour change with
+   its own tests.
 3. **The body and the honest `.REPR`**, in one commit with the `MVMArrayB` test,
    plus the deletion of `nativecall_pin.rs` and its three helpers.
 
-Step 1 is large but has no design content left; steps 2 and 3 are where the
-judgment is.
+Steps 2 and 3 are where the judgment is.

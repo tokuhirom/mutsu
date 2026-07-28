@@ -91,12 +91,17 @@ impl Interpreter {
                                     &class_name.resolve(),
                                 ) =>
                                 {
-                                    // Try "bytes" first (make_buf), then "data"
+                                    // Buf element storage first, then a `data`
+                                    // attribute (what a user-built stand-in carries).
                                     let map = attributes.as_map();
-                                    let bytes_arr = map.get("bytes").or_else(|| map.get("data"));
-                                    if let Some(ValueView::Array(bytes, _)) =
-                                        bytes_arr.map(Value::view)
-                                    {
+                                    let bytes = crate::value::value_buf::buf_elems_in(&map)
+                                        .or_else(|| match map.get("data").map(Value::view) {
+                                            Some(ValueView::Array(items, ..)) => {
+                                                Some(items.to_vec())
+                                            }
+                                            _ => None,
+                                        });
+                                    if let Some(bytes) = bytes {
                                         let data: Vec<u8> =
                                             bytes.iter().map(|v| v.to_f64() as u8).collect();
                                         let _ = stdin.write_all(&data);

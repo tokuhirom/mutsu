@@ -1,4 +1,5 @@
 use crate::symbol::Symbol;
+use crate::value::value_buf::{buf_elems, make_buf, with_buf_elems};
 use crate::value::{RuntimeError, Value, ValueView};
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
@@ -28,19 +29,15 @@ pub(crate) fn buf_class_name(val: &Value) -> String {
 }
 
 pub(crate) fn buf_get_int_items(target: &Value) -> Option<Vec<Value>> {
-    if let ValueView::Instance { attributes, .. } = target.view()
-        && let Some(ValueView::Array(items, ..)) = attributes.as_map().get("bytes").map(Value::view)
-    {
-        Some(items.to_vec())
+    if let ValueView::Instance { attributes, .. } = target.view() {
+        buf_elems(&attributes)
     } else {
         None
     }
 }
 
 pub(crate) fn make_buf_from_int_items(class_name: &str, items: &[Value]) -> Value {
-    let mut attrs = std::collections::HashMap::new();
-    attrs.insert("bytes".to_string(), Value::array(items.to_vec()));
-    Value::make_instance(Symbol::intern(class_name), attrs)
+    make_buf(Symbol::intern(class_name), items.to_vec())
 }
 
 pub(crate) fn eval_whatever_code(sub_data: &crate::gc::Gc<crate::value::SubData>, arg: i64) -> i64 {
@@ -141,17 +138,17 @@ pub(crate) fn buf_get_bytes(target: &Value) -> Option<Vec<u8>> {
         ..
     } = target.view()
         && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
-        && let Some(ValueView::Array(items, ..)) = attributes.as_map().get("bytes").map(Value::view)
-    {
-        return Some(
+        && let Some(bytes) = with_buf_elems(&attributes, |items| {
             items
                 .iter()
                 .map(|v| match v.view() {
                     ValueView::Int(i) => i as u8,
                     _ => 0,
                 })
-                .collect(),
-        );
+                .collect::<Vec<u8>>()
+        })
+    {
+        return Some(bytes);
     }
     None
 }

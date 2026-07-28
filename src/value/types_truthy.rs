@@ -102,10 +102,10 @@ impl Value {
                     || cn.starts_with("buf")
                     || cn.starts_with("blob")
                 {
-                    return match attributes.as_map().get("bytes").map(Value::view) {
-                        Some(ValueView::Array(items, ..)) => !items.is_empty(),
-                        _ => false,
-                    };
+                    return crate::value::value_buf::with_buf_elems(&attributes, |items| {
+                        !items.is_empty()
+                    })
+                    .unwrap_or(false);
                 }
                 true
             }

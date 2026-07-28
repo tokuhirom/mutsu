@@ -274,9 +274,7 @@ pub(super) fn dispatch(
             attributes,
             ..
         } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-            if let Some(ValueView::Array(bytes, ..)) =
-                attributes.as_map().get("bytes").map(Value::view)
-            {
+            if let Some(bytes) = crate::value::value_buf::buf_elems(&attributes) {
                 if method == "raku" || method == "perl" {
                     let elems: Vec<String> = bytes
                         .iter()

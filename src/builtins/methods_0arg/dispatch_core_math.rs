@@ -605,12 +605,9 @@ pub(super) fn dispatch(
         "tree" => Some(Some(Ok(tree_to_depth(target, usize::MAX)))),
         "encode" => {
             let s = target.to_string_value();
-            let bytes: Vec<Value> = s.as_bytes().iter().map(|&b| Value::int(b as i64)).collect();
-            let mut attrs = std::collections::HashMap::new();
-            attrs.insert("bytes".to_string(), Value::array(bytes));
-            Some(Some(Ok(Value::make_instance(
+            Some(Some(Ok(crate::value::value_buf::make_buf(
                 Symbol::intern("utf8"),
-                attrs,
+                crate::value::value_buf::bytes_to_elems(s.as_bytes()),
             ))))
         }
         "sink" => Some(match target.view() {

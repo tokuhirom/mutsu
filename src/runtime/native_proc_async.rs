@@ -6,12 +6,7 @@ use std::io::{Read, Write};
 
 /// Create a Buf Value from raw bytes.
 fn make_buf_value(bytes: &[u8]) -> Value {
-    let mut battrs = HashMap::new();
-    battrs.insert(
-        "bytes".to_string(),
-        Value::array(bytes.iter().map(|b| Value::int(*b as i64)).collect()),
-    );
-    Value::make_instance(Symbol::intern("Buf"), battrs)
+    crate::value::value_buf::make_buf_from_u8(bytes)
 }
 
 /// Incrementally UTF-8-decode a Proc::Async output stream. Emits the decoded valid
@@ -674,19 +669,16 @@ impl Interpreter {
                             || cn.starts_with("Blob[")
                     } =>
                     {
-                        if let Some(ValueView::Array(items, ..)) =
-                            attributes.as_map().get("bytes").map(Value::view)
-                        {
+                        crate::value::value_buf::with_buf_elems(&attributes, |items| {
                             items
                                 .iter()
                                 .map(|v| match v.view() {
                                     ValueView::Int(i) => i as u8,
                                     _ => 0,
                                 })
-                                .collect()
-                        } else {
-                            Vec::new()
-                        }
+                                .collect::<Vec<u8>>()
+                        })
+                        .unwrap_or_default()
                     }
                     ValueView::Str(s) => {
                         let enc = attrs

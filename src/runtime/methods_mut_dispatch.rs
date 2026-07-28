@@ -2,6 +2,7 @@ use super::methods_signature_errors::make_x_immutable_error;
 use super::*;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
+use crate::value::value_buf::{buf_elems_in, bytes_to_elems, set_buf_elems, with_buf_elems};
 use num_bigint::BigInt;
 use num_traits::Signed;
 
@@ -339,28 +340,20 @@ impl Interpreter {
         } = target.view()
             && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
         {
-            let bytes = attributes
-                .as_map()
-                .get("bytes")
-                .and_then(|v| match v.view() {
-                    ValueView::Array(items, ..) => Some(
-                        items
-                            .iter()
-                            .map(|v| match v.view() {
-                                ValueView::Int(i) => i.clamp(0, 255) as u8,
-                                ValueView::Num(f) => (f as i64).clamp(0, 255) as u8,
-                                ValueView::BigInt(bi) => {
-                                    num_traits::ToPrimitive::to_i64(bi.as_ref())
-                                        .unwrap_or(0)
-                                        .clamp(0, 255) as u8
-                                }
-                                _ => 0u8,
-                            })
-                            .collect::<Vec<u8>>(),
-                    ),
-                    _ => None,
-                })
-                .unwrap_or_default();
+            let bytes = with_buf_elems(&attributes, |items| {
+                items
+                    .iter()
+                    .map(|v| match v.view() {
+                        ValueView::Int(i) => i.clamp(0, 255) as u8,
+                        ValueView::Num(f) => (f as i64).clamp(0, 255) as u8,
+                        ValueView::BigInt(bi) => num_traits::ToPrimitive::to_i64(bi.as_ref())
+                            .unwrap_or(0)
+                            .clamp(0, 255) as u8,
+                        _ => 0u8,
+                    })
+                    .collect::<Vec<u8>>()
+            })
+            .unwrap_or_default();
 
             if (method == "read-ubits" || method == "read-bits") && args.len() == 2 {
                 let Some(from) = Self::value_to_non_negative_i64(&args[0]) else {
@@ -397,15 +390,7 @@ impl Interpreter {
                 };
                 let written = crate::builtins::buf_bits::write_bits(&bytes, from, bits, &args[2])?;
                 let mut updated_attrs = attributes.to_map();
-                updated_attrs.insert(
-                    "bytes".to_string(),
-                    Value::array(
-                        written
-                            .iter()
-                            .map(|b| Value::int(*b as i64))
-                            .collect::<Vec<_>>(),
-                    ),
-                );
+                set_buf_elems(&mut updated_attrs, bytes_to_elems(&written));
                 return Ok(Value::write_back_sharing(
                     &attributes,
                     class_name,
@@ -450,30 +435,22 @@ impl Interpreter {
                 ValueView::Num(f) => f as i64,
                 _ => 0,
             };
-            let mut bytes = {
-                let mut v: Vec<u8> = Vec::new();
-                if let Some(bytes_val) = attributes.as_map().get("bytes")
-                    && let ValueView::Array(items, ..) = bytes_val.view()
-                {
-                    v.reserve(items.len());
-                    for it in items.iter() {
-                        v.push(match it.view() {
-                            ValueView::Int(i) => i.clamp(0, 255) as u8,
-                            ValueView::Num(f) => (f as i64).clamp(0, 255) as u8,
-                            _ => 0,
-                        });
-                    }
-                }
-                v
-            };
+            let mut bytes = with_buf_elems(&attributes, |items| {
+                items
+                    .iter()
+                    .map(|it| match it.view() {
+                        ValueView::Int(i) => i.clamp(0, 255) as u8,
+                        ValueView::Num(f) => (f as i64).clamp(0, 255) as u8,
+                        _ => 0,
+                    })
+                    .collect::<Vec<u8>>()
+            })
+            .unwrap_or_default();
             crate::builtins::buf_write_num::apply_write_num(
                 &mut bytes, method, offset_i64, value_val, endian_val,
             )?;
             let mut updated_attrs = attributes.to_map();
-            updated_attrs.insert(
-                "bytes".to_string(),
-                Value::array(bytes.into_iter().map(|b| Value::int(b as i64)).collect()),
-            );
+            set_buf_elems(&mut updated_attrs, bytes_to_elems(&bytes));
             let updated = Value::write_back_sharing(&attributes, class_name, updated_attrs, id);
             self.env.insert(target_var.to_string(), updated.clone());
             return Ok(updated);
@@ -549,30 +526,22 @@ impl Interpreter {
                 ValueView::Num(f) => f as i64,
                 _ => 0,
             };
-            let mut bytes = {
-                let mut v: Vec<u8> = Vec::new();
-                if let Some(bytes_val) = attributes.as_map().get("bytes")
-                    && let ValueView::Array(items, ..) = bytes_val.view()
-                {
-                    v.reserve(items.len());
-                    for it in items.iter() {
-                        v.push(match it.view() {
-                            ValueView::Int(i) => i.clamp(0, 255) as u8,
-                            ValueView::Num(f) => (f as i64).clamp(0, 255) as u8,
-                            _ => 0,
-                        });
-                    }
-                }
-                v
-            };
+            let mut bytes = with_buf_elems(&attributes, |items| {
+                items
+                    .iter()
+                    .map(|it| match it.view() {
+                        ValueView::Int(i) => i.clamp(0, 255) as u8,
+                        ValueView::Num(f) => (f as i64).clamp(0, 255) as u8,
+                        _ => 0,
+                    })
+                    .collect::<Vec<u8>>()
+            })
+            .unwrap_or_default();
             crate::builtins::buf_write_int::apply_write_int(
                 &mut bytes, method, offset_i64, value_val, endian_val,
             )?;
             let mut updated_attrs = attributes.to_map();
-            updated_attrs.insert(
-                "bytes".to_string(),
-                Value::array(bytes.into_iter().map(|b| Value::int(b as i64)).collect()),
-            );
+            set_buf_elems(&mut updated_attrs, bytes_to_elems(&bytes));
             let updated = Value::write_back_sharing(&attributes, class_name, updated_attrs, id);
             self.env.insert(target_var.to_string(), updated.clone());
             return Ok(updated);
@@ -2078,19 +2047,14 @@ impl Interpreter {
                 let from = from as usize;
                 let bits = bits as usize;
                 let mut updated = attributes.to_map();
-                let mut bytes = if let Some(bytes_val) = updated.get("bytes")
-                    && let ValueView::Array(items, ..) = bytes_val.view()
-                {
-                    items
-                        .iter()
-                        .map(|v| match v.view() {
-                            ValueView::Int(i) => i as u8,
-                            _ => 0,
-                        })
-                        .collect::<Vec<u8>>()
-                } else {
-                    Vec::new()
-                };
+                let mut bytes: Vec<u8> = buf_elems_in(&updated)
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|v| match v.view() {
+                        ValueView::Int(i) => i as u8,
+                        _ => 0,
+                    })
+                    .collect();
                 let required_bits = from.saturating_add(bits);
                 let required_len = required_bits.div_ceil(8);
                 if bytes.len() < required_len {
@@ -2100,10 +2064,7 @@ impl Interpreter {
                 if bits > 0 {
                     write_bits_into_bytes(&mut bytes, from, bits, &value);
                 }
-                updated.insert(
-                    "bytes".to_string(),
-                    Value::array(bytes.into_iter().map(|b| Value::int(b as i64)).collect()),
-                );
+                set_buf_elems(&mut updated, bytes_to_elems(&bytes));
                 let updated_instance =
                     Value::write_back_sharing(&attributes, class_name, updated, target_id);
                 self.env

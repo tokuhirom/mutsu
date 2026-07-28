@@ -272,16 +272,17 @@ impl Interpreter {
                     ..
                 } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
                     // Buf argument: decode as UTF-8
-                    if let Some(bytes_val) = attributes.as_map().get("bytes")
-                        && let ValueView::Array(items, _) = bytes_val.view()
+                    if let Some(bytes) =
+                        crate::value::value_buf::with_buf_elems(&attributes, |items| {
+                            items
+                                .iter()
+                                .map(|v| match v.view() {
+                                    ValueView::Int(n) => n as u8,
+                                    _ => v.to_string_value().parse::<u8>().unwrap_or(0),
+                                })
+                                .collect::<Vec<u8>>()
+                        })
                     {
-                        let bytes: Vec<u8> = items
-                            .iter()
-                            .map(|v| match v.view() {
-                                ValueView::Int(n) => n as u8,
-                                _ => v.to_string_value().parse::<u8>().unwrap_or(0),
-                            })
-                            .collect();
                         let code = String::from_utf8_lossy(&bytes).to_string();
                         return self.eval_eval_string(&code);
                     }

@@ -65,13 +65,7 @@ impl Interpreter {
                     || cn.starts_with("blob")
             } =>
             {
-                if let Some(ValueView::Array(items, ..)) =
-                    attributes.as_map().get("bytes").map(Value::view)
-                {
-                    Value::seq(items.clone().to_vec())
-                } else {
-                    Value::seq(Vec::new())
-                }
+                Value::seq(crate::value::value_buf::buf_elems_or_empty(&attributes))
             }
             _ => Value::seq(vec![target.clone()]),
         })
@@ -120,13 +114,11 @@ impl Interpreter {
                 || cn.starts_with("buf")
                 || cn.starts_with("blob")
             {
-                if let Some(ValueView::Array(items, ..)) =
-                    attributes.as_map().get("bytes").map(Value::view)
-                {
-                    return Ok(Value::array_with_kind(
-                        items.clone(),
-                        crate::value::ArrayKind::List,
-                    ));
+                if let Some(list) = crate::value::value_buf::buf_elems_as_array(
+                    &attributes.as_map(),
+                    crate::value::ArrayKind::List,
+                ) {
+                    return Ok(list);
                 }
                 return Ok(Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),

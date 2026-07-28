@@ -604,11 +604,12 @@ impl Interpreter {
                 result.push_str(&resumed.to_string_value());
                 continue;
             }
-            // Buf/Blob instances with "bytes" attribute: call .Str which throws X::Buf::AsStr
-            // Blob type objects (no "bytes" attr, e.g. $*DISTRO.signature) stringify to ""
+            // Buf/Blob instances with element storage: call .Str, which throws
+            // X::Buf::AsStr. Blob *type objects* have no storage (e.g.
+            // `$*DISTRO.signature`) and stringify to "".
             if let ValueView::Instance { attributes, .. } = v.view()
                 && Self::is_buf_value(&v)
-                && attributes.contains_key("bytes")
+                && crate::value::value_buf::has_buf_elems(&attributes)
             {
                 let str_result = self.try_compiled_method_or_interpret(v, "Str", Vec::new())?;
                 result.push_str(&str_result.to_string_value());
