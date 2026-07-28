@@ -86,7 +86,9 @@ const CACHE_MAGIC: &[u8; 4] = b"MTS2";
 fn interpreter_version() -> String {
     // Bump CACHE_FORMAT_VERSION when Stmt/Expr/Value enum variants change,
     // or when `CacheMetadata` / `ParseEffects` gain or lose a field.
-    const CACHE_FORMAT_VERSION: u32 = 8;
+    // 9: `Value` gained `BufStorage` (ADR-0015 P2), which also shifted the
+    // serialized `SerValue` discriminants after `Array`.
+    const CACHE_FORMAT_VERSION: u32 = 9;
     let exe_stamp = std::env::current_exe()
         .and_then(fs::metadata)
         .and_then(|m| m.modified())

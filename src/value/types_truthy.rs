@@ -39,6 +39,10 @@ impl Value {
             // A `VarRef` is a transient binder wrapper: it is as true as the
             // variable's value.
             ValueView::VarRef { value, .. } => value.truthy(),
+            // A buffer is true when it has elements — the same rule the
+            // instance-level `Buf` arm applies, so a stray storage value
+            // cannot answer differently from the buffer holding it.
+            ValueView::BufStorage(b) => !b.bytes.is_empty(),
             ValueView::RakuAst(_) => true,
             ValueView::Bool(b) => b,
             ValueView::Int(i) => i != 0,

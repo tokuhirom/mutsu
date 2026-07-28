@@ -837,8 +837,12 @@ fn buf_instance_pin_key(v: &Value) -> Option<usize> {
 #[cfg(feature = "libffi")]
 fn write_buf_instance_bytes(v: &Value, bytes: &[u8]) {
     match v.view() {
-        ValueView::Instance { attributes, .. } => {
-            crate::value::value_buf::store_buf_bytes(&attributes, bytes);
+        ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } => {
+            crate::value::value_buf::store_buf_bytes(&attributes, class_name, bytes);
         }
         ValueView::Scalar(inner) => write_buf_instance_bytes(inner, bytes),
         ValueView::ContainerRef(cell) => {

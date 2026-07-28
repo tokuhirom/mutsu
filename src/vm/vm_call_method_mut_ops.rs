@@ -2677,7 +2677,7 @@ impl Interpreter {
         // (so aliases observing the same buf see the mutation), then refresh the
         // receiver binding to match the interpreter's `env.insert(target_var, ...)`.
         let mut updated_attrs = attributes.to_map();
-        crate::value::value_buf::set_buf_bytes(&mut updated_attrs, &new_bytes);
+        crate::value::value_buf::set_buf_bytes(&mut updated_attrs, class_name, &new_bytes);
         let updated = Value::write_back_sharing(&attributes, class_name, updated_attrs, id);
         self.env_mut()
             .insert(target_name.to_string(), updated.clone());

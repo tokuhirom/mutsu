@@ -302,6 +302,11 @@ impl Value {
             // A `VarRef` is a transient binder wrapper: it stringifies as the
             // variable's value.
             ValueView::VarRef { value, .. } => value.to_string_value(),
+            // `Buf`/`Blob` element storage never surfaces as a Raku-level
+            // value; a buffer stringifies through the `X::Buf::AsStr` path on
+            // the instance holding this. Latin-1 keeps the bytes recoverable
+            // if one ever leaks into a diagnostic.
+            ValueView::BufStorage(b) => b.bytes.iter().map(|&c| c as char).collect(),
             ValueView::RakuAst(node) => crate::rakuast::node_gist(node),
             ValueView::Int(i) => i.to_string(),
             ValueView::BigInt(n) => n.to_string(),
@@ -726,25 +731,10 @@ impl Value {
                         // `(Blob)` via a separate path.
                         format!("{}:0x<>", class_name)
                     } else {
-                        // Two hex digits per byte of one element.
-                        let hex_width =
-                            2 * crate::value::value_buf::buf_elem_width(&class_name.resolve());
+                        let width = crate::value::value_buf::buf_elem_width(&class_name.resolve());
                         let hex: Vec<String> = bytes
                             .iter()
-                            .map(|b| match b.view() {
-                                ValueView::Int(i) => {
-                                    if hex_width == 16 {
-                                        format!("{:016X}", i as u64)
-                                    } else if hex_width == 8 {
-                                        format!("{:08X}", i as u32)
-                                    } else if hex_width == 4 {
-                                        format!("{:04X}", i as u16)
-                                    } else {
-                                        format!("{:02X}", i as u8)
-                                    }
-                                }
-                                _ => "0".repeat(hex_width),
-                            })
+                            .map(|b| crate::value::value_buf::elem_hex(b, width))
                             .collect();
                         format!("{}:0x<{}>", class_name, hex.join(" "))
                     }

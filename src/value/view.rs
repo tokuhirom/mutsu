@@ -39,6 +39,7 @@ pub enum ValueView<'a> {
         excl_end: bool,
     },
     Array(GcRef<'a, ArrayData>, ArrayKind),
+    BufStorage(GcRef<'a, BufData>),
     Hash(GcRef<'a, HashData>),
     Rat(i64, i64),
     FatRat(i64, i64),
