@@ -45,13 +45,22 @@ impl Value {
         orig: Option<&str>,
         named_quantified: &HashSet<String>,
     ) -> Self {
-        fn make_capture_match(s: &str, orig: Option<&str>, search_from: usize) -> Value {
+        // `orig`'s original string (for the `.orig` attribute, shared via Arc
+        // rather than cloned) and its char vector (for the position search
+        // below) are threaded through as a pair rather than re-derived from
+        // `Option<&str>` at every leaf capture — a match tree can have one
+        // such leaf per matched character (e.g. a quoted scalar's run of
+        // space captures), and re-collecting the WHOLE original string into
+        // a fresh `Vec<char>` (and cloning it into a fresh `String`) at each
+        // one made a single `.parse()` cost O(captures × document length).
+        type OrigCtx<'o> = (&'o std::sync::Arc<String>, &'o [char]);
+
+        fn make_capture_match(s: &str, orig_ctx: Option<OrigCtx>, search_from: usize) -> Value {
             let mut attrs = HashMap::new();
             attrs.insert("str".to_string(), Value::str(s.to_string()));
             // Try to find the captured text's position within the original string
-            let (cap_from, cap_to) = if let Some(o) = orig {
+            let (cap_from, cap_to) = if let Some((_, haystack)) = orig_ctx {
                 // Search for the captured substring starting from search_from
-                let haystack: Vec<char> = o.chars().collect();
                 let needle: Vec<char> = s.chars().collect();
                 let mut found_from = 0i64;
                 let mut found = false;
@@ -74,14 +83,17 @@ impl Value {
             attrs.insert("to".to_string(), Value::Int(cap_to));
             attrs.insert("list".to_string(), Value::array(Vec::new()));
             attrs.insert("named".to_string(), Value::hash(HashMap::new()));
-            if let Some(o) = orig {
-                attrs.insert("orig".to_string(), Value::str(o.to_string()));
+            if let Some((o, _)) = orig_ctx {
+                attrs.insert("orig".to_string(), Value::str_arc(std::sync::Arc::clone(o)));
             }
             Value::make_instance(Symbol::intern("Match"), attrs)
         }
 
         /// Build a Match object from a RegexCaptures, recursively handling subcaptures.
-        fn make_subcap_match(caps: &crate::runtime::RegexCaptures, orig: Option<&str>) -> Value {
+        fn make_subcap_match(
+            caps: &crate::runtime::RegexCaptures,
+            orig_ctx: Option<OrigCtx>,
+        ) -> Value {
             let search_start = caps.from;
             let pos_vals: Vec<Value> = caps
                 .positional
@@ -98,7 +110,7 @@ impl Value {
                             .iter()
                             .map(|(text, from, to, subcap)| {
                                 if let Some(sc) = subcap {
-                                    return make_subcap_match(sc, orig);
+                                    return make_subcap_match(sc, orig_ctx);
                                 }
                                 let mut a = HashMap::new();
                                 a.insert("str".to_string(), Value::str(text.clone()));
@@ -106,8 +118,11 @@ impl Value {
                                 a.insert("to".to_string(), Value::Int(*to as i64));
                                 a.insert("list".to_string(), Value::array(Vec::new()));
                                 a.insert("named".to_string(), Value::hash(HashMap::new()));
-                                if let Some(o) = orig {
-                                    a.insert("orig".to_string(), Value::str(o.to_string()));
+                                if let Some((o, _)) = orig_ctx {
+                                    a.insert(
+                                        "orig".to_string(),
+                                        Value::str_arc(std::sync::Arc::clone(o)),
+                                    );
                                 }
                                 Value::make_instance(Symbol::intern("Match"), a)
                             })
@@ -116,9 +131,9 @@ impl Value {
                     }
                     // Recursively build nested Match objects for positional subcaptures
                     if let Some(Some(subcap)) = caps.positional_subcaps.get(i) {
-                        return make_subcap_match(subcap, orig);
+                        return make_subcap_match(subcap, orig_ctx);
                     }
-                    make_capture_match(s, orig, search_start)
+                    make_capture_match(s, orig_ctx, search_start)
                 })
                 .collect();
             let mut sub_named: HashMap<String, Value> = HashMap::new();
@@ -131,9 +146,9 @@ impl Value {
                         if let Some(scs) = subcaps_for_key
                             && let Some(sc) = scs.get(i)
                         {
-                            return make_subcap_match(sc, orig);
+                            return make_subcap_match(sc, orig_ctx);
                         }
-                        make_capture_match(s, orig, search_start)
+                        make_capture_match(s, orig_ctx, search_start)
                     })
                     .collect();
                 if vals.len() == 1 && !caps.named_quantified.contains(key) {
@@ -157,7 +172,7 @@ impl Value {
             for (key, scs) in &caps.named_subcaps {
                 if key.starts_with(crate::runtime::SILENT_ACTION_MARKER_PREFIX) {
                     for sc in scs {
-                        silent_caps_vals.push(make_subcap_match(sc, orig));
+                        silent_caps_vals.push(make_subcap_match(sc, orig_ctx));
                     }
                 }
             }
@@ -173,8 +188,8 @@ impl Value {
                     Value::real_array(silent_caps_vals),
                 );
             }
-            if let Some(o) = orig {
-                attrs.insert("orig".to_string(), Value::str(o.to_string()));
+            if let Some((o, _)) = orig_ctx {
+                attrs.insert("orig".to_string(), Value::str_arc(std::sync::Arc::clone(o)));
             }
             // Store :sym<> variant name so action dispatch can find it
             if let Some(ref sym_val) = caps.sym {
@@ -210,12 +225,20 @@ impl Value {
             Value::make_instance(Symbol::intern("Match"), attrs)
         }
 
+        // Built once per `.parse()` (not per leaf capture, see `OrigCtx` above).
+        let orig_arc = orig.map(|o| std::sync::Arc::new(o.to_string()));
+        let orig_chars_vec: Option<Vec<char>> = orig.map(|o| o.chars().collect());
+        let orig_ctx: Option<OrigCtx> = match (&orig_arc, &orig_chars_vec) {
+            (Some(a), Some(c)) => Some((a, c.as_slice())),
+            _ => None,
+        };
+
         let mut attrs = HashMap::new();
         attrs.insert("str".to_string(), Value::str(matched));
         attrs.insert("from".to_string(), Value::Int(from));
         attrs.insert("to".to_string(), Value::Int(to));
-        if let Some(o) = orig {
-            attrs.insert("orig".to_string(), Value::str(o.to_string()));
+        if let Some((o, _)) = orig_ctx {
+            attrs.insert("orig".to_string(), Value::str_arc(std::sync::Arc::clone(o)));
         }
         let search_start = from as usize;
         let caps: Vec<Value> = positional
@@ -232,7 +255,7 @@ impl Value {
                         .iter()
                         .map(|(text, qfrom, qto, subcap)| {
                             if let Some(sc) = subcap {
-                                return make_subcap_match(sc, orig);
+                                return make_subcap_match(sc, orig_ctx);
                             }
                             let mut a = HashMap::new();
                             a.insert("str".to_string(), Value::str(text.clone()));
@@ -240,8 +263,11 @@ impl Value {
                             a.insert("to".to_string(), Value::Int(*qto as i64));
                             a.insert("list".to_string(), Value::array(Vec::new()));
                             a.insert("named".to_string(), Value::hash(HashMap::new()));
-                            if let Some(o) = orig {
-                                a.insert("orig".to_string(), Value::str(o.to_string()));
+                            if let Some((o, _)) = orig_ctx {
+                                a.insert(
+                                    "orig".to_string(),
+                                    Value::str_arc(std::sync::Arc::clone(o)),
+                                );
                             }
                             Value::make_instance(Symbol::intern("Match"), a)
                         })
@@ -251,9 +277,9 @@ impl Value {
                 // If there are nested subcaptures for this positional capture,
                 // build a full Match object with subcaptures
                 if let Some(Some(subcap)) = positional_subcaps.get(i) {
-                    return make_subcap_match(subcap, orig);
+                    return make_subcap_match(subcap, orig_ctx);
                 }
-                make_capture_match(s, orig, search_start)
+                make_capture_match(s, orig_ctx, search_start)
             })
             .collect();
         attrs.insert("list".to_string(), Value::array(caps));
@@ -267,9 +293,9 @@ impl Value {
                     if let Some(scs) = subcaps_for_key
                         && let Some(sc) = scs.get(i)
                     {
-                        return make_subcap_match(sc, orig);
+                        return make_subcap_match(sc, orig_ctx);
                     }
-                    make_capture_match(s, orig, search_start)
+                    make_capture_match(s, orig_ctx, search_start)
                 })
                 .collect();
             if vals.len() == 1 && !named_quantified.contains(key) {
@@ -293,7 +319,7 @@ impl Value {
         for (key, scs) in named_subcaps {
             if key.starts_with(crate::runtime::SILENT_ACTION_MARKER_PREFIX) {
                 for sc in scs {
-                    silent_caps_vals.push(make_subcap_match(sc, orig));
+                    silent_caps_vals.push(make_subcap_match(sc, orig_ctx));
                 }
             }
         }
