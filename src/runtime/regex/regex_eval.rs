@@ -88,12 +88,9 @@ impl Interpreter {
         target: &str,
     ) -> Option<String> {
         let mut env = self.make_regex_eval_env(caps);
-        // Set $_ to the match target string
+        // Set $_ to the match target string. After `make_regex_eval_env`, which
+        // installs the `:my`/`:let` lexicals — the topic must win over them.
         env.insert("_".to_string(), Value::str(target.to_string()));
-        // Add variables declared via :my inside the regex
-        for (k, v) in &caps.regex_vars {
-            env.insert(k.clone(), v.clone());
-        }
         let (stmts, _) = crate::parse_dispatch::parse_source(code).ok()?;
         let mut interp = Interpreter {
             env,
@@ -165,31 +162,54 @@ impl Interpreter {
         }
     }
 
-    /// Evaluate a code assertion inside a regex, **on this interpreter**.
+    /// Run one inline regex code atom — a `<?{ … }>` / `<!{ … }>` assertion or a
+    /// plain `{ … }` side-effect block — **on this interpreter**.
     ///
-    /// Raku semantics: the assertion runs inline, once, where the cursor reaches
-    /// it, and its side effects are real — visible to later assertions in the same
-    /// match, and surviving a match that ultimately fails. `advent2013-day18` needs
-    /// all three (`%*PLAYED{$card}++` must be visible to the next card's assertion;
+    /// Raku semantics: the code runs inline, once, where the cursor reaches it,
+    /// and its side effects are real — visible to later atoms in the same match,
+    /// and surviving a match that ultimately fails. `advent2013-day18` needs all
+    /// three (`%*PLAYED{$card}++` must be visible to the next card's assertion;
     /// `@dups.push` must survive the failing parses). A scratch interpreter cannot
     /// provide any of them, so this runs in `self` (ADR-0009 part B).
     ///
-    /// Only the *regex-internal* bindings this sets up (`$/`, `$0`…, `$<name>`) and
-    /// the assertion's own `my` declarations are scoped: they are saved and
-    /// restored around the body. Every other write is a genuine side effect and is
-    /// left in place — that is the whole point.
-    pub(super) fn eval_regex_code_assertion(
+    /// Only the *regex-internal* bindings this sets up (`$/`, `$0`…, `$<name>`,
+    /// the in-regex `:my`/`:let` lexicals) and the body's own `my` declarations are
+    /// scoped: they are saved and restored around the body. Every other write is a
+    /// genuine side effect and is left in place — that is the whole point.
+    ///
+    /// Returns the body's value (`None` if the code failed to parse or threw) and
+    /// the writes it made to the in-regex lexicals. Those are regex-scoped, so they
+    /// must not stay in `self.env`; the caller threads them back through
+    /// `RegexCaptures::regex_vars`, where the match trail can undo them on
+    /// backtracking.
+    ///
+    /// `writes_back_to_caller` selects how a write to an *outer* lexical is
+    /// propagated. A plain `{ … }` block must reach the caller's compiled local
+    /// slots (`'123' ~~ / (\d) { $seen = $/.Str } \d+ /` has to leave `$seen`
+    /// set), which is the env-diff → `pending_local_updates` bookkeeping the
+    /// reduce-time replay does; an assertion keeps ADR-0009's cheaper behaviour of
+    /// simply leaving the write in `env`, so the hot `<?{ … }>` path does not take
+    /// on a full env snapshot per cursor position.
+    pub(super) fn eval_regex_inline_code(
         &mut self,
         code: &str,
         caps: &RegexCaptures,
         matched_so_far: &str,
-    ) -> bool {
+        writes_back_to_caller: bool,
+    ) -> (Option<Value>, HashMap<String, Value>) {
         let (stmts, _) = match crate::parse_dispatch::parse_source(code) {
             Ok(result) => result,
-            Err(_) => return false,
+            Err(_) => return (None, HashMap::new()),
         };
         // The bindings to install for the body, and to restore afterwards.
         let mut env: Vec<(String, Value)> = Vec::new();
+        // In-regex `:my`/`:let` lexicals (and anything a preceding inline `{ }`
+        // block wrote to them). They are lexical to the regex, so they are
+        // installed here and restored with the rest of the regex bindings —
+        // `:my $x = 'y'; <?{ $x eq 'y' }>` must see 'y', not an outer `$x`.
+        for (k, v) in &caps.regex_vars {
+            env.push((k.clone(), v.clone()));
+        }
         // Set positional capture variables ($0, $1, etc.)
         for (i, val) in caps.positional.iter().enumerate() {
             env.push((i.to_string(), Value::str(val.clone())));
@@ -199,16 +219,19 @@ impl Interpreter {
         // `<?{ … $/.lc … }>` assertion inside a `token` relies on this (the card
         // grammar's dup check does `%*PLAYED{$/.lc}++`). `$/[n]` still indexes the
         // positional captures on the Match object.
-        env.push((
-            "/".to_string(),
-            Value::make_match_object_with_captures(
-                matched_so_far.to_string(),
-                caps.match_from as i64,
-                (caps.match_from + matched_so_far.chars().count()) as i64,
-                &caps.positional,
-                &caps.named,
-            ),
-        ));
+        let cursor = Value::make_match_object_with_captures(
+            matched_so_far.to_string(),
+            caps.match_from as i64,
+            (caps.match_from + matched_so_far.chars().count()) as i64,
+            &caps.positional,
+            &caps.named,
+        );
+        // `$¢` is the current match state at this point in the pattern — the same
+        // object as `$/` here (`/ .{ $c = $¢ } /` must leave `$c` with a usable
+        // `.pos`, roast/S05-capture/match-object.t). The reduce-time replay always
+        // installed both; running inline has to as well.
+        env.push(("\u{00A2}".to_string(), cursor.clone()));
+        env.push(("/".to_string(), cursor));
         // When the assertion references `.made` AND we are inside a
         // `Grammar.parse(:actions(...))`, run the relevant action method on each
         // just-matched named capture so `$<x>.made` is available *during* the
@@ -259,17 +282,53 @@ impl Interpreter {
         for (k, v) in env {
             self.env.insert(k, v);
         }
-        let result = self.eval_block_value(&stmts);
+        // Marks the body as embedded regex code so a bare free variable's
+        // auto-package-qualified write (`$x` inside `grammar G { … }` compiles to
+        // `SetGlobal("G::x")`) is redirected back onto the lexical in `env` —
+        // otherwise the write strands itself in a `G::x` package slot and the
+        // harvest below sees nothing. Same flag the reduce-time replay uses.
+        let result = if writes_back_to_caller {
+            let before = self.pending_local_updates.len();
+            self.eval_regex_code_block_body(&stmts);
+            // The regex's own `:my`/`:let` lexicals are not caller lexicals — they
+            // are harvested into `regex_vars` below and must not be written into
+            // the caller's slots as well.
+            if !caps.regex_vars.is_empty() {
+                let kept: Vec<(String, Value)> = self
+                    .pending_local_updates
+                    .split_off(before)
+                    .into_iter()
+                    .filter(|(name, _)| !caps.regex_vars.contains_key(name))
+                    .collect();
+                self.pending_local_updates.extend(kept);
+            }
+            Ok(Value::NIL)
+        } else {
+            let saved_in_block = self.in_regex_code_block;
+            self.in_regex_code_block = true;
+            let r = self.eval_block_value(&stmts);
+            self.in_regex_code_block = saved_in_block;
+            r
+        };
+        // Harvest writes to the in-regex lexicals *before* restoring them: the
+        // value has to survive as a `regex_vars` delta so a later `$name`
+        // interpolation or `<?{ … }>` assertion in the same match reads it, while
+        // `self.env` goes back to what the enclosing scope had.
+        let mut writes: HashMap<String, Value> = HashMap::new();
+        for k in caps.regex_vars.keys() {
+            if let Some(now) = self.env.get(k)
+                && caps.regex_vars.get(k) != Some(now)
+            {
+                writes.insert(k.clone(), now.clone());
+            }
+        }
         for (k, orig) in saved {
             match orig {
                 Some(v) => self.env.insert(k, v),
                 None => self.env.remove(&k),
             };
         }
-        match result {
-            Ok(val) => val.truthy(),
-            Err(_) => false,
-        }
+        (result.ok(), writes)
     }
 
     /// Build a Match object for each named capture in `caps` and run its grammar

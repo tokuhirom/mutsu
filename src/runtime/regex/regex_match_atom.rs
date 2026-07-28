@@ -67,6 +67,7 @@ impl Interpreter {
         // store and rewinds it on backtrack. `current_caps` is the engine's
         // accumulated store, passed for READS only (backrefs, code assertions,
         // subrule argument evaluation) — it must never be cloned into results.
+        let _vars_seed = Self::arm_inline_vars_seed(atom, current_caps);
 
         if let RegexAtom::Alternation(alternatives) = atom {
             // | (LTM): try all alternatives, longest match wins.

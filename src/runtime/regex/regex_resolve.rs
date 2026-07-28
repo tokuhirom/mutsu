@@ -499,6 +499,13 @@ impl Interpreter {
             };
             env.insert(format!("<{}>", k), value);
         }
+        // In-regex `:my`/`:let` lexicals, so an expression evaluated mid-match —
+        // a subrule argument `<sequence($new-indent)>`, a `<{ … }>` interpolation,
+        // a dynamic quantifier — reads the value the regex computed rather than an
+        // outer variable of the same name (or nothing at all).
+        for (k, v) in &caps.regex_vars {
+            env.insert(k.clone(), v.clone());
+        }
         env
     }
 

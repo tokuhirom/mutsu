@@ -143,6 +143,32 @@ fn is_subrule_lookahead_name(s: &str) -> bool {
 /// as `my $x = ''`, `my $new-indent`, or `my ($a, $b)`. Returns the bare names
 /// without the `$` sigil (`x`, `new-indent`, `a`, `b`). Only `$`-sigil names are
 /// collected — `@`/`%` interpolations are not handled as literal backreferences.
+/// The scalar names a pattern introduces with an in-regex `:my` / `:let`
+/// declaration. Their values only exist *while matching* (a `{ … }` block
+/// commonly computes them), so any pre-pass that would bake a value into the
+/// pattern text has to leave references to them alone.
+pub(crate) fn declared_regex_var_names(pattern: &str) -> std::collections::HashSet<String> {
+    let mut names = std::collections::HashSet::new();
+    let bytes: Vec<char> = pattern.chars().collect();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] == ':' {
+            let rest: String = bytes[i + 1..].iter().collect();
+            if rest.starts_with("my ") || rest.starts_with("let ") {
+                let start = i;
+                while i < bytes.len() && bytes[i] != ';' {
+                    i += 1;
+                }
+                let decl: String = bytes[start..i.min(bytes.len())].iter().collect();
+                names.extend(scalar_names_in_decl(&decl));
+                continue;
+            }
+        }
+        i += 1;
+    }
+    names
+}
+
 pub(super) fn scalar_names_in_decl(code: &str) -> Vec<String> {
     let chars: Vec<char> = code.chars().collect();
     let mut names = Vec::new();
@@ -1188,6 +1214,24 @@ impl Interpreter {
                     let consumed = remaining.len() - modifier_rest.len();
                     for _ in 0..consumed {
                         chars.next();
+                    }
+                    continue;
+                }
+                // Standalone backtrack control `:` — "commit to the atom just
+                // matched, never backtrack into it" (`token key { <.plainfirst> :
+                // <-[\:\#]>* }`). It is not a modifier and not a `:my` decl: it
+                // ratchets the token already emitted, which is exactly what the
+                // per-token `ratchet` flag means. `::` / `:::` are *different*
+                // controls and are left alone here. With no preceding atom the
+                // construct is an error, which the validator below reports.
+                if !tokens.is_empty()
+                    && chars.peek() != Some(&':')
+                    && chars
+                        .peek()
+                        .is_none_or(|ch| !ch.is_alphanumeric() && !matches!(ch, '_' | '!' | '('))
+                {
+                    if let Some(last) = tokens.last_mut() {
+                        last.ratchet = true;
                     }
                     continue;
                 }

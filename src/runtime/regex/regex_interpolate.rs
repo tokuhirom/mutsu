@@ -384,6 +384,18 @@ impl Interpreter {
         out
     }
 
+    /// Does this argument expression mention a `:my`/`:let` lexical of the regex
+    /// it appears in? Such an expression has to stay unrendered (see
+    /// [`Self::instantiate_named_regex_arg_calls`]).
+    fn regex_arg_names_local(arg: &str, locals: &std::collections::HashSet<String>) -> bool {
+        if locals.is_empty() {
+            return false;
+        }
+        crate::runtime::regex_parse_core::scalar_names_in_decl(arg)
+            .iter()
+            .any(|n| locals.contains(n))
+    }
+
     pub(in crate::runtime) fn instantiate_named_regex_arg_calls(
         &mut self,
         pattern: &str,
@@ -391,6 +403,12 @@ impl Interpreter {
         let chars: Vec<char> = pattern.chars().collect();
         let mut out = String::new();
         let default_caps = RegexCaptures::default();
+        // An argument naming an in-regex `:my`/`:let` lexical must NOT be rendered
+        // here: this pass runs before the match, when that lexical has no value
+        // yet, and baking the resulting `Nil` into the pattern text is permanent.
+        // Left verbatim, it is re-evaluated at match time against the live
+        // captures (`eval_regex_arg_list`), which is where the value exists.
+        let regex_local_vars = crate::runtime::regex_parse_core::declared_regex_var_names(pattern);
         let mut i = 0usize;
         while i < chars.len() {
             if chars[i] != '<' {
@@ -504,7 +522,9 @@ impl Interpreter {
                 // For complex / non-round-trippable values (Pair, Slip, Array, Hash, ...),
                 // keep the original argument expression so the match-time evaluator can
                 // re-evaluate and route them as named arguments or flatten Slips.
-                if Self::regex_arg_is_complex(arg) {
+                if Self::regex_arg_is_complex(arg)
+                    || Self::regex_arg_names_local(arg, &regex_local_vars)
+                {
                     rendered_args.push(arg.clone());
                     continue;
                 }
