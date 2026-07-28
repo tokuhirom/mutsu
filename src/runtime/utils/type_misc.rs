@@ -5,6 +5,10 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         // A `VarRef` is a transient binder wrapper, not a type: report the type
         // of the variable's value.
         ValueView::VarRef { value, .. } => value_type_name(value),
+        // `Buf`/`Blob` element storage never surfaces as a Raku-level value:
+        // it lives in the buffer instance's attribute cell and only
+        // `value::value_buf` reads it. Answer as the buffer it backs.
+        ValueView::BufStorage(_) => "Buf",
         ValueView::RakuAst(node) => node.class.printed_name(),
         ValueView::Int(_) => "Int",
         ValueView::BigInt(_) => "Int",

@@ -66,6 +66,7 @@ impl NanBox {
                 },
                 data,
             ),
+            ValueRepr::BufStorage(data) => pack_gc(Kind::BufStorage, data),
             ValueRepr::Hash(data, itemized) => pack_gc(
                 if itemized {
                     Kind::HashItemized

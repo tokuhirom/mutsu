@@ -224,6 +224,7 @@ unsafe fn decode_kind(kind: Kind, bits: u64) -> ValueRepr {
                 _ => ArrayKind::Lazy,
             },
         ),
+        Kind::BufStorage => ValueRepr::BufStorage(unsafe { take_gc::<BufData>(bits) }),
         Kind::HashPlain => ValueRepr::Hash(unsafe { take_gc::<HashData>(bits) }, false),
         Kind::HashItemized => ValueRepr::Hash(unsafe { take_gc::<HashData>(bits) }, true),
         Kind::SetImm => ValueRepr::Set(unsafe { take_gc::<SetData>(bits) }, false),

@@ -158,6 +158,8 @@ pub(in crate::value) enum Kind {
     ArrayItemArray,
     ArrayShaped,
     ArrayLazy,
+    /// `Buf`/`Blob` element storage (ADR-0015 P2) — a payload-only node.
+    BufStorage,
     HashPlain,
     HashItemized,
     SetImm,
@@ -443,6 +445,7 @@ unsafe fn payload_op(kind: Kind, bits: u64, op: PayloadOp) {
             | Kind::ArrayItemArray
             | Kind::ArrayShaped
             | Kind::ArrayLazy => gc_op::<ArrayData>(bits, op),
+            Kind::BufStorage => gc_op::<BufData>(bits, op),
             Kind::HashPlain | Kind::HashItemized => gc_op::<HashData>(bits, op),
             Kind::SetImm | Kind::SetMut => gc_op::<SetData>(bits, op),
             Kind::BagImm | Kind::BagMut => gc_op::<BagData>(bits, op),

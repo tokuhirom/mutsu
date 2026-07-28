@@ -292,6 +292,35 @@ pub(crate) fn seq_sink(arc_ptr: &Arc<Vec<Value>>) {
 /// Shared mutable attribute storage for Proxy subclasses.
 pub(crate) type ProxySubclassAttrs = Arc<Mutex<HashMap<String, Value>>>;
 
+/// The element storage of a `Buf`/`Blob`, as contiguous native bytes
+/// (ADR-0015 P2).
+///
+/// This is a **payload-only** GC node: it holds no `Value`s, so it cannot take
+/// part in a cycle, `Trace` is an empty body, and ADR-0001's container type
+/// filter keeps paying nothing for it. It replaces the `Array` of one boxed
+/// `Value::Int` per element that a `Buf` used to carry — a megabyte buffer cost
+/// a million boxed `Value`s and a million GC edges to trace; it now costs a
+/// megabyte and no edges.
+///
+/// The element **type** used to live only in the class-name string
+/// (`Buf[uint16]`), which is why mutsu could not tell `Blob[int8]` from
+/// `Blob[uint8]` on the way back out. It is data now: `width` bytes per
+/// element, `signed` deciding how those bytes read back.
+///
+/// Bytes are stored little-endian, matching every `.read-*`/`.write-*` default
+/// and what `.decode` on a `buf16` already produced.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct BufData {
+    /// `elems * width` bytes. The buffer C is handed a pointer into under P2's
+    /// remaining phase, hence contiguous and never a `Vec<Value>` again.
+    pub bytes: Vec<u8>,
+    /// Bytes per element: 1, 2, 4 or 8.
+    pub width: u8,
+    /// Whether an element reads back as signed (`Blob[int8]`) or unsigned
+    /// (`Blob[uint8]`, and every plain `Buf`/`Blob`/`utf8`/`utf16`).
+    pub signed: bool,
+}
+
 /// Bag data: wraps HashMap<String, NumBigInt> with optional original-typed keys.
 /// Implements Deref to HashMap<String, NumBigInt> so existing code works unchanged.
 /// Weights are arbitrary-precision so a BagHash weight can exceed i64::MAX.
@@ -1160,6 +1189,10 @@ pub(in crate::value) enum ValueRepr {
     /// GC-migrated (§11 step 5c first wave): backed by a cycle-collectable
     /// `Gc<ArrayData>` rather than a plain `crate::gc::Gc<ArrayData>`.
     Array(crate::gc::Gc<ArrayData>, ArrayKind),
+    /// The element storage of a `Buf`/`Blob` (ADR-0015 P2). Never a Raku-level
+    /// value on its own: it lives in the buffer instance's attribute cell and
+    /// only [`crate::value::value_buf`] constructs or reads it.
+    BufStorage(crate::gc::Gc<BufData>),
     /// The `bool` is the per-holder itemization flag (`true` when this hash sits
     /// in a `$` scalar container: `$(%h)` / `.item` / `my $h = %x`). It mirrors
     /// `ArrayKind::ItemArray` for arrays — a Value-level marker that shares the

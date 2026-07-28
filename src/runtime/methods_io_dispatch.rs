@@ -144,30 +144,35 @@ impl Interpreter {
             None => raw_input,
         };
         let translated = self.translate_newlines_for_encode(&input);
-        let mut attrs = crate::value::AttrMap::new();
-        let type_name = match normalized_encoding.as_str() {
-            "utf-16" | "utf16" => {
-                let units: Vec<Value> = translated
-                    .encode_utf16()
-                    .map(|u| Value::int(u as i64))
-                    .collect();
-                set_buf_elems(&mut attrs, units);
-                "utf16"
-            }
-            _ => {
-                let bytes = self.encode_with_encoding_and_replacement(
-                    &translated,
-                    &encoding,
-                    replacement.as_deref(),
-                )?;
-                set_buf_bytes(&mut attrs, &bytes);
-                match normalized_encoding.as_str() {
-                    "utf-8" | "utf8" => "utf8",
-                    _ => "Blob[uint8]",
-                }
-            }
+        // The class has to be settled before the storage is: it is what says
+        // how wide an element is (`utf16` holds 16-bit code units, the rest
+        // bytes), and the storage now carries that width rather than
+        // re-deriving it from the name on every read.
+        let is_utf16 = matches!(normalized_encoding.as_str(), "utf-16" | "utf16");
+        let type_name = if is_utf16 {
+            "utf16"
+        } else if matches!(normalized_encoding.as_str(), "utf-8" | "utf8") {
+            "utf8"
+        } else {
+            "Blob[uint8]"
         };
-        Ok(Value::make_instance(Symbol::intern(type_name), attrs))
+        let class_sym = Symbol::intern(type_name);
+        let mut attrs = crate::value::AttrMap::new();
+        if is_utf16 {
+            let units: Vec<Value> = translated
+                .encode_utf16()
+                .map(|u| Value::int(u as i64))
+                .collect();
+            set_buf_elems(&mut attrs, class_sym, units);
+        } else {
+            let bytes = self.encode_with_encoding_and_replacement(
+                &translated,
+                &encoding,
+                replacement.as_deref(),
+            )?;
+            set_buf_bytes(&mut attrs, class_sym, &bytes);
+        }
+        Ok(Value::make_instance(class_sym, attrs))
     }
 
     pub(super) fn dispatch_decode(

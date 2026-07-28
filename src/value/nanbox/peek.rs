@@ -461,6 +461,7 @@ unsafe fn view_kind<'a>(kind: Kind, bits: u64) -> ValueView<'a> {
             Kind::ArrayItemArray => ValueView::Array(gc_guard(bits), ArrayKind::ItemArray),
             Kind::ArrayShaped => ValueView::Array(gc_guard(bits), ArrayKind::Shaped),
             Kind::ArrayLazy => ValueView::Array(gc_guard(bits), ArrayKind::Lazy),
+            Kind::BufStorage => ValueView::BufStorage(gc_guard(bits)),
             Kind::HashPlain | Kind::HashItemized => ValueView::Hash(gc_guard(bits)),
             Kind::SetImm => ValueView::Set(gc_guard(bits), false),
             Kind::SetMut => ValueView::Set(gc_guard(bits), true),

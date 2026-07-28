@@ -276,13 +276,10 @@ pub(super) fn dispatch(
         } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
             if let Some(bytes) = crate::value::value_buf::buf_elems(&attributes) {
                 if method == "raku" || method == "perl" {
-                    let elems: Vec<String> = bytes
-                        .iter()
-                        .map(|b| match b.view() {
-                            ValueView::Int(i) => i.to_string(),
-                            _ => "0".to_string(),
-                        })
-                        .collect();
+                    // `to_string_value`, not an `Int`-only match: a `uint64`
+                    // element above `i64::MAX` decodes to a `BigInt`, and the
+                    // old fallback printed it as `0`.
+                    let elems: Vec<String> = bytes.iter().map(Value::to_string_value).collect();
                     // Normalize short names to canonical forms for .raku
                     let cn = class_name.resolve();
                     let canonical = match cn.as_str() {
@@ -308,21 +305,12 @@ pub(super) fn dispatch(
                     if bytes.is_empty() {
                         Some(Ok(Value::str(format!("{}:0x<>", class_name))))
                     } else {
-                        let hex_width =
-                            2 * crate::value::value_buf::buf_elem_width(&class_name.resolve());
+                        let width = crate::value::value_buf::buf_elem_width(&class_name.resolve());
                         let truncated = bytes.len() > 100;
                         let display_bytes = if truncated { &bytes[..100] } else { &bytes[..] };
                         let mut hex: Vec<String> = display_bytes
                             .iter()
-                            .map(|b| match b.view() {
-                                ValueView::Int(i) => match hex_width {
-                                    16 => format!("{:016X}", i as u64),
-                                    8 => format!("{:08X}", i as u32),
-                                    4 => format!("{:04X}", i as u16),
-                                    _ => format!("{:02X}", i as u8),
-                                },
-                                _ => "0".repeat(hex_width),
-                            })
+                            .map(|b| crate::value::value_buf::elem_hex(b, width))
                             .collect();
                         if truncated {
                             hex.push("...".to_string());

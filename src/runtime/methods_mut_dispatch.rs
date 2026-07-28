@@ -377,7 +377,7 @@ impl Interpreter {
                 };
                 let written = crate::builtins::buf_bits::write_bits(&bytes, from, bits, &args[2])?;
                 let mut updated_attrs = attributes.to_map();
-                set_buf_bytes(&mut updated_attrs, &written);
+                set_buf_bytes(&mut updated_attrs, class_name, &written);
                 return Ok(Value::write_back_sharing(
                     &attributes,
                     class_name,
@@ -427,7 +427,7 @@ impl Interpreter {
                 &mut bytes, method, offset_i64, value_val, endian_val,
             )?;
             let mut updated_attrs = attributes.to_map();
-            set_buf_bytes(&mut updated_attrs, &bytes);
+            set_buf_bytes(&mut updated_attrs, class_name, &bytes);
             let updated = Value::write_back_sharing(&attributes, class_name, updated_attrs, id);
             self.env.insert(target_var.to_string(), updated.clone());
             return Ok(updated);
@@ -508,7 +508,7 @@ impl Interpreter {
                 &mut bytes, method, offset_i64, value_val, endian_val,
             )?;
             let mut updated_attrs = attributes.to_map();
-            set_buf_bytes(&mut updated_attrs, &bytes);
+            set_buf_bytes(&mut updated_attrs, class_name, &bytes);
             let updated = Value::write_back_sharing(&attributes, class_name, updated_attrs, id);
             self.env.insert(target_var.to_string(), updated.clone());
             return Ok(updated);
@@ -2024,7 +2024,7 @@ impl Interpreter {
                 if bits > 0 {
                     write_bits_into_bytes(&mut bytes, from, bits, &value);
                 }
-                set_buf_bytes(&mut updated, &bytes);
+                set_buf_bytes(&mut updated, class_name, &bytes);
                 let updated_instance =
                     Value::write_back_sharing(&attributes, class_name, updated, target_id);
                 self.env

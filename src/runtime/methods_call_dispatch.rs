@@ -814,7 +814,7 @@ impl Interpreter {
                     let id = id_opt.unwrap();
                     let updated_cell = attrs_opt.unwrap();
                     let mut updated_map = updated_cell.to_map();
-                    set_buf_bytes(&mut updated_map, &bytes);
+                    set_buf_bytes(&mut updated_map, class_sym, &bytes);
                     return Ok(Value::write_back_sharing(
                         &updated_cell,
                         class_sym,
@@ -899,7 +899,7 @@ impl Interpreter {
                     let id = id_opt.unwrap();
                     let updated_cell = attrs_opt.unwrap();
                     let mut updated_map = updated_cell.to_map();
-                    set_buf_bytes(&mut updated_map, &bytes);
+                    set_buf_bytes(&mut updated_map, class_sym, &bytes);
                     return Ok(Value::write_back_sharing(
                         &updated_cell,
                         class_sym,

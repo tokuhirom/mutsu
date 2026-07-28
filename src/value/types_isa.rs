@@ -17,6 +17,10 @@ impl Value {
         }
         let my_type = match self.view() {
             ValueView::VarRef { .. } => unreachable!("unwrapped above"),
+            // `Buf`/`Blob` element storage never surfaces as a Raku-level value:
+            // it lives in the buffer instance's attribute cell and only
+            // `value::value_buf` reads it. Answer as the buffer it backs.
+            ValueView::BufStorage(_) => "Buf",
             ValueView::RakuAst(node) => node.class.printed_name(),
             ValueView::Int(_) | ValueView::BigInt(_) => "Int",
             ValueView::Num(_) => "Num",

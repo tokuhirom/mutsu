@@ -189,8 +189,12 @@ impl Interpreter {
         // uncatchable abort; `truncate` then handles the shrink case.
         Self::autoviv_resize(&mut bytes, new_size, Value::int(0))?;
         bytes.truncate(new_size);
-        let updated =
-            Value::write_back_sharing(&attrs_cell, class_name_sym, buf_attrs(bytes), orig_id);
+        let updated = Value::write_back_sharing(
+            &attrs_cell,
+            class_name_sym,
+            buf_attrs(class_name_sym, bytes),
+            orig_id,
+        );
         self.env.insert(target_var.to_string(), updated.clone());
         Ok(updated)
     }
@@ -299,8 +303,12 @@ impl Interpreter {
             _ => unreachable!(),
         }
 
-        let updated =
-            Value::write_back_sharing(&attrs_cell, class_name_sym, buf_attrs(bytes), orig_id);
+        let updated = Value::write_back_sharing(
+            &attrs_cell,
+            class_name_sym,
+            buf_attrs(class_name_sym, bytes),
+            orig_id,
+        );
         self.env.insert(target_var.to_string(), updated.clone());
         Ok(updated)
     }
@@ -359,7 +367,7 @@ impl Interpreter {
                 let updated = Value::write_back_sharing(
                     &attrs_cell,
                     class_name_sym,
-                    buf_attrs(bytes),
+                    buf_attrs(class_name_sym, bytes),
                     orig_id,
                 );
                 self.env.insert(target_var.to_string(), updated);
@@ -386,7 +394,7 @@ impl Interpreter {
                 let updated = Value::write_back_sharing(
                     &attrs_cell,
                     class_name_sym,
-                    buf_attrs(bytes),
+                    buf_attrs(class_name_sym, bytes),
                     orig_id,
                 );
                 self.env.insert(target_var.to_string(), updated);
@@ -451,7 +459,7 @@ impl Interpreter {
                 let updated = Value::write_back_sharing(
                     &attrs_cell,
                     class_name_sym,
-                    buf_attrs(bytes),
+                    buf_attrs(class_name_sym, bytes),
                     orig_id,
                 );
                 self.env.insert(target_var.to_string(), updated);

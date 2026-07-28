@@ -226,7 +226,7 @@ pub(crate) fn try_native_buf_write(
     match inst {
         Some(cell) => {
             let mut updated_map = cell.attributes.to_map();
-            set_buf_bytes(&mut updated_map, &bytes);
+            set_buf_bytes(&mut updated_map, cell.class_sym, &bytes);
             Some(Ok(Value::write_back_sharing(
                 &cell.attributes,
                 cell.class_sym,

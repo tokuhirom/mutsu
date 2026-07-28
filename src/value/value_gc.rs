@@ -24,8 +24,8 @@ use std::sync::{Arc, Condvar, Mutex};
 use crate::gc::{ErasedGc, RootVisitor, Trace, visit_map_values};
 
 use super::{
-    ArrayData, BagData, ChannelState, EnumValue, HashData, InstanceAttrs, LazyList, MixData,
-    PromiseState, SetData, SharedChannel, SharedPromise, SubData, Value,
+    ArrayData, BagData, BufData, ChannelState, EnumValue, HashData, InstanceAttrs, LazyList,
+    MixData, PromiseState, SetData, SharedChannel, SharedPromise, SubData, Value,
 };
 
 /// Whether an `Arc`-shared wrapper is *uniquely owned* — its only holder is the
@@ -412,6 +412,17 @@ impl Trace for ArrayData {
         self.items.clear();
         self.default = None;
     }
+}
+
+/// A `Buf`/`Blob`'s bytes hold no `Value`s, so this node has no outgoing edges
+/// at all: it can never be part of a cycle, and ADR-0001's container type filter
+/// therefore pays nothing for it beyond the refcount every `Gc` has. Both
+/// methods are deliberately empty rather than absent, so that adding a `Value`
+/// field to `BufData` later would show up here as an obvious omission.
+impl Trace for BufData {
+    fn trace(&self, _visit: &mut dyn FnMut(&ErasedGc)) {}
+
+    fn drop_gc_edges(&mut self) {}
 }
 
 impl Trace for HashData {

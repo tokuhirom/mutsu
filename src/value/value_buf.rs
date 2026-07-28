@@ -1,49 +1,158 @@
-//! `Buf`/`Blob` element storage — the single accessor layer (ADR-0015 P2 step 1).
+//! `Buf`/`Blob` element storage — the single accessor layer (ADR-0015 P2).
 //!
-//! A `Buf`/`Blob` has no dedicated `Value` variant. It is a plain
-//! `Value::Instance` whose one attribute holds a `Value::Array` with **one boxed
-//! `Value::Int` per element**. Until now every one of the ~104 places that
-//! touched that storage spelled the attribute name itself and open-coded the
-//! `ValueView::Array` match, so the representation could not be changed without
-//! editing forty files.
+//! A `Buf`/`Blob` is a plain `Value::Instance` whose one attribute holds its
+//! elements. That storage used to be a `Value::Array` with **one boxed
+//! `Value::Int` per element**: a megabyte buffer cost a million boxed `Value`s
+//! and a million GC edges, the element width was recoverable only by matching on
+//! the class-name string, and there was no contiguous memory to hand a C
+//! function a pointer into.
 //!
-//! This module is that chokepoint. The attribute name is private to it, and
-//! every read, write, probe and construction goes through one of the functions
-//! below. Nothing here changes behaviour — it is a pure refactor whose point is
-//! to make [ADR-0015](../../docs/adr/0015-native-backed-container-storage-and-repr-bodies.md)
-//! P2 step 2 (a contiguous native-backed node with an element width, so
-//! `Buf.REPR` can honestly answer `VMArray` and NativeCall can hand C a real
-//! `MVMArrayB` body) a change to *this file* rather than to its callers.
+//! It is now a [`BufData`] node — contiguous little-endian bytes plus the
+//! element type. That node is payload-only (it holds no `Value`s), so it can
+//! never form a cycle and ADR-0001's container type filter pays nothing for it.
+//!
+//! This module is the chokepoint that made the swap possible and is what keeps
+//! it contained: the attribute name is private to it, and every read, write,
+//! probe and construction goes through one of the functions below, so the ~170
+//! call sites across forty files did not have to know the representation
+//! changed. What remains of
+//! [ADR-0015](../../docs/adr/0015-native-backed-container-storage-and-repr-bodies.md)
+//! P2 — the synthesised `MVMArrayB` body and an honest `Buf.REPR` of `VMArray`,
+//! which is what `NativeHelpers::Blob`'s `BODY_OF` needs — builds on this node.
 //!
 //! Three levels are offered deliberately:
 //!
-//! - the **element** functions ([`buf_elems`], [`set_buf_elems`], …) decode to
-//!   and from `Vec<Value>`; under P2 they become the encode/decode boundary;
+//! - the **element** functions ([`buf_elems`], [`set_buf_elems`], …) are the
+//!   encode/decode boundary: they hand out and take back `Vec<Value>`;
 //! - the **byte** functions ([`buf_bytes`], [`with_buf_bytes`], [`buf_len`], …)
-//!   speak the representation P2 will actually store, so a caller that only
-//!   wants bytes or a count never round-trips through boxed `Value`s;
+//!   speak what the node stores, so a caller that only wants bytes or a count
+//!   never round-trips through boxed `Value`s;
 //! - the **storage** functions ([`buf_storage`], [`set_buf_storage`]) move the
-//!   container across without decoding it, for the coercions that only re-tag a
-//!   buffer (`.Buf`, `.Blob`); under P2 they become a node share.
+//!   node across without decoding it, for the coercions that only re-tag a
+//!   buffer (`.Buf`, `.Blob`).
 //!
-//! [`buf_elem_width`] is the fourth thing P2 needs and the one that is *not*
-//! stored in the data at all today: the element width lives only in the class
-//! name (`Buf[uint16]`), and four separate places used to re-derive it with
-//! their own `cn.contains("16")` ladder. It is derived here now, so P2 has one
-//! place to move it from the name into the node.
+//! **Reads need no class name; construction does.** The node carries the
+//! element type, so everything that reads a buffer — including
+//! [`with_buf_elems_mut`], which re-encodes at the width the buffer already
+//! has — works from the node alone. Only the functions that *create* storage
+//! take a `class_name`, because the name is where Raku keeps the element type
+//! (`Blob[int8]`) and there is nowhere else to read it from.
 //!
 //! [`is_buf_or_blob_class`](crate::runtime::utils::is_buf_or_blob_class) stays
 //! the companion class-name filter: this module answers "what is in there", not
 //! "is this a Buf".
 
-use super::{AttrMap, InstanceAttrs, Value, ValueView};
+use super::{AttrMap, BufData, InstanceAttrs, Value, ValueRepr, ValueView};
+use crate::gc::Gc;
 use crate::symbol::Symbol;
 
-/// The attribute a `Buf`/`Blob`-shaped instance keeps its elements under.
+/// The attribute a `Buf`/`Blob`-shaped instance keeps its storage under.
 ///
-/// Private on purpose: it is the thing P2 deletes. If you find yourself wanting
-/// it outside this module, the accessor you need is missing — add it here.
+/// Private on purpose. If you find yourself wanting it outside this module, the
+/// accessor you need is missing — add it here.
 const ELEMS_ATTR: &str = "bytes";
+
+// ---------------------------------------------------------------------------
+// The node, and the encode/decode across it.
+// ---------------------------------------------------------------------------
+
+/// The element type of a `Buf`/`Blob`-shaped class: bytes per element, and
+/// whether an element reads back signed.
+///
+/// Recovered from the class name, which is where Raku puts it (`Blob[int8]`).
+/// This is the *only* place that reading stops — from here on the type travels
+/// in the node, which is what lets `Blob[int8].new(-1)[0]` answer `-1`.
+fn elem_type(class_name: &str) -> (u8, bool) {
+    // `uint` contains `int`, so the unsigned test has to come first.
+    let signed = !class_name.contains("uint") && class_name.contains("int");
+    (buf_elem_width(class_name) as u8, signed)
+}
+
+/// One element as the unsigned integer its bytes spell.
+///
+/// **Truncating**, which is the convention Raku itself stores by: `Buf.new(300)`
+/// holds `0x2C` and `Buf.new(-1)` holds `0xFF` in both mutsu and Rakudo, and
+/// every mutation path (`.new`, `[i] =`, `push`, `append`, `unshift`, `splice`)
+/// masks on the way in. Three different conventions used to be spelled out at
+/// the call sites — this one, a `.clamp(0, 255)` one, and one going via
+/// `to_int` — and they could only disagree about a buffer whose elements exceed
+/// its width, which the masking makes unreachable.
+fn elem_to_u64(v: &Value) -> u64 {
+    match v.view() {
+        ValueView::Int(i) => i as u64,
+        // `to_int` saturates a `BigInt` at `i64::MAX`, which would turn a
+        // legitimate `uint64` element into `0x7FFF_FFFF_FFFF_FFFF`; take the
+        // full-range conversion here and let it fall through only for a value
+        // that does not fit either way.
+        ValueView::BigInt(n) => {
+            use num_traits::ToPrimitive;
+            n.as_ref()
+                .to_u64()
+                .unwrap_or_else(|| n.as_ref().to_i64().unwrap_or(0) as u64)
+        }
+        // Everything else goes through the general numeric coercion: elements
+        // do not always arrive as bare `Int`s. `Blob.allocate(10, <1 2 3>)` and
+        // `$buf.append(array[int].new: <7 1 3>)` hand over `IntStr` allomorphs,
+        // and a `:=`-bound element arrives as a `ContainerRef`. The boxed
+        // representation stored those as-is and converted lazily on read, so
+        // encoding at write time has to do the same conversion or they silently
+        // become zeros (`roast/S32-container/buf.t` 3/14/16).
+        _ => crate::runtime::to_int(v) as u64,
+    }
+}
+
+/// Elements to the contiguous little-endian bytes the node stores.
+fn encode_elems(elems: &[Value], width: u8) -> Vec<u8> {
+    let w = width as usize;
+    let mut bytes = Vec::with_capacity(elems.len() * w);
+    for v in elems {
+        bytes.extend_from_slice(&elem_to_u64(v).to_le_bytes()[..w]);
+    }
+    bytes
+}
+
+/// The node's bytes back to elements.
+///
+/// A `uint64` element above `i64::MAX` becomes a `BigInt` rather than wrapping
+/// negative — `buf64.new(0xFFFF_FFFF_FFFF_FFFF)[0]` is `18446744073709551615`,
+/// as in Rakudo. A signed element is sign-extended from its width.
+fn decode_elems(data: &BufData) -> Vec<Value> {
+    let w = data.width as usize;
+    data.bytes
+        .chunks_exact(w)
+        .map(|chunk| {
+            let mut raw = [0u8; 8];
+            raw[..w].copy_from_slice(chunk);
+            let u = u64::from_le_bytes(raw);
+            if data.signed {
+                // Sign-extend from the element's own width.
+                let shift = 64 - w * 8;
+                Value::int(((u << shift) as i64) >> shift)
+            } else if w == 8 && u > i64::MAX as u64 {
+                Value::bigint(num_bigint::BigInt::from(u))
+            } else {
+                Value::int(u as i64)
+            }
+        })
+        .collect()
+}
+
+/// The storage `Value` a buffer instance keeps under [`ELEMS_ATTR`].
+fn storage_value(bytes: Vec<u8>, width: u8, signed: bool) -> Value {
+    Value::from_repr(ValueRepr::BufStorage(Gc::new(BufData {
+        bytes,
+        width,
+        signed,
+    })))
+}
+
+/// The node behind a buffer instance's storage attribute, if it has one.
+fn node_in(map: &AttrMap) -> Option<super::GcRef<'_, BufData>> {
+    match map.get(ELEMS_ATTR)?.view() {
+        ValueView::BufStorage(data) => Some(data),
+        _ => None,
+    }
+}
 
 /// The elements of a `Buf`/`Blob`-shaped instance, as owned `Value`s.
 ///
@@ -64,10 +173,8 @@ pub(crate) fn buf_elems_or_empty(attrs: &InstanceAttrs) -> Vec<Value> {
 /// [`buf_elems`] against an attribute map already in hand (a `to_map()` snapshot
 /// or a live read guard), so a caller holding one does not take a second lock.
 pub(crate) fn buf_elems_in(map: &AttrMap) -> Option<Vec<Value>> {
-    match map.get(ELEMS_ATTR)?.view() {
-        ValueView::Array(items, ..) => Some(items.to_vec()),
-        _ => None,
-    }
+    let node = node_in(map)?;
+    Some(decode_elems(&node))
 }
 
 /// Run `f` over the elements without copying them.
@@ -76,11 +183,8 @@ pub(crate) fn buf_elems_in(map: &AttrMap) -> Option<Vec<Value>> {
 /// so `f` must not re-enter the same instance's attribute cell for writing.
 /// Returns `None` (without calling `f`) when there is no element storage.
 pub(crate) fn with_buf_elems<R>(attrs: &InstanceAttrs, f: impl FnOnce(&[Value]) -> R) -> Option<R> {
-    let map = attrs.as_map();
-    match map.get(ELEMS_ATTR)?.view() {
-        ValueView::Array(items, ..) => Some(f(items.as_slice())),
-        _ => None,
-    }
+    let elems = buf_elems(attrs)?;
+    Some(f(&elems))
 }
 
 /// Whether this instance carries element storage at all. Distinguishes a real
@@ -96,15 +200,15 @@ pub(crate) fn has_buf_elems_in(map: &AttrMap) -> bool {
 
 /// A fresh attribute map holding `elems` — the map to hand
 /// `Value::make_instance` / `Value::write_back_sharing`.
-pub(crate) fn buf_attrs(elems: Vec<Value>) -> AttrMap {
+pub(crate) fn buf_attrs(class_name: Symbol, elems: Vec<Value>) -> AttrMap {
     let mut map = AttrMap::new();
-    set_buf_elems(&mut map, elems);
+    set_buf_elems(&mut map, class_name, elems);
     map
 }
 
 /// A fresh `Buf`/`Blob`-shaped instance of `class_name` holding `elems`.
 pub(crate) fn make_buf(class_name: Symbol, elems: Vec<Value>) -> Value {
-    Value::make_instance(class_name, buf_attrs(elems))
+    Value::make_instance(class_name, buf_attrs(class_name, elems))
 }
 
 /// A fresh plain `Buf` over raw bytes — the commonest construction of all (I/O
@@ -120,14 +224,22 @@ pub(crate) fn bytes_to_elems(bytes: &[u8]) -> Vec<Value> {
 
 /// Store `elems` into a map being built or updated, then handed to
 /// `make_instance` / `commit_attrs`.
-pub(crate) fn set_buf_elems(map: &mut AttrMap, elems: Vec<Value>) {
-    map.insert(ELEMS_ATTR, Value::array(elems));
+pub(crate) fn set_buf_elems(map: &mut AttrMap, class_name: Symbol, elems: Vec<Value>) {
+    let (width, signed) = elem_type(&class_name.resolve());
+    map.insert(
+        ELEMS_ATTR,
+        storage_value(encode_elems(&elems, width), width, signed),
+    );
 }
 
 /// Store `elems` into a **live** instance, through its shared attribute cell —
 /// visible to every alias, no rebind of the holding variable needed.
-pub(crate) fn store_buf_elems(attrs: &InstanceAttrs, elems: Vec<Value>) {
-    attrs.insert(ELEMS_ATTR, Value::array(elems));
+pub(crate) fn store_buf_elems(attrs: &InstanceAttrs, class_name: Symbol, elems: Vec<Value>) {
+    let (width, signed) = elem_type(&class_name.resolve());
+    attrs.insert(
+        ELEMS_ATTR,
+        storage_value(encode_elems(&elems, width), width, signed),
+    );
 }
 
 /// Mutate the elements in place through the shared cell, without decoding the
@@ -136,18 +248,28 @@ pub(crate) fn with_buf_elems_mut<R>(
     attrs: &InstanceAttrs,
     f: impl FnOnce(&mut Vec<Value>) -> R,
 ) -> Option<R> {
-    attrs
-        .with_attr_mut(ELEMS_ATTR, |slot| {
-            slot.with_array_mut(|items, _| f(crate::gc::Gc::make_mut(items)))
-        })
-        .flatten()
+    // The node knows its own element type, so unlike the construction helpers
+    // this one needs no class name: decode, hand `f` the elements, re-encode at
+    // the width the buffer already has.
+    let map = attrs.as_map();
+    let (mut elems, width, signed) = {
+        let node = node_in(&map)?;
+        (decode_elems(&node), node.width, node.signed)
+    };
+    drop(map);
+    let out = f(&mut elems);
+    attrs.insert(
+        ELEMS_ATTR,
+        storage_value(encode_elems(&elems, width), width, signed),
+    );
+    Some(out)
 }
 
 /// The element container itself, cloned, for the coercions that re-tag a buffer
 /// without looking inside it (`.Buf`, `.Blob`). Pair with [`set_buf_storage`].
 pub(crate) fn buf_storage(map: &AttrMap) -> Option<Value> {
     let stored = map.get(ELEMS_ATTR)?;
-    matches!(stored.view(), ValueView::Array(..)).then(|| stored.clone())
+    matches!(stored.view(), ValueView::BufStorage(..)).then(|| stored.clone())
 }
 
 /// Store a container obtained from [`buf_storage`] into a map being built.
@@ -160,46 +282,44 @@ pub(crate) fn set_buf_storage(map: &mut AttrMap, storage: Value) {
 /// today. The share is invisible: element writes go through
 /// [`with_buf_elems_mut`], whose `Gc::make_mut` forks a shared node.
 pub(crate) fn buf_elems_as_array(map: &AttrMap, kind: super::ArrayKind) -> Option<Value> {
-    match map.get(ELEMS_ATTR)?.view() {
-        ValueView::Array(items, ..) => Some(Value::array_with_kind(items.clone(), kind)),
-        _ => None,
-    }
+    Some(Value::array_with_kind(
+        crate::gc::Gc::new(super::ArrayData::new(buf_elems_in(map)?)),
+        kind,
+    ))
 }
 
 // ---------------------------------------------------------------------------
 // Byte-level access — what P2 will actually store.
 // ---------------------------------------------------------------------------
 
-/// One element, as the byte it occupies in a width-1 buffer.
+/// One element as the fixed-width hex digits a `Buf` gists with
+/// (`Buf[uint16]:0x<1170>`), big-endian within the element as Rakudo prints it.
 ///
-/// **Truncating**, which is the convention Raku itself stores by: `Buf.new(300)`
-/// holds `0x2C` and `Buf.new(-1)` holds `0xFF` in both mutsu and Rakudo, and
-/// every mutation path (`.new`, `[i] =`, `push`, `append`, `unshift`, `splice`)
-/// already masks on the way in. Three different conventions used to be spelled
-/// out at the call sites — this one, a `.clamp(0, 255)` one, and one going via
-/// `to_int` — and they could only disagree about a buffer whose elements exceed
-/// its width, which the masking makes unreachable. For a wider buffer this is
-/// the low byte of the element, matching what the truncating sites did.
-pub(crate) fn elem_to_u8(v: &Value) -> u8 {
-    match v.view() {
-        ValueView::Int(i) => i as u8,
-        ValueView::Num(f) => f as i64 as u8,
-        ValueView::BigInt(n) => {
-            use num_traits::ToPrimitive;
-            // `to_u64` is `None` for a negative or oversized value; fall back to
-            // the low 64 bits so this stays a truncation rather than a zero.
-            n.as_ref()
-                .to_u64()
-                .unwrap_or_else(|| n.as_ref().to_i64().unwrap_or(0) as u64) as u8
-        }
-        _ => 0,
+/// Formatting from the element's *unsigned* bit pattern is what makes a signed
+/// or oversized element print the bytes it actually occupies: `Blob[int8]`
+/// holding `-1` is `FF`, and a `uint64` element above `i64::MAX` — a `BigInt`
+/// once decoded — is its own sixteen digits rather than zeros.
+pub(crate) fn elem_hex(v: &Value, width: usize) -> String {
+    let u = elem_to_u64(v);
+    match width {
+        8 => format!("{u:016X}"),
+        4 => format!("{:08X}", u as u32),
+        2 => format!("{:04X}", u as u16),
+        _ => format!("{:02X}", u as u8),
     }
 }
 
 /// The number of **elements**, without decoding any of them. Not the number of
-/// bytes — see [`buf_elem_width`], and `.bytes` is `elems * width`.
+/// bytes — see [`buf_elem_width`]; `.bytes` is `elems * width`.
 pub(crate) fn buf_len(attrs: &InstanceAttrs) -> Option<usize> {
-    with_buf_elems(attrs, <[Value]>::len)
+    buf_len_in(&attrs.as_map())
+}
+
+/// [`buf_len`] against an attribute map already in hand. A division, not a
+/// decode: the node's byte count divided by its element width.
+pub(crate) fn buf_len_in(map: &AttrMap) -> Option<usize> {
+    let node = node_in(map)?;
+    Some(node.bytes.len() / node.width as usize)
 }
 
 /// [`buf_len`] with an absent buffer read as empty.
@@ -207,13 +327,14 @@ pub(crate) fn buf_len_or_zero(attrs: &InstanceAttrs) -> usize {
     buf_len(attrs).unwrap_or(0)
 }
 
-/// The elements as one truncated byte each ([`elem_to_u8`]).
+/// The elements as one byte each — the buffer's real bytes for a width-1
+/// buffer (every `Buf`/`Blob`/`utf8`), read straight off the node.
 ///
 /// `None` when the instance carries no element storage, exactly as
-/// [`buf_elems`]. For a width-1 buffer — every `Buf`/`Blob`/`utf8` — these are
-/// the buffer's real bytes, and P2 hands them over without decoding anything.
+/// [`buf_elems`]. For a wider buffer this is the low byte of each element,
+/// which is what the byte-shaped callers have always taken.
 pub(crate) fn buf_bytes(attrs: &InstanceAttrs) -> Option<Vec<u8>> {
-    with_buf_bytes(attrs, <[u8]>::to_vec)
+    buf_bytes_in(&attrs.as_map())
 }
 
 /// [`buf_bytes`] with an absent buffer read as empty.
@@ -223,29 +344,44 @@ pub(crate) fn buf_bytes_or_empty(attrs: &InstanceAttrs) -> Vec<u8> {
 
 /// [`buf_bytes`] against an attribute map already in hand.
 pub(crate) fn buf_bytes_in(map: &AttrMap) -> Option<Vec<u8>> {
-    Some(buf_elems_in(map)?.iter().map(elem_to_u8).collect())
+    let node = node_in(map)?;
+    Some(node_bytes(&node).into_owned())
+}
+
+/// The byte view of a node: its storage as-is for a width-1 buffer (every
+/// `Buf`/`Blob`/`utf8`, so the common case borrows and copies nothing extra),
+/// and the low byte of each element for a wider one.
+fn node_bytes<'a>(node: &'a BufData) -> std::borrow::Cow<'a, [u8]> {
+    if node.width == 1 {
+        std::borrow::Cow::Borrowed(&node.bytes)
+    } else {
+        std::borrow::Cow::Owned(
+            node.bytes
+                .chunks_exact(node.width as usize)
+                .map(|c| c[0])
+                .collect(),
+        )
+    }
 }
 
 /// Run `f` over the bytes without handing out an owned `Vec`.
 ///
-/// Today the slice is a temporary this function builds; under P2 a width-1
-/// buffer passes its storage straight through. Callers that go on to mutate the
-/// bytes want [`buf_bytes`] instead.
+/// For a width-1 buffer this is the node's storage, borrowed — no decode and no
+/// allocation. Callers that go on to mutate the bytes want [`buf_bytes`].
 pub(crate) fn with_buf_bytes<R>(attrs: &InstanceAttrs, f: impl FnOnce(&[u8]) -> R) -> Option<R> {
-    let bytes = with_buf_elems(attrs, |items| {
-        items.iter().map(elem_to_u8).collect::<Vec<u8>>()
-    })?;
-    Some(f(&bytes))
+    let map = attrs.as_map();
+    let node = node_in(&map)?;
+    Some(f(&node_bytes(&node)))
 }
 
-/// Store raw bytes into a map being built or updated.
-pub(crate) fn set_buf_bytes(map: &mut AttrMap, bytes: &[u8]) {
-    set_buf_elems(map, bytes_to_elems(bytes));
+/// Store raw bytes into a map being built or updated, one byte per element.
+pub(crate) fn set_buf_bytes(map: &mut AttrMap, class_name: Symbol, bytes: &[u8]) {
+    set_buf_elems(map, class_name, bytes_to_elems(bytes));
 }
 
 /// Store raw bytes into a **live** instance, through its shared attribute cell.
-pub(crate) fn store_buf_bytes(attrs: &InstanceAttrs, bytes: &[u8]) {
-    store_buf_elems(attrs, bytes_to_elems(bytes));
+pub(crate) fn store_buf_bytes(attrs: &InstanceAttrs, class_name: Symbol, bytes: &[u8]) {
+    store_buf_elems(attrs, class_name, bytes_to_elems(bytes));
 }
 
 /// A fresh `Buf`/`Blob`-shaped instance of `class_name` over raw bytes.
@@ -339,11 +475,11 @@ mod tests {
     /// exceed a byte; there it is the element's low byte.
     #[test]
     fn bytes_truncate_rather_than_clamp() {
-        assert_eq!(elem_to_u8(&Value::int(300)), 0x2C);
-        assert_eq!(elem_to_u8(&Value::int(-1)), 0xFF);
-        assert_eq!(elem_to_u8(&Value::int(0x1170)), 0x70);
-        assert_eq!(elem_to_u8(&Value::num(300.9)), 0x2C);
-        assert_eq!(elem_to_u8(&Value::str("nope".to_string())), 0);
+        assert_eq!(elem_to_u64(&Value::int(300)) as u8, 0x2C);
+        assert_eq!(elem_to_u64(&Value::int(-1)) as u8, 0xFF);
+        assert_eq!(elem_to_u64(&Value::int(0x1170)) as u8, 0x70);
+        assert_eq!(elem_to_u64(&Value::num(300.9)) as u8, 0x2C);
+        assert_eq!(elem_to_u64(&Value::str("nope".to_string())), 0);
 
         let wide = make_buf(Symbol::intern("Buf[uint16]"), vec![Value::int(0x1170)]);
         assert_eq!(buf_bytes(&attrs_of(&wide)), Some(vec![0x70]));
@@ -362,12 +498,13 @@ mod tests {
 
     #[test]
     fn bytes_round_trip_through_the_write_side() {
+        let buf = Symbol::intern("Buf");
         let mut map = AttrMap::new();
-        set_buf_bytes(&mut map, &[1, 2, 3]);
-        let b = Value::make_instance(Symbol::intern("Buf"), map);
+        set_buf_bytes(&mut map, buf, &[1, 2, 3]);
+        let b = Value::make_instance(buf, map);
         assert_eq!(buf_bytes(&attrs_of(&b)), Some(vec![1, 2, 3]));
 
-        store_buf_bytes(&attrs_of(&b), &[9]);
+        store_buf_bytes(&attrs_of(&b), buf, &[9]);
         assert_eq!(buf_bytes(&attrs_of(&b)), Some(vec![9]));
 
         let fresh = make_buf_from_bytes(Symbol::intern("Blob"), &[4, 5]);
@@ -382,5 +519,77 @@ mod tests {
         set_buf_storage(&mut map, storage);
         let blob = Value::make_instance(Symbol::intern("Blob"), map);
         assert_eq!(buf_elems(&attrs_of(&blob)), Some(bytes_to_elems(&[7, 8])));
+    }
+
+    /// The node stores contiguous bytes at the class's element width, so a
+    /// wide buffer's storage is `elems * width` bytes — not one byte per
+    /// element, which is all the old boxed representation could express.
+    #[test]
+    fn the_node_stores_contiguous_bytes_at_the_element_width() {
+        let wide = make_buf(Symbol::intern("Buf[uint16]"), vec![Value::int(0x1170)]);
+        let attrs = attrs_of(&wide);
+        let map = attrs.as_map();
+        let node = node_in(&map).expect("node");
+        assert_eq!(node.bytes, vec![0x70, 0x11]); // little-endian
+        assert_eq!(node.width, 2);
+        assert!(!node.signed);
+    }
+
+    /// The element type used to live only in the class-name string, so every
+    /// element read back unsigned. It is data now.
+    #[test]
+    fn signed_elements_read_back_signed() {
+        let signed = make_buf(Symbol::intern("Blob[int8]"), vec![Value::int(-1)]);
+        assert_eq!(buf_elems(&attrs_of(&signed)), Some(vec![Value::int(-1)]));
+        // Same bytes, unsigned type: a different value.
+        let unsigned = make_buf(Symbol::intern("Blob[uint8]"), vec![Value::int(-1)]);
+        assert_eq!(buf_elems(&attrs_of(&unsigned)), Some(vec![Value::int(255)]));
+
+        let wide = make_buf(Symbol::intern("Buf[int16]"), vec![Value::int(-2)]);
+        assert_eq!(buf_elems(&attrs_of(&wide)), Some(vec![Value::int(-2)]));
+    }
+
+    /// `uint64` is the one width whose range does not fit `i64`; the old
+    /// representation wrapped it negative on the way out.
+    #[test]
+    fn oversized_unsigned_elements_decode_to_bigint() {
+        let b = make_buf(Symbol::intern("Buf[uint64]"), vec![Value::int(-1)]);
+        let elems = buf_elems(&attrs_of(&b)).expect("elems");
+        assert_eq!(elems[0].to_string_value(), "18446744073709551615");
+        assert_eq!(elem_hex(&elems[0], 8), "FFFFFFFFFFFFFFFF");
+    }
+
+    /// Elements do not always arrive as bare `Int`s — `Blob.allocate(10, <1 2 3>)`
+    /// hands over `IntStr` allomorphs. The boxed representation stored them
+    /// as-is and converted on read; encoding at write time has to convert too.
+    #[test]
+    fn non_int_elements_are_coerced_not_zeroed() {
+        let b = buf_of(vec![Value::str("7".to_string()), Value::num(13.9)]);
+        assert_eq!(buf_bytes(&attrs_of(&b)), Some(vec![7, 13]));
+    }
+
+    #[test]
+    fn element_type_reads_signedness_off_the_name() {
+        for name in ["Buf", "Blob", "utf8", "utf16", "Buf[uint8]", "Blob[uint64]"] {
+            assert!(!elem_type(name).1, "{name} should be unsigned");
+        }
+        for name in ["Blob[int8]", "Buf[int16]", "Buf[int64]"] {
+            assert!(elem_type(name).1, "{name} should be signed");
+        }
+    }
+
+    /// An in-place element mutation re-encodes at the buffer's own width — it
+    /// takes no class name, because the node already knows.
+    #[test]
+    fn in_place_mutation_keeps_the_element_width() {
+        let wide = make_buf(Symbol::intern("Buf[uint16]"), vec![Value::int(1)]);
+        let attrs = attrs_of(&wide);
+        with_buf_elems_mut(&attrs, |items| items.push(Value::int(0x1234)));
+        assert_eq!(
+            buf_elems(&attrs),
+            Some(vec![Value::int(1), Value::int(0x1234)])
+        );
+        let map = attrs.as_map();
+        assert_eq!(node_in(&map).expect("node").bytes, vec![1, 0, 0x34, 0x12]);
     }
 }

@@ -55,6 +55,8 @@ impl Value {
                     && a.len() == b.len()
                     && a.iter().zip(b.iter()).all(|(x, y)| x.eqv(y))
             }
+            // Buffer storage: bytes and element type, same rule as `==`.
+            (ValueView::BufStorage(a), ValueView::BufStorage(b)) => *a == *b,
             // Hashes: recursively use eqv for values
             (ValueView::Hash(a), ValueView::Hash(b)) => {
                 a.len() == b.len() && a.iter().all(|(k, v)| b.get(k).is_some_and(|bv| v.eqv(bv)))

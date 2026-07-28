@@ -28,7 +28,8 @@ because a contiguous `Vec<u8>` cannot be interpreted without it.
 (see [`news/2026-07/buf-storage-accessor-chokepoint.md`](../../news/2026-07/buf-storage-accessor-chokepoint.md)).
 Sections 2 and 5 below are now historical: read them for *why* the campaign was
 needed, not as work still to do. Step 2 (the byte view and the width probe) is
-done too; steps 3 and 4 are open.
+done too, as is step 3 (the node). Only step 4 — the body and the honest
+`.REPR` — is open.
 
 ## 2. The `"bytes"` campaign is 104 sites, not 91 (done — historical)
 
@@ -193,12 +194,15 @@ ADR §4 promises — does not exist yet and is part of P2.
    `0xFF`), every mutation path masks on the way in, and for a wider buffer
    Rakudo agrees with neither convention anyway.
 
-3. **The node**, behind those accessors: contiguous `Vec<u8>` + element width,
-   with the encode/decode the accessors now hide. Signedness has to ride along
-   with the width — mutsu stores every element unsigned today, so
-   `Blob[int8].new(-1)[0]` answers `255` where raku answers `-1`, and the node
-   is where that stops being true.
+3. **The node.** **DONE** — see
+   [`news/2026-07/buf-native-byte-node.md`](../../news/2026-07/buf-native-byte-node.md).
+   `ValueRepr::BufStorage(Gc<BufData>)`: contiguous little-endian bytes plus the
+   element width and signedness, behind the accessors from steps 1 and 2. Adding
+   the variant reached exactly six exhaustive matches plus `==` and `eqv`.
+   Reads take no class name (the node carries the type); the ~20 *construction*
+   sites do, since the name is the only place Raku keeps it. Closed the
+   signedness and `uint64` readback gaps as a side effect.
 4. **The body and the honest `.REPR`**, in one commit with the `MVMArrayB` test,
    plus the deletion of `nativecall_pin.rs` and its three helpers.
 
-Steps 3 and 4 are where the judgment is.
+Step 4 is what `DBIish`'s mysql driver is actually waiting for.
