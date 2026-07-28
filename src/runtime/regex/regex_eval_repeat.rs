@@ -331,21 +331,29 @@ impl Interpreter {
     /// update for the outer VM. Assumes the block's `$/`, `$<name>`, `$0…` etc.
     /// have already been installed in `self.env` by the caller.
     pub(in crate::runtime) fn eval_regex_code_block_body(&mut self, stmts: &[crate::ast::Stmt]) {
-        // Snapshot env keys and values before execution
-        let snapshot: HashMap<Symbol, String> = self
-            .env
-            .iter()
-            .map(|(k, v)| (*k, format!("{:?}", v)))
-            .collect();
+        // Snapshot the env by *binding identity* — the cloned `Value` is an Arc
+        // bump, and holding it also keeps the old allocation alive so a freed
+        // address cannot be recycled into a false "unchanged".
+        //
+        // This used to snapshot `format!("{:?}", v)` for every name and compare
+        // the strings, which made `Debug` formatting of the whole env the single
+        // largest cost of a grammar parse (~20% of a `load-yaml` profile — a YAML
+        // grammar runs a `{ … }` block per line, per backtrack). Identity is also
+        // the *right* question: what has to be written back to the caller's local
+        // is a name that was **rebound**. A container mutated in place keeps its
+        // allocation, which the caller's local already shares, so it needs no
+        // writeback — while a rebinding to an equal-looking value (which the
+        // string comparison missed) now is reported.
+        let snapshot: HashMap<Symbol, Value> =
+            self.env.iter().map(|(k, v)| (*k, v.clone())).collect();
         let saved_in_block = self.in_regex_code_block;
         self.in_regex_code_block = true;
         let _ = self.eval_block_value(stmts);
         self.in_regex_code_block = saved_in_block;
         // Record changed env variables as pending local updates for the outer VM
         for (k, v) in &self.env {
-            let old_repr = snapshot.get(k).map(|s| s.as_str()).unwrap_or("");
-            let new_repr = format!("{:?}", v);
-            if old_repr != new_repr {
+            let rebound = snapshot.get(k).is_none_or(|old| !old.same_binding(v));
+            if rebound {
                 let name = k.resolve();
                 // Slice C' (docs/vm-single-store.md, open-question #2): an
                 // embedded regex `{ ... }` / `:my`/`:let` block writes a caller
