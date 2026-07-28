@@ -2202,7 +2202,7 @@ impl Interpreter {
             action_made: None,
             current_grammar_actions: None,
             pending_regex_error: None,
-            precomp_enabled: true,
+            precomp_enabled: crate::precomp::enabled_by_default(),
             monkey_typing: false,
             json_import_defaults: crate::runtime::json::JsonImportDefaults::default(),
 

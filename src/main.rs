@@ -31,6 +31,9 @@ fn print_help(program: &str) {
     println!("  MUTSULIB       Colon-separated list of module search paths");
     println!("                 (searched after -I paths, so -I takes priority;");
     println!("                 both are searched before installed modules)");
+    println!("  MUTSU_PRECOMP  Set to 0 to disable the module precompilation");
+    println!("                 cache, like --no-precomp but for every mutsu");
+    println!("                 process a script or test harness spawns");
 }
 
 fn print_negation_error(option: &str) -> ! {
