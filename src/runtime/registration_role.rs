@@ -261,6 +261,7 @@ impl Interpreter {
         type_param_defs: &[ParamDef],
         body: &[Stmt],
         role_is_rw: bool,
+        language_version: &str,
     ) -> Result<(), RuntimeError> {
         self.clear_private_zeroarg_method_cache();
 
@@ -1117,7 +1118,12 @@ impl Interpreter {
                 type_param_defs: type_param_defs.to_vec(),
                 role_def: role_def.clone(),
                 parents: candidate_parents,
-                language_version: crate::parser::current_language_version(),
+                // The revision the role was *declared* under, snapshotted at parse
+                // time (`Stmt::RoleDecl.language_version`) exactly like a class's.
+                // Reading the parser global here instead would report whatever
+                // revision happens to be active when the declaration executes,
+                // which for a role in a `use`d module is the importer's.
+                language_version: language_version.to_string(),
             });
         if self
             .registry()
