@@ -64,12 +64,18 @@ own runner makes the two pre-P1 points agree to within 1–3%:
 | `bench-grammar-parse-deep` | 0.311 | 0.320 | **0.250** |
 | `bench-yaml-parse` | 117.4 | 116.9 | **121.5** |
 
-≈−20% on both grammar benchmarks, ≈+4% on the YAML one. The likely reason for the split
-is recorded in ADR-0016's P2 entry and is the first thing that phase must confirm:
-`REDUCED_SUBRULES` is armed only for `.parse(:actions(...))`, which YAMLish uses and the
-grammar benchmarks do not — so for the actions case the deep copy this change removed
-from the rebase may simply have moved to `reduce_regex_captures_made_for_rule`, whose
-`Arc::make_mut(sc)` now takes the copy-on-write path on nodes the log holds.
+≈−20% on both grammar benchmarks, ≈+4% on the YAML one. The −20% is well supported (two
+independent pre-change points agree to 1%, and both grammar benchmarks move together);
+the +4% is a single point inside this benchmark's noise, so it reads as "no measured
+change", not a regression.
+
+The obvious explanation for the split was tested and **rejected**: `REDUCED_SUBRULES` is
+armed only for `.parse(:actions(...))` (YAMLish uses actions, the grammar benchmarks do
+not), so the removed deep copy might have moved to `reduce_regex_captures_made_for_rule`,
+whose `Arc::make_mut(sc)` would take the copy-on-write path on log-held nodes. An env gate
+turning `record_reduced_subrule` into a no-op, interleaved and core-pinned, gave a median
+of 4.11 s with the log and 4.15 s without — no difference. ADR-0016's P2 entry records
+what to measure instead.
 
 Numbers come from `bench-history.tsv` on the `bench-data` branch, not a local A/B — see
 `todo/tickets/yaml-parse-throughput.md` for why local numbers on the dev box were not
