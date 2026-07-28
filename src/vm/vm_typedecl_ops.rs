@@ -453,7 +453,14 @@ impl Interpreter {
             self.unsuppress_name(&name_str);
             loan_env!(
                 self,
-                register_role_decl(&qualified_name, type_params, type_param_defs, body, *is_rw,)
+                register_role_decl(
+                    &qualified_name,
+                    type_params,
+                    type_param_defs,
+                    body,
+                    *is_rw,
+                    language_version,
+                )
             )?;
             // Link `is Parent` references on this role to the lexical class visible
             // in this scope (which may be stored under a mangled name), matching
