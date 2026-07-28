@@ -3673,18 +3673,47 @@ impl Interpreter {
             }
         }
 
+        // A method the *user declared* on this class outranks the by-name builtin
+        // dispatchers below, which key on the method name alone and would answer
+        // first. `Grammar.parse(:actions(A))` invokes the action named after each
+        // rule, so a grammar with a rule called `map` — YAMLish's block-mapping
+        // rule is exactly that — needs `A.map($/)` to reach the action method and
+        // not the collection builtin, which rejected the Match as "not callable".
+        // Checked for the type object too, since `:actions(A)` passes the class.
+        // `.WHAT` and friends are *macros*, not builtin methods: `$o.WHAT` is the
+        // type object even when the class declares `method WHAT`, and only the
+        // quoted `$o."WHAT"()` reaches it (roast/S12-methods/what.t). They keep
+        // their existing `skip_pseudo_method_native` handling.
+        let shadows_builtin = !is_pseudo_method
+            && match target.view() {
+                ValueView::Instance { class_name, .. } => {
+                    self.class_has_user_method(&class_name.resolve(), method)
+                }
+                ValueView::Package(name) => self.class_has_user_method(&name.resolve(), method),
+                _ => false,
+            };
+
         // Primary method dispatch by name (group 1: string, IO, coercion, misc)
-        if let Some(result) = self.dispatch_method_by_name_1(target.clone(), method, args.clone()) {
+        if !shadows_builtin
+            && let Some(result) =
+                self.dispatch_method_by_name_1(target.clone(), method, args.clone())
+        {
             return result;
         }
 
         // Primary method dispatch by name (group 2: collection/iteration)
-        if let Some(result) = self.dispatch_method_by_name_2(target.clone(), method, args.clone()) {
+        if !shadows_builtin
+            && let Some(result) =
+                self.dispatch_method_by_name_2(target.clone(), method, args.clone())
+        {
             return result;
         }
 
         // Primary method dispatch by name (group 3: Supply, network, temporal, misc)
-        if let Some(result) = self.dispatch_method_by_name_3(target.clone(), method, args.clone()) {
+        if !shadows_builtin
+            && let Some(result) =
+                self.dispatch_method_by_name_3(target.clone(), method, args.clone())
+        {
             return result;
         }
 
