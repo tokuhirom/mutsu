@@ -222,6 +222,30 @@ impl Interpreter {
         }
     }
 
+    /// Is `class_name` an ordinary object the user declared, rather than a
+    /// built-in whose instances really do index like a container?
+    ///
+    /// The container-element fallback below is right for the built-ins — an
+    /// immutable `utf8`/`Blob`/`Map` must still reach it so the assignment
+    /// throws, and a `class MyHash is Hash {}` keeps its backing store. It is
+    /// never right for a plain user object, where it would replace the object
+    /// with a freshly built Array/Hash. Asking the class registry avoids
+    /// enumerating built-in names, which is what a first attempt got wrong:
+    /// `"hi".encode` is a `utf8`, a name no container list mentions.
+    fn instance_is_plain_user_object(&mut self, class_name: &str) -> bool {
+        if !self.user_declared_classes.contains(class_name) {
+            return false;
+        }
+        const CONTAINER_BASES: &[&str] = &[
+            "Hash", "Array", "List", "Map", "Seq", "Buf", "Blob", "Capture", "Baggy", "Setty",
+            "Mixy", "Set", "Bag", "Mix", "SetHash", "BagHash", "MixHash",
+        ];
+        !self
+            .class_mro(class_name)
+            .iter()
+            .any(|parent| CONTAINER_BASES.contains(&parent.resolve().as_str()))
+    }
+
     pub(crate) fn exec_index_assign_expr_named_op_inner(
         &mut self,
         code: &CompiledCode,
@@ -431,6 +455,23 @@ impl Interpreter {
                     let enc = Self::encode_bound_index(&idx);
                     self.mark_ro_index(&var_name, enc);
                 }
+                self.stack.push(val);
+                return Ok(());
+            }
+            // The class declares no subscript-assign method and is not a
+            // container subclass, so the fallback below would REPLACE the
+            // instance with a fresh Array/Hash — `$b[0].a = 11` (which the
+            // compiler lowers to a mutate-then-`$b[0] = elem` write-back)
+            // silently turned `$b` into an Array, and every later method call
+            // on it died with "No such method ... for invocant of type
+            // 'Array'". The element was already mutated in place through the
+            // instance, so the write-back has nothing left to do; drop it
+            // rather than clobber the variable. (Rakudo rejects a *direct*
+            // `$obj[0] = v` here with "Cannot modify an immutable ..."; that is
+            // a separate gap — this path cannot tell the two apart.)
+            if self.instance_is_plain_user_object(&cls) {
+                let raw_val = self.stack.pop().unwrap_or(Value::NIL);
+                let (val, _) = Self::unwrap_bind_index_value(raw_val);
                 self.stack.push(val);
                 return Ok(());
             }
