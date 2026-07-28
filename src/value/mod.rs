@@ -311,14 +311,30 @@ pub(crate) type ProxySubclassAttrs = Arc<Mutex<HashMap<String, Value>>>;
 /// and what `.decode` on a `buf16` already produced.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct BufData {
-    /// `elems * width` bytes. The buffer C is handed a pointer into under P2's
-    /// remaining phase, hence contiguous and never a `Vec<Value>` again.
+    /// `elems * width` bytes. This is the buffer C is handed a pointer into, so
+    /// it is contiguous and never a `Vec<Value>` again.
     pub bytes: Vec<u8>,
     /// Bytes per element: 1, 2, 4 or 8.
     pub width: u8,
     /// Whether an element reads back as signed (`Blob[int8]`) or unsigned
     /// (`Blob[uint8]`, and every plain `Buf`/`Blob`/`utf8`/`utf16`).
     pub signed: bool,
+    /// The synthesised `VMArray` REPR body, allocated on first `.WHERE` and
+    /// owned by this node — see [`value_buf_repr::ReprBody`].
+    pub body: value_buf_repr::ReprBody,
+}
+
+impl BufData {
+    /// A buffer node over `bytes`, with no REPR body yet: the body block is
+    /// allocated the first time something asks for the buffer's `.WHERE`.
+    pub(crate) fn new(bytes: Vec<u8>, width: u8, signed: bool) -> BufData {
+        BufData {
+            bytes,
+            width,
+            signed,
+            body: value_buf_repr::ReprBody::default(),
+        }
+    }
 }
 
 /// Bag data: wraps HashMap<String, NumBigInt> with optional original-typed keys.
@@ -401,6 +417,7 @@ pub(crate) mod types_truthy;
 mod value_async;
 /// `Buf`/`Blob` element storage — the accessor chokepoint (ADR-0015 P2).
 pub(crate) mod value_buf;
+pub(crate) mod value_buf_repr;
 mod value_collections;
 mod value_enum;
 mod value_eq;

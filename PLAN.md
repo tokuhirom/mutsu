@@ -115,8 +115,9 @@ section.
       at **8/9 files, raku parity on 8** (it was 1/9 when the slot was chosen); the ledger is
       `todo/tickets/dbiish-blockers.md`. The last file is the `mysql` driver, gated on
       [ADR-0015](docs/adr/0015-native-backed-container-storage-and-repr-bodies.md) — `DBDish::SQLite`
-      does not need it, so bundling SQLite support is not blocked on that ADR (which is Accepted, and
-      whose P0-P3 are the route to 9/9). Next: vendor
+      does not need it, so bundling SQLite support is not blocked on that ADR (which is Accepted;
+      P0-P2 are landed, P3 remains). The mysql driver's remaining blocker is now the parser ticket
+      `todo/tickets/ternary-then-branch-enum-value.md`. Next: vendor
       `DBIish` + `NativeLibs` + `NativeHelpers::Blob` and baseline the release gate.
       This is the next step toward "a web blog can be written with the bundle alone": the bundle can
       already fetch, render and parse JSON, but it cannot store.
@@ -405,10 +406,11 @@ sessions).
   off-the-shelf `DBDish::SQLite` passes 8 of `DBIish`'s 9 files at raku parity without going near
   `BODY_OF`. What is genuinely left is the `mysql` driver, which needs a stable native buffer behind
   `Blob`/`array`/`CArray` — designed in
-  [ADR-0015](docs/adr/0015-native-backed-container-storage-and-repr-bodies.md) (Proposed), findings in
-  `todo/deep/nativehelpers-blob-moarvm-guts.md`.
-  A general parse bug found as a side effect (unfixed): greediness of the ternary then-branch in
-  `constant NAME is export = <cond> ?? <Type> !! <Type>`.
+  [ADR-0015](docs/adr/0015-native-backed-container-storage-and-repr-bodies.md) (Accepted), findings in
+  `todo/deep/nativehelpers-blob-moarvm-guts.md`. **P2 (native-backed `Buf`/`Blob`) landed 2026-07-28**
+  and `pointer-to(Blob)` now works; what remains for the mysql driver is a *parser* bug
+  (`todo/tickets/ternary-then-branch-enum-value.md`), not a representation one. P3 (Raku-side
+  `CArray[T]` / `array[T]`) is still open.
 
 ---
 

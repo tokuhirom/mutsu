@@ -245,14 +245,36 @@ Cannot dereference a Pointer[Any]: not a type NativeCall can read
   in sub BODY_OF ... in sub pointer-to ... in sub BPointer ...
 ```
 
-That is **ADR-0015 P2 and nothing else**: `BODY_OF` looks the body type up as
-`%known-bodies{any.REPR}`, and `Buf`/`Blob` still answer `P6opaque` where raku
-answers `VMArray`, so the lookup misses and `Pointer[Any]` is what gets
+That was **ADR-0015 P2 and nothing else**: `BODY_OF` looks the body type up as
+`%known-bodies{any.REPR}`, and `Buf`/`Blob` still answered `P6opaque` where raku
+answers `VMArray`, so the lookup missed and `Pointer[Any]` was what got
 dereferenced. (The module's own `die "Can only handle …"` guard does not fire —
-it tests `type ~~ Nil`, and a missing hash key is `Any`.) There is no smaller
-intermediate step left: making `.REPR` answer `VMArray` without the body behind
-it is exactly what ADR-0015 §2.1's ordering rule forbids. Re-measure with the
-one-liner above before chasing anything else.
+it tests `type ~~ Nil`, and a missing hash key is `Any`.)
+
+**Update 2026-07-28: P2 is landed and `BODY_OF(Buf)` works end to end** — see
+[`news/2026-07/buf-repr-body-and-native-storage.md`](../../news/2026-07/buf-repr-body-and-native-storage.md).
+`pointer-to($buf)` returns the buffer's own element address, and a C function
+that writes through a pointer it retained is visible in Raku with no intervening
+call. Two bugs had to fall for it: the missing `VMArray` body itself, and a
+CStruct field accessor being shadowed by a builtin whenever the class was
+declared inside a module (which made `MVMArrayB.elems` answer `1` and `.any`
+build a Junction, so the module read a junction instead of a body).
+
+**⑨ is now a parser blocker, not a representation one.**
+`DBDish::mysql::StatementHandle` fails to parse:
+
+```
+Failed to parse module 'DBDish::mysql::StatementHandle':
+Unexpected block in infix position (missing statement control word before the expression?)
+```
+
+The construct is `.buffer_type = @!column-type[$col] ~~ Blob ?? MYSQL_TYPE_BLOB
+!! MYSQL_TYPE_STRING`, where both names are values of an `enum` exported by
+`DBDish::mysql::Native`. mutsu rejects a bare identifier in a ternary's
+then-branch unless it can tell the name is a complete term, and an imported enum
+value is not currently something it can tell. Minimal repro and the shape of the
+fix: [`ternary-then-branch-enum-value.md`](ternary-then-branch-enum-value.md).
+That is the last thing between `01-basic` and raku parity.
 
 ### ⑤ `06-types` — object hash keyed by type objects
 

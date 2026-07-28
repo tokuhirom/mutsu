@@ -596,6 +596,12 @@ impl crate::runtime::Interpreter {
     /// for an unmanaged cast: storage set, `managed`/`elems` zero, which is
     /// exactly what an unmanaged `CArray` handle is.
     ///
+    /// A `Buf`/`Blob` qualifies too, by a different route: it has no `address`
+    /// attribute, but its storage node *is* contiguous C memory, and the
+    /// `MVMArrayB` body describing it is synthesised from that node (ADR-0015
+    /// P2, `value::value_buf_repr`). This is the answer `NativeHelpers::Blob`'s
+    /// `pointer-to` needs.
+    ///
     /// A CStruct *constructed in Raku* deliberately does not qualify: it has no
     /// C storage yet, so it keeps `P6opaque` and `BODY_OF` keeps refusing it
     /// loudly instead of quietly reading a NULL body. Giving it real storage is
@@ -617,6 +623,17 @@ impl crate::runtime::Interpreter {
         else {
             return None;
         };
+        // A buffer with real element storage. A `Buf`-shaped instance that has
+        // none — a type object reached through this path — falls through and
+        // keeps `P6opaque`, so nothing ever gets an honest name without a body.
+        if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
+            && let Some(body) = crate::value::value_buf::buf_repr_body_address(&attributes)
+        {
+            return Some(match method {
+                "REPR" => Value::str_from("VMArray"),
+                _ => Value::int(body as i64),
+            });
+        }
         let addr = match attributes.as_map().get("address").map(|v| v.view()) {
             Some(ValueView::Int(a)) if a > 0 => a as usize,
             _ => return None,

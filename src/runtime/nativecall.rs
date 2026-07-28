@@ -8,10 +8,11 @@
 //!
 //! Supported so far: scalar C types (signed/unsigned 8/16/32/64-bit integers,
 //! 32/64-bit floats), `Str` passed as a NUL-terminated `char*`, an opaque
-//! `Pointer`, `CArray[T]` (a contiguous C buffer / `char**` for `CArray[Str]`)
-//! and `Blob`/`Buf` (a byte buffer) as call arguments, with the C-side data
-//! copied back into the Raku array/buffer after the call so an out-array /
-//! out-buffer (`SSL_read` / `BIO_read`-style fill) is visible, and
+//! `Pointer`, `CArray[T]` (a contiguous C buffer / `char**` for `CArray[Str]`,
+//! whose C-side data is copied back into the Raku array after the call so an
+//! out-array fill is visible), `Blob`/`Buf` passed as a pointer to the object's
+//! **own** storage (so an out-buffer fill needs no copy back at all — see
+//! [docs/nativecall-repr-bodies.md](../../docs/nativecall-repr-bodies.md)), and
 //! `is repr('CStruct')` types as **opaque native handles passed by pointer**
 //! (returned wrapped in an instance of the declared class, e.g. OpenSSL's
 //! `SSL` / `SSL_CTX` / `SSL_METHOD`). The library name may be supplied by a code
@@ -42,11 +43,11 @@ pub enum CType {
     /// the [`ParamSpec::elem`] field (a scalar numeric type, or `Str` for a
     /// `char**`). Passed as a pointer to the first element.
     CArray,
-    /// `Blob` / `Buf` / `buf8` — a byte buffer passed as a pointer to its bytes
-    /// (`char*` / `void*`). Unlike `Str`, it is not NUL-terminated and may carry
-    /// embedded NULs, and the callee may write into it (an out-buffer, e.g.
-    /// `SSL_read` / `BIO_read`), so the C bytes are copied back into the caller's
-    /// buffer after the call.
+    /// `Blob` / `Buf` / `buf8` — a byte buffer passed as a pointer to **its own**
+    /// bytes (`char*` / `void*`). Unlike `Str`, it is not NUL-terminated and may
+    /// carry embedded NULs, and the callee may write into it (an out-buffer,
+    /// e.g. `SSL_read` / `BIO_read`) — which needs no copy back, because the
+    /// memory C wrote into is the Raku object's storage (ADR-0015 P2).
     Buf,
 }
 
@@ -232,9 +233,6 @@ pub fn call_native(spec: &NativeCallSpec, args: &[Value]) -> Result<Value, Runti
     // Arg indices holding a numeric `CArray` whose C buffer must be copied back
     // into the caller's Raku array after the call (an out-array fill).
     let mut carray_writebacks: Vec<usize> = Vec::new();
-    // Arg indices holding a `Blob`/`Buf` whose C buffer must be copied back into
-    // the caller's Buf after the call (an out-buffer, e.g. `SSL_read`).
-    let mut buf_writebacks: Vec<usize> = Vec::new();
 
     for (i, (ps, v)) in spec.params.iter().zip(args.iter()).enumerate() {
         let (ty, owner) = if ps.is_rw && ps.ct == CType::Pointer {
@@ -255,10 +253,6 @@ pub fn call_native(spec: &NativeCallSpec, args: &[Value]) -> Result<Value, Runti
             // callee performs must be reflected back into the caller's array.
             if matches!(owner, ArgOwner::CArrayNum { .. }) {
                 carray_writebacks.push(i);
-            }
-            // A `Buf`/`Blob` out-buffer: reflect callee writes back into the Buf.
-            if matches!(owner, ArgOwner::BufBytes { .. }) {
-                buf_writebacks.push(i);
             }
             (ty, owner)
         };
@@ -352,20 +346,9 @@ pub fn call_native(spec: &NativeCallSpec, args: &[Value]) -> Result<Value, Runti
         }
     }
 
-    // Copy each `Buf`/`Blob` out-buffer's (possibly callee-modified) C bytes
-    // back into the caller's Buf instance.
-    for idx in buf_writebacks {
-        if let ArgOwner::BufBytes { pin_key, buf, .. } = &owners[idx] {
-            match pin_key {
-                Some(key) => {
-                    if let Some(bytes) = crate::runtime::nativecall_pin::read(*key) {
-                        write_buf_instance_bytes(&args[idx], &bytes);
-                    }
-                }
-                None => write_buf_instance_bytes(&args[idx], buf),
-            }
-        }
-    }
+    // A `Buf`/`Blob` out-buffer needs no writeback: C wrote into the object's
+    // own storage (ADR-0015 P2). This is the sync point that used to be needed
+    // and the one that could not exist for a pointer C merely retained.
 
     Ok(result)
 }
@@ -546,18 +529,19 @@ enum ArgOwner {
         data_ptr: *const std::ffi::c_void,
         elem: CType,
     },
-    /// A `Blob` / `Buf` byte buffer (`void*`): `data_ptr` is the pointer handed
-    /// to libffi. The callee may write into it (an out-buffer), so the bytes
-    /// are copied back into the caller's `Buf` instance after the call.
+    /// A `Blob` / `Buf` byte buffer (`void*`): `data_ptr` points straight at the
+    /// Raku object's own element storage, so a callee that writes into it — an
+    /// out-buffer such as `SSL_read` — is writing into the `Buf` itself and
+    /// there is nothing to copy back.
     ///
-    /// `pin_key` is `Some` in the normal case, where the bytes live in the
-    /// object-lifetime pin registry (see [`crate::runtime::nativecall_pin`]) so
-    /// that a C function which *retains* the pointer keeps seeing live memory.
-    /// It is `None` only when the argument is not a pinnable instance (a type
-    /// object, say), and then the fallback `buf` backs the pointer for the
-    /// duration of the call.
+    /// `node` is the storage node, held here purely to keep that allocation
+    /// alive for the duration of the call. It is `None` only when the argument
+    /// is not a buffer instance (a type object, say), and then the empty
+    /// fallback `buf` backs the pointer instead.
     BufBytes {
-        pin_key: Option<usize>,
+        #[allow(dead_code)]
+        node: Option<crate::gc::Gc<crate::value::BufData>>,
+        #[allow(dead_code)]
         buf: Vec<u8>,
         data_ptr: *const std::ffi::c_void,
     },
@@ -755,30 +739,41 @@ fn marshal_arg(ps: &ParamSpec, raw: &Value) -> Result<(libffi::middle::Type, Arg
             }
         }
         CType::Buf => {
-            // A `Blob`/`Buf` is passed as a `void*` to a contiguous copy of its
-            // bytes. The copy is pinned to the Raku object rather than to the
-            // call, so a C function that retains the pointer (OpenSSL's
-            // `BIO_new_mem_buf` builds a memory BIO *over* the caller's bytes)
-            // still sees live memory afterwards.
-            let bytes = buf_instance_bytes(v).unwrap_or_default();
-            match buf_instance_pin_key(v).and_then(|key| {
-                crate::runtime::nativecall_pin::pin(key, &bytes).map(|ptr| (key, ptr))
-            }) {
-                Some((key, ptr)) => (
-                    Type::pointer(),
-                    ArgOwner::BufBytes {
-                        pin_key: Some(key),
-                        buf: Vec::new(),
-                        data_ptr: ptr as *const std::ffi::c_void,
-                    },
-                ),
-                // Not a pinnable instance: fall back to a per-call temporary.
+            // A `Blob`/`Buf` is passed as a `void*` **to its own storage**
+            // (ADR-0015 P2). Nothing is copied in and nothing is copied back:
+            // the bytes C reads and writes are the Raku object's bytes, so a
+            // callee that fills an out-buffer needs no sync point, and one that
+            // retains the pointer (OpenSSL's `BIO_new_mem_buf` builds a memory
+            // BIO *over* the caller's bytes) keeps seeing live memory for as
+            // long as the Raku object is alive.
+            match buf_storage_node(v) {
+                Some(node) => {
+                    // SAFETY: audited aliased in-place container write (see
+                    // `value::aliased_mut`) — this is the pointer C writes
+                    // through, and the `node` held in the owner keeps the
+                    // allocation alive for at least the duration of the call.
+                    // No Rust borrow into the buffer is live across it.
+                    let data_ptr = unsafe { crate::value::gc_contents_mut(&node) }
+                        .bytes
+                        .as_mut_ptr();
+                    (
+                        Type::pointer(),
+                        ArgOwner::BufBytes {
+                            node: Some(node),
+                            buf: Vec::new(),
+                            data_ptr: data_ptr as *const std::ffi::c_void,
+                        },
+                    )
+                }
+                // Not a buffer instance at all (a type object passed where a
+                // buffer was declared): an empty per-call block.
                 None => {
+                    let bytes: Vec<u8> = Vec::new();
                     let data_ptr = bytes.as_ptr() as *const std::ffi::c_void;
                     (
                         Type::pointer(),
                         ArgOwner::BufBytes {
-                            pin_key: None,
+                            node: None,
                             buf: bytes,
                             data_ptr,
                         },
@@ -792,66 +787,22 @@ fn marshal_arg(ps: &ParamSpec, raw: &Value) -> Result<(libffi::middle::Type, Arg
     })
 }
 
-/// Read the bytes of a `Blob`/`Buf` native-call argument. A `Buf`/`Blob` is an
-/// `Instance` whose `bytes` attribute is an `Array` of byte `Int`s; unwrap any
-/// `Scalar`/`ContainerRef`/`VarRef` container first (a `$`-variable argument
-/// arrives wrapped).
+/// The storage node of a `Blob`/`Buf` native-call argument — the contiguous
+/// bytes C is handed a pointer into. Unwraps any `Scalar`/`ContainerRef`/
+/// `VarRef` container first (a `$`-variable argument arrives wrapped).
+///
+/// `None` for anything that is not a buffer instance (a type object passed
+/// where a buffer was declared), which then gets an empty per-call block.
 #[cfg(feature = "libffi")]
-fn buf_instance_bytes(v: &Value) -> Option<Vec<u8>> {
+fn buf_storage_node(v: &Value) -> Option<crate::gc::Gc<crate::value::BufData>> {
     match v.view() {
         ValueView::Instance { attributes, .. } => {
-            crate::value::value_buf::with_buf_elems(&attributes, |items| {
-                items
-                    .iter()
-                    .map(|b| crate::runtime::to_int(b) as u8)
-                    .collect::<Vec<u8>>()
-            })
+            crate::value::value_buf::buf_storage_node(&attributes)
         }
-        ValueView::Scalar(inner) => buf_instance_bytes(inner),
-        ValueView::ContainerRef(cell) => cell.lock().ok().and_then(|g| buf_instance_bytes(&g)),
-        ValueView::VarRef { value, .. } => buf_instance_bytes(value),
+        ValueView::Scalar(inner) => buf_storage_node(inner),
+        ValueView::ContainerRef(cell) => cell.lock().ok().and_then(|g| buf_storage_node(&g)),
+        ValueView::VarRef { value, .. } => buf_storage_node(value),
         _ => None,
-    }
-}
-
-/// The pin-registry key for a `Blob`/`Buf` native-call argument: the address of
-/// its shared attribute cell, which is unique per object and stays valid until
-/// the object dies. `None` for anything that is not an instance (a type object
-/// passed where a buffer was declared), which then gets a per-call temporary.
-#[cfg(feature = "libffi")]
-fn buf_instance_pin_key(v: &Value) -> Option<usize> {
-    match v.view() {
-        ValueView::Instance { attributes, .. } => Some(attributes.cell_key()),
-        ValueView::Scalar(inner) => buf_instance_pin_key(inner),
-        ValueView::ContainerRef(cell) => cell.lock().ok().and_then(|g| buf_instance_pin_key(&g)),
-        ValueView::VarRef { value, .. } => buf_instance_pin_key(value),
-        _ => None,
-    }
-}
-
-/// Copy C-side bytes back into a `Blob`/`Buf` argument's `bytes` attribute after
-/// a native call (an out-buffer such as `SSL_read` / `BIO_read`). The `Instance`
-/// shares its attribute cell with the caller's variable, so the update is
-/// visible at the call site. The buffer length is preserved (the callee reports
-/// how many bytes it wrote via the return value; the caller slices accordingly).
-#[cfg(feature = "libffi")]
-fn write_buf_instance_bytes(v: &Value, bytes: &[u8]) {
-    match v.view() {
-        ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } => {
-            crate::value::value_buf::store_buf_bytes(&attributes, class_name, bytes);
-        }
-        ValueView::Scalar(inner) => write_buf_instance_bytes(inner, bytes),
-        ValueView::ContainerRef(cell) => {
-            if let Ok(g) = cell.lock() {
-                write_buf_instance_bytes(&g, bytes);
-            }
-        }
-        ValueView::VarRef { value, .. } => write_buf_instance_bytes(value, bytes),
-        _ => {}
     }
 }
 
