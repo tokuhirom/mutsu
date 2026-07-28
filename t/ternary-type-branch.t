@@ -7,7 +7,7 @@ use Test;
 # bare identifier in then-position was the head of an unconsumed listop call.
 # It must be accepted when `!!` follows directly.
 
-plan 10;
+plan 16;
 
 # Bare statement-level ternary with a type-object then-branch.
 is (1 ?? Int !! Str).^name, 'Int', 'ternary then-branch type object (Int) at expression level';
@@ -49,4 +49,34 @@ is (1 ?? Int !! Numeric).^name, 'Int', 'ternary with type-object branches, no fa
     sub rt123115 { 2 }
     dies-ok { EVAL q{1 ?? rt123115 !! 3} },
         'non-type bareword then-branch (listop gobbling !!) still errors';
+}
+
+# A *value* of a user-declared enum is a complete nullary term -- it takes no
+# arguments, so it can never be the listop head the guard is looking for, and it
+# must stand unparenthesized in then-position.
+enum Light <RED AMBER GREEN>;
+enum Status (OK => 200, MISSING => 404);
+
+is (1 ?? RED !! AMBER).key, 'RED', 'angle-list enum value in then-position';
+is (0 ?? RED !! AMBER).key, 'AMBER', 'and the else-branch still selects';
+is (1 ?? OK !! MISSING).value, 200, 'pair-list enum value in then-position';
+
+# The method-lvalue statement path parses its RHS in a mode where the guard does
+# fire (unlike a `my $x = ...` RHS), which is where `DBDish::mysql` tripped:
+# `.buffer_type = @!column-type[$col] ~~ Blob ?? MYSQL_TYPE_BLOB !! MYSQL_TYPE_STRING`.
+class Holder { has $.slot is rw }
+{
+    my $h = Holder.new;
+    given $h {
+        .slot = 1 ?? RED !! AMBER;
+    }
+    is $h.slot.key, 'RED', 'enum value in a method-lvalue assignment RHS';
+}
+
+# An enum's values travel with it into an importing file.
+{
+    use lib $?FILE.IO.parent.add('lib-enum-ternary').Str;
+    use EnumTernaryValues;
+    is (1 ?? CRIMSON !! AZURE).key, 'CRIMSON', 'imported enum value in then-position';
+    is (1 ?? FOUND !! GONE).value, 200, 'imported pair-list enum value in then-position';
 }

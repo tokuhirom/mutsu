@@ -62,8 +62,9 @@ pub(in crate::parser) use module_exports::{
     register_module_type_names,
 };
 pub(in crate::parser) use pragma_preseed::{
-    current_attributes_pragma, is_user_declared_sub, is_user_declared_type, push_package_path,
-    register_user_type, register_user_type_verbatim, reset_package_path, set_attributes_pragma,
+    current_attributes_pragma, is_user_declared_enum_value, is_user_declared_sub,
+    is_user_declared_type, push_package_path, register_user_enum_value, register_user_type,
+    register_user_type_verbatim, reset_package_path, set_attributes_pragma,
     set_eval_imported_function_preseed, set_eval_operator_assoc_preseed, set_eval_operator_preseed,
     set_eval_user_sub_preseed,
 };
@@ -103,6 +104,12 @@ struct LexicalScope {
     /// User-declared class/role/grammar/enum names. Used to disambiguate
     /// identifiers like `S` from the `S///` substitution operator.
     user_types: HashSet<String>,
+    /// The *values* of user-declared enums (`enum E <FOO BAR>` → `FOO`, `BAR`),
+    /// including those of an enum a `use`d module exports. An enum value is by
+    /// construction a complete nullary term, never the head of a listop call,
+    /// which is what the `?? then !!` guard needs to know — the user-declared
+    /// twin of `is_builtin_enum_value`.
+    user_enum_values: HashSet<String>,
     /// `no worries` lexical pragma: when true, compiler "Potential difficulties"
     /// warnings (e.g. the empty-`<>` colonpair warning) are suppressed in this
     /// scope and any nested scopes (inherited via `push_scope`).

@@ -125,6 +125,41 @@ pub(crate) fn register_user_type(name: &str) {
     }
 }
 
+/// Register the name of one value of a user-declared enum.
+///
+/// Registered in the **outermost** scope, like the composed spelling of a
+/// package-nested type: an `enum` declared inside a class or module body
+/// installs its values as package-scoped symbols that outlive the body, and a
+/// `use`d module's exported enum values must be visible for the rest of the
+/// importing file.
+pub(crate) fn register_user_enum_value(name: &str) {
+    SCOPES.with(|s| {
+        let mut scopes = s.borrow_mut();
+        let outermost = scopes
+            .first_mut()
+            .expect("scope stack should never be empty");
+        outermost.user_enum_values.insert(name.to_string());
+    });
+}
+
+/// Whether `name` is a value of a user-declared enum — the user-declared twin of
+/// [`is_builtin_enum_value`](crate::runtime::utils::is_builtin_enum_value).
+///
+/// An enum value takes no arguments, so a bare occurrence of it is a *complete*
+/// term. That is what lets it stand unparenthesized in a ternary's then-branch
+/// (`$t ~~ Blob ?? MYSQL_TYPE_BLOB !! MYSQL_TYPE_STRING`, from
+/// `DBDish::mysql`), where a bareword is otherwise assumed to be a listop head
+/// that gobbled the `!!`.
+pub(crate) fn is_user_declared_enum_value(name: &str) -> bool {
+    SCOPES.with(|s| {
+        let scopes = s.borrow();
+        scopes
+            .iter()
+            .rev()
+            .any(|scope| scope.user_enum_values.contains(name))
+    })
+}
+
 /// Check if a name was declared as a user type (class, role, grammar, enum)
 /// in any enclosing scope.
 pub(crate) fn is_user_declared_type(name: &str) -> bool {

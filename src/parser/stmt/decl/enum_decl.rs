@@ -8,6 +8,22 @@ use crate::symbol::Symbol;
 use crate::value::Value;
 use crate::value::ValueView;
 
+/// Record an enum's value names, so later parsing knows each is a *complete*
+/// nullary term rather than a possible listop head (see
+/// [`is_user_declared_enum_value`](crate::parser::stmt::simple::is_user_declared_enum_value)).
+///
+/// The `__DYNAMIC__` placeholder the computed-body forms emit is not a value
+/// name, and a value spelled like a parser keyword is left alone for the same
+/// reason declaration helpers do.
+fn register_enum_values(variants: &[(String, Option<Expr>)]) {
+    for (name, _) in variants {
+        if name == "__DYNAMIC__" || name.is_empty() {
+            continue;
+        }
+        super::super::simple::register_user_enum_value(name);
+    }
+}
+
 /// Parse `anon enum` declaration.
 pub(crate) fn anon_enum_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("anon", input).ok_or_else(|| PError::expected("anon enum declaration"))?;
@@ -87,6 +103,7 @@ fn parse_anon_enum_body(input: &str) -> PResult<'_, Stmt> {
     // where the swallowed `;` lets the expression parser absorb the following
     // statement as an infix continuation. (The dynamic-enum paths above already
     // return without consuming `;`.)
+    register_enum_values(&variants);
     Ok((
         rest,
         Stmt::EnumDecl {
@@ -374,6 +391,7 @@ pub(super) fn parse_enum_decl_body_with_type(
     let (rest, _) = ws(rest)?;
     // See parse_anon_enum_body: leave the trailing `;` for the statement layer
     // so `enum` in expression context does not swallow the next statement.
+    register_enum_values(&variants);
     Ok((
         rest,
         Stmt::EnumDecl {

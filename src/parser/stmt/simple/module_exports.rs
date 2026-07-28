@@ -270,6 +270,15 @@ pub(crate) fn extract_exported_names(source: &str) -> Vec<InlineModuleExport> {
             .filter(|name| name.contains("::"))
             .collect()
     });
+    // The same for enum *values* declared by a module this one used: they are
+    // complete nullary terms wherever the importer can see them, and unlike type
+    // names they are never qualified, so there is nothing to filter on.
+    let transitive_enum_values: Vec<String> = SCOPES.with(|s| {
+        s.borrow()
+            .iter()
+            .flat_map(|scope| scope.user_enum_values.iter().cloned())
+            .collect()
+    });
     // Restore scopes and language version
     SCOPES.with(|s| {
         *s.borrow_mut() = saved_scopes;
@@ -292,6 +301,15 @@ pub(crate) fn extract_exported_names(source: &str) -> Vec<InlineModuleExport> {
             // The names are already fully composed; a `use` that appears inside
             // a package block must not compose them a second time.
             register_user_type_verbatim(name);
+        }
+        // An enum's *values* travel with it. Without this a bare
+        // `MYSQL_TYPE_BLOB` in the importing file is an unknown identifier, and
+        // the `?? then !!` guard reads it as a listop head that gobbled the
+        // `!!` (see `is_user_declared_enum_value`).
+        let mut enum_values: Vec<String> = transitive_enum_values;
+        collect_module_enum_values(&stmts, &mut enum_values);
+        for name in &enum_values {
+            register_user_enum_value(name);
         }
     }
     let mut exports: HashMap<String, InlineModuleExport> = HashMap::new();
@@ -373,6 +391,30 @@ pub(crate) fn extract_exported_names(source: &str) -> Vec<InlineModuleExport> {
 /// parser knows they are declared types rather than undeclared barewords.
 fn collect_module_type_names(stmts: &[Stmt], out: &mut Vec<String>) {
     collect_module_type_names_under(stmts, "", out);
+}
+
+/// The value names of every `enum` a module declares, at any nesting depth.
+///
+/// Unlike a type name an enum value is never package-composed here: the
+/// importer spells it bare, which is the only spelling the `?? then !!` guard
+/// ever sees.
+fn collect_module_enum_values(stmts: &[Stmt], out: &mut Vec<String>) {
+    for stmt in stmts {
+        match stmt {
+            Stmt::EnumDecl { variants, .. } => {
+                out.extend(
+                    variants
+                        .iter()
+                        .map(|(name, _)| name.clone())
+                        .filter(|name| name != "__DYNAMIC__" && !name.is_empty()),
+                );
+            }
+            Stmt::ClassDecl { body, .. }
+            | Stmt::RoleDecl { body, .. }
+            | Stmt::Package { body, .. } => collect_module_enum_values(body, out),
+            _ => {}
+        }
+    }
 }
 
 /// `prefix` is the `::`-joined path of the enclosing package-like declarators.

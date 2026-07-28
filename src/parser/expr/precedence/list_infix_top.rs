@@ -48,6 +48,7 @@ pub(crate) fn item_expr(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         && !crate::runtime::utils::is_builtin_constant_term(name)
         && !crate::parser::stmt::simple::is_user_declared_type(name)
         && !crate::parser::stmt::simple::is_user_declared_value_term(name)
+        && !crate::parser::stmt::simple::is_user_declared_enum_value(name)
     {
         return Err(PError::expected("expected '!!' in ternary expression"));
     }
