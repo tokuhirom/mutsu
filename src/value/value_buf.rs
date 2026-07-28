@@ -80,14 +80,24 @@ fn elem_type(class_name: &str) -> (u8, bool) {
 fn elem_to_u64(v: &Value) -> u64 {
     match v.view() {
         ValueView::Int(i) => i as u64,
-        ValueView::Num(f) => f as i64 as u64,
+        // `to_int` saturates a `BigInt` at `i64::MAX`, which would turn a
+        // legitimate `uint64` element into `0x7FFF_FFFF_FFFF_FFFF`; take the
+        // full-range conversion here and let it fall through only for a value
+        // that does not fit either way.
         ValueView::BigInt(n) => {
             use num_traits::ToPrimitive;
             n.as_ref()
                 .to_u64()
                 .unwrap_or_else(|| n.as_ref().to_i64().unwrap_or(0) as u64)
         }
-        _ => 0,
+        // Everything else goes through the general numeric coercion: elements
+        // do not always arrive as bare `Int`s. `Blob.allocate(10, <1 2 3>)` and
+        // `$buf.append(array[int].new: <7 1 3>)` hand over `IntStr` allomorphs,
+        // and a `:=`-bound element arrives as a `ContainerRef`. The boxed
+        // representation stored those as-is and converted lazily on read, so
+        // encoding at write time has to do the same conversion or they silently
+        // become zeros (`roast/S32-container/buf.t` 3/14/16).
+        _ => crate::runtime::to_int(v) as u64,
     }
 }
 
@@ -547,6 +557,15 @@ mod tests {
         let elems = buf_elems(&attrs_of(&b)).expect("elems");
         assert_eq!(elems[0].to_string_value(), "18446744073709551615");
         assert_eq!(elem_hex(&elems[0], 8), "FFFFFFFFFFFFFFFF");
+    }
+
+    /// Elements do not always arrive as bare `Int`s — `Blob.allocate(10, <1 2 3>)`
+    /// hands over `IntStr` allomorphs. The boxed representation stored them
+    /// as-is and converted on read; encoding at write time has to convert too.
+    #[test]
+    fn non_int_elements_are_coerced_not_zeroed() {
+        let b = buf_of(vec![Value::str("7".to_string()), Value::num(13.9)]);
+        assert_eq!(buf_bytes(&attrs_of(&b)), Some(vec![7, 13]));
     }
 
     #[test]
