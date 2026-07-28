@@ -32,6 +32,21 @@ a bogus baseline that wastes a session.
 
 ## Status: **9/9 — raku parity on every file** (2026-07-28)
 
+**Update 2026-07-29: mutsu opens a real MariaDB connection.** These nine files
+only ever *load* the mysql driver; running it against a server took eight more
+NativeCall/dispatch fixes
+([one](../../news/2026-07/nativecall-cglobal-and-native-methods.md),
+[two](../../news/2026-07/cstruct-handles-carry-their-registered-name.md)).
+`DBDish::mysql.new.connect(…)` returns a `DBDish::mysql::Connection` and
+`.prepare` returns a real `StatementHandle`. Two things remain before a query
+runs, both recorded with the exact failing line:
+[`self-not-restored-after-a-private-method-chain.md`](self-not-restored-after-a-private-method-chain.md)
+(`execute` reads `$!stmt` with the wrong invocant) and
+[`require-loaded-module-loses-use-imports.md`](require-loaded-module-loses-use-imports.md)
+(`DBIish.connect(…)`'s own front door). `DBDish::Pg` shares
+`DBDish::StatementHandle`, so it will hit the first one at the same line —
+fixing it is the shortest path to Postgres.
+
 The three fixes that closed the last file are recorded in
 [`news/2026-07/buf-repr-body-and-native-storage.md`](../../news/2026-07/buf-repr-body-and-native-storage.md),
 [`ternary-then-branch-enum-value.md`](../../news/2026-07/ternary-then-branch-enum-value.md)
