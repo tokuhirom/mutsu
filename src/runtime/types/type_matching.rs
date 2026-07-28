@@ -16,6 +16,77 @@ impl Interpreter {
         Value::package(Symbol::intern(trimmed))
     }
 
+    /// The class name behind an instance value, looking through a `but`/role
+    /// mixin wrapper. `None` for anything that is not an instance.
+    fn instance_class_name_of(value: &Value) -> Option<String> {
+        match value.view() {
+            ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+            ValueView::Mixin(inner, _) => Self::instance_class_name_of(inner.as_ref()),
+            _ => None,
+        }
+    }
+
+    /// Does `class_name` (or anything in its MRO) compose `base[args...]` with
+    /// type arguments that satisfy `constraint_args`?
+    ///
+    /// `class_composed_roles` stores the *parameterised* spelling of each
+    /// composed role (`R[Int]`), which is what makes `$obj ~~ R[Int]` decidable
+    /// for a real instance — the role's type arguments are not recorded anywhere
+    /// on the instance itself.
+    pub(in crate::runtime) fn class_composes_parameterised_role(
+        &mut self,
+        class_name: &str,
+        constraint_base: &str,
+        expected: &[Value],
+    ) -> bool {
+        let mut candidates: Vec<String> = self
+            .class_mro(class_name)
+            .iter()
+            .map(|s| s.resolve())
+            .collect();
+        if !candidates.iter().any(|c| c == class_name) {
+            candidates.insert(0, class_name.to_string());
+        }
+        let composed: Vec<String> = candidates
+            .iter()
+            .filter_map(|c| self.registry().class_composed_roles.get(c).cloned())
+            .flatten()
+            .collect();
+        if composed.is_empty() {
+            return false;
+        }
+        for role in composed {
+            let Some((role_base, role_args)) = Self::parse_parametric_type_name(&role) else {
+                continue;
+            };
+            let actual: Vec<Value> = role_args
+                .iter()
+                .map(|arg| self.type_arg_value_from_name(arg))
+                .collect();
+            // Either the composed role IS the constrained one, or it inherits
+            // from it and carries its arguments through (`role S[::T] does R[T]`).
+            let actual = if role_base == constraint_base {
+                Some(actual)
+            } else {
+                self.role_parent_args_for(&role_base, &actual, constraint_base)
+            };
+            if let Some(actual) = actual
+                && actual.len() == expected.len()
+                && actual.iter().zip(expected.iter()).all(|(a, e)| {
+                    // A *value* type parameter (`role R[$x]`, composed as
+                    // `R[42]`) has no type object to subtype-check: the
+                    // registry only kept its spelling, so compare spellings.
+                    self.parametric_arg_subtypes(a, e)
+                        || super::registration_class::type_value_name(a)
+                            == super::registration_class::type_value_name(e)
+                })
+            {
+                return true;
+            }
+        }
+        false
+    }
+
     pub(in crate::runtime) fn normalize_type_capture_value(&self, value: Value) -> Value {
         if let ValueView::Str(name) = value.view()
             && self.is_resolvable_type(&name)
@@ -889,6 +960,23 @@ impl Interpreter {
                 }
             }
         }
+        // An instance of a class that composed the parameterisation directly
+        // (`class W does R[Int]`, or the punned class `R[Int]` built for
+        // `R[Int].new`) records `R[Int]` in `class_composed_roles`, not in the
+        // `__mutsu_role_typeargs__` markers the mixin branch above reads.
+        if let Some((constraint_base, constraint_args)) =
+            Self::parse_parametric_type_name(constraint)
+            && self.is_role(&constraint_base)
+            && let Some(class_name) = Self::instance_class_name_of(value)
+        {
+            let expected: Vec<Value> = constraint_args
+                .iter()
+                .map(|arg| self.type_arg_value_from_name(arg))
+                .collect();
+            if self.class_composes_parameterised_role(&class_name, &constraint_base, &expected) {
+                return true;
+            }
+        }
         if let ValueView::ParametricRole {
             base_name,
             type_args,
@@ -1140,27 +1228,29 @@ impl Interpreter {
             {
                 return true;
             }
-            // Check composed roles for the instance's class (and its MRO)
-            if self.registry().roles.contains_key(constraint) {
+            // Check composed roles for the instance's class (and its MRO),
+            // transitively through each role's own parents. The walk is not
+            // gated on `constraint` being a *user-declared* role: a role may
+            // compose a BUILT-IN one (`role R does Real`), and `Real` is not in
+            // `registry().roles`, so gating there made every instance of a class
+            // composing such a role fail `~~ Real`. For the same reason parents
+            // are pushed unconditionally — mirroring the `.does` introspection
+            // walk in `methods_classhow_dispatch`.
+            {
                 let mro = self.class_mro(&class_name.resolve());
-                // Seed from the registry; the transitive walk below stays inline
-                // because its gate / match check diverge from the Package-value
-                // walk above (exact `== constraint` + `roles.contains_key` here).
                 let mut role_stack = self.registry().composed_roles_seed(&mro);
                 let mut seen_roles = HashSet::new();
                 while let Some(role_name) = role_stack.pop() {
                     if !seen_roles.insert(role_name.clone()) {
                         continue;
                     }
-                    if role_name == constraint {
+                    if Self::type_matches(constraint, &role_name) {
                         return true;
                     }
                     if let Some(rparents) = self.registry().role_parents.get(&role_name) {
                         for rp in rparents {
                             let rp_base = rp.split_once('[').map(|(b, _)| b).unwrap_or(rp.as_str());
-                            if self.registry().roles.contains_key(rp_base) {
-                                role_stack.push(rp_base.to_string());
-                            }
+                            role_stack.push(rp_base.to_string());
                         }
                     }
                 }

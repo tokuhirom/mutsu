@@ -660,6 +660,63 @@ impl Interpreter {
         }
     }
 
+    /// Materialise the class a *parameterised* role puns to, e.g. `R[Int]` for
+    /// `R[Int].new`. Unlike `ensure_role_punned_to_class` — which copies a
+    /// non-parametric role's attributes and methods into a class shell — this
+    /// runs the real composition path (`register_class_decl` with a single
+    /// `does R[Int]` parent), because only composition binds the type
+    /// parameters, evaluates the role body's deferred statements against them
+    /// and pulls the role's `BUILD` into the class.
+    ///
+    /// Returns the name of the punned class, or `None` when `type_args` match
+    /// no candidate of the role (the caller then falls back to its own path).
+    pub(crate) fn ensure_parametric_role_pun_class(
+        &mut self,
+        base_name: &str,
+        type_args: &[Value],
+    ) -> Option<String> {
+        if type_args.is_empty() {
+            return None;
+        }
+        let pun_name = format!(
+            "{}[{}]",
+            base_name,
+            type_args
+                .iter()
+                .map(super::registration_class::type_value_name)
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        if self.registry().classes.contains_key(&pun_name) {
+            return Some(pun_name);
+        }
+        // Only pun what actually resolves to a role candidate; anything else
+        // (an unknown name, a parametric *class*) keeps its existing handling.
+        let candidate = self.resolve_role_candidate(&pun_name).ok().flatten();
+        let (role, ..) = candidate?;
+        if role.is_stub_role {
+            return None;
+        }
+        let language_version = self
+            .type_metadata
+            .get(base_name)
+            .and_then(|m| m.get("language-revision"))
+            .map(|v| format!("6.{}", v.to_string_value()))
+            .unwrap_or_else(crate::parser::current_language_version);
+        let parents = [pun_name.clone()];
+        let modifiers = super::registration_class::ClassDeclModifiers {
+            class_is_rw: false,
+            is_hidden: false,
+            is_lexical: false,
+            hidden_parents: &[],
+            does_parents: &parents,
+            language_version: &language_version,
+        };
+        self.register_class_decl(&pun_name, &parents, modifiers, &[])
+            .ok()?;
+        Some(pun_name)
+    }
+
     pub(crate) fn ensure_role_punned_to_class(&mut self, role_name: &str) {
         if self.registry().classes.contains_key(role_name) {
             return;

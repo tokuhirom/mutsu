@@ -598,7 +598,43 @@ impl Interpreter {
                 ValueView::Instance { class_name, .. } => Some(class_name),
                 _ => None,
             };
-            let result = self.call_method_with_values(delegate, target_method, args)?;
+            // An `@`/`%` attribute delegate is a *value*, so a mutating target
+            // method (`ASSIGN-POS`, `push`, `ASSIGN-KEY`, ...) would update a
+            // copy and the write would vanish — `handles <AT-POS ASSIGN-POS>`
+            // only ever appeared to work through the punned-role mixin path.
+            // Bind the delegate to a temp variable and dispatch through the mut
+            // path (what `call_method_mut_with_values` needs to write back), then
+            // fold the updated container into the attribute map the caller
+            // installs. Mirrors the mut dispatcher's own delegation arm.
+            let container_temp = match delegate.view() {
+                _ if is_method_based => None,
+                ValueView::Array(..) => Some("@__mutsu_delegation_tmp__"),
+                ValueView::Hash(_) => Some("%__mutsu_delegation_tmp__"),
+                _ => None,
+            };
+            let result = if let Some(temp_var) = container_temp {
+                // The temp name is fixed (the mut dispatcher's delegation arm
+                // uses the same one), so save any binding a delegation further
+                // out on the stack left behind and put it back afterwards.
+                let saved_temp = self.env.get(temp_var).cloned();
+                self.env.insert(temp_var.to_string(), delegate.clone());
+                let r = self.call_method_mut_with_values(temp_var, delegate, target_method, args);
+                let updated = self.env.get(temp_var).cloned();
+                match saved_temp {
+                    Some(prev) => self.env.insert(temp_var.to_string(), prev),
+                    None => self.env.remove(temp_var),
+                };
+                let r = r?;
+                if let Some(updated) = updated {
+                    self.skip_pseudo_method_native = saved_skip_pseudo;
+                    let mut attrs = attributes;
+                    attrs.insert(attr_key.to_string(), updated);
+                    return Ok((r, attrs));
+                }
+                r
+            } else {
+                self.call_method_with_values(delegate, target_method, args)?
+            };
             // Restore the saved skip_pseudo flag so the outer caller is unaffected.
             self.skip_pseudo_method_native = saved_skip_pseudo;
             // For Instance delegates, check if the delegate was mutated and update

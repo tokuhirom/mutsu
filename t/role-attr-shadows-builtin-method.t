@@ -11,7 +11,10 @@ role MyRat[::NuT = Int, ::DeT = Int] does Real {
     method nude { self.numerator, self.denominator }
 }
 
-my $r = MyRat[Int,Int].new(3, 10);
+# `MyRat` declares no `new`, so the punned parameterisation gets Mu's default
+# constructor — named arguments only, exactly as for a class (the builtin
+# `Rational` used below does declare `new($nu, $de)`, hence the positional call).
+my $r = MyRat[Int,Int].new(numerator => 3, denominator => 10);
 is $r.numerator, 3, 'role instance attr numerator wins over builtin';
 is $r.denominator, 10, 'role instance attr denominator wins over builtin';
 is-deeply $r.nude.List, (3, 10), 'user nude method wins over builtin';
