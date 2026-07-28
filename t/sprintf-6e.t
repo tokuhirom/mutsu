@@ -5,12 +5,14 @@ use Test;
 #  - the sign is emitted before the radix prefix (`-0x100`, not `0x-100`);
 #  - `+`/space flags do not apply to radix conversions (%b/%o/%x);
 #  - `#` forces a trailing decimal point on %e/%f even at precision 0;
-#  - the `0` flag zero-pads strings, and beats `-` on float specs.
+#  - the `0` flag zero-pads strings, and beats `-` on float specs;
+#  - `%G` uppercases the special values (`INF`/`NAN`), while `%g` and the
+#    `%e`/`%E`/`%f` specs keep the `Inf`/`NaN` casing.
 # The 6.d behavior is pinned by the whitelisted roast/6.d/S32-str/sprintf-*.t
 # suite (the language version is lexical to the whole file, so 6.d cases cannot
 # live here).
 
-plan 34;
+plan 45;
 
 # sign before radix prefix (# with negatives)
 is sprintf("%#x", -256), "-0x100", '%#x negative: sign before 0x';
@@ -63,3 +65,19 @@ is sprintf("%-012.2e", 0),   "00000.00e+00", '%-012.2e: 0 beats - on scientific'
 # - still beats 0 for integer/string specs
 is sprintf("%-08d", 42), "42      ", '%-08d: - beats 0 for integers';
 is sprintf("%-08b", 42), "101010  ", '%-08b: - beats 0 for radix';
+
+# %G uppercases Inf/NaN; %g and the other float specs do not
+is sprintf("%g", Inf),   "Inf",  '%g keeps Inf casing';
+is sprintf("%G", Inf),   "INF",  '%G uppercases Inf';
+is sprintf("%g", -Inf),  "-Inf", '%g keeps -Inf casing';
+is sprintf("%G", -Inf),  "-INF", '%G uppercases -Inf';
+is sprintf("%G", NaN),   "NAN",  '%G uppercases NaN';
+is sprintf("% 6G", Inf), "   INF", '% 6G pads the uppercased Inf';
+is sprintf("%E", Inf),   "Inf",  '%E keeps Inf casing';
+is sprintf("%E", NaN),   "NaN",  '%E keeps NaN casing';
+
+# The language revision is inherited by EVAL'd code, and neither an EVAL nor a
+# module load may leave the unit compiled under a different revision.
+is EVAL('sprintf("%#x", -256)'), "-0x100", 'EVAL inherits the 6.e revision';
+is sprintf("%#x", -256), "-0x100", 'the 6.e revision survives an EVAL';
+is sprintf("%G", Inf),   "INF",   '%G still uppercases after an EVAL';

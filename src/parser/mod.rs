@@ -476,6 +476,13 @@ pub(crate) fn parse_program_with_operators_and_user_subs(
     stmt::set_eval_operator_assoc_preseed(operator_assoc.clone());
     stmt::set_eval_imported_function_preseed(imported_function_names.to_vec());
     stmt::set_eval_user_sub_preseed(user_sub_names.to_vec());
+    // EVAL'd code is compiled under the *calling* unit's language revision, not
+    // the 6.d default a fresh compilation unit gets (rakudo: `use v6.e.PREVIEW;
+    // EVAL 'sprintf("%#x", -256)'` is `-0x100`). Seed the nested parse with it and
+    // put ours back afterwards, so a `use vX` inside the EVAL'd string stays
+    // lexical to that string.
+    let saved_language_version = stmt::simple::current_language_version();
+    stmt::set_eval_language_version_preseed(Some(saved_language_version.clone()));
     // Every caller of this entry point evaluates the parsed unit for its value
     // (EVAL / EVAL :check / throws-like code strings), so the final statement
     // is a return position, not sink context.
@@ -485,6 +492,8 @@ pub(crate) fn parse_program_with_operators_and_user_subs(
     stmt::set_eval_operator_assoc_preseed(std::collections::HashMap::new());
     stmt::set_eval_imported_function_preseed(Vec::new());
     stmt::set_eval_user_sub_preseed(Vec::new());
+    stmt::set_eval_language_version_preseed(None);
+    stmt::simple::set_current_language_version(&saved_language_version);
     result
 }
 
@@ -501,11 +510,15 @@ pub(crate) fn parse_program_partial_with_operators(
     stmt::set_eval_operator_assoc_preseed(operator_assoc.clone());
     stmt::set_eval_imported_function_preseed(imported_function_names.to_vec());
     stmt::set_eval_user_sub_preseed(Vec::new());
+    // Same revision inheritance as `parse_program_with_operators_and_user_subs`:
+    // this scans EVAL'd code, so it compiles under the caller's language version.
+    stmt::set_eval_language_version_preseed(Some(stmt::simple::current_language_version()));
     let result = parse_program_partial(input);
     stmt::set_eval_operator_preseed(Vec::new());
     stmt::set_eval_operator_assoc_preseed(std::collections::HashMap::new());
     stmt::set_eval_imported_function_preseed(Vec::new());
     stmt::set_eval_user_sub_preseed(Vec::new());
+    stmt::set_eval_language_version_preseed(None);
     result
 }
 
@@ -519,9 +532,16 @@ pub(crate) fn parse_program_partial(input: &str) -> (Vec<Stmt>, Option<String>) 
         primary::reset_primary_memo();
         stmt::reset_statement_memo();
     }
-    stmt::reset_user_subs();
     // This is a best-effort nested sub-parse (module export scan / EVAL / pseudo
-    // package). It must not leave `ORIGINAL_SOURCE` pointing at `input` — once
+    // package). It must not leak the scanned source's `use vX` pragma into the
+    // caller: `reset_user_subs` resets the language version to the 6.d default and
+    // the nested parse then adopts whatever pragma `input` declares, so without a
+    // restore a `use SomeModule` in a `use v6.e.PREVIEW` program silently dropped
+    // the caller back to 6.d for every later version-gated behavior (sprintf flag
+    // semantics, submethod dispatch, ...). Snapshot before the reset.
+    let saved_language_version = stmt::simple::current_language_version();
+    stmt::reset_user_subs();
+    // It must not leave `ORIGINAL_SOURCE` pointing at `input` either — once
     // `input` (often a temporary module String) is dropped, the enclosing parse's
     // `current_line_number` would fall back to 1 for every statement. Snapshot the
     // caller's source state and restore it before returning.
@@ -540,6 +560,7 @@ pub(crate) fn parse_program_partial(input: &str) -> (Vec<Stmt>, Option<String>) 
     };
     let (stmts, _) = stmt::stmt_list_partial(source);
     primary::restore_source_state(saved_source_state);
+    stmt::simple::set_current_language_version(&saved_language_version);
     (stmts, finish_content)
 }
 

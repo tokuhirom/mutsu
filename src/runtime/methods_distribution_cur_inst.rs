@@ -352,11 +352,17 @@ impl Interpreter {
         if source_path.exists() {
             let saved = self.precomp_enabled;
             self.precomp_enabled = false;
+            // The module's own `use vX` pragma is lexical to it; restore ours
+            // once its mainline has run (same contract as `load_module`).
+            let saved_language_version = crate::parser::current_language_version();
             let parsed = self.parse_module_source(&short_name, &source_path);
             self.precomp_enabled = saved;
-            if let Ok((stmts, _)) = parsed {
-                self.run_block(&stmts)?;
-            }
+            let ran = match parsed {
+                Ok((stmts, _)) => self.run_block(&stmts).map(|_| ()),
+                Err(_) => Ok(()),
+            };
+            crate::parser::set_current_language_version(&saved_language_version);
+            ran?;
         }
         let mut new_symbols: Vec<String> = Vec::new();
         for k in self.registry().classes.keys() {

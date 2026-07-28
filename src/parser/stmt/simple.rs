@@ -71,6 +71,7 @@ pub(in crate::parser) use registry::{
     lookup_custom_infix_precedence, lookup_postfix_precedence, lookup_prefix_precedence,
     lookup_user_infix_assoc, register_op_precedence, register_user_infix_assoc, register_user_sub,
     register_user_test_assertion_sub, reset_user_subs, resolve_op_precedence,
+    set_eval_language_version_preseed,
 };
 pub(in crate::parser) use user_ops::{
     is_circumfix_close_delimiter, is_user_declared_prefix_sub, is_user_declared_value_term,
@@ -158,6 +159,11 @@ thread_local! {
     /// `first().uc` when a user sub `first` shadows the `first` listop).
     static EVAL_USER_SUB_PRESEED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
     static CURRENT_LANGUAGE_VERSION: RefCell<String> = RefCell::new("6.d".to_string());
+    /// Language version the EVAL'd unit starts at, instead of the 6.d default.
+    /// EVAL inherits the caller's language revision in rakudo (`use v6.e.PREVIEW;
+    /// EVAL 'sprintf("%#x", -256)'` yields `-0x100`), and a `use vX` inside the
+    /// EVAL'd string still overrides it.
+    static EVAL_LANGUAGE_VERSION_PRESEED: RefCell<Option<String>> = const { RefCell::new(None) };
     /// `use attributes :D/:U/:_` pragma — tracks the smiley to apply to unsmileyed attribute types.
     /// Empty string means no pragma active.
     static ATTRIBUTES_PRAGMA: RefCell<String> = const { RefCell::new(String::new()) };

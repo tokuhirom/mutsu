@@ -675,6 +675,10 @@ impl Interpreter {
                         // Load the module, using precompilation cache when available.
                         // Explicitly constructed FileSystem repositories default to
                         // precomp-disabled behavior.
+                        // The compunit's own `use vX` pragma is lexical to it;
+                        // restore ours once its mainline has run (same contract
+                        // as `load_module`).
+                        let saved_language_version = crate::parser::current_language_version();
                         let (stmts, precompiled) = if repo_precomp_enabled {
                             self.parse_module_source(&short_name_str, &source_path)?
                         } else {
@@ -712,7 +716,10 @@ impl Interpreter {
                             self.set_current_package("GLOBAL".to_string());
                             let result = self.run_block(&stmts);
                             self.set_current_package(saved_package);
+                            crate::parser::set_current_language_version(&saved_language_version);
                             result?;
+                        } else {
+                            crate::parser::set_current_language_version(&saved_language_version);
                         }
                         self.loaded_modules.insert(short_name_str.clone());
                         let mut attrs = HashMap::new();

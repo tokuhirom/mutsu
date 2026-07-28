@@ -178,6 +178,20 @@ pub(crate) fn reset_user_subs() {
         // match rakudo's pragma-less default, which is what roast tests assume.
         *v.borrow_mut() = "6.d".to_string();
     });
+    // ... unless this is an EVAL, which inherits the calling unit's revision.
+    EVAL_LANGUAGE_VERSION_PRESEED.with(|preseed| {
+        if let Some(version) = preseed.borrow().as_deref() {
+            set_current_language_version(version);
+        }
+    });
+}
+
+/// Seed the language version an EVAL's nested parse starts at. `None` restores
+/// the plain 6.d default used for a fresh compilation unit.
+pub(crate) fn set_eval_language_version_preseed(version: Option<String>) {
+    EVAL_LANGUAGE_VERSION_PRESEED.with(|preseed| {
+        *preseed.borrow_mut() = version;
+    });
 }
 
 pub(crate) fn set_current_language_version(version: &str) {

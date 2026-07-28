@@ -14,10 +14,12 @@ is sprintf("%x", 255), "ff", 'hex';
 is sprintf("%o", 8), "10", 'octal';
 is sprintf("%b", 5), "101", 'binary';
 is sprintf("%e", 12345.678), "1.234568e+04", 'scientific';
+# Under 6.d (this file has no `use v6.e` pragma) `%G` keeps the `Inf` casing;
+# the 6.e uppercasing is pinned by t/sprintf-6e.t.
 is sprintf("%g", Inf), "Inf", '%g preserves Inf casing';
-is sprintf("%G", Inf), "INF", '%G uppercases Inf';
+is sprintf("%G", Inf), "Inf", '%G preserves Inf casing under 6.d';
 is sprintf("%g", -Inf), "-Inf", '%g preserves negative Inf casing';
-is sprintf("%G", -Inf), "-INF", '%G uppercases negative Inf';
+is sprintf("%G", -Inf), "-Inf", '%G preserves negative Inf casing under 6.d';
 is sprintf("%-10s|", "hi"), "hi        |", 'left-justify';
 is sprintf("%2\$s %1\$s", "a", "b"), "b a", 'positional args';
 is sprintf("%d", [42]), "42", 'single-array flatten, one elem';

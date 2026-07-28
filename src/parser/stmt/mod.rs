@@ -91,6 +91,10 @@ pub(super) fn set_eval_user_sub_preseed(names: Vec<String>) {
     simple::set_eval_user_sub_preseed(names);
 }
 
+pub(super) fn set_eval_language_version_preseed(version: Option<String>) {
+    simple::set_eval_language_version_preseed(version);
+}
+
 pub(super) fn statement_memo_stats() -> (usize, usize, usize) {
     STMT_MEMO.stats()
 }
