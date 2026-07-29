@@ -151,6 +151,53 @@ impl Interpreter {
 }
 
 impl Interpreter {
+    /// Resolve a NativeCallSpec's `ret_struct` to the name its class is
+    /// actually registered under, at CALL time. Registration-time resolution
+    /// (`registered_native_class_name`) covers most declarations, but a native
+    /// sub declared INSIDE the class body it returns —
+    /// `sub PQconnectdbParams(... --> PGconn)` inside `class PGconn` — runs
+    /// its registration before the class exists, leaving the short name; by
+    /// call time the class is registered package-qualified, and an instance
+    /// tagged with the short name cannot dispatch the class's ordinary Raku
+    /// methods (`PGconn.escapeBytea`). Falls back to a UNIQUE `::Short`
+    /// suffix match among registered classes; an ambiguous short name is left
+    /// alone.
+    pub(crate) fn resolve_native_ret_struct(
+        &mut self,
+        spec: &mut crate::runtime::nativecall::NativeCallSpec,
+    ) {
+        let Some(name) = spec.ret_struct.clone() else {
+            return;
+        };
+        if self.registry().classes.contains_key(&name) {
+            return;
+        }
+        if let Some(ValueView::Package(sym)) = self.env.get(&name).map(Value::view) {
+            let resolved = sym.resolve().to_string();
+            if resolved != name && self.registry().classes.contains_key(&resolved) {
+                spec.ret_struct = Some(resolved);
+                return;
+            }
+        }
+        let suffix = format!("::{name}");
+        let found = {
+            let registry = self.registry();
+            let mut found: Option<String> = None;
+            for k in registry.classes.keys() {
+                if k.ends_with(suffix.as_str()) {
+                    if found.is_some() {
+                        return;
+                    }
+                    found = Some(k.clone());
+                }
+            }
+            found
+        };
+        if let Some(f) = found {
+            spec.ret_struct = Some(f);
+        }
+    }
+
     /// Route a resolved `is native(...)` **method** to NativeCall, with the
     /// invocant marshalled as the first C argument.
     ///
@@ -176,6 +223,8 @@ impl Interpreter {
                     .get(&Self::native_method_key(short, method))
             })?
             .clone();
+        let mut spec = spec;
+        self.resolve_native_ret_struct(&mut spec);
         let mut call_args = Vec::with_capacity(args.len() + 1);
         call_args.push(invocant.clone());
         call_args.extend(args.iter().cloned());

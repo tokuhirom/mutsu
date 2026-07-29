@@ -234,6 +234,19 @@ pub(crate) fn load_library_cached(
 
 #[cfg(feature = "libffi")]
 pub fn call_native(spec: &NativeCallSpec, args: &[Value]) -> Result<Value, RuntimeError> {
+    call_native_with_out_args(spec, args).map(|(v, _)| v)
+}
+
+/// [`call_native`], additionally returning the decoded values of `is rw`
+/// numeric out-parameters as `(arg index, value)` pairs. A caller's variable
+/// that arrives as a shared cell is already written in place; the returned
+/// pairs let an interpreter-side call path also write back a plain `VarRef`
+/// argument (a local variable passed by name), which this layer cannot reach.
+#[cfg(feature = "libffi")]
+pub fn call_native_with_out_args(
+    spec: &NativeCallSpec,
+    args: &[Value],
+) -> Result<(Value, Vec<(usize, Value)>), RuntimeError> {
     use libffi::middle::{Arg, Cif, CodePtr, Type};
 
     if args.len() != spec.params.len() {
@@ -271,12 +284,37 @@ pub fn call_native(spec: &NativeCallSpec, args: &[Value]) -> Result<Value, Runti
     // into the caller's Raku array after the call (an out-array fill).
     let mut carray_writebacks: Vec<usize> = Vec::new();
 
+    // Arg indices holding an `is rw` numeric out-slot whose value must be
+    // decoded and written back into the caller's variable after the call.
+    let mut num_writebacks: Vec<usize> = Vec::new();
+
     for (i, (ps, v)) in spec.params.iter().zip(args.iter()).enumerate() {
         let (ty, owner) = if ps.is_rw && ps.ct == CType::Pointer {
             // `Pointer is rw`: pass `void**` — a pointer to a slot holding the
             // current address; C writes the new pointer into the slot.
             let slot = Box::new(pointer_address(v));
             writebacks.push(i);
+            (Type::pointer(), ArgOwner::new_out_ptr(slot))
+        } else if ps.is_rw && numeric_out_width(ps.ct).is_some() {
+            // An `is rw` numeric parameter is an out-parameter: C receives a
+            // `T*` and writes the result through it (libpq's
+            // `PQescapeByteaConn(..., size_t *to_length)` — declared
+            // `size_t $to_length is rw`). Passing the value directly hands C a
+            // garbage pointer and it writes into the weeds (a segfault, when
+            // lucky). The slot is seeded with the current value; the result is
+            // decoded and written back into the caller's variable below.
+            let resolved = resolve_arg(v);
+            let seed = match ps.ct {
+                CType::F32 => (crate::runtime::utils::to_float_value(&resolved).unwrap_or(0.0)
+                    as f32)
+                    .to_bits() as u64,
+                CType::F64 => crate::runtime::utils::to_float_value(&resolved)
+                    .unwrap_or(0.0)
+                    .to_bits(),
+                _ => crate::runtime::to_int(&resolved) as u64,
+            };
+            let slot = Box::new(seed as usize);
+            num_writebacks.push(i);
             (Type::pointer(), ArgOwner::new_out_ptr(slot))
         } else {
             let (ty, owner) = marshal_arg(ps, v).map_err(|msg| {
@@ -364,6 +402,22 @@ pub fn call_native(spec: &NativeCallSpec, args: &[Value]) -> Result<Value, Runti
         }
     }
 
+    // Decode each `is rw` numeric out-slot (C wrote through the `T*`) and
+    // write the value back into the caller's variable through its shared
+    // container cell; also collect the values so an interpreter-side caller
+    // can write back a plain `VarRef` argument this layer cannot reach.
+    let mut out_args: Vec<(usize, Value)> = Vec::with_capacity(num_writebacks.len());
+    for idx in num_writebacks {
+        if let ArgOwner::OutPtr { slot, .. } = &owners[idx] {
+            let raw = **slot as u64;
+            let width = numeric_out_width(spec.params[idx].ct).unwrap_or(8);
+            let bytes = raw.to_ne_bytes();
+            let val = decode_carray_elem(spec.params[idx].ct, &bytes[..width]);
+            write_scalar_back(&args[idx], val.clone());
+            out_args.push((idx, val));
+        }
+    }
+
     // Copy each numeric CArray's (possibly callee-modified) C buffer back into
     // the caller's Raku array, element by element, through the shared backing
     // node so the mutation is visible at the call site.
@@ -387,7 +441,7 @@ pub fn call_native(spec: &NativeCallSpec, args: &[Value]) -> Result<Value, Runti
     // own storage (ADR-0015 P2). This is the sync point that used to be needed
     // and the one that could not exist for a pointer C merely retained.
 
-    Ok(result)
+    Ok((result, out_args))
 }
 
 /// Build a `Pointer` object holding the given C address. Used to marshal a
@@ -514,6 +568,37 @@ pub(crate) fn value_c_address(v: &Value) -> usize {
 #[cfg(feature = "libffi")]
 fn pointer_address(v: &Value) -> usize {
     value_c_address(v)
+}
+
+/// The byte width C writes through an `is rw` numeric out-parameter of the
+/// given type, or `None` for a non-numeric type (which is not an out-slot).
+#[cfg(feature = "libffi")]
+fn numeric_out_width(ct: CType) -> Option<usize> {
+    match ct {
+        CType::I8 | CType::U8 => Some(1),
+        CType::I16 | CType::U16 => Some(2),
+        CType::I32 | CType::U32 | CType::F32 => Some(4),
+        CType::I64 | CType::U64 | CType::F64 => Some(8),
+        CType::Void | CType::Str | CType::Pointer | CType::CArray | CType::Buf => None,
+    }
+}
+
+/// Write an `is rw` numeric out-parameter's result back into the caller's
+/// variable, through its shared `ContainerRef` cell (a `$`-variable argument
+/// arrives wrapped in one). A non-container argument (a literal) has nowhere
+/// to write back to and is silently skipped, like Rakudo.
+#[cfg(feature = "libffi")]
+fn write_scalar_back(v: &Value, new_val: Value) {
+    match v.view() {
+        ValueView::ContainerRef(cell) => {
+            if let Ok(mut g) = cell.lock() {
+                *g = new_val;
+            }
+        }
+        ValueView::Scalar(inner) => write_scalar_back(inner, new_val),
+        ValueView::VarRef { value, .. } => write_scalar_back(value, new_val),
+        _ => {}
+    }
 }
 
 /// Write a resolved C address back into a `Pointer` object's `address`
@@ -962,6 +1047,15 @@ pub fn call_native(spec: &NativeCallSpec, _args: &[Value]) -> Result<Value, Runt
         "NativeCall is not available in this build (cannot call '{}')",
         spec.symbol
     )))
+}
+
+/// Stub used when the `libffi` feature is disabled (e.g. wasm builds).
+#[cfg(not(feature = "libffi"))]
+pub fn call_native_with_out_args(
+    spec: &NativeCallSpec,
+    args: &[Value],
+) -> Result<(Value, Vec<(usize, Value)>), RuntimeError> {
+    call_native(spec, args).map(|v| (v, Vec::new()))
 }
 
 #[cfg(all(test, feature = "libffi"))]

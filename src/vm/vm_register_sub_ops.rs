@@ -437,6 +437,16 @@ impl Interpreter {
             let Some(tc) = pd.type_constraint.as_deref() else {
                 return Ok(());
             };
+            // A definedness smiley is not part of the C type: `Blob:D $dest`
+            // marshals as `Blob`. Left attached, the name missed every scalar
+            // mapping and fell through to the opaque-CStruct branch — the Buf
+            // was passed as an address-less handle, i.e. NULL, and the callee
+            // (NativeHelpers::Blob's `memcpy(Blob:D $dest, ...)`) wrote to it.
+            let tc = tc
+                .strip_suffix(":D")
+                .or_else(|| tc.strip_suffix(":U"))
+                .or_else(|| tc.strip_suffix(":_"))
+                .unwrap_or(tc);
             // `constant my_bool = int8;` — follow the alias to the type it names.
             let resolved_tc = self.resolve_native_type_alias(tc);
             let tc = resolved_tc.as_str();

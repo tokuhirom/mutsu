@@ -129,19 +129,10 @@ fn typed_default_expr(type_name: &str) -> Expr {
     let base = strip_type_smiley_suffix(type_name);
     if base == "Mu" {
         Expr::BareWord("Mu".to_string())
-    } else if base == "int"
-        || base == "int8"
-        || base == "int16"
-        || base == "int32"
-        || base == "int64"
-        || base == "uint"
-        || base == "uint8"
-        || base == "uint16"
-        || base == "uint32"
-        || base == "uint64"
-        || base == "atomicint"
-        || base == "byte"
-    {
+    } else if crate::runtime::native_types::is_native_int_type(base) {
+        // Includes the C-width aliases (`ulong`, `size_t`, …): an
+        // uninitialized `my size_t $sz;` reads as 0, not Nil (DBDish::Pg's
+        // `escapeBytea` declares its out-length slot exactly this way).
         Expr::Literal(Value::int(0))
     } else if base == "num" || base == "num32" || base == "num64" {
         Expr::Literal(Value::num(0.0))

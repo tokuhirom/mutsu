@@ -461,6 +461,26 @@ pub(crate) fn buf_elem_width(class_name: &str) -> usize {
     }
 }
 
+/// The element type name a `Buf`/`Blob`-shaped class answers from `.of`:
+/// the bracket parameter when spelled (`Blob[int8]` → `int8`), else the
+/// width/signedness the short name encodes (`buf16` → `uint16`), defaulting
+/// to `uint8` — matching Rakudo (`Buf.of` is `(uint8)`).
+pub(crate) fn buf_elem_type_name(class_name: &str) -> String {
+    if let Some(inner) = class_name
+        .split_once('[')
+        .and_then(|(_, rest)| rest.strip_suffix(']'))
+    {
+        return inner.to_string();
+    }
+    let (width, signed) = elem_type(class_name);
+    let bits = width as usize * 8;
+    if signed {
+        format!("int{bits}")
+    } else {
+        format!("uint{bits}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

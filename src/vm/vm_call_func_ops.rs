@@ -229,7 +229,8 @@ impl Interpreter {
                     .rsplit_once("::")
                     .and_then(|(_, short)| self.native_call_specs.get(short).cloned())
             });
-            if let Some(spec) = spec {
+            if let Some(mut spec) = spec {
+                self.resolve_native_ret_struct(&mut spec);
                 let arity_usize = arity as usize;
                 if self.stack.len() < arity_usize {
                     return Err(RuntimeError::new(format!(
@@ -241,7 +242,27 @@ impl Interpreter {
                 let mut args: Vec<Value> = self.stack.drain(start..).collect();
                 // Drop the synthetic callsite-line marker the compiler may append.
                 args.retain(|a| !Self::is_callsite_line_marker(a));
-                let result = crate::runtime::nativecall::call_native(&spec, &args)?;
+                let (result, out_args) =
+                    crate::runtime::nativecall::call_native_with_out_args(&spec, &args)?;
+                // An `is rw` numeric out-parameter whose argument is a plain
+                // variable arrives as a `VarRef`; the marshalling layer cannot
+                // reach the caller's slot, so write it back here by name —
+                // `PQunescapeBytea($v, my size_t $elems)` must leave the
+                // written length in `$elems`.
+                if !out_args.is_empty() {
+                    let mut wrote = false;
+                    for (idx, val) in out_args {
+                        if let crate::value::ValueView::VarRef { name, .. } = args[idx].view() {
+                            let n = name.resolve().to_string();
+                            self.env_mut().insert(n.clone(), val);
+                            self.pending_rw_writeback_sources.push(n);
+                            wrote = true;
+                        }
+                    }
+                    if wrote {
+                        self.apply_pending_rw_writeback(code);
+                    }
+                }
                 self.stack.push(result);
                 return Ok(());
             }

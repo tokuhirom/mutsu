@@ -437,7 +437,42 @@ const MU_METHODS: &[&str] = &[
 /// The method names a built-in `type_name` responds to, in `.^methods` order.
 /// Returns an empty `Vec` for types not modelled here (e.g. user classes, which
 /// are handled separately via `registry().classes`).
+/// `Buf`/`Blob` methods the native probe can't reach (slow-path or type-object
+/// constructors). `allocate` matters beyond introspection:
+/// `NativeHelpers::Blob`'s `blob-from-pointer` branches on
+/// `$type.can('allocate')` and takes a REPR-poking fallback when it answers
+/// false.
+const BUF_METHODS: &[&str] = &[
+    "allocate",
+    "new",
+    "push",
+    "pop",
+    "shift",
+    "unshift",
+    "append",
+    "prepend",
+    "splice",
+    "reallocate",
+    "subbuf",
+    "subbuf-rw",
+    "decode",
+    "elems",
+    "bytes",
+    "of",
+    "reverse",
+    "list",
+    "Blob",
+    "Buf",
+    "Bool",
+    "Str",
+    "gist",
+    "raku",
+];
+
 pub(crate) fn builtin_type_method_names(type_name: &str) -> Vec<&'static str> {
+    if crate::runtime::utils::is_buf_or_blob_class(type_name) {
+        return BUF_METHODS.to_vec();
+    }
     match type_name {
         "Str" => [STR_OWN, NUMERIC_COERCIONS, &["elems", "fmt"]].concat(),
         "Int" | "Num" | "Rat" | "Complex" => [NUMERIC_OWN, NUMERIC_COERCIONS].concat(),
@@ -466,6 +501,12 @@ pub(crate) fn builtin_type_method_names(type_name: &str) -> Vec<&'static str> {
 /// `samemark` but not `abs`, while `2` responds to `abs` but not `chars`, so the
 /// same `METHOD_UNIVERSE` yields each type's correct subset automatically.
 pub(crate) fn builtin_sample_value(type_name: &str) -> Option<Value> {
+    if crate::runtime::utils::is_buf_or_blob_class(type_name) {
+        return Some(crate::value::value_buf::make_buf(
+            Symbol::intern(type_name),
+            vec![Value::int(1)],
+        ));
+    }
     Some(match type_name {
         "Str" => Value::str_from("abc"),
         "Int" => Value::int(2),
