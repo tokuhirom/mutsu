@@ -627,6 +627,9 @@ impl Interpreter {
                             None
                         }
                     })
+                    // A file-scope `my @a` of the running routine's own module
+                    // (see `module_scope_lexicals`; keys keep the `@` sigil).
+                    .or_else(|| self.module_scope_lexical(name).cloned())
                     .unwrap_or_else(|| {
                         // An undeclared `@`-sigil variable defaults to an empty
                         // Array (raku auto-declares it as Array under `no strict`):
@@ -722,7 +725,12 @@ impl Interpreter {
                         } else {
                             None
                         }
-                    });
+                    })
+                    // A file-scope `my %h` of the module the running routine
+                    // belongs to (see `module_scope_lexicals`; the table keys
+                    // keep the `%` sigil). Last resort, after every live store —
+                    // mirrors the scalar fallback in `GetGlobal`.
+                    .or_else(|| self.module_scope_lexical(name).cloned());
                 match val {
                     // Decontainerize a top-level `ContainerRef` cell from a
                     // whole-container `:=` bind (`my %h2 := %h`); the read

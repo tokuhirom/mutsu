@@ -575,13 +575,31 @@ impl Interpreter {
     /// A CStruct *field* is spelled the same way, so `cstruct_layout` follows
     /// the alias too — `MYSQL_BIND` declares `has intptr $.length`.
     pub(crate) fn resolve_native_type_alias(&self, name: &str) -> String {
+        self.resolve_native_type_alias_for_owner(name, "")
+    }
+
+    /// [`Self::resolve_native_type_alias`] with a fallback anchor: when the
+    /// live env no longer holds the constant (the module was loaded by a frame
+    /// that has since returned — a `require` inside a method), the alias is
+    /// looked up in `owner`'s module scope (`module_scope_lexicals`, walked up
+    /// the `::` chain). `owner` is the declaration the alias was spelled in,
+    /// e.g. the CStruct class whose field is being laid out.
+    pub(crate) fn resolve_native_type_alias_for_owner(&self, name: &str, owner: &str) -> String {
         use crate::runtime::nativecall::CType;
         let mut current = name.to_string();
         for _ in 0..4 {
             if CType::from_type_name(&current).is_some() {
                 return current;
             }
-            let Some(value) = self.get_env_with_main_alias(&current) else {
+            let value = self.get_env_with_main_alias(&current).or_else(|| {
+                if owner.is_empty() {
+                    None
+                } else {
+                    self.module_scope_lexical_for_owner(owner, &current)
+                        .cloned()
+                }
+            });
+            let Some(value) = value else {
                 break;
             };
             let ValueView::Package(target) = value.view() else {

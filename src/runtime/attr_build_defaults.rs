@@ -154,6 +154,36 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Build the initial container for an `@`/`%` attribute declared with an
+    /// `is Type` container trait (`has @.a is Buf`, `has %.h is TypeConverter`).
+    /// A parameterized `Array[T]` is built directly with element-type metadata
+    /// (a `Package` built from the string name would lose its type parameter on
+    /// `.new`); any other type is produced by dispatching to its `.new`, falling
+    /// back to a plain empty container when that fails.
+    pub(crate) fn build_is_type_container(&mut self, type_name: &str, sigil: char) -> Value {
+        if let Some(inner) = type_name
+            .strip_prefix("Array[")
+            .or_else(|| type_name.strip_prefix("array["))
+            .and_then(|s| s.strip_suffix(']'))
+        {
+            let arr = Value::real_array(Vec::new());
+            return self.tag_container_metadata(
+                arr,
+                super::ContainerTypeInfo {
+                    value_type: inner.trim().to_string(),
+                    key_type: None,
+                    declared_type: Some(type_name.to_string()),
+                },
+            );
+        }
+        let type_obj = Value::package(Symbol::intern(type_name));
+        match self.call_method_with_values(type_obj, "new", vec![]) {
+            Ok(v) => v,
+            Err(_) if sigil == '@' => Value::real_array(Vec::new()),
+            Err(_) => Value::hash(std::collections::HashMap::new()),
+        }
+    }
+
     /// The value an attribute with no initializer starts life with: an empty
     /// container for `@`/`%` (carrying the declared element type / `is Type`
     /// container), a native zero for a native-typed `$`, and otherwise the
@@ -179,32 +209,7 @@ impl Interpreter {
                     .get(&(class_key.to_string(), attr_name.to_string()))
                     .cloned();
                 if let Some(type_name) = is_type {
-                    // For a parameterized container type (`is Array[Rat]`),
-                    // build the empty array directly with type metadata so
-                    // `.WHAT` / `~~ Array[Rat]` see the declared element type
-                    // (a `Package` built from the string name loses its
-                    // type parameter when `.new` is dispatched).
-                    if let Some(inner) = type_name
-                        .strip_prefix("Array[")
-                        .or_else(|| type_name.strip_prefix("array["))
-                        .and_then(|s| s.strip_suffix(']'))
-                    {
-                        let arr = Value::real_array(Vec::new());
-                        self.tag_container_metadata(
-                            arr,
-                            super::ContainerTypeInfo {
-                                value_type: inner.trim().to_string(),
-                                key_type: None,
-                                declared_type: Some(type_name.clone()),
-                            },
-                        )
-                    } else {
-                        let type_obj = Value::package(Symbol::intern(&type_name));
-                        match self.call_method_with_values(type_obj, "new", vec![]) {
-                            Ok(v) => v,
-                            Err(_) => Value::real_array(Vec::new()),
-                        }
-                    }
+                    self.build_is_type_container(&type_name, '@')
                 } else {
                     let arr = Value::real_array(Vec::new());
                     // Register element type constraint for typed array attributes
@@ -235,11 +240,7 @@ impl Interpreter {
                     .get(&(class_key.to_string(), attr_name.to_string()))
                     .cloned();
                 if let Some(type_name) = is_type {
-                    let type_obj = Value::package(Symbol::intern(&type_name));
-                    match self.call_method_with_values(type_obj, "new", vec![]) {
-                        Ok(v) => v,
-                        Err(_) => Value::hash(std::collections::HashMap::new()),
-                    }
+                    self.build_is_type_container(&type_name, '%')
                 } else {
                     let h = Value::hash(std::collections::HashMap::new());
                     // Register value type constraint for typed hash attributes

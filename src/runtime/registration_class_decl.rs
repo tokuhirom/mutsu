@@ -1040,6 +1040,8 @@ impl Interpreter {
                     // role was first parameterised — inside a `with`/`given`
                     // block, that would retopicalize the caller.
                     let saved_topic = self.env.get("_").cloned();
+                    let body_env_before: HashSet<crate::symbol::Symbol> =
+                        self.env.keys().copied().collect();
                     for stmt in &role.deferred_body_stmts {
                         let is_type_decl =
                             matches!(stmt, Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. });
@@ -1058,6 +1060,71 @@ impl Interpreter {
                         }
                         None => {
                             self.env.remove("_");
+                        }
+                    }
+                    // Persist the role body's lexicals as class-body statics of
+                    // the composing class. Leaving them only in the live env
+                    // works for the frame that ran the composition, but a later
+                    // method call from another frame (a require-in-method load
+                    // whose frame is gone) reads them as Nil — DBIish's
+                    // `LinearArray[MYSQL_BIND].new` computed its stride from a
+                    // Nil `$sol` on the second construction and calloc'd a
+                    // 0-byte bind array. Same recognition rules as the
+                    // class-body statics pass at the end of this function: a
+                    // name the body explicitly declared counts even when a
+                    // same-named lexical already leaked into the outer env.
+                    {
+                        let declared: HashSet<&str> = role
+                            .deferred_body_stmts
+                            .iter()
+                            .filter_map(|stmt| match stmt {
+                                Stmt::VarDecl {
+                                    name,
+                                    is_our: false,
+                                    is_dynamic: false,
+                                    ..
+                                } => Some(name.as_str()),
+                                _ => None,
+                            })
+                            .collect();
+                        let new_lexicals: Vec<(String, Value)> = self
+                            .env
+                            .iter()
+                            .filter_map(|(k, v)| {
+                                let bare = k.resolve();
+                                if body_env_before.contains(k) && !declared.contains(bare.as_str())
+                                {
+                                    return None;
+                                }
+                                if bare.contains("::")
+                                    || bare.starts_with("__")
+                                    || bare.starts_with('?')
+                                    || bare.starts_with('!')
+                                    || bare == "self"
+                                    || bare == "_"
+                                {
+                                    return None;
+                                }
+                                if !declared.contains(bare.as_str())
+                                    && matches!(v.view(), ValueView::Package(_))
+                                {
+                                    return None;
+                                }
+                                Some((bare, v.clone()))
+                            })
+                            .collect();
+                        if !new_lexicals.is_empty() {
+                            let marks = self
+                                .class_body_static_names
+                                .entry(name.to_string())
+                                .or_default();
+                            for (bare, _) in &new_lexicals {
+                                marks.insert(bare.clone());
+                            }
+                            let store = self.package_lexicals.entry(name.to_string()).or_default();
+                            for (bare, v) in new_lexicals {
+                                store.insert(bare, v);
+                            }
                         }
                     }
                     // Rename each newly-declared nested class to its

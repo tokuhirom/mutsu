@@ -222,11 +222,28 @@ impl Interpreter {
         // instead of an O(locals) clone. This is the lexical-slot endgame's
         // targeted-reset technique (docs/lexical-scope-slot-campaign.md §1.3).
         let env_had_before: crate::runtime::NameSet = self.env().keys().copied().collect();
+        let stack_base = self.stack.len();
+        let saved_when_matched = self.when_matched();
         self.push_loop_local_scope();
         // Track `my` declarations made directly in this branch.
         self.block_declared_vars
             .push(crate::runtime::NameSet::default());
         let res = self.run_range(code, body_start, body_end, compiled_fns);
+        // A `when`/`default` succeed exits its innermost enclosing block — this
+        // one, when the `when` sits in a bare block / branch body rather than
+        // directly in a `given` (`given 5 { { when Int {...} }; say "after" }`
+        // prints "after" in raku). Statement position: absorb without leaving a
+        // value on the stack.
+        let res = match res {
+            Err(e) if e.is_succeed() => {
+                self.stack.truncate(stack_base);
+                // Reset the match flag too: an enclosing `given` breaks its body
+                // on it after every op (see `exec_do_block_expr_op`'s twin).
+                loan_env!(self, set_when_matched(saved_when_matched));
+                Ok(())
+            }
+            other => other,
+        };
         let block_declared = self.block_declared_vars.pop().unwrap_or_default();
         // Restore shadowed outer bindings on every exit path (including errors
         // such as `next`/`last`/`return`/exceptions) so the scope stays balanced.

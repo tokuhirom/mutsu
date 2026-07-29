@@ -329,13 +329,18 @@ impl crate::runtime::Interpreter {
     /// Only a name that is *not* already marshallable is followed, so a field
     /// typed with a real C type or with a class held by reference keeps its
     /// declared spelling.
-    fn resolve_field_type_alias(&self, ty: &str) -> String {
+    ///
+    /// `owner` is the CStruct class declaring the field: when the constant is a
+    /// module file-scope name whose env entry died with the frame that loaded
+    /// the module (`require` inside a method), it is resolved from the owner's
+    /// module scope instead (`module_scope_lexicals`).
+    fn resolve_field_type_alias(&self, ty: &str, owner: &str) -> String {
         if ty.is_empty()
             || FieldType::from_type_name(ty, |n| self.is_native_handle_class(n)).is_some()
         {
             return ty.to_string();
         }
-        self.resolve_native_type_alias(ty)
+        self.resolve_native_type_alias_for_owner(ty, owner)
     }
 
     /// The C field layout of a `is repr('CStruct')` class, or `None` if the
@@ -349,7 +354,10 @@ impl crate::runtime::Interpreter {
                 let ty = self
                     .get_attr_type_constraint(&registered, name)
                     .unwrap_or_default();
-                (name.clone(), self.resolve_field_type_alias(&ty))
+                (
+                    name.clone(),
+                    self.resolve_field_type_alias(&ty, &registered),
+                )
             })
             .collect();
         // `is_known_struct` cannot borrow `self` here (the layout call takes it

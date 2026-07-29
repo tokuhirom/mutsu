@@ -2,7 +2,7 @@ use v6;
 use lib 't/lib';
 use Test;
 
-plan 11;
+plan 14;
 
 # A module body runs in the env of whatever frame triggered the load, so the
 # short-name type aliases the module's own `use` statements install used to die
@@ -35,6 +35,12 @@ sub install-from-sub($name) {
         'and so does a sub of that module called from the method';
     is $d.slot-name('big'), 'wide',
         'a method resolves its module\'s own file-scope `my` hash';
+    is $d.kind-of('arr'), 'VMArray',
+        'a sub of ANOTHER module resolves that module\'s private `my %` element';
+    is $d.kind-count, 2,
+        'and a whole-hash read of it';
+    is $d.kind-at(1), 'arr',
+        'and a private `my @` element read';
 }
 
 # A SECOND module importing the same names, loaded after the first. Nothing new

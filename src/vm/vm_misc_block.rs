@@ -82,6 +82,7 @@ impl Interpreter {
         let end = body_end as usize;
         let label = label.clone();
         let stack_base = self.stack.len();
+        let saved_when_matched = self.when_matched();
         let once_scope = self.next_once_scope_id();
         self.push_once_scope(once_scope);
         self.push_enum_scope();
@@ -126,6 +127,20 @@ impl Interpreter {
                         e.return_value
                             .unwrap_or(Value::slip_arc(std::sync::Arc::new(vec![]))),
                     );
+                    break Ok(());
+                }
+                // A `when`/`default` succeed exits its innermost enclosing
+                // block — this one. `do { when Int { "i" } }` yields the matched
+                // body's value and execution continues after the `do`; raku does
+                // NOT let the succeed travel on to an outer `given`/`with`
+                // (DBIish's execute loses its whole bind-setup `given` when the
+                // preceding `do { when ... }` escapes it). The `when_matched`
+                // flag is reset too — an enclosing `given` breaks its body on it
+                // after every op, which would skip the rest of the given.
+                Err(e) if e.is_succeed() => {
+                    self.stack.truncate(stack_base);
+                    self.stack.push(e.return_value.unwrap_or(Value::NIL));
+                    loan_env!(self, set_when_matched(saved_when_matched));
                     break Ok(());
                 }
                 Err(e) => break Err(e),

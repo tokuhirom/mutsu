@@ -351,18 +351,45 @@ impl Interpreter {
             Some(current.as_str()),
         ];
         for candidate in candidates.into_iter().flatten() {
-            let mut pkg = candidate;
-            loop {
-                if let Some(found) = table.get(pkg).and_then(|entries| entries.get(name)) {
-                    return Some(found);
-                }
-                match pkg.rsplit_once("::") {
-                    Some((parent, _)) => pkg = parent,
-                    None => break,
-                }
+            if let Some(found) = Self::lookup_in_package_chain(table, candidate, name) {
+                return Some(found);
             }
         }
         None
+    }
+
+    /// Look `name` up in a per-package table starting from a *known* owner
+    /// package and walking up its `::` chain. For sites where the anchor is not
+    /// the running frame but a specific declaration — e.g. a CStruct attribute
+    /// whose type alias must resolve in the scope of the class that declared it.
+    fn lookup_in_package_chain<'a, V>(
+        table: &'a HashMap<String, HashMap<String, V>>,
+        owner: &str,
+        name: &str,
+    ) -> Option<&'a V> {
+        let mut pkg = owner;
+        loop {
+            if let Some(found) = table.get(pkg).and_then(|entries| entries.get(name)) {
+                return Some(found);
+            }
+            match pkg.rsplit_once("::") {
+                Some((parent, _)) => pkg = parent,
+                None => break,
+            }
+        }
+        None
+    }
+
+    /// [`Self::module_scope_lexical`] anchored at an explicit owner package
+    /// instead of the running frame: the file-scope name a module declared,
+    /// looked up from `owner`'s `::` chain. Used where the reader knows which
+    /// declaration the name belongs to (a CStruct field's type alias) even
+    /// though no frame of that module is running.
+    pub(crate) fn module_scope_lexical_for_owner(&self, owner: &str, name: &str) -> Option<&Value> {
+        if self.module_scope_lexicals.is_empty() || name.is_empty() {
+            return None;
+        }
+        Self::lookup_in_package_chain(&self.module_scope_lexicals, owner, name)
     }
 
     /// `has_type` without short-name alias resolution — checks the type

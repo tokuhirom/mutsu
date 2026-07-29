@@ -6,6 +6,20 @@ This file is the ledger of what stops `DBIish` from running on mutsu. Measured
 2026-07-25, `DBIish` 0.6.8, debug build of `main`, and re-measured the same day
 after the parse blocker was fixed.
 
+**Update 2026-07-29 (final): the full prepared-statement lifecycle runs
+end-to-end against a live MariaDB through the front door**
+(`DBIish.connect('mysql', …)` → `prepare` → typed-parameter `execute` →
+`allrows`/`row` with type conversion → `dispose`), byte-identical to Rakudo —
+see [`news/2026-07/dbiish-prepared-statements-end-to-end.md`](../../news/2026-07/dbiish-prepared-statements-end-to-end.md)
+for the six general-purpose fixes that closed it (module-scope sigiled
+lexicals, owner-anchored CStruct field aliases, role-body statics on the pun
+class, `bless`-route `is Type` containers, `when`-succeed scoped to its
+innermost block, enum-to-int CStruct field writes). The
+`require-loaded-module-loses-use-imports` ticket this file pointed at is fixed
+too ([`news/2026-07/module-type-aliases-outlive-the-requiring-frame.md`](../../news/2026-07/module-type-aliases-outlive-the-requiring-frame.md)).
+What remains here is **bundling**, not bugs: the "When these are cleared" list
+at the bottom.
+
 Only the generic and SQLite files are in scope — `libpq` / `libmysqlclient` are
 not installed on the survey machine, so the Pg/MySQL/Oracle/SQLCipher files are
 neither passing nor failing.

@@ -369,25 +369,34 @@ impl Interpreter {
                 lit_val.clone()
             } else if !is_deferred && let Some(expr) = default {
                 self.eval_block_value(&[Stmt::Expr(expr.clone())])?
-            } else if *sigil == '@' {
-                // A `@`-sigil attribute with no default is an empty Array,
-                // not Nil (matches `dispatch_new`). Leaving it Nil makes
-                // `@!attr.elems` return 1 (Any.elems) and corrupts guards.
-                let mut arr = Value::real_array(Vec::new());
-                if let Some(tc) = plan.type_constraints.get(attr_name).cloned() {
-                    arr = self.tag_container_metadata(
-                        arr,
-                        super::ContainerTypeInfo {
-                            value_type: tc,
-                            key_type: None,
-                            declared_type: None,
-                        },
-                    );
+            } else if *sigil == '@' || *sigil == '%' {
+                // An `is Type` container trait (`has %.h is TypeConverter`)
+                // builds an instance of that type, exactly like `dispatch_new`'s
+                // `seed_attr_value` — a plain empty container here would strip
+                // the type (DBIish's `has %.Converter is DBDish::TypeConverter`
+                // lost its STORE/convert-function surface through bless).
+                if let Some(type_name) = self.attribute_is_type_in_mro(cn_resolved, attr_name) {
+                    self.build_is_type_container(&type_name, *sigil)
+                } else if *sigil == '@' {
+                    // A `@`-sigil attribute with no default is an empty Array,
+                    // not Nil (matches `dispatch_new`). Leaving it Nil makes
+                    // `@!attr.elems` return 1 (Any.elems) and corrupts guards.
+                    let mut arr = Value::real_array(Vec::new());
+                    if let Some(tc) = plan.type_constraints.get(attr_name).cloned() {
+                        arr = self.tag_container_metadata(
+                            arr,
+                            super::ContainerTypeInfo {
+                                value_type: tc,
+                                key_type: None,
+                                declared_type: None,
+                            },
+                        );
+                    }
+                    arr
+                } else {
+                    // A `%`-sigil attribute with no default is an empty Hash.
+                    Value::hash(HashMap::new())
                 }
-                arr
-            } else if *sigil == '%' {
-                // A `%`-sigil attribute with no default is an empty Hash.
-                Value::hash(HashMap::new())
             } else {
                 // Native types have zero/empty defaults instead of Nil.
                 // The plan's type_constraints carry the same MRO-wide map
