@@ -1709,21 +1709,7 @@ impl Compiler {
                 if let Some(var_name) = binding_var {
                     // Desugar: if EXPR -> $var { BODY } else { ELSE }
                     // into: { my $var = EXPR; if $var { BODY } else { ELSE } }
-                    let bare_name = var_name.trim_start_matches('$').to_string();
-                    let desugared_cond = Expr::Var(bare_name.clone());
-                    let var_decl = Stmt::VarDecl {
-                        name: bare_name,
-                        expr: cond.clone(),
-                        type_constraint: None,
-                        is_state: false,
-                        is_our: false,
-                        is_dynamic: false,
-                        is_export: false,
-                        export_tags: vec![],
-                        custom_traits: Vec::new(),
-                        where_constraint: None,
-                    };
-                    self.compile_stmt(&var_decl);
+                    let desugared_cond = self.compile_if_binding_decl(var_name, cond);
                     self.compile_condition_expr(&desugared_cond);
                 } else {
                     self.compile_condition_expr(cond);

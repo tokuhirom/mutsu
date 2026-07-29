@@ -113,7 +113,17 @@ fn lower_if_clause_binding(
         return (None, then_branch);
     }
     if param_defs.len() == 1 && is_simple_if_binding(&param_defs[0]) {
-        return (Some(param_defs[0].name.clone()), then_branch);
+        // A sigilless pointy (`if EXPR -> \r { }`) is marked with a leading
+        // `\` so the compiler binds the value itself (no scalar itemization)
+        // and resolves the name as a bare word — see
+        // `Compiler::compile_if_binding_decl`.
+        let p = &param_defs[0];
+        let name = if p.sigilless {
+            format!("\\{}", p.name)
+        } else {
+            p.name.clone()
+        };
+        return (Some(name), then_branch);
     }
 
     let source_binding = next_if_bind_tmp_name();

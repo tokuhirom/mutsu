@@ -7,6 +7,33 @@ use crate::value::AttrMap;
 use crate::value::ValueView;
 
 impl Interpreter {
+    /// Whether an unqualified private call is permitted *lexically*: the
+    /// executing code's `self` is an instance of the owning class.
+    ///
+    /// `method_class_stack` reflects the *runtime* caller, which is wrong for a
+    /// private call written in a closure: in `$.b.run: { self!secret }` the
+    /// stack top is B (whose method invoked the closure) though the call is
+    /// lexically inside A. Raku resolves private calls lexically, and the
+    /// closure runs with its captured `self` — so an env `self` whose class is
+    /// (or inherits from) the owner marks code that was written inside that
+    /// class. DBDish's Pg StatementHandle BUILD calls `self!get-meta` inside a
+    /// block passed to `$!parent.protect-connection` this way.
+    fn lexical_self_allows_private(&mut self, resolved_owner: &str) -> bool {
+        let Some(ValueView::Instance {
+            class_name: self_cls,
+            ..
+        }) = self.env.get("self").map(Value::view)
+        else {
+            return false;
+        };
+        let self_cls = self_cls.resolve().to_string();
+        self_cls == resolved_owner
+            || self
+                .class_mro(&self_cls)
+                .iter()
+                .any(|s| s.resolve() == resolved_owner)
+    }
+
     /// Dispatch method calls for Instance values and handle all fallback paths.
     ///
     /// This is called from `call_method_with_values` after the main method name
@@ -132,7 +159,8 @@ impl Interpreter {
                                 caller_class
                                     .as_ref()
                                     .is_some_and(|caller| trusted.contains(caller))
-                            });
+                            })
+                        || self.lexical_self_allows_private(&resolved_owner);
                     if !caller_allowed {
                         if was_qualified {
                             return Err(make_private_permission_error(
@@ -1590,7 +1618,8 @@ impl Interpreter {
                                 caller_class
                                     .as_ref()
                                     .is_some_and(|caller| trusted.contains(caller))
-                            });
+                            })
+                        || self.lexical_self_allows_private(&resolved_owner);
                     if !caller_allowed {
                         return Err(make_private_permission_error(
                             pm_name,

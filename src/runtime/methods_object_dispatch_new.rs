@@ -1655,12 +1655,24 @@ impl Interpreter {
                             .is_empty()
                 });
                 let has_build_phase = any_build || any_role_build;
+                // A custom BUILD takes over named-arg → attribute mapping only
+                // for the attributes of the MRO layer declaring it; other
+                // layers still auto-assign (see `build_owning_attr_names`).
+                let build_owned_attrs = if has_build_phase {
+                    let mro_names: Vec<String> =
+                        class_mro.iter().map(|s| s.as_str().to_string()).collect();
+                    self.build_owning_attr_names(&mro_names)
+                } else {
+                    Default::default()
+                };
                 let mut deferred_defaults: Vec<super::attr_build_defaults::DeferredAttrDefault> =
                     Vec::new();
                 for val in &args {
                     match val.view() {
                         ValueView::Pair(k, v) => {
-                            if !any_build && self.is_attribute_buildable(class_key, k) {
+                            if !build_owned_attrs.contains(k.as_str())
+                                && self.is_attribute_buildable(class_key, k)
+                            {
                                 let sigil = sigil_map.get(k).copied().unwrap_or('$');
                                 let mut value = v.clone();
                                 // A coercion-typed attribute (`has Int() $.x`)

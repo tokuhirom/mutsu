@@ -405,7 +405,20 @@ impl Interpreter {
         // Map each parameter's type constraint to a C type. An unmapped /
         // missing type means we cannot marshal it — skip native registration so
         // the failure surfaces clearly rather than mis-calling.
-        let mut params = Vec::with_capacity(param_defs.len());
+        let mut params = Vec::with_capacity(param_defs.len() + 1);
+        // A native method receives its invocant as the first C argument whether
+        // or not the signature spells it: `method PQstatus(--> int32)` on a
+        // CPointer class is `PQstatus(PGconn*)` (DBDish::Pg declares its whole
+        // surface this way). An explicit invocant (`MYSQL:D:`) arrives as a
+        // leading `is_invocant` parameter; synthesize the pointer slot when the
+        // signature leaves it implicit.
+        if invocant_class.is_some() && !param_defs.first().is_some_and(|pd| pd.is_invocant) {
+            params.push(ParamSpec {
+                ct: CType::Pointer,
+                is_rw: false,
+                elem: None,
+            });
+        }
         for pd in param_defs {
             // A method's invocant is its first C argument, passed by pointer —
             // a handle's address for `:D:`, NULL for `:U:` (`MYSQL.mysql_init`
@@ -490,7 +503,7 @@ impl Interpreter {
                 // pointer in an instance of the declared class so it round-trips
                 // as that handle type (`ret_struct` carries the class name).
                 None if self.is_native_struct_type(rt) => {
-                    ret_struct = Some(Self::native_struct_class_name(rt));
+                    ret_struct = Some(self.registered_native_class_name(rt));
                     CType::Pointer
                 }
                 None => return Ok(()),
@@ -558,6 +571,24 @@ impl Interpreter {
     /// `SSL_METHOD`), matching how the class is registered by its short name.
     fn native_struct_class_name(name: &str) -> String {
         name.rsplit("::").next().unwrap_or(name).to_string()
+    }
+
+    /// The class name a returned native handle should be tagged with so that
+    /// ordinary method dispatch on it works: the name the class is actually
+    /// *registered* under. A class declared inside a `unit module` is
+    /// registered package-qualified (`DBDish::Pg::Native::PGresult`) while the
+    /// return type is spelled short (`--> PGresult`); resolving through the
+    /// env — the same lookup `.^name` performs — recovers the registered name.
+    /// Falls back to the short name for a class not visible here (declared in
+    /// another compilation unit), preserving the previous behavior.
+    fn registered_native_class_name(&mut self, name: &str) -> String {
+        if let Some(ValueView::Package(sym)) = self.env().get(name).map(Value::view) {
+            let resolved = sym.resolve().to_string();
+            if self.registry().classes.contains_key(&resolved) {
+                return resolved;
+            }
+        }
+        Self::native_struct_class_name(name)
     }
 
     /// Follow a `constant` type alias to the type it names.

@@ -119,6 +119,38 @@ impl Compiler {
         self.pop_dynamic_scope_lexical(saved);
     }
 
+    /// Compile the `if EXPR -> v { }` binding declaration and return the
+    /// expression that reads the bound name back (for the truth test and the
+    /// branch body). A `\`-prefixed binding names a sigilless pointy
+    /// (`if EXPR -> \r { }`): it is registered as a sigilless local BEFORE the
+    /// decl compiles, so the store binds the condition value itself instead of
+    /// itemizing it into a scalar container (DBIish's `if self._row -> \r
+    /// { r.Array }` must not nest the row array), and it reads back as a bare
+    /// word rather than a `$`-variable.
+    pub(super) fn compile_if_binding_decl(&mut self, var_name: &str, cond: &Expr) -> Expr {
+        let (bare_name, read_expr) = if let Some(bare) = var_name.strip_prefix('\\') {
+            self.sigilless_locals.insert(bare.to_string());
+            (bare.to_string(), Expr::BareWord(bare.to_string()))
+        } else {
+            let bare = var_name.trim_start_matches('$').to_string();
+            (bare.clone(), Expr::Var(bare))
+        };
+        let var_decl = Stmt::VarDecl {
+            name: bare_name,
+            expr: cond.clone(),
+            type_constraint: None,
+            is_state: false,
+            is_our: false,
+            is_dynamic: false,
+            is_export: false,
+            export_tags: vec![],
+            custom_traits: Vec::new(),
+            where_constraint: None,
+        };
+        self.compile_stmt(&var_decl);
+        read_expr
+    }
+
     pub(super) fn compile_if_value(
         &mut self,
         cond: &Expr,
@@ -170,21 +202,8 @@ impl Compiler {
             self.code.emit(OpCode::EnterPointyTopic);
         }
         if let Some(var_name) = binding_var {
-            let bare_name = var_name.trim_start_matches('$').to_string();
-            let var_decl = Stmt::VarDecl {
-                name: bare_name.clone(),
-                expr: cond.clone(),
-                type_constraint: None,
-                is_state: false,
-                is_our: false,
-                is_dynamic: false,
-                is_export: false,
-                export_tags: vec![],
-                custom_traits: Vec::new(),
-                where_constraint: None,
-            };
-            self.compile_stmt(&var_decl);
-            self.compile_expr(&Expr::Var(bare_name));
+            let read_expr = self.compile_if_binding_decl(var_name, cond);
+            self.compile_expr(&read_expr);
         } else {
             self.compile_expr(cond);
         }

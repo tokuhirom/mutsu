@@ -755,13 +755,14 @@ impl Interpreter {
         None
     }
 
-    /// Dispatch the silent-action captures reachable from a match's attribute
-    /// map: this level's own `silent_caps` (hidden `<.foo>` subrule matches that
-    /// carry nested captures), then — descending through positional `( )` groups
-    /// — each group's `silent_caps`. Only `silent_caps` are fired, never a group's
-    /// named children: those are already dispatched by the named-children walk in
-    /// `invoke_grammar_actions`, so re-firing them would double-dispatch (see
-    /// t/grammar-reduce-time-dynvar.t). Captures are dispatched in source order.
+    /// Dispatch this level's own silent-action captures: hidden `<.foo>`
+    /// subrule matches that carry nested captures. Only `silent_caps` are
+    /// fired, never named children or positional groups: named children are
+    /// dispatched by the named-children walk in `invoke_grammar_actions`, and
+    /// positional `( )` groups are recursed into by its positional walk (which
+    /// fires each group's own `silent_caps` exactly once) — descending here too
+    /// would double-dispatch (see t/grammar-reduce-time-dynvar.t). Captures are
+    /// dispatched in source order.
     fn dispatch_silent_action_caps(
         &mut self,
         attrs: &crate::value::AttrReadGuard<'_>,
@@ -782,15 +783,6 @@ impl Interpreter {
             for item in items {
                 let dispatch_name = Self::get_action_name(&item).unwrap_or_default();
                 self.invoke_grammar_actions(item, actions, &dispatch_name)?;
-            }
-        }
-        let positionals: Vec<Value> = match attrs.get("list").map(Value::view) {
-            Some(ValueView::Array(pos_arr, _)) => pos_arr.iter().cloned().collect(),
-            _ => Vec::new(),
-        };
-        for p in &positionals {
-            if let ValueView::Instance { attributes, .. } = p.view() {
-                self.dispatch_silent_action_caps(&attributes.as_map(), actions)?;
             }
         }
         Ok(())
@@ -858,6 +850,54 @@ impl Interpreter {
                 }
             }
             updated_attrs.insert("named".to_string(), Value::hash(updated_named));
+        }
+
+        // Recurse into positional `( )` group captures the same way. A group
+        // itself has no action method (dispatch name "" unless the capture
+        // carries an aliased `action_name`), but the named subrules matched
+        // INSIDE it do — DBDish::Pg's tokenizer is `( <normal> | <placeholder>
+        // )*` with per-token actions — and their `.made` must be attached to
+        // the Match objects reachable via `$0[…]`, so the updated children are
+        // stored back into `list`.
+        if let Some(ValueView::Array(pos_arr, meta)) =
+            attributes.as_map().get("list").map(Value::view)
+        {
+            let mut updated_list = Vec::with_capacity(pos_arr.len());
+            let mut changed = false;
+            for item in pos_arr.as_ref() {
+                let updated_item = match item.view() {
+                    // A quantified group `(...)*`: an Array of per-iteration Matches.
+                    ValueView::Array(items, imeta) => {
+                        let mut updated_items = Vec::with_capacity(items.len());
+                        for it in items.as_ref() {
+                            let dispatch_name = Self::get_action_name(it).unwrap_or_default();
+                            let updated =
+                                self.invoke_grammar_actions(it.clone(), actions, &dispatch_name)?;
+                            updated_items.push(updated);
+                        }
+                        Value::array_with_kind(
+                            crate::gc::Gc::new(crate::value::ArrayData::new(updated_items)),
+                            imeta,
+                        )
+                    }
+                    ValueView::Instance { .. } => {
+                        let dispatch_name = Self::get_action_name(item).unwrap_or_default();
+                        self.invoke_grammar_actions(item.clone(), actions, &dispatch_name)?
+                    }
+                    _ => item.clone(),
+                };
+                changed = true;
+                updated_list.push(updated_item);
+            }
+            if changed {
+                updated_attrs.insert(
+                    "list".to_string(),
+                    Value::array_with_kind(
+                        crate::gc::Gc::new(crate::value::ArrayData::new(updated_list)),
+                        meta,
+                    ),
+                );
+            }
         }
 
         // Dispatch actions for silent-action captures: hidden `<.foo>` subrule

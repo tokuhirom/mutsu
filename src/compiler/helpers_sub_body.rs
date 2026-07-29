@@ -869,6 +869,46 @@ impl Compiler {
                     sub_compiler.compile_expr(&Expr::Literal(Value::TRUE));
                     continue;
                 }
+                // The same value-position statement forms `compile_routine_body_stmts`
+                // reifies for named subs: without these a phaser-carrying method whose
+                // tail is an `if`/block/decl compiled as a plain statement and returned
+                // Nil (DBDish::Pg's `prepare` ends in `LEAVE {...}; if ... { .new(...) }`).
+                if is_value
+                    && let Stmt::If {
+                        cond,
+                        then_branch,
+                        else_branch,
+                        binding_var,
+                    } = stmt
+                {
+                    sub_compiler.compile_if_value(cond, then_branch, else_branch, binding_var);
+                    continue;
+                }
+                if is_value && let Stmt::Block(stmts) | Stmt::SyntheticBlock(stmts) = stmt {
+                    sub_compiler.compile_block_inline(stmts);
+                    continue;
+                }
+                if is_value && let Stmt::VarDecl { name, .. } = stmt {
+                    sub_compiler.compile_stmt(stmt);
+                    if let Some(&slot) = sub_compiler.local_map.get(name) {
+                        sub_compiler.code.emit(OpCode::GetLocal(slot));
+                    } else {
+                        sub_compiler.emit_nil_value();
+                    }
+                    continue;
+                }
+                if is_value && let Stmt::Assign { name, .. } = stmt {
+                    sub_compiler.compile_stmt(stmt);
+                    if let Some(&slot) = sub_compiler.local_map.get(name) {
+                        sub_compiler.code.emit(OpCode::GetLocal(slot));
+                    } else {
+                        let idx = sub_compiler
+                            .code
+                            .add_constant(Value::str(sub_compiler.qualify_variable_name(name)));
+                        sub_compiler.code.emit(OpCode::GetGlobal(idx));
+                    }
+                    continue;
+                }
                 sub_compiler.compile_stmt(stmt);
             }
             if last_is_enter {
