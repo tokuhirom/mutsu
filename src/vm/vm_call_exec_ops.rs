@@ -37,6 +37,43 @@ impl Interpreter {
                 _ => args.push(arg),
             }
         }
+        // NativeCall: a statement-level call to an `is native(...)` sub compiles
+        // to `ExecCall` (a bare call statement whose value is sunk), not
+        // `CallFunc` — but only `CallFunc`'s handler checked `native_call_specs`.
+        // A sunk native call (`sqlite3_extended_result_codes($p, 1);`, its return
+        // discarded) therefore ran its literal `{ ... }` stub body instead of
+        // dispatching over FFI, dying with "Stub code executed". Mirror
+        // `exec_call_func_op`'s native dispatch here so the check applies
+        // regardless of which opcode a given callsite compiled to.
+        if !self.native_call_specs.is_empty() {
+            let spec = self.native_call_specs.get(&name).cloned().or_else(|| {
+                name.rsplit_once("::")
+                    .and_then(|(_, short)| self.native_call_specs.get(short).cloned())
+            });
+            if let Some(mut spec) = spec {
+                self.resolve_native_ret_struct(&mut spec);
+                let mut call_args = args;
+                call_args.retain(|a| !Self::is_callsite_line_marker(a));
+                let (result, out_args) =
+                    crate::runtime::nativecall::call_native_with_out_args(&spec, &call_args)?;
+                if !out_args.is_empty() {
+                    let mut wrote = false;
+                    for (idx, val) in out_args {
+                        if let ValueView::VarRef { name, .. } = call_args[idx].view() {
+                            let n = name.resolve().to_string();
+                            self.env_mut().insert(n.clone(), val);
+                            self.pending_rw_writeback_sources.push(n);
+                            wrote = true;
+                        }
+                    }
+                    if wrote {
+                        self.apply_pending_rw_writeback(code);
+                    }
+                }
+                self.stack.push(result);
+                return Ok(());
+            }
+        }
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
         let arg_sources = if arg_sources.as_ref().is_some_and(|s| s.len() != args.len()) {
             None

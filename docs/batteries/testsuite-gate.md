@@ -49,6 +49,16 @@ vendor/zef/lib`, `-I modules/OpenSSL/lib`, …) — the clone provides only the
 `t/` tests. A test file "passes" when it emits a TAP plan and every planned test
 is `ok` with no `not ok`.
 
+The harness unconditionally sets `DBIISH_WRITE_TEST=YES` (harmless for every
+other battery, which doesn't read it): without it, `DBIish`'s own
+`CommonTesting` harness does a bare `skip-rest` covering the *entire* planned
+count the moment a file reaches a write assertion, so the whole file trivially
+"passes" without exercising any of its real code path. This is a stronger case
+than the general `NETWORK_TESTING` policy below (an ordinary skip-gated
+assertion still leaves the rest of its file exercised) — a variable that
+degrades an entire file to a no-op is worth flipping on so the whitelist means
+something.
+
 **Each test runs with the fetched repo as its working directory**, which is how
 `prove` / `zef test` run these suites. It matters: they reach for fixtures by
 relative path (OpenSSL's `03-rsa.rakutest` does `slurp 't/key.pem'`). Running

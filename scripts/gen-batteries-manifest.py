@@ -92,6 +92,23 @@ SIDECAR = {
         "slot": "YAML",
         "record": "docs/batteries/yaml.md",
     },
+    "DBIish": {
+        "slot": "Database (SQLite)",
+        "record": "docs/batteries/database.md",
+    },
+    "NativeLibs": {
+        "slot": "Database (SQLite)",
+        "record": "docs/batteries/database.md",
+        # META6.json uses the British "licence" key, which the reader below
+        # does not look for.
+        "license": "Artistic-2.0",
+    },
+    "NativeHelpers::Blob": {
+        "slot": "Database (SQLite)",
+        "record": "docs/batteries/database.md",
+        # META6.json has no license key; the dist ships an Artistic-2.0 LICENSE file.
+        "license": "Artistic-2.0",
+    },
 }
 
 

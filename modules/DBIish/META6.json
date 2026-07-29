@@ -1,0 +1,83 @@
+{
+  "api": 1,
+  "auth": "zef:raku-community-modules",
+  "authors": [
+  ],
+  "build-depends": [
+  ],
+  "depends": {
+    "runtime": {
+      "requires": [
+        "NativeHelpers::Blob",
+        "NativeLibs:auth<github:salortiz>:ver<0.0.9+>"
+      ]
+    },
+    "test": {
+      "requires": [
+        [
+          "NativeCall::TypeDiag"
+        ]
+      ]
+    }
+  },
+  "description": "Database connectivity for Raku",
+  "license": "BSD-2-Clause",
+  "meta-version": "1",
+  "name": "DBIish",
+  "provides": {
+    "DBDish": "lib/DBDish.rakumod",
+    "DBDish::Connection": "lib/DBDish/Connection.rakumod",
+    "DBDish::ErrorHandling": "lib/DBDish/ErrorHandling.rakumod",
+    "DBDish::Oracle": "lib/DBDish/Oracle.rakumod",
+    "DBDish::Oracle::Connection": "lib/DBDish/Oracle/Connection.rakumod",
+    "DBDish::Oracle::Native": "lib/DBDish/Oracle/Native.rakumod",
+    "DBDish::Oracle::StatementHandle": "lib/DBDish/Oracle/StatementHandle.rakumod",
+    "DBDish::Pg": "lib/DBDish/Pg.rakumod",
+    "DBDish::Pg::Connection": "lib/DBDish/Pg/Connection.rakumod",
+    "DBDish::Pg::ErrorHandling": "lib/DBDish/Pg/ErrorHandling.rakumod",
+    "DBDish::Pg::Native": "lib/DBDish/Pg/Native.rakumod",
+    "DBDish::Pg::StatementHandle": "lib/DBDish/Pg/StatementHandle.rakumod",
+    "DBDish::SQLCipher": "lib/DBDish/SQLCipher.rakumod",
+    "DBDish::SQLCipher::Connection": "lib/DBDish/SQLCipher/Connection.rakumod",
+    "DBDish::SQLCipher::Native": "lib/DBDish/SQLCipher/Native.rakumod",
+    "DBDish::SQLCipher::StatementHandle": "lib/DBDish/SQLCipher/StatementHandle.rakumod",
+    "DBDish::SQLite": "lib/DBDish/SQLite.rakumod",
+    "DBDish::SQLite::Connection": "lib/DBDish/SQLite/Connection.rakumod",
+    "DBDish::SQLite::Native": "lib/DBDish/SQLite/Native.rakumod",
+    "DBDish::SQLite::StatementHandle": "lib/DBDish/SQLite/StatementHandle.rakumod",
+    "DBDish::StatementHandle": "lib/DBDish/StatementHandle.rakumod",
+    "DBDish::TestMock": "lib/DBDish/TestMock.rakumod",
+    "DBDish::TestMock::Connection": "lib/DBDish/TestMock/Connection.rakumod",
+    "DBDish::TestMock::StatementHandle": "lib/DBDish/TestMock/StatementHandle.rakumod",
+    "DBDish::mysql": "lib/DBDish/mysql.rakumod",
+    "DBDish::mysql::Connection": "lib/DBDish/mysql/Connection.rakumod",
+    "DBDish::mysql::ErrorHandling": "lib/DBDish/mysql/ErrorHandling.rakumod",
+    "DBDish::mysql::Native": "lib/DBDish/mysql/Native.rakumod",
+    "DBDish::mysql::StatementHandle": "lib/DBDish/mysql/StatementHandle.rakumod",
+    "DBIish": "lib/DBIish.rakumod",
+    "DBIish::Common": "lib/DBIish/Common.rakumod",
+    "DBIish::CommonTesting": "lib/DBIish/CommonTesting.rakumod"
+  },
+  "raku": "6.d",
+  "resources": [
+  ],
+  "source-url": "https://github.com/raku-community-modules/DBIish.git",
+  "support": {
+    "bugtracker": "https://github.com/raku-community-modules/DBIish/issues",
+    "email": "community@raku.org",
+    "source": "https://github.com/raku-community-modules/DBIish.git"
+  },
+  "tags": [
+    "database",
+    "dbdish",
+    "mariadb",
+    "mysql",
+    "oracle",
+    "postgres",
+    "sqlite",
+    "sqlcipher"
+  ],
+  "test-depends": [
+  ],
+  "version": "0.6.8"
+}

@@ -13,7 +13,8 @@ impl Interpreter {
     }
 
     /// The attribute an `is rw` method exposes as its assignable lvalue: the
-    /// bare `$!attr` (or `return-rw $!attr`) its body evaluates to.
+    /// bare `$!attr`/`@!attr`/`%!attr` (or `return-rw` of one) its body
+    /// evaluates to. Returns the attribute name and its sigil.
     ///
     /// An `is rw` routine returns its *last* expression's container, so the
     /// last statement is what decides — the earlier ones are ordinary code that
@@ -23,22 +24,33 @@ impl Interpreter {
     /// the method anyway to read its current value, so those side effects
     /// happen. An explicit `return-rw $!attr` anywhere in the body also counts:
     /// it decides the return value wherever it sits.
-    pub(crate) fn rw_method_attribute_target(body: &[Stmt]) -> Option<String> {
+    pub(crate) fn rw_method_attribute_target(body: &[Stmt]) -> Option<(String, char)> {
         let significant = || body.iter().filter(|s| !matches!(s, Stmt::SetLine(_)));
         let last = significant().next_back()?;
-        let extract_attr = |expr: &Expr| -> Option<String> {
+        let extract_attr = |expr: &Expr| -> Option<(String, char)> {
             match expr {
                 Expr::Var(name) if name.starts_with('!') && name.len() > 1 => {
-                    Some(name[1..].to_string())
+                    Some((name[1..].to_string(), '$'))
+                }
+                Expr::ArrayVar(name) if name.starts_with('!') && name.len() > 1 => {
+                    Some((name[1..].to_string(), '@'))
+                }
+                Expr::HashVar(name) if name.starts_with('!') && name.len() > 1 => {
+                    Some((name[1..].to_string(), '%'))
                 }
                 Expr::Call { name, args } if name == "return-rw" && args.len() == 1 => {
-                    if let Expr::Var(attr) = &args[0]
-                        && attr.starts_with('!')
-                        && attr.len() > 1
-                    {
-                        return Some(attr[1..].to_string());
+                    match &args[0] {
+                        Expr::Var(attr) if attr.starts_with('!') && attr.len() > 1 => {
+                            Some((attr[1..].to_string(), '$'))
+                        }
+                        Expr::ArrayVar(attr) if attr.starts_with('!') && attr.len() > 1 => {
+                            Some((attr[1..].to_string(), '@'))
+                        }
+                        Expr::HashVar(attr) if attr.starts_with('!') && attr.len() > 1 => {
+                            Some((attr[1..].to_string(), '%'))
+                        }
+                        _ => None,
                     }
-                    None
                 }
                 _ => None,
             }

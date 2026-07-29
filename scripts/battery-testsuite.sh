@@ -46,6 +46,13 @@ fi
 # must be addressable from there.
 case "$MUTSU_BIN" in /*) ;; *) MUTSU_BIN="$ROOT/$MUTSU_BIN" ;; esac
 
+# DBIish's own CommonTesting harness no-ops its write-path assertions (a bare
+# `skip-rest` covering the whole planned count) unless this is set — without
+# it, every DBIish file that reaches a live-write test trivially "passes" by
+# skipping, giving zero regression coverage. Harmless for every other bundled
+# suite, which does not read this variable.
+export DBIISH_WRITE_TEST=YES
+
 # --- fetch a specific upstream commit into $dir (shallow, no full history) ----
 fetch_commit() {
   local dir="$1" url="$2" commit="$3"
