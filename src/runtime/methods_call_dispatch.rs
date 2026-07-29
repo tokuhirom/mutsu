@@ -552,6 +552,23 @@ impl Interpreter {
                 // exception (which throws only when sunk/used unhandled), not an
                 // immediate throw like `.throw`.
                 if method == "fail" {
+                    // EXCEPT on a HANDLED Failure, where the METHOD form
+                    // throws the wrapped exception outright (verified against
+                    // raku; the sub form `fail $f` re-arms instead — roast
+                    // S04-exceptions/fail.t). DBDish's execute error path is
+                    // `with self!handle-errors { ... } else { .fail }`: the
+                    // `with` marks the Failure handled via `.defined`, and
+                    // the `.fail` must surface the exception.
+                    if cn == "Failure"
+                        && target.is_failure_handled()
+                        && let ValueView::Instance { attributes, .. } = target.view()
+                        && let Some(exc) = attributes.as_map().get("exception").cloned()
+                    {
+                        let msg = self.exception_message_or_died_with(&exc);
+                        let mut err = crate::value::RuntimeError::new(&msg);
+                        err.exception = Some(Box::new(exc));
+                        return Err(err);
+                    }
                     return self.builtin_fail(std::slice::from_ref(&target));
                 }
                 // throw / rethrow: build a RuntimeError carrying this exception.
