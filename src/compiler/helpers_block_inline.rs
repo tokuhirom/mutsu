@@ -114,6 +114,19 @@ impl Compiler {
         self.hoist_sub_decls(stmts, true);
         // Hoist `my TYPE $var;` type constraints (see `hoist_typed_var_decls`).
         self.hoist_typed_var_decls(stmts);
+        // Register sigilless names BEFORE compiling their VarDecl (mirroring
+        // the `Stmt::SyntheticBlock` arm of `compile_stmt`): the marker
+        // statement comes AFTER the decl, but the decl must already know the
+        // name is sigilless so its store binds the value itself instead of
+        // itemizing it into a scalar container. This value-position path is
+        // how `if my \r = @rows { r.Array }` compiles its condition
+        // (`DoStmt(SyntheticBlock([VarDecl, MarkSigillessReadonly]))`) —
+        // without the pre-pass, `r` became `$[...]` and `r.Array` nested.
+        for s in stmts {
+            if let Stmt::MarkSigillessReadonly(name) | Stmt::MarkSigilless(name) = s {
+                self.sigilless_locals.insert(name.clone());
+            }
+        }
         for (i, stmt) in stmts.iter().enumerate() {
             let is_last = i == stmts.len() - 1;
             if is_last {

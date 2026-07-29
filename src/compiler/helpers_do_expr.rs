@@ -130,21 +130,8 @@ impl Compiler {
         };
         let needs_cond_value = needs_at_underscore || cond_placeholder.is_some();
         if let Some(var_name) = binding_var {
-            let bare_name = var_name.trim_start_matches('$').to_string();
-            let var_decl = Stmt::VarDecl {
-                name: bare_name.clone(),
-                expr: cond.clone(),
-                type_constraint: None,
-                is_state: false,
-                is_our: false,
-                is_dynamic: false,
-                is_export: false,
-                export_tags: vec![],
-                custom_traits: Vec::new(),
-                where_constraint: None,
-            };
-            self.compile_stmt(&var_decl);
-            self.compile_expr(&Expr::Var(bare_name));
+            let read_expr = self.compile_if_binding_decl(var_name, cond);
+            self.compile_expr(&read_expr);
         } else {
             self.compile_expr(cond);
         }

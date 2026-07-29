@@ -447,12 +447,32 @@ impl Interpreter {
         // ONLY to extract `$*` dynamic-var writes (which flow through the scratch
         // env into the overlay, not through actions state). `InstanceAttrs::clone`
         // is a deep, fresh-cell copy.
+        //
+        // The copy gets a FRESH instance id: `invoke_grammar_actions` re-reads
+        // the actions object from the env after each dispatch by (class, id)
+        // match, and the scratch env holds the caller's ORIGINAL instance — a
+        // copy sharing the id would be silently swapped back to the original
+        // mid-walk, leaking every subsequent attribute mutation (pinned by
+        // t/grammar-reduce-time-dynvar.t test 5).
         let mut actions = match actions.view() {
             ValueView::Instance {
                 class_name,
                 attributes,
-                id,
-            } => Value::instance_parts(class_name, crate::gc::Gc::new((**attributes).clone()), id),
+                ..
+            } => {
+                // Deep-clone first (detaching shared containers), then rebuild
+                // under the fresh id — `InstanceAttrs` carries its id internally
+                // and `instance_parts` asserts the two agree.
+                let detached = (**attributes).clone().to_map();
+                let fresh_id = crate::value::next_instance_id();
+                Value::instance_parts(
+                    class_name,
+                    crate::gc::Gc::new(crate::value::InstanceAttrs::new(
+                        class_name, detached, fresh_id, false,
+                    )),
+                    fresh_id,
+                )
+            }
             _ => actions.clone(),
         };
         let match_obj = Value::make_match_object_full_q(

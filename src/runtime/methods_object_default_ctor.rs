@@ -32,21 +32,27 @@ impl Interpreter {
         let sigil_of =
             |name: &str| -> char { attr_idx_of(name).map(|i| class_attrs[i].5).unwrap_or('$') };
 
-        // A custom BUILD replaces the default named-argument → attribute binding:
-        // with a BUILD present, a provided `:attr(value)` is NOT auto-assigned to
-        // `$!attr` — only BUILD decides what gets set (via its signature's
-        // `:$!attr` params or explicit assignment in its body). So
+        // A custom BUILD replaces the default named-argument → attribute binding
+        // for the attributes of the MRO layer that declares it: a provided
+        // `:attr(value)` for such an attribute is NOT auto-assigned — only that
+        // BUILD decides what gets set (via its signature's `:$!attr` params or
+        // explicit assignment in its body). So
         // `class P { has $.x = 42; submethod BUILD() {} }; P.new(:666x).x` is 42.
-        // Skip the auto-assignment loop when the class has a BUILD; defaults are
-        // still filled below and BUILD runs afterward.
+        // Attributes of layers WITHOUT their own BUILD still auto-assign
+        // (per-class BUILDALL semantics — see `build_owning_attr_names`).
+        // Defaults are still filled below and BUILD runs afterward.
         let has_build = plan.has_build;
+        let build_owned_attrs = if has_build {
+            let mro = self.mro_readonly(cn_resolved);
+            self.build_owning_attr_names(&mro)
+        } else {
+            Default::default()
+        };
 
         let mut attrs = AttrMap::new();
         for arg in args {
-            if has_build {
-                break;
-            }
             if let ValueView::Pair(key, val) = arg.view()
+                && !build_owned_attrs.contains(key.as_str())
                 && self.is_attribute_buildable(cn_resolved, key)
             {
                 let key_sym = attr_idx_of(key).map(|i| plan.attr_syms[i]);

@@ -66,7 +66,9 @@ impl CType {
             "uint64" | "ulong" | "ulonglong" | "uint" | "size_t" => CType::U64,
             "num32" => CType::F32,
             "num64" | "num" | "Num" => CType::F64,
-            "Str" => CType::Str,
+            // `str` is the native string type — still a NUL-terminated `char*`
+            // at the C boundary (DBDish::Pg declares `PQconnectdb(str ...)`).
+            "Str" | "str" => CType::Str,
             "Pointer" | "OpaquePointer" => CType::Pointer,
             // A byte buffer passed as a `void*` to its raw bytes. `blob8`/`buf8`
             // are the `uint8` parametric spellings; the bracketed forms
@@ -858,6 +860,18 @@ fn marshal_carray_arg(
     raw: &Value,
 ) -> Result<(libffi::middle::Type, ArgOwner), String> {
     use libffi::middle::Type;
+    // An UNDEFINED argument (a type object / Nil) for a `CArray[T]` parameter
+    // is a genuine NULL, as in Rakudo. Handing over a pointer to an empty
+    // buffer instead is fatal for callees that branch on NULL-ness: libpq's
+    // `PQexecPrepared(..., paramLengths, paramFormats, ...)` treats a non-NULL
+    // `paramFormats` as "per-parameter format array" and reads nParams entries
+    // from it — DBDish::Pg passes `Null` (a Pointer type object) for both.
+    {
+        let resolved = resolve_arg(raw);
+        if !crate::runtime::types::value_is_defined(&resolved) {
+            return Ok((Type::pointer(), ArgOwner::Ptr(std::ptr::null())));
+        }
+    }
     // An unparameterized `CArray` parameter carries no element type in the
     // signature, so take it from the argument itself (`CArray[int32].new` tags
     // the array with its element type).
@@ -877,7 +891,17 @@ fn marshal_carray_arg(
         let mut strings = Vec::with_capacity(list.len());
         let mut ptrs: Vec<*const std::ffi::c_char> = Vec::with_capacity(list.len() + 1);
         for item in &list {
-            let s = item.to_string_value();
+            // An undefined element (a `Str` type object / Nil) is a NULL
+            // `char*`, same as an undefined `Str` argument. Libpq's
+            // `PQconnectdbParams` key/value arrays are terminated exactly this
+            // way (`$keys[$i] = Str`); stringifying instead sent "(Str)" as a
+            // connection option.
+            let resolved = resolve_arg(item);
+            if !crate::runtime::types::value_is_defined(&resolved) {
+                ptrs.push(std::ptr::null());
+                continue;
+            }
+            let s = resolved.to_string_value();
             let cstr = std::ffi::CString::new(s)
                 .map_err(|_| "CArray[Str] element contains an embedded NUL byte".to_string())?;
             ptrs.push(cstr.as_ptr());
@@ -938,4 +962,52 @@ pub fn call_native(spec: &NativeCallSpec, _args: &[Value]) -> Result<Value, Runt
         "NativeCall is not available in this build (cannot call '{}')",
         spec.symbol
     )))
+}
+
+#[cfg(all(test, feature = "libffi"))]
+mod tests {
+    use super::*;
+
+    fn carray_spec(elem: CType) -> ParamSpec {
+        ParamSpec {
+            ct: CType::CArray,
+            is_rw: false,
+            elem: Some(elem),
+        }
+    }
+
+    /// An undefined `CArray[T]` argument (a type object) must marshal as a
+    /// genuine NULL — libpq branches on the NULL-ness of `paramFormats`.
+    #[test]
+    fn undefined_carray_argument_is_null() {
+        let ty = Value::package(crate::symbol::Symbol::intern("Pointer"));
+        let (_, owner) = marshal_carray_arg(&carray_spec(CType::I32), &ty).unwrap();
+        match owner {
+            ArgOwner::Ptr(p) => assert!(p.is_null(), "expected a NULL pointer"),
+            other => panic!(
+                "expected ArgOwner::Ptr, got {:?}",
+                std::mem::discriminant(&other)
+            ),
+        }
+    }
+
+    /// An undefined element of a `CArray[Str]` (`$a[$i] = Str`) is a NULL
+    /// `char*` — libpq's `PQconnectdbParams` key array is terminated this way.
+    #[test]
+    fn undefined_carray_str_element_is_null() {
+        let arr = Value::array(vec![
+            Value::str("host".to_string()),
+            Value::package(crate::symbol::Symbol::intern("Str")),
+        ]);
+        let (_, owner) = marshal_carray_arg(&carray_spec(CType::Str), &arr).unwrap();
+        match owner {
+            ArgOwner::CArrayStr { ptrs, .. } => {
+                assert_eq!(ptrs.len(), 3, "two elements + terminator");
+                assert!(!ptrs[0].is_null(), "defined element is a real char*");
+                assert!(ptrs[1].is_null(), "type-object element is NULL");
+                assert!(ptrs[2].is_null(), "the array stays NULL-terminated");
+            }
+            _ => panic!("expected ArgOwner::CArrayStr"),
+        }
+    }
 }

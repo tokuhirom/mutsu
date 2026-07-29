@@ -6,6 +6,18 @@ This file is the ledger of what stops `DBIish` from running on mutsu. Measured
 2026-07-25, `DBIish` 0.6.8, debug build of `main`, and re-measured the same day
 after the parse blocker was fixed.
 
+**Update 2026-07-29 (Pg): the same lifecycle runs end-to-end against a live
+PostgreSQL 16 too** (`DBIish.connect('Pg', …)` → `PQprepare`/`PQexecPrepared`
+with `$1`-placeholders → typed `allrows`/`row` → `dispose`), byte-identical to
+Rakudo, including the extended surface (bool/bigint/float8/numeric/text/NULL
+round-trips, column metadata, `rows`, SQL-level transactions, an
+`X::DBDish::DBError::Pg` raised and caught, `server-version`). Seven more
+general fixes — see
+[`news/2026-07/dbiish-postgresql-end-to-end.md`](../../news/2026-07/dbiish-postgresql-end-to-end.md).
+The upstream 0.6.8 `commit`/`rollback` *methods* are broken in DBIish itself
+(`$!parent` is the driver, which has no `protect-connection`) — raku dies the
+same way, so SQL-level `BEGIN`/`COMMIT`/`ROLLBACK` is the parity surface.
+
 **Update 2026-07-29 (final): the full prepared-statement lifecycle runs
 end-to-end against a live MariaDB through the front door**
 (`DBIish.connect('mysql', …)` → `prepare` → typed-parameter `execute` →

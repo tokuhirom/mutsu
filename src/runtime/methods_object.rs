@@ -381,6 +381,45 @@ impl Interpreter {
         plan
     }
 
+    /// Attribute names declared by an MRO layer that has its OWN `BUILD`
+    /// (class submethod or role-composed). Raku's BUILDALL runs one build step
+    /// per class: a custom BUILD replaces the default named-arg → attribute
+    /// auto-assignment only for the attributes of the layer that declares it —
+    /// a parent class without its own BUILD still auto-assigns
+    /// (X::DBDish::DBError::Pg computes `$!sqlstate` in its BUILD while its
+    /// parent's `$.native-message is required` arrives as an ordinary named
+    /// arg; gating on "any BUILD in the MRO" mis-raised X::Attribute::Required
+    /// for it).
+    pub(crate) fn build_owning_attr_names(
+        &mut self,
+        classes: &[String],
+    ) -> std::collections::HashSet<String> {
+        let mut owned = std::collections::HashSet::new();
+        for cls in classes {
+            if cls == "Any" || cls == "Mu" {
+                continue;
+            }
+            let has_own_build = self
+                .registry()
+                .classes
+                .get(cls)
+                .is_some_and(|cd| cd.methods.contains_key("BUILD"))
+                || !self
+                    .ordered_role_submethods_for_class(cls, "BUILD")
+                    .is_empty();
+            if !has_own_build {
+                continue;
+            }
+            let registry = self.registry();
+            if let Some(cd) = registry.classes.get(cls) {
+                for a in cd.attributes.iter() {
+                    owned.insert(a.0.clone());
+                }
+            }
+        }
+        owned
+    }
+
     /// Default-construct `class_name` natively when it is eligible (see
     /// `is_native_default_constructible`). Returns `None` for ineligible
     /// classes so callers fall through to the full constructor dispatch.
