@@ -129,7 +129,10 @@ impl Interpreter {
     pub(super) fn builtin_fail(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         if let Some(v) = args.first().cloned() {
             // When fail() receives a Failure:D, extract the inner exception
-            // and re-arm it (Raku behavior: fail(Failure:D) re-arms)
+            // and re-arm it (Raku behavior: fail(Failure:D) re-arms, even a
+            // handled one — roast S04-exceptions/fail.t pins
+            // `foo() orelse fail $_`. The METHOD form `.fail` on a handled
+            // Failure throws instead; that lives in the method dispatch.)
             if let ValueView::Instance {
                 class_name,
                 attributes,

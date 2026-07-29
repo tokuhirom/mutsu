@@ -34,14 +34,14 @@ PGDATABASE=dbdishtest DBIISH_WRITE_TEST=YES`; create `dbdishtest` first).
 applies: a scalar `$INCS` string under zsh silently breaks the module path and
 produced a bogus first survey in this very session.
 
-Of the 11 upstream Pg files, 9 match raku exactly (30-pg, 34-pg-types,
+Of the 11 upstream Pg files, 10 match raku exactly (30-pg, 34-pg-types,
 35-pg-common, 36-pg-array, 36-pg-blob, 36-pg-native, 37-pg-datetime,
-38-pg-connection-lock, 38-pg-threads). The basic + extended e2e scripts
-(`tmp/dbiish-e2e-pg.raku`, `tmp/dbiish-pg-extra.raku`) are byte-identical to
-raku. Remaining:
+38-pg-connection-lock, 38-pg-errors, 38-pg-threads). The basic + extended
+e2e scripts (`tmp/dbiish-e2e-pg.raku`, `tmp/dbiish-pg-extra.raku`) are
+byte-identical to raku. Remaining:
 
-Re-measured 2026-07-29 (fifth pass; sweep helper `tmp/pg-sweep.sh`; raku
-totals 26/9):
+Re-measured 2026-07-29 (sixth pass; sweep helper `tmp/pg-sweep.sh`; raku
+totals 26):
 
 - `36-pg-blob` — **RESOLVED** (17/17, raku parity) by the six-fix chain in
   `news/2026-07/module-loaded-sub-with-tail-var.md`.
@@ -66,6 +66,7 @@ totals 26/9):
   `class K { has %.c; }; my $k = K.new; my $e = "Yes";
   $k.c{Str} = sub ($v) { "$v-$e" }; $e = "No"; say $k.c{Str}("x")`
   — raku warns and prints `x-No`; mutsu dies on the coercion.
-- **`38-pg-errors` (7 ok, 1 fail)** — one subtest assertion inside "Incorrect
-  column" (the first three subtest checks pass; dig out which of the 15
-  fails).
+- `38-pg-errors` — **RESOLVED** (9/9, raku parity): a handled Failure's
+  `.fail` METHOD throws its wrapped exception (the sub form `fail $f`
+  re-arms) — `news/2026-07/handled-failure-refail-throws.md`, pinned by
+  `t/failure-handled-refail-throws.t`.
