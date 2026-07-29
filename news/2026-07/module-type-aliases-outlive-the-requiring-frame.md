@@ -55,14 +55,31 @@ package — each walked up its `::` chain. A name that is directly registered
 short-circuits before the table is consulted, so a locally declared type still
 wins over an import.
 
+## The same for a module's own `constant`s
+
+The alias table only covers type names, and the very next step of the DBIish path
+showed the other half: `NativeHelpers::Blob`'s `MoarVM::Guts::REPRs` declares a
+file-scope `constant Offset` that its exported `OBJECT_BODY` sub reads, and that
+resolved to the *string* `"Offset"` for exactly the same reason — the module was
+loaded from inside the method frame. So the env diff also records every plain
+(sigilless, unqualified) file-scope name into `module_scope_lexicals`, consulted
+as the **last** resort in bareword resolution, immediately before the
+undeclared-bareword-as-`Str` fallback, so any live `env` binding still wins. It is
+deliberately kept separate from `package_lexicals`, which is the mutable
+package-block `my` store with its own writeback path.
+
 ## Effect
 
 `DBIish.connect` now reaches a live MariaDB (`connected: True`) through the real
-`DBIish` → `install-driver` → `DBDish::mysql` path. The remaining failure is
-further along, in `prepare`.
+`DBIish` → `install-driver` → `DBDish::mysql` path, and `.execute` runs real DDL
+against it. The remaining failure is further along, in `prepare`, and is not this
+bug: `NativeHelpers::Blob`'s `BODY_OF` reads MoarVM's internal object layout
+(`any.WHERE + Offset` reinterpreted as an `MVMArrayB` CStruct), which mutsu does
+not reproduce.
 
 Pinned by `t/require-in-method-keeps-module-type-alias.t` (fixtures
 `t/lib/RequiredDriver.rakumod` and `t/lib/RequiredDriver/Native.rakumod`), which
 covers a `require` in a method, in a sub, and in DBIish's exact
-memoise-inside-a-lock-inside-a-method shape. All six assertions pass under raku
-too.
+memoise-inside-a-lock-inside-a-method shape, plus a module-private `constant`
+read from both a method and a sub of that module. All eight assertions pass under
+raku too.

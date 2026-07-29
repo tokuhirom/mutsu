@@ -386,6 +386,13 @@ impl Interpreter {
             // Resolve the bare word to that persisted package value rather than
             // treating it as an undeclared bareword string.
             our_val
+        } else if let Some(module_val) = self.module_scope_lexical(name).cloned() {
+            // A `constant` (or sigilless declaration) the running routine's own
+            // module made in its file scope. A module body executes in the env of
+            // whatever frame loaded it, so that binding is gone once the frame is
+            // (a `require` inside a method); `module_scope_lexicals` keeps it attached
+            // to the module instead. Last resort, after every live-env route.
+            module_val
         } else {
             Value::str(name.to_string())
         };

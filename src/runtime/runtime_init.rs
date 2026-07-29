@@ -2109,6 +2109,7 @@ impl Interpreter {
             current_distribution_frame_floor: 0,
             package_distributions: HashMap::new(),
             package_type_aliases: HashMap::new(),
+            module_scope_lexicals: HashMap::new(),
             exported_subs: HashMap::new(),
             exported_sub_values: HashMap::new(),
             exported_vars: HashMap::new(),

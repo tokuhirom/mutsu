@@ -315,10 +315,32 @@ impl Interpreter {
         if self.has_type_direct(name) {
             return None;
         }
-        // `current_package` is GLOBAL while a method body runs (module bodies are
-        // executed under GLOBAL), so the owning package has to come from the
-        // running frame: the method's class first, then the routine frame's
-        // package, then whatever package is current.
+        self.lookup_in_running_package(&self.package_type_aliases, name)
+            .filter(|target| self.has_type_direct(target))
+            .cloned()
+    }
+
+    /// The bare `constant` / sigilless declaration a module made in its own file
+    /// scope, for a name the live `env` no longer accounts for. The LAST resort in
+    /// bareword resolution — see `module_scope_lexicals`.
+    pub(crate) fn module_scope_lexical(&self, name: &str) -> Option<&Value> {
+        if self.module_scope_lexicals.is_empty() || name.contains("::") || name.is_empty() {
+            return None;
+        }
+        self.lookup_in_running_package(&self.module_scope_lexicals, name)
+    }
+
+    /// Look `name` up in a per-package table, keyed by the package of the frame
+    /// that is actually running. `current_package` is GLOBAL while a method body
+    /// runs (module bodies execute under GLOBAL), so the owning package has to
+    /// come from the running frame: the method's class first, then the routine
+    /// frame's package, then whatever package is current — each walked up its
+    /// `::` chain like `resolve_type_name_for_owner`.
+    fn lookup_in_running_package<'a, V>(
+        &'a self,
+        table: &'a HashMap<String, HashMap<String, V>>,
+        name: &str,
+    ) -> Option<&'a V> {
         let current = self.current_package();
         let candidates = [
             self.method_class_stack_top_str(),
@@ -331,13 +353,8 @@ impl Interpreter {
         for candidate in candidates.into_iter().flatten() {
             let mut pkg = candidate;
             loop {
-                if let Some(target) = self
-                    .package_type_aliases
-                    .get(pkg)
-                    .and_then(|aliases| aliases.get(name))
-                    && self.has_type_direct(target)
-                {
-                    return Some(target.clone());
+                if let Some(found) = table.get(pkg).and_then(|entries| entries.get(name)) {
+                    return Some(found);
                 }
                 match pkg.rsplit_once("::") {
                     Some((parent, _)) => pkg = parent,

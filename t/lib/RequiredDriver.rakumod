@@ -1,10 +1,19 @@
 unit class RequiredDriver;
 use RequiredDriver::Native;
 
+# A file-scope `constant` the module's own routines close over, but which nothing
+# exports. Same lifetime problem as the imported type name below: it is declared
+# in the env of whatever frame loaded the module.
+constant SLOT-SIZE = 7 * 6;
+
 has $.parent;
 
-# Both of these resolve `Widget` through the short name this module imported for
-# itself, long after whatever frame ran the `require` has returned.
+# All of these resolve names the module declared or imported for itself, long
+# after whatever frame ran the `require` has returned.
 method widget-name(--> Str) { Widget.^name }
 method widget-label(--> Str) { Widget.new.label }
 method widget-tag(--> Str) { WIDGET-TAG }
+method slot-size(--> Int) { SLOT-SIZE }
+method slot-size-via-sub(--> Int) { slot-size-helper() }
+
+sub slot-size-helper(--> Int) { SLOT-SIZE + 1 }

@@ -1034,6 +1034,18 @@ pub struct Interpreter {
     /// the resolution lexical to the module instead of dynamic to the frame.
     /// Consulted by `package_type_alias` from `has_type` / `GetBareWord`.
     pub(crate) package_type_aliases: HashMap<String, HashMap<String, String>>,
+    /// The module's other file-scope bare names — `constant`s and sigilless
+    /// declarations its own routines close over — keyed the same way as
+    /// `package_type_aliases`, and lost for the same reason. Consulted by
+    /// `module_scope_lexical` as the LAST resort in bareword resolution, just
+    /// before the undeclared-bareword-as-`Str` fallback, so a live `env` binding
+    /// always wins. Distinct from `package_lexicals`, which is the *mutable*
+    /// package-block `my` store with its own writeback path; these are a module's
+    /// immutable file-scope terms. `NativeHelpers::Blob`'s `MoarVM::Guts::REPRs`
+    /// is the motivating case: `constant Offset` is read by the exported
+    /// `OBJECT_BODY` sub of the same module, and resolved to the string
+    /// `"Offset"` once the frame that loaded the module was gone.
+    pub(crate) module_scope_lexicals: HashMap<String, HashMap<String, Value>>,
     /// Exported subroutine symbols by package and export tag.
     exported_subs: HashMap<String, HashMap<String, HashSet<String>>>,
     /// Exported variable/constant symbols by package and export tag.
