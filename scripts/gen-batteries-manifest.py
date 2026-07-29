@@ -137,13 +137,20 @@ def collect() -> list[dict]:
         meta = json.loads(read_text(meta_path))
         name = meta.get("name", entry)
         sidecar = SIDECAR.get(name, {})
+        # META6 "authors" is nominally an array, but some dists (e.g.
+        # NativeHelpers::Blob) ship it as a bare string. Always emit a list --
+        # the page does `lib.authors.join(', ')`, which throws on a string.
+        raw_authors = meta.get("authors") or (
+            [meta["author"]] if meta.get("author") else []
+        )
+        authors = [raw_authors] if isinstance(raw_authors, str) else raw_authors
         libraries.append(
             {
                 "name": name,
                 "version": meta.get("version", ""),
                 "description": meta.get("description", ""),
                 "license": sidecar.get("license") or meta.get("license") or "",
-                "authors": meta.get("authors") or ([meta["author"]] if meta.get("author") else []),
+                "authors": authors,
                 "auth": meta.get("auth", ""),
                 "provides": sorted((meta.get("provides") or {}).keys()),
                 "depends": meta.get("depends") or [],

@@ -188,7 +188,9 @@
       "version": "0.1.9",
       "description": "NativeCall utilities for work with Blob and CArray",
       "license": "Artistic-2.0",
-      "authors": "Salvador Ortiz <sortiz@cpan.com>",
+      "authors": [
+        "Salvador Ortiz <sortiz@cpan.com>"
+      ],
       "auth": "github:salortiz",
       "provides": [
         "MoarVM::Guts::REPRs",
