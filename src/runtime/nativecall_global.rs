@@ -228,7 +228,36 @@ impl Interpreter {
         let mut call_args = Vec::with_capacity(args.len() + 1);
         call_args.push(invocant.clone());
         call_args.extend(args.iter().cloned());
-        Some(crate::runtime::nativecall::call_native(&spec, &call_args))
+        let result = match crate::runtime::nativecall::call_native_with_out_args(&spec, &call_args)
+        {
+            Ok((v, out_args)) => {
+                // An `is rw` numeric out-parameter must reach the caller's
+                // variable (`$conn.PQescapeByteaConn($buf, $len, $sz)` leaves
+                // the written length in `$sz`), the same as the native-sub VM
+                // call site. A method argument arrives by value, so the
+                // caller name comes from the dispatching CallMethod op's
+                // arg-source list (a `VarRef` is honored too, for interpreter
+                // routes that keep it). The queued source is applied to the
+                // caller's local slot when the VM op returns.
+                for (idx, val) in out_args {
+                    let name = match call_args[idx].view() {
+                        ValueView::VarRef { name, .. } => Some(name.resolve().to_string()),
+                        _ => self
+                            .pending_call_arg_sources()
+                            // `call_args[0]` is the invocant, absent there.
+                            .and_then(|sources| sources.get(idx.checked_sub(1)?))
+                            .and_then(|s| s.clone()),
+                    };
+                    if let Some(n) = name {
+                        self.env.insert(n.clone(), val);
+                        self.pending_rw_writeback_sources.push(n);
+                    }
+                }
+                Ok(v)
+            }
+            Err(e) => Err(e),
+        };
+        Some(result)
     }
 
     /// [`try_native_call_method`] from a call site that knows only the

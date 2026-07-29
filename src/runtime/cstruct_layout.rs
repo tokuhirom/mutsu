@@ -597,6 +597,18 @@ impl crate::runtime::Interpreter {
         };
         let addr = crate::runtime::nativecall::value_c_address(&args[1]);
         let short = short_base_name(&target);
+        // `nativecast(Str, $ptr)` reads the pointer as a NUL-terminated C
+        // string (the same marshalling a `--> Str` native return uses), not as
+        // an opaque handle tagged `Str`.
+        if short == "Str" {
+            if addr == 0 {
+                return Some(Ok(crate::value::Value::NIL));
+            }
+            let cstr = unsafe { std::ffi::CStr::from_ptr(addr as *const std::ffi::c_char) };
+            return Some(Ok(crate::value::Value::str(
+                cstr.to_string_lossy().into_owned(),
+            )));
+        }
         // `Pointer[T]` stays an ordinary `Pointer` object and remembers `T` in
         // an `of` attribute, rather than becoming an instance of a class named
         // "Pointer[T]" — every `Pointer` method (`.Int`, `.gist`, the

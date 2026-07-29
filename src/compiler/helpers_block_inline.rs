@@ -59,6 +59,16 @@ impl Compiler {
                 self.emit_set_named_var(name);
                 true
             }
+            // A bare call the parser resolved to a *statement* call (chosen when
+            // the name is a known routine — e.g. a sub imported by an
+            // already-parsed `use`) must still yield its return value: it is the
+            // block's value. Without this arm it fell to statement compilation
+            // and the block yielded Nil (`with ptr { blob-from-pointer(...) }`
+            // inside a module — the NativeHelpers::Blob shape — returned Nil).
+            Stmt::Call { name, args } => {
+                self.compile_tail_stmt_call_value(*name, args);
+                true
+            }
             _ => false,
         }
     }

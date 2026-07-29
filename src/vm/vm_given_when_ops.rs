@@ -179,9 +179,10 @@ impl Interpreter {
             if let Err(e) = self.exec_one(code, &mut inner_ip, compiled_fns) {
                 if e.is_succeed() {
                     self.stack.truncate(stack_base);
-                    if let Some(v) = e.return_value {
-                        self.stack.push(v);
-                    }
+                    // A statement `given` always yields exactly one stack value
+                    // (mirroring `exec_do_given_expr_op`), so statement-position
+                    // compilers can pair it with an unconditional `Pop`.
+                    self.stack.push(e.return_value.unwrap_or(Value::NIL));
                     restore(self, true);
                     *ip = end;
                     return Ok(());
@@ -193,11 +194,15 @@ impl Interpreter {
                 break;
             }
         }
-        if self.stack.len() > stack_base {
-            let last = self.stack.pop().unwrap_or(Value::NIL);
-            self.stack.truncate(stack_base);
-            self.stack.push(last);
-        }
+        // Always net exactly +1 stack value (Nil when the body left none), so
+        // the compiler's statement-position `Pop` never eats an unrelated value.
+        let last = if self.stack.len() > stack_base {
+            self.stack.pop().unwrap_or(Value::NIL)
+        } else {
+            Value::NIL
+        };
+        self.stack.truncate(stack_base);
+        self.stack.push(last);
 
         restore(self, true);
         *ip = end;
