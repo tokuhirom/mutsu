@@ -109,17 +109,6 @@ section.
       MIME::Base64 / HTTP::Server::Tiny / Tubu (sync WAF) / DBDishLite (SQLite) / NativeCall.
       Use "a web blog can be written with the bundle alone" as the selection criterion (the HTTP
       client gap needs investigation).
-- [ ] **Bundle the database battery — `DBIish` (SQLite).** The slot is **selected** and its survey is
-      recorded in [docs/batteries/database.md](docs/batteries/database.md) (`DBIish` over `DB::SQLite`:
-      449 dependents vs 0, maintained vs 2021, fewer deps, one API for several engines). It now runs
-      at **9/9 files, raku parity on every one** as of 2026-07-28 (it was 1/9 when the slot was
-      chosen); the ledger is `todo/tickets/dbiish-blockers.md`. The last file was the `mysql` driver, gated on
-      [ADR-0015](docs/adr/0015-native-backed-container-storage-and-repr-bodies.md) — `DBDish::SQLite`
-      does not need it, so bundling SQLite support is not blocked on that ADR (which is Accepted;
-      P0-P2 are landed, P3 remains). The mysql driver now runs at parity too. Next: vendor
-      `DBIish` + `NativeLibs` + `NativeHelpers::Blob` and baseline the release gate.
-      This is the next step toward "a web blog can be written with the bundle alone": the bundle can
-      already fetch, render and parse JSON, but it cannot store.
 - [ ] **Vendoring mechanism**: vendor the bundled modules into the source tree (e.g. `modules/`) so
       an installed mutsu resolves them with no extra configuration (make `MUTSULIB` have a built-in
       default, or register a standard lib path in `Interpreter::new()` — same pattern as
