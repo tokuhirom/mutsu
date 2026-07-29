@@ -784,10 +784,13 @@ impl Interpreter {
                 continue;
             }
             let name = key.resolve();
-            // Sigils, twigils, qualified names and the `__mutsu_*` / `?FILE`-style
-            // metadata keys are never plain module-scope declarations.
+            // Twigils, qualified names and the `__mutsu_*` / `?FILE`-style
+            // metadata keys are never plain module-scope declarations. A scalar
+            // `my $x` is stored sigil-less (key `x`); `@`/`%` keep their sigil.
+            // `&` names are routines and have the registry, so they stay out.
+            let bare = name.strip_prefix(['@', '%']).unwrap_or(name.as_str());
             if name.contains("::")
-                || !name
+                || !bare
                     .chars()
                     .next()
                     .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')

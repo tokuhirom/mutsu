@@ -2,7 +2,7 @@ use v6;
 use lib 't/lib';
 use Test;
 
-plan 8;
+plan 9;
 
 # A module body runs in the env of whatever frame triggered the load, so the
 # short-name type aliases the module's own `use` statements install used to die
@@ -33,6 +33,8 @@ sub install-from-sub($name) {
         'a method resolves its module\'s own file-scope constant';
     is $d.slot-size-via-sub, 43,
         'and so does a sub of that module called from the method';
+    is $d.slot-name('big'), 'wide',
+        'a method resolves its module\'s own file-scope `my` hash';
 }
 
 {
