@@ -1164,7 +1164,9 @@ impl Interpreter {
                     // `nextsame`/`callsame`/`callwith`/`samewith` from the selected
                     // candidate still work because compile_and_call_function_def pushes
                     // the same multi-dispatch + samewith frames the interpreter would.
-                    self.compile_and_call_function_def(&def, args, compiled_fns)
+                    let is_raw = def.is_raw;
+                    let result = self.compile_and_call_function_def(&def, args, compiled_fns)?;
+                    loan_env!(self, maybe_fetch_rw_proxy(result, !is_raw))
                 } else if self.has_proto(name)
                     && let Some(result) =
                         self.vm_try_run_nontrivial_proto_body(name, args.clone(), compiled_fns)
@@ -1216,7 +1218,10 @@ impl Interpreter {
                         && Self::def_is_otf_compilable_multi_candidate(&def)
                         && !self.multi_candidate_state_forces_interpreter(name, &def)
                     {
-                        self.compile_and_call_function_def(&def, args, compiled_fns)
+                        let is_raw = def.is_raw;
+                        let result =
+                            self.compile_and_call_function_def(&def, args, compiled_fns)?;
+                        loan_env!(self, maybe_fetch_rw_proxy(result, !is_raw))
                     } else {
                         crate::vm::vm_stats::record_function_fallback(name);
                         self.set_pending_call_arg_sources(arg_sources);
@@ -1275,7 +1280,10 @@ impl Interpreter {
                             Self::def_is_otf_compilable_module_single(&def)
                         };
                         if gate_ok {
-                            return self.compile_and_call_function_def(&def, args, compiled_fns);
+                            let is_raw = def.is_raw;
+                            let result =
+                                self.compile_and_call_function_def(&def, args, compiled_fns)?;
+                            return loan_env!(self, maybe_fetch_rw_proxy(result, !is_raw));
                         }
                     }
                     crate::vm::vm_stats::record_function_fallback(name);
@@ -1295,7 +1303,9 @@ impl Interpreter {
                 // code params (&foo), no where constraints, no closures.
                 && Self::def_is_otf_compilable(&def)
                 {
-                    self.compile_and_call_function_def(&def, args, compiled_fns)
+                    let is_raw = def.is_raw;
+                    let result = self.compile_and_call_function_def(&def, args, compiled_fns)?;
+                    loan_env!(self, maybe_fetch_rw_proxy(result, !is_raw))
                 } else if let Some(result) = self.try_native_test_function(name, &args) {
                     // Dispatch Test functions straight to their typed handler (lever A).
                     result
