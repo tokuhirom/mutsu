@@ -35,6 +35,6 @@ method, a loop body, and that a throwing FETCH is caught by a surrounding `try`
 in both a sub and a method.
 
 This is one of two bugs on `DBIish`'s real mysql path. The other — a `Proxy`
-`FETCH` body losing its captured lexical to a same-named *caller* lexical — is a
-dual-store problem recorded in
-[`todo/deep/closure-capture-loses-to-same-named-caller-lexical.md`](../../todo/deep/closure-capture-loses-to-same-named-caller-lexical.md).
+`FETCH` body losing its captured lexical to a same-named *caller* lexical — is
+fixed in
+[`closure-capture-beats-same-named-caller-lexical.md`](closure-capture-beats-same-named-caller-lexical.md).

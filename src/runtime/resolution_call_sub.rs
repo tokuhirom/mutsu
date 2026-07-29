@@ -312,6 +312,24 @@ impl Interpreter {
             } else {
                 data.env.clone()
             };
+            // Free vars this closure lexically OWNS: the creating frame declares
+            // them and never mutates them after the capture op ran (the compiler's
+            // `authoritative_free_vars`, plus the runtime-vouched
+            // `authoritative_captures` for a closure built inside a `.map`/`.grep`
+            // block). A same-named lexical in whatever frame happens to call the
+            // closure is an unrelated binding and must never shadow these — that is
+            // lexical scoping degrading into dynamic scoping. The VM's
+            // `call_compiled_closure` already installs them with overwrite; this is
+            // the interpreter-path twin, and it is what lets the `merge_all`
+            // caller-priority merge below stay sound (see the comment there).
+            let auth_free_vars: &[crate::symbol::Symbol] = data
+                .compiled_code
+                .as_ref()
+                .map(|cc| cc.authoritative_free_vars.as_slice())
+                .unwrap_or(&[]);
+            let is_authoritative = |k: crate::symbol::Symbol| {
+                auth_free_vars.contains(&k) || data.authoritative_captures.contains(&k)
+            };
             let mut new_env = saved_env.clone();
             for (k, v) in &closure_base_env {
                 // A captured `ContainerRef` is a shared container cell (box-on-
@@ -326,7 +344,15 @@ impl Interpreter {
                     new_env.insert_sym(*k, v.clone());
                     continue;
                 }
-                if merge_all {
+                // Caller-priority: a `Proxy` FETCH body (and the other
+                // native-invoked callbacks that pass `merge_all`) must see the
+                // CURRENT value of a captured lexical its STORE twin mutates
+                // (substr-rw's `$str`), and a dynamic var must resolve against the
+                // live caller chain. But a name the closure lexically owns is not
+                // up for grabs — hence the `is_authoritative` escape hatch, which
+                // covers exactly the never-mutated captures where "same name" can
+                // safely be read as "the closure's own binding".
+                if merge_all && !is_authoritative(*k) {
                     new_env.entry_or_insert(k.resolve(), v.clone());
                     continue;
                 }
@@ -558,10 +584,22 @@ impl Interpreter {
                     if k.with_str(crate::runtime::utils::is_index_rw_call_temp) {
                         continue;
                     }
-                    if k != "_"
-                        && k != "@_"
-                        && (merged.contains_key_sym(*k) || k.starts_with("__mutsu_var_meta::"))
-                    {
+                    if k == "_" || k == "@_" {
+                        continue;
+                    }
+                    if merged.contains_key_sym(*k) {
+                        // Only propagate what the body actually CHANGED (vs its
+                        // body-entry snapshot). An entry equal to that snapshot is
+                        // the callee's own captured lexical, not a mutation, and
+                        // writing it back would overwrite an unrelated caller
+                        // variable that merely shares the name — `cglobal`'s FETCH
+                        // captures `$libname` = 'libmariadb.so.0', its caller
+                        // `try-versions` has its own `Str $libname` = 'mariadb',
+                        // and every probe after the first read the clobbered value
+                        // (NativeLibs, the DBIish mysql path).
+                        if body_entry_env.get_sym(*k) == Some(v) {
+                            continue;
+                        }
                         // Unlike the non-merge_all branch below, this path is used
                         // by native-invoked callbacks (Promise/Supply/reduce/lvalue
                         // Proxy/on-switch, ...) where nothing else drains
@@ -572,9 +610,9 @@ impl Interpreter {
                         // it (io-cathandle.t on-switch: `$args = (a, b)` assigns a
                         // List, which the old Bool/Int/Num/Str/Rat-only whitelist
                         // silently dropped).
-                        if merged.contains_key_sym(*k) && body_entry_env.get_sym(*k) != Some(v) {
-                            captured_outer_writes.push(k.resolve().to_string());
-                        }
+                        captured_outer_writes.push(k.resolve().to_string());
+                        merged.insert_sym(*k, v.clone());
+                    } else if k.starts_with("__mutsu_var_meta::") {
                         merged.insert_sym(*k, v.clone());
                     }
                 }
