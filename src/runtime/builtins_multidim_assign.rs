@@ -186,7 +186,14 @@ impl Interpreter {
                 && let Some(info) = self.container_type_metadata(&current)
             {
                 let constraint = &info.value_type.clone();
-                if constraint != "Mu"
+                // An empty value_type means "no element constraint": a Map
+                // carries embedded metadata (declared_type) with no value
+                // type, and `hashdata_type_info` renders that as "" — checking
+                // against it would reject EVERY assignment (`has %.h =
+                // Map.new(...)`; `$obj.h{k} = v` — DBDish::Pg's
+                // dynamic-types).
+                if !constraint.is_empty()
+                    && constraint != "Mu"
                     && constraint != "Any"
                     && !self.type_matches_value(constraint, &effective_value)
                 {
