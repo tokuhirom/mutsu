@@ -249,6 +249,7 @@ impl Interpreter {
             package_distributions: self.package_distributions.clone(),
             package_type_aliases: self.package_type_aliases.clone(),
             module_scope_lexicals: self.module_scope_lexicals.clone(),
+            module_imported_names: Vec::new(),
             exported_subs: self.exported_subs.clone(),
             exported_vars: self.exported_vars.clone(),
             exported_sub_values: self.exported_sub_values.clone(),

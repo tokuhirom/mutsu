@@ -2110,6 +2110,7 @@ impl Interpreter {
             package_distributions: HashMap::new(),
             package_type_aliases: HashMap::new(),
             module_scope_lexicals: HashMap::new(),
+            module_imported_names: Vec::new(),
             exported_subs: HashMap::new(),
             exported_sub_values: HashMap::new(),
             exported_vars: HashMap::new(),

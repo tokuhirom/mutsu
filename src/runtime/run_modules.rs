@@ -686,8 +686,14 @@ impl Interpreter {
             // env so the new ones can be recorded against the module itself.
             let before_env_keys: std::collections::HashSet<crate::symbol::Symbol> =
                 self.env.keys().copied().collect();
+            let saved_imports = std::mem::take(&mut self.module_imported_names);
             let result = self.run_block(&stmts);
+            let imported = std::mem::replace(&mut self.module_imported_names, saved_imports);
             module_scope_names = self.collect_module_scope_names(&before_env_keys);
+            // A re-import of a name an earlier module already installed adds
+            // nothing to `env`, so the diff misses it even though it is part of
+            // this module's scope (see `module_imported_names`).
+            module_scope_names.extend(imported);
             module_type_aliases = self.module_type_aliases_of(&module_scope_names);
             match saved_qfile {
                 Some(f) => {

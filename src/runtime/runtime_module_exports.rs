@@ -432,6 +432,12 @@ impl Interpreter {
                     };
                     self.pending_rw_writeback_sources.push(slot_name);
                 }
+                // Part of the LOADING module's own lexical scope, whether or not
+                // it is new to `env` (see `module_imported_names`).
+                if !self.module_load_stack.is_empty() && !target.contains("::") {
+                    self.module_imported_names
+                        .push((target.clone(), value.clone()));
+                }
                 self.env.insert(target, value);
             }
         }

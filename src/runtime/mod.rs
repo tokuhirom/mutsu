@@ -1046,6 +1046,14 @@ pub struct Interpreter {
     /// `OBJECT_BODY` sub of the same module, and resolved to the string
     /// `"Offset"` once the frame that loaded the module was gone.
     pub(crate) module_scope_lexicals: HashMap<String, HashMap<String, Value>>,
+    /// Names the module currently being loaded imported from another module,
+    /// accumulated by `import_module` and folded into `module_scope_lexicals`
+    /// when the load finishes. The env diff `load_module` takes cannot see these:
+    /// re-importing a name a *previously* loaded module already installed adds
+    /// nothing to `env`, so `DBDish::mysql::StatementHandle`'s `use
+    /// DBDish::mysql::Native` looked like a no-op even though `intptr` is part of
+    /// its lexical scope. Saved/restored around each nested load.
+    pub(crate) module_imported_names: Vec<(String, Value)>,
     /// Exported subroutine symbols by package and export tag.
     exported_subs: HashMap<String, HashMap<String, HashSet<String>>>,
     /// Exported variable/constant symbols by package and export tag.

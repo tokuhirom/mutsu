@@ -69,6 +69,16 @@ always wins. It is deliberately kept separate from `package_lexicals`, which is
 the mutable package-block `my` store with its own writeback path and its own
 qualified-name semantics.
 
+## Re-imports count too
+
+The env diff alone is not enough. A module that `use`s a module some *earlier*
+module already loaded adds nothing to `env` — the names are there — so the diff
+saw no import at all. `DBDish::mysql::StatementHandle`'s `use
+DBDish::mysql::Native` is exactly that, and its `intptr` and `ptrsize` stayed
+unresolvable. `import_module` therefore records what it installs against the
+module currently being loaded (`module_imported_names`, saved and restored around
+each nested load), and `load_module` folds that in alongside the diff.
+
 ## Effect
 
 `DBIish.connect` now reaches a live MariaDB (`connected: True`) through the real
@@ -81,5 +91,6 @@ Pinned by `t/require-in-method-keeps-module-type-alias.t` (fixtures
 `t/lib/RequiredDriver.rakumod` and `t/lib/RequiredDriver/Native.rakumod`), which
 covers a `require` in a method, in a sub, and in DBIish's exact
 memoise-inside-a-lock-inside-a-method shape, plus a module-private `constant`
-read from both a method and a sub of that module and a module-private `my %`.
-All nine assertions pass under raku too.
+read from both a method and a sub of that module, a module-private `my %`, and a
+second importer of an already-loaded module. All eleven assertions pass under
+raku too.
