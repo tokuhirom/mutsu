@@ -445,11 +445,17 @@ impl Interpreter {
         // defines the associative protocol (STORE / AT-KEY), which covers both
         // the role-composed (`Hash::Agnostic`) and the plain-class (`Hash::str`)
         // styles without grabbing unrelated `is <Type>` container traits.
+        // A *role* names a tie just as well as a class (`my %h is TypeConverter`):
+        // raku puns it, and `Value::package(name).new` already takes the punning
+        // path a role-typed attribute (`has %.C is TypeConverter`) uses. The
+        // method probes must look in the role registry too — the class MRO does
+        // not reach a bare role's own methods.
         if name.starts_with('%')
-            && self.registry().classes.contains_key(&trait_name)
+            && (self.registry().classes.contains_key(&trait_name)
+                || self.registry().roles.contains_key(&trait_name))
             && (self.class_does_role(&trait_name, "Associative")
-                || self.registry_mut().class_has_method(&trait_name, "STORE")
-                || self.registry_mut().class_has_method(&trait_name, "AT-KEY"))
+                || self.has_user_method_including_role(&trait_name, "STORE")
+                || self.has_user_method_including_role(&trait_name, "AT-KEY"))
         {
             if has_arg {
                 self.stack.pop();
@@ -494,7 +500,7 @@ impl Interpreter {
                     "STORE",
                     vec![list_arg, Value::pair("INITIALIZE".to_string(), Value::TRUE)],
                 )?;
-                let bound = if matches!(stored.view(), ValueView::Instance { .. }) {
+                let bound = if Self::is_tie_bindable(&stored) {
                     stored
                 } else {
                     instance

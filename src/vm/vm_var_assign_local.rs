@@ -744,11 +744,11 @@ impl Interpreter {
         // `throws-like { %h = ... }` block) the hash is a captured lexical held in
         // `env`, not `self.locals[idx]`. Resolve the instance from either place and
         // remember where it came from so the bound result is written back there.
-        let (instance, from_local) = match self.locals[idx].view() {
-            ValueView::Instance { .. } => (self.locals[idx].clone(), true),
-            _ => match self.get_env_with_main_alias(&name) {
-                Some(v) if matches!(v.view(), ValueView::Instance { .. }) => (v, false),
-                _ => return Ok(None),
+        let (instance, from_local) = match self.locals[idx].clone() {
+            v if Self::is_tie_bindable(&v) => (v, true),
+            _ => match self.tied_candidate_outside_slot(&name) {
+                Some(v) => (v, false),
+                None => return Ok(None),
             },
         };
         if !self.instance_is_tied(&instance) {
@@ -759,8 +759,27 @@ impl Interpreter {
             self.locals[idx] = bound.clone();
         }
         self.set_env_with_main_alias(&name, bound.clone());
+        self.write_self_attr_cell(&name, bound.clone());
         self.stack.push(bound);
         Ok(Some(()))
+    }
+
+    /// A tie candidate for `name` that does not live in the local slot: either
+    /// `env` (a captured lexical / global) or — for an attribute twigil
+    /// (`%!C = ...`) — `self`'s attribute cell, which is the store of record.
+    ///
+    /// The cell fallback is load-bearing: an attribute's local slot is only
+    /// seeded by a *read*, so `%!C = ...` with no prior read of `%!C` sees an
+    /// empty slot and would clobber the tie with a plain Hash. That made the
+    /// bug look intermittent — inserting any read of `%!C` before the
+    /// assignment made it disappear.
+    fn tied_candidate_outside_slot(&mut self, name: &str) -> Option<Value> {
+        if let Some(v) = self.get_env_with_main_alias(name)
+            && Self::is_tie_bindable(&v)
+        {
+            return Some(v);
+        }
+        self.read_self_attr_cell(name).filter(Self::is_tie_bindable)
     }
 
     /// The `env`-named twin of `maybe_tied_store_reassign`: `%h = ...` where the
@@ -774,16 +793,15 @@ impl Interpreter {
         if !(name.starts_with('%') || name.starts_with('@')) {
             return Ok(None);
         }
-        let Some(instance) = self.get_env_with_main_alias(name) else {
+        let Some(instance) = self.tied_candidate_outside_slot(name) else {
             return Ok(None);
         };
-        if !matches!(instance.view(), ValueView::Instance { .. })
-            || !self.instance_is_tied(&instance)
-        {
+        if !self.instance_is_tied(&instance) {
             return Ok(None);
         }
         let bound = self.tied_store_dispatch(instance)?;
         self.set_env_with_main_alias(name, bound.clone());
+        self.write_self_attr_cell(name, bound.clone());
         self.stack.push(bound);
         Ok(Some(()))
     }
@@ -791,12 +809,30 @@ impl Interpreter {
     /// True when `instance` is a tied container: a user `STORE` method plus a
     /// composed `Associative`/`Positional` role.
     pub(super) fn instance_is_tied(&mut self, instance: &Value) -> bool {
-        let ValueView::Instance { class_name, .. } = instance.view() else {
+        let Some(class_name) = Self::tied_instance_type_name(instance) else {
             return false;
         };
         let cn = class_name.as_str();
-        self.has_user_method(cn, "STORE")
+        self.has_user_method_including_role(cn, "STORE")
             && (self.class_does_role(cn, "Associative") || self.class_does_role(cn, "Positional"))
+    }
+
+    /// The type name behind a candidate tied container. A tie declared with a
+    /// *role* (`my %h is TypeConverter`, `has %.C is TypeConverter`) puns the
+    /// role, and a punned role is a `Mixin` wrapping the instance — so matching
+    /// `Instance` alone would silently skip every role-typed tie.
+    pub(super) fn tied_instance_type_name(val: &Value) -> Option<crate::symbol::Symbol> {
+        match val.view() {
+            ValueView::Instance { class_name, .. } => Some(class_name),
+            ValueView::Mixin(inner, _) => Self::tied_instance_type_name(inner),
+            _ => None,
+        }
+    }
+
+    /// Whether `val` is a value a tie can be bound to: an instance, or the
+    /// `Mixin` a punned role is represented as.
+    pub(super) fn is_tie_bindable(val: &Value) -> bool {
+        Self::tied_instance_type_name(val).is_some()
     }
 
     /// Pop the RHS and route it through the tied instance's `STORE`, returning
@@ -810,7 +846,7 @@ impl Interpreter {
         let list_arg = Value::array(store_values);
         let stored =
             self.try_compiled_method_or_interpret(instance.clone(), "STORE", vec![list_arg])?;
-        Ok(if matches!(stored.view(), ValueView::Instance { .. }) {
+        Ok(if Self::is_tie_bindable(&stored) {
             stored
         } else {
             instance

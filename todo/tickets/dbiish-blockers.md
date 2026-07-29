@@ -65,18 +65,22 @@ even when the block runs inside another object's method, which is what
 - [`$*VM.platform-library-name` honours `:version`](../../news/2026-07/platform-library-name-keeps-its-version.md)
   — needed by `DBDish::Pg`, see below.
 
-**Next failure on the mysql end-to-end path** (`tmp/mysql-e2e-use.raku`):
+**Reading rows back** used to fail on the mysql end-to-end path
+(`tmp/mysql-e2e-use.raku`) with
 
 ```
 No such method 'convert-function' for invocant of type 'Hash'
   in sub _row ... in sub row ...
 ```
 
-i.e. reading rows back. `DBDish::StatementHandle`'s `_row` looks up a per-column
-converter and finds a plain `Hash` where a `TypeConverter` object is expected —
-the same punned-role-in-an-attribute shape as ⑤ below, so check
-[`todo/deep/punned-role-container-attribute-store.md`](../deep/punned-role-container-attribute-store.md)
-first.
+`DBDish::StatementHandle`'s `_row` binds `my %Converter := $!parent.Converter`
+and found a plain `Hash` where a `TypeConverter` was expected. This was *not* the
+punned-role-in-an-attribute store of ⑤ (that landed 2026-07-26); it was the
+container **tie** in front of it — `has %.Converter is DBDish::TypeConverter`
+populated by a bare `%!Converter = …` in BUILD. Fixed in
+[`news/2026-07/tied-container-attribute-and-role.md`](../../news/2026-07/tied-container-attribute-and-role.md):
+a whole-value assignment to an attribute now routes through `STORE` instead of
+replacing the tie, and a tie named by a *role* is recognised at all.
 
 Still open before `DBIish.connect(…)` works through its own front door:
 [`require-loaded-module-loses-use-imports.md`](require-loaded-module-loses-use-imports.md).
@@ -382,15 +386,13 @@ the end of this file). Three are done and two remain:
   that means a punned-role object living inside an attribute, which is precisely
   where the second store cannot be reached.
 
-So what is left of ⑤ is one thing:
-[`todo/deep/punned-role-container-attribute-store.md`](../deep/punned-role-container-attribute-store.md).
-A punned role keeps its `@`/`%` attributes in `__mutsu_attr__` mixin markers
-instead of the instance's attribute cell, so an ordinary `%!h<k> = 1` inside a
-role method is dropped, while the `handles` delegation path mutates the marker
-and writes the rebuilt `Mixin` back into the *caller's env variable* — a
-writeback that cannot reach an object held in an attribute. The code carries its
-own `TODO` for this. It wants the cell to become the single store for every
-sigil; ~36 `__mutsu_attr__` sites are involved.
+The last of ⑤ was the two-store problem: a punned role kept its `@`/`%`
+attributes in `__mutsu_attr__` mixin markers instead of the instance's attribute
+cell, so an ordinary `%!h<k> = 1` inside a role method was dropped, while the
+`handles` delegation path mutated the marker and wrote the rebuilt `Mixin` back
+into the *caller's env variable* — a writeback that cannot reach an object held
+in an attribute. The cell is the single store for every sigil now:
+[`news/2026-07/punned-role-container-attribute-store.md`](../../news/2026-07/punned-role-container-attribute-store.md).
 
 Note the object-hash requirement overlaps the deferred "object-hash `WHICH`"
 item in the doc-diff DEEP bucket (`docs/doc-diff-backlog.md`).
@@ -466,7 +468,7 @@ is at 30 of 35. Two left:
    `unit module` prelude capture). **The only thing left is ADR-0015 P2** —
    native-backed `Buf`/`Blob` with an honest `VMArray` `.REPR` and an `MVMArrayB`
    body. That is the campaign, not a slice. It has been surveyed against `main`:
-   [`todo/deep/adr0015-p2-buf-storage-survey.md`](../deep/adr0015-p2-buf-storage-survey.md)
+   [`news/2026-07/adr0015-p2-buf-storage-survey.md`](../../news/2026-07/adr0015-p2-buf-storage-survey.md)
    has the measured touch count (104, not the ADR's ~91), the `.REPR` machinery
    P1 already left in place, and — the load-bearing correction —
    **`native_object_where` cannot be extended into `MVMArrayB`**: it is memoised

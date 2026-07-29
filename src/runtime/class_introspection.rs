@@ -232,6 +232,22 @@ impl Interpreter {
         false
     }
 
+    /// [`Self::has_user_method`] widened to a bare role name. A punned role
+    /// (`Role.new`) carries the role as its type name, but the role's methods
+    /// live in the role registry, which the class MRO does not reach — so a
+    /// classes-only lookup answers `false` for every method a punned role
+    /// declares.
+    pub(crate) fn has_user_method_including_role(&mut self, name: &str, method_name: &str) -> bool {
+        if self.has_user_method(name, method_name) {
+            return true;
+        }
+        self.registry()
+            .roles
+            .get(name)
+            .and_then(|r| r.methods.get(method_name))
+            .is_some_and(|defs| defs.iter().any(|d| !d.is_private))
+    }
+
     /// Check if a class has a public attribute accessor for the given name.
     pub(crate) fn has_public_accessor(&mut self, class_name: &str, method_name: &str) -> bool {
         let attrs = self.collect_class_attributes(class_name);

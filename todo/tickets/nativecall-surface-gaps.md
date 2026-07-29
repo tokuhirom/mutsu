@@ -62,8 +62,8 @@ done
 
 - ~~**`is native` on methods**~~ — **done 2026-07-29**, see
   [`news/2026-07/nativecall-cglobal-and-native-methods.md`](../../news/2026-07/nativecall-cglobal-and-native-methods.md).
-- **`nativecast` tags handles with the short class name**, so a CStruct declared
-  inside a module loses its hand-written methods:
-  [`nativecast-tags-handles-with-the-short-class-name.md`](nativecast-tags-handles-with-the-short-class-name.md).
+- ~~**`nativecast` tags handles with the short class name**~~ — **done
+  2026-07-29**, see
+  [`news/2026-07/cstruct-handles-carry-their-registered-name.md`](../../news/2026-07/cstruct-handles-carry-their-registered-name.md).
 - **By-value CStructs and callbacks** — recorded in `runtime/nativecall.rs`'s
   module docs as follow-up work; no dist in the batteries needs them yet.
