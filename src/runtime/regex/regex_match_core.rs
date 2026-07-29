@@ -56,7 +56,13 @@ impl Interpreter {
                     }
                 }
             }
-            RegexAtom::Group(pat) | RegexAtom::CaptureGroup(pat) => {
+            // A CAPTURING group is a capture boundary: a named capture inside
+            // `( <element> ',' )*` belongs to each group's own Match (reached
+            // via `$0[n]<element>`), NOT to the enclosing Match — raku leaves
+            // `$/<element>` entirely absent there. Only a non-capturing group
+            // (`[ <e> ]*`) exposes its inner names to the quantified parent
+            // (as lists). So do not descend into CaptureGroup.
+            RegexAtom::Group(pat) => {
                 for tok in &pat.tokens {
                     if let Some(name) = tok.named_capture.as_ref() {
                         out.insert(name.clone());
