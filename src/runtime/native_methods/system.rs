@@ -199,15 +199,33 @@ impl Interpreter {
                 // Convert a library short-name to the OS-specific shared library filename.
                 // e.g. "foo" -> "libfoo.so" on Linux, "libfoo.dylib" on macOS, "foo.dll" on Windows.
                 let name = args
-                    .first()
+                    .iter()
+                    .find(|v| !matches!(v.view(), ValueView::Pair(..)))
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
-                let platform_name = if cfg!(target_os = "macos") {
-                    format!("lib{name}.dylib")
-                } else if cfg!(target_os = "windows") {
-                    format!("{name}.dll")
-                } else {
-                    format!("lib{name}.so")
+                // `:version` names an ABI-versioned library. A distribution ships
+                // the versioned file (`libpq.so.5`) and only the `-dev` package
+                // installs the bare `libpq.so` symlink, so a binding that probes
+                // versions — `NativeLibs::Searcher.at-runtime('pq', 'PQstatus', 5)`,
+                // which DBIish's Pg driver uses — finds nothing at all when the
+                // version is dropped. Rakudo appends it after the extension on
+                // Linux and before it on macOS; Windows has no ABI suffix.
+                let version = args
+                    .iter()
+                    .find_map(|v| match v.view() {
+                        ValueView::Pair(key, value) if key.as_str() == "version" => Some(value),
+                        _ => None,
+                    })
+                    .filter(|v| crate::runtime::types::value_is_defined(v))
+                    .map(|v| v.to_string_value())
+                    // `Version.new(5).Str` is `5`, but a `Version` gists as `v5`.
+                    .map(|s| s.strip_prefix('v').unwrap_or(&s).to_string());
+                let platform_name = match (cfg!(target_os = "macos"), cfg!(windows), version) {
+                    (true, _, Some(v)) => format!("lib{name}.{v}.dylib"),
+                    (true, _, None) => format!("lib{name}.dylib"),
+                    (_, true, _) => format!("{name}.dll"),
+                    (_, _, Some(v)) => format!("lib{name}.so.{v}"),
+                    (_, _, None) => format!("lib{name}.so"),
                 };
                 Ok(self.make_io_path_instance(&platform_name))
             }

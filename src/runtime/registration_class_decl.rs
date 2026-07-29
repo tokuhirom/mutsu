@@ -1033,6 +1033,13 @@ impl Interpreter {
                     // the role package — a lexical `sub`/`my $x` keeps the outer
                     // package so a bare reference from a role method still resolves.
                     let saved_body_pkg = self.current_package().to_string();
+                    // The body's lexical effects are kept on purpose (a composed
+                    // method may close over `my $sol = nativesizeof(T)`), but the
+                    // *topic* is not one of them: each statement publishes its
+                    // value through `$_`, and composition happens wherever the
+                    // role was first parameterised — inside a `with`/`given`
+                    // block, that would retopicalize the caller.
+                    let saved_topic = self.env.get("_").cloned();
                     for stmt in &role.deferred_body_stmts {
                         let is_type_decl =
                             matches!(stmt, Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. });
@@ -1044,6 +1051,14 @@ impl Interpreter {
                             self.set_current_package(saved_body_pkg.clone());
                         }
                         r?;
+                    }
+                    match saved_topic {
+                        Some(topic) => {
+                            self.env.insert("_".to_string(), topic);
+                        }
+                        None => {
+                            self.env.remove("_");
+                        }
                     }
                     // Rename each newly-declared nested class to its
                     // per-composition parameterized name and record an alias so a

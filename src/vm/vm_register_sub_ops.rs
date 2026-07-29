@@ -571,7 +571,10 @@ impl Interpreter {
     /// the stub `{ * }` body and the call fails with "No such method".
     ///
     /// Bounded: an alias chain longer than a few links is treated as no alias.
-    fn resolve_native_type_alias(&self, name: &str) -> String {
+    ///
+    /// A CStruct *field* is spelled the same way, so `cstruct_layout` follows
+    /// the alias too — `MYSQL_BIND` declares `has intptr $.length`.
+    pub(crate) fn resolve_native_type_alias(&self, name: &str) -> String {
         use crate::runtime::nativecall::CType;
         let mut current = name.to_string();
         for _ in 0..4 {

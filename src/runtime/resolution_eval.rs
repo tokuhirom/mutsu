@@ -218,7 +218,35 @@ impl Interpreter {
             }
         }
         self.block_scope_depth += 1;
+        // A carrier block publishes its value through the topic (the compiler
+        // ends every body with `SetTopic`, which `run_compiled_block` reads back)
+        // — but the *caller's* `$_` must not change, because this entry point
+        // runs a body that is not lexically the caller's: a role type argument,
+        // a `where` clause, a regex code block. Leaking it made
+        // `LinearArray[MYSQL_BIND].new(...)` inside a `with $!stmt { ... }` retopicalize
+        // the block to `MYSQL_BIND`, so the next `.method` call ran on the wrong
+        // invocant. `run_compiled_block` reads the value before this restores, so
+        // the return value is unaffected.
+        //
+        // An EVAL'd compilation unit is the exception: it runs *in* the caller's
+        // scope, so `EVAL '$_ = 3'` really does set the caller's topic (rakudo
+        // agrees), and its own tail value is the topic the caller then sees.
+        let saved_topic = if is_eval_unit {
+            None
+        } else {
+            Some(self.env.get("_").cloned())
+        };
         let result = self.run_compiled_block(&code, &compiled_fns);
+        if let Some(saved) = saved_topic {
+            match saved {
+                Some(topic) => {
+                    self.env.insert("_".to_string(), topic);
+                }
+                None => {
+                    self.env.remove("_");
+                }
+            }
+        }
         let trailing_sub_value = match body.last() {
             Some(Stmt::SubDecl {
                 name,
