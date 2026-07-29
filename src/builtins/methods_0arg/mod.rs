@@ -1848,7 +1848,17 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 if let Some(ValueView::Array(list, _)) =
                     attributes.as_map().get("list").map(Value::view)
                 {
-                    vals.extend(list.iter().cloned());
+                    // A quantified positional capture (`( ... )*` — $0 is an
+                    // Array of per-iteration Matches) flattens into the value
+                    // list, matching raku's Seq flattening: `$m.values` over
+                    // `( <element> ','?)*` yields the group Matches themselves.
+                    for v in list.iter() {
+                        if let ValueView::Array(inner, _) = v.view() {
+                            vals.extend(inner.iter().cloned());
+                        } else {
+                            vals.push(v.clone());
+                        }
+                    }
                 }
                 if let Some(ValueView::Hash(named)) =
                     attributes.as_map().get("named").map(Value::view)
@@ -1888,7 +1898,13 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 {
                     for (i, v) in list.iter().enumerate() {
                         kv.push(Value::int(i as i64));
-                        kv.push(v.clone());
+                        // A quantified capture's Array flattens after its key
+                        // (raku: `$m.kv` over `(\w)*` is `(0, m1, m2)`).
+                        if let ValueView::Array(inner, _) = v.view() {
+                            kv.extend(inner.iter().cloned());
+                        } else {
+                            kv.push(v.clone());
+                        }
                     }
                 }
                 if let Some(ValueView::Hash(named)) =

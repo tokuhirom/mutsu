@@ -427,9 +427,21 @@ impl Compiler {
         let tmp = format!("__for_elem_src_{}", self.code.constants.len());
         let element = target.as_ref().clone();
 
+        // Copy the element's `.values` (not the element itself): for a
+        // Positional element the two are the same list, but for a value whose
+        // `.values` has its own semantics — a Match's Capture view
+        // (`$m.<array>.values` over a quantified group) — assigning the bare
+        // element to `@tmp` would wrap it as a one-element array and iterate
+        // the wrong thing.
         let decl = Stmt::VarDecl {
             name: format!("@{}", tmp),
-            expr: element,
+            expr: Expr::MethodCall {
+                target: Box::new(element.clone()),
+                name: crate::symbol::Symbol::intern("values"),
+                args: Vec::new(),
+                modifier: None,
+                quoted: false,
+            },
             type_constraint: None,
             is_state: false,
             is_our: false,
@@ -457,12 +469,27 @@ impl Compiler {
             };
         }
 
-        let writeback = Stmt::Expr(Expr::IndexAssign {
-            target: container.clone(),
-            index: index.clone(),
-            value: Box::new(Expr::ArrayVar(tmp)),
-            is_positional: *is_positional,
-        });
+        // Write the temp back only when the element actually is an Array —
+        // the one case where `@tmp = <ELEM>.values` copies and mutations
+        // would otherwise be lost. An unconditional write turned a
+        // non-container element (`$match.<array>`, a Match — note Match does
+        // Positional, so that role is not a usable guard) into a one-element
+        // Array as a silent side effect of merely looping over its values.
+        let writeback = Stmt::If {
+            cond: Expr::Binary {
+                op: crate::token_kind::TokenKind::SmartMatch,
+                left: Box::new(element),
+                right: Box::new(Expr::BareWord("Array".to_string())),
+            },
+            then_branch: vec![Stmt::Expr(Expr::IndexAssign {
+                target: container.clone(),
+                index: index.clone(),
+                value: Box::new(Expr::ArrayVar(tmp)),
+                is_positional: *is_positional,
+            })],
+            else_branch: Vec::new(),
+            binding_var: None,
+        };
 
         Some(vec![decl, for_stmt, writeback])
     }

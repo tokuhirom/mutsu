@@ -34,21 +34,23 @@ PGDATABASE=dbdishtest DBIISH_WRITE_TEST=YES`; create `dbdishtest` first).
 applies: a scalar `$INCS` string under zsh silently breaks the module path and
 produced a bogus first survey in this very session.
 
-Of the 11 upstream Pg files, 7 match raku exactly (30-pg, 34-pg-types,
-36-pg-blob, 36-pg-native, 37-pg-datetime, 38-pg-connection-lock,
-38-pg-threads). The basic + extended e2e scripts (`tmp/dbiish-e2e-pg.raku`,
-`tmp/dbiish-pg-extra.raku`) are byte-identical to raku. Remaining:
+Of the 11 upstream Pg files, 8 match raku exactly (30-pg, 34-pg-types,
+36-pg-array, 36-pg-blob, 36-pg-native, 37-pg-datetime,
+38-pg-connection-lock, 38-pg-threads). The basic + extended e2e scripts
+(`tmp/dbiish-e2e-pg.raku`, `tmp/dbiish-pg-extra.raku`) are byte-identical to
+raku. Remaining:
 
-Re-measured 2026-07-29 (third pass, full sweep via `tmp/pg-sweep.sh`, after
-the with-tail-value chain + nativecast(Str) + method rw-out-param fixes; raku
-totals 109/46/26/9):
+Re-measured 2026-07-29 (fourth pass; sweep helper `tmp/pg-sweep.sh`; raku
+totals 109/26/9):
 
 - `36-pg-blob` — **RESOLVED** (17/17, raku parity) by the six-fix chain in
   `news/2026-07/module-loaded-sub-with-tail-var.md`.
-- **`36-pg-array` (0 run)** — dies in `_to-array` with "Type Array does not
-  support associative indexing": `$element.values[0]<array>` — a hash
-  subscript on a `Match`'s positional child comes back as a plain `Array`
-  somewhere in the `PgArrayGrammar` match tree.
+- `36-pg-array` — **RESOLVED** (46/46, raku parity): three quantified-group
+  capture-semantics fixes (capturing groups are a capture boundary for inner
+  named captures; `Match.values`/`.kv` flatten a quantified `$0`; the
+  `for <element>.values` writeback desugar no longer converts a non-Array
+  element to an Array), pinned by
+  `t/match-quantified-group-capture-semantics.t`.
 - **`36-pg-enum` (13 of 26)** — dies at test 14 with "Type check failed for
   an element of %; expected  but got Package" (note the EMPTY expected type):
   a typed hash element check against an enum/type-object value.
