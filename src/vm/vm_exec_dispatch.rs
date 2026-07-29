@@ -1546,6 +1546,16 @@ impl Interpreter {
                     let source_name = source_var.clone();
                     self.set_env_with_main_alias(&source_name, val.clone());
                     self.update_local_if_exists(code, &source_name, &val);
+                    // An attribute topic (`with $!result { .PQclear; $_ = Nil }`
+                    // — DBDish::Pg's StatementHandle.finish) must reach self's
+                    // attribute cell, not just the env mirror: the stale cell
+                    // otherwise keeps the freed C pointer and the next finish
+                    // double-frees it (SEGV).
+                    if Self::attr_twigil_base(&source_name).is_some()
+                        && !Self::is_non_mirrorable_attr_value(&val)
+                    {
+                        self.write_self_attr_cell(&source_name, val.clone());
+                    }
                 }
                 // Reverse alias propagation: find all variables that are
                 // bound TO this variable (i.e. `my $x := $name`) and update
