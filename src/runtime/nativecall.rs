@@ -232,16 +232,11 @@ pub(crate) fn load_library_cached(
     )))
 }
 
-#[cfg(feature = "libffi")]
-pub fn call_native(spec: &NativeCallSpec, args: &[Value]) -> Result<Value, RuntimeError> {
-    call_native_with_out_args(spec, args).map(|(v, _)| v)
-}
-
-/// [`call_native`], additionally returning the decoded values of `is rw`
+/// Perform a native call, additionally returning the decoded values of `is rw`
 /// numeric out-parameters as `(arg index, value)` pairs. A caller's variable
 /// that arrives as a shared cell is already written in place; the returned
 /// pairs let an interpreter-side call path also write back a plain `VarRef`
-/// argument (a local variable passed by name), which this layer cannot reach.
+/// (or arg-source-named) argument, which this layer cannot reach.
 #[cfg(feature = "libffi")]
 pub fn call_native_with_out_args(
     spec: &NativeCallSpec,
@@ -1042,20 +1037,14 @@ fn ret_ffi_type(ct: CType) -> libffi::middle::Type {
 
 /// Stub used when the `libffi` feature is disabled (e.g. wasm builds).
 #[cfg(not(feature = "libffi"))]
-pub fn call_native(spec: &NativeCallSpec, _args: &[Value]) -> Result<Value, RuntimeError> {
+pub fn call_native_with_out_args(
+    spec: &NativeCallSpec,
+    _args: &[Value],
+) -> Result<(Value, Vec<(usize, Value)>), RuntimeError> {
     Err(RuntimeError::new(format!(
         "NativeCall is not available in this build (cannot call '{}')",
         spec.symbol
     )))
-}
-
-/// Stub used when the `libffi` feature is disabled (e.g. wasm builds).
-#[cfg(not(feature = "libffi"))]
-pub fn call_native_with_out_args(
-    spec: &NativeCallSpec,
-    args: &[Value],
-) -> Result<(Value, Vec<(usize, Value)>), RuntimeError> {
-    call_native(spec, args).map(|v| (v, Vec::new()))
 }
 
 #[cfg(all(test, feature = "libffi"))]

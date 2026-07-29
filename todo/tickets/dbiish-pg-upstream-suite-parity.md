@@ -34,17 +34,17 @@ PGDATABASE=dbdishtest DBIISH_WRITE_TEST=YES`; create `dbdishtest` first).
 applies: a scalar `$INCS` string under zsh silently breaks the module path and
 produced a bogus first survey in this very session.
 
-Of the 11 upstream Pg files, 6 match raku exactly (30-pg, 34-pg-types,
-36-pg-native, 37-pg-datetime, 38-pg-connection-lock, 38-pg-threads). The
-basic + extended e2e scripts (`tmp/dbiish-e2e-pg.raku`,
+Of the 11 upstream Pg files, 7 match raku exactly (30-pg, 34-pg-types,
+36-pg-blob, 36-pg-native, 37-pg-datetime, 38-pg-connection-lock,
+38-pg-threads). The basic + extended e2e scripts (`tmp/dbiish-e2e-pg.raku`,
 `tmp/dbiish-pg-extra.raku`) are byte-identical to raku. Remaining:
 
-Re-measured 2026-07-29 (late, with the correct include array, after the
-rw-out-param/smiley/ret_struct/Buf-of fixes; raku totals 109/46/17/26/9):
+Re-measured 2026-07-29 (third pass, full sweep via `tmp/pg-sweep.sh`, after
+the with-tail-value chain + nativecast(Str) + method rw-out-param fixes; raku
+totals 109/46/26/9):
 
-- **`36-pg-blob` (12 ok, 5 fail)** — blocked on
-  [`module-loaded-sub-with-tail-var.md`](module-loaded-sub-with-tail-var.md):
-  `blob-from-pointer` returns its `memcpy`'s `Pointer` instead of the `Buf`.
+- `36-pg-blob` — **RESOLVED** (17/17, raku parity) by the six-fix chain in
+  `news/2026-07/module-loaded-sub-with-tail-var.md`.
 - **`36-pg-array` (0 run)** — dies in `_to-array` with "Type Array does not
   support associative indexing": `$element.values[0]<array>` — a hash
   subscript on a `Match`'s positional child comes back as a plain `Array`

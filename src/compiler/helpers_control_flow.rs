@@ -114,6 +114,12 @@ impl Compiler {
                 }
             } else {
                 self.compile_stmt(stmt);
+                // A non-final statement `given` nets one stack value that would
+                // shadow the block's real tail value — pop it (the final one is
+                // the block value and is kept, see the `Stmt::Given` arm above).
+                if matches!(stmt, Stmt::Given { .. }) {
+                    self.code.emit(OpCode::Pop);
+                }
             }
         }
         self.pop_dynamic_scope_lexical(saved);
@@ -393,6 +399,15 @@ impl Compiler {
         } else {
             for s in stmts {
                 self.compile_stmt(s);
+                // A statement `given` always nets one stack value (see
+                // `exec_given_op`). This body is statement position — its value
+                // is never read — so pop it, or a `with $p { ... }` (lowered to
+                // `if .defined { given ... }`) leaks its block value past the
+                // `if`, shadowing the enclosing block's real tail value on the
+                // `eval_block_value` (stack.last()) call path.
+                if matches!(s, Stmt::Given { .. }) {
+                    self.code.emit(OpCode::Pop);
+                }
             }
         }
         self.pop_dynamic_scope_lexical(saved);

@@ -3494,19 +3494,8 @@ impl Compiler {
     /// Compile the last statement of a `let` block so its result sets the topic.
     /// This allows `exec_let_block_op` to check the topic for success/failure.
     pub(super) fn compile_last_stmt_as_topic(&mut self, stmt: &Stmt) {
-        match stmt {
-            Stmt::Expr(expr) => {
-                self.compile_expr(expr);
-                self.code.emit(OpCode::SetTopic);
-            }
-            _ => {
-                // For non-expression statements (calls, assignments, etc.),
-                // compile normally. Any completed statement counts as success.
-                self.compile_stmt(stmt);
-                self.compile_expr(&Expr::Literal(Value::TRUE));
-                self.code.emit(OpCode::SetTopic);
-            }
-        }
+        self.compile_tail_stmt_value(stmt);
+        self.code.emit(OpCode::SetTopic);
     }
 
     /// Like [`compile_last_stmt_as_topic`], but leaves the statement's value on
@@ -3514,9 +3503,59 @@ impl Compiler {
     /// final statement of a block compiled in expression context (e.g. a `do`
     /// block), whose value the enclosing `DoBlockExpr` pops off the stack.
     pub(super) fn compile_last_stmt_as_value(&mut self, stmt: &Stmt) {
+        self.compile_tail_stmt_value(stmt);
+    }
+
+    /// Compile a block-final statement so exactly one value — the statement's
+    /// Raku value — is left on the stack. Mirrors the tail-statement arms of
+    /// `Compiler::compile`: a tail `if`/`with` yields its branch value (a
+    /// module-loaded `sub { ...; LEAVE {...}; with ptr {...} else {...} }` — the
+    /// NativeHelpers::Blob shape — used to yield `True` here), a declaration or
+    /// assignment yields the assigned value, and only genuinely valueless
+    /// statements fall back to `True` ("completed" success).
+    fn compile_tail_stmt_value(&mut self, stmt: &Stmt) {
         match stmt {
-            Stmt::Expr(expr) => self.compile_expr(expr),
+            Stmt::Expr(expr) => {
+                // Tail expression escapes the frame (implicit result).
+                self.with_escape(true, |c| c.compile_expr(expr));
+            }
+            Stmt::Call { name, args } => {
+                self.compile_tail_stmt_call_value(*name, args);
+            }
+            Stmt::If {
+                cond,
+                then_branch,
+                else_branch,
+                binding_var,
+            } => {
+                self.compile_if_value(cond, then_branch, else_branch, binding_var);
+            }
+            // A statement `given` nets exactly one stack value (see
+            // `exec_given_op`), which IS the block value here.
+            Stmt::Given { .. } => self.compile_stmt(stmt),
+            Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
+                self.compile_block_inline(body);
+            }
+            Stmt::VarDecl { name, .. } => {
+                let var_name = name.clone();
+                self.compile_stmt(stmt);
+                let slot = self.alloc_local(&var_name);
+                self.code.emit(OpCode::GetLocal(slot));
+            }
+            Stmt::Assign { name, .. } => {
+                self.compile_stmt(stmt);
+                if let Some(&slot) = self.local_map.get(name) {
+                    self.code.emit(OpCode::GetLocal(slot));
+                } else {
+                    let idx = self
+                        .code
+                        .add_constant(Value::str(self.qualify_variable_name(name)));
+                    self.code.emit(OpCode::GetGlobal(idx));
+                }
+            }
             _ => {
+                // For genuinely valueless statements (loops, say, etc.),
+                // compile normally. Any completed statement counts as success.
                 self.compile_stmt(stmt);
                 self.compile_expr(&Expr::Literal(Value::TRUE));
             }

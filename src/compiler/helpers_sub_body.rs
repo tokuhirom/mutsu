@@ -504,6 +504,11 @@ impl Compiler {
         if sink_last_expr {
             for stmt in body {
                 sub_compiler.compile_stmt(stmt);
+                // A statement `given` nets one stack value; every statement is
+                // sunk here, so pop it to keep the stack clean for the Nil below.
+                if matches!(stmt, Stmt::Given { .. }) {
+                    sub_compiler.code.emit(OpCode::Pop);
+                }
             }
             let nil_idx = sub_compiler.code.add_constant(Value::NIL);
             sub_compiler.code.emit(OpCode::LoadConst(nil_idx));
@@ -590,6 +595,12 @@ impl Compiler {
                 }
             }
             sub_compiler.compile_stmt(stmt);
+            // A non-final statement `given` nets one stack value that would
+            // pollute the stack under the routine's real tail value — pop it.
+            // (A final `given` falls through above and IS the implicit return.)
+            if !is_last && matches!(stmt, Stmt::Given { .. }) {
+                sub_compiler.code.emit(OpCode::Pop);
+            }
         }
     }
 
@@ -910,6 +921,11 @@ impl Compiler {
                     continue;
                 }
                 sub_compiler.compile_stmt(stmt);
+                // A non-value statement `given` nets one stack value that would
+                // pollute the stack under the closure's real value — pop it.
+                if !is_value && matches!(stmt, Stmt::Given { .. }) {
+                    sub_compiler.code.emit(OpCode::Pop);
+                }
             }
             if last_is_enter {
                 sub_compiler.code.emit(OpCode::LoadEnterResult);
@@ -1049,6 +1065,11 @@ impl Compiler {
                     }
                 }
                 sub_compiler.compile_stmt(stmt);
+                // A non-final statement `given` nets one stack value that would
+                // pollute the stack under the closure's real tail value — pop it.
+                if !is_last && matches!(stmt, Stmt::Given { .. }) {
+                    sub_compiler.code.emit(OpCode::Pop);
+                }
             }
         }
         // Transfer any compiled functions from the closure to the parent
