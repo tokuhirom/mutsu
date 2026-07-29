@@ -1,4 +1,31 @@
-# DBIish upstream Pg test suite — remaining parity gaps
+# DBIish upstream Pg/mysql test suites — remaining parity gaps
+
+## mysql suite (first measurement 2026-07-29, late)
+
+The 8 mysql files need the server on port **3306** — the tests pass no port
+and `MYSQL_TCP_PORT` does not reach libmysqlclient through DBDish. Forward it
+(`socat TCP-LISTEN:3306,fork,reuseaddr TCP:127.0.0.1:13306 &`) and create the
+fixtures once
+(`docker exec mutsu-mariadb mariadb -uroot -pmutsu -e "CREATE DATABASE IF NOT
+EXISTS dbdishtest; CREATE USER IF NOT EXISTS 'testuser'@'%' IDENTIFIED BY
+'testpass'; GRANT ALL ON dbdishtest.* TO 'testuser'@'%';"`), then
+`MYSQL_HOST=127.0.0.1 DBIISH_WRITE_TEST=YES` with the usual `$INC` array.
+
+| file | raku ok/notok | mutsu ok/notok |
+| --- | --- | --- |
+| `20-mysql` | 89/0 | 88/1 |
+| `24-mysql-types` | 5/0 | 1/4 |
+| `24-mysql-types-json` | 0 (skip: no JSON::Tiny) | **25/0** (bundled battery — more than raku, fine) |
+| `25-mysql-common` | 109/0 | 29/0, then stops |
+| `26-mysql-blob` | 10/0 | 8/1 |
+| `27-mysql-datetime` | 11/0 | 11/0 ✓ |
+| `28-mysql-connection-lock` | 3/0 | 3/0 ✓ |
+| `28-mysql-threads` | 1/0 | 1/0 ✓ |
+
+Failure modes not yet dug into (numbers only — start with `25-mysql-common`'s
+stop at 29 and `24-mysql-types`' 4 fails).
+
+## Pg suite
 
 Measured 2026-07-29 against a live PostgreSQL 16 (docker `mutsu-postgres`,
 port 15432, `PGHOST=127.0.0.1 PGPORT=15432 PGUSER=postgres PGPASSWORD=mutsu
