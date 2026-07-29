@@ -313,6 +313,31 @@ impl crate::runtime::Interpreter {
         })
     }
 
+    /// Follow a `constant` type alias a field's declared type is spelled with.
+    ///
+    /// A C binding names its platform-dependent types once and reuses them:
+    /// `DBDish::mysql::Native` declares `constant my_bool = int8` and
+    /// `constant intptr = ptrsize == 8 ?? uint64 !! uint32`, then writes
+    /// `has intptr $.length` / `has my_bool $.is_unsigned` inside `MYSQL_BIND`.
+    /// The alias is not a C type name, so the field was unmappable and — because
+    /// one bad field aborts the whole layout — the struct had *no* layout at all:
+    /// `nativesizeof(MYSQL_BIND)` failed, which in turn killed the
+    /// `LinearArray[MYSQL_BIND]` parameterisation that computes its stride from
+    /// it. Signatures already follow these aliases
+    /// ([`Self::resolve_native_type_alias`]); fields now do too.
+    ///
+    /// Only a name that is *not* already marshallable is followed, so a field
+    /// typed with a real C type or with a class held by reference keeps its
+    /// declared spelling.
+    fn resolve_field_type_alias(&self, ty: &str) -> String {
+        if ty.is_empty()
+            || FieldType::from_type_name(ty, |n| self.is_native_handle_class(n)).is_some()
+        {
+            return ty.to_string();
+        }
+        self.resolve_native_type_alias(ty)
+    }
+
     /// The C field layout of a `is repr('CStruct')` class, or `None` if the
     /// class is not a CStruct or declares a field NativeCall cannot marshal.
     pub(crate) fn cstruct_layout(&mut self, class_name: &str) -> Option<Vec<FieldLayout>> {
@@ -324,7 +349,7 @@ impl crate::runtime::Interpreter {
                 let ty = self
                     .get_attr_type_constraint(&registered, name)
                     .unwrap_or_default();
-                (name.clone(), ty)
+                (name.clone(), self.resolve_field_type_alias(&ty))
             })
             .collect();
         // `is_known_struct` cannot borrow `self` here (the layout call takes it

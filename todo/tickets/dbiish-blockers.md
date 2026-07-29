@@ -46,8 +46,52 @@ even when the block runs inside another object's method, which is what
 `$!parent.protect-connection: { $!stmt… }` does. `DBDish::Pg` shares
 `DBDish::StatementHandle`, so it was going to hit the same line.
 
+**Update 2026-07-29 (later): prepared `INSERT`s run against the server.**
+`$insert.execute('BUBH', 'Hot beef burrito', 1, 4.95)` reaches MariaDB and
+`$insert.rows` comes back. Three more fixes were needed, all of them general:
+
+- [a CStruct field type follows a `constant` alias](../../news/2026-07/cstruct-fields-follow-constant-type-aliases.md).
+  `MYSQL_BIND` declares `has intptr $.length`, `intptr` is not a NativeCall type
+  name, and one unmappable field aborts the whole layout — so `MYSQL_BIND` had
+  no layout, `nativesizeof` on it failed, and `LinearArray[MYSQL_BIND]` (whose
+  role body computes its stride with `nativesizeof(T)`) came back
+  *unparameterised*. The tell: `.REPR` said `CStruct` while `nativesizeof` said
+  `P6opaque`.
+- [parameterising a role no longer retopicalizes the caller](../../news/2026-07/role-parameterisation-keeps-the-caller-topic.md).
+  The type-argument expression and the role's deferred body each published their
+  value through `$_`, so the *first* `LinearArray[MYSQL_BIND].new($pc)` inside
+  `with $!stmt { … }` left the topic as `MYSQL_BIND` and the next
+  `.mysql_stmt_field_count` ran on the wrong invocant.
+- [`$*VM.platform-library-name` honours `:version`](../../news/2026-07/platform-library-name-keeps-its-version.md)
+  — needed by `DBDish::Pg`, see below.
+
+**Next failure on the mysql end-to-end path** (`tmp/mysql-e2e-use.raku`):
+
+```
+No such method 'convert-function' for invocant of type 'Hash'
+  in sub _row ... in sub row ...
+```
+
+i.e. reading rows back. `DBDish::StatementHandle`'s `_row` looks up a per-column
+converter and finds a plain `Hash` where a `TypeConverter` object is expected —
+the same punned-role-in-an-attribute shape as ⑤ below, so check
+[`todo/deep/punned-role-container-attribute-store.md`](../deep/punned-role-container-attribute-store.md)
+first.
+
 Still open before `DBIish.connect(…)` works through its own front door:
 [`require-loaded-module-loses-use-imports.md`](require-loaded-module-loses-use-imports.md).
+
+**`01-basic` regressed to 12 of 35 in this environment, and it is not a mutsu
+regression** — `libpq5` was installed on the survey machine after the 35/35
+measurement, so the file now actually exercises the Pg driver. The first Pg
+blocker (`platform-library-name` dropping `:version`) is fixed above; re-measure
+before reading anything else into that number.
+
+A gap found while pinning the CStruct-alias fix, deliberately left out of scope:
+`nativecast(SomeCStruct, $carray)` on a **Raku-side** `CArray` (as opposed to a
+handle C gave us) produces an instance with no address, so reading a field off
+it fails with "No such method". Every DBIish path casts a pointer that came from
+C, so nothing here needs it.
 
 The three fixes that closed the last file are recorded in
 [`news/2026-07/buf-repr-body-and-native-storage.md`](../../news/2026-07/buf-repr-body-and-native-storage.md),
