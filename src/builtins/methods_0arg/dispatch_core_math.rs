@@ -9,15 +9,24 @@ use num_traits::ToPrimitive;
 use super::complex_math::complex_trig;
 
 /// Convert a string to Rat, handling integer, decimal, scientific notation, and complex forms.
+/// Parses with BigInt so values past i64 keep their magnitude
+/// (`"18446744073709551616".Rat`); `make_big_rat` reduces and downcasts to a
+/// small Rat whenever both parts fit.
 fn str_to_rat(s: &str) -> Value {
+    use num_bigint::BigInt;
+    let big = |s: &str| s.parse::<BigInt>().ok();
+    let pow10 = |e: u32| BigInt::from(10).pow(e);
     let trimmed = s.trim();
     if trimmed.is_empty() {
         return make_rat(0, 1);
     }
     if let Some((n_str, d_str)) = trimmed.split_once('/') {
-        let n = n_str.trim().parse::<i64>().unwrap_or(0);
-        let d = d_str.trim().parse::<i64>().unwrap_or(1);
-        return make_rat(n, if d == 0 { 1 } else { d });
+        let n = big(n_str.trim()).unwrap_or_default();
+        let mut d = big(d_str.trim()).unwrap_or_else(|| BigInt::from(1));
+        if num_traits::Zero::is_zero(&d) {
+            d = BigInt::from(1);
+        }
+        return crate::value::make_big_rat(n, d);
     }
     let real_str = if let Some(pos) = trimmed
         .find('+')
@@ -44,41 +53,34 @@ fn str_to_rat(s: &str) -> Value {
         };
         if let Some((int_part, frac_part)) = decimal_part.split_once('.') {
             let frac_digits = frac_part.len() as u32;
-            if let Some(denom) = 10i64.checked_pow(frac_digits) {
-                let int_val = int_part.parse::<i64>().unwrap_or(0);
-                let frac_val = frac_part.parse::<i64>().unwrap_or(0);
-                let mut numer = int_val * denom + frac_val;
-                if negative {
-                    numer = -numer;
-                }
-                if let Some(exp) = exp_part {
-                    if exp >= 0 {
-                        if let Some(factor) = 10i64.checked_pow(exp as u32) {
-                            return make_rat(numer * factor, denom);
-                        }
-                    } else if let Some(factor) = 10i64.checked_pow((-exp) as u32) {
-                        return make_rat(numer, denom * factor);
-                    }
-                }
-                return make_rat(numer, denom);
+            let denom = pow10(frac_digits);
+            let int_val = big(int_part).unwrap_or_default();
+            let frac_val = big(frac_part).unwrap_or_default();
+            let mut numer = int_val * &denom + frac_val;
+            if negative {
+                numer = -numer;
             }
+            return match exp_part {
+                Some(exp) if exp >= 0 => {
+                    crate::value::make_big_rat(numer * pow10(exp as u32), denom)
+                }
+                Some(exp) => crate::value::make_big_rat(numer, denom * pow10((-exp) as u32)),
+                None => crate::value::make_big_rat(numer, denom),
+            };
         }
     }
     if let Some(e_pos) = real_str.find(['e', 'E']) {
         let base = &real_str[..e_pos];
         let exp = real_str[e_pos + 1..].parse::<i32>().unwrap_or(0);
-        if let Ok(base_val) = base.parse::<i64>() {
+        if let Some(base_val) = big(base) {
             if exp >= 0 {
-                if let Some(factor) = 10i64.checked_pow(exp as u32) {
-                    return make_rat(base_val * factor, 1);
-                }
-            } else if let Some(factor) = 10i64.checked_pow((-exp) as u32) {
-                return make_rat(base_val, factor);
+                return crate::value::make_big_rat(base_val * pow10(exp as u32), BigInt::from(1));
             }
+            return crate::value::make_big_rat(base_val, pow10((-exp) as u32));
         }
     }
-    let n = real_str.parse::<i64>().unwrap_or(0);
-    make_rat(n, 1)
+    let n = big(real_str).unwrap_or_default();
+    crate::value::make_big_rat(n, BigInt::from(1))
 }
 
 /// Recursively apply `.tree` to nested arrays.

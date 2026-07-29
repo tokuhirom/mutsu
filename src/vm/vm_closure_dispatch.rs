@@ -328,6 +328,16 @@ impl Interpreter {
             .free_var_syms
             .iter()
             .filter_map(|k| {
+                // Per-instance frozen state only exists for free vars the body
+                // (or a nested closure) actually WRITES. A read-only free var
+                // must always resolve to the live caller binding — e.g. a
+                // type-constrained scalar (not boxed into a ContainerRef cell)
+                // rewritten by the mainline between calls (`my Str $e = "Yes";
+                // ... $e = "No"`) would otherwise be clobbered by the value
+                // persisted at the end of the previous call.
+                if !cc.free_var_writes.contains(k) && !cc.free_var_container_writes.contains(k) {
+                    return None;
+                }
                 // Skip box-on-capture cells: a ContainerRef-captured lexical is a
                 // shared container, not per-instance frozen state, so the stale
                 // closure_captured_state value must not clobber the live Arc.
@@ -819,6 +829,12 @@ impl Interpreter {
         // the first call's value.
         for k in &cc.free_var_syms {
             if k.with_str(crate::env::is_dynamic_var_name) {
+                continue;
+            }
+            // Mirror of the `cap_overrides` write gate: a free var the body
+            // never writes carries no per-instance state, so persisting it
+            // would only pin the closure to a stale value.
+            if !cc.free_var_writes.contains(k) && !cc.free_var_container_writes.contains(k) {
                 continue;
             }
             if let Some(val) = self.env().get_sym(*k).cloned() {

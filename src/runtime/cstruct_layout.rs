@@ -524,6 +524,32 @@ impl crate::runtime::Interpreter {
         Some(unsafe { read_field(base, &field) })
     }
 
+    /// Mirror of `native_carray_element` for element assignment: write `value`
+    /// into native memory at `base + index * sizeof(elem)`. `None` when the
+    /// element type is not marshallable (caller falls back). Same
+    /// trust-the-declaration contract as `write_field`.
+    pub(crate) fn native_carray_element_assign(
+        &mut self,
+        elem: &str,
+        base: usize,
+        index: usize,
+        value: &crate::value::Value,
+    ) -> Option<()> {
+        if base == 0 {
+            return None;
+        }
+        let ty = FieldType::from_type_name(elem, |n| self.is_native_handle_class(n))?;
+        let field = FieldLayout {
+            name: String::new(),
+            ty,
+            offset: index.checked_mul(ty.size())?,
+        };
+        // SAFETY: as in `native_carray_element` — the address and index are the
+        // caller's declaration-backed contract, exactly as in Rakudo.
+        unsafe { write_field(base, &field, value) };
+        Some(())
+    }
+
     /// `nativesizeof($obj-or-type)` — NativeCall's own helper, reporting how
     /// many bytes the argument's type takes in C. Both a type object
     /// (`nativesizeof(uint32)`) and an instance are accepted, matching Rakudo.

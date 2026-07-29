@@ -458,6 +458,15 @@ fn parse_destructuring_with_rhs(
 
     let has_named = vars.iter().any(|v| v.is_named);
 
+    // List-assignment iterates the RHS with one level of decont (Rakudo
+    // List.STORE): `my ($a, $b) = $row` where `$row` holds an itemized Array
+    // flattens into its elements, while `= $row,` (a comma list) keeps the
+    // itemized value whole. `__mutsu_list_assign_rhs` deitemizes exactly the
+    // single-itemized-container shape and passes everything else through —
+    // unlike `.list`, it leaves a Failure RHS intact (`my ($x) = @e.shift`
+    // on an empty array stores the Failure, it does not throw). Binding
+    // (`:=`) keeps its historical `.list` wrap; named destructuring keeps
+    // the raw value (it subscripts it).
     let rhs = if is_binding && !has_named {
         Expr::MethodCall {
             target: Box::new(raw_rhs),
@@ -465,6 +474,11 @@ fn parse_destructuring_with_rhs(
             args: vec![],
             modifier: None,
             quoted: false,
+        }
+    } else if !has_named {
+        Expr::Call {
+            name: Symbol::intern("__mutsu_list_assign_rhs"),
+            args: vec![raw_rhs],
         }
     } else {
         raw_rhs

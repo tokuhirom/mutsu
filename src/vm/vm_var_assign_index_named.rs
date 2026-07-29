@@ -841,7 +841,6 @@ impl Interpreter {
                         .collect::<Result<Vec<_>, _>>()?;
                     let max_idx = indices.iter().copied().max().unwrap_or(0);
                     let mut resize_err = None;
-                    let mut assigned = Vec::new();
                     crate::value::value_buf::with_buf_elems_mut(&attributes, |arr| {
                         if let Err(e) = Self::autoviv_resize(arr, max_idx + 1, Value::int(0)) {
                             resize_err = Some(e);
@@ -849,25 +848,38 @@ impl Interpreter {
                         }
                         for (i, &pos) in indices.iter().enumerate() {
                             let v = vals.get(i).cloned().unwrap_or(Value::NIL);
-                            let byte = crate::runtime::to_int(&v) & 0xff;
-                            arr[pos] = Value::int(byte);
-                            assigned.push(Value::int(byte));
+                            // No `& 0xff` here: encode_elems masks to the
+                            // node's own element width (a Buf[uint64] element
+                            // must keep all 8 bytes).
+                            arr[pos] = Value::int(crate::runtime::to_int(&v));
                         }
                     });
                     if let Some(e) = resize_err {
                         return Err(e);
                     }
+                    // The slice-assignment expression yields the values AS
+                    // STORED (width-masked by encode_elems): read them back
+                    // (`($b[0,1] = 300, -1)` is `(44, 255)` on a buf8).
+                    let assigned = crate::value::value_buf::with_buf_elems(&attributes, |arr| {
+                        indices
+                            .iter()
+                            .map(|&pos| arr.get(pos).cloned().unwrap_or(Value::NIL))
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
                     self.stack.push(Value::array(assigned));
                     return Ok(());
                 } else if let Some(pos) = Self::index_to_usize(&idx) {
-                    let byte = crate::runtime::to_int(&val) & 0xff;
+                    // Full-width element value; encode_elems masks to the
+                    // node's element width (Buf[uint64] keeps all 8 bytes).
+                    let elem = Value::int(crate::runtime::to_int(&val));
                     let mut resize_err = None;
                     crate::value::value_buf::with_buf_elems_mut(&attributes, |arr| {
                         if let Err(e) = Self::autoviv_resize(arr, pos + 1, Value::int(0)) {
                             resize_err = Some(e);
                             return;
                         }
-                        arr[pos] = Value::int(byte);
+                        arr[pos] = elem;
                     });
                     if let Some(e) = resize_err {
                         return Err(e);
@@ -877,6 +889,45 @@ impl Interpreter {
                 } else {
                     return Err(RuntimeError::new("Index out of range"));
                 }
+            }
+        }
+        // A `CArray[T]` *native handle* (`nativecast(CArray[T], $ptr)`):
+        // element assignment writes into native memory — the mirror of the
+        // read arm in vm_var_index_ops.rs. Without this the generic fallback
+        // below would replace the handle with a plain Raku Array, silently
+        // dropping the address (DBDish::mysql pokes result-length buffers
+        // through such casts).
+        if !bind_mode {
+            let carray_target = match self.env().get(&var_name).map(Value::view) {
+                Some(ValueView::Instance {
+                    attributes,
+                    class_name,
+                    ..
+                }) if attributes.contains_key("address") => {
+                    let cn = class_name.resolve();
+                    cn.strip_prefix("CArray[")
+                        .and_then(|s| s.strip_suffix(']'))
+                        .map(|e| {
+                            (
+                                e.to_string(),
+                                attributes
+                                    .as_map()
+                                    .get("address")
+                                    .map(|v| crate::runtime::to_int(v) as usize)
+                                    .unwrap_or(0),
+                            )
+                        })
+                }
+                _ => None,
+            };
+            if let Some((elem, base)) = carray_target
+                && let Some(pos) = Self::index_to_usize(&idx)
+                && self
+                    .native_carray_element_assign(&elem, base, pos, &val)
+                    .is_some()
+            {
+                self.stack.push(val);
+                return Ok(());
             }
         }
         let encoded_idx = Self::encode_bound_index(&idx);

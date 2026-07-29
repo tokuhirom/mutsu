@@ -314,6 +314,25 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
                 }
                 return cmp;
             }
+            // Big rationals (BigRat / big FatRat / BigInt vs Rat mixes) compare
+            // numerically too — without this branch a `.sort` over values past
+            // i64 falls to the string fallback and mis-orders them.
+            if let (Some(ap), Some(bp)) = (
+                crate::runtime::utils::to_big_rat_parts(a),
+                crate::runtime::utils::to_big_rat_parts(b),
+            ) {
+                let cmp = crate::runtime::utils::compare_big_rat_parts(ap, bp)
+                    .unwrap_or(std::cmp::Ordering::Equal) as i32;
+                if cmp != 0 {
+                    return cmp;
+                }
+                if matches!(a.view(), ValueView::Mixin(..))
+                    || matches!(b.view(), ValueView::Mixin(..))
+                {
+                    return a.to_string_value().cmp(&b.to_string_value()) as i32;
+                }
+                return cmp;
+            }
             a.to_string_value().cmp(&b.to_string_value()) as i32
         }
     }
