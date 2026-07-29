@@ -36,13 +36,19 @@ This is **not** an unsupportable MoarVM-guts read: mutsu deliberately synthesise
 those REPR bodies (ADR-0015 P2, `src/value/value_buf_repr.rs`), and
 `pointer-to($buf)` returns a correct pointer when the module is `use`d at file
 scope. It fails only on the `require`-inside-a-method route, because
-`%known-bodies` (and `intptr`) resolve to nothing and `type` lands as `Any`.
+`%known-bodies` resolves to nothing and `type` lands as `Any`.
 
-Confirmed with `rust-gdb` at the lookup: the routine stack at that moment is
-`DBDish::mysql::StatementHandle::BUILD` and its callers — `MoarVM::Guts::REPRs`
+`intptr` and `Offset`, read from the same expression, **do** resolve now: they are
+read from `DBDish::mysql::StatementHandle::BUILD`'s own body, so the method's
+class anchors them. `%known-bodies` is different — a *private* `my %` of
+`MoarVM::Guts::REPRs`, read from that module's own `BODY_OF` sub. Confirmed with
+`rust-gdb`: the routine stack at that moment is
+`DBDish::mysql::StatementHandle::BUILD` and its callers, `MoarVM::Guts::REPRs`
 appears nowhere, and `def_file` is `None` on every frame. The table *does* hold
-the names, keyed `MoarVM::Guts::REPRs`; nothing at the read site can reach that
-key.
+the name, keyed `MoarVM::Guts::REPRs`; nothing at the read site can reach that
+key. (A second, smaller gap sits on top: a `%h{...}` element read does not reach
+the `GetGlobal` fallback chain at all, so even a correct anchor would need that
+route wired up too.)
 
 ## Why this is deep
 
