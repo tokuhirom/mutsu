@@ -388,6 +388,13 @@ impl Interpreter {
                     &Value::NIL,
                 )
                 .is_some()
+                // Slow-path builtin methods (block-taking / `&mut self`, e.g.
+                // `Buf.allocate`) are invisible to the pure native probe; the
+                // declared per-type lists cover them. NativeHelpers::Blob's
+                // `blob-from-pointer` branches on `$type.can('allocate')` and
+                // takes a REPR-poking fallback when it wrongly answers false.
+                || crate::builtins::builtin_type_methods::builtin_type_method_names(&class_name)
+                    .contains(&method_name)
                 // Check user-defined classes and their native_methods set
                 || {
                     let pkg = Value::package(Symbol::intern(&class_name));

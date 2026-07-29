@@ -547,6 +547,17 @@ pub(super) fn dispatch(
             ValueView::Package(name) if name.resolve() == "Hash" || name.resolve() == "Array" => {
                 Some(Ok(Value::package(Symbol::intern("Mu"))))
             }
+            // A `Buf`/`Blob`-shaped instance answers its element type
+            // (`Buf.new(1).of` is `(uint8)`, `buf16.new(1).of` is `(uint16)`)
+            // — DBDish::Pg's `escapeBytea` sizes its buffer with
+            // `nativesizeof($buf.of)`.
+            ValueView::Instance { class_name, .. }
+                if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) =>
+            {
+                Some(Ok(Value::package(Symbol::intern(
+                    &crate::value::value_buf::buf_elem_type_name(&class_name.resolve()),
+                ))))
+            }
             ValueView::Package(_) | ValueView::CustomType(_) => {
                 let name = match target.view() {
                     ValueView::Package(name) => name,
@@ -569,6 +580,11 @@ pub(super) fn dispatch(
                     || n.starts_with("MixHash[")
                 {
                     Some(Ok(Value::package(Symbol::intern("Real"))))
+                } else if crate::runtime::utils::is_buf_or_blob_class(&n) {
+                    // The type object answers `.of` too (`Buf.of` is `(uint8)`).
+                    Some(Ok(Value::package(Symbol::intern(
+                        &crate::value::value_buf::buf_elem_type_name(&n),
+                    ))))
                 } else {
                     None
                 }
