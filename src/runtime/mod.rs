@@ -1020,6 +1020,40 @@ pub struct Interpreter {
     /// Maps package names to their distribution context.
     /// Populated during module loading so OTF compilation can resolve $?DISTRIBUTION.
     pub(crate) package_distributions: HashMap<String, Value>,
+    /// Short type names a module imported for its OWN lexical scope, keyed by the
+    /// module name and by every class/role that module declares:
+    /// `{"Drv2" | "Drv2::Native" => {"THING2" => "Drv2::Native::THING2"}}`.
+    ///
+    /// A module body runs in the *caller's* env (`load_module` → `run_block`), so
+    /// the `Package` aliases its own `use` statements install land in whatever
+    /// frame triggered the load and die with it. That is invisible for a
+    /// compile-time `use` at file scope (the alias outlives every later call),
+    /// but a `require` executed inside a method frame loses them the moment the
+    /// method returns — and the module's own methods then cannot resolve their
+    /// own imported type names. Recording the aliases against the module makes
+    /// the resolution lexical to the module instead of dynamic to the frame.
+    /// Consulted by `package_type_alias` from `has_type` / `GetBareWord`.
+    pub(crate) package_type_aliases: HashMap<String, HashMap<String, String>>,
+    /// The module's other file-scope bare names — `constant`s and sigilless
+    /// declarations its own routines close over — keyed the same way as
+    /// `package_type_aliases`, and lost for the same reason. Consulted by
+    /// `module_scope_lexical` as the LAST resort in bareword resolution, just
+    /// before the undeclared-bareword-as-`Str` fallback, so a live `env` binding
+    /// always wins. Distinct from `package_lexicals`, which is the *mutable*
+    /// package-block `my` store with its own writeback path; these are a module's
+    /// immutable file-scope terms. `NativeHelpers::Blob`'s `MoarVM::Guts::REPRs`
+    /// is the motivating case: `constant Offset` is read by the exported
+    /// `OBJECT_BODY` sub of the same module, and resolved to the string
+    /// `"Offset"` once the frame that loaded the module was gone.
+    pub(crate) module_scope_lexicals: HashMap<String, HashMap<String, Value>>,
+    /// Names the module currently being loaded imported from another module,
+    /// accumulated by `import_module` and folded into `module_scope_lexicals`
+    /// when the load finishes. The env diff `load_module` takes cannot see these:
+    /// re-importing a name a *previously* loaded module already installed adds
+    /// nothing to `env`, so `DBDish::mysql::StatementHandle`'s `use
+    /// DBDish::mysql::Native` looked like a no-op even though `intptr` is part of
+    /// its lexical scope. Saved/restored around each nested load.
+    pub(crate) module_imported_names: Vec<(String, Value)>,
     /// Exported subroutine symbols by package and export tag.
     exported_subs: HashMap<String, HashMap<String, HashSet<String>>>,
     /// Exported variable/constant symbols by package and export tag.

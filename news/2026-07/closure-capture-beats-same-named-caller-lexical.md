@@ -66,9 +66,9 @@ picked. The merge-back defect compounded it: after the first probe the caller's
 `$libname` was itself overwritten with the candidate name.
 
 mutsu now picks `libmariadb.so.3`, matching raku, and `DBDish::mysql` loads and
-connects to a live MariaDB. `DBIish.connect` is still blocked one step later by
-an unrelated defect recorded in
-[`todo/tickets/dbiish-install-driver-loses-native-type.md`](../../todo/tickets/dbiish-install-driver-loses-native-type.md).
+connects to a live MariaDB. `DBIish.connect` was blocked one step later by an
+unrelated defect, since fixed in
+[`module-type-aliases-outlive-the-requiring-frame.md`](module-type-aliases-outlive-the-requiring-frame.md).
 
 Pinned by `t/proxy-fetch-capture-vs-caller-lexical.t`, which covers the shadowing
 (caller `my`, caller parameter, method caller, and the write-back across loop

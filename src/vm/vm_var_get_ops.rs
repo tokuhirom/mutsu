@@ -124,7 +124,10 @@ impl Interpreter {
             // (Nil) it must NOT shadow the type — `$foo` and `foo` are distinct
             // symbols in Raku. This notably affects `my $foo = foo.new`, whose RHS
             // resolves `foo` before the `$foo` slot is assigned.
-            Value::package(Symbol::intern(Self::resolve_type_alias(name)))
+            match self.package_type_alias(name) {
+                Some(qualified) => Value::package(Symbol::intern(&qualified)),
+                None => Value::package(Symbol::intern(Self::resolve_type_alias(name))),
+            }
         } else if let Some(v) = self.env().get(name) {
             if matches!(v.view(), ValueView::Enum { .. } | ValueView::Nil)
                 || matches!(v.view(), ValueView::Package(pkg) if pkg.resolve() != name)
@@ -204,7 +207,14 @@ impl Interpreter {
                 self.compile_and_call_function_def(&def, Vec::new(), compiled_fns)?
             }
         } else if self.has_type(name) {
-            Value::package(Symbol::intern(Self::resolve_type_alias(name)))
+            // `has_type` also accepts a short name that only resolves through the
+            // declaring module's own import aliases (`package_type_aliases`); such
+            // a name must become the QUALIFIED type, since the short name is not
+            // registered anywhere.
+            match self.package_type_alias(name) {
+                Some(qualified) => Value::package(Symbol::intern(&qualified)),
+                None => Value::package(Symbol::intern(Self::resolve_type_alias(name))),
+            }
         } else if let Some(qualified) = self.resolve_type_in_current_package(name) {
             // A short type name declared in the (dynamically) current package.
             // Checked BEFORE the built-in-type fallback so a module-local
@@ -376,6 +386,13 @@ impl Interpreter {
             // Resolve the bare word to that persisted package value rather than
             // treating it as an undeclared bareword string.
             our_val
+        } else if let Some(module_val) = self.module_scope_lexical(name).cloned() {
+            // A `constant` (or sigilless declaration) the running routine's own
+            // module made in its file scope. A module body executes in the env of
+            // whatever frame loaded it, so that binding is gone once the frame is
+            // (a `require` inside a method); `module_scope_lexicals` keeps it attached
+            // to the module instead. Last resort, after every live-env route.
+            module_val
         } else {
             Value::str(name.to_string())
         };

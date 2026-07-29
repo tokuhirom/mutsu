@@ -188,6 +188,9 @@ impl Interpreter {
         for inner in self.package_lexicals.values() {
             visit_map_values(visitor, inner);
         }
+        for inner in self.module_scope_lexicals.values() {
+            visit_map_values(visitor, inner);
+        }
         visit_map_values(visitor, &self.escaped_our_lexical_cells);
         visit_map_values(visitor, &self.state_vars);
         visit_map_values(visitor, &self.closure_captured_state);

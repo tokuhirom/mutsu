@@ -473,6 +473,12 @@ impl Interpreter {
                         let i: usize = name.parse().ok()?;
                         Some(Self::bound_slash_positional(&slash, i))
                     })
+                    // A file-scope lexical of the module the running routine
+                    // belongs to. A module body executes in the env of whatever
+                    // frame loaded it, so that binding dies with the frame (a
+                    // `require` inside a method); `module_scope_lexicals` keeps it
+                    // attached to the module. Last resort, after every live store.
+                    .or_else(|| self.module_scope_lexical(name).cloned())
                     .map(Ok)
                     .unwrap_or_else(|| {
                         if name.starts_with('^') {

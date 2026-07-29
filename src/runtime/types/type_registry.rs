@@ -296,7 +296,73 @@ impl Interpreter {
                 return true;
             }
         }
-        false
+        self.package_type_alias(name).is_some()
+    }
+
+    /// Resolve `name` through the *declaring module's* import aliases rather than
+    /// the live `env` — the lexical fallback for a short type name a module
+    /// imported for its own scope. See `package_type_aliases`: those aliases live
+    /// in whatever frame ran the module load, so a `require` inside a method loses
+    /// them on return and the module's own methods can no longer see their own
+    /// imports. Keyed by the package currently executing (a method's class, or the
+    /// module itself), walking up the `::` chain like `resolve_type_name_for_owner`.
+    pub(crate) fn package_type_alias(&self, name: &str) -> Option<String> {
+        if self.package_type_aliases.is_empty() || name.contains("::") || name.is_empty() {
+            return None;
+        }
+        // A directly registered name is its own resolution; the module alias is
+        // only ever the fallback for a short name nothing else accounts for.
+        if self.has_type_direct(name) {
+            return None;
+        }
+        self.lookup_in_running_package(&self.package_type_aliases, name)
+            .filter(|target| self.has_type_direct(target))
+            .cloned()
+    }
+
+    /// The bare `constant` / sigilless declaration a module made in its own file
+    /// scope, for a name the live `env` no longer accounts for. The LAST resort in
+    /// bareword resolution — see `module_scope_lexicals`.
+    pub(crate) fn module_scope_lexical(&self, name: &str) -> Option<&Value> {
+        if self.module_scope_lexicals.is_empty() || name.contains("::") || name.is_empty() {
+            return None;
+        }
+        self.lookup_in_running_package(&self.module_scope_lexicals, name)
+    }
+
+    /// Look `name` up in a per-package table, keyed by the package of the frame
+    /// that is actually running. `current_package` is GLOBAL while a method body
+    /// runs (module bodies execute under GLOBAL), so the owning package has to
+    /// come from the running frame: the method's class first, then the routine
+    /// frame's package, then whatever package is current — each walked up its
+    /// `::` chain like `resolve_type_name_for_owner`.
+    fn lookup_in_running_package<'a, V>(
+        &'a self,
+        table: &'a HashMap<String, HashMap<String, V>>,
+        name: &str,
+    ) -> Option<&'a V> {
+        let current = self.current_package();
+        let candidates = [
+            self.method_class_stack_top_str(),
+            self.routine_stack
+                .last()
+                .map(|frame| frame.package.as_str())
+                .filter(|pkg| !pkg.is_empty() && *pkg != "GLOBAL"),
+            Some(current.as_str()),
+        ];
+        for candidate in candidates.into_iter().flatten() {
+            let mut pkg = candidate;
+            loop {
+                if let Some(found) = table.get(pkg).and_then(|entries| entries.get(name)) {
+                    return Some(found);
+                }
+                match pkg.rsplit_once("::") {
+                    Some((parent, _)) => pkg = parent,
+                    None => break,
+                }
+            }
+        }
+        None
     }
 
     /// `has_type` without short-name alias resolution — checks the type
