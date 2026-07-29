@@ -398,12 +398,6 @@ fn process_q_mode_with_escapes(content: &str, flags: &QuoteFlags) -> Expr {
             if is_q_literal_escape(c, flags) {
                 current.push(c);
                 rest = after_escape;
-            } else if c == '\\' {
-                current.push('\\');
-                rest = after_escape;
-            } else if c == '\'' {
-                current.push('\'');
-                rest = after_escape;
             } else {
                 current.push('\\');
                 current.push(c);
@@ -593,7 +587,13 @@ fn process_q_escape_in_interpolating<'a>(
 }
 
 fn is_q_literal_escape(c: char, flags: &QuoteFlags) -> bool {
-    c == '\\' || c == '\'' || flags.quote_open == Some(c) || flags.quote_close == Some(c)
+    // In q mode a backslash only escapes itself and the active delimiters
+    // (`q{fo\'o}` keeps the backslash). The bare `'` case only applies when
+    // no delimiter is recorded (plain `'...'` content processed here).
+    c == '\\'
+        || flags.quote_open == Some(c)
+        || flags.quote_close == Some(c)
+        || (flags.quote_open.is_none() && c == '\'')
 }
 
 /// Try interpolation based on quote flags (selective per-sigil).

@@ -72,8 +72,11 @@ impl Interpreter {
             ValueView::Package(sym) => sym.resolve() == "Any",
             _ => false,
         };
+        // Only a 1-element Seq/Slip of a nilish value collapses to Nil (a
+        // cross-metaop intermediate shape, #872). A real Array must survive:
+        // `my \r = [Any]` / `my $x = [Any]` keep the array, matching Rakudo
+        // (DBIish reads a NULL row as `[Any]` and binds it with `\r = ...`).
         let single_nilish = match val.view() {
-            ValueView::Array(items, _) => items.len() == 1 && items.first().is_some_and(is_nilish),
             ValueView::Seq(items) => items.len() == 1 && items.first().is_some_and(is_nilish),
             ValueView::Slip(items) => items.len() == 1 && items.first().is_some_and(is_nilish),
             _ => false,

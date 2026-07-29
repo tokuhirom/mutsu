@@ -376,6 +376,7 @@ impl Interpreter {
             "__mutsu_assign_callable_lvalue" => self.builtin_assign_callable_lvalue(&args),
             "__mutsu_assignment_ro" => self.builtin_assignment_ro(&args),
             "__mutsu_star_lvalue_rhs" => self.builtin_star_lvalue_rhs(&args),
+            "__mutsu_list_assign_rhs" => self.builtin_list_assign_rhs(&args),
             "__mutsu_record_bound_array_len" => self.builtin_record_bound_array_len(&args),
             "__mutsu_record_shaped_array_dims" => self.builtin_record_shaped_array_dims(&args),
             "__mutsu_feed_whatever" => self.builtin_feed_whatever(&args),

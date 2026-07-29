@@ -213,7 +213,17 @@ impl Interpreter {
             // Multi-dimensional index assignment (e.g., $c.a[2;1] = value)
             Self::multidim_assign_nested(current, &dims, effective_value.clone())?
         } else {
-            let key = index.to_string_value();
+            let is_object_hash =
+                matches!(current.view(), ValueView::Hash(h) if h.key_type.is_some());
+            let key = if !is_object_hash && matches!(index.view(), ValueView::Package(_)) {
+                // A bare type object keyed into a plain (Str-keyed) hash
+                // attribute coerces to "" with Rakudo's "uninitialized value
+                // of type X in string context" warning, matching the lookup
+                // path (DBDish::Pg keys converters by type object).
+                self.coerce_type_object_hash_key(&index)?
+            } else {
+                index.to_string_value()
+            };
             match current.view() {
                 ValueView::Hash(h) => {
                     // Check for autovivification via nested subscript assignment:
@@ -335,6 +345,8 @@ impl Interpreter {
                 // An object hash (`has %.a{Str:D}`) stores `.WHICH` keys.
                 let key = if h.key_type.is_some() {
                     crate::runtime::utils::value_which_key(&index)
+                } else if matches!(index.view(), ValueView::Package(_)) {
+                    self.coerce_type_object_hash_key(&index)?
                 } else {
                     index.to_string_value()
                 };

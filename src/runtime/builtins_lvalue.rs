@@ -568,6 +568,28 @@ impl Interpreter {
         Err(RuntimeError::assignment_ro(None))
     }
 
+    /// `__mutsu_list_assign_rhs(rhs)` — Rakudo List.STORE decont for a paren
+    /// destructuring assignment (`my ($a, $b) = RHS`): an ITEMIZED single RHS
+    /// container is deitemized so the temp-array assignment flattens it into
+    /// elements (`my ($a, $b) = $row`). Every other value — comma lists,
+    /// plain arrays, Failures, scalars — passes through untouched: a Failure
+    /// RHS must land in the first target, not throw (so a blanket `.list`
+    /// call is wrong here).
+    pub(super) fn builtin_list_assign_rhs(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let Some(v) = args.first() else {
+            return Ok(Value::NIL);
+        };
+        if let ValueView::Array(items, kind) = v.view()
+            && kind.is_itemized()
+        {
+            return Ok(Value::array_with_kind(items.clone(), kind.decontainerize()));
+        }
+        Ok(v.clone())
+    }
+
     pub(super) fn builtin_star_lvalue_rhs(
         &mut self,
         args: &[Value],

@@ -324,13 +324,34 @@ pub(crate) fn parse_nf_form<'a>(rest_after_nf: &'a str, nf_name: &str) -> PResul
 }
 
 /// Helper to build the final expression from quoted content.
-pub(crate) fn make_q_content_expr(content: &str, is_qq: bool, q_closure_interp: bool) -> Expr {
+/// `open`/`close` are the quote delimiters: in `q` mode a backslash only
+/// escapes itself and the delimiters (`q{fo\'o}` keeps the backslash, while
+/// `q{a\}b}` and `q'fo\'o'` drop it) — Rakudo semantics.
+pub(crate) fn make_q_content_expr(
+    content: &str,
+    is_qq: bool,
+    q_closure_interp: bool,
+    open: char,
+    close: char,
+) -> Expr {
     if is_qq {
         interpolate_string_content(content)
     } else if q_closure_interp {
         interpolate_string_content_with_modes(content, false, true)
     } else {
-        let s = content.replace("\\'", "'").replace("\\\\", "\\");
+        let mut s = String::with_capacity(content.len());
+        let mut chars = content.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c == '\\'
+                && let Some(&n) = chars.peek()
+                && (n == '\\' || n == open || n == close)
+            {
+                s.push(n);
+                chars.next();
+            } else {
+                s.push(c);
+            }
+        }
         Expr::Literal(Value::str(s))
     }
 }
@@ -366,11 +387,17 @@ pub(crate) fn parse_q_quoted_content(
             let open_str: String = std::iter::repeat_n(first, repeat_count).collect();
             let close_str: String = std::iter::repeat_n(close_ch, repeat_count).collect();
             let (rest, content) = read_multi_bracketed(input, &open_str, &close_str, true)?;
-            return Ok((rest, make_q_content_expr(content, is_qq, q_closure_interp)));
+            return Ok((
+                rest,
+                make_q_content_expr(content, is_qq, q_closure_interp, first, close_ch),
+            ));
         }
         // Single bracket — use read_bracketed for proper nesting
         let (rest, content) = read_bracketed(input, first, close_ch, true)?;
-        return Ok((rest, make_q_content_expr(content, is_qq, q_closure_interp)));
+        return Ok((
+            rest,
+            make_q_content_expr(content, is_qq, q_closure_interp, first, close_ch),
+        ));
     }
 
     // Non-bracket delimiter (e.g. q/.../, q|...|)
@@ -381,7 +408,10 @@ pub(crate) fn parse_q_quoted_content(
             .ok_or_else(|| PError::expected(&format!("closing '{first}'")))?;
         let content = &rest[..end];
         let rest = &rest[end + first.len_utf8()..];
-        return Ok((rest, make_q_content_expr(content, is_qq, q_closure_interp)));
+        return Ok((
+            rest,
+            make_q_content_expr(content, is_qq, q_closure_interp, first, first),
+        ));
     }
 
     Err(PError::expected("q string delimiter"))
