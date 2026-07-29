@@ -1,10 +1,42 @@
-# `DBIish` battery — remaining blockers
+# `DBIish` battery — from selection to bundled
 
-The database battery is selected but not yet bundled; the reasoning and the
-candidate comparison are in [docs/batteries/database.md](../../docs/batteries/database.md).
-This file is the ledger of what stops `DBIish` from running on mutsu. Measured
-2026-07-25, `DBIish` 0.6.8, debug build of `main`, and re-measured the same day
-after the parse blocker was fixed.
+**Bundled 2026-07-29.** `DBIish` + `NativeLibs` + `NativeHelpers::Blob` are now
+vendored into `modules/` and resolve with zero config; see
+[docs/batteries/database.md](../../docs/batteries/database.md) for the current
+status, the vendoring recipe, and the bundle index entry in
+[BATTERIES.md §7](../../BATTERIES.md#7-bundle-index). Closing the bundling work
+found two more general mutsu bugs (a statement-level/sunk native-call dispatch
+gap in `src/vm/vm_call_exec_ops.rs`, and a bare `@!attr`/`%!attr`-returning
+method wrongly rejecting indexed assignment without `is rw` in
+`src/runtime/methods_mut_rw_attr.rs` / `methods_mut_method_lvalue.rs`), pinned
+by `t/nativecall-statement-level-sunk-call.t` and
+`t/method-bare-array-attr-index-assign.t`.
+
+Five of the nine generic/SQLite upstream test files now gate every release
+(`01-basic`, `02-meta`, `03-lib-util`, `05-mock`, `06-types`); the remaining
+four (`44-sqlite-memory`, `45-sqlite-common`, `46-sqlite-blob`,
+`48-sqlite-errors`) are blocked on a missing type-coercion family
+(`Any.Int`/`.Num`, `Str.Buf`) tracked in
+[`todo/tickets/any-nil-int-num-coercion-missing.md`](../../todo/tickets/any-nil-int-num-coercion-missing.md).
+Bundling also surfaced (but did not cause — verified against a clean stash of
+every file this session touched) a pre-existing `Template::Mustache` context-
+resolution regression, tracked in
+[`todo/tickets/template-mustache-context-precedence-regression.md`](../../todo/tickets/template-mustache-context-precedence-regression.md),
+and a pre-existing whole-hash-assignment merge bug in the `rw`-accessor path,
+tracked in
+[`todo/tickets/rw-accessor-whole-hash-assign-merges-not-replaces.md`](../../todo/tickets/rw-accessor-whole-hash-assign-merges-not-replaces.md).
+
+What follows is the original selection-to-working ledger, kept for the
+debugging history and the fix links it carries.
+
+---
+
+The database battery was selected but not yet bundled at the time this ledger
+started; the reasoning and the candidate comparison are in
+[docs/batteries/database.md](../../docs/batteries/database.md). This file was
+the ledger of what stopped `DBIish` from running on mutsu. Measured 2026-07-25,
+`DBIish` 0.6.8, debug build of `main`, and re-measured the same day after the
+parse blocker was fixed.
 
 **Update 2026-07-29 (Pg): the same lifecycle runs end-to-end against a live
 PostgreSQL 16 too** (`DBIish.connect('Pg', …)` → `PQprepare`/`PQexecPrepared`
@@ -502,9 +534,9 @@ is at 30 of 35. Two left:
    CStruct/CArray bodies are all-zero past word 0. Read it before starting. See
    ⑨ above for the exact current failure.
 
-## When these are cleared
+## Bundling (done 2026-07-29)
 
-Follow the "Next steps before this can be bundled" list at the end of
-`docs/batteries/database.md`: re-measure, vendor the three trees, add them to
-`batteries.lock`, and baseline the release gate with
-`scripts/battery-testsuite.sh --update`.
+Followed the recipe now in `docs/batteries/database.md`'s "Vendoring recipe"
+section: vendored the three trees, added them to `batteries.lock`, and
+baselined the release gate with `scripts/battery-testsuite.sh --update`. See
+the top of this file for what's gated and what remains open.

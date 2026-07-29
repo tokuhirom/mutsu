@@ -37,3 +37,6 @@ Test::Util::ServerPort	modules/Test-Util-ServerPort/lib	https://github.com/jonat
 Template::Mustache	modules/Template-Mustache/lib	https://github.com/raku-community-modules/Template-Mustache.git	27f3e862d1060c60042956b852cf39dc183b56a5	t/*.rakutest	{clone}/t/lib
 HTTP::UserAgent	modules/HTTP-UserAgent/lib	https://github.com/raku-community-modules/HTTP-UserAgent.git	1d6a31a0656a422524c266831f3d27bd62a3e3d7	t/*.rakutest	{clone}/t/lib
 YAMLish	modules/YAMLish/lib	https://github.com/Leont/yamlish.git	2a1d04ab7098e9ea0491ff8d1907fd868f938e62	t/*.rakutest	modules/MIME-Base64/lib
+NativeLibs	modules/NativeLibs/lib	https://github.com/salortiz/NativeLibs.git	f3e78510702af0eeb49b4418dc59008ff4f8cd1b	t/*.t	-
+NativeHelpers::Blob	modules/NativeHelpers-Blob/lib	https://github.com/salortiz/NativeHelpers-Blob.git	54ac6ddf7f557018a54974692a0a97a2b0aca11b	t/*.t	-
+DBIish	modules/DBIish/lib	https://github.com/raku-community-modules/DBIish.git	34f77e7f1581a67d544f88aa2f10fa90cb3df1b4	t/*.rakutest	modules/NativeLibs/lib,modules/NativeHelpers-Blob/lib

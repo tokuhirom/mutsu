@@ -1,0 +1,24 @@
+{
+    "perl" : "6.c",
+    "name" : "NativeLibs",
+    "version" : "0.0.9",
+    "auth" : "github:salortiz",
+    "description" : "Native libraries utilities",
+    "depends" : [ ],
+    "build-depends" : [ ],
+    "test-depends" : [ ],
+    "provides" : {
+	"NativeLibs" : "lib/NativeLibs.pm6"
+    },
+    "repo-type" : "git",
+    "source-url": "git://github.com/salortiz/NativeLibs.git",
+    "authors" : [ "Salvador Ortiz <sortiz@cpan.com>" ],
+    "licence" : "Artistic-2.0",
+    "support" : {
+	"email" : "sog@msg.mx",
+	"source" : "https://github.com/salortiz/NativeLibs.git"
+    },
+    "tags" : [
+	"NativeCall", "MoarVM", "Utilities"
+    ]
+}

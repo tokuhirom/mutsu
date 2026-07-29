@@ -804,7 +804,9 @@ impl Interpreter {
                         actual_method
                     )));
                 }
-                if let Some(attr_name) = Self::rw_method_attribute_target(&method_def.body) {
+                if let Some((attr_name, _sigil)) =
+                    Self::rw_method_attribute_target(&method_def.body)
+                {
                     let mut updated = attributes.to_map();
                     let current = if method_args.is_empty() {
                         self.call_method_with_values(target.clone(), actual_method, Vec::new())
@@ -1334,21 +1336,30 @@ impl Interpreter {
         }
         // A method whose body is `return-rw $!attr` exposes a writable
         // container even without an `is rw` trait (URI's `multi method
-        // fragment(URI:D: --> Fragment) { return-rw $!fragment }`).
-        let returns_rw_attr =
-            Self::rw_method_attribute_target(&method_def.body).is_some_and(|_| {
-                method_def
+        // fragment(URI:D: --> Fragment) { return-rw $!fragment }`). A method
+        // whose body is a bare `@!attr`/`%!attr` (no `return-rw`, no `is rw`)
+        // exposes that Array/Hash container too: `method items { @!items }`
+        // returns the actual attribute value, and assigning into it — whole
+        // (`$obj.items = ...`) or by index (`$obj.items[$i] = ...`) — mutates
+        // that container via its own STORE/element-assignment, which needs no
+        // `is rw` on the accessor (only a *scalar* `$!attr` needs `is rw` to
+        // expose the container for rebinding).
+        let rw_attr_target = Self::rw_method_attribute_target(&method_def.body);
+        let returns_rw_attr = rw_attr_target.as_ref().is_some_and(|(_, sigil)| {
+            *sigil == '@'
+                || *sigil == '%'
+                || method_def
                     .body
                     .iter()
                     .any(Self::stmt_contains_return_rw_call)
-            });
+        });
         if !method_def.is_rw && !returns_rw_attr {
             return Err(RuntimeError::new(format!(
                 "X::Assignment::RO: method '{}' is not rw",
                 method
             )));
         }
-        if let Some(attr_name) = Self::rw_method_attribute_target(&method_def.body) {
+        if let Some((attr_name, _sigil)) = rw_attr_target {
             let mut updated = attributes.to_map();
             let current = if method_args.is_empty() {
                 self.call_method_with_values(
