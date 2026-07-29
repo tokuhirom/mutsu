@@ -608,19 +608,17 @@ impl Interpreter {
         // Classes/roles this module declares belong to its distribution too, so a
         // later OTF compile of one of their methods can resolve `$?DISTRIBUTION`
         // (e.g. a role method reads `$?DISTRIBUTION.meta` — zef's `Pluggable`).
-        // Snapshot the pre-load names so we can record the dist for the new ones.
+        // The same set is what the module's imported type aliases are recorded
+        // against (`package_type_aliases`), so snapshot the pre-load names
+        // unconditionally.
         let module_dist = inst_dist.or_else(|| Self::detect_distribution(&source_path));
         let (before_class_names, before_role_names): (
             std::collections::HashSet<String>,
             std::collections::HashSet<String>,
-        ) = if module_dist.is_some() {
-            (
-                self.registry().classes.keys().cloned().collect(),
-                self.registry().roles.keys().cloned().collect(),
-            )
-        } else {
-            Default::default()
-        };
+        ) = (
+            self.registry().classes.keys().cloned().collect(),
+            self.registry().roles.keys().cloned().collect(),
+        );
         if let Some(dist) = &module_dist {
             self.current_distribution = Some(dist.clone());
             // Everything this module's own mainline runs from here on sits at or
@@ -646,6 +644,7 @@ impl Interpreter {
         // module: a member named `<directive>::<declarator>` must use a known
         // directive (DECLARE/SUPERSEDE/COMPOSE), else X::EXPORTHOW::InvalidDirective.
         Self::validate_exporthow_directives(&stmts)?;
+        let mut module_type_aliases: HashMap<String, String> = HashMap::new();
         if !Self::should_skip_runtime_for_use_only_module(&stmts) {
             // Module files should be compiled in a fresh GLOBAL scope, not
             // inheriting the caller's current_package.  Otherwise the compiler
@@ -680,7 +679,14 @@ impl Interpreter {
                 "?FILE".to_string(),
                 Value::str(source_path.to_string_lossy().to_string()),
             );
+            // See `package_type_aliases`: the module body runs in the CALLER's env,
+            // so the short-name type aliases its own `use` statements install are
+            // only as long-lived as the frame that triggered the load. Snapshot the
+            // env so the new ones can be recorded against the module itself.
+            let before_env_keys: std::collections::HashSet<crate::symbol::Symbol> =
+                self.env.keys().copied().collect();
             let result = self.run_block(&stmts);
+            module_type_aliases = self.collect_module_type_aliases(&before_env_keys);
             match saved_qfile {
                 Some(f) => {
                     self.env.insert("?FILE".to_string(), f);
@@ -709,8 +715,11 @@ impl Interpreter {
             self.apply_module_export(export_args.unwrap_or_default())?;
         }
         // Record the module's distribution for every class/role it just declared,
-        // so an OTF compile of one of their methods resolves `$?DISTRIBUTION`.
-        if let Some(dist) = &module_dist {
+        // so an OTF compile of one of their methods resolves `$?DISTRIBUTION`, and
+        // its imported short type names against the same set, so a method of one
+        // of those classes can still resolve them once the frame that ran the
+        // `require` is gone (see `package_type_aliases`).
+        if module_dist.is_some() || !module_type_aliases.is_empty() {
             let new_names: Vec<String> = self
                 .registry()
                 .classes
@@ -725,15 +734,65 @@ impl Interpreter {
                 .cloned()
                 .collect();
             for name in new_names {
-                self.package_distributions
-                    .entry(name)
-                    .or_insert_with(|| dist.clone());
+                if let Some(dist) = &module_dist {
+                    self.package_distributions
+                        .entry(name.clone())
+                        .or_insert_with(|| dist.clone());
+                }
+                if !module_type_aliases.is_empty() {
+                    self.package_type_aliases.entry(name).or_default().extend(
+                        module_type_aliases
+                            .iter()
+                            .map(|(k, v)| (k.clone(), v.clone())),
+                    );
+                }
+            }
+            if !module_type_aliases.is_empty() {
+                self.package_type_aliases
+                    .entry(module.to_string())
+                    .or_default()
+                    .extend(module_type_aliases);
             }
         }
         crate::parser::set_current_language_version(&saved_language_version);
         self.current_distribution = saved_distribution;
         self.current_distribution_frame_floor = saved_distribution_floor;
         Ok(())
+    }
+
+    /// The short-name type aliases a module body just installed into `env`:
+    /// entries added since `before` whose value is a `Package` naming a *different*
+    /// registered type (`THING2 => Drv2::Native::THING2`). Those are exactly what
+    /// the module's own `use` statements imported for its own lexical scope; see
+    /// `package_type_aliases` for why they cannot be left to live in `env`.
+    fn collect_module_type_aliases(
+        &self,
+        before: &std::collections::HashSet<crate::symbol::Symbol>,
+    ) -> HashMap<String, String> {
+        let mut aliases = HashMap::new();
+        for key in self.env.keys() {
+            if before.contains(key) {
+                continue;
+            }
+            let name = key.resolve();
+            // Only bare type names: sigils, twigils and the `__mutsu_*` /
+            // `?FILE`-style metadata keys are never type aliases.
+            if !name
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_uppercase() || c == '_')
+            {
+                continue;
+            }
+            let Some(ValueView::Package(target)) = self.env.get_sym(*key).map(Value::view) else {
+                continue;
+            };
+            let target = target.resolve();
+            if target != name && self.has_type_direct(&target) {
+                aliases.insert(name.to_string(), target.to_string());
+            }
+        }
+        aliases
     }
 
     /// Compile a module's statements and record each resulting compiled sub body

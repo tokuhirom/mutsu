@@ -1020,6 +1020,20 @@ pub struct Interpreter {
     /// Maps package names to their distribution context.
     /// Populated during module loading so OTF compilation can resolve $?DISTRIBUTION.
     pub(crate) package_distributions: HashMap<String, Value>,
+    /// Short type names a module imported for its OWN lexical scope, keyed by the
+    /// module name and by every class/role that module declares:
+    /// `{"Drv2" | "Drv2::Native" => {"THING2" => "Drv2::Native::THING2"}}`.
+    ///
+    /// A module body runs in the *caller's* env (`load_module` → `run_block`), so
+    /// the `Package` aliases its own `use` statements install land in whatever
+    /// frame triggered the load and die with it. That is invisible for a
+    /// compile-time `use` at file scope (the alias outlives every later call),
+    /// but a `require` executed inside a method frame loses them the moment the
+    /// method returns — and the module's own methods then cannot resolve their
+    /// own imported type names. Recording the aliases against the module makes
+    /// the resolution lexical to the module instead of dynamic to the frame.
+    /// Consulted by `package_type_alias` from `has_type` / `GetBareWord`.
+    pub(crate) package_type_aliases: HashMap<String, HashMap<String, String>>,
     /// Exported subroutine symbols by package and export tag.
     exported_subs: HashMap<String, HashMap<String, HashSet<String>>>,
     /// Exported variable/constant symbols by package and export tag.
