@@ -675,6 +675,35 @@ impl crate::runtime::Interpreter {
         })
     }
 
+    /// The representation a class was *declared* with (`is repr('CStruct')`).
+    /// `None` for an ordinary class, whose representation is `P6opaque`.
+    ///
+    /// [`Self::try_native_handle_repr_where`] answers `.REPR` for a live handle
+    /// — an instance that carries a C address. A **type object** has no address,
+    /// so it fell through to `P6opaque`, and a binding that gates on the
+    /// representation of its type parameter got the wrong answer:
+    /// `NativeHelpers::CStruct`'s `LinearArray[::T]` opens with
+    /// `die "Need a CStruct" unless T.REPR eq 'CStruct'`.
+    pub(crate) fn declared_class_repr(&self, name: &str) -> Option<&'static str> {
+        let short = name.rsplit("::").next().unwrap_or(name);
+        let reg = self.registry();
+        let holds = |set: &rustc_hash::FxHashSet<String>| {
+            set.contains(name)
+                || set
+                    .iter()
+                    .any(|c| c.rsplit("::").next().unwrap_or(c) == short)
+        };
+        if holds(&reg.cstruct_classes) {
+            Some("CStruct")
+        } else if holds(&reg.cunion_classes) {
+            Some("CUnion")
+        } else if holds(&reg.cpointer_classes) {
+            Some("CPointer")
+        } else {
+            None
+        }
+    }
+
     /// `$ptr.of` — what a typed `Pointer[T]` points at, `void` for an untyped
     /// one, as in Rakudo. `NativeHelpers::Blob`'s `blob-from-pointer` branches
     /// on exactly this (`ptr.of ~~ void ?? $type.of !! ptr.of`).

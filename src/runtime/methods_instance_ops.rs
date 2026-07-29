@@ -1915,12 +1915,28 @@ impl Interpreter {
                 ))
             }
             "REPR" if args.is_empty() => {
-                // CustomType/CustomTypeInstance report their stored REPR; every
+                // CustomType/CustomTypeInstance report their stored REPR; a
+                // class declared `is repr('CStruct')` (or CUnion/CPointer)
+                // reports that even as a *type object*, which is where a
+                // NativeCall binding gates on it
+                // (`die "Need a CStruct" unless T.REPR eq 'CStruct'`); every
                 // other type is P6opaque.
                 if let Some(repr) = target.custom_repr() {
-                    Ok(Value::str_from(repr))
-                } else {
-                    Ok(Value::str_from("P6opaque"))
+                    return Ok(Value::str_from(repr));
+                }
+                // Type objects only. An *instance* reaches here when it has no C
+                // storage (a Raku-constructed CStruct), and `t/nativecall-repr-body.t`
+                // pins that it must keep under-reporting `P6opaque`: answering
+                // the honest name without a body would make `BODY_OF`
+                // dereference whatever `.WHERE` returned. A live handle already
+                // answers `CStruct` through `try_native_handle_repr_where`.
+                let class = match target.view() {
+                    ValueView::Package(name) => Some(name.resolve()),
+                    _ => None,
+                };
+                match class.as_deref().and_then(|c| self.declared_class_repr(c)) {
+                    Some(repr) => Ok(Value::str_from(repr)),
+                    None => Ok(Value::str_from("P6opaque")),
                 }
             }
             "Str" | "Stringy" if args.is_empty() => match target.view() {
