@@ -366,6 +366,9 @@ pub(crate) fn to_int(v: &Value) -> i64 {
             }
         }
         ValueView::Complex(r, _) => r as i64,
+        // An enum value numifies to its underlying value (`+MYSQL_TYPE_DOUBLE`
+        // is 5) — without this a CStruct field write of an enum stored 0.
+        ValueView::Enum { value, .. } => value.as_i64(),
         ValueView::Str(s) => s.parse().unwrap_or(0),
         ValueView::Array(items, ..) => items.len() as i64,
         ValueView::Hash(items) => items.len() as i64,

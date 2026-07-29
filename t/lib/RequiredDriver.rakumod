@@ -19,5 +19,8 @@ method widget-tag(--> Str) { WIDGET-TAG }
 method slot-size(--> Int) { SLOT-SIZE }
 method slot-size-via-sub(--> Int) { slot-size-helper() }
 method slot-name(Str $key --> Str) { %slot-names{$key} }
+method kind-of(Str $key --> Str) { kind-of($key) }
+method kind-count(--> Int) { kind-count() }
+method kind-at(Int $i --> Str) { kind-at($i) }
 
 sub slot-size-helper(--> Int) { SLOT-SIZE + 1 }
