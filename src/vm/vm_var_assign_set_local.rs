@@ -1866,6 +1866,13 @@ impl Interpreter {
             let sv = source_var.clone();
             self.set_env_with_main_alias(&sv, val.clone());
             self.update_local_if_exists(code, &sv, &val);
+            // An attribute topic (`with $!result { .PQclear; $_ = Nil }` —
+            // DBDish::Pg's StatementHandle.finish) must reach self's attribute
+            // cell, not just the env mirror: the stale cell otherwise keeps the
+            // freed C pointer and the next finish double-frees it.
+            if Self::attr_twigil_base(&sv).is_some() && !Self::is_non_mirrorable_attr_value(&val) {
+                self.write_self_attr_cell(&sv, val.clone());
+            }
         }
         Ok(())
     }
