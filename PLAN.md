@@ -95,7 +95,7 @@ Do **not** implement the same Raku operation in multiple places:
 Modules with a proven working record (details in [news/2026-06.md](news/2026-06.md)): JSON native
 (`to-json`/`from-json` #3402) / Template::Mustache / File::Temp / File::Directory::Tree /
 HTTP::Parser / MIME::Base64 / HTTP::Server::Tiny (end-to-end HTTP serving) / Tubu (homegrown
-synchronous web framework, `t/lib`) / DBDishLite (homegrown SQLite layer, `t/lib`) / NativeCall MVP
+synchronous web framework, `t/lib`) / DBIish (bundled SQLite battery) / NativeCall MVP
 (real SQLite CRUD round-trip) / zef CLI.
 
 Right now these merely "work" — the three pillars of **bundling, documentation, and continuity
@@ -106,15 +106,17 @@ section.
 
 - [ ] **Finalize the bundle list**. First candidates (based on working record):
       JSON (native built-in) / Template::Mustache / File::Temp / File::Directory::Tree / HTTP::Parser /
-      MIME::Base64 / HTTP::Server::Tiny / Tubu (sync WAF) / DBDishLite (SQLite) / NativeCall.
+      MIME::Base64 / HTTP::Server::Tiny / Tubu (sync WAF) / DBIish (SQLite) / NativeCall.
       Use "a web blog can be written with the bundle alone" as the selection criterion (the HTTP
       client gap needs investigation).
 - [ ] **Vendoring mechanism**: vendor the bundled modules into the source tree (e.g. `modules/`) so
       an installed mutsu resolves them with no extra configuration (make `MUTSULIB` have a built-in
       default, or register a standard lib path in `Interpreter::new()` — same pattern as
       `add_default_site_repo()`). Also verify consistency with the precomp cache.
-- [ ] **Promote the `t/lib` homegrown libraries**: move Tubu / DBDishLite out of the test-helper
-      location into proper bundled modules; clean up naming, API, and standalone tests.
+- [ ] **Promote the `t/lib` homegrown libraries**: move Tubu out of the test-helper
+      location into a proper bundled module; clean up naming, API, and standalone tests.
+      (The homegrown `DBDishLite` SQLite layer was retired 2026-07-31 — the bundled upstream
+      `DBIish` battery covers it.)
 - [ ] **Documentation**: a usage document per bundled library (overview; the fact that no install is
       needed; API reference; example code). Location: `docs/batteries/` (or starting from a top-level
       `BATTERIES.md`). "Well-documented" is an explicit goal requirement, so documentation is
