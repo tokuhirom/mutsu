@@ -219,17 +219,11 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
             ))
         }
         ValueView::Nil => Value::hash(HashMap::new()),
-        ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } if class_name == "Match" => {
+        ValueView::Instance { class_name, .. } if class_name == "Match" => {
             // %($/) returns the named captures hash
-            if let Some(named) = attributes.as_map().get("named") {
-                named.clone()
-            } else {
-                Value::hash(HashMap::new())
-            }
+            value
+                .match_named()
+                .unwrap_or_else(|| Value::hash(HashMap::new()))
         }
         _ => {
             let mut map = HashMap::new();

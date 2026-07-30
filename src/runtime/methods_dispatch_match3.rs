@@ -848,8 +848,9 @@ impl Interpreter {
         {
             if class_name == "Match" {
                 let key = args[0].to_string_value();
+                let named_v = target.match_named();
                 let exists = matches!(
-                    attributes.as_map().get("named").map(Value::view),
+                    named_v.as_ref().map(Value::view),
                     Some(ValueView::Hash(named)) if named.contains_key(key.as_str())
                 );
                 return Some(Ok(Value::truth(exists)));
@@ -877,17 +878,12 @@ impl Interpreter {
         target: &Value,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if let ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } = target.view()
-            && class_name == "Match"
-        {
+        if target.is_match_instance() {
             let idx = crate::runtime::to_int(&args[0]);
+            let list_v = target.match_list();
             let exists = idx >= 0
                 && matches!(
-                    attributes.as_map().get("list").map(Value::view),
+                    list_v.as_ref().map(Value::view),
                     Some(ValueView::Array(items, ..)) if (idx as usize) < items.len()
                 );
             return Some(Ok(Value::truth(exists)));
@@ -1018,18 +1014,10 @@ impl Interpreter {
             // `$match.AT-KEY("name")` — named-capture lookup, mirroring the
             // `$match<name>` postcircumfix. Routed here by hyper method calls such
             // as `@<chars>».<spaces>`, which dispatch `.AT-KEY` per element.
-            (
-                ValueView::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                },
-                idx,
-            ) if class_name == "Match" => {
+            (ValueView::Instance { class_name, .. }, idx) if class_name == "Match" => {
                 let key = idx.to_string_value();
-                if let Some(ValueView::Hash(named)) =
-                    attributes.as_map().get("named").map(Value::view)
-                {
+                let named_v = target.match_named();
+                if let Some(ValueView::Hash(named)) = named_v.as_ref().map(Value::view) {
                     Some(Ok(named.get(key.as_str()).cloned().unwrap_or(Value::NIL)))
                 } else {
                     Some(Ok(Value::NIL))

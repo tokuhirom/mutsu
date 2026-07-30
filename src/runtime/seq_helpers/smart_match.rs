@@ -771,20 +771,16 @@ impl Interpreter {
                         attributes.insert("ast".to_string(), made_val);
                     }
                     // Upgrade positional capture env vars ($0, $1, ...) to Match objects
-                    if let ValueView::Instance { attributes, .. } = match_obj.view()
-                        && let Some(ValueView::Array(list, _)) =
-                            attributes.as_map().get("list").map(Value::view)
-                    {
+                    let list_v = match_obj.match_list();
+                    if let Some(ValueView::Array(list, _)) = list_v.as_ref().map(Value::view) {
                         for (i, v) in list.iter().enumerate() {
                             self.env.insert(i.to_string(), v.clone());
                         }
                     }
                     // Set named capture env vars from the match object's named hash
                     // so subcapture-aware Match objects are used (not plain strings)
-                    if let ValueView::Instance { attributes, .. } = match_obj.view()
-                        && let Some(ValueView::Hash(named_hash)) =
-                            attributes.as_map().get("named").map(Value::view)
-                    {
+                    let named_v = match_obj.match_named();
+                    if let Some(ValueView::Hash(named_hash)) = named_v.as_ref().map(Value::view) {
                         for (k, v) in named_hash.iter() {
                             self.env.insert(format!("<{}>", k), v.clone());
                         }

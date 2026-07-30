@@ -498,13 +498,10 @@ pub(crate) fn native_method_1arg(
                         let ch = s.chars().nth(idx).map(|c| Value::str(c.to_string()));
                         Some(Ok(ch.unwrap_or(Value::NIL)))
                     }
-                    ValueView::Instance {
-                        class_name,
-                        attributes,
-                        ..
-                    } if class_name == "Match" => {
+                    ValueView::Instance { class_name, .. } if class_name == "Match" => {
+                        let list_v = target.match_list();
                         if let Some(ValueView::Array(positional, ..)) =
-                            attributes.as_map().get("list").map(Value::view)
+                            list_v.as_ref().map(Value::view)
                         {
                             return Some(Ok(positional.get(idx).cloned().unwrap_or(Value::NIL)));
                         }

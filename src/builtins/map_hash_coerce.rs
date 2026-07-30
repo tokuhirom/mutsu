@@ -168,17 +168,11 @@ pub(crate) fn to_hash(target: Value, check_odd: bool) -> Result<Value, RuntimeEr
             }),
             |w| w.clone(),
         )),
-        ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } if class_name == "Match" => {
+        ValueView::Instance { class_name, .. } if class_name == "Match" => {
             // %($/) returns the named captures hash.
-            if let Some(named) = attributes.as_map().get("named") {
-                Ok(named.clone())
-            } else {
-                Ok(Value::hash(HashMap::new()))
-            }
+            Ok(target
+                .match_named()
+                .unwrap_or_else(|| Value::hash(HashMap::new())))
         }
         _ => {
             if check_odd {

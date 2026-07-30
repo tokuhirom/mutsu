@@ -1759,6 +1759,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     } = target.view()
         && class_name == "Match"
     {
+        let list_v = target.match_list();
+        let named_v = target.match_named();
         match method {
             "from" => {
                 return Some(Ok(Value::int(target.match_from().unwrap_or(0))));
@@ -1805,16 +1807,12 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
             "keys" => {
                 let mut keys = Vec::new();
-                if let Some(ValueView::Array(list, _)) =
-                    attributes.as_map().get("list").map(Value::view)
-                {
+                if let Some(ValueView::Array(list, _)) = list_v.as_ref().map(Value::view) {
                     for i in 0..list.len() {
                         keys.push(Value::int(i as i64));
                     }
                 }
-                if let Some(ValueView::Hash(named)) =
-                    attributes.as_map().get("named").map(Value::view)
-                {
+                if let Some(ValueView::Hash(named)) = named_v.as_ref().map(Value::view) {
                     let mut sorted: Vec<&String> = named.keys().collect();
                     sorted.sort();
                     for k in sorted {
@@ -1825,9 +1823,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
             "values" => {
                 let mut vals = Vec::new();
-                if let Some(ValueView::Array(list, _)) =
-                    attributes.as_map().get("list").map(Value::view)
-                {
+                if let Some(ValueView::Array(list, _)) = list_v.as_ref().map(Value::view) {
                     // A quantified positional capture (`( ... )*` — $0 is an
                     // Array of per-iteration Matches) flattens into the value
                     // list, matching raku's Seq flattening: `$m.values` over
@@ -1840,9 +1836,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         }
                     }
                 }
-                if let Some(ValueView::Hash(named)) =
-                    attributes.as_map().get("named").map(Value::view)
-                {
+                if let Some(ValueView::Hash(named)) = named_v.as_ref().map(Value::view) {
                     let mut sorted: Vec<(&String, &Value)> = named.iter().collect();
                     sorted.sort_by_key(|(k, _)| (*k).clone());
                     for (_, v) in sorted {
@@ -1853,16 +1847,12 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
             "pairs" => {
                 let mut pairs = Vec::new();
-                if let Some(ValueView::Array(list, _)) =
-                    attributes.as_map().get("list").map(Value::view)
-                {
+                if let Some(ValueView::Array(list, _)) = list_v.as_ref().map(Value::view) {
                     for (i, v) in list.iter().enumerate() {
                         pairs.push(Value::pair(i.to_string(), v.clone()));
                     }
                 }
-                if let Some(ValueView::Hash(named)) =
-                    attributes.as_map().get("named").map(Value::view)
-                {
+                if let Some(ValueView::Hash(named)) = named_v.as_ref().map(Value::view) {
                     let mut sorted: Vec<(&String, &Value)> = named.iter().collect();
                     sorted.sort_by_key(|(k, _)| (*k).clone());
                     for (k, v) in sorted {
@@ -1873,9 +1863,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
             "kv" => {
                 let mut kv = Vec::new();
-                if let Some(ValueView::Array(list, _)) =
-                    attributes.as_map().get("list").map(Value::view)
-                {
+                if let Some(ValueView::Array(list, _)) = list_v.as_ref().map(Value::view) {
                     for (i, v) in list.iter().enumerate() {
                         kv.push(Value::int(i as i64));
                         // A quantified capture's Array flattens after its key
@@ -1887,9 +1875,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         }
                     }
                 }
-                if let Some(ValueView::Hash(named)) =
-                    attributes.as_map().get("named").map(Value::view)
-                {
+                if let Some(ValueView::Hash(named)) = named_v.as_ref().map(Value::view) {
                     let mut sorted: Vec<(&String, &Value)> = named.iter().collect();
                     sorted.sort_by_key(|(k, _)| (*k).clone());
                     for (k, v) in sorted {
@@ -1900,7 +1886,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 return Some(Ok(Value::array(kv)));
             }
             "elems" => {
-                let count = match attributes.as_map().get("list").map(Value::view) {
+                let count = match list_v.as_ref().map(Value::view) {
                     Some(ValueView::Array(list, _)) => list.len(),
                     _ => 0,
                 };

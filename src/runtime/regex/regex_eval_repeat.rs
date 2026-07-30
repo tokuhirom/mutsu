@@ -562,18 +562,14 @@ impl Interpreter {
         node_match: Value,
     ) -> Option<Value> {
         // Named captures carrying a child `.made` (from the recursion above).
-        let ast_named: Vec<(String, Value)> =
-            if let ValueView::Instance { attributes, .. } = node_match.view() {
-                match attributes.as_map().get("named").map(Value::view) {
-                    Some(ValueView::Hash(named_hash)) => named_hash
-                        .iter()
-                        .map(|(k, v)| (k.clone(), v.clone()))
-                        .collect(),
-                    _ => Vec::new(),
-                }
-            } else {
-                Vec::new()
-            };
+        let named_v = node_match.match_named();
+        let ast_named: Vec<(String, Value)> = match named_v.as_ref().map(Value::view) {
+            Some(ValueView::Hash(named_hash)) => named_hash
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+            _ => Vec::new(),
+        };
         let saved_match = self.env.get("/").cloned();
         // Fresh `make` slot for this node (do not inherit a sibling's value).
         self.env.remove("made");
