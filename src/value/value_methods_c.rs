@@ -59,6 +59,7 @@ impl Value {
             let mut attrs = HashMap::new();
             attrs.insert("str".to_string(), Value::str(s.to_string()));
             // Try to find the captured text's position within the original string
+            crate::vm::vm_stats::record_regex_match_leaf(orig_ctx.is_some());
             let (cap_from, cap_to) = if let Some((_, haystack)) = orig_ctx {
                 // Search for the captured substring starting from search_from
                 let needle: Vec<char> = s.chars().collect();
@@ -91,6 +92,9 @@ impl Value {
 
         /// Build a Match object from a stored CapNode, recursively handling subcaptures.
         fn make_subcap_match(caps: &crate::runtime::CapNode, orig_ctx: Option<OrigCtx>) -> Value {
+            if caps.children.is_none() {
+                crate::vm::vm_stats::record_regex_match_leaf(false);
+            }
             let search_start = caps.from;
             let kids = caps.kids();
             let pos_vals: Vec<Value> = kids

@@ -262,6 +262,18 @@ written through the `Arc`.
 Delete `chars[a..b].iter().collect()` at capture sites, the `captured.clone()` duplicates,
 and `make_capture_match`'s search entirely — the Match builder reads the recorded span.
 Fixes the repeated-text offset bug.
+*Measured 2026-07-31 (counted, not guessed — post-P2 `leaf_searches`/`leaf_spans`
+counters under `MUTSU_VM_STATS`):* the position search is **already dead on every
+workload tested** — `bench-yaml-parse` (0 searches / 38,431 span reads), the YAMLish
+battery test, roast S05 capture/global files, and ad-hoc `m:g`/`split`/`subst` shapes
+all report `leaf_searches=0`, because every leaf reaching the builder now carries a
+span-bearing `CapNode` (P2 made the `store_apply_named_capture` carrier the natural
+representation). The pre-P1 "≈4 points of memcmp" attributed to the search no longer
+applies. **P3's value is therefore the text axis itself**, not the search: per stored
+leaf the text is materialized and copied up to three times (`chars[a..b].collect()`
+into `CapNode.matched`, again into the accumulator's `named`/`positional` text vecs,
+again into the Match `str` attribute) — 38k `String` allocations per bench parse.
+The search fallback is retired when the text axis goes.
 
 **P4 — One list per axis + interned names.** Collapse the parallel vectors/maps into
 `Vec<PosSlot>` and `HashMap<Symbol, Vec<Arc<CapNode>>>`, and shrink the trail's undo
