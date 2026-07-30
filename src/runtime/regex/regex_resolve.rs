@@ -624,7 +624,7 @@ impl Interpreter {
                 .or(Some(Value::NIL));
         }
         let source = format!("({expr_src});");
-        let (stmts, _) = crate::parse_dispatch::parse_source(&source).ok()?;
+        let stmts = self.parse_regex_code_cached(&source)?;
         let mut interp = Interpreter {
             env: self.make_regex_eval_env(caps),
             current_package: Arc::new(RwLock::new(self.current_package())),
