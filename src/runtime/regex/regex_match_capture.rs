@@ -484,7 +484,7 @@ impl Interpreter {
             }
             RegexAtom::VarDecl { code } => {
                 let source = format!("{};", code);
-                if let Ok((stmts, _)) = crate::parse_dispatch::parse_source(&source) {
+                if let Some(stmts) = self.parse_regex_code_cached(&source) {
                     let mut interp = Interpreter {
                         env: self.env.clone(),
                         current_package: Arc::new(RwLock::new(self.current_package())),

@@ -39,7 +39,25 @@ thread_local! {
     /// parse is picked up.
     pub(crate) static REGEX_PARSE_CACHE: RefCell<HashMap<String, (u64, std::sync::Arc<RegexPattern>)>> =
         RefCell::new(HashMap::new());
+
+    /// Memoization cache for the *main-slang* code strings evaluated during
+    /// regex matching: `{ … }` side-effect blocks, `<?{ … }>`/`<!{ … }>`
+    /// assertions, `<{ … }>` closure interpolations, `** {code}` quantifier
+    /// blocks, and `:my $x = …;` declarations. These are evaluated per cursor
+    /// position / per iteration in the hot match loop, and re-parsing the same
+    /// short string from source each time made the Raku parser (not the regex
+    /// engine) the dominant cost of a grammar parse (~30% of samples on the
+    /// yaml bench). The parse result is deterministic for a given source string
+    /// under a fixed declaration registry, so entries record the interpreter's
+    /// `registry_write_gen`: any routine/operator (re)registration invalidates
+    /// them, the same discipline as `REGEX_PARSE_CACHE`'s `TOKEN_DEFS_GEN`.
+    pub(crate) static REGEX_CODE_PARSE_CACHE: RefCell<HashMap<String, CachedCodeParse>> =
+        RefCell::new(HashMap::new());
 }
+
+/// A `REGEX_CODE_PARSE_CACHE` entry: the `registry_write_gen` the code string
+/// was parsed under, and the parsed statements.
+pub(crate) type CachedCodeParse = (u64, std::sync::Arc<Vec<crate::ast::Stmt>>);
 
 /// Generation counter for the grammar-token registry (`Registry.token_defs`).
 /// Bumped on every token (re)definition / wholesale restore; used to invalidate

@@ -118,6 +118,22 @@ static GC_ROOTS_SCANNED: AtomicU64 = AtomicU64::new(0);
 static REGEX_CAP_MAKEMUT_TOTAL: AtomicU64 = AtomicU64::new(0);
 static REGEX_CAP_MAKEMUT_SHARED: AtomicU64 = AtomicU64::new(0);
 
+// Regex embedded-code parse cache (REGEX_CODE_PARSE_CACHE) effectiveness.
+static REGEX_CODE_PARSE_HITS: AtomicU64 = AtomicU64::new(0);
+static REGEX_CODE_PARSE_MISSES: AtomicU64 = AtomicU64::new(0);
+
+/// Record one lookup in the regex embedded-code parse cache.
+#[inline]
+pub(crate) fn record_regex_code_parse(hit: bool) {
+    if enabled() {
+        if hit {
+            REGEX_CODE_PARSE_HITS.fetch_add(1, Ordering::Relaxed);
+        } else {
+            REGEX_CODE_PARSE_MISSES.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
 /// Record one `Arc::make_mut` on a stored regex capture node; `shared` means
 /// the node had other holders (strong_count > 1) so make_mut deep-copied it.
 #[inline]
@@ -439,6 +455,11 @@ pub(crate) fn dump() {
     let cap_makemut_shared = REGEX_CAP_MAKEMUT_SHARED.load(Ordering::Relaxed);
     eprintln!(
         "[mutsu vm-stats] regex-captures: cap_makemut={cap_makemut_total} shared_deep_copies={cap_makemut_shared}"
+    );
+    let code_parse_hits = REGEX_CODE_PARSE_HITS.load(Ordering::Relaxed);
+    let code_parse_misses = REGEX_CODE_PARSE_MISSES.load(Ordering::Relaxed);
+    eprintln!(
+        "[mutsu vm-stats] regex-code-parse-cache: hits={code_parse_hits} misses={code_parse_misses}"
     );
     let jit_compiles = JIT_COMPILES.load(Ordering::Relaxed);
     let jit_entries = JIT_ENTRIES.load(Ordering::Relaxed);
