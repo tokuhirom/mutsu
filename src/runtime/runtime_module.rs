@@ -43,9 +43,17 @@ impl Interpreter {
                 let ks = key.resolve();
                 ks.contains("::") && !ks.starts_with("GLOBAL::")
             });
-            self.registry_mut()
-                .classes
-                .retain(|key, _| class_snapshot.contains(key));
+            // Same exception for classes: a module's own package-qualified
+            // classes (`ScanCacheHelper::ScanCacheThing`) persist as long as the
+            // module is loaded. `loaded_modules` is never rolled back, so a
+            // later block-scoped re-`use` of the module is a no-op that cannot
+            // re-register them — dropping them here left `.new` on the class
+            // dying with X::Method::NotFound in the second block
+            // (t/module-reuse-class-in-block.t). Bare imported aliases are
+            // still removed with the import scope.
+            self.registry_mut().classes.retain(|key, _| {
+                class_snapshot.contains(key) || (key.contains("::") && !key.starts_with("GLOBAL::"))
+            });
             self.newline_mode = newline_mode;
             self.strict_mode = strict_mode;
             self.fatal_mode = fatal_mode;
