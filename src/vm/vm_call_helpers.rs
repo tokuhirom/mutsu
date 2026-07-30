@@ -200,7 +200,14 @@ impl Interpreter {
             .cloned()
             .map(Self::unwrap_var_ref_value)
             .collect();
-        if self.has_declared_function(name) || self.has_multi_function(name) || self.has_proto(name)
+        // `fn_base_name_registered` is the cheap negative gate (#5574): when no
+        // registry key carries this base name, `has_declared_function` and
+        // `has_multi_function` (a full functions-map scan) cannot match, so a
+        // builtin like `make` skips both. `has_proto` reads a separate map and
+        // stays unguarded.
+        if (self.fn_base_name_registered(name)
+            && (self.has_declared_function(name) || self.has_multi_function(name)))
+            || self.has_proto(name)
         {
             raw_args
         } else {

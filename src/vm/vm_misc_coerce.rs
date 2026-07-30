@@ -172,6 +172,30 @@ impl Interpreter {
                 return Ok(());
             }
         }
+        // Grammar-hot fast path: `~$match` on a plain `Match` instance is the
+        // dominant Str coercion in grammar-action code (one `~$<key>` per
+        // capture). Match is a builtin class whose `.Str` is the stored `str`
+        // attribute, so read it directly instead of paying the generic
+        // Stringy-then-Str method-dispatch ceremony below. Only a user augment
+        // of `Match.Stringy`/`Match.Str` (or a `prefix:<~>` overload, already
+        // checked above) could observe the difference — gate on those.
+        if let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = val.view()
+            && class_name == "Match"
+            && !self.has_user_method("Match", "Stringy")
+            && !self.has_user_method("Match", "Str")
+        {
+            let s = attributes
+                .as_map()
+                .get("str")
+                .cloned()
+                .unwrap_or_else(|| Value::str(String::new()));
+            self.stack.push(s);
+            return Ok(());
+        }
         // If the value is an Instance, try calling the Stringy method, then Str
         if let ValueView::Instance { .. } = val.view() {
             // Slice F: a user `Stringy`/`Str` method can mutate a captured-outer

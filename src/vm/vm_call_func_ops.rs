@@ -617,9 +617,15 @@ impl Interpreter {
             // this branch prevents regressions where dispatching through
             // `call_sub_value` behaves differently (e.g. dynamic `$*ERR`
             // handling for `note` inside a caller-provided block).
-            if self.has_proto(name_str)
-                || self.has_multi_candidates(name_str)
+            // Pure disjunction — every arm yields `None` — so order it
+            // cheapest-first: the base-name negative gate (#5574) short-
+            // circuits the whole check for a builtin like `make` (no registry
+            // key carries the name, so `has_function` is false), and the
+            // multi-candidates full-map scan runs last, memoized.
+            if !self.fn_base_name_registered(name_str)
                 || !self.has_function(name_str)
+                || self.has_proto(name_str)
+                || self.has_multi_candidates_cached(name_str)
             {
                 None
             } else {

@@ -249,11 +249,28 @@ impl Interpreter {
     }
 
     /// Check if a class has a public attribute accessor for the given name.
+    ///
+    /// The most-derived declaration of an attribute name decides its
+    /// visibility (mirroring `collect_class_attributes`' override-by-name
+    /// merge), so walk the MRO derived-first and stop at the first class
+    /// declaring the name instead of cloning the whole merged attribute list
+    /// per query — this sits on the per-call method-dispatch path.
     pub(crate) fn has_public_accessor(&mut self, class_name: &str, method_name: &str) -> bool {
-        let attrs = self.collect_class_attributes(class_name);
-        attrs
-            .iter()
-            .any(|(attr_name, is_public, ..)| *is_public && attr_name == method_name)
+        let mro = self.class_mro(class_name);
+        for cn in mro.iter() {
+            if let Some(class_def) = self.registry().classes.get(cn.as_str())
+                // Within one class a later same-name declaration overrides an
+                // earlier one (collect_class_attributes' remove-then-push).
+                && let Some((_, is_public, ..)) = class_def
+                    .attributes
+                    .iter()
+                    .rev()
+                    .find(|(n, ..)| n == method_name)
+            {
+                return *is_public;
+            }
+        }
+        false
     }
 
     /// Decide, per MRO level, whether an explicit user method or a public
