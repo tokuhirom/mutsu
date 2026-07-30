@@ -171,6 +171,7 @@ mod calls;
 mod class;
 mod class_dispatch;
 mod class_introspection;
+mod ctor_phase_plan;
 pub(crate) use class_introspection::UserMethodOrAccessor;
 pub(crate) mod cstruct_layout;
 mod decl_types;
@@ -467,6 +468,37 @@ pub(crate) struct NativeCtorPlan {
     /// so the whole scan (its keys `Vec` plus the `(String, String)` registry-key
     /// allocs) is skipped. The overwhelmingly common case.
     pub(crate) has_container_defaults: bool,
+    /// Pre-derived BUILD/TWEAK phase step lists (`runtime/ctor_phase_plan.rs`):
+    /// the base-first MRO walk, per-level registry probes, role-submethod
+    /// ordering, and 6.c/6.e skip decisions that the construction phases
+    /// re-derived on every single construction. Empty when `has_build` /
+    /// `has_tweak` is false.
+    pub(crate) build_steps: Arc<Vec<ConstructionPhaseStep>>,
+    pub(crate) tweak_steps: Arc<Vec<ConstructionPhaseStep>>,
+    /// Attribute-name skeleton (declared attr names -> Nil) usable as the
+    /// phase-dispatch probe map when the live cell carries no sigilless-alias
+    /// metadata: every consumer on that path reads only the key set (see
+    /// `run_construction_phase_steps`), so the per-construction whole-cell
+    /// `to_map()` value clone is skipped.
+    pub(crate) probe_skeleton: Arc<crate::value::AttrMap>,
+}
+
+/// One pre-derived step of a construction phase (BUILD or TWEAK) — see
+/// `NativeCtorPlan::{build_steps, tweak_steps}`.
+pub(crate) enum ConstructionPhaseStep {
+    /// A role-composed submethod at this MRO level, with its owning role and
+    /// already-collected def (what `ordered_role_submethods_for_class`
+    /// re-derived per construction).
+    Role { role_name: String, def: MethodDef },
+    /// The class's own candidate at this MRO level, dispatched with
+    /// `mro_class` as the receiver. `pinned` carries the single simple
+    /// candidate when dispatch may bypass method resolution (the common
+    /// `submethod TWEAK` shape); `None` keeps the full
+    /// `run_instance_method_celled` path.
+    Class {
+        mro_class: String,
+        pinned: Option<MethodDef>,
+    },
 }
 
 /// Kind of declaration a doc comment is attached to.
