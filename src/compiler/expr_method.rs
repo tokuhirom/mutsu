@@ -130,7 +130,10 @@ impl Compiler {
         self.compile_expr(target);
         let arity = args.len() as u32;
         let arg_sources_idx = self.add_arg_sources_constant(args);
-        let esc = Self::method_escapes_closure_args(&name.resolve());
+        let mname = name.resolve();
+        let esc = Self::method_escapes_closure_args(&mname);
+        // `Thread.start` / `Promise.start` hand the block to a thread.
+        let thread_esc = mname == "start";
         // `Pair.new($k, $v)` binds its value parameter raw, so the built Pair's
         // value aliases `$v`'s container (write-through, traps.rakudoc; only the
         // 2-positional form — the named form and the key decontainerize). Tag the
@@ -146,7 +149,7 @@ impl Compiler {
             && args.len() == 2
             && matches!(&args[1], Expr::Var(n) if !n.contains("::"));
         for (i, arg) in args.iter().enumerate() {
-            self.compile_method_arg_with_escape(arg, esc);
+            self.with_thread_escape(thread_esc, |s| s.compile_method_arg_with_escape(arg, esc));
             if pair_value_capture
                 && i == 1
                 && let Expr::Var(n) = arg
@@ -525,9 +528,12 @@ impl Compiler {
         self.compile_expr(target);
         let arity = args.len() as u32;
         let arg_sources_idx = self.add_arg_sources_constant(args);
-        let esc = Self::method_escapes_closure_args(&name.resolve());
+        let mname = name.resolve();
+        let esc = Self::method_escapes_closure_args(&mname);
+        // `Thread.start` / `Promise.start` hand the block to a thread.
+        let thread_esc = mname == "start";
         for arg in args {
-            self.compile_method_arg_with_escape(arg, esc);
+            self.with_thread_escape(thread_esc, |s| s.compile_method_arg_with_escape(arg, esc));
         }
         let name_idx = self.code.add_constant(Value::str(name.resolve()));
         let modifier_idx = modifier.map(|m| self.code.add_constant(Value::str(m.to_string())));
