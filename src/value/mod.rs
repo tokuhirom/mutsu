@@ -292,8 +292,33 @@ pub(crate) fn seq_sink(arc_ptr: &Arc<Vec<Value>>) {
 /// Shared mutable attribute storage for Proxy subclasses.
 pub(crate) type ProxySubclassAttrs = Arc<Mutex<HashMap<String, Value>>>;
 
+/// How the bytes of one element read back out of a [`BufData`] node.
+///
+/// The node stores bytes; this is what says whether those bytes spell an
+/// unsigned integer, a two's-complement signed one, or an IEEE float. It
+/// started as a single `signed: bool` — enough for `Buf`/`Blob`, whose element
+/// types are all integers — and became an enum for ADR-0015 P3, because a
+/// `CArray[num64]` shares this node and its elements are `Num`s.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) enum ElemKind {
+    /// `uint8` … `uint64`, and every plain `Buf`/`Blob`/`utf8`/`utf16`.
+    Uint,
+    /// `int8` … `int64`: sign-extended from the element's own width on the way
+    /// out.
+    Int,
+    /// `num32` / `num64`: the bytes are an IEEE-754 float of the element width.
+    Float,
+}
+
+impl ElemKind {
+    /// Whether an element reads back sign-extended.
+    pub(crate) fn is_signed(self) -> bool {
+        matches!(self, ElemKind::Int)
+    }
+}
+
 /// The element storage of a `Buf`/`Blob`, as contiguous native bytes
-/// (ADR-0015 P2).
+/// (ADR-0015 P2), and of a native-backed `CArray[T]` (P3).
 ///
 /// This is a **payload-only** GC node: it holds no `Value`s, so it cannot take
 /// part in a cycle, `Trace` is an empty body, and ADR-0001's container type
@@ -316,24 +341,30 @@ pub(crate) struct BufData {
     pub bytes: Vec<u8>,
     /// Bytes per element: 1, 2, 4 or 8.
     pub width: u8,
-    /// Whether an element reads back as signed (`Blob[int8]`) or unsigned
-    /// (`Blob[uint8]`, and every plain `Buf`/`Blob`/`utf8`/`utf16`).
-    pub signed: bool,
-    /// The synthesised `VMArray` REPR body, allocated on first `.WHERE` and
-    /// owned by this node — see [`value_buf_repr::ReprBody`].
+    /// How those bytes read back — see [`ElemKind`].
+    pub kind: ElemKind,
+    /// The synthesised REPR body, allocated on first `.WHERE` and owned by this
+    /// node — see [`value_buf_repr::ReprBody`]. Which layout it holds is decided
+    /// by the *container* asking (`MVMArrayB` for a `Buf`, `CArrayB` for a
+    /// `CArray`), not by the node.
     pub body: value_buf_repr::ReprBody,
 }
 
 impl BufData {
     /// A buffer node over `bytes`, with no REPR body yet: the body block is
     /// allocated the first time something asks for the buffer's `.WHERE`.
-    pub(crate) fn new(bytes: Vec<u8>, width: u8, signed: bool) -> BufData {
+    pub(crate) fn new(bytes: Vec<u8>, width: u8, kind: ElemKind) -> BufData {
         BufData {
             bytes,
             width,
-            signed,
+            kind,
             body: value_buf_repr::ReprBody::default(),
         }
+    }
+
+    /// The number of elements the node holds.
+    pub(crate) fn elems(&self) -> usize {
+        self.bytes.len() / (self.width.max(1) as usize)
     }
 }
 
@@ -418,6 +449,7 @@ mod value_async;
 /// `Buf`/`Blob` element storage — the accessor chokepoint (ADR-0015 P2).
 pub(crate) mod value_buf;
 pub(crate) mod value_buf_repr;
+pub(crate) mod value_carray;
 mod value_collections;
 mod value_enum;
 mod value_eq;

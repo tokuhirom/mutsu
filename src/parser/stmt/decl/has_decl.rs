@@ -7,7 +7,6 @@ use super::helpers::{
     parse_array_shape_suffix, shaped_array_new_expr, shaped_array_new_with_data_expr,
 };
 use super::method_decl_body;
-use super::parse_colon_method_arg;
 use super::parse_decl_type_constraint;
 use crate::ast::{Expr, Stmt};
 use crate::symbol::Symbol;
@@ -720,36 +719,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             let (r, _) = parse_char(r, ')')?;
             (r, args)
         } else if rest.starts_with(':') && !rest.starts_with("::") {
-            let r = &rest[1..];
-            let (r, _) = ws(r)?;
-            let (r, first_arg) = parse_colon_method_arg(r)?;
-            let mut args = vec![first_arg];
-            let mut r_inner = r;
-            loop {
-                let (r2, _) = ws(r_inner)?;
-                if r2.starts_with(':')
-                    && !r2.starts_with("::")
-                    && let Ok((r3, arg)) = crate::parser::primary::misc::colonpair_expr(r2)
-                {
-                    args.push(arg);
-                    r_inner = r3;
-                    continue;
-                }
-                if !r2.starts_with(',') {
-                    break;
-                }
-                let r2 = &r2[1..];
-                let (r2, _) = ws(r2)?;
-                // Handle trailing comma before ';' or '}'
-                if r2.starts_with(';') || r2.starts_with('}') || r2.is_empty() {
-                    r_inner = r2;
-                    break;
-                }
-                let (r2, next) = parse_colon_method_arg(r2)?;
-                args.push(next);
-                r_inner = r2;
-            }
-            (r_inner, args)
+            crate::parser::stmt::assign::parse_colon_args(rest)?
         } else {
             (rest, Vec::new())
         };

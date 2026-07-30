@@ -352,37 +352,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             (r, a)
         } else if r_before_ws.starts_with(':') && !r_before_ws.starts_with("::") {
             // Colon-arg syntax: .=method: arg, arg2 (no space before colon)
-            let r = &r_before_ws[1..];
-            let (r, _) = ws(r)?;
-            let (r, first_arg) = parse_colon_method_arg(r)?;
-            let mut args = vec![first_arg];
-            let mut r_inner = r;
-            loop {
-                let (r2, _) = ws(r_inner)?;
-                // Adjacent colonpairs without comma
-                if r2.starts_with(':')
-                    && !r2.starts_with("::")
-                    && let Ok((r3, arg)) = crate::parser::primary::misc::colonpair_expr(r2)
-                {
-                    args.push(arg);
-                    r_inner = r3;
-                    continue;
-                }
-                if !r2.starts_with(',') {
-                    break;
-                }
-                let r2 = &r2[1..];
-                let (r2, _) = ws(r2)?;
-                // Handle trailing comma before ';' or '}'
-                if r2.starts_with(';') || r2.starts_with('}') || r2.is_empty() {
-                    r_inner = r2;
-                    break;
-                }
-                let (r2, next) = parse_colon_method_arg(r2)?;
-                args.push(next);
-                r_inner = r2;
-            }
-            (r_inner, args)
+            crate::parser::stmt::assign::parse_colon_args(r_before_ws)?
         } else if r.starts_with(':') && !r.starts_with("::") {
             // Fake-infix adverb form: .=method :key<val> (space before colon)
             let mut args = Vec::new();

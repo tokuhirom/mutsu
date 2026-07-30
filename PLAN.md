@@ -398,7 +398,13 @@ sessions).
   `todo/deep/nativehelpers-blob-moarvm-guts.md`. **P2 (native-backed `Buf`/`Blob`) landed 2026-07-28**
   and `pointer-to(Blob)` now works; the two follow-on bugs (a ternary then-branch enum value, and a
   hyper not descending into an itemized list) are fixed too, so `DBIish` is at raku parity on all
-  nine files. P3 (Raku-side `CArray[T]` / `array[T]`) is still open.
+  nine files. **P3a (native-backed Raku-side `CArray[T]`) landed 2026-07-30** — `.REPR`/`.WHERE` are
+  honest, a native call is handed the array's own bytes, and `NativeHelpers::Blob`'s `01-basic.t`
+  (24/24) and `03-pointer.t` (10/10) joined the battery gate
+  ([news](news/2026-07/carray-native-storage.md)). Still open: **P3b** (`array[T]`, which needs the
+  `ArrayData::items` accessor chokepoint first, and is also the fix for `array-shapes.t` T36-38) and
+  **P3c** (reference-element `CArray[Str]`/`CArray[Pointer]`, parity polish — no bundled dist needs
+  C to write one).
 
 ---
 

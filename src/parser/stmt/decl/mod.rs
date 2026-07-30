@@ -39,18 +39,6 @@ use super::{
     class_decl_body, method_decl_body, method_decl_body_my, parse_comma_or_expr, sub_decl_body,
 };
 
-/// Parse a single argument in colon method-call syntax (.method: arg1, arg2).
-/// Tries colonpair first (:name, :$var, :!flag, :0port), then expression.
-fn parse_colon_method_arg(input: &str) -> PResult<'_, Expr> {
-    if input.starts_with(':')
-        && !input.starts_with("::")
-        && let Ok(result) = crate::parser::primary::misc::colonpair_expr(input)
-    {
-        return Ok(result);
-    }
-    expression(input)
-}
-
 fn parse_decl_type_constraint(input: &str) -> Option<(&str, String)> {
     let (mut rest, mut type_name) = parse_type_constraint_expr(input)?;
     loop {

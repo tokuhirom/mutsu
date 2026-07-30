@@ -33,7 +33,7 @@ enum SerValue {
     Array(Vec<SerValue>, ArrayKind),
     /// `Buf`/`Blob` element storage: the bytes plus the element type, so a
     /// precompiled `constant $CRLF = Buf.new(13, 10)` round-trips.
-    BufStorage(Vec<u8>, u8, bool),
+    BufStorage(Vec<u8>, u8, crate::value::ElemKind),
     Hash(HashMap<String, SerValue>),
     Rat(i64, i64),
     FatRat(i64, i64),
@@ -150,7 +150,7 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
         // does, serialize the variable's value.
         ValueView::VarRef { value, .. } => value_to_ser(value),
         ValueView::RakuAst(_) => Err("cannot serialize a RakuAST node".to_string()),
-        ValueView::BufStorage(b) => Ok(SerValue::BufStorage(b.bytes.clone(), b.width, b.signed)),
+        ValueView::BufStorage(b) => Ok(SerValue::BufStorage(b.bytes.clone(), b.width, b.kind)),
         ValueView::Int(n) => Ok(SerValue::Int(n)),
         ValueView::BigInt(n) => Ok(SerValue::BigInt((**n).clone())),
         ValueView::Num(n) => Ok(SerValue::Num(n)),
@@ -352,8 +352,8 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
 fn ser_to_value(sv: SerValue) -> Value {
     match sv {
         SerValue::Int(n) => Value::Int(n),
-        SerValue::BufStorage(bytes, width, signed) => Value::from_repr(ValueRepr::BufStorage(
-            crate::gc::Gc::new(crate::value::BufData::new(bytes, width, signed)),
+        SerValue::BufStorage(bytes, width, kind) => Value::from_repr(ValueRepr::BufStorage(
+            crate::gc::Gc::new(crate::value::BufData::new(bytes, width, kind)),
         )),
         SerValue::BigInt(n) => Value::BigInt(Arc::new(n)),
         SerValue::Num(n) => Value::Num(n),

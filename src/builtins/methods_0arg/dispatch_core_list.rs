@@ -31,7 +31,7 @@ pub(super) fn dispatch(
                     class_name,
                     attributes,
                     ..
-                } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
+                } if crate::runtime::utils::is_native_elems_class(&class_name.resolve()) => {
                     let len = buf_len_or_zero(&attributes);
                     Some(Ok(Value::int(len as i64 - 1)))
                 }

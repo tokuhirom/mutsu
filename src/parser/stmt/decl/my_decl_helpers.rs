@@ -4,9 +4,9 @@ use super::super::super::parse_result::{PError, PResult, take_while1};
 use super::super::{keyword, qualified_ident};
 use super::constant_subset::constant_decl;
 use super::helpers::{parse_sigilless_decl_name, register_term_symbol_from_decl_name};
-use super::my_decl_assign::parse_colon_args;
 use super::{parse_decl_type_constraint, parse_statement_modifier};
 use crate::ast::{Expr, Stmt};
+use crate::parser::stmt::assign::parse_colon_args;
 use crate::symbol::Symbol;
 use crate::value::Value;
 

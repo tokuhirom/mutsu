@@ -12,6 +12,61 @@ pub(crate) fn parse_colon_method_arg(input: &str) -> PResult<'_, Expr> {
     expression(input)
 }
 
+/// Parse the whole colon-argument list of a `.=method: a, b` call. `input` must
+/// start at the `:`.
+///
+/// The one place this list is parsed. It used to be four byte-identical inline
+/// loops (declaration, assignment statement, `has` default, `constant`), which is
+/// how the list-infix lift below came to be missing from all of them while the
+/// ordinary postfix `.method: …` path had it.
+pub(crate) fn parse_colon_args(input: &str) -> PResult<'_, Vec<Expr>> {
+    let r = &input[1..];
+    let (r, _) = ws(r)?;
+    // Raku's list-infix operators are LOOSER than the comma separating the
+    // arguments, so `.= new: 10, 20 ... 100` is ONE sequence argument whose seed
+    // is the whole comma level — exactly as `(10, 20 ... 100)` in parens. Parsed
+    // per-argument, the seed was only the *last* element, so
+    // `my CArray[uint16] $a .= new: 10, 20 ... 100` (NativeHelpers::Blob's
+    // `03-pointer.t`) built 10, 20, 21, 22, … instead of 10, 20, 30, ….
+    if let Some(result) = crate::parser::primary::try_parse_sequence_arg_list(r) {
+        let (r_seq, seq) = result?;
+        return Ok((r_seq, vec![seq]));
+    }
+    let (r, first_arg) = parse_colon_method_arg(r)?;
+    let mut args = vec![first_arg];
+    let mut r_inner = r;
+    loop {
+        let (r2, _) = ws(r_inner)?;
+        // Adjacent colonpairs without comma.
+        if r2.starts_with(':')
+            && !r2.starts_with("::")
+            && let Ok((r3, arg)) = crate::parser::primary::misc::colonpair_expr(r2)
+        {
+            args.push(arg);
+            r_inner = r3;
+            continue;
+        }
+        if !r2.starts_with(',') {
+            break;
+        }
+        let r2 = &r2[1..];
+        let (r2, _) = ws(r2)?;
+        // Trailing comma before `;` or `}`.
+        if r2.starts_with(';') || r2.starts_with('}') || r2.is_empty() {
+            r_inner = r2;
+            break;
+        }
+        let (r2, next) = parse_colon_method_arg(r2)?;
+        args.push(next);
+        r_inner = r2;
+    }
+    // The same looser-than-comma rule for the `Z`/`X` meta-ops and `minmax`.
+    Ok((
+        r_inner,
+        crate::parser::primary::lift_list_infix_in_arg_list(args),
+    ))
+}
+
 /// Try to parse a single assignment expression: $var op= expr or $var = expr.
 /// Returns the expression as Expr::AssignExpr.
 pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr> {
@@ -260,37 +315,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             }
         } else if r_before_ws.starts_with(':') && !r_before_ws.starts_with("::") {
             // Colon-arg syntax: .=method: arg, arg2 (no space before colon)
-            let r = &r[1..];
-            let (r, _) = ws(r)?;
-            let (r, first_arg) = parse_colon_method_arg(r)?;
-            let mut args = vec![first_arg];
-            let mut r_inner = r;
-            loop {
-                let (r2, _) = ws(r_inner)?;
-                // Adjacent colonpairs without comma
-                if r2.starts_with(':')
-                    && !r2.starts_with("::")
-                    && let Ok((r3, arg)) = crate::parser::primary::misc::colonpair_expr(r2)
-                {
-                    args.push(arg);
-                    r_inner = r3;
-                    continue;
-                }
-                if !r2.starts_with(',') {
-                    break;
-                }
-                let r2 = &r2[1..];
-                let (r2, _) = ws(r2)?;
-                // Handle trailing comma before ';' or '}'
-                if r2.starts_with(';') || r2.starts_with('}') || r2.is_empty() {
-                    r_inner = r2;
-                    break;
-                }
-                let (r2, next) = parse_colon_method_arg(r2)?;
-                args.push(next);
-                r_inner = r2;
-            }
-            (r_inner, args)
+            parse_colon_args(r)?
         } else if r.starts_with(':') && !r.starts_with("::") {
             // Fake-infix adverb form: .=method :key<val> (space before colon)
             let mut args = Vec::new();

@@ -296,18 +296,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 class_name,
                 attributes,
                 ..
-            } if {
-                let cn = class_name.resolve();
-                cn == "Buf"
-                    || cn == "Blob"
-                    || cn == "utf8"
-                    || cn == "utf16"
-                    || cn.starts_with("Buf[")
-                    || cn.starts_with("Blob[")
-                    || cn.starts_with("buf")
-                    || cn.starts_with("blob")
-            } =>
-            {
+            } if crate::runtime::utils::is_native_elems_class(&class_name.resolve()) => {
                 if let Some(list) = crate::value::value_buf::buf_elems_as_array(
                     &attributes.as_map(),
                     crate::value::ArrayKind::List,
@@ -549,18 +538,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     class_name,
                     attributes,
                     ..
-                } if {
-                    let cn = class_name.resolve();
-                    cn == "Buf"
-                        || cn == "Blob"
-                        || cn == "utf8"
-                        || cn == "utf16"
-                        || cn.starts_with("Buf[")
-                        || cn.starts_with("Blob[")
-                        || cn.starts_with("buf")
-                        || cn.starts_with("blob")
-                } =>
-                {
+                } if crate::runtime::utils::is_native_elems_class(&class_name.resolve()) => {
                     Some(Ok(wrap(crate::value::value_buf::buf_elems_or_empty(
                         &attributes,
                     ))))
@@ -831,18 +809,7 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
             class_name,
             attributes,
             ..
-        } if {
-            let cn = class_name.resolve();
-            cn == "Buf"
-                || cn == "Blob"
-                || cn == "utf8"
-                || cn == "utf16"
-                || cn.starts_with("Buf[")
-                || cn.starts_with("Blob[")
-                || cn.starts_with("buf")
-                || cn.starts_with("blob")
-        } =>
-        {
+        } if crate::runtime::utils::is_native_elems_class(&class_name.resolve()) => {
             let positional = crate::value::value_buf::buf_elems_or_empty(&attributes);
             Ok(Value::capture(positional, HashMap::new()))
         }

@@ -184,6 +184,27 @@ Each phase is independently useful and independently shippable.
 - **P3 — native-backed Raku-side `CArray[T]` and `array[T]`.** The same node for
   the two remaining containers. **Retires the per-call copy-in/copy-out and the
   out-array writeback in `marshal_carray_arg`.**
+  - **P3a — `CArray[T]` (landed).** A `CArray` over a *native numeric* `T` is a
+    storage-backed instance sharing `BufData` and the whole `value_buf` accessor
+    layer; the node's element descriptor became an `ElemKind` so `num32`/`num64`
+    elements fit. `.REPR` answers `CArray`, `.WHERE` a `CArrayB` block, and a
+    native call is handed the array's own bytes. Element types that are
+    **references** (`CArray[Str]`, `CArray[Pointer]`, a nested `CArray`, a CStruct
+    class) keep the boxed representation and the per-call `char**` build: their
+    bytes are an address, and reading one back means materialising the object it
+    points at, which contiguous bytes alone cannot do (MoarVM keeps a parallel
+    `child` table for exactly this). They go on under-reporting `P6opaque`, which
+    is the safe direction under the ordering rule below. `array[T]` was NOT part
+    of this slice.
+  - **P3b — `array[T]` (open).** The same node again, but the container is a
+    `Value::Array`, not an instance, so the accessor-chokepoint step P2 did for
+    `Buf`'s ~104 `"bytes"` touches has to be done for `ArrayData::items` first.
+    Independently the fix for the native-typed shaped-array defect
+    (`array-shapes.t` T36-38).
+  - **P3c — reference-element `CArray` (open, optional).** Storing `char*`
+    elements natively, with the array owning the `CString`s, would retire the
+    `CArrayStr` marshal path too. No bundled dist needs C to *write* a
+    `CArray[Str]`, so this is parity polish rather than a blocker.
 
 **Ordering rule (safety-critical): `.REPR` truthfulness for a kind must land in
 the same slice as that kind's body, never before it.** The moment `.REPR` says
@@ -286,11 +307,16 @@ the identity hash and a binding dereferenced garbage).
    would make mutsu *stricter* than the implementation these modules were written
    against, at the cost of holding dead blocks alive. Revisit only if a real dist
    trips on it.
-4. **Does `array[T]` ride in P3?** ✅ **RESOLVED: yes.** It is the same node and
-   the same marshalling path, and it is independently the fix for the native-typed
-   shaped-array defect (`array-shapes.t` T36-38: broken coercion, ~150× slower
-   than it should be) — which is the same "boxed where it should be native"
-   problem seen from the other side.
+4. **Does `array[T]` ride in P3?** ✅ **RESOLVED: yes** — but *after* `CArray`, not
+   with it (see the P3a/P3b split in §2.1, made when P3a landed). It is the same
+   node and the same marshalling path, and it is independently the fix for the
+   native-typed shaped-array defect (`array-shapes.t` T36-38: broken coercion,
+   ~150× slower than it should be) — which is the same "boxed where it should be
+   native" problem seen from the other side. What separates the two is the
+   *container*: a `CArray` could become a storage-backed instance and reuse
+   `Buf`'s accessor layer as-is, whereas `array[T]` is a `Value::Array`, so its
+   `ArrayData::items` touches need the same chokepoint step P2 did for `Buf`
+   first.
 5. **How far does `.REPR` truthfulness go?** ✅ **RESOLVED: exactly the four kinds
    that get bodies**, everything else stays `P6opaque`. Answering honestly for
    every type (`P6int`, `P6num`, `P6str`, …) has no known consumer, and under the
@@ -315,10 +341,15 @@ P0 is unblocked and self-contained; P1 follows it; P2 is the campaign. Concretel
 - **P2** the node, the two accessors, the ~91 `"bytes"` sites, `MVMArrayB`,
   `.REPR = VMArray`, delete `nativecall_pin.rs`. Acceptance: `DBIish` `01-basic`
   reaches raku parity (35/35) and the battery test-suite gate stays green.
-- **P3** the same node for `CArray[T]` / `array[T]`; delete the copy-in/copy-out
-  in `marshal_carray_arg`. Acceptance: `t/nativecall-carray.t` unchanged and
-  green, plus a test that C writes through a retained pointer are visible in Raku
-  with no intervening call.
+- **P3a** (landed) the same node for `CArray[T]`; the numeric copy-in/copy-out in
+  `marshal_carray_arg` is bypassed for every storage-backed argument. Acceptance,
+  all met: `t/nativecall-carray.t` unchanged and green; `t/carray-native-storage.t`
+  pins that a C write through a *retained* pointer is visible in Raku with no
+  intervening call; `NativeHelpers::Blob`'s `01-basic.t` (24/24) and `03-pointer.t`
+  (10/10) joined the battery gate.
+- **P3b** the same node for `array[T]`, behind the `ArrayData::items` accessor
+  chokepoint. Acceptance: `pointer-to(array:D)` works and `array-shapes.t` T36-38
+  pass at native speed.
 
 *Status is `Accepted`. If the judgment changes later, supersede this ADR rather
 than rewriting it.*

@@ -88,7 +88,9 @@ fn interpreter_version() -> String {
     // or when `CacheMetadata` / `ParseEffects` gain or lose a field.
     // 9: `Value` gained `BufStorage` (ADR-0015 P2), which also shifted the
     // serialized `SerValue` discriminants after `Array`.
-    const CACHE_FORMAT_VERSION: u32 = 9;
+    // 10: `BufStorage`'s element descriptor became `ElemKind` (ADR-0015 P3),
+    // so its third field serializes as an enum rather than a bool.
+    const CACHE_FORMAT_VERSION: u32 = 10;
     let exe_stamp = std::env::current_exe()
         .and_then(fs::metadata)
         .and_then(|m| m.modified())

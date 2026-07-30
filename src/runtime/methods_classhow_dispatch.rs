@@ -630,6 +630,24 @@ impl Interpreter {
                         return Err(RuntimeError::new("add_method target must be a type object"));
                     }
                 };
+                // A **qualified spelling of an already-registered class** adds to
+                // that class, not to a fresh stub under the long name.
+                // `NativeHelpers::Pointer` adds pointer arithmetic with
+                // `NativeCall::Types::Pointer.^add_method('add', …)`, while the
+                // prelude registers `Pointer` under its short name and tags every
+                // handle with it — so the stub was created, populated, and never
+                // consulted, leaving `.add` "no such method" and `.succ`/`.pred`
+                // falling through to the numeric successor.
+                let class_name = match class_name.rsplit("::").next() {
+                    Some(short)
+                        if short != class_name
+                            && !self.registry().classes.contains_key(&class_name)
+                            && self.registry().classes.contains_key(short) =>
+                    {
+                        short.to_string()
+                    }
+                    _ => class_name,
+                };
                 let method_name = args[1].to_string_value();
                 let method_value = args[2].clone();
                 let ValueView::Sub(sub_data) = method_value.view() else {
@@ -644,8 +662,28 @@ impl Interpreter {
                     .filter(|pd| !pd.is_invocant)
                     .cloned()
                     .collect();
+                // The name list has to lose the invocant too, not just
+                // `param_defs`: dispatch binds arguments positionally against
+                // `params`, so leaving `self` in it shifted every argument by one
+                // and left the last parameter undeclared — `method (Pointer:D:
+                // Int $off) { … $off … }` died with "Variable 'off' is not
+                // declared" (`NativeHelpers::Pointer`'s `add`).
+                let invocant_names: HashSet<&str> = sub_data
+                    .param_defs
+                    .iter()
+                    .filter(|pd| pd.is_invocant)
+                    .map(|pd| pd.name.as_str())
+                    .collect();
+                let filtered_params: Vec<String> = sub_data
+                    .params
+                    .iter()
+                    .filter(|p| {
+                        !invocant_names.contains(p.trim_start_matches(['$', '@', '%', '&']))
+                    })
+                    .cloned()
+                    .collect();
                 let def = MethodDef {
-                    params: sub_data.params.clone(),
+                    params: filtered_params,
                     param_defs: filtered_param_defs,
                     body: std::sync::Arc::new(sub_data.body.clone()),
                     is_rw: sub_data.is_rw,

@@ -514,7 +514,9 @@ pub(crate) fn native_method_1arg(
                         class_name,
                         attributes,
                         ..
-                    } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
+                    } if crate::runtime::utils::is_native_elems_class(&class_name.resolve())
+                        && crate::value::value_buf::has_buf_elems(&attributes) =>
+                    {
                         if let Some(b) =
                             crate::value::value_buf::with_buf_elems(&attributes, |items| {
                                 items.get(idx).cloned().unwrap_or(Value::int(0))
