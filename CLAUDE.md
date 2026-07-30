@@ -116,7 +116,7 @@ Executes compiled bytecode. `vm.rs` holds the (unified `Interpreter`) struct, `r
   1. Create a feature branch from main: `git checkout -b <branch-name>`
   2. Commit changes to the feature branch.
   3. Push and open a PR with `gh pr create`. No version-bump label is needed — the release version is chosen by hand at release time (see "Cutting a release" below), not aggregated from PR labels.
-  4. Enable auto-merge: `gh pr merge --auto --squash <pr-number>`.
+  4. Enable auto-merge: `gh pr merge --auto --merge <pr-number>`. **Use `--merge`, not `--squash`** — squash merging is disabled on this repository, and `--squash` fails with `GraphQL: Merge method squash merging is not allowed on this repository (enablePullRequestAutoMerge)`, silently leaving auto-merge off. (`--rebase` is also allowed if you prefer it.)
   5. **Immediately after opening the PR, verify it is mergeable — do NOT assume it is.** Run `gh pr view <pr-number> --json mergeStateStatus,state -q '.state + " / " + .mergeStateStatus'`. If `mergeStateStatus` is `DIRTY` (merge conflict) or CI never registers (no workflow runs appear within ~1 min via `gh run list --branch <branch>`), the branch has conflicted with `main` — a sibling PR almost certainly touched the same file (docs/ledger files are the usual culprit, since slices update the same survey table). **Rebase onto `main` and resolve the conflict before relying on auto-merge:** `git fetch origin main && git rebase origin/main`, resolve, `git rebase --continue`, then `git push --force-with-lease`. A `DIRTY` PR will sit unmerged forever and CI will not run — catching it at open time (not hours later) is the rule. This conflict is frequent when landing many small slices in sequence; expect it.
   6. CI (GitHub Actions) runs `make test` and `make roast`. The PR merges automatically when CI passes.
      - **A documentation-only PR skips the four heavy jobs on purpose.** `ci.yml`'s `changes` job classifies the diff (`scripts/ci-docs-only.sh`); when every changed path is under `docs/`, `news/`, `todo/`, `TODO_roast/`, `old-design-docs/`, `raku-doc/`, or is a top-level `*.md`, the `test` / `wasm-e2e` / `gc-stress` / `jit-stress` jobs report `skipped`, which counts as success for branch protection. So `gh pr checks` showing those as skipped on a docs PR is **correct**, not a stuck CI — the PR is mergeable. Anything else in the diff (including `.github/**` and any nested `README.md`) runs the full suite. If you add a new documentation directory, add it to the allowlist in that script *and* to `bench.yml`'s `paths-ignore`, and extend the script's `--self-test` cases.
@@ -491,7 +491,7 @@ When the user says **"Test::Util workout"** (or similar), execute this workflow:
 6. Fix the interpreter to make the test pass. When the spec is unclear, check behavior with `raku -e '<code>'` and consult `raku-doc/`.
 7. Run `make test` and `make roast` to ensure no regressions.
 8. Create a feature branch, commit, push, and open a PR (follow PR workflow above).
-9. Enable auto-merge: `gh pr merge --auto --squash <pr-number>`.
+9. Enable auto-merge: `gh pr merge --auto --merge <pr-number>` (see the PR workflow above — `--squash` is rejected by this repository).
 
 Key rules:
 - The function implementation lives in `src/runtime/test_functions.rs` (not as a builtin).
