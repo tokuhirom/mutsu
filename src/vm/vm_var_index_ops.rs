@@ -1203,7 +1203,7 @@ impl Interpreter {
                 | ValueView::RangeExcl(..)
                 | ValueView::RangeExclStart(..)
                 | ValueView::RangeExclBoth(..),
-            ) if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
+            ) if crate::runtime::utils::is_native_elems_class(&class_name.resolve()) => {
                 if let Some(bytes) = buf_elems(&attributes) {
                     let len = bytes.len() as i64;
                     let (start, end_incl) = match index.view() {
@@ -1750,7 +1750,7 @@ impl Interpreter {
                 // bytes; a Match (and other positional instances) count their
                 // `list` of positional captures so `$/[*-1]` resolves `*-1` to
                 // the last capture (`m/ (\d) <?{ $/[*-1] < 5 }> /`).
-                let len = if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) {
+                let len = if crate::runtime::utils::is_native_elems_class(&class_name.resolve()) {
                     buf_len_or_zero(&attributes) as i64
                 } else if let Some(ValueView::Array(list, ..)) =
                     attributes.as_map().get("list").map(Value::view)

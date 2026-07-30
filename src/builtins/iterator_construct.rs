@@ -26,7 +26,7 @@ fn blob_elements(target: &Value) -> Option<Vec<Value>> {
     else {
         return None;
     };
-    if !crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) {
+    if !crate::runtime::utils::is_native_elems_class(&class_name.resolve()) {
         return None;
     }
     Some(crate::value::value_buf::buf_elems_or_empty(&attributes))

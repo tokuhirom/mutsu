@@ -292,13 +292,18 @@ Two of the four went in; the other two are blocked here, on **ADR-0015 P3**
 | --- | --- | --- |
 | `99-my-meta.t` | whitelisted (was already) | |
 | `00-trivial.t` | **whitelisted 2026-07-30** | needed `constant HANDLE = uint32` to be usable as a signature type |
-| `01-basic.t` | blocked at test 9 (8/24 pass) | `carray-from-blob($a):managed` builds a Raku-side `CArray[T]`, whose `.REPR` is `P6opaque`, so `BODY_OF` refuses it |
-| `03-pointer.t` | blocked at test 1 (0/10) | `nativecast(Pointer[uint16], CArray[uint16].new(…))` — a Raku-side `CArray` carries no C address, so `.deref` reads address 0 |
+| `01-basic.t` | **whitelisted 2026-07-30, 24/24** | ADR-0015 P3a (native-backed `CArray[T]`) |
+| `03-pointer.t` | **whitelisted 2026-07-30, 10/10** | P3a, plus three general bugs behind it (colon-arg list-infix precedence, `^add_method` on a qualified name, an added method's invocant counted as a parameter) |
 | `02-cstruct.t` | **not whitelistable at all** | raku itself fails its tests 13 and 15 on this machine, so it can never be an all-green gate entry (it also needs a C compiler at test time) |
 
-One smaller gap sits behind `01-basic.t` test 6 and is independent of P3: an
-*unmanaged* `CArray` (a `nativecast` handle) has no known length, so `.elems`
-must throw; mutsu returns a number. Fixing it alone does not unblock the file.
+Both are landed — see
+[news/2026-07/carray-native-storage.md](../../news/2026-07/carray-native-storage.md).
+The `01-basic.t` test 6 gap recorded here (an *unmanaged* `CArray` has no known
+length, so `.elems` must throw rather than answer 0) went with them.
+
+**What is left of this finding** is the `Buf` half that P2 already answered, plus
+P3b (`array[T]`, needed for `pointer-to(array:D)`) and P3c (reference-element
+`CArray`) — see ADR-0015 §2.1.
 
 Re-measure with:
 

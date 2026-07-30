@@ -825,7 +825,13 @@ impl Interpreter {
             }) = self.env().get(&var_name).map(Value::view)
         {
             let cn = class_name.resolve();
-            if crate::runtime::utils::is_buf_or_blob_class(&cn) {
+            // Storage-backed instances only. An **unmanaged** `CArray` — a
+            // `nativecast`ed handle — shares the class-name shape but keeps its
+            // elements in C memory, so it must fall through to the address path
+            // below; writing through this one would silently drop the assignment.
+            if crate::runtime::utils::is_native_elems_class(&cn)
+                && crate::value::value_buf::has_buf_elems(&attributes)
+            {
                 if crate::runtime::utils::is_blob_like_class(&cn) {
                     return Err(RuntimeError::assignment_ro(Some("Blob")));
                 }

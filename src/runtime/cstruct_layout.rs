@@ -727,6 +727,20 @@ impl crate::runtime::Interpreter {
                 _ => Value::int(body as i64),
             });
         }
+        // A native-backed `CArray[T]` (ADR-0015 P3). Same shape as the buffer
+        // above, a different REPR body: `NativeHelpers::Blob`'s `pointer-to`
+        // reads `$bb.storage` off a `CArrayB` where a `Blob`'s reads
+        // `$bb.realstart` off an `MVMArrayB`. An array whose element type is a
+        // reference (`CArray[Str]`) has no storage node and so keeps
+        // `P6opaque`, which is the safe direction (§2.1).
+        if crate::value::value_carray::is_native_carray_class(&class_name.resolve())
+            && let Some(body) = crate::value::value_carray::carray_repr_body_address(&attributes)
+        {
+            return Some(match method {
+                "REPR" => Value::str_from("CArray"),
+                _ => Value::int(body as i64),
+            });
+        }
         let addr = match attributes.as_map().get("address").map(|v| v.view()) {
             Some(ValueView::Int(a)) if a > 0 => a as usize,
             _ => return None,

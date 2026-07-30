@@ -294,20 +294,10 @@ impl Interpreter {
             attributes,
             ..
         } = v.view()
+            && crate::runtime::utils::is_native_elems_class(&class_name.resolve())
+            && let Some(bytes) = crate::value::value_buf::buf_elems(&attributes)
         {
-            let cn = class_name.resolve();
-            let is_blob = cn == "Buf"
-                || cn == "Blob"
-                || cn == "utf8"
-                || cn == "utf16"
-                || cn == "utf32"
-                || cn.starts_with("Buf[")
-                || cn.starts_with("Blob[")
-                || cn.starts_with("buf")
-                || cn.starts_with("blob");
-            if is_blob && let Some(bytes) = crate::value::value_buf::buf_elems(&attributes) {
-                return Some(bytes);
-            }
+            return Some(bytes);
         }
         None
     }

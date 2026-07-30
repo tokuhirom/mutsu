@@ -249,6 +249,17 @@ impl Interpreter {
                 }
             }
         }
+        // A `CArray[T]` over a native numeric `T` is a storage-backed instance,
+        // not an `Array` of boxed elements: its bytes are the memory C is handed
+        // a pointer into, and they are what its `.WHERE` describes (ADR-0015
+        // P3). Reference-typed elements (`CArray[Str]`, `CArray[Pointer]`, a
+        // nested `CArray`) keep the boxed form — see
+        // `value::value_carray::native_elem_type`.
+        if base_class_name == "CArray"
+            && crate::value::value_carray::is_native_carray_class(&class_name.resolve())
+        {
+            return Ok(crate::value::value_carray::make_carray(class_name, items));
+        }
         let mut result = if matches!(base_class_name, "Array" | "array" | "CArray") {
             // A CArray is a mutable, element-assignable buffer like a native
             // `array`, so build a real (mutable) Array, not an immutable List.

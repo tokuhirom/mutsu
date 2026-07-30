@@ -103,28 +103,18 @@ impl Interpreter {
             attributes,
             ..
         } = target.view()
+            && crate::runtime::utils::is_native_elems_class(&class_name.resolve())
         {
-            let cn = class_name.resolve();
-            if cn == "Buf"
-                || cn == "Blob"
-                || cn == "utf8"
-                || cn == "utf16"
-                || cn.starts_with("Buf[")
-                || cn.starts_with("Blob[")
-                || cn.starts_with("buf")
-                || cn.starts_with("blob")
-            {
-                if let Some(list) = crate::value::value_buf::buf_elems_as_array(
-                    &attributes.as_map(),
-                    crate::value::ArrayKind::List,
-                ) {
-                    return Ok(list);
-                }
-                return Ok(Value::array_with_kind(
-                    crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
-                    crate::value::ArrayKind::List,
-                ));
+            if let Some(list) = crate::value::value_buf::buf_elems_as_array(
+                &attributes.as_map(),
+                crate::value::ArrayKind::List,
+            ) {
+                return Ok(list);
             }
+            return Ok(Value::array_with_kind(
+                crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
+                crate::value::ArrayKind::List,
+            ));
         }
         // A genuinely-lazy list (`(1…∞).List`) must STAY lazy: materializing it
         // would lose the infinite tail (and `.elems`/`eqv` must still throw

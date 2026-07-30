@@ -58,7 +58,7 @@ synthesised on demand.
 | REPR | body | mutsu's answer |
 | --- | --- | --- |
 | `VMArray` | `{u64 elems; u64 start; u64 ssize; void* any}` | a `Buf`/`Blob` with element storage |
-| `CArray` | `{void* storage; void** child; i32 managed; i32 allocated; i32 elems}` | a `nativecast`ed `CArray` handle |
+| `CArray` | `{void* storage; void** child; i32 managed; i32 allocated; i32 elems}` | a `nativecast`ed `CArray` handle, and a native-backed `CArray[T]` |
 | `CStruct` | `{void* cstruct; void** child_objs}` | a `nativecast`ed CStruct/CUnion handle |
 
 `start` is **always 0**: mutsu's element storage never has an unused prefix, so
@@ -67,8 +67,14 @@ synthesised on demand.
 For the two handle kinds the body is a zero-filled block whose first word is the
 handle's address — byte-identical to both layouts, since every later word of an
 unmanaged cast is zero (`managed`, `allocated` and `elems` are all 0, which is
-exactly what an unmanaged `CArray` handle *is*). For a `Buf` the block is real
-and per-object; see below.
+exactly what an unmanaged `CArray` handle *is*). For a `Buf`, and for a
+`CArray[T]` mutsu allocated itself, the block is real and per-object; see below.
+
+A **native-backed `CArray[T]`** — one built in Raku over a native numeric element
+type — fills its `CArrayB` for real: `storage` is its element bytes, `elems` and
+`allocated` its length and capacity, `managed` is 1 (owning its memory is what
+having storage *means*), and `child` is always NULL, because the element types that
+would need a child table keep the boxed representation (see the last section).
 
 ### 3. `.WHERE` is stable for the object's lifetime
 
@@ -96,8 +102,9 @@ Raku-side write to a buffer that does **not** grow it past its allocation writes
 
 ## What a native call is handed
 
-A `Blob`/`Buf` argument declared as a C `void*` is passed **its own storage
-address**. Nothing is copied in and nothing is copied back:
+A `Blob`/`Buf` or native-backed `CArray[T]` argument declared as a C `void*` (or a
+`T*`) is passed **its own storage address**. Nothing is copied in and nothing is
+copied back:
 
 - a callee filling an out-buffer (`SSL_read`, `mysql_stmt_fetch`) writes into
   the Raku object, so there is no sync point to get wrong — and, critically, no
@@ -110,7 +117,12 @@ address**. Nothing is copied in and nothing is copied back:
 
 This replaced a per-object mirror (`runtime/nativecall_pin.rs`, deleted) that
 could keep a retained pointer alive but could never observe a write it did not
-mediate.
+mediate — and, for `CArray`, a per-call copy-in/copy-out that could only reflect a
+write made *during* the call.
+
+`nativecast(Pointer[T], $carray)` reinterprets that same element address, which is
+what makes `NativeHelpers::Pointer`'s arithmetic (`.succ`/`.pred`/`.add`/`+`) walk
+a Raku-built array.
 
 ## Residual unsafety
 
@@ -127,7 +139,12 @@ Everything else answers `P6opaque`, on purpose (ADR-0015 §5, open question 5):
 each honest answer is a promise that a body exists behind it, and that is not a
 promise to make idly. In particular:
 
-- a **CStruct constructed in Raku** (`Rec.new`) has no C storage yet — that is
-  ADR-0015's P3;
-- a Raku-side **`CArray[T]`** and **`array[T]`** — likewise P3;
+- a **CStruct constructed in Raku** (`Rec.new`) has no C storage yet;
+- a Raku-side **`array[T]`** — ADR-0015's P3b;
+- a **`CArray[T]` whose element type is a reference**: `CArray[Str]`,
+  `CArray[Pointer]`, a nested `CArray[CArray[…]]`, a CStruct element. Their
+  elements are addresses of other objects, so reading one back means materialising
+  the object it points at, which contiguous bytes alone cannot express — MoarVM
+  keeps its parallel `child` table for exactly this. They keep the boxed
+  representation and the per-call `char**` build (ADR-0015's P3c);
 - an ordinary class, which also keeps its identity-derived `.WHERE`.

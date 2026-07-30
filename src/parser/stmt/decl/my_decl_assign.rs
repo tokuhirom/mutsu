@@ -7,8 +7,8 @@ use super::helpers::shaped_array_new_with_data_expr;
 use super::my_decl::MyDeclState;
 use super::{
     consume_scalar_decl_trailing_comma, default_decl_expr, method_decl_body,
-    parse_assign_expr_or_comma, parse_colon_method_arg, parse_comma_chained_decls,
-    parse_statement_modifier, rewrite_decl_assignment_or_chain, wrap_with_will_leave,
+    parse_assign_expr_or_comma, parse_comma_chained_decls, parse_statement_modifier,
+    rewrite_decl_assignment_or_chain, wrap_with_will_leave,
 };
 use crate::ast::{AssignOp, Expr, Stmt};
 use crate::symbol::Symbol;
@@ -574,7 +574,7 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         (r, args)
     } else if rest.starts_with(':') && !rest.starts_with("::") {
         // Colon invocant form (no space before ':'): .=method: arg
-        parse_colon_args(rest)?
+        crate::parser::stmt::assign::parse_colon_args(rest)?
     } else if rest_ws.starts_with(':') && !rest_ws.starts_with("::") {
         // Fake-infix adverb form (space before ':'): .=method :key<val> :key2<val2>
         parse_fake_infix_adverbs(rest_ws)?
@@ -667,41 +667,6 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         return parse_statement_modifier(rest, stmt);
     }
     Ok((rest, stmt))
-}
-
-/// Parse colon-style method arguments.
-pub(super) fn parse_colon_args(input: &str) -> PResult<'_, Vec<Expr>> {
-    let r = &input[1..];
-    let (r, _) = ws(r)?;
-    let (r, first_arg) = parse_colon_method_arg(r)?;
-    let mut args = vec![first_arg];
-    let mut r_inner = r;
-    loop {
-        let (r2, _) = ws(r_inner)?;
-        // Adjacent colonpairs without comma
-        if r2.starts_with(':')
-            && !r2.starts_with("::")
-            && let Ok((r3, arg)) = crate::parser::primary::misc::colonpair_expr(r2)
-        {
-            args.push(arg);
-            r_inner = r3;
-            continue;
-        }
-        if !r2.starts_with(',') {
-            break;
-        }
-        let r2 = &r2[1..];
-        let (r2, _) = ws(r2)?;
-        // Handle trailing comma before ';' or '}'
-        if r2.starts_with(';') || r2.starts_with('}') || r2.is_empty() {
-            r_inner = r2;
-            break;
-        }
-        let (r2, next) = parse_colon_method_arg(r2)?;
-        args.push(next);
-        r_inner = r2;
-    }
-    Ok((r_inner, args))
 }
 
 /// Parse fake-infix adverb arguments: `:key<val> :key2<val2>`.

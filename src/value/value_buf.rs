@@ -46,7 +46,7 @@
 //! the companion class-name filter: this module answers "what is in there", not
 //! "is this a Buf".
 
-use super::{AttrMap, BufData, InstanceAttrs, Value, ValueRepr, ValueView};
+use super::{AttrMap, BufData, ElemKind, InstanceAttrs, Value, ValueRepr, ValueView};
 use crate::gc::Gc;
 use crate::symbol::Symbol;
 
@@ -60,16 +60,56 @@ const ELEMS_ATTR: &str = "bytes";
 // The node, and the encode/decode across it.
 // ---------------------------------------------------------------------------
 
-/// The element type of a `Buf`/`Blob`-shaped class: bytes per element, and
-/// whether an element reads back signed.
+/// The element type of a storage-backed class: bytes per element, and how an
+/// element reads back.
 ///
-/// Recovered from the class name, which is where Raku puts it (`Blob[int8]`).
-/// This is the *only* place that reading stops — from here on the type travels
-/// in the node, which is what lets `Blob[int8].new(-1)[0]` answer `-1`.
-fn elem_type(class_name: &str) -> (u8, bool) {
+/// Recovered from the class name, which is where Raku puts it (`Blob[int8]`,
+/// `CArray[num64]`). This is the *only* place that reading stops — from here on
+/// the type travels in the node, which is what lets `Blob[int8].new(-1)[0]`
+/// answer `-1`.
+///
+/// A spelled-out element type goes through the [`native_elem_type`] table; a
+/// short name that only encodes a width (`buf16`, `utf8`, bare `Buf`) falls back
+/// to the width and signedness its spelling implies.
+pub(crate) fn elem_type(class_name: &str) -> (u8, ElemKind) {
+    if let Some(inner) = class_name
+        .split_once('[')
+        .and_then(|(_, rest)| rest.strip_suffix(']'))
+        && let Some(desc) = native_elem_type(inner)
+    {
+        return desc;
+    }
     // `uint` contains `int`, so the unsigned test has to come first.
-    let signed = !class_name.contains("uint") && class_name.contains("int");
-    (buf_elem_width(class_name) as u8, signed)
+    let kind = if !class_name.contains("uint") && class_name.contains("int") {
+        ElemKind::Int
+    } else {
+        ElemKind::Uint
+    };
+    (buf_elem_width(class_name) as u8, kind)
+}
+
+/// The width and read-back kind of a **native numeric** element type, by the
+/// name Raku spells it with. `None` for anything that is not one — `Str`,
+/// `Pointer`, a nested `CArray[...]`, a CStruct class — which is exactly the
+/// filter deciding whether a `CArray[T]` gets native storage (ADR-0015 P3).
+///
+/// Elements of those other types are *references*: their bytes are an address,
+/// and reading one back means materialising the object it points at, which
+/// native storage alone cannot do. They keep the boxed representation.
+pub(crate) fn native_elem_type(elem: &str) -> Option<(u8, ElemKind)> {
+    Some(match elem {
+        "int8" => (1, ElemKind::Int),
+        "int16" => (2, ElemKind::Int),
+        "int32" => (4, ElemKind::Int),
+        "int64" | "int" | "long" | "longlong" | "ssize_t" => (8, ElemKind::Int),
+        "uint8" | "byte" | "bool" => (1, ElemKind::Uint),
+        "uint16" => (2, ElemKind::Uint),
+        "uint32" => (4, ElemKind::Uint),
+        "uint64" | "uint" | "ulong" | "ulonglong" | "size_t" => (8, ElemKind::Uint),
+        "num32" => (4, ElemKind::Float),
+        "num64" | "num" => (8, ElemKind::Float),
+        _ => return None,
+    })
 }
 
 /// One element as the unsigned integer its bytes spell.
@@ -106,13 +146,28 @@ fn elem_to_u64(v: &Value) -> u64 {
 }
 
 /// Elements to the contiguous little-endian bytes the node stores.
-fn encode_elems(elems: &[Value], width: u8) -> Vec<u8> {
+fn encode_elems(elems: &[Value], width: u8, kind: ElemKind) -> Vec<u8> {
     let w = width as usize;
     let mut bytes = Vec::with_capacity(elems.len() * w);
     for v in elems {
-        bytes.extend_from_slice(&elem_to_u64(v).to_le_bytes()[..w]);
+        bytes.extend_from_slice(&elem_bits(v, width, kind).to_le_bytes()[..w]);
     }
     bytes
+}
+
+/// The bit pattern one element occupies, as the `u64` its `width` low bytes
+/// spell. For a float element that is the IEEE-754 encoding at the element
+/// width; for an integer element it is [`elem_to_u64`].
+fn elem_bits(v: &Value, width: u8, kind: ElemKind) -> u64 {
+    if kind != ElemKind::Float {
+        return elem_to_u64(v);
+    }
+    let f = crate::runtime::utils::to_float_value(v).unwrap_or(0.0);
+    if width == 4 {
+        (f as f32).to_bits() as u64
+    } else {
+        f.to_bits()
+    }
 }
 
 /// The node's bytes back to elements.
@@ -127,24 +182,33 @@ fn decode_elems(data: &BufData) -> Vec<Value> {
         .map(|chunk| {
             let mut raw = [0u8; 8];
             raw[..w].copy_from_slice(chunk);
-            let u = u64::from_le_bytes(raw);
-            if data.signed {
-                // Sign-extend from the element's own width.
-                let shift = 64 - w * 8;
-                Value::int(((u << shift) as i64) >> shift)
-            } else if w == 8 && u > i64::MAX as u64 {
-                Value::bigint(num_bigint::BigInt::from(u))
-            } else {
-                Value::int(u as i64)
-            }
+            decode_elem_bits(u64::from_le_bytes(raw), data.width, data.kind)
         })
         .collect()
 }
 
+/// One element's bit pattern back to the `Value` its type spells.
+fn decode_elem_bits(u: u64, width: u8, kind: ElemKind) -> Value {
+    let w = width as usize;
+    match kind {
+        ElemKind::Float if w == 4 => Value::num(f32::from_bits(u as u32) as f64),
+        ElemKind::Float => Value::num(f64::from_bits(u)),
+        ElemKind::Int => {
+            // Sign-extend from the element's own width.
+            let shift = 64 - w * 8;
+            Value::int(((u << shift) as i64) >> shift)
+        }
+        ElemKind::Uint if w == 8 && u > i64::MAX as u64 => {
+            Value::bigint(num_bigint::BigInt::from(u))
+        }
+        ElemKind::Uint => Value::int(u as i64),
+    }
+}
+
 /// The storage `Value` a buffer instance keeps under [`ELEMS_ATTR`].
-fn storage_value(bytes: Vec<u8>, width: u8, signed: bool) -> Value {
+fn storage_value(bytes: Vec<u8>, width: u8, kind: ElemKind) -> Value {
     Value::from_repr(ValueRepr::BufStorage(Gc::new(BufData::new(
-        bytes, width, signed,
+        bytes, width, kind,
     ))))
 }
 
@@ -227,10 +291,10 @@ pub(crate) fn bytes_to_elems(bytes: &[u8]) -> Vec<Value> {
 /// Store `elems` into a map being built or updated, then handed to
 /// `make_instance` / `commit_attrs`.
 pub(crate) fn set_buf_elems(map: &mut AttrMap, class_name: Symbol, elems: Vec<Value>) {
-    let (width, signed) = elem_type(&class_name.resolve());
+    let (width, kind) = elem_type(&class_name.resolve());
     map.insert(
         ELEMS_ATTR,
-        storage_value(encode_elems(&elems, width), width, signed),
+        storage_value(encode_elems(&elems, width, kind), width, kind),
     );
 }
 
@@ -247,7 +311,7 @@ pub(crate) fn set_buf_elems(map: &mut AttrMap, class_name: Symbol, elems: Vec<Va
 /// A **shared** node is replaced instead: `.Buf`/`.Blob` re-tag one buffer's
 /// storage under another name without copying it, and Raku's copy semantics
 /// mean a write to one must not be seen by the other.
-fn put_bytes(attrs: &InstanceAttrs, bytes: Vec<u8>, width: u8, signed: bool) {
+fn put_bytes(attrs: &InstanceAttrs, bytes: Vec<u8>, width: u8, kind: ElemKind) {
     {
         let map = attrs.as_map();
         if let Some(node) = node_in(&map)
@@ -264,11 +328,11 @@ fn put_bytes(attrs: &InstanceAttrs, bytes: Vec<u8>, width: u8, signed: bool) {
             data.bytes.clear();
             data.bytes.extend_from_slice(&bytes);
             data.width = width;
-            data.signed = signed;
+            data.kind = kind;
             return;
         }
     }
-    attrs.insert(ELEMS_ATTR, storage_value(bytes, width, signed));
+    attrs.insert(ELEMS_ATTR, storage_value(bytes, width, kind));
 }
 
 /// Mutate the elements in place through the shared cell, without decoding the
@@ -281,13 +345,13 @@ pub(crate) fn with_buf_elems_mut<R>(
     // this one needs no class name: decode, hand `f` the elements, re-encode at
     // the width the buffer already has.
     let map = attrs.as_map();
-    let (mut elems, width, signed) = {
+    let (mut elems, width, kind) = {
         let node = node_in(&map)?;
-        (decode_elems(&node), node.width, node.signed)
+        (decode_elems(&node), node.width, node.kind)
     };
     drop(map);
     let out = f(&mut elems);
-    put_bytes(attrs, encode_elems(&elems, width), width, signed);
+    put_bytes(attrs, encode_elems(&elems, width, kind), width, kind);
     Some(out)
 }
 
@@ -326,9 +390,21 @@ pub(crate) fn buf_elems_as_array(map: &AttrMap, kind: super::ArrayKind) -> Optio
 /// stays `P6opaque` — under-reporting is safe, claiming `VMArray` without a body
 /// behind it is not.
 pub(crate) fn buf_repr_body_address(attrs: &InstanceAttrs) -> Option<usize> {
+    with_storage_node(attrs, |node| node.body.address(node))
+}
+
+/// Run `f` over the storage node itself, holding the attribute read guard for
+/// the call. `None` (without calling `f`) when there is no element storage.
+///
+/// The node-level entry point for the containers that share this storage but not
+/// its REPR body — see [`super::value_carray`].
+pub(crate) fn with_storage_node<R>(
+    attrs: &InstanceAttrs,
+    f: impl FnOnce(&BufData) -> R,
+) -> Option<R> {
     let map = attrs.as_map();
     let node = node_in(&map)?;
-    Some(node.body.address(&node))
+    Some(f(&node))
 }
 
 /// This buffer's storage node, with a reference of its own.
@@ -375,8 +451,7 @@ pub(crate) fn buf_len(attrs: &InstanceAttrs) -> Option<usize> {
 /// [`buf_len`] against an attribute map already in hand. A division, not a
 /// decode: the node's byte count divided by its element width.
 pub(crate) fn buf_len_in(map: &AttrMap) -> Option<usize> {
-    let node = node_in(map)?;
-    Some(node.bytes.len() / node.width as usize)
+    Some(node_in(map)?.elems())
 }
 
 /// [`buf_len`] with an absent buffer read as empty.
@@ -472,9 +547,12 @@ pub(crate) fn buf_elem_type_name(class_name: &str) -> String {
     {
         return inner.to_string();
     }
-    let (width, signed) = elem_type(class_name);
+    let (width, kind) = elem_type(class_name);
     let bits = width as usize * 8;
-    if signed {
+    if kind == ElemKind::Float {
+        return format!("num{bits}");
+    }
+    if kind.is_signed() {
         format!("int{bits}")
     } else {
         format!("uint{bits}")
@@ -604,7 +682,7 @@ mod tests {
         let node = node_in(&map).expect("node");
         assert_eq!(node.bytes, vec![0x70, 0x11]); // little-endian
         assert_eq!(node.width, 2);
-        assert!(!node.signed);
+        assert_eq!(node.kind, ElemKind::Uint);
     }
 
     /// The element type used to live only in the class-name string, so every
@@ -643,10 +721,39 @@ mod tests {
     #[test]
     fn element_type_reads_signedness_off_the_name() {
         for name in ["Buf", "Blob", "utf8", "utf16", "Buf[uint8]", "Blob[uint64]"] {
-            assert!(!elem_type(name).1, "{name} should be unsigned");
+            assert_eq!(
+                elem_type(name).1,
+                ElemKind::Uint,
+                "{name} should be unsigned"
+            );
         }
         for name in ["Blob[int8]", "Buf[int16]", "Buf[int64]"] {
-            assert!(elem_type(name).1, "{name} should be signed");
+            assert_eq!(elem_type(name).1, ElemKind::Int, "{name} should be signed");
+        }
+    }
+
+    /// A `CArray[num64]` shares this node, so the element kind has to carry
+    /// "these bytes are a float" — the `signed: bool` it replaced could not.
+    #[test]
+    fn float_elements_round_trip_through_the_node() {
+        for (name, width) in [("CArray[num64]", 8), ("CArray[num32]", 4)] {
+            let b = make_buf(
+                Symbol::intern(name),
+                vec![Value::num(1.5), Value::num(-2.25)],
+            );
+            let attrs = attrs_of(&b);
+            {
+                let map = attrs.as_map();
+                let node = node_in(&map).expect("node");
+                assert_eq!(node.width, width, "{name}");
+                assert_eq!(node.kind, ElemKind::Float, "{name}");
+                assert_eq!(node.bytes.len(), 2 * width as usize, "{name}");
+            }
+            assert_eq!(
+                buf_elems(&attrs),
+                Some(vec![Value::num(1.5), Value::num(-2.25)]),
+                "{name}"
+            );
         }
     }
 

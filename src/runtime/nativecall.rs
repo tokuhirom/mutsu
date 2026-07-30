@@ -560,12 +560,22 @@ fn make_struct_value(class: &str, addr: usize) -> Value {
 pub(crate) fn value_c_address(v: &Value) -> usize {
     match v.view() {
         ValueView::Int(i) => i as usize,
-        ValueView::Instance { attributes, .. } => {
-            match attributes.as_map().get("address").map(Value::view) {
-                Some(ValueView::Int(i)) => i as usize,
-                _ => 0,
+        ValueView::Instance {
+            attributes,
+            class_name,
+            ..
+        } => match attributes.as_map().get("address").map(Value::view) {
+            Some(ValueView::Int(i)) => i as usize,
+            // A native-backed `CArray[T]` carries no `address` attribute: it
+            // *owns* its storage, and the pointer C gets is that storage
+            // (ADR-0015 P3). This is what `nativecast(Pointer[uint16], $carray)`
+            // reinterprets — `NativeHelpers::Pointer`'s whole test file walks the
+            // result with `.succ`/`.deref`.
+            _ if crate::value::value_carray::is_native_carray_class(&class_name.resolve()) => {
+                crate::value::value_carray::carray_storage_address(&attributes).unwrap_or(0)
             }
-        }
+            _ => 0,
+        },
         ValueView::Scalar(inner) => value_c_address(inner),
         ValueView::ContainerRef(cell) => cell.lock().ok().map(|g| value_c_address(&g)).unwrap_or(0),
         ValueView::VarRef { value, .. } => value_c_address(value),
@@ -967,6 +977,35 @@ fn marshal_carray_arg(
         if !crate::runtime::types::value_is_defined(&resolved) {
             return Ok((Type::pointer(), ArgOwner::Ptr(std::ptr::null())));
         }
+    }
+    // A native-backed `CArray[T]` is passed as a `void*` **to its own element
+    // storage** (ADR-0015 P3), exactly as a `Blob`/`Buf` is under P2: nothing is
+    // copied in and nothing is copied back, so a callee that fills the array
+    // needs no sync point and one that retains the pointer keeps seeing live
+    // memory. The copy this replaces was correct only for a callee that wrote
+    // *during* the call — `NativeHelpers::Blob`'s `carray-from-blob(:managed)`
+    // `memcpy`s into `BODY_OF(arr).storage` afterwards, with no call boundary at
+    // which a copy could have been synced back.
+    //
+    // A `Buf` handed to a `CArray[T]` parameter lands here too, and handing over
+    // its storage is equally right — the copy path could not see one at all and
+    // passed an empty buffer.
+    if let Some(node) = buf_storage_node(&resolve_arg(raw)) {
+        // SAFETY: audited aliased in-place container write (see
+        // `value::aliased_mut`) — this is the pointer C writes through, and the
+        // `node` held in the owner keeps the allocation alive for at least the
+        // duration of the call. No Rust borrow into the buffer is live across it.
+        let data_ptr = unsafe { crate::value::gc_contents_mut(&node) }
+            .bytes
+            .as_mut_ptr();
+        return Ok((
+            Type::pointer(),
+            ArgOwner::BufBytes {
+                node: Some(node),
+                buf: Vec::new(),
+                data_ptr: data_ptr as *const std::ffi::c_void,
+            },
+        ));
     }
     // An unparameterized `CArray` parameter carries no element type in the
     // signature, so take it from the argument itself (`CArray[int32].new` tags

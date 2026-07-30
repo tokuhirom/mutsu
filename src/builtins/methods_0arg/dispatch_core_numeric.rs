@@ -127,7 +127,19 @@ pub(super) fn dispatch(
                     class_name,
                     attributes,
                     ..
-                } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
+                } if crate::runtime::utils::is_native_elems_class(&class_name.resolve()) => {
+                    // An **unmanaged** `CArray` — a `nativecast`ed handle, which
+                    // carries a bare C address and no storage of its own — has no
+                    // length to report, and Rakudo throws rather than answering 0.
+                    // `NativeHelpers::Blob`'s `01-basic.t` asserts exactly that
+                    // (`dies-ok { $au.elems }`) before going on to use `:size`.
+                    if !crate::value::value_buf::has_buf_elems(&attributes)
+                        && attributes.contains_key("address")
+                    {
+                        return Some(Some(Err(crate::value::RuntimeError::new(
+                            "Don't know how many elements a C array returned from a library",
+                        ))));
+                    }
                     Value::int(crate::value::value_buf::buf_len_or_zero(&attributes) as i64)
                 }
                 ValueView::Channel(_) => {

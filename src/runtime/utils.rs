@@ -214,6 +214,19 @@ pub(crate) fn is_buf_or_blob_class(cn: &str) -> bool {
     is_buf_like_class(cn) || is_blob_like_class(cn)
 }
 
+/// Whether instances of `cn` keep their elements in a native storage node — a
+/// `Buf`/`Blob`, or a native-backed `CArray[T]` (ADR-0015 P2 and P3).
+///
+/// This is the predicate for the *element-storage mechanics* an accessor in
+/// [`crate::value::value_buf`] serves: indexing, assignment, `.elems`, `.list`,
+/// iteration. It is deliberately **not** the predicate for anything that means
+/// "is a byte string": a `CArray` is not a `Blob`, so `.decode`, `.subbuf`,
+/// the `write-*` families, the hex `.gist` and the `Buf`/`Blob` type checks all
+/// keep the narrower [`is_buf_or_blob_class`] gate.
+pub(crate) fn is_native_elems_class(cn: &str) -> bool {
+    is_buf_or_blob_class(cn) || crate::value::value_carray::is_native_carray_class(cn)
+}
+
 /// Normalize Buf/Blob type aliases to canonical form.
 pub(crate) fn normalize_buf_type_name(name: &str) -> String {
     match name {

@@ -616,6 +616,39 @@ impl Interpreter {
                     }
                     return false;
                 }
+                // NativeCall `Pointer[T]`: the parameterisation is NOT in the
+                // class name — a typed pointer stays an ordinary `Pointer`
+                // instance and remembers `T` in an `of` attribute, so that every
+                // `Pointer` method keeps working (see `try_nativecast`). So the
+                // element type is read from there, resolving a `constant` alias on
+                // the declared side exactly as the `CArray` arm does.
+                // `NativeHelpers::Pointer`'s pointer arithmetic returns these, and
+                // `isa-ok $p.succ, Pointer[uint16]` is what checks them.
+                "Pointer" => {
+                    let ValueView::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } = value.view()
+                    else {
+                        return false;
+                    };
+                    let name = class_name.resolve();
+                    if name.rsplit("::").next() != Some("Pointer") {
+                        return false;
+                    }
+                    let Some(of) = attributes.as_map().get("of").map(|v| match v.view() {
+                        ValueView::Package(n) => n.resolve(),
+                        _ => v.to_string_value(),
+                    }) else {
+                        // An untyped `Pointer` is `Pointer[void]`; it matches a
+                        // parameterised constraint only when that asks for `void`.
+                        return self.resolved_type_capture_name(inner) == "void";
+                    };
+                    let want = self.resolved_type_capture_name(inner);
+                    let want = self.type_alias_target(&want).unwrap_or(want);
+                    return want == of || Self::type_matches(&want, &of);
+                }
                 "Array" | "List" | "Positional" => {
                     if let ValueView::Array(items, ..) = value.view() {
                         // Prefer the container's declared element type when known

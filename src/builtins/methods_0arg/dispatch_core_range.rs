@@ -552,7 +552,7 @@ pub(super) fn dispatch(
             // — DBDish::Pg's `escapeBytea` sizes its buffer with
             // `nativesizeof($buf.of)`.
             ValueView::Instance { class_name, .. }
-                if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) =>
+                if crate::runtime::utils::is_native_elems_class(&class_name.resolve()) =>
             {
                 Some(Ok(Value::package(Symbol::intern(
                     &crate::value::value_buf::buf_elem_type_name(&class_name.resolve()),
@@ -580,7 +580,7 @@ pub(super) fn dispatch(
                     || n.starts_with("MixHash[")
                 {
                     Some(Ok(Value::package(Symbol::intern("Real"))))
-                } else if crate::runtime::utils::is_buf_or_blob_class(&n) {
+                } else if crate::runtime::utils::is_native_elems_class(&n) {
                     // The type object answers `.of` too (`Buf.of` is `(uint8)`).
                     Some(Ok(Value::package(Symbol::intern(
                         &crate::value::value_buf::buf_elem_type_name(&n),
