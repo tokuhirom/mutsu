@@ -43,6 +43,24 @@ impl Interpreter {
         let base = function_key_base_name(name);
         let base_sym = Symbol::intern(base);
         if let Some(&cached) = self.fn_base_name_cache.get(&base_sym) {
+            // Debug-only staleness audit: recompute and compare, so a
+            // functions-map mutation that missed its `fn_resolve_gen` bump
+            // fails CI's debug `prove t/` with a located panic instead of
+            // surfacing as a silent wrong "Unknown function" in release.
+            #[cfg(debug_assertions)]
+            {
+                let fresh = self
+                    .registry()
+                    .functions
+                    .keys()
+                    .any(|k| function_key_base_name(&k.resolve()) == base);
+                assert_eq!(
+                    fresh, cached,
+                    "stale fn_base_name_cache entry for {name:?} (base {base:?}): \
+                     a registry functions-map mutation missed its fn_resolve_gen \
+                     bump — see fn_base_name_registered in dispatch_resolve.rs"
+                );
+            }
             return cached;
         }
         let found = self

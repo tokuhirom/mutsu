@@ -2030,6 +2030,15 @@ pub(crate) struct CompiledCode {
     /// fast/light call paths, which skip the routine clone-id setup the `once`
     /// store keys on (see `once_scope_key`).
     pub(crate) has_once: bool,
+    /// True if this code observes its caller frame: a `callframe`/`callframes`
+    /// call, or a `CALLER::` pseudo-package read/write op. Set during `emit()`.
+    /// Such a body must be invoked through a frame-pushing call path
+    /// (`push_caller_env`), so the fast/light frameless paths exclude it —
+    /// otherwise `callframe(1)`/`CALLER::` resolve against the *grand*-caller.
+    /// (Historically this was masked by an unconditional `fn_resolve_gen` bump
+    /// after every interpreter-native call, which kept such routines
+    /// permanently out of the name-keyed call caches by accident.)
+    pub(crate) uses_callframe: bool,
     /// True if this code runs an inline body that reads the frame's lexicals *by
     /// name* through a path the `free_var_syms` op-scan cannot see: loop/block
     /// bodies that thread control temps through `env` by name (`ForLoop`,
@@ -2195,6 +2204,7 @@ impl CompiledCode {
             is_routine: false,
             reads_topic: false,
             has_once: false,
+            uses_callframe: false,
             source_line: None,
             is_pointy_block: false,
             has_env_writes: false,
@@ -3755,6 +3765,27 @@ impl CompiledCode {
     pub(crate) fn emit(&mut self, op: OpCode) -> usize {
         if matches!(op, OpCode::OnceExpr { .. }) {
             self.has_once = true;
+        }
+        if !self.uses_callframe {
+            match &op {
+                // A direct `callframe(…)`/`callframes()` call observes the
+                // caller frame; so do the CALLER:: pseudo-package variable ops.
+                OpCode::CallFunc { name_idx, .. } | OpCode::CallFuncNamed { name_idx, .. } => {
+                    if let Some(v) = self.constants.get(*name_idx as usize)
+                        && let ValueView::Str(s) = v.view()
+                        && matches!(s.as_str(), "callframe" | "callframes")
+                    {
+                        self.uses_callframe = true;
+                    }
+                }
+                OpCode::GetCallerVar { .. }
+                | OpCode::SetCallerVar { .. }
+                | OpCode::BindCallerVar { .. }
+                | OpCode::GetCallerOuterVar { .. } => {
+                    self.uses_callframe = true;
+                }
+                _ => {}
+            }
         }
         if !self.has_calls {
             // Every call opcode -- any of these can invoke a callee that writes

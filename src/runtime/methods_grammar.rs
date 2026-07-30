@@ -795,6 +795,60 @@ impl Interpreter {
         actions: &mut Value,
         rule_name: &str,
     ) -> Result<Value, RuntimeError> {
+        // Fast path: a childless leaf whose rule has no action method — the
+        // overwhelming majority of nodes in a leaf-heavy parse (one node per
+        // matched character in a quoted-scalar run). Returning it untouched
+        // skips the two attribute-map clones, the node rebuild, and the whole
+        // env save/restore ceremony below, none of which can have any effect
+        // for such a node.
+        let leaf_sym_method: Option<String>;
+        let is_actionless_candidate_leaf;
+        if let ValueView::Instance { attributes, .. } = match_obj.view() {
+            let amap = attributes.as_map();
+            let has_named_children = matches!(
+                amap.get("named").map(Value::view),
+                Some(ValueView::Hash(h)) if !h.is_empty()
+            );
+            let has_list_children = matches!(
+                amap.get("list").map(Value::view),
+                Some(ValueView::Array(a, _)) if !a.is_empty()
+            );
+            let has_silent = amap.get("silent_caps").is_some();
+            if !has_named_children && !has_list_children && !has_silent {
+                is_actionless_candidate_leaf = true;
+                leaf_sym_method = match amap.get("sym_variant").map(Value::view) {
+                    Some(ValueView::Str(sym_val)) => {
+                        Some(if sym_val.contains('<') || sym_val.contains('>') {
+                            format!("{rule_name}:sym\u{ab}{}\u{bb}", &*sym_val)
+                        } else {
+                            format!("{rule_name}:sym<{}>", &*sym_val)
+                        })
+                    }
+                    _ => None,
+                };
+            } else {
+                is_actionless_candidate_leaf = false;
+                leaf_sym_method = None;
+            }
+        } else {
+            return Ok(match_obj);
+        }
+        if is_actionless_candidate_leaf {
+            let actions_cn: Option<String> = match actions.view() {
+                ValueView::Instance { class_name, .. } => Some(class_name.to_string()),
+                ValueView::Package(name) => Some(name.to_string()),
+                _ => None,
+            };
+            if let Some(cn) = actions_cn {
+                let sym_hit = leaf_sym_method
+                    .as_deref()
+                    .is_some_and(|s| self.has_user_method(&cn, s));
+                let rule_hit = !rule_name.is_empty() && self.has_user_method(&cn, rule_name);
+                if !sym_hit && !rule_hit {
+                    return Ok(match_obj);
+                }
+            }
+        }
         let (class_name, attributes) = if let ValueView::Instance {
             class_name,
             attributes,
@@ -916,6 +970,44 @@ impl Interpreter {
         // Rebuild match_obj with updated children
         let match_obj = Value::make_instance(class_name, (updated_attrs.clone()).to_map());
 
+        // Interior node with no action method of its own: the children (and
+        // silent captures) above are already dispatched, and none of the env
+        // ceremony below can matter — no method will read `$/`/`$<x>`/`$0…`,
+        // and `make` cannot run. Return the rebuilt node directly. (`$/` is
+        // (re)set by the caller after the walk, so skipping the insert here
+        // does not change what user code observes.)
+        {
+            let no_own_action = {
+                let actions_cn: Option<String> = match actions.view() {
+                    ValueView::Instance { class_name, .. } => Some(class_name.to_string()),
+                    ValueView::Package(name) => Some(name.to_string()),
+                    _ => None,
+                };
+                match actions_cn {
+                    None => false,
+                    Some(cn) => {
+                        let sym_hit =
+                            match updated_attrs.as_map().get("sym_variant").map(Value::view) {
+                                Some(ValueView::Str(sym_val)) => {
+                                    let sym_name = if sym_val.contains('<') || sym_val.contains('>')
+                                    {
+                                        format!("{rule_name}:sym\u{ab}{}\u{bb}", &*sym_val)
+                                    } else {
+                                        format!("{rule_name}:sym<{}>", &*sym_val)
+                                    };
+                                    self.has_user_method(&cn, &sym_name)
+                                }
+                                _ => false,
+                            };
+                        !sym_hit && !self.has_user_method(&cn, rule_name)
+                    }
+                }
+            };
+            if no_own_action {
+                return Ok(match_obj);
+            }
+        }
+
         // Set $/ to this match and try calling actions.{rule_name}(match)
         self.env.insert("/".to_string(), match_obj.clone());
         self.env.remove("made");
@@ -1012,9 +1104,11 @@ impl Interpreter {
             ValueView::Package(name) => Some(name.as_str()),
             _ => None,
         };
+        let mut called_action = false;
         let method_result = if let Some(ref sym_name) = sym_method_name {
             let sym_exists = actions_class_name.is_none_or(|cn| self.has_user_method(cn, sym_name));
             if sym_exists {
+                called_action = true;
                 let result = self.call_method_with_values(
                     actions.clone(),
                     sym_name,
@@ -1036,11 +1130,13 @@ impl Interpreter {
                     other => other,
                 }
             } else if actions_class_name.is_none_or(|cn| self.has_user_method(cn, rule_name)) {
+                called_action = true;
                 self.call_method_with_values(actions.clone(), rule_name, vec![match_obj.clone()])
             } else {
                 Ok(match_obj.clone())
             }
         } else if actions_class_name.is_none_or(|cn| self.has_user_method(cn, rule_name)) {
+            called_action = true;
             self.call_method_with_values(actions.clone(), rule_name, vec![match_obj.clone()])
         } else {
             Ok(match_obj.clone())
@@ -1048,12 +1144,14 @@ impl Interpreter {
 
         // After the method call, if actions is an Instance, its attributes
         // may have been mutated.  Retrieve the updated version from env so
-        // subsequent child/rule calls see the latest state.
-        if let ValueView::Instance {
-            class_name: act_cn,
-            id: act_id,
-            ..
-        } = actions.view()
+        // subsequent child/rule calls see the latest state. Skipped when no
+        // action method was actually invoked — the env scan is O(env) per node.
+        if called_action
+            && let ValueView::Instance {
+                class_name: act_cn,
+                id: act_id,
+                ..
+            } = actions.view()
         {
             for v in self.env.values() {
                 if let ValueView::Instance {

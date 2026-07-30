@@ -288,6 +288,16 @@ impl Interpreter {
         crate::runtime::registry::RegistryReadGuard::new(&self.registry, "registry")
     }
 
+    /// Current registry write generation — bumped on every `registry_mut()`
+    /// acquisition. Lets callers detect "did anything take a registry write
+    /// guard across this call?" (e.g. to invalidate name-keyed resolution
+    /// caches only when the function set could actually have changed).
+    #[inline]
+    pub(crate) fn registry_write_generation(&self) -> u64 {
+        self.registry_write_gen
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// Write access to the shared declaration [`Registry`]. Same guard discipline
     /// as [`Self::registry`].
     #[inline]

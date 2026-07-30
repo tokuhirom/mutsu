@@ -1421,14 +1421,22 @@ impl Interpreter {
                     // env. With the Any seed (PLAN 8.5 step 3) the slot holds
                     // a real value, so the writeback must be explicit
                     // (t/require-expression.t `BEGIN try EVAL`).
+                    let reg_gen_before = self.registry_write_generation();
                     let carrier_saved = self.begin_carrier();
                     let result = self.vm_call_function(name, args);
                     let written = self.end_carrier(carrier_saved);
                     self.writeback_carrier_writes(code, &written);
                     self.set_pending_call_arg_sources(None);
                     // Interpreter function calls (e.g. `require`) may register
-                    // new subs — invalidate function resolution caches.
-                    self.fn_resolve_gen += 1;
+                    // new subs — invalidate function resolution caches. Only
+                    // when the call actually acquired a registry write guard,
+                    // though: a blanket bump here cleared the name-keyed caches
+                    // after EVERY interpreter-native builtin call (`make`, in a
+                    // grammar-action walk, is one per action), forcing a full
+                    // registry rescan per call.
+                    if self.registry_write_generation() != reg_gen_before {
+                        self.fn_resolve_gen += 1;
+                    }
                     // substr-rw returns a Proxy that must be preserved (not auto-FETCHed)
                     let auto_fetch = name != "substr-rw";
                     let result = result?;

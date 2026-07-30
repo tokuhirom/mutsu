@@ -39,6 +39,9 @@ impl Interpreter {
             && !fn_name.is_empty()
             // A `once` needs the clone-id setup only the full call path performs.
             && !cf.code.has_once
+            // A body observing its caller frame (callframe / CALLER::) needs the
+            // frame-pushing path, or introspection resolves to the grand-caller.
+            && !cf.code.uses_callframe
     }
 
     /// Check if a compiled function is eligible for the light call path.
@@ -64,6 +67,8 @@ impl Interpreter {
             && !cf.empty_sig
             // A `once` needs the clone-id setup only the full call path performs.
             && !cf.code.has_once
+            // callframe / CALLER:: need the frame-pushing path (see fast path).
+            && !cf.code.uses_callframe
             && !cf.param_defs.is_empty()
             && cf.param_defs.iter().any(|pd| pd.named)
             && cf.param_defs.iter().all(|pd| {
@@ -115,6 +120,8 @@ impl Interpreter {
             && !cf.has_inner_subs
             // A `once` needs the clone-id setup only the full call path performs.
             && !cf.code.has_once
+            // callframe / CALLER:: need the frame-pushing path (see fast path).
+            && !cf.code.uses_callframe
             // Only allow return types that light_return_type_check can handle
             && cf
                 .return_type
