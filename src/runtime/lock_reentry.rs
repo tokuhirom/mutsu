@@ -129,11 +129,11 @@ pub(crate) struct ReentrantReadGuard<'a, T> {
 }
 
 impl<'a, T> ReentrantReadGuard<'a, T> {
-    pub(crate) fn new(lock: &'a std::sync::RwLock<T>, name: &'static str) -> Self {
+    pub(crate) fn new(lock: &'a std::sync::RwLock<T>, _name: &'static str) -> Self {
         #[cfg(debug_assertions)]
         let lock_id = lock as *const _ as usize;
         #[cfg(debug_assertions)]
-        reentry_check::enter_read(lock_id, name);
+        reentry_check::enter_read(lock_id, _name);
         // Acquire only after the reentry check, so a would-be deadlock panics
         // instead of hanging on the blocking `.read()`.
         let inner = lock.read().unwrap();
@@ -169,11 +169,11 @@ pub(crate) struct ReentrantWriteGuard<'a, T> {
 }
 
 impl<'a, T> ReentrantWriteGuard<'a, T> {
-    pub(crate) fn new(lock: &'a std::sync::RwLock<T>, name: &'static str) -> Self {
+    pub(crate) fn new(lock: &'a std::sync::RwLock<T>, _name: &'static str) -> Self {
         #[cfg(debug_assertions)]
         let lock_id = lock as *const _ as usize;
         #[cfg(debug_assertions)]
-        reentry_check::enter_write(lock_id, name);
+        reentry_check::enter_write(lock_id, _name);
         let inner = lock.write().unwrap();
         Self {
             inner,
