@@ -14,6 +14,22 @@ on:
   push:
     branches:
       - main
+    # A documentation-only merge cannot move a benchmark, so measuring it just
+    # burns ~25 min of runner and appends a row that differs from its
+    # predecessor only by runner noise — which actively hurts, because reading
+    # the history already requires normalizing that noise away. Unlike ci.yml,
+    # `paths-ignore` is safe here: no bench check is required by the `main`
+    # ruleset, so a run that never happens blocks nothing. Keep this list in
+    # sync with the allowlist in scripts/ci-docs-only.sh.
+    paths-ignore:
+      - 'docs/**'
+      - 'news/**'
+      - 'todo/**'
+      - 'TODO_roast/**'
+      - 'old-design-docs/**'
+      - 'raku-doc/**'
+      - '*.md'
+      - 'LICENSE'
   workflow_dispatch:
 
 permissions:
