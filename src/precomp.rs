@@ -91,19 +91,26 @@ fn interpreter_version() -> String {
     // 10: `BufStorage`'s element descriptor became `ElemKind` (ADR-0015 P3),
     // so its third field serializes as an enum rather than a bool.
     const CACHE_FORMAT_VERSION: u32 = 10;
-    let exe_stamp = std::env::current_exe()
-        .and_then(fs::metadata)
-        .and_then(|m| m.modified())
-        .ok()
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    format!(
-        "{}+cf{}+exe{}",
-        env!("CARGO_PKG_VERSION"),
-        CACHE_FORMAT_VERSION,
-        exe_stamp
-    )
+    // The exe mtime cannot change while this process runs, so stat it once —
+    // every cache validation used to re-stat the (large) binary per module.
+    static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    VERSION
+        .get_or_init(|| {
+            let exe_stamp = std::env::current_exe()
+                .and_then(fs::metadata)
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_nanos())
+                .unwrap_or(0);
+            format!(
+                "{}+cf{}+exe{}",
+                env!("CARGO_PKG_VERSION"),
+                CACHE_FORMAT_VERSION,
+                exe_stamp
+            )
+        })
+        .clone()
 }
 
 /// Whether the cache is on unless a caller turns it off.
@@ -216,8 +223,12 @@ fn decode_config() -> impl bincode::config::Config {
 
 /// Try to load a cached compilation unit for the given source file.
 ///
+/// `source` is the file's content when the caller has already read it —
+/// content-hash validation then hashes the in-memory bytes instead of
+/// re-reading the file. Pass `None` to read from disk.
+///
 /// Returns `Some(unit)` if a valid cache entry exists, `None` otherwise.
-pub(crate) fn load_cached_unit(source_path: &Path) -> Option<CachedUnit> {
+pub(crate) fn load_cached_unit(source_path: &Path, source: Option<&str>) -> Option<CachedUnit> {
     let canonical = source_path.canonicalize().ok()?;
     let dir = cache_dir()?;
     let hash = path_hash(&canonical);
@@ -279,7 +290,10 @@ pub(crate) fn load_cached_unit(source_path: &Path) -> Option<CachedUnit> {
         let _ = fs::remove_file(&cache_file);
         return None;
     };
-    let current_hash = source_content_hash(source_path)?;
+    let current_hash = match source {
+        Some(code) => content_hash(code.as_bytes()),
+        None => source_content_hash(source_path)?,
+    };
     if expected_hash != current_hash {
         let _ = fs::remove_file(&cache_file);
         return None;
@@ -427,9 +441,15 @@ fn source_mtime_nanos(path: &Path) -> Option<u128> {
 
 fn source_content_hash(path: &Path) -> Option<u64> {
     let bytes = fs::read(path).ok()?;
+    Some(content_hash(&bytes))
+}
+
+/// Hash source bytes the same way `source_content_hash` does, so an in-memory
+/// hash validates against an entry written from a disk read (and vice versa).
+fn content_hash(bytes: &[u8]) -> u64 {
     let mut hasher = DefaultHasher::new();
     bytes.hash(&mut hasher);
-    Some(hasher.finish())
+    hasher.finish()
 }
 
 #[cfg(test)]
@@ -457,7 +477,7 @@ mod tests {
 
         // Save and load
         save_cached_unit(&source, &stmts, &ParseEffects::default());
-        let loaded = load_cached_unit(&source);
+        let loaded = load_cached_unit(&source, None);
         assert!(loaded.is_some(), "cache should return Some");
         let loaded = loaded.unwrap().stmts;
         assert_eq!(loaded.len(), 2);
@@ -474,6 +494,31 @@ mod tests {
     }
 
     #[test]
+    fn in_memory_source_validates_like_disk_read() {
+        // Callers that already read the source pass it in; the content-hash
+        // check must accept the same bytes and reject different ones without
+        // consulting the file.
+        let stmts = vec![Stmt::Say(vec![Expr::Literal(Value::int(1))])];
+
+        let dir = tempdir("memhash");
+        let source = dir.join("test-mem.rakumod");
+        let code = "say 1;\n";
+        fs::write(&source, code).unwrap();
+
+        save_cached_unit(&source, &stmts, &ParseEffects::default());
+        assert!(
+            load_cached_unit(&source, Some(code)).is_some(),
+            "in-memory bytes matching the file must validate"
+        );
+        assert!(
+            load_cached_unit(&source, Some("say 2;\n")).is_none(),
+            "in-memory bytes differing from cache-time content must miss"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn cache_invalidated_on_mtime_change() {
         let stmts = vec![Stmt::Say(vec![Expr::Literal(Value::int(1))])];
 
@@ -485,7 +530,7 @@ mod tests {
         }
 
         save_cached_unit(&source, &stmts, &ParseEffects::default());
-        assert!(load_cached_unit(&source).is_some());
+        assert!(load_cached_unit(&source, None).is_some());
 
         // Touch the file (update mtime)
         std::thread::sleep(std::time::Duration::from_secs(2));
@@ -495,7 +540,7 @@ mod tests {
         }
 
         // Cache should now be invalid
-        assert!(load_cached_unit(&source).is_none());
+        assert!(load_cached_unit(&source, None).is_none());
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -554,7 +599,7 @@ mod tests {
         fs::write(&cache_file, &data).unwrap();
 
         // Stale version → cache must be rejected (and removed).
-        assert!(load_cached_unit(&source).is_none());
+        assert!(load_cached_unit(&source, None).is_none());
         assert!(!cache_file.exists(), "stale cache file should be removed");
 
         let _ = fs::remove_dir_all(&dir);
@@ -578,7 +623,7 @@ mod tests {
         }
 
         save_cached_unit(&source, &stmts, &effects);
-        let loaded = load_cached_unit(&source).expect("cache should return Some");
+        let loaded = load_cached_unit(&source, None).expect("cache should return Some");
         assert_eq!(loaded.effects, effects);
 
         let _ = fs::remove_dir_all(&dir);
@@ -599,7 +644,7 @@ mod tests {
         }
 
         save_cached_unit(&source, &stmts, &ParseEffects::default());
-        assert!(load_cached_unit(&source).is_some());
+        assert!(load_cached_unit(&source, None).is_some());
 
         // Rewrite the entry claiming a different source path, as a path-hash
         // collision would produce.
@@ -623,7 +668,7 @@ mod tests {
         fs::write(&cache_file, &data).unwrap();
 
         assert!(
-            load_cached_unit(&source).is_none(),
+            load_cached_unit(&source, None).is_none(),
             "an entry naming another source must not be served"
         );
 
@@ -652,7 +697,7 @@ mod tests {
 
         save_cached_unit(&source, &stmts, &ParseEffects::default());
         assert!(
-            load_cached_unit(&source).is_some(),
+            load_cached_unit(&source, None).is_some(),
             "control: entry is valid"
         );
 
@@ -680,7 +725,7 @@ mod tests {
         fs::write(&cache_file, &data).unwrap();
 
         assert!(
-            load_cached_unit(&source).is_none(),
+            load_cached_unit(&source, None).is_none(),
             "a corrupt entry must read as a cache miss"
         );
 

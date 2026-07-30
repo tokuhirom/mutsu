@@ -115,7 +115,7 @@ impl Interpreter {
         // Try loading from precompilation cache. A hit skips the parse, so replay
         // the parser state it would have produced (see `precomp::ParseEffects`).
         let stmts = if self.precomp_enabled {
-            if let Some(unit) = crate::precomp::load_cached_unit(&path) {
+            if let Some(unit) = crate::precomp::load_cached_unit(&path, None) {
                 crate::parser::set_current_language_version(&unit.effects.language_version);
                 for warning in &unit.effects.warnings {
                     self.write_warn_to_stderr(warning);
