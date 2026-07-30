@@ -360,6 +360,25 @@ impl Interpreter {
                 .map(|(n, ..)| crate::symbol::Symbol::intern(n))
                 .collect::<Vec<_>>(),
         );
+        // Pre-derive the BUILD/TWEAK phase step lists and the attribute-name
+        // probe skeleton (runtime/ctor_phase_plan.rs) — pure class-shape data
+        // the construction phases otherwise re-derive per construction.
+        let build_steps = std::sync::Arc::new(if registered && has_build {
+            self.build_construction_phase_steps(cn_resolved, "BUILD")
+        } else {
+            Vec::new()
+        });
+        let tweak_steps = std::sync::Arc::new(if registered && has_tweak {
+            self.build_construction_phase_steps(cn_resolved, "TWEAK")
+        } else {
+            Vec::new()
+        });
+        let probe_skeleton = std::sync::Arc::new(
+            attr_syms
+                .iter()
+                .map(|s| (*s, Value::NIL))
+                .collect::<crate::value::AttrMap>(),
+        );
         let plan = std::sync::Arc::new(super::NativeCtorPlan {
             is_cunion,
             eligible,
@@ -371,6 +390,9 @@ impl Interpreter {
             has_smiley,
             has_custom_bless,
             has_container_defaults,
+            build_steps,
+            tweak_steps,
+            probe_skeleton,
         });
         // Don't freeze a plan for a class that is not (yet) registered: e.g. a
         // role punned to a class on first use would otherwise keep a stale

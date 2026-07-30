@@ -555,118 +555,16 @@ impl Interpreter {
         inv: &Value,
         args: &[Value],
     ) -> Result<(), RuntimeError> {
-        let Some(cell) = Self::self_instance_attrs(inv) else {
-            return Ok(());
-        };
-        let mut probe_attrs = cell.to_map();
-        let refresh_probe = probe_attrs
-            .keys()
-            .any(|k| k.starts_with("__mutsu_attr_alias::"));
-        let mro = self.class_mro(&class_name.resolve());
-        // Determine the class's language revision for submethod dispatch rules.
-        let class_lang_rev = self
-            .type_metadata
-            .get(&class_name.resolve())
-            .and_then(|m| m.get("language-revision"))
-            .map(|v| v.to_string_value())
-            .unwrap_or_else(|| {
-                let version = crate::parser::current_language_version();
-                if let Some(rest) = version.strip_prefix("6.") {
-                    rest.chars().next().unwrap_or('c').to_string()
-                } else {
-                    "c".to_string()
-                }
-            });
-        let class_is_6e = class_lang_rev != "c";
-        for mro_class in mro.iter().rev().map(|s| s.as_str()) {
-            if mro_class == "Any" || mro_class == "Mu" {
-                continue;
-            }
-            // Skip role entries in MRO
-            if self.registry().roles.contains_key(mro_class)
-                && !self.registry().classes.contains_key(mro_class)
-            {
-                continue;
-            }
-            // Check if the class itself has a BUILD submethod
-            let class_has_own_build = self
-                .registry()
-                .classes
-                .get(mro_class)
-                .and_then(|def| def.methods.get("BUILD"))
-                .map(|overloads| overloads.iter().any(|md| md.role_origin.is_none()))
-                .unwrap_or(false);
-            // Call BUILD submethods from composed roles.
-            // Rules:
-            // - Always call role BUILD submethods (both 6.c and 6.e classes)
-            // - In 6.c: if class has own BUILD, skip role submethods from same
-            //   revision (6.c), but still call submethods from other revisions (6.e+)
-            // - In 6.e+: always call all role submethods regardless
-            let role_order = self.ordered_role_submethods_for_class(mro_class, "BUILD");
-            for (role_name, method_def) in role_order {
-                // Determine the role's language revision
-                let role_base = role_name
-                    .split_once('[')
-                    .map(|(b, _)| b)
-                    .unwrap_or(&role_name);
-                let role_lang_rev = self
-                    .type_metadata
-                    .get(role_base)
-                    .and_then(|m| m.get("language-revision"))
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_else(|| "c".to_string());
-                // In 6.c class with own BUILD: skip 6.c role submethods
-                if !class_is_6e && class_has_own_build && role_lang_rev == "c" {
-                    continue;
-                }
-                if refresh_probe {
-                    probe_attrs = cell.to_map();
-                }
-                let (_v, updated) = self.run_resolved_method_celled(
-                    &class_name.resolve(),
-                    &role_name,
-                    "BUILD",
-                    method_def,
-                    &probe_attrs,
-                    args.to_vec(),
-                    Some(inv.clone()),
-                )?;
-                if let Some(m) = updated {
-                    cell.commit_attrs(m);
-                }
-            }
-            // Call the class's BUILD if it has one that wasn't already handled
-            // by ordered_role_submethods_for_class. Role submethods (is_my=true,
-            // role_origin=Some) were already called above. Regular methods
-            // (is_my=false) from roles still need to go through run_instance_method.
-            let has_non_submethod_build = self
-                .registry()
-                .classes
-                .get(mro_class)
-                .and_then(|def| def.methods.get("BUILD"))
-                .map(|overloads| {
-                    overloads
-                        .iter()
-                        .any(|md| md.role_origin.is_none() || !md.is_my)
-                })
-                .unwrap_or(false);
-            if has_non_submethod_build {
-                if refresh_probe {
-                    probe_attrs = cell.to_map();
-                }
-                let (_v, updated) = self.run_instance_method_celled(
-                    mro_class,
-                    &probe_attrs,
-                    "BUILD",
-                    args.to_vec(),
-                    Some(inv.clone()),
-                )?;
-                if let Some(m) = updated {
-                    cell.commit_attrs(m);
-                }
-            }
-        }
-        Ok(())
+        // Both fail modes Propagate -> the runner never returns `Ok(Err(..))`.
+        self.run_construction_phase_steps(
+            class_name,
+            inv,
+            args,
+            "BUILD",
+            super::ctor_phase_plan::PhaseFail::Propagate,
+            super::ctor_phase_plan::PhaseFail::Propagate,
+        )
+        .map(|_| ())
     }
 
     /// Run the TWEAK phase of construction: invoke every TWEAK submethod (own and
@@ -686,126 +584,16 @@ impl Interpreter {
         inv: &Value,
         tweak_args: &[Value],
     ) -> Result<Result<(), Value>, RuntimeError> {
-        let Some(cell) = Self::self_instance_attrs(inv) else {
-            return Ok(Ok(()));
-        };
-        let mut probe_attrs = cell.to_map();
-        let refresh_probe = probe_attrs
-            .keys()
-            .any(|k| k.starts_with("__mutsu_attr_alias::"));
-        let cn = class_name.resolve();
-        let mro = self.class_mro(&cn);
-        let class_lang_rev = self
-            .type_metadata
-            .get(&cn)
-            .and_then(|m| m.get("language-revision"))
-            .map(|v| v.to_string_value())
-            .unwrap_or_else(|| {
-                let version = crate::parser::current_language_version();
-                if let Some(rest) = version.strip_prefix("6.") {
-                    rest.chars().next().unwrap_or('c').to_string()
-                } else {
-                    "c".to_string()
-                }
-            });
-        let class_is_6e = class_lang_rev != "c";
-        for mro_class in mro.iter().rev().map(|s| s.as_str()) {
-            if mro_class == "Any" || mro_class == "Mu" {
-                continue;
-            }
-            // Skip role entries in MRO
-            if self.registry().roles.contains_key(mro_class)
-                && !self.registry().classes.contains_key(mro_class)
-            {
-                continue;
-            }
-            // Check if the class itself has a TWEAK submethod
-            let class_has_own_tweak = self
-                .registry()
-                .classes
-                .get(mro_class)
-                .and_then(|def| def.methods.get("TWEAK"))
-                .map(|overloads| overloads.iter().any(|md| md.role_origin.is_none()))
-                .unwrap_or(false);
-            // Call TWEAK submethods from composed roles (same rules as BUILD)
-            let role_order = self.ordered_role_submethods_for_class(mro_class, "TWEAK");
-            for (role_name, method_def) in role_order {
-                let role_base = role_name
-                    .split_once('[')
-                    .map(|(b, _)| b)
-                    .unwrap_or(&role_name);
-                let role_lang_rev = self
-                    .type_metadata
-                    .get(role_base)
-                    .and_then(|m| m.get("language-revision"))
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_else(|| "c".to_string());
-                // In 6.c class with own TWEAK: skip 6.c role submethods
-                if !class_is_6e && class_has_own_tweak && role_lang_rev == "c" {
-                    continue;
-                }
-                if refresh_probe {
-                    probe_attrs = cell.to_map();
-                }
-                match self.run_resolved_method_celled(
-                    &cn,
-                    &role_name,
-                    "TWEAK",
-                    method_def,
-                    &probe_attrs,
-                    tweak_args.to_vec(),
-                    Some(inv.clone()),
-                ) {
-                    Ok((_v, updated)) => {
-                        if let Some(m) = updated {
-                            cell.commit_attrs(m);
-                        }
-                    }
-                    // `fail` inside TWEAK yields a Failure `.new` returns, not an
-                    // error (Raku: the Failure only throws when the object is used).
-                    Err(err) if err.is_fail() => {
-                        return Ok(Err(self.fail_error_to_failure_value(&err)));
-                    }
-                    Err(err) => return Err(err),
-                }
-            }
-            // Call the class's TWEAK if it has one that wasn't already handled
-            // by ordered_role_submethods_for_class. Same logic as BUILD above.
-            let has_non_submethod_tweak = self
-                .registry()
-                .classes
-                .get(mro_class)
-                .and_then(|def| def.methods.get("TWEAK"))
-                .map(|overloads| {
-                    overloads
-                        .iter()
-                        .any(|md| md.role_origin.is_none() || !md.is_my)
-                })
-                .unwrap_or(false);
-            if has_non_submethod_tweak {
-                if refresh_probe {
-                    probe_attrs = cell.to_map();
-                }
-                match self.run_instance_method_celled(
-                    mro_class,
-                    &probe_attrs,
-                    "TWEAK",
-                    tweak_args.to_vec(),
-                    Some(inv.clone()),
-                ) {
-                    Ok((_v, updated)) => {
-                        if let Some(m) = updated {
-                            cell.commit_attrs(m);
-                        }
-                    }
-                    Err(err) if err.is_fail() => {
-                        return Ok(Err(self.fail_error_to_failure_value(&err)));
-                    }
-                    Err(err) => return Err(err),
-                }
-            }
-        }
-        Ok(Ok(()))
+        // `fail` inside TWEAK yields a Failure `.new` returns, not an error
+        // (Raku: the Failure only throws when the object is used).
+        self.run_construction_phase_steps(
+            class_name,
+            inv,
+            tweak_args,
+            "TWEAK",
+            super::ctor_phase_plan::PhaseFail::TweakFailure,
+            super::ctor_phase_plan::PhaseFail::TweakFailure,
+        )
     }
 
     /// Run the BUILD phase of construction: invoke every BUILD submethod (own and
@@ -824,124 +612,16 @@ impl Interpreter {
         inv: &Value,
         build_args: &[Value],
     ) -> Result<Result<(), Value>, RuntimeError> {
-        let Some(cell) = Self::self_instance_attrs(inv) else {
-            return Ok(Ok(()));
-        };
-        let mut probe_attrs = cell.to_map();
-        let refresh_probe = probe_attrs
-            .keys()
-            .any(|k| k.starts_with("__mutsu_attr_alias::"));
-        let cn = class_name.resolve();
-        let mro = self.class_mro(&cn);
-        let class_lang_rev = self
-            .type_metadata
-            .get(&cn)
-            .and_then(|m| m.get("language-revision"))
-            .map(|v| v.to_string_value())
-            .unwrap_or_else(|| {
-                let version = crate::parser::current_language_version();
-                if let Some(rest) = version.strip_prefix("6.") {
-                    rest.chars().next().unwrap_or('c').to_string()
-                } else {
-                    "c".to_string()
-                }
-            });
-        let class_is_6e = class_lang_rev != "c";
-        for mro_class in mro.iter().rev().map(|s| s.as_str()) {
-            if mro_class == "Any" || mro_class == "Mu" {
-                continue;
-            }
-            if self.registry().roles.contains_key(mro_class)
-                && !self.registry().classes.contains_key(mro_class)
-            {
-                continue;
-            }
-            let class_has_own_build = self
-                .registry()
-                .classes
-                .get(mro_class)
-                .and_then(|def| def.methods.get("BUILD"))
-                .map(|overloads| overloads.iter().any(|md| md.role_origin.is_none()))
-                .unwrap_or(false);
-            let role_order = self.ordered_role_submethods_for_class(mro_class, "BUILD");
-            for (role_name, method_def) in role_order {
-                let role_base = role_name
-                    .split_once('[')
-                    .map(|(b, _)| b)
-                    .unwrap_or(&role_name);
-                let role_lang_rev = self
-                    .type_metadata
-                    .get(role_base)
-                    .and_then(|m| m.get("language-revision"))
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_else(|| "c".to_string());
-                if !class_is_6e && class_has_own_build && role_lang_rev == "c" {
-                    continue;
-                }
-                if refresh_probe {
-                    probe_attrs = cell.to_map();
-                }
-                let (_v, updated) = self.run_resolved_method_celled(
-                    &cn,
-                    &role_name,
-                    "BUILD",
-                    method_def,
-                    &probe_attrs,
-                    build_args.to_vec(),
-                    Some(inv.clone()),
-                )?;
-                if let Some(m) = updated {
-                    cell.commit_attrs(m);
-                }
-            }
-            let has_non_submethod_build = self
-                .registry()
-                .classes
-                .get(mro_class)
-                .and_then(|def| def.methods.get("BUILD"))
-                .map(|overloads| {
-                    overloads
-                        .iter()
-                        .any(|md| md.role_origin.is_none() || !md.is_my)
-                })
-                .unwrap_or(false);
-            if has_non_submethod_build {
-                if refresh_probe {
-                    probe_attrs = cell.to_map();
-                }
-                match self.run_instance_method_celled(
-                    mro_class,
-                    &probe_attrs,
-                    "BUILD",
-                    build_args.to_vec(),
-                    Some(inv.clone()),
-                ) {
-                    Ok((_v, updated)) => {
-                        if let Some(m) = updated {
-                            cell.commit_attrs(m);
-                        }
-                    }
-                    Err(err) if err.is_fail() => {
-                        // `fail` inside BUILD yields a Failure, not an error.
-                        let ex = if let Some(exception) = err.exception {
-                            *exception
-                        } else {
-                            let mut ex_attrs = HashMap::new();
-                            ex_attrs.insert("message".to_string(), Value::str(err.message));
-                            Value::make_instance(Symbol::intern("X::AdHoc"), ex_attrs)
-                        };
-                        let mut failure_attrs = HashMap::new();
-                        failure_attrs.insert("exception".to_string(), ex);
-                        return Ok(Err(Value::make_instance(
-                            Symbol::intern("Failure"),
-                            failure_attrs,
-                        )));
-                    }
-                    Err(err) => return Err(err),
-                }
-            }
-        }
-        Ok(Ok(()))
+        // Historical asymmetry preserved: a role-submethod `fail` propagates as
+        // an error, a class-step `fail` becomes the returned `Failure`.
+        self.run_construction_phase_steps(
+            class_name,
+            inv,
+            build_args,
+            "BUILD",
+            super::ctor_phase_plan::PhaseFail::Propagate,
+            super::ctor_phase_plan::PhaseFail::BuildFailure,
+        )
     }
 
     /// Dispatch Enum .new — should throw X::Constructor::BadType.
