@@ -645,12 +645,18 @@ impl Interpreter {
             }
             Ok(v) => {
                 // A defined Match/Cursor return advances the parse by its extent.
-                if let ValueView::Instance { attributes, .. } = v.view()
-                    && let Some(to) = attributes
-                        .as_map()
-                        .get("to")
-                        .and_then(|t| t.as_int())
-                        .filter(|&t| t >= 0)
+                // (Match goes through the seam; a non-Match cursor-like instance
+                // with a `to` attribute also counts.)
+                if let Some(to) = v
+                    .match_to()
+                    .or_else(|| {
+                        if let ValueView::Instance { attributes, .. } = v.view() {
+                            attributes.as_map().get("to").and_then(|t| t.as_int())
+                        } else {
+                            None
+                        }
+                    })
+                    .filter(|&t| t >= 0)
                 {
                     let end = pos + to as usize;
                     if end <= chars.len() {

@@ -2,17 +2,18 @@ use super::*;
 
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
-        let match_equals_pair_array =
-            |attrs: &crate::gc::Gc<InstanceAttrs>, arr: &crate::gc::Gc<ArrayData>| {
-                if arr.len() != 2 {
-                    return false;
-                }
-                let map = attrs.as_map();
-                let (Some(from), Some(matched)) = (map.get("from"), map.get("str")) else {
-                    return false;
-                };
-                arr[0] == *from && arr[1] == *matched
+        let match_equals_pair_array = |m: &Value, arr: &Value| {
+            let Some(items) = arr.as_list_items() else {
+                return false;
             };
+            if items.len() != 2 {
+                return false;
+            }
+            let (Some(from), Some(matched)) = (m.match_from(), m.match_str_value()) else {
+                return false;
+            };
+            items[0] == Value::int(from) && items[1] == matched
+        };
         match (self.view(), other.view()) {
             (ValueView::Int(a), ValueView::Int(b)) => a == b,
             (ValueView::BigInt(a), ValueView::BigInt(b)) => *a == *b,
@@ -217,22 +218,16 @@ impl PartialEq for Value {
                     ..
                 },
             ) => a == b && *aa == *ba,
-            (
-                ValueView::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                },
-                ValueView::Array(items, ..),
-            ) if class_name == "Match" => match_equals_pair_array(&attributes, &items),
-            (
-                ValueView::Array(items, ..),
-                ValueView::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                },
-            ) if class_name == "Match" => match_equals_pair_array(&attributes, &items),
+            (ValueView::Instance { class_name, .. }, ValueView::Array(..))
+                if class_name == "Match" =>
+            {
+                match_equals_pair_array(self, other)
+            }
+            (ValueView::Array(..), ValueView::Instance { class_name, .. })
+                if class_name == "Match" =>
+            {
+                match_equals_pair_array(other, self)
+            }
             (
                 ValueView::Junction {
                     kind: ak,

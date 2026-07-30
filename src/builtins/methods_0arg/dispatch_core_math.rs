@@ -146,9 +146,8 @@ pub(super) fn cool_instance_numeric(target: &Value) -> Option<f64> {
     };
     match class_name.resolve().as_str() {
         "IO::Path" => target.to_string_value().trim().parse::<f64>().ok(),
-        "Match" => attributes
-            .as_map()
-            .get("str")
+        "Match" => target
+            .match_str_value()
             .and_then(|v| v.to_string_value().trim().parse::<f64>().ok()),
         "StrDistance" => {
             let before = attributes

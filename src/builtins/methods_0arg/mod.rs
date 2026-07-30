@@ -1761,18 +1761,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     {
         match method {
             "from" => {
-                return Some(Ok(attributes
-                    .as_map()
-                    .get("from")
-                    .cloned()
-                    .unwrap_or(Value::int(0))));
+                return Some(Ok(Value::int(target.match_from().unwrap_or(0))));
             }
             "to" | "pos" => {
-                return Some(Ok(attributes
-                    .as_map()
-                    .get("to")
-                    .cloned()
-                    .unwrap_or(Value::int(0))));
+                return Some(Ok(Value::int(target.match_to().unwrap_or(0))));
             }
             "gist" => {
                 // Full Match gist: corner-quoted text plus positional/named
@@ -1781,28 +1773,20 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 return Some(Ok(Value::str(gist)));
             }
             "Str" => {
-                return Some(Ok(attributes
-                    .as_map()
-                    .get("str")
-                    .cloned()
-                    .unwrap_or(Value::str(String::new()))));
+                return Some(Ok(target
+                    .match_str_value()
+                    .unwrap_or_else(|| Value::str(String::new()))));
             }
             "Bool" => {
                 // A failed `.subparse` Match is falsy; every other Match is truthy.
-                let ok = !attributes
-                    .as_map()
-                    .get("__failed_match__")
-                    .is_some_and(|v| v.truthy());
-                return Some(Ok(Value::truth(ok)));
+                return Some(Ok(Value::truth(!target.match_is_failed())));
             }
             "orig" | "target" => {
                 // `.target` is the original string the match ran against; for an
                 // ordinary Match it is identical to `.orig`.
-                return Some(Ok(attributes
-                    .as_map()
-                    .get("orig")
-                    .cloned()
-                    .unwrap_or(Value::str(String::new()))));
+                return Some(Ok(target
+                    .match_orig()
+                    .unwrap_or_else(|| Value::str(String::new()))));
             }
             "raku" | "perl" => {
                 return Some(Ok(Value::str(match_helpers::match_raku_repr(
@@ -1810,17 +1794,13 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 ))));
             }
             "list" | "Array" => {
-                return Some(Ok(attributes
-                    .as_map()
-                    .get("list")
-                    .cloned()
+                return Some(Ok(target
+                    .match_list()
                     .unwrap_or_else(|| Value::array(Vec::new()))));
             }
             "hash" | "Hash" => {
-                return Some(Ok(attributes
-                    .as_map()
-                    .get("named")
-                    .cloned()
+                return Some(Ok(target
+                    .match_named()
                     .unwrap_or_else(|| Value::hash(HashMap::new()))));
             }
             "keys" => {
@@ -1927,19 +1907,12 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 return Some(Ok(Value::int(count as i64)));
             }
             "ast" | "made" => {
-                return Some(Ok(attributes
-                    .as_map()
-                    .get("ast")
-                    .cloned()
-                    .unwrap_or(Value::NIL)));
+                return Some(Ok(target.match_ast().unwrap_or(Value::NIL)));
             }
             "prematch" => {
-                if let Some(orig_val) = attributes.as_map().get("orig") {
+                if let Some(orig_val) = target.match_orig() {
                     let orig = orig_val.to_string_value();
-                    let from = match attributes.as_map().get("from").map(Value::view) {
-                        Some(ValueView::Int(n)) => n as usize,
-                        _ => 0,
-                    };
+                    let from = target.match_from().unwrap_or(0).max(0) as usize;
                     let chars: Vec<char> = orig.chars().collect();
                     let pre: String = chars[..from.min(chars.len())].iter().collect();
                     return Some(Ok(Value::str(pre)));
@@ -1947,12 +1920,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 return Some(Ok(Value::str(String::new())));
             }
             "postmatch" => {
-                if let Some(orig_val) = attributes.as_map().get("orig") {
+                if let Some(orig_val) = target.match_orig() {
                     let orig = orig_val.to_string_value();
-                    let to = match attributes.as_map().get("to").map(Value::view) {
-                        Some(ValueView::Int(n)) => n as usize,
-                        _ => 0,
-                    };
+                    let to = target.match_to().unwrap_or(0).max(0) as usize;
                     let chars: Vec<char> = orig.chars().collect();
                     let post: String = chars[to.min(chars.len())..].iter().collect();
                     return Some(Ok(Value::str(post)));
