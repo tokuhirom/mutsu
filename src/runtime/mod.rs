@@ -1169,6 +1169,13 @@ pub struct Interpreter {
     /// parent's *current* bindings). Only populated while
     /// `shared_vars_active`; empty (zero-cost) for single-threaded programs.
     pub(crate) thread_redeclared_vars: std::collections::HashSet<String>,
+    /// Union of every executed `CompiledCode::type_body_written_lexicals`:
+    /// lexicals written by a registered class/role method body. These keep the
+    /// name-keyed `shared_vars` lane even when a spawned block also captures
+    /// them — the capture analysis cannot see such a write (PLAN.md §6).
+    /// Populated at `RegisterClass` / `RegisterRole`, which always run before
+    /// the type can be instantiated.
+    pub(crate) type_body_written_lexicals: std::collections::HashSet<String>,
     /// Per-closure-instance captured-variable state, keyed by
     /// (closure instance id, captured variable Symbol). This is the hot
     /// closure-call persistence store (loaded/saved on every closure call for

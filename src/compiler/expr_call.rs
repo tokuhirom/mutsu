@@ -1355,6 +1355,9 @@ impl Compiler {
                 // shared `ContainerRef` cells (escape analysis). Compile its
                 // args in an escaping position.
                 let escaping_args = name.resolve() == "start";
+                // `start` hands its block to a thread — a strictly narrower
+                // signal than `escaping_args`, see CompiledCode::thread_escaping.
+                let thread_escaping = escaping_args;
                 // Literal named args (`:key(val)` / `key => val` with a
                 // compile-time-known key) travel out-of-band: only the VALUE
                 // is compiled, and (position, key) goes into a NamedArgsSpec,
@@ -1382,11 +1385,15 @@ impl Compiler {
                         // in with_escape + with_suppress_pair_capture, under
                         // which the FatArrow compile is `left; right; MakePair`
                         // — so the value side is a plain compile_expr.
-                        self.with_escape(escaping_args, |s| {
-                            s.with_suppress_pair_capture(true, |s| s.compile_expr(right))
+                        self.with_thread_escape(thread_escaping, |s| {
+                            s.with_escape(escaping_args, |s| {
+                                s.with_suppress_pair_capture(true, |s| s.compile_expr(right))
+                            })
                         });
                     } else {
-                        self.compile_call_arg_with_escape(arg, escaping_args);
+                        self.with_thread_escape(thread_escaping, |s| {
+                            s.compile_call_arg_with_escape(arg, escaping_args)
+                        });
                     }
                 }
                 let name_idx = self.code.add_constant(Value::str(name.resolve()));

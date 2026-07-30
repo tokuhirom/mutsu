@@ -1,11 +1,104 @@
 use super::*;
 
 impl Interpreter {
+    /// The scalar lexicals a spawned block captures itself, as bare env keys.
+    ///
+    /// These are exactly the names the closure machinery already owns per
+    /// binding, so `clone_for_thread_for_block` keeps them out of the
+    /// name-keyed `shared_vars` lane (PLAN.md §6). A name the block does NOT
+    /// capture is invisible to that analysis — a `submethod DESTROY`, a
+    /// `closing => {...}` handler, or any other separately-registered routine
+    /// that closes over an outer lexical and runs on the worker — so it keeps
+    /// using the name lane.
+    fn block_captured_scalars(&self, block: &Value) -> std::collections::HashSet<String> {
+        let mut out = std::collections::HashSet::new();
+        if let ValueView::Sub(data) = block.view()
+            && let Some(cc) = data.compiled_code.as_ref()
+        {
+            for sym in &cc.free_var_syms {
+                let name = sym.resolve();
+                if name.starts_with('@') || name.starts_with('%') || name.starts_with('&') {
+                    continue;
+                }
+                let bare = name.trim_start_matches('$');
+                // A name a registered class/role method writes keeps the name
+                // lane: that write is invisible to the capture analysis, so the
+                // closure machinery does NOT own the name after all. Applies
+                // whether or not the local got a cell — roast
+                // S12-construction/roles-6e.t's `$order` holds a List, a shape
+                // `box_captured_lexicals` declines to box at all.
+                if self.type_body_written_lexicals.contains(bare) {
+                    continue;
+                }
+                // Only a genuinely PLAIN scalar is owned per binding by the
+                // closure machinery — either boxed into a shared cell by
+                // `box_captured_lexicals` or correctly frozen by value. An
+                // ALLOW-list, deliberately: everything else (a Channel, a
+                // Promise, a Lock, an Array/List/Hash, a Sub, a type object, ...)
+                // is a shape `box_captured_lexicals` declines to box, so the name
+                // lane is still the only thing keeping the parent and the worker
+                // on ONE object. Dropping it for those hangs
+                // `my $c = Channel.new; start { $c.send(42) }; $c.receive`
+                // (pin: t/concurrency-threading.t test 4).
+                let plain = self
+                    .env
+                    .get(bare)
+                    .or_else(|| self.env.get(&name))
+                    .is_some_and(|v| {
+                        matches!(
+                            v.view(),
+                            ValueView::Int(_)
+                                | ValueView::BigInt(_)
+                                | ValueView::Num(_)
+                                | ValueView::Str(_)
+                                | ValueView::Bool(_)
+                                | ValueView::Rat(..)
+                                | ValueView::FatRat(..)
+                                | ValueView::BigRat(..)
+                                | ValueView::Complex(..)
+                                | ValueView::ContainerRef(_)
+                        )
+                    });
+                if !plain {
+                    continue;
+                }
+                out.insert(bare.to_string());
+            }
+        }
+        out
+    }
+
+    /// Union a frame's `type_body_written_lexicals` into the interpreter-wide
+    /// set. Called at `RegisterClass` / `RegisterRole`, which always run before
+    /// the type can be instantiated (and so before any of its methods can run).
+    pub(crate) fn note_type_body_written_lexicals(&mut self, code: &CompiledCode) {
+        for sym in &code.type_body_written_lexicals {
+            let name = sym.resolve();
+            self.type_body_written_lexicals
+                .insert(name.trim_start_matches('$').to_string());
+        }
+    }
+
+    /// [`clone_for_thread`] for a spawn that runs a known block (`start { ... }`,
+    /// `Promise.start`, `Thread.start`): the block's own captured scalars are
+    /// excluded from the name-keyed shared store. See `block_captured_scalars`.
+    pub(crate) fn clone_for_thread_for_block(&mut self, block: &Value) -> Self {
+        let captured = self.block_captured_scalars(block);
+        self.clone_for_thread_excluding(&captured)
+    }
+
     /// Create a lightweight clone of this interpreter for use in a spawned thread.
     /// Shares function/class/role/enum definitions but starts with fresh output and test state.
     /// Array (`@`) and scalar (`$`) variables are shared between parent and child via `shared_vars`
     /// so that mutations are visible across threads.
     pub(crate) fn clone_for_thread(&mut self) -> Self {
+        self.clone_for_thread_excluding(&std::collections::HashSet::new())
+    }
+
+    fn clone_for_thread_excluding(
+        &mut self,
+        captured_scalars: &std::collections::HashSet<String>,
+    ) -> Self {
         // Collapse a scoped (multi-tier overlay) env to a flat one first: the
         // shared-var seeding and the child's env clone below iterate the env
         // overlay-only, which would miss parent-chain lexicals on a scoped env.
@@ -42,12 +135,33 @@ impl Interpreter {
                 {
                     continue;
                 }
+                let key = key.resolve();
+                // A scalar the spawned block captures itself is NOT shared by
+                // name. `start` compiles its block as escaping
+                // (`compiler/expr_call.rs`), so the closure machinery already
+                // gives such a scalar a per-binding home: a shared
+                // `ContainerRef` cell from `box_captured_lexicals` when it is
+                // mutated, a frozen value when it is read-only. The store is
+                // keyed by the BARE NAME, so it cannot represent two
+                // concurrently-live bindings of the same name — exactly what a
+                // recursive frame chain is (`sub f($n) { start { ... f($n-1)
+                // ... } }`). Seeding those names here ran a second, lossy
+                // mechanism in parallel with the working one and silently
+                // overwrote its correct answer (PLAN.md §6).
+                // `@`/`%` aggregates always keep this lane: their
+                // `__mutsu_atomic_*` CAS copies are keyed off these entries.
+                if !captured_scalars.is_empty()
+                    && !key.starts_with('@')
+                    && !key.starts_with('%')
+                    && captured_scalars.contains(key.trim_start_matches('$'))
+                {
+                    continue;
+                }
                 // Only seed if not already visible — an entry an earlier thread
                 // already updated must not be reset to this env's copy.
                 // EXCEPT names this thread re-declared: their entry (if any)
                 // belongs to the shadowed outer binding, so bind the current one
                 // into this lineage, shadowing the ancestor's.
-                let key = key.resolve();
                 if self.thread_redeclared_vars.contains(&key) {
                     shared.declare(&key, val.clone());
                 } else {
@@ -74,8 +188,19 @@ impl Interpreter {
         // name the parent re-declared since an earlier spawn (its current
         // value was force-seeded above). From this spawn on, writes to those
         // names must flow both ways again, so drop the parent-side masks.
-        // (The child's own mask starts empty via the struct literal below.)
-        self.thread_redeclared_vars.clear();
+        //
+        // EXCEPT the names excluded from seeding above: their premise ("its
+        // current value was force-seeded") does not hold, so the mask must
+        // survive. The store can hold a STALE entry under such a name — the
+        // blanket `sync_env_from_locals` mirror writes a frame's declared-but-
+        // not-yet-initialized slots (Nil) into the store, and the re-declaration
+        // mask then blocks the post-assignment refresh. The old force-seed
+        // repaired that bomb at every spawn; without it, dropping the mask lets
+        // the next `await`'s `sync_shared_vars_to_env` pull the stale Nil back
+        // over the live binding (`$port` in roast S17-promise/
+        // nonblocking-await.t's socket server went Nil → connect to port 0).
+        self.thread_redeclared_vars
+            .retain(|n| captured_scalars.contains(n.trim_start_matches('$')));
         let mut referenced_handle_ids = std::collections::HashSet::new();
         for value in self.env.values() {
             if let Some(id) = Self::handle_id_from_value(value) {
@@ -273,7 +398,15 @@ impl Interpreter {
             escaping_our_lexical_names: self.escaping_our_lexical_names.clone(),
             escaped_our_sub_names: self.escaped_our_sub_names.clone(),
             state_vars: HashMap::new(),
-            thread_redeclared_vars: std::collections::HashSet::new(),
+            // The spawned block's own captured scalars were NOT seeded into the
+            // store (the closure machinery owns them per binding), so the child
+            // must treat them exactly like re-declared names: reads and writes
+            // stay env-local, and a stale same-named ancestor entry must not be
+            // pulled over the captured copy at a sync point.
+            thread_redeclared_vars: captured_scalars.clone(),
+            // A worker can instantiate a type registered on the parent, so the
+            // set of method-written lexicals travels with the clone.
+            type_body_written_lexicals: self.type_body_written_lexicals.clone(),
             // Mirror state_vars: a thread clone starts with no persisted
             // closure captured state (falls back to the captured-env initial
             // values), exactly as before this store existed.

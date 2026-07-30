@@ -1949,6 +1949,24 @@ pub(crate) struct CompiledCode {
     /// call args / control blocks) non-boxed, avoiding the broad-boxing
     /// perf/correctness regression (see #2749).
     pub(crate) needs_cell_locals: Vec<Symbol>,
+    /// Frame lexicals that a `class`/`role` body's methods WRITE. A method is
+    /// installed by `RegisterClass`/`RegisterRole` and is invoked with no
+    /// closure-creation op, so the capture analysis behind
+    /// `box_captured_lexicals` never sees these writes. Such a name therefore
+    /// keeps the name-keyed `shared_vars` lane that `clone_for_thread_for_block`
+    /// otherwise retires for a block's own captures (PLAN.md §6): it is the only
+    /// mechanism that carries a `submethod DESTROY { $a++ }` write on a worker
+    /// back to the parent. Populated by `record_type_body_captures`.
+    pub(crate) type_body_written_lexicals: Vec<Symbol>,
+    /// True when this closure was compiled in a position that hands it to a
+    /// THREAD (`start { ... }`, `Thread.start`, `Promise.start`). A plain
+    /// escaping position (stored/returned) is not enough: this gates boxing a
+    /// type-constrained scalar into a shared cell, which is required for the
+    /// parent to observe a worker's write (the name-keyed `shared_vars` lane
+    /// no longer carries a spawned block's own captured scalars, PLAN.md §6)
+    /// but must NOT happen for a same-frame closure, because `cas` resolves its
+    /// target BY NAME and is not cell-aware (roast S17-lowlevel/cas.t).
+    pub(crate) thread_escaping: bool,
     /// The subset of this code's own `free_var_syms` whose captured value is
     /// **authoritative**: the CREATING frame declares them as plain lexicals and
     /// provably never mutates them after this closure captured them, so the
@@ -2198,6 +2216,8 @@ impl CompiledCode {
             needs_cell_escaping_our_sub_free: Vec::new(),
             captured_mutated_locals: Vec::new(),
             needs_cell_locals: Vec::new(),
+            type_body_written_lexicals: Vec::new(),
+            thread_escaping: false,
             authoritative_free_vars: Vec::new(),
             self_capture_decl_locals: Vec::new(),
             outer_code_var_names: std::collections::HashSet::new(),
@@ -3510,6 +3530,21 @@ impl CompiledCode {
             .filter(|sym| self.needs_cell_locals.contains(sym))
             .collect();
         self.needs_cell_free_vars = needs_cell_free.into_iter().collect();
+        // Thread-escape is transitive through enclosing closures: a nested
+        // `start { $c = ... }` inside `.map({ ... })` reaches the outer `$c`
+        // only via this frame's capture, so the boxing decision at the OUTER
+        // creation site (which consults `cc.thread_escaping` to relax the
+        // typed-scalar skip) must see the nested thread hand-off. The cell
+        // requirement itself already bubbles via `needs_cell_free_vars`; this
+        // carries the thread bit alongside it.
+        if !self.thread_escaping
+            && self
+                .closure_compiled_codes
+                .iter()
+                .any(|nested| nested.thread_escaping)
+        {
+            self.thread_escaping = true;
+        }
         // Tell each closure we embed which of ITS free variables we (the creating
         // frame) vouch for: a plain lexical we declare and never mutate after the
         // capture op runs. Only such a capture can be installed with overwrite

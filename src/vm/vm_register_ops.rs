@@ -650,12 +650,29 @@ impl Interpreter {
                 // it, so the ContainerRef write-through bypasses no real check.
                 // Box `my Mu $s` so captured-outer thunks (metaop `Xxx`/`Zand`)
                 // share its cell and stay coherent without the blanket reconcile.
-                let mut tc = loan_env!(self, var_type_constraint(&s));
-                if tc.is_none() {
-                    tc = loan_env!(self, var_type_constraint(s.trim_start_matches('$')));
-                }
-                if matches!(tc.as_deref(), Some(t) if t != "Mu") {
-                    continue;
+                // EXCEPTION: a closure handed to a THREAD boxes constrained
+                // scalars too. Boxing is safe for the constraint itself — the
+                // check runs at the assignment op, which looks the constraint up
+                // BY NAME in `var_type_constraints` (cloned into a spawned
+                // thread) before any write-through, and the loop path (A) has
+                // always boxed constrained scalars. But a cell breaks `cas`,
+                // which resolves its target by name (roast S17-lowlevel/cas.t
+                // does `cas` on a `my LittleNodey $head` captured by a
+                // same-frame `throws-like` block), so the relaxation is gated on
+                // `thread_escaping`, not applied to every escaping closure.
+                // For a thread the cell is required: without it the parent could
+                // only observe a worker's write through the name-keyed
+                // `shared_vars` lane, which no longer carries a spawned block's
+                // own captured scalars (PLAN.md §6).
+                // Pin: t/thread-shared-scalar-visibility.t.
+                if !cc.thread_escaping {
+                    let mut tc = loan_env!(self, var_type_constraint(&s));
+                    if tc.is_none() {
+                        tc = loan_env!(self, var_type_constraint(s.trim_start_matches('$')));
+                    }
+                    if matches!(tc.as_deref(), Some(t) if t != "Mu") {
+                        continue;
+                    }
                 }
             }
             let Some(idx) = baked_idx else {
@@ -698,6 +715,14 @@ impl Interpreter {
             // `set_shared_var` only updates entries that already exist, so this
             // is a no-op when the name was never snapshotted.
             if self.shared_vars_active {
+                // The cell now OWNS this binding, which is exactly what the
+                // re-declaration mask was standing in for, so the mask must not
+                // block the replacement below: leaving the stale plain snapshot
+                // in place lets `sync_shared_vars_to_env` write it back over the
+                // cell after the next await and disconnect the parent.
+                self.thread_redeclared_vars.remove(&s);
+                self.thread_redeclared_vars
+                    .remove(s.trim_start_matches('$'));
                 loan_env!(self, set_shared_var(&s, container.clone()));
             }
         }
