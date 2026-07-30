@@ -354,7 +354,7 @@ impl Interpreter {
                     best.named_subcaps
                         .entry(spec.lookup_name.clone())
                         .or_default()
-                        .push(std::sync::Arc::new(subcap));
+                        .push(std::sync::Arc::new(subcap.into_cap_node()));
                 }
                 return Some(best);
             }

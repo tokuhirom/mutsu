@@ -267,7 +267,7 @@ impl Interpreter {
                     new_caps.positional.push(captured);
                     new_caps
                         .positional_subcaps
-                        .push(Some(std::sync::Arc::new(subcap)));
+                        .push(Some(std::sync::Arc::new(subcap.into_cap_node())));
                     new_caps.positional_quantified.push(None);
                     return Some((end, new_caps));
                 }
@@ -652,7 +652,7 @@ impl Interpreter {
                     .as_deref()
                     .or_else(|| (!spec.silent).then_some(spec.lookup_name.as_str()));
                 if let Some(capture_name) = capture_name {
-                    let subcap = RegexCaptures {
+                    let subcap = CapNode {
                         matched: captured.clone(),
                         from: pos,
                         to: end,
@@ -677,7 +677,7 @@ impl Interpreter {
                         new_caps
                             .capture_alias_map
                             .insert(capture_name.to_string(), spec.lookup_name.clone());
-                        let subcap2 = RegexCaptures {
+                        let subcap2 = CapNode {
                             matched: captured.clone(),
                             from: pos,
                             to: end,
@@ -725,7 +725,7 @@ impl Interpreter {
                     .as_deref()
                     .or_else(|| (!spec.silent).then_some(spec.lookup_name.as_str()));
                 if let Some(capture_name) = capture_name {
-                    let subcap = RegexCaptures {
+                    let subcap = CapNode {
                         matched: captured.clone(),
                         from: pos,
                         to: end,

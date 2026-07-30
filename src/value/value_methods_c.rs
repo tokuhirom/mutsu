@@ -9,8 +9,8 @@ impl Value {
         to: i64,
         positional: &[String],
         named: &HashMap<String, Vec<String>>,
-        named_subcaps: &HashMap<String, Vec<std::sync::Arc<crate::runtime::RegexCaptures>>>,
-        positional_subcaps: &[Option<std::sync::Arc<crate::runtime::RegexCaptures>>],
+        named_subcaps: &HashMap<String, Vec<std::sync::Arc<crate::runtime::CapNode>>>,
+        positional_subcaps: &[Option<std::sync::Arc<crate::runtime::CapNode>>],
         positional_quantified: &[Option<Vec<crate::runtime::QuantifiedCaptureEntry>>],
         positional_nil: &[bool],
         orig: Option<&str>,
@@ -38,8 +38,8 @@ impl Value {
         to: i64,
         positional: &[String],
         named: &HashMap<String, Vec<String>>,
-        named_subcaps: &HashMap<String, Vec<std::sync::Arc<crate::runtime::RegexCaptures>>>,
-        positional_subcaps: &[Option<std::sync::Arc<crate::runtime::RegexCaptures>>],
+        named_subcaps: &HashMap<String, Vec<std::sync::Arc<crate::runtime::CapNode>>>,
+        positional_subcaps: &[Option<std::sync::Arc<crate::runtime::CapNode>>],
         positional_quantified: &[Option<Vec<crate::runtime::QuantifiedCaptureEntry>>],
         positional_nil: &[bool],
         orig: Option<&str>,
@@ -89,23 +89,21 @@ impl Value {
             Value::make_instance(Symbol::intern("Match"), attrs)
         }
 
-        /// Build a Match object from a RegexCaptures, recursively handling subcaptures.
-        fn make_subcap_match(
-            caps: &crate::runtime::RegexCaptures,
-            orig_ctx: Option<OrigCtx>,
-        ) -> Value {
+        /// Build a Match object from a stored CapNode, recursively handling subcaptures.
+        fn make_subcap_match(caps: &crate::runtime::CapNode, orig_ctx: Option<OrigCtx>) -> Value {
             let search_start = caps.from;
-            let pos_vals: Vec<Value> = caps
+            let kids = caps.kids();
+            let pos_vals: Vec<Value> = kids
                 .positional
                 .iter()
                 .enumerate()
                 .map(|(i, s)| {
                     // An unmatched optional capture (`(x)?` zero match) renders as Nil.
-                    if caps.positional_nil.get(i) == Some(&true) {
+                    if kids.positional_nil.get(i) == Some(&true) {
                         return Value::Nil;
                     }
                     // Check if this positional entry is a quantified list
-                    if let Some(Some(qlist)) = caps.positional_quantified.get(i) {
+                    if let Some(Some(qlist)) = kids.positional_quantified.get(i) {
                         let arr: Vec<Value> = qlist
                             .iter()
                             .map(|(text, from, to, subcap)| {
@@ -130,15 +128,15 @@ impl Value {
                         return Value::array(arr);
                     }
                     // Recursively build nested Match objects for positional subcaptures
-                    if let Some(Some(subcap)) = caps.positional_subcaps.get(i) {
+                    if let Some(Some(subcap)) = kids.positional_subcaps.get(i) {
                         return make_subcap_match(subcap, orig_ctx);
                     }
                     make_capture_match(s, orig_ctx, search_start)
                 })
                 .collect();
             let mut sub_named: HashMap<String, Value> = HashMap::new();
-            for (key, values) in &caps.named {
-                let subcaps_for_key = caps.named_subcaps.get(key);
+            for (key, values) in &kids.named {
+                let subcaps_for_key = kids.named_subcaps.get(key);
                 let vals: Vec<Value> = values
                     .iter()
                     .enumerate()
@@ -151,14 +149,14 @@ impl Value {
                         make_capture_match(s, orig_ctx, search_start)
                     })
                     .collect();
-                if vals.len() == 1 && !caps.named_quantified.contains(key) {
+                if vals.len() == 1 && !kids.named_quantified.contains(key) {
                     sub_named.insert(key.clone(), vals[0].clone());
                 } else {
                     sub_named.insert(key.clone(), Value::real_array(vals));
                 }
             }
             // For quantified named captures that matched zero times, insert empty arrays
-            for qname in &caps.named_quantified {
+            for qname in &kids.named_quantified {
                 sub_named
                     .entry(qname.clone())
                     .or_insert_with(|| Value::real_array(Vec::new()));
@@ -169,7 +167,7 @@ impl Value {
             // build them into a `silent_caps` array for the grammar action walk.
             // Each subcap's `action_name` carries the rule name to dispatch on.
             let mut silent_caps_vals: Vec<Value> = Vec::new();
-            for (key, scs) in &caps.named_subcaps {
+            for (key, scs) in &kids.named_subcaps {
                 if key.starts_with(crate::runtime::SILENT_ACTION_MARKER_PREFIX) {
                     for sc in scs {
                         silent_caps_vals.push(make_subcap_match(sc, orig_ctx));
@@ -206,16 +204,16 @@ impl Value {
             // reduce. The action walk re-installs them around this node's action
             // so a per-match dynamic variable is not read as the last match's
             // value (see `Interpreter::reduce_regex_captures_made_for_rule`).
-            if !caps.regex_vars.is_empty() {
-                let vars: HashMap<String, Value> = caps
+            if !kids.regex_vars.is_empty() {
+                let vars: HashMap<String, Value> = kids
                     .regex_vars
                     .iter()
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect();
                 attrs.insert("reduce_time_vars".to_string(), Value::hash(vars));
             }
-            if !caps.capture_alias_map.is_empty() {
-                let alias_hash: HashMap<String, Value> = caps
+            if !kids.capture_alias_map.is_empty() {
+                let alias_hash: HashMap<String, Value> = kids
                     .capture_alias_map
                     .iter()
                     .map(|(k, v)| (k.clone(), Value::str(v.clone())))

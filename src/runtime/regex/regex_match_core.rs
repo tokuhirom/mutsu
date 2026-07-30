@@ -240,7 +240,7 @@ impl Interpreter {
         // captures (named subrules etc.) so e.g. `$<family>=(<ident>)` keeps
         // `$<family><ident>` accessible — otherwise truncating the group's
         // positional entry would discard its nested subcapture.
-        let mut group_subcap: Option<std::sync::Arc<RegexCaptures>> = None;
+        let mut group_subcap: Option<std::sync::Arc<CapNode>> = None;
         if matches!(token.atom, RegexAtom::CaptureGroup(_))
             && store.caps().positional.len() > pos_base
         {
@@ -299,17 +299,15 @@ impl Interpreter {
                 let gsm = std::sync::Arc::make_mut(&mut gs);
                 gsm.from = from;
                 gsm.to = to;
-                gsm.match_from = from;
                 gsm.matched = captured.clone();
                 gs
             } else if let Some(sc) = subrule_subcap {
                 sc
             } else {
-                std::sync::Arc::new(RegexCaptures {
+                std::sync::Arc::new(CapNode {
                     from,
                     to,
                     matched: captured.clone(),
-                    match_from: from,
                     ..Default::default()
                 })
             };
@@ -347,7 +345,7 @@ impl Interpreter {
             let inner_positionals = if subcap_idx < caps.positional_subcaps.len() {
                 caps.positional_subcaps[subcap_idx]
                     .as_ref()
-                    .map(|sc| &sc.positional)
+                    .map(|sc| &sc.kids().positional)
             } else {
                 None
             };
@@ -707,7 +705,7 @@ impl Interpreter {
                     subcap.matched = captured.clone();
                     subcap.from = current;
                     subcap.to = end;
-                    let subcap = std::sync::Arc::new(subcap);
+                    let subcap = std::sync::Arc::new(subcap.into_cap_node());
                     // This subrule iteration has REDUCED — log it for the
                     // failed-parse action replay, exactly as the general
                     // `build_named_candidates_from_inner` path does.

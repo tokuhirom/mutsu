@@ -404,7 +404,7 @@ impl Interpreter {
         for g in 0..atom_stride {
             let mut list: Vec<QuantifiedCaptureEntry> = Vec::new();
             let mut last_text = String::new();
-            let mut last_sub: Option<std::sync::Arc<RegexCaptures>> = None;
+            let mut last_sub: Option<std::sync::Arc<CapNode>> = None;
             for ac in atom_caps {
                 if let Some(text) = ac.positional.get(g) {
                     let (from, to) = ac.positional_offsets.get(g).copied().unwrap_or((0, 0));
@@ -426,7 +426,7 @@ impl Interpreter {
         for g in 0..sep_stride {
             let mut list: Vec<QuantifiedCaptureEntry> = Vec::new();
             let mut last_text = String::new();
-            let mut last_sub: Option<std::sync::Arc<RegexCaptures>> = None;
+            let mut last_sub: Option<std::sync::Arc<CapNode>> = None;
             for sc in &all_sep {
                 if let Some(text) = sc.positional.get(g) {
                     let (from, to) = sc.positional_offsets.get(g).copied().unwrap_or((0, 0));

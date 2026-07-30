@@ -280,7 +280,7 @@ impl Interpreter {
                 new_caps.positional.push(captured);
                 new_caps
                     .positional_subcaps
-                    .push(Some(std::sync::Arc::new(subcap)));
+                    .push(Some(std::sync::Arc::new(subcap.into_cap_node())));
                 new_caps.positional_quantified.push(None);
                 out.push((end, new_caps));
             }
@@ -729,7 +729,7 @@ impl Interpreter {
                 if is_alias {
                     subcap.action_name = Some(spec.lookup_name.clone());
                 }
-                let subcap = std::sync::Arc::new(subcap);
+                let subcap = std::sync::Arc::new(subcap.into_cap_node());
                 // This subrule has just REDUCED. Log it so a parse that fails
                 // overall can still run its action, the way Rakudo (which
                 // dispatches at reduce time) does — see `REDUCED_SUBRULES`.
@@ -754,7 +754,7 @@ impl Interpreter {
                         .named_subcaps
                         .entry(spec.lookup_name.clone())
                         .or_default()
-                        .push(std::sync::Arc::new(orig_subcap));
+                        .push(std::sync::Arc::new(orig_subcap.into_cap_node()));
                     new_caps
                         .named
                         .entry(spec.lookup_name.clone())
@@ -792,7 +792,7 @@ impl Interpreter {
                     crate::runtime::SILENT_ACTION_MARKER_PREFIX,
                     spec.lookup_name
                 );
-                let subcap = std::sync::Arc::new(subcap);
+                let subcap = std::sync::Arc::new(subcap.into_cap_node());
                 super::regex_helpers::record_reduced_subrule(&spec.lookup_name, &subcap);
                 new_caps
                     .named_subcaps
