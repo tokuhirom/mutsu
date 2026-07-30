@@ -252,18 +252,9 @@ impl Interpreter {
                 &[],
                 &HashMap::new(),
             );
-            if let ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } = match_obj.view()
-            {
-                let attrs = attributes.as_ref().clone();
-                attrs.insert("ast".to_string(), ast.clone());
-                Value::make_instance(class_name, (attrs).to_map())
-            } else {
-                match_obj
-            }
+            match_obj
+                .match_with_attrs(vec![("ast", ast.clone())])
+                .unwrap_or(match_obj)
         };
         // Build the named-capture submatches once, so they can be installed BOTH
         // as `$<name>` variables AND into the `$/` match object's `named`
@@ -306,20 +297,12 @@ impl Interpreter {
             &[],
             &HashMap::new(),
         );
-        let match_obj = if let ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } = match_obj.view()
-        {
-            let attrs = attributes.as_ref().clone();
-            attrs.insert("named".to_string(), Value::hash(named_map));
+        let match_obj = {
+            let mut updates = vec![("named", Value::hash(named_map))];
             if !pos_list.is_empty() {
-                attrs.insert("list".to_string(), Value::array(pos_list));
+                updates.push(("list", Value::array(pos_list)));
             }
-            Value::make_instance(class_name, attrs.to_map())
-        } else {
-            match_obj
+            match_obj.match_with_attrs(updates).unwrap_or(match_obj)
         };
         self.env.insert("/".to_string(), match_obj.clone());
         // Set up $¢ (current match cursor) — same as $/ for in-progress match
@@ -590,18 +573,14 @@ impl Interpreter {
             // from the block's matched-so-far context (mid-rule `{ … $/ … }`).
             if !ast_named.is_empty()
                 && let Some(cur) = self.env.get("/").cloned()
-                && let ValueView::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                } = cur.view()
             {
-                let attrs = attributes.as_ref().clone();
                 let named_hash: HashMap<String, Value> = ast_named.iter().cloned().collect();
-                attrs.insert("named".to_string(), Value::hash(named_hash));
-                let updated = Value::make_instance(class_name, attrs.to_map());
-                self.env.insert("/".to_string(), updated.clone());
-                self.env.insert("\u{00A2}".to_string(), updated);
+                if let Some(updated) =
+                    cur.match_with_attrs(vec![("named", Value::hash(named_hash))])
+                {
+                    self.env.insert("/".to_string(), updated.clone());
+                    self.env.insert("\u{00A2}".to_string(), updated);
+                }
             }
             self.eval_regex_code_block_body(&stmts);
         }

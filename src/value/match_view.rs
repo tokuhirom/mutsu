@@ -82,4 +82,57 @@ impl Value {
             _ => None,
         }
     }
+
+    /// A Match equal to `self` with the given attributes replaced — the
+    /// rebuild pattern every post-hoc attribute write (`.made`/`ast`,
+    /// `actions`, `capture_alias_map`, `orig`, `named`, `list`) uses.
+    /// `None` when `self` is not a Match. The rebuilt Match is a fresh
+    /// instance (new identity), same as the inline clone-insert-rebuild
+    /// sites this replaces.
+    pub(crate) fn match_with_attrs(&self, updates: Vec<(&str, Value)>) -> Option<Value> {
+        match self.view() {
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Match" => {
+                let attrs = attributes.as_ref().clone();
+                for (k, v) in updates {
+                    attrs.insert(k.to_string(), v);
+                }
+                Some(Value::make_instance(class_name, attrs.to_map()))
+            }
+            _ => None,
+        }
+    }
+
+    /// [`Self::match_with_attrs`], but preserving the instance identity —
+    /// `Match.make` writes the updated Match back under the SAME id, because
+    /// consumers re-read live objects by `(class, id)` match (see the grammar
+    /// action walk). `None` when `self` is not a Match.
+    pub(crate) fn match_with_attrs_keeping_id(&self, updates: Vec<(&str, Value)>) -> Option<Value> {
+        match self.view() {
+            ValueView::Instance {
+                class_name,
+                attributes,
+                id,
+            } if class_name == "Match" => {
+                let attrs = InstanceAttrs::clone(&attributes);
+                for (k, v) in updates {
+                    attrs.insert(k.to_string(), v);
+                }
+                Some(Value::instance_parts(
+                    class_name,
+                    crate::gc::Gc::new(InstanceAttrs::new(class_name, attrs.to_map(), id, false)),
+                    id,
+                ))
+            }
+            _ => None,
+        }
+    }
+
+    /// A Match with `.ast` set, preserving the instance identity (`Match.make`).
+    pub(crate) fn match_with_ast_keeping_id(&self, ast: Value) -> Option<Value> {
+        self.match_with_attrs_keeping_id(vec![("ast", ast)])
+    }
 }

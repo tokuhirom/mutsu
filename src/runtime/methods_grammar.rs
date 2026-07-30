@@ -501,35 +501,26 @@ impl Interpreter {
                 Some(&text),
                 &captures.named_quantified,
             );
-            let match_obj = if let ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } = match_obj.view()
-            {
-                let attrs = attributes.as_ref().clone();
+            let match_obj = {
+                let mut updates: Vec<(&str, Value)> = Vec::new();
                 if let Some(ast) = self.env.get("made").cloned() {
-                    attrs.insert("ast".to_string(), ast);
+                    updates.push(("ast", ast));
                 }
                 if let Some(ref act) = actions_obj {
-                    attrs.insert("actions".to_string(), act.clone());
+                    updates.push(("actions", act.clone()));
                 }
                 if !alias_map.is_empty() {
                     let alias_hash: HashMap<String, Value> = alias_map
                         .iter()
                         .map(|(k, v)| (k.clone(), Value::str(v.clone())))
                         .collect();
-                    attrs.insert("capture_alias_map".to_string(), Value::hash(alias_hash));
+                    updates.push(("capture_alias_map", Value::hash(alias_hash)));
                 }
-                Value::make_instance(class_name, (attrs).to_map())
-            } else {
-                match_obj
+                match_obj.match_with_attrs(updates).unwrap_or(match_obj)
             };
             // Set named capture env vars from match object
-            if let ValueView::Instance { attributes, .. } = match_obj.view()
-                && let Some(ValueView::Hash(named_hash)) =
-                    attributes.as_map().get("named").map(Value::view)
-            {
+            let named_v = match_obj.match_named();
+            if let Some(ValueView::Hash(named_hash)) = named_v.as_ref().map(Value::view) {
                 for (k, v) in named_hash.iter() {
                     self.env.insert(format!("<{}>", k), v.clone());
                 }

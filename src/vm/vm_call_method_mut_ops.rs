@@ -1110,28 +1110,9 @@ impl Interpreter {
         }
         // Handle Match.make — must mutate the Match instance's `ast` attribute
         // and write the modified Match back to the variable.
-        if method == "make"
-            && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Match")
-        {
+        if method == "make" && target.is_match_instance() {
             let value = args.into_iter().next().unwrap_or(Value::NIL);
-            if let ValueView::Instance {
-                class_name,
-                attributes,
-                id,
-            } = target.view()
-            {
-                let attrs = crate::value::InstanceAttrs::clone(&attributes);
-                attrs.insert("ast".to_string(), value.clone());
-                let updated = Value::instance_parts(
-                    class_name,
-                    crate::gc::Gc::new(crate::value::InstanceAttrs::new(
-                        class_name,
-                        (attrs).to_map(),
-                        id,
-                        false,
-                    )),
-                    id,
-                );
+            if let Some(updated) = target.match_with_ast_keeping_id(value.clone()) {
                 self.env_mut().insert(target_name.to_string(), updated);
                 self.env_mut().insert("made".to_string(), value.clone());
                 self.action_made = Some(value.clone());

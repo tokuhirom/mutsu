@@ -2171,27 +2171,11 @@ impl Interpreter {
             return result;
         }
         // Match.make
-        if let ValueView::Instance {
-            class_name,
-            attributes,
-            id,
-        } = target.view()
-            && class_name == "Match"
-            && method == "make"
+        if method == "make"
+            && let Some(updated) =
+                target.match_with_ast_keeping_id(args.first().cloned().unwrap_or(Value::NIL))
         {
             let value = args.first().cloned().unwrap_or(Value::NIL);
-            let attrs = crate::value::InstanceAttrs::clone(&attributes);
-            attrs.insert("ast".to_string(), value.clone());
-            let updated = Value::instance_parts(
-                class_name,
-                crate::gc::Gc::new(crate::value::InstanceAttrs::new(
-                    class_name,
-                    (attrs).to_map(),
-                    id,
-                    false,
-                )),
-                id,
-            );
             self.env.insert("/".to_string(), updated);
             self.env.insert("made".to_string(), value.clone());
             self.action_made = Some(value.clone());
