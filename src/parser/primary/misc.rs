@@ -9,6 +9,8 @@ mod anon_decl;
 mod colonpair;
 mod hash;
 mod lambda;
+#[cfg(test)]
+mod lambda_tests;
 mod reduction;
 
 pub(super) use anon_decl::{

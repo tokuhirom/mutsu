@@ -4232,9 +4232,18 @@ impl Interpreter {
                     compiled_fns,
                 )?;
             }
-            OpCode::BlockLocalScope { body_end } => {
+            OpCode::BlockLocalScope {
+                body_end,
+                succeed_boundary,
+            } => {
                 self.sync_source_line(code, *ip);
-                self.exec_block_local_scope_op(code, *body_end, ip, compiled_fns)?;
+                self.exec_block_local_scope_op(
+                    code,
+                    *body_end,
+                    *succeed_boundary,
+                    ip,
+                    compiled_fns,
+                )?;
             }
             OpCode::CheckPhaser {
                 is_pre,

@@ -486,6 +486,20 @@ fn is_implicit_topic_call(bytes: &[u8], at: usize) -> bool {
             // `a => .key` has no invocant; `%h<a>.key` does.
             matches!(p.checked_sub(2).map(|q| bytes[q]), Some(b'='))
         }
+        // `$!.message` is a term even though it ends in punctuation; a bare `!`
+        // is prefix negation (`{ a => !.defined }` is a block).
+        b'!' => !matches!(p.checked_sub(2).map(|q| bytes[q]), Some(b'$')),
+        // A `/` right before the dot closes a term far more often than it
+        // divides by one: it ends `$/`, a quoting construct (`q:to/EOF/.trim`,
+        // `q/x/.uc`) or a regex literal (`/rx/.gist`). Infix division, on the
+        // other hand, is spelled with a space on its left (`1 / .elems`), and
+        // that spelling stays a topic reference.
+        b'/' => matches!(
+            p.checked_sub(2).map(|q| bytes[q]),
+            None | Some(b' ') | Some(b'\t') | Some(b'\n') | Some(b'\r')
+        ),
+        // `$¢.foo` — the last byte of the UTF-8 `¢` is 0xA2.
+        0xA2 if bytes[..p].ends_with("$\u{a2}".as_bytes()) => false,
         c => !(c.is_ascii_alphanumeric() || c == b'_'),
     }
 }
