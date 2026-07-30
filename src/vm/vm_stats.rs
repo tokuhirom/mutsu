@@ -67,6 +67,25 @@ fn opcode_histogram()
     HIST.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// Per-name histogram of `resolve_function_with_types` invocations (the full
+/// registry-scanning resolution walk). Only populated when stats are on. This
+/// is the empirical basis for resolution-caching work: a name with thousands
+/// of entries here is paying the candidate scan per call.
+fn function_full_resolve_by_name() -> &'static Mutex<HashMap<String, u64>> {
+    static BY_NAME: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+    BY_NAME.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Record one `resolve_function_with_types` invocation.
+#[inline]
+pub(crate) fn record_function_full_resolve(name: &str) {
+    if enabled()
+        && let Ok(mut map) = function_full_resolve_by_name().lock()
+    {
+        *map.entry(name.to_string()).or_insert(0) += 1;
+    }
+}
+
 /// Per-name histogram of method calls that entered the slow-path resolver dispatch
 /// `run_instance_method` (resolve candidate + frame setup + env clone). §B #3680
 /// deleted the tree-walk of the method body, so these now execute the body as
@@ -117,6 +136,22 @@ static GC_ROOTS_SCANNED: AtomicU64 = AtomicU64::new(0);
 // CapNode split (ADR-0016 P2) removes structurally.
 static REGEX_CAP_MAKEMUT_TOTAL: AtomicU64 = AtomicU64::new(0);
 static REGEX_CAP_MAKEMUT_SHARED: AtomicU64 = AtomicU64::new(0);
+
+// Regex embedded-code parse cache (REGEX_CODE_PARSE_CACHE) effectiveness.
+static REGEX_CODE_PARSE_HITS: AtomicU64 = AtomicU64::new(0);
+static REGEX_CODE_PARSE_MISSES: AtomicU64 = AtomicU64::new(0);
+
+/// Record one lookup in the regex embedded-code parse cache.
+#[inline]
+pub(crate) fn record_regex_code_parse(hit: bool) {
+    if enabled() {
+        if hit {
+            REGEX_CODE_PARSE_HITS.fetch_add(1, Ordering::Relaxed);
+        } else {
+            REGEX_CODE_PARSE_MISSES.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
 
 /// Record one `Arc::make_mut` on a stored regex capture node; `shared` means
 /// the node had other holders (strong_count > 1) so make_mut deep-copied it.
@@ -440,6 +475,11 @@ pub(crate) fn dump() {
     eprintln!(
         "[mutsu vm-stats] regex-captures: cap_makemut={cap_makemut_total} shared_deep_copies={cap_makemut_shared}"
     );
+    let code_parse_hits = REGEX_CODE_PARSE_HITS.load(Ordering::Relaxed);
+    let code_parse_misses = REGEX_CODE_PARSE_MISSES.load(Ordering::Relaxed);
+    eprintln!(
+        "[mutsu vm-stats] regex-code-parse-cache: hits={code_parse_hits} misses={code_parse_misses}"
+    );
     let jit_compiles = JIT_COMPILES.load(Ordering::Relaxed);
     let jit_entries = JIT_ENTRIES.load(Ordering::Relaxed);
     let jit_bailouts = JIT_BAILOUTS.load(Ordering::Relaxed);
@@ -481,6 +521,24 @@ pub(crate) fn dump() {
             "[mutsu vm-stats] opcodes executed total={} distinct={} (top {}): {}",
             total,
             map.len(),
+            top.len(),
+            top.join(" ")
+        );
+    }
+    if let Ok(map) = function_full_resolve_by_name().lock()
+        && !map.is_empty()
+    {
+        let total: u64 = map.values().sum();
+        let mut entries: Vec<(&String, &u64)> = map.iter().collect();
+        entries.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+        let top: Vec<String> = entries
+            .iter()
+            .take(25)
+            .map(|(name, count)| format!("{name}={count}"))
+            .collect();
+        eprintln!(
+            "[mutsu vm-stats] function-full-resolve total={} by name (top {}): {}",
+            total,
             top.len(),
             top.join(" ")
         );

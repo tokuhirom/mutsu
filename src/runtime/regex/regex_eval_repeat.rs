@@ -11,7 +11,7 @@ impl Interpreter {
         code: &str,
         caps: &RegexCaptures,
     ) -> Option<(usize, Option<usize>)> {
-        let (stmts, _) = crate::parse_dispatch::parse_source(code).ok()?;
+        let stmts = self.parse_regex_code_cached(code)?;
         let env = self.make_regex_eval_env(caps);
         let mut interp = Interpreter {
             env,
@@ -230,7 +230,7 @@ impl Interpreter {
         code_blocks: &[CodeBlockContext],
     ) {
         for ctx in code_blocks {
-            let Ok((stmts, _)) = crate::parse_dispatch::parse_source(&ctx.code) else {
+            let Some(stmts) = self.parse_regex_code_cached(&ctx.code) else {
                 continue;
             };
             self.setup_regex_code_block_env(ctx);
@@ -494,7 +494,7 @@ impl Interpreter {
         // Fresh `make` slot for this node (do not inherit a sibling's value).
         self.env.remove("made");
         for ctx in &blocks {
-            let Ok((stmts, _)) = crate::parse_dispatch::parse_source(&ctx.code) else {
+            let Some(stmts) = self.parse_regex_code_cached(&ctx.code) else {
                 continue;
             };
             self.setup_regex_code_block_env(ctx);
@@ -589,7 +589,7 @@ impl Interpreter {
             let Some(key) = Self::dynamic_decl_var_key(decl) else {
                 continue;
             };
-            if let Ok((stmts, _)) = crate::parse_dispatch::parse_source(&format!("{decl};")) {
+            if let Some(stmts) = self.parse_regex_code_cached(&format!("{decl};")) {
                 let _ = self.eval_block_value(&stmts);
             }
             // A `$`-sigil dynamic variable lives in env WITHOUT its sigil

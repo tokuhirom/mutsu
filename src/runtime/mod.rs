@@ -1712,6 +1712,14 @@ pub struct Interpreter {
     pub(crate) fn_resolve_cache_gen: u64,
     pub(crate) multi_candidates_cache: rustc_hash::FxHashMap<Symbol, bool>,
     pub(crate) multi_candidates_cache_gen: u64,
+    /// Per-name memo of "does ANY registry function key carry this base name?"
+    /// (`fn_base_name_registered`). `false` lets `resolve_function_with_types`
+    /// return `None` without scanning the whole functions map — the common case
+    /// for interpreter-native builtins like `make` / `prefix:<~>`, which
+    /// otherwise pay a full failed candidate walk on every call. Guarded by
+    /// `fn_resolve_gen` like `multi_candidates_cache`.
+    pub(crate) fn_base_name_cache: rustc_hash::FxHashMap<Symbol, bool>,
+    pub(crate) fn_base_name_cache_gen: u64,
     pub(crate) light_call_cache: rustc_hash::FxHashMap<Symbol, (Symbol, u64)>,
     pub(crate) light_call_cache_gen: u64,
     pub(crate) pos_light_call_cache: rustc_hash::FxHashMap<Symbol, (Symbol, u64)>,

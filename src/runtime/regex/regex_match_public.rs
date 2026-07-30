@@ -412,7 +412,7 @@ impl Interpreter {
             }
             if !handled_state_postfix && !handled_direct_assign {
                 let eval_src = stmt_src.clone();
-                let Ok((stmts, _)) = crate::parse_dispatch::parse_source(&eval_src) else {
+                let Some(stmts) = self.parse_regex_code_cached(&eval_src) else {
                     self.registry_mut().token_defs = saved_token_defs;
                     self.restore_env_entries(restore_always);
                     self.restore_env_entries(restore_on_fail);

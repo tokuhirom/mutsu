@@ -54,6 +54,8 @@ impl Interpreter {
             let ks = key.resolve();
             ks != "EXPORT" && !ks.ends_with("::EXPORT")
         });
+        // Invalidate name-keyed resolution caches.
+        self.fn_resolve_gen += 1;
     }
 
     /// Install the symbols named by an `EXPORT` return value. Accepts a single

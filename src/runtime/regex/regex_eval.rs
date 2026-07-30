@@ -1,6 +1,41 @@
 use super::super::*;
 
 impl Interpreter {
+    /// Parse a main-slang code string embedded in a regex (`{ … }` block,
+    /// `<?{ … }>` assertion, `<{ … }>` interpolation, `** {code}` quantifier,
+    /// `:my` declaration) through the thread-local `REGEX_CODE_PARSE_CACHE`.
+    /// These strings are re-evaluated per cursor position in the hot match
+    /// loop, and the parse of a given string is deterministic under a fixed
+    /// declaration registry — so a cache hit (keyed by the string, guarded by
+    /// `registry_write_gen`) is a refcount bump instead of a full re-parse.
+    /// Returns `None` when the code does not parse (not cached — the caller
+    /// treats it as a no-op/no-match either way).
+    pub(in crate::runtime) fn parse_regex_code_cached(
+        &self,
+        code: &str,
+    ) -> Option<Arc<Vec<crate::ast::Stmt>>> {
+        use crate::runtime::regex_parse::REGEX_CODE_PARSE_CACHE;
+        let cur_gen = self
+            .registry_write_gen
+            .load(std::sync::atomic::Ordering::Relaxed);
+        if let Some(hit) = REGEX_CODE_PARSE_CACHE.with(|c| {
+            c.borrow()
+                .get(code)
+                .and_then(|(g, stmts)| (*g == cur_gen).then(|| Arc::clone(stmts)))
+        }) {
+            crate::vm::vm_stats::record_regex_code_parse(true);
+            return Some(hit);
+        }
+        crate::vm::vm_stats::record_regex_code_parse(false);
+        let (stmts, _) = crate::parse_dispatch::parse_source(code).ok()?;
+        let stmts = Arc::new(stmts);
+        REGEX_CODE_PARSE_CACHE.with(|c| {
+            c.borrow_mut()
+                .insert(code.to_string(), (cur_gen, Arc::clone(&stmts)));
+        });
+        Some(stmts)
+    }
+
     /// Copy the declaration registry (functions / proto_functions / token_defs)
     /// from `self` into a freshly-built sub-interpreter used for regex/grammar
     /// evaluation. `self` and `target` have distinct registry `Arc`s, so this is
@@ -91,7 +126,7 @@ impl Interpreter {
         // Set $_ to the match target string. After `make_regex_eval_env`, which
         // installs the `:my`/`:let` lexicals — the topic must win over them.
         env.insert("_".to_string(), Value::str(target.to_string()));
-        let (stmts, _) = crate::parse_dispatch::parse_source(code).ok()?;
+        let stmts = self.parse_regex_code_cached(code)?;
         let mut interp = Interpreter {
             env,
             current_package: Arc::new(RwLock::new(self.current_package())),
@@ -197,9 +232,8 @@ impl Interpreter {
         matched_so_far: &str,
         writes_back_to_caller: bool,
     ) -> (Option<Value>, HashMap<String, Value>) {
-        let (stmts, _) = match crate::parse_dispatch::parse_source(code) {
-            Ok(result) => result,
-            Err(_) => return (None, HashMap::new()),
+        let Some(stmts) = self.parse_regex_code_cached(code) else {
+            return (None, HashMap::new());
         };
         // The bindings to install for the body, and to restore afterwards.
         let mut env: Vec<(String, Value)> = Vec::new();
@@ -268,7 +302,7 @@ impl Interpreter {
         // `my $card = …` would clobber a same-named variable in the enclosing
         // scope — day18's assertion declares exactly that.
         let mut scoped: Vec<String> = env.iter().map(|(k, _)| k.clone()).collect();
-        for stmt in &stmts {
+        for stmt in stmts.iter() {
             if let Stmt::VarDecl { name, .. } = stmt
                 && !scoped.contains(name)
             {
