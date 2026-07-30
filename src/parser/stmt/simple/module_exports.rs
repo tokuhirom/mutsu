@@ -1,4 +1,36 @@
 use super::*;
+use std::cell::Cell;
+use std::rc::Rc;
+
+/// Everything one module-file scan learns that importers need replayed:
+/// the `is export` subs, the declared type names (own + transitive), and the
+/// declared enum values (own + transitive). Cached per resolved file path so
+/// each module file is scan-parsed at most once per process — without the
+/// cache a diamond-heavy dependency graph re-parses the same file once per
+/// reachable `use` mention (Template::HAML re-read its `X.rakumod` 222 times).
+struct ModuleScanResult {
+    exports: Vec<InlineModuleExport>,
+    type_names: Vec<String>,
+    enum_values: Vec<String>,
+}
+
+thread_local! {
+    /// Scan results memoized by resolved module file path. Keyed by path, not
+    /// module name, so a `use lib` that changes resolution mid-parse gets a
+    /// fresh scan for the newly-resolved file.
+    static MODULE_SCAN_CACHE: RefCell<HashMap<String, Rc<ModuleScanResult>>> =
+        RefCell::new(HashMap::new());
+    /// Bumped whenever the LOADING_MODULES recursion guard suppresses a nested
+    /// scan. A scan during which this fired (a `use` cycle) is missing the
+    /// cycle partner's transitive contribution, so it must not be cached —
+    /// an importer outside the cycle would otherwise be pinned to the
+    /// truncated view forever.
+    static SCAN_GUARD_SKIPS: Cell<u64> = const { Cell::new(0) };
+}
+
+fn note_scan_guard_skip() {
+    SCAN_GUARD_SKIPS.with(|c| c.set(c.get() + 1));
+}
 
 /// Register exported function names for a module (called when parsing `use` statements).
 /// Exports are added to the current (innermost) lexical scope.
@@ -6,8 +38,8 @@ use super::*;
 /// For `Test`, uses a hardcoded list (Test functions are implemented natively in Rust).
 /// For all other modules, dynamically scans the module file to extract `is export` subs.
 pub(crate) fn register_module_exports(module: &str) {
-    let exports: Vec<InlineModuleExport> = if module == "Test" {
-        TEST_EXPORTS
+    if module == "Test" {
+        let exports: Vec<InlineModuleExport> = TEST_EXPORTS
             .iter()
             .map(|s| InlineModuleExport {
                 name: (*s).to_string(),
@@ -15,8 +47,11 @@ pub(crate) fn register_module_exports(module: &str) {
                 associativity: None,
                 is_test_assertion: false,
             })
-            .collect()
-    } else if module == "JSON::Fast" || module == "JSON::Tiny" {
+            .collect();
+        apply_module_exports(&exports);
+        return;
+    }
+    if module == "JSON::Fast" || module == "JSON::Tiny" {
         // Native modules: `to-json`/`from-json` are implemented in Rust
         // (runtime/json.rs), so there is no source file to scan for exports.
         // JSON::Fast also exports the X::JSON::AdditionalContent exception
@@ -25,7 +60,7 @@ pub(crate) fn register_module_exports(module: &str) {
         if module == "JSON::Fast" {
             register_user_type("X::JSON::AdditionalContent");
         }
-        ["to-json", "from-json"]
+        let exports: Vec<InlineModuleExport> = ["to-json", "from-json"]
             .iter()
             .map(|s| InlineModuleExport {
                 name: (*s).to_string(),
@@ -33,26 +68,51 @@ pub(crate) fn register_module_exports(module: &str) {
                 associativity: None,
                 is_test_assertion: false,
             })
-            .collect()
-    } else {
-        // Check for infinite recursion
-        let already_loading = LOADING_MODULES.with(|m| m.borrow().contains(module));
-        if already_loading {
-            return;
-        }
-        LOADING_MODULES.with(|m| {
-            m.borrow_mut().insert(module.to_string());
-        });
-        let result = find_and_extract_exports(module);
-        LOADING_MODULES.with(|m| {
-            m.borrow_mut().remove(module);
-        });
-        result
-    };
+            .collect();
+        apply_module_exports(&exports);
+        return;
+    }
+    // Check for infinite recursion
+    let already_loading = LOADING_MODULES.with(|m| m.borrow().contains(module));
+    if already_loading {
+        note_scan_guard_skip();
+        return;
+    }
+    LOADING_MODULES.with(|m| {
+        m.borrow_mut().insert(module.to_string());
+    });
+    let scan = find_and_scan_module(module);
+    LOADING_MODULES.with(|m| {
+        m.borrow_mut().remove(module);
+    });
+    if let Some(scan) = scan {
+        apply_scan_types(&scan);
+        apply_module_exports(&scan.exports);
+    }
+}
+
+/// Replay a scan's declared type/enum names into the importer's current scope.
+fn apply_scan_types(scan: &ModuleScanResult) {
+    for name in &scan.type_names {
+        // The names are already fully composed; a `use` that appears inside
+        // a package block must not compose them a second time.
+        register_user_type_verbatim(name);
+    }
+    // An enum's *values* travel with it. Without this a bare
+    // `MYSQL_TYPE_BLOB` in the importing file is an unknown identifier, and
+    // the `?? then !!` guard reads it as a listop head that gobbled the
+    // `!!` (see `is_user_declared_enum_value`).
+    for name in &scan.enum_values {
+        register_user_enum_value(name);
+    }
+}
+
+/// Register a module's exported subs into the importer's current scope.
+fn apply_module_exports(exports: &[InlineModuleExport]) {
     if exports.is_empty() {
         return;
     }
-    for export in &exports {
+    for export in exports {
         // Register operator subs into user_subs so that the parser's
         // prefix/infix/postfix/circumfix matchers pick them up.
         if is_operator_sub_name(&export.name) {
@@ -81,7 +141,7 @@ pub(crate) fn register_module_exports(module: &str) {
         let current = scopes
             .last_mut()
             .expect("scope stack should never be empty");
-        for export in &exports {
+        for export in exports {
             current.imported_functions.insert(export.name.clone());
         }
     });
@@ -164,29 +224,40 @@ pub(crate) fn import_inline_module_exports(module: &str) {
 pub(crate) fn register_module_type_names(module: &str) {
     let already_loading = LOADING_MODULES.with(|m| m.borrow().contains(module));
     if already_loading {
+        note_scan_guard_skip();
         return;
     }
     LOADING_MODULES.with(|m| {
         m.borrow_mut().insert(module.to_string());
     });
-    let _ = find_and_extract_exports(module);
+    let scan = find_and_scan_module(module);
     LOADING_MODULES.with(|m| {
         m.borrow_mut().remove(module);
     });
+    if let Some(scan) = scan {
+        apply_scan_types(&scan);
+    }
 }
 
-fn find_and_extract_exports(module: &str) -> Vec<InlineModuleExport> {
-    let path = find_module_file(module);
-    match path {
-        Some(p) => {
-            if let Ok(source) = std::fs::read_to_string(&p) {
-                extract_exported_names(&source)
-            } else {
-                Vec::new()
-            }
-        }
-        None => Vec::new(),
+/// Resolve a module name to its source file and scan it, memoized per file
+/// path. A cache hit performs no I/O and no parse — the callers replay the
+/// stored registrations into their own scope instead.
+fn find_and_scan_module(module: &str) -> Option<Rc<ModuleScanResult>> {
+    let path = find_module_file(module)?;
+    if let Some(hit) = MODULE_SCAN_CACHE.with(|c| c.borrow().get(&path).cloned()) {
+        return Some(hit);
     }
+    let source = std::fs::read_to_string(&path).ok()?;
+    let skips_before = SCAN_GUARD_SKIPS.with(|c| c.get());
+    let result = Rc::new(scan_module_source(&source));
+    // Only a scan the recursion guard never truncated is complete enough to
+    // cache (see SCAN_GUARD_SKIPS).
+    if SCAN_GUARD_SKIPS.with(|c| c.get()) == skips_before {
+        MODULE_SCAN_CACHE.with(|c| {
+            c.borrow_mut().insert(path, Rc::clone(&result));
+        });
+    }
+    Some(result)
 }
 
 /// Search lib_paths and program directory for a `.rakumod` / `.pm6` / `.pm` file
@@ -250,10 +321,24 @@ fn find_module_file(module: &str) -> Option<String> {
 }
 
 /// Parse module source and extract names of `is export` sub/proto declarations.
-/// Saves and restores the parser's scope state to avoid clobbering the caller's scopes.
+/// Kept as a thin wrapper over `scan_module_source` for unit tests.
+#[cfg(test)]
 pub(crate) fn extract_exported_names(source: &str) -> Vec<InlineModuleExport> {
+    scan_module_source(source).exports
+}
+
+/// Parse module source and collect its `is export` subs, declared type names,
+/// and declared enum values — without registering anything into the caller's
+/// scope. Saves and restores the parser's scope state (and package path) so
+/// the nested parse cannot clobber the caller's, and so a cache hit (which
+/// skips the nested parse entirely) is indistinguishable from a miss.
+fn scan_module_source(source: &str) -> ModuleScanResult {
     // Save current scopes — parse_program_partial calls reset_user_subs which clears them
     let saved_scopes = SCOPES.with(|s| s.borrow().clone());
+    // reset_user_subs also clears the package path; snapshot it too, or a `use`
+    // inside a `package Foo { ... }` body would leave the rest of the body
+    // composing its declarations against an empty path.
+    let saved_package_path = PACKAGE_PATH.with(|p| p.borrow().clone());
     // Save the language version — parsing the module may change it via `use v6.*`
     let saved_language_version = current_language_version();
     let (stmts, _) = crate::parser::parse_program_partial(source);
@@ -279,39 +364,28 @@ pub(crate) fn extract_exported_names(source: &str) -> Vec<InlineModuleExport> {
             .flat_map(|scope| scope.user_enum_values.iter().cloned())
             .collect()
     });
-    // Restore scopes and language version
+    // Restore scopes, package path, and language version
     SCOPES.with(|s| {
         *s.borrow_mut() = saved_scopes;
     });
+    PACKAGE_PATH.with(|p| {
+        *p.borrow_mut() = saved_package_path;
+    });
     set_current_language_version(&saved_language_version);
-    // Register the module's declared type names (classes/roles/enums/grammars)
-    // into the importer's scope. A `use`d module makes its `our`-scoped and
+    // Collect the module's declared type names (classes/roles/enums/grammars)
+    // for the importer's scope. A `use`d module makes its `our`-scoped and
     // exported types visible to the importer, but mutsu loads modules at run
     // time, so without this the parser treats those imported types as
     // undeclared. That in turn misfires heuristics like the `when X::Foo {}`
     // undeclared-exception gobble check (see `given_when::when_stmt`), breaking
     // valid code such as `when X::Zef::UnsatisfiableDependency { ... }` in a
-    // file that `use Zef`. Registration happens after the scope restore above so
-    // the names land in the importer's current scope, not the module's discarded
-    // parse scope.
-    {
-        let mut type_names: Vec<String> = transitive_types;
-        collect_module_type_names(&stmts, &mut type_names);
-        for name in &type_names {
-            // The names are already fully composed; a `use` that appears inside
-            // a package block must not compose them a second time.
-            register_user_type_verbatim(name);
-        }
-        // An enum's *values* travel with it. Without this a bare
-        // `MYSQL_TYPE_BLOB` in the importing file is an unknown identifier, and
-        // the `?? then !!` guard reads it as a listop head that gobbled the
-        // `!!` (see `is_user_declared_enum_value`).
-        let mut enum_values: Vec<String> = transitive_enum_values;
-        collect_module_enum_values(&stmts, &mut enum_values);
-        for name in &enum_values {
-            register_user_enum_value(name);
-        }
-    }
+    // file that `use Zef`. Registration (`apply_scan_types`) happens in the
+    // caller after this scan returns, so the names land in the importer's
+    // current scope, not the module's discarded parse scope.
+    let mut type_names: Vec<String> = transitive_types;
+    collect_module_type_names(&stmts, &mut type_names);
+    let mut enum_values: Vec<String> = transitive_enum_values;
+    collect_module_enum_values(&stmts, &mut enum_values);
     let mut exports: HashMap<String, InlineModuleExport> = HashMap::new();
     for stmt in &stmts {
         match stmt {
@@ -381,7 +455,11 @@ pub(crate) fn extract_exported_names(source: &str) -> Vec<InlineModuleExport> {
 
     let mut result: Vec<InlineModuleExport> = exports.into_values().collect();
     result.sort_by(|a, b| a.name.cmp(&b.name));
-    result
+    ModuleScanResult {
+        exports: result,
+        type_names,
+        enum_values,
+    }
 }
 
 /// Recursively collect the names of type declarations (class/role/enum/grammar)
