@@ -1,4 +1,4 @@
-# Release-time bundled-library test-suite gate
+# Bundled-library test-suite gate
 
 mutsu ships several upstream Raku libraries verbatim ("batteries" — see
 [BATTERIES.md](../../BATTERIES.md) and [vendor/README.md](../../vendor/README.md)):
@@ -15,14 +15,32 @@ requirement**: a tag cannot publish unless every bundled library's upstream
 tests still pass, at a recorded per-file baseline, against the *shipped* library
 and the release `mutsu`.
 
-## Why at release time
+## Where it runs
 
-Cutting a release is a deliberate act, so the expensive, network-dependent
-suite run belongs there rather than on every merge. A release is now cut by the
-manual `tag-release.yml` workflow (`gh workflow run tag-release.yml -f
-version=X.Y.Z`; see "Cutting a release" in `CLAUDE.md`), which bumps the version
-and pushes the tag that fires `release.yml`. This batteries gate runs as part of
-that release build, so a regression against a shipped library blocks the publish.
+**At release — authoritative.** A release is cut by the manual
+`tag-release.yml` workflow (`gh workflow run tag-release.yml -f version=X.Y.Z`;
+see "Cutting a release" in `CLAUDE.md`), which bumps the version and pushes the
+tag that fires `release.yml`. The `batteries` job there `needs`-gates the
+publish job, so a regression against a shipped library blocks the release.
+
+**Post-merge — early warning.** Release time turned out to be far too late to
+*learn* about a regression. Nothing else ran the gate, so `Template::Mustache`
+could sit on the whitelist at 6/13 for days; the drift only surfaced when it
+took the v0.19.0 release run down (the tag was pushed, the publish was skipped).
+The `test` job in `ci.yml` therefore also runs the gate on a push to `main`,
+which attributes drift to a commit within minutes of the merge.
+
+**On a PR — only when the PR is about the batteries.** The same step runs on a
+pull request that touches `batteries.lock`, `batteries-whitelist.txt`,
+`batteries-exclude.txt`, `scripts/battery-testsuite.sh`, a shipped `modules/`
+tree, or `vendor/zef/` — the changes whose whole point is to move the baseline.
+An ordinary PR skips it: the run clones 17 upstream repositories, and the merge
+path should not depend on the network. Cost when it does run is small (~75s of
+suites; the job has already built the release binary for roast), so this does
+not lengthen ordinary CI at all.
+
+The pin tests under `t/` are not a substitute. They cover bugs that have already
+been found; the gate is the net for the ones that have not.
 
 ## Moving parts
 
@@ -33,6 +51,7 @@ that release build, so a regression against a shipped library blocks the publish
 | `batteries-exclude.txt` | Files the gate must never run, same `name<TAB>testfile` shape. Skipped in both modes, so they can neither block a release nor enter the baseline. |
 | `scripts/battery-testsuite.sh` | The harness. Fetches each suite at its pinned commit, runs it against the bundled library, and enforces (or, with `--update`, regenerates) the whitelist. |
 | `release.yml` `batteries` job | Runs the harness on every release build; `needs` gates the publish job. |
+| `ci.yml` `test` job, last two steps | Runs the same harness post-merge on `main`, and on a PR that touches the batteries. The `Should the bundled-library gate run?` step holds the path filter. |
 
 ## Running it
 

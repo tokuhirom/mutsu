@@ -196,6 +196,51 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+      # ── Bundled-library gate (post-merge; see docs/batteries/testsuite-gate.md)
+      #
+      # `release.yml` runs this as the authoritative gate on a release. That is
+      # the only place it ran, so a general interpreter change could break a
+      # bundled module and nothing said a word until someone cut a release:
+      # `Template::Mustache` sat on the whitelist at 6/13 for days and took the
+      # v0.19.0 release run down with it. The pin tests in `t/` only cover bugs
+      # already found; this is the net for the unknown ones.
+      #
+      # It runs here on a push to `main` (attributing drift to a commit within
+      # minutes) and on a PR that touches the batteries themselves — a whitelist
+      # edit, a re-pin in batteries.lock, a change to a shipped `modules/` tree
+      # or to the gate script. It deliberately does NOT run on an ordinary PR:
+      # it clones 17 upstream repositories, and the merge path should not depend
+      # on that. Cost when it does run is small — the suites themselves take
+      # ~75s, and this job has already built the release binary for roast.
+      - name: Should the bundled-library gate run?
+        id: batteries
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed="$(gh pr diff "${{ github.event.pull_request.number }}" --name-only)"
+          if printf '%s\n' "$changed" | grep -qE '^(batteries\.lock|batteries-whitelist\.txt|batteries-exclude\.txt|scripts/battery-testsuite\.sh|modules/|vendor/zef/)'; then
+            echo "  PR touches the batteries — running the gate."
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "  PR does not touch the batteries — the gate runs post-merge."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bundled-library test suites
+        if: steps.batteries.outputs.run == 'true'
+        # libssl for the OpenSSL / IO::Socket::SSL batteries' NativeCall at
+        # runtime; installed here rather than in the job's apt step so an
+        # ordinary PR does not pay for it.
+        run: |
+          sudo apt-get install -y libssl-dev
+          scripts/battery-testsuite.sh
+        env:
+          MUTSU_BIN: target/release/mutsu
+
   wasm-e2e:
     # Skipped on tagpr's release PR — see the `test` job's comment.
     if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'tagpr-from-')
