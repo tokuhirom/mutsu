@@ -100,10 +100,8 @@ impl Interpreter {
             if positional_len == 0 {
                 self.env.insert("0".to_string(), Value::NIL);
             }
-            if let ValueView::Instance { attributes, .. } = match_obj.view()
-                && let Some(ValueView::Hash(named_hash)) =
-                    attributes.as_map().get("named").map(Value::view)
-            {
+            let named_v = match_obj.match_named();
+            if let Some(ValueView::Hash(named_hash)) = named_v.as_ref().map(Value::view) {
                 for (k, v) in named_hash.iter() {
                     self.env.insert(format!("<{}>", k), v.clone());
                 }

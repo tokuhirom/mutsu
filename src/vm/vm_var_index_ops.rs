@@ -1028,17 +1028,11 @@ impl Interpreter {
                     v
                 }
             }
-            (
-                ValueView::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                },
-                ValueView::Array(keys, ..),
-            ) if class_name == "Match" => {
-                if let Some(ValueView::Hash(named)) =
-                    attributes.as_map().get("named").map(Value::view)
-                {
+            (ValueView::Instance { class_name, .. }, ValueView::Array(keys, ..))
+                if class_name == "Match" =>
+            {
+                let named_v = target.match_named();
+                if let Some(ValueView::Hash(named)) = named_v.as_ref().map(Value::view) {
                     Value::array(
                         keys.iter()
                             .map(|k| {
@@ -1051,35 +1045,23 @@ impl Interpreter {
                     Value::array(vec![Value::NIL; keys.len()])
                 }
             }
-            (
-                ValueView::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                },
-                ValueView::Str(key),
-            ) if class_name == "Match" => {
-                if let Some(ValueView::Hash(named)) =
-                    attributes.as_map().get("named").map(Value::view)
-                {
+            (ValueView::Instance { class_name, .. }, ValueView::Str(key))
+                if class_name == "Match" =>
+            {
+                let named_v = target.match_named();
+                if let Some(ValueView::Hash(named)) = named_v.as_ref().map(Value::view) {
                     named.get(key.as_str()).cloned().unwrap_or(Value::NIL)
                 } else {
                     Value::NIL
                 }
             }
-            (
-                ValueView::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                },
-                ValueView::Int(i),
-            ) if class_name == "Match" => {
+            (ValueView::Instance { class_name, .. }, ValueView::Int(i))
+                if class_name == "Match" =>
+            {
+                let list_v = target.match_list();
                 if i < 0 {
                     Value::NIL
-                } else if let Some(ValueView::Array(items, ..)) =
-                    attributes.as_map().get("list").map(Value::view)
-                {
+                } else if let Some(ValueView::Array(items, ..)) = list_v.as_ref().map(Value::view) {
                     items.get(i as usize).cloned().unwrap_or(Value::NIL)
                 } else {
                     Value::NIL

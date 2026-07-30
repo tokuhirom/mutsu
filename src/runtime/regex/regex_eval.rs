@@ -390,11 +390,8 @@ impl Interpreter {
             None,
             &caps.named_quantified,
         );
-        let ValueView::Instance { attributes, .. } = full.view() else {
-            return out;
-        };
-        let attr_map = attributes.as_map();
-        let Some(ValueView::Hash(named)) = attr_map.get("named").map(Value::view) else {
+        let named_v = full.match_named();
+        let Some(ValueView::Hash(named)) = named_v.as_ref().map(Value::view) else {
             return out;
         };
         let mut scratch = Interpreter {
