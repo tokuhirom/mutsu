@@ -28,15 +28,32 @@ by round 4 broke down into three independent per-call costs, all removed
   derived-first and stops at the first class declaring the name — same
   override-by-name semantics, no clones.
 
-Remaining leads, from the round-5 profile: the ceremony *between*
-`call_method_with_values` and the JIT-compiled action body is still ~15-20
-points deep (`dispatch_instance_and_fallback` → `run_instance_method[_celled]`
-→ `call_compiled_method[_fast]` → `vm_jit::try_enter`, each layer shaving
-2-8%); `Interpreter::new` is ~4.7% of the run (~80ms, one-time startup cost of
-every mutsu invocation — a separate lead, not match-time); and the ADR-0016
-P2+ structural work (CapNode split, spans, lazy Match) still stands for the
-allocator/memcmp tail (`_int_free`+`malloc`+`memmove` ≈ 23%,
-`LocalKey::with` TLS ≈ 12%).
+Remaining leads — **corrected after a post-merge re-profile** (unprivileged
+`perf`, warm cache, so no sudo/cold-cache contamination): the earlier
+"ceremony between `call_method_with_values` and the JIT body is 15-20 points"
+reading, and any post-merge entries like "`check_eval_param_type_constraints`
+18%" / "main-script `parse_program` 11%" / "`exec_use_module_op` 16%" in a
+*children* view, are **stack-truncation misattributions**, not real costs:
+grammar matching recurses hundreds of frames deep, the kernel caps recorded
+call stacks at `perf_event_max_stack` (127), and the severed lower fragments
+get re-rooted onto whatever shallow frame they landed under. Verified with
+gdb hit counters: `collect_declared_type_names_with` runs **once** per
+process (the pre-run check of the 23-line bench script) and warm `use
+YAMLish` is 0.03s wall — neither can be 18%/16% of a 1.3s run. **Trust
+self-time (`--no-children`) and gdb hit counts for grammar-heavy profiles;
+treat every deep-recursion children percentage as suspect.**
+
+What the trustworthy self-time view actually shows (post-round-5, 1.27s):
+a long tail dominated by **Match-object construction** — the
+`make_match_object_full_q`/`make_subcap_match` recursion with its
+`Vec::from_iter`/`make_instance`/`AttrMap::from` cluster is the largest
+coherent block (≥20% even before un-truncating), over an allocator floor of
+`malloc`+`cfree`+`malloc_consolidate`+`memmove` ≈ 23%. That is exactly
+ADR-0016 P2/P5 territory (CapNode split, spans, lazy Match) — the next
+round is structural, not another call-site fix. Two smaller leads:
+`Interpreter::new` ≈ 80ms one-time startup of every mutsu invocation
+(separate from match time), and process startup (`_dl_relocate_object` +
+loader ≈ 6-8% of a 1.3s run).
 
 **Update (2026-07-30, round 4): ~7x now.** The dominant cost was not the regex
 engine at all — it was the **grammar-action walk's function dispatch**. On
