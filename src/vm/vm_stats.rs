@@ -109,6 +109,27 @@ static GC_PAUSE_NS_TOTAL: AtomicU64 = AtomicU64::new(0);
 static GC_PAUSE_NS_MAX: AtomicU64 = AtomicU64::new(0);
 static GC_ROOTS_SCANNED: AtomicU64 = AtomicU64::new(0);
 
+// ADR-0016 P2 diagnostics: how often a stored regex capture node
+// (`Arc<RegexCaptures>`) is mutated through `Arc::make_mut` while shared
+// (strong_count > 1), which deep-clones the entire descendant subtree. The
+// `TOTAL` counter is every such make_mut; `SHARED` is the subset that actually
+// copied. These quantify the reduce-walk / alias-action_name copy cost the
+// CapNode split (ADR-0016 P2) removes structurally.
+static REGEX_CAP_MAKEMUT_TOTAL: AtomicU64 = AtomicU64::new(0);
+static REGEX_CAP_MAKEMUT_SHARED: AtomicU64 = AtomicU64::new(0);
+
+/// Record one `Arc::make_mut` on a stored regex capture node; `shared` means
+/// the node had other holders (strong_count > 1) so make_mut deep-copied it.
+#[inline]
+pub(crate) fn record_regex_cap_makemut(shared: bool) {
+    if enabled() {
+        REGEX_CAP_MAKEMUT_TOTAL.fetch_add(1, Ordering::Relaxed);
+        if shared {
+            REGEX_CAP_MAKEMUT_SHARED.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
 // JIT (ADR-0004 layer 4) counters: how many chunks compiled to native code,
 // how many body executions entered native code, and how many chunks bailed
 // out (contain a not-yet-supported opcode; see `jit_bailout_by_opcode` for
@@ -413,6 +434,11 @@ pub(crate) fn dump() {
     let gc_threshold = crate::gc::gc_current_size_threshold();
     eprintln!(
         "[mutsu vm-stats] gc: collections={gc_collections} candidate_pushes={gc_candidate_pushes} dedup_hits={gc_dedup_hits} reclaimed_nodes={gc_reclaimed_nodes} reclaimed_cycles={gc_reclaimed_cycles} pause_ns_total={gc_pause_ns_total} pause_ns_max={gc_pause_ns_max} roots_scanned={gc_roots_scanned} gc_threshold={gc_threshold}"
+    );
+    let cap_makemut_total = REGEX_CAP_MAKEMUT_TOTAL.load(Ordering::Relaxed);
+    let cap_makemut_shared = REGEX_CAP_MAKEMUT_SHARED.load(Ordering::Relaxed);
+    eprintln!(
+        "[mutsu vm-stats] regex-captures: cap_makemut={cap_makemut_total} shared_deep_copies={cap_makemut_shared}"
     );
     let jit_compiles = JIT_COMPILES.load(Ordering::Relaxed);
     let jit_entries = JIT_ENTRIES.load(Ordering::Relaxed);

@@ -717,6 +717,18 @@ impl Interpreter {
                     && !spec.alias_replaces_original
                     && capture_name != spec.lookup_name;
                 let original_subcap = also_under_original.then(|| subcap.clone());
+                // For an aliased capture (`<x=rule>`), record the original rule
+                // name for grammar action dispatch BEFORE the node is wrapped in
+                // an Arc and shared (`record_reduced_subrule` clones the handle):
+                // writing it afterwards through `Arc::make_mut` deep-copied the
+                // whole descendant subtree for every aliased subrule capture.
+                // The alias copy carries it; the original-name copy (cloned just
+                // above) keeps `action_name: None`, same as before.
+                let is_alias = spec.capture_name.is_some() && capture_name != spec.lookup_name;
+                let mut subcap = subcap;
+                if is_alias {
+                    subcap.action_name = Some(spec.lookup_name.clone());
+                }
                 let subcap = std::sync::Arc::new(subcap);
                 // This subrule has just REDUCED. Log it so a parse that fails
                 // overall can still run its action, the way Rakudo (which
@@ -732,15 +744,10 @@ impl Interpreter {
                     .entry(capture_name.to_string())
                     .or_default()
                     .push(captured.clone());
-                if spec.capture_name.is_some() && capture_name != spec.lookup_name {
+                if is_alias {
                     new_caps
                         .capture_alias_map
                         .insert(capture_name.to_string(), spec.lookup_name.clone());
-                    if let Some(subcaps) = new_caps.named_subcaps.get_mut(capture_name)
-                        && let Some(last) = subcaps.last_mut()
-                    {
-                        std::sync::Arc::make_mut(last).action_name = Some(spec.lookup_name.clone());
-                    }
                 }
                 if let Some(orig_subcap) = original_subcap {
                     new_caps
