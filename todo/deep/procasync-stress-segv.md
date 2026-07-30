@@ -68,14 +68,20 @@ and the fix may well be an ADR-level decision about the raw-pointer sites.
 
 ## Reproduction status
 
-Rare. Not reproduced yet outside the one CI run:
+**Not reproduced outside that single CI job.** Measured 2026-07-30:
 
-- The failing job was re-run and needs its result recorded here once known.
-- The last six `main` CI runs before it (30590224445, 30589790880, 30588793948, 30556546586,
+- **Re-running the very same failing job passed** (12m03s, whole `test` job green). So the crash did
+  not survive a retry on an identical commit.
+- **Local: 22/22 clean.** Release build (`cargo build --release`), `MUTSU_FUDGE=1 prove -e
+  target/release/mutsu roast/S17-procasync/stress.t` — 6 serial runs, then 16 more as 4 concurrent
+  instances × 4 rounds to imitate CI's contention. Every run exited 0.
+- The six `main` CI runs preceding it (30590224445, 30589790880, 30588793948, 30556546586,
   30556056462, 30551748477) show no SIGSEGV for this file.
-- Local repro attempts should use the **release** build, since that is what `make roast` runs:
-  `cargo build --release && MUTSU_FUDGE=1 prove -e target/release/mutsu roast/S17-procasync/stress.t`,
-  looped. Under CPU contention (`-j4` or heavier) is the likelier repro condition, matching CI.
+
+So the observed rate is roughly 1 in several dozen runs *on CI hardware*, and 0 in 22 locally — low
+enough that a repro loop is not the way in. Anyone picking this up should expect to need a core dump
+from CI, or a sanitizer build, rather than a local reproduction. Use the **release** build when
+trying anyway, since that is what `make roast` runs.
 
 The PR it appeared on (#5582) deleted an unreferenced Raku test-helper module and edited PLAN.md —
 no Rust changes at all — so the crash cannot have been introduced by that diff.
@@ -84,8 +90,9 @@ no Rust changes at all — so the crash cannot have been introduced by that diff
 
 1. Get a fault address and a backtrace: run the inner 1200-iteration program directly (not through
    `is_run`) in a loop under `rust-gdb -batch`, or enable core dumps and inspect the core.
-2. If it will not reproduce standalone, run the whole file under load and check whether the parent or
-   the `is_run` child faulted.
+2. It very likely will *not* reproduce standalone (see above) — so prefer a CI-side approach: enable
+   core dumps in the `test` job, or add a sanitizer/`gdb`-attached variant, rather than burning local
+   cycles on a loop that has already come up empty 22 times.
 3. Only quarantine it in `flaky-tests.txt` if the evidence standard in `docs/flaky-test-policy.md` is
    actually met — and note that a *crash* is a poor quarantine candidate, since retrying hides a real
    memory-safety bug rather than tolerating benign non-determinism.
