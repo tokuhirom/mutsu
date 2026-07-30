@@ -375,7 +375,7 @@ impl Interpreter {
             receiver_class_name,
             owner_class.as_str(),
             method_name,
-            method_def,
+            &method_def,
             attributes,
             args,
             invocant,
@@ -427,7 +427,7 @@ impl Interpreter {
             receiver_class_name,
             owner_class,
             method_name,
-            method_def,
+            &method_def,
             &attributes,
             args,
             invocant,
@@ -455,7 +455,7 @@ impl Interpreter {
         receiver_class_name: &str,
         owner_class: &str,
         method_name: &str,
-        method_def: MethodDef,
+        method_def: &MethodDef,
         attributes: &AttrMap,
         args: Vec<Value>,
         invocant: Option<Value>,
@@ -486,11 +486,19 @@ impl Interpreter {
         // compiled-execution Mixin/instance attribute writeback is handled by
         // `self_instance_attrs` (unwraps a `Mixin` self to the inner cell) in
         // the attr ops and the `final_attrs` commit below.
-        let mut method_def = method_def;
-        if method_def.compiled_code.is_none() && method_def.delegation.is_none() {
-            let dist = self.resolve_package_distribution(owner_class);
-            Self::compile_method_def_in_place_with_dist(&mut method_def, owner_class, dist);
-        }
+        // Borrowed on the hot path; cloned only for the cold on-demand compile
+        // (a candidate reached before its owner's registration compile pass).
+        let compiled_holder: Option<MethodDef>;
+        let method_def: &MethodDef =
+            if method_def.compiled_code.is_none() && method_def.delegation.is_none() {
+                let mut owned = method_def.clone();
+                let dist = self.resolve_package_distribution(owner_class);
+                Self::compile_method_def_in_place_with_dist(&mut owned, owner_class, dist);
+                compiled_holder = Some(owned);
+                compiled_holder.as_ref().unwrap()
+            } else {
+                method_def
+            };
         let writeback_safe_compiled =
             method_def.compiled_code.is_some() && method_def.delegation.is_none();
         if !writeback_safe_compiled {
@@ -500,7 +508,7 @@ impl Interpreter {
                 .forward_resolved_delegation(
                     receiver_class_name,
                     owner_class,
-                    method_def,
+                    method_def.clone(),
                     attributes.clone(),
                     args,
                     invocant,
@@ -514,7 +522,7 @@ impl Interpreter {
             receiver_class_name,
             owner_class,
             method_name,
-            &method_def,
+            method_def,
             &cc,
             attributes,
             args,

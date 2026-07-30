@@ -468,6 +468,11 @@ pub(crate) struct NativeCtorPlan {
     /// so the whole scan (its keys `Vec` plus the `(String, String)` registry-key
     /// allocs) is skipped. The overwhelmingly common case.
     pub(crate) has_container_defaults: bool,
+    /// MRO-resolved `is Type` container attribute traits (`has %.h is X`):
+    /// attr name -> type name. Replaces the per-construction
+    /// `attribute_is_type_in_mro` MRO walk (a `(String, String)` tuple-key
+    /// alloc per MRO level per unfilled `@`/`%` attribute).
+    pub(crate) attr_is_types: Arc<HashMap<String, String>>,
     /// Pre-derived BUILD/TWEAK phase step lists (`runtime/ctor_phase_plan.rs`):
     /// the base-first MRO walk, per-level registry probes, role-submethod
     /// ordering, and 6.c/6.e skip decisions that the construction phases

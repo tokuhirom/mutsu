@@ -375,7 +375,7 @@ impl Interpreter {
                 // `seed_attr_value` — a plain empty container here would strip
                 // the type (DBIish's `has %.Converter is DBDish::TypeConverter`
                 // lost its STORE/convert-function surface through bless).
-                if let Some(type_name) = self.attribute_is_type_in_mro(cn_resolved, attr_name) {
+                if let Some(type_name) = plan.attr_is_types.get(attr_name).cloned() {
                     self.build_is_type_container(&type_name, *sigil)
                 } else if *sigil == '@' {
                     // A `@`-sigil attribute with no default is an empty Array,

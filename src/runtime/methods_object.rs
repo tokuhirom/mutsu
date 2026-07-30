@@ -360,6 +360,17 @@ impl Interpreter {
                 .map(|(n, ..)| crate::symbol::Symbol::intern(n))
                 .collect::<Vec<_>>(),
         );
+        // MRO-resolved `is Type` container traits for every declared attribute
+        // (usually empty — the registry map is keyed by declaring class).
+        let attr_is_types = std::sync::Arc::new(
+            class_attrs
+                .iter()
+                .filter_map(|(n, ..)| {
+                    self.attribute_is_type_in_mro(cn_resolved, n)
+                        .map(|t| (n.clone(), t))
+                })
+                .collect::<HashMap<String, String>>(),
+        );
         // Pre-derive the BUILD/TWEAK phase step lists and the attribute-name
         // probe skeleton (runtime/ctor_phase_plan.rs) — pure class-shape data
         // the construction phases otherwise re-derive per construction.
@@ -390,6 +401,7 @@ impl Interpreter {
             has_smiley,
             has_custom_bless,
             has_container_defaults,
+            attr_is_types,
             build_steps,
             tweak_steps,
             probe_skeleton,
