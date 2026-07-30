@@ -270,6 +270,16 @@ impl Interpreter {
             if let Some(def) = self.choose_best_matching_candidate(name, arg_values, candidates) {
                 return Some((*def).clone());
             }
+            // Same flexible-arity fallback the qualified branch of
+            // `resolve_function_with_types` uses: a candidate with an
+            // optional/defaulted/slurpy positional is registered under its
+            // declared arity, not the call's.
+            let flexible = self.qualified_flexible_arity_candidates(name);
+            if !flexible.is_empty()
+                && let Some(def) = self.choose_best_matching_candidate(name, arg_values, flexible)
+            {
+                return Some((*def).clone());
+            }
             return None;
         }
         self.resolve_function_with_types(name, arg_values)

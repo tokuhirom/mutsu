@@ -1046,6 +1046,11 @@ pub(crate) enum Stmt {
         /// whose `{*}` dispatches to the matching multi method candidate,
         /// rather than a package-level proto sub.
         is_method: bool,
+        /// True for `our proto sub`. The proto is the one *visible* name of a
+        /// multi (its candidates are lexical), so `our` on it makes the whole
+        /// routine a package symbol: `module M { our proto sub f(|) {*} }` puts
+        /// `&f` in `M::` and `::('M::&f')` resolves.
+        is_our: bool,
     },
     Let {
         name: String,

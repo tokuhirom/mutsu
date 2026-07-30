@@ -75,18 +75,30 @@ fetch_commit() {
 # that) and reach for fixtures by RELATIVE path, e.g. OpenSSL's 03-rsa does
 # `slurp 't/key.pem'`. Running from the mutsu repo root instead made such files
 # die before their first test and be miscounted as library failures.
+# A `not ok N - desc # TODO reason` line is an *expected* failure: TAP says the
+# suite still passes, and `prove` agrees. Upstream suites use it for assertions
+# that depend on the host (NativeLibs' 10-search only finds a versioned
+# `libmysqlclient` on some distros), so counting it as a failure would make a file
+# ungateable even at exact parity with raku — which fails the same subtest.
 run_one() {
   local workdir="$1"; shift
-  local out planned nok okc
+  local out planned nok okc todo
   out="$(cd "$workdir" && timeout 120 "$MUTSU_BIN" "$@" 2>&1)"
   planned="$(printf '%s\n' "$out" | grep -oE '^1\.\.[0-9]+' | head -1 | cut -d. -f3)"
   nok="$(printf '%s\n' "$out" | grep -cE '^not ok')"
   okc="$(printf '%s\n' "$out" | grep -cE '^ok ')"
-  if [ -n "$planned" ] && [ "$nok" -eq 0 ] && [ "$okc" -eq "$planned" ]; then
-    echo "PASS"
+  todo="$(printf '%s\n' "$out" | grep -ciE '^not ok.*# *TODO')"
+  if [ -n "$planned" ] \
+     && [ "$((nok - todo))" -eq 0 ] \
+     && [ "$((okc + todo))" -eq "$planned" ]; then
+    if [ "$todo" -gt 0 ]; then
+      echo "PASS($todo todo)"
+    else
+      echo "PASS"
+    fi
     return 0
   fi
-  echo "FAIL(ok=$okc/${planned:-?},notok=$nok)"
+  echo "FAIL(ok=$okc/${planned:-?},notok=$nok,todo=$todo)"
   return 1
 }
 

@@ -246,6 +246,7 @@ impl Interpreter {
                 || declared_types.contains(tc)
                 || self.is_resolvable_type(tc)
                 || self.has_type(tc)
+                || self.is_type_alias_constant(tc)
                 || matches!(tc, "Inf" | "NaN" | "True" | "False" | "Empty")
                 || crate::env::global_base_contains(tc)
             {
@@ -298,6 +299,35 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Is `name` a `constant` bound to a type object — i.e. an alias usable
+    /// wherever a type name is?
+    ///
+    /// `constant Foo = Int;` / `constant HANDLE = uint32;` puts a type object in
+    /// the lexical scope, and Raku accepts the alias in a signature
+    /// (`sub f(Foo $x --> Foo)`). C bindings lean on this heavily — the
+    /// `NativeHelpers::Blob` tests declare `constant HANDLE = uint32` and return
+    /// `--> HANDLE` — so rejecting the alias made the whole declaration fail to
+    /// compile. Held as a *type object* value, so a plain env lookup identifies
+    /// it: an alias is a `Package` value, unlike an ordinary constant.
+    ///
+    /// The binding must point at some *other* type. A `package`/`module` binds
+    /// its own name to itself, and `my package A {}; sub foo(A $a)` is
+    /// X::Parameter::BadType in Raku ("insufficiently type-like") — treating it
+    /// as an alias here would swallow that error.
+    pub(crate) fn is_type_alias_constant(&self, name: &str) -> bool {
+        let Some(value) = self.get_env_with_main_alias(name) else {
+            return false;
+        };
+        let ValueView::Package(target) = value.view() else {
+            return false;
+        };
+        let target = target.resolve();
+        target != name
+            && (self.is_resolvable_type(&target)
+                || self.has_type(&target)
+                || crate::runtime::nativecall::CType::from_type_name(&target).is_some())
+    }
+
     /// Reject a sub return type (`--> NoSuchType` / `returns NoSuchType`) that
     /// names a type unknown to this compilation unit -> X::Undeclared (with
     /// `what` => "Type", `symbol` => the bad name). Mirrors the parameter-type
@@ -340,6 +370,7 @@ impl Interpreter {
             || declared_types.contains(rt)
             || self.is_resolvable_type(rt)
             || self.has_type(rt)
+            || self.is_type_alias_constant(rt)
         {
             return Ok(());
         }
@@ -1091,8 +1122,17 @@ impl Interpreter {
         params: &[String],
         param_defs: &[ParamDef],
         body: &[Stmt],
+        is_our: bool,
     ) -> Result<(), RuntimeError> {
         let key = format!("{}::{}", self.current_package(), name);
+        // `our proto sub f(|) {*}` makes the whole multi a package symbol. Its
+        // candidates are declared bare (`multi sub f(...)`) and each of those
+        // marks `Pkg::f` my-scoped, which would hide the routine from the
+        // package stash however the proto was declared — so record the
+        // our-visibility up front and let it win.
+        if is_our && self.current_package() != "GLOBAL" {
+            self.mark_our_scoped_package_item(key.clone());
+        }
         if self
             .registry()
             .functions

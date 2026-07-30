@@ -28,6 +28,18 @@ impl Interpreter {
         if constraint == value_type {
             return true;
         }
+        // A parameterized type is-a its base type: `CArray[uint8] ~~ CArray`,
+        // `Array[Int] ~~ Array`, `Pointer[uint16] ~~ Pointer`. The base name is
+        // the type; the parameterization only narrows it. (The reverse is not
+        // true — a bare `CArray` value does not satisfy `CArray[uint8]` — and the
+        // parameterized-vs-parameterized comparison is handled by the callers
+        // that know how to match the inner types.)
+        if !constraint.contains('[')
+            && let Some((value_base, _)) = value_type.split_once('[')
+            && value_base == constraint
+        {
+            return true;
+        }
         // Qualified name matching: GH2613::R1 should match R1 and vice versa.
         // When one name is qualified (contains ::) and the other is a short name,
         // check if the short name matches the last component of the qualified name.

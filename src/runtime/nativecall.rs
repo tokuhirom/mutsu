@@ -112,6 +112,11 @@ pub struct NativeCallSpec {
     /// name so the returned address is wrapped in an instance of that class
     /// (rather than a bare `Pointer`). `None` for a plain `Pointer` return.
     pub ret_struct: Option<String>,
+    /// A already-resolved function entry point, bypassing `library`/`symbol`
+    /// lookup. Set by `nativecast(<Signature>, $ptr)`, which turns a raw C
+    /// function pointer obtained at runtime (`dlsym`) into something callable —
+    /// there is no symbol name to look up, only the address.
+    pub entry: Option<usize>,
 }
 
 /// Candidate OS library file names for a `is native(<arg>)` argument, applying
@@ -253,17 +258,28 @@ pub fn call_native_with_out_args(
         )));
     }
 
-    let (lib, lib_name) = load_declared_library(&spec.library)?;
-    let func_ptr: *const std::ffi::c_void = unsafe {
-        let sym: libloading::Symbol<*const std::ffi::c_void> =
-            lib.get(spec.symbol.as_bytes()).map_err(|e| {
-                RuntimeError::new(format!(
-                    "NativeCall: symbol '{}' not found in '{lib_name}': {e}",
-                    spec.symbol
-                ))
-            })?;
-        // The symbol's address IS the function entry point.
-        *sym.into_raw()
+    let func_ptr: *const std::ffi::c_void = match spec.entry {
+        // `nativecast(<Signature>, $ptr)`: the entry point is the address itself.
+        Some(addr) if addr != 0 => addr as *const std::ffi::c_void,
+        Some(_) => {
+            return Err(RuntimeError::new(
+                "NativeCall: cannot call through a NULL function pointer",
+            ));
+        }
+        None => {
+            let (lib, lib_name) = load_declared_library(&spec.library)?;
+            unsafe {
+                let sym: libloading::Symbol<*const std::ffi::c_void> =
+                    lib.get(spec.symbol.as_bytes()).map_err(|e| {
+                        RuntimeError::new(format!(
+                            "NativeCall: symbol '{}' not found in '{lib_name}': {e}",
+                            spec.symbol
+                        ))
+                    })?;
+                // The symbol's address IS the function entry point.
+                *sym.into_raw()
+            }
+        }
     };
 
     // Owners that must outlive the libffi call (boxed scalars and CStrings the

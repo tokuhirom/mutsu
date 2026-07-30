@@ -548,6 +548,26 @@ impl Interpreter {
                 true
             };
         }
+        // An *unparameterized* `CArray` constraint accepts any `CArray[T]`: the
+        // parameterization only narrows the type (`isa-ok $au, CArray` and
+        // `sub carray-is-managed(CArray:D \arr)` in NativeHelpers::Blob both
+        // spell it bare). The value side is either a native Array carrying a
+        // `CArray[...]` declared type or a `nativecast`ed handle whose element
+        // type lives in its class name; neither reduces to the `&'static`
+        // `value_type_name` ("Array" / the class name) the generic tail compares.
+        if constraint == "CArray" {
+            if let ValueView::Instance { class_name, .. } = value.view() {
+                let cn = class_name.resolve();
+                return cn == "CArray" || cn.starts_with("CArray[");
+            }
+            if matches!(value.view(), ValueView::Array(..)) {
+                return self.container_type_metadata(value).is_some_and(|m| {
+                    m.declared_type
+                        .as_deref()
+                        .is_some_and(|d| d == "CArray" || d.starts_with("CArray["))
+                });
+            }
+        }
         if let Some((base, inner)) = Self::parse_generic_constraint(constraint) {
             match base {
                 "array" => {

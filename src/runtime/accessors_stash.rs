@@ -338,6 +338,12 @@ impl Interpreter {
                     tags.extend(tagset.iter().cloned());
                 }
             }
+            // `ALL` is always a member of an EXPORT package — it is the
+            // everything-tag, not a tag any symbol is declared with, so it never
+            // appears in the collected tag sets. Leaving it out made
+            // `::('Mod::EXPORT::ALL')` (resolved one component at a time) fail on
+            // the last step even though the whole name resolves.
+            tags.insert("ALL".to_string());
             let mut symbols: HashMap<String, Value> = HashMap::new();
             for tag in tags {
                 symbols.insert(
@@ -406,6 +412,40 @@ impl Interpreter {
             // Skip my-scoped subs (they should not appear in the package stash)
             let fq_base = format!("{}::{}", package_name, base);
             if self.is_my_scoped_package_item(&fq_base) {
+                continue;
+            }
+            symbols
+                .entry(format!("&{base}"))
+                .or_insert_with(|| Value::routine_parts(def.package, def.name, false));
+        }
+
+        // A module that exports anything has an `EXPORT` member in its stash
+        // (`module Foo { our sub bar is export {} }` gives `Foo::.keys` ==
+        // `(&bar EXPORT)` in Rakudo). Without it, walking a name one component
+        // at a time — which is what `::('Foo::EXPORT::ALL')` does — stopped at
+        // `EXPORT` even though `Foo::EXPORT::ALL` resolves when spelled whole.
+        if self.exported_subs.contains_key(package_name.as_str())
+            || self.exported_vars.contains_key(package_name.as_str())
+        {
+            symbols.entry("EXPORT".to_string()).or_insert_with(|| {
+                Value::package(Symbol::intern(&format!("{package_name}::EXPORT")))
+            });
+        }
+
+        // A `proto sub` is held in its own registry, not in `functions`, so the
+        // loop above never saw it — `module M { our proto sub f(|) {*} }` had an
+        // empty stash and `::('M::&f')` was a Failure. Its candidates are not
+        // stash members in Rakudo either (a bare `multi` is lexical); the proto
+        // is the one visible name, and it is visible exactly when it is `our`.
+        for (key, def) in &self.registry().proto_functions {
+            let key_s = key.resolve();
+            let Some(base) = Self::stash_member_tail(&key_s, &package_name) else {
+                continue;
+            };
+            if base.is_empty() || base.contains("::") || base.contains(':') {
+                continue;
+            }
+            if self.is_my_scoped_package_item(&format!("{}::{}", package_name, base)) {
                 continue;
             }
             symbols

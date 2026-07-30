@@ -35,6 +35,39 @@ impl Interpreter {
         None
     }
 
+    /// Candidates for a package-qualified `name` that can absorb a call whose
+    /// positional count differs from their declared one — i.e. those with an
+    /// optional / defaulted / slurpy positional parameter — gathered across ALL
+    /// registered arities, sorted most-specific first.
+    ///
+    /// Multi candidates are registered under `Pkg::name/<arity>…` keys built
+    /// from the *declared* parameter count, so a call that omits a defaulted
+    /// trailing parameter never matches the exact-arity keys. The bare-name
+    /// path has long had this fallback; the qualified path did not, so
+    /// `NativeLibs::cannon-name('foo')` could not reach
+    /// `multi cannon-name(Str $l, Version $v = Version)` even though the
+    /// identical bare call resolved fine.
+    pub(super) fn qualified_flexible_arity_candidates(
+        &self,
+        name: &str,
+    ) -> Vec<(String, Arc<FunctionDef>)> {
+        let prefix = format!("{}/", name);
+        let mut candidates: Vec<(String, Arc<FunctionDef>)> =
+            self.registry()
+                .functions
+                .iter()
+                .filter(|(k, def)| {
+                    k.resolve().starts_with(&prefix)
+                        && def.param_defs.iter().any(|p| {
+                            !p.named && (p.optional_marker || p.default.is_some() || p.slurpy)
+                        })
+                })
+                .map(|(k, def)| (k.resolve(), def.clone()))
+                .collect();
+        self.sort_candidates_by_specificity(&mut candidates);
+        candidates
+    }
+
     pub(super) fn resolve_function_with_arity(
         &self,
         name: &str,
@@ -169,6 +202,14 @@ impl Interpreter {
                 {
                     return Some(def);
                 }
+            }
+            // A candidate whose declared arity differs from the call's because a
+            // trailing parameter is optional/defaulted/slurpy.
+            let flexible = self.qualified_flexible_arity_candidates(name);
+            if !flexible.is_empty()
+                && let Some(def) = self.choose_best_matching_candidate(name, arg_values, flexible)
+            {
+                return Some(def);
             }
             if let Some(def) = self
                 .registry()

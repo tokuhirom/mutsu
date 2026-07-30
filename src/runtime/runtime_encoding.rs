@@ -252,9 +252,20 @@ impl Interpreter {
         self.my_scoped_package_items.insert(fq_name);
     }
 
+    /// Mark a fully-qualified name as explicitly `our`-scoped, overriding any
+    /// `my`-scoped marking of the same name. Needed where one Raku routine is
+    /// registered from several declarations of differing scope: an
+    /// `our proto sub` publishes the name while each bare `multi` candidate
+    /// would otherwise mark it lexical.
+    pub(crate) fn mark_our_scoped_package_item(&mut self, fq_name: String) {
+        self.my_scoped_package_items.remove(&fq_name);
+        self.our_scoped_package_items.insert(fq_name);
+    }
+
     /// Check if a fully-qualified name is `my`-scoped within its parent package.
     pub(crate) fn is_my_scoped_package_item(&self, fq_name: &str) -> bool {
         self.my_scoped_package_items.contains(fq_name)
+            && !self.our_scoped_package_items.contains(fq_name)
     }
 
     pub(crate) fn is_name_suppressed(&self, name: &str) -> bool {

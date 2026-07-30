@@ -14,7 +14,7 @@ use super::my_decl_helpers::{
     check_invalid_type_smiley, parse_optional_type_constraint, parse_sigilless_decl,
     parse_typed_constant, try_dot_twigil_attr,
 };
-use super::{parse_char, proto_decl};
+use super::{parse_char, proto_decl_scoped};
 use crate::ast::{Expr, Stmt};
 
 use super::super::sub::parse_type_constraint_expr;
@@ -137,7 +137,7 @@ pub(super) fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, St
             rest = after_ws;
             // Fall through to normal variable parsing below
         } else {
-            return proto_decl(rest);
+            return proto_decl_scoped(rest, is_our);
         }
     }
 

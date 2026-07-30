@@ -62,6 +62,60 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("Promise"), attrs)
     }
 
+    /// The declared name of a callable value, for looking it up in name-keyed
+    /// registries. `None` for anonymous blocks/closures.
+    pub(crate) fn callable_value_name(func: &Value) -> Option<String> {
+        let (package, name) = match func.view() {
+            ValueView::Routine { package, name, .. } => (package.resolve(), name.resolve()),
+            ValueView::Sub(data) => (data.package.resolve(), data.name.resolve()),
+            _ => return None,
+        };
+        if name.is_empty() {
+            return None;
+        }
+        if package.is_empty() || package == "GLOBAL" {
+            Some(name.to_string())
+        } else {
+            Some(format!("{package}::{name}"))
+        }
+    }
+
+    /// Dispatch `name` over C FFI if it is a registered `is native` sub.
+    /// `Ok(None)` means "not a native sub" — the caller continues normally.
+    ///
+    /// Unlike the VM opcode paths this does not write `is rw` out-parameters
+    /// back to a caller *slot* (there is no `CompiledCode` here to address one);
+    /// it writes them into `env` and records the name, which the enclosing VM
+    /// frame drains on return.
+    pub(crate) fn try_dispatch_native_by_name(
+        &mut self,
+        name: &str,
+        args: &[Value],
+    ) -> Result<Option<Value>, RuntimeError> {
+        let Some(mut spec) = self.native_call_specs.get(name).cloned().or_else(|| {
+            name.rsplit_once("::")
+                .and_then(|(_, short)| self.native_call_specs.get(short).cloned())
+        }) else {
+            return Ok(None);
+        };
+        self.resolve_native_ret_struct(&mut spec);
+        let call_args: Vec<Value> = args
+            .iter()
+            .filter(|a| !Self::is_callsite_line_marker(a))
+            .cloned()
+            .collect();
+        let (result, out_args) =
+            crate::runtime::nativecall::call_native_with_out_args(&spec, &call_args)?;
+        for (idx, val) in out_args {
+            if let ValueView::VarRef { name, .. } = call_args[idx].view() {
+                let n = name.resolve().to_string();
+                self.env_mut().insert(n.clone(), val);
+                self.pending_rw_writeback_sources.push(n);
+            }
+        }
+        Ok(Some(result))
+    }
+
     pub(crate) fn call_sub_value(
         &mut self,
         func: Value,
@@ -76,6 +130,19 @@ impl Interpreter {
             },
             _ => func,
         };
+        // NativeCall: a sub declared `is native(...)` has a `{ * }` stub for a
+        // body, so reaching that body at all is a bug — it must be dispatched
+        // over C FFI instead. The two VM call opcodes check `native_call_specs`
+        // by name, but a call through a code object (`my &f = &dlsym; f(|c)`,
+        // which is how `NativeLibs` picks between the dyncall and libffi symbol
+        // lookups) resolves the callee as a value and never consulted them, so
+        // it ran the stub and returned `*`.
+        if !self.native_call_specs.is_empty()
+            && let Some(name) = Self::callable_value_name(&func)
+            && let Some(result) = self.try_dispatch_native_by_name(&name, &args)?
+        {
+            return Ok(result);
+        }
         if let ValueView::Routine {
             package,
             name,

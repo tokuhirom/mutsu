@@ -174,6 +174,7 @@ mod class_introspection;
 pub(crate) use class_introspection::UserMethodOrAccessor;
 pub(crate) mod cstruct_layout;
 mod decl_types;
+pub(crate) mod nativecall_fnptr;
 pub(crate) use self::decl_types::*;
 pub(crate) mod deprecation;
 pub(crate) mod did_you_mean;
@@ -201,6 +202,7 @@ mod io_pod_config;
 mod io_pod_entries;
 mod io_pod_table;
 mod io_sysinfo;
+mod io_sysinfo_vm_config;
 mod iterator_protocol;
 pub(crate) mod json;
 mod lock_reentry;
@@ -1427,6 +1429,9 @@ pub struct Interpreter {
     /// Fully-qualified names of `my`-scoped classes/subs inside packages.
     /// These should NOT appear in the parent package's stash.
     my_scoped_package_items: HashSet<String>,
+    /// Names published by an explicit `our` declaration; wins over
+    /// `my_scoped_package_items` (see `mark_our_scoped_package_item`).
+    our_scoped_package_items: HashSet<String>,
     /// Stack of lexically-scoped class names per block scope depth.
     /// When a block scope exits, classes registered in that scope get suppressed.
     lexical_class_scopes: Vec<Vec<String>>,

@@ -442,6 +442,17 @@ impl Interpreter {
             target
         };
 
+        // NativeCall: a sub declared `is native(...)` carries a `{ * }` stub
+        // body, so it must be dispatched over C FFI no matter how the callsite
+        // reached it — including through a code object (`my &f = &dlsym; f(...)`).
+        // See `try_dispatch_native_by_name`.
+        if !self.native_call_specs.is_empty()
+            && let Some(name) = Self::callable_value_name(&target)
+            && let Some(result) = self.try_dispatch_native_by_name(&name, &args)?
+        {
+            return Ok(result);
+        }
+
         // A WalkList is invoked (`$x.WALK(...)()`) by calling each candidate on
         // the original invocant, forwarding any arguments.
         if let ValueView::Instance { class_name, .. } = target.view()

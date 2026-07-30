@@ -262,10 +262,27 @@ fn walk_stmt(stmt: &Stmt, nil_hint: bool) {
             walk_stmts(then_branch, false);
             walk_stmts(else_branch, false);
         }
-        Stmt::When { body, .. } | Stmt::Default(body) => walk_stmts(body, false),
+        // A `when`/`default` block's final statement is the block's *value* —
+        // `when` succeeds out of the enclosing topicalizer with it — so it is not
+        // sunk. Rakudo warns for `if True { 1 }` but not for `when 'a' { 1 }`,
+        // and mutsu warned for both; the spurious warning fired even on a branch
+        // that never ran (`when 'darwin' { skip-rest, "…" }` in a Linux-only
+        // test file). Everything before the last statement is still sunk.
+        Stmt::When { body, .. } | Stmt::Default(body) => walk_stmts(sunk_prefix(body), false),
         // Everything else (declarations, calls, say/print, assignments, and the
         // bodies of subs/classes/etc.) is not analysed for sink warnings.
         _ => {}
+    }
+}
+
+/// The statements of `body` that are genuinely in sink context when the block's
+/// final statement is its value: everything up to (and not including) the last
+/// real statement. Trailing bookkeeping markers (`SetLine`) are not statements
+/// and are kept out of the reckoning.
+fn sunk_prefix(body: &[Stmt]) -> &[Stmt] {
+    match body.iter().rposition(|s| !matches!(s, Stmt::SetLine(_))) {
+        Some(last) => &body[..last],
+        None => body,
     }
 }
 

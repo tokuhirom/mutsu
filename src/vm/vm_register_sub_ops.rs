@@ -526,6 +526,7 @@ impl Interpreter {
             params,
             ret,
             ret_struct,
+            entry: None,
         };
         if let Some(class_name) = invocant_class {
             // Both spellings: the declaration is package-qualified while a
@@ -700,6 +701,7 @@ impl Interpreter {
             is_export,
             custom_traits,
             is_method,
+            is_our,
             ..
         } = stmt
         {
@@ -715,7 +717,7 @@ impl Interpreter {
             // pattern, SBOM::CycloneDX). Skip the package-level registration for
             // method protos; the method-table path already handles them.
             if !*is_method {
-                self.register_proto_decl(&name_str, params, param_defs, body)?;
+                self.register_proto_decl(&name_str, params, param_defs, body, *is_our)?;
             }
             if *is_export {
                 self.register_proto_decl_as_global(&name_str, params, param_defs, body)?;

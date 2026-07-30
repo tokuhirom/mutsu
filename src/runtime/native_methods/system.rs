@@ -166,6 +166,32 @@ impl Interpreter {
 
     // --- VM ---
 
+    /// `$path.absolute` for a path that need not exist: prepend `$*CWD` when it
+    /// is relative and fold away `.` / `..` components lexically (no `realpath`,
+    /// so nothing is resolved through symlinks and a missing file is fine).
+    fn absolute_lexical_path(path: &std::path::Path) -> String {
+        use std::path::Component;
+        let absolute = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            match std::env::current_dir() {
+                Ok(cwd) => cwd.join(path),
+                Err(_) => path.to_path_buf(),
+            }
+        };
+        let mut out = std::path::PathBuf::new();
+        for comp in absolute.components() {
+            match comp {
+                Component::CurDir => {}
+                Component::ParentDir => {
+                    out.pop();
+                }
+                other => out.push(other),
+            }
+        }
+        out.to_string_lossy().to_string()
+    }
+
     pub(in crate::runtime) fn native_vm(
         &mut self,
         attributes: &AttrMap,
@@ -220,14 +246,32 @@ impl Interpreter {
                     .map(|v| v.to_string_value())
                     // `Version.new(5).Str` is `5`, but a `Version` gists as `v5`.
                     .map(|s| s.strip_prefix('v').unwrap_or(&s).to_string());
+                // Rakudo decorates only the BASENAME and puts the directory back
+                // afterwards: `'/bar/foo'.IO` becomes `/bar/libfoo.so`, not
+                // `lib/bar/foo.so`. A name that carries any directory at all is
+                // additionally made absolute (`'./foo'` -> `$*CWD/libfoo.so`),
+                // which is what makes `NativeLibs`' "load the .so I just built
+                // next to me" idiom work.
+                let path = std::path::Path::new(&name);
+                let basename = path
+                    .file_name()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_else(|| name.clone());
+                let has_dir = basename != name;
                 let platform_name = match (cfg!(target_os = "macos"), cfg!(windows), version) {
-                    (true, _, Some(v)) => format!("lib{name}.{v}.dylib"),
-                    (true, _, None) => format!("lib{name}.dylib"),
-                    (_, true, _) => format!("{name}.dll"),
-                    (_, _, Some(v)) => format!("lib{name}.so.{v}"),
-                    (_, _, None) => format!("lib{name}.so"),
+                    (true, _, Some(v)) => format!("lib{basename}.{v}.dylib"),
+                    (true, _, None) => format!("lib{basename}.dylib"),
+                    (_, true, _) => format!("{basename}.dll"),
+                    (_, _, Some(v)) => format!("lib{basename}.so.{v}"),
+                    (_, _, None) => format!("lib{basename}.so"),
                 };
-                Ok(self.make_io_path_instance(&platform_name))
+                let full = if has_dir {
+                    let dir = path.parent().unwrap_or(std::path::Path::new("."));
+                    Self::absolute_lexical_path(&dir.join(&platform_name))
+                } else {
+                    platform_name
+                };
+                Ok(self.make_io_path_instance(&full))
             }
             "gist" | "Str" => {
                 let name = attributes
