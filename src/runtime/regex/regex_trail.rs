@@ -31,7 +31,7 @@ pub(super) struct PosTailRec {
     p_at: usize,
     p: Vec<String>,
     sc_at: usize,
-    sc: Vec<Option<Arc<RegexCaptures>>>,
+    sc: Vec<Option<Arc<CapNode>>>,
     q_at: usize,
     q: Vec<Option<Vec<QuantifiedCaptureEntry>>>,
     off_at: usize,
@@ -54,7 +54,7 @@ pub(super) enum Undo {
     PosOverwrite {
         idx: usize,
         text: Option<String>,
-        sc: Option<Option<Arc<RegexCaptures>>>,
+        sc: Option<Option<Arc<CapNode>>>,
         q: Option<Option<Vec<QuantifiedCaptureEntry>>>,
         off: Option<(usize, usize)>,
     },
@@ -349,7 +349,7 @@ impl CapStore {
             .push(val);
     }
 
-    pub(super) fn push_named_subcap(&mut self, key: &str, sub: Arc<RegexCaptures>) {
+    pub(super) fn push_named_subcap(&mut self, key: &str, sub: Arc<CapNode>) {
         self.record_named_sub_key(key);
         self.caps
             .named_subcaps
@@ -382,7 +382,7 @@ impl CapStore {
     pub(super) fn push_positional(
         &mut self,
         text: String,
-        subcap: Option<Arc<RegexCaptures>>,
+        subcap: Option<Arc<CapNode>>,
         quantified: Option<Vec<QuantifiedCaptureEntry>>,
         offsets: (usize, usize),
     ) {
@@ -620,7 +620,10 @@ mod tests {
         store.push_named("k", "1".to_string());
         let m2 = store.mark();
         store.push_named("k", "2".to_string());
-        store.push_named_subcap("k", std::sync::Arc::new(RegexCaptures::default()));
+        store.push_named_subcap(
+            "k",
+            std::sync::Arc::new(super::super::super::CapNode::default()),
+        );
         store.rewind(m2);
         assert_eq!(store.caps().named["k"], vec!["1".to_string()]);
         assert!(store.caps().named_subcaps.is_empty());

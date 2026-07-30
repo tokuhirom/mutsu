@@ -38,7 +38,7 @@ pub(crate) struct CodeBlockContext {
 /// copy of the whole sub-match tree. A completed sub-match is effectively
 /// immutable once stored; the rare post-store tweak (e.g. setting `action_name`)
 /// goes through `Arc::make_mut`, which is free while the entry is still unshared.
-pub(crate) type QuantifiedCaptureEntry = (String, usize, usize, Option<Arc<RegexCaptures>>);
+pub(crate) type QuantifiedCaptureEntry = (String, usize, usize, Option<Arc<CapNode>>);
 
 /// Prefix marking a `named_subcaps` entry as a *silent action capture*: the
 /// match of a silent subrule (`<.foo>`) that is hidden from `.hash` but whose
@@ -47,16 +47,121 @@ pub(crate) type QuantifiedCaptureEntry = (String, usize, usize, Option<Arc<Regex
 /// entries never collide with user captures and are trivially filtered.
 pub(crate) const SILENT_ACTION_MARKER_PREFIX: &str = "\u{1}silent\u{1}";
 
+/// An immutable **stored capture node** — what an `Arc<…>` sub-capture is
+/// (ADR-0016 P2). Distinct from [`RegexCaptures`], the engine's *mutable
+/// accumulator* for the pattern run in progress: a completed sub-match needs
+/// only its span, text, dispatch metadata, and (rarely) children, so storing
+/// the full 14-collection accumulator per node cost ~600 zeroed bytes per
+/// leaf. A leaf `CapNode` (the overwhelmingly common case — e.g. one per
+/// matched character in a quantified `<str=space>` run) collapses every child
+/// collection into a single `None`.
+///
+/// The rare post-store mutation (the reduce walk writing `ast`/`regex_vars`)
+/// still goes through `Arc::make_mut`, same as before the split.
+#[derive(Clone, Default)]
+pub(crate) struct CapNode {
+    pub(crate) matched: String,
+    pub(crate) from: usize,
+    pub(crate) to: usize,
+    /// The winning :sym<> variant name, if this match was from a protoregex.
+    pub(crate) sym: Option<String>,
+    /// The original rule name when this capture was stored under an alias.
+    pub(crate) action_name: Option<String>,
+    /// The AST value produced by this node's inline `{ make … }` code block(s),
+    /// computed at reduce time. `None` when the rule ran no `make`.
+    pub(crate) ast: Option<Value>,
+    /// Child captures + per-node reduce state. `None` for a leaf with no
+    /// captures, no code blocks, and no metadata — the size win of the split.
+    pub(crate) children: Option<Box<CapChildren>>,
+}
+
+/// The non-leaf payload of a [`CapNode`]: child captures on both axes plus the
+/// per-node reduce-time state. Boxed so a leaf node pays one `None` word.
+#[derive(Clone, Default)]
+pub(crate) struct CapChildren {
+    pub(crate) named: HashMap<String, Vec<String>>,
+    pub(crate) named_subcaps: HashMap<String, Vec<Arc<CapNode>>>,
+    pub(crate) named_quantified: HashSet<String>,
+    pub(crate) capture_alias_map: HashMap<String, String>,
+    pub(crate) positional: Vec<String>,
+    pub(crate) positional_subcaps: Vec<Option<Arc<CapNode>>>,
+    pub(crate) positional_quantified: Vec<Option<Vec<QuantifiedCaptureEntry>>>,
+    pub(crate) positional_nil: Vec<bool>,
+    /// Inline `{ … }` code blocks recorded on this node, run once at reduce time.
+    pub(crate) code_blocks: Vec<CodeBlockContext>,
+    /// What this rule's own `:my $*x` declarations held at this match's reduce
+    /// (see `Interpreter::record_rule_dynvars`).
+    pub(crate) regex_vars: HashMap<String, Value>,
+}
+
+impl CapNode {
+    /// Immutable child access: an empty default when this node is a leaf.
+    pub(crate) fn kids(&self) -> &CapChildren {
+        static EMPTY: std::sync::OnceLock<CapChildren> = std::sync::OnceLock::new();
+        self.children
+            .as_deref()
+            .unwrap_or_else(|| EMPTY.get_or_init(CapChildren::default))
+    }
+
+    /// Mutable child access, materializing the payload on first use.
+    pub(crate) fn kids_mut(&mut self) -> &mut CapChildren {
+        self.children.get_or_insert_with(Default::default)
+    }
+}
+
+impl RegexCaptures {
+    /// Convert this accumulator into the immutable stored node it describes
+    /// (ADR-0016 P2). Consumes the accumulator; drops the accumulator-only
+    /// fields nothing reads through a stored node (`hash_captures`,
+    /// `positional_slots`, `capture_start`/`capture_end`, `match_from`). The
+    /// child payload is allocated only when something would go in it.
+    pub(crate) fn into_cap_node(self) -> CapNode {
+        let has_children = !self.named.is_empty()
+            || !self.named_subcaps.is_empty()
+            || !self.named_quantified.is_empty()
+            || !self.capture_alias_map.is_empty()
+            || !self.positional.is_empty()
+            || !self.positional_subcaps.is_empty()
+            || !self.positional_quantified.is_empty()
+            || !self.positional_nil.is_empty()
+            || !self.code_blocks.is_empty()
+            || !self.regex_vars.is_empty();
+        let children = has_children.then(|| {
+            Box::new(CapChildren {
+                named: self.named,
+                named_subcaps: self.named_subcaps,
+                named_quantified: self.named_quantified,
+                capture_alias_map: self.capture_alias_map,
+                positional: self.positional,
+                positional_subcaps: self.positional_subcaps,
+                positional_quantified: self.positional_quantified,
+                positional_nil: self.positional_nil,
+                code_blocks: self.code_blocks,
+                regex_vars: self.regex_vars,
+            })
+        });
+        CapNode {
+            matched: self.matched,
+            from: self.from,
+            to: self.to,
+            sym: self.sym,
+            action_name: self.action_name,
+            ast: self.ast,
+            children,
+        }
+    }
+}
+
 #[derive(Clone, Default)]
 pub(crate) struct RegexCaptures {
     pub(crate) named: HashMap<String, Vec<String>>,
     /// Nested sub-captures for named subrule matches. Key is capture name,
     /// value is inner captures from the subrule (parallel to entries in `named`).
-    pub(crate) named_subcaps: HashMap<String, Vec<Arc<RegexCaptures>>>,
+    pub(crate) named_subcaps: HashMap<String, Vec<Arc<CapNode>>>,
     pub(crate) positional: Vec<String>,
     /// Nested sub-captures for positional capture groups. Each entry corresponds
     /// to the same index in `positional` and holds inner captures from nested groups.
-    pub(crate) positional_subcaps: Vec<Option<Arc<RegexCaptures>>>,
+    pub(crate) positional_subcaps: Vec<Option<Arc<CapNode>>>,
     /// When a capture group is quantified (e.g. `(\w)+`), this parallel vec
     /// stores the list of all iteration matches for that positional index.
     /// When `Some`, the positional slot should be rendered as an Array of Match objects.
@@ -106,6 +211,36 @@ pub(crate) struct RegexCaptures {
     /// `$<sub>».made` resolve in a parent inline action and post-parse. `None`
     /// when the rule ran no `make`.
     pub(crate) ast: Option<Value>,
+}
+
+#[cfg(test)]
+mod cap_node_tests {
+    use super::*;
+
+    /// ADR-0016 P2: a stored leaf capture node must stay a handful of words —
+    /// that is the entire point of the `CapNode`/`RegexCaptures` split (a
+    /// stored leaf used to cost the full ~600-byte accumulator). If a change
+    /// pushes `CapNode` past this, move the new field into `CapChildren`.
+    #[test]
+    fn cap_node_size_guard() {
+        assert!(
+            std::mem::size_of::<CapNode>() <= 112,
+            "CapNode grew to {} bytes",
+            std::mem::size_of::<CapNode>()
+        );
+    }
+
+    /// A leaf conversion must not allocate a child payload.
+    #[test]
+    fn into_cap_node_leaf_has_no_children() {
+        let mut caps = RegexCaptures::default();
+        caps.matched = "x".to_string();
+        caps.from = 3;
+        caps.to = 4;
+        let node = caps.into_cap_node();
+        assert!(node.children.is_none());
+        assert_eq!((node.from, node.to), (3, 4));
+    }
 }
 
 #[derive(Clone)]

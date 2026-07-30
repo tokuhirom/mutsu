@@ -473,7 +473,7 @@ impl Interpreter {
     /// any `$*` dynamic-var writes it makes into the reduce-time overlay. The
     /// scratch is seeded with the overlay's current values so the action sees the
     /// latest dynamic state; only vars whose value actually changes are published.
-    fn run_reduce_time_action(&self, sub: &RegexCaptures, rule_name: &str, actions: Value) {
+    fn run_reduce_time_action(&self, sub: &CapNode, rule_name: &str, actions: Value) {
         // Run on an INDEPENDENT deep copy of the actions object so any `self`
         // attribute the action mutates does not leak into the real actions
         // object — the authoritative post-parse action pass will run again and is
@@ -509,18 +509,19 @@ impl Interpreter {
             }
             _ => actions.clone(),
         };
+        let kids = sub.kids();
         let match_obj = Value::make_match_object_full_q(
             sub.matched.clone(),
             sub.from as i64,
             sub.to as i64,
-            &sub.positional,
-            &sub.named,
-            &sub.named_subcaps,
-            &sub.positional_subcaps,
-            &sub.positional_quantified,
-            &sub.positional_nil,
+            &kids.positional,
+            &kids.named,
+            &kids.named_subcaps,
+            &kids.positional_subcaps,
+            &kids.positional_quantified,
+            &kids.positional_nil,
             None,
-            &sub.named_quantified,
+            &kids.named_quantified,
         );
         let mut scratch = Interpreter {
             env: self.env.clone(),

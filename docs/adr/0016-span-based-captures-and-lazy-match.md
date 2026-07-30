@@ -232,6 +232,16 @@ alone is 0.04 s of its ~4.07 s, so it is not module-load dominated.)
 collapses its child collections to a single `None` (`children: Option<Box<CapChildren>>`),
 which is where the order-of-magnitude shrink comes from; it also takes the
 `Vec<(usize, RegexCaptures)>` candidate-list memmove with it.
+**Landed 2026-07-31** (`news/2026-07/regex-capnode-split.md`): `CapNode` =
+`matched`/`from`/`to`/`sym`/`action_name`/`ast` + `children: Option<Box<CapChildren>>`,
+≤112 bytes for a leaf (pinned by `cap_node_size_guard`); conversion via
+`RegexCaptures::into_cap_node()` at the ~10 storage sites; the reduce walk and the
+failed-parse replay recurse over `CapNode`; the accumulator-only fields
+(`hash_captures`, `positional_slots`, `positional_offsets`, capture markers,
+`match_from`) are dropped at conversion — nothing ever read them through a stored node.
+Note: the candidate lists themselves still move `RegexCaptures` deltas (ADR-0007's
+delta protocol); their per-delta cost now shrinks with P4's axis collapse rather than
+with this phase.
 **Start by counting the reduce-walk copies** (see P1's measurement note — guessing at
 this already cost one rejected hypothesis): every `Arc::make_mut` on a *stored* node is a
 deep copy whenever anything else holds a handle, and `snapshot()` alone is enough to make

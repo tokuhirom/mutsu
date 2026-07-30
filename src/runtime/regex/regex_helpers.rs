@@ -185,14 +185,14 @@ const REDUCED_SUBRULE_LOG_CAP: usize = 20_000;
 #[derive(Default)]
 pub(crate) struct ReducedSubruleLog {
     /// `(rule name to dispatch the action under, that rule's captures)`.
-    entries: Vec<(String, std::sync::Arc<RegexCaptures>)>,
+    entries: Vec<(String, std::sync::Arc<CapNode>)>,
     /// De-dups `(rule, from, to)`: mutsu's matcher enumerates every candidate end
     /// position of a subrule, so the same reduce is often produced repeatedly.
     seen: std::collections::HashSet<(String, usize, usize)>,
 }
 
 impl ReducedSubruleLog {
-    pub(crate) fn into_entries(self) -> Vec<(String, std::sync::Arc<RegexCaptures>)> {
+    pub(crate) fn into_entries(self) -> Vec<(String, std::sync::Arc<CapNode>)> {
         self.entries
     }
 }
@@ -201,7 +201,7 @@ impl ReducedSubruleLog {
 /// No-op unless an action-driven parse is live, and never while the matcher is
 /// only *measuring* a declarative prefix or probing the failure position
 /// (ADR-0009: those passes must have no observable side effects).
-pub(crate) fn record_reduced_subrule(rule: &str, caps: &std::sync::Arc<RegexCaptures>) {
+pub(crate) fn record_reduced_subrule(rule: &str, caps: &std::sync::Arc<CapNode>) {
     if LTM_DECLARATIVE_MODE.with(Cell::get) || CODE_ATOMS_INERT.with(Cell::get) {
         return;
     }
@@ -233,7 +233,7 @@ impl ReducedSubruleGuard {
     }
 
     /// Take the entries logged so far, leaving a fresh empty log in place.
-    pub(crate) fn take_entries() -> Vec<(String, std::sync::Arc<RegexCaptures>)> {
+    pub(crate) fn take_entries() -> Vec<(String, std::sync::Arc<CapNode>)> {
         REDUCED_SUBRULES.with(|slot| {
             let mut slot = slot.borrow_mut();
             match slot.as_mut() {

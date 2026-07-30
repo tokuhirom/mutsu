@@ -644,6 +644,24 @@ impl Interpreter {
         )
     }
 
+    /// [`Self::match_object_from_captures`] for a stored capture node.
+    fn match_object_from_cap_node(node: &CapNode, text: &str) -> Value {
+        let kids = node.kids();
+        Value::make_match_object_full_q(
+            node.matched.clone(),
+            node.from as i64,
+            node.to as i64,
+            &kids.positional,
+            &kids.named,
+            &kids.named_subcaps,
+            &kids.positional_subcaps,
+            &kids.positional_quantified,
+            &kids.positional_nil,
+            Some(text),
+            &kids.named_quantified,
+        )
+    }
+
     /// Run the actions over the match tree of a parse that FAILED because the
     /// start rule covered only part of the input: Rakudo dispatched every one of
     /// them at reduce time, including the start rule's own. Anything that reduced
@@ -698,7 +716,7 @@ impl Interpreter {
         if entries.is_empty() {
             return Ok(());
         }
-        let outside: Vec<(String, std::sync::Arc<RegexCaptures>)> = entries
+        let outside: Vec<(String, std::sync::Arc<CapNode>)> = entries
             .into_iter()
             .filter(|(_, caps)| {
                 !covered.is_some_and(|(from, to)| caps.from >= from && caps.to <= to)
@@ -708,7 +726,7 @@ impl Interpreter {
         // `token a { <b> }` where both cover the same text) keep the LAST logged
         // one, which is the outer rule: the matcher recurses, so children are
         // logged before their parent.
-        let maximal: Vec<&(String, std::sync::Arc<RegexCaptures>)> = outside
+        let maximal: Vec<&(String, std::sync::Arc<CapNode>)> = outside
             .iter()
             .enumerate()
             .filter(|(i, (_, e))| {
@@ -725,8 +743,8 @@ impl Interpreter {
         let mut result = Ok(());
         for (rule, caps) in maximal {
             let mut caps = (**caps).clone();
-            self.reduce_regex_captures_made(&mut caps, Some(text));
-            let match_obj = Self::match_object_from_captures(&caps, text);
+            self.reduce_cap_node_for_rule(&mut caps, Some(text), None);
+            let match_obj = Self::match_object_from_cap_node(&caps, text);
             let dispatch = Self::get_action_name(&match_obj).unwrap_or_else(|| rule.clone());
             if let Err(e) = self.invoke_grammar_actions(match_obj, actions, &dispatch) {
                 result = Err(e);

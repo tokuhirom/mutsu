@@ -411,47 +411,12 @@ impl Interpreter {
         // a child's code block accumulates into this match's binding (the
         // `:my %*PLAYED = (); <card>+` shape) rather than a sibling match's.
         let declared_keys = self.install_fresh_rule_dynvars(rule_name);
-        // The walk mutates a node only to take/run its code blocks (writing
-        // `ast`) or to record per-rule dynvar bindings. A subtree with no code
-        // blocks anywhere — the overwhelmingly common case for a leaf-heavy
-        // grammar parse — is left byte-identical, so descending into it through
-        // `Arc::make_mut` would only deep-copy shared nodes (each is already in
-        // `REDUCED_SUBRULES` and/or a `snapshot()`) for nothing. Skip those
-        // subtrees outright. Only sound when no rule declares `:my $*x` dynvars
-        // (a declaring rule must run even without blocks); such grammars are
-        // rare and keep the full walk.
-        let skip_untouched = self.grammar_rule_dynvar_decls.is_empty();
-        // Children first so a parent block reading a child's `.made` sees it.
-        for (key, scs) in caps.named_subcaps.iter_mut() {
-            let child_rule = Self::reduce_child_rule_name(key);
-            for sc in scs.iter_mut() {
-                if skip_untouched && !Self::subtree_has_code_blocks(sc) {
-                    continue;
-                }
-                crate::vm::vm_stats::record_regex_cap_makemut(Arc::strong_count(sc) > 1);
-                let sc = Arc::make_mut(sc);
-                let child_rule = sc.action_name.clone().unwrap_or(child_rule.clone());
-                self.reduce_regex_captures_made_for_rule(sc, orig, Some(&child_rule));
-            }
-        }
-        for sc in caps.positional_subcaps.iter_mut().flatten() {
-            if skip_untouched && !Self::subtree_has_code_blocks(sc) {
-                continue;
-            }
-            crate::vm::vm_stats::record_regex_cap_makemut(Arc::strong_count(sc) > 1);
-            self.reduce_regex_captures_made(Arc::make_mut(sc), orig);
-        }
-        for pq in caps.positional_quantified.iter_mut().flatten() {
-            for entry in pq.iter_mut() {
-                if let Some(sc) = entry.3.as_mut() {
-                    if skip_untouched && !Self::subtree_has_code_blocks(sc) {
-                        continue;
-                    }
-                    crate::vm::vm_stats::record_regex_cap_makemut(Arc::strong_count(sc) > 1);
-                    self.reduce_regex_captures_made(Arc::make_mut(sc), orig);
-                }
-            }
-        }
+        self.reduce_child_axes(
+            &mut caps.named_subcaps,
+            &mut caps.positional_subcaps,
+            &mut caps.positional_quantified,
+            orig,
+        );
         if caps.code_blocks.is_empty() {
             // Even with no code blocks of its own, a declaring match must record
             // what its binding holds — its action still reads it, and a sibling
@@ -460,9 +425,9 @@ impl Interpreter {
             return;
         }
         // Build this node's Match so `$<name>` can carry the children's asts. The
-        // block's `$/` still comes from its own matched-so-far context (below), so
-        // a mid-rule `{ … $/ … }` sees the prefix — only the child `.made` values
-        // read via `$<name>` / `$<name>».made` come from here.
+        // block's `$/` still comes from its own matched-so-far context (inside
+        // `reduce_run_code_blocks`), so a mid-rule `{ … $/ … }` sees the prefix —
+        // only the child `.made` values read via `$<name>` come from here.
         let node_match = Value::make_match_object_full_q(
             caps.matched.clone(),
             caps.from as i64,
@@ -476,6 +441,126 @@ impl Interpreter {
             orig,
             &caps.named_quantified,
         );
+        let blocks = std::mem::take(&mut caps.code_blocks);
+        caps.ast = self.reduce_run_code_blocks(blocks, node_match);
+        self.record_rule_dynvars(caps, &declared_keys);
+    }
+
+    /// [`Self::reduce_regex_captures_made_for_rule`] for a stored capture node
+    /// (ADR-0016 P2: stored nodes are `CapNode`, not accumulators).
+    pub(in crate::runtime) fn reduce_cap_node_for_rule(
+        &mut self,
+        node: &mut CapNode,
+        orig: Option<&str>,
+        rule_name: Option<&str>,
+    ) {
+        let declared_keys = self.install_fresh_rule_dynvars(rule_name);
+        if let Some(kids) = node.children.as_deref_mut() {
+            self.reduce_child_axes(
+                &mut kids.named_subcaps,
+                &mut kids.positional_subcaps,
+                &mut kids.positional_quantified,
+                orig,
+            );
+        }
+        let has_blocks = node
+            .children
+            .as_deref()
+            .is_some_and(|k| !k.code_blocks.is_empty());
+        if !has_blocks {
+            // Even with no code blocks of its own, a declaring match must record
+            // what its binding holds — its action still reads it, and a sibling
+            // that DOES have a block would otherwise decide the value.
+            if !declared_keys.is_empty() {
+                self.record_cap_node_dynvars(node, &declared_keys);
+            }
+            return;
+        }
+        // Build this node's Match so `$<name>` can carry the children's asts.
+        let (matched, from, to) = (node.matched.clone(), node.from, node.to);
+        let kids = node
+            .children
+            .as_deref_mut()
+            .expect("has_blocks implies kids");
+        let node_match = Value::make_match_object_full_q(
+            matched,
+            from as i64,
+            to as i64,
+            &kids.positional,
+            &kids.named,
+            &kids.named_subcaps,
+            &kids.positional_subcaps,
+            &kids.positional_quantified,
+            &kids.positional_nil,
+            orig,
+            &kids.named_quantified,
+        );
+        let blocks = std::mem::take(&mut kids.code_blocks);
+        node.ast = self.reduce_run_code_blocks(blocks, node_match);
+        self.record_cap_node_dynvars(node, &declared_keys);
+    }
+
+    /// The children-first part of the reduce walk, shared between the top-level
+    /// accumulator and stored `CapNode`s (their child axes are the same types).
+    fn reduce_child_axes(
+        &mut self,
+        named_subcaps: &mut HashMap<String, Vec<Arc<CapNode>>>,
+        positional_subcaps: &mut [Option<Arc<CapNode>>],
+        positional_quantified: &mut [Option<Vec<QuantifiedCaptureEntry>>],
+        orig: Option<&str>,
+    ) {
+        // The walk mutates a node only to take/run its code blocks (writing
+        // `ast`) or to record per-rule dynvar bindings. A subtree with no code
+        // blocks anywhere — the overwhelmingly common case for a leaf-heavy
+        // grammar parse — is left byte-identical, so descending into it through
+        // `Arc::make_mut` would only deep-copy shared nodes (each is already in
+        // `REDUCED_SUBRULES` and/or a `snapshot()`) for nothing. Skip those
+        // subtrees outright. Only sound when no rule declares `:my $*x` dynvars
+        // (a declaring rule must run even without blocks); such grammars are
+        // rare and keep the full walk.
+        let skip_untouched = self.grammar_rule_dynvar_decls.is_empty();
+        // Children first so a parent block reading a child's `.made` sees it.
+        for (key, scs) in named_subcaps.iter_mut() {
+            let child_rule = Self::reduce_child_rule_name(key);
+            for sc in scs.iter_mut() {
+                if skip_untouched && !Self::subtree_has_code_blocks(sc) {
+                    continue;
+                }
+                crate::vm::vm_stats::record_regex_cap_makemut(Arc::strong_count(sc) > 1);
+                let sc = Arc::make_mut(sc);
+                let child_rule = sc.action_name.clone().unwrap_or(child_rule.clone());
+                self.reduce_cap_node_for_rule(sc, orig, Some(&child_rule));
+            }
+        }
+        for sc in positional_subcaps.iter_mut().flatten() {
+            if skip_untouched && !Self::subtree_has_code_blocks(sc) {
+                continue;
+            }
+            crate::vm::vm_stats::record_regex_cap_makemut(Arc::strong_count(sc) > 1);
+            self.reduce_cap_node_for_rule(Arc::make_mut(sc), orig, None);
+        }
+        for pq in positional_quantified.iter_mut().flatten() {
+            for entry in pq.iter_mut() {
+                if let Some(sc) = entry.3.as_mut() {
+                    if skip_untouched && !Self::subtree_has_code_blocks(sc) {
+                        continue;
+                    }
+                    crate::vm::vm_stats::record_regex_cap_makemut(Arc::strong_count(sc) > 1);
+                    self.reduce_cap_node_for_rule(Arc::make_mut(sc), orig, None);
+                }
+            }
+        }
+    }
+
+    /// Run one node's inline `{ … }` code blocks against its reduced Match and
+    /// return the produced `make` value. Shared by the accumulator and
+    /// `CapNode` reduce paths; the caller supplies `node_match` (built from its
+    /// own fields) and stores the returned `ast`.
+    fn reduce_run_code_blocks(
+        &mut self,
+        blocks: Vec<CodeBlockContext>,
+        node_match: Value,
+    ) -> Option<Value> {
         // Named captures carrying a child `.made` (from the recursion above).
         let ast_named: Vec<(String, Value)> =
             if let ValueView::Instance { attributes, .. } = node_match.view() {
@@ -489,7 +574,6 @@ impl Interpreter {
             } else {
                 Vec::new()
             };
-        let blocks = std::mem::take(&mut caps.code_blocks);
         let saved_match = self.env.get("/").cloned();
         // Fresh `make` slot for this node (do not inherit a sibling's value).
         self.env.remove("made");
@@ -525,32 +609,36 @@ impl Interpreter {
             }
             self.eval_regex_code_block_body(&stmts);
         }
-        caps.ast = self.env.get("made").cloned();
-        self.record_rule_dynvars(caps, &declared_keys);
+        let ast = self.env.get("made").cloned();
         if let Some(m) = saved_match {
             self.env.insert("/".to_string(), m);
         }
+        ast
     }
 
     /// Read-only pre-check for the reduce walk: does this stored capture
     /// subtree contain any inline `{ … }` code blocks? When it does not (and no
     /// rule declares dynvars — checked by the caller), the walk would leave the
     /// subtree byte-identical, so the caller skips it instead of deep-copying
-    /// shared `Arc` nodes via `make_mut`.
-    fn subtree_has_code_blocks(caps: &RegexCaptures) -> bool {
-        if !caps.code_blocks.is_empty() {
+    /// shared `Arc` nodes via `make_mut`. A leaf (`children: None`) answers in
+    /// one branch.
+    fn subtree_has_code_blocks(node: &CapNode) -> bool {
+        let Some(kids) = node.children.as_deref() else {
+            return false;
+        };
+        if !kids.code_blocks.is_empty() {
             return true;
         }
-        caps.named_subcaps
+        kids.named_subcaps
             .values()
             .flatten()
             .any(|sc| Self::subtree_has_code_blocks(sc))
-            || caps
+            || kids
                 .positional_subcaps
                 .iter()
                 .flatten()
                 .any(|sc| Self::subtree_has_code_blocks(sc))
-            || caps
+            || kids
                 .positional_quantified
                 .iter()
                 .flatten()
@@ -608,6 +696,15 @@ impl Interpreter {
         for key in keys {
             if let Some(v) = self.env.get(key).cloned() {
                 caps.regex_vars.insert(key.clone(), v);
+            }
+        }
+    }
+
+    /// [`Self::record_rule_dynvars`] for a stored capture node.
+    fn record_cap_node_dynvars(&mut self, node: &mut CapNode, keys: &[String]) {
+        for key in keys {
+            if let Some(v) = self.env.get(key).cloned() {
+                node.kids_mut().regex_vars.insert(key.clone(), v);
             }
         }
     }
