@@ -67,6 +67,25 @@ fn opcode_histogram()
     HIST.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// Per-name histogram of `resolve_function_with_types` invocations (the full
+/// registry-scanning resolution walk). Only populated when stats are on. This
+/// is the empirical basis for resolution-caching work: a name with thousands
+/// of entries here is paying the candidate scan per call.
+fn function_full_resolve_by_name() -> &'static Mutex<HashMap<String, u64>> {
+    static BY_NAME: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+    BY_NAME.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Record one `resolve_function_with_types` invocation.
+#[inline]
+pub(crate) fn record_function_full_resolve(name: &str) {
+    if enabled()
+        && let Ok(mut map) = function_full_resolve_by_name().lock()
+    {
+        *map.entry(name.to_string()).or_insert(0) += 1;
+    }
+}
+
 /// Per-name histogram of method calls that entered the slow-path resolver dispatch
 /// `run_instance_method` (resolve candidate + frame setup + env clone). §B #3680
 /// deleted the tree-walk of the method body, so these now execute the body as
@@ -502,6 +521,24 @@ pub(crate) fn dump() {
             "[mutsu vm-stats] opcodes executed total={} distinct={} (top {}): {}",
             total,
             map.len(),
+            top.len(),
+            top.join(" ")
+        );
+    }
+    if let Ok(map) = function_full_resolve_by_name().lock()
+        && !map.is_empty()
+    {
+        let total: u64 = map.values().sum();
+        let mut entries: Vec<(&String, &u64)> = map.iter().collect();
+        entries.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+        let top: Vec<String> = entries
+            .iter()
+            .take(25)
+            .map(|(name, count)| format!("{name}={count}"))
+            .collect();
+        eprintln!(
+            "[mutsu vm-stats] function-full-resolve total={} by name (top {}): {}",
+            total,
             top.len(),
             top.join(" ")
         );

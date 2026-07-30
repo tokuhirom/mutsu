@@ -595,6 +595,8 @@ impl Interpreter {
                     .map(|(_, arc)| arc.clone())
             {
                 self.registry_mut().functions.insert(fq_sym, cached);
+                // Invalidate name-keyed resolution caches.
+                self.fn_resolve_gen += 1;
                 self.registered_fn_fingerprints.insert(fq_sym, site_fp);
                 if pkg != "GLOBAL" {
                     self.mark_my_scoped_package_item(fq);
@@ -833,6 +835,8 @@ impl Interpreter {
                 let resolved = key.resolve();
                 resolved != lexical_single && !resolved.starts_with(&lexical_multi_prefix)
             });
+            // Invalidate name-keyed resolution caches.
+            self.fn_resolve_gen += 1;
         }
         if let Some(assoc) = associativity {
             self.operator_assoc.insert(name.to_string(), assoc.clone());
@@ -921,6 +925,8 @@ impl Interpreter {
                 self.registered_fn_fingerprints.remove(&fq_sym);
             }
             self.registry_mut().functions.insert(fq_sym, arc);
+            // Invalidate name-keyed resolution caches.
+            self.fn_resolve_gen += 1;
         }
         // If this is an our-scoped sub, also store it in the persistent our_scoped_functions
         // so it survives block scope restoration.
@@ -1148,6 +1154,8 @@ impl Interpreter {
             let resolved = existing.resolve();
             resolved != key && !resolved.starts_with(&prefix)
         });
+        // Invalidate name-keyed resolution caches.
+        self.fn_resolve_gen += 1;
         self.registry_mut().proto_subs.insert(key);
         let fq = format!("{}::{}", self.current_package(), name);
         // `proto bar {*}` declares an empty signature; record it so dispatch

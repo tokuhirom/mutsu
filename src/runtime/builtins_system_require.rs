@@ -169,6 +169,8 @@ impl Interpreter {
             &before_function_keys,
             main_exported,
         );
+        // Invalidate name-keyed resolution caches.
+        self.fn_resolve_gen += 1;
 
         if let Some(pkg) = package_hint
             && !pkg.is_empty()
@@ -192,6 +194,8 @@ impl Interpreter {
             for (alias, def) in fn_aliases {
                 self.registry_mut().functions.insert(alias, def);
             }
+            // Invalidate name-keyed resolution caches.
+            self.fn_resolve_gen += 1;
 
             let mut env_aliases: Vec<(String, Value)> = Vec::new();
             for (name, value) in &self.env {
@@ -303,6 +307,7 @@ impl Interpreter {
         for k in leaked {
             functions.remove(&k);
         }
+        // NOTE: callers must bump `fn_resolve_gen` after this (no `self` here).
     }
 
     fn import_single_require_symbol(&mut self, module: &str, symbol: &str) -> bool {
@@ -341,6 +346,8 @@ impl Interpreter {
             for (k, v) in function_entries {
                 self.registry_mut().functions.insert(k, v);
             }
+            // Invalidate name-keyed resolution caches.
+            self.fn_resolve_gen += 1;
             return found
                 || self
                     .registry()

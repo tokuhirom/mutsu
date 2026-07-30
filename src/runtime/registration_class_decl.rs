@@ -2247,6 +2247,8 @@ impl Interpreter {
                             Symbol::intern(&qualified_name),
                             std::sync::Arc::new(func_def),
                         );
+                        // Invalidate name-keyed resolution caches.
+                        self.fn_resolve_gen += 1;
                     }
                     // `my method` registers as a lexically-scoped function
                     // (callable as `name(invocant)` inside the class body)
@@ -2332,6 +2334,8 @@ impl Interpreter {
                             Symbol::intern(&qualified_name),
                             std::sync::Arc::new(func_def),
                         );
+                        // Invalidate name-keyed resolution caches.
+                        self.fn_resolve_gen += 1;
                         // Mark as my-scoped so it doesn't appear in the package stash
                         self.mark_my_scoped_package_item(qualified_name);
                     }

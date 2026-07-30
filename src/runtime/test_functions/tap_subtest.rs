@@ -63,6 +63,8 @@ impl Interpreter {
             mut type_metadata,
             var_type_constraints,
         } = snapshot;
+        // Invalidate name-keyed resolution caches (functions restored wholesale).
+        self.fn_resolve_gen += 1;
         {
             let mut registry = self.registry_mut();
             registry.functions = functions;

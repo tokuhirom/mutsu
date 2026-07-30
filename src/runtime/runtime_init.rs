@@ -2262,6 +2262,8 @@ impl Interpreter {
             fn_resolve_cache_gen: 0,
             multi_candidates_cache: Default::default(),
             multi_candidates_cache_gen: 0,
+            fn_base_name_cache: Default::default(),
+            fn_base_name_cache_gen: 0,
             light_call_cache: Default::default(),
             light_call_cache_gen: 0,
             pos_light_call_cache: Default::default(),

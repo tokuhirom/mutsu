@@ -1,6 +1,59 @@
 use super::*;
 
+/// The *base name* a registry function key stands for: the key minus its
+/// package prefix and its arity/type suffix. `"Pkg::foo/2:Int,Str"` → `"foo"`,
+/// `"GLOBAL::infix:</>/2"` → `"infix:</>"`, `"foo"` → `"foo"`.
+///
+/// The arity suffix is the RIGHTMOST `/` immediately followed by an ASCII
+/// digit (`/2`, `/3:Int`, `/1__m…`); an operator name's own `/` (as in
+/// `infix:</>`) is never digit-followed, so it survives. The same extraction
+/// is applied to both registry keys and query names, so any exotic spelling
+/// degrades to a consistent (never wrong) bucket.
+fn function_key_base_name(key: &str) -> &str {
+    let bytes = key.as_bytes();
+    let mut end = key.len();
+    let mut i = key.len();
+    while i > 1 {
+        i -= 1;
+        if bytes[i - 1] == b'/' && bytes[i].is_ascii_digit() {
+            end = i - 1;
+            break;
+        }
+    }
+    let head = &key[..end];
+    match head.rfind("::") {
+        Some(p) => &head[p + 2..],
+        None => head,
+    }
+}
+
 impl Interpreter {
+    /// Whether ANY registered function key carries `name`'s base name — a
+    /// cheap negative gate for [`Self::resolve_function_with_types`]. When
+    /// this is `false`, no lookup pattern in the resolver (qualified, typed,
+    /// arity-keyed, flexible-arity, package-searched) can possibly match, so
+    /// the resolver returns `None` without walking the registry. Memoized per
+    /// name in `fn_base_name_cache`, invalidated by `fn_resolve_gen` (bumped
+    /// on every function registration/removal).
+    pub(crate) fn fn_base_name_registered(&mut self, name: &str) -> bool {
+        if self.fn_base_name_cache_gen != self.fn_resolve_gen {
+            self.fn_base_name_cache.clear();
+            self.fn_base_name_cache_gen = self.fn_resolve_gen;
+        }
+        let base = function_key_base_name(name);
+        let base_sym = Symbol::intern(base);
+        if let Some(&cached) = self.fn_base_name_cache.get(&base_sym) {
+            return cached;
+        }
+        let found = self
+            .registry()
+            .functions
+            .keys()
+            .any(|k| function_key_base_name(&k.resolve()) == base);
+        self.fn_base_name_cache.insert(base_sym, found);
+        found
+    }
+
     pub(super) fn sort_candidates_by_specificity(
         &self,
         candidates: &mut [(String, Arc<FunctionDef>)],
@@ -100,6 +153,7 @@ impl Interpreter {
         name: &str,
         arg_values: &[Value],
     ) -> Option<Arc<FunctionDef>> {
+        crate::vm::vm_stats::record_function_full_resolve(name);
         // Arity counts only positional args, excluding named args (Pair values)
         let arity = arg_values
             .iter()
@@ -137,6 +191,13 @@ impl Interpreter {
                 attrs,
             )));
             self.set_pending_dispatch_error(err);
+            return None;
+        }
+        // Negative gate: if no registry key carries this base name at all, no
+        // candidate scan below can match — skip the whole walk. This is the
+        // common case for interpreter-native builtins (`make`, `prefix:<~>`,
+        // …) that are dispatched *after* a failed user-function resolution.
+        if !self.fn_base_name_registered(name) {
             return None;
         }
         if name.contains("::") {

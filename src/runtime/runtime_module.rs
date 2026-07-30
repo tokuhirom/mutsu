@@ -435,6 +435,8 @@ impl Interpreter {
                         })
                         .copied()
                         .collect();
+                    // Invalidate name-keyed resolution caches (keys renamed).
+                    self.fn_resolve_gen += 1;
                     for mk in multi_keys {
                         let removed = self.registry_mut().functions.remove(&mk);
                         if let Some(def) = removed {
@@ -492,6 +494,8 @@ impl Interpreter {
             for k in non_exported_op_globals {
                 self.registry_mut().functions.remove(&k);
             }
+            // Invalidate name-keyed resolution caches.
+            self.fn_resolve_gen += 1;
 
             // Remove GLOBAL:: sub aliases that were leaked by sub hoisting during
             // this module load, are NOT exported, and shadow a core builtin.
@@ -540,6 +544,8 @@ impl Interpreter {
                 for k in leaked_globals {
                     self.registry_mut().functions.remove(&k);
                 }
+                // Invalidate name-keyed resolution caches.
+                self.fn_resolve_gen += 1;
             }
 
             self.loaded_modules.insert(module.to_string());

@@ -719,6 +719,8 @@ impl Interpreter {
                 &before_function_keys,
                 main_exported,
             );
+            // Invalidate name-keyed resolution caches.
+            self.fn_resolve_gen += 1;
             // If the module defined `sub EXPORT`, call it with the `use` args and
             // install the symbols it returns into the caller's scope.
             self.apply_module_export(export_args.unwrap_or_default())?;
