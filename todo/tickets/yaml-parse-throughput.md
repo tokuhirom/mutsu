@@ -1,5 +1,43 @@
 # Parsing YAML with the bundled `YAMLish` is still ~5-35x slower than raku
 
+**Update (2026-07-31, round 5): ~5x now.** The action-walk call ceremony named
+by round 4 broke down into three independent per-call costs, all removed
+(`benchmarks/bench-yaml-parse.raku`, release, clean idle box: 1.70s → **1.27s**,
+−25%; the 5 upstream YAMLish files run in ~11s total, was ~26s):
+
+- **`~$<key>` Str coercion of a Match paid a two-stage method-dispatch
+  ceremony** (13.9% of the profile): `exec_str_coerce_op` routed every Match
+  instance through `try_compiled_method_or_interpret("Stringy")` →
+  `call_method_with_values` → `should_bypass_native_fastpath` (a ~20-arm
+  predicate chain) → `run_instance_method` → the native handler that finally
+  read the `str` attribute. A grammar action does this once per capture. Now a
+  plain `Match` (no user augment of `Match.Str`/`Stringy`, no `prefix:<~>`
+  overload) reads the `str` attribute directly in the opcode.
+- **Every `make(...)` call re-scanned the whole functions registry twice**
+  (~10%): the lexical-`&name`-override gate in `exec_call_func_op` called the
+  uncached `has_multi_candidates` (full functions-map key scan), and
+  `normalize_call_args_for_target` called `has_multi_function` (same scan) plus
+  `has_declared_function` — for a name (`make`) that is not a registered
+  function at all. Both sites now short-circuit through the #5574
+  `fn_base_name_registered` negative gate (and the override gate checks the
+  cheap `!has_function` before the memoized `has_multi_candidates_cached`).
+- **`has_public_accessor` cloned the class's whole merged attribute list per
+  query** (~4%, on the per-call dispatch path via `call_method_with_values`):
+  `collect_class_attributes` builds and clones a deduplicated
+  `Vec<ClassAttributeDef>` across the MRO. The query now walks the MRO
+  derived-first and stops at the first class declaring the name — same
+  override-by-name semantics, no clones.
+
+Remaining leads, from the round-5 profile: the ceremony *between*
+`call_method_with_values` and the JIT-compiled action body is still ~15-20
+points deep (`dispatch_instance_and_fallback` → `run_instance_method[_celled]`
+→ `call_compiled_method[_fast]` → `vm_jit::try_enter`, each layer shaving
+2-8%); `Interpreter::new` is ~4.7% of the run (~80ms, one-time startup cost of
+every mutsu invocation — a separate lead, not match-time); and the ADR-0016
+P2+ structural work (CapNode split, spans, lazy Match) still stands for the
+allocator/memcmp tail (`_int_free`+`malloc`+`memmove` ≈ 23%,
+`LocalKey::with` TLS ≈ 12%).
+
 **Update (2026-07-30, round 4): ~7x now.** The dominant cost was not the regex
 engine at all — it was the **grammar-action walk's function dispatch**. On
 `benchmarks/bench-yaml-parse.raku` (release, clean idle box), main went
