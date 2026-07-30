@@ -26,11 +26,20 @@ engine at all — it was the **grammar-action walk's function dispatch**. On
   no-action nodes skip the attribute-map clones, node rebuild and env
   save/restore ceremony entirely.
 
-Remaining (next session): module load is now ~19% of the bench (YAMLish parse
-per process — raku wins this via precompilation), the action-method call
-ceremony (`call_method_with_values` → `run_instance_method`) is ~50%
-inclusive, and the ADR-0016 P2+ structural work (CapNode split, spans,
-lazy Match) still stands for the allocator/memcmp tail.
+Remaining (next session): the action-method call ceremony
+(`call_method_with_values` → `run_instance_method`) is ~50% inclusive, and
+the ADR-0016 P2+ structural work (CapNode split, spans, lazy Match) still
+stands for the allocator/memcmp tail.
+
+(A profile taken right after a rebuild shows `load_module`/`parse_program` at
+~19% — that is the **cold first run only**: the disk precomp cache
+(`src/precomp.rs`) keys on the executable's mtime, so every fresh build parses
+each module once and re-caches. Measured warm vs `MUTSU_PRECOMP=0` on the
+bench: 1.72s vs 1.82s, i.e. the whole parse+cache path is ~0.1s (~6%) per
+cold run and ~0 warm; `use YAMLish` alone is 0.02s warm / 0.04s uncached.
+Precomp covers the AST only — token/rule regex-slang bodies still parse
+per process at match time into the in-memory `REGEX_PARSE_CACHE` — but that
+cost is inside the ~0.1s, so on-disk regex precomp is NOT a promising lead.)
 
 The YAML battery is correct — all 5 upstream files (81/81 subtests) pass — but it
 is **slow**, and the cost is in *matching*, not module load. This is the
