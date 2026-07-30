@@ -21,9 +21,6 @@ plan 8;
     use ScanCacheHelper;
     is scan-cache-greet("hit"), "hello, hit", "exported sub works on scan cache hit";
     is (3 scan-cat 4), "3|4", "exported operator works on scan cache hit";
-    # `.new` here would trip a pre-existing re-`use` method-dispatch bug
-    # (todo/tickets/reuse-in-block-class-method-dispatch.md); the type-term
-    # parse is what the scan cache is responsible for.
-    ok ScanCacheThing ~~ Mu, "declared class visible on scan cache hit";
+    ok ScanCacheThing.new.label eq "thing", "declared class visible on scan cache hit";
     ok ScanBlue ~~ ScanCacheColor, "enum value term parses on scan cache hit";
 }
