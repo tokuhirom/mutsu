@@ -336,22 +336,6 @@ impl Env {
         }
     }
 
-    /// Build a flat (`parent=None`) env directly from a pre-built overlay map.
-    /// Name lookups still fall through to [`GLOBAL_BASE`] at the tail, so the
-    /// built-in enum constants remain reachable without copying them in. Used by
-    /// the closure-capture upvalue path (single-store Slice E) to materialize a
-    /// snapshot holding only a closure's free variables, the shadow-meta, and the
-    /// system names a body may read through a dedicated opcode — not a flatten of
-    /// every plain user lexical in scope.
-    pub(crate) fn from_symbol_map(map: HashMap<Symbol, Value>) -> Self {
-        Self {
-            inner: Arc::new(map.into_iter().collect()),
-            parent: None,
-            tombstones: None,
-            depth: 0,
-        }
-    }
-
     /// Create a *scoped child* env: an empty overlay that reads through to
     /// `parent` (the whole caller-frame env, itself possibly scoped) and then to
     /// [`GLOBAL_BASE`]. Writes land in the (initially empty) overlay, so the
@@ -491,6 +475,45 @@ impl Env {
                     depth: 0,
                 }
             }
+        }
+    }
+
+    /// Build a flat env holding exactly the entries `keep` accepts, walking
+    /// every tier base-to-leaf (parents first, then each frame's tombstones,
+    /// then its overlay). The visible-per-key result is identical to
+    /// `self.flattened()` followed by a filtered copy — a shadowing leaf entry
+    /// overwrites (or, when rejected, removes) the parent's entry, and a
+    /// tombstoned key does not survive — but no intermediate whole-map clone
+    /// is materialized. This is the closure-capture fast path: `flattened()`
+    /// deep-clones the entire parent-chain map per call, which dominated
+    /// lambda creation inside method frames (`todo/deep/closure-env-capture-cost.md`).
+    /// The base tier (`GLOBAL_BASE`) is — as in `flattened()` — never
+    /// materialized; it stays reachable through the flat env's tail lookup.
+    pub(crate) fn filtered_flat(&self, keep: &dyn Fn(Symbol, &Value) -> bool) -> Env {
+        fn collect(env: &Env, out: &mut SymMap, keep: &dyn Fn(Symbol, &Value) -> bool) {
+            if let Some(parent) = &env.parent {
+                collect(parent, out, keep);
+            }
+            if let Some(tomb) = &env.tombstones {
+                for k in tomb {
+                    out.remove(k);
+                }
+            }
+            for (k, v) in env.inner.iter() {
+                if keep(*k, v) {
+                    out.insert(*k, v.clone());
+                } else {
+                    out.remove(k);
+                }
+            }
+        }
+        let mut out = SymMap::default();
+        collect(self, &mut out, keep);
+        Self {
+            inner: Arc::new(out),
+            parent: None,
+            tombstones: None,
+            depth: 0,
         }
     }
 

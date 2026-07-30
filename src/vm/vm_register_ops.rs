@@ -461,25 +461,22 @@ impl Interpreter {
         // the caller on return (`* ~~ /<$r>/` invoked inside a grep-in-`for`).
         let own_locals: std::collections::HashSet<&str> =
             cc.locals.iter().map(|s| s.as_str()).collect();
-        // Flatten once (same as `clone_env`), then keep only the upvalue set,
-        // shadow-meta, and system names. The base tier (GLOBAL_BASE) is never in
-        // the overlay and stays reachable through the flat env's tail lookup.
-        let flat = self.clone_env();
-        let mut map: std::collections::HashMap<Symbol, Value> = std::collections::HashMap::new();
-        for (k, v) in flat.iter() {
-            // `__mutsu_callable_type` is closure-identity metadata (the
-            // WhateverCode marker), (re)installed on the genuine closure's own env
-            // after capture. Never inherit it, or an ordinary inner block would be
-            // mis-detected as a WhateverCode (see the by-name path above).
+        // Keep only the upvalue set, shadow-meta, and system names, walking the
+        // env tiers directly (`filtered_flat`) — flattening first (`clone_env`)
+        // deep-cloned the entire parent-chain map per lambda creation. The
+        // filter is key-pure, so the tier walk's shadow/tombstone handling is
+        // exactly the flattened view. `__mutsu_callable_type` is
+        // closure-identity metadata (the WhateverCode marker), (re)installed on
+        // the genuine closure's own env after capture — never inherit it, or an
+        // ordinary inner block would be mis-detected as a WhateverCode (see the
+        // by-name path above).
+        let mut env = self.env().filtered_flat(&|k, _v| {
             if k.with_str(|s| s == "__mutsu_callable_type") {
-                continue;
+                return false;
             }
-            let keep = free.contains(k)
-                || k.with_str(|s| !crate::env::is_plain_user_lexical(s) && !own_locals.contains(s));
-            if keep {
-                map.insert(*k, v.clone());
-            }
-        }
+            free.contains(&k)
+                || k.with_str(|s| !crate::env::is_plain_user_lexical(s) && !own_locals.contains(s))
+        });
         // Upvalue read: override this frame's own free-var slots with the live
         // local value. Authoritative even after the closure-driven env flush is
         // gone (a slot-only local is no longer mirrored into `env`).
@@ -487,10 +484,10 @@ impl Interpreter {
             if let Some(slot) = Self::resolve_capture_slot(code, &cc.free_var_parent_slots, i, *sym)
                 && let Some(val) = self.locals.get(slot)
             {
-                map.insert(*sym, val.clone());
+                env.insert_sym(*sym, val.clone());
             }
         }
-        crate::env::Env::from_symbol_map(map)
+        env
     }
 
     /// Build the closure's upvalue array (aligned with `cc.upvalue_syms`) from the
