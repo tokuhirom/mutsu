@@ -127,18 +127,25 @@ Vendored sources are **never hand-edited**; an update is always a clean re-vendo
 of a new upstream release. If mutsu needs a change to run the module, that change
 goes in the interpreter (rung 2), not in the vendored copy.
 
-### Release-time verification: the bundled-library test-suite gate
+### Verification: the bundled-library test-suite gate
 
 Upstream test suites are excluded from the vendored copy (above), so "does the
-shipped library actually run under this mutsu?" is verified **at release time**:
-`release.yml`'s `batteries` job fetches every battery's upstream suite at the
-commit pinned in `batteries.lock`, runs it against the *bundled* library and the
-release `mutsu`, and blocks the publish job if any file listed in
-`batteries-whitelist.txt` regressed. It is a per-file baseline (the
-`roast-whitelist.txt` philosophy), not an all-green wall, so suites with known
-gaps still pin their passing files. Tests that unconditionally reach a
-**third-party service** are listed in `batteries-exclude.txt` and never run
-there: a release must not be blocked by someone else's outage. Full details:
+shipped library actually run under this mutsu?" is verified by a dedicated gate:
+it fetches every battery's upstream suite at the commit pinned in
+`batteries.lock`, runs it against the *bundled* library and a release `mutsu`,
+and fails if any file listed in `batteries-whitelist.txt` regressed. It is a
+per-file baseline (the `roast-whitelist.txt` philosophy), not an all-green wall,
+so suites with known gaps still pin their passing files. Tests that
+unconditionally reach a **third-party service** are listed in
+`batteries-exclude.txt` and never run: a release must not be blocked by someone
+else's outage.
+
+`release.yml`'s `batteries` job is the authoritative run and blocks the publish
+job. Because that is too late to *learn* about a regression (a whitelist can rot
+for as long as nobody cuts a release — it did, see
+`news/2026-07/batteries-gate-runs-post-merge.md`), `ci.yml`'s `test` job runs the
+same gate on a push to `main` and on a PR that touches the batteries themselves.
+An ordinary PR skips it. Full details:
 [docs/batteries/testsuite-gate.md](docs/batteries/testsuite-gate.md).
 
 ## 4. License policy
