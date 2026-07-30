@@ -1,5 +1,46 @@
 # Parsing YAML with the bundled `YAMLish` is still ~5-35x slower than raku
 
+**Update (2026-07-30, round 4): ~7x now.** The dominant cost was not the regex
+engine at all — it was the **grammar-action walk's function dispatch**. On
+`benchmarks/bench-yaml-parse.raku` (release, clean idle box), main went
+3.95s → **1.73s** across PRs #5573/#5574/#5575, vs raku 0.25s on the same box:
+
+- Reduce-walk `Arc::make_mut` deep copies: 40,297 → 0 (#5573; counted, no
+  wall-clock change — ADR-0016 correctly predicted this class was noise-level).
+- Embedded-code parse cache (`REGEX_CODE_PARSE_CACHE`, #5574): `{…}`/`<?{…}>`/
+  `** {code}` strings parsed once per registry generation.
+- **Negative function-resolution gate** (#5574, the big one, −45%): the action
+  walk resolved `make` (80,240×) and `prefix:<~>` (38,418×) through the full
+  registry-scanning `resolve_function_with_types` walk, failing every time
+  (neither is a registered function). A per-name "does any registry key carry
+  this base name?" memo (`fn_base_name_cache`) short-circuits it.
+- **Precise `fn_resolve_gen` bump** (#5575, −16%): the interpreter-fallback
+  call arm bumped the gen after EVERY native-builtin call, clearing all
+  name-keyed call caches once per `make`; now it bumps only when the call
+  actually acquired a registry write guard. This exposed (and #5575 fixes) a
+  latent bug the churn had been masking: the frameless fast/light call paths
+  ran `callframe`/`CALLER::`-using bodies without pushing a caller frame
+  (new `CompiledCode::uses_callframe` compile-time gate; pin
+  `t/source-line-table.t`).
+- Leaf/interior early-exits in `invoke_grammar_actions` (#5575): childless
+  no-action nodes skip the attribute-map clones, node rebuild and env
+  save/restore ceremony entirely.
+
+Remaining (next session): the action-method call ceremony
+(`call_method_with_values` → `run_instance_method`) is ~50% inclusive, and
+the ADR-0016 P2+ structural work (CapNode split, spans, lazy Match) still
+stands for the allocator/memcmp tail.
+
+(A profile taken right after a rebuild shows `load_module`/`parse_program` at
+~19% — that is the **cold first run only**: the disk precomp cache
+(`src/precomp.rs`) keys on the executable's mtime, so every fresh build parses
+each module once and re-caches. Measured warm vs `MUTSU_PRECOMP=0` on the
+bench: 1.72s vs 1.82s, i.e. the whole parse+cache path is ~0.1s (~6%) per
+cold run and ~0 warm; `use YAMLish` alone is 0.02s warm / 0.04s uncached.
+Precomp covers the AST only — token/rule regex-slang bodies still parse
+per process at match time into the in-memory `REGEX_PARSE_CACHE` — but that
+cost is inside the ~0.1s, so on-disk regex precomp is NOT a promising lead.)
+
 The YAML battery is correct — all 5 upstream files (81/81 subtests) pass — but it
 is **slow**, and the cost is in *matching*, not module load. This is the
 match-time twin of `grammar-heavy-module-load-slower-than-raku.md`; that ticket
