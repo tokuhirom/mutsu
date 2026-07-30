@@ -280,13 +280,23 @@ The search fallback is retired when the text axis goes.
 vocabulary accordingly (the alignment invariants become structural rather than asserted in
 comments).
 
-**P5 — Lazy `Match`.** First a pure refactor: funnel the ~34 `class_name == "Match"`
+**P5 — Lazy `Match`.** First a pure refactor: funnel the `class_name == "Match"`
 consumer sites through accessor helpers (`match_str` / `match_span` / `match_list` /
 `match_named`) with no behavior change. Then swap the representation behind them to
 `ValueRepr::Match(Gc<MatchNode>)` with `OnceCell`-memoized derived views, and rewrite
 `invoke_grammar_actions` to walk `CapNode` and materialize only where `has_user_method`
 already says an action exists — which removes the per-node `AttrMap`/`HashData` clone as
 a side effect.
+*Scoped 2026-07-31* (`todo/deep/adr0016-p5-match-consumer-inventory.md` — the full
+sweep): the "~34 sites" estimate was low — **72 attribute-touching sites** (9 builders,
+7 clone-insert-rebuild sites, 18 scalar readers, 37 `list`/`named` structure readers,
+1 in-place mutator), plus two attributes this ADR had not listed (`actions`,
+`__failed_match__`/`pos` on failed `.subparse` matches). The four proposed accessors
+cover 55 of the 72; three more close the set (`match_ast`, `match_meta`,
+`match_is_failed`). The builders already funnel through three constructors, so the
+builder-side swap is cheap; the rebuilders need a `with_ast(...)`-style copy-on-write
+helper first, and the one in-place mutator (`smart_match.rs`) must convert to the
+rebuild pattern.
 
 ## Consequences
 
