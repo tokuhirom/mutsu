@@ -771,8 +771,15 @@ pub(crate) enum OpCode {
     /// exit. Names bound with `:=` to an outer var (not `my`-declared in the
     /// branch) are never recorded, so they survive. Runs the body in
     /// `ip+1 .. body_end`.
+    /// `succeed_boundary` says whether *this* block is where a `when`/`default`
+    /// succeed signal stops. A bare block or an `if`/`unless`/`else` branch is
+    /// such a boundary (`given 5 { if c { when Int {...} }; say "after" }` still
+    /// runs the `say`), so the signal is absorbed. A `when`/`default`/`given`
+    /// body is NOT: the signal has to reach the enclosing `When`/`Default`/
+    /// `Given` op, which turns it into that construct's value.
     BlockLocalScope {
         body_end: u32,
+        succeed_boundary: bool,
     },
     /// Check the top-of-stack value; if falsy, throw X::Phaser::PrePost.
     /// `is_pre` distinguishes PRE (true) from POST (false). `condition_idx` is
@@ -3917,7 +3924,7 @@ impl CompiledCode {
     pub(crate) fn patch_block_local_body_end(&mut self, idx: usize) {
         let target = self.ops.len() as u32;
         match &mut self.ops[idx] {
-            OpCode::BlockLocalScope { body_end } => *body_end = target,
+            OpCode::BlockLocalScope { body_end, .. } => *body_end = target,
             _ => panic!("patch_block_local_body_end on non-BlockLocalScope opcode"),
         }
     }

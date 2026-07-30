@@ -57,6 +57,17 @@ impl Interpreter {
                 'e' | 'f' | 'g' => "Numeric",
                 _ => continue,
             };
+            // `%s` on an instance is plain string context: dispatch `.Str` the
+            // same way `~$obj` does, whether or not the class spells the method
+            // out itself. Gating this on an *own* `Str` method rendered every
+            // inherited one as the raw object — an Exception subclass, whose
+            // `Str` comes from `message` up the MRO, printed
+            // `My::X::Thing()` instead of its message.
+            if method == "Str" && !is_type_object {
+                let arg_clone = actual_args[idx].clone();
+                actual_args[idx] = Value::str(self.stringify_value(arg_clone)?);
+                continue;
+            }
             if !self.has_user_method(&cn, method) {
                 // A bare type object stringifies (`%s`) to "" with rakudo's
                 // "uninitialized value of type X in string context" warning

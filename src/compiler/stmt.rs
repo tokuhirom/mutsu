@@ -2482,7 +2482,12 @@ impl Compiler {
                 });
                 let block_local_idx = (!*is_statement_modifier
                     && Self::branch_declares_block_local(body))
-                .then(|| self.code.emit(OpCode::BlockLocalScope { body_end: 0 }));
+                .then(|| {
+                    self.code.emit(OpCode::BlockLocalScope {
+                        body_end: 0,
+                        succeed_boundary: false,
+                    })
+                });
                 let saved_scope =
                     (!*is_statement_modifier).then(|| self.push_dynamic_scope_lexical());
                 if Self::has_catch_or_control(body) {
@@ -2511,8 +2516,12 @@ impl Compiler {
             Stmt::When { cond, body } => {
                 self.compile_expr(cond);
                 let when_idx = self.code.emit(OpCode::When { body_end: 0 });
-                let block_local_idx = Self::branch_declares_block_local(body)
-                    .then(|| self.code.emit(OpCode::BlockLocalScope { body_end: 0 }));
+                let block_local_idx = Self::branch_declares_block_local(body).then(|| {
+                    self.code.emit(OpCode::BlockLocalScope {
+                        body_end: 0,
+                        succeed_boundary: false,
+                    })
+                });
                 let saved_scope = self.push_dynamic_scope_lexical();
                 for (i, s) in body.iter().enumerate() {
                     let is_last = i == body.len() - 1;
@@ -2532,8 +2541,12 @@ impl Compiler {
             }
             Stmt::Default(body) => {
                 let default_idx = self.code.emit(OpCode::Default { body_end: 0 });
-                let block_local_idx = Self::branch_declares_block_local(body)
-                    .then(|| self.code.emit(OpCode::BlockLocalScope { body_end: 0 }));
+                let block_local_idx = Self::branch_declares_block_local(body).then(|| {
+                    self.code.emit(OpCode::BlockLocalScope {
+                        body_end: 0,
+                        succeed_boundary: false,
+                    })
+                });
                 let saved_scope = self.push_dynamic_scope_lexical();
                 if Self::has_catch_or_control(body) {
                     self.compile_try(body, &None);

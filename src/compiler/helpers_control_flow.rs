@@ -363,7 +363,10 @@ impl Compiler {
     /// clobber without the full env restore of `BlockScope` (which would revert a
     /// `:=` binding the branch makes to an outer variable).
     pub(super) fn compile_block_local_branch(&mut self, stmts: &[Stmt]) {
-        let idx = self.code.emit(OpCode::BlockLocalScope { body_end: 0 });
+        let idx = self.code.emit(OpCode::BlockLocalScope {
+            body_end: 0,
+            succeed_boundary: true,
+        });
         self.compile_body_with_implicit_try(stmts);
         self.code.patch_block_local_body_end(idx);
     }

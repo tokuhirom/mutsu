@@ -199,6 +199,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         body_end: u32,
+        succeed_boundary: bool,
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
@@ -234,8 +235,15 @@ impl Interpreter {
         // directly in a `given` (`given 5 { { when Int {...} }; say "after" }`
         // prints "after" in raku). Statement position: absorb without leaving a
         // value on the stack.
+        //
+        // Only when this scope is itself the boundary, though. Wrapping a
+        // `when`/`default`/`given` *body* (which happens as soon as the body
+        // declares a `my`) must let the signal through: it carries the value the
+        // enclosing `When`/`Default`/`Given` op yields, and swallowing it here
+        // silently turned `when 'x' { my $d = ...; ...; when Int { 'A' } }` into
+        // Nil.
         let res = match res {
-            Err(e) if e.is_succeed() => {
+            Err(e) if succeed_boundary && e.is_succeed() => {
                 self.stack.truncate(stack_base);
                 // Reset the match flag too: an enclosing `given` breaks its body
                 // on it after every op (see `exec_do_block_expr_op`'s twin).
