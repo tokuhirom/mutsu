@@ -373,16 +373,15 @@ impl Interpreter {
         None
     }
 
-    /// Parse a module source file, using the precompilation cache when available.
-    /// Returns (stmts, was_precompiled).
     /// Extract operator sub names (infix:<..>, prefix:<..>, etc.) that a
     /// module exports with `is export` (DEFAULT or MANDATORY tag). Used by
     /// `load_module` to populate `imported_operator_names` so EVAL can see
     /// operators from imported modules without seeing non-exported subs.
-    fn extract_module_exported_operator_names(source: &str) -> Vec<String> {
-        let (stmts, _) = crate::parser::parse_program_partial(source);
+    /// Walks the already-parsed statements (fresh or from the precomp cache)
+    /// rather than re-reading and re-parsing the source file.
+    fn extract_module_exported_operator_names(stmts: &[crate::ast::Stmt]) -> Vec<String> {
         let mut out = Vec::new();
-        for stmt in &stmts {
+        for stmt in stmts {
             if let crate::ast::Stmt::SubDecl {
                 name,
                 is_export,
@@ -408,6 +407,8 @@ impl Interpreter {
         out
     }
 
+    /// Parse a module source file, using the precompilation cache when available.
+    /// Returns (stmts, was_precompiled).
     pub(super) fn parse_module_source(
         &mut self,
         module: &str,
@@ -428,7 +429,9 @@ impl Interpreter {
         // replayed from the entry — otherwise the module's mainline runs under
         // the *importer's* language revision and the module's warnings never
         // appear. See `precomp::ParseEffects`.
-        if precomp_eligible && let Some(unit) = crate::precomp::load_cached_unit(source_path) {
+        if precomp_eligible
+            && let Some(unit) = crate::precomp::load_cached_unit(source_path, Some(&code))
+        {
             crate::parser::set_current_language_version(&unit.effects.language_version);
             for warning in &unit.effects.warnings {
                 self.write_warn_to_stderr(warning);
@@ -580,12 +583,6 @@ impl Interpreter {
         let (source_path, inst_dist_json) = self
             .resolve_module_path(module)
             .ok_or_else(|| RuntimeError::unsatisfied_dependency(module))?;
-        // Track operator subs exported by this module so EVAL can see them.
-        if let Ok(source) = fs::read_to_string(&source_path) {
-            for name in Self::extract_module_exported_operator_names(&source) {
-                self.imported_operator_names.insert(name);
-            }
-        }
         // Detect distribution context for $?DISTRIBUTION.
         // For installed modules (inst# paths), use the dist JSON directly.
         // Otherwise fall back to META6.json detection.
@@ -640,6 +637,10 @@ impl Interpreter {
         // into the caller's language version.
         let saved_language_version = crate::parser::current_language_version();
         let (stmts, _precompiled) = self.parse_module_source(module, &source_path)?;
+        // Track operator subs exported by this module so EVAL can see them.
+        for name in Self::extract_module_exported_operator_names(&stmts) {
+            self.imported_operator_names.insert(name);
+        }
         // Validate any `package EXPORTHOW { ... }` directives before running the
         // module: a member named `<directive>::<declarator>` must use a known
         // directive (DECLARE/SUPERSEDE/COMPOSE), else X::EXPORTHOW::InvalidDirective.
