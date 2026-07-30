@@ -404,19 +404,16 @@ impl Interpreter {
             // Also set the canonical !attr env key so write-back finds it
             self.env.insert(format!("!{}", attr_name), value.clone());
             self.env.insert(format!(".{}", attr_name), value.clone());
-            if let Some(self_val) = self.env.get("self").cloned()
-                && let ValueView::Instance {
-                    class_name,
-                    attributes,
-                    id,
-                } = self_val.view()
+            if let Some(self_val) = self.env.get("self")
+                && let ValueView::Instance { attributes, .. } = self_val.view()
             {
-                let mut updated_attrs = attributes.to_map();
-                updated_attrs.insert(attr_name.to_string(), value.clone());
-                self.env.insert(
-                    "self".to_string(),
-                    Value::write_back_sharing(&attributes, class_name, updated_attrs, id),
-                );
+                // Write the one attribute in place through `self`'s shared cell
+                // (visible to every alias — env `self` already shares this
+                // cell). The former whole-map `to_map()` + `commit_attrs`
+                // round-trip cloned every attribute per attributive param and
+                // could clobber a concurrent write to a *different* attribute
+                // between snapshot and commit.
+                attributes.insert(attr_name.to_string(), value.clone());
             }
         }
         if matches!(

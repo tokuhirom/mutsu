@@ -54,7 +54,7 @@ specializes the whole new -> bless -> BUILDALL chain.
 
 ## Slices
 
-- [ ] **S1: cache a per-class construction phase plan.** Extend
+- [x] **S1: cache a per-class construction phase plan.** Extend
   `NativeCtorPlan` (or add a sibling cache with the same invalidation sites)
   with the ordered, already-resolved BUILD/TWEAK submethod list: (owner class,
   role origin, method def Arc, 6.c/6.e skip decisions). `run_build_phase` /
@@ -75,6 +75,21 @@ specializes the whole new -> bless -> BUILDALL chain.
 - [ ] **S4 (ADR territory, long term):** flat attribute slots instead of the
   per-instance hash map (the ADR-0016 "span + shared subject" analog for
   objects). Only if S1-S3 leave a measurable gap.
+- [ ] **S5 (deep, general):** closure env capture is O(program symbols) per
+  lambda creation — `*.flat` in TWEAK costs ~10% of this bench, and every
+  hot-loop `.map({...})` pays it. Design ticket:
+  `todo/deep/closure-env-capture-cost.md`.
+
+Progress: S1 landed (#5569) — resolver-path TWEAK dispatches 2/construction
+-> 0, phase re-derivation gone, probe skeleton replaces the per-construction
+`to_map()`. S2 (partial) — `bind_param_value` attributive-param whole-map
+`to_map()`+`commit_attrs` round-trip replaced with a single-key cell write
+(3 whole-map clones/construction removed), `is Type` container-trait lookup
+plan-cached, `run_resolved_method_celled` borrows the def instead of cloning
+per call. A frame-pointer profile (2026-07-30) puts the remaining
+construction cost in: closure capture (S5), `bind_function_args_values`
+(~8%), `merge_method_env` (~7%), GC safepoint/candidate churn (S3, ~10%
+combined with pop_call_frame).
 
 ## Measurement notes
 
