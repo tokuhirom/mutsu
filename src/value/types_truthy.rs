@@ -89,12 +89,7 @@ impl Value {
                     return false;
                 }
                 // A failed `.subparse` Match is falsy (but still defined).
-                if class_name == "Match"
-                    && attributes
-                        .as_map()
-                        .get("__failed_match__")
-                        .is_some_and(|v| v.truthy())
-                {
+                if class_name == "Match" && self.match_is_failed() {
                     return false;
                 }
                 // Buf/Blob: truthy when non-empty

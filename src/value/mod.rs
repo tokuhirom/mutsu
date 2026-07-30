@@ -434,6 +434,8 @@ mod error;
 mod error_construct;
 mod error_typed;
 mod guards;
+/// ADR-0016 P5 seam: `Match`-representation accessor helpers.
+mod match_view;
 /// NaN-boxed 8-byte representation core (3b-1 step B): the packed word that
 /// IS the `Value` storage. The only module that knows the bit layout.
 mod nanbox;

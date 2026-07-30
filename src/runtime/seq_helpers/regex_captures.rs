@@ -401,12 +401,11 @@ impl Interpreter {
 
     /// Get the match continuation position from `$/.to`, defaulting to 0.
     pub(in crate::runtime) fn get_match_to_position(&self) -> usize {
-        if let Some(ValueView::Instance { attributes, .. }) = self.env.get("/").map(Value::view)
-            && let Some(ValueView::Int(to)) = attributes.as_map().get("to").map(Value::view)
-        {
-            return to as usize;
-        }
-        0
+        self.env
+            .get("/")
+            .and_then(Value::match_to)
+            .map(|to| to as usize)
+            .unwrap_or(0)
     }
 
     #[cfg(feature = "pcre2")]

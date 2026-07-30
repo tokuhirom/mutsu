@@ -35,14 +35,7 @@ impl Interpreter {
             return Err(err);
         }
         // Match coerces to Numeric via its matched string.
-        if let ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } = value.view()
-            && class_name == "Match"
-            && let Some(str_val) = attributes.as_map().get("str")
-        {
+        if let Some(str_val) = value.match_str_value() {
             let s = str_val.to_string_value();
             let s = s.trim();
             if let Ok(i) = s.parse::<i64>() {

@@ -79,22 +79,12 @@ fn value_raku_repr(val: &Value) -> String {
 
 /// Extract the `from` position from a Match object value.
 pub(super) fn match_value_from(val: &Value) -> i64 {
-    if let ValueView::Instance { attributes, .. } = val.view()
-        && let Some(ValueView::Int(n)) = attributes.as_map().get("from").map(Value::view)
-    {
-        return n;
-    }
-    0
+    val.match_from().unwrap_or(0)
 }
 
 /// Extract the `to` position from a Match object value.
 pub(super) fn match_value_to(val: &Value) -> i64 {
-    if let ValueView::Instance { attributes, .. } = val.view()
-        && let Some(ValueView::Int(n)) = attributes.as_map().get("to").map(Value::view)
-    {
-        return n;
-    }
-    0
+    val.match_to().unwrap_or(0)
 }
 
 /// Collect all captures from a Match object sorted by position.

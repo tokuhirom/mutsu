@@ -764,13 +764,7 @@ impl Interpreter {
 
     /// Extract `action_name` from a Match object (set for aliased captures).
     pub(crate) fn get_action_name(match_obj: &Value) -> Option<String> {
-        if let ValueView::Instance { attributes, .. } = match_obj.view()
-            && let Some(ValueView::Str(action_name)) =
-                attributes.as_map().get("action_name").map(Value::view)
-        {
-            return Some(action_name.to_string());
-        }
-        None
+        match_obj.match_action_name()
     }
 
     /// Dispatch this level's own silent-action captures: hidden `<.foo>`
@@ -788,16 +782,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         if let Some(ValueView::Array(silent_arr, _)) = attrs.get("silent_caps").map(Value::view) {
             let mut items: Vec<Value> = silent_arr.iter().cloned().collect();
-            items.sort_by_key(|m| {
-                if let ValueView::Instance { attributes, .. } = m.view()
-                    && let Some(ValueView::Int(from)) =
-                        attributes.as_map().get("from").map(Value::view)
-                {
-                    from
-                } else {
-                    0
-                }
-            });
+            items.sort_by_key(|m| m.match_from().unwrap_or(0));
             for item in items {
                 let dispatch_name = Self::get_action_name(&item).unwrap_or_default();
                 self.invoke_grammar_actions(item, actions, &dispatch_name)?;

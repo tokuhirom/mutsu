@@ -179,19 +179,12 @@ impl Interpreter {
         // Stringy-then-Str method-dispatch ceremony below. Only a user augment
         // of `Match.Stringy`/`Match.Str` (or a `prefix:<~>` overload, already
         // checked above) could observe the difference — gate on those.
-        if let ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } = val.view()
-            && class_name == "Match"
+        if val.is_match_instance()
             && !self.has_user_method("Match", "Stringy")
             && !self.has_user_method("Match", "Str")
         {
-            let s = attributes
-                .as_map()
-                .get("str")
-                .cloned()
+            let s = val
+                .match_str_value()
                 .unwrap_or_else(|| Value::str(String::new()));
             self.stack.push(s);
             return Ok(());

@@ -51,22 +51,13 @@ impl Interpreter {
             return None;
         }
         // Cursor: a Match instance (orig + to = current position) or a plain Str.
-        let (text, pos) = match args.first().map(Value::view) {
-            Some(ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            }) if class_name.resolve() == "Match" => {
-                let attrs = attributes.as_map();
-                let orig = attrs.get("orig").map(|v| v.to_string_value())?;
-                let to = attrs
-                    .get("to")
-                    .and_then(|v| v.as_int())
-                    .filter(|t| *t >= 0)
-                    .unwrap_or(0) as usize;
+        let (text, pos) = match args.first() {
+            Some(m) if m.is_match_instance() => {
+                let orig = m.match_orig().map(|v| v.to_string_value())?;
+                let to = m.match_to().filter(|t| *t >= 0).unwrap_or(0) as usize;
                 (orig, to)
             }
-            Some(ValueView::Str(s)) => (s.to_string(), 0usize),
+            Some(v) if matches!(v.view(), ValueView::Str(_)) => (v.to_string_value(), 0usize),
             _ => return None,
         };
         Some(self.run_token_method_at(pkg, name, &args[1..], &text, pos))
@@ -229,17 +220,19 @@ impl Interpreter {
             }
         };
         let side = LAST_TOKEN_METHOD_MATCH.with(|slot| slot.borrow_mut().take());
-        // The wrapper must return a Match/cursor; read its extent.
-        let to_abs = if let ValueView::Instance { attributes, .. } = result.view() {
-            attributes
-                .as_map()
-                .get("to")
-                .and_then(|t| t.as_int())
-                .filter(|&t| t >= pos as i64 && t <= chars.len() as i64)
-                .map(|t| t as usize)
-        } else {
-            None
-        };
+        // The wrapper must return a Match/cursor; read its extent. A non-Match
+        // cursor-like instance (user class with a `to` attribute) also counts.
+        let to_abs = result
+            .match_to()
+            .or_else(|| {
+                if let ValueView::Instance { attributes, .. } = result.view() {
+                    attributes.as_map().get("to").and_then(|t| t.as_int())
+                } else {
+                    None
+                }
+            })
+            .filter(|&t| t >= pos as i64 && t <= chars.len() as i64)
+            .map(|t| t as usize);
         let Some(to_abs) = to_abs else {
             return Some(Vec::new());
         };
