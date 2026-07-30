@@ -411,8 +411,20 @@ impl Interpreter {
             && package != "MY"
             && !package.is_empty()
         {
+            // A lexical bound to a *type object* names that package:
+            // `my \NCexports = ::('NativeCall::EXPORT::ALL'); NCexports::{$_}`
+            // must read the bound package's stash, not a package literally
+            // called "NCexports". Only a `Package` value redirects — any other
+            // binding leaves the literal-name reading intact.
+            let target = self
+                .get_env_with_main_alias(package)
+                .and_then(|v| match v.view() {
+                    ValueView::Package(sym) => Some(sym.resolve().to_string()),
+                    _ => None,
+                })
+                .unwrap_or_else(|| package.to_string());
             self.stack
-                .push(loan_env!(self, package_stash_value(package)));
+                .push(loan_env!(self, package_stash_value(&target)));
             return;
         }
 

@@ -192,6 +192,30 @@ fn collect_declared_type_names_with(
                 }
                 collect_declared_type_names_with(interp, extra_dirs, body, out, packages, classes);
             }
+            // `constant HANDLE = uint32;` aliases a type, and the alias is usable
+            // wherever a type name is (`sub GetProcessHeap(--> HANDLE)`, which is
+            // how C bindings spell their platform types). Only a bare-name RHS
+            // counts: `constant TAU = 6.28` names a value, not a type, and must
+            // stay rejected as a parameter type. Whether the bare name really
+            // resolves to a type is not decided here — this pre-pass only records
+            // that the *alias* exists, exactly as it does for a `class`.
+            Stmt::VarDecl {
+                name,
+                expr: crate::ast::Expr::BareWord(target),
+                custom_traits,
+                ..
+            } if custom_traits.iter().any(|(t, _)| t == "__constant")
+                && name.starts_with(|c: char| c.is_ascii_uppercase() || c.is_ascii_lowercase())
+                && !name.starts_with(['$', '@', '%', '&']) =>
+            {
+                // Record only when the target itself looks like a type name, so a
+                // `constant Foo = bareword-sub-call` is not mistaken for a type.
+                if interp.is_none_or(|i| i.is_resolvable_type(target) || i.has_type(target))
+                    || crate::runtime::nativecall::CType::from_type_name(target).is_some()
+                {
+                    insert_declared_name(out, name);
+                }
+            }
             Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
                 collect_declared_type_names_with(interp, extra_dirs, body, out, packages, classes);
             }

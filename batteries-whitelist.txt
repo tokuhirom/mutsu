@@ -78,7 +78,12 @@ MIME::Base64	basic.rakutest
 MIME::Base64	binary-and-long-line.rakutest
 MIME::Base64	oneline.rakutest
 MIME::Base64	rfc4648-test-vector.rakutest
+NativeHelpers::Blob	00-trivial.t
 NativeHelpers::Blob	99-my-meta.t
+NativeLibs	01-basic.t
+NativeLibs	02-cannon-name.t
+NativeLibs	10-search.t
+NativeLibs	20-compile.t
 OpenSSL	01-basic.rakutest
 OpenSSL	03-rsa.rakutest
 OpenSSL	04-crypt.rakutest

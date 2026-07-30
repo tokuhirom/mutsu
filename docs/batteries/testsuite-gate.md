@@ -66,7 +66,15 @@ MUTSU_BIN=target/release/mutsu scripts/battery-testsuite.sh --update
 The harness runs each suite against the **bundled** library (`-I
 vendor/zef/lib`, `-I modules/OpenSSL/lib`, …) — the clone provides only the
 `t/` tests. A test file "passes" when it emits a TAP plan and every planned test
-is `ok` with no `not ok`.
+is `ok`, counting a `not ok … # TODO …` as passing.
+
+A `# TODO` failure is an *expected* failure — TAP says the suite still passes,
+and `prove` agrees. Upstream suites use it for assertions that depend on the
+host: `NativeLibs`' `10-search.t` marks its "is there a versioned
+`libmysqlclient`?" probe TODO, and raku fails that subtest on this machine too.
+Counting it as a failure would make such a file ungateable even at exact parity
+with raku. The verdict line reports the count (`PASS(1 todo)`) so a file quietly
+turning its whole plan into TODOs is still visible.
 
 The harness unconditionally sets `DBIISH_WRITE_TEST=YES` (harmless for every
 other battery, which doesn't read it): without it, `DBIish`'s own

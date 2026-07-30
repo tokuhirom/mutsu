@@ -296,7 +296,7 @@ impl crate::runtime::Interpreter {
     /// Whether a *field* of type `name` occupies one pointer inside an
     /// enclosing CStruct: any class NativeCall holds by reference, i.e. one
     /// declared `is repr('CStruct')`, `'CPointer'` or `'CUnion'`.
-    fn is_native_handle_class(&self, name: &str) -> bool {
+    pub(crate) fn is_native_handle_class(&self, name: &str) -> bool {
         let short = name.rsplit("::").next().unwrap_or(name);
         let reg = self.registry();
         [
@@ -611,6 +611,16 @@ impl crate::runtime::Interpreter {
                 "nativecast() expects 2 arguments, got {}",
                 args.len()
             ))));
+        }
+        // `nativecast(:(num64 --> num64), $ptr)` — cast a raw C function pointer
+        // to a *signature*, yielding something callable. This is how a symbol
+        // looked up at runtime becomes a usable routine (`NativeLibs`'
+        // `Loader.symbol($name, :(num64 --> num64))`), so there is no `is native`
+        // declaration and no symbol name to bind — only the address.
+        if let ValueView::Instance { class_name, id, .. } = args[0].view()
+            && class_name.resolve() == "Signature"
+        {
+            return Some(self.native_callable_from_signature(id, &args[1]));
         }
         let target = match args[0].view() {
             ValueView::Package(n) => n.resolve().to_string(),

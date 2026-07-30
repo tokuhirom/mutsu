@@ -154,6 +154,65 @@ impl Interpreter {
         }
     }
 
+    /// Publish `NativeCall`'s export list.
+    ///
+    /// mutsu implements NativeCall inside the VM, so `use NativeCall` loads no
+    /// Raku module — but the module's *export surface* is introspectable in
+    /// Rakudo (`NativeCall::EXPORT::ALL`) and real bindings read it: `NativeLibs`
+    /// re-exports the whole stash into its own `UNIT::EXPORT` so that its users
+    /// get NativeCall transitively. With no entries, that stash was empty and
+    /// the re-export silently did nothing.
+    ///
+    /// The list is Rakudo's `NativeCall.rakumod` / `NativeCall::Types` export
+    /// set: the trait that makes a sub native, the four helper routines, and the
+    /// C type objects.
+    pub(crate) fn register_nativecall_exports(&mut self) {
+        const SUBS: [&str; 6] = [
+            "trait_mod:<is>",
+            "nativecast",
+            "nativesizeof",
+            "cglobal",
+            "explicitly-manage",
+            "refresh",
+        ];
+        const TYPES: [&str; 11] = [
+            "Pointer",
+            "OpaquePointer",
+            "CArray",
+            "void",
+            "bool",
+            "long",
+            "longlong",
+            "ulong",
+            "ulonglong",
+            "size_t",
+            "ssize_t",
+        ];
+        if self.exported_subs.contains_key("NativeCall") {
+            return;
+        }
+        for name in SUBS {
+            self.register_exported_sub("NativeCall".to_string(), name.to_string(), Vec::new());
+        }
+        // `guess_library_name` is a routine, but it is spelled `&…` by consumers
+        // and lives with the types in Rakudo's export map; registering it in both
+        // sets keeps either spelling resolvable.
+        self.register_exported_sub(
+            "NativeCall".to_string(),
+            "guess_library_name".to_string(),
+            Vec::new(),
+        );
+        for name in TYPES {
+            self.register_exported_var("NativeCall".to_string(), name.to_string(), Vec::new());
+        }
+        // `::('NativeCall')` must resolve to the package rather than failing:
+        // `NativeLibs`' own `EXPORT` sub passes `NativeCall` through as a value.
+        self.env.insert(
+            "NativeCall".to_string(),
+            Value::package(Symbol::intern("NativeCall")),
+        );
+    }
+
     pub(crate) fn import_module(
         &mut self,
         module: &str,

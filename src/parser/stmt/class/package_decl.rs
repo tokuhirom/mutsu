@@ -521,6 +521,11 @@ pub(crate) fn package_decl_with_scope(input: &str, is_my: bool) -> PResult<'_, S
 
 /// Parse `proto` declaration.
 pub(crate) fn proto_decl(input: &str) -> PResult<'_, Stmt> {
+    proto_decl_scoped(input, false)
+}
+
+/// `proto` declaration, `is_our` set for the `our proto ...` spelling.
+pub(crate) fn proto_decl_scoped(input: &str, is_our: bool) -> PResult<'_, Stmt> {
     let rest = keyword("proto", input).ok_or_else(|| PError::expected("proto declaration"))?;
     let (rest, _) = ws1(rest)?;
     // proto token | proto rule | proto sub | proto method
@@ -576,6 +581,7 @@ pub(crate) fn proto_decl(input: &str) -> PResult<'_, Stmt> {
                     .map(|(n, _)| n.clone())
                     .collect(),
                 is_method,
+                is_our,
             },
         ));
     }
@@ -594,6 +600,7 @@ pub(crate) fn proto_decl(input: &str) -> PResult<'_, Stmt> {
                 .map(|(n, _)| n.clone())
                 .collect(),
             is_method,
+            is_our,
         },
     ))
 }

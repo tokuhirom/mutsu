@@ -282,6 +282,31 @@ code as-is and grow mutsu's core, with private reimplementation as a last resort
 15 further distributions in the fez index depend on `NativeHelpers::Blob`
 directly, so the module itself is the thing worth making work.
 
+## What this still blocks in the battery gate (measured 2026-07-30)
+
+Issue #5557 asked for `NativeHelpers::Blob`'s upstream tests to be whitelisted.
+Two of the four went in; the other two are blocked here, on **ADR-0015 P3**
+(native-backed Raku-side `CArray[T]`), and not on anything smaller:
+
+| file | status | why |
+| --- | --- | --- |
+| `99-my-meta.t` | whitelisted (was already) | |
+| `00-trivial.t` | **whitelisted 2026-07-30** | needed `constant HANDLE = uint32` to be usable as a signature type |
+| `01-basic.t` | blocked at test 9 (8/24 pass) | `carray-from-blob($a):managed` builds a Raku-side `CArray[T]`, whose `.REPR` is `P6opaque`, so `BODY_OF` refuses it |
+| `03-pointer.t` | blocked at test 1 (0/10) | `nativecast(Pointer[uint16], CArray[uint16].new(…))` — a Raku-side `CArray` carries no C address, so `.deref` reads address 0 |
+| `02-cstruct.t` | **not whitelistable at all** | raku itself fails its tests 13 and 15 on this machine, so it can never be an all-green gate entry (it also needs a C compiler at test time) |
+
+One smaller gap sits behind `01-basic.t` test 6 and is independent of P3: an
+*unmanaged* `CArray` (a `nativecast` handle) has no known length, so `.elems`
+must throw; mutsu returns a number. Fixing it alone does not unblock the file.
+
+Re-measure with:
+
+```sh
+MUTSU_BIN=target/release/mutsu BATTERIES_LOCK=<lock-with-just-this-battery> \
+  BATTERIES_WHITELIST=/dev/null scripts/battery-testsuite.sh
+```
+
 ## Note on the diagnostic
 
 The first line mutsu prints for these files is

@@ -376,12 +376,10 @@ impl Interpreter {
         attrs.insert("desc".to_string(), Value::str_from("mutsu virtual machine"));
         // osname mirrors the build-time OS name MoarVM exposes via `$*VM.osname`
         // (e.g. "linux", "darwin", "mswin32"); zef branches on it (tar/CLI).
-        let osname = match std::env::consts::OS {
-            "macos" => "darwin",
-            "windows" => "mswin32",
-            other => other,
-        };
-        attrs.insert("osname".to_string(), Value::str_from(osname));
+        attrs.insert(
+            "osname".to_string(),
+            Value::str_from(super::io_sysinfo_vm_config::osname()),
+        );
         attrs.insert("precomp-ext".to_string(), Value::str_from("mutsu"));
         attrs.insert("precomp-target".to_string(), Value::str_from("mutsu"));
         attrs.insert("prefix".to_string(), Value::str_from("mutsu"));
@@ -389,23 +387,10 @@ impl Interpreter {
         let mut props = HashMap::new();
         props.insert("name".to_string(), Value::str_from("mutsu"));
         attrs.insert("properties".to_string(), Value::hash(props));
-        // config: a non-empty hash so the value is truthy.
-        let mut config = HashMap::new();
-        config.insert("name".to_string(), Value::str_from("mutsu"));
-        // be: 0 for little-endian, 1 for big-endian (matches Rakudo's $*VM.config<be>)
-        let be_val = if cfg!(target_endian = "big") {
-            "1"
-        } else {
-            "0"
-        };
-        config.insert("be".to_string(), Value::str_from(be_val));
-        // nativecall_backend names the FFI implementation behind NativeCall.
-        // Modules branch on it to decide whether the dyncall-only extensions are
-        // available (`NativeLibs` does `$*VM.config<nativecall_backend> eq
-        // 'dyncall'`); mutsu's is libffi, which is also what a modern MoarVM
-        // reports, and reading it must not warn about an undefined value.
-        config.insert("nativecall_backend".to_string(), Value::str_from("libffi"));
-        attrs.insert("config".to_string(), Value::hash(config));
+        attrs.insert(
+            "config".to_string(),
+            Value::hash(super::io_sysinfo_vm_config::vm_config()),
+        );
         Value::make_instance(Symbol::intern("VM"), attrs)
     }
 

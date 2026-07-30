@@ -450,7 +450,7 @@ impl Interpreter {
         Some(self.locals.get(idx)?.clone())
     }
 
-    pub(super) fn get_env_with_main_alias(&self, name: &str) -> Option<Value> {
+    pub(crate) fn get_env_with_main_alias(&self, name: &str) -> Option<Value> {
         // Raku allows underscore variants of kebab-case identifiers
         // (e.g. $*EXECUTABLE_NAME is equivalent to $*EXECUTABLE-NAME).
         // Try the kebab-case equivalent first if the name contains underscores.

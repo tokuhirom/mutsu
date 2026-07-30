@@ -66,19 +66,28 @@ impl Interpreter {
     }
 
     /// Split `Name:auth<zef:foo>:ver<0.0.20+>` into the bare module name and
-    /// its distribution selectors. The parser only appends the three dist
-    /// adverbs (`ver`/`auth`/`api`) in this literal angle form, so the split is
+    /// its distribution selectors. The parser only appends the dist adverbs
+    /// (`ver`/`auth`/`api`) in this literal angle form, so the split is
     /// unambiguous: a `::`-qualified name never contains a lone `:`.
+    ///
+    /// `:v<…>` is Raku's short spelling of `:ver<…>` and normalizes to it. The
+    /// two never collide: the trailing `<` makes `:v<` and `:ver<` distinct
+    /// patterns.
     pub(crate) fn split_dist_selectors(module: &str) -> (&str, Vec<(String, String)>) {
         let mut selectors = Vec::new();
         let mut bare_end = module.len();
-        for key in ["ver", "auth", "api"] {
+        for (key, canonical) in [
+            ("ver", "ver"),
+            ("v", "ver"),
+            ("auth", "auth"),
+            ("api", "api"),
+        ] {
             let pat = format!(":{}<", key);
             if let Some(pos) = module.find(&pat) {
                 bare_end = bare_end.min(pos);
                 let after = &module[pos + pat.len()..];
                 if let Some(end) = after.find('>') {
-                    selectors.push((key.to_string(), after[..end].to_string()));
+                    selectors.push((canonical.to_string(), after[..end].to_string()));
                 }
             }
         }
@@ -180,6 +189,12 @@ impl Interpreter {
         let env_snapshot: HashSet<Symbol> = self.env.keys().copied().collect();
         let func_keys_before: HashSet<Symbol> = self.registry().functions.keys().copied().collect();
 
+        // NativeCall loads no Raku module here (the machinery is in the VM), but
+        // its export list is a real introspectable surface that other modules
+        // read and re-export — see `register_nativecall_exports`.
+        if module == "NativeCall" {
+            self.register_nativecall_exports();
+        }
         let result = if module == "Test"
             || matches!(
                 module,
