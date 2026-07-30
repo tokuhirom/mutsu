@@ -19,7 +19,51 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Classifies the change as documentation-only so the four heavy jobs below
+  # can skip themselves. Roughly one in six commits here touches only docs/,
+  # news/, todo/, TODO_roast/ or a top-level *.md, and each one was paying for
+  # two full cargo builds plus three roast sweeps.
+  #
+  # This must be a job-level `if:`, not a workflow-level `paths-ignore`. With
+  # `paths-ignore` GitHub never creates the check run, so the required status
+  # checks (`test`, `wasm-e2e`, `gc-stress`) stay pending and the PR can never
+  # merge. A job that exists and is *skipped* counts as success for branch
+  # protection, which is exactly the semantics we want.
+  #
+  # The classifier is an allowlist and fails safe: anything it does not
+  # recognise as documentation -- including .github/** itself -- yields
+  # `false` and runs everything. It self-tests on each run (~1s) so a bad edit
+  # to the path rules is caught here rather than by a silently-untested merge.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      docs-only: ${{ steps.detect.outputs.docs-only }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts/ci-docs-only.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Classifier self-test
+        run: scripts/ci-docs-only.sh --self-test
+
+      - name: Detect documentation-only change
+        id: detect
+        run: |
+          result=$(scripts/ci-docs-only.sh)
+          echo "docs-only=$result" >> "$GITHUB_OUTPUT"
+          echo "docs-only=$result"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # GITHUB_EVENT_NAME / GITHUB_SHA / GITHUB_REPOSITORY come from the
+          # runner; these two do not.
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+
   test:
+    needs: changes
+    if: needs.changes.outputs.docs-only != 'true'
     runs-on: ubuntu-latest
     # The job does two full cargo builds (debug for `prove t/`, release for
     # roast) plus clippy, unit tests, and the ~7 min roast suite. At 15 min the
@@ -242,8 +286,9 @@ jobs:
           MUTSU_BIN: target/release/mutsu
 
   wasm-e2e:
-    # Skipped on tagpr's release PR — see the `test` job's comment.
-    if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'tagpr-from-')
+    # Skipped on a documentation-only change — see the `changes` job.
+    needs: changes
+    if: needs.changes.outputs.docs-only != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -315,8 +360,9 @@ jobs:
     # `VERIFY FAIL` in the suite = heap corruption). A failure anywhere here
     # is a real GC regression.
     #
-    # Skipped on tagpr's release PR — see the `test` job's comment.
-    if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'tagpr-from-')
+    # Skipped on a documentation-only change — see the `changes` job.
+    needs: changes
+    if: needs.changes.outputs.docs-only != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -443,8 +489,9 @@ jobs:
     # gate: any failure here that does not reproduce with MUTSU_JIT=off is a
     # JIT codegen/shim bug.
     #
-    # Skipped on tagpr's release PR — see the `test` job's comment.
-    if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'tagpr-from-')
+    # Skipped on a documentation-only change — see the `changes` job.
+    needs: changes
+    if: needs.changes.outputs.docs-only != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
