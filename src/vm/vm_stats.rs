@@ -136,6 +136,13 @@ static GC_ROOTS_SCANNED: AtomicU64 = AtomicU64::new(0);
 // CapNode split (ADR-0016 P2) removes structurally.
 static REGEX_CAP_MAKEMUT_TOTAL: AtomicU64 = AtomicU64::new(0);
 static REGEX_CAP_MAKEMUT_SHARED: AtomicU64 = AtomicU64::new(0);
+// ADR-0016 P3: how many leaf captures the Match builder had to recover a
+// position for by SEARCHING the subject (`make_capture_match` with an orig
+// context), vs. leaves whose span came from a recorded carrier node. The
+// search is O(document) per leaf and semantically wrong for repeated text —
+// P3's goal is to drive `searches` to zero by carrying spans.
+static REGEX_MATCH_LEAF_SEARCHES: AtomicU64 = AtomicU64::new(0);
+static REGEX_MATCH_LEAF_SPANS: AtomicU64 = AtomicU64::new(0);
 
 // Regex embedded-code parse cache (REGEX_CODE_PARSE_CACHE) effectiveness.
 static REGEX_CODE_PARSE_HITS: AtomicU64 = AtomicU64::new(0);
@@ -161,6 +168,18 @@ pub(crate) fn record_regex_cap_makemut(shared: bool) {
         REGEX_CAP_MAKEMUT_TOTAL.fetch_add(1, Ordering::Relaxed);
         if shared {
             REGEX_CAP_MAKEMUT_SHARED.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
+/// A Match-builder leaf capture recovered its offsets by searching the subject
+/// (`searched == true`) or read them from a recorded span (`searched == false`).
+pub(crate) fn record_regex_match_leaf(searched: bool) {
+    if enabled() {
+        if searched {
+            REGEX_MATCH_LEAF_SEARCHES.fetch_add(1, Ordering::Relaxed);
+        } else {
+            REGEX_MATCH_LEAF_SPANS.fetch_add(1, Ordering::Relaxed);
         }
     }
 }
@@ -472,8 +491,10 @@ pub(crate) fn dump() {
     );
     let cap_makemut_total = REGEX_CAP_MAKEMUT_TOTAL.load(Ordering::Relaxed);
     let cap_makemut_shared = REGEX_CAP_MAKEMUT_SHARED.load(Ordering::Relaxed);
+    let leaf_searches = REGEX_MATCH_LEAF_SEARCHES.load(Ordering::Relaxed);
+    let leaf_spans = REGEX_MATCH_LEAF_SPANS.load(Ordering::Relaxed);
     eprintln!(
-        "[mutsu vm-stats] regex-captures: cap_makemut={cap_makemut_total} shared_deep_copies={cap_makemut_shared}"
+        "[mutsu vm-stats] regex-captures: cap_makemut={cap_makemut_total} shared_deep_copies={cap_makemut_shared} leaf_searches={leaf_searches} leaf_spans={leaf_spans}"
     );
     let code_parse_hits = REGEX_CODE_PARSE_HITS.load(Ordering::Relaxed);
     let code_parse_misses = REGEX_CODE_PARSE_MISSES.load(Ordering::Relaxed);
