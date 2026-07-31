@@ -451,6 +451,7 @@ impl Interpreter {
             // then hold `$_` at the outer topic instead of binding it to the
             // element (`*.map({ $_ })` saw the whole list, not each item).
             flat.remove_sym(Symbol::intern("__mutsu_callable_type"));
+            self.materialize_frame_self_into_capture(code, &mut flat);
             return flat;
         }
         let free: std::collections::HashSet<Symbol> = cc.free_var_syms.iter().copied().collect();
@@ -487,7 +488,25 @@ impl Interpreter {
                 env.insert_sym(*sym, val.clone());
             }
         }
+        self.materialize_frame_self_into_capture(code, &mut env);
         env
+    }
+
+    /// `self` is lexical: a closure created inside a method body must capture
+    /// that method's invocant. On the fast method path (skip_env_setup) `self`
+    /// lives ONLY in a local slot, so the env-based capture above misses it and
+    /// a later `$.attr`/`$!attr` in the closure body resolved against whatever
+    /// `self` the *invoking* frame happened to carry — a supply block created
+    /// in `Sink.sinker` and tapped from another object's method read `$!sum`
+    /// off that other object (Cro::Service.start's assembled pipeline).
+    fn materialize_frame_self_into_capture(&self, code: &CompiledCode, env: &mut Env) {
+        if env.get("self").is_none()
+            && let Some(slot) = code.locals.iter().position(|n| n == "self")
+            && let Some(val) = self.locals.get(slot)
+            && !val.is_nil()
+        {
+            env.insert("self".to_string(), val.clone());
+        }
     }
 
     /// Build the closure's upvalue array (aligned with `cc.upvalue_syms`) from the

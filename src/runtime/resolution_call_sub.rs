@@ -432,6 +432,17 @@ impl Interpreter {
                 }
                 new_env.insert_sym(*k, v.clone());
             }
+            // `self` may live in a PARENT tier of the captured env: the loop
+            // above iterates the own tier only (`Env::iter` does not walk the
+            // chain, unlike `get`), so the lexical-self install in the loop
+            // never fires for a closure captured under a scoped overlay — a
+            // supply block created in `Sink.sinker` and driven from another
+            // object's method read `$!attr` off that other object. Resolve
+            // through the tier-walking get and force-install (self is lexical;
+            // a method's own invocant is bound from its args after this).
+            if let Some(captured_self) = closure_base_env.get("self").cloned() {
+                new_env.insert("self".to_string(), captured_self);
+            }
             self.env = new_env.clone();
             // Check for empty signature: a pointy block `-> { }` or sub with no
             // params that doesn't use @_/%_ must reject positional arguments.
