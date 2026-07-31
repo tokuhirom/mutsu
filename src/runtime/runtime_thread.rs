@@ -363,6 +363,7 @@ impl Interpreter {
             module_packages: self.module_packages.clone(),
             closure_env_overrides: self.closure_env_overrides.clone(),
             pending_eval_sigilless: Vec::new(),
+            pending_eval_placeholder_params: Vec::new(),
             predictive_seq_iters: self.predictive_seq_iters.clone(),
             protect_block_cache: HashMap::new(),
             subset_predicate_cache: HashMap::new(),

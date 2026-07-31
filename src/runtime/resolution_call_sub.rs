@@ -572,7 +572,21 @@ impl Interpreter {
                     })
                     .unwrap_or_default(),
             );
+            // Tell the fresh-compiler body path which PLACEHOLDER params this
+            // call has bound (`{ 0 <= $^p <= 5 }` called as a subset `where`
+            // predicate), so the chained-comparison DoBlock's stray-placeholder
+            // check does not die on an attached one. Restored right after; a
+            // nested call sets and restores its own.
+            let saved_eval_placeholders = std::mem::replace(
+                &mut self.pending_eval_placeholder_params,
+                data.params
+                    .iter()
+                    .filter(|p| p.trim_start_matches(['$', '@', '%', '&']).starts_with('^'))
+                    .cloned()
+                    .collect(),
+            );
             let body_result = self.eval_block_value(&data.body);
+            self.pending_eval_placeholder_params = saved_eval_placeholders;
             self.frame_authoritative = saved_frame_auth;
             let result = match body_result {
                 Err(mut e) if e.is_leave => {

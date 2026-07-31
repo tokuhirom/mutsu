@@ -6,9 +6,37 @@ impl Compiler {
         // used directly inside it cannot be captured -> X::Placeholder::Block.
         // Exception: inside a method, the legacy argument variables `%_` / `@_`
         // refer to the method's implicit `*%_` / `*@_` slurpy and are valid here.
+        // Exception: a placeholder that is already a bound parameter of the
+        // ENCLOSING block — its local exists in `local_map` — is attached, not
+        // stray. The chained-comparison desugar (`{ 0 <= $^p <= 5 }`) wraps the
+        // body in a compiler-generated DoBlock inside the very AnonSubParams
+        // that owns `^p`; dying here broke every subset/where written that way
+        // (Cro::Core's `Cro::Port`). Pin: t/subset-where-placeholder-chain.t.
         if let Some(ph) = crate::ast::collect_unattached_placeholders(body)
             .into_iter()
-            .find(|ph| !(self.lexically_in_method && (ph == "%_" || ph == "@_")))
+            .find(|ph| {
+                if self.lexically_in_method && (ph == "%_" || ph == "@_") {
+                    return false;
+                }
+                // A CARET placeholder (`$^p`) already bound as the enclosing
+                // block's parameter is attached, not stray: the local exists in
+                // `local_map` (same-compiler case), or the interpret-path
+                // caller bound it in env and seeded `prebound_placeholder_params`
+                // (re-entrant block eval — `call_sub_value` → `eval_block_value`
+                // re-compiles the body alone). The chained-comparison desugar
+                // (`{ 0 <= $^p <= 5 }`) wraps the body in a compiler-generated
+                // DoBlock inside the very block that owns `^p`; dying here broke
+                // every subset/where written that way (Cro::Core's `Cro::Port`).
+                // Pin: t/subset-where-placeholder-chain.t. The `%_`/`@_` implicit
+                // slurpies keep the strict rule (only a METHOD provides them) —
+                // pin: t/placeholder-named-in-method-do.t.
+                let bare = ph.trim_start_matches(['$', '@', '%', '&']);
+                let attached_caret = bare.starts_with('^')
+                    && (self.local_map.contains_key(ph.as_str())
+                        || self.local_map.contains_key(bare)
+                        || self.prebound_placeholder_params.contains(bare));
+                !attached_caret
+            })
         {
             let err = Self::placeholder_scope_error("block", &ph);
             let idx = self.code.add_constant(err);

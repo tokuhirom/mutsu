@@ -1025,6 +1025,10 @@ pub struct Interpreter {
     /// attr.get_value(self) }`). Seeded right before the eval and consumed by the
     /// fresh compiler's `enclosing_sigilless`. Empty except across that call.
     pending_eval_sigilless: Vec<String>,
+    /// Placeholder params (e.g. `^p`) the current interpret-path sub call has
+    /// bound in env, seeded into `compile_block_value_opts`'s fresh compiler
+    /// so its stray-placeholder checks know they are attached.
+    pending_eval_placeholder_params: Vec<String>,
     /// PredictiveIterator backing a `Seq.new(iterator)`, keyed by the Seq's
     /// Arc pointer (`seq_id`). Kept off the scoped `env` so the association
     /// survives sub/block returns between Seq creation and `.tail`/`.Numeric`

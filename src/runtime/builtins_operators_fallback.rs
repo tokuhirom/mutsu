@@ -544,7 +544,16 @@ impl Interpreter {
                     .map(|pd| pd.name.clone())
                     .collect(),
             );
+            let saved_eval_placeholders = std::mem::replace(
+                &mut self.pending_eval_placeholder_params,
+                def.params
+                    .iter()
+                    .filter(|p| p.trim_start_matches(['$', '@', '%', '&']).starts_with('^'))
+                    .cloned()
+                    .collect(),
+            );
             let result = self.eval_block_value_with_pre_post(&def.body);
+            self.pending_eval_placeholder_params = saved_eval_placeholders;
             self.pending_eval_sigilless = saved_eval_sigilless;
             self.set_current_package(saved_package);
             self.routine_stack.pop();

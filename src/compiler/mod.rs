@@ -236,6 +236,10 @@ pub(crate) struct Compiler {
     /// degrade to the literal name string once the creating frame is gone
     /// (escaping closure / `.^add_method`).
     enclosing_sigilless: std::collections::HashSet<String>,
+    /// Placeholder params (`^p` caret-form) an interpret-path caller has
+    /// already bound in env before re-compiling this body — see
+    /// `seed_prebound_placeholders`.
+    pub(super) prebound_placeholder_params: std::collections::HashSet<String>,
     /// Set true immediately before compiling a *synthesized* `Stmt::Block`
     /// (an if/while/loop/control branch body the compiler wraps at compile time,
     /// not a genuine source `{ ... }`). The `Stmt::Block` arm consumes it to
@@ -354,6 +358,7 @@ impl Compiler {
             outer_constant_names: std::collections::HashSet::new(),
             sigilless_locals: std::collections::HashSet::new(),
             enclosing_sigilless: std::collections::HashSet::new(),
+            prebound_placeholder_params: std::collections::HashSet::new(),
             last_source_line: None,
             pending_index_rw_writebacks: Vec::new(),
             current_distribution: None,
@@ -566,6 +571,23 @@ impl Compiler {
     /// call it. No-op for the common empty case.
     pub(crate) fn seed_enclosing_sigilless(&mut self, names: &[String]) {
         self.enclosing_sigilless.extend(names.iter().cloned());
+    }
+
+    /// Seed the placeholder parameters an interpret-path caller has already
+    /// BOUND (in env) before re-compiling a block body with a fresh compiler
+    /// (`call_sub_value` → `eval_block_value`). The body of
+    /// `{ 0 <= $^p <= 5 }` reaches that fresh compiler as bare statements —
+    /// the chained-comparison desugar wraps them in a compiler-generated
+    /// DoBlock, whose stray-placeholder check would otherwise die on `$^p`
+    /// even though the closure's own signature bound it. Stored caret-form
+    /// (`^p`), sigil stripped, matching `collect_unattached_placeholders`.
+    pub(crate) fn seed_prebound_placeholders(&mut self, params: &[String]) {
+        for p in params {
+            let bare = p.trim_start_matches(['$', '@', '%', '&']);
+            if bare.starts_with('^') {
+                self.prebound_placeholder_params.insert(bare.to_string());
+            }
+        }
     }
 
     fn inherit_enclosing_scopes(&self, sub: &mut Compiler) {
