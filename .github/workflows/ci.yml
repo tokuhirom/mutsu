@@ -228,6 +228,14 @@ jobs:
         env:
           MUTSU_BIN: target/release/mutsu
 
+      - name: Crash reports (fatal signals)
+        # A `Wstat: 11 (Signal: SEGV)` line in the summary above names neither
+        # the process that faulted nor the place. src/crash_report/ writes one
+        # tmp/crash/<pid>.txt per crashed process; print them here so the
+        # answer is in the job log the first time the crash fires.
+        if: failure()
+        run: scripts/report-crash-reports.sh
+
       - name: Upload roast log
         # Always upload the full (untruncated) roast log so a failure can be
         # diagnosed from the artifact even when the web log viewer truncates the
@@ -237,6 +245,15 @@ jobs:
         with:
           name: roast-log
           path: tmp/roast.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Upload crash reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: crash-reports
+          path: tmp/crash/
           retention-days: 7
           if-no-files-found: ignore
 
@@ -466,6 +483,19 @@ jobs:
           fi
           echo "No GC verify violations across the suite."
 
+      - name: Crash reports (fatal signals, GC on)
+        if: failure()
+        run: scripts/report-crash-reports.sh
+
+      - name: Upload GC stress crash reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: gc-stress-crash-reports
+          path: tmp/crash/
+          retention-days: 7
+          if-no-files-found: ignore
+
       - name: Upload GC stress logs
         if: always()
         uses: actions/upload-artifact@v7
@@ -551,6 +581,19 @@ jobs:
       - name: Flaky quarantine retries used (JIT on)
         if: always()
         run: scripts/report-flaky-retries.sh
+
+      - name: Crash reports (fatal signals, JIT on)
+        if: failure()
+        run: scripts/report-crash-reports.sh
+
+      - name: Upload JIT stress crash reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: jit-stress-crash-reports
+          path: tmp/crash/
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Upload JIT stress logs
         if: always()

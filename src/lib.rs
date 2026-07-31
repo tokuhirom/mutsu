@@ -1,6 +1,7 @@
 mod ast;
 mod builtins;
 mod compiler;
+pub mod crash_report;
 pub mod doc_mode;
 pub(crate) mod env;
 pub mod error_render;
