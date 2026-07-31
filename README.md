@@ -291,7 +291,7 @@ See [CLAUDE.md](CLAUDE.md) for development conventions, architecture details, an
 ## License
 
 mutsu is licensed under the **Artistic License 2.0** — see [LICENSE](LICENSE).
-That covers mutsu's own code (`src/`, `t/`, `docs/`, `benchmarks/`, `wasm-demo/`, ...).
+That covers mutsu's own code (`src/`, `t/`, `docs/`, `benchmarks/`, `site/`, ...).
 
 This repository also contains a number of **vendored third-party trees, each of
 which keeps its own license**. They are not covered by mutsu's LICENSE:
@@ -314,4 +314,4 @@ only via `scripts/update-vendor.sh` (see [docs/vendoring.md](docs/vendoring.md))
 
 - [Raku documentation](https://docs.raku.org/)
 - [Roast (official Raku test suite)](https://github.com/Raku/roast)
-- [The mutsu site](https://tokuhirom.github.io/mutsu/) — Raku introduction, tutorial and playground (source in `wasm-demo/`)
+- [The mutsu site](https://tokuhirom.github.io/mutsu/) — Raku introduction, tutorial and playground (source in `site/`)

@@ -19,7 +19,7 @@ inline SVG by a small vanilla-JS runtime), so it opens offline. Omit
 `--standalone` when the HTML will be wrapped by something that supplies its own
 document skeleton (e.g. published as an Artifact).
 
-Pass `--site-chrome` when the output is deployed into `wasm-demo/`: it adds the
+Pass `--site-chrome` when the output is deployed into `site/`: it adds the
 site's shared nav and footer by loading `assets/site.css` and `assets/i18n.js`
 from the same directory, so the dashboard is a page of the site rather than an
 orphan. That trades away self-containedness, which is why it is opt-in.
@@ -101,7 +101,7 @@ TEMPLATE = r"""<title>Benchmark trend &mdash; mutsu</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 __CHROME_HEAD__
 <style>
-/* Palette shared with the rest of the site (wasm-demo/assets/site.css), so the
+/* Palette shared with the rest of the site (site/assets/site.css), so the
    dashboard reads as the same product whether it is deployed alongside the
    site or opened as a standalone file. */
 :root {
@@ -434,7 +434,7 @@ def main():
         action="store_true",
         help="add the mutsu site's shared nav and footer (pulls in assets/site.css and "
         "assets/i18n.js from the same directory). Use when the output is deployed into "
-        "wasm-demo/; omit to keep the file self-contained for offline use.",
+        "site/; omit to keep the file self-contained for offline use.",
     )
     args = ap.parse_args()
 

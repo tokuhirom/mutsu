@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 //
-// Verifies every code snippet shipped on the static site (wasm-demo/).
+// Verifies every code snippet shipped on the static site (site/).
 //
 //   node scripts/check-site-snippets.mjs             # check, exit 1 on drift
 //   node scripts/check-site-snippets.mjs --update    # (re)write the expectations
@@ -18,14 +18,14 @@ import { tmpdir } from 'os';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
-import { parseCorpus, renderCorpus } from '../wasm-demo/assets/corpus.js';
+import { parseCorpus, renderCorpus } from '../site/assets/corpus.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const MUTSU = process.env.MUTSU_BIN || join(ROOT, 'target/debug/mutsu');
 const UPDATE = process.argv.includes('--update');
 const TIMEOUT = 60_000;
 
-const CORPORA = ['wasm-demo/content/lessons.txt', 'wasm-demo/content/highlights.txt'];
+const CORPORA = ['site/content/lessons.txt', 'site/content/highlights.txt'];
 
 const scratch = mkdtempSync(join(tmpdir(), 'mutsu-site-'));
 
@@ -103,9 +103,9 @@ function indent(text, pad = '       ') {
  * is the worst possible first impression of the language.
  * ------------------------------------------------------------------ */
 
-const { PROGRAMS, REPL_LINES } = await import('../wasm-demo/content/examples.js');
+const { PROGRAMS, REPL_LINES } = await import('../site/content/examples.js');
 
-console.log(`\n=== wasm-demo/content/examples.js (${PROGRAMS.length} programs)`);
+console.log(`\n=== site/content/examples.js (${PROGRAMS.length} programs)`);
 
 for (const ex of PROGRAMS) {
   checked++;
@@ -164,12 +164,12 @@ const LANGS = ['en', 'ja'];
 const tutorial = {};
 const landing = {};
 for (const lang of LANGS) {
-  tutorial[lang] = (await import(`../wasm-demo/content/tutorial.${lang}.js`)).default;
-  landing[lang] = (await import(`../wasm-demo/content/landing.${lang}.js`)).default;
+  tutorial[lang] = (await import(`../site/content/tutorial.${lang}.js`)).default;
+  landing[lang] = (await import(`../site/content/landing.${lang}.js`)).default;
 }
 
-const lessons = parseCorpus(readFileSync(join(ROOT, 'wasm-demo/content/lessons.txt'), 'utf8'));
-const highlights = parseCorpus(readFileSync(join(ROOT, 'wasm-demo/content/highlights.txt'), 'utf8'));
+const lessons = parseCorpus(readFileSync(join(ROOT, 'site/content/lessons.txt'), 'utf8'));
+const highlights = parseCorpus(readFileSync(join(ROOT, 'site/content/highlights.txt'), 'utf8'));
 
 let missing = 0;
 function want(cond, what) {

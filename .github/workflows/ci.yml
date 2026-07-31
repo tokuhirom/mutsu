@@ -136,7 +136,7 @@ jobs:
           MUTSU_T_TIMEOUT: "30"
 
       - name: Site snippets still produce their documented output
-        # Every code sample shipped on the wasm-demo site (landing highlights +
+        # Every code sample shipped on the site (landing highlights +
         # tutorial lessons) runs under mutsu here and must match the output
         # recorded next to it. `raku` is not installed on the runner, so the
         # raku cross-check is skipped and this is a pure regression gate; the
@@ -343,7 +343,7 @@ jobs:
       - name: Build WASM
         run: |
           wasm-pack build --target web --no-default-features --features wasm
-          mv pkg wasm-demo/pkg
+          mv pkg site/pkg
 
       - uses: actions/setup-node@v7
         with:
@@ -353,7 +353,7 @@ jobs:
       # there), so it needs its own checks. No browser required — this drives
       # pkg/ straight from Node.
       - name: Run WASM concurrency tests
-        run: node wasm-demo/concurrency.test.mjs
+        run: node site/concurrency.test.mjs
 
       - name: Install Playwright
         run: |
@@ -361,7 +361,7 @@ jobs:
           npx playwright install --with-deps chromium
 
       - name: Run E2E tests
-        run: node wasm-demo/e2e.test.mjs
+        run: node site/e2e.test.mjs
 
   gc-stress:
     # Runs the whole test + roast suite with the GC cycle collector ON

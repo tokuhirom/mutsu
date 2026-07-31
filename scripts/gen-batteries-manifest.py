@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Generate wasm-demo/content/batteries.json from the vendored bundle.
+"""Generate site/content/batteries.json from the vendored bundle.
 
-The batteries page on the site (wasm-demo/batteries.html) lists every library
+The batteries page on the site (site/batteries.html) lists every library
 mutsu ships in its `modules/` tree and renders each one's upstream README. That
 list must never drift from what is actually bundled, so it is *generated* from
 the authoritative source — each `modules/<Dist>/META6.json` — rather than
@@ -27,7 +27,7 @@ import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODULES_DIR = os.path.join(REPO_ROOT, "modules")
-OUT_PATH = os.path.join(REPO_ROOT, "wasm-demo", "content", "batteries.json")
+OUT_PATH = os.path.join(REPO_ROOT, "site", "content", "batteries.json")
 
 # Facts that META6.json does not carry. Keyed by META6 "name". Optional — a
 # module missing from this map still lists, just without a slot/record link.

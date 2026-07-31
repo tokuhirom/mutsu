@@ -195,19 +195,19 @@ template for new records.
 ### Publish the bundle on the Pages site
 
 The bundled-library set is a headline feature ("batteries included"), so it must
-be **visible on the project's Pages site** (`wasm-demo/`, deployed by
+be **visible on the project's Pages site** (`site/`, deployed by
 `.github/workflows/pages.yml`), not only in the repo:
 
-- A **Batteries page** (`wasm-demo/batteries.html`) lists every bundled library
+- A **Batteries page** (`site/batteries.html`) lists every bundled library
   with a one-line description, its license, and its status.
 - It is reachable from the site navigation — add an entry to the `NAV` array in
-  [`wasm-demo/assets/i18n.js`](wasm-demo/assets/i18n.js) (with an `i18n` label key)
+  [`site/assets/i18n.js`](site/assets/i18n.js) (with an `i18n` label key)
   and give it an active-page state, exactly like the existing pages.
 - **Each entry links to its `docs/batteries/<lib>.md` record** so the full
   documentation is reachable from the site. `docs/batteries/*.md` stays the single
   source of truth (linked as GitHub-rendered markdown); do not fork the prose into
   the HTML page — the page carries only the list + summaries + links.
-- Note the deploy trigger: `pages.yml` only republishes on `wasm-demo/**` changes
+- Note the deploy trigger: `pages.yml` only republishes on `site/**` changes
   (or manual `workflow_dispatch`). A `docs/batteries/` edit alone will not
   redeploy the site, and that is fine because the page links out to GitHub rather
   than embedding the docs. Publish real rows only when the battery actually works
