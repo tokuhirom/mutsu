@@ -304,7 +304,7 @@ impl Value {
         if let Some(node) = self.0.as_match_node()
             && node.forced().is_none()
         {
-            return node.cap.matched.clone();
+            return node.span_text();
         }
         match self.view() {
             // A `VarRef` is a transient binder wrapper: it stringifies as the

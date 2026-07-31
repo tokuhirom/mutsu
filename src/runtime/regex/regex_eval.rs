@@ -254,11 +254,12 @@ impl Interpreter {
         // grammar's dup check does `%*PLAYED{$/.lc}++`). `$/[n]` still indexes the
         // positional captures on the Match object.
         let cursor = Value::make_match_object_with_captures(
-            matched_so_far.to_string(),
             caps.match_from as i64,
             (caps.match_from + matched_so_far.chars().count()) as i64,
             &caps.positional,
             &caps.named,
+            super::regex_helpers::current_match_target()
+                .unwrap_or_else(|| MatchTarget::new(matched_so_far)),
         );
         // `$¢` is the current match state at this point in the pattern — the same
         // object as `$/` here (`/ .{ $c = $¢ } /` must leave `$c` with a usable
@@ -377,8 +378,12 @@ impl Interpreter {
         mut actions: Value,
     ) -> HashMap<String, Value> {
         let mut out = HashMap::new();
+        // Mid-match synthesis: the accumulator carries no subject yet, so the
+        // subject comes from the live engine scope (empty-subject fallback is
+        // unreachable in practice — this only runs from inside a match).
+        let target =
+            super::regex_helpers::current_match_target().unwrap_or_else(|| MatchTarget::new(""));
         let full = Value::make_match_object_full_q(
-            caps.matched.clone(),
             caps.from as i64,
             caps.to as i64,
             &caps.positional,
@@ -387,7 +392,7 @@ impl Interpreter {
             &caps.positional_subcaps,
             &caps.positional_quantified,
             &caps.positional_nil,
-            None,
+            target,
             &caps.named_quantified,
         );
         let named_v = full.match_named();
@@ -507,8 +512,11 @@ impl Interpreter {
             _ => actions.clone(),
         };
         let kids = sub.kids();
+        // Mid-match synthesis — subject from the live engine scope (see
+        // `run_named_capture_actions`).
+        let target =
+            super::regex_helpers::current_match_target().unwrap_or_else(|| MatchTarget::new(""));
         let match_obj = Value::make_match_object_full_q(
-            sub.matched.clone(),
             sub.from as i64,
             sub.to as i64,
             &kids.positional,
@@ -517,7 +525,7 @@ impl Interpreter {
             &kids.positional_subcaps,
             &kids.positional_quantified,
             &kids.positional_nil,
-            None,
+            target,
             &kids.named_quantified,
         );
         let mut scratch = Interpreter {

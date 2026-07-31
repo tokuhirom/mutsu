@@ -161,10 +161,9 @@ impl Interpreter {
         // a global `.subst` sets it to a List of every Match object (matching
         // `s:g///` and Rakudo's `.subst(:g)` — `$/` is always a List, even for a
         // single match).
+        let target = crate::runtime::MatchTarget::new(text);
         let make_match = |start: usize, end: usize, caps: &[String]| {
-            let matched: String = chars[start..end].iter().collect();
             Value::make_match_object_full(
-                matched,
                 start as i64,
                 end as i64,
                 caps,
@@ -173,7 +172,7 @@ impl Interpreter {
                 &[],
                 &[],
                 &[],
-                Some(text),
+                target.clone(),
             )
         };
         if global {

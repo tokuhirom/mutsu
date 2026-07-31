@@ -168,7 +168,6 @@ impl Interpreter {
                     let fmt = args.first().map(Value::to_string_value).unwrap_or_default();
                     let len = fmt.chars().count() as i64;
                     return Some(Ok(Value::make_match_object_full(
-                        fmt.clone(),
                         0,
                         len,
                         &[],
@@ -177,7 +176,7 @@ impl Interpreter {
                         &[],
                         &[],
                         &[],
-                        Some(&fmt),
+                        crate::runtime::MatchTarget::new(&fmt),
                     )));
                 }
                 ("Formatter", "CODE") => {

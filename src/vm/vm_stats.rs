@@ -136,11 +136,11 @@ static GC_ROOTS_SCANNED: AtomicU64 = AtomicU64::new(0);
 // CapNode split (ADR-0016 P2) removes structurally.
 static REGEX_CAP_MAKEMUT_TOTAL: AtomicU64 = AtomicU64::new(0);
 static REGEX_CAP_MAKEMUT_SHARED: AtomicU64 = AtomicU64::new(0);
-// ADR-0016 P3: how many leaf captures the Match builder had to recover a
-// position for by SEARCHING the subject (`make_capture_match` with an orig
-// context), vs. leaves whose span came from a recorded carrier node. The
-// search is O(document) per leaf and semantically wrong for repeated text —
-// P3's goal is to drive `searches` to zero by carrying spans.
+// ADR-0016 P3: how many leaf captures reached the Match builder WITHOUT a
+// span carrier (text-axis only — their offsets are reported as 0..len of the
+// captured text, the position search having been retired), vs. leaves whose
+// span came from a recorded carrier node. Non-zero `searches` means an
+// exploded-builder caller still passes bare text.
 static REGEX_MATCH_LEAF_SEARCHES: AtomicU64 = AtomicU64::new(0);
 static REGEX_MATCH_LEAF_SPANS: AtomicU64 = AtomicU64::new(0);
 
@@ -172,8 +172,8 @@ pub(crate) fn record_regex_cap_makemut(shared: bool) {
     }
 }
 
-/// A Match-builder leaf capture recovered its offsets by searching the subject
-/// (`searched == true`) or read them from a recorded span (`searched == false`).
+/// A Match-builder leaf capture arrived without a span carrier (`searched ==
+/// true` — the legacy text-only shape) or read a recorded span (`false`).
 pub(crate) fn record_regex_match_leaf(searched: bool) {
     if enabled() {
         if searched {

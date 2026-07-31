@@ -2,12 +2,15 @@
 //!
 //! A regex/grammar match no longer eagerly builds a full `Instance("Match")`
 //! attribute tree per capture node. The match VALUE is a
-//! `ValueRepr::Match(Gc<MatchNode>)` holding the shared subject string and the
-//! stored capture node (`Arc<CapNode>`); the Instance-shaped attribute map is
-//! materialized once, on first `view()` decode, and memoized. Materialization
-//! is ONE level deep: child captures become lazy `Match` values themselves, so
-//! a subtree nobody inspects never allocates anything beyond the `CapNode`
-//! the matcher already built.
+//! `ValueRepr::Match(Gc<MatchNode>)` holding the shared subject
+//! (`MatchTarget`) and the stored capture node (`Arc<CapNode>`); the
+//! Instance-shaped attribute map is materialized once, on first `view()`
+//! decode, and memoized. Materialization is ONE level deep: child captures
+//! become lazy `Match` values themselves, so a subtree nobody inspects never
+//! allocates anything beyond the `CapNode` the matcher already built.
+//!
+//! ADR-0016 P3: capture nodes no longer store matched text — `.Str` is
+//! derived from the recorded span through the shared `MatchTarget`.
 //!
 //! Consumers are unchanged: `view()` on a lazy Match forces the memoized map
 //! and presents `ValueView::Instance` exactly as an eager Match. The seam
@@ -17,7 +20,7 @@
 //! same as before.
 
 use super::*;
-use crate::runtime::{CapNode, SILENT_ACTION_MARKER_PREFIX};
+use crate::runtime::{CapNode, MatchTarget, SILENT_ACTION_MARKER_PREFIX};
 use std::sync::OnceLock;
 
 /// Interned class symbol for `Match`.
@@ -28,8 +31,9 @@ pub(in crate::value) fn match_class_symbol() -> Symbol {
 
 /// The payload of a lazy `Match` value. See the module doc.
 pub(crate) struct MatchNode {
-    /// The whole subject string (`.orig`), shared by every node of the tree.
-    pub(in crate::value) orig: Option<Arc<String>>,
+    /// The shared subject this match ran against, shared by every node of
+    /// the tree. Answers `.orig` and derives `.Str` from the span.
+    pub(in crate::value) target: MatchTarget,
     /// The stored capture node this Match presents.
     pub(in crate::value) cap: Arc<CapNode>,
     /// Stable instance identity (same id domain as eager `Instance`s).
@@ -50,9 +54,9 @@ impl std::fmt::Debug for MatchNode {
 }
 
 impl MatchNode {
-    pub(in crate::value) fn new(cap: Arc<CapNode>, orig: Option<Arc<String>>) -> Self {
+    pub(in crate::value) fn new(cap: Arc<CapNode>, target: MatchTarget) -> Self {
         Self {
-            orig,
+            target,
             cap,
             id: next_instance_id(),
             attrs: OnceLock::new(),
@@ -81,6 +85,11 @@ impl MatchNode {
         let _ = self.attrs.take();
     }
 
+    /// This node's matched text, derived from the recorded span.
+    pub(in crate::value) fn span_text(&self) -> String {
+        self.target.span_str(self.cap.from, self.cap.to)
+    }
+
     /// Read one attribute, without forcing when it is derivable from the
     /// capture node. Structural attributes (`list`, `named`, `silent_caps`,
     /// `reduce_time_vars`, `capture_alias_map`) force the materialization.
@@ -89,10 +98,10 @@ impl MatchNode {
             return attrs.as_map().get(name).cloned();
         }
         match name {
-            "str" => Some(Value::str(self.cap.matched.clone())),
+            "str" => Some(Value::str(self.span_text())),
             "from" => Some(Value::Int(self.cap.from as i64)),
             "to" => Some(Value::Int(self.cap.to as i64)),
-            "orig" => self.orig.as_ref().map(|o| Value::str_arc(Arc::clone(o))),
+            "orig" => Some(Value::str_arc(Arc::clone(self.target.text()))),
             "ast" => self.cap.ast.clone(),
             "sym_variant" => self.cap.sym.clone().map(Value::str),
             "action_name" => self.cap.action_name.clone().map(Value::str),
@@ -106,7 +115,7 @@ impl MatchNode {
 
     /// A lazy child Match sharing this node's subject.
     fn lazy_child(&self, sc: &Arc<CapNode>) -> Value {
-        Value::lazy_match(Arc::clone(sc), self.orig.clone())
+        Value::lazy_match(Arc::clone(sc), self.target.clone())
     }
 
     /// Build this node's attribute map — the pre-P5 `make_subcap_match`, with
@@ -117,10 +126,6 @@ impl MatchNode {
             crate::vm::vm_stats::record_regex_match_leaf(false);
         }
         let kids = cap.kids();
-        let search_start = cap.from;
-        // Subject chars for the legacy text-only-leaf position search below,
-        // computed at most once per materialization.
-        let mut chars_cache: Option<Vec<char>> = None;
 
         let pos_vals: Vec<Value> = kids
             .positional
@@ -134,11 +139,11 @@ impl MatchNode {
                 if let Some(Some(qlist)) = kids.positional_quantified.get(i) {
                     let arr: Vec<Value> = qlist
                         .iter()
-                        .map(|(text, qfrom, qto, subcap)| {
+                        .map(|(qfrom, qto, subcap)| {
                             if let Some(sc) = subcap {
                                 return self.lazy_child(sc);
                             }
-                            span_leaf_match(text, *qfrom, *qto, self.orig.as_ref())
+                            span_leaf_match(*qfrom, *qto, &self.target)
                         })
                         .collect();
                     return Value::array(arr);
@@ -146,7 +151,7 @@ impl MatchNode {
                 if let Some(Some(subcap)) = kids.positional_subcaps.get(i) {
                     return self.lazy_child(subcap);
                 }
-                text_leaf_match(s, self.orig.as_ref(), &mut chars_cache, search_start)
+                text_leaf_match(s, &self.target)
             })
             .collect();
 
@@ -162,7 +167,7 @@ impl MatchNode {
                     {
                         return self.lazy_child(sc);
                     }
-                    text_leaf_match(s, self.orig.as_ref(), &mut chars_cache, search_start)
+                    text_leaf_match(s, &self.target)
                 })
                 .collect();
             if vals.len() == 1 && !kids.named_quantified.contains(key) {
@@ -191,7 +196,7 @@ impl MatchNode {
         }
 
         let mut attrs = AttrMap::new();
-        attrs.insert("str", Value::str(cap.matched.clone()));
+        attrs.insert("str", Value::str(self.span_text()));
         attrs.insert("from", Value::Int(cap.from as i64));
         attrs.insert("to", Value::Int(cap.to as i64));
         attrs.insert("list", Value::array(pos_vals));
@@ -199,9 +204,7 @@ impl MatchNode {
         if !silent_caps_vals.is_empty() {
             attrs.insert("silent_caps", Value::real_array(silent_caps_vals));
         }
-        if let Some(o) = &self.orig {
-            attrs.insert("orig", Value::str_arc(Arc::clone(o)));
-        }
+        attrs.insert("orig", Value::str_arc(Arc::clone(self.target.text())));
         if let Some(sym) = &cap.sym {
             attrs.insert("sym_variant", Value::str(sym.clone()));
         }
@@ -235,66 +238,41 @@ impl MatchNode {
 }
 
 /// Eager leaf Match for a quantified-capture entry with a recorded span.
-fn span_leaf_match(text: &str, from: usize, to: usize, orig: Option<&Arc<String>>) -> Value {
+fn span_leaf_match(from: usize, to: usize, target: &MatchTarget) -> Value {
     let mut attrs = AttrMap::new();
-    attrs.insert("str", Value::str(text.to_string()));
+    attrs.insert("str", Value::str(target.span_str(from, to)));
     attrs.insert("from", Value::Int(from as i64));
     attrs.insert("to", Value::Int(to as i64));
     attrs.insert("list", Value::array(Vec::new()));
     attrs.insert("named", Value::hash(HashMap::new()));
-    if let Some(o) = orig {
-        attrs.insert("orig", Value::str_arc(Arc::clone(o)));
-    }
+    attrs.insert("orig", Value::str_arc(Arc::clone(target.text())));
     Value::make_instance(match_class_symbol(), attrs)
 }
 
 /// Eager leaf Match for a TEXT-ONLY capture entry (no stored `CapNode`).
-/// The span is recovered by searching for the text at/after `search_from` —
-/// the pre-P5 legacy path; every leaf the matcher stores today carries a
-/// span-bearing `CapNode`, so this survives only for exploded-builder callers
-/// that still pass bare text.
-fn text_leaf_match(
-    s: &str,
-    orig: Option<&Arc<String>>,
-    chars_cache: &mut Option<Vec<char>>,
-    search_from: usize,
-) -> Value {
-    crate::vm::vm_stats::record_regex_match_leaf(orig.is_some());
-    let (cap_from, cap_to) = if let Some(o) = orig {
-        let haystack = chars_cache.get_or_insert_with(|| o.chars().collect());
-        let needle: Vec<char> = s.chars().collect();
-        let mut found = None;
-        for start in search_from..=haystack.len().saturating_sub(needle.len()) {
-            if haystack[start..start + needle.len()] == needle[..] {
-                found = Some(start as i64);
-                break;
-            }
-        }
-        match found {
-            Some(f) => (f, f + needle.len() as i64),
-            None => (0i64, s.chars().count() as i64),
-        }
-    } else {
-        (0i64, s.chars().count() as i64)
-    };
+/// Survives only for text-axis entries with no aligned span carrier — every
+/// leaf the matcher stores today carries a span-bearing `CapNode`, so this
+/// fires only on exploded-builder callers that still pass bare text. The
+/// span is unrecoverable here (P3 retired the position search), so it is
+/// reported as `0..chars` of the captured text itself.
+fn text_leaf_match(s: &str, target: &MatchTarget) -> Value {
+    crate::vm::vm_stats::record_regex_match_leaf(true);
     let mut attrs = AttrMap::new();
     attrs.insert("str", Value::str(s.to_string()));
-    attrs.insert("from", Value::Int(cap_from));
-    attrs.insert("to", Value::Int(cap_to));
+    attrs.insert("from", Value::Int(0));
+    attrs.insert("to", Value::Int(s.chars().count() as i64));
     attrs.insert("list", Value::array(Vec::new()));
     attrs.insert("named", Value::hash(HashMap::new()));
-    if let Some(o) = orig {
-        attrs.insert("orig", Value::str_arc(Arc::clone(o)));
-    }
+    attrs.insert("orig", Value::str_arc(Arc::clone(target.text())));
     Value::make_instance(match_class_symbol(), attrs)
 }
 
 impl Value {
     /// Construct a lazy `Match` from a stored capture node and the shared
-    /// subject string.
-    pub(crate) fn lazy_match(cap: Arc<CapNode>, orig: Option<Arc<String>>) -> Value {
+    /// subject.
+    pub(crate) fn lazy_match(cap: Arc<CapNode>, target: MatchTarget) -> Value {
         Value::from_repr(ValueRepr::Match(crate::gc::Gc::new(MatchNode::new(
-            cap, orig,
+            cap, target,
         ))))
     }
 
@@ -310,7 +288,7 @@ impl Value {
         }
         let mut cap = (*node.cap).clone();
         cap.ast = Some(ast);
-        Some(Value::lazy_match(Arc::new(cap), node.orig.clone()))
+        Some(Value::lazy_match(Arc::new(cap), node.target.clone()))
     }
 
     /// The per-match `:my $*x` values recorded at reduce time, read straight
@@ -360,9 +338,8 @@ mod tests {
     use super::*;
     use crate::runtime::RegexCaptures;
 
-    fn leaf_cap(text: &str, from: usize, to: usize) -> Arc<CapNode> {
+    fn leaf_cap(from: usize, to: usize) -> Arc<CapNode> {
         let mut caps = RegexCaptures::default();
-        caps.matched = text.to_string();
         caps.from = from;
         caps.to = to;
         Arc::new(caps.into_cap_node())
@@ -370,7 +347,7 @@ mod tests {
 
     #[test]
     fn lazy_match_scalar_reads_do_not_force() {
-        let m = Value::lazy_match(leaf_cap("ab", 3, 5), Some(Arc::new("xxxab".to_string())));
+        let m = Value::lazy_match(leaf_cap(3, 5), MatchTarget::new("xxxab"));
         assert!(m.is_match_instance());
         assert_eq!(m.match_from(), Some(3));
         assert_eq!(m.match_to(), Some(5));
@@ -383,7 +360,7 @@ mod tests {
 
     #[test]
     fn lazy_match_views_as_instance() {
-        let m = Value::lazy_match(leaf_cap("ab", 3, 5), Some(Arc::new("xxxab".to_string())));
+        let m = Value::lazy_match(leaf_cap(3, 5), MatchTarget::new("xxxab"));
         match m.view() {
             ValueView::Instance {
                 class_name,
@@ -405,15 +382,14 @@ mod tests {
     #[test]
     fn lazy_match_children_stay_lazy_one_level() {
         // parent { named: x => child }, child a leaf with a span.
-        let child = leaf_cap("b", 1, 2);
+        let child = leaf_cap(1, 2);
         let mut caps = RegexCaptures::default();
-        caps.matched = "ab".to_string();
         caps.from = 0;
         caps.to = 2;
         caps.named.insert("x".to_string(), vec!["b".to_string()]);
         caps.named_subcaps
             .insert("x".to_string(), vec![Arc::clone(&child)]);
-        let parent = Value::lazy_match(Arc::new(caps.into_cap_node()), None);
+        let parent = Value::lazy_match(Arc::new(caps.into_cap_node()), MatchTarget::new("ab"));
         let named = parent.match_named().expect("named hash");
         let child_val = match named.view() {
             ValueView::Hash(h) => h.map.get("x").cloned().expect("x"),

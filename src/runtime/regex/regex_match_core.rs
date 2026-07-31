@@ -167,6 +167,10 @@ impl Interpreter {
                 if let Some(ce) = caps.capture_end.as_mut() {
                     *ce = map_pos(*ce, &pos_map, orig_len) + start;
                 }
+                // Captured spans were recorded in the stripped slice's space;
+                // text derives from spans (ADR-0016 P3), so translate the whole
+                // capture tree back to subject space.
+                super::regex_helpers::remap_caps_spans_offset(caps, &pos_map, orig_len, start);
             }
             return results;
         }
@@ -294,12 +298,11 @@ impl Interpreter {
                 None
             };
             let sub = if let Some(mut gs) = group_subcap.take() {
-                // Keep the group's nested captures, but pin the span/text to
-                // the aliased group's extent.
+                // Keep the group's nested captures, but pin the span to the
+                // aliased group's extent.
                 let gsm = std::sync::Arc::make_mut(&mut gs);
                 gsm.from = from;
                 gsm.to = to;
-                gsm.matched = captured.clone();
                 gs
             } else if let Some(sc) = subrule_subcap {
                 sc
@@ -307,7 +310,6 @@ impl Interpreter {
                 std::sync::Arc::new(CapNode {
                     from,
                     to,
-                    matched: captured.clone(),
                     ..Default::default()
                 })
             };
@@ -702,7 +704,6 @@ impl Interpreter {
                 if !capture_name.is_empty() {
                     let captured: String = ctx.chars[current..end].iter().collect();
                     let mut subcap = inner_caps;
-                    subcap.matched = captured.clone();
                     subcap.from = current;
                     subcap.to = end;
                     let subcap = std::sync::Arc::new(subcap.into_cap_node());

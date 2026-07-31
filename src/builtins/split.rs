@@ -305,22 +305,28 @@ fn split_by_strings(
 fn separator_value(m: &SplitMatch) -> Value {
     if m.is_regex {
         use std::collections::HashMap;
-        let orig = if m.orig.is_empty() {
-            None
+        // A separator Match's subject: the whole split subject when known,
+        // else the separator text itself (spans are then 0-based over it).
+        let target = if m.orig.is_empty() {
+            crate::runtime::MatchTarget::new(&m.matched)
         } else {
-            Some(m.orig.as_str())
+            crate::runtime::MatchTarget::new(&m.orig)
+        };
+        let (from, to) = if m.orig.is_empty() {
+            (0, m.matched.chars().count() as i64)
+        } else {
+            (m.from as i64, m.to as i64)
         };
         Value::make_match_object_full(
-            m.matched.clone(),
-            m.from as i64,
-            m.to as i64,
+            from,
+            to,
             &m.positional_captures,
             &HashMap::new(),
             &HashMap::new(),
             &[],
             &[],
             &[],
-            orig,
+            target,
         )
     } else {
         Value::str(m.matched.clone())

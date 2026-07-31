@@ -1,10 +1,9 @@
 use super::*;
 
 impl Value {
-    /// Create a Match object with positional captures and original string.
+    /// Create a Match object with positional captures and the shared subject.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn make_match_object_full(
-        matched: String,
         from: i64,
         to: i64,
         positional: &[String],
@@ -13,10 +12,9 @@ impl Value {
         positional_subcaps: &[Option<std::sync::Arc<crate::runtime::CapNode>>],
         positional_quantified: &[Option<Vec<crate::runtime::QuantifiedCaptureEntry>>],
         positional_nil: &[bool],
-        orig: Option<&str>,
+        target: crate::runtime::MatchTarget,
     ) -> Self {
         Self::make_match_object_full_q(
-            matched,
             from,
             to,
             positional,
@@ -25,7 +23,7 @@ impl Value {
             positional_subcaps,
             positional_quantified,
             positional_nil,
-            orig,
+            target,
             &HashSet::new(),
         )
     }
@@ -39,9 +37,11 @@ impl Value {
     /// (see `value::match_lazy`). The synthesized top node deliberately
     /// carries no `sym`/`action_name`/`ast`/`regex_vars`/`capture_alias_map`
     /// — the pre-P5 builder never surfaced those on the top-level Match.
+    ///
+    /// ADR-0016 P3: matched text is not passed or stored; `.Str` derives
+    /// from the span through `target`.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn make_match_object_full_q(
-        matched: String,
         from: i64,
         to: i64,
         positional: &[String],
@@ -50,7 +50,7 @@ impl Value {
         positional_subcaps: &[Option<std::sync::Arc<crate::runtime::CapNode>>],
         positional_quantified: &[Option<Vec<crate::runtime::QuantifiedCaptureEntry>>],
         positional_nil: &[bool],
-        orig: Option<&str>,
+        target: crate::runtime::MatchTarget,
         named_quantified: &HashSet<String>,
     ) -> Self {
         let has_children = !named.is_empty()
@@ -75,7 +75,6 @@ impl Value {
             })
         });
         let cap = crate::runtime::CapNode {
-            matched,
             from: from.max(0) as usize,
             to: to.max(0) as usize,
             sym: None,
@@ -83,10 +82,7 @@ impl Value {
             ast: None,
             children,
         };
-        Value::lazy_match(
-            std::sync::Arc::new(cap),
-            orig.map(|o| std::sync::Arc::new(o.to_string())),
-        )
+        Value::lazy_match(std::sync::Arc::new(cap), target)
     }
 
     pub(crate) fn version_strip_trailing_zeros(parts: &[VersionPart]) -> Vec<VersionPart> {

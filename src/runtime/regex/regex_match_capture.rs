@@ -69,6 +69,9 @@ impl Interpreter {
                         }
                         new_caps.positional.extend(inner_caps.positional);
                         new_caps
+                            .positional_offsets
+                            .append(&mut inner_caps.positional_offsets);
+                        new_caps
                             .positional_subcaps
                             .append(&mut inner_caps.positional_subcaps);
                         new_caps
@@ -131,6 +134,9 @@ impl Interpreter {
                         }
                         new_caps.positional.append(&mut inner_caps.positional);
                         new_caps
+                            .positional_offsets
+                            .append(&mut inner_caps.positional_offsets);
+                        new_caps
                             .positional_subcaps
                             .append(&mut inner_caps.positional_subcaps);
                         new_caps
@@ -177,6 +183,9 @@ impl Interpreter {
                             new_caps.named.entry(k).or_default().extend(v);
                         }
                         new_caps.positional.append(&mut inner_caps.positional);
+                        new_caps
+                            .positional_offsets
+                            .append(&mut inner_caps.positional_offsets);
                         new_caps
                             .positional_subcaps
                             .append(&mut inner_caps.positional_subcaps);
@@ -261,10 +270,10 @@ impl Interpreter {
                     // are intentionally NOT merged into the parent `named` map.
                     // Store inner captures as subcaptures of this group
                     let mut subcap = inner_caps.clone();
-                    subcap.matched = captured.clone();
                     subcap.from = pos;
                     subcap.to = end;
                     new_caps.positional.push(captured);
+                    new_caps.positional_offsets.push((pos, end));
                     new_caps
                         .positional_subcaps
                         .push(Some(std::sync::Arc::new(subcap.into_cap_node())));
@@ -383,6 +392,9 @@ impl Interpreter {
                             new_caps.positional.push(v.clone());
                         }
                         new_caps
+                            .positional_offsets
+                            .extend(inner_caps.positional_offsets.iter().copied());
+                        new_caps
                             .positional_subcaps
                             .extend(inner_caps.positional_subcaps.clone());
                         new_caps
@@ -415,23 +427,27 @@ impl Interpreter {
                 return Some((pos, new_caps));
             }
             RegexAtom::Backref(idx) => {
-                let ref_text =
+                // A quantified slot's reference text is the concatenation of
+                // every iteration's span; a plain slot keeps its stored text.
+                let ref_chars: Option<Vec<char>> =
                     if let Some(Some(qlist)) = current_caps.positional_quantified.get(*idx) {
-                        let mut s = String::new();
-                        for (text, _, _, _) in qlist {
-                            s.push_str(text);
+                        let mut v = Vec::new();
+                        for (a, b, _) in qlist {
+                            let (a, b) = (*a.min(&chars.len()), *b.min(&chars.len()));
+                            v.extend_from_slice(&chars[a..b.max(a)]);
                         }
-                        Some(s)
+                        Some(v)
                     } else {
-                        current_caps.positional.get(*idx).cloned()
+                        current_caps
+                            .positional
+                            .get(*idx)
+                            .map(|t| t.chars().collect())
                     };
-                if let Some(ref_text) = ref_text {
-                    let ref_chars: Vec<char> = ref_text.chars().collect();
-                    if pos + ref_chars.len() <= chars.len()
-                        && chars[pos..pos + ref_chars.len()] == ref_chars[..]
-                    {
-                        return Some((pos + ref_chars.len(), RegexCaptures::default()));
-                    }
+                if let Some(ref_chars) = ref_chars
+                    && pos + ref_chars.len() <= chars.len()
+                    && chars[pos..pos + ref_chars.len()] == ref_chars[..]
+                {
+                    return Some((pos + ref_chars.len(), RegexCaptures::default()));
                 }
                 return None;
             }
@@ -653,7 +669,6 @@ impl Interpreter {
                     .or_else(|| (!spec.silent).then_some(spec.lookup_name.as_str()));
                 if let Some(capture_name) = capture_name {
                     let subcap = CapNode {
-                        matched: captured.clone(),
                         from: pos,
                         to: end,
                         ..Default::default()
@@ -678,7 +693,6 @@ impl Interpreter {
                             .capture_alias_map
                             .insert(capture_name.to_string(), spec.lookup_name.clone());
                         let subcap2 = CapNode {
-                            matched: captured.clone(),
                             from: pos,
                             to: end,
                             ..Default::default()
@@ -726,7 +740,6 @@ impl Interpreter {
                     .or_else(|| (!spec.silent).then_some(spec.lookup_name.as_str()));
                 if let Some(capture_name) = capture_name {
                     let subcap = CapNode {
-                        matched: captured.clone(),
                         from: pos,
                         to: end,
                         ..Default::default()

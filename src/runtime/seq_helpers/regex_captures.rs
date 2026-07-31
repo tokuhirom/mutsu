@@ -29,7 +29,7 @@ impl Interpreter {
         };
 
         let mut attrs = HashMap::new();
-        attrs.insert("str".to_string(), Value::str(captures.matched.clone()));
+        attrs.insert("str".to_string(), Value::str(captures.matched_text()));
         attrs.insert("from".to_string(), Value::int(captures.from as i64));
         attrs.insert("to".to_string(), Value::int(captures.to as i64));
         let positional: Vec<Value> = if !captures.positional_slots.is_empty() {
@@ -37,7 +37,9 @@ impl Interpreter {
                 .positional_slots
                 .iter()
                 .map(|slot| match slot {
-                    Some((s, from, to)) => make_capture_match(s, *from, *to),
+                    Some((from, to)) => {
+                        make_capture_match(&captures.span_text(*from, *to), *from, *to)
+                    }
                     None => Value::NIL,
                 })
                 .collect()
@@ -98,7 +100,7 @@ impl Interpreter {
 
         for (i, slot) in captures.positional_slots.iter().enumerate() {
             let value = match slot {
-                Some((capture, from, to)) => make_capture_match(capture, *from, *to),
+                Some((from, to)) => make_capture_match(&captures.span_text(*from, *to), *from, *to),
                 None => Value::NIL,
             };
             self.env.insert(i.to_string(), value);
@@ -280,7 +282,6 @@ impl Interpreter {
                 // the single-match path and `.match(:g)` — the `~~ m:g/.../` path
                 // previously passed `None`, leaving `.orig` empty.
                 Value::make_match_object_full(
-                    c.matched.clone(),
                     c.from as i64,
                     c.to as i64,
                     &c.positional,
@@ -289,7 +290,7 @@ impl Interpreter {
                     &c.positional_subcaps,
                     &c.positional_quantified,
                     &c.positional_nil,
-                    Some(orig),
+                    c.target_or_new(orig),
                 )
             })
             .collect::<Vec<_>>();
@@ -416,19 +417,23 @@ impl Interpreter {
         let mut locs = re.capture_locations();
         let m0 = re.captures_read(&mut locs, text.as_bytes()).ok()??;
         let names = re.capture_names();
+        // pcre2 reports BYTE offsets; recorded spans are char indices into
+        // the shared subject (ADR-0016 P3), so translate at the boundary.
+        let to_char = |b: usize| text.get(..b).map_or(b, |p| p.chars().count());
         let mut out = RegexCaptures {
-            matched: text.get(m0.start()..m0.end())?.to_string(),
-            from: m0.start(),
-            to: m0.end(),
+            from: to_char(m0.start()),
+            to: to_char(m0.end()),
+            target: Some(crate::runtime::MatchTarget::new(text)),
             ..RegexCaptures::default()
         };
         for idx in 1..locs.len() {
             if names.get(idx).is_some_and(Option::is_none) {
                 if let Some((start, end)) = locs.get(idx) {
                     let captured = text.get(start..end)?.to_string();
-                    out.positional.push(captured.clone());
-                    out.positional_offsets.push((start, end));
-                    out.positional_slots.push(Some((captured, start, end)));
+                    let (cs, ce) = (to_char(start), to_char(end));
+                    out.positional.push(captured);
+                    out.positional_offsets.push((cs, ce));
+                    out.positional_slots.push(Some((cs, ce)));
                 } else {
                     out.positional_slots.push(None);
                 }
@@ -459,17 +464,21 @@ impl Interpreter {
         let mut start = 0usize;
         let bytes = text.as_bytes();
         let mut locs = re.capture_locations();
+        // pcre2 reports BYTE offsets; recorded spans are char indices into
+        // the shared subject (ADR-0016 P3), so translate at the boundary.
+        let to_char = |b: usize| text.get(..b).map_or(b, |p| p.chars().count());
+        let target = crate::runtime::MatchTarget::new(text);
         while start <= bytes.len() {
             let Ok(Some(m0)) = re.captures_read_at(&mut locs, bytes, start) else {
                 break;
             };
-            let Some(matched) = text.get(m0.start()..m0.end()) else {
+            if text.get(m0.start()..m0.end()).is_none() {
                 break;
-            };
+            }
             let mut item = RegexCaptures {
-                matched: matched.to_string(),
-                from: m0.start(),
-                to: m0.end(),
+                from: to_char(m0.start()),
+                to: to_char(m0.end()),
+                target: Some(target.clone()),
                 ..RegexCaptures::default()
             };
             for idx in 1..locs.len() {
@@ -479,9 +488,9 @@ impl Interpreter {
                             continue;
                         };
                         item.positional.push(captured.to_string());
-                        item.positional_offsets.push((c_start, c_end));
-                        item.positional_slots
-                            .push(Some((captured.to_string(), c_start, c_end)));
+                        let (cs, ce) = (to_char(c_start), to_char(c_end));
+                        item.positional_offsets.push((cs, ce));
+                        item.positional_slots.push(Some((cs, ce)));
                     } else {
                         item.positional_slots.push(None);
                     }
