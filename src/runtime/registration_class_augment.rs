@@ -668,15 +668,18 @@ impl Interpreter {
     /// parameters, evaluates the role body's deferred statements against them
     /// and pulls the role's `BUILD` into the class.
     ///
-    /// Returns the name of the punned class, or `None` when `type_args` match
-    /// no candidate of the role (the caller then falls back to its own path).
+    /// Returns the name of the punned class, or `Ok(None)` when `type_args`
+    /// match no candidate of the role (the caller then falls back to its own
+    /// path). An error raised by the composition itself — most importantly a
+    /// role body guard rejecting the type argument — is propagated, because
+    /// that parameterisation must not be silently accepted.
     pub(crate) fn ensure_parametric_role_pun_class(
         &mut self,
         base_name: &str,
         type_args: &[Value],
-    ) -> Option<String> {
+    ) -> Result<Option<String>, RuntimeError> {
         if type_args.is_empty() {
-            return None;
+            return Ok(None);
         }
         let pun_name = format!(
             "{}[{}]",
@@ -688,14 +691,16 @@ impl Interpreter {
                 .join(",")
         );
         if self.registry().classes.contains_key(&pun_name) {
-            return Some(pun_name);
+            return Ok(Some(pun_name));
         }
         // Only pun what actually resolves to a role candidate; anything else
         // (an unknown name, a parametric *class*) keeps its existing handling.
         let candidate = self.resolve_role_candidate(&pun_name).ok().flatten();
-        let (role, _, resolved_args) = candidate?;
+        let Some((role, _, resolved_args)) = candidate else {
+            return Ok(None);
+        };
         if role.is_stub_role {
-            return None;
+            return Ok(None);
         }
         // Composition is driven by the *name* `R[...]`, so this path is only
         // sound when the arguments survive the round trip through it. They do
@@ -704,7 +709,7 @@ impl Interpreter {
         // { ... }]`), which comes back as a plain Str and would bind `T` to a
         // string. Fall back to the caller's own path for those.
         if resolved_args != type_args {
-            return None;
+            return Ok(None);
         }
         // `^language-revision` on the pun must report the revision of the
         // *matched* candidate, not whichever one happened to register last
@@ -729,10 +734,9 @@ impl Interpreter {
             does_parents: &parents,
             language_version: &language_version,
         };
-        self.register_class_decl(&pun_name, &parents, modifiers, &[])
-            .ok()?;
+        self.register_class_decl(&pun_name, &parents, modifiers, &[])?;
         self.store_language_revision_from_version(&pun_name, &language_version);
-        Some(pun_name)
+        Ok(Some(pun_name))
     }
 
     pub(crate) fn ensure_role_punned_to_class(&mut self, role_name: &str) {

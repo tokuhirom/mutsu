@@ -205,6 +205,40 @@ impl RuntimeError {
         Self::typed("X::Role::Initialization", attrs)
     }
 
+    /// X::Role::Instantiation - a role body statement died while the role was
+    /// being instantiated for a concrete parameterisation (`R[Int]`), so the
+    /// parameterisation is rejected. Wraps the original error, whose message is
+    /// re-indented under an "exception details:" header as Rakudo renders it.
+    pub(crate) fn role_instantiation(role_name: &str, inner: Self) -> Self {
+        let inner_type = inner
+            .exception
+            .as_deref()
+            .and_then(|ex| match ex.view() {
+                super::ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+                _ => None,
+            })
+            .unwrap_or_else(|| "X::AdHoc".to_string());
+        let details = inner
+            .message
+            .lines()
+            .map(|line| format!("    {line}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let msg = format!(
+            "Could not instantiate role '{role_name}' because it died with {inner_type}; exception details:\n\n{details}\n"
+        );
+        let mut attrs = HashMap::new();
+        attrs.insert(
+            "role".to_string(),
+            Value::package(Symbol::intern(role_name)),
+        );
+        if let Some(ex) = inner.exception {
+            attrs.insert("exception".to_string(), *ex);
+        }
+        attrs.insert("message".to_string(), Value::str(msg));
+        Self::typed("X::Role::Instantiation", attrs)
+    }
+
     /// X::Assignment::RO with typename - Cannot modify an immutable value of a given type
     pub(crate) fn assignment_ro_typename(typename: &str, repr: &str) -> Self {
         let msg = format!("Cannot modify an immutable {} ({})", typename, repr);

@@ -37,6 +37,5 @@ role Guarded[::T] {
 }
 is Guarded[AStruct].describe, 'guarded:AStruct',
     'a role can gate on its type parameter being a CStruct';
-# NOTE: `Guarded[Ordinary].describe` should die (raku does). mutsu does not run
-# the role body's guard on the rejecting parameterisation — a separate gap,
-# recorded in todo/tickets/role-body-guard-not-run-on-parameterisation.md.
+# The rejecting half of the same guard is pinned by
+# t/role-body-guard-parameterisation.t.
