@@ -492,6 +492,10 @@ impl Interpreter {
         // Save idx for unmark step (idx is consumed by delete_from_container)
         let idx_for_unmark = idx.clone();
         let result = if let Some(container) = self.env_mut().get_mut(&var_name) {
+            // A `Map` refuses every removal, including of a key it does not
+            // hold. Unlike the quanthashes below it is not an X::Assignment::RO
+            // but a plain X::AdHoc, so it has its own guard.
+            crate::runtime::refuse_map_removal(container)?;
             // Deleting a key from an immutable Set/Bag/Mix is a read-only
             // modification: raku throws X::Assignment::RO (not X::Immutable),
             // e.g. `Cannot modify an immutable Bag (Bag(a(2) b))`.
@@ -639,6 +643,12 @@ impl Interpreter {
         // Note: We cannot distinguish Bag from BagHash or Set from SetHash
         // in the expression form (no variable metadata), so immutability
         // checks for Bag/Set are only in the named op path.
+        //
+        // A `Map` is the exception: its immutability marker rides on the
+        // container's own `declared_type`, not on the variable, so a Map held in
+        // a `$` (`Map.new(...)`, which reaches this op rather than the named
+        // one) refuses here just as `my %h is Map` does there.
+        crate::runtime::refuse_map_removal(&target)?;
         let result = Self::delete_from_container(&mut target, idx, "Any")?;
         self.stack.push(result);
         Ok(())

@@ -2645,7 +2645,7 @@ impl Interpreter {
         // `:delete` on a `%h but R` dispatches through — had no method to find.
         if method == "DELETE-KEY" && args.len() == 1 && matches!(target.view(), ValueView::Hash(_))
         {
-            return Ok(self.hash_delete_key_value(&target, &args[0]));
+            return self.hash_delete_key_value(&target, &args[0]);
         }
 
         // Mixin dispatch

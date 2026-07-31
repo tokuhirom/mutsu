@@ -374,6 +374,7 @@ pub(crate) mod value_iterator;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod wasm_sched;
 pub(crate) use self::match_target::MatchTarget;
+pub(crate) use self::methods_subscript_protocol::refuse_map_removal;
 pub(crate) use self::output_sink::OutputSink;
 #[allow(unused_imports)]
 pub(crate) use self::output_sink::{OutputSinkReadGuard, OutputSinkWriteGuard};

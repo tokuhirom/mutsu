@@ -16,13 +16,37 @@
 use super::*;
 use crate::symbol::Symbol;
 
+/// raku's refusal message for removing anything from an immutable `Map`. It is
+/// a plain `X::AdHoc`, as in Rakudo (`Map.new("a", 1).DELETE-KEY("a")` dies with
+/// exactly this payload), not one of the typed assignment exceptions the
+/// `Set`/`Bag`/`Mix` paths raise.
+pub(crate) const MAP_REMOVAL_REFUSED: &str = "Can not remove values from a Map";
+
+/// Refuse a removal when `target` is an immutable `Map`.
+///
+/// raku refuses *every* removal from a Map, whatever route reaches it — the
+/// `:delete` adverb, `.DELETE-KEY` on the value, a multidim slice — and refuses
+/// it for a key the Map does not even hold. So every delete path calls this
+/// before touching the container, rather than each deciding for itself.
+pub(crate) fn refuse_map_removal(target: &Value) -> Result<(), RuntimeError> {
+    if target.is_immutable_map() {
+        return Err(RuntimeError::new(MAP_REMOVAL_REFUSED));
+    }
+    Ok(())
+}
+
 impl Interpreter {
     /// `%h.DELETE-KEY($key)` on a hash value: remove the entry and return the
     /// value it held, or the hash's `is default(...)` value (else its element
     /// type object) when the key was absent.
-    pub(super) fn hash_delete_key_value(&mut self, target: &Value, key_arg: &Value) -> Value {
+    pub(super) fn hash_delete_key_value(
+        &mut self,
+        target: &Value,
+        key_arg: &Value,
+    ) -> Result<Value, RuntimeError> {
+        refuse_map_removal(target)?;
         let ValueView::Hash(map) = target.view() else {
-            return Value::NIL;
+            return Ok(Value::NIL);
         };
         // An object hash stores `.WHICH` keys; a plain hash the stringified key.
         let key = if map.key_type.is_some() {
@@ -45,7 +69,7 @@ impl Interpreter {
                 original.remove(&key);
             }
         });
-        old
+        Ok(old)
     }
 
     /// `@a.DELETE-POS($index)` on an array value: leave a hole at `$index` and
