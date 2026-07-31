@@ -109,6 +109,13 @@ section.
       MIME::Base64 / HTTP::Server::Tiny / Tubu (sync WAF) / DBIish (SQLite) / NativeCall.
       Use "a web blog can be written with the bundle alone" as the selection criterion (the HTTP
       client gap needs investigation).
+- [ ] **Web-framework slot** — surveyed 2026-07-31, no winner bundled yet:
+      [docs/batteries/web-framework.md](docs/batteries/web-framework.md). Humming-Bird (MIT,
+      active, pure-Raku, IO::Socket::Async + react/whenever) is the short-term battery candidate —
+      one parser ticket (`todo/tickets/brace-subscript-after-call-and-parens.md`) gates most of its
+      suite gap. Cro (61 dependents, raku baseline 28/28, mutsu 1/28) is the mid-term north star:
+      no `nqp` left in its chain; blockers are ticketed, ordinary compat work + a `monitor` shim.
+      Note this supersedes the "Cro = nqp territory" reading of the 2026-06 scouting notes.
 - [ ] **Vendoring mechanism**: vendor the bundled modules into the source tree (e.g. `modules/`) so
       an installed mutsu resolves them with no extra configuration (make `MUTSULIB` have a built-in
       default, or register a standard lib path in `Interpreter::new()` — same pattern as
