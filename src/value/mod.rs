@@ -435,7 +435,9 @@ mod error_construct;
 mod error_typed;
 mod guards;
 /// ADR-0016 P5 seam: `Match`-representation accessor helpers.
+mod match_lazy;
 mod match_view;
+pub(crate) use match_lazy::MatchNode;
 /// NaN-boxed 8-byte representation core (3b-1 step B): the packed word that
 /// IS the `Value` storage. The only module that knows the bit layout.
 mod nanbox;
@@ -1301,6 +1303,10 @@ pub(in crate::value) enum ValueRepr {
         attributes: crate::gc::Gc<InstanceAttrs>,
         id: u64,
     },
+    /// A lazily materialized regex `Match` (ADR-0016 P5). Presents as an
+    /// `Instance("Match")` through `view()`, which forces the memoized
+    /// one-level materialization — see [`match_lazy`].
+    Match(crate::gc::Gc<MatchNode>),
     Junction {
         kind: JunctionKind,
         values: Arc<Vec<Value>>,

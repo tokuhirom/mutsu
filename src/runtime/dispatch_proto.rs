@@ -124,7 +124,7 @@ impl Interpreter {
                 if is_binding_param {
                     let type_names: Vec<String> = args
                         .iter()
-                        .filter(|a| !matches!(a.view(), ValueView::Pair(..)))
+                        .filter(|a| !a.is_string_pair_value())
                         .map(|a| super::value_type_name(a).to_string())
                         .collect();
                     let mut err = RuntimeError::new(format!(

@@ -122,6 +122,25 @@ impl Interpreter {
         is_pseudo_method: bool,
     ) -> bool {
         let _ = args;
+        // Lazy-Match head branch: the chain below reads `target.view()`
+        // repeatedly, which would materialize a lazy Match per method call.
+        // Its class is statically "Match", so evaluate the Instance arms that
+        // can apply to it directly (the Supply/IO::Handle/Proc::Async/Stash
+        // arms and the Real/Numeric bridge arm can never hit a Match).
+        if target.is_lazy_match_value() {
+            return skip_pseudo
+                || method == "squish"
+                || method == "elems"
+                || (matches!(method, "throw" | "rethrow" | "gist" | "Str" | "Stringy")
+                    && self.exception_render_needs_interpreter(target, "Match"))
+                || self.is_native_method("Match", method)
+                || self.has_user_method("Match", "Bridge")
+                || (!is_pseudo_method
+                    && (self.has_user_method("Match", method)
+                        || self.has_public_accessor("Match", method)
+                        || (self.has_class_level_attr("Match", method)
+                            && !self.has_public_accessor("Match", method))));
+        }
         skip_pseudo
             || method == "squish"
             || (matches!(
@@ -209,6 +228,10 @@ impl Interpreter {
     /// Used so that role-method dispatch on punned role instances takes
     /// precedence over the built-in Cool fallbacks (e.g. `.uc`).
     pub(crate) fn mixin_role_has_method(&self, target: &Value, method: &str) -> bool {
+        // Tag probe first — a `view()` on a lazy Match would materialize it.
+        if !target.is_mixin_value() {
+            return false;
+        }
         let ValueView::Mixin(_, mixins) = target.view() else {
             return false;
         };

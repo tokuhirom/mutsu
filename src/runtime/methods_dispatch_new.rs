@@ -467,7 +467,7 @@ impl Interpreter {
         if self.class_mro(cn_resolved).iter().any(|n| n == "Array") {
             let elems: Vec<Value> = args
                 .iter()
-                .filter(|a| !matches!(a.view(), ValueView::Pair(..)))
+                .filter(|a| !a.is_string_pair_value())
                 .cloned()
                 .collect();
             if !elems.is_empty() || !attributes.contains_key("__mutsu_array_storage") {

@@ -1084,7 +1084,7 @@ impl Interpreter {
                         let data = if data.is_none() {
                             let positional: Vec<Value> = args
                                 .iter()
-                                .filter(|arg| !matches!(arg.view(), ValueView::Pair(..)))
+                                .filter(|arg| !arg.is_string_pair_value())
                                 .cloned()
                                 .collect();
                             if positional.is_empty() {

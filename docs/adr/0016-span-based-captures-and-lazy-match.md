@@ -297,6 +297,29 @@ cover 55 of the 72; three more close the set (`match_ast`, `match_meta`,
 builder-side swap is cheap; the rebuilders need a `with_ast(...)`-style copy-on-write
 helper first, and the one in-place mutator (`smart_match.rs`) must convert to the
 rebuild pattern.
+**Landed 2026-07-31** (`news/2026-07/regex-lazy-match-repr.md`): the repr is
+`ValueRepr::Match(Gc<MatchNode>)` where `MatchNode = { orig: Option<Arc<String>>,
+cap: Arc<CapNode>, id, attrs: OnceLock<Gc<InstanceAttrs>> }`. Rather than adding a
+`ValueView::Match` arm (which would have forced every consumer to change), `view()`
+materializes the memoized one-level attribute map and presents
+`ValueView::Instance("Match")` — so consumers are unchanged and laziness is
+preserved exactly where the seam accessors and tag probes keep `view()` from
+running. Children materialize as lazy Matches themselves (one `Gc` alloc each).
+The action walk skips actionless nodes via a capture-node peek and runs
+leaf actions (`make ~$/` per char, the YAMLish shape) against the lazy `$/`,
+applying `make` as a fresh lazy node. Two consequences worth recording:
+(1) the "grammar-action walk materializes only where `has_user_method` says so"
+plan met reality — YAMLish DOES define per-char leaf actions (`space`,
+`single-bare`), so the win there came from the leaf-action fast path, not from
+skipping; (2) keeping a lazy value alive across generic dispatch required
+converting ~20 `matches!(v.view(), …)` variant probes into pure tag probes —
+a `view()`-based "is it an X?" check is now an anti-pattern anywhere a lazy
+Match can flow. Measured by instrumentation: leaf materializations on a YAMLish
+parse fell 1807 → 15; local interleaved A/B (idle box): `bench-yaml-parse`
+1.31 s → 0.87 s (≈ −34 %), bench CI to confirm.
+The reduce walk (`reduce_cap_node_for_rule` code-block replay) and the failed
+partial-parse replay still build eager Matches for `$/` inside in-regex code
+blocks — small counts, unchanged semantics.
 
 ## Consequences
 

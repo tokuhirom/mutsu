@@ -119,10 +119,7 @@ impl Interpreter {
         // (`C`/`D`/`KC`/`KD` i.e. NFC/NFD/NFKC/NFKD). Rakudo `#?rakudo skip`s the
         // normalization-form parameter ("We do not handle NDF yet"); mutsu
         // applies it (roast S32-str/encode.t "encoding to UTF-8, with NFD").
-        let positionals: Vec<&Value> = args
-            .iter()
-            .filter(|v| !matches!(v.view(), ValueView::Pair(..)))
-            .collect();
+        let positionals: Vec<&Value> = args.iter().filter(|v| !v.is_string_pair_value()).collect();
         let encoding = positionals
             .first()
             .map(|v| v.to_string_value())
@@ -192,7 +189,7 @@ impl Interpreter {
             let default_encoding = if is_wide { "utf-16" } else { "utf-8" };
             let encoding = args
                 .iter()
-                .find(|v| !matches!(v.view(), ValueView::Pair(..)))
+                .find(|v| !v.is_string_pair_value())
                 .map(|v| v.to_string_value())
                 .unwrap_or_else(|| default_encoding.to_string());
             let replacement = Self::named_value(args, "replacement").map(|v| {

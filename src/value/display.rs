@@ -298,6 +298,14 @@ fn format_rat_str_bigint(numer: &NumBigInt, denom: &NumBigInt, is_fatrat: bool) 
 
 impl Value {
     pub(crate) fn to_string_value(&self) -> String {
+        // Stringifying an unmaterialized lazy Match is just its matched text
+        // (the `str` attribute the eager arm below reads) — skip the
+        // materializing `view()` decode.
+        if let Some(node) = self.0.as_match_node()
+            && node.forced().is_none()
+        {
+            return node.cap.matched.clone();
+        }
         match self.view() {
             // A `VarRef` is a transient binder wrapper: it stringifies as the
             // variable's value.

@@ -91,7 +91,10 @@ impl Interpreter {
     pub(crate) fn implicit_method_named_slurpy(param_defs: &[ParamDef], args: &[Value]) -> Value {
         let mut implicit_named = std::collections::HashMap::new();
         for arg in args.iter() {
-            let unwrapped = unwrap_varref_value(arg.clone());
+            let unwrapped = arg.unwrap_varref();
+            if !unwrapped.is_string_pair_value() {
+                continue;
+            }
             if let ValueView::Pair(key, val) = unwrapped.view() {
                 if key.is_empty() {
                     continue;

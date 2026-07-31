@@ -392,13 +392,21 @@ impl Interpreter {
         // shadows the name (then the full checker below must run its predicate),
         // so it is gated on the subset registry. This skips the long string-
         // compare gauntlet for the ubiquitous `Int $n` / `Point $p` params.
-        let tag_match = match value.view() {
-            ValueView::Int(_) => constraint == "Int",
-            ValueView::Num(_) => constraint == "Num",
-            ValueView::Str(_) => constraint == "Str",
-            ValueView::Bool(_) => constraint == "Bool",
-            ValueView::Instance { class_name, .. } => class_name.as_str() == constraint,
-            _ => false,
+        let tag_match = if value.is_lazy_match_value() {
+            // A lazy Match is always class "Match" — answer the ubiquitous
+            // constraints without materializing it. Unlisted constraints
+            // (subsets, roles) fall through to the full checker below, which
+            // materializes through `view()` as an Instance.
+            matches!(constraint, "Match" | "Any" | "Mu")
+        } else {
+            match value.view() {
+                ValueView::Int(_) => constraint == "Int",
+                ValueView::Num(_) => constraint == "Num",
+                ValueView::Str(_) => constraint == "Str",
+                ValueView::Bool(_) => constraint == "Bool",
+                ValueView::Instance { class_name, .. } => class_name.as_str() == constraint,
+                _ => false,
+            }
         };
         if tag_match && !self.registry().subsets.contains_key(constraint) {
             return true;

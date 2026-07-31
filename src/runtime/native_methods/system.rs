@@ -226,7 +226,7 @@ impl Interpreter {
                 // e.g. "foo" -> "libfoo.so" on Linux, "libfoo.dylib" on macOS, "foo.dll" on Windows.
                 let name = args
                     .iter()
-                    .find(|v| !matches!(v.view(), ValueView::Pair(..)))
+                    .find(|v| !v.is_string_pair_value())
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
                 // `:version` names an ABI-versioned library. A distribution ships

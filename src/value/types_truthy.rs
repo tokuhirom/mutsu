@@ -35,6 +35,15 @@ impl Value {
     }
 
     pub(crate) fn truthy(&self) -> bool {
+        // An unmaterialized lazy Match is always a successful live match
+        // (failed `.subparse` Matches are rebuilt as eager Instances carrying
+        // `__failed_match__`) — answer without materializing. A boolean test
+        // is the most common observation of `m//` in a condition.
+        if let Some(node) = self.0.as_match_node()
+            && node.forced().is_none()
+        {
+            return true;
+        }
         match self.view() {
             // A `VarRef` is a transient binder wrapper: it is as true as the
             // variable's value.

@@ -38,6 +38,11 @@ impl Interpreter {
     /// Auto-FETCH a Proxy value. If the value is a Proxy, call its FETCH callback.
     /// Used when a Proxy-bound variable is read in value context.
     pub(crate) fn auto_fetch_proxy(&mut self, value: &Value) -> Result<Value, RuntimeError> {
+        // Tag probe first: a `view()` on a lazy Match would materialize it
+        // just to see it is not a Proxy.
+        if !value.is_proxy_value() {
+            return Ok(value.clone());
+        }
         if let ValueView::Proxy { fetcher, .. } = value.view() {
             if fetcher.is_nil() {
                 return Ok(Value::NIL);

@@ -133,6 +133,7 @@ impl NanBox {
                 );
                 pack_gc(Kind::Instance, attributes)
             }
+            ValueRepr::Match(node) => pack_gc(Kind::Match, node),
             ValueRepr::Junction { kind, values } => pack_arc(
                 match kind {
                     JunctionKind::Any => Kind::JunctionAny,

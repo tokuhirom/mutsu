@@ -111,12 +111,7 @@ impl Interpreter {
             let positional_indices: Vec<usize> = args
                 .iter()
                 .enumerate()
-                .filter(|(_, arg)| {
-                    !matches!(
-                        unwrap_varref_value((*arg).clone()).view(),
-                        ValueView::Pair(..)
-                    )
-                })
+                .filter(|(_, arg)| !arg.unwrap_varref().is_string_pair_value())
                 .map(|(idx, _)| idx)
                 .collect();
             let positional_arg_count = positional_indices.len();
@@ -126,12 +121,7 @@ impl Interpreter {
             // parts.
             let named_args: Vec<Value> = args
                 .iter()
-                .filter(|arg| {
-                    matches!(
-                        unwrap_varref_value((*arg).clone()).view(),
-                        ValueView::Pair(..)
-                    )
-                })
+                .filter(|arg| arg.unwrap_varref().is_string_pair_value())
                 .cloned()
                 .collect();
             let remaining_args = |from_positional: usize| -> Vec<Value> {
@@ -579,7 +569,10 @@ impl Interpreter {
             let named_args: Vec<(String, Value)> = args
                 .iter()
                 .filter_map(|a| {
-                    let a = unwrap_varref_value(a.clone());
+                    let a = a.unwrap_varref();
+                    if !a.is_string_pair_value() {
+                        return None;
+                    }
                     if let ValueView::Pair(key, val) = a.view() {
                         Some((key.clone(), val.clone()))
                     } else {
@@ -774,7 +767,7 @@ impl Interpreter {
             filtered_params.iter().filter(|p| !p.named).collect();
         let positional_arg_count = args
             .iter()
-            .filter(|arg| !matches!(arg.view(), ValueView::Pair(..)))
+            .filter(|arg| !arg.is_string_pair_value())
             .count();
         let mut required = 0usize;
         let mut has_positional_slurpy = false;

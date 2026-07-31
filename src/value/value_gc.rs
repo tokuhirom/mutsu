@@ -70,6 +70,13 @@ impl Value {
     /// `Gc` node nested inside them is still reached (otherwise the wrapper is an
     /// invisible edge and a cycle through it is missed — an under-collect).
     pub(crate) fn gc_trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
+        // A lazy Match is a `Gc<MatchNode>` node: yield the handle WITHOUT
+        // going through `view()`, which would materialize the match (allocate)
+        // in the middle of a collect.
+        if let Some(node) = self.0.match_node_erased() {
+            visit(&node);
+            return;
+        }
         // Post-flip, the multi-field payloads (Pair, Scalar, Capture, ...)
         // live behind one shared `Arc<...Box>`: when that box is shared by
         // N > 1 holders, tracing through every holder would over-count its
@@ -375,6 +382,24 @@ impl Trace for MixData {
 
     fn drop_gc_edges(&mut self) {
         self.original_keys = None;
+    }
+}
+
+/// A lazy Match node's only traced edge is its memoized materialization
+/// (`Gc<InstanceAttrs>`). The `Arc<CapNode>` payload can hold `Value`s
+/// (`ast`, `regex_vars`, code-block contexts), but the capture tree is shared
+/// across sibling Matches and the reduce log, so per the shared-wrapper rule
+/// its contents are treated as externally rooted (conservative — a cycle
+/// routed solely through a capture node's `ast` defers, never corrupts; see
+/// [`uniquely_owned`]).
+impl Trace for super::MatchNode {
+    fn trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
+        if let Some(attrs) = self.forced() {
+            visit(&attrs.erased());
+        }
+    }
+    fn drop_gc_edges(&mut self) {
+        self.take_attrs_for_gc();
     }
 }
 

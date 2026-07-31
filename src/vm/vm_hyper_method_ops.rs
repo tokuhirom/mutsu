@@ -452,7 +452,11 @@ impl Interpreter {
             // dispatch on the inner value, then write any in-place mutation back
             // THROUGH the cell so the source array observes it and the result
             // array keeps its source aliasing.
-            let hyper_cell = if let ValueView::ContainerRef(cell) = item.view() {
+            // Tag-probed: this runs per element, and a `view()` would
+            // materialize a lazy Match just to see it is not a cell.
+            let hyper_cell = if item.is_container_ref()
+                && let ValueView::ContainerRef(cell) = item.view()
+            {
                 let cell = cell.clone();
                 *item = cell.lock().unwrap().clone();
                 Some(cell)
@@ -471,10 +475,15 @@ impl Interpreter {
                     "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
                 )
             {
-                let class_name = match item.view() {
-                    ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
-                    ValueView::Package(name) => Some(name.resolve()),
-                    _ => None,
+                let class_name = if item.is_lazy_match_value() {
+                    // Lazy Match: class is "Match" — no materialization.
+                    Some("Match".to_string())
+                } else {
+                    match item.view() {
+                        ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+                        ValueView::Package(name) => Some(name.resolve()),
+                        _ => None,
+                    }
                 };
                 if let Some(cn) = class_name
                     && self.has_user_method(&cn, &method)
@@ -582,13 +591,17 @@ impl Interpreter {
                     // Raku's >> descends into Iterable structures, but stops
                     // if the method is natively defined on the list type
                     // (e.g., .join, .elems, .sort, .reverse, .unique, .squish).
-                    let is_iterable_item = matches!(
-                        item.view(),
-                        ValueView::Array(..)
-                            | ValueView::Seq(..)
-                            | ValueView::Slip(..)
-                            | ValueView::Hash(..)
-                    );
+                    // (Lazy-Match gate: a `view()` here would materialize a
+                    // lazy Match per `».method` element just to see it is not
+                    // an Iterable.)
+                    let is_iterable_item = !item.is_lazy_match_value()
+                        && matches!(
+                            item.view(),
+                            ValueView::Array(..)
+                                | ValueView::Seq(..)
+                                | ValueView::Slip(..)
+                                | ValueView::Hash(..)
+                        );
                     // A qualified dispatch (`».Any::elems`) still names a
                     // plain list-native method once the owner prefix is
                     // stripped, so nodality is decided on the unqualified tail.

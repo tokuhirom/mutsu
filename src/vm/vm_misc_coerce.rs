@@ -132,7 +132,10 @@ impl Interpreter {
         let val = loan_env!(self, auto_fetch_proxy(&val))?;
         // Mu itself has no Str candidate — stringifying it is a hard
         // error (Rakudo dies with `Cannot resolve caller prefix:<~>(Mu:U)`).
-        if let ValueView::Package(name) = val.view()
+        // Tag-probed: `~$match` lands here per capture and a `view()` would
+        // materialize a lazy Match.
+        if val.is_package_value()
+            && let ValueView::Package(name) = val.view()
             && name.resolve() == "Mu"
         {
             return Err(RuntimeError::new(format!(

@@ -571,6 +571,84 @@ impl Value {
         self.0.is_nil()
     }
 
+    /// Whether this is a Junction (any flavour). A pure tag probe — unlike a
+    /// `view()` match it cannot materialize a lazy Match, so dispatch-path
+    /// junction scans must use this as their gate.
+    #[inline]
+    pub(crate) fn is_junction_value(&self) -> bool {
+        self.0.is_junction()
+    }
+
+    /// Whether this is a `Proxy`. A pure tag probe (see [`Self::is_junction_value`]).
+    #[inline]
+    pub(crate) fn is_proxy_value(&self) -> bool {
+        self.0.is_proxy()
+    }
+
+    /// Whether this is a string-keyed `Pair` (`ValueView::Pair`). A pure tag
+    /// probe (see [`Self::is_junction_value`]) — dispatch-path named-argument
+    /// scans use it so they cannot materialize a lazy Match.
+    #[inline]
+    pub(crate) fn is_string_pair_value(&self) -> bool {
+        self.0.is_string_pair()
+    }
+
+    /// Whether this is a lazily materialized `Match` (`ValueRepr::Match`). A
+    /// pure tag probe: type-check fast paths use it to answer the ubiquitous
+    /// constraints (`Match`/`Any`/`Mu`) without materializing.
+    #[inline]
+    pub(crate) fn is_lazy_match_value(&self) -> bool {
+        self.0.as_match_node().is_some()
+    }
+
+    /// Whether this is a `Pair` or `ValuePair`. A pure tag probe (see
+    /// [`Self::is_junction_value`]).
+    #[inline]
+    pub(crate) fn is_any_pair_value(&self) -> bool {
+        self.0.is_any_pair()
+    }
+
+    /// Whether this is a `HashEntryRef`. A pure tag probe (see
+    /// [`Self::is_junction_value`]).
+    #[inline]
+    pub(crate) fn is_hash_entry_ref_value(&self) -> bool {
+        self.0.is_hash_entry_ref()
+    }
+
+    /// Whether this is a `LazyThunk`. A pure tag probe (see
+    /// [`Self::is_junction_value`]).
+    #[inline]
+    pub(crate) fn is_lazy_thunk_value(&self) -> bool {
+        self.0.is_lazy_thunk()
+    }
+
+    /// Whether this is a `Package` type object. A pure tag probe (see
+    /// [`Self::is_junction_value`]).
+    #[inline]
+    pub(crate) fn is_package_value(&self) -> bool {
+        self.0.is_package()
+    }
+
+    /// Whether this is a `Mixin`. A pure tag probe (see
+    /// [`Self::is_junction_value`]).
+    #[inline]
+    pub(crate) fn is_mixin_value(&self) -> bool {
+        self.0.is_mixin()
+    }
+
+    /// Whether this is a `Seq`. A pure tag probe (see [`Self::is_junction_value`]).
+    #[inline]
+    pub(crate) fn is_seq_value(&self) -> bool {
+        self.0.is_seq()
+    }
+
+    /// Whether this is a `LazyList`. A pure tag probe (see
+    /// [`Self::is_junction_value`]).
+    #[inline]
+    pub(crate) fn is_lazy_list_value(&self) -> bool {
+        self.0.is_lazy_list()
+    }
+
     /// Whether this is the `Any` type object (`Package("Any")`) — notably the
     /// value an uninitialized untyped scalar declaration seeds (PLAN 8.5
     /// step 3), which container-identity heuristics must treat like the old

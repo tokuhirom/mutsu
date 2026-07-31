@@ -311,14 +311,14 @@ impl Interpreter {
         // or an Iterable) — those cases fall through to the generic
         // element-wise/base-case handling below.
         if let ValueView::Pair(k, v) = left.view()
-            && !matches!(right.view(), ValueView::Pair(..))
+            && !right.is_string_pair_value()
             && !Self::is_listy(right)
         {
             let new_v = self.hyper_op_pair(op, v, right, dwim_left, dwim_right)?;
             return Ok(Value::pair(k.clone(), new_v));
         }
         if let ValueView::Pair(k, v) = right.view()
-            && !matches!(left.view(), ValueView::Pair(..))
+            && !left.is_string_pair_value()
             && !Self::is_listy(left)
         {
             let new_v = self.hyper_op_pair(op, left, v, dwim_left, dwim_right)?;

@@ -14,15 +14,24 @@
 use super::*;
 
 impl Value {
-    /// Is this value a `Match` instance (regex match object)?
+    /// Is this value a `Match` instance (regex match object)? True for both
+    /// the lazy repr (`ValueRepr::Match`, checked WITHOUT materializing) and
+    /// an eager/rebuilt `Instance("Match")`.
     pub(crate) fn is_match_instance(&self) -> bool {
+        if self.0.as_match_node().is_some() {
+            return true;
+        }
         matches!(self.view(), ValueView::Instance { class_name, .. } if class_name == "Match")
     }
 
     /// Read one attribute of a `Match` instance. `None` when `self` is not a
     /// Match or the attribute is absent. The internal funnel every public
-    /// accessor below goes through.
+    /// accessor below goes through. On an unmaterialized lazy Match, scalar
+    /// attributes are answered straight from the capture node.
     fn match_attr(&self, name: &str) -> Option<Value> {
+        if let Some(node) = self.0.as_match_node() {
+            return node.attr(name);
+        }
         match self.view() {
             ValueView::Instance {
                 class_name,

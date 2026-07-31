@@ -166,9 +166,7 @@ impl Interpreter {
 
     pub(super) fn builtin_slurp(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         // Check if first arg is a named pair (not a positional path)
-        let first_is_pair = args
-            .first()
-            .is_none_or(|v| matches!(v.view(), ValueView::Pair(..)));
+        let first_is_pair = args.first().is_none_or(|v| v.is_string_pair_value());
         // If no positional path argument, slurp from $*ARGFILES
         if first_is_pair {
             let argfiles = self.env.get("$*ARGFILES").cloned().unwrap_or(Value::NIL);

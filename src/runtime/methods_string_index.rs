@@ -192,7 +192,7 @@ impl Interpreter {
         }
         let mut positional: Vec<Value> = Vec::new();
         for arg in args {
-            if !matches!(arg.view(), ValueView::Pair(..)) {
+            if !arg.is_string_pair_value() {
                 positional.push(arg.clone());
             }
         }

@@ -782,6 +782,183 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Leaf fast path of [`Self::invoke_grammar_actions`]: run a STILL-LAZY,
+    /// childless Match's action method without materializing its attribute
+    /// map. The env ceremony only has to hide the parent's captures — a
+    /// childless leaf installs no `$<x>`/`$0..` of its own — and a `make`
+    /// from the action becomes a fresh lazy node carrying the `ast`
+    /// (`match_with_ast_lazy`). Per-char leaf actions (`method space($/) {
+    /// make ~$/ }`, the YAMLish shape) hit this for every matched character,
+    /// so it must not touch `InstanceAttrs` at all.
+    fn invoke_leaf_action_lazy(
+        &mut self,
+        match_obj: Value,
+        actions: &mut Value,
+        rule_name: &str,
+        sym_method_name: Option<&str>,
+    ) -> Result<Value, RuntimeError> {
+        self.env.insert("/".to_string(), match_obj.clone());
+        self.env.remove("made");
+        self.action_made = None;
+        // Hide the parent's named/positional captures from the leaf's action.
+        let saved_named_captures: Vec<(Symbol, Value)> = self
+            .env
+            .iter()
+            .filter(|(k, _)| k.starts_with("<") && k.ends_with(">"))
+            .map(|(k, v)| (*k, v.clone()))
+            .collect();
+        for (k, _) in &saved_named_captures {
+            self.env.remove_sym(*k);
+        }
+        let mut saved_positional: Vec<(usize, Option<Value>)> = Vec::new();
+        for i in 0..10 {
+            saved_positional.push((i, self.env.remove(&i.to_string())));
+        }
+        let saved_topic = self.env.get("_").cloned();
+        self.env.insert("_".to_string(), match_obj.clone());
+
+        // Re-install this match's own `:my $*x` bindings with the values they
+        // held when IT reduced — same as the main walk's `reduce_time_vars`
+        // handling, but read straight from the capture node.
+        let saved_reduce_vars: Vec<(String, Option<Value>)> = match_obj
+            .match_reduce_time_vars_lazy()
+            .map(|vars| {
+                vars.into_iter()
+                    .map(|(k, v)| {
+                        let prev = self.env.get(&k).cloned();
+                        self.env.insert(k.clone(), v);
+                        (k, prev)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let actions_class_name = match actions.view() {
+            ValueView::Instance { class_name, .. } => Some(class_name.as_str()),
+            ValueView::Package(name) => Some(name.as_str()),
+            _ => None,
+        };
+        let mut called_action = false;
+        let method_result = if let Some(sym_name) = sym_method_name {
+            let sym_exists = actions_class_name.is_none_or(|cn| self.has_user_method(cn, sym_name));
+            if sym_exists {
+                called_action = true;
+                let result = self.call_method_with_values(
+                    actions.clone(),
+                    sym_name,
+                    vec![match_obj.clone()],
+                );
+                match result {
+                    Err(e) if e.is_method_not_found() => {
+                        if actions_class_name.is_none_or(|cn| self.has_user_method(cn, rule_name)) {
+                            self.call_method_with_values(
+                                actions.clone(),
+                                rule_name,
+                                vec![match_obj.clone()],
+                            )
+                        } else {
+                            Ok(match_obj.clone())
+                        }
+                    }
+                    other => other,
+                }
+            } else if actions_class_name.is_none_or(|cn| self.has_user_method(cn, rule_name)) {
+                called_action = true;
+                self.call_method_with_values(actions.clone(), rule_name, vec![match_obj.clone()])
+            } else {
+                Ok(match_obj.clone())
+            }
+        } else if actions_class_name.is_none_or(|cn| self.has_user_method(cn, rule_name)) {
+            called_action = true;
+            self.call_method_with_values(actions.clone(), rule_name, vec![match_obj.clone()])
+        } else {
+            Ok(match_obj.clone())
+        };
+
+        // Re-read a possibly-mutated actions instance (same as the main walk).
+        if called_action
+            && let ValueView::Instance {
+                class_name: act_cn,
+                id: act_id,
+                ..
+            } = actions.view()
+        {
+            for v in self.env.values() {
+                if let ValueView::Instance {
+                    class_name: cn,
+                    id,
+                    attributes,
+                    ..
+                } = v.view()
+                    && cn == act_cn
+                    && id == act_id
+                {
+                    *actions = Value::instance_parts(cn, attributes.clone(), id);
+                    break;
+                }
+            }
+        }
+
+        if let Some(old_topic) = saved_topic {
+            self.env.insert("_".to_string(), old_topic);
+        } else {
+            self.env.remove("_");
+        }
+        // Restore whatever this match's `:my` bindings shadowed
+        for (k, prev) in saved_reduce_vars {
+            match prev {
+                Some(v) => {
+                    self.env.insert(k, v);
+                }
+                None => {
+                    self.env.remove(&k);
+                }
+            }
+        }
+        {
+            let current_angle_keys: Vec<Symbol> = self
+                .env
+                .keys()
+                .filter(|k| k.starts_with("<") && k.ends_with(">"))
+                .copied()
+                .collect();
+            for k in current_angle_keys {
+                self.env.remove_sym(k);
+            }
+            for (k, v) in saved_named_captures {
+                self.env.insert_sym(k, v);
+            }
+        }
+        for i in 0..10 {
+            self.env.remove(&i.to_string());
+        }
+        for (i, val) in saved_positional {
+            if let Some(v) = val {
+                self.env.insert(i.to_string(), v);
+            }
+        }
+
+        match method_result {
+            Ok(_) => {}
+            Err(e) if e.is_method_not_found() => {
+                // No action method for this rule — silently skip
+            }
+            Err(e) => return Err(e),
+        }
+
+        Ok(match self.action_made.take() {
+            Some(ast) => match match_obj.match_with_ast_lazy(ast.clone()) {
+                Some(v) => v,
+                // The action itself observed `$/` (materializing it) — fall
+                // back to the eager rebuild, same as the main walk.
+                None => match_obj
+                    .match_with_attrs(vec![("ast", ast)])
+                    .unwrap_or(match_obj),
+            },
+            None => match_obj,
+        })
+    }
+
     /// Walk the match tree bottom-up and invoke action methods on the actions object.
     pub(crate) fn invoke_grammar_actions(
         &mut self,
@@ -795,9 +972,25 @@ impl Interpreter {
         // skips the two attribute-map clones, the node rebuild, and the whole
         // env save/restore ceremony below, none of which can have any effect
         // for such a node.
+        let fmt_sym_method = |sym_val: &str| {
+            if sym_val.contains('<') || sym_val.contains('>') {
+                format!("{rule_name}:sym\u{ab}{sym_val}\u{bb}")
+            } else {
+                format!("{rule_name}:sym<{sym_val}>")
+            }
+        };
         let leaf_sym_method: Option<String>;
         let is_actionless_candidate_leaf;
-        if let ValueView::Instance { attributes, .. } = match_obj.view() {
+        if let Some((is_leaf, sym)) = match_obj.match_walk_peek() {
+            // Unmaterialized lazy Match: the leaf check reads the capture
+            // node directly, so an actionless leaf is never materialized.
+            is_actionless_candidate_leaf = is_leaf;
+            leaf_sym_method = if is_leaf {
+                sym.as_deref().map(fmt_sym_method)
+            } else {
+                None
+            };
+        } else if let ValueView::Instance { attributes, .. } = match_obj.view() {
             let amap = attributes.as_map();
             let has_named_children = matches!(
                 amap.get("named").map(Value::view),
@@ -811,13 +1004,7 @@ impl Interpreter {
             if !has_named_children && !has_list_children && !has_silent {
                 is_actionless_candidate_leaf = true;
                 leaf_sym_method = match amap.get("sym_variant").map(Value::view) {
-                    Some(ValueView::Str(sym_val)) => {
-                        Some(if sym_val.contains('<') || sym_val.contains('>') {
-                            format!("{rule_name}:sym\u{ab}{}\u{bb}", &*sym_val)
-                        } else {
-                            format!("{rule_name}:sym<{}>", &*sym_val)
-                        })
-                    }
+                    Some(ValueView::Str(sym_val)) => Some(fmt_sym_method(&sym_val)),
                     _ => None,
                 };
             } else {
@@ -842,6 +1029,16 @@ impl Interpreter {
                     return Ok(match_obj);
                 }
             }
+            // A still-lazy childless leaf WITH an action: run it without
+            // materializing the attribute map.
+            if match_obj.match_walk_peek().is_some() {
+                return self.invoke_leaf_action_lazy(
+                    match_obj,
+                    actions,
+                    rule_name,
+                    leaf_sym_method.as_deref(),
+                );
+            }
         }
         let (class_name, attributes) = if let ValueView::Instance {
             class_name,
@@ -863,17 +1060,19 @@ impl Interpreter {
                 .iter()
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect();
-            children.sort_by_key(|(_, v)| {
-                if let ValueView::Instance { attributes, .. } = v.view()
-                    && let Some(ValueView::Int(from)) =
-                        attributes.as_map().get("from").map(Value::view)
-                {
-                    return from;
-                }
-                0
-            });
+            // `match_from` is the non-materializing seam read — a lazy child
+            // is not forced just to be sorted.
+            children.sort_by_key(|(_, v)| v.match_from().unwrap_or(0));
             for (child_name, child_match) in children {
-                if let ValueView::Array(items, meta) = child_match.view() {
+                // Probe Match first (non-materializing); only non-Match values
+                // (arrays of per-iteration Matches) go through `view()`.
+                if child_match.is_match_instance() {
+                    let dispatch_name =
+                        Self::get_action_name(&child_match).unwrap_or_else(|| child_name.clone());
+                    let updated_child =
+                        self.invoke_grammar_actions(child_match, actions, &dispatch_name)?;
+                    updated_named.insert(child_name, updated_child);
+                } else if let ValueView::Array(items, meta) = child_match.view() {
                     let mut updated_items = Vec::with_capacity(items.len());
                     for item in items.as_ref() {
                         let dispatch_name =
@@ -913,26 +1112,35 @@ impl Interpreter {
             let mut updated_list = Vec::with_capacity(pos_arr.len());
             let mut changed = false;
             for item in pos_arr.as_ref() {
-                let updated_item = match item.view() {
-                    // A quantified group `(...)*`: an Array of per-iteration Matches.
-                    ValueView::Array(items, imeta) => {
-                        let mut updated_items = Vec::with_capacity(items.len());
-                        for it in items.as_ref() {
-                            let dispatch_name = Self::get_action_name(it).unwrap_or_default();
-                            let updated =
-                                self.invoke_grammar_actions(it.clone(), actions, &dispatch_name)?;
-                            updated_items.push(updated);
+                // Probe Match first (non-materializing, covers lazy children).
+                let updated_item = if item.is_match_instance() {
+                    let dispatch_name = Self::get_action_name(item).unwrap_or_default();
+                    self.invoke_grammar_actions(item.clone(), actions, &dispatch_name)?
+                } else {
+                    match item.view() {
+                        // A quantified group `(...)*`: an Array of per-iteration Matches.
+                        ValueView::Array(items, imeta) => {
+                            let mut updated_items = Vec::with_capacity(items.len());
+                            for it in items.as_ref() {
+                                let dispatch_name = Self::get_action_name(it).unwrap_or_default();
+                                let updated = self.invoke_grammar_actions(
+                                    it.clone(),
+                                    actions,
+                                    &dispatch_name,
+                                )?;
+                                updated_items.push(updated);
+                            }
+                            Value::array_with_kind(
+                                crate::gc::Gc::new(crate::value::ArrayData::new(updated_items)),
+                                imeta,
+                            )
                         }
-                        Value::array_with_kind(
-                            crate::gc::Gc::new(crate::value::ArrayData::new(updated_items)),
-                            imeta,
-                        )
+                        ValueView::Instance { .. } => {
+                            let dispatch_name = Self::get_action_name(item).unwrap_or_default();
+                            self.invoke_grammar_actions(item.clone(), actions, &dispatch_name)?
+                        }
+                        _ => item.clone(),
                     }
-                    ValueView::Instance { .. } => {
-                        let dispatch_name = Self::get_action_name(item).unwrap_or_default();
-                        self.invoke_grammar_actions(item.clone(), actions, &dispatch_name)?
-                    }
-                    _ => item.clone(),
                 };
                 changed = true;
                 updated_list.push(updated_item);

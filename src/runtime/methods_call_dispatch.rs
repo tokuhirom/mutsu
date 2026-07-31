@@ -697,13 +697,17 @@ impl Interpreter {
             return Ok(Value::junction(kind, results));
         }
         if Self::should_autothread_method(method)
-            && let Some((idx, kind, values)) =
-                args.iter()
-                    .enumerate()
-                    .find_map(|(idx, arg)| match arg.view() {
-                        ValueView::Junction { kind, values } => Some((idx, kind, values.clone())),
-                        _ => None,
-                    })
+            && let Some((idx, kind, values)) = args.iter().enumerate().find_map(|(idx, arg)| {
+                // Tag probe first: a `view()` on a lazy Match would
+                // materialize it just to see it is not a Junction.
+                if !arg.is_junction_value() {
+                    return None;
+                }
+                match arg.view() {
+                    ValueView::Junction { kind, values } => Some((idx, kind, values.clone())),
+                    _ => None,
+                }
+            })
         {
             let mut results = Vec::with_capacity(values.len());
             for value in values.iter() {

@@ -149,6 +149,11 @@ impl Interpreter {
         &self,
         value: &Value,
     ) -> Option<RuntimeError> {
+        // A lazy Match is never a Failure — tag probe, so the per-capture
+        // `~$match` path cannot materialize it here.
+        if value.is_lazy_match_value() {
+            return None;
+        }
         let ValueView::Instance {
             class_name,
             attributes,

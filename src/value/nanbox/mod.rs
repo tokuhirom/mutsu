@@ -168,6 +168,8 @@ pub(in crate::value) enum Kind {
     BagMut,
     MixImm,
     MixMut,
+    /// A lazily materialized regex `Match` (ADR-0016 P5): `Gc<MatchNode>`.
+    Match,
     // -- inline kinds (payload in bits 8..40) --
     Nil,
     Whatever,
@@ -450,6 +452,7 @@ unsafe fn payload_op(kind: Kind, bits: u64, op: PayloadOp) {
             Kind::SetImm | Kind::SetMut => gc_op::<SetData>(bits, op),
             Kind::BagImm | Kind::BagMut => gc_op::<BagData>(bits, op),
             Kind::MixImm | Kind::MixMut => gc_op::<MixData>(bits, op),
+            Kind::Match => gc_op::<MatchNode>(bits, op),
             Kind::Nil
             | Kind::Whatever
             | Kind::HyperWhatever

@@ -175,7 +175,7 @@ impl Interpreter {
         // Arity counts only positional args, excluding named args (Pair values)
         let arity = arg_values
             .iter()
-            .filter(|v| !matches!(v.view(), ValueView::Pair(..)))
+            .filter(|v| !v.is_string_pair_value())
             .count();
         // The proto's signature gates the whole dispatch: `proto bar {*}`
         // declares an empty signature, so any call with positional arguments
@@ -191,7 +191,7 @@ impl Interpreter {
         {
             let type_names: Vec<String> = arg_values
                 .iter()
-                .filter(|v| !matches!(v.view(), ValueView::Pair(..)))
+                .filter(|v| !v.is_string_pair_value())
                 .map(crate::value::types::what_type_name)
                 .collect();
             let msg = format!(
