@@ -47,15 +47,7 @@ impl Interpreter {
             captures
                 .positional
                 .iter()
-                .enumerate()
-                .map(|(i, s)| {
-                    let (from, to) = captures
-                        .positional_offsets
-                        .get(i)
-                        .copied()
-                        .unwrap_or((0, s.chars().count()));
-                    make_capture_match(s, from, to)
-                })
+                .map(|slot| make_capture_match(&captures.slot_text(slot), slot.from, slot.to))
                 .collect()
         };
         attrs.insert("list".to_string(), Value::array(positional));
@@ -287,17 +279,16 @@ impl Interpreter {
                     &c.positional,
                     &c.named,
                     &c.named_subcaps,
-                    &c.positional_subcaps,
-                    &c.positional_quantified,
-                    &c.positional_nil,
                     c.target_or_new(orig),
                 )
             })
             .collect::<Vec<_>>();
         self.env.insert("/".to_string(), Value::array(slash_list));
         if let Some(first) = selected.first() {
+            let t = first.target_or_new(orig);
             for (i, cap) in first.positional.iter().enumerate() {
-                self.env.insert(i.to_string(), Value::str(cap.clone()));
+                self.env
+                    .insert(i.to_string(), Value::str(t.span_str(cap.from, cap.to)));
             }
         }
     }
@@ -429,10 +420,8 @@ impl Interpreter {
         for idx in 1..locs.len() {
             if names.get(idx).is_some_and(Option::is_none) {
                 if let Some((start, end)) = locs.get(idx) {
-                    let captured = text.get(start..end)?.to_string();
                     let (cs, ce) = (to_char(start), to_char(end));
-                    out.positional.push(captured);
-                    out.positional_offsets.push((cs, ce));
+                    out.positional.push(crate::runtime::PosSlot::span(cs, ce));
                     out.positional_slots.push(Some((cs, ce)));
                 } else {
                     out.positional_slots.push(None);
@@ -484,12 +473,11 @@ impl Interpreter {
             for idx in 1..locs.len() {
                 if names.get(idx).is_some_and(Option::is_none) {
                     if let Some((c_start, c_end)) = locs.get(idx) {
-                        let Some(captured) = text.get(c_start..c_end) else {
+                        if text.get(c_start..c_end).is_none() {
                             continue;
-                        };
-                        item.positional.push(captured.to_string());
+                        }
                         let (cs, ce) = (to_char(c_start), to_char(c_end));
-                        item.positional_offsets.push((cs, ce));
+                        item.positional.push(crate::runtime::PosSlot::span(cs, ce));
                         item.positional_slots.push(Some((cs, ce)));
                     } else {
                         item.positional_slots.push(None);

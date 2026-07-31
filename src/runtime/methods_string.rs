@@ -97,9 +97,6 @@ impl Interpreter {
                 &c.positional,
                 &c.named,
                 &c.named_subcaps,
-                &c.positional_subcaps,
-                &c.positional_quantified,
-                &c.positional_nil,
                 c.target_or_new(text),
             )
         };
@@ -463,9 +460,6 @@ impl Interpreter {
                         &captures.positional,
                         &captures.named,
                         &captures.named_subcaps,
-                        &captures.positional_subcaps,
-                        &captures.positional_quantified,
-                        &captures.positional_nil,
                         captures.target_or_new(&text),
                     );
                     self.env.insert("/".to_string(), match_obj);

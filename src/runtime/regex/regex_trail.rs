@@ -25,38 +25,23 @@ pub(super) enum MapId {
     HashCap,
 }
 
-/// Saved tails for a positional-block truncation (values moved out, moved
-/// back on rewind). Boxed to keep `Undo` small.
+/// Saved tail for a positional truncation (slots moved out, moved back on
+/// rewind). Boxed to keep `Undo` small.
 pub(super) struct PosTailRec {
-    p_at: usize,
-    p: Vec<String>,
-    sc_at: usize,
-    sc: Vec<Option<Arc<CapNode>>>,
-    q_at: usize,
-    q: Vec<Option<Vec<QuantifiedCaptureEntry>>>,
-    off_at: usize,
-    off: Vec<(usize, usize)>,
+    at: usize,
+    slots: Vec<PosSlot>,
 }
 
 pub(super) enum Undo {
-    /// Truncate the positional block back to these lengths (undoes appends).
-    PosLens {
-        p: usize,
-        sc: usize,
-        q: usize,
-        off: usize,
-        nil: usize,
-    },
-    /// Restore previously truncated positional tails (truncate to `*_at`,
-    /// then re-extend with the saved values).
+    /// Truncate the positional slots back to this length (undoes appends).
+    PosLen(usize),
+    /// Restore a previously truncated positional tail (truncate to `at`,
+    /// then re-extend with the saved slots).
     PosTail(Box<PosTailRec>),
-    /// Restore a single overwritten positional entry (`$N=` alias writes).
+    /// Restore a single overwritten positional slot (`$N=` alias writes).
     PosOverwrite {
         idx: usize,
-        text: Option<String>,
-        sc: Option<Option<Arc<CapNode>>>,
-        q: Option<Option<Vec<QuantifiedCaptureEntry>>>,
-        off: Option<(usize, usize)>,
+        slot: Box<PosSlot>,
     },
     /// Truncate `map[key]` to `len`; remove the key if it was newly created.
     MapVecTrunc {
@@ -122,50 +107,17 @@ impl CapStore {
             let rec = self.trail.pop().expect("trail entry");
             let caps = &mut self.caps;
             match rec {
-                Undo::PosLens { p, sc, q, off, nil } => {
-                    caps.positional.truncate(p);
-                    caps.positional_subcaps.truncate(sc);
-                    caps.positional_quantified.truncate(q);
-                    caps.positional_offsets.truncate(off);
-                    caps.positional_nil.truncate(nil);
+                Undo::PosLen(len) => {
+                    caps.positional.truncate(len);
                 }
                 Undo::PosTail(rec) => {
                     let r = *rec;
-                    caps.positional.truncate(r.p_at);
-                    caps.positional.extend(r.p);
-                    caps.positional_subcaps.truncate(r.sc_at);
-                    caps.positional_subcaps.extend(r.sc);
-                    caps.positional_quantified.truncate(r.q_at);
-                    caps.positional_quantified.extend(r.q);
-                    caps.positional_offsets.truncate(r.off_at);
-                    caps.positional_offsets.extend(r.off);
+                    caps.positional.truncate(r.at);
+                    caps.positional.extend(r.slots);
                 }
-                Undo::PosOverwrite {
-                    idx,
-                    text,
-                    sc,
-                    q,
-                    off,
-                } => {
-                    if let Some(text) = text
-                        && idx < caps.positional.len()
-                    {
-                        caps.positional[idx] = text;
-                    }
-                    if let Some(sc) = sc
-                        && idx < caps.positional_subcaps.len()
-                    {
-                        caps.positional_subcaps[idx] = sc;
-                    }
-                    if let Some(q) = q
-                        && idx < caps.positional_quantified.len()
-                    {
-                        caps.positional_quantified[idx] = q;
-                    }
-                    if let Some(off) = off
-                        && idx < caps.positional_offsets.len()
-                    {
-                        caps.positional_offsets[idx] = off;
+                Undo::PosOverwrite { idx, slot } => {
+                    if idx < caps.positional.len() {
+                        caps.positional[idx] = *slot;
                     }
                 }
                 Undo::MapVecTrunc {
@@ -223,16 +175,10 @@ impl CapStore {
         }
     }
 
-    /// Record the current positional-block lengths so appends since this point
-    /// can be undone by truncation.
+    /// Record the current positional length so appends since this point can
+    /// be undone by truncation.
     fn record_pos_lens(&mut self) {
-        self.trail.push(Undo::PosLens {
-            p: self.caps.positional.len(),
-            sc: self.caps.positional_subcaps.len(),
-            q: self.caps.positional_quantified.len(),
-            off: self.caps.positional_offsets.len(),
-            nil: self.caps.positional_nil.len(),
-        });
+        self.trail.push(Undo::PosLen(self.caps.positional.len()));
     }
 
     fn record_named_key(&mut self, key: &str) {
@@ -277,10 +223,9 @@ impl CapStore {
     /// Apply a candidate delta (a `RegexCaptures` built relative to an empty
     /// baseline) to the store, recording undo. Merges exactly the fields the
     /// old by-value merge paths handled: named/named_subcaps/named_quantified,
-    /// capture_alias_map, the positional block (incl. offsets), code_blocks,
-    /// hash_captures, regex_vars, capture markers, and sym.
-    /// `positional_nil`/`positional_slots` and the per-level metadata
-    /// (matched/from/to/match_from) are intentionally NOT merged.
+    /// capture_alias_map, the positional slots, code_blocks, hash_captures,
+    /// regex_vars, capture markers, and sym. `positional_slots` and the
+    /// per-level metadata (from/to/match_from) are intentionally NOT merged.
     pub(super) fn merge_delta(&mut self, mut delta: RegexCaptures) {
         for (k, v) in delta.named.drain() {
             self.record_named_key(&k);
@@ -296,22 +241,9 @@ impl CapStore {
         for (k, v) in delta.capture_alias_map.drain() {
             self.insert_alias(k, v);
         }
-        if !delta.positional.is_empty()
-            || !delta.positional_subcaps.is_empty()
-            || !delta.positional_quantified.is_empty()
-            || !delta.positional_offsets.is_empty()
-        {
+        if !delta.positional.is_empty() {
             self.record_pos_lens();
             self.caps.positional.append(&mut delta.positional);
-            self.caps
-                .positional_subcaps
-                .append(&mut delta.positional_subcaps);
-            self.caps
-                .positional_quantified
-                .append(&mut delta.positional_quantified);
-            self.caps
-                .positional_offsets
-                .append(&mut delta.positional_offsets);
         }
         if !delta.code_blocks.is_empty() {
             self.trail
@@ -378,90 +310,34 @@ impl CapStore {
             .push(entry);
     }
 
-    /// Append one positional entry (text + subcap + quantified + offsets).
-    pub(super) fn push_positional(
-        &mut self,
-        text: String,
-        subcap: Option<Arc<CapNode>>,
-        quantified: Option<Vec<QuantifiedCaptureEntry>>,
-        offsets: (usize, usize),
-    ) {
+    /// Append one positional slot.
+    pub(super) fn push_positional(&mut self, slot: PosSlot) {
         self.record_pos_lens();
-        self.caps.positional.push(text);
-        self.caps.positional_subcaps.push(subcap);
-        self.caps.positional_quantified.push(quantified);
-        self.caps.positional_offsets.push(offsets);
+        self.caps.positional.push(slot);
     }
 
-    /// Truncate the positional text/subcap/quantified vecs to `to`, saving the
-    /// removed tails so rewind can restore them (the `$<name>=(...)` alias
-    /// surgery drops the group's auto-positional entry). `positional_offsets`
-    /// is left untouched, mirroring the old named-alias path.
-    pub(super) fn truncate_positional_3(&mut self, to: usize) {
-        let p = split_off_clamped(&mut self.caps.positional, to);
-        let sc = split_off_clamped(&mut self.caps.positional_subcaps, to);
-        let q = split_off_clamped(&mut self.caps.positional_quantified, to);
+    /// Truncate the positional slots to `to`, saving the removed tail so
+    /// rewind can restore it (the `$<name>=(...)` / `$N=` alias surgery drops
+    /// the group's auto-positional entry).
+    pub(super) fn truncate_positional(&mut self, to: usize) {
+        let slots = split_off_clamped(&mut self.caps.positional, to);
         self.trail.push(Undo::PosTail(Box::new(PosTailRec {
-            p_at: self.caps.positional.len(),
-            p,
-            sc_at: self.caps.positional_subcaps.len(),
-            sc,
-            q_at: self.caps.positional_quantified.len(),
-            q,
-            off_at: self.caps.positional_offsets.len(),
-            off: Vec::new(),
+            at: self.caps.positional.len(),
+            slots,
         })));
     }
 
-    /// Truncate all four positional vecs to `to` (the `$N=` alias path).
-    pub(super) fn truncate_positional_4(&mut self, to: usize) {
-        let p = split_off_clamped(&mut self.caps.positional, to);
-        let sc = split_off_clamped(&mut self.caps.positional_subcaps, to);
-        let q = split_off_clamped(&mut self.caps.positional_quantified, to);
-        let off = split_off_clamped(&mut self.caps.positional_offsets, to);
-        self.trail.push(Undo::PosTail(Box::new(PosTailRec {
-            p_at: self.caps.positional.len(),
-            p,
-            sc_at: self.caps.positional_subcaps.len(),
-            sc,
-            q_at: self.caps.positional_quantified.len(),
-            q,
-            off_at: self.caps.positional_offsets.len(),
-            off,
-        })));
-    }
-
-    /// Overwrite the positional entry at `idx` (`$N=` re-assigning an existing
-    /// slot), saving the previous values.
-    pub(super) fn overwrite_positional(&mut self, idx: usize, text: String, off: (usize, usize)) {
+    /// Overwrite the positional slot at `idx` (`$N=` re-assigning an existing
+    /// slot), saving the previous value.
+    pub(super) fn overwrite_positional(&mut self, idx: usize, slot: PosSlot) {
         let caps = &mut self.caps;
-        let prev_text = if idx < caps.positional.len() {
-            Some(std::mem::replace(&mut caps.positional[idx], text))
-        } else {
-            None
-        };
-        let prev_off = if idx < caps.positional_offsets.len() {
-            Some(std::mem::replace(&mut caps.positional_offsets[idx], off))
-        } else {
-            None
-        };
-        let prev_sc = if idx < caps.positional_subcaps.len() {
-            Some(caps.positional_subcaps[idx].take())
-        } else {
-            None
-        };
-        let prev_q = if idx < caps.positional_quantified.len() {
-            Some(caps.positional_quantified[idx].take())
-        } else {
-            None
-        };
-        self.trail.push(Undo::PosOverwrite {
-            idx,
-            text: prev_text,
-            sc: prev_sc,
-            q: prev_q,
-            off: prev_off,
-        });
+        if idx < caps.positional.len() {
+            let prev = std::mem::replace(&mut caps.positional[idx], slot);
+            self.trail.push(Undo::PosOverwrite {
+                idx,
+                slot: Box::new(prev),
+            });
+        }
     }
 
     /// Trailed `reserve_nil_capture_slots` (unmatched `(x)?` Nil reservation).
@@ -478,32 +354,16 @@ impl CapStore {
         if stride == 0 {
             return;
         }
-        // Save the whole tail from base_len (clamped per vec) so rewind can
-        // restore the unfolded state exactly, including the padding fold adds.
-        let p = split_off_clamped(&mut self.caps.positional, base_len);
-        let sc = split_off_clamped(&mut self.caps.positional_subcaps, base_len);
-        let q = split_off_clamped(&mut self.caps.positional_quantified, base_len);
-        let off = split_off_clamped(&mut self.caps.positional_offsets, base_len);
+        // Save the whole tail from base_len so rewind can restore the
+        // unfolded state exactly, then re-extend with clones for fold to
+        // consume. Rewind truncates to the cut point (removing whatever fold
+        // produced above it) and re-extends the saved tail.
+        let slots = split_off_clamped(&mut self.caps.positional, base_len);
         let rec = PosTailRec {
-            p_at: self.caps.positional.len(),
-            p,
-            sc_at: self.caps.positional_subcaps.len(),
-            sc,
-            q_at: self.caps.positional_quantified.len(),
-            q,
-            off_at: self.caps.positional_offsets.len(),
-            off,
+            at: self.caps.positional.len(),
+            slots,
         };
-        // Re-extend with clones for fold to consume; the saved originals are
-        // the undo. Rewind truncates each vec to its `*_at` cut point (removing
-        // whatever fold produced above it) and re-extends the saved tail,
-        // restoring the exact unfolded state.
-        self.caps.positional.extend(rec.p.iter().cloned());
-        self.caps.positional_subcaps.extend(rec.sc.iter().cloned());
-        self.caps
-            .positional_quantified
-            .extend(rec.q.iter().cloned());
-        self.caps.positional_offsets.extend(rec.off.iter().cloned());
+        self.caps.positional.extend(rec.slots.iter().cloned());
         self.trail.push(Undo::PosTail(Box::new(rec)));
         super::regex_helpers::fold_quantified_captures(&mut self.caps, base_len, stride);
     }
@@ -520,15 +380,12 @@ fn split_off_clamped<T>(v: &mut Vec<T>, at: usize) -> Vec<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::super::RegexCaptures;
+    use super::super::super::{PosSlot, RegexCaptures};
     use super::CapStore;
 
     fn store_with_base() -> CapStore {
         let mut init = RegexCaptures::default();
-        init.positional.push("a".to_string());
-        init.positional_subcaps.push(None);
-        init.positional_quantified.push(None);
-        init.positional_offsets.push((0, 1));
+        init.positional.push(PosSlot::span(0, 1));
         init.named
             .entry("x".to_string())
             .or_default()
@@ -537,8 +394,14 @@ mod tests {
     }
 
     fn assert_base(store: &CapStore) {
-        assert_eq!(store.caps().positional, vec!["a".to_string()]);
-        assert_eq!(store.caps().positional_offsets, vec![(0, 1)]);
+        assert_eq!(store.caps().positional.len(), 1);
+        assert_eq!(
+            (
+                store.caps().positional[0].from,
+                store.caps().positional[0].to
+            ),
+            (0, 1)
+        );
         assert_eq!(store.caps().named.len(), 1);
         assert_eq!(store.caps().named["x"], vec!["v".to_string()]);
         assert!(store.caps().named_subcaps.is_empty());
@@ -551,10 +414,7 @@ mod tests {
         let mut store = store_with_base();
         let m = store.mark();
         let mut delta = RegexCaptures::default();
-        delta.positional.push("b".to_string());
-        delta.positional_subcaps.push(None);
-        delta.positional_quantified.push(None);
-        delta.positional_offsets.push((1, 2));
+        delta.positional.push(PosSlot::span(1, 2));
         delta
             .named
             .entry("x".to_string())
@@ -584,12 +444,18 @@ mod tests {
     fn truncate_and_overwrite_rewind() {
         let mut store = store_with_base();
         let m = store.mark();
-        store.push_positional("b".to_string(), None, None, (1, 2));
-        store.truncate_positional_4(0);
+        store.push_positional(PosSlot::span(1, 2));
+        store.truncate_positional(0);
         assert!(store.caps().positional.is_empty());
-        store.push_positional("c".to_string(), None, None, (5, 6));
-        store.overwrite_positional(0, "z".to_string(), (9, 9));
-        assert_eq!(store.caps().positional, vec!["z".to_string()]);
+        store.push_positional(PosSlot::span(5, 6));
+        store.overwrite_positional(0, PosSlot::span(9, 9));
+        assert_eq!(
+            (
+                store.caps().positional[0].from,
+                store.caps().positional[0].to
+            ),
+            (9, 9)
+        );
         store.rewind(m);
         assert_base(&store);
     }
@@ -599,16 +465,22 @@ mod tests {
         let mut store = store_with_base();
         let m = store.mark();
         // Two iterations of a 1-stride capture: entries at idx 1 and 2.
-        store.push_positional("b".to_string(), None, None, (1, 2));
-        store.push_positional("c".to_string(), None, None, (2, 3));
+        store.push_positional(PosSlot::span(1, 2));
+        store.push_positional(PosSlot::span(2, 3));
         let mf = store.mark();
         store.fold_quantified(1, 1);
         assert_eq!(store.caps().positional.len(), 2); // folded into one slot
-        assert!(store.caps().positional_quantified[1].is_some());
+        assert!(store.caps().positional[1].quantified.is_some());
         store.rewind(mf);
         assert_eq!(store.caps().positional.len(), 3);
-        assert_eq!(store.caps().positional[2], "c");
-        assert!(store.caps().positional_quantified[2].is_none());
+        assert_eq!(
+            (
+                store.caps().positional[2].from,
+                store.caps().positional[2].to
+            ),
+            (2, 3)
+        );
+        assert!(store.caps().positional[2].quantified.is_none());
         store.rewind(m);
         assert_base(&store);
     }

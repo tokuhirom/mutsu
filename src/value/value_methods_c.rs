@@ -6,12 +6,9 @@ impl Value {
     pub(crate) fn make_match_object_full(
         from: i64,
         to: i64,
-        positional: &[String],
+        positional: &[crate::runtime::PosSlot],
         named: &HashMap<String, Vec<String>>,
         named_subcaps: &HashMap<String, Vec<std::sync::Arc<crate::runtime::CapNode>>>,
-        positional_subcaps: &[Option<std::sync::Arc<crate::runtime::CapNode>>],
-        positional_quantified: &[Option<Vec<crate::runtime::QuantifiedCaptureEntry>>],
-        positional_nil: &[bool],
         target: crate::runtime::MatchTarget,
     ) -> Self {
         Self::make_match_object_full_q(
@@ -20,9 +17,6 @@ impl Value {
             positional,
             named,
             named_subcaps,
-            positional_subcaps,
-            positional_quantified,
-            positional_nil,
             target,
             &HashSet::new(),
         )
@@ -31,35 +25,29 @@ impl Value {
     /// Like make_match_object_full but with named_quantified tracking.
     ///
     /// ADR-0016 P5: this no longer builds an eager `Instance` tree. It
-    /// synthesizes a top-level `CapNode` from the exploded capture axes and
+    /// synthesizes a top-level `CapNode` from the capture axes and
     /// returns a lazy `Match` value (`ValueRepr::Match`); the Instance-shaped
     /// attribute map materializes on first observation, one level at a time
     /// (see `value::match_lazy`). The synthesized top node deliberately
     /// carries no `sym`/`action_name`/`ast`/`regex_vars`/`capture_alias_map`
     /// — the pre-P5 builder never surfaced those on the top-level Match.
     ///
-    /// ADR-0016 P3: matched text is not passed or stored; `.Str` derives
-    /// from the span through `target`.
+    /// ADR-0016 P3/P4: matched text is not passed or stored; `.Str` and every
+    /// positional capture derive from recorded spans through `target`.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn make_match_object_full_q(
         from: i64,
         to: i64,
-        positional: &[String],
+        positional: &[crate::runtime::PosSlot],
         named: &HashMap<String, Vec<String>>,
         named_subcaps: &HashMap<String, Vec<std::sync::Arc<crate::runtime::CapNode>>>,
-        positional_subcaps: &[Option<std::sync::Arc<crate::runtime::CapNode>>],
-        positional_quantified: &[Option<Vec<crate::runtime::QuantifiedCaptureEntry>>],
-        positional_nil: &[bool],
         target: crate::runtime::MatchTarget,
         named_quantified: &HashSet<String>,
     ) -> Self {
         let has_children = !named.is_empty()
             || !named_subcaps.is_empty()
             || !named_quantified.is_empty()
-            || !positional.is_empty()
-            || !positional_subcaps.is_empty()
-            || !positional_quantified.is_empty()
-            || !positional_nil.is_empty();
+            || !positional.is_empty();
         let children = has_children.then(|| {
             Box::new(crate::runtime::CapChildren {
                 named: named.clone(),
@@ -67,9 +55,6 @@ impl Value {
                 named_quantified: named_quantified.clone(),
                 capture_alias_map: HashMap::new(),
                 positional: positional.to_vec(),
-                positional_subcaps: positional_subcaps.to_vec(),
-                positional_quantified: positional_quantified.to_vec(),
-                positional_nil: positional_nil.to_vec(),
                 code_blocks: Vec::new(),
                 regex_vars: HashMap::new(),
             })

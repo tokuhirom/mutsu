@@ -130,13 +130,12 @@ impl MatchNode {
         let pos_vals: Vec<Value> = kids
             .positional
             .iter()
-            .enumerate()
-            .map(|(i, s)| {
+            .map(|slot| {
                 // An unmatched optional capture (`(x)?` zero match) renders as Nil.
-                if kids.positional_nil.get(i) == Some(&true) {
+                if slot.nil {
                     return Value::Nil;
                 }
-                if let Some(Some(qlist)) = kids.positional_quantified.get(i) {
+                if let Some(qlist) = &slot.quantified {
                     let arr: Vec<Value> = qlist
                         .iter()
                         .map(|(qfrom, qto, subcap)| {
@@ -148,10 +147,13 @@ impl MatchNode {
                         .collect();
                     return Value::array(arr);
                 }
-                if let Some(Some(subcap)) = kids.positional_subcaps.get(i) {
+                if let Some(subcap) = &slot.subcap {
                     return self.lazy_child(subcap);
                 }
-                text_leaf_match(s, &self.target)
+                // ADR-0016 P4: every slot carries its span, so a subcap-less
+                // leaf renders with its REAL offsets (pre-P4 this was the
+                // text-only fallback with fabricated `0..len`).
+                span_leaf_match(slot.from, slot.to, &self.target)
             })
             .collect();
 
@@ -167,7 +169,7 @@ impl MatchNode {
                     {
                         return self.lazy_child(sc);
                     }
-                    text_leaf_match(s, &self.target)
+                    Value::text_leaf_match(s, &self.target)
                 })
                 .collect();
             if vals.len() == 1 && !kids.named_quantified.contains(key) {
@@ -249,22 +251,25 @@ fn span_leaf_match(from: usize, to: usize, target: &MatchTarget) -> Value {
     Value::make_instance(match_class_symbol(), attrs)
 }
 
-/// Eager leaf Match for a TEXT-ONLY capture entry (no stored `CapNode`).
-/// Survives only for text-axis entries with no aligned span carrier — every
-/// leaf the matcher stores today carries a span-bearing `CapNode`, so this
-/// fires only on exploded-builder callers that still pass bare text. The
-/// span is unrecoverable here (P3 retired the position search), so it is
-/// reported as `0..chars` of the captured text itself.
-fn text_leaf_match(s: &str, target: &MatchTarget) -> Value {
-    crate::vm::vm_stats::record_regex_match_leaf(true);
-    let mut attrs = AttrMap::new();
-    attrs.insert("str", Value::str(s.to_string()));
-    attrs.insert("from", Value::Int(0));
-    attrs.insert("to", Value::Int(s.chars().count() as i64));
-    attrs.insert("list", Value::array(Vec::new()));
-    attrs.insert("named", Value::hash(HashMap::new()));
-    attrs.insert("orig", Value::str_arc(Arc::clone(target.text())));
-    Value::make_instance(match_class_symbol(), attrs)
+impl Value {
+    /// Eager leaf Match for a TEXT-ONLY capture entry (no recorded span).
+    /// ADR-0016 P4 removed the stored text axis, so the matcher never
+    /// produces these; it survives only for the exploded text-carrier builder
+    /// (`make_match_object_with_captures`) whose sources (transliteration
+    /// callbacks, code-block snapshots) genuinely have no offsets. The span
+    /// is unrecoverable here, so it is reported as `0..chars` of the captured
+    /// text itself.
+    pub(crate) fn text_leaf_match(s: &str, target: &MatchTarget) -> Value {
+        crate::vm::vm_stats::record_regex_match_leaf(true);
+        let mut attrs = AttrMap::new();
+        attrs.insert("str", Value::str(s.to_string()));
+        attrs.insert("from", Value::Int(0));
+        attrs.insert("to", Value::Int(s.chars().count() as i64));
+        attrs.insert("list", Value::array(Vec::new()));
+        attrs.insert("named", Value::hash(HashMap::new()));
+        attrs.insert("orig", Value::str_arc(Arc::clone(target.text())));
+        Value::make_instance(match_class_symbol(), attrs)
+    }
 }
 
 impl Value {

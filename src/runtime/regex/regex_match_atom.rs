@@ -87,15 +87,6 @@ impl Interpreter {
                         .named_quantified
                         .extend(inner_caps.named_quantified.drain());
                     new_caps.positional.append(&mut inner_caps.positional);
-                    new_caps
-                        .positional_offsets
-                        .append(&mut inner_caps.positional_offsets);
-                    new_caps
-                        .positional_subcaps
-                        .append(&mut inner_caps.positional_subcaps);
-                    new_caps
-                        .positional_quantified
-                        .append(&mut inner_caps.positional_quantified);
                     new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                     indexed.push((i, next, new_caps));
                 }
@@ -138,15 +129,6 @@ impl Interpreter {
                         .named_quantified
                         .extend(inner_caps.named_quantified.drain());
                     new_caps.positional.append(&mut inner_caps.positional);
-                    new_caps
-                        .positional_offsets
-                        .append(&mut inner_caps.positional_offsets);
-                    new_caps
-                        .positional_subcaps
-                        .append(&mut inner_caps.positional_subcaps);
-                    new_caps
-                        .positional_quantified
-                        .append(&mut inner_caps.positional_quantified);
                     new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                     group.push((next, new_caps));
                 }
@@ -207,18 +189,7 @@ impl Interpreter {
                 new_caps
                     .named_quantified
                     .extend(inner_caps.named_quantified.drain());
-                for v in inner_caps.positional.drain(..) {
-                    new_caps.positional.push(v);
-                }
-                new_caps
-                    .positional_offsets
-                    .append(&mut inner_caps.positional_offsets);
-                new_caps
-                    .positional_subcaps
-                    .append(&mut inner_caps.positional_subcaps);
-                new_caps
-                    .positional_quantified
-                    .append(&mut inner_caps.positional_quantified);
+                new_caps.positional.append(&mut inner_caps.positional);
                 new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                 // A `<(` / `)>` capture marker inside the group sets the match
                 // boundaries for the whole pattern; propagate it out of the group.
@@ -272,7 +243,6 @@ impl Interpreter {
             for (end, inner_caps) in
                 self.regex_match_ends_from_caps_in_pkg(pattern, chars, pos, pkg)
             {
-                let captured: String = chars[pos..end].iter().collect();
                 let mut new_caps = RegexCaptures::default();
                 let mut inner_caps = inner_caps;
                 // Named captures appearing inside a positional capture group belong
@@ -285,12 +255,12 @@ impl Interpreter {
                 let mut subcap = inner_caps;
                 subcap.from = pos;
                 subcap.to = end;
-                new_caps.positional.push(captured);
-                new_caps.positional_offsets.push((pos, end));
-                new_caps
-                    .positional_subcaps
-                    .push(Some(std::sync::Arc::new(subcap.into_cap_node())));
-                new_caps.positional_quantified.push(None);
+                new_caps.positional.push(PosSlot {
+                    from: pos,
+                    to: end,
+                    subcap: Some(std::sync::Arc::new(subcap.into_cap_node())),
+                    ..Default::default()
+                });
                 out.push((end, new_caps));
             }
             // Reverse the inner match order so the outer LIFO stack
@@ -312,18 +282,7 @@ impl Interpreter {
                     for (k, v) in inner_caps.named.drain() {
                         new_caps.named.entry(k).or_default().extend(v);
                     }
-                    for v in inner_caps.positional.drain(..) {
-                        new_caps.positional.push(v);
-                    }
-                    new_caps
-                        .positional_offsets
-                        .append(&mut inner_caps.positional_offsets);
-                    new_caps
-                        .positional_subcaps
-                        .append(&mut inner_caps.positional_subcaps);
-                    new_caps
-                        .positional_quantified
-                        .append(&mut inner_caps.positional_quantified);
+                    new_caps.positional.append(&mut inner_caps.positional);
                     new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                     out.push((end, new_caps));
                 }

@@ -400,48 +400,39 @@ impl Interpreter {
         sep_stride: usize,
     ) {
         // Positional captures: atom groups occupy the first `atom_stride` slots,
-        // separator groups the next `sep_stride`.
-        for g in 0..atom_stride {
+        // separator groups the next `sep_stride`. The folded slot keeps the
+        // last iteration's span/subcap as its representative values.
+        let fold_group = |sources: &[&RegexCaptures], g: usize| -> PosSlot {
             let mut list: Vec<QuantifiedCaptureEntry> = Vec::new();
-            let mut last_text = String::new();
-            let mut last_sub: Option<std::sync::Arc<CapNode>> = None;
-            for ac in atom_caps {
-                if let Some(text) = ac.positional.get(g) {
-                    let (from, to) = ac.positional_offsets.get(g).copied().unwrap_or((0, 0));
-                    let sub = ac.positional_subcaps.get(g).cloned().flatten();
-                    list.push((from, to, sub.clone()));
-                    last_text = text.clone();
-                    last_sub = sub;
+            for src in sources {
+                if let Some(slot) = src.positional.get(g) {
+                    list.push((slot.from, slot.to, slot.subcap.clone()));
                 }
             }
-            let last_span = list.last().map(|(a, b, _)| (*a, *b)).unwrap_or((0, 0));
-            caps.positional.push(last_text);
-            caps.positional_subcaps.push(last_sub);
-            caps.positional_quantified.push(Some(list));
-            caps.positional_offsets.push(last_span);
+            let (from, to, subcap) = list
+                .last()
+                .map(|(a, b, sc)| (*a, *b, sc.clone()))
+                .unwrap_or((0, 0, None));
+            PosSlot {
+                from,
+                to,
+                subcap,
+                quantified: Some(list),
+                nil: false,
+            }
+        };
+        let atom_refs: Vec<&RegexCaptures> = atom_caps.iter().collect();
+        for g in 0..atom_stride {
+            let slot = fold_group(&atom_refs, g);
+            caps.positional.push(slot);
         }
         let mut all_sep: Vec<&RegexCaptures> = sep_caps.iter().collect();
         if let Some(ts) = trailing_sep {
             all_sep.push(ts);
         }
         for g in 0..sep_stride {
-            let mut list: Vec<QuantifiedCaptureEntry> = Vec::new();
-            let mut last_text = String::new();
-            let mut last_sub: Option<std::sync::Arc<CapNode>> = None;
-            for sc in &all_sep {
-                if let Some(text) = sc.positional.get(g) {
-                    let (from, to) = sc.positional_offsets.get(g).copied().unwrap_or((0, 0));
-                    let sub = sc.positional_subcaps.get(g).cloned().flatten();
-                    list.push((from, to, sub.clone()));
-                    last_text = text.clone();
-                    last_sub = sub;
-                }
-            }
-            let last_span = list.last().map(|(a, b, _)| (*a, *b)).unwrap_or((0, 0));
-            caps.positional.push(last_text);
-            caps.positional_subcaps.push(last_sub);
-            caps.positional_quantified.push(Some(list));
-            caps.positional_offsets.push(last_span);
+            let slot = fold_group(&all_sep, g);
+            caps.positional.push(slot);
         }
         // Named captures: merge every iteration's named captures (as arrays).
         for src in atom_caps.iter().chain(all_sep.iter().copied()) {

@@ -23,10 +23,10 @@ impl Interpreter {
             if let Some(caps) = captures
                 && !caps.positional.is_empty()
             {
-                let expanded = crate::vm::vm_string_regex_ops::expand_capture_refs(
-                    replacement_str,
-                    &caps.positional,
-                );
+                let texts: Vec<String> =
+                    caps.positional.iter().map(|s| caps.slot_text(s)).collect();
+                let expanded =
+                    crate::vm::vm_string_regex_ops::expand_capture_refs(replacement_str, &texts);
                 return Ok(cased(expanded));
             }
             return Ok(cased(replacement_str.to_string()));
@@ -63,9 +63,6 @@ impl Interpreter {
                 &captures.positional,
                 &captures.named,
                 &captures.named_subcaps,
-                &captures.positional_subcaps,
-                &captures.positional_quantified,
-                &captures.positional_nil,
                 captures.target_or_new(orig_text.unwrap_or_default()),
             );
             self.env.insert("/".to_string(), match_obj.clone());
@@ -80,7 +77,11 @@ impl Interpreter {
                 // per-iteration matches as `$N`; the flat slot only holds the
                 // last iteration's text (t/uri-unescape shape:
                 // `.subst(:g, /['%' (<.xdigit>**2)]+/, -> $/ { $0.flatmap... })`).
-                let value = if let Some(Some(qlist)) = captures.positional_quantified.get(i) {
+                let value = if let Some(qlist) = captures
+                    .positional
+                    .get(i)
+                    .and_then(|slot| slot.quantified.as_ref())
+                {
                     let t = captures.target_or_new(orig_text.unwrap_or_default());
                     Value::array(
                         qlist
@@ -91,8 +92,8 @@ impl Interpreter {
                 } else if let Some(Some((a, b))) = captures.positional_slots.get(i) {
                     let t = captures.target_or_new(orig_text.unwrap_or_default());
                     Value::str(t.span_str(*a, *b))
-                } else if let Some(capture) = captures.positional.get(i) {
-                    Value::str(capture.clone())
+                } else if let Some(slot) = captures.positional.get(i) {
+                    Value::str(captures.slot_text(slot))
                 } else {
                     Value::NIL
                 };

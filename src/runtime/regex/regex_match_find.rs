@@ -378,16 +378,22 @@ impl Interpreter {
                 stripped_min
             };
             for start in search_start..=stripped_chars.len() {
-                if let Some((end, caps)) = self.regex_match_end_from_caps_in_pkg(
+                if let Some((end, mut caps)) = self.regex_match_end_from_caps_in_pkg(
                     &stripped_parsed,
                     &stripped_chars,
                     start,
                     &pkg,
                 ) {
+                    // Remap the capture spans back to original-subject space so
+                    // the derived texts keep their combining marks (pre-P4 the
+                    // stored text axis returned mark-stripped text here).
+                    for slot in caps.positional.iter_mut() {
+                        super::regex_helpers::remap_pos_slot(slot, &pos_map, orig_len, 0);
+                    }
                     return Some((
                         map_pos(caps.capture_start.unwrap_or(start), &pos_map, orig_len),
                         map_pos(caps.capture_end.unwrap_or(end), &pos_map, orig_len),
-                        caps.positional,
+                        super::regex_helpers::pos_slot_texts(&caps.positional, &orig_chars),
                     ));
                 }
             }
@@ -407,7 +413,7 @@ impl Interpreter {
                 return Some((
                     caps.capture_start.unwrap_or(start),
                     caps.capture_end.unwrap_or(end),
-                    caps.positional,
+                    super::regex_helpers::pos_slot_texts(&caps.positional, &orig_chars),
                 ));
             }
         }

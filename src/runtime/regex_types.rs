@@ -42,6 +42,39 @@ pub(crate) struct CodeBlockContext {
 /// goes through `Arc::make_mut`, which is free while the entry is still unshared.
 pub(crate) type QuantifiedCaptureEntry = (usize, usize, Option<Arc<CapNode>>);
 
+/// One positional capture slot (ADR-0016 P4) — the collapse of the five
+/// parallel positional vectors (`positional` text ‖ `positional_subcaps` ‖
+/// `positional_quantified` ‖ `positional_offsets` ‖ `positional_nil`) into a
+/// single axis. The captured text derives from the span through the shared
+/// subject; the alignment invariants the parallel vectors asserted in comments
+/// are now structural.
+#[derive(Clone, Default)]
+pub(crate) struct PosSlot {
+    /// The recorded span (char offsets, absolute in the engine's subject).
+    pub(crate) from: usize,
+    pub(crate) to: usize,
+    /// Inner captures from a nested group's own pattern run.
+    pub(crate) subcap: Option<Arc<CapNode>>,
+    /// When the group was quantified (e.g. `(\w)+`), all iteration matches;
+    /// the slot then renders as an Array of Match objects. `Some(vec![])`
+    /// marks a zero-iteration quantified capture (renders as an empty list).
+    pub(crate) quantified: Option<Vec<QuantifiedCaptureEntry>>,
+    /// An *unmatched optional* capture (`(x)?` that matched zero times),
+    /// rendered as `Nil` rather than an empty Match.
+    pub(crate) nil: bool,
+}
+
+impl PosSlot {
+    /// A plain matched slot: span only.
+    pub(crate) fn span(from: usize, to: usize) -> Self {
+        PosSlot {
+            from,
+            to,
+            ..Default::default()
+        }
+    }
+}
+
 /// Prefix marking a `named_subcaps` entry as a *silent action capture*: the
 /// match of a silent subrule (`<.foo>`) that is hidden from `.hash` but whose
 /// grammar action method (and its descendants') must still fire. The prefix is a
@@ -84,10 +117,10 @@ pub(crate) struct CapChildren {
     pub(crate) named_subcaps: HashMap<String, Vec<Arc<CapNode>>>,
     pub(crate) named_quantified: HashSet<String>,
     pub(crate) capture_alias_map: HashMap<String, String>,
-    pub(crate) positional: Vec<String>,
-    pub(crate) positional_subcaps: Vec<Option<Arc<CapNode>>>,
-    pub(crate) positional_quantified: Vec<Option<Vec<QuantifiedCaptureEntry>>>,
-    pub(crate) positional_nil: Vec<bool>,
+    /// Positional captures as span-bearing slots (ADR-0016 P4). Unlike the
+    /// pre-P4 parallel vectors, the span survives onto the stored node — the
+    /// text-only leaf fallback (fabricated `0..len` offsets) is gone.
+    pub(crate) positional: Vec<PosSlot>,
     /// Inline `{ … }` code blocks recorded on this node, run once at reduce time.
     pub(crate) code_blocks: Vec<CodeBlockContext>,
     /// What this rule's own `:my $*x` declarations held at this match's reduce
@@ -134,6 +167,11 @@ impl RegexCaptures {
             .unwrap_or_default()
     }
 
+    /// A positional slot's text through the published subject (ADR-0016 P4).
+    pub(crate) fn slot_text(&self, slot: &PosSlot) -> String {
+        self.span_text(slot.from, slot.to)
+    }
+
     /// Convert this accumulator into the immutable stored node it describes
     /// (ADR-0016 P2). Consumes the accumulator; drops the accumulator-only
     /// fields nothing reads through a stored node (`hash_captures`,
@@ -145,9 +183,6 @@ impl RegexCaptures {
             || !self.named_quantified.is_empty()
             || !self.capture_alias_map.is_empty()
             || !self.positional.is_empty()
-            || !self.positional_subcaps.is_empty()
-            || !self.positional_quantified.is_empty()
-            || !self.positional_nil.is_empty()
             || !self.code_blocks.is_empty()
             || !self.regex_vars.is_empty();
         let children = has_children.then(|| {
@@ -157,9 +192,6 @@ impl RegexCaptures {
                 named_quantified: self.named_quantified,
                 capture_alias_map: self.capture_alias_map,
                 positional: self.positional,
-                positional_subcaps: self.positional_subcaps,
-                positional_quantified: self.positional_quantified,
-                positional_nil: self.positional_nil,
                 code_blocks: self.code_blocks,
                 regex_vars: self.regex_vars,
             })
@@ -181,25 +213,14 @@ pub(crate) struct RegexCaptures {
     /// Nested sub-captures for named subrule matches. Key is capture name,
     /// value is inner captures from the subrule (parallel to entries in `named`).
     pub(crate) named_subcaps: HashMap<String, Vec<Arc<CapNode>>>,
-    pub(crate) positional: Vec<String>,
-    /// Nested sub-captures for positional capture groups. Each entry corresponds
-    /// to the same index in `positional` and holds inner captures from nested groups.
-    pub(crate) positional_subcaps: Vec<Option<Arc<CapNode>>>,
-    /// When a capture group is quantified (e.g. `(\w)+`), this parallel vec
-    /// stores the list of all iteration matches for that positional index.
-    /// When `Some`, the positional slot should be rendered as an Array of Match objects.
-    pub(crate) positional_quantified: Vec<Option<Vec<QuantifiedCaptureEntry>>>,
-    /// Character offsets (start, end) for each entry in `positional`.
-    pub(crate) positional_offsets: Vec<(usize, usize)>,
-    /// Marks a positional slot as an *unmatched optional* capture (`(x)?` that
-    /// matched zero times) which must render as `Nil` (not an empty Match). Only
-    /// the zero-match reservation arms set entries here; they pad with `false` up
-    /// to the current `positional` length before pushing `true`, so matched
-    /// captures (which never touch this vec) stay aligned. The Match builder reads
-    /// it via `.get(i)` — a missing/`false` entry renders normally.
-    pub(crate) positional_nil: Vec<bool>,
+    /// Positional captures as span-bearing slots (ADR-0016 P4): span, nested
+    /// subcaptures, quantified iteration lists, and the Nil marker in one axis.
+    pub(crate) positional: Vec<PosSlot>,
     /// Unnamed capture slots by capture index (for $0, $1, ...) as recorded
-    /// spans, where `None` represents an unmatched capture.
+    /// spans, where `None` represents an unmatched capture. A separate
+    /// numbering axis from `positional` (it has `None` holes where
+    /// `positional` has no entry at all); written only by the pcre2/`:P5`
+    /// path.
     pub(crate) positional_slots: Vec<Option<(usize, usize)>>,
     pub(crate) from: usize,
     pub(crate) to: usize,

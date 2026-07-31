@@ -11,15 +11,11 @@ impl Interpreter {
         end: usize,
         positional: &[String],
     ) -> Value {
-        Value::make_match_object_full(
+        Value::make_match_object_with_captures(
             start as i64,
             end as i64,
             positional,
             &std::collections::HashMap::new(),
-            &std::collections::HashMap::new(),
-            &[],
-            &[],
-            &[],
             crate::runtime::MatchTarget::new(text),
         )
     }
@@ -261,15 +257,11 @@ impl Interpreter {
                 .unwrap_or(&[]);
             // Bind `$/` to a Match object for this match, and `$0`, `$1`, ...
             // to the positional captures.
-            let match_obj = Value::make_match_object_full(
+            let match_obj = Value::make_match_object_with_captures(
                 *start as i64,
                 *end as i64,
                 caps,
                 &std::collections::HashMap::new(),
-                &std::collections::HashMap::new(),
-                &[],
-                &[],
-                &[],
                 crate::runtime::MatchTarget::new(text),
             );
             self.env_mut().insert("/".to_string(), match_obj);
