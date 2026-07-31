@@ -345,7 +345,8 @@ impl Interpreter {
                             if !caps.code_blocks.is_empty()
                                 || caps.named_subcaps.values().any(|v| !v.is_empty())
                             {
-                                self.reduce_regex_captures_made(caps, Some(&text));
+                                let ct = caps.target_or_new(&text);
+                                self.reduce_regex_captures_made(caps, Some(&ct));
                             }
                         }
                     }
@@ -432,10 +433,7 @@ impl Interpreter {
 
     /// Create a Match object from regex match positions.
     fn create_match_object(&self, text: &str, start: usize, end: usize, _pat: &str) -> Value {
-        let chars: Vec<char> = text.chars().collect();
-        let matched: String = chars[start..end].iter().collect();
         Value::make_match_object_full(
-            matched,
             start as i64,
             end as i64,
             &[],
@@ -444,7 +442,7 @@ impl Interpreter {
             &[],
             &[],
             &[],
-            Some(text),
+            crate::runtime::MatchTarget::new(text),
         )
     }
 

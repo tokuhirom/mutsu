@@ -171,7 +171,9 @@ impl Interpreter {
             None => return Vec::new(),
         };
         let pkg = self.current_package();
-        let chars: Vec<char> = text.chars().collect();
+        let target = MatchTarget::new(text);
+        let _target_scope = super::regex_helpers::MatchTargetScope::enter(target.clone());
+        let chars = target.chars();
         let mut results = Vec::new();
         let mut pos = 0;
         while pos <= chars.len() {
@@ -179,21 +181,21 @@ impl Interpreter {
             if parsed.anchor_start {
                 if pos == 0
                     && let Some((end, mut caps)) =
-                        self.regex_match_end_from_caps_in_pkg(&parsed, &chars, 0, &pkg)
+                        self.regex_match_end_from_caps_in_pkg(&parsed, chars, 0, &pkg)
                 {
                     caps.from = caps.capture_start.unwrap_or(0);
                     caps.to = caps.capture_end.unwrap_or(end);
-                    caps.matched = chars[caps.from..caps.to].iter().collect();
+                    caps.target = Some(target.clone());
                     found = Some((0, end, caps));
                 }
             } else {
                 for start in pos..=chars.len() {
                     if let Some((end, mut caps)) =
-                        self.regex_match_end_from_caps_in_pkg(&parsed, &chars, start, &pkg)
+                        self.regex_match_end_from_caps_in_pkg(&parsed, chars, start, &pkg)
                     {
                         caps.from = caps.capture_start.unwrap_or(start);
                         caps.to = caps.capture_end.unwrap_or(end);
-                        caps.matched = chars[caps.from..caps.to].iter().collect();
+                        caps.target = Some(target.clone());
                         found = Some((start, end, caps));
                         break;
                     }

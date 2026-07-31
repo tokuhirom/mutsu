@@ -31,14 +31,16 @@ pub(crate) struct CodeBlockContext {
     pub(crate) positional: Vec<String>,
 }
 
-/// A single entry in a quantified capture list: (matched_text, from, to, subcaptures).
+/// A single entry in a quantified capture list: (from, to, subcaptures).
+/// The matched text derives from the span through the shared subject
+/// (ADR-0016 P3).
 ///
 /// The nested sub-captures are held behind an `Arc` so that cloning a parent
 /// `RegexCaptures` during backtracking is a refcount bump rather than a deep
 /// copy of the whole sub-match tree. A completed sub-match is effectively
 /// immutable once stored; the rare post-store tweak (e.g. setting `action_name`)
 /// goes through `Arc::make_mut`, which is free while the entry is still unshared.
-pub(crate) type QuantifiedCaptureEntry = (String, usize, usize, Option<Arc<CapNode>>);
+pub(crate) type QuantifiedCaptureEntry = (usize, usize, Option<Arc<CapNode>>);
 
 /// Prefix marking a `named_subcaps` entry as a *silent action capture*: the
 /// match of a silent subrule (`<.foo>`) that is hidden from `.hash` but whose
@@ -60,7 +62,6 @@ pub(crate) const SILENT_ACTION_MARKER_PREFIX: &str = "\u{1}silent\u{1}";
 /// still goes through `Arc::make_mut`, same as before the split.
 #[derive(Clone, Default)]
 pub(crate) struct CapNode {
-    pub(crate) matched: String,
     pub(crate) from: usize,
     pub(crate) to: usize,
     /// The winning :sym<> variant name, if this match was from a protoregex.
@@ -110,6 +111,29 @@ impl CapNode {
 }
 
 impl RegexCaptures {
+    /// The subject this capture tree was published with (set by the engine
+    /// entry point), else one built fresh from `text` (ADR-0016 P3).
+    pub(crate) fn target_or_new(&self, text: &str) -> crate::runtime::MatchTarget {
+        self.target
+            .clone()
+            .unwrap_or_else(|| crate::runtime::MatchTarget::new(text))
+    }
+
+    /// The whole-match text, derived from the recorded span through the
+    /// published subject (ADR-0016 P3). Empty when no subject was published —
+    /// callers on the engine-entry consumer paths always have one.
+    pub(crate) fn matched_text(&self) -> String {
+        self.span_text(self.from, self.to)
+    }
+
+    /// The text of an arbitrary recorded span through the published subject.
+    pub(crate) fn span_text(&self, from: usize, to: usize) -> String {
+        self.target
+            .as_ref()
+            .map(|t| t.span_str(from, to))
+            .unwrap_or_default()
+    }
+
     /// Convert this accumulator into the immutable stored node it describes
     /// (ADR-0016 P2). Consumes the accumulator; drops the accumulator-only
     /// fields nothing reads through a stored node (`hash_captures`,
@@ -141,7 +165,6 @@ impl RegexCaptures {
             })
         });
         CapNode {
-            matched: self.matched,
             from: self.from,
             to: self.to,
             sym: self.sym,
@@ -175,10 +198,9 @@ pub(crate) struct RegexCaptures {
     /// captures (which never touch this vec) stay aligned. The Match builder reads
     /// it via `.get(i)` — a missing/`false` entry renders normally.
     pub(crate) positional_nil: Vec<bool>,
-    /// Unnamed capture slots by capture index (for $0, $1, ...), where `None`
-    /// represents an unmatched capture.
-    pub(crate) positional_slots: Vec<Option<(String, usize, usize)>>,
-    pub(crate) matched: String,
+    /// Unnamed capture slots by capture index (for $0, $1, ...) as recorded
+    /// spans, where `None` represents an unmatched capture.
+    pub(crate) positional_slots: Vec<Option<(usize, usize)>>,
     pub(crate) from: usize,
     pub(crate) to: usize,
     pub(crate) capture_start: Option<usize>,
@@ -211,6 +233,11 @@ pub(crate) struct RegexCaptures {
     /// `$<sub>».made` resolve in a parent inline action and post-parse. `None`
     /// when the rule ran no `make`.
     pub(crate) ast: Option<Value>,
+    /// The shared subject this match ran against (ADR-0016 P3). Set once by
+    /// the engine entry point on the returned top-level accumulator — the
+    /// engine itself never touches it. Consumers derive captured text from
+    /// recorded spans through it instead of a stored `matched` string.
+    pub(crate) target: Option<crate::runtime::MatchTarget>,
 }
 
 #[cfg(test)]
@@ -219,12 +246,14 @@ mod cap_node_tests {
 
     /// ADR-0016 P2: a stored leaf capture node must stay a handful of words —
     /// that is the entire point of the `CapNode`/`RegexCaptures` split (a
-    /// stored leaf used to cost the full ~600-byte accumulator). If a change
-    /// pushes `CapNode` past this, move the new field into `CapChildren`.
+    /// stored leaf used to cost the full ~600-byte accumulator). P3 removed
+    /// the stored `matched` text (spans + the shared `MatchTarget` derive it),
+    /// shrinking the bound further. If a change pushes `CapNode` past this,
+    /// move the new field into `CapChildren`.
     #[test]
     fn cap_node_size_guard() {
         assert!(
-            std::mem::size_of::<CapNode>() <= 112,
+            std::mem::size_of::<CapNode>() <= 88,
             "CapNode grew to {} bytes",
             std::mem::size_of::<CapNode>()
         );
@@ -234,7 +263,6 @@ mod cap_node_tests {
     #[test]
     fn into_cap_node_leaf_has_no_children() {
         let mut caps = RegexCaptures::default();
-        caps.matched = "x".to_string();
         caps.from = 3;
         caps.to = 4;
         let node = caps.into_cap_node();

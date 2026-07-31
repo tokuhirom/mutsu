@@ -1,6 +1,6 @@
 use super::super::*;
 use super::regex_casefold::{casefold_pattern, casefold_text, needs_casefold_expansion};
-use super::regex_helpers::{map_pos, strip_marks_pattern, strip_marks_text};
+use super::regex_helpers::{strip_marks_pattern, strip_marks_text};
 
 impl Interpreter {
     fn parse_regex_declarative_prefix(pattern: &str) -> (Vec<(String, String)>, String) {
@@ -136,23 +136,26 @@ impl Interpreter {
     ) -> Option<RegexCaptures> {
         let parsed = self.parse_regex(pattern)?;
         let pkg = self.current_package();
-        let orig_chars: Vec<char> = text.chars().collect();
+        let target = MatchTarget::new(text);
+        let _target_scope = super::regex_helpers::MatchTargetScope::enter(target.clone());
+        let orig_chars = target.chars();
 
         // When :m (ignoremark) is set, strip combining marks from both text and
         // pattern literals, match on stripped forms, then map positions back.
+        // Every recorded span (including sub-captures) is remapped from the
+        // stripped space so captured text derives from the original subject.
         if parsed.ignore_mark {
-            let (stripped_chars, pos_map) = strip_marks_text(&orig_chars);
+            let (stripped_chars, pos_map) = strip_marks_text(orig_chars);
             let stripped_parsed = strip_marks_pattern(&parsed);
             let orig_len = orig_chars.len();
             if stripped_parsed.anchor_start {
                 return self
                     .regex_match_end_from_caps_in_pkg(&stripped_parsed, &stripped_chars, 0, &pkg)
                     .map(|(end, mut caps)| {
-                        let from = map_pos(caps.capture_start.unwrap_or(0), &pos_map, orig_len);
-                        let to = map_pos(caps.capture_end.unwrap_or(end), &pos_map, orig_len);
-                        caps.from = from;
-                        caps.to = to;
-                        caps.matched = orig_chars[from..to].iter().collect();
+                        caps.from = caps.capture_start.unwrap_or(0);
+                        caps.to = caps.capture_end.unwrap_or(end);
+                        super::regex_helpers::remap_caps_spans(&mut caps, &pos_map, orig_len);
+                        caps.target = Some(target.clone());
                         caps
                     });
             }
@@ -163,11 +166,10 @@ impl Interpreter {
                     start,
                     &pkg,
                 ) {
-                    let from = map_pos(caps.capture_start.unwrap_or(start), &pos_map, orig_len);
-                    let to = map_pos(caps.capture_end.unwrap_or(end), &pos_map, orig_len);
-                    caps.from = from;
-                    caps.to = to;
-                    caps.matched = orig_chars[from..to].iter().collect();
+                    caps.from = caps.capture_start.unwrap_or(start);
+                    caps.to = caps.capture_end.unwrap_or(end);
+                    super::regex_helpers::remap_caps_spans(&mut caps, &pos_map, orig_len);
+                    caps.target = Some(target.clone());
                     return Some(caps);
                 }
             }
@@ -183,8 +185,8 @@ impl Interpreter {
         // in folded space that correspond to the start of an original character's
         // fold expansion. This prevents false matches in the middle of a fold
         // (e.g., matching 't' from the expansion of 'ﬆ' -> 'st').
-        if parsed.ignore_case && needs_casefold_expansion(&orig_chars, &parsed) {
-            let (folded_chars, pos_map) = casefold_text(&orig_chars);
+        if parsed.ignore_case && needs_casefold_expansion(orig_chars, &parsed) {
+            let (folded_chars, pos_map) = casefold_text(orig_chars);
             let folded_parsed = casefold_pattern(&parsed);
             let orig_len = orig_chars.len();
 
@@ -202,11 +204,10 @@ impl Interpreter {
                         if !is_fold_boundary(end_pos) {
                             return None;
                         }
-                        let from = map_pos(caps.capture_start.unwrap_or(0), &pos_map, orig_len);
-                        let to = map_pos(end_pos, &pos_map, orig_len);
-                        caps.from = from;
-                        caps.to = to;
-                        caps.matched = orig_chars[from..to].iter().collect();
+                        caps.from = caps.capture_start.unwrap_or(0);
+                        caps.to = end_pos;
+                        super::regex_helpers::remap_caps_spans(&mut caps, &pos_map, orig_len);
+                        caps.target = Some(target.clone());
                         Some(caps)
                     });
             }
@@ -226,11 +227,10 @@ impl Interpreter {
                     if !is_fold_boundary(end_pos) {
                         continue;
                     }
-                    let from = map_pos(caps.capture_start.unwrap_or(start), &pos_map, orig_len);
-                    let to = map_pos(end_pos, &pos_map, orig_len);
-                    caps.from = from;
-                    caps.to = to;
-                    caps.matched = orig_chars[from..to].iter().collect();
+                    caps.from = caps.capture_start.unwrap_or(start);
+                    caps.to = end_pos;
+                    super::regex_helpers::remap_caps_spans(&mut caps, &pos_map, orig_len);
+                    caps.target = Some(target.clone());
                     return Some(caps);
                 }
             }
@@ -240,21 +240,21 @@ impl Interpreter {
         let chars = orig_chars;
         if parsed.anchor_start {
             return self
-                .regex_match_end_from_caps_in_pkg(&parsed, &chars, 0, &pkg)
+                .regex_match_end_from_caps_in_pkg(&parsed, chars, 0, &pkg)
                 .map(|(end, mut caps)| {
                     caps.from = caps.capture_start.unwrap_or(0);
                     caps.to = caps.capture_end.unwrap_or(end);
-                    caps.matched = chars[caps.from..caps.to].iter().collect();
+                    caps.target = Some(target.clone());
                     caps
                 });
         }
         for start in 0..=chars.len() {
             if let Some((end, mut caps)) =
-                self.regex_match_end_from_caps_in_pkg(&parsed, &chars, start, &pkg)
+                self.regex_match_end_from_caps_in_pkg(&parsed, chars, start, &pkg)
             {
                 caps.from = caps.capture_start.unwrap_or(start);
                 caps.to = caps.capture_end.unwrap_or(end);
-                caps.matched = chars[caps.from..caps.to].iter().collect();
+                caps.target = Some(target.clone());
                 return Some(caps);
             }
         }
@@ -323,10 +323,11 @@ impl Interpreter {
                         continue;
                     }
                     if !spec.silent {
+                        let whole = caps.matched_text();
                         caps.named
                             .entry(spec.lookup_name.clone())
                             .or_default()
-                            .push(caps.matched.clone());
+                            .push(whole);
                     }
                     // LTM: prefer longer declarative prefix match;
                     // if equal, prefer longer overall match

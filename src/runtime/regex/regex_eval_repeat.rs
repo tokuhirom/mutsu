@@ -246,11 +246,11 @@ impl Interpreter {
         let ast_hint = self.env.get("made").cloned().unwrap_or(Value::NIL);
         let to_match_with_ast = |text: &str, ast: &Value| -> Value {
             let match_obj = Value::make_match_object_with_captures(
-                text.to_string(),
                 0,
                 text.chars().count() as i64,
                 &[],
                 &HashMap::new(),
+                MatchTarget::new(text),
             );
             match_obj
                 .match_with_attrs(vec![("ast", ast.clone())])
@@ -279,11 +279,11 @@ impl Interpreter {
         let mut pos_list: Vec<Value> = Vec::with_capacity(ctx.positional.len());
         for (i, val) in ctx.positional.iter().enumerate() {
             let pos_match = Value::make_match_object_with_captures(
-                val.clone(),
                 0,
                 val.chars().count() as i64,
                 &[],
                 &HashMap::new(),
+                MatchTarget::new(val),
             );
             self.env.insert(i.to_string(), pos_match.clone());
             pos_list.push(pos_match);
@@ -291,11 +291,11 @@ impl Interpreter {
         // Set up $/ as a match object for the matched-so-far text, carrying the
         // named/positional captures so `$/.hash`/`$/.values`/`$/<name>` all work.
         let match_obj = Value::make_match_object_with_captures(
-            ctx.matched_so_far.clone(),
             0,
             ctx.matched_so_far.chars().count() as i64,
             &[],
             &HashMap::new(),
+            MatchTarget::new(&ctx.matched_so_far),
         );
         let match_obj = {
             let mut updates = vec![("named", Value::hash(named_map))];
@@ -371,9 +371,9 @@ impl Interpreter {
     pub(in crate::runtime) fn reduce_regex_captures_made(
         &mut self,
         caps: &mut RegexCaptures,
-        orig: Option<&str>,
+        target: Option<&MatchTarget>,
     ) {
-        self.reduce_regex_captures_made_for_rule(caps, orig, None);
+        self.reduce_regex_captures_made_for_rule(caps, target, None);
     }
 
     /// [`Self::reduce_regex_captures_made`] with the name of the rule this node
@@ -387,7 +387,7 @@ impl Interpreter {
     pub(in crate::runtime) fn reduce_regex_captures_made_for_rule(
         &mut self,
         caps: &mut RegexCaptures,
-        orig: Option<&str>,
+        target: Option<&MatchTarget>,
         rule_name: Option<&str>,
     ) {
         // A fresh binding for THIS match, installed before the subtree reduces so
@@ -398,7 +398,7 @@ impl Interpreter {
             &mut caps.named_subcaps,
             &mut caps.positional_subcaps,
             &mut caps.positional_quantified,
-            orig,
+            target,
         );
         if caps.code_blocks.is_empty() {
             // Even with no code blocks of its own, a declaring match must record
@@ -412,7 +412,6 @@ impl Interpreter {
         // `reduce_run_code_blocks`), so a mid-rule `{ … $/ … }` sees the prefix —
         // only the child `.made` values read via `$<name>` come from here.
         let node_match = Value::make_match_object_full_q(
-            caps.matched.clone(),
             caps.from as i64,
             caps.to as i64,
             &caps.positional,
@@ -421,7 +420,7 @@ impl Interpreter {
             &caps.positional_subcaps,
             &caps.positional_quantified,
             &caps.positional_nil,
-            orig,
+            super::regex_helpers::target_or_empty(target),
             &caps.named_quantified,
         );
         let blocks = std::mem::take(&mut caps.code_blocks);
@@ -434,7 +433,7 @@ impl Interpreter {
     pub(in crate::runtime) fn reduce_cap_node_for_rule(
         &mut self,
         node: &mut CapNode,
-        orig: Option<&str>,
+        target: Option<&MatchTarget>,
         rule_name: Option<&str>,
     ) {
         let declared_keys = self.install_fresh_rule_dynvars(rule_name);
@@ -443,7 +442,7 @@ impl Interpreter {
                 &mut kids.named_subcaps,
                 &mut kids.positional_subcaps,
                 &mut kids.positional_quantified,
-                orig,
+                target,
             );
         }
         let has_blocks = node
@@ -460,13 +459,12 @@ impl Interpreter {
             return;
         }
         // Build this node's Match so `$<name>` can carry the children's asts.
-        let (matched, from, to) = (node.matched.clone(), node.from, node.to);
+        let (from, to) = (node.from, node.to);
         let kids = node
             .children
             .as_deref_mut()
             .expect("has_blocks implies kids");
         let node_match = Value::make_match_object_full_q(
-            matched,
             from as i64,
             to as i64,
             &kids.positional,
@@ -475,7 +473,7 @@ impl Interpreter {
             &kids.positional_subcaps,
             &kids.positional_quantified,
             &kids.positional_nil,
-            orig,
+            super::regex_helpers::target_or_empty(target),
             &kids.named_quantified,
         );
         let blocks = std::mem::take(&mut kids.code_blocks);
@@ -490,7 +488,7 @@ impl Interpreter {
         named_subcaps: &mut HashMap<String, Vec<Arc<CapNode>>>,
         positional_subcaps: &mut [Option<Arc<CapNode>>],
         positional_quantified: &mut [Option<Vec<QuantifiedCaptureEntry>>],
-        orig: Option<&str>,
+        target: Option<&MatchTarget>,
     ) {
         // The walk mutates a node only to take/run its code blocks (writing
         // `ast`) or to record per-rule dynvar bindings. A subtree with no code
@@ -512,7 +510,7 @@ impl Interpreter {
                 crate::vm::vm_stats::record_regex_cap_makemut(Arc::strong_count(sc) > 1);
                 let sc = Arc::make_mut(sc);
                 let child_rule = sc.action_name.clone().unwrap_or(child_rule.clone());
-                self.reduce_cap_node_for_rule(sc, orig, Some(&child_rule));
+                self.reduce_cap_node_for_rule(sc, target, Some(&child_rule));
             }
         }
         for sc in positional_subcaps.iter_mut().flatten() {
@@ -520,16 +518,16 @@ impl Interpreter {
                 continue;
             }
             crate::vm::vm_stats::record_regex_cap_makemut(Arc::strong_count(sc) > 1);
-            self.reduce_cap_node_for_rule(Arc::make_mut(sc), orig, None);
+            self.reduce_cap_node_for_rule(Arc::make_mut(sc), target, None);
         }
         for pq in positional_quantified.iter_mut().flatten() {
             for entry in pq.iter_mut() {
-                if let Some(sc) = entry.3.as_mut() {
+                if let Some(sc) = entry.2.as_mut() {
                     if skip_untouched && !Self::subtree_has_code_blocks(sc) {
                         continue;
                     }
                     crate::vm::vm_stats::record_regex_cap_makemut(Arc::strong_count(sc) > 1);
-                    self.reduce_cap_node_for_rule(Arc::make_mut(sc), orig, None);
+                    self.reduce_cap_node_for_rule(Arc::make_mut(sc), target, None);
                 }
             }
         }
@@ -618,7 +616,7 @@ impl Interpreter {
                 .iter()
                 .flatten()
                 .flatten()
-                .any(|e| e.3.as_deref().is_some_and(Self::subtree_has_code_blocks))
+                .any(|e| e.2.as_deref().is_some_and(Self::subtree_has_code_blocks))
     }
 
     /// The rule name a `named_subcaps` key stands for. A silent-action capture

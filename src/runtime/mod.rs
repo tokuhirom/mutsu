@@ -208,6 +208,7 @@ mod iterator_protocol;
 pub(crate) mod json;
 mod lock_reentry;
 mod main_args;
+mod match_target;
 mod metamodel;
 mod methods;
 mod methods_aggregate_ctor;
@@ -369,6 +370,7 @@ pub(crate) mod value_iterator;
 /// Cooperative scheduler standing in for OS threads in the browser.
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod wasm_sched;
+pub(crate) use self::match_target::MatchTarget;
 pub(crate) use self::output_sink::OutputSink;
 #[allow(unused_imports)]
 pub(crate) use self::output_sink::{OutputSinkReadGuard, OutputSinkWriteGuard};

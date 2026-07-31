@@ -664,11 +664,11 @@ impl Interpreter {
                     .insert(idx.to_string(), Value::str_arc(cap.clone().into()));
             }
             Value::make_match_object_with_captures(
-                matched.to_string(),
                 0,
                 matched.len() as i64,
                 caps,
                 &std::collections::HashMap::new(),
+                crate::runtime::MatchTarget::new(matched),
             )
         } else {
             Value::str(matched.to_string())

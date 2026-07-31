@@ -97,16 +97,16 @@ impl Interpreter {
         };
         // Matched against the whole subject from `pos` (ADR-0016 P1), so the
         // captures this publishes are already in absolute coordinates.
-        let all_chars: Vec<char> = text.chars().collect();
-        let matches = self.regex_match_ends_from_caps_in_pkg(&parsed, &all_chars, pos, pkg);
+        let target = MatchTarget::new(text);
+        let _target_scope = super::regex_helpers::MatchTargetScope::enter(target.clone());
+        let matches = self.regex_match_ends_from_caps_in_pkg(&parsed, target.chars(), pos, pkg);
         // Matches come HIGHEST FIRST: the first entry is the token's best
         // (ratcheted) match, which is what a cursor method call returns.
-        let Some((end, caps)) = matches.into_iter().next() else {
+        let Some((end, mut caps)) = matches.into_iter().next() else {
             return Ok(Value::NIL);
         };
-        let matched: String = all_chars[pos..end].iter().collect();
+        caps.target = Some(target.clone());
         let m = Value::make_match_object_full_q(
-            matched,
             pos as i64,
             end as i64,
             &caps.positional,
@@ -115,7 +115,7 @@ impl Interpreter {
             &caps.positional_subcaps,
             &caps.positional_quantified,
             &caps.positional_nil,
-            Some(text),
+            target,
             &caps.named_quantified,
         );
         LAST_TOKEN_METHOD_MATCH.with(|slot| {
@@ -194,9 +194,7 @@ impl Interpreter {
         if !matches!(meth.view(), ValueView::Sub(_)) {
             return None;
         }
-        let text: String = chars.iter().collect();
         let cursor = Value::make_match_object_full_q(
-            String::new(),
             pos as i64,
             pos as i64,
             &[],
@@ -205,7 +203,7 @@ impl Interpreter {
             &[],
             &[],
             &[],
-            Some(&text),
+            MatchTarget::from_chars(chars),
             &HashSet::new(),
         );
         let mut call_args = vec![cursor];
@@ -249,7 +247,6 @@ impl Interpreter {
                 t.caps
             }
             _ => RegexCaptures {
-                matched: chars[pos..to_abs].iter().collect(),
                 from: pos,
                 to: to_abs,
                 ..RegexCaptures::default()

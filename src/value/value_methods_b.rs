@@ -572,14 +572,13 @@ impl Value {
 
     /// Create a Match object with positional captures.
     pub(crate) fn make_match_object_with_captures(
-        matched: String,
         from: i64,
         to: i64,
         positional: &[String],
         named: &HashMap<String, Vec<String>>,
+        target: crate::runtime::MatchTarget,
     ) -> Self {
         Self::make_match_object_full(
-            matched,
             from,
             to,
             positional,
@@ -588,7 +587,7 @@ impl Value {
             &[],
             &[],
             &[],
-            None,
+            target,
         )
     }
 }

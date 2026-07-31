@@ -92,7 +92,6 @@ impl Interpreter {
     fn subst_match_var(selected: &[RegexCaptures], text: &str, result_is_list: bool) -> Value {
         let to_match = |c: &RegexCaptures| {
             Value::make_match_object_full(
-                c.matched.clone(),
                 c.from as i64,
                 c.to as i64,
                 &c.positional,
@@ -101,7 +100,7 @@ impl Interpreter {
                 &c.positional_subcaps,
                 &c.positional_quantified,
                 &c.positional_nil,
-                Some(text),
+                c.target_or_new(text),
             )
         };
         if result_is_list {
@@ -424,11 +423,13 @@ impl Interpreter {
                     for captures in &selected {
                         let prefix: String = chars[last_end..captures.from].iter().collect();
                         result.push_str(&prefix);
+                        let matched_text: String =
+                            chars[captures.from..captures.to].iter().collect();
                         let repl = self.eval_subst_replacement_cased(
                             &replacement_val,
                             is_closure,
                             &replacement_str,
-                            &captures.matched,
+                            &matched_text,
                             Some(captures),
                             Some(&text),
                             transforms,
@@ -457,7 +458,6 @@ impl Interpreter {
                 } {
                     // Set $/ to the match object
                     let match_obj = Value::make_match_object_full(
-                        captures.matched.clone(),
                         captures.from as i64,
                         captures.to as i64,
                         &captures.positional,
@@ -466,16 +466,17 @@ impl Interpreter {
                         &captures.positional_subcaps,
                         &captures.positional_quantified,
                         &captures.positional_nil,
-                        Some(&text),
+                        captures.target_or_new(&text),
                     );
                     self.env.insert("/".to_string(), match_obj);
                     let prefix: String = chars[..captures.from].iter().collect();
                     let suffix: String = chars[captures.to..].iter().collect();
+                    let matched_text: String = chars[captures.from..captures.to].iter().collect();
                     let repl = self.eval_subst_replacement_cased(
                         &replacement_val,
                         is_closure,
                         &replacement_str,
-                        &captures.matched,
+                        &matched_text,
                         Some(&captures),
                         Some(&text),
                         transforms,
@@ -551,7 +552,6 @@ impl Interpreter {
                         result.push_str(&text[last_end..start]);
                         let matched_text = &text[start..end];
                         let caps = is_closure.then(|| RegexCaptures {
-                            matched: matched_text.to_string(),
                             from: char_indices[idx].0,
                             to: char_indices[idx].1,
                             ..Default::default()
@@ -575,7 +575,6 @@ impl Interpreter {
                     let end = bpos + pat.as_str().len();
                     let matched_text = &text[bpos..end];
                     let caps = is_closure.then(|| RegexCaptures {
-                        matched: matched_text.to_string(),
                         from: text[..bpos].chars().count(),
                         to: text[..end].chars().count(),
                         ..Default::default()

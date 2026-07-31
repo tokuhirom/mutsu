@@ -88,6 +88,9 @@ impl Interpreter {
                         .extend(inner_caps.named_quantified.drain());
                     new_caps.positional.append(&mut inner_caps.positional);
                     new_caps
+                        .positional_offsets
+                        .append(&mut inner_caps.positional_offsets);
+                    new_caps
                         .positional_subcaps
                         .append(&mut inner_caps.positional_subcaps);
                     new_caps
@@ -135,6 +138,9 @@ impl Interpreter {
                         .named_quantified
                         .extend(inner_caps.named_quantified.drain());
                     new_caps.positional.append(&mut inner_caps.positional);
+                    new_caps
+                        .positional_offsets
+                        .append(&mut inner_caps.positional_offsets);
                     new_caps
                         .positional_subcaps
                         .append(&mut inner_caps.positional_subcaps);
@@ -205,6 +211,9 @@ impl Interpreter {
                     new_caps.positional.push(v);
                 }
                 new_caps
+                    .positional_offsets
+                    .append(&mut inner_caps.positional_offsets);
+                new_caps
                     .positional_subcaps
                     .append(&mut inner_caps.positional_subcaps);
                 new_caps
@@ -274,10 +283,10 @@ impl Interpreter {
                 new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                 // Store inner captures as subcaptures of this group
                 let mut subcap = inner_caps;
-                subcap.matched = captured.clone();
                 subcap.from = pos;
                 subcap.to = end;
                 new_caps.positional.push(captured);
+                new_caps.positional_offsets.push((pos, end));
                 new_caps
                     .positional_subcaps
                     .push(Some(std::sync::Arc::new(subcap.into_cap_node())));
@@ -306,6 +315,9 @@ impl Interpreter {
                     for v in inner_caps.positional.drain(..) {
                         new_caps.positional.push(v);
                     }
+                    new_caps
+                        .positional_offsets
+                        .append(&mut inner_caps.positional_offsets);
                     new_caps
                         .positional_subcaps
                         .append(&mut inner_caps.positional_subcaps);
@@ -698,7 +710,6 @@ impl Interpreter {
                 let ce = inner_caps.capture_end.unwrap_or(end).clamp(cs, end);
                 let captured: String = chars[cs..ce].iter().collect();
                 let mut subcap = inner_caps;
-                subcap.matched = captured.clone();
                 subcap.from = cs;
                 subcap.to = ce;
                 // sym is already set on subcap from raw_out collection loop.
@@ -782,9 +793,7 @@ impl Interpreter {
                 // lost the rule's own action and over-exposed children in `.hash`.
                 let cs = inner_caps.capture_start.unwrap_or(pos).clamp(pos, end);
                 let ce = inner_caps.capture_end.unwrap_or(end).clamp(cs, end);
-                let captured: String = chars[cs..ce].iter().collect();
                 let mut subcap = inner_caps;
-                subcap.matched = captured;
                 subcap.from = cs;
                 subcap.to = ce;
                 if subcap.sym.is_none() && sym_key.is_some() {

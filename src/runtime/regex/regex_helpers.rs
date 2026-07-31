@@ -609,12 +609,138 @@ fn strip_marks_class_item(item: &ClassItem) -> ClassItem {
     }
 }
 
+thread_local! {
+    /// The subject of the innermost live engine invocation (ADR-0016 P3).
+    /// Pushed by the public entry points around the engine walk; engine-side
+    /// Match synthesis (reduce-time `$*` actions, `<?{ … }>` `.made`
+    /// dispatch) reads the top, since capture accumulators carry no subject
+    /// until the entry point publishes them. A stack because subrule argument
+    /// evaluation can re-enter the public entry points mid-match.
+    static CURRENT_MATCH_TARGET: RefCell<Vec<MatchTarget>> = const { RefCell::new(Vec::new()) };
+}
+
+/// RAII scope for [`CURRENT_MATCH_TARGET`].
+pub(super) struct MatchTargetScope;
+
+impl MatchTargetScope {
+    pub(super) fn enter(target: MatchTarget) -> Self {
+        CURRENT_MATCH_TARGET.with(|s| s.borrow_mut().push(target));
+        MatchTargetScope
+    }
+}
+
+impl Drop for MatchTargetScope {
+    fn drop(&mut self) {
+        CURRENT_MATCH_TARGET.with(|s| {
+            s.borrow_mut().pop();
+        });
+    }
+}
+
+/// The innermost live engine subject, if any (see [`CURRENT_MATCH_TARGET`]).
+pub(super) fn current_match_target() -> Option<MatchTarget> {
+    CURRENT_MATCH_TARGET.with(|s| s.borrow().last().cloned())
+}
+
+/// An owned subject for a Match builder: the given one, else the live engine
+/// scope's, else an empty subject (unreachable in practice — callers always
+/// run either with an explicit target or inside a live match).
+pub(in crate::runtime) fn target_or_empty(target: Option<&MatchTarget>) -> MatchTarget {
+    target
+        .cloned()
+        .or_else(current_match_target)
+        .unwrap_or_else(|| MatchTarget::new(""))
+}
+
 /// Map a position from stripped char space back to original char space.
 pub(super) fn map_pos(pos: usize, pos_map: &[usize], orig_len: usize) -> usize {
     if pos < pos_map.len() {
         pos_map[pos]
     } else {
         orig_len
+    }
+}
+
+/// Remap every recorded span in a capture tree from a derived match space
+/// (mark-stripped `:m` / case-folded `:i`) back to original char space
+/// (ADR-0016 P3). Captured text derives from spans through the shared
+/// subject, so spans recorded while matching a derived subject must be
+/// translated before the captures are published — including sub-capture
+/// nodes, which the pre-P3 code left in derived space (their stored text
+/// papered over it).
+pub(super) fn remap_caps_spans(caps: &mut RegexCaptures, pos_map: &[usize], orig_len: usize) {
+    remap_caps_spans_offset(caps, pos_map, orig_len, 0);
+}
+
+/// [`remap_caps_spans`] with a base offset added after mapping — for the
+/// engine-internal `:m` branch, which strips a mid-subject SLICE and must
+/// land the spans back at the slice's absolute position. Does not touch
+/// `from`/`to`/`capture_start`/`capture_end` when `offset != 0` (the caller
+/// translates those itself; the accumulator's own span is not yet set there).
+pub(super) fn remap_caps_spans_offset(
+    caps: &mut RegexCaptures,
+    pos_map: &[usize],
+    orig_len: usize,
+    offset: usize,
+) {
+    let m = |p: usize| map_pos(p, pos_map, orig_len) + offset;
+    if offset == 0 {
+        caps.from = m(caps.from);
+        caps.to = m(caps.to);
+    }
+    for (a, b) in caps.positional_offsets.iter_mut() {
+        (*a, *b) = (m(*a), m(*b));
+    }
+    for slot in caps.positional_slots.iter_mut().flatten() {
+        slot.0 = m(slot.0);
+        slot.1 = m(slot.1);
+    }
+    for sc in caps.named_subcaps.values_mut().flatten() {
+        remap_cap_node_spans(std::sync::Arc::make_mut(sc), pos_map, orig_len, offset);
+    }
+    for sc in caps.positional_subcaps.iter_mut().flatten() {
+        remap_cap_node_spans(std::sync::Arc::make_mut(sc), pos_map, orig_len, offset);
+    }
+    for entry in caps.positional_quantified.iter_mut().flatten().flatten() {
+        entry.0 = m(entry.0);
+        entry.1 = m(entry.1);
+        if let Some(sc) = &mut entry.2 {
+            remap_cap_node_spans(std::sync::Arc::make_mut(sc), pos_map, orig_len, offset);
+        }
+    }
+}
+
+/// [`remap_caps_spans`] over a stored capture node, recursively (same offset
+/// semantics as [`remap_caps_spans_offset`], applied to every span).
+pub(super) fn remap_cap_node_spans(
+    node: &mut CapNode,
+    pos_map: &[usize],
+    orig_len: usize,
+    offset: usize,
+) {
+    let m = |p: usize| map_pos(p, pos_map, orig_len) + offset;
+    node.from = m(node.from);
+    node.to = m(node.to);
+    let Some(children) = node.children.as_deref_mut() else {
+        return;
+    };
+    for sc in children.named_subcaps.values_mut().flatten() {
+        remap_cap_node_spans(std::sync::Arc::make_mut(sc), pos_map, orig_len, offset);
+    }
+    for sc in children.positional_subcaps.iter_mut().flatten() {
+        remap_cap_node_spans(std::sync::Arc::make_mut(sc), pos_map, orig_len, offset);
+    }
+    for entry in children
+        .positional_quantified
+        .iter_mut()
+        .flatten()
+        .flatten()
+    {
+        entry.0 = m(entry.0);
+        entry.1 = m(entry.1);
+        if let Some(sc) = &mut entry.2 {
+            remap_cap_node_spans(std::sync::Arc::make_mut(sc), pos_map, orig_len, offset);
+        }
     }
 }
 
@@ -860,6 +986,7 @@ pub(super) fn fold_quantified_captures(caps: &mut RegexCaptures, base_len: usize
 
     // Collect entries per group
     let mut folded_positional = Vec::with_capacity(stride);
+    let mut folded_offsets = Vec::with_capacity(stride);
     let mut folded_subcaps = Vec::with_capacity(stride);
     let mut folded_quantified: Vec<Option<Vec<QuantifiedCaptureEntry>>> =
         Vec::with_capacity(stride);
@@ -868,7 +995,6 @@ pub(super) fn fold_quantified_captures(caps: &mut RegexCaptures, base_len: usize
         let mut list: Vec<QuantifiedCaptureEntry> = Vec::with_capacity(iterations);
         for iter in 0..iterations {
             let idx = base_len + iter * stride + group;
-            let text = caps.positional[idx].clone();
             let subcap = if idx < caps.positional_subcaps.len() {
                 caps.positional_subcaps[idx].clone()
             } else {
@@ -877,14 +1003,16 @@ pub(super) fn fold_quantified_captures(caps: &mut RegexCaptures, base_len: usize
             let (from, to) = if idx < caps.positional_offsets.len() {
                 caps.positional_offsets[idx]
             } else {
-                (0, text.chars().count())
+                (0, caps.positional[idx].chars().count())
             };
-            list.push((text, from, to, subcap));
+            list.push((from, to, subcap));
         }
         // Use the last iteration's values as the "representative" for backref purposes
+        let last_idx = base_len + (iterations - 1) * stride + group;
+        folded_positional.push(caps.positional[last_idx].clone());
         let last = list.last().unwrap();
-        folded_positional.push(last.0.clone());
-        folded_subcaps.push(last.3.clone());
+        folded_offsets.push((last.0, last.1));
+        folded_subcaps.push(last.2.clone());
         folded_quantified.push(Some(list));
     }
 
@@ -899,10 +1027,13 @@ pub(super) fn fold_quantified_captures(caps: &mut RegexCaptures, base_len: usize
     }
     caps.positional_quantified.truncate(base_len);
     caps.positional_quantified.extend(folded_quantified);
-    // Also truncate offsets if present
-    if caps.positional_offsets.len() > base_len {
-        caps.positional_offsets.truncate(base_len);
+    // Keep the offsets axis aligned: the representative slot carries the last
+    // iteration's span.
+    caps.positional_offsets.truncate(base_len);
+    while caps.positional_offsets.len() < base_len {
+        caps.positional_offsets.push((0, 0));
     }
+    caps.positional_offsets.extend(folded_offsets);
 }
 
 /// Reserve `stride` index-stable Nil slots for an unmatched optional capture

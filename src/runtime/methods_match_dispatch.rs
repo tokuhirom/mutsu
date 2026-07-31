@@ -164,7 +164,6 @@ impl Interpreter {
                 .iter()
                 .map(|c| {
                     Value::make_match_object_full(
-                        c.matched.clone(),
                         c.from as i64,
                         c.to as i64,
                         &c.positional,
@@ -173,7 +172,7 @@ impl Interpreter {
                         &c.positional_subcaps,
                         &c.positional_quantified,
                         &c.positional_nil,
-                        Some(&text),
+                        c.target_or_new(&text),
                     )
                 })
                 .collect();
@@ -205,13 +204,12 @@ impl Interpreter {
             self.regex_match_with_captures(&pat, &text)
         };
         if let Some(mut captures) = captures {
-            let matched = captures.matched.clone();
             let from = captures.from as i64;
             let to = captures.to as i64;
+            let mtarget = captures.target_or_new(&text);
             // Reduce-time inline actions (children first) commit per-node `.made`.
-            self.reduce_regex_captures_made(&mut captures, Some(&text));
+            self.reduce_regex_captures_made(&mut captures, Some(&mtarget));
             let match_obj = Value::make_match_object_full(
-                matched,
                 from,
                 to,
                 &captures.positional,
@@ -220,7 +218,7 @@ impl Interpreter {
                 &captures.positional_subcaps,
                 &captures.positional_quantified,
                 &captures.positional_nil,
-                Some(&text),
+                mtarget,
             );
             // Set positional capture env vars ($0, $1, ...) from match object
             let list_v = match_obj.match_list();

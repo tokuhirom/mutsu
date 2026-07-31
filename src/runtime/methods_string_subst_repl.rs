@@ -58,7 +58,6 @@ impl Interpreter {
         }
         if let Some(captures) = captures {
             let match_obj = Value::make_match_object_full(
-                captures.matched.clone(),
                 captures.from as i64,
                 captures.to as i64,
                 &captures.positional,
@@ -67,7 +66,7 @@ impl Interpreter {
                 &captures.positional_subcaps,
                 &captures.positional_quantified,
                 &captures.positional_nil,
-                orig_text,
+                captures.target_or_new(orig_text.unwrap_or_default()),
             );
             self.env.insert("/".to_string(), match_obj.clone());
             self.env.insert("$_".to_string(), match_obj.clone());
@@ -82,14 +81,16 @@ impl Interpreter {
                 // last iteration's text (t/uri-unescape shape:
                 // `.subst(:g, /['%' (<.xdigit>**2)]+/, -> $/ { $0.flatmap... })`).
                 let value = if let Some(Some(qlist)) = captures.positional_quantified.get(i) {
+                    let t = captures.target_or_new(orig_text.unwrap_or_default());
                     Value::array(
                         qlist
                             .iter()
-                            .map(|(text, _, _, _)| Value::str(text.clone()))
+                            .map(|(a, b, _)| Value::str(t.span_str(*a, *b)))
                             .collect(),
                     )
-                } else if let Some(Some((capture, _, _))) = captures.positional_slots.get(i) {
-                    Value::str(capture.clone())
+                } else if let Some(Some((a, b))) = captures.positional_slots.get(i) {
+                    let t = captures.target_or_new(orig_text.unwrap_or_default());
+                    Value::str(t.span_str(*a, *b))
                 } else if let Some(capture) = captures.positional.get(i) {
                     Value::str(capture.clone())
                 } else {

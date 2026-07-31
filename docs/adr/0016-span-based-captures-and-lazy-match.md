@@ -275,6 +275,30 @@ into `CapNode.matched`, again into the accumulator's `named`/`positional` text v
 again into the Match `str` attribute) — 38k `String` allocations per bench parse.
 The search fallback is retired when the text axis goes.
 
+**P3a landed 2026-07-31** (`news/2026-07/regex-match-target-span-reads.md`): the
+subject became `MatchTarget { text: Arc<String>, chars: Arc<[char]> }`, built once
+per engine entry, published on the returned accumulator
+(`RegexCaptures::target`) and carried by every lazy `MatchNode`; a thread-local
+engine scope covers mid-match synthesis (`<?{ }>` `.made` dispatch, reduce-time
+`$*` actions). On top of it the **stored text axis is gone where a span already
+lived**: `CapNode.matched` and `RegexCaptures.matched` are deleted (readers
+derive text via `span_str`, with an ASCII byte-slice fast path),
+`QuantifiedCaptureEntry` is `(from, to, subcap)`, `positional_slots` is spans
+only, and the P5 leaf position search is retired outright. Landing this
+surfaced that `positional_offsets` was NOT maintained by every positional
+producer (the quantified-fold fallback fabricated `0..len` — exactly the
+Cause-2 class of bug); every push/merge site now keeps the axis aligned.
+Compatibility fixes on the way: `:m`/`:i`-fold captures are remapped to
+original-subject space recursively (sub-captures previously reported derived-
+space offsets and derived-space text — `m:m/ caf (e) s /` on "cafés" now
+captures "é" like raku), and the pcre2 `:P5` path reported byte offsets where
+char offsets were expected. What P3 still owes: the accumulator's
+`named`/`positional` text vectors (and `CodeBlockContext`'s snapshot copies),
+which are structurally the P4 axis collapse — local interleaved A/B shows the
+intermediate state ≈ +2–3 % on `bench-yaml-parse` (the capture-site text
+`collect`s still run, plus span-derived reads), to be recovered when the text
+vectors disappear with P4.
+
 **P4 — One list per axis + interned names.** Collapse the parallel vectors/maps into
 `Vec<PosSlot>` and `HashMap<Symbol, Vec<Arc<CapNode>>>`, and shrink the trail's undo
 vocabulary accordingly (the alignment invariants become structural rather than asserted in
@@ -320,6 +344,10 @@ parse fell 1807 → 15; local interleaved A/B (idle box): `bench-yaml-parse`
 The reduce walk (`reduce_cap_node_for_rule` code-block replay) and the failed
 partial-parse replay still build eager Matches for `$/` inside in-regex code
 blocks — small counts, unchanged semantics.
+*Confirmed by bench CI (int-arith-normalized, `bench-history.tsv`):* the seven
+main-branch points before the P5 merge sit at 38.2–41.8 (`bench-yaml-parse` ÷
+`int-arith`); the P5 merge row (`fa2400a49`) is **25.65** — ≈ −35 %, matching
+the local A/B.
 
 ## Consequences
 

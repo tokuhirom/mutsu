@@ -413,7 +413,8 @@ impl Interpreter {
                 if let Some(ref mut actions) = actions_obj {
                     match partial_match.take() {
                         Some(mut caps) => {
-                            self.reduce_regex_captures_made(&mut caps, Some(&text));
+                            let pt = caps.target_or_new(&text);
+                            self.reduce_regex_captures_made(&mut caps, Some(&pt));
                             self.dispatch_partial_parse_actions(
                                 &caps,
                                 actions,
@@ -452,7 +453,8 @@ impl Interpreter {
                 // A failed `.subparse` yields a failed Match, not a Failure.
                 return Ok(self.make_failed_match_value(&text, start_pos.unwrap_or(0)));
             };
-            self.reduce_regex_captures_made(&mut captures, Some(&text));
+            let gtarget = captures.target_or_new(&text);
+            self.reduce_regex_captures_made(&mut captures, Some(&gtarget));
             // A subparse must begin at the requested offset (0, or `:pos(N)`);
             // `:c(N)` allows any start >= N, so it is exempt from the check.
             let required_from = start_pos.or(if continue_pos.is_some() {
@@ -489,7 +491,6 @@ impl Interpreter {
             }
             let alias_map = std::mem::take(&mut captures.capture_alias_map);
             let match_obj = Value::make_match_object_full_q(
-                captures.matched,
                 captures.from as i64,
                 captures.to as i64,
                 &captures.positional,
@@ -498,7 +499,7 @@ impl Interpreter {
                 &captures.positional_subcaps,
                 &captures.positional_quantified,
                 &captures.positional_nil,
-                Some(&text),
+                gtarget,
                 &captures.named_quantified,
             );
             let match_obj = {
@@ -621,7 +622,6 @@ impl Interpreter {
     /// whole parse text so `.orig`/`.prematch` work on it.
     fn match_object_from_captures(caps: &RegexCaptures, text: &str) -> Value {
         Value::make_match_object_full_q(
-            caps.matched.clone(),
             caps.from as i64,
             caps.to as i64,
             &caps.positional,
@@ -630,16 +630,15 @@ impl Interpreter {
             &caps.positional_subcaps,
             &caps.positional_quantified,
             &caps.positional_nil,
-            Some(text),
+            caps.target_or_new(text),
             &caps.named_quantified,
         )
     }
 
     /// [`Self::match_object_from_captures`] for a stored capture node.
-    fn match_object_from_cap_node(node: &CapNode, text: &str) -> Value {
+    fn match_object_from_cap_node(node: &CapNode, target: &MatchTarget) -> Value {
         let kids = node.kids();
         Value::make_match_object_full_q(
-            node.matched.clone(),
             node.from as i64,
             node.to as i64,
             &kids.positional,
@@ -648,7 +647,7 @@ impl Interpreter {
             &kids.positional_subcaps,
             &kids.positional_quantified,
             &kids.positional_nil,
-            Some(text),
+            target.clone(),
             &kids.named_quantified,
         )
     }
@@ -732,10 +731,11 @@ impl Interpreter {
             .collect();
         let saved_self = self.env.get("self").cloned();
         let mut result = Ok(());
+        let rtarget = MatchTarget::new(text);
         for (rule, caps) in maximal {
             let mut caps = (**caps).clone();
-            self.reduce_cap_node_for_rule(&mut caps, Some(text), None);
-            let match_obj = Self::match_object_from_cap_node(&caps, text);
+            self.reduce_cap_node_for_rule(&mut caps, Some(&rtarget), None);
+            let match_obj = Self::match_object_from_cap_node(&caps, &rtarget);
             let dispatch = Self::get_action_name(&match_obj).unwrap_or_else(|| rule.clone());
             if let Err(e) = self.invoke_grammar_actions(match_obj, actions, &dispatch) {
                 result = Err(e);

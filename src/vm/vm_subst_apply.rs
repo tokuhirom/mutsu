@@ -11,10 +11,7 @@ impl Interpreter {
         end: usize,
         positional: &[String],
     ) -> Value {
-        let chars: Vec<char> = text.chars().collect();
-        let matched: String = chars[start..end].iter().collect();
         Value::make_match_object_full(
-            matched,
             start as i64,
             end as i64,
             positional,
@@ -23,7 +20,7 @@ impl Interpreter {
             &[],
             &[],
             &[],
-            Some(text),
+            crate::runtime::MatchTarget::new(text),
         )
     }
 
@@ -265,7 +262,6 @@ impl Interpreter {
             // Bind `$/` to a Match object for this match, and `$0`, `$1`, ...
             // to the positional captures.
             let match_obj = Value::make_match_object_full(
-                matched_text.to_string(),
                 *start as i64,
                 *end as i64,
                 caps,
@@ -274,7 +270,7 @@ impl Interpreter {
                 &[],
                 &[],
                 &[],
-                Some(text),
+                crate::runtime::MatchTarget::new(text),
             );
             self.env_mut().insert("/".to_string(), match_obj);
             for n in 0..10 {

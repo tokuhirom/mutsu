@@ -248,13 +248,14 @@ impl Interpreter {
                             self.env.insert(i.to_string(), Value::str(v.clone()));
                         }
                         // Reduce-time inline actions (children first).
-                        self.reduce_regex_captures_made(&mut captures, Some(&text));
+                        let starget = captures.target_or_new(&text);
+                        self.reduce_regex_captures_made(&mut captures, Some(&starget));
                         let match_obj = Value::make_match_object_with_captures(
-                            captures.matched.clone(),
                             captures.from as i64,
                             captures.to as i64,
                             &captures.positional,
                             &captures.named,
+                            starget,
                         );
                         self.env.insert("/".to_string(), match_obj);
                         for (k, v) in &captures.named {
@@ -330,11 +331,11 @@ impl Interpreter {
                             } else {
                                 let cap = &non_overlapping[idx - 1];
                                 let match_obj = Value::make_match_object_with_captures(
-                                    cap.matched.clone(),
                                     cap.from as i64,
                                     cap.to as i64,
                                     &cap.positional,
                                     &cap.named,
+                                    cap.target_or_new(&text),
                                 );
                                 junc_values.push(match_obj);
                             }
@@ -543,7 +544,8 @@ impl Interpreter {
                     if !cap.code_blocks.is_empty()
                         || cap.named_subcaps.values().any(|v| !v.is_empty())
                     {
-                        self.reduce_regex_captures_made(cap, Some(&text));
+                        let ct = cap.target_or_new(&text);
+                        self.reduce_regex_captures_made(cap, Some(&ct));
                     }
                 }
                 self.apply_multi_regex_captures(&selected, &text);
@@ -713,7 +715,8 @@ impl Interpreter {
                     self.env.remove("made");
                     // Reduce-time inline actions: run each subrule's `{ make … }`
                     // once (children first) and commit per-node `.made`.
-                    self.reduce_regex_captures_made(&mut captures, Some(&text));
+                    let starget = captures.target_or_new(&text);
+                    self.reduce_regex_captures_made(&mut captures, Some(&starget));
                     // Merge hash captures into named for Match object
                     let mut named_with_hash = captures.named.clone();
                     for hash_name in captures.hash_captures.keys() {
@@ -724,7 +727,6 @@ impl Interpreter {
                         }
                     }
                     let match_obj = Value::make_match_object_full_q(
-                        captures.matched.clone(),
                         captures.from as i64,
                         captures.to as i64,
                         &captures.positional,
@@ -733,7 +735,7 @@ impl Interpreter {
                         &captures.positional_subcaps,
                         &captures.positional_quantified,
                         &captures.positional_nil,
-                        Some(&text),
+                        starget,
                         &captures.named_quantified,
                     );
                     // Apply hash captures: set named entries to Hash values
