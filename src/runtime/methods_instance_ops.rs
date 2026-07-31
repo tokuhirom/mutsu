@@ -2001,15 +2001,16 @@ impl Interpreter {
                 }
                 _ => Ok(Value::str(target.to_string_value())),
             },
-            "Numeric" | "Real" if args.is_empty() => {
+            "Numeric" | "Real" | "Int" if args.is_empty() => {
                 let num_name = match target.view() {
                     ValueView::Package(name) => Some(name.resolve()),
                     ValueView::Str(name) => Some(name.to_string()),
                     _ => None,
                 };
                 if let Some(name) = num_name {
-                    // A bare type object (no user `.Numeric`/`.Real`, and not one of
-                    // the concrete numeric types handled on the fast path) inherits
+                    // A bare type object (no user `.Numeric`/`.Real`/`.Int`, and not
+                    // one of the concrete numeric types handled on the fast path —
+                    // `Int.Int` identity, `Num.Int` concreteness error) inherits
                     // Mu's coercion: warn "uninitialized ... in numeric context" and
                     // return 0. Roles keep their existing silent 0 for back-compat.
                     if self.registry().roles.contains_key(&name) {

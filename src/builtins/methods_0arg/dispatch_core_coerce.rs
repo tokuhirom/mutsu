@@ -161,7 +161,10 @@ pub(super) fn dispatch(
     // instance" (no `method Rat() { self }`), so those are left to fall through.
     if let ValueView::Package(name) = target.view()
         && matches!(method, "Int" | "Num" | "Complex")
-        && name.resolve() == method
+        && (name.resolve() == method
+            // `UInt.Int` also returns the invocant unchanged: UInt is a subset
+            // of Int, so it inherits Int's `method Int() { self }`.
+            || (method == "Int" && name.resolve() == "UInt"))
     {
         return Some(Some(Ok(target.clone())));
     }
@@ -646,6 +649,24 @@ pub(super) fn dispatch(
             _ => Some(Ok(Value::str(target.to_string_value()))),
         }),
         "Int" => {
+            // `.Int` on a type object: `Int.Int`/`UInt.Int` identity is handled
+            // by the same-type check above; the concrete Cool types only define
+            // `Int` multis with a `:D` invocant, so their type objects throw
+            // X::Parameter::InvalidConcreteness. Every other type object (Any,
+            // Mu, Cool, IntStr, user classes, roles) inherits Mu's coercion —
+            // warn "uninitialized ... in numeric context" and return 0 — which
+            // lives on the slow path so a user-defined `.Int` dispatches first.
+            if let ValueView::Package(name) = target.view() {
+                let n = name.resolve();
+                return match n.as_str() {
+                    "Num" | "Str" | "Rat" | "FatRat" | "Complex" => {
+                        Some(Some(Err(RuntimeError::parameter_invalid_concreteness(
+                            &n, &n, "Int", "self", true, true,
+                        ))))
+                    }
+                    _ => Some(None),
+                };
+            }
             let result = match target.view() {
                 ValueView::Int(i) => Value::int(i),
                 ValueView::BigInt(_) => target.clone(),

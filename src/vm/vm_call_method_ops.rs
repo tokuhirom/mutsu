@@ -1530,12 +1530,13 @@ impl Interpreter {
                         // Numeric coercion on Nil (an undefined value) warns and
                         // resumes with the corresponding numeric *zero* — raku's
                         // `Nil.Int` is `0` (defined), `Nil.Num` is `0e0`,
-                        // `Nil.Rat` is `0.0`, etc. — NOT the type object.
-                        "Rat" | "FatRat" | "Int" | "Num" | "Complex" | "Numeric"
+                        // `Nil.Rat` is `0.0`, `Nil.Real` is `0`, etc. — NOT the
+                        // type object.
+                        "Rat" | "FatRat" | "Int" | "Num" | "Complex" | "Numeric" | "Real"
                             if args.is_empty() =>
                         {
                             let zero = match method {
-                                "Int" | "Numeric" => Value::int(0),
+                                "Int" | "Numeric" | "Real" => Value::int(0),
                                 "Num" => Value::num(0.0),
                                 "Rat" => crate::value::make_rat(0, 1),
                                 "FatRat" => crate::value::make_big_fat_rat(0.into(), 1.into()),
