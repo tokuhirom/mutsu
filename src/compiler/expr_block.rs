@@ -143,10 +143,11 @@ impl Compiler {
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
                     // Mark a fresh declaration so SetGlobal creates a NEW container
                     // (not an in-place reuse of the previous evaluation's), keeping
-                    // `push @a2, my @o = $_` iterations independent.
-                    if has_initializer {
-                        self.code.emit(OpCode::MarkVarDeclContext);
-                    }
+                    // `push @a2, my @o = $_` iterations independent. A BARE decl
+                    // (`(my @a)`) is marked too so `use strict` accepts the
+                    // declaring write; its fresh-container detach is a no-op (the
+                    // marker-slot cache path reuses the stored value regardless).
+                    self.code.emit(OpCode::MarkVarDeclContext);
                     self.code.emit(OpCode::SetGlobal(name_idx));
                     // Apply an `is default(...)` trait BEFORE reading the value back,
                     // so the container's embedded default travels with the value
@@ -257,6 +258,7 @@ impl Compiler {
                     if *is_our {
                         self.code.emit(OpCode::Dup); // for return value
                         self.code.emit(OpCode::Dup); // for SetGlobal
+                        self.code.emit(OpCode::MarkVarDeclContext);
                         self.emit_set_named_var(name);
                         let qualified = self.qualify_variable_name(name);
                         let slot_opt = self.local_map.get(name).copied();
@@ -289,6 +291,7 @@ impl Compiler {
                             self.code.emit(OpCode::TypeCheck(tc_idx2, None));
                             // Now Dup the wrapped value and store
                             self.code.emit(OpCode::Dup);
+                            self.code.emit(OpCode::MarkVarDeclContext);
                             self.emit_set_named_var(name);
                         } else {
                             let is_nil_literal = matches!(expr, Expr::Literal(lit) if lit.is_nil());
@@ -310,6 +313,7 @@ impl Compiler {
                                     name_idx: name_idx2,
                                     tc_idx,
                                 });
+                                self.code.emit(OpCode::MarkVarDeclContext);
                                 self.emit_set_named_var(name);
                                 self.emit_get_named_var(name);
                             } else if type_constraint.is_none()
@@ -335,6 +339,7 @@ impl Compiler {
                                 self.code.emit(OpCode::Pop);
                                 self.compile_expr(&Expr::BareWord("Any".to_string()));
                                 self.code.emit(OpCode::Dup);
+                                self.code.emit(OpCode::MarkVarDeclContext);
                                 self.emit_set_named_var(name);
                             } else {
                                 // Enforce a scalar type constraint in expression
@@ -358,6 +363,7 @@ impl Compiler {
                                     }
                                 }
                                 self.code.emit(OpCode::Dup);
+                                self.code.emit(OpCode::MarkVarDeclContext);
                                 self.emit_set_named_var(name);
                             }
                         }
