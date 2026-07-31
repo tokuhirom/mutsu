@@ -294,7 +294,109 @@ impl Interpreter {
                 );
                 Ok((Value::str(final_s), attributes))
             }
-            "set-line-separators" => Ok((Value::NIL, attributes)),
+            "set-line-separators" => {
+                // Store the separator strings for consume-line-chars.
+                let seps: Vec<Value> = args
+                    .first()
+                    .map(|v| match v.view() {
+                        ValueView::Array(items, ..) => items
+                            .iter()
+                            .map(|s| Value::str(s.to_string_value()))
+                            .collect(),
+                        _ => vec![Value::str(v.to_string_value())],
+                    })
+                    .unwrap_or_default();
+                attributes.insert("line-separators".to_string(), Value::array(seps));
+                Ok((Value::NIL, attributes))
+            }
+            "consume-line-chars" => {
+                let mut chomp = false;
+                let mut eof = false;
+                for arg in &args {
+                    if let ValueView::Pair(key, value) = arg.view() {
+                        match &*key.to_string() {
+                            "chomp" => chomp = value.truthy(),
+                            "eof" => eof = value.truthy(),
+                            _ => {}
+                        }
+                    }
+                }
+                let separators: Vec<String> =
+                    match attributes.get("line-separators").map(Value::view) {
+                        Some(ValueView::Array(items, ..)) if !items.is_empty() => {
+                            items.iter().map(|s| s.to_string_value()).collect()
+                        }
+                        _ => vec!["\r\n".to_string(), "\n".to_string()],
+                    };
+                let buf = decoder_buffer(&attributes);
+                let enc_name = attributes
+                    .get("encoding")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                // Find the earliest separator occurrence (byte-wise: the
+                // separators are ASCII in practice). At equal positions the
+                // longest separator wins, so "\r\n" is not split by "\n".
+                let mut hit: Option<(usize, usize)> = None; // (index, sep_len)
+                for sep in &separators {
+                    let sep_bytes = sep.as_bytes();
+                    if sep_bytes.is_empty() {
+                        continue;
+                    }
+                    if let Some(idx) = buf.windows(sep_bytes.len()).position(|w| w == sep_bytes) {
+                        let better = match hit {
+                            None => true,
+                            Some((best_idx, best_len)) => {
+                                idx < best_idx || (idx == best_idx && sep_bytes.len() > best_len)
+                            }
+                        };
+                        if better {
+                            hit = Some((idx, sep_bytes.len()));
+                        }
+                    }
+                }
+                let translate_nl = attributes
+                    .get("translate-nl")
+                    .map(|v| v.truthy())
+                    .unwrap_or(false);
+                match hit {
+                    Some((idx, sep_len)) => {
+                        let end = if chomp { idx } else { idx + sep_len };
+                        let line = decode_bytes(&buf[..end], translate_nl, &enc_name);
+                        let rest: Vec<Value> = buf[idx + sep_len..]
+                            .iter()
+                            .map(|b| Value::int(*b as i64))
+                            .collect();
+                        attributes.insert("buffer".to_string(), Value::array(rest));
+                        Ok((Value::str(line), attributes))
+                    }
+                    None if eof && !buf.is_empty() => {
+                        let line = decode_bytes(&buf, translate_nl, &enc_name);
+                        attributes.insert("buffer".to_string(), Value::array(Vec::new()));
+                        Ok((Value::str(line), attributes))
+                    }
+                    // No complete line yet: an undefined Str.
+                    None => Ok((Value::package(Symbol::intern("Str")), attributes)),
+                }
+            }
+            "consume-exactly-bytes" => {
+                let n = args
+                    .first()
+                    .and_then(|v| v.as_int())
+                    .and_then(|n| usize::try_from(n).ok())
+                    .unwrap_or(0);
+                let buf = decoder_buffer(&attributes);
+                if buf.len() < n {
+                    // Not enough bytes buffered: an undefined Blob, buffer kept.
+                    return Ok((Value::package(Symbol::intern("Blob")), attributes));
+                }
+                let taken: Vec<Value> = buf[..n].iter().map(|b| Value::int(*b as i64)).collect();
+                let rest: Vec<Value> = buf[n..].iter().map(|b| Value::int(*b as i64)).collect();
+                attributes.insert("buffer".to_string(), Value::array(rest));
+                Ok((
+                    crate::value::value_buf::make_buf(Symbol::intern("Buf[uint8]"), taken),
+                    attributes,
+                ))
+            }
             "bytes-available" => {
                 let buf = decoder_buffer(&attributes);
                 Ok((Value::int(buf.len() as i64), attributes))

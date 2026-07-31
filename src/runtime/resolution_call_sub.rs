@@ -714,6 +714,14 @@ impl Interpreter {
                     if k == "_" || k == "@_" {
                         continue;
                     }
+                    // The ambient callable-instance id is frame-scoped: leaking a
+                    // callee's (or a nested callee's) id into the caller env makes
+                    // closures created later in the caller capture the WRONG
+                    // non-local-return target (a quit-handler `return` then
+                    // escapes its routine instead of returning from it).
+                    if k == "__mutsu_callable_id" {
+                        continue;
+                    }
                     if merged.contains_key_sym(*k) {
                         // Only propagate what the body actually CHANGED (vs its
                         // body-entry snapshot). An entry equal to that snapshot is
@@ -758,6 +766,11 @@ impl Interpreter {
                     }
                     // See the merge_all branch: index-rw temps never merge back.
                     if k.with_str(crate::runtime::utils::is_index_rw_call_temp) {
+                        continue;
+                    }
+                    // See the merge_all branch: the ambient callable-instance id
+                    // is frame-scoped and must never leak into the caller env.
+                    if k == "__mutsu_callable_id" {
                         continue;
                     }
                     if matches!(v.view(), ValueView::Array(..)) {

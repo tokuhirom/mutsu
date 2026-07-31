@@ -77,6 +77,13 @@ impl Interpreter {
                             SupplierEmitAction::Call(tap, emitted, delay_seconds) => {
                                 Self::sleep_for_supply_delay(delay_seconds);
                                 if let Err(err) = self.call_sub_value(tap, vec![emitted], true) {
+                                    // A `return` inside the tap callback targets the
+                                    // callback's lexically enclosing routine: propagate
+                                    // the signal unchanged so that routine's call frame
+                                    // consumes it — it is not a supply failure.
+                                    if err.is_return() || err.return_value.is_some() {
+                                        return Err(err);
+                                    }
                                     // Route errors from tap callbacks to the
                                     // supplier's quit handlers (e.g. die inside
                                     // a whenever body in a supply block).
@@ -522,6 +529,13 @@ impl Interpreter {
                             SupplierEmitAction::Call(tap, emitted, delay_seconds) => {
                                 Self::sleep_for_supply_delay(delay_seconds);
                                 if let Err(err) = self.call_sub_value(tap, vec![emitted], true) {
+                                    // A `return` inside the tap callback targets the
+                                    // callback's lexically enclosing routine: propagate
+                                    // the signal unchanged so that routine's call frame
+                                    // consumes it — it is not a supply failure.
+                                    if err.is_return() || err.return_value.is_some() {
+                                        return Err(err);
+                                    }
                                     // Route errors from tap callbacks to the
                                     // supplier's quit handlers.
                                     let reason = err

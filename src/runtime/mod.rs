@@ -1894,6 +1894,14 @@ pub struct Interpreter {
     pub(crate) otf_call_cache: rustc_hash::FxHashMap<Symbol, (Symbol, Symbol, CompiledFunction)>,
     pub(crate) otf_call_cache_gen: u64,
     pub(crate) check_phaser_depth: u32,
+    /// Depth of `with_nested_registers` re-entry (nested VM runs: closure
+    /// bodies dispatched from native code, EVAL, dies-ok blocks, ...). The
+    /// uncaught-CX::Return -> X::ControlFlow::Return conversion in `run_inner`
+    /// only fires at the TRUE top level (depth 0): inside a nested run the
+    /// signal's target routine may well be an outer VM frame, so it must keep
+    /// propagating (a tap/quit callback's `return` targeting the sub that
+    /// called `.emit`, for example).
+    pub(crate) nested_run_depth: u32,
     pub(crate) gather_for_loop_resume: Option<crate::value::ForLoopResumeState>,
     /// Transient hand-off from a consumed `ForLoopResumeState` to its loop
     /// executor: the mid-body ip the resumed iteration's first body run

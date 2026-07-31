@@ -1722,6 +1722,11 @@ fn merge_method_env(
                     // Nil on entry, so merging it back would wipe the caller's
                     // error variable (`$!.message; $!.rc` must both see it).
                     || crate::runtime::utils::is_routine_scoped_error_var(s)
+                    // Per-frame non-local-return target marker: writing the
+                    // callee's id back would retarget blocks the caller creates
+                    // afterwards (a later closure's `return` then escapes its
+                    // routine instead of returning from it).
+                    || s == "__mutsu_callable_id"
             }) {
                 return None;
             }
