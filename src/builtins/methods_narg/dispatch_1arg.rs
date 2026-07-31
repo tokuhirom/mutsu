@@ -583,6 +583,13 @@ pub(crate) fn native_method_1arg(
             if let Some(items) = target.as_list_items() {
                 return Some(Ok(Value::truth((idx as usize) < items.len())));
             }
+            // `Any.EXISTS-POS`: a non-Positional value is a one-element list
+            // holding itself under a positional subscript, so index 0 is the
+            // only one that exists. Restricted to the plain scalar leaves, so a
+            // class declaring its own EXISTS-POS is never shadowed by this.
+            if target.is_one_element_scalar() {
+                return Some(Ok(Value::truth(idx == 0)));
+            }
             None
         }
         "in-range" => {
