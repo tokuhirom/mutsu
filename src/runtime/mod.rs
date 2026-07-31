@@ -2032,6 +2032,14 @@ impl Default for Interpreter {
     }
 }
 
+/// Internal trait marking a routine that came from a prelude spliced into the
+/// host compunit rather than from its source. Such a routine registers under
+/// `GLOBAL` (so a method body under any package reaches it by bare name) and
+/// enters no module's export map. Marker traits are `__`-prefixed by
+/// convention, which is how registration tells them from a user trait — see
+/// `has_user_custom_traits` in `registration_sub`.
+pub(crate) const PRELUDE_SUB_TRAIT: &str = "__mutsu_prelude";
+
 /// Immutable process-constant magic/dynamic variables hoisted into the shared
 /// env base tier (see `Interpreter::new`). These hold the same value for the
 /// whole process and are never reassigned/removed by normal programs, so they

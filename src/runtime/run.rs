@@ -87,14 +87,24 @@ class GLOBAL::NativeCall::CStr {
 /// Injected per entry, so a program that declares its own `sub refresh` keeps
 /// the other four (see `inject_nativecall_subs_prelude`).
 ///
-/// Every one is `is export`, as Rakudo declares them (`is export(:DEFAULT)`).
-/// That is load-bearing here and not decoration: a prelude is spliced into the
-/// host compunit, so inside a `unit module M` a plain `our sub` registers as
-/// `M::nativesizeof` — invisible to a method body running under some other
-/// package, which is exactly the shape `NativeHelpers::Pointer` has (it
-/// `^add_method`s onto `NativeCall::Types::Pointer` and calls `nativesizeof`
-/// from inside). `is export` also registers the routine globally, which is what
-/// the `GLOBAL::` prefix does for the prelude's classes.
+/// None is `is export`, even though Rakudo declares them `is export(:DEFAULT)`:
+/// a prelude is spliced into the *host* compunit, so an `is export` here would
+/// make every module that merely *uses* NativeCall re-export the helper to
+/// whoever uses *it*. Raku does not (`use NativeLibs` leaves `nativecast`
+/// undeclared), and the difference is not cosmetic — the re-exported copy
+/// collides with the host's own injected copy, which is a hard
+/// `X::Redeclaration`.
+///
+/// They still have to be reachable by bare name from a method body running
+/// under some other package, which is the shape `NativeHelpers::Pointer` has
+/// (it `^add_method`s onto `NativeCall::Types::Pointer` and calls
+/// `nativesizeof` from inside). That is what the `__mutsu_prelude` marker
+/// `inject_nativecall_subs_prelude` stamps on each declaration buys: the
+/// routine registers under `GLOBAL` rather than the host package — the same
+/// thing the `GLOBAL::` prefix does for the prelude's classes — without
+/// entering any module's export map. See
+/// `todo/deep/module-package-sub-invisible-from-method-body.md` for the
+/// underlying lexical-resolution gap that makes the marker necessary.
 ///
 /// - `cglobal`: the `Proxy` is the contract, not an implementation detail. The
 ///   documented behaviour is that the returned object "redirects all its
@@ -116,7 +126,7 @@ pub(super) const NATIVECALL_SUB_PRELUDES: &[(&str, &str)] = &[
     (
         "cglobal",
         r#"
-our sub cglobal($libname, $symbol, $target-type) is export is rw {
+our sub cglobal($libname, $symbol, $target-type) is rw {
     Proxy.new(
         FETCH => -> $ { __mutsu_cglobal_fetch($libname, $symbol, $target-type) },
         STORE => -> $, $ { die "Writing to C globals NYI" }
@@ -127,19 +137,19 @@ our sub cglobal($libname, $symbol, $target-type) is export is rw {
     (
         "nativecast",
         r#"
-our sub nativecast($target-type, $source) is export { __mutsu_nativecast($target-type, $source) }
+our sub nativecast($target-type, $source) { __mutsu_nativecast($target-type, $source) }
 "#,
     ),
     (
         "nativesizeof",
         r#"
-our sub nativesizeof($obj) is export { __mutsu_nativesizeof($obj) }
+our sub nativesizeof($obj) { __mutsu_nativesizeof($obj) }
 "#,
     ),
     (
         "explicitly-manage",
         r#"
-our sub explicitly-manage(Str $str, :$encoding = 'utf8') is export {
+our sub explicitly-manage(Str $str, :$encoding = 'utf8') {
     NativeCall::CStr.new(:address(__mutsu_explicitly_manage($str.encode($encoding))))
 }
 "#,
@@ -147,7 +157,7 @@ our sub explicitly-manage(Str $str, :$encoding = 'utf8') is export {
     (
         "refresh",
         r#"
-our sub refresh($obj) is export { 1 }
+our sub refresh($obj) { 1 }
 "#,
     ),
 ];
