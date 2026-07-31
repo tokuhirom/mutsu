@@ -1,9 +1,9 @@
 // Concurrency tests for the WASM build, run against pkg/ directly (no browser).
-// Run: node wasm-demo/concurrency.test.mjs
+// Run: node site/concurrency.test.mjs
 //
-// Requires wasm-demo/pkg/ to be built:
+// Requires site/pkg/ to be built:
 //   wasm-pack build --target web --no-default-features --features wasm
-//   mv pkg wasm-demo/pkg
+//   mv pkg site/pkg
 //
 // Browsers give a wasm module one thread, so `start`/`await`/`Thread`/timers run
 // on the cooperative scheduler in src/runtime/wasm_sched.rs rather than on OS

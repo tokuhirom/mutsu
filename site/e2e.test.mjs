@@ -1,10 +1,10 @@
 // E2E tests for the static site (landing page, tutorial, playground) using Playwright.
-// Run: node wasm-demo/e2e.test.mjs
+// Run: node site/e2e.test.mjs
 //
 // Requires: npm install playwright
-// Also requires wasm-demo/pkg/ to be built:
+// Also requires site/pkg/ to be built:
 //   wasm-pack build --target web --no-default-features --features wasm
-//   mv pkg wasm-demo/pkg
+//   mv pkg site/pkg
 //
 // The tutorial sweep runs EVERY lesson in the browser and compares against the
 // expectation recorded in content/lessons.txt (which scripts/check-site-snippets.mjs
@@ -70,20 +70,20 @@ async function runSnippet(page, scope = '') {
 }
 
 // Check pkg exists
-if (!existsSync('wasm-demo/pkg/mutsu.js')) {
-  console.error('Error: wasm-demo/pkg/ not found. Build WASM first.');
+if (!existsSync('site/pkg/mutsu.js')) {
+  console.error('Error: site/pkg/ not found. Build WASM first.');
   process.exit(1);
 }
 
-const lessons = parseCorpus(readFileSync('wasm-demo/content/lessons.txt', 'utf8'));
-const highlights = parseCorpus(readFileSync('wasm-demo/content/highlights.txt', 'utf8'));
+const lessons = parseCorpus(readFileSync('site/content/lessons.txt', 'utf8'));
+const highlights = parseCorpus(readFileSync('site/content/highlights.txt', 'utf8'));
 
 // The bench dashboard is generated at deploy time from the bench-data branch.
 // Render one here from a synthetic history so its site chrome is covered by the
 // same suite as the hand-written pages — it is a page of the site, and it is
 // easy to forget when the shared chrome changes.
-const BENCH_HTML = 'wasm-demo/bench-trend.html';
-const BENCH_TSV = 'wasm-demo/.bench-history.e2e.tsv';
+const BENCH_HTML = 'site/bench-trend.html';
+const BENCH_TSV = 'site/.bench-history.e2e.tsv';
 const benchRows = [
   'date\tcommit\tbenchmark\tmutsu_median_s\tmutsu_min_s\traku_median_s\tratio_mutsu_over_raku\truns\trunner\trakudo',
 ];
@@ -105,7 +105,7 @@ if (rendered.status !== 0) {
 }
 
 // Start HTTP server
-server = spawn('python3', ['-m', 'http.server', String(PORT), '-d', 'wasm-demo'], {
+server = spawn('python3', ['-m', 'http.server', String(PORT), '-d', 'site'], {
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 await new Promise(r => setTimeout(r, 1500));
@@ -203,7 +203,7 @@ try {
    * =============================================================== */
 
   console.log('Test: batteries page lists the bundled libraries');
-  const battManifest = JSON.parse(readFileSync('wasm-demo/content/batteries.json', 'utf8'));
+  const battManifest = JSON.parse(readFileSync('site/content/batteries.json', 'utf8'));
   await page.goto(`${BASE}/batteries.html?lang=en`, { waitUntil: 'networkidle' });
   await page.waitForFunction(() => document.body.dataset.ready === '1', { timeout: 15000 });
 

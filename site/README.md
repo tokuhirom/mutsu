@@ -1,4 +1,4 @@
-# wasm-demo — the mutsu site
+# The mutsu site
 
 The static site deployed to <https://tokuhirom.github.io/mutsu/> by
 `.github/workflows/pages.yml`. It is **mutsu's home page**, not a WebAssembly demo:
@@ -68,7 +68,7 @@ fully self-contained file for offline use:
 
 ```sh
 git show origin/bench-data:bench-history.tsv \
-  | python3 scripts/bench-visualize.py --standalone --site-chrome -o wasm-demo/bench-trend.html
+  | python3 scripts/bench-visualize.py --standalone --site-chrome -o site/bench-trend.html
 ```
 
 ## Languages
@@ -128,7 +128,7 @@ scheduler in `src/runtime/wasm_sched.rs`: a would-be thread becomes a task on a 
 queue, and every point that would block on another thread pumps that queue instead.
 It is concurrency without parallelism — nothing runs at the same time as anything
 else, and a task that blocks midway on something only its waiter would do later
-reports a deadlock rather than hanging the tab. `wasm-demo/concurrency.test.mjs`
+reports a deadlock rather than hanging the tab. `site/concurrency.test.mjs`
 pins the behaviour (run it with Node, no browser needed).
 
 ## Adding a lesson
@@ -138,7 +138,7 @@ pins the behaviour (run it with Node, no browser needed).
 2. Add a title and prose under the same key to **both** `content/tutorial.en.js` and
    `content/tutorial.ja.js`.
 3. `node scripts/check-site-snippets.mjs --update` to record the output.
-4. `node wasm-demo/e2e.test.mjs` to check it in the browser.
+4. `node site/e2e.test.mjs` to check it in the browser.
 
 Nothing else needs touching: the table of contents, the counters, prev/next, and the
 e2e lesson sweep are all derived from the corpus.
@@ -147,18 +147,18 @@ e2e lesson sweep are all derived from the corpus.
 
 ```sh
 wasm-pack build --target web --no-default-features --features wasm
-mv pkg wasm-demo/pkg
-python3 -m http.server 8000 -d wasm-demo    # then open http://localhost:8000/
+mv pkg site/pkg
+python3 -m http.server 8000 -d site    # then open http://localhost:8000/
 ```
 
 ## Tests
 
 ```sh
 node scripts/check-site-snippets.mjs   # every snippet, under mutsu (+ raku if present)
-node wasm-demo/concurrency.test.mjs    # start/await/Channel/timers in the WASM build
+node site/concurrency.test.mjs    # start/await/Channel/timers in the WASM build
 npm install playwright && npx playwright install chromium
-node wasm-demo/e2e.test.mjs            # the site itself, in a real browser
-SKIP_LESSON_SWEEP=1 node wasm-demo/e2e.test.mjs   # skip the per-lesson sweep
+node site/e2e.test.mjs            # the site itself, in a real browser
+SKIP_LESSON_SWEEP=1 node site/e2e.test.mjs   # skip the per-lesson sweep
 ```
 
 The e2e suite runs **every** tutorial lesson in the browser and compares against the

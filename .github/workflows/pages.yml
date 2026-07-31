@@ -14,7 +14,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'wasm-demo/**'
+      - 'site/**'
       - 'modules/**'                   # the batteries page lists these
       - 'scripts/bench-visualize.py'   # renders bench-trend.html
       - 'scripts/gen-batteries-manifest.py'
@@ -46,7 +46,7 @@ jobs:
       - name: Build WASM
         run: |
           wasm-pack build --target web --no-default-features --features wasm
-          mv pkg wasm-demo/pkg
+          mv pkg site/pkg
 
       - name: Generate the batteries listing
         # The batteries page (batteries.html) is generated from the vendored
@@ -55,7 +55,7 @@ jobs:
         # module vendored since it was last committed.
         run: |
           python3 scripts/gen-batteries-manifest.py
-          cat wasm-demo/content/batteries.json | python3 -c \
+          cat site/content/batteries.json | python3 -c \
             'import json,sys; print("bundled:", ", ".join(l["name"] for l in json.load(sys.stdin)["libraries"]))'
 
       - name: Record compatibility stats
@@ -67,8 +67,8 @@ jobs:
           pass=$(grep -c . roast-whitelist.txt)
           total=$(find roast -name '*.t' -type f | wc -l)
           printf '{"roastPass":%d,"roastTotal":%d}\n' "$pass" "$total" \
-            > wasm-demo/content/stats.json
-          cat wasm-demo/content/stats.json
+            > site/content/stats.json
+          cat site/content/stats.json
 
       - name: Render bench-trend dashboard
         # Pull the perf history from the bench-data branch and render it into the
@@ -82,7 +82,7 @@ jobs:
           git fetch --depth 1 origin bench-data 2>/dev/null || true
           if git show FETCH_HEAD:bench-history.tsv > /tmp/bench-history.tsv 2>/dev/null; then
             python3 scripts/bench-visualize.py --standalone --site-chrome \
-              /tmp/bench-history.tsv -o wasm-demo/bench-trend.html
+              /tmp/bench-history.tsv -o site/bench-trend.html
           else
             echo "no bench-history.tsv on bench-data yet; skipping bench-trend"
           fi
@@ -90,7 +90,7 @@ jobs:
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5
         with:
-          path: wasm-demo
+          path: site
 
   deploy:
     needs: build

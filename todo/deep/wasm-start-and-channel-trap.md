@@ -21,7 +21,7 @@ spawn), as does `gather`/`take`.
 - `src/runtime/builtins_system.rs` — `spawn_user_thread`,
   `spawn_callable_promise`.
 - The channel / supply pumps that spawn.
-- `wasm-demo/content/lessons.txt`, `wasm-demo/e2e.test.mjs`.
+- `site/content/lessons.txt`, `site/e2e.test.mjs`.
 
 ## Why it is large
 
@@ -38,7 +38,7 @@ never-kept promise would deadlock rather than trap.
 ## Acceptance test
 
 The tutorial marks those two lessons `no-browser` in
-`wasm-demo/content/lessons.txt`, so the site explains the limitation and shows
+`site/content/lessons.txt`, so the site explains the limitation and shows
 the recorded native output rather than a trap. Removing those flags is the
-acceptance test for this item; `wasm-demo/e2e.test.mjs` sweeps every non-flagged
+acceptance test for this item; `site/e2e.test.mjs` sweeps every non-flagged
 lesson in a real browser.

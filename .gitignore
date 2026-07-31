@@ -39,16 +39,16 @@ target-local/
 # prove --state=save state file (CI roast failure-summary re-run; ephemeral)
 .prove
 
-# wasm-pack output + the Playwright install that drives wasm-demo/e2e.test.mjs
+# wasm-pack output + the Playwright install that drives site/e2e.test.mjs
 /pkg/
-/wasm-demo/pkg/
+/site/pkg/
 # Rendered at deploy time by scripts/bench-visualize.py (and transiently by the
 # e2e suite) from the bench-data branch's history.
-/wasm-demo/bench-trend.html
-/wasm-demo/.bench-history.e2e.tsv
+/site/bench-trend.html
+/site/.bench-history.e2e.tsv
 # Compatibility numbers counted at deploy time by pages.yml (the landing page
 # falls back to a baked-in figure when it is absent).
-/wasm-demo/content/stats.json
+/site/content/stats.json
 /node_modules/
 /package.json
 /package-lock.json

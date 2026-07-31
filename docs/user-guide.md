@@ -11,9 +11,9 @@ The user-facing manual is **published on the site**, in English and Japanese:
 - <https://tokuhirom.github.io/mutsu/batteries.html> — the bundled libraries, with
   their versions, licenses and upstream documentation.
 
-The manual's source is `wasm-demo/content/manual.en.js` and
-`wasm-demo/content/manual.ja.js`; the page that renders it is
-`wasm-demo/manual.html`. Edit those — this file is a pointer, not a copy.
+The manual's source is `site/content/manual.en.js` and
+`site/content/manual.ja.js`; the page that renders it is
+`site/manual.html`. Edit those — this file is a pointer, not a copy.
 
 There used to be a full user guide here. It had drifted badly out of date (it
 claimed NativeCall was unsupported, that there was no package manager, that

@@ -23,11 +23,11 @@
 set -u
 
 # A path is documentation iff it matches one of these. Everything else --
-# src/, t/, roast/, scripts/, wasm-demo/, modules/, vendor/, benchmarks/,
+# src/, t/, roast/, scripts/, site/, modules/, vendor/, benchmarks/,
 # Cargo.*, Makefile, roast-whitelist.txt, flaky-tests.txt, and crucially
 # .github/** itself -- forces the full suite.
 #
-# Deliberately NOT `**/*.md`: a README under modules/ or wasm-demo/ sits next
+# Deliberately NOT `**/*.md`: a README under modules/ or site/ sits next
 # to files the build reads, and the blast radius of guessing wrong there is a
 # silently-untested merge. Top-level *.md (PLAN, README, CLAUDE, ANALYSIS,
 # PERFORMANCE, BATTERIES, AGENTS) is safe and covers the common case.
