@@ -1,34 +1,44 @@
-# Connection-manager per-connection pipelines treat live supplies as cold (Cro::Core composer.rakutest 87-88 + trailing hang)
+# Cro::Core composer.rakutest: 1 remaining failure (test 133) — thread-side attribute reads see a hollow instance
 
-With #5605/#5608/#5611 and the closure-self/parent-tier fix in, Cro::Core's
-`t/composer.rakutest` reaches 86/88, failing only the connection-manager
-message-flow tests and hanging after the last one (exit 124).
+**Status 2026-07-31 (после the live-pipeline campaign):** composer.rakutest is
+at **132/133, no hang** (was 83 + trailing hang at the start of the slice).
+Landed in the same branch as this ticket update:
 
-Scenario (composer.rakutest ~line 470-520): `Cro.compose($conn-source,
-TestUppercaseTransform)` produces a service whose connection manager builds a
-per-connection pipeline: `connection.incoming` (a live `Supplier`-backed
-supply) → transform (`supply { whenever $input { emit ... } }`) → the
-connection's replier sink (`whenever $input { $!replier.emit(.body);
-LAST $!replier.emit('(closed)') }`).
+- chained-tap arm for ON-DEMAND whenever sources in the supply-block tap path
+  (liveness propagates; the old cold replay snapshotted zero values and fired
+  LAST immediately — the '(closed)' failure and the trailing hang);
+- `supply_get_values` worklist: promise-source whenever markers block on the
+  promise and run the body; nested markers re-queue (composite connector's
+  `establish(...).list` returned the raw marker before);
+- `lexical_closure_package` prefers the method's class when the innermost
+  non-block routine frame is a method (nested-class short names in `start`
+  bodies — `start Transform.new` in TestConnector.connect captured the
+  CALLER's package);
+- Bool smartmatch arm for type-object topics (`when $seen-connector` in
+  Cro::CompositeConnector.BUILD classified everything as "before").
 
-Observed: `$response-channel-a.receive` gets `'(closed)'` instead of `'BBQ'`
-— the replier sink's `whenever` saw ZERO messages and its LAST phaser fired
-immediately. The message is emitted into the connection's `$!send` Supplier
-*after* the pipeline is assembled, so the pipeline must stay LIVE; instead
-the per-connection pipeline assembly (which happens inside the connection
-manager's own `whenever` body, i.e. inside a running supply callback) takes
-a cold/finite replay path: 0 buffered values → done → LAST.
+**Remaining failure (test 133, 'That message is a TestBinaryMessage'):**
+`Cro.compose(TestUppercaseTransform, TestConnector, TestTransform)` →
+`.establish(...).list` applies ONLY the connector's own transform. Root cause
+narrowed with env-gated instrumentation: inside
+`Cro::CompositeConnector.connect`'s `start` block, the attribute reads
+`@!before` / `@!after` resolve against a `self` whose attributes are EMPTY
+(`read_self_attr_cell` = None, env has no materialized key, and the instance
+fallback finds nothing — debug print showed `self-keys=` empty), while the
+same reads on the main thread (`.produces`) see the populated arrays. So the
+start-thread's captured/cloned `self` is a hollow copy of the
+CompositeConnector instance — possibly a pre-BUILD CoW snapshot or a
+deep-copy in `clone_for_thread` that drops attribute contents (scalar
+`$!connector` SURVIVES, arrays do not — suspicious of cell/array handling in
+the thread clone or in the closure self materialization).
 
-The trailing process hang after test 86 (before these fixes: after 88) is
-likely the same machinery: a per-connection driver waiting on something that
-never completes.
+Repro (vendored Cro::Core lib):
+`tmp/subset-repro/conn-probe.raku` variant with a before-transform — or
+directly: `await $comp.connect(prepend => "x")` then `.components.elems`
+(2 expected with one before-transform, observed 1).
 
-Where to look: the supply-block tap path's marker handling in
-`native_supply_mut_methods.rs` (live supplier-backed sources ARE handled when
-the tap happens at "top level", so the difference is assembling/tapping from
-within a whenever callback — `supply_emit_buffer` frames / `react_active`
-state at that moment), and `run_whenever_with_value`'s react-mode vs
-non-react-mode branches.
-
-Repro: run the vendored suite `tmp`-extract of Cro::Core:
-`target/debug/mutsu -I lib t/composer.rakutest` (tests 87-88).
+Also unproven-but-kept in the same branch: closure captures now EXCLUDE
+attribute-twigil env keys (`!x`, `@!x`, `%.x`, …) so attr reads go through the
+live `self` instead of a creation-time snapshot; this did not resolve test
+133 (the hollow-self read happens through the instance fallback too) but is
+the honest semantics.

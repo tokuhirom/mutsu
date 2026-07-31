@@ -133,9 +133,51 @@ impl Interpreter {
             // source is replayed synchronously so the body's emissions appear
             // in source order. A live (supplier-backed) source cannot be
             // driven synchronously here and is dropped (previously the raw
-            // 4-element marker array leaked through as a value).
+            // 4-element marker array leaked through as a value). Replayed
+            // emissions are processed through the same worklist: a body that
+            // registers a NESTED whenever emits a fresh marker, and a
+            // `whenever <Promise>` source (e.g. a composite connector's
+            // `whenever self!connect(...)`) blocks on the promise and runs
+            // the body with its result — both used to leak the raw marker.
             let mut out = Vec::with_capacity(emitted.len());
-            for item in emitted {
+            let mut queue: std::collections::VecDeque<Value> = emitted.into();
+            while let Some(item) = queue.pop_front() {
+                if Self::is_promise_whenever_marker(&item) {
+                    let ValueView::Array(arr, ..) = item.view() else {
+                        continue;
+                    };
+                    let ValueView::Promise(shared) = arr[0].view() else {
+                        continue;
+                    };
+                    let (result, _, _) = shared.wait();
+                    let broken = shared.status() == "Broken";
+                    let cbs = if broken {
+                        Self::value_array_items(&arr[3]).unwrap_or_default()
+                    } else {
+                        let mut v = vec![arr[1].clone()];
+                        v.extend(Self::value_array_items(&arr[2]).unwrap_or_default());
+                        v
+                    };
+                    if broken && cbs.is_empty() {
+                        return Err(Self::runtime_error_from_supply_reason(result));
+                    }
+                    for (i, cb) in cbs.into_iter().enumerate() {
+                        let args = if i == 0 { vec![result.clone()] } else { vec![] };
+                        self.supply_emit_buffer.push(Vec::new());
+                        let res = self.call_sub_value(cb, args, true);
+                        let captured = self.supply_emit_buffer.pop().unwrap_or_default();
+                        for c in captured.into_iter().rev() {
+                            queue.push_front(c);
+                        }
+                        if let Err(err) = res
+                            && !err.is_react_done()
+                            && !err.is_last()
+                        {
+                            return Err(err);
+                        }
+                    }
+                    continue;
+                }
                 let marker = if let ValueView::Array(arr, ..) = item.view()
                     && arr.len() == 4
                     && matches!(arr[0].view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
@@ -163,9 +205,11 @@ impl Interpreter {
                 }
                 let last_cbs = Self::value_array_items(&last_arr).unwrap_or_default();
                 let quit_cbs = Self::value_array_items(&quit_arr).unwrap_or_default();
-                let (mut captured, unhandled_quit) =
+                let (captured, unhandled_quit) =
                     self.replay_cold_whenever_capture(&source, &body_cb, &last_cbs, &quit_cbs);
-                out.append(&mut captured);
+                for c in captured.into_iter().rev() {
+                    queue.push_front(c);
+                }
                 if let Some(reason) = unhandled_quit {
                     return Err(Self::runtime_error_from_supply_reason(reason));
                 }
