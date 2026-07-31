@@ -158,6 +158,11 @@ impl Interpreter {
             Expr::ArrayLiteral(items) => {
                 items.iter().any(|i| Self::expr_references_var(i, var_name))
             }
+            // Grouped is the transparent parenthesization marker (e.g. a
+            // parenthesized X/Z meta-op keeps it so the arg-list lift leaves
+            // it alone) — look through it, or `my @foo := 1..3, (@foo Z+ 100)`
+            // stops throwing X::Syntax::Variable::Initializer.
+            Expr::Grouped(inner) => Self::expr_references_var(inner, var_name),
             _ => false,
         }
     }
