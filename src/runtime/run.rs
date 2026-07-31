@@ -72,44 +72,85 @@ class GLOBAL::NativeCall::CStr {
 }
 "#;
 
-/// NativeCall's `cglobal`, which is a module export in Rakudo rather than a
-/// builtin — hence a Raku definition injected with the rest of NativeCall's
-/// surface, not a global function.
+/// NativeCall's five exported helper routines, each with the name that gates
+/// its injection.
 ///
-/// The `Proxy` is the contract, not an implementation detail: the documented
-/// behaviour is that the returned object "redirects all its accesses" to the
-/// named symbol (`Language/nativecall.rakudoc`), so every read must re-fetch.
-/// The documented example is `errno`, which is exactly the case a snapshot
-/// would get wrong. Only that one fetch is native
-/// (`runtime::nativecall_global`); writing is NYI in Rakudo too.
-pub(super) const NATIVECALL_CGLOBAL_PRELUDE: &str = r#"
-our sub cglobal($libname, $symbol, $target-type) is rw {
+/// **None of these is a Raku builtin.** Rakudo exports them from
+/// `NativeCall.rakumod`, and mutsu's working agreement is that a routine
+/// belongs in the builtin set only if `Language/perl-func.rakudoc` lists it;
+/// these are documented under `Language/nativecall.rakudoc` instead. Defining
+/// them here rather than in the function-dispatch chain is what makes them
+/// importable rather than ambient, and what gives each one a real `&` to take,
+/// pass or wrap. The marshalling stays in Rust behind a `__mutsu_`-prefixed
+/// primitive that is not part of the user-visible surface.
+///
+/// Injected per entry, so a program that declares its own `sub refresh` keeps
+/// the other four (see `inject_nativecall_subs_prelude`).
+///
+/// Every one is `is export`, as Rakudo declares them (`is export(:DEFAULT)`).
+/// That is load-bearing here and not decoration: a prelude is spliced into the
+/// host compunit, so inside a `unit module M` a plain `our sub` registers as
+/// `M::nativesizeof` — invisible to a method body running under some other
+/// package, which is exactly the shape `NativeHelpers::Pointer` has (it
+/// `^add_method`s onto `NativeCall::Types::Pointer` and calls `nativesizeof`
+/// from inside). `is export` also registers the routine globally, which is what
+/// the `GLOBAL::` prefix does for the prelude's classes.
+///
+/// - `cglobal`: the `Proxy` is the contract, not an implementation detail. The
+///   documented behaviour is that the returned object "redirects all its
+///   accesses" to the named symbol, so every read must re-fetch — the
+///   documented example is `errno`, which is exactly what a snapshot would get
+///   wrong. Only the one fetch is native (`runtime::nativecall_global`);
+///   writing is NYI in Rakudo too.
+/// - `nativecast` / `nativesizeof`: thin wrappers over the marshalling in
+///   `runtime::cstruct_layout`.
+/// - `explicitly-manage`: encodes here rather than in Rust, so the documented
+///   `:$encoding` is honoured by construction; the native half is only the leak
+///   (see [`runtime::nativecall_manage`](crate::runtime::nativecall_manage)).
+/// - `refresh` re-reads a CStruct's fields after C wrote them behind the
+///   runtime's back. In mutsu there is nothing to re-read: a CStruct instance
+///   holds only the C address, and every field access reads through it
+///   (`cstruct_field_value`), so the fields are never stale. The sub still has
+///   to exist and to return 1, as Rakudo's does, because bindings call it.
+pub(super) const NATIVECALL_SUB_PRELUDES: &[(&str, &str)] = &[
+    (
+        "cglobal",
+        r#"
+our sub cglobal($libname, $symbol, $target-type) is export is rw {
     Proxy.new(
         FETCH => -> $ { __mutsu_cglobal_fetch($libname, $symbol, $target-type) },
         STORE => -> $, $ { die "Writing to C globals NYI" }
     )
 }
-"#;
-
-/// NativeCall's remaining two exports, `explicitly-manage` and `refresh`. Like
-/// `cglobal` they are module exports rather than builtins, so they live in a
-/// prelude injected alongside the rest of NativeCall's surface.
-///
-/// `explicitly-manage` encodes here rather than in Rust so the documented
-/// `:$encoding` is honoured by construction; the native half is only the leak
-/// (see [`runtime::nativecall_manage`](crate::runtime::nativecall_manage)).
-///
-/// `refresh` re-reads a CStruct's fields after C wrote them behind the
-/// runtime's back. In mutsu there is nothing to re-read: a CStruct instance
-/// holds only the C address, and every field access reads through it
-/// (`cstruct_field_value`), so the fields are never stale. The sub still has to
-/// exist and to return 1, as Rakudo's does, because bindings call it.
-pub(super) const NATIVECALL_MANAGE_PRELUDE: &str = r#"
-our sub explicitly-manage(Str $str, :$encoding = 'utf8') {
+"#,
+    ),
+    (
+        "nativecast",
+        r#"
+our sub nativecast($target-type, $source) is export { __mutsu_nativecast($target-type, $source) }
+"#,
+    ),
+    (
+        "nativesizeof",
+        r#"
+our sub nativesizeof($obj) is export { __mutsu_nativesizeof($obj) }
+"#,
+    ),
+    (
+        "explicitly-manage",
+        r#"
+our sub explicitly-manage(Str $str, :$encoding = 'utf8') is export {
     NativeCall::CStr.new(:address(__mutsu_explicitly_manage($str.encode($encoding))))
 }
-our sub refresh($obj) { 1 }
-"#;
+"#,
+    ),
+    (
+        "refresh",
+        r#"
+our sub refresh($obj) is export { 1 }
+"#,
+    ),
+];
 
 /// Builtin `IO::Socket` role. Raku's socket classes (`IO::Socket::INET`,
 /// `IO::Socket::Async`) are native in mutsu, but the base `IO::Socket` role is
@@ -162,8 +203,7 @@ impl Interpreter {
         // normal RoleDecl/VM path by prepending their statements to the body.
         Self::inject_prelude_roles(&preprocessed, &mut stmts);
         Self::inject_nativecall_prelude(&preprocessed, &mut stmts);
-        Self::inject_cglobal_prelude(&preprocessed, &mut stmts);
-        Self::inject_nativecall_manage_prelude(&preprocessed, &mut stmts);
+        Self::inject_nativecall_subs_prelude(&preprocessed, &mut stmts);
         Self::inject_iosocket_prelude(&preprocessed, &mut stmts);
         let (_pre_ph, enter_ph, success_ph, failure_ph, _post_ph, body_main) =
             self.split_block_phasers(&stmts);

@@ -7,10 +7,14 @@ code rather than as a campaign.
 
 ## Subs
 
+All five are done: each is an `our sub` in the NativeCall prelude over a
+`__mutsu_`-prefixed native primitive, so it arrives with the module rather than
+being ambient, and has a real `&`.
+
 | export | mutsu | note |
 | --- | --- | --- |
-| `nativecast` | works, but as a **builtin** and with no `&nativecast` | [`nativecall-exports-are-not-builtins.md`](nativecall-exports-are-not-builtins.md) |
-| `nativesizeof` | same | same |
+| `nativecast` | ✅ done 2026-07-31 | was a builtin with no `&nativecast`; see [`news/2026-07/nativecall-exports-are-module-routines.md`](../../news/2026-07/nativecall-exports-are-module-routines.md) |
+| `nativesizeof` | ✅ done 2026-07-31 | same |
 | `cglobal` | ✅ done 2026-07-29 | prelude sub over a native fetch |
 | `explicitly-manage` | ✅ done 2026-07-31 | prelude sub returning a `NativeCall::CStr` over a deliberately-leaked buffer |
 | `refresh` | ✅ done 2026-07-31 | a genuine no-op returning 1: a mutsu CStruct holds only the C address and every field access reads through it, so its fields are never stale |
@@ -38,12 +42,12 @@ one as a term degraded to the `Str` an undeclared bareword becomes — and `void
 was declared but gated on the source *also* naming `Pointer`. Both are fixed;
 see [`news/2026-07/nativecall-type-surface.md`](../../news/2026-07/nativecall-type-surface.md).
 
-Renaming the type objects to their `NativeCall::Types::` spelling is the one
-open item here, and it is cosmetic: nothing in the batteries matches on those
-names. It belongs with the cleanup in
-[`nativecall-exports-are-not-builtins.md`](nativecall-exports-are-not-builtins.md),
-since both hinge on NativeCall's surface being a real module rather than ambient
-globals.
+Renaming the type objects to their `NativeCall::Types::` spelling is the **one
+open item left in this ticket**, and it is cosmetic: nothing in the batteries
+matches on those names, and `nativecast`/`nativesizeof`/`CType::from_type_name`
+all key off the short spelling. Doing it means registering the prelude classes
+under the long name and teaching those lookups to strip the namespace — worth
+doing for fidelity, not urgent.
 
 ## Reproducing
 

@@ -1,6 +1,6 @@
 use super::run::{
-    IO_SOCKET_ROLE_PRELUDE, NATIVECALL_CGLOBAL_PRELUDE, NATIVECALL_MANAGE_PRELUDE,
-    NATIVECALL_POINTER_PRELUDE, RATIONAL_ROLE_PRELUDE,
+    IO_SOCKET_ROLE_PRELUDE, NATIVECALL_POINTER_PRELUDE, NATIVECALL_SUB_PRELUDES,
+    RATIONAL_ROLE_PRELUDE,
 };
 use super::*;
 
@@ -61,62 +61,62 @@ impl Interpreter {
         *stmts = combined;
     }
 
-    /// Prepend NativeCall's `cglobal` when a program that uses NativeCall calls
-    /// it without declaring its own.
+    /// Prepend NativeCall's exported helper routines — `cglobal`, `nativecast`,
+    /// `nativesizeof`, `explicitly-manage`, `refresh` — to a program that uses
+    /// NativeCall and calls them.
     ///
-    /// `cglobal` is **not** a Raku builtin — Rakudo exports it from
-    /// `NativeCall.rakumod` — so it is injected with the module's other
-    /// definitions rather than made a global function. Its body is Raku because
-    /// the contract is a `Proxy` ("redirects all its accesses",
-    /// `Language/nativecall.rakudoc`), and only the one fetch behind it is
-    /// native (see [`runtime::nativecall_global`](crate::runtime::nativecall_global)).
-    pub(super) fn inject_cglobal_prelude(source: &str, stmts: &mut Vec<Stmt>) {
-        if !source.contains("NativeCall")
-            || !source.contains("cglobal")
-            || source.contains("sub cglobal")
-        {
-            return;
-        }
-        use std::sync::OnceLock;
-        static CGLOBAL_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
-        let prelude = CGLOBAL_STMTS.get_or_init(|| {
-            crate::parse_dispatch::parse_source(NATIVECALL_CGLOBAL_PRELUDE)
-                .map(|(s, _)| s)
-                .unwrap_or_default()
-        });
-        if prelude.is_empty() {
-            return;
-        }
-        let mut combined = prelude.clone();
-        combined.append(stmts);
-        *stmts = combined;
-    }
-
-    /// Prepend NativeCall's `explicitly-manage` / `refresh` when a program that
-    /// uses NativeCall calls one of them without declaring its own.
-    pub(super) fn inject_nativecall_manage_prelude(source: &str, stmts: &mut Vec<Stmt>) {
+    /// None of the five is a Raku builtin: Rakudo exports them from
+    /// `NativeCall.rakumod`, and mutsu's working agreement puts a routine in the
+    /// builtin set only if `Language/perl-func.rakudoc` lists it. Injecting them
+    /// as ordinary `our sub`s is what makes them importable rather than ambient,
+    /// and what gives each a real `&` to take, pass or wrap.
+    ///
+    /// Each entry is gated on its own name, so a program that declares its own
+    /// `sub refresh` (a common enough name) still receives the other four.
+    pub(super) fn inject_nativecall_subs_prelude(source: &str, stmts: &mut Vec<Stmt>) {
         if !source.contains("NativeCall") {
             return;
         }
-        let wants_manage =
-            source.contains("explicitly-manage") && !source.contains("sub explicitly-manage");
-        let wants_refresh = source.contains("refresh") && !source.contains("sub refresh");
-        if !wants_manage && !wants_refresh {
-            return;
-        }
         use std::sync::OnceLock;
-        static MANAGE_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
-        let prelude = MANAGE_STMTS.get_or_init(|| {
-            crate::parse_dispatch::parse_source(NATIVECALL_MANAGE_PRELUDE)
-                .map(|(s, _)| s)
-                .unwrap_or_default()
+        static SUB_STMTS: OnceLock<Vec<Vec<Stmt>>> = OnceLock::new();
+        let parsed = SUB_STMTS.get_or_init(|| {
+            NATIVECALL_SUB_PRELUDES
+                .iter()
+                .map(|(_, src)| {
+                    crate::parse_dispatch::parse_source(src)
+                        .map(|(s, _)| s)
+                        .unwrap_or_default()
+                })
+                .collect()
         });
+        let mut prelude: Vec<Stmt> = Vec::new();
+        for ((name, _), decl) in NATIVECALL_SUB_PRELUDES.iter().zip(parsed) {
+            if source.contains(name) && !Self::declares_toplevel_sub(stmts, name) {
+                prelude.extend(decl.iter().cloned());
+            }
+        }
         if prelude.is_empty() {
             return;
         }
-        let mut combined = prelude.clone();
-        combined.append(stmts);
-        *stmts = combined;
+        prelude.append(stmts);
+        *stmts = prelude;
+    }
+
+    /// Whether `stmts` already declares a mainline `sub <name>`, which an
+    /// injected prelude of the same name would collide with.
+    ///
+    /// Asked of the parsed statements rather than of the source text: a
+    /// `source.contains("sub refresh")` check also matches the phrase in a
+    /// comment, and a file *documenting* what it exercises then silently lost
+    /// the routine it was testing. Only the top level is considered (descending
+    /// one `SyntheticBlock`, which carries grouped declarations), because that is
+    /// the only scope an injected top-level `our sub` can clash with.
+    fn declares_toplevel_sub(stmts: &[Stmt], name: &str) -> bool {
+        stmts.iter().any(|s| match s {
+            Stmt::SubDecl { name: n, .. } => n.resolve() == name,
+            Stmt::SyntheticBlock(inner) => Self::declares_toplevel_sub(inner, name),
+            _ => false,
+        })
     }
 
     /// Prepend the builtin `IO::Socket` role when a module/program composes it
