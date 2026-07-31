@@ -93,6 +93,11 @@ no Rust changes at all — so the crash cannot have been introduced by that diff
 2. It very likely will *not* reproduce standalone (see above) — so prefer a CI-side approach: enable
    core dumps in the `test` job, or add a sanitizer/`gdb`-attached variant, rather than burning local
    cycles on a loop that has already come up empty 22 times.
+   **The cheapest version of that is already specced:
+   [todo/tickets/crash-report-on-fatal-signal.md](../tickets/crash-report-on-fatal-signal.md)** — an
+   in-process fatal-signal handler that records the fault address, pid and argv. It answers the
+   parent-vs-child question below at zero steady-state cost, and is worth landing before anything
+   heavier.
 3. Only quarantine it in `flaky-tests.txt` if the evidence standard in `docs/flaky-test-policy.md` is
    actually met — and note that a *crash* is a poor quarantine candidate, since retrying hides a real
    memory-safety bug rather than tolerating benign non-determinism.
