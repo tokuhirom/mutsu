@@ -188,7 +188,40 @@ impl Interpreter {
             let inner = cell.lock().unwrap().clone();
             self.env_mut().insert(var_name.clone(), inner);
         }
+        // A `%h but R` / `@a but R` mixin wraps its container in a `Mixin`, which
+        // none of the container arms below recognise: `:delete` silently did
+        // nothing and returned Nil. Where a composed role supplies the subscript
+        // protocol itself the inner dispatch calls it (see the Mixin arm in
+        // `exec_delete_index_named_op_inner`); otherwise the delete belongs to the
+        // wrapped container, so unwrap it into env for the duration of the op and
+        // re-wrap afterwards. Unwrapping — rather than reimplementing the delete
+        // for mixins — keeps every bit of bookkeeping working unchanged, because
+        // all of it (`__mutsu_deleted_index::`, trailing-hole trimming, the
+        // container-metadata re-tag) is keyed by the *variable name*, which the
+        // unwrap does not change.
+        let mixin_overrides = match self.env().get(&var_name).cloned() {
+            Some(value) => match value.view() {
+                ValueView::Mixin(inner, overrides)
+                    if !self.mixin_role_has_method(&value, "DELETE-KEY")
+                        && !self.mixin_role_has_method(&value, "DELETE-POS") =>
+                {
+                    let inner = inner.as_ref().clone();
+                    let overrides = overrides.as_ref().clone();
+                    self.env_mut().insert(var_name.clone(), inner);
+                    Some(overrides)
+                }
+                _ => None,
+            },
+            None => None,
+        };
         let result = self.exec_delete_index_named_op_inner(code, name_idx, slot);
+        if let Some(overrides) = mixin_overrides
+            && let Some(mutated) = self.env().get(&var_name).cloned()
+        {
+            let rewrapped = Value::mixin(mutated, overrides);
+            self.env_mut().insert(var_name.clone(), rewrapped.clone());
+            self.write_local_slot_or_name(code, slot, &var_name, rewrapped);
+        }
         if let Some(cell) = bound_cell {
             if let Some(mutated) = self.env().get(&var_name).cloned() {
                 *cell.lock().unwrap() = mutated;
@@ -227,17 +260,28 @@ impl Interpreter {
         // kind, so pick by the index's type, falling back to whichever
         // protocol method the class declares.
         if let Some(target) = self.env().get(&var_name).cloned()
-            && let ValueView::Instance { class_name, .. } = target.view()
+            && matches!(
+                target.view(),
+                ValueView::Instance { .. } | ValueView::Mixin(..)
+            )
         {
             let (primary, secondary) = if matches!(idx.view(), ValueView::Int(_)) {
                 ("DELETE-POS", "DELETE-KEY")
             } else {
                 ("DELETE-KEY", "DELETE-POS")
             };
-            let cn = class_name.resolve();
-            let method = if self.has_user_method(&cn, primary) {
+            // A punned role that supplies the protocol itself is a `Mixin`, not an
+            // `Instance` (`role R does Associative { method DELETE-KEY($k) {...} }`),
+            // and its methods live on the composed roles rather than on a class.
+            let declares = |vm: &mut Self, name: &str| match target.view() {
+                ValueView::Instance { class_name, .. } => {
+                    vm.has_user_method(&class_name.resolve(), name)
+                }
+                _ => vm.mixin_role_has_method(&target, name),
+            };
+            let method = if declares(self, primary) {
                 Some(primary)
-            } else if self.has_user_method(&cn, secondary) {
+            } else if declares(self, secondary) {
                 Some(secondary)
             } else {
                 None
