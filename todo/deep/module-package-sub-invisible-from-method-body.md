@@ -49,15 +49,23 @@ see `NativeHelpers::Pointer`'s own routines.
 ## Why it has not been noticed more
 
 Because most of what module method bodies call is either a builtin (always
-resolvable, whatever the package) or an `is export` routine (which is *also*
-registered globally, so the `GLOBAL` step of the walk finds it). Only a
+resolvable, whatever the package) or an `is export` routine (which the importer
+then installs globally, so the `GLOBAL` step of the walk finds it). Only a
 package-scoped, non-exported routine falls in the hole — and `is export` is the
-workaround every affected place has reached for so far, including mutsu's own
-NativeCall prelude (see
-[`news/2026-07/nativecall-exports-are-module-routines.md`](../../news/2026-07/nativecall-exports-are-module-routines.md),
-where the five NativeCall helpers had to be marked `is export` for exactly this
-reason). That workaround is wrong in one visible way: it also re-exports the
-routine to whoever `use`s the module, which Raku would not.
+workaround every affected place has reached for so far.
+
+mutsu's own NativeCall prelude used it and was bitten by exactly the predicted
+side effect: re-exporting the routine to whoever `use`s the module, which Raku
+would not. That broke every DBIish SQLCipher file with an `X::Redeclaration`
+(the re-exported copy collided with the importer's own spliced copy) and has
+since been replaced by a narrower mechanism — the `__mutsu_prelude` marker
+trait, which registers the routine under `GLOBAL` directly instead of routing
+global visibility through an export
+([`news/2026-08/nativecall-helpers-are-not-reexported.md`](../../news/2026-08/nativecall-helpers-are-not-reexported.md)).
+That marker is available only to preludes mutsu splices in itself, so an
+ordinary module still has `is export` (or an explicit `Module::name(...)`) as
+its only spelling, and a prelude-injected helper is still visible process-wide
+once any compunit loads it — both of which this ticket's fix removes.
 
 ## Why this is large
 

@@ -73,6 +73,13 @@ impl Interpreter {
     ///
     /// Each entry is gated on its own name, so a program that declares its own
     /// `sub refresh` (a common enough name) still receives the other four.
+    ///
+    /// Each declaration is stamped with the internal `__mutsu_prelude` trait,
+    /// which registers it under `GLOBAL` instead of the host compunit's package
+    /// and keeps it out of that module's export map. Without the stamp a module
+    /// that merely *uses* NativeCall would re-export the helper to its own
+    /// importers, and the re-exported copy collides with the importer's own
+    /// injected copy as an `X::Redeclaration` (see [`NATIVECALL_SUB_PRELUDES`]).
     pub(super) fn inject_nativecall_subs_prelude(source: &str, stmts: &mut Vec<Stmt>) {
         if !source.contains("NativeCall") {
             return;
@@ -83,9 +90,11 @@ impl Interpreter {
             NATIVECALL_SUB_PRELUDES
                 .iter()
                 .map(|(_, src)| {
-                    crate::parse_dispatch::parse_source(src)
+                    let mut stmts = crate::parse_dispatch::parse_source(src)
                         .map(|(s, _)| s)
-                        .unwrap_or_default()
+                        .unwrap_or_default();
+                    Self::mark_prelude_subs(&mut stmts);
+                    stmts
                 })
                 .collect()
         });
@@ -100,6 +109,22 @@ impl Interpreter {
         }
         prelude.append(stmts);
         *stmts = prelude;
+    }
+
+    /// Stamp every routine declaration in a parsed prelude with the internal
+    /// `__mutsu_prelude` trait. Marker traits are `__`-prefixed by convention
+    /// (`__our_scoped`, `__lexical_hoist`) so registration can tell them from a
+    /// user trait and never tries to apply one as a role.
+    fn mark_prelude_subs(stmts: &mut [Stmt]) {
+        for stmt in stmts {
+            match stmt {
+                Stmt::SubDecl { custom_traits, .. } => {
+                    custom_traits.push((crate::runtime::PRELUDE_SUB_TRAIT.to_string(), None));
+                }
+                Stmt::SyntheticBlock(inner) => Self::mark_prelude_subs(inner),
+                _ => {}
+            }
+        }
     }
 
     /// Whether `stmts` already declares a mainline `sub <name>`, which an

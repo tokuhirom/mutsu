@@ -642,8 +642,13 @@ pub(crate) fn native_method_0arg(
     if method == "nl-out" {
         return Some(Ok(Value::str_from("\n")));
     }
-    // Native int coercer methods (.byte(), .int8(), .uint16(), etc.)
-    if runtime::native_types::is_native_int_type(method) {
+    // Native int coercer methods (.byte(), .int8(), .uint16(), etc.). Rakudo
+    // declares these on `Cool`, so a `Pair` — which is not Cool — has no such
+    // method; answering one here made `.^can('bool')` true for every value and
+    // broke callers that probe `.^can($field)` before trying the next
+    // candidate. `bool` and the C-width aliases are not coercion methods at all
+    // (see `is_native_int_coerce_method`).
+    if runtime::native_types::is_native_int_coerce_method(method) && target.isa_check("Cool") {
         return Some(raku_repr::native_int_coerce_method(target, method));
     }
     // Uni types: override .chars, .codes, .comb to work on codepoints

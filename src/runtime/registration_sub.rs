@@ -533,6 +533,47 @@ impl Interpreter {
         if !multi {
             self.empty_sig_proto_names.remove(&Symbol::intern(name));
         }
+        // A prelude routine spliced into a host compunit (mutsu's NativeCall
+        // helpers) belongs to no package the host declares: it registers under
+        // `GLOBAL` so a method body running under any package can call it by
+        // bare name, exactly as the prelude's `GLOBAL::`-prefixed classes do.
+        // Registering it under the host's own package instead would leave it
+        // invisible to those bodies, which is what the `is export` workaround
+        // used to paper over — at the cost of re-exporting it to every importer
+        // (see `NATIVECALL_SUB_PRELUDES`).
+        if custom_traits
+            .iter()
+            .any(|(t, _)| t == crate::runtime::PRELUDE_SUB_TRAIT)
+        {
+            let global_key = Symbol::intern(&format!("GLOBAL::{}", name));
+            // Every compunit that uses NativeCall carries its own copy of the
+            // declaration, and they are identical by construction, so the first
+            // one wins and the rest are no-ops rather than redeclarations.
+            if self.registry().functions.contains_key(&global_key) {
+                return Ok(SubRegisterOutcome::Unchanged);
+            }
+            if self.current_package() != "GLOBAL" {
+                let saved = self.current_package();
+                self.set_current_package("GLOBAL".to_string());
+                let outcome = self.register_sub_decl_fp(
+                    name,
+                    params,
+                    param_defs,
+                    return_type,
+                    associativity,
+                    body,
+                    multi,
+                    is_rw,
+                    is_raw,
+                    is_test_assertion,
+                    supersede,
+                    custom_traits,
+                    site_fingerprint,
+                );
+                self.set_current_package(saved);
+                return outcome;
+            }
+        }
         let is_method_value_decl = custom_traits
             .iter()
             .any(|(t, _)| t == "__mutsu_method_decl");
