@@ -76,6 +76,9 @@ jobs:
     # than GNU ld. mold is installed in the "Install prove" step below.
     env:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
+      # Absolute, so every mutsu in the process tree reports to the one place
+      # the crash-report step collects. See the note on that step below.
+      MUTSU_CRASH_DIR: ${{ github.workspace }}/tmp/crash
     steps:
       - uses: actions/checkout@v7
         with:
@@ -231,8 +234,18 @@ jobs:
       - name: Crash reports (fatal signals)
         # A `Wstat: 11 (Signal: SEGV)` line in the summary above names neither
         # the process that faulted nor the place. src/crash_report/ writes one
-        # tmp/crash/<pid>.txt per crashed process; print them here so the
-        # answer is in the job log the first time the crash fires.
+        # <pid>.txt per crashed process; print them here so the answer is in
+        # the job log the first time the crash fires.
+        #
+        # This covers every mutsu in the job — any t/ or roast file's own
+        # interpreter, and any subprocess it spawned (each writes its own
+        # report, told apart by pid and argv). That is why the job env sets an
+        # ABSOLUTE MUTSU_CRASH_DIR: the default `tmp/crash` is resolved against
+        # each process's startup working directory, so a subprocess spawned
+        # with `:cwd`, or one inheriting a `chdir`, would drop its report in
+        # some temp directory this step never looks at. Verified: with the
+        # relative default, a `run(..., :cwd(...))` child's report lands under
+        # that cwd instead.
         if: failure()
         run: scripts/report-crash-reports.sh
 
@@ -391,6 +404,9 @@ jobs:
       # S17-lowlevel/thread.t sat at ~24s against the 30s GC-off budget and
       # timed out on a loaded runner the first time this step ran blocking.
       MUTSU_ROAST_TIMEOUT_SCALE: "2"
+      # Absolute, so every mutsu in the process tree reports to the one place
+      # the crash-report step collects.
+      MUTSU_CRASH_DIR: ${{ github.workspace }}/tmp/crash
       # Link with mold (installed below); shared with the other native jobs.
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
     steps:
@@ -527,6 +543,9 @@ jobs:
     env:
       MUTSU_JIT: "on"
       MUTSU_JIT_THRESHOLD: "2"
+      # Absolute, so every mutsu in the process tree reports to the one place
+      # the crash-report step collects.
+      MUTSU_CRASH_DIR: ${{ github.workspace }}/tmp/crash
       # Link with mold (installed below); shared with the other native jobs.
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
     steps:

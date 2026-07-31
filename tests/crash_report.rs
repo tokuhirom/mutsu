@@ -114,6 +114,47 @@ fn reporting_can_be_switched_off() {
     );
 }
 
+/// A process that starts in some other directory must still report into an
+/// absolute `MUTSU_CRASH_DIR`.
+///
+/// This is the property CI depends on. The default `tmp/crash` is relative to
+/// each process's startup working directory, so a subprocess spawned with
+/// `:cwd` — or one inheriting a parent's `chdir` — would otherwise drop its
+/// report somewhere the collection step never looks, and the crash of a
+/// subprocess is exactly the case this whole feature exists to attribute.
+#[test]
+fn an_absolute_report_dir_survives_a_different_working_directory() {
+    let base = std::env::temp_dir().join(format!("mutsu-crash-test-cwd-{}", std::process::id()));
+    let elsewhere = base.join("elsewhere");
+    let reports = base.join("reports");
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&elsewhere).expect("failed to create working directory");
+
+    let status = Command::new(env!("CARGO_BIN_EXE_mutsu"))
+        .args(["-e", "say 'sentinel-marker'"])
+        .current_dir(&elsewhere)
+        .env("MUTSU_CRASH_SELFTEST", "segv")
+        .env("MUTSU_CRASH_DIR", &reports)
+        .output()
+        .expect("failed to spawn mutsu")
+        .status;
+    assert_eq!(status.signal(), Some(libc::SIGSEGV));
+
+    let report = read_report(&reports);
+    assert_eq!(field(&report, "signal:"), "11 (SIGSEGV)");
+    // cwd is recorded too, so a report found here still says where it ran.
+    assert!(
+        field(&report, "cwd:").contains("elsewhere"),
+        "cwd line should record the process's own working directory:\n{report}"
+    );
+    assert!(
+        !elsewhere.join("tmp").exists(),
+        "an absolute MUTSU_CRASH_DIR must not also write under the cwd"
+    );
+
+    let _ = std::fs::remove_dir_all(&base);
+}
+
 /// An ordinary, non-crashing run must leave no trace: the report directory is
 /// created from inside the handler, never at startup.
 #[test]

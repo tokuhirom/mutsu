@@ -32,6 +32,13 @@
 //! `[profile.release]` sets `debug = false` — but the raw frame addresses can
 //! still be resolved offline with `addr2line -f -e target/release/mutsu`.
 //!
+//! The default `tmp/crash` is resolved against the process's **startup**
+//! working directory, so a later `chdir` cannot move it — but a process that
+//! *starts* elsewhere (a subprocess spawned with `:cwd`, or one inheriting a
+//! parent's `chdir`) writes its report under that directory instead. A harness
+//! that collects reports from one place must therefore export an absolute
+//! `MUTSU_CRASH_DIR`, which every descendant inherits; CI does exactly that.
+//!
 //! This is instrumentation, not a fix: it buys nothing until the next crash,
 //! and then it buys an answer instead of another dead end.
 
