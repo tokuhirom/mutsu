@@ -752,6 +752,17 @@ impl Interpreter {
                     coercee,
                 );
             }
+            // Raku's coercion protocol also accepts a method named after the
+            // target type on the VALUE: `Promise($supply)` is `$supply.Promise`
+            // when the target declares no COERCE/new for it. This is the branch
+            // built-in targets with native-only constructors land in
+            // (`class_has_method` sees user methods only), e.g.
+            // Cro::MessageWithBody.body-blob's `Promise(supply { ... })`.
+            if args.len() == 1
+                && let Ok(res) = self.call_method_with_values(args[0].clone(), name, vec![])
+            {
+                return Ok(res);
+            }
             let source_type = crate::runtime::value_type_name(&args[0]).to_string();
             let msg = format!(
                 "Impossible coercion from '{}' into '{}': no acceptable coercion method found",

@@ -204,7 +204,20 @@ fn expr_ends_with_block(expr: &Expr) -> bool {
         | Expr::DynamicMethodCall { args, .. }
         | Expr::Call { args, .. }
         | Expr::UserRoutineCall { args, .. } => {
-            matches!(args.last(), Some(Expr::AnonSub { is_block: true, .. }))
+            // Recurse into the final argument: a block-taking construct that
+            // desugars to a call (`supply { ... }` becomes
+            // `Supply.on-demand(<block>)`) still ends the statement's text with
+            // its `}` — `$msg.set-body-byte-stream: supply { ... }` followed by
+            // a newline must not swallow the next line's `given`/`if` as a
+            // statement modifier (Cro::Core t/message-with-body.rakutest).
+            match args.last() {
+                Some(Expr::AnonSub { is_block: true, .. }) => true,
+                // A lowered block-taking construct carries its user block as a
+                // Lambda (`supply { ... }` -> `Supply.on-demand(<lambda>)`).
+                Some(Expr::Lambda { .. }) => true,
+                Some(last) => expr_ends_with_block(last),
+                None => false,
+            }
         }
         _ => false,
     }
