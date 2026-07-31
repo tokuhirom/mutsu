@@ -122,6 +122,7 @@ Executes compiled bytecode. `vm.rs` holds the (unified `Interpreter`) struct, `r
      - **A documentation-only PR skips the four heavy jobs on purpose.** `ci.yml`'s `changes` job classifies the diff (`scripts/ci-docs-only.sh`); when every changed path is under `docs/`, `news/`, `todo/`, `TODO_roast/`, `old-design-docs/`, `raku-doc/`, or is a top-level `*.md`, the `test` / `wasm-e2e` / `gc-stress` / `jit-stress` jobs report `skipped`, which counts as success for branch protection. So `gh pr checks` showing those as skipped on a docs PR is **correct**, not a stuck CI — the PR is mergeable. Anything else in the diff (including `.github/**` and any nested `README.md`) runs the full suite. If you add a new documentation directory, add it to the allowlist in that script *and* to `bench.yml`'s `paths-ignore`, and extend the script's `--self-test` cases.
   7. **Watch the new PR's CI in the background, never foreground-block on it.** Use a `run_in_background` bash poll loop on `gh pr checks <pr-number>` that exits when no check is `pending` (the harness notifies you on completion). Do NOT use foreground `gh pr checks --watch` — it blocks ~13 min and wastes the session. The background watch surfaces a red CI within minutes so you can fix-forward instead of leaving it unnoticed; auto-merge still lands the PR on its own once CI is green. If you have genuinely-independent, non-conflicting work, do it in parallel; in the final stretch there usually isn't any, so the watch itself is the productive thing.
   8. **Before going idle, decide the next slice.** Don't wait on the merge with nothing queued. Re-read the relevant ledger/PLAN (`PLAN.md`, `TODO_roast/BLOCKERS.md`) and pick the next concrete unit of work — start it on a fresh branch off `main` if it's independent of the open PR, or lay out options and confirm with the user when the next step is a strategic fork.
+- **When the change spans several ordered slices, use a stack of PRs instead of the single-branch flow above** — see "Stacked PRs (`gh stack`)" at the end of this section.
 - If CI fails, fix on the same branch and push again (the background watch notifies you; re-watch after pushing).
   - **Flaky-looking CI failures:** consult the "Known flaky tests" section below before re-triggering. (`roast/S02-names-vars/perl.t`'s historical `Failed: 0` abort no longer reproduces as of 2026-07-05 and was re-whitelisted — treat a new failure there as real first, per the triage protocol.)
 - **Never close a PR without preserving its knowledge.** If a PR has rebase conflicts, rebase it (manually or with an agent that reads the PR diff via `gh pr diff <number>`). The PR diff itself is the best documentation of the change — do not just close it and write a summary. Reopen and fix it, or have a new agent read the diff and re-implement on a fresh branch.
@@ -130,6 +131,62 @@ Executes compiled bytecode. `vm.rs` holds the (unified `Interpreter`) struct, `r
 - Temporary test scripts must be written to `./tmp/` (project-local, gitignored) using the Write tool. Never write to `/tmp/` or `/tmp/claude-1000/`.
 - Do not use `cat`, `head`, `tail`, or `sed` via Bash to read files. Always use the Read tool.
 - Do not use `grep`, `rg`, or `find` via Bash to search files. Always use the Grep and Glob tools.
+
+### Stacked PRs (`gh stack`) — the default for a change that spans several slices
+
+GitHub [stacked pull requests](https://github.blog/changelog/2026-07-30-stacked-pull-requests-are-now-in-public-preview/)
+are in public preview, and the `gh-stack` extension is already installed in this workspace
+(`gh extension install github/gh-stack`; docs: <https://gh.io/stacks>). A stack is an ordered chain
+of PRs where each layer targets the layer below it, so every layer is reviewed and CI'd on its own
+while the layers above it keep moving.
+
+**Use a stack whenever the work decomposes into ordered layers** — a parser change under a compiler
+change under a VM change, a refactor under the feature it enables, a new opcode under its call
+sites. That shape is common here, and without a stack it forces a bad choice: one unreviewable
+mega-PR, or a serial "open PR, wait for merge, branch again" chain where each slice conflicts with
+the last (PR workflow step 5 exists precisely because of that chain).
+
+Typical loop:
+
+```
+gh stack init <bottom-branch>       # or: gh stack init b1 b2 b3  (adopts existing branches, bottom to top)
+# ... commit the bottom layer ...
+gh stack add <next-branch>          # stacks a new branch on the current top (-Am "msg" to commit too)
+gh stack submit                     # push every branch, create/update the PRs, link them as a stack
+gh stack view                       # stack map with each layer's PR state
+gh stack sync                       # after main moves: fetch, cascade-rebase, atomic force-with-lease push
+gh stack up / down / top / bottom   # navigate layers
+```
+
+Rules specific to this repository:
+
+- **Every layer must be independently green.** CI runs per PR against the layer below, so each layer
+  has to build and pass `make test` plus `cargo clippy -- -D warnings` on its own. Never park a
+  knowingly-broken intermediate state "because the top of the stack fixes it" — that makes the stack
+  unreviewable and unbisectable, and it is the same sin as a stub that only exists to make tests pass.
+- **Keep the stack shallow (roughly 3-5 layers) and land the bottom early.** A tall stack multiplies
+  rebase pain instead of removing it. Merge the bottom as soon as it is green rather than growing the
+  stack indefinitely.
+- **Merge with `gh stack merge --yes --merge`.** `gh stack merge` is atomic — everything up to and
+  including the PR you pick merges, or nothing does — and it takes the same merge-method flags as
+  `gh pr merge`, so **`--squash` is rejected by this repository** exactly as it is for a single PR;
+  pass `--merge` (or `--rebase`).
+- **`gh stack merge` has no `--auto`: it does not wait for CI.** Either watch every layer's CI in the
+  background first (PR workflow step 7) and merge the stack once all layers are green, or enable
+  auto-merge per layer with `gh pr merge --auto --merge <pr-number>` — GitHub retargets and rebases
+  the upper layers automatically as the ones below merge.
+- **`gh stack sync` replaces the manual `git fetch origin main && git rebase origin/main` of PR
+  workflow step 5** for stacked branches. Never hand-rebase one branch of a stack in isolation — that
+  desynchronizes the layers above it. If sync reports a conflict it restores every branch to its
+  original state; resolve it with `gh stack rebase`.
+- **A stack is not a licence to slice away from the real change.** "Refactor boldly — CI + roast are
+  the safety net" still governs: stack a change that genuinely has ordered layers, and do not dress
+  up ten timid micro-PRs that collectively dance around the architectural goal. If the change is one
+  coherent unit, ship it as one PR.
+- **Each layer still follows every normal rule** — its own tests, English commit message and PR body,
+  and a conventional-commit title (`type:` / `type(scope):`), which is what drives the release-note
+  label. "Never close a PR without preserving its knowledge" applies to a layer as much as to a
+  standalone PR; use `gh stack modify` to restructure a stack rather than dropping a layer.
 
 ## Cutting a release
 
