@@ -34,6 +34,13 @@ fn print_help(program: &str) {
     println!("  MUTSU_PRECOMP  Set to 0 to disable the module precompilation");
     println!("                 cache, like --no-precomp but for every mutsu");
     println!("                 process a script or test harness spawns");
+    println!("  MUTSU_CRASH_REPORT");
+    println!("                 Set to 0 to disable the fatal-signal crash");
+    println!("                 report (tmp/crash/<pid>.txt, written only when");
+    println!("                 the interpreter dies of SIGSEGV and friends)");
+    println!("  MUTSU_CRASH_DIR");
+    println!("                 Directory to write crash reports to");
+    println!("                 (default: tmp/crash)");
 }
 
 fn print_negation_error(option: &str) -> ! {
@@ -95,6 +102,11 @@ fn handle_negated_long_option(
 }
 
 fn main() {
+    // Before anything else: a fatal signal from here on writes a crash report
+    // (tmp/crash/<pid>.txt) naming the signal, fault address, pid and argv,
+    // then re-raises. Two syscalls now, no files created until a crash.
+    mutsu::crash_report::install();
+
     // Spawn the real entry point on a thread with a larger stack to avoid
     // stack overflows during deeply-recursive grammar matching and deep user
     // recursion (each Raku-level call consumes a sizeable native frame, so
@@ -115,6 +127,10 @@ fn run_main() {
     // mutator; register it so a worker-side collector can count its
     // quiescence (blocked in await/.finish/sleep) toward the rendezvous.
     mutsu::gc_register_main_thread();
+    // The alternate signal stack is per-thread, and this — not the OS main
+    // thread — is where the interpreter actually runs.
+    mutsu::crash_report::install();
+    mutsu::crash_report::selftest_if_requested();
     let args: Vec<String> = env::args().collect();
 
     let mut dump_ast = false;

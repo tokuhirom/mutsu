@@ -90,14 +90,14 @@ no Rust changes at all — so the crash cannot have been introduced by that diff
 
 1. Get a fault address and a backtrace: run the inner 1200-iteration program directly (not through
    `is_run`) in a loop under `rust-gdb -batch`, or enable core dumps and inspect the core.
-2. It very likely will *not* reproduce standalone (see above) — so prefer a CI-side approach: enable
-   core dumps in the `test` job, or add a sanitizer/`gdb`-attached variant, rather than burning local
-   cycles on a loop that has already come up empty 22 times.
-   **The cheapest version of that is already specced:
-   [todo/tickets/crash-report-on-fatal-signal.md](../tickets/crash-report-on-fatal-signal.md)** — an
-   in-process fatal-signal handler that records the fault address, pid and argv. It answers the
-   parent-vs-child question below at zero steady-state cost, and is worth landing before anything
-   heavier.
+2. It very likely will *not* reproduce standalone (see above) — so prefer a CI-side approach rather
+   than burning local cycles on a loop that has already come up empty 22 times.
+   **The cheapest version of that has landed**
+   ([news](../../news/2026-07/crash-report-on-fatal-signal.md), `src/crash_report/`): a fatal-signal
+   handler now writes `tmp/crash/<pid>.txt` with the signal, fault address, pid, **argv** and a
+   backtrace, and CI prints it and uploads it as the `crash-reports` artifact. So the next occurrence
+   answers the parent-vs-`is_run`-child question below by itself — check the artifact first. Anything
+   heavier (core dumps, a sanitizer job) is only worth building once that report says it is needed.
 3. Only quarantine it in `flaky-tests.txt` if the evidence standard in `docs/flaky-test-policy.md` is
    actually met — and note that a *crash* is a poor quarantine candidate, since retrying hides a real
    memory-safety bug rather than tolerating benign non-determinism.
