@@ -772,6 +772,15 @@ impl Interpreter {
                     }
                     return Ok(target.clone());
                 }
+                // A plain (or native typed) array target: resize its items in
+                // place — CBOR::Simple presizes `array[num32].new` this way.
+                if let ValueView::Array(items, _) = target.view() {
+                    // SAFETY: audited aliased in-place container write (see
+                    // value::aliased_mut); no borrow into the node is live.
+                    let data = unsafe { crate::value::gc_contents_mut(&items) };
+                    data.items.resize(n, Value::int(0));
+                    return Ok(target.clone());
+                }
                 Ok(target)
             }
             // Debug

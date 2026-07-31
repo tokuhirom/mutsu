@@ -97,6 +97,15 @@ impl Compiler {
         args: &[Expr],
         suppress_listop_rewrite: bool,
     ) {
+        // nqp:: control-flow ops (`nqp::if`/`nqp::while`/`nqp::stmts`/...) are
+        // special forms whose operands must not be eagerly evaluated as call
+        // arguments — see nqp_forms.rs. Value ops fall through to the normal
+        // call path (dispatched in runtime/nqp_ops.rs).
+        if name.with_str(|n| n.starts_with("nqp::"))
+            && name.with_str(|n| self.try_compile_nqp_form(n, args))
+        {
+            return;
+        }
         let suppress_listop_rewrite =
             suppress_listop_rewrite || self.user_listop_shadows.contains(&name.resolve());
         // `callframe`/`caller` inside N enclosing `for` blocks must report the

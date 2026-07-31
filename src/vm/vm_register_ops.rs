@@ -667,7 +667,28 @@ impl Interpreter {
                     if tc.is_none() {
                         tc = loan_env!(self, var_type_constraint(s.trim_start_matches('$')));
                     }
-                    if matches!(tc.as_deref(), Some(t) if t != "Mu") {
+                    // EXCEPTION: native value types (`int`/`num`/`str` families)
+                    // and the builtin scalar value types (`Int`/`Num`/`Str`/
+                    // `Rat`/`UInt`, with or without a `:D`/`:U` smiley) are boxed
+                    // like `Mu`. Their wrap/coercion also runs at the assignment
+                    // op by name before any write-through, and the snapshot lane
+                    // genuinely loses coherence for them: a captured
+                    // `my int $pos` (or an `Int:D $pos is rw` parameter)
+                    // reassigned by the OWNER after the closure's `$pos++`
+                    // diverged into two stores — CBOR::Simple's encoder buffer
+                    // position, where every string byte landed one off. The cas
+                    // concern that motivated the skip targets CLASS-typed
+                    // scalars (S17-lowlevel/cas.t `my LittleNodey $head`), which
+                    // keep the skip. Pin: t/nqp-cbor-ops.t.
+                    let value_type_boxable = tc.as_deref().is_some_and(|t| {
+                        crate::runtime::native_types::is_native_int_type(t)
+                            || matches!(t, "num" | "num32" | "num64" | "str")
+                            || matches!(
+                                crate::runtime::types::strip_type_smiley(t).0,
+                                "Int" | "UInt" | "Num" | "Str" | "Rat"
+                            )
+                    });
+                    if !value_type_boxable && matches!(tc.as_deref(), Some(t) if t != "Mu") {
                         continue;
                     }
                 }
