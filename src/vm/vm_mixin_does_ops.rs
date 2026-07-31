@@ -31,6 +31,15 @@ impl Interpreter {
                 self,
                 eval_does_values(left.clone(), right.clone())
             )),
+            // A parameterised role (`5 but G[Int]`). `does` reaches this through
+            // `extract_role_application`; without the arm here `but` fell all the
+            // way to `apply_but_mixin`, which composed nothing at all.
+            ValueView::ParametricRole { base_name, .. } if self.has_role(&base_name.resolve()) => {
+                Some(loan_env!(
+                    self,
+                    eval_does_values(left.clone(), right.clone())
+                ))
+            }
             _ => None,
         };
         if let Some(composed) = role_composed {

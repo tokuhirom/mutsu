@@ -802,7 +802,7 @@ impl Interpreter {
             if (self.role_has_method(name, "COERCE") || self.role_has_method(name, "new"))
                 && args.len() == 1
             {
-                self.ensure_role_punned_to_class(name);
+                self.ensure_role_punned_to_class(name)?;
                 // Try COERCE first, then fall back to new
                 if self.role_has_method(name, "COERCE") {
                     let coerce_result = self.call_method_with_values(

@@ -313,6 +313,40 @@ impl Interpreter {
             return Err(RuntimeError::new(format!("Unknown role: {}", role_name)));
         }
 
+        // Mixing a role into a value is a composition, so the role's
+        // non-declaration body runs — once per composed parameterisation, like
+        // Rakudo (which memoises the resulting `Int+{R}` type). This is what
+        // makes a guard in the body reject a bad parameterisation:
+        //
+        //     role Guarded[::T] { die unless T.REPR eq 'CStruct' }
+        //     my $o = 5 but Guarded[Ordinary];   # X::Role::Instantiation
+        //
+        // A parameterised role goes through the pun class so the body sees its
+        // type parameters bound; a plain one only needs the body run, and
+        // punning it to a class here would change what `R.HOW` reports.
+        if role.is_some() {
+            if !role_args.is_empty()
+                && self
+                    .registry()
+                    .role_type_params
+                    .get(role_name)
+                    .is_some_and(|params| !params.is_empty())
+            {
+                self.ensure_parametric_role_pun_class(role_name, role_args)?;
+            } else if self
+                .registry_mut()
+                .composed_role_bodies
+                .insert(format!("mixin:{role_name}"))
+            {
+                let stmts = role
+                    .as_ref()
+                    .map(|r| r.deferred_body_stmts.clone())
+                    .unwrap_or_default();
+                self.run_role_body_for_composition(role_name, role_name, &stmts)?;
+                self.run_composed_role_ancestor_bodies(role_name, role_name)?;
+            }
+        }
+
         let (inner, mut mixins) = if let ValueView::Mixin(inner, existing) = left.view() {
             (inner.as_ref().clone(), (**existing).clone())
         } else {

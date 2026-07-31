@@ -949,7 +949,7 @@ impl Interpreter {
                     ValueView::Instance { class_name, .. } => class_name.resolve(),
                     _ => args[0].to_string_value(),
                 };
-                self.ensure_role_punned_to_class(&role_name);
+                self.ensure_role_punned_to_class(&role_name)?;
                 Ok(Value::package(Symbol::intern(&role_name)))
             }
             "roles" if !args.is_empty() => self.dispatch_classhow_roles(&args),

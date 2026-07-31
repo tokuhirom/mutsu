@@ -160,22 +160,31 @@ pub(crate) fn grammar_decl(input: &str) -> PResult<'_, Stmt> {
             r = r2;
         }
     }
-    let mut does_parents = Vec::new();
-    while let Some(r2) = keyword("does", r) {
-        let (r2, _) = ws1(r2)?;
-        let (r2, role_name) = qualified_ident(r2)?;
-        does_parents.push(role_name);
-        let (r2, _) = ws(r2)?;
-        let (r2, _) = skip_optional_role_args(r2)?;
-        r = r2;
-    }
     // Default parent is Grammar if no `is` clause. A module-local
     // `grammar Grammar` (qualified to `Mod::Grammar`) must still inherit the
     // built-in Grammar; only a genuine top-level `grammar Grammar` that IS the
     // built-in would self-parent, and that is dropped at registration (see the
-    // self-parent filter in `exec_register_class_op`).
+    // self-parent filter in `exec_register_class_op`). Decided before the
+    // `does` clauses are read: a composed role is not an `is` parent, so
+    // `grammar G does R { }` must still inherit Grammar.
     if parents.is_empty() {
         parents.push("Grammar".to_string());
+    }
+    let mut does_parents = Vec::new();
+    while let Some(r2) = keyword("does", r) {
+        let (r2, _) = ws1(r2)?;
+        let (r2, role_name) = qualified_ident(r2)?;
+        let (r2, _) = ws(r2)?;
+        let (r2, bracket_suffix) = crate::parser::stmt::class::parse_optional_bracket_suffix(r2)?;
+        let full_name = format!("{}{}", role_name, bracket_suffix);
+        // The role-composition loop in `register_class_decl` walks `parents`
+        // and uses `does_parents` only to tell composition from punning, so a
+        // `does` role must appear in both — otherwise the grammar composes
+        // nothing at all.
+        parents.push(full_name.clone());
+        does_parents.push(full_name);
+        let (r2, _) = ws(r2)?;
+        r = r2;
     }
     let (rest, body) = {
         let _pkg = super::super::simple::push_package_path(&name);

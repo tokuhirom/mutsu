@@ -108,36 +108,6 @@ impl Interpreter {
         })
     }
 
-    #[inline]
-    pub(crate) fn vm_run_block_raw(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
-        if stmts.is_empty() {
-            return Ok(());
-        }
-        // CP-3 collapse PoC: instead of bouncing to `Interpreter::run_block_raw`
-        // (which spins up a fresh sub-Interpreter via `mem::take`/`Interpreter::new` — the
-        // ping-pong), compile the block (pure, no env) and run it in-place on
-        // this Interpreter via `run_nested`, sharing the same interpreter + env directly.
-        let (code, compiled_fns) = self.compile_block_raw(stmts);
-        let result = self.run_nested(&code, &compiled_fns);
-        // Slice F (env<->locals coherence): a deferred role body that mutates an
-        // outer lexical (`role R { $side = @outer.elems * 100 }`) writes it into
-        // `env` by name; record those names so the caller (the role-registration
-        // opcode, which holds the outer `code`) writes them through to the outer
-        // frame's local slots, dropping the dependency on the reverse pull. The
-        // topic is excluded as a per-call alias.
-        for sym in &code.free_var_writes {
-            sym.with_str(|fname| {
-                if fname != "_" && fname != "@_" && fname != "%_" {
-                    self.pending_rw_writeback_sources.push(fname.to_string());
-                }
-            });
-        }
-        // Mirror `run_block_raw`'s trailing DESTROY pass (may run user code, so
-        // it needs the env loaned).
-        self.loan_env_for(|i| i.run_pending_instance_destroys())?;
-        result.map(|_| ())
-    }
-
     pub(crate) fn vm_eval_block_value(&mut self, body: &[Stmt]) -> Result<Value, RuntimeError> {
         if body.is_empty() {
             return Ok(Value::NIL);

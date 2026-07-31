@@ -199,6 +199,13 @@ pub(crate) struct Registry {
     pub(crate) role_hides: HashMap<String, Vec<String>>,
     /// Declared type parameters per parameterized role: role -> [param names].
     pub(crate) role_type_params: HashMap<String, Vec<String>>,
+    /// Compositions whose role body has already been run, keyed
+    /// `"{kind}:{role}"` (`pun:R`, `mixin:R`). Rakudo runs a role body once per
+    /// composition and memoises the composed type, so punning a role twice — or
+    /// mixing it into a second value — must not run its body again. A `does`
+    /// composition is not memoised here: each consuming class is its own
+    /// composition and runs the body again, as Rakudo does.
+    pub(crate) composed_role_bodies: HashSet<String>,
     /// Bound role type parameters per class: class -> (param name -> value).
     pub(crate) class_role_param_bindings: HashMap<String, HashMap<String, Value>>,
 

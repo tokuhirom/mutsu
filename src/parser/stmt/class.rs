@@ -31,7 +31,6 @@ pub(crate) use package_decl::{
     check_pseudo_package_in_decl, export_name_clash_error, extract_exported_subs,
     find_export_name_clash,
 };
-pub(crate) use role_decl::skip_optional_role_args;
 
 // Public entry points — preserve each function's original visibility.
 pub(super) use class_decl::{also_trait_stmt, class_decl_body};

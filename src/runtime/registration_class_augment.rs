@@ -739,14 +739,17 @@ impl Interpreter {
         Ok(Some(pun_name))
     }
 
-    pub(crate) fn ensure_role_punned_to_class(&mut self, role_name: &str) {
+    pub(crate) fn ensure_role_punned_to_class(
+        &mut self,
+        role_name: &str,
+    ) -> Result<(), RuntimeError> {
         if self.registry().classes.contains_key(role_name) {
-            return;
+            return Ok(());
         }
         self.clear_private_zeroarg_method_cache();
         let role_def = match self.registry().roles.get(role_name) {
             Some(r) => r.clone(),
-            None => return,
+            None => return Ok(()),
         };
         // A method copied into the pun still *came from* the role, and has to
         // say so: `role_origin` is how the rest of the runtime tells a composed
@@ -871,5 +874,136 @@ impl Interpreter {
         if let Some(version) = candidate_lang_version {
             self.store_language_revision_from_version(role_name, &version);
         }
+        // Punning is a composition, so the role's non-declaration body runs
+        // here. Rakudo behaves the same way:
+        //
+        //     my $side; role R { $side = 1 }; say $side;  # (Any)
+        //     R.new;                                      # now 1
+        //
+        // The `classes` lookup at the top of this function is not enough of a
+        // memo: a construction path that punned a role only to build one
+        // instance drops the pun class again afterwards, which would re-run the
+        // body on the next `R.new`. The body runs *after* the pun class is
+        // registered so a self-reference in it (`R.some-method`) resolves
+        // against the class it just became. A dying body rejects the pun
+        // exactly as it rejects a `does` composition (X::Role::Instantiation).
+        if self
+            .registry_mut()
+            .composed_role_bodies
+            .insert(format!("pun:{role_name}"))
+        {
+            self.run_role_body_for_composition(
+                role_name,
+                role_name,
+                &role_def.deferred_body_stmts,
+            )?;
+            self.run_composed_role_ancestor_bodies(role_name, role_name)?;
+        }
+        Ok(())
+    }
+
+    /// Composing a role composes the roles it composes, so their bodies run
+    /// too — nearest first, the order Rakudo runs them in.
+    pub(crate) fn run_composed_role_ancestor_bodies(
+        &mut self,
+        role_name: &str,
+        regex_owner: &str,
+    ) -> Result<(), RuntimeError> {
+        for ancestor in self.role_ancestor_names(role_name) {
+            let stmts = self
+                .registry()
+                .roles
+                .get(&ancestor)
+                .map(|r| r.deferred_body_stmts.clone())
+                .unwrap_or_default();
+            self.run_role_body_for_composition(&ancestor, regex_owner, &stmts)?;
+        }
+        Ok(())
+    }
+
+    /// The roles a role composes, transitively, nearest first — the order
+    /// Rakudo runs their bodies in when a class composes `role_name`.
+    pub(crate) fn role_ancestor_names(&self, role_name: &str) -> Vec<String> {
+        let mut seen: Vec<String> = Vec::new();
+        let mut queue: Vec<String> = vec![role_name.to_string()];
+        let mut idx = 0;
+        while idx < queue.len() {
+            let current = queue[idx].clone();
+            idx += 1;
+            let base = current
+                .split_once('[')
+                .map(|(b, _)| b.to_string())
+                .unwrap_or(current);
+            let Some(parents) = self.registry().role_parents.get(&base).cloned() else {
+                continue;
+            };
+            for parent in parents {
+                let parent_base = parent
+                    .split_once('[')
+                    .map(|(b, _)| b.to_string())
+                    .unwrap_or(parent);
+                if parent_base != role_name
+                    && !seen.contains(&parent_base)
+                    && self.registry().roles.contains_key(&parent_base)
+                {
+                    seen.push(parent_base.clone());
+                    queue.push(parent_base);
+                }
+            }
+        }
+        seen
+    }
+
+    /// Run a role's deferred (non-declaration) body statements as part of a
+    /// composition. A type declaration in the body is qualified by the role
+    /// (`type_owner`) so `$?CLASS.^name` reports `R::Inner`; a `token`/`rule` is
+    /// qualified by the type being composed into (`regex_owner`) because it is
+    /// composed like a method. Everything else keeps the surrounding package so
+    /// a bare `&sub` reference from a role method still resolves.
+    pub(crate) fn run_role_body_for_composition(
+        &mut self,
+        type_owner: &str,
+        regex_owner: &str,
+        stmts: &[Stmt],
+    ) -> Result<(), RuntimeError> {
+        if stmts.is_empty() {
+            return Ok(());
+        }
+        let saved_pkg = self.current_package().to_string();
+        // Each body statement publishes its value through `$_`; composition can
+        // happen inside a `with`/`given` block, so the topic is restored.
+        let saved_topic = self.env.get("_").cloned();
+        let restore_topic = |this: &mut Self, topic: Option<Value>| match topic {
+            Some(topic) => {
+                this.env.insert("_".to_string(), topic);
+            }
+            None => {
+                this.env.remove("_");
+            }
+        };
+        for stmt in stmts {
+            let body_pkg = match stmt {
+                Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } => Some(type_owner),
+                Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. } => Some(regex_owner),
+                _ => None,
+            };
+            if let Some(pkg) = body_pkg {
+                self.set_current_package(pkg.to_string());
+            }
+            let r = self.run_block_raw(std::slice::from_ref(stmt));
+            if body_pkg.is_some() {
+                self.set_current_package(saved_pkg.clone());
+            }
+            if let Err(err) = r {
+                if err.control.is_none() {
+                    restore_topic(self, saved_topic);
+                    self.set_current_package(saved_pkg);
+                    return Err(RuntimeError::role_instantiation(type_owner, err));
+                }
+                return Err(err);
+            }
+        }
+        restore_topic(self, saved_topic);
+        Ok(())
     }
 }

@@ -269,30 +269,6 @@ pub(crate) fn parse_optional_role_type_params(
     Ok((rest, (params, param_defs)))
 }
 
-/// Skip optional role args like `[Str:D(Numeric)]` in a `does` clause.
-pub(crate) fn skip_optional_role_args(input: &str) -> PResult<'_, ()> {
-    let (mut r, _) = ws(input)?;
-    if !r.starts_with('[') {
-        return Ok((r, ()));
-    }
-    let mut depth = 0u32;
-    while let Some(ch) = r.chars().next() {
-        let len = ch.len_utf8();
-        if ch == '[' {
-            depth += 1;
-        } else if ch == ']' {
-            depth = depth.saturating_sub(1);
-            if depth == 0 {
-                r = &r[len..];
-                break;
-            }
-        }
-        r = &r[len..];
-    }
-    let (r, _) = ws(r)?;
-    Ok((r, ()))
-}
-
 /// Parse `role` declaration.
 pub(crate) fn role_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("role", input).ok_or_else(|| PError::expected("role declaration"))?;

@@ -343,7 +343,7 @@ impl Interpreter {
             if !self.registry().classes.contains_key(cn.as_str())
                 && self.registry().roles.contains_key(cn.as_str())
             {
-                self.ensure_role_punned_to_class(&cn);
+                self.ensure_role_punned_to_class(&cn)?;
             }
         }
         // Initialize with default attribute values. The attribute defs and the
