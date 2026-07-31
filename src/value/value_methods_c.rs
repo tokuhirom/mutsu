@@ -1,28 +1,7 @@
 use super::*;
 
 impl Value {
-    /// Create a Match object with positional captures and the shared subject.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn make_match_object_full(
-        from: i64,
-        to: i64,
-        positional: &[crate::runtime::PosSlot],
-        named: &HashMap<String, Vec<String>>,
-        named_subcaps: &HashMap<String, Vec<std::sync::Arc<crate::runtime::CapNode>>>,
-        target: crate::runtime::MatchTarget,
-    ) -> Self {
-        Self::make_match_object_full_q(
-            from,
-            to,
-            positional,
-            named,
-            named_subcaps,
-            target,
-            &HashSet::new(),
-        )
-    }
-
-    /// Like make_match_object_full but with named_quantified tracking.
+    /// Create a Match object with captures and the shared subject.
     ///
     /// ADR-0016 P5: this no longer builds an eager `Instance` tree. It
     /// synthesizes a top-level `CapNode` from the capture axes and
@@ -33,26 +12,20 @@ impl Value {
     /// — the pre-P5 builder never surfaced those on the top-level Match.
     ///
     /// ADR-0016 P3/P4: matched text is not passed or stored; `.Str` and every
-    /// positional capture derive from recorded spans through `target`.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn make_match_object_full_q(
+    /// capture derive from recorded spans through `target`. The pre-P4
+    /// exploded axes (named text map ‖ subcaps ‖ quantified set, four
+    /// positional vecs) are gone — both axes arrive as span-bearing slots.
+    pub(crate) fn make_match_object_full(
         from: i64,
         to: i64,
         positional: &[crate::runtime::PosSlot],
-        named: &HashMap<String, Vec<String>>,
-        named_subcaps: &HashMap<String, Vec<std::sync::Arc<crate::runtime::CapNode>>>,
+        named: &HashMap<String, crate::runtime::NamedSlot>,
         target: crate::runtime::MatchTarget,
-        named_quantified: &HashSet<String>,
     ) -> Self {
-        let has_children = !named.is_empty()
-            || !named_subcaps.is_empty()
-            || !named_quantified.is_empty()
-            || !positional.is_empty();
+        let has_children = !named.is_empty() || !positional.is_empty();
         let children = has_children.then(|| {
             Box::new(crate::runtime::CapChildren {
                 named: named.clone(),
-                named_subcaps: named_subcaps.clone(),
-                named_quantified: named_quantified.clone(),
                 capture_alias_map: HashMap::new(),
                 positional: positional.to_vec(),
                 code_blocks: Vec::new(),

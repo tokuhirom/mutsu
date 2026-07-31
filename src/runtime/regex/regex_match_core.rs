@@ -198,7 +198,6 @@ impl Interpreter {
     /// `pos_base` is the store's positional length at token start.
     fn store_apply_named_capture(
         store: &mut CapStore,
-        chars: &[char],
         token: &RegexToken,
         from: usize,
         to: usize,
@@ -230,7 +229,6 @@ impl Interpreter {
             }
             return;
         }
-        let captured: String = chars[from..to].iter().collect();
         // A named capture group `$<x>=(...)` aliases the group to the name and
         // does NOT consume a positional number (Raku: `/$<x>=(\w)(\d)/` makes
         // `$<x>` the \w and `$0` the \d). When this named token's atom is itself
@@ -254,69 +252,61 @@ impl Interpreter {
                 .and_then(|slot| slot.subcap.clone());
             store.truncate_positional(pos_base);
         }
-        store.push_named(name, captured.clone());
+        // The alias entry is one span-bearing node (ADR-0016 P4): the pinned
+        // group subcap when the atom is a capturing group; for an aliased
+        // subrule call (`$<pl> = <G::list>`) the called rule's full sub-match
+        // tree, which the rule already merged into the store under its own
+        // capture key (Raku keeps BOTH captures — `$/.keys` is `(G::list pl)`);
+        // else a minimal span carrier, which keeps `.from`/`.to` exact even
+        // for a zero-width match (`$<delim>=<[a..z]>*` matching empty).
+        let subrule_subcap = if group_subcap.is_none()
+            && let RegexAtom::Named(atom_name) = &token.atom
+        {
+            let spec = Self::parse_named_regex_lookup_spec(atom_name);
+            let own_key = spec
+                .capture_name
+                .clone()
+                .or_else(|| (!spec.silent).then(|| spec.lookup_name.clone()));
+            own_key
+                .and_then(|k| store.caps().named.get(&k)?.nodes.last().cloned())
+                .filter(|sc| sc.from == from && sc.to == to)
+        } else {
+            None
+        };
+        let sub = if let Some(mut gs) = group_subcap.take() {
+            // Keep the group's nested captures, but pin the span to the
+            // aliased group's extent.
+            let gsm = std::sync::Arc::make_mut(&mut gs);
+            gsm.from = from;
+            gsm.to = to;
+            gs
+        } else if let Some(sc) = subrule_subcap {
+            sc
+        } else {
+            std::sync::Arc::new(CapNode {
+                from,
+                to,
+                ..Default::default()
+            })
+        };
+        store.push_named_node(name, sub);
         // `@<name>=` array-sigil alias forces list context: mark the name as
         // quantified so the Match builder always presents it as a List, even
         // for a single non-quantified capture (`@<foo>=(.(.))` → `[«bc»]`).
         if token.force_list_capture {
             store.insert_named_quantified(name.clone());
         }
-        // Record a minimal sub-capture carrying the exact (from, to) span so
-        // the Match object gets the right offsets even for a zero-width match
-        // (e.g. `$<delim>=<[a..z]>*` matching empty). Without this the Match
-        // builder falls back to searching for the captured text, which yields
-        // offset 0 for an empty string and breaks `.caps`/`.chunks` ordering.
-        // Only do this when no richer sub-capture already aligns with this
-        // entry, so subrule-aliased captures keep their nested structure.
-        let name_count = store.caps().named.get(name).map(Vec::len).unwrap_or(0);
-        let sub_count = store
-            .caps()
-            .named_subcaps
-            .get(name)
-            .map(Vec::len)
-            .unwrap_or(0);
-        if sub_count < name_count {
-            // An aliased subrule call (`$<pl> = <G::list>`) must carry the
-            // called rule's full sub-match tree, not just its text: the rule
-            // already merged its rich subcap into the store under its own
-            // capture key, so clone that entry (span-checked) for the alias.
-            // Raku keeps BOTH captures (`$/.keys` is `(G::list pl)`).
-            let subrule_subcap = if group_subcap.is_none()
-                && let RegexAtom::Named(atom_name) = &token.atom
-            {
-                let spec = Self::parse_named_regex_lookup_spec(atom_name);
-                let own_key = spec
-                    .capture_name
-                    .clone()
-                    .or_else(|| (!spec.silent).then(|| spec.lookup_name.clone()));
-                own_key
-                    .and_then(|k| store.caps().named_subcaps.get(&k)?.last().cloned())
-                    .filter(|sc| sc.from == from && sc.to == to)
-            } else {
-                None
-            };
-            let sub = if let Some(mut gs) = group_subcap.take() {
-                // Keep the group's nested captures, but pin the span to the
-                // aliased group's extent.
-                let gsm = std::sync::Arc::make_mut(&mut gs);
-                gsm.from = from;
-                gsm.to = to;
-                gs
-            } else if let Some(sc) = subrule_subcap {
-                sc
-            } else {
+        // Also capture under the secondary name (e.g., original builtin class name
+        // when using `$<alias>=<builtin_class>` syntax).
+        if let Some(secondary) = token.secondary_named_capture.as_ref() {
+            store.push_named_node(
+                secondary,
                 std::sync::Arc::new(CapNode {
                     from,
                     to,
                     ..Default::default()
-                })
-            };
-            store.push_named_subcap(name, sub);
-        }
-        // Also capture under the secondary name (e.g., original builtin class name
-        // when using `$<alias>=<builtin_class>` syntax).
-        if let Some(secondary) = token.secondary_named_capture.as_ref() {
-            store.push_named(secondary, captured);
+                }),
+            );
         }
     }
 
@@ -449,7 +439,7 @@ impl Interpreter {
             for (next, delta) in cands.into_iter().rev() {
                 let m = store.mark();
                 store.merge_delta(delta);
-                Self::store_apply_named_capture(store, ctx.chars, token, pos, next, pos_base);
+                Self::store_apply_named_capture(store, token, pos, next, pos_base);
                 let stop = self.walk_tokens(ctx, idx + 1, next, store, matches);
                 store.rewind(m);
                 if stop {
@@ -482,7 +472,7 @@ impl Interpreter {
                 for (next, delta) in candidates.into_iter().rev() {
                     let m = store.mark();
                     store.merge_delta(delta);
-                    Self::store_apply_named_capture(store, ctx.chars, token, pos, next, pos_base);
+                    Self::store_apply_named_capture(store, token, pos, next, pos_base);
                     Self::store_apply_hash_capture(store, ctx.chars, token, pos, next, pos_base);
                     let stop = self.walk_tokens(ctx, idx + 1, next, store, matches);
                     store.rewind(m);
@@ -528,7 +518,7 @@ impl Interpreter {
                 for (next, delta) in candidates.into_iter().rev() {
                     let m = store.mark();
                     store.merge_delta(delta);
-                    Self::store_apply_named_capture(store, ctx.chars, token, pos, next, pos_base);
+                    Self::store_apply_named_capture(store, token, pos, next, pos_base);
                     Self::store_apply_hash_capture(store, ctx.chars, token, pos, next, pos_base);
                     let stop = self.walk_tokens(ctx, idx + 1, next, store, matches);
                     store.rewind(m);
@@ -705,7 +695,6 @@ impl Interpreter {
                     break;
                 }
                 if !capture_name.is_empty() {
-                    let captured: String = ctx.chars[current..end].iter().collect();
                     let mut subcap = inner_caps;
                     subcap.from = current;
                     subcap.to = end;
@@ -714,8 +703,7 @@ impl Interpreter {
                     // failed-parse action replay, exactly as the general
                     // `build_named_candidates_from_inner` path does.
                     super::regex_helpers::record_reduced_subrule(&capture_name, &subcap);
-                    store.push_named_subcap(&capture_name, subcap);
-                    store.push_named(&capture_name, captured);
+                    store.push_named_node(&capture_name, subcap);
                 }
                 current = end;
                 count += 1;
@@ -767,7 +755,7 @@ impl Interpreter {
             return None;
         }
         store.merge_delta(delta);
-        Self::store_apply_named_capture(store, ctx.chars, token, current, next, pos_base);
+        Self::store_apply_named_capture(store, token, current, next, pos_base);
         let hash_base = if hash_per_iter {
             iter_pos_base
         } else {
@@ -978,7 +966,7 @@ impl Interpreter {
             let iter_pos_base = store.caps().positional.len();
             let m = store.mark();
             store.merge_delta(delta);
-            Self::store_apply_named_capture(store, ctx.chars, token, current, next, pos_base);
+            Self::store_apply_named_capture(store, token, current, next, pos_base);
             Self::store_apply_hash_capture(store, ctx.chars, token, current, next, iter_pos_base);
             // Greedy: recurse deeper first, then stop at this length.
             // Frugal: the mirror — stop here first, then grow deeper.

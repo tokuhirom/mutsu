@@ -303,6 +303,38 @@ vectors disappear with P4.
 `Vec<PosSlot>` and `HashMap<Symbol, Vec<Arc<CapNode>>>`, and shrink the trail's undo
 vocabulary accordingly (the alignment invariants become structural rather than asserted in
 comments).
+**Landed 2026-07-31 in two stacked layers**
+(`news/2026-07/regex-positional-axis-posslot.md`, `.../regex-named-axis-namedslot.md`):
+
+- *Layer 1 (positional)*: the five parallel positional collections became
+  `Vec<PosSlot { from, to, subcap, quantified, nil }>` on both the accumulator
+  and `CapChildren`. The spans now SURVIVE onto stored nodes —
+  `into_cap_node` used to drop `positional_offsets`, which is why the builder
+  had a text-leaf fallback fabricating `0..len`; that fallback is retired for
+  matcher output (leaves report real `.from`/`.to`). Backrefs compare spans
+  against the engine's `chars` (alloc-free). Trail undo:
+  `PosLens{5}` → `PosLen`, 4-vec `PosTailRec` → one slot vec. Net −265 lines.
+- *Layer 2 (named)*: the three named collections became
+  `HashMap<String, NamedSlot { nodes: Vec<Arc<CapNode>>, quantified: bool }>`.
+  Every write site had a span in scope (verified by inventory before coding),
+  so text-only entries became span-bearing leaf nodes; the
+  `sub_count < name_count` alignment repair in `store_apply_named_capture`
+  and the silent-marker side channel's separate map disappear structurally.
+  `$<name>` backrefs are span compares. `make_match_object_full_q`'s
+  `named_quantified` parameter is gone (the flag lives in the slot), and the
+  `named`/`named_subcaps`/`named_quantified` builder-argument triple is one
+  map.
+- `CodeBlockContext` keeps its text snapshot shape, but both axes are
+  materialized from spans at its single construction site (same engine
+  space, so semantics are unchanged); `hash_captures` (accumulator-only) and
+  `positional_slots` (the pcre2 numbering axis) stay separate by design.
+- Capture names remain `String` keys — interning them to `Symbol`s needs a
+  Symbol-keyed hash map on the Match render path and is deferred as a
+  follow-up optimization, not part of the axis collapse.
+- Behavior changes, all corrective toward raku and consistent with what P3a
+  did for the subcap axis: subcap-less capture leaves report real offsets,
+  and `:m`/`:i`-fold capture texts read through consumers derive from the
+  original subject rather than the stripped/folded engine space.
 
 **P5 — Lazy `Match`.** First a pure refactor: funnel the `class_name == "Match"`
 consumer sites through accessor helpers (`match_str` / `match_span` / `match_list` /

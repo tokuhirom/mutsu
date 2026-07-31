@@ -168,7 +168,6 @@ impl Interpreter {
                         c.to as i64,
                         &c.positional,
                         &c.named,
-                        &c.named_subcaps,
                         c.target_or_new(&text),
                     )
                 })
@@ -211,7 +210,6 @@ impl Interpreter {
                 to,
                 &captures.positional,
                 &captures.named,
-                &captures.named_subcaps,
                 mtarget,
             );
             // Set positional capture env vars ($0, $1, ...) from match object

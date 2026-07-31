@@ -343,7 +343,7 @@ impl Interpreter {
                     } else {
                         for (_, _, caps) in &mut matches {
                             if !caps.code_blocks.is_empty()
-                                || caps.named_subcaps.values().any(|v| !v.is_empty())
+                                || caps.named.values().any(|slot| !slot.nodes.is_empty())
                             {
                                 let ct = caps.target_or_new(&text);
                                 self.reduce_regex_captures_made(caps, Some(&ct));
@@ -437,7 +437,6 @@ impl Interpreter {
             start as i64,
             end as i64,
             &[],
-            &std::collections::HashMap::new(),
             &std::collections::HashMap::new(),
             crate::runtime::MatchTarget::new(text),
         )

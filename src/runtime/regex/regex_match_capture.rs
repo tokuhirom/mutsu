@@ -56,14 +56,8 @@ impl Interpreter {
                     .map(|(next, mut inner_caps)| {
                         let mut new_caps = RegexCaptures::default();
                         for (k, v) in inner_caps.named.drain() {
-                            new_caps.named.entry(k).or_default().extend(v);
+                            new_caps.named.entry(k).or_default().merge(v);
                         }
-                        for (k, v) in inner_caps.named_subcaps.drain() {
-                            new_caps.named_subcaps.entry(k).or_default().extend(v);
-                        }
-                        new_caps
-                            .named_quantified
-                            .extend(inner_caps.named_quantified.drain());
                         for (k, v) in inner_caps.capture_alias_map.drain() {
                             new_caps.capture_alias_map.insert(k, v);
                         }
@@ -112,14 +106,8 @@ impl Interpreter {
                     {
                         let mut new_caps = RegexCaptures::default();
                         for (k, v) in inner_caps.named.drain() {
-                            new_caps.named.entry(k).or_default().extend(v);
+                            new_caps.named.entry(k).or_default().merge(v);
                         }
-                        for (k, v) in inner_caps.named_subcaps.drain() {
-                            new_caps.named_subcaps.entry(k).or_default().extend(v);
-                        }
-                        new_caps
-                            .named_quantified
-                            .extend(inner_caps.named_quantified.drain());
                         for (k, v) in inner_caps.capture_alias_map.drain() {
                             new_caps.capture_alias_map.insert(k, v);
                         }
@@ -162,7 +150,7 @@ impl Interpreter {
                     {
                         let mut new_caps = RegexCaptures::default();
                         for (k, v) in inner_caps.named.drain() {
-                            new_caps.named.entry(k).or_default().extend(v);
+                            new_caps.named.entry(k).or_default().merge(v);
                         }
                         new_caps.positional.append(&mut inner_caps.positional);
                         new_caps.code_blocks.append(&mut inner_caps.code_blocks);
@@ -326,7 +314,7 @@ impl Interpreter {
                 let mut new_caps = RegexCaptures::default();
                 let ctx = CodeBlockContext {
                     code: code.clone(),
-                    named: current_caps.named.clone(),
+                    named: super::regex_helpers::named_slot_texts(&current_caps.named, chars),
                     matched_so_far,
                     positional: super::regex_helpers::pos_slot_texts(
                         &current_caps.positional,
@@ -371,7 +359,7 @@ impl Interpreter {
                                 .named
                                 .entry(k.clone())
                                 .or_default()
-                                .extend(v.clone());
+                                .merge(v.clone());
                         }
                         return Some((end, new_caps));
                     }
@@ -424,17 +412,18 @@ impl Interpreter {
                 return None;
             }
             RegexAtom::NamedBackref(name) => {
-                let ref_text = current_caps
+                // Span comparison against the engine's own chars — same
+                // alloc-free scheme as the positional Backref (ADR-0016 P4).
+                let node = current_caps
                     .named
                     .get(name.as_str())
-                    .and_then(|vals| vals.last())
-                    .cloned();
-                if let Some(ref_text) = ref_text {
-                    let ref_chars: Vec<char> = ref_text.chars().collect();
-                    if pos + ref_chars.len() <= chars.len()
-                        && chars[pos..pos + ref_chars.len()] == ref_chars[..]
-                    {
-                        return Some((pos + ref_chars.len(), RegexCaptures::default()));
+                    .and_then(|slot| slot.nodes.last());
+                if let Some(node) = node {
+                    let (a, b) = (node.from.min(chars.len()), node.to.min(chars.len()));
+                    let (a, b) = (a, b.max(a));
+                    let len = b - a;
+                    if pos + len <= chars.len() && chars[pos..pos + len] == chars[a..b] {
+                        return Some((pos + len, RegexCaptures::default()));
                     }
                 }
                 return None;
@@ -565,7 +554,6 @@ impl Interpreter {
                     return Self::build_named_candidates_from_inner(
                         vec![(inner_end, inner_caps)],
                         pos,
-                        chars,
                         &spec,
                         None,
                     )
@@ -596,12 +584,16 @@ impl Interpreter {
                 }
                 let mut new_caps = RegexCaptures::default();
                 if !spec.silent {
-                    let captured: String = chars[pos..end].iter().collect();
                     new_caps
                         .named
                         .entry(spec.lookup_name.to_string())
                         .or_default()
-                        .push(captured);
+                        .nodes
+                        .push(std::sync::Arc::new(CapNode {
+                            from: pos,
+                            to: end,
+                            ..Default::default()
+                        }));
                 }
                 return Some((end, new_caps));
             }
@@ -634,27 +626,16 @@ impl Interpreter {
             {
                 let end = pos + 1;
                 let mut new_caps = RegexCaptures::default();
-                let captured: String = chars[pos..end].iter().collect();
                 let capture_name = spec
                     .capture_name
                     .as_deref()
                     .or_else(|| (!spec.silent).then_some(spec.lookup_name.as_str()));
                 if let Some(capture_name) = capture_name {
-                    let subcap = CapNode {
-                        from: pos,
-                        to: end,
-                        ..Default::default()
-                    };
-                    new_caps
-                        .named_subcaps
-                        .entry(capture_name.to_string())
-                        .or_default()
-                        .push(std::sync::Arc::new(subcap));
                     new_caps
                         .named
                         .entry(capture_name.to_string())
                         .or_default()
-                        .push(captured.clone());
+                        .merge(NamedSlot::leaf(pos, end));
                     // For <foo=alpha>, also capture under the original name.
                     // For <foo=.alpha>, the dot suppresses the original name.
                     if spec.capture_name.is_some()
@@ -664,21 +645,11 @@ impl Interpreter {
                         new_caps
                             .capture_alias_map
                             .insert(capture_name.to_string(), spec.lookup_name.clone());
-                        let subcap2 = CapNode {
-                            from: pos,
-                            to: end,
-                            ..Default::default()
-                        };
-                        new_caps
-                            .named_subcaps
-                            .entry(spec.lookup_name.to_string())
-                            .or_default()
-                            .push(std::sync::Arc::new(subcap2));
                         new_caps
                             .named
                             .entry(spec.lookup_name.to_string())
                             .or_default()
-                            .push(captured);
+                            .merge(NamedSlot::leaf(pos, end));
                     }
                 }
                 return Some((end, new_caps));
@@ -705,27 +676,16 @@ impl Interpreter {
                 }
                 let end = pos + 1;
                 let mut new_caps = RegexCaptures::default();
-                let captured: String = chars[pos..end].iter().collect();
                 let capture_name = spec
                     .capture_name
                     .as_deref()
                     .or_else(|| (!spec.silent).then_some(spec.lookup_name.as_str()));
                 if let Some(capture_name) = capture_name {
-                    let subcap = CapNode {
-                        from: pos,
-                        to: end,
-                        ..Default::default()
-                    };
-                    new_caps
-                        .named_subcaps
-                        .entry(capture_name.to_string())
-                        .or_default()
-                        .push(std::sync::Arc::new(subcap));
                     new_caps
                         .named
                         .entry(capture_name.to_string())
                         .or_default()
-                        .push(captured);
+                        .merge(NamedSlot::leaf(pos, end));
                 }
                 return Some((end, new_caps));
             }
@@ -787,14 +747,13 @@ impl Interpreter {
                     return None;
                 }
                 if chars[pos..pos + name_chars.len()] == name_chars[..] {
-                    let captured: String = name_chars.iter().collect();
                     let mut new_caps = RegexCaptures::default();
                     let capture_name = spec.capture_name.unwrap_or(literal);
                     new_caps
                         .named
                         .entry(capture_name)
                         .or_default()
-                        .push(captured);
+                        .merge(NamedSlot::leaf(pos, pos + name_chars.len()));
                     return Some((pos + name_chars.len(), new_caps));
                 }
                 None

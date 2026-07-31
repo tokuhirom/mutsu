@@ -318,16 +318,9 @@ impl Interpreter {
                     .unwrap_or(0);
                 let mut caps = self.regex_match_with_captures(&sub_pat, text);
                 self.set_current_package(saved_pkg);
-                if let Some(mut caps) = caps.take() {
+                if let Some(caps) = caps.take() {
                     if caps.from != 0 || caps.to != text.chars().count() {
                         continue;
-                    }
-                    if !spec.silent {
-                        let whole = caps.matched_text();
-                        caps.named
-                            .entry(spec.lookup_name.clone())
-                            .or_default()
-                            .push(whole);
                     }
                     // LTM: prefer longer declarative prefix match;
                     // if equal, prefer longer overall match
@@ -352,9 +345,10 @@ impl Interpreter {
                 if !spec.silent {
                     let mut subcap = best.clone();
                     subcap.sym = best_sym;
-                    best.named_subcaps
+                    best.named
                         .entry(spec.lookup_name.clone())
                         .or_default()
+                        .nodes
                         .push(std::sync::Arc::new(subcap.into_cap_node()));
                 }
                 return Some(best);

@@ -10,7 +10,7 @@
 //! `runtime` via `pub(crate) use self::regex_types::*`).
 
 use crate::value::Value;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -75,6 +75,39 @@ impl PosSlot {
     }
 }
 
+/// One named capture's entries (ADR-0016 P4) — the collapse of the three
+/// parallel named collections (`named` text map ‖ `named_subcaps` ‖
+/// `named_quantified`). Every entry is a span-bearing capture node; the
+/// captured text derives from the node's span through the shared subject.
+#[derive(Clone, Default)]
+pub(crate) struct NamedSlot {
+    pub(crate) nodes: Vec<Arc<CapNode>>,
+    /// The name was captured under a quantifier (or `@<name>=` forced list):
+    /// the Match presents it as an Array even for zero or one entries.
+    pub(crate) quantified: bool,
+}
+
+impl NamedSlot {
+    /// A slot holding one span-only leaf entry.
+    pub(crate) fn leaf(from: usize, to: usize) -> Self {
+        NamedSlot {
+            nodes: vec![Arc::new(CapNode {
+                from,
+                to,
+                ..Default::default()
+            })],
+            quantified: false,
+        }
+    }
+
+    /// Fold another slot's entries into this one (capture-merge semantics:
+    /// entries append, the quantified flag is sticky).
+    pub(crate) fn merge(&mut self, other: NamedSlot) {
+        self.nodes.extend(other.nodes);
+        self.quantified |= other.quantified;
+    }
+}
+
 /// Prefix marking a `named_subcaps` entry as a *silent action capture*: the
 /// match of a silent subrule (`<.foo>`) that is hidden from `.hash` but whose
 /// grammar action method (and its descendants') must still fire. The prefix is a
@@ -113,9 +146,11 @@ pub(crate) struct CapNode {
 /// per-node reduce-time state. Boxed so a leaf node pays one `None` word.
 #[derive(Clone, Default)]
 pub(crate) struct CapChildren {
-    pub(crate) named: HashMap<String, Vec<String>>,
-    pub(crate) named_subcaps: HashMap<String, Vec<Arc<CapNode>>>,
-    pub(crate) named_quantified: HashSet<String>,
+    /// Named captures as span-bearing slots (ADR-0016 P4): capture nodes and
+    /// the quantified flag in one axis. Silent-action captures (`<.foo>`)
+    /// live under `SILENT_ACTION_MARKER_PREFIX`-prefixed keys and are hidden
+    /// from `.hash`.
+    pub(crate) named: HashMap<String, NamedSlot>,
     pub(crate) capture_alias_map: HashMap<String, String>,
     /// Positional captures as span-bearing slots (ADR-0016 P4). Unlike the
     /// pre-P4 parallel vectors, the span survives onto the stored node — the
@@ -179,8 +214,6 @@ impl RegexCaptures {
     /// child payload is allocated only when something would go in it.
     pub(crate) fn into_cap_node(self) -> CapNode {
         let has_children = !self.named.is_empty()
-            || !self.named_subcaps.is_empty()
-            || !self.named_quantified.is_empty()
             || !self.capture_alias_map.is_empty()
             || !self.positional.is_empty()
             || !self.code_blocks.is_empty()
@@ -188,8 +221,6 @@ impl RegexCaptures {
         let children = has_children.then(|| {
             Box::new(CapChildren {
                 named: self.named,
-                named_subcaps: self.named_subcaps,
-                named_quantified: self.named_quantified,
                 capture_alias_map: self.capture_alias_map,
                 positional: self.positional,
                 code_blocks: self.code_blocks,
@@ -209,10 +240,9 @@ impl RegexCaptures {
 
 #[derive(Clone, Default)]
 pub(crate) struct RegexCaptures {
-    pub(crate) named: HashMap<String, Vec<String>>,
-    /// Nested sub-captures for named subrule matches. Key is capture name,
-    /// value is inner captures from the subrule (parallel to entries in `named`).
-    pub(crate) named_subcaps: HashMap<String, Vec<Arc<CapNode>>>,
+    /// Named captures as span-bearing slots (ADR-0016 P4). Keyed by capture
+    /// name; silent-action captures use `SILENT_ACTION_MARKER_PREFIX` keys.
+    pub(crate) named: HashMap<String, NamedSlot>,
     /// Positional captures as span-bearing slots (ADR-0016 P4): span, nested
     /// subcaptures, quantified iteration lists, and the Nil marker in one axis.
     pub(crate) positional: Vec<PosSlot>,
@@ -239,8 +269,6 @@ pub(crate) struct RegexCaptures {
     pub(crate) regex_vars: HashMap<String, Value>,
     /// The winning :sym<> variant name, if this match was from a protoregex.
     pub(crate) sym: Option<String>,
-    /// Named captures from quantified tokens — always stored as arrays in Match.
-    pub(crate) named_quantified: HashSet<String>,
     /// For aliased captures like `<str=.str_escape>`, maps capture name to
     /// original rule name for grammar action dispatch.
     pub(crate) capture_alias_map: HashMap<String, String>,

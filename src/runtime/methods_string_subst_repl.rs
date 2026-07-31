@@ -62,7 +62,6 @@ impl Interpreter {
                 captures.to as i64,
                 &captures.positional,
                 &captures.named,
-                &captures.named_subcaps,
                 captures.target_or_new(orig_text.unwrap_or_default()),
             );
             self.env.insert("/".to_string(), match_obj.clone());

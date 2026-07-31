@@ -53,11 +53,15 @@ impl Interpreter {
         attrs.insert("list".to_string(), Value::array(positional));
         let mut named = HashMap::new();
         for (k, v) in &captures.named {
+            if k.starts_with(crate::runtime::SILENT_ACTION_MARKER_PREFIX) {
+                continue;
+            }
             let vals: Vec<Value> = v
+                .nodes
                 .iter()
-                .map(|s| make_capture_match(s, 0, s.chars().count()))
+                .map(|n| make_capture_match(&captures.span_text(n.from, n.to), n.from, n.to))
                 .collect();
-            if vals.len() == 1 {
+            if vals.len() == 1 && !v.quantified {
                 named.insert(k.clone(), vals[0].clone());
             } else {
                 named.insert(k.clone(), Value::array(vals));
@@ -278,7 +282,6 @@ impl Interpreter {
                     c.to as i64,
                     &c.positional,
                     &c.named,
-                    &c.named_subcaps,
                     c.target_or_new(orig),
                 )
             })
@@ -429,11 +432,11 @@ impl Interpreter {
                 continue;
             }
             if let (Some(Some(name)), Some((start, end))) = (names.get(idx), locs.get(idx)) {
-                let captured = text.get(start..end)?.to_string();
+                text.get(start..end)?;
                 out.named
                     .entry(name.to_string())
                     .or_default()
-                    .push(captured);
+                    .merge(NamedSlot::leaf(to_char(start), to_char(end)));
             }
         }
         Some(out)
@@ -486,13 +489,13 @@ impl Interpreter {
                 }
                 if let (Some(Some(name)), Some((c_start, c_end))) = (names.get(idx), locs.get(idx))
                 {
-                    let Some(captured) = text.get(c_start..c_end) else {
+                    if text.get(c_start..c_end).is_none() {
                         continue;
-                    };
+                    }
                     item.named
                         .entry(name.to_string())
                         .or_default()
-                        .push(captured.to_string());
+                        .merge(NamedSlot::leaf(to_char(c_start), to_char(c_end)));
                 }
             }
             // Advance past the match (at least 1 byte to avoid infinite loop)

@@ -692,7 +692,11 @@ pub(super) fn remap_caps_spans_offset(
         slot.0 = m(slot.0);
         slot.1 = m(slot.1);
     }
-    for sc in caps.named_subcaps.values_mut().flatten() {
+    for sc in caps
+        .named
+        .values_mut()
+        .flat_map(|slot| slot.nodes.iter_mut())
+    {
         remap_cap_node_spans(std::sync::Arc::make_mut(sc), pos_map, orig_len, offset);
     }
     for slot in caps.positional.iter_mut() {
@@ -737,7 +741,11 @@ pub(super) fn remap_cap_node_spans(
     let Some(children) = node.children.as_deref_mut() else {
         return;
     };
-    for sc in children.named_subcaps.values_mut().flatten() {
+    for sc in children
+        .named
+        .values_mut()
+        .flat_map(|slot| slot.nodes.iter_mut())
+    {
         remap_cap_node_spans(std::sync::Arc::make_mut(sc), pos_map, orig_len, offset);
     }
     for slot in children.positional.iter_mut() {
@@ -873,12 +881,8 @@ pub(super) fn merge_regex_captures(
     mut src: RegexCaptures,
 ) -> RegexCaptures {
     for (k, v) in src.named.drain() {
-        dst.named.entry(k).or_default().extend(v);
+        dst.named.entry(k).or_default().merge(v);
     }
-    for (k, v) in src.named_subcaps.drain() {
-        dst.named_subcaps.entry(k).or_default().extend(v);
-    }
-    dst.named_quantified.extend(src.named_quantified.drain());
     for (k, v) in src.capture_alias_map.drain() {
         dst.capture_alias_map.insert(k, v);
     }
@@ -1013,12 +1017,37 @@ pub(super) fn fold_quantified_captures(caps: &mut RegexCaptures, base_len: usize
 pub(super) fn pos_slot_texts(slots: &[PosSlot], chars: &[char]) -> Vec<String> {
     slots
         .iter()
-        .map(|slot| {
-            let from = slot.from.min(chars.len());
-            let to = slot.to.min(chars.len()).max(from);
-            chars[from..to].iter().collect()
+        .map(|slot| span_chars_text(slot.from, slot.to, chars))
+        .collect()
+}
+
+/// [`pos_slot_texts`] for the named axis: the per-name text lists a
+/// `CodeBlockContext` snapshot carries. Silent-action marker keys never had
+/// text entries pre-P4 and are skipped.
+pub(super) fn named_slot_texts(
+    named: &HashMap<String, NamedSlot>,
+    chars: &[char],
+) -> HashMap<String, Vec<String>> {
+    named
+        .iter()
+        .filter(|(k, _)| !k.starts_with(SILENT_ACTION_MARKER_PREFIX))
+        .map(|(k, slot)| {
+            (
+                k.clone(),
+                slot.nodes
+                    .iter()
+                    .map(|n| span_chars_text(n.from, n.to, chars))
+                    .collect(),
+            )
         })
         .collect()
+}
+
+/// One span's text through a chars slice, clamped.
+fn span_chars_text(from: usize, to: usize, chars: &[char]) -> String {
+    let from = from.min(chars.len());
+    let to = to.min(chars.len()).max(from);
+    chars[from..to].iter().collect()
 }
 
 /// Reserve `stride` index-stable Nil slots for an unmatched optional capture

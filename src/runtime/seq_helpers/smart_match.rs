@@ -256,15 +256,22 @@ impl Interpreter {
                             captures.to as i64,
                             &captures.positional,
                             &captures.named,
-                            &HashMap::new(),
                             starget,
                         );
                         self.env.insert("/".to_string(), match_obj);
                         for (k, v) in &captures.named {
-                            let value = if v.len() == 1 {
-                                Value::str(v[0].clone())
+                            if k.starts_with(crate::runtime::SILENT_ACTION_MARKER_PREFIX) {
+                                continue;
+                            }
+                            let texts: Vec<String> = v
+                                .nodes
+                                .iter()
+                                .map(|n| captures.span_text(n.from, n.to))
+                                .collect();
+                            let value = if texts.len() == 1 {
+                                Value::str(texts[0].clone())
                             } else {
-                                Value::array(v.iter().cloned().map(Value::str).collect())
+                                Value::array(texts.into_iter().map(Value::str).collect())
                             };
                             self.env.insert(format!("<{}>", k), value);
                         }
@@ -337,7 +344,6 @@ impl Interpreter {
                                     cap.to as i64,
                                     &cap.positional,
                                     &cap.named,
-                                    &HashMap::new(),
                                     cap.target_or_new(&text),
                                 );
                                 junc_values.push(match_obj);
@@ -545,7 +551,7 @@ impl Interpreter {
                 let mut selected = selected;
                 for cap in &mut selected {
                     if !cap.code_blocks.is_empty()
-                        || cap.named_subcaps.values().any(|v| !v.is_empty())
+                        || cap.named.values().any(|slot| !slot.nodes.is_empty())
                     {
                         let ct = cap.target_or_new(&text);
                         self.reduce_regex_captures_made(cap, Some(&ct));
@@ -724,20 +730,16 @@ impl Interpreter {
                     // Merge hash captures into named for Match object
                     let mut named_with_hash = captures.named.clone();
                     for hash_name in captures.hash_captures.keys() {
-                        // Don't overwrite existing named captures
-                        if !named_with_hash.contains_key(hash_name) {
-                            // Store placeholder so make_match_object_full creates the key
-                            named_with_hash.insert(hash_name.clone(), Vec::new());
-                        }
+                        // Don't overwrite existing named captures; an empty
+                        // placeholder slot makes the builder create the key.
+                        named_with_hash.entry(hash_name.clone()).or_default();
                     }
-                    let match_obj = Value::make_match_object_full_q(
+                    let match_obj = Value::make_match_object_full(
                         captures.from as i64,
                         captures.to as i64,
                         &captures.positional,
                         &named_with_hash,
-                        &captures.named_subcaps,
                         starget,
-                        &captures.named_quantified,
                     );
                     // Apply hash captures: set named entries to Hash values
                     if !captures.hash_captures.is_empty()
