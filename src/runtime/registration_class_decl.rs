@@ -1045,11 +1045,22 @@ impl Interpreter {
                     for stmt in &role.deferred_body_stmts {
                         let is_type_decl =
                             matches!(stmt, Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. });
+                        // A `token`/`rule`/`regex` in a role body is composed into
+                        // the consuming grammar, exactly like a method: it must
+                        // register under the COMPOSING class's package, not the
+                        // role's and not the enclosing one. Registering it under
+                        // the outer package makes every grammar share one global
+                        // `<item>`, so two roles declaring the same token name
+                        // silently alias (`grammar GA does A` seeing B's `item`).
+                        let is_regex_decl =
+                            matches!(stmt, Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. });
                         if is_type_decl {
                             self.set_current_package(base_role_name.to_string());
+                        } else if is_regex_decl {
+                            self.set_current_package(name.to_string());
                         }
                         let r = self.run_block_raw(std::slice::from_ref(stmt));
-                        if is_type_decl {
+                        if is_type_decl || is_regex_decl {
                             self.set_current_package(saved_body_pkg.clone());
                         }
                         // A role body statement that dies rejects this
@@ -1193,6 +1204,12 @@ impl Interpreter {
                         // Don't remove the param name itself - methods may need it
                     }
                 }
+                // Composing a role composes the roles it composes, so their
+                // bodies run too — nearest first, which is the order Rakudo
+                // runs them in for `role GP {...}; role P does GP {...};
+                // class K does P { }` (P, then GP). Their methods already
+                // transit into the class below; only the bodies were missing.
+                self.run_composed_role_ancestor_bodies(base_role_name, name)?;
                 if let Some(parent_specs) =
                     self.registry().role_parents.get(base_role_name).cloned()
                 {
@@ -2466,6 +2483,14 @@ impl Interpreter {
                             }
                         }
                     }
+                    // `also does R` is a composition like any other, so R's
+                    // body runs — and so do the bodies of the roles R composes.
+                    self.run_role_body_for_composition(
+                        &role_name_str,
+                        name,
+                        &role.deferred_body_stmts,
+                    )?;
+                    self.run_composed_role_ancestor_bodies(&role_name_str, name)?;
                 }
                 Stmt::TrustsDecl {
                     name: trusted_class,

@@ -389,6 +389,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         let mut r = r;
         let mut parents = Vec::new();
         let mut does_parents = Vec::new();
+        let mut is_parent_count = 0usize;
         loop {
             if let Some(r2) = keyword("is", r) {
                 let (r2, _) = ws1(r2)?;
@@ -399,6 +400,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     qualified_ident(r2)?
                 };
                 parents.push(parent);
+                is_parent_count += 1;
                 let (r2, _) = ws(r2)?;
                 r = r2;
                 continue;
@@ -418,8 +420,10 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         // `grammar Grammar` (qualified to `Mod::Grammar`) must still inherit the
         // built-in Grammar; only a genuine top-level `grammar Grammar` that IS
         // the built-in would self-parent, and that is dropped at registration
-        // (see the self-parent filter in `exec_register_class_op`).
-        if parents.is_empty() {
+        // (see the self-parent filter in `exec_register_class_op`). A composed
+        // role is not an `is` parent, so `unit grammar G does R;` must still
+        // inherit Grammar.
+        if is_parent_count == 0 {
             parents.push("Grammar".to_string());
         }
         let (r, _) = opt_char(r, ';');

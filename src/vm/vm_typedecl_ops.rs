@@ -513,39 +513,14 @@ impl Interpreter {
                     });
                 }
             }
-            // Execute deferred non-declaration body statements now that the role
-            // name is fully available in the environment.  This lets code like
-            // `role R { method foo {}; R.foo }` work.
-            if type_params.is_empty() {
-                let deferred = self
-                    .get_role_def(&qualified_name)
-                    .map(|r| r.deferred_body_stmts.clone())
-                    .unwrap_or_default();
-                // Run a nested TYPE declaration (`my class CR2` / `my role`) in the
-                // role body with the ROLE as the current package, so it is named
-                // `R2::CR2` (qualified by its lexical role) and `$?CLASS.^name`
-                // reports the full name. Only type declarations get the role
-                // package — a lexical `sub`/`my $x` in the role body must keep the
-                // outer package so a bare `&a` reference from a role method still
-                // resolves (else it would register as `Role::a` and vanish).
-                let saved_role_body_pkg = self.current_package().to_string();
-                for stmt in &deferred {
-                    let is_type_decl =
-                        matches!(stmt, Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. });
-                    if is_type_decl {
-                        self.set_current_package(qualified_name.clone());
-                    }
-                    let r = self.vm_run_block_raw(std::slice::from_ref(stmt));
-                    if is_type_decl {
-                        self.set_current_package(saved_role_body_pkg.clone());
-                    }
-                    r?;
-                }
-                // Slice F: write the deferred body's outer-lexical mutations
-                // through to this caller frame's local slots (vm_run_block_raw
-                // recorded them); keeps `$side` coherent without the reverse pull.
-                self.apply_pending_rw_writeback(code);
-            }
+            // A role's non-declaration body statements are NOT run here. Rakudo
+            // runs a role body once per *composition* (`class C does R`, a pun,
+            // or a `but`/`does` mixin), never at the declaration itself:
+            //
+            //     role R { say "BODY" }               # prints nothing
+            //     role R { say "BODY" }; class C does R { }   # prints BODY once
+            //
+            // The composition-time run lives in `registration_class_decl.rs`.
 
             // Gather deferred custom traits from role registration
             let role_deferred = self

@@ -2725,7 +2725,7 @@ impl Interpreter {
                     // Already punned: fall through to ordinary class dispatch,
                     // which is what makes the retry below terminate.
                     if !self.registry().classes.contains_key(&role_name.resolve()) {
-                        self.ensure_role_punned_to_class(&role_name.resolve());
+                        self.ensure_role_punned_to_class(&role_name.resolve())?;
                         return self.call_method_with_values(target.clone(), method, args);
                     }
                 }

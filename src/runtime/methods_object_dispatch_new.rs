@@ -406,7 +406,7 @@ impl Interpreter {
             {
                 return self.dispatch_new(Value::package(Symbol::intern(&punned)), args);
             }
-            self.ensure_role_punned_to_class(&base_name_str);
+            self.ensure_role_punned_to_class(&base_name_str)?;
             let mut selected_role = self.registry().roles.get(&base_name_str).cloned();
             let mut matched_lang_version: Option<String> = None;
             // The matched candidate's parameter *signature*, not just the names:
@@ -552,7 +552,7 @@ impl Interpreter {
                 // `%.phases` from the parameter inside `BUILD`, so before this
                 // the pun answered `Any` for every phase.
                 let pre_existing_class = self.registry().classes.contains_key(&base_name_str);
-                self.ensure_role_punned_to_class(&base_name_str);
+                self.ensure_role_punned_to_class(&base_name_str)?;
                 let saved_bindings = self
                     .registry()
                     .class_role_param_bindings
@@ -1413,7 +1413,7 @@ impl Interpreter {
                 }
                 if role.methods.contains_key("new") {
                     let role_name = class_name.resolve();
-                    self.ensure_role_punned_to_class(&role_name);
+                    self.ensure_role_punned_to_class(&role_name)?;
                     let dispatched = self.run_instance_method(
                         &class_name.resolve(),
                         AttrMap::new(),
@@ -1471,7 +1471,7 @@ impl Interpreter {
                 // class, so the role stays a role -- the same bookkeeping the
                 // `new`-declaring branch above performs.
                 let pre_existing_class = self.registry().classes.contains_key(&cn_resolved);
-                self.ensure_role_punned_to_class(&cn_resolved);
+                self.ensure_role_punned_to_class(&cn_resolved)?;
                 self.role_pun_construction.push(cn_resolved.clone());
                 let constructed = self.dispatch_new(target.clone(), args.clone());
                 self.role_pun_construction.pop();
@@ -1492,7 +1492,7 @@ impl Interpreter {
             if !self.registry().classes.contains_key(&cn_resolved)
                 && self.registry().roles.contains_key(&cn_resolved)
             {
-                self.ensure_role_punned_to_class(&cn_resolved);
+                self.ensure_role_punned_to_class(&cn_resolved)?;
             }
             if self.registry().classes.contains_key(&cn_resolved)
                 || type_args
