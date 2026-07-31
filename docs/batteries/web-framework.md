@@ -102,22 +102,32 @@ releases:
   path, real `IO::Socket::Async` + supply-pipeline load (mutsu's S17 layer
   gets its first production-shaped workout).
 
-## Leaning: two tracks, Humming-Bird first
+## Leaning: Cro first (decision updated 2026-07-31, same day)
 
-- **Short term — Humming-Bird is the battery candidate.** MIT, actively
-  maintained (2026-07), pure-Raku dep closure of which most is already
-  bundled or proven on mutsu, server built directly on
-  `IO::Socket::Async.listen` + `react whenever` (implemented territory), and
-  the suite gap to the 10/14 baseline is essentially one parser ticket. Its
-  weakness is ecosystem standing (1 dependent) — it earns the slot by being
-  *reachable*, not by being the standard.
-- **Mid term — Cro is the compatibility north star for this slot**, the same
-  role zef plays for the module pipeline: 61 dependents, and Air (the most
+**Original leaning was "Humming-Bird short-term, Cro mid-term". The user
+overruled it the same day, and the survey data supports the reversal**: 4 of
+Humming-Bird's 14 test files fail under current raku itself (a duplicate
+double-import that a maintained project would have caught), it has 1
+dependent, and its parser blocker turned out to be shared with Cro anyway.
+A battery whose upstream does not keep itself green on raku is a weak
+foundation to bundle.
+
+- **The slot's target is Cro** — the same role zef plays for the module
+  pipeline: 61 dependents, raku baseline 28/28, and Air (the most
   interesting modern DX, HTMX-oriented, 2026-02) plus the rest of the Cro
-  ring all become reachable if and only if Cro::HTTP runs. Do not bundle Cro
-  yet; treat "Cro::HTTP suite green under mutsu" as a campaign target measured
-  by this survey's harness, starting with the two tickets above, then
-  `Cro::Service.start`, then a built-in `monitor`.
+  ring become reachable if and only if Cro::HTTP runs. Do not bundle Cro
+  yet; treat "Cro::HTTP suite green under mutsu" as the campaign target
+  measured by this survey's harness. Known gate order after the brace-
+  subscript (#5599) and role-stub (name-based satisfaction) fixes:
+  `CBOR::Simple`'s nqp ops (gates `Log::Timeline`, and therefore
+  `use Cro::HTTP::Router` — the load-time slice is small: `bitor_i`,
+  `nqp::const::BINARY_*`, `Encoding::Registry`; the buf read/write family
+  only runs when log outputs are activated), then `Cro::Service.start`,
+  then a built-in `monitor` for the client/session files.
+- **Humming-Bird stays a measured compat data point** (10/14 = its raku
+  baseline as of the two fixes above), not the battery. Its remaining
+  failures (t/04 middleware assignment, t/13 live-server flow) are still
+  worth fixing as general bugs when convenient.
 - **Rejected for the slot**: Web::App/HTTP::Easy (healthy and tiny, but a
   synchronous PSGI/SCGI/FastCGI design from the pre-async era with 1
   dependent; its suites already pass — keep as a compat data point, not a
