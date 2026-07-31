@@ -12,8 +12,8 @@ code rather than as a campaign.
 | `nativecast` | works, but as a **builtin** and with no `&nativecast` | [`nativecall-exports-are-not-builtins.md`](nativecall-exports-are-not-builtins.md) |
 | `nativesizeof` | same | same |
 | `cglobal` | ✅ done 2026-07-29 | prelude sub over a native fetch |
-| `explicitly-manage` | **missing** | `explicitly-manage($str)` — hands a `Str`'s buffer's lifetime to the callee. Documented in `nativecall.rakudoc` §"Explicit memory management" |
-| `refresh` | **missing** | `refresh($obj)` — re-read a CStruct's fields after C wrote them behind mutsu's back. Under ADR-0015's shared-storage direction this may become a no-op rather than a copy; decide when implementing |
+| `explicitly-manage` | ✅ done 2026-07-31 | prelude sub returning a `NativeCall::CStr` over a deliberately-leaked buffer |
+| `refresh` | ✅ done 2026-07-31 | a genuine no-op returning 1: a mutsu CStruct holds only the C address and every field access reads through it, so its fields are never stale |
 
 `guess_library_name` and `check_routine_sanity` are `:TEST`-tagged in Rakudo and
 are not part of the default surface; no reason to add them.
@@ -21,36 +21,36 @@ are not part of the default surface; no reason to add them.
 ## Type objects
 
 `use NativeCall` exports these as `NativeCall::Types::*`. mutsu answers a short
-name, which is a cosmetic difference (`.^name`), except where the type object
-does not exist at all:
+name, which is a cosmetic difference (`.^name`). Every type object now exists;
+what remains is only that prefix:
 
 | type | mutsu `.^name` | raku `.^name` |
 | --- | --- | --- |
 | `long` / `longlong` / `ulong` / `ulonglong` | `long` / … | `NativeCall::Types::long` / … |
-| `size_t` | `size_t` | `NativeCall::Types::size_t` |
+| `size_t` / `ssize_t` | `size_t` / `ssize_t` | `NativeCall::Types::size_t` / `…::ssize_t` |
+| `bool` | `bool` | `NativeCall::Types::bool` |
 | `void` | `void` | `NativeCall::Types::void` |
 | `CArray` / `Pointer` | `CArray` / `Pointer` | `NativeCall::Types::CArray` / `…::Pointer` |
-| **`bool`** | `Str` — **absent** | `NativeCall::Types::bool` |
-| **`ssize_t`** | `Str` — **absent** | `NativeCall::Types::ssize_t` |
-| **`OpaquePointer`** | `Str` — **absent** | `NativeCall::Types::Pointer` (an alias) |
+| `OpaquePointer` | `Pointer` (an alias, so `OpaquePointer === Pointer`) | `NativeCall::Types::Pointer` (same) |
 
-`Str` here is what an undeclared bareword degrades to, so those three are simply
-not declared. Note `OpaquePointer` *is* accepted in a **signature**
-(`CType::from_type_name` maps it), so only its use as a term is missing — which
-is what `my $p = OpaquePointer;` and `$x ~~ OpaquePointer` need.
+`bool`, `ssize_t` and `OpaquePointer` were **absent** until 2026-07-31 — naming
+one as a term degraded to the `Str` an undeclared bareword becomes — and `void`
+was declared but gated on the source *also* naming `Pointer`. Both are fixed;
+see [`news/2026-07/nativecall-type-surface.md`](../../news/2026-07/nativecall-type-surface.md).
 
-Also note the short-name answers are not merely cosmetic for `void`: the
-`Pointer`/`void` prelude classes are injected **only when the source contains
-"Pointer"** (`inject_nativecall_prelude`), so `use NativeCall; say void.^name`
-alone does not see `void`. Widening that gate is part of the same cleanup as
-[`nativecall-exports-are-not-builtins.md`](nativecall-exports-are-not-builtins.md).
+Renaming the type objects to their `NativeCall::Types::` spelling is the one
+open item here, and it is cosmetic: nothing in the batteries matches on those
+names. It belongs with the cleanup in
+[`nativecall-exports-are-not-builtins.md`](nativecall-exports-are-not-builtins.md),
+since both hinge on NativeCall's surface being a real module rather than ambient
+globals.
 
 ## Reproducing
 
 ```sh
 for t in long longlong ulong ulonglong bool size_t ssize_t void CArray Pointer OpaquePointer; do
   printf '%-14s mutsu=' "$t"
-  mutsu -e "use NativeCall; my \$p = Pointer; say $t.^name" 2>&1 | head -1
+  mutsu -e "use NativeCall; say $t.^name" 2>&1 | head -1
 done
 for f in explicitly-manage refresh nativesizeof nativecast cglobal; do
   printf '%-20s ' "$f"

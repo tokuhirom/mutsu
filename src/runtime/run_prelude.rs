@@ -1,6 +1,6 @@
 use super::run::{
-    IO_SOCKET_ROLE_PRELUDE, NATIVECALL_CGLOBAL_PRELUDE, NATIVECALL_POINTER_PRELUDE,
-    RATIONAL_ROLE_PRELUDE,
+    IO_SOCKET_ROLE_PRELUDE, NATIVECALL_CGLOBAL_PRELUDE, NATIVECALL_MANAGE_PRELUDE,
+    NATIVECALL_POINTER_PRELUDE, RATIONAL_ROLE_PRELUDE,
 };
 use super::*;
 
@@ -30,13 +30,19 @@ impl Interpreter {
         *stmts = combined;
     }
 
-    /// Prepend the builtin NativeCall `Pointer` class when a program that uses
-    /// NativeCall references `Pointer` without declaring its own. Parsed once
-    /// and cached, like [`inject_prelude_roles`].
+    /// Prepend NativeCall's type objects (`Pointer`, `void`, `OpaquePointer`,
+    /// `NativeCall::CStr`) to a program that uses NativeCall. Parsed once and
+    /// cached, like [`inject_prelude_roles`].
+    ///
+    /// The gate is `use NativeCall` alone, deliberately: keying it on the
+    /// source also naming `Pointer` meant `use NativeCall; say void.^name` --
+    /// or any of the other three -- saw an undeclared bareword, since only one
+    /// of the four names gated all of them.
     pub(super) fn inject_nativecall_prelude(source: &str, stmts: &mut Vec<Stmt>) {
         if !source.contains("NativeCall")
-            || !source.contains("Pointer")
             || source.contains("class Pointer")
+            || source.contains("class void")
+            || source.contains("class OpaquePointer")
         {
             return;
         }
@@ -75,6 +81,33 @@ impl Interpreter {
         static CGLOBAL_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
         let prelude = CGLOBAL_STMTS.get_or_init(|| {
             crate::parse_dispatch::parse_source(NATIVECALL_CGLOBAL_PRELUDE)
+                .map(|(s, _)| s)
+                .unwrap_or_default()
+        });
+        if prelude.is_empty() {
+            return;
+        }
+        let mut combined = prelude.clone();
+        combined.append(stmts);
+        *stmts = combined;
+    }
+
+    /// Prepend NativeCall's `explicitly-manage` / `refresh` when a program that
+    /// uses NativeCall calls one of them without declaring its own.
+    pub(super) fn inject_nativecall_manage_prelude(source: &str, stmts: &mut Vec<Stmt>) {
+        if !source.contains("NativeCall") {
+            return;
+        }
+        let wants_manage =
+            source.contains("explicitly-manage") && !source.contains("sub explicitly-manage");
+        let wants_refresh = source.contains("refresh") && !source.contains("sub refresh");
+        if !wants_manage && !wants_refresh {
+            return;
+        }
+        use std::sync::OnceLock;
+        static MANAGE_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
+        let prelude = MANAGE_STMTS.get_or_init(|| {
+            crate::parse_dispatch::parse_source(NATIVECALL_MANAGE_PRELUDE)
                 .map(|(s, _)| s)
                 .unwrap_or_default()
         });

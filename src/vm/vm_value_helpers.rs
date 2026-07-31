@@ -440,6 +440,8 @@ impl Interpreter {
                 | "longlong"
                 | "ulonglong"
                 | "size_t"
+                | "ssize_t"
+                | "bool"
                 | "num"
                 | "num32"
                 | "num64"

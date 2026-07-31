@@ -30,6 +30,12 @@ pub(crate) const NATIVE_INT_TYPES: &[&str] = &[
     "longlong",
     "ulonglong",
     "size_t",
+    "ssize_t",
+    // `NativeCall::Types::bool` is C's `_Bool`: one byte wide, and *signed* —
+    // Rakudo answers -1 for `my bool $x = -1` and 44 for `= 300`, i.e. exactly
+    // `int8`. It is an integer type there too (a native `bool` return boxes to
+    // `Int`, not to `Bool`).
+    "bool",
 ];
 
 /// Returns true if `name` is a native integer type.
@@ -79,10 +85,11 @@ pub(crate) fn native_int_bounds(type_name: &str) -> Option<(NumBigInt, NumBigInt
             NumBigInt::from(-2147483648i64),
             NumBigInt::from(2147483647i64),
         )),
-        "int64" | "int" | "atomicint" | "long" | "longlong" => Some((
+        "int64" | "int" | "atomicint" | "long" | "longlong" | "ssize_t" => Some((
             NumBigInt::from(-9223372036854775808i64),
             NumBigInt::from(9223372036854775807i64),
         )),
+        "bool" => Some((NumBigInt::from(-128i64), NumBigInt::from(127i64))),
         "uint8" | "byte" => Some((NumBigInt::from(0u64), NumBigInt::from(255u64))),
         "uint16" => Some((NumBigInt::from(0u64), NumBigInt::from(65535u64))),
         "uint32" => Some((NumBigInt::from(0u64), NumBigInt::from(4294967295u64))),
@@ -97,11 +104,11 @@ pub(crate) fn native_int_bounds(type_name: &str) -> Option<(NumBigInt, NumBigInt
 /// Number of bits for each native type.
 fn native_type_bits(type_name: &str) -> Option<u32> {
     match type_name {
-        "int8" | "uint8" | "byte" => Some(8),
+        "int8" | "uint8" | "byte" | "bool" => Some(8),
         "int16" | "uint16" => Some(16),
         "int32" | "uint32" => Some(32),
         "int64" | "uint64" | "int" | "uint" | "long" | "ulong" | "longlong" | "ulonglong"
-        | "size_t" => Some(64),
+        | "size_t" | "ssize_t" => Some(64),
         _ => None,
     }
 }
@@ -110,7 +117,7 @@ fn native_type_bits(type_name: &str) -> Option<u32> {
 fn is_signed_native(type_name: &str) -> bool {
     matches!(
         type_name,
-        "int8" | "int16" | "int32" | "int64" | "int" | "long" | "longlong"
+        "int8" | "int16" | "int32" | "int64" | "int" | "long" | "longlong" | "ssize_t" | "bool"
     )
 }
 

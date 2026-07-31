@@ -1346,6 +1346,10 @@ impl Interpreter {
                     // One fetch behind the `Proxy` NativeCall's `cglobal`
                     // returns (see runtime::nativecall_global).
                     result
+                } else if let Some(result) = self.try_explicitly_manage(name, &args) {
+                    // The leak behind NativeCall's `explicitly-manage`
+                    // (see runtime::nativecall_manage).
+                    result
                 } else if let Some(result) = self.try_native_json_function(name, &args) {
                     // Dispatch JSON::Fast / JSON::Tiny `to-json` / `from-json`
                     // to the native implementation (runtime/json.rs).
