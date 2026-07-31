@@ -413,6 +413,49 @@ impl Interpreter {
                                 {
                                     whenever_on_close.extend(cbs.iter().cloned());
                                 }
+                            } else if let ValueView::Instance {
+                                attributes: inner_attrs,
+                                ..
+                            } = inner_supply.view()
+                                && let Some(ValueView::Int(chan_sid)) =
+                                    inner_attrs.as_map().get("supply_id").map(Value::view)
+                                && let Some(rx) = take_supply_channel(chan_sid as u64)
+                            {
+                                // Live channel-backed whenever source (e.g.
+                                // `whenever IO::Socket::Async.listen(...)` inside a
+                                // supply block). The react event loop drains such
+                                // channels itself; a bare `.tap` has no loop, so
+                                // drive the whenever body from a worker thread. The
+                                // body's `$emitter.emit(...)` dispatches through the
+                                // emitter supplier's registered taps, which is how
+                                // emitted values reach `tap_cb` from that thread.
+                                if !outer_tap_registered
+                                    && Self::supply_has_active_callback(&tap_cb)
+                                {
+                                    register_supplier_tap(
+                                        emitter_supplier_id,
+                                        tap_cb.clone(),
+                                        delay_seconds,
+                                    );
+                                    outer_tap_registered = true;
+                                }
+                                if let Some(ref qf) = quit_cb {
+                                    register_supplier_quit_callback(
+                                        emitter_supplier_id,
+                                        qf.clone(),
+                                    );
+                                }
+                                // Point the outer Tap at the OS listener so
+                                // `$tap.close` stops listening (Raku closes the
+                                // upstream source when the downstream tap closes).
+                                if let Some(lid) = inner_attrs.as_map().get("listener-id") {
+                                    tap_handle_attrs.insert("listener-id".to_string(), lid.clone());
+                                }
+                                let mut driver = self.clone_for_thread();
+                                let body_cb = body_cb.clone();
+                                crate::runtime::builtins_system::spawn_user_thread(move || {
+                                    Self::run_supply_act_loop(&mut driver, &rx, &body_cb, 0.0);
+                                });
                             } else {
                                 // Cold (supplier-less) whenever source: replay it
                                 // synchronously, capturing the body's emissions so

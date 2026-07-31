@@ -175,7 +175,15 @@ impl Interpreter {
             .map(|v| v.to_string_value())
             .or_else(|| attributes.get("enc").map(Value::to_string_value))
             .unwrap_or_else(|| "utf-8".to_string());
-        let supply_id = next_supply_id();
+        // This id is stamped into the Supply's `supplier_id` attribute and every
+        // downstream registration (register_supplier_tap, supplier_done, emit)
+        // keys the SUPPLIER registry with it — so it must come from the supplier
+        // counter. Allocating from `next_supply_id()` (a separate counter, also
+        // starting at 1) collided with a genuine `Supplier.new` of the same
+        // number, cross-delivering that supplier's emissions to this socket's
+        // tap (seen as Cro::TCP::Message objects arriving on a client's
+        // `.Supply(:bin)` tap).
+        let supply_id = next_supplier_id();
         register_async_supply(
             supply_id,
             AsyncSocketSupplyState {

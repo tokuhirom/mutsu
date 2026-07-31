@@ -436,6 +436,11 @@ impl Interpreter {
                 supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
                 supply_attrs.insert("live".to_string(), Value::TRUE);
                 supply_attrs.insert("supply_id".to_string(), Value::int(supply_id as i64));
+                // Carry the listener handle on the Supply so a downstream
+                // consumer (the supply-block tap path) can point its Tap at
+                // the OS listener — closing that outer tap must stop
+                // listening, exactly like closing the Tap returned here.
+                supply_attrs.insert("listener-id".to_string(), Value::int(listener_id as i64));
                 let supply_val = Value::make_instance(Symbol::intern("Supply"), supply_attrs);
 
                 // If we are inside a react block, register the subscription so the
@@ -447,7 +452,18 @@ impl Interpreter {
                 // TcpStream, so a client on the main thread sees the data over the
                 // OS socket).
                 if !self.supply_emit_buffer.is_empty() {
-                    let sub = Value::array(vec![supply_val, callback]);
+                    // Same 4-element shape as every other whenever subscription
+                    // marker ([source, body, [LAST…], [QUIT…]]) so the supply-
+                    // block tap path recognises it; a 2-element array fell
+                    // through as a plain emitted value there. The listener
+                    // whenever's own LAST/QUIT phasers are not routed here.
+                    // TODO: thread them through run_whenever_with_value.
+                    let sub = Value::array(vec![
+                        supply_val,
+                        callback,
+                        Value::array(Vec::new()),
+                        Value::array(Vec::new()),
+                    ]);
                     if let Some(last) = self.supply_emit_buffer.last_mut() {
                         last.push(sub);
                     }
@@ -529,7 +545,10 @@ impl Interpreter {
             "Supply" => {
                 let id =
                     udp_id.ok_or_else(|| RuntimeError::new("Missing UDP socket id for Supply"))?;
-                let supply_id = next_supply_id();
+                // Stamped as `supplier_id` below, so allocate from the supplier
+                // counter (see async_socket_supply_in_memory for the collision
+                // this avoids).
+                let supply_id = next_supplier_id();
                 register_async_supply(
                     supply_id,
                     AsyncSocketSupplyState {

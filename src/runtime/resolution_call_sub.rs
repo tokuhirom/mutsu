@@ -411,6 +411,20 @@ impl Interpreter {
                     new_env.insert_sym(*k, v.clone());
                     continue;
                 }
+                // `self` is LEXICAL in Raku: a block has no invocant of its own,
+                // so `self`/`$.attr` inside it resolves to the enclosing method's
+                // invocant — the one this closure captured. The merge_all
+                // don't-overwrite below made it *dynamic* instead: a natively
+                // invoked callback (a `whenever` body dispatched from a supplier
+                // tap or the in-process connect path) ran against whatever `self`
+                // the caller env last leaked — e.g. Cro::TCP::Listener.incoming's
+                // whenever body read `$.nodelay` off a Cro::TCP::Replier. Mirrors
+                // the VM closure dispatch's force-install; a method's own invocant
+                // is bound from its args after this merge, so it still wins.
+                if k.with_str(|s| s == "self") {
+                    new_env.insert_sym(*k, v.clone());
+                    continue;
+                }
                 // Caller-priority: a `Proxy` FETCH body (and the other
                 // native-invoked callbacks that pass `merge_all`) must see the
                 // CURRENT value of a captured lexical its STORE twin mutates
