@@ -505,14 +505,28 @@ impl Interpreter {
         quit_cbs: &[Value],
         last_value: &mut Value,
     ) -> Result<(), RuntimeError> {
-        let values = match source.view() {
+        // Materialize the source through `supply_get_values` (same as
+        // `replay_cold_whenever_capture`): an on-demand source (`whenever $src`
+        // where $src is a stored `supply { emit ... }`) keeps its values behind
+        // `on_demand_callback`, not in a static `values` attribute — reading
+        // only the attribute replayed ZERO values and jumped straight to the
+        // LAST phaser (Cro::MessageWithBody.body-blob awaited an empty Buf).
+        let (values, mut initial_quit): (Vec<Value>, Option<Value>) = match source.view() {
             ValueView::Instance { attributes, .. } => {
-                match attributes.as_map().get("values").map(Value::view) {
-                    Some(ValueView::Array(items, ..)) => items.to_vec(),
-                    _ => Vec::new(),
+                match self.supply_get_values(&attributes.as_map()) {
+                    Ok(items) => (items, None),
+                    Err(err) => (
+                        Vec::new(),
+                        Some(
+                            err.exception
+                                .as_deref()
+                                .cloned()
+                                .unwrap_or_else(|| Value::str(err.message.clone())),
+                        ),
+                    ),
                 }
             }
-            _ => Vec::new(),
+            _ => (Vec::new(), None),
         };
 
         // Capture whatever the given callback `emit`s into `last_value`.
@@ -540,7 +554,7 @@ impl Interpreter {
 
         // Run the body for each source value; force lazy elements so a dying
         // gather surfaces as a quit.
-        let mut quit_reason: Option<Value> = None;
+        let mut quit_reason: Option<Value> = initial_quit.take();
         'replay: for v in values {
             let lazy = if let ValueView::LazyList(ll) = v.view() {
                 Some(ll.clone())
