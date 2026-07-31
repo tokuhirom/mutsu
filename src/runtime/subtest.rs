@@ -406,7 +406,24 @@ impl Interpreter {
             return Ok(());
         }
 
-        // Not in react mode: original behavior
+        // Not in react mode: original behavior.
+        //
+        // When this whenever is registered at dispatch time from INSIDE another
+        // whenever's body (the enclosing supply block's tap already sized its
+        // done group from the static subscriptions), join that group: increment
+        // it now and arrange a decrement when this nested source completes.
+        // Without this the enclosing supply looked finished as soon as its
+        // static sources were done and fired `done` while the nested pipeline
+        // was still live (Cro::Connector.establish).
+        let group_marker = self
+            .env
+            .get(Self::WHENEVER_DONE_GROUP_ENV_KEY)
+            .and_then(|v| match v.view() {
+                ValueView::Int(gid) => Some(gid as u64),
+                _ => None,
+            })
+            .filter(|gid| crate::runtime::native_methods::whenever_done_group_increment(*gid))
+            .map(Self::make_whenever_done_group_marker);
         if let ValueView::Instance {
             class_name,
             attributes: _,
@@ -415,8 +432,15 @@ impl Interpreter {
             && class_name == "Supply"
         {
             let mut tap_args = vec![callback.clone()];
-            if let Some(done_cb) = last_callbacks.first().cloned() {
-                tap_args.push(Value::pair("done".to_string(), done_cb));
+            let mut done_chain: Vec<Value> = last_callbacks.first().cloned().into_iter().collect();
+            done_chain.extend(group_marker.clone());
+            match done_chain.len() {
+                0 => {}
+                1 => tap_args.push(Value::pair("done".to_string(), done_chain.pop().unwrap())),
+                _ => tap_args.push(Value::pair(
+                    "done".to_string(),
+                    Self::make_supply_done_chain(done_chain),
+                )),
             }
             if let Some(quit_cb) = quit_callbacks.first().cloned() {
                 tap_args.push(Value::pair("quit".to_string(), quit_cb));
@@ -450,6 +474,7 @@ impl Interpreter {
             let mut thread_interp = self.clone_for_thread();
             let last_cb = last_callbacks.first().cloned();
             let quit_cb = quit_callbacks.first().cloned();
+            let marker = group_marker;
             shared.on_resolve(Box::new(move |status, result, _output, _stderr| {
                 if status == "Kept" {
                     let ran = thread_interp.call_sub_value(callback, vec![result], true);
@@ -461,7 +486,15 @@ impl Interpreter {
                 } else if let Some(quit_cb) = quit_cb {
                     let _ = thread_interp.call_sub_value(quit_cb, vec![result], true);
                 }
+                // One-shot source complete: leave the enclosing done group.
+                if let Some(marker) = marker {
+                    let _ = thread_interp.invoke_done_callback(marker);
+                }
             }));
+        } else if let Some(marker) = group_marker {
+            // No subscription was registered for this source kind; undo the
+            // group join so the enclosing supply's done is not held hostage.
+            self.invoke_done_callback(marker)?;
         }
         Ok(())
     }

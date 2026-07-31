@@ -120,6 +120,12 @@ impl Interpreter {
                 // Also skip $*CWD/*CWD — in Raku, dynamic variables like $*CWD
                 // are thread-local; mutations inside `start` blocks must not
                 // propagate back to the parent thread.
+                // `self` is a per-invocation binding, never a shared mutable
+                // variable: seeding it lets one start-block's invocant leak into
+                // a sibling thread's env via the await-time shared-var sync
+                // (Cro::CompositeConnector read another connector's attributes).
+                // `?`-prefixed compile-time pseudo-lexicals (?CLASS, ?ROLE,
+                // ?LINE, ...) are per-scope constants with the same problem.
                 if key == "_"
                     || key == "@_"
                     || key == "%_"
@@ -129,9 +135,10 @@ impl Interpreter {
                     || key == "$!"
                     || key == "$*CWD"
                     || key == "*CWD"
+                    || key == "self"
                     || key.starts_with("__mutsu_")
                     || key.starts_with("&")
-                    || key == "?LINE"
+                    || key.starts_with("?")
                 {
                     continue;
                 }

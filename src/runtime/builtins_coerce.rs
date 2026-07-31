@@ -53,7 +53,10 @@ impl Interpreter {
             // form (`$x.Rat` …), which carries the full native coercion logic
             // incl. Failure semantics for invalid strings (JSON::Unmarshal's
             // `multi _unmarshal(Any:D $json, Rat) { Rat($json) }`).
-            "Rat" | "FatRat" | "Complex" => {
+            // `Real($x)` / `Numeric($x)` likewise delegate to the method form
+            // (`$x.Real` / `$x.Numeric`), which handles every numeric variant
+            // and string parsing with Failure semantics.
+            "Rat" | "FatRat" | "Complex" | "Real" | "Numeric" => {
                 return self.call_method_with_values(value.clone(), name, vec![]);
             }
             "Int" => match value.view() {

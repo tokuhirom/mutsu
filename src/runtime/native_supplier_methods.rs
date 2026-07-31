@@ -27,6 +27,11 @@ impl Interpreter {
                 );
                 supply_attrs.insert("supplier_id".to_string(), Value::int(supplier_id as i64));
                 supply_attrs.insert("supplier_done".to_string(), Value::truth(done));
+                if attributes.contains_key("preserving") {
+                    // Supplier::Preserving: its supplies replay the buffered
+                    // backlog to the next tap (see supplier_take_preserved_backlog).
+                    supply_attrs.insert("preserving".to_string(), Value::TRUE);
+                }
                 if let Some(reason) = quit_reason {
                     supply_attrs.insert("quit_reason".to_string(), reason);
                 }
@@ -62,6 +67,11 @@ impl Interpreter {
                     supplier_emit(supplier_id, value.clone());
                     // Dispatch tap callbacks (head_limit, unique, produce, etc.)
                     let actions = supplier_emit_callbacks(supplier_id, &value);
+                    // A live tap consumed this emission — it is not part of the
+                    // Supplier::Preserving backlog a future tap replays.
+                    if !actions.is_empty() && attributes.contains_key("preserving") {
+                        supplier_mark_preserved_consumed(supplier_id);
+                    }
                     for action in actions {
                         match action {
                             SupplierEmitAction::Call(tap, emitted, delay_seconds) => {
@@ -502,6 +512,11 @@ impl Interpreter {
                         crate::runtime::native_methods::supplier_serialize_group(sid)
                             .map(crate::runtime::native_methods::acquire_supply_serialize);
                     let actions = supplier_emit_callbacks(sid, &value);
+                    // A live tap consumed this emission — it is not part of the
+                    // Supplier::Preserving backlog a future tap replays.
+                    if !actions.is_empty() && attrs.contains_key("preserving") {
+                        supplier_mark_preserved_consumed(sid);
+                    }
                     for action in actions {
                         match action {
                             SupplierEmitAction::Call(tap, emitted, delay_seconds) => {

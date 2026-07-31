@@ -283,7 +283,14 @@ impl Interpreter {
                     // are armed only once those taps are registered.
                     let emitted = self.normalize_promise_whenever_markers(emitted);
 
-                    // Pre-count supplier-backed whenever subscriptions
+                    // Pre-count whenever subscriptions that participate in the
+                    // done group: supplier-backed sources (marker registered on
+                    // the supplier's done) and chained on-demand sources (marker
+                    // passed as the inner tap's done). Without counting the
+                    // latter, a supply whose only whenever wraps another
+                    // on-demand supply looked finite and fired a spurious
+                    // `done` at tap time (Cro::Connector.establish tore down
+                    // its pipeline before any message flowed).
                     let whenever_supplier_count = emitted
                         .iter()
                         .filter(|item| {
@@ -295,7 +302,9 @@ impl Interpreter {
                                     ..
                                 } = arr[0].view()
                                 && class_name == "Supply"
-                                && attributes.contains_key("supplier_id")
+                                && (attributes.contains_key("supplier_id")
+                                    || (attributes.contains_key("on_demand_callback")
+                                        && !attributes.contains_key("supply_id")))
                             {
                                 true
                             } else {
@@ -304,10 +313,12 @@ impl Interpreter {
                         })
                         .count();
 
+                    let mut done_group_id: Option<u64> = None;
                     if whenever_supplier_count > 0 {
                         done_group_marker = done_cb.as_ref().map(|df| {
                             let group_id =
                                 create_whenever_done_group(whenever_supplier_count, df.clone());
+                            done_group_id = Some(group_id);
                             Self::make_whenever_done_group_marker(group_id)
                         });
                     }
@@ -325,7 +336,20 @@ impl Interpreter {
                             && matches!(arr[0].view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
                         {
                             let inner_supply = &arr[0];
-                            let body_cb = arr[1].clone();
+                            let mut body_cb = arr[1].clone();
+                            // Let the body know its enclosing done group: a
+                            // nested `whenever` it registers at dispatch time
+                            // joins the group (see `run_whenever_with_value`),
+                            // keeping the supply open until the nested source
+                            // also completes (Cro::Connector.establish's
+                            // `whenever $connection { whenever ...transformer }`).
+                            if let Some(gid) = done_group_id {
+                                body_cb = Self::sub_with_env_key(
+                                    &body_cb,
+                                    Self::WHENEVER_DONE_GROUP_ENV_KEY,
+                                    Value::int(gid as i64),
+                                );
+                            }
 
                             if let ValueView::Instance {
                                 attributes: inner_attrs,
@@ -335,7 +359,7 @@ impl Interpreter {
                                     inner_attrs.as_map().get("supplier_id").map(Value::view)
                             {
                                 let supplier_id = sid as u64;
-                                register_supplier_tap(supplier_id, body_cb, 0.0);
+                                register_supplier_tap(supplier_id, body_cb.clone(), 0.0);
                                 // Raku serializes all `whenever` handlers of one
                                 // supply block ("only in one whenever block at a
                                 // time"). Tag this source trigger with the block's
@@ -358,6 +382,15 @@ impl Interpreter {
                                         delay_seconds,
                                     );
                                     outer_tap_registered = true;
+                                }
+                                // Supplier::Preserving source: replay the backlog
+                                // buffered before this whenever subscribed (after
+                                // the outer tap is wired, so the body's `emit`
+                                // reaches the subscriber).
+                                if inner_attrs.as_map().contains_key("preserving") {
+                                    for v in supplier_take_preserved_backlog(supplier_id) {
+                                        self.call_sub_value(body_cb.clone(), vec![v], true)?;
+                                    }
                                 }
                                 if let Some(ref qf) = quit_cb {
                                     register_supplier_quit_callback(supplier_id, qf.clone());
@@ -488,8 +521,26 @@ impl Interpreter {
                                 let last_cbs = Self::value_array_items(&arr[2]).unwrap_or_default();
                                 let quit_cbs = Self::value_array_items(&arr[3]).unwrap_or_default();
                                 let mut tap_args = vec![body_cb.clone()];
-                                if let Some(l) = last_cbs.first() {
-                                    tap_args.push(Value::pair("done".to_string(), l.clone()));
+                                // The inner tap's done fires this whenever's LAST
+                                // phasers AND decrements the enclosing supply's
+                                // done group (this source counts toward
+                                // `whenever_supplier_count`), so the outer done
+                                // only fires when every source completes — and a
+                                // live chained pipeline keeps the supply open.
+                                let mut done_chain: Vec<Value> = last_cbs.clone();
+                                if let Some(ref marker) = done_group_marker {
+                                    done_chain.push(marker.clone());
+                                }
+                                match done_chain.len() {
+                                    0 => {}
+                                    1 => tap_args.push(Value::pair(
+                                        "done".to_string(),
+                                        done_chain.pop().unwrap(),
+                                    )),
+                                    _ => tap_args.push(Value::pair(
+                                        "done".to_string(),
+                                        Self::make_supply_done_chain(done_chain),
+                                    )),
                                 }
                                 if let Some(q) = quit_cbs.first() {
                                     tap_args.push(Value::pair("quit".to_string(), q.clone()));
@@ -745,7 +796,15 @@ impl Interpreter {
                             Some(ValueView::Bool(true))
                         );
                         if is_live {
-                            Vec::new()
+                            // Supplier::Preserving: replay the backlog buffered
+                            // while no tap listened, exactly once.
+                            if attrs.contains_key("preserving")
+                                && Self::supply_has_active_callback(&tap_cb)
+                            {
+                                supplier_take_preserved_backlog(supplier_id as u64)
+                            } else {
+                                Vec::new()
+                            }
                         } else {
                             let (snap_values, _, _) = supplier_snapshot(supplier_id as u64);
                             if !snap_values.is_empty() {
@@ -859,17 +918,18 @@ impl Interpreter {
                                 done
                             };
                         if supplier_is_done {
-                            let _ = self.call_sub_value(done_fn, vec![], true);
+                            // `done_fn` may be a marker/chain when this tap is
+                            // the chained inner tap of an enclosing whenever.
+                            self.invoke_done_callback(done_fn)?;
                         } else {
                             register_supplier_done_callback(supplier_id as u64, done_fn);
                         }
                     } else if done_group_marker.is_none() {
                         // Only call done immediately when there are no
-                        // supplier-backed whenever subscriptions tracking
-                        // done via the group mechanism. Cold (on-demand)
-                        // whenevers complete synchronously, so done can
-                        // fire immediately in that case.
-                        let _ = self.call_sub_value(done_fn, vec![], true);
+                        // whenever subscriptions tracking done via the group
+                        // mechanism. Cold whenevers complete synchronously,
+                        // so done can fire immediately in that case.
+                        self.invoke_done_callback(done_fn)?;
                     }
                 }
                 if let Some(quit_fn) = quit_cb {

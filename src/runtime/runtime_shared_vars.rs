@@ -421,6 +421,11 @@ impl Interpreter {
                 // A name re-declared in this thread is a fresh local binding;
                 // pulling the shared (outer) value in would clobber it.
                 .filter(|k| !self.thread_redeclared_vars.contains(*k))
+                // `self` and `?`-pseudo-lexicals are per-invocation/per-scope
+                // bindings, never shared variables — a store polluted by an
+                // older seed must not overwrite the live frame's invocant
+                // (mirrors the seeding exclusion in `clone_for_thread`).
+                .filter(|k| *k != "self" && !k.starts_with('?'))
                 .cloned()
                 .collect()
         };
