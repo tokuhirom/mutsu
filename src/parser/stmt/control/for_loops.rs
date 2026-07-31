@@ -41,9 +41,33 @@ fn expr_ends_with_block(expr: &Expr) -> bool {
 /// a top-level `;` (the C-style `for (init; test; incr)` obsolete form).
 fn paren_has_toplevel_semicolon(input: &str) -> bool {
     let mut depth = 0i32;
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
     let mut chars = input.chars().peekable();
     while let Some(c) = chars.next() {
+        if in_single_quote {
+            match c {
+                '\'' => in_single_quote = false,
+                '\\' => {
+                    chars.next();
+                }
+                _ => {}
+            }
+            continue;
+        }
+        if in_double_quote {
+            match c {
+                '"' => in_double_quote = false,
+                '\\' => {
+                    chars.next();
+                }
+                _ => {}
+            }
+            continue;
+        }
         match c {
+            '\'' => in_single_quote = true,
+            '"' => in_double_quote = true,
             '(' | '[' | '{' => depth += 1,
             ')' | ']' | '}' => {
                 depth -= 1;

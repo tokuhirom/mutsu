@@ -283,10 +283,14 @@ impl Interpreter {
         // `token linetag { ^^ (\h*) <tag> <?{ $<tag>.made<type> ~~ none(...) }> ... }`).
         // The actions run in a scratch interpreter so the assertion's own
         // `$/`/`$0` env below is not clobbered by the action dispatch.
-        let made_named: HashMap<String, Value> = if code.contains(".made")
-            && let Some(actions0) = self.current_grammar_actions.clone()
-        {
-            self.run_named_capture_actions(caps, actions0)
+        let made_named: HashMap<String, Value> = if code.contains(".made") {
+            if let Some(actions0) = self.current_grammar_actions.clone() {
+                self.run_named_capture_actions(caps, actions0)
+            } else {
+                // No actions: `.made` must still resolve (to Nil) on a Match,
+                // not die with method-not-found on a plain Str capture.
+                self.named_capture_match_objects(caps)
+            }
         } else {
             HashMap::new()
         };
@@ -340,7 +344,7 @@ impl Interpreter {
         // harvest below sees nothing. Same flag the reduce-time replay uses.
         let result = if writes_back_to_caller {
             let before = self.pending_local_updates.len();
-            self.eval_regex_code_block_body(&stmts);
+            let body_result = self.eval_regex_code_block_body(&stmts);
             // The regex's own `:my`/`:let` lexicals are not caller lexicals — they
             // are harvested into `regex_vars` below and must not be written into
             // the caller's slots as well.
@@ -353,7 +357,7 @@ impl Interpreter {
                     .collect();
                 self.pending_local_updates.extend(kept);
             }
-            Ok(Value::NIL)
+            body_result.map(|_| Value::NIL)
         } else {
             let saved_in_block = self.in_regex_code_block;
             self.in_regex_code_block = true;
@@ -379,7 +383,49 @@ impl Interpreter {
                 None => self.env.remove(&k),
             };
         }
-        (result.ok(), writes)
+        // A genuine exception (`die`) inside an embedded `{ … }` / `<?{ … }>`
+        // block propagates out of the whole match in Rakudo — it is not a
+        // mismatch. Park it in the pending slot; the match-entry points
+        // (smartmatch, Grammar.parse, m//) re-raise it after the engine unwinds.
+        let value = match result {
+            Ok(v) => Some(v),
+            Err(e) => {
+                if e.return_value.is_none() {
+                    super::super::regex_parse::PENDING_REGEX_ERROR.with(|slot| {
+                        let mut slot = slot.borrow_mut();
+                        if slot.is_none() {
+                            *slot = Some(e);
+                        }
+                    });
+                }
+                None
+            }
+        };
+        (value, writes)
+    }
+
+    /// Build a Match object for each named capture in `caps` WITHOUT running
+    /// any actions. Used when an embedded code block references `$<x>.made` but
+    /// no `:actions` object is in play: the capture must still be a Match (so
+    /// `.made` answers Nil) rather than the plain Str the fast path installs —
+    /// on a Str, `.made` is a method-not-found, which now propagates as a die.
+    fn named_capture_match_objects(&mut self, caps: &RegexCaptures) -> HashMap<String, Value> {
+        let target =
+            super::regex_helpers::current_match_target().unwrap_or_else(|| MatchTarget::new(""));
+        let full = Value::make_match_object_full(
+            caps.from as i64,
+            caps.to as i64,
+            &caps.positional,
+            &caps.named,
+            target,
+        );
+        let named_v = full.match_named();
+        match named_v.as_ref().map(Value::view) {
+            Some(ValueView::Hash(named)) => {
+                named.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+            }
+            _ => HashMap::new(),
+        }
     }
 
     /// Build a Match object for each named capture in `caps` and run its grammar

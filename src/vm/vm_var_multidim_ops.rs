@@ -451,6 +451,15 @@ impl Interpreter {
             let dim = Self::normalize_multidim_dim(&dims[0]);
             return self.multi_dim_hash_read(&m, &dim, &dims[1..]);
         }
+        // A Seq is positional too: `.map({...})[*;*]` must flatten the mapped
+        // rows, not treat the whole Seq as one scalar element (Cro's HTTP/2
+        // cookie unpacking does exactly this).
+        if let ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) =
+            target.view()
+        {
+            let arr = Value::array(items.as_ref().clone());
+            return self.multi_dim_index_read(&arr, dims);
+        }
         // A non-positional value behaves as a single-element list when
         // subscripted in a further dimension: in `(10,20,30)[1,2;0]` each
         // selected scalar is indexed by the trailing `0`, and `20[0]` is `20`

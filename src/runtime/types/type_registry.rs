@@ -451,12 +451,22 @@ impl Interpreter {
         if name.contains("::") || name.is_empty() {
             return name;
         }
-        // A core type name is never shadowed by a package-local declaration
-        // (class registration excludes builtin short names from its aliases for
-        // the same reason), so skip the probe — it would otherwise allocate a
+        // A core type name is normally not shadowed by a package-local
+        // declaration, so skip the probe — it would otherwise allocate a
         // `Owner::Int` candidate for every ordinary attribute on every `.new`.
+        // BUT a user CAN declare e.g. `subset Method of Str` inside a class
+        // (Cro::HTTP::Request does), and that lexically shadows the builtin;
+        // subsets/classes/enums register their short name too, so a few direct
+        // hash probes detect a shadow without the per-package allocation.
         if crate::runtime::Interpreter::is_builtin_type(&name) {
-            return name;
+            let reg = self.registry();
+            let shadowed = reg.subsets.contains_key(&name)
+                || reg.classes.contains_key(&name)
+                || reg.enum_types.contains_key(&name)
+                || reg.roles.contains_key(&name);
+            if !shadowed {
+                return name;
+            }
         }
         let mut pkg = owner;
         loop {

@@ -234,7 +234,21 @@ impl Interpreter {
                 continue;
             };
             self.setup_regex_code_block_env(ctx);
-            self.eval_regex_code_block_body(&stmts);
+            let body_result = self.eval_regex_code_block_body(&stmts);
+            self.park_regex_code_block_error(body_result);
+        }
+    }
+
+    /// Park a `die` from a replayed code block in the pending-regex-error slot
+    /// (first error wins), matching the inline-execution path's behavior.
+    fn park_regex_code_block_error(&self, result: Result<(), RuntimeError>) {
+        if let Err(e) = result {
+            super::super::regex_parse::PENDING_REGEX_ERROR.with(|slot| {
+                let mut slot = slot.borrow_mut();
+                if slot.is_none() {
+                    *slot = Some(e);
+                }
+            });
         }
     }
 
@@ -313,7 +327,13 @@ impl Interpreter {
     /// the env before and recording any changed variable as a pending local
     /// update for the outer VM. Assumes the block's `$/`, `$<name>`, `$0…` etc.
     /// have already been installed in `self.env` by the caller.
-    pub(in crate::runtime) fn eval_regex_code_block_body(&mut self, stmts: &[crate::ast::Stmt]) {
+    /// Returns `Err` when the block threw a genuine exception (a `die`), which
+    /// Rakudo propagates out of the match rather than treating as a mismatch.
+    /// Env writeback still happens before the error is returned.
+    pub(in crate::runtime) fn eval_regex_code_block_body(
+        &mut self,
+        stmts: &[crate::ast::Stmt],
+    ) -> Result<(), RuntimeError> {
         // Snapshot the env by *binding identity* — the cloned `Value` is an Arc
         // bump, and holding it also keeps the old allocation alive so a freed
         // address cannot be recycled into a false "unchanged".
@@ -331,7 +351,7 @@ impl Interpreter {
             self.env.iter().map(|(k, v)| (*k, v.clone())).collect();
         let saved_in_block = self.in_regex_code_block;
         self.in_regex_code_block = true;
-        let _ = self.eval_block_value(stmts);
+        let eval_result = self.eval_block_value(stmts);
         self.in_regex_code_block = saved_in_block;
         // Record changed env variables as pending local updates for the outer VM
         for (k, v) in &self.env {
@@ -352,6 +372,11 @@ impl Interpreter {
                 }
                 self.pending_local_updates.push((name, v.clone()));
             }
+        }
+        // A `return`-carrying error is block control flow, not an exception.
+        match eval_result {
+            Err(e) if e.return_value.is_none() => Err(e),
+            _ => Ok(()),
         }
     }
 
@@ -558,7 +583,8 @@ impl Interpreter {
                     self.env.insert("\u{00A2}".to_string(), updated);
                 }
             }
-            self.eval_regex_code_block_body(&stmts);
+            let body_result = self.eval_regex_code_block_body(&stmts);
+            self.park_regex_code_block_error(body_result);
         }
         let ast = self.env.get("made").cloned();
         if let Some(m) = saved_match {

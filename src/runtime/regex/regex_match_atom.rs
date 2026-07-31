@@ -29,6 +29,24 @@ thread_local! {
 }
 
 impl Interpreter {
+    /// An alternation alternative that is a lone plain `{ … }` code block
+    /// (`|| { die "no match" }`). Such a branch matches zero-width and exists
+    /// for its side effects, so evaluating it eagerly during candidate
+    /// collection fires those effects on paths raku never executes — it must
+    /// only run when no other alternative matched.
+    fn is_pure_code_block_alt(alt: &RegexPattern) -> bool {
+        alt.tokens.len() == 1
+            && matches!(alt.tokens[0].quant, RegexQuant::One)
+            && alt.tokens[0].separator.is_none()
+            && matches!(
+                &alt.tokens[0].atom,
+                RegexAtom::CodeAssertion {
+                    is_assertion: false,
+                    ..
+                }
+            )
+    }
+
     /// Try to match `branch` starting at `pos` such that it ends exactly at
     /// `target_end`. Returns the branch's own captures (relative to an empty
     /// baseline) on success. Used by conjunction (`&` / `&&`) matching, where
@@ -71,8 +89,18 @@ impl Interpreter {
 
         if let RegexAtom::Alternation(alternatives) = atom {
             // | (LTM): try all alternatives, longest match wins.
+            //
+            // A side-effect-only alternative (`| { die ... }` — a lone plain
+            // code block) is deferred: it matches zero-width, so it can only
+            // win when NOTHING else matched, and running it eagerly would fire
+            // its side effects (a `die`!) on paths raku never executes.
             let mut indexed: Vec<(usize, usize, RegexCaptures)> = Vec::new();
+            let mut deferred_code: Vec<(usize, &RegexPattern)> = Vec::new();
             for (i, alt) in alternatives.iter().enumerate() {
+                if Self::is_pure_code_block_alt(alt) {
+                    deferred_code.push((i, alt));
+                    continue;
+                }
                 if let Some((next, mut inner_caps)) =
                     self.regex_match_end_from_caps_in_pkg(alt, chars, pos, pkg)
                 {
@@ -83,6 +111,21 @@ impl Interpreter {
                     new_caps.positional.append(&mut inner_caps.positional);
                     new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                     indexed.push((i, next, new_caps));
+                }
+            }
+            if indexed.is_empty() {
+                for (i, alt) in deferred_code {
+                    if let Some((next, mut inner_caps)) =
+                        self.regex_match_end_from_caps_in_pkg(alt, chars, pos, pkg)
+                    {
+                        let mut new_caps = RegexCaptures::default();
+                        for (k, v) in inner_caps.named.drain() {
+                            new_caps.named.entry(k).or_default().merge(v);
+                        }
+                        new_caps.positional.append(&mut inner_caps.positional);
+                        new_caps.code_blocks.append(&mut inner_caps.code_blocks);
+                        indexed.push((i, next, new_caps));
+                    }
                 }
             }
             indexed.sort_by(|a, b| a.1.cmp(&b.1).then(b.0.cmp(&a.0)));
@@ -107,6 +150,13 @@ impl Interpreter {
             // After pushing to LIFO: alt_0's highest-priority match is on top.
             let mut groups: Vec<Vec<(usize, RegexCaptures)>> = Vec::new();
             for alt in alternatives {
+                // Defer a side-effect-only alternative (`|| { die ... }`): once
+                // an earlier alternative matched, raku never reaches it, so
+                // running it here would fire its side effects spuriously.
+                if Self::is_pure_code_block_alt(alt) && groups.iter().any(|g| !g.is_empty()) {
+                    groups.push(Vec::new());
+                    continue;
+                }
                 let inner_matches = self.regex_match_ends_from_caps_in_pkg(alt, chars, pos, pkg);
                 // inner_matches is in HIGHEST FIRST order (per regex_match_ends_from_caps_in_pkg
                 // convention). Reverse to LOWEST FIRST for our return convention.

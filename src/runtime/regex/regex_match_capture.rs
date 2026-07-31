@@ -305,6 +305,12 @@ impl Interpreter {
                 if !super::regex_helpers::code_block_defers_to_reduce(code) {
                     let (_value, writes) =
                         self.eval_regex_inline_code(code, current_caps, &matched_so_far, true);
+                    // The block `die`d: fail the match so the engine unwinds; the
+                    // parked pending error is re-raised at the match entry point.
+                    if super::super::regex_parse::PENDING_REGEX_ERROR.with(|e| e.borrow().is_some())
+                    {
+                        return None;
+                    }
                     let mut new_caps = RegexCaptures::default();
                     new_caps.regex_vars.extend(writes);
                     return Some((pos, new_caps));

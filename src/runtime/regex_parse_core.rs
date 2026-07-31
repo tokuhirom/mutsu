@@ -2233,8 +2233,7 @@ impl Interpreter {
                                     && !trimmed.starts_with('{')
                                     && !trimmed.starts_with("?{")
                                     && !trimmed.starts_with("!{")
-                                    && trimmed.contains("::")
-                                    && trimmed.contains('=')
+                                    && Self::contains_longname_alias(trimmed)
                                 {
                                     PENDING_REGEX_ERROR.with(|e| {
                                         *e.borrow_mut() = Some(Self::make_longname_alias_error());
@@ -2863,7 +2862,7 @@ impl Interpreter {
                                                     return None;
                                                 }
                                                 // Check for longname aliases
-                                                if trimmed.contains("::") && trimmed.contains('=') {
+                                                if Self::contains_longname_alias(trimmed) {
                                                     PENDING_REGEX_ERROR.with(|e| {
                                                         *e.borrow_mut() =
                                                             Some(Self::make_longname_alias_error());
