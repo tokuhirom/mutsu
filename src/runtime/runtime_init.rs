@@ -2259,6 +2259,7 @@ impl Interpreter {
             otf_compile_cache: HashMap::new(),
             imported_compiled_fns: HashMap::new(),
             state_scope_id: None,
+            pending_nested_state_scope: None,
             fn_resolve_cache: Default::default(),
             fn_resolve_gen: 0,
             fn_resolve_cache_gen: 0,
