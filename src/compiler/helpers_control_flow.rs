@@ -8,6 +8,16 @@ impl Compiler {
         body_str.contains("\"@_\"") || body_str.contains("\"%_\"")
     }
 
+    /// Whether `--> spec` names a **definite return value** (a literal or a
+    /// lowercase term the sub returns regardless of its body, as in Rakudo's own
+    /// `sub refresh($obj --> 1)`) rather than a return *type*. A definite return
+    /// makes the body's last expression sink.
+    ///
+    /// Lowercase alone cannot decide it: Raku's native types are lowercase too,
+    /// so `sub f($x --> ulong) { $x }` was read as "return the term `ulong`",
+    /// sank the body and answered Nil for every one of `int`/`num`/`str` and the
+    /// `NativeCall::Types` C-width aliases. Native type names are therefore
+    /// excluded, which is what `is_known_type_constraint` decides.
     pub(super) fn is_definite_return_spec(spec: &str) -> bool {
         let s = spec.trim();
         if s.is_empty() {
@@ -22,7 +32,8 @@ impl Compiler {
             return true;
         }
         matches!(s, "Nil" | "True" | "False" | "Empty" | "pi" | "e" | "tau")
-            || s.chars().next().is_some_and(|c| c.is_ascii_lowercase())
+            || (s.chars().next().is_some_and(|c| c.is_ascii_lowercase())
+                && !crate::runtime::utils::is_known_type_constraint(s))
     }
 
     pub(super) fn emit_nil_value(&mut self) {

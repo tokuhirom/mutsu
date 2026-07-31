@@ -98,11 +98,13 @@ pub(crate) fn elem_type(class_name: &str) -> (u8, ElemKind) {
 /// native storage alone cannot do. They keep the boxed representation.
 pub(crate) fn native_elem_type(elem: &str) -> Option<(u8, ElemKind)> {
     Some(match elem {
-        "int8" => (1, ElemKind::Int),
+        // `bool` is C's one-byte, *signed* `_Bool` (`CArray[bool]` round-trips
+        // -1, exactly as `CArray[int8]` does).
+        "int8" | "bool" => (1, ElemKind::Int),
         "int16" => (2, ElemKind::Int),
         "int32" => (4, ElemKind::Int),
         "int64" | "int" | "long" | "longlong" | "ssize_t" => (8, ElemKind::Int),
-        "uint8" | "byte" | "bool" => (1, ElemKind::Uint),
+        "uint8" | "byte" => (1, ElemKind::Uint),
         "uint16" => (2, ElemKind::Uint),
         "uint32" => (4, ElemKind::Uint),
         "uint64" | "uint" | "ulong" | "ulonglong" | "size_t" => (8, ElemKind::Uint),

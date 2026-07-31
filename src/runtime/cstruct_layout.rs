@@ -49,10 +49,10 @@ impl FieldType {
         // "one class, several spellings" problem `cstruct_class_name` documents.
         // `is_known_struct` gets the name as written; it does its own matching.
         Some(match short_base_name(name) {
-            "int8" => FieldType::I8,
+            "int8" | "bool" => FieldType::I8,
             "int16" => FieldType::I16,
             "int32" => FieldType::I32,
-            "int64" | "long" | "longlong" | "int" => FieldType::I64,
+            "int64" | "long" | "longlong" | "ssize_t" | "int" => FieldType::I64,
             "uint8" | "byte" => FieldType::U8,
             "uint16" => FieldType::U16,
             "uint32" => FieldType::U32,

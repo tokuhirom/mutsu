@@ -56,6 +56,20 @@ class GLOBAL::Pointer {
 # type object to compare against (`ptr.of ~~ void` in NativeHelpers::Blob's
 # `blob-from-pointer`), so an empty class is the whole of it.
 class GLOBAL::void { }
+# `OpaquePointer` is NativeCall's historical spelling of `Pointer`, and Rakudo
+# still exports it -- as an ALIAS, not a subclass (`OpaquePointer === Pointer`
+# is True there). A `constant` is what preserves that identity; a class of its
+# own would not.
+constant OpaquePointer = Pointer;
+# The object `explicitly-manage` returns: a C string whose buffer the callee now
+# owns. Rakudo names it `NativeCall::CStr` and gives it `repr('CStr')`; here the
+# address of the leaked buffer is the whole state (see
+# `runtime::nativecall_manage`).
+class GLOBAL::NativeCall::CStr {
+    has $.address = 0;
+    method gist(--> Str) { 'NativeCall::CStr.new' }
+    method Str(--> Str) { self.gist }
+}
 "#;
 
 /// NativeCall's `cglobal`, which is a module export in Rakudo rather than a
@@ -75,6 +89,26 @@ our sub cglobal($libname, $symbol, $target-type) is rw {
         STORE => -> $, $ { die "Writing to C globals NYI" }
     )
 }
+"#;
+
+/// NativeCall's remaining two exports, `explicitly-manage` and `refresh`. Like
+/// `cglobal` they are module exports rather than builtins, so they live in a
+/// prelude injected alongside the rest of NativeCall's surface.
+///
+/// `explicitly-manage` encodes here rather than in Rust so the documented
+/// `:$encoding` is honoured by construction; the native half is only the leak
+/// (see [`runtime::nativecall_manage`](crate::runtime::nativecall_manage)).
+///
+/// `refresh` re-reads a CStruct's fields after C wrote them behind the
+/// runtime's back. In mutsu there is nothing to re-read: a CStruct instance
+/// holds only the C address, and every field access reads through it
+/// (`cstruct_field_value`), so the fields are never stale. The sub still has to
+/// exist and to return 1, as Rakudo's does, because bindings call it.
+pub(super) const NATIVECALL_MANAGE_PRELUDE: &str = r#"
+our sub explicitly-manage(Str $str, :$encoding = 'utf8') {
+    NativeCall::CStr.new(:address(__mutsu_explicitly_manage($str.encode($encoding))))
+}
+our sub refresh($obj) { 1 }
 "#;
 
 /// Builtin `IO::Socket` role. Raku's socket classes (`IO::Socket::INET`,
@@ -129,6 +163,7 @@ impl Interpreter {
         Self::inject_prelude_roles(&preprocessed, &mut stmts);
         Self::inject_nativecall_prelude(&preprocessed, &mut stmts);
         Self::inject_cglobal_prelude(&preprocessed, &mut stmts);
+        Self::inject_nativecall_manage_prelude(&preprocessed, &mut stmts);
         Self::inject_iosocket_prelude(&preprocessed, &mut stmts);
         let (_pre_ph, enter_ph, success_ph, failure_ph, _post_ph, body_main) =
             self.split_block_phasers(&stmts);

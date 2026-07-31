@@ -56,10 +56,11 @@ impl CType {
     /// Returns `None` for an unrecognized / unsupported type name.
     pub fn from_type_name(name: &str) -> Option<CType> {
         Some(match name {
-            "int8" => CType::I8,
+            // `bool` is C's `_Bool`: one signed byte, same ABI slot as `int8`.
+            "int8" | "bool" => CType::I8,
             "int16" => CType::I16,
             "int32" => CType::I32,
-            "int64" | "long" | "longlong" | "int" | "Int" => CType::I64,
+            "int64" | "long" | "longlong" | "ssize_t" | "int" | "Int" => CType::I64,
             "uint8" | "byte" => CType::U8,
             "uint16" => CType::U16,
             "uint32" => CType::U32,
@@ -853,7 +854,14 @@ fn marshal_arg(ps: &ParamSpec, raw: &Value) -> Result<(libffi::middle::Type, Arg
     let ct = ps.ct;
     let resolved = resolve_arg(raw);
     let v = &resolved;
-    let int = || crate::runtime::to_int(v);
+    // `Bool` unboxes to 1/0 in a native integer slot (it `does Int`), which is
+    // how `True` reaches a C `_Bool`/`int` parameter. Without this it went
+    // through `to_int`'s catch-all and every `Bool` argument arrived as 0.
+    let int = || {
+        crate::runtime::to_int(&crate::runtime::native_types::unbox_bool_to_native_int(
+            v.clone(),
+        ))
+    };
     let num = || crate::runtime::utils::to_float_value(v).unwrap_or(0.0);
     Ok(match ct {
         CType::I8 => (Type::i8(), ArgOwner::I8(int() as i8)),
@@ -879,7 +887,15 @@ fn marshal_arg(ps: &ParamSpec, raw: &Value) -> Result<(libffi::middle::Type, Arg
             // corrupted the heap: OpenSSL's `ERR_error_string($e, Nil)` — where
             // NULL means "use your own static buffer" — writes up to 256 bytes
             // and aborted mutsu with "realloc(): invalid next size".
-            if !crate::runtime::types::value_is_defined(v) {
+            if let Some(addr) = crate::runtime::nativecall_manage::explicitly_managed_address(v) {
+                // An `explicitly-manage`d string: hand C the leaked buffer
+                // itself, so a callee that RETAINS the pointer keeps seeing
+                // live memory after the call returns.
+                (
+                    Type::pointer(),
+                    ArgOwner::Ptr(addr as *const std::ffi::c_void),
+                )
+            } else if !crate::runtime::types::value_is_defined(v) {
                 (Type::pointer(), ArgOwner::Ptr(std::ptr::null()))
             } else {
                 let s = v.to_string_value();
