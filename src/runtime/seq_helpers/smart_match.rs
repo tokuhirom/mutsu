@@ -1393,6 +1393,12 @@ impl Interpreter {
                     ..
                 },
             ) if rhs_class == "Mu" => lhs_type == "Mu",
+            // A Bool RHS is the match result regardless of the topic — also for
+            // a type-object topic (rakudo: "Smartmatch against True always
+            // matches"). Must precede the Package catch-all below;
+            // Cro::CompositeConnector's BUILD classifies components with
+            // `when $seen-connector` over type-object topics.
+            (ValueView::Package(_), ValueView::Bool(b)) => b,
             // When LHS is a type object (Package), only match same type or type hierarchy
             (ValueView::Package(_), _) => false,
             // When RHS is NaN, check if LHS is also NaN

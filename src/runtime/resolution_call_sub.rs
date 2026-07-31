@@ -610,7 +610,28 @@ impl Interpreter {
                     .cloned()
                     .collect(),
             );
+            // Package-scoped name resolution: run the body under the closure's
+            // declaring package so nested-class short names and `our`-vars
+            // resolve when the Sub value is invoked from a foreign frame —
+            // mirrors the VM closure dispatch. A `start Transform.new(...)`
+            // inside a method of the class that declares nested `class
+            // Transform` ran its body on a thread whose current package was
+            // the SPAWNING frame's (Cro::CompositeConnector), so the
+            // suppressed nested name did not resolve.
+            let saved_anon_pkg = {
+                let pkg = data.package.resolve();
+                if !pkg.is_empty() && pkg != "GLOBAL" && !pkg.contains("::&") {
+                    let saved = self.current_package().to_string();
+                    self.set_current_package(pkg.to_string());
+                    Some(saved)
+                } else {
+                    None
+                }
+            };
             let body_result = self.eval_block_value(&data.body);
+            if let Some(p) = saved_anon_pkg {
+                self.set_current_package(p);
+            }
             self.pending_eval_placeholder_params = saved_eval_placeholders;
             self.frame_authoritative = saved_frame_auth;
             let result = match body_result {

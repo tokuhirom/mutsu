@@ -440,6 +440,27 @@ impl Interpreter {
     /// the class for some method shapes (class-scoped subs, package lexicals, a
     /// `::`-qualified owner), so fall back to the running method's class.
     pub(crate) fn lexical_closure_package(&self) -> String {
+        // A closure created inside a METHOD body lexically belongs to that
+        // method's class, even when `current_package` still holds the CALLER's
+        // package (method dispatch pushes `method_class_stack` but does not
+        // re-point `current_package`). Walk past block frames to the innermost
+        // routine: if it is a method, its class wins — `start Transform.new`
+        // inside TestConnector.connect must capture TestConnector, not the
+        // Cro::CompositeConnector frame that invoked it (nested-class short
+        // names resolve against the captured package). An innermost SUB frame
+        // keeps the package rules (a module sub called from a method must not
+        // inherit the method's class).
+        for f in self.routine_stack.iter().rev() {
+            if f.is_block {
+                continue;
+            }
+            if f.is_method
+                && let Some(class) = self.method_class_stack.last()
+            {
+                return class.clone();
+            }
+            break;
+        }
         let pkg = self.current_package();
         if (pkg.is_empty() || pkg == "GLOBAL")
             && let Some(class) = self.method_class_stack.last()

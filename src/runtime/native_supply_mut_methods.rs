@@ -456,17 +456,79 @@ impl Interpreter {
                                 crate::runtime::builtins_system::spawn_user_thread(move || {
                                     Self::run_supply_act_loop(&mut driver, &rx, &body_cb, 0.0);
                                 });
+                            } else if let ValueView::Instance {
+                                attributes: inner_attrs,
+                                ..
+                            } = inner_supply.view()
+                                && inner_attrs.as_map().contains_key("on_demand_callback")
+                            {
+                                // On-demand whenever source: chain a REAL tap so
+                                // liveness propagates. Materializing the source
+                                // into a snapshot (the old cold replay) treated a
+                                // pipeline whose BOTTOM source is a live Supplier
+                                // as finite — zero buffered values, so the body
+                                // never ran and its LAST phaser fired immediately
+                                // (Cro::ConnectionManager's per-connection
+                                // pipeline emitted '(closed)' before any message
+                                // could flow). A genuinely finite source replays
+                                // synchronously through the chained tap and then
+                                // fires the LAST phasers via its done callback.
+                                // Register the outer tap on the emitter FIRST so
+                                // the body's `$emitter.emit` dispatches live.
+                                if !outer_tap_registered
+                                    && Self::supply_has_active_callback(&tap_cb)
+                                {
+                                    register_supplier_tap(
+                                        emitter_supplier_id,
+                                        tap_cb.clone(),
+                                        delay_seconds,
+                                    );
+                                    outer_tap_registered = true;
+                                }
+                                let last_cbs = Self::value_array_items(&arr[2]).unwrap_or_default();
+                                let quit_cbs = Self::value_array_items(&arr[3]).unwrap_or_default();
+                                let mut tap_args = vec![body_cb.clone()];
+                                if let Some(l) = last_cbs.first() {
+                                    tap_args.push(Value::pair("done".to_string(), l.clone()));
+                                }
+                                if let Some(q) = quit_cbs.first() {
+                                    tap_args.push(Value::pair("quit".to_string(), q.clone()));
+                                }
+                                // TODO: thread the inner Tap into the outer Tap
+                                // handle so closing the outer tap tears down a
+                                // still-live inner pipeline.
+                                if let Err(err) = self.call_method_with_values(
+                                    inner_supply.clone(),
+                                    "tap",
+                                    tap_args,
+                                ) {
+                                    let reason = err
+                                        .exception
+                                        .as_deref()
+                                        .cloned()
+                                        .unwrap_or_else(|| Value::str(err.message.clone()));
+                                    if let Some(ref qf) = quit_cb {
+                                        self.call_supply_quit_handler(qf.clone(), reason)?;
+                                    } else {
+                                        return Err(Self::runtime_error_from_supply_reason(reason));
+                                    }
+                                    return Ok((
+                                        Value::make_instance(Symbol::intern("Tap"), HashMap::new()),
+                                        attrs,
+                                    ));
+                                }
                             } else {
-                                // Cold (supplier-less) whenever source: replay it
-                                // synchronously, capturing the body's emissions so
-                                // they reach the tap subscriber (and do_callbacks)
-                                // via plain_values below, in source order. Before
-                                // this the body's `$emitter.emit` had no registered
-                                // tap and the values were silently dropped. When a
-                                // preceding supplier-backed whenever already
-                                // registered the outer tap on the emitter, the
-                                // emissions were dispatched live during the replay,
-                                // so the captured copies are discarded.
+                                // Cold (supplier-less, non-on-demand) whenever
+                                // source: replay it synchronously, capturing the
+                                // body's emissions so they reach the tap subscriber
+                                // (and do_callbacks) via plain_values below, in
+                                // source order. Before this the body's
+                                // `$emitter.emit` had no registered tap and the
+                                // values were silently dropped. When a preceding
+                                // supplier-backed whenever already registered the
+                                // outer tap on the emitter, the emissions were
+                                // dispatched live during the replay, so the
+                                // captured copies are discarded.
                                 let last_cbs = Self::value_array_items(&arr[2]).unwrap_or_default();
                                 let quit_cbs = Self::value_array_items(&arr[3]).unwrap_or_default();
                                 let (mut captured, unhandled_quit) = self

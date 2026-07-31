@@ -451,6 +451,9 @@ impl Interpreter {
             // then hold `$_` at the outer topic instead of binding it to the
             // element (`*.map({ $_ })` saw the whole list, not each item).
             flat.remove_sym(Symbol::intern("__mutsu_callable_type"));
+            // Attribute-twigil keys are per-frame materializations of `self`'s
+            // attributes — never snapshot them (see the filtered branch below).
+            flat.retain(|k, _| !k.with_str(Self::is_attr_twigil_env_key));
             self.materialize_frame_self_into_capture(code, &mut flat);
             return flat;
         }
@@ -475,6 +478,15 @@ impl Interpreter {
             if k.with_str(|s| s == "__mutsu_callable_type") {
                 return false;
             }
+            // Attribute-twigil keys (`!x`, `@!x`, `%.x`, …) are per-frame
+            // materializations of `self`'s attributes, not lexicals: the
+            // closure must read them through its captured `self` at RUN time.
+            // A creation-time snapshot goes stale the moment the instance
+            // mutates — a `start` block reading `@!before` inside
+            // Cro::CompositeConnector.connect saw an empty pre-mutation copy.
+            if k.with_str(|s| Self::is_attr_twigil_env_key(s)) {
+                return false;
+            }
             free.contains(&k)
                 || k.with_str(|s| !crate::env::is_plain_user_lexical(s) && !own_locals.contains(s))
         });
@@ -490,6 +502,18 @@ impl Interpreter {
         }
         self.materialize_frame_self_into_capture(code, &mut env);
         env
+    }
+
+    /// Attribute-twigil env keys (`!x`, `@!x`, `%.x`, …): per-frame
+    /// materializations of `self`'s attributes that a closure capture must NOT
+    /// snapshot (see the capture filter).
+    fn is_attr_twigil_env_key(s: &str) -> bool {
+        let bare = match s.as_bytes().first() {
+            Some(b'@' | b'%' | b'&' | b'$') => &s[1..],
+            _ => s,
+        };
+        let b = bare.as_bytes();
+        matches!(b.first(), Some(b'!') | Some(b'.')) && b.len() > 1 && b[1].is_ascii_alphabetic()
     }
 
     /// `self` is lexical: a closure created inside a method body must capture
