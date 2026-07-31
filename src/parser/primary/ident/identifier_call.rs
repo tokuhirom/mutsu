@@ -1460,6 +1460,12 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         && !r.starts_with(',')
         && !rest.starts_with('.')
         && !rest.starts_with('[')
+        // A `{` with NO whitespace after the name is a postcircumfix hash
+        // subscript on the call result (`routes{'/'}` is `routes(){'/'}` —
+        // Humming-Bird's route table), not a hash-composer argument. Leave the
+        // bareword for the postfix loop's Index arm. `routes {'/'}` (spaced)
+        // still parses as a listop argument below.
+        && !rest.starts_with('{')
         && !(ws_consumed_unspace && r.starts_with('.') && !r.starts_with(".."))
         && !is_unspace_before_postfix(r)
     {

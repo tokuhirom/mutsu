@@ -1625,10 +1625,15 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         // Treat this as Type.new(...) for package/type barewords.
         // But NOT for sigilless variables (term symbols like \h), which should use
         // hash subscript semantics instead. Also NOT for `self` which uses hash subscript.
+        // Also NOT for known routines: `routes{'/'}` is a hash subscript on the
+        // call result (raku binds a no-whitespace `{` as postcircumfix), so a
+        // declared or imported sub falls through to the Index arm below.
         if rest.starts_with('{')
             && matches!(&expr, Expr::BareWord(name) if {
                 name != "self"
                 && crate::parser::stmt::simple::match_user_declared_term_symbol(name).is_none()
+                && !crate::parser::stmt::simple::is_user_declared_sub(name)
+                && !crate::parser::is_imported_function(name)
             })
         {
             let r = &rest[1..];
@@ -1758,6 +1763,15 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     | Expr::Literal(_)
                     | Expr::DoStmt(_)
                     | Expr::Grouped(_)
+                    // A parenthesized binary expression is returned UNWRAPPED by
+                    // paren_expr (only barewords/vars/feeds/junctions keep their
+                    // Grouped shell), so `($a // $b){$key}` reaches this arm as a
+                    // bare Binary. raku applies postcircumfix `{ }` to any
+                    // parenthesized term (Cro::HTTP::Router relies on it); without
+                    // this the `{$key}` was left behind as a separate block
+                    // statement — a parse error in statement position.
+                    | Expr::Binary { .. }
+                    | Expr::Ternary { .. }
                     // A hash literal `%(...)` is a term and may be directly
                     // subscripted: `%(a=>1,b=>2){"a"}` is `1`. (Angle subscript
                     // `%(...)<a>` already works because that handler is
