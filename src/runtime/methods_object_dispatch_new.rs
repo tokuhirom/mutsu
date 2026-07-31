@@ -897,6 +897,9 @@ impl Interpreter {
                         "supplier_id".to_string(),
                         Value::int(super::native_methods::next_supplier_id() as i64),
                     );
+                    if class_name.resolve() == "Supplier::Preserving" {
+                        attrs.insert("preserving".to_string(), Value::TRUE);
+                    }
                     return Ok(Value::make_instance(*class_name, attrs));
                 }
                 "ThreadPoolScheduler" | "CurrentThreadScheduler" | "Tap" | "Cancellation" => {

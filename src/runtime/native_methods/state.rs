@@ -184,6 +184,10 @@ struct SupplierRuntimeState {
     /// order it relative to buffered emits of sibling suppliers.
     terminal_seq: Option<u64>,
     pending_promises: Vec<SharedPromise>,
+    /// Watermark into `emitted` for `Supplier::Preserving`: values below it
+    /// were already delivered to a tap (live dispatch or backlog replay);
+    /// values at/above it are the buffered backlog the next tap must replay.
+    preserved_consumed: usize,
     /// Push sinks registered by consuming drive loops (react / `await
     /// $supply` / control waits). Every emit/done/quit is pushed to each
     /// registered sink under this registry's lock, so a later
@@ -477,6 +481,28 @@ pub(in crate::runtime) fn supplier_emit(supplier_id: u64, value: Value) {
         }
         state.emitted.push(value);
         state.emitted_seq.push(next_emit_seq());
+    }
+}
+
+/// `Supplier::Preserving`: take the buffered backlog (values emitted while no
+/// tap was listening) and mark it consumed, so exactly one tap replays it.
+pub(in crate::runtime) fn supplier_take_preserved_backlog(supplier_id: u64) -> Vec<Value> {
+    if let Ok(mut map) = supplier_state_map().lock() {
+        let state = map.entry(supplier_id).or_default();
+        let backlog = state.emitted[state.preserved_consumed.min(state.emitted.len())..].to_vec();
+        state.preserved_consumed = state.emitted.len();
+        backlog
+    } else {
+        Vec::new()
+    }
+}
+
+/// `Supplier::Preserving`: a live tap just received the current emission, so
+/// everything emitted so far no longer belongs to the buffered backlog.
+pub(in crate::runtime) fn supplier_mark_preserved_consumed(supplier_id: u64) {
+    if let Ok(mut map) = supplier_state_map().lock() {
+        let state = map.entry(supplier_id).or_default();
+        state.preserved_consumed = state.emitted.len();
     }
 }
 

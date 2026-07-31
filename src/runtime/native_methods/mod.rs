@@ -35,8 +35,9 @@ pub(in crate::runtime) use state::{
     register_promise_combinator_sources, register_supply_quit_tap, register_supply_tap,
     register_udp_bound_socket, set_supply_collected_bytes, set_supply_collected_output,
     set_supply_enc, supplier_done, supplier_done_deferred, supplier_emit, supplier_id_from_attrs,
-    supplier_quit, supplier_reset, supplier_reset_keep_quit, supply_channel_map,
-    supply_channel_map_pub, take_supply_collected_bytes, udp_port_in_use, update_async_connection,
+    supplier_mark_preserved_consumed, supplier_quit, supplier_reset, supplier_reset_keep_quit,
+    supplier_take_preserved_backlog, supply_channel_map, supply_channel_map_pub,
+    take_supply_collected_bytes, udp_port_in_use, update_async_connection,
 };
 // Supplier registry accessors driven by the VM-side react/supply loop.
 pub(crate) use state::{
@@ -67,8 +68,9 @@ pub(in crate::runtime) use state_supplier::{
     supplier_serialize_group, supplier_tap_count, supplier_unique_get_seen,
     supplier_unique_mark_seen, take_supplier_close_callbacks, take_supplier_done_callbacks,
     take_supplier_quit_callbacks, take_supplier_whenever_quit_callbacks, update_classify_state,
-    whenever_done_group_decrement, zip_buffer_value, zip_latest_buffer_value,
-    zip_latest_source_done, zip_latest_state_info, zip_source_done, zip_state_info,
+    whenever_done_group_decrement, whenever_done_group_increment, zip_buffer_value,
+    zip_latest_buffer_value, zip_latest_source_done, zip_latest_state_info, zip_source_done,
+    zip_state_info,
 };
 
 use super::*;

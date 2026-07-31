@@ -385,6 +385,12 @@ impl Value {
         }))
     }
 
+    /// Build a Sub value from an already-populated `SubData` (e.g. a modified
+    /// clone of an existing sub's data).
+    pub(crate) fn from_sub_data(data: SubData) -> Value {
+        Value::Sub(crate::gc::Gc::new(data))
+    }
+
     /// Access SubData fields if this is a Sub (or upgraded WeakSub).
     ///
     /// Hands out a `&SubData` borrowed from `self`, which a `view()` guard

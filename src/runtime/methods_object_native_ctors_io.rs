@@ -413,6 +413,12 @@ impl Interpreter {
                 "supplier_id".to_string(),
                 Value::int(super::native_methods::next_supplier_id() as i64),
             );
+            if cn == "Supplier::Preserving" {
+                // Marks the supplier (and, propagated via `.Supply`, its
+                // supplies) as backlog-preserving: values emitted while no tap
+                // listens replay to the next tap.
+                attrs.insert("preserving".to_string(), Value::TRUE);
+            }
             Some(Ok(Value::make_instance(class_name, attrs)))
         } else if cn == "Proc::Async" {
             // `Proc::Async.new(@cmd, :w, :enc)` is pure data: arg parsing +

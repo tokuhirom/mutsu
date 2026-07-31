@@ -1535,6 +1535,24 @@ pub(in crate::runtime) fn create_whenever_done_group(count: usize, done_cb: Valu
     id
 }
 
+/// Increment the active count for a whenever-done group: a whenever body
+/// registered a NESTED whenever at dispatch time (after the group was sized
+/// from the supply block's static subscriptions), so the group gains a member
+/// that must also complete before the supply's done fires. Returns false when
+/// the group no longer exists (already completed), in which case the caller
+/// must not register a decrement for it.
+pub(in crate::runtime) fn whenever_done_group_increment(group_id: u64) -> bool {
+    if let Ok(map) = whenever_done_group_map().lock()
+        && let Some(group) = map.get(&group_id)
+    {
+        group
+            .remaining
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        return true;
+    }
+    false
+}
+
 /// Decrement the active count for a whenever-done group.
 /// Returns Some(done_cb) if the count reached zero (all whenevers done).
 pub(in crate::runtime) fn whenever_done_group_decrement(group_id: u64) -> Option<Value> {

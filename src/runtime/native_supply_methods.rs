@@ -34,7 +34,29 @@ impl Interpreter {
                 attributes.as_map().get("group_id").map(|v| v.view())
         {
             if let Some(real_done_cb) = whenever_done_group_decrement(group_id as u64) {
-                let _ = self.call_sub_value(real_done_cb, vec![], true);
+                // The group's stored callback may itself be a marker (a chained
+                // on-demand whenever passes the outer group's marker as the
+                // inner tap's done), so dispatch recursively.
+                self.invoke_done_callback(real_done_cb)?;
+            }
+            return Ok(());
+        }
+        // A done chain bundles several done callbacks (e.g. a whenever's LAST
+        // phaser plus the enclosing supply's done-group marker) into the single
+        // `done => ...` slot of a chained inner tap. Fire each in order.
+        if let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = done_cb.view()
+            && class_name == "__SupplyDoneChain"
+        {
+            if let Some(ValueView::Array(cbs, ..)) =
+                attributes.as_map().get("callbacks").map(|v| v.view())
+            {
+                for cb in cbs.iter().cloned().collect::<Vec<_>>() {
+                    self.invoke_done_callback(cb)?;
+                }
             }
             return Ok(());
         }
@@ -98,6 +120,32 @@ impl Interpreter {
             attrs.insert("done_cb".to_string(), cb);
         }
         Value::make_instance(Symbol::intern("__SupplyOnDemandComplete"), attrs)
+    }
+
+    /// Env key through which a whenever body learns the done group of its
+    /// enclosing supply block, so a nested `whenever` registered at dispatch
+    /// time (inside the body) can join the group and keep the supply open.
+    pub(super) const WHENEVER_DONE_GROUP_ENV_KEY: &'static str = "__mutsu_whenever_done_group";
+
+    /// Return a copy of `sub` whose captured env additionally binds `key` to
+    /// `val` (CoW — the original sub and its env are untouched). Non-Sub values
+    /// pass through unchanged.
+    pub(super) fn sub_with_env_key(sub: &Value, key: &str, val: Value) -> Value {
+        if let Some(data) = sub.as_sub() {
+            let mut new_data = data.clone();
+            new_data.env.insert(key.to_string(), val);
+            Value::from_sub_data(new_data)
+        } else {
+            sub.clone()
+        }
+    }
+
+    /// Bundle several done callbacks into one value for the single `done =>`
+    /// slot of a chained inner tap. `invoke_done_callback` fires each in order.
+    pub(super) fn make_supply_done_chain(callbacks: Vec<Value>) -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert("callbacks".to_string(), Value::array(callbacks));
+        Value::make_instance(Symbol::intern("__SupplyDoneChain"), attrs)
     }
 
     /// Marker registered as a done callback so the emitter's CLOSE-phaser
