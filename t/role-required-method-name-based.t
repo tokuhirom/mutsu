@@ -8,7 +8,7 @@ use Test;
 # `serialize(Cro::Message $m, $body)` stub with a proto/multi set typed at
 # the narrower Cro::HTTP::Message, and mutsu rejected the composition.
 
-plan 6;
+plan 8;
 
 class Msg { }
 class HttpMsg is Msg { }
@@ -53,6 +53,17 @@ is Child.new.f("x"), 'base(x)', 'inherited differently-signed method satisfies t
 throws-like 'role R2 { method g($x) { ... } }; class C2 does R2 { }; C2.new',
     Exception, message => /'must be implemented'/,
     'missing implementation still fails composition';
+
+# A stubbed MULTI keeps per-candidate signature enforcement (unlike a plain
+# method stub): `multi method m(Int) { ... }` is satisfied only by a
+# signature-matching candidate (S14-roles/stubs.t pins the roast side).
+role MultiStub {
+    multi method m(Int) { ... }
+}
+lives-ok { EVAL 'class MultiOk does MultiStub { multi method m(Int) { "int" } }' },
+    'matching multi satisfies a stubbed multi';
+dies-ok { EVAL 'class MultiBad does MultiStub { multi method m(Str) { "str" } }' },
+    'non-matching multi does NOT satisfy a stubbed multi';
 
 # A stub satisfied by an exact match keeps working.
 role Exact {

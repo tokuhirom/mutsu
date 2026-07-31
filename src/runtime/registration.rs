@@ -303,18 +303,22 @@ impl Interpreter {
                         }
                     }
                     if local_matches == 0 {
-                        // rakudo satisfies a role's required method by NAME — the
-                        // stub's signature is advisory, not enforced (`method f()`
-                        // satisfies a stub `f(Int $x, Str $y --> Str)`). So any
-                        // concrete same-named method in this class satisfies the
-                        // requirement even when no candidate matches the stub's
-                        // positional signature. Cro::HTTP::BodySerializers relies
-                        // on this: the class implements the Cro::Core stub
+                        // rakudo satisfies a role's required NON-MULTI method by
+                        // NAME — the stub's signature is advisory, not enforced
+                        // (`method f()` satisfies a stub `f(Int $x, Str $y -->
+                        // Str)`). So any concrete same-named method in this class
+                        // satisfies the requirement even when no candidate matches
+                        // the stub's positional signature. Cro::HTTP::BodySerializers
+                        // relies on this: the class implements the Cro::Core stub
                         // `serialize(Cro::Message, $body)` with a proto/multi set
-                        // typed at the narrower Cro::HTTP::Message. The exact-
-                        // signature `matching` above still drives the multiple-
-                        // candidates conflict check, unchanged.
-                        if !concrete.is_empty() {
+                        // typed at the narrower Cro::HTTP::Message. A stubbed
+                        // *multi* keeps per-candidate signature enforcement —
+                        // `multi method a(Int) { ... }` is NOT satisfied by
+                        // `multi method a(Str)` (S14-roles/stubs.t "Interface
+                        // contract enforced on stubbed multi"). The exact-signature
+                        // `matching` above still drives the multiple-candidates
+                        // conflict check, unchanged.
+                        if !required.is_multi && !concrete.is_empty() {
                             continue;
                         }
                         let inherited_matches = self.inherited_matching_method_count(
@@ -342,9 +346,11 @@ impl Interpreter {
                         }
                         if total == 0 {
                             // Same name-based rule for inherited methods: a parent
-                            // class's concrete method of this name satisfies the
-                            // stub even when its signature differs.
-                            if self.inherited_any_concrete_method(class_name, &method_name) {
+                            // class's concrete method of this name satisfies a
+                            // NON-MULTI stub even when its signature differs.
+                            if !required.is_multi
+                                && self.inherited_any_concrete_method(class_name, &method_name)
+                            {
                                 continue;
                             }
                             // rakudo: "Method 'o' must be implemented by A
