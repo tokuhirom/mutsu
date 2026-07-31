@@ -333,6 +333,19 @@ impl Interpreter {
                 "getcodename requires a concrete code object",
             ));
         }
+        // `.bless` on a ROLE type object puns the role, exactly like `.new`
+        // does — Cro's composer builds its service as
+        // `$service-type.bless(:@components)` with the `Cro::Service` role as
+        // the default service type, and without the pun the instance carried
+        // the role's name but none of its methods (`.start` missing).
+        {
+            let cn = class_name.resolve();
+            if !self.registry().classes.contains_key(cn.as_str())
+                && self.registry().roles.contains_key(cn.as_str())
+            {
+                self.ensure_role_punned_to_class(&cn);
+            }
+        }
         // Initialize with default attribute values. The attribute defs and the
         // BUILD/TWEAK probes come from the cached per-class NativeCtorPlan
         // (shape-only data, invalidated with the dispatch caches) instead of
