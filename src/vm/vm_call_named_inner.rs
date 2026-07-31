@@ -219,9 +219,22 @@ impl Interpreter {
                 self.locals[i] = val.clone();
             }
         }
+        // A named sub's `state` scope is its REGISTRATION clone id (refreshed
+        // on every RegisterSub execution): a nested named sub re-registers per
+        // enclosing call, and raku re-initializes its `state` per clone, while
+        // a top-level sub registers once so its state persists. Setting the
+        // ambient scope here also makes the body's StateVarInit/Guard and the
+        // cached-closure dispatch path (which resolves the same registration
+        // id) agree on ONE key shape — the cold path used raw keys before,
+        // which diverged exactly for nested subs (Cro::ConnectionConditional).
+        let saved_state_scope = self.state_scope_id;
+        if callable_id.is_some() {
+            self.state_scope_id = callable_id;
+        }
         // Load persisted state variable values
         for (slot, key) in &cf.code.state_locals {
-            if let Some(val) = self.get_state_var(key) {
+            let scoped_key = self.scoped_state_key(key);
+            if let Some(val) = self.get_state_var(&scoped_key) {
                 self.locals[*slot] = val.clone();
             }
         }
@@ -383,8 +396,10 @@ impl Interpreter {
                 .get(local_name)
                 .cloned()
                 .unwrap_or_else(|| self.locals[*slot].clone());
-            loan_env!(self, set_state_var(key.clone(), val));
+            let scoped_key = self.scoped_state_key(key);
+            loan_env!(self, set_state_var(scoped_key, val));
         }
+        self.state_scope_id = saved_state_scope;
 
         // A scalar `is rw` / `is raw` parameter (`$a is rw`, stored sigil-less as
         // `a`) is bound to a slot-only local in the body (read/written via

@@ -517,9 +517,13 @@ impl Interpreter {
             // Set __mutsu_callable_id so blocks defined inside this routine
             // capture the correct target for non-local return.
             let callable_key = format!("__mutsu_callable_id::{}::{}", def.package, def.name);
+            let mut registration_id: Option<u64> = None;
             if let Some(id_val) = self.env.get(&callable_key).cloned()
                 && let ValueView::Int(id) = id_val.view()
             {
+                if id != 0 {
+                    registration_id = Some(id as u64);
+                }
                 self.env
                     .insert("__mutsu_callable_id".to_string(), Value::int(id));
             }
@@ -552,7 +556,14 @@ impl Interpreter {
                     .cloned()
                     .collect(),
             );
+            // Key the body's `state` variables by the registration clone id,
+            // matching the compiled named path's `state_scope_id`: the body
+            // runs via `run_nested`, whose register reset would otherwise
+            // clear the scope, so hand it across (consumed by
+            // `with_nested_registers`).
+            self.pending_nested_state_scope = registration_id;
             let result = self.eval_block_value_with_pre_post(&def.body);
+            self.pending_nested_state_scope = None;
             self.pending_eval_placeholder_params = saved_eval_placeholders;
             self.pending_eval_sigilless = saved_eval_sigilless;
             self.set_current_package(saved_package);

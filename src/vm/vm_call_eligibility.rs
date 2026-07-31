@@ -29,14 +29,18 @@ impl Interpreter {
 
     /// Check if a compiled function is eligible for the fast call path.
     /// Returns true for simple functions that don't need the full call machinery.
-    /// State variables are supported: both `state_locals` load/sync and anonymous
-    /// state variable sync (via `sync_anon_state_value` at the opcode level) work
-    /// correctly in the fast path.
     pub(super) fn is_fast_call_eligible(cf: &CompiledFunction, fn_name: &str) -> bool {
         cf.params.is_empty()
             && cf.param_defs.is_empty()
             && cf.return_type.is_none()
             && !fn_name.is_empty()
+            // A `state` variable's store key is scoped by the routine's
+            // REGISTRATION clone id, which only the full named path resolves
+            // and installs as `state_scope_id` (a nested named sub must
+            // re-initialize per enclosing call). This path used raw keys,
+            // which diverged from the full path's scoped keys. Same rule as
+            // the light paths below.
+            && cf.code.state_locals.is_empty()
             // A `once` needs the clone-id setup only the full call path performs.
             && !cf.code.has_once
             // A body observing its caller frame (callframe / CALLER::) needs the

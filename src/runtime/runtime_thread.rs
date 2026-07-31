@@ -559,6 +559,7 @@ impl Interpreter {
             // body (and thus the same cross-thread `state` cell) the parent used.
             imported_compiled_fns: self.imported_compiled_fns.clone(),
             state_scope_id: None,
+            pending_nested_state_scope: None,
             fn_resolve_cache: Default::default(),
             fn_resolve_gen: 0,
             fn_resolve_cache_gen: 0,

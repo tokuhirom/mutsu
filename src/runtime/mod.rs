@@ -1720,6 +1720,13 @@ pub struct Interpreter {
     /// via `imported_state_body_for_def`. Empty for programs that `use` nothing.
     pub(crate) imported_compiled_fns: HashMap<u64, std::sync::Arc<CompiledFunction>>,
     pub(crate) state_scope_id: Option<u64>,
+    /// One-shot handoff of a `state` scope into the next nested run: the
+    /// interpreter-fallback call path runs a routine body via `run_nested`,
+    /// whose register reset clears `state_scope_id` — this field survives the
+    /// reset and is consumed by `with_nested_registers` as the nested run's
+    /// initial scope, so a fallback-dispatched named sub still keys its state
+    /// by its registration clone id (per-clone `state` in nested named subs).
+    pub(crate) pending_nested_state_scope: Option<u64>,
     #[allow(clippy::type_complexity)]
     pub(crate) fn_resolve_cache:
         rustc_hash::FxHashMap<(Symbol, usize, Vec<String>), (Symbol, u64, String)>,

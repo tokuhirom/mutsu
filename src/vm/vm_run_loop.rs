@@ -284,6 +284,9 @@ impl Interpreter {
         let saved_vardecl_context = self.vardecl_context;
         let saved_loop_cond_active = self.loop_cond_active;
         let saved_state_scope_id = self.state_scope_id.take();
+        // A fallback-dispatched routine body hands its registration clone id
+        // across this register reset (see `pending_nested_state_scope`).
+        self.state_scope_id = self.pending_nested_state_scope.take();
         let saved_gather_for_loop_resume = self.gather_for_loop_resume.take();
         let saved_rw_map_topic_capture = self.rw_map_topic_capture.take();
         // `current_code` is the raw address of the *caller's* live `CompiledCode`
