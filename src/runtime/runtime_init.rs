@@ -2099,6 +2099,7 @@ impl Interpreter {
             module_packages: HashMap::new(),
             closure_env_overrides: HashMap::new(),
             pending_eval_sigilless: Vec::new(),
+            pending_eval_placeholder_params: Vec::new(),
             predictive_seq_iters: HashMap::new(),
             protect_block_cache: HashMap::new(),
             subset_predicate_cache: HashMap::new(),

@@ -111,6 +111,7 @@ impl Interpreter {
         // sigilless parameters (`\attr`) as lexical captures rather than
         // barewords. The fresh compiler otherwise has no signature context.
         compiler.seed_enclosing_sigilless(&self.pending_eval_sigilless);
+        compiler.seed_prebound_placeholders(&self.pending_eval_placeholder_params);
         let scope = if let Some(frame) = self.routine_stack.last() {
             // Set enclosing_package to the clean package name so that
             // $?PACKAGE resolves to the package, not the mangled routine
