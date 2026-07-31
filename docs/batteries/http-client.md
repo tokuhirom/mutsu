@@ -122,6 +122,12 @@ services (HTTP client + server, WebSockets, TLS, routing) on the
 in the whole Cro stack, and its TLS relies on `IO::Socket::Async::SSL` (async +
 OpenSSL) which mutsu has no foundation for. Overkill for "make one request."
 
+> **Update 2026-07-31:** the "no foundation" claim is stale — mutsu now bundles
+> and drives the `OpenSSL` binding (sync TLS battery), and a measured
+> re-assessment of the whole Cro chain (no `nqp` left upstream; concrete,
+> ticketed blockers) is in [web-framework.md](web-framework.md). The *rejection
+> for the HTTP-client slot* stands; Cro's reachability picture changed.
+
 ### Homegrown curl-shellout client — rejected
 
 A mutsu-specific client driving system `curl` via `Proc::Async` (the pattern the
