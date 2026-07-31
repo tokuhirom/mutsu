@@ -43,6 +43,27 @@ pub(crate) fn is_native_int_type(name: &str) -> bool {
     NATIVE_INT_TYPES.contains(&name)
 }
 
+/// The native integer types that are also spelled as a *coercion method* on
+/// `Cool` — `42.int8`, `"42".byte`. This is a strict subset of
+/// [`NATIVE_INT_TYPES`]: the C-width aliases `NativeCall::Types` exports
+/// (`long`, `size_t`, `bool`, ...) and `atomicint` name a type but have no
+/// method of that name, so `42.bool` is "No such method" in Rakudo just as
+/// `42.Bool` is not spelled `bool`.
+///
+/// Keeping the two lists apart is not pedantry: a stray coercion method makes
+/// `.^can` answer yes for the name on *every* value, and code that probes
+/// `$obj.^can($field)` before falling back — the shape
+/// `Template::Mustache`'s context lookup has — then calls a method that
+/// silently answers 0 instead of moving on to the next candidate.
+const NATIVE_INT_COERCE_METHODS: &[&str] = &[
+    "int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64", "byte", "int", "uint",
+];
+
+/// Whether `name` is spelled as a native-integer coercion method on `Cool`.
+pub(crate) fn is_native_int_coerce_method(name: &str) -> bool {
+    NATIVE_INT_COERCE_METHODS.contains(&name)
+}
+
 /// Returns true if `name` is a native array element type.
 pub(crate) fn is_native_array_element_type(name: &str) -> bool {
     is_native_int_type(name) || matches!(name, "num" | "num32" | "num64" | "str")
