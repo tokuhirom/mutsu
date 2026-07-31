@@ -170,6 +170,24 @@ impl Interpreter {
         Ok(false)
     }
 
+    /// Apply a WhateverCode subscript (`*-1`) to the subscripted value's
+    /// `.elems`, yielding the concrete index it stands for. Any other index is
+    /// returned unchanged.
+    pub(super) fn resolve_whatever_index_by_elems(
+        &mut self,
+        instance: &Value,
+        idx: &Value,
+    ) -> Result<Value, RuntimeError> {
+        if !matches!(idx.view(), ValueView::Sub(..)) {
+            return Ok(idx.clone());
+        }
+        let elems = self
+            .try_compiled_method_or_interpret(instance.clone(), "elems", vec![])
+            .unwrap_or(Value::int(0));
+        let len = crate::runtime::to_int(&elems).max(0);
+        self.call_sub_value(idx.clone(), vec![Value::int(len)], false)
+    }
+
     pub(super) fn instance_exists_pos_result(
         &mut self,
         instance: &Value,
@@ -177,6 +195,10 @@ impl Interpreter {
         effective_negated: bool,
         adverb_bits: u32,
     ) -> Result<Option<Value>, RuntimeError> {
+        // A `*-1`-style index is a WhateverCode: resolve it against the
+        // subscripted thing's length before asking whether it exists, exactly
+        // as the plain-value subscript path does.
+        let idx = &self.resolve_whatever_index_by_elems(instance, idx)?;
         let pairs: Vec<(Value, bool)> = match idx.view() {
             ValueView::Array(items, ..) => {
                 if let [only] = items.as_slice()

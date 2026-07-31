@@ -491,8 +491,31 @@ impl Interpreter {
                 self.stack.push(result);
                 return Ok(());
             }
+            // A plain scalar is a one-element list holding itself under a
+            // positional subscript, so `$i[0]:exists` is True on a defined value
+            // and False everywhere else — raku's `Any.EXISTS-POS`. These reached
+            // the generic tail below, whose array backing is empty for anything
+            // that is not an array, and answered False for every index including
+            // 0. Routing them through the same helper the Instance and Mixin arms
+            // use gets slices and `:!exists` right for free, and answers an
+            // *associative* subscript (`5<a>:exists`) False, because no
+            // EXISTS-KEY is found on a scalar.
+            if target.is_one_element_scalar()
+                && let Some(result) =
+                    self.instance_exists_pos_result(&target, &idx, effective_negated, adverb_bits)?
+            {
+                self.stack.push(result);
+                return Ok(());
+            }
             let idxs = match idx.view() {
                 ValueView::Int(i) => vec![i],
+                // `@a[*-1]:exists` — a WhateverCode index stands for a concrete
+                // index once applied to the array's length. Unresolved it fell
+                // into the generic tail and answered False for every array.
+                ValueView::Sub(..) => {
+                    let resolved = self.resolve_whatever_index_by_elems(&target, &idx)?;
+                    vec![crate::runtime::to_int(&resolved)]
+                }
                 ValueView::Array(items, ..) if crate::runtime::utils::is_shaped_array(&target) => {
                     // Shaped array: multi-dimensional exists (e.g. @arr[0;0]:exists).
                     // An unassigned cell holds its unset seed — Nil or the Any

@@ -658,6 +658,40 @@ impl Value {
         matches!(self.view(), ValueView::Package(sym) if sym.as_str() == "Any")
     }
 
+    /// Whether a positional subscript sees this value as a *one-element list
+    /// holding itself* — raku's `Any.AT-POS`/`Any.EXISTS-POS` behaviour, which
+    /// every non-Positional, non-Associative value inherits (`5[0]` is `5`,
+    /// and index 0 is the only one that exists).
+    ///
+    /// True only for the plain scalar leaves. Everything that is Positional
+    /// (Array, Buf, Range, Seq/Slip, LazyList), Associative (Hash, Set/Bag/Mix)
+    /// or carries its own subscript protocol (Instance, Mixin) is excluded — it
+    /// has real elements and its own answer. Type objects and `Nil` are
+    /// excluded too: they are undefined, so raku's one-element list is empty
+    /// for them and nothing exists.
+    pub fn is_one_element_scalar(&self) -> bool {
+        matches!(
+            self.view(),
+            ValueView::Int(_)
+                | ValueView::BigInt(_)
+                | ValueView::Num(_)
+                | ValueView::Str(_)
+                | ValueView::Bool(_)
+                | ValueView::Rat(..)
+                | ValueView::FatRat(..)
+                | ValueView::BigRat(..)
+                | ValueView::Complex(..)
+                | ValueView::Pair(..)
+                | ValueView::ValuePair(..)
+                | ValueView::Enum { .. }
+                | ValueView::Regex(_)
+                | ValueView::RegexWithAdverbs(_)
+                | ValueView::Sub(_)
+                | ValueView::Routine { .. }
+                | ValueView::Version { .. }
+        )
+    }
+
     // ---- consuming extractors (move the payload out) ----
 
     /// The backing store and kind if this is exactly an `Array`, consuming
