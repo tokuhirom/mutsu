@@ -53,6 +53,7 @@ mod helpers_phasers;
 mod helpers_stmt_analysis;
 mod helpers_sub_body;
 pub(crate) mod lex_scope;
+mod nqp_forms;
 mod stmt;
 
 #[derive(Clone)]

@@ -927,6 +927,11 @@ impl Interpreter {
         // not find symbol '&index' in 'GLOBAL::Foo::Bar'" — is the same shape but
         // a wider blast radius; see todo/tickets/nqp-op-aliasing-and-sha1.md.)
         if let Some(op) = name.strip_prefix("nqp::") {
+            // The supported VALUE-op table (runtime/nqp_ops.rs) — anything it
+            // does not know keeps the loud unsupported error below.
+            if let Some(result) = self.call_nqp_op(op, args) {
+                return result;
+            }
             return Err(RuntimeError::new(format!(
                 "Unsupported nqp:: op: nqp::{op}"
             )));

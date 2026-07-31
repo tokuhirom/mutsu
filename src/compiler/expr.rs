@@ -155,6 +155,13 @@ impl Compiler {
                 self.code.emit(OpCode::ReactDone);
             }
             Expr::BareWord(name) => {
+                // `nqp::const::*` names are compile-time integer constants
+                // (binary read/write size/endian flags — see nqp_forms.rs).
+                if let Some(n) = super::nqp_forms::nqp_const_value(name) {
+                    let idx = self.code.add_constant(Value::int(n));
+                    self.code.emit(OpCode::LoadConst(idx));
+                    return;
+                }
                 // An in-scope `constant` with a compile-time scalar value is read
                 // straight from the constant pool (ADR-0006 §2.2) instead of a
                 // GetLocal / GetBareWord package lookup.

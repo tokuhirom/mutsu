@@ -24,8 +24,10 @@ throws-like 'use nqp; nqp::index("hello", "z")', X::AdHoc,
     message => /'Unsupported nqp:: op' .* 'nqp::index'/,
     'an unimplemented nqp op fails instead of aliasing to the Raku builtin';
 
-throws-like 'use nqp; nqp::chars("x")', X::AdHoc,
-    message => /'nqp::chars'/,
+# (`nqp::chars` was the example here until the CBOR::Simple slice implemented
+# it — the example must stay an op mutsu does NOT provide.)
+throws-like 'use nqp; nqp::objectid($_)', X::AdHoc,
+    message => /'nqp::objectid'/,
     'and names the op it could not provide';
 
 throws-like 'use nqp; nqp::substr("hello", 1, 3)', X::AdHoc,

@@ -16,6 +16,7 @@ mod indent;
 mod numeric;
 mod str_match;
 
+pub(crate) use buf::{read_f32_endian, read_f64_endian, read_int_value};
 pub(crate) use dispatch_1arg::native_method_1arg;
 pub(crate) use dispatch_2arg::native_method_2arg;
 pub(crate) use fmt_contains::{fmt_joinable_target, native_contains_with_options};
