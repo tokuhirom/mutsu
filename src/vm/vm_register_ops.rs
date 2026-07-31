@@ -484,7 +484,7 @@ impl Interpreter {
             // A creation-time snapshot goes stale the moment the instance
             // mutates — a `start` block reading `@!before` inside
             // Cro::CompositeConnector.connect saw an empty pre-mutation copy.
-            if k.with_str(|s| Self::is_attr_twigil_env_key(s)) {
+            if k.with_str(Self::is_attr_twigil_env_key) {
                 return false;
             }
             free.contains(&k)
