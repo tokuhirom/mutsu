@@ -3111,8 +3111,16 @@ impl Interpreter {
                     // Parse as alternation: [a|b|c]
                     let mut group_pattern = String::new();
                     let mut depth = 1;
-                    for ch in chars.by_ref() {
-                        if ch == '[' {
+                    while let Some(ch) = chars.next() {
+                        if ch == '\\' {
+                            // An escaped character never affects bracket depth:
+                            // `[<?[\]]>||$]` must not close the group at the
+                            // char class's escaped `\]` (Cro::Uri IPv4address).
+                            group_pattern.push(ch);
+                            if let Some(esc) = chars.next() {
+                                group_pattern.push(esc);
+                            }
+                        } else if ch == '[' {
                             depth += 1;
                             group_pattern.push(ch);
                         } else if ch == ']' {
