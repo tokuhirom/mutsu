@@ -233,6 +233,22 @@ impl Value {
         self.0.is_hash_itemized()
     }
 
+    /// Whether this is an immutable `Map` — a hash whose `declared_type` says
+    /// `Map`, however it was built (`Map.new(...)`, `my %h is Map`, a `Capture`'s
+    /// `.hash`). Sees through a `$`-scalar wrapper, because `my $m = Map.new(...)`
+    /// itemizes and every mutation route should refuse the same either way.
+    ///
+    /// raku permits no removal from a Map at all, so this is the one predicate
+    /// the delete paths consult; the assign side reaches the same conclusion
+    /// from the container's `declared_type` metadata.
+    pub fn is_immutable_map(&self) -> bool {
+        match self.view() {
+            ValueView::Hash(h) => h.declared_type.as_deref() == Some("Map"),
+            ValueView::Scalar(inner) => inner.is_immutable_map(),
+            _ => false,
+        }
+    }
+
     /// Return this value with its hash itemization flag set to `itemized`,
     /// preserving the SAME `HashData` `Gc` (so `=`-shared mutation still tracks).
     /// A non-hash value is returned unchanged.

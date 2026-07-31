@@ -1473,6 +1473,7 @@ impl Interpreter {
                 }
             }
             "DELETE-KEY" if args.len() == 1 => {
+                crate::runtime::refuse_map_removal(&target)?;
                 let key = args[0].to_string_value();
                 let inner_target = match target.view() {
                     ValueView::Scalar(inner) => inner,
