@@ -68,15 +68,6 @@ impl Interpreter {
                             new_caps.capture_alias_map.insert(k, v);
                         }
                         new_caps.positional.extend(inner_caps.positional);
-                        new_caps
-                            .positional_offsets
-                            .append(&mut inner_caps.positional_offsets);
-                        new_caps
-                            .positional_subcaps
-                            .append(&mut inner_caps.positional_subcaps);
-                        new_caps
-                            .positional_quantified
-                            .append(&mut inner_caps.positional_quantified);
                         // Propagate a `<(` / `)>` capture marker set inside the group.
                         if inner_caps.capture_start.is_some() {
                             new_caps.capture_start = inner_caps.capture_start;
@@ -133,15 +124,6 @@ impl Interpreter {
                             new_caps.capture_alias_map.insert(k, v);
                         }
                         new_caps.positional.append(&mut inner_caps.positional);
-                        new_caps
-                            .positional_offsets
-                            .append(&mut inner_caps.positional_offsets);
-                        new_caps
-                            .positional_subcaps
-                            .append(&mut inner_caps.positional_subcaps);
-                        new_caps
-                            .positional_quantified
-                            .append(&mut inner_caps.positional_quantified);
                         new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                         new_caps.regex_vars.extend(inner_caps.regex_vars);
                         let replace = best
@@ -183,15 +165,6 @@ impl Interpreter {
                             new_caps.named.entry(k).or_default().extend(v);
                         }
                         new_caps.positional.append(&mut inner_caps.positional);
-                        new_caps
-                            .positional_offsets
-                            .append(&mut inner_caps.positional_offsets);
-                        new_caps
-                            .positional_subcaps
-                            .append(&mut inner_caps.positional_subcaps);
-                        new_caps
-                            .positional_quantified
-                            .append(&mut inner_caps.positional_quantified);
                         new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                         new_caps.regex_vars.extend(inner_caps.regex_vars);
                         return Some((next, new_caps));
@@ -261,23 +234,22 @@ impl Interpreter {
                 if let Some((end, inner_caps)) =
                     self.regex_match_end_from_caps_in_pkg(pattern, chars, pos, pkg)
                 {
-                    let captured: String = chars[pos..end].iter().collect();
                     let mut new_caps = RegexCaptures::default();
                     // Named captures appearing inside a positional capture group
                     // belong to that group's sub-Match (`$/[0]<name>`), NOT to the
                     // parent Match's top-level named captures (`$/<name>`). They are
-                    // therefore preserved only in `positional_subcaps` below, and
+                    // therefore preserved only in the slot's subcap below, and
                     // are intentionally NOT merged into the parent `named` map.
                     // Store inner captures as subcaptures of this group
                     let mut subcap = inner_caps.clone();
                     subcap.from = pos;
                     subcap.to = end;
-                    new_caps.positional.push(captured);
-                    new_caps.positional_offsets.push((pos, end));
-                    new_caps
-                        .positional_subcaps
-                        .push(Some(std::sync::Arc::new(subcap.into_cap_node())));
-                    new_caps.positional_quantified.push(None);
+                    new_caps.positional.push(PosSlot {
+                        from: pos,
+                        to: end,
+                        subcap: Some(std::sync::Arc::new(subcap.into_cap_node())),
+                        ..Default::default()
+                    });
                     return Some((end, new_caps));
                 }
                 return None;
@@ -356,7 +328,10 @@ impl Interpreter {
                     code: code.clone(),
                     named: current_caps.named.clone(),
                     matched_so_far,
-                    positional: current_caps.positional.clone(),
+                    positional: super::regex_helpers::pos_slot_texts(
+                        &current_caps.positional,
+                        chars,
+                    ),
                 };
                 // If eager code block collection is enabled, push immediately
                 // so the block is captured even if the overall match fails later.
@@ -388,18 +363,9 @@ impl Interpreter {
                         self.regex_match_end_from_caps_in_pkg(&parsed, chars, pos, &pkg)
                     {
                         let mut new_caps = RegexCaptures::default();
-                        for v in &inner_caps.positional {
-                            new_caps.positional.push(v.clone());
-                        }
                         new_caps
-                            .positional_offsets
-                            .extend(inner_caps.positional_offsets.iter().copied());
-                        new_caps
-                            .positional_subcaps
-                            .extend(inner_caps.positional_subcaps.clone());
-                        new_caps
-                            .positional_quantified
-                            .extend(inner_caps.positional_quantified.clone());
+                            .positional
+                            .extend(inner_caps.positional.iter().cloned());
                         for (k, v) in &inner_caps.named {
                             new_caps
                                 .named
@@ -428,26 +394,32 @@ impl Interpreter {
             }
             RegexAtom::Backref(idx) => {
                 // A quantified slot's reference text is the concatenation of
-                // every iteration's span; a plain slot keeps its stored text.
-                let ref_chars: Option<Vec<char>> =
-                    if let Some(Some(qlist)) = current_caps.positional_quantified.get(*idx) {
-                        let mut v = Vec::new();
-                        for (a, b, _) in qlist {
-                            let (a, b) = (*a.min(&chars.len()), *b.min(&chars.len()));
-                            v.extend_from_slice(&chars[a..b.max(a)]);
-                        }
-                        Some(v)
+                // every iteration's span; a plain slot's is its own span. Both
+                // compare against the same `chars` the spans were recorded in,
+                // so no text is materialized (ADR-0016 P4).
+                let slot = current_caps.positional.get(*idx)?;
+                let mut cursor = pos;
+                let compare_span = |a: usize, b: usize, cursor: &mut usize| -> bool {
+                    let (a, b) = (a.min(chars.len()), b.min(chars.len()));
+                    let (a, b) = (a, b.max(a));
+                    let len = b - a;
+                    if *cursor + len <= chars.len() && chars[*cursor..*cursor + len] == chars[a..b]
+                    {
+                        *cursor += len;
+                        true
                     } else {
-                        current_caps
-                            .positional
-                            .get(*idx)
-                            .map(|t| t.chars().collect())
-                    };
-                if let Some(ref_chars) = ref_chars
-                    && pos + ref_chars.len() <= chars.len()
-                    && chars[pos..pos + ref_chars.len()] == ref_chars[..]
-                {
-                    return Some((pos + ref_chars.len(), RegexCaptures::default()));
+                        false
+                    }
+                };
+                let ok = if let Some(qlist) = &slot.quantified {
+                    qlist
+                        .iter()
+                        .all(|(a, b, _)| compare_span(*a, *b, &mut cursor))
+                } else {
+                    compare_span(slot.from, slot.to, &mut cursor)
+                };
+                if ok {
+                    return Some((cursor, RegexCaptures::default()));
                 }
                 return None;
             }

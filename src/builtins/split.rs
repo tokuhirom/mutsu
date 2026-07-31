@@ -317,15 +317,11 @@ fn separator_value(m: &SplitMatch) -> Value {
         } else {
             (m.from as i64, m.to as i64)
         };
-        Value::make_match_object_full(
+        Value::make_match_object_with_captures(
             from,
             to,
             &m.positional_captures,
             &HashMap::new(),
-            &HashMap::new(),
-            &[],
-            &[],
-            &[],
             target,
         )
     } else {

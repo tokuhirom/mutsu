@@ -244,22 +244,30 @@ impl Interpreter {
         for (k, v) in &caps.regex_vars {
             env.push((k.clone(), v.clone()));
         }
+        // The engine-scope subject: derives `$0…` texts from the live
+        // accumulator's spans (the accumulator's own `target` is only set at
+        // engine exit).
+        let live_target = super::regex_helpers::current_match_target()
+            .unwrap_or_else(|| MatchTarget::new(matched_so_far));
         // Set positional capture variables ($0, $1, etc.)
-        for (i, val) in caps.positional.iter().enumerate() {
-            env.push((i.to_string(), Value::str(val.clone())));
+        for (i, slot) in caps.positional.iter().enumerate() {
+            env.push((
+                i.to_string(),
+                Value::str(live_target.span_str(slot.from, slot.to)),
+            ));
         }
         // Build `$/` as a proper Match object so `$/.Str`/`$/.lc`/`~$/` yield the
         // matched-so-far text (not just an array of positional captures). A
         // `<?{ … $/.lc … }>` assertion inside a `token` relies on this (the card
         // grammar's dup check does `%*PLAYED{$/.lc}++`). `$/[n]` still indexes the
         // positional captures on the Match object.
-        let cursor = Value::make_match_object_with_captures(
+        let cursor = Value::make_match_object_full(
             caps.match_from as i64,
             (caps.match_from + matched_so_far.chars().count()) as i64,
             &caps.positional,
             &caps.named,
-            super::regex_helpers::current_match_target()
-                .unwrap_or_else(|| MatchTarget::new(matched_so_far)),
+            &HashMap::new(),
+            live_target,
         );
         // `$¢` is the current match state at this point in the pattern — the same
         // object as `$/` here (`/ .{ $c = $¢ } /` must leave `$c` with a usable
@@ -389,9 +397,6 @@ impl Interpreter {
             &caps.positional,
             &caps.named,
             &caps.named_subcaps,
-            &caps.positional_subcaps,
-            &caps.positional_quantified,
-            &caps.positional_nil,
             target,
             &caps.named_quantified,
         );
@@ -522,9 +527,6 @@ impl Interpreter {
             &kids.positional,
             &kids.named,
             &kids.named_subcaps,
-            &kids.positional_subcaps,
-            &kids.positional_quantified,
-            &kids.positional_nil,
             target,
             &kids.named_quantified,
         );

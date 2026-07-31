@@ -213,21 +213,20 @@ impl Interpreter {
         // (Named captures always start with a letter/underscore, so an
         // all-digit name can only come from `$N=`.)
         if let Ok(forced_idx) = name.parse::<usize>() {
-            let captured: String = chars[from..to].iter().collect();
             // Drop the auto-positional entry a capturing group atom produced;
             // the alias decides this capture's index explicitly.
             if matches!(token.atom, RegexAtom::CaptureGroup(_))
                 && store.caps().positional.len() > pos_base
             {
-                store.truncate_positional_4(pos_base);
+                store.truncate_positional(pos_base);
             }
             while store.caps().positional.len() < forced_idx {
-                store.push_positional(String::new(), None, None, (0, 0));
+                store.push_positional(PosSlot::default());
             }
             if store.caps().positional.len() == forced_idx {
-                store.push_positional(captured, None, None, (from, to));
+                store.push_positional(PosSlot::span(from, to));
             } else {
-                store.overwrite_positional(forced_idx, captured, (from, to));
+                store.overwrite_positional(forced_idx, PosSlot::span(from, to));
             }
             return;
         }
@@ -250,11 +249,10 @@ impl Interpreter {
         {
             group_subcap = store
                 .caps()
-                .positional_subcaps
+                .positional
                 .get(pos_base)
-                .cloned()
-                .flatten();
-            store.truncate_positional_3(pos_base);
+                .and_then(|slot| slot.subcap.clone());
+            store.truncate_positional(pos_base);
         }
         store.push_named(name, captured.clone());
         // `@<name>=` array-sigil alias forces list context: mark the name as
@@ -338,26 +336,31 @@ impl Interpreter {
             let caps = store.caps();
             // Count how many new positional captures this atom produced
             let new_count = caps.positional.len().saturating_sub(pos_base);
-            // Look for inner subcaptures in positional_subcaps
+            // Look for inner subcaptures on the group's slot
             let subcap_idx = if new_count >= 1 {
                 pos_base
             } else {
-                caps.positional_subcaps.len()
+                caps.positional.len()
             };
-            let inner_positionals = if subcap_idx < caps.positional_subcaps.len() {
-                caps.positional_subcaps[subcap_idx]
-                    .as_ref()
-                    .map(|sc| &sc.kids().positional)
-            } else {
-                None
+            let inner_positionals = caps
+                .positional
+                .get(subcap_idx)
+                .and_then(|slot| slot.subcap.as_ref())
+                .map(|sc| &sc.kids().positional);
+            // The inner slots' text derives from their spans through the same
+            // `chars` this pattern level is matching against (ADR-0016 P4).
+            let slot_text = |slot: &PosSlot| -> String {
+                let a = slot.from.min(chars.len());
+                let b = slot.to.min(chars.len()).max(a);
+                chars[a..b].iter().collect()
             };
             if let Some(inner) = inner_positionals {
                 if inner.len() >= 2 {
                     // Two+ inner subcaptures: first = key, second = value
-                    (inner[0].clone(), Some(inner[1].clone()))
+                    (slot_text(&inner[0]), Some(slot_text(&inner[1])))
                 } else if inner.len() == 1 {
                     // One inner subcapture: it is the key, no value
-                    (inner[0].clone(), None)
+                    (slot_text(&inner[0]), None)
                 } else {
                     // No inner subcaptures in subcaps: use matched text
                     let k: String = chars[from..to].iter().collect();

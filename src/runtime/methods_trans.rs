@@ -585,7 +585,12 @@ impl Interpreter {
                         {
                             best_len = caps.to - i;
                             let matched: String = chars[i..caps.to].iter().collect();
-                            best_captures = Some(caps.positional.clone());
+                            best_captures = Some(
+                                caps.positional
+                                    .iter()
+                                    .map(|slot| caps.slot_text(slot))
+                                    .collect::<Vec<String>>(),
+                            );
                             best_closure = Some((closure.clone(), matched));
                             found = true;
                         }

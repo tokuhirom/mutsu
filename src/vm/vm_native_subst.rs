@@ -163,15 +163,11 @@ impl Interpreter {
         // single match).
         let target = crate::runtime::MatchTarget::new(text);
         let make_match = |start: usize, end: usize, caps: &[String]| {
-            Value::make_match_object_full(
+            Value::make_match_object_with_captures(
                 start as i64,
                 end as i64,
                 caps,
                 &HashMap::new(),
-                &HashMap::new(),
-                &[],
-                &[],
-                &[],
                 target.clone(),
             )
         };

@@ -570,24 +570,27 @@ impl Value {
         Value::make_instance(Symbol::intern("Instant"), attrs)
     }
 
-    /// Create a Match object with positional captures.
+    /// Create a Match object from TEXT-ONLY positional captures (no spans).
+    /// The exploded-builder convenience for carriers that never recorded
+    /// offsets (transliteration callbacks, code-block snapshots); each text
+    /// renders as an eager leaf Match reporting `0..len`, same as pre-P4.
+    /// Span-bearing callers use `make_match_object_full` instead.
     pub(crate) fn make_match_object_with_captures(
         from: i64,
         to: i64,
-        positional: &[String],
+        positional_texts: &[String],
         named: &HashMap<String, Vec<String>>,
         target: crate::runtime::MatchTarget,
     ) -> Self {
-        Self::make_match_object_full(
-            from,
-            to,
-            positional,
-            named,
-            &HashMap::new(),
-            &[],
-            &[],
-            &[],
-            target,
-        )
+        let m = Self::make_match_object_full(from, to, &[], named, &HashMap::new(), target.clone());
+        if positional_texts.is_empty() {
+            return m;
+        }
+        let list: Vec<Value> = positional_texts
+            .iter()
+            .map(|s| Value::text_leaf_match(s, &target))
+            .collect();
+        m.match_with_attrs(vec![("list", Value::array(list))])
+            .unwrap_or(m)
     }
 }

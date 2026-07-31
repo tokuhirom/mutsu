@@ -245,16 +245,18 @@ impl Interpreter {
                     if let Some(mut captures) = self.regex_match_with_captures(&pat, &text) {
                         // Set positional captures before executing code blocks
                         for (i, v) in captures.positional.iter().enumerate() {
-                            self.env.insert(i.to_string(), Value::str(v.clone()));
+                            self.env
+                                .insert(i.to_string(), Value::str(captures.slot_text(v)));
                         }
                         // Reduce-time inline actions (children first).
                         let starget = captures.target_or_new(&text);
                         self.reduce_regex_captures_made(&mut captures, Some(&starget));
-                        let match_obj = Value::make_match_object_with_captures(
+                        let match_obj = Value::make_match_object_full(
                             captures.from as i64,
                             captures.to as i64,
                             &captures.positional,
                             &captures.named,
+                            &HashMap::new(),
                             starget,
                         );
                         self.env.insert("/".to_string(), match_obj);
@@ -330,11 +332,12 @@ impl Interpreter {
                                 junc_values.push(Value::NIL);
                             } else {
                                 let cap = &non_overlapping[idx - 1];
-                                let match_obj = Value::make_match_object_with_captures(
+                                let match_obj = Value::make_match_object_full(
                                     cap.from as i64,
                                     cap.to as i64,
                                     &cap.positional,
                                     &cap.named,
+                                    &HashMap::new(),
                                     cap.target_or_new(&text),
                                 );
                                 junc_values.push(match_obj);
@@ -709,7 +712,8 @@ impl Interpreter {
                     }
                     // Set positional captures as strings first (needed by code blocks)
                     for (i, v) in captures.positional.iter().enumerate() {
-                        self.env.insert(i.to_string(), Value::str(v.clone()));
+                        self.env
+                            .insert(i.to_string(), Value::str(captures.slot_text(v)));
                     }
                     // Clear any previous `made` value before executing code blocks
                     self.env.remove("made");
@@ -732,9 +736,6 @@ impl Interpreter {
                         &captures.positional,
                         &named_with_hash,
                         &captures.named_subcaps,
-                        &captures.positional_subcaps,
-                        &captures.positional_quantified,
-                        &captures.positional_nil,
                         starget,
                         &captures.named_quantified,
                     );

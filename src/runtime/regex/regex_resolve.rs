@@ -528,13 +528,22 @@ impl Interpreter {
 
     pub(super) fn make_regex_eval_env(&self, caps: &RegexCaptures) -> Env {
         let mut env = self.env.clone();
-        for (i, val) in caps.positional.iter().enumerate() {
-            env.insert(i.to_string(), Value::str(val.clone()));
+        // Mid-match capture texts derive from the engine-scope subject
+        // (ADR-0016 P4); the live accumulator's own `target` is unset.
+        let live_target = super::regex_helpers::current_match_target();
+        let slot_text = |slot: &crate::runtime::PosSlot| -> String {
+            live_target
+                .as_ref()
+                .map(|t| t.span_str(slot.from, slot.to))
+                .unwrap_or_default()
+        };
+        for (i, slot) in caps.positional.iter().enumerate() {
+            env.insert(i.to_string(), Value::str(slot_text(slot)));
         }
         let match_list: Vec<Value> = caps
             .positional
             .iter()
-            .map(|s| Value::str(s.clone()))
+            .map(|s| Value::str(slot_text(s)))
             .collect();
         env.insert("/".to_string(), Value::array(match_list));
         for (k, v) in &caps.named {

@@ -394,12 +394,7 @@ impl Interpreter {
         // a child's code block accumulates into this match's binding (the
         // `:my %*PLAYED = (); <card>+` shape) rather than a sibling match's.
         let declared_keys = self.install_fresh_rule_dynvars(rule_name);
-        self.reduce_child_axes(
-            &mut caps.named_subcaps,
-            &mut caps.positional_subcaps,
-            &mut caps.positional_quantified,
-            target,
-        );
+        self.reduce_child_axes(&mut caps.named_subcaps, &mut caps.positional, target);
         if caps.code_blocks.is_empty() {
             // Even with no code blocks of its own, a declaring match must record
             // what its binding holds — its action still reads it, and a sibling
@@ -417,9 +412,6 @@ impl Interpreter {
             &caps.positional,
             &caps.named,
             &caps.named_subcaps,
-            &caps.positional_subcaps,
-            &caps.positional_quantified,
-            &caps.positional_nil,
             super::regex_helpers::target_or_empty(target),
             &caps.named_quantified,
         );
@@ -438,12 +430,7 @@ impl Interpreter {
     ) {
         let declared_keys = self.install_fresh_rule_dynvars(rule_name);
         if let Some(kids) = node.children.as_deref_mut() {
-            self.reduce_child_axes(
-                &mut kids.named_subcaps,
-                &mut kids.positional_subcaps,
-                &mut kids.positional_quantified,
-                target,
-            );
+            self.reduce_child_axes(&mut kids.named_subcaps, &mut kids.positional, target);
         }
         let has_blocks = node
             .children
@@ -470,9 +457,6 @@ impl Interpreter {
             &kids.positional,
             &kids.named,
             &kids.named_subcaps,
-            &kids.positional_subcaps,
-            &kids.positional_quantified,
-            &kids.positional_nil,
             super::regex_helpers::target_or_empty(target),
             &kids.named_quantified,
         );
@@ -486,8 +470,7 @@ impl Interpreter {
     fn reduce_child_axes(
         &mut self,
         named_subcaps: &mut HashMap<String, Vec<Arc<CapNode>>>,
-        positional_subcaps: &mut [Option<Arc<CapNode>>],
-        positional_quantified: &mut [Option<Vec<QuantifiedCaptureEntry>>],
+        positional: &mut [PosSlot],
         target: Option<&MatchTarget>,
     ) {
         // The walk mutates a node only to take/run its code blocks (writing
@@ -513,15 +496,14 @@ impl Interpreter {
                 self.reduce_cap_node_for_rule(sc, target, Some(&child_rule));
             }
         }
-        for sc in positional_subcaps.iter_mut().flatten() {
-            if skip_untouched && !Self::subtree_has_code_blocks(sc) {
-                continue;
+        for slot in positional.iter_mut() {
+            if let Some(sc) = slot.subcap.as_mut()
+                && (!skip_untouched || Self::subtree_has_code_blocks(sc))
+            {
+                crate::vm::vm_stats::record_regex_cap_makemut(Arc::strong_count(sc) > 1);
+                self.reduce_cap_node_for_rule(Arc::make_mut(sc), target, None);
             }
-            crate::vm::vm_stats::record_regex_cap_makemut(Arc::strong_count(sc) > 1);
-            self.reduce_cap_node_for_rule(Arc::make_mut(sc), target, None);
-        }
-        for pq in positional_quantified.iter_mut().flatten() {
-            for entry in pq.iter_mut() {
+            for entry in slot.quantified.iter_mut().flatten() {
                 if let Some(sc) = entry.2.as_mut() {
                     if skip_untouched && !Self::subtree_has_code_blocks(sc) {
                         continue;
@@ -606,17 +588,16 @@ impl Interpreter {
             .values()
             .flatten()
             .any(|sc| Self::subtree_has_code_blocks(sc))
-            || kids
-                .positional_subcaps
-                .iter()
-                .flatten()
-                .any(|sc| Self::subtree_has_code_blocks(sc))
-            || kids
-                .positional_quantified
-                .iter()
-                .flatten()
-                .flatten()
-                .any(|e| e.2.as_deref().is_some_and(Self::subtree_has_code_blocks))
+            || kids.positional.iter().any(|slot| {
+                slot.subcap
+                    .as_deref()
+                    .is_some_and(Self::subtree_has_code_blocks)
+                    || slot
+                        .quantified
+                        .iter()
+                        .flatten()
+                        .any(|e| e.2.as_deref().is_some_and(Self::subtree_has_code_blocks))
+            })
     }
 
     /// The rule name a `named_subcaps` key stands for. A silent-action capture

@@ -688,9 +688,6 @@ pub(super) fn remap_caps_spans_offset(
         caps.from = m(caps.from);
         caps.to = m(caps.to);
     }
-    for (a, b) in caps.positional_offsets.iter_mut() {
-        (*a, *b) = (m(*a), m(*b));
-    }
     for slot in caps.positional_slots.iter_mut().flatten() {
         slot.0 = m(slot.0);
         slot.1 = m(slot.1);
@@ -698,10 +695,26 @@ pub(super) fn remap_caps_spans_offset(
     for sc in caps.named_subcaps.values_mut().flatten() {
         remap_cap_node_spans(std::sync::Arc::make_mut(sc), pos_map, orig_len, offset);
     }
-    for sc in caps.positional_subcaps.iter_mut().flatten() {
+    for slot in caps.positional.iter_mut() {
+        remap_pos_slot(slot, pos_map, orig_len, offset);
+    }
+}
+
+/// Remap one positional slot's spans (its own, its subcap tree, and every
+/// quantified iteration entry).
+pub(super) fn remap_pos_slot(
+    slot: &mut PosSlot,
+    pos_map: &[usize],
+    orig_len: usize,
+    offset: usize,
+) {
+    let m = |p: usize| map_pos(p, pos_map, orig_len) + offset;
+    slot.from = m(slot.from);
+    slot.to = m(slot.to);
+    if let Some(sc) = &mut slot.subcap {
         remap_cap_node_spans(std::sync::Arc::make_mut(sc), pos_map, orig_len, offset);
     }
-    for entry in caps.positional_quantified.iter_mut().flatten().flatten() {
+    for entry in slot.quantified.iter_mut().flatten() {
         entry.0 = m(entry.0);
         entry.1 = m(entry.1);
         if let Some(sc) = &mut entry.2 {
@@ -727,20 +740,8 @@ pub(super) fn remap_cap_node_spans(
     for sc in children.named_subcaps.values_mut().flatten() {
         remap_cap_node_spans(std::sync::Arc::make_mut(sc), pos_map, orig_len, offset);
     }
-    for sc in children.positional_subcaps.iter_mut().flatten() {
-        remap_cap_node_spans(std::sync::Arc::make_mut(sc), pos_map, orig_len, offset);
-    }
-    for entry in children
-        .positional_quantified
-        .iter_mut()
-        .flatten()
-        .flatten()
-    {
-        entry.0 = m(entry.0);
-        entry.1 = m(entry.1);
-        if let Some(sc) = &mut entry.2 {
-            remap_cap_node_spans(std::sync::Arc::make_mut(sc), pos_map, orig_len, offset);
-        }
+    for slot in children.positional.iter_mut() {
+        remap_pos_slot(slot, pos_map, orig_len, offset);
     }
 }
 
@@ -882,10 +883,6 @@ pub(super) fn merge_regex_captures(
         dst.capture_alias_map.insert(k, v);
     }
     dst.positional.append(&mut src.positional);
-    dst.positional_subcaps.append(&mut src.positional_subcaps);
-    dst.positional_quantified
-        .append(&mut src.positional_quantified);
-    dst.positional_offsets.append(&mut src.positional_offsets);
     dst.code_blocks.append(&mut src.code_blocks);
     for (k, v) in src.hash_captures.drain() {
         dst.hash_captures.entry(k).or_default().extend(v);
@@ -965,10 +962,10 @@ pub(super) fn fold_quantified_captures(caps: &mut RegexCaptures, base_len: usize
         // reserves its own Nil slot (see `reserve_nil_capture_slots`), so both
         // `(y)?`→Nil and `(z)*`→[] coexist at their correct positions.
         for _ in 0..stride {
-            caps.positional.push(String::new());
-            caps.positional_subcaps.push(None);
-            caps.positional_quantified.push(Some(Vec::new()));
-            caps.positional_offsets.push((0, 0));
+            caps.positional.push(PosSlot {
+                quantified: Some(Vec::new()),
+                ..Default::default()
+            });
         }
         return;
     }
@@ -984,79 +981,61 @@ pub(super) fn fold_quantified_captures(caps: &mut RegexCaptures, base_len: usize
         return;
     }
 
-    // Collect entries per group
-    let mut folded_positional = Vec::with_capacity(stride);
-    let mut folded_offsets = Vec::with_capacity(stride);
-    let mut folded_subcaps = Vec::with_capacity(stride);
-    let mut folded_quantified: Vec<Option<Vec<QuantifiedCaptureEntry>>> =
-        Vec::with_capacity(stride);
-
+    // Collect entries per group; the last iteration's span/subcap become the
+    // folded slot's "representative" values for backref purposes.
+    let mut folded: Vec<PosSlot> = Vec::with_capacity(stride);
     for group in 0..stride {
         let mut list: Vec<QuantifiedCaptureEntry> = Vec::with_capacity(iterations);
         for iter in 0..iterations {
             let idx = base_len + iter * stride + group;
-            let subcap = if idx < caps.positional_subcaps.len() {
-                caps.positional_subcaps[idx].clone()
-            } else {
-                None
-            };
-            let (from, to) = if idx < caps.positional_offsets.len() {
-                caps.positional_offsets[idx]
-            } else {
-                (0, caps.positional[idx].chars().count())
-            };
-            list.push((from, to, subcap));
+            let slot = &caps.positional[idx];
+            list.push((slot.from, slot.to, slot.subcap.clone()));
         }
-        // Use the last iteration's values as the "representative" for backref purposes
-        let last_idx = base_len + (iterations - 1) * stride + group;
-        folded_positional.push(caps.positional[last_idx].clone());
         let last = list.last().unwrap();
-        folded_offsets.push((last.0, last.1));
-        folded_subcaps.push(last.2.clone());
-        folded_quantified.push(Some(list));
+        folded.push(PosSlot {
+            from: last.0,
+            to: last.1,
+            subcap: last.2.clone(),
+            quantified: Some(list),
+            nil: false,
+        });
     }
 
     // Replace entries from base_len onward
     caps.positional.truncate(base_len);
-    caps.positional.extend(folded_positional);
-    caps.positional_subcaps.truncate(base_len);
-    caps.positional_subcaps.extend(folded_subcaps);
-    // Ensure positional_quantified is the right length
-    while caps.positional_quantified.len() < base_len {
-        caps.positional_quantified.push(None);
-    }
-    caps.positional_quantified.truncate(base_len);
-    caps.positional_quantified.extend(folded_quantified);
-    // Keep the offsets axis aligned: the representative slot carries the last
-    // iteration's span.
-    caps.positional_offsets.truncate(base_len);
-    while caps.positional_offsets.len() < base_len {
-        caps.positional_offsets.push((0, 0));
-    }
-    caps.positional_offsets.extend(folded_offsets);
+    caps.positional.extend(folded);
+}
+
+/// Materialize the positional slots' texts through the engine's subject —
+/// the snapshot a `CodeBlockContext` carries (ADR-0016 P4). Built at snapshot
+/// time from the same `chars` the spans were recorded against, so the
+/// semantics match the pre-P4 stored-text axis exactly.
+pub(super) fn pos_slot_texts(slots: &[PosSlot], chars: &[char]) -> Vec<String> {
+    slots
+        .iter()
+        .map(|slot| {
+            let from = slot.from.min(chars.len());
+            let to = slot.to.min(chars.len()).max(from);
+            chars[from..to].iter().collect()
+        })
+        .collect()
 }
 
 /// Reserve `stride` index-stable Nil slots for an unmatched optional capture
 /// group (`(x)?` that matched zero times). The slots render as `Nil` in the
 /// resulting Match (Raku: `(a)?(b)` on "b" yields `$0 = Nil`, `$1 = b`).
-///
-/// `positional_nil` is padded with `false` up to the current `positional` length
-/// before the `true` entries are pushed, so the matched captures that precede
-/// this group (which never touch `positional_nil`) stay index-aligned.
 pub(super) fn reserve_nil_capture_slots(caps: &mut RegexCaptures, stride: usize) {
     if stride == 0 {
         return;
     }
-    while caps.positional_nil.len() < caps.positional.len() {
-        caps.positional_nil.push(false);
-    }
     let at = caps.to;
     for _ in 0..stride {
-        caps.positional.push(String::new());
-        caps.positional_subcaps.push(None);
-        caps.positional_quantified.push(None);
-        caps.positional_offsets.push((at, at));
-        caps.positional_nil.push(true);
+        caps.positional.push(PosSlot {
+            from: at,
+            to: at,
+            nil: true,
+            ..Default::default()
+        });
     }
 }
 

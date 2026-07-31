@@ -487,7 +487,8 @@ impl Interpreter {
                 return Ok(self.make_parse_failure_value(&text, captures.to));
             }
             for (i, v) in captures.positional.iter().enumerate() {
-                self.env.insert(i.to_string(), Value::str(v.clone()));
+                self.env
+                    .insert(i.to_string(), Value::str(captures.slot_text(v)));
             }
             let alias_map = std::mem::take(&mut captures.capture_alias_map);
             let match_obj = Value::make_match_object_full_q(
@@ -496,9 +497,6 @@ impl Interpreter {
                 &captures.positional,
                 &captures.named,
                 &captures.named_subcaps,
-                &captures.positional_subcaps,
-                &captures.positional_quantified,
-                &captures.positional_nil,
                 gtarget,
                 &captures.named_quantified,
             );
@@ -627,9 +625,6 @@ impl Interpreter {
             &caps.positional,
             &caps.named,
             &caps.named_subcaps,
-            &caps.positional_subcaps,
-            &caps.positional_quantified,
-            &caps.positional_nil,
             caps.target_or_new(text),
             &caps.named_quantified,
         )
@@ -644,9 +639,6 @@ impl Interpreter {
             &kids.positional,
             &kids.named,
             &kids.named_subcaps,
-            &kids.positional_subcaps,
-            &kids.positional_quantified,
-            &kids.positional_nil,
             target.clone(),
             &kids.named_quantified,
         )

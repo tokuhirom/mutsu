@@ -439,9 +439,6 @@ impl Interpreter {
             &[],
             &std::collections::HashMap::new(),
             &std::collections::HashMap::new(),
-            &[],
-            &[],
-            &[],
             crate::runtime::MatchTarget::new(text),
         )
     }

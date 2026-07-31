@@ -112,9 +112,6 @@ impl Interpreter {
             &caps.positional,
             &caps.named,
             &caps.named_subcaps,
-            &caps.positional_subcaps,
-            &caps.positional_quantified,
-            &caps.positional_nil,
             target,
             &caps.named_quantified,
         );
@@ -200,9 +197,6 @@ impl Interpreter {
             &[],
             &HashMap::new(),
             &HashMap::new(),
-            &[],
-            &[],
-            &[],
             MatchTarget::from_chars(chars),
             &HashSet::new(),
         );
