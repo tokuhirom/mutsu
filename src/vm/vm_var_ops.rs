@@ -59,7 +59,7 @@ impl Interpreter {
         Value::pair(SELF_HASH_REF_SENTINEL.to_string(), Value::TRUE)
     }
 
-    pub(super) fn resolve_hash_entry(
+    pub(crate) fn resolve_hash_entry(
         &self,
         items: &crate::gc::Gc<crate::value::HashData>,
         key: &str,

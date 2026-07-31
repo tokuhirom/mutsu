@@ -571,6 +571,15 @@ pub(crate) fn native_method_1arg(
                     Some(n) => return Some(Ok(Value::truth((idx as usize) < n))),
                 }
             }
+            // An in-range slot of a mutable array may still be a hole — a
+            // deleted element or an autovivification gap — and raku reports
+            // those as absent. A shaped array is fixed-size, so every in-range
+            // slot of one exists regardless of what it holds.
+            if let ValueView::Array(data, ..) = target.view() {
+                let i = idx as usize;
+                let exists = i < data.len() && (data.shape.is_some() || !data.hole_at(i));
+                return Some(Ok(Value::truth(exists)));
+            }
             if let Some(items) = target.as_list_items() {
                 return Some(Ok(Value::truth((idx as usize) < items.len())));
             }

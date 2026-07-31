@@ -2510,7 +2510,14 @@ impl Interpreter {
                         ValueView::Num(f) if f >= 0.0 => Some(f as usize),
                         _ => None,
                     };
-                    return Ok(Value::truth(index.is_some_and(|i| i < items.len())));
+                    // A shaped array is fixed-size: every in-range slot exists.
+                    // Anywhere else an in-range slot may still be a hole — a
+                    // deleted element or an autovivification gap — and reporting
+                    // those as existing made `:exists` disagree with itself once
+                    // it started dispatching through EXISTS-POS (a mixin).
+                    return Ok(Value::truth(index.is_some_and(|i| {
+                        i < items.len() && (shape.is_some() || !items.hole_at(i))
+                    })));
                 }
                 ("ASSIGN-POS", [idx, value]) => {
                     let index = match idx.view() {
@@ -2614,25 +2621,12 @@ impl Interpreter {
                     let Some(index) = index else {
                         return Err(RuntimeError::new("Cannot DELETE-POS with a negative index"));
                     };
-                    let mut updated = items.to_vec();
-                    let deleted = if index < updated.len() {
-                        let old = std::mem::replace(&mut updated[index], Value::NIL);
-                        match old.view() {
-                            ValueView::Scalar(inner) => inner.clone(),
-                            _ => old.clone(),
-                        }
-                    } else {
-                        Value::NIL
-                    };
-                    let replacement = Value::array_with_kind(
-                        crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
-                        arr_kind,
-                    );
-                    if let Some(ref shape) = shape {
-                        crate::runtime::utils::mark_shaped_array(&replacement, Some(shape));
-                    }
-                    self.overwrite_array_bindings_by_identity(&items, replacement);
-                    return Ok(deleted);
+                    // Delete through the shared backing node rather than
+                    // rebuilding the array and rewriting the env bindings that
+                    // point at the old one: an array held inside a `Mixin`'s
+                    // `Arc<Value>` (`@a but R`) is not an env binding, so the
+                    // rewrite never reached it and the delete was lost.
+                    return Ok(self.array_delete_pos_value(&target, index));
                 }
                 ("clone", _) => {
                     let cloned = items.to_vec();
@@ -2643,6 +2637,15 @@ impl Interpreter {
                 }
                 _ => {}
             }
+        }
+
+        // `%h.DELETE-KEY($k)` on a hash *value*. The name-keyed mut path
+        // (`vm_call_method_mut_ops`) answers this for a plain lexical `%h`; every
+        // other route — a hash reached through a `Mixin` above all, which is what
+        // `:delete` on a `%h but R` dispatches through — had no method to find.
+        if method == "DELETE-KEY" && args.len() == 1 && matches!(target.view(), ValueView::Hash(_))
+        {
+            return Ok(self.hash_delete_key_value(&target, &args[0]));
         }
 
         // Mixin dispatch

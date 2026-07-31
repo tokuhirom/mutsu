@@ -276,6 +276,7 @@ mod methods_string_search;
 mod methods_string_subst_repl;
 mod methods_string_substr;
 mod methods_sub;
+mod methods_subscript_protocol;
 mod methods_supply_dispatch;
 mod methods_temporal;
 mod methods_trans;
