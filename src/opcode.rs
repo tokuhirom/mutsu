@@ -27,6 +27,54 @@ pub(crate) fn reflective_name_access_possible() -> bool {
     REFLECTIVE_NAME_ACCESS_SEEN.load(Ordering::Relaxed)
 }
 
+/// Which bracket a subscript was written with. Carried in bits 8-9 of the
+/// `ExistsIndexAdv` / `ExistsIndexNamedAdv` flag word so the VM can pick the
+/// subscript protocol from the *syntax* rather than guessing from the index's
+/// runtime type: `$c[0]` is `EXISTS-POS`/`AT-POS` and `$c{0}` is
+/// `EXISTS-KEY`/`AT-KEY`, however the index happens to be typed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SubscriptKind {
+    /// The subscript's bracket is not recorded (a zen slice, or a target the
+    /// compiler did not recognise as an `Index`). The VM falls back to the
+    /// index-type heuristic.
+    Unknown = 0,
+    /// Written with `[...]`.
+    Positional = 1,
+    /// Written with `{...}` or `<...>`.
+    Associative = 2,
+}
+
+impl SubscriptKind {
+    const SHIFT: u32 = 8;
+    const MASK: u32 = 0b11;
+
+    /// The kind of a subscript written with `[...]` when `is_positional`.
+    #[inline]
+    pub fn from_is_positional(is_positional: bool) -> Self {
+        if is_positional {
+            SubscriptKind::Positional
+        } else {
+            SubscriptKind::Associative
+        }
+    }
+
+    /// This kind's contribution to an `ExistsIndexAdv` flag word.
+    #[inline]
+    pub fn to_flag_bits(self) -> u32 {
+        (self as u32) << Self::SHIFT
+    }
+
+    /// The kind recorded in an `ExistsIndexAdv` flag word.
+    #[inline]
+    pub fn from_flags(flags: u32) -> Self {
+        match (flags >> Self::SHIFT) & Self::MASK {
+            1 => SubscriptKind::Positional,
+            2 => SubscriptKind::Associative,
+            _ => SubscriptKind::Unknown,
+        }
+    }
+}
+
 /// Base binary operation for a fused compound-assignment opcode
 /// (`$x OP= rhs`). Each variant maps to the same `exec_*_op` the plain
 /// `Binary` path uses, so the fused op shares exact operator semantics.
@@ -1146,7 +1194,14 @@ pub(crate) enum OpCode {
     /// Stack: [target, index] or [target, index, arg] or [target] (zen).
     /// Flags: bit0=negated, bit1=has_arg, bit2=is_zen,
     ///        bits 4-7=adverb (0=None,1=Kv,2=NotKv,3=P,4=NotP,5=NotV,
-    ///                         6=InvalidK,7=InvalidNotK,8=InvalidV)
+    ///                         6=InvalidK,7=InvalidNotK,8=InvalidV),
+    ///        bits 8-9=subscript kind (0=Unknown, 1=Positional `[ ]`,
+    ///                                 2=Associative `{ }` / `< >`)
+    ///
+    /// The subscript kind is what lets the VM tell `$c[0]` from `$c{0}` on a
+    /// target that is Associative but not Positional: raku reads the former
+    /// through `Any.EXISTS-POS` (the value is a one-element list holding
+    /// itself) and the latter as a key lookup.
     ExistsIndexAdv(u32),
     /// Variant of ExistsIndexAdv that knows the array variable name and
     /// consults the deleted-index tracker so `:delete` can report a slot

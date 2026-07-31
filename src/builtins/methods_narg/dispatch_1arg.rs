@@ -585,9 +585,11 @@ pub(crate) fn native_method_1arg(
             }
             // `Any.EXISTS-POS`: a non-Positional value is a one-element list
             // holding itself under a positional subscript, so index 0 is the
-            // only one that exists. Restricted to the plain scalar leaves, so a
+            // only one that exists. The Associative containers are included —
+            // `Hash`/`Set`/`Bag`/`Mix` do not do `Positional`, so
+            // `%h.EXISTS-POS(1)` is False however many keys the hash has. A
             // class declaring its own EXISTS-POS is never shadowed by this.
-            if target.is_one_element_scalar() {
+            if target.is_one_element_under_positional_subscript() {
                 return Some(Ok(Value::truth(idx == 0)));
             }
             None
