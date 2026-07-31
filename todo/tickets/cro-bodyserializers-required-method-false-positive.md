@@ -34,6 +34,21 @@ defines several sibling classes implementing plain `method serialize` before
 the proto/multi one, and the stub signature carries typed params from yet
 another module (`Cro::HTTP::Message`).
 
+## Hypothesis (from reading `src/runtime/registration.rs` ~line 267)
+
+The composition check satisfies a stub only when a concrete candidate passes
+`method_signatures_match(required, candidate)`. The Cro::Core stub is
+`method serialize(Cro::Message $message, $body --> Supply)` while the class
+proto/multis type the first parameter as the *narrower* `Cro::HTTP::Message`
+(and the multis use `@body` / `%body`), so every candidate fails the signature
+match → `local_matches == 0` → false error. All my reduced repros used
+*identical* parameter types on stub and implementation, which is why they
+passed. Rakudo satisfies a role requirement by NAME (the signature is
+advisory), so the fix is likely to relax `method_signatures_match` here (or
+count any same-named concrete/proto as satisfying the stub). Untested — verify
+with a repro where the stub and the implementing proto/multi differ in a
+positional parameter's type constraint.
+
 Repro (with the Cro sources fetched from fez):
 
 ```

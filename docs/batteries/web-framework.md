@@ -80,6 +80,12 @@ releases:
 - **No `use nqp` anywhere** in Cro::Core / Cro::HTTP / Cro::TLS / OO::Monitors
   / Log::Timeline / HTTP::HPACK. The only `nqp::` in the whole chain is one
   `nqp::sha1` line in `OpenSSL::NativeLib` (a resources-path helper).
+  *Correction (same day, found by load-probing after the brace-subscript fix):*
+  that claim covers the 7 dists' own code, but Log::Timeline **eagerly loads**
+  its `CBOR::Simple` output backend, which is an `nqp_ops_only` dist (buffer
+  read/write ops). That makes the nqp-op subset a real, bounded prerequisite
+  for loading Cro::HTTP — see
+  [`todo/tickets/cbor-simple-nqp-buf-ops.md`](../../todo/tickets/cbor-simple-nqp-buf-ops.md).
 - **NativeCall surfaces are small and known**: the OpenSSL binding (~94
   `is native` functions — and mutsu already bundles and drives `OpenSSL` for
   the sync TLS battery) and one `setsockopt` in `Cro::Core`'s TCP_NODELAY.
