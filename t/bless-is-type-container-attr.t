@@ -36,5 +36,5 @@ is $c.conv.^name, 'TC', 'a %-attr with `is Role` blessed as that type';
 is $c.conv.tag, 'tc', 'its methods dispatch';
 is $c.conv<a>, 1, 'BUILD assignment went through the role STORE';
 is $c.conv<b>, 2, 'both pairs';
-ok $c.conv.EXISTS-KEY('b'), 'EXISTS-KEY delegates too';
+ok $c.conv<b>:exists, 'EXISTS-KEY delegates too';
 is $c.hooks.^name, 'TC', 'an @-attr with `is Role` builds the same way';
