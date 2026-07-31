@@ -954,7 +954,12 @@ impl Interpreter {
                 // leading `__` and are stored straight into env at runtime — they
                 // are never user-declared, so `use strict` must skip them too.
                 let is_internal_temp = bare_no_sigil.starts_with("__");
+                // A store arriving with `vardecl_context` set IS the declaration
+                // (an expression-position `my` — `ok my $x = 7, 'desc'` — compiles
+                // to MarkVarDeclContext + SetGlobal when no local slot exists), so
+                // `use strict` must not reject it as an undeclared write.
                 if self.strict_mode
+                    && !self.vardecl_context
                     && !is_attr_twigil
                     && !is_internal_temp
                     && !name.contains("::")
