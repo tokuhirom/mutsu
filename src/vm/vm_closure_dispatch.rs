@@ -266,6 +266,15 @@ impl Interpreter {
                 self.env_mut().entry_or_insert_sym(*k, v.clone());
             }
         }
+        // `self` may live in a PARENT tier of the captured env: the loop above
+        // iterates the own tier only (`Env::iter` does not walk the chain,
+        // unlike `get`), so the lexical-self install in the loop never fires
+        // for a closure captured under a scoped overlay. Resolve through the
+        // tier-walking get and force-install (interpreter-path twin in
+        // `call_sub_value`).
+        if let Some(captured_self) = data.env.get("self").cloned() {
+            self.env_mut().insert("self".to_string(), captured_self);
+        }
         // A closure's free variables are lexically bound in its captured env, so an
         // *authoritative* capture must OVERWRITE whatever the caller env happens to
         // hold under the same name. The frame env is a scoped child of the
