@@ -87,6 +87,79 @@ pub(crate) fn nil_absorbs_method(method: &str) -> bool {
     // making the hyper path warn+resume is a separate follow-up.
 }
 
+/// The pre-dispatch verdicts for a method call on a `Nil` invocant that resolve
+/// to an error or a warn-and-resume rather than normal dispatch, shared by the
+/// scalar `MethodCall` opcode and the named-receiver `CallMethodMut` opcode
+/// (`my $v := Nil; $v.Int` must warn exactly like `Nil.Int`):
+///
+/// - element mutators (`BIND-POS`, `STORE`, ...) → hard error;
+/// - numeric coercions warn "Use of Nil in numeric context" and resume with
+///   the corresponding numeric *zero* — raku's `Nil.Int` is `0` (defined),
+///   `Nil.Num` is `0e0`, `Nil.Rat` is `0.0`, `Nil.Real` is `0`, etc. — NOT
+///   the type object;
+/// - the Real methods that numify their invocant (`abs`, `floor`, `ceiling`,
+///   `round`, `truncate`, `sign`) treat Nil as the numeric zero: they warn and
+///   resume with the method applied to 0 — which is 0 (an Int) for every one
+///   of these. (`sqrt`/`exp`/`log` are `Cool:D`-only and error on Nil:U; they
+///   stay in the callers' Nil-absorbing catch-all — matching raku's
+///   X::Multi::NoMatch is a separate follow-up.);
+/// - string coercion (`Str`/`Stringy`) warns "Use of Nil in string context"
+///   and resumes with the empty string (`.gist` and `.raku` do NOT warn — they
+///   render "Nil" and stay on normal dispatch);
+/// - `ords` warns and resumes to an empty Seq; `chrs` warns and resumes to a
+///   single null byte.
+///
+/// Returns `None` for every other method: the callers keep their own handling
+/// for autovivification (`push`/`append`/...), the methods Nil genuinely
+/// defines, and the Nil-absorbing catch-all / post-dispatch FALLBACK absorb.
+/// `no_args` is true when the call has no arguments (the coercion arms only
+/// apply to the 0-ary form; an argument makes them fall through unchanged).
+pub(crate) fn nil_predispatch_error(method: &str, no_args: bool) -> Option<RuntimeError> {
+    match method {
+        "BIND-POS" | "BIND-KEY" | "ASSIGN-POS" | "ASSIGN-KEY" | "STORE" => {
+            Some(RuntimeError::new(format!(
+                "Invocant of method '{}' must be an object instance of type \
+                 'Any', not a type object of type 'Nil'.  Did you forget a \
+                 '.new'?",
+                method
+            )))
+        }
+        "Rat" | "FatRat" | "Int" | "Num" | "Complex" | "Numeric" | "Real" if no_args => {
+            let zero = match method {
+                "Int" | "Numeric" | "Real" => Value::int(0),
+                "Num" => Value::num(0.0),
+                "Rat" => crate::value::make_rat(0, 1),
+                "FatRat" => crate::value::make_big_fat_rat(0.into(), 1.into()),
+                "Complex" => Value::complex(0.0, 0.0),
+                _ => unreachable!(),
+            };
+            Some(RuntimeError::warn_signal_with_resume(
+                "Use of Nil in numeric context".to_string(),
+                zero,
+            ))
+        }
+        "abs" | "floor" | "ceiling" | "round" | "truncate" | "sign" if no_args => {
+            Some(RuntimeError::warn_signal_with_resume(
+                "Use of Nil in numeric context".to_string(),
+                Value::int(0),
+            ))
+        }
+        "Str" | "Stringy" if no_args => Some(RuntimeError::warn_signal_with_resume(
+            "Use of Nil in string context".to_string(),
+            Value::str(String::new()),
+        )),
+        "ords" if no_args => Some(RuntimeError::warn_signal_with_resume(
+            "Use of Nil in string context".to_string(),
+            Value::seq(vec![]),
+        )),
+        "chrs" if no_args => Some(RuntimeError::warn_signal_with_resume(
+            "Use of Nil in string context".to_string(),
+            Value::str("\0".to_string()),
+        )),
+        _ => None,
+    }
+}
+
 impl Interpreter {
     /// Build an X::Multi::NoMatch error for a `print`/`say`/`put`/`note` call
     /// made with a positional argument on an invocant whose only candidate is
@@ -1448,15 +1521,14 @@ impl Interpreter {
                 // which lets the hyper-method path (`».foo`) reach the same
                 // Nil-absorbing verdict without duplicating this dispatch.
                 if target.is_nil() {
+                    // The warn-and-resume coercions and the element-mutator
+                    // errors live in `nil_predispatch_error`, shared with the
+                    // named-receiver opcode (`exec_call_method_mut_op_impl`)
+                    // so `my $v := Nil; $v.Int` reaches the same verdict.
+                    if let Some(err) = nil_predispatch_error(method, args.is_empty()) {
+                        return Err(err);
+                    }
                     match method {
-                        "BIND-POS" | "BIND-KEY" | "ASSIGN-POS" | "ASSIGN-KEY" | "STORE" => {
-                            return Err(RuntimeError::new(format!(
-                                "Invocant of method '{}' must be an object instance of type \
-                                 'Any', not a type object of type 'Nil'.  Did you forget a \
-                                 '.new'?",
-                                method
-                            )));
-                        }
                         // Any:U autovivification: push/append/unshift/prepend on
                         // a runtime-undefined value (e.g. an out-of-range array
                         // element `@a[5]` or an uninitialised variable) creates a
@@ -1494,16 +1566,6 @@ impl Interpreter {
                         | "clone" | "item" | "self" | "sink" | "pending" => {
                             // Fall through to normal dispatch
                         }
-                        // String coercion on Nil warns ("Use of Nil in string
-                        // context") and resumes with the empty string. (`.gist`
-                        // and `.raku`, above, stay in the fall-through list — they
-                        // render "Nil" and do NOT warn.)
-                        "Str" | "Stringy" if args.is_empty() => {
-                            return Err(RuntimeError::warn_signal_with_resume(
-                                "Use of Nil in string context".to_string(),
-                                Value::str(String::new()),
-                            ));
-                        }
                         // List/iteration methods inherited from Any: Nil behaves
                         // like a single undefined item (e.g. `Nil.grep(*.defined)`
                         // is an empty Seq, `Nil.map(*.so)` is `(False)`), NOT a
@@ -1526,56 +1588,6 @@ impl Interpreter {
                         // X::Multi::NoMatch case handled by the catch-all below.)
                         "say" | "note" | "put" | "print" if args.is_empty() => {
                             // Fall through to normal dispatch
-                        }
-                        // Numeric coercion on Nil (an undefined value) warns and
-                        // resumes with the corresponding numeric *zero* — raku's
-                        // `Nil.Int` is `0` (defined), `Nil.Num` is `0e0`,
-                        // `Nil.Rat` is `0.0`, `Nil.Real` is `0`, etc. — NOT the
-                        // type object.
-                        "Rat" | "FatRat" | "Int" | "Num" | "Complex" | "Numeric" | "Real"
-                            if args.is_empty() =>
-                        {
-                            let zero = match method {
-                                "Int" | "Numeric" | "Real" => Value::int(0),
-                                "Num" => Value::num(0.0),
-                                "Rat" => crate::value::make_rat(0, 1),
-                                "FatRat" => crate::value::make_big_fat_rat(0.into(), 1.into()),
-                                "Complex" => Value::complex(0.0, 0.0),
-                                _ => unreachable!(),
-                            };
-                            let msg = "Use of Nil in numeric context".to_string();
-                            return Err(RuntimeError::warn_signal_with_resume(msg, zero));
-                        }
-                        // Real methods that numify their invocant (`abs`, `floor`,
-                        // `ceiling`, `round`, `truncate`, `sign`) treat Nil as the
-                        // numeric zero: they warn "Use of Nil in numeric context"
-                        // and resume with the method applied to 0 — which is 0 (an
-                        // Int) for every one of these — instead of absorbing to Nil.
-                        // (`sqrt`/`exp`/`log` are `Cool:D`-only and error on Nil:U;
-                        // they stay in the Nil-absorbing catch-all — matching raku's
-                        // X::Multi::NoMatch is a separate follow-up.)
-                        "abs" | "floor" | "ceiling" | "round" | "truncate" | "sign"
-                            if args.is_empty() =>
-                        {
-                            return Err(RuntimeError::warn_signal_with_resume(
-                                "Use of Nil in numeric context".to_string(),
-                                Value::int(0),
-                            ));
-                        }
-                        // `Nil.ords` warns ("Use of Nil in string context") and
-                        // resumes to an empty Seq; `Nil.chrs` warns and resumes
-                        // to a single null byte.
-                        "ords" if args.is_empty() => {
-                            return Err(RuntimeError::warn_signal_with_resume(
-                                "Use of Nil in string context".to_string(),
-                                Value::seq(vec![]),
-                            ));
-                        }
-                        "chrs" if args.is_empty() => {
-                            return Err(RuntimeError::warn_signal_with_resume(
-                                "Use of Nil in string context".to_string(),
-                                Value::str("\0".to_string()),
-                            ));
                         }
                         _ => {
                             // Nil-absorbing method returns Nil and touches no env.

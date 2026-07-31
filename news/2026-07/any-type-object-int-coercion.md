@@ -31,6 +31,7 @@ The fix mirrors raku's dispatch shape, verified case by case against raku:
 original ticket's assumption that `.Num` should warn was wrong.
 
 Pinned by `t/any-type-object-int-coercion.t`. One adjacent gap was split out
-into `todo/tickets/bound-nil-variable-method-dispatch-skips-nil-handling.md`:
-a variable *bound* to Nil (`my $v := Nil`) dispatches through the
-named-variable opcode path, which skips all Nil special-casing.
+and fixed in the stacked follow-up
+(news/2026-07/bound-nil-variable-method-dispatch.md): a variable *bound* to
+Nil (`my $v := Nil`) dispatched through the named-variable opcode path, which
+skipped all Nil special-casing.

@@ -1788,6 +1788,19 @@ impl Interpreter {
             _ => {}
         }
 
+        // Pre-dispatch Nil special cases — the same verdicts the scalar
+        // `MethodCall` opcode reaches: warn-and-resume coercions (`$v.Int` /
+        // `$v.Str` on a variable *bound* to Nil warn like `Nil.Int`) and
+        // element-mutator errors. Everything else falls through to normal
+        // dispatch, and the post-dispatch FALLBACK absorb in
+        // `exec_call_method_mut_op` keeps handling genuinely-unknown methods.
+        if modifier.is_none()
+            && target.is_nil()
+            && let Some(err) =
+                crate::vm::vm_call_method_ops::nil_predispatch_error(&method, args.is_empty())
+        {
+            return Err(err);
+        }
         // Auto-vivify undefined values (Nil, Any, Mu type objects) to empty Arrays
         // for mutating list methods. In Raku, calling push/unshift/append/prepend on
         // an undefined variable auto-vivifies it to an Array.
