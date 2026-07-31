@@ -550,16 +550,22 @@ impl crate::runtime::Interpreter {
         Some(())
     }
 
-    /// `nativesizeof($obj-or-type)` — NativeCall's own helper, reporting how
-    /// many bytes the argument's type takes in C. Both a type object
+    /// The primitive behind NativeCall's `nativesizeof($obj-or-type)`, reporting
+    /// how many bytes the argument's type takes in C. Both a type object
     /// (`nativesizeof(uint32)`) and an instance are accepted, matching Rakudo.
+    ///
+    /// The user-visible `nativesizeof` is an `our sub` in the NativeCall prelude
+    /// (`NATIVECALL_SUB_PRELUDES`) that calls this. It is spelled `__mutsu_`
+    /// here precisely so that it is *not* an ambient builtin: Rakudo exports
+    /// `nativesizeof` from `NativeCall.rakumod`, so it must arrive with the
+    /// module and be `&`-callable, not be visible to every program.
     pub(crate) fn try_nativesizeof(
         &mut self,
         name: &str,
         args: &[crate::value::Value],
     ) -> Option<Result<crate::value::Value, crate::value::RuntimeError>> {
         use crate::value::{RuntimeError, ValueView};
-        if name != "nativesizeof" {
+        if name != "__mutsu_nativesizeof" {
             return None;
         }
         if args.len() != 1 {
@@ -588,17 +594,21 @@ impl crate::runtime::Interpreter {
         })
     }
 
-    /// `nativecast($target-type, $source)` — reinterpret the C pointer carried
-    /// by `$source` as `$target-type`. NativeCall's own helper, and the only
-    /// way to reach the fields of a struct a C function handed back as an
+    /// The primitive behind NativeCall's `nativecast($target-type, $source)` —
+    /// reinterpret the C pointer carried by `$source` as `$target-type`. The
+    /// only way to reach the fields of a struct a C function handed back as an
     /// opaque pointer (`nativecast(evp_cipher_st, $cipher).key_len`).
+    ///
+    /// As with `try_nativesizeof`, the user-visible `nativecast` is an `our sub`
+    /// in the NativeCall prelude; this half is `__mutsu_`-prefixed so it is not
+    /// an ambient builtin.
     pub(crate) fn try_nativecast(
         &mut self,
         name: &str,
         args: &[crate::value::Value],
     ) -> Option<Result<crate::value::Value, crate::value::RuntimeError>> {
         use crate::value::{RuntimeError, ValueView};
-        if name != "nativecast" {
+        if name != "__mutsu_nativecast" {
             return None;
         }
         let args: Vec<crate::value::Value> = args
