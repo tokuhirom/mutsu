@@ -178,10 +178,7 @@ impl Interpreter {
         // args are ignored. Two or more positionals resolve to no candidate and
         // must throw X::Multi::NoMatch (roast .../multi-no-match.t) rather than
         // silently taking the first.
-        let positional: Vec<&Value> = args
-            .iter()
-            .filter(|a| !matches!(a.view(), ValueView::Pair(..)))
-            .collect();
+        let positional: Vec<&Value> = args.iter().filter(|a| !a.is_string_pair_value()).collect();
         if positional.len() > 1 {
             return Err(super::methods_signature_errors::make_multi_no_match_error(
                 "new",

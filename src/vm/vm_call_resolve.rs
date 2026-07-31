@@ -111,11 +111,7 @@ impl Interpreter {
                 }
             }
         } else {
-            let pos_arity = || {
-                args.iter()
-                    .filter(|a| !matches!(a.view(), ValueView::Pair(..)))
-                    .count()
-            };
+            let pos_arity = || args.iter().filter(|a| !a.is_string_pair_value()).count();
             // Innermost package first, then each enclosing package, then GLOBAL:
             // a method of `NL::Searcher` calling a bare name must reach `NL`'s
             // compiled routine (see `bare_name_packages`). The GLOBAL fallback

@@ -202,9 +202,7 @@ impl Interpreter {
             // carries a Pair/ValuePair to the full path (which separates named from
             // positional and validates arity via `bind_function_args_values`) keeps
             // that check; the fast path stays for the common all-positional call.
-            let has_named_arg = args
-                .iter()
-                .any(|a| matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)));
+            let has_named_arg = args.iter().any(|a| a.is_any_pair_value());
 
             if !has_named_arg
                 && !has_missing_required

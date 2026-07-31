@@ -167,10 +167,7 @@ impl Interpreter {
         args: &[Value],
         current_def: &FunctionDef,
     ) -> Vec<Arc<FunctionDef>> {
-        let arity = args
-            .iter()
-            .filter(|v| !matches!(v.view(), ValueView::Pair(..)))
-            .count();
+        let arity = args.iter().filter(|v| !v.is_string_pair_value()).count();
         let search_pkgs = self.bare_name_packages();
         let typed_prefixes: Vec<String> = search_pkgs
             .iter()

@@ -92,7 +92,12 @@ impl Value {
         })
     }
     /// The `(name, value, index)` of a [`ValueRepr::VarRef`], or `None`.
+    /// Tag-probe gated: runs once per bound parameter, and a `view()` on a
+    /// lazy Match would materialize it just to see it is not a VarRef.
     pub fn as_varref(&self) -> Option<(Symbol, &Value, Option<u32>)> {
+        if !self.0.is_varref() {
+            return None;
+        }
         match self.view() {
             ValueView::VarRef { name, value, index } => Some((name, value, index)),
             _ => None,
@@ -101,6 +106,9 @@ impl Value {
     /// The value a [`ValueRepr::VarRef`] wraps, or `self` when it is not one.
     /// The binder strips the wrapper here once it has taken the name it needs.
     pub fn unwrap_varref(&self) -> &Value {
+        if !self.0.is_varref() {
+            return self;
+        }
         match self.view() {
             ValueView::VarRef { value, .. } => value,
             _ => self,
@@ -366,8 +374,11 @@ impl Value {
         }
     }
 
+    /// Tag probe (never decodes `view()`): this runs on every `GetLocal`, and
+    /// a `view()` on a lazy Match would materialize it just to see it is not
+    /// a `ContainerRef`.
     pub fn is_container_ref(&self) -> bool {
-        matches!(self.view(), ValueView::ContainerRef(_))
+        self.0.is_container_ref()
     }
 
     /// Autovivify a hash entry: if the key doesn't exist, insert an empty Hash.

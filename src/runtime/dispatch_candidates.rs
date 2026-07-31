@@ -29,7 +29,7 @@ impl Interpreter {
     ) -> RuntimeError {
         let arg_types = args
             .iter()
-            .filter(|v| !matches!(v.view(), ValueView::Pair(..)))
+            .filter(|v| !v.is_string_pair_value())
             .map(super::value_type_name)
             .collect::<Vec<_>>()
             .join(", ");

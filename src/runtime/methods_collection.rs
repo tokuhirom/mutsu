@@ -11,6 +11,11 @@ impl Interpreter {
 
     /// Check if a value is lazy/infinite and cannot be coerced to a QuantHash.
     pub(crate) fn is_lazy_for_coerce(value: &Value) -> bool {
+        // Tag probe: this guard runs per dispatched method call, and a
+        // `view()` on a lazy Match would materialize it.
+        if value.is_lazy_match_value() {
+            return false;
+        }
         match value.view() {
             ValueView::LazyList(_) => true,
             ValueView::Array(_, kind) if kind.is_lazy() => true,

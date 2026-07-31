@@ -105,7 +105,7 @@ impl Interpreter {
         }
         let positional_arg_count = args
             .iter()
-            .filter(|arg| !matches!(arg.view(), ValueView::Pair(..)))
+            .filter(|arg| !arg.is_string_pair_value())
             .count();
         let positional_params: Vec<&ParamDef> = param_defs.iter().filter(|pd| !pd.named).collect();
         let has_positional_slurpy = positional_params

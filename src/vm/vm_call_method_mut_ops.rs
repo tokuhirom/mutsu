@@ -1133,7 +1133,7 @@ impl Interpreter {
             let mut match_args: Vec<Value> = Vec::new();
             let mut positional_seen = 0;
             for arg in &args {
-                if matches!(arg.view(), ValueView::Pair(..)) {
+                if arg.is_string_pair_value() {
                     match_args.push(arg.clone());
                 } else {
                     positional_seen += 1;

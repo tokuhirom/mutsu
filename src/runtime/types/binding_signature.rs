@@ -682,7 +682,7 @@ impl Interpreter {
                     let mut items = Vec::new();
                     while positional_idx < args.len() {
                         let val = unwrap_varref_value(args[positional_idx].clone());
-                        if !matches!(val.view(), ValueView::Pair(..)) {
+                        if !val.is_string_pair_value() {
                             items.push(val);
                         }
                         positional_idx += 1;
@@ -708,7 +708,7 @@ impl Interpreter {
                         let raw_arg = args[positional_idx].clone();
                         positional_idx += 1;
                         let arg = unwrap_varref_value(raw_arg);
-                        if matches!(arg.view(), ValueView::Pair(..)) {
+                        if arg.is_string_pair_value() {
                             // Named arg -- leave for *%_ slurpy; keep scanning.
                             continue;
                         }
@@ -747,7 +747,7 @@ impl Interpreter {
                         let rest: Vec<Value> = args[positional_idx..]
                             .iter()
                             .map(|a| unwrap_varref_value(a.clone()))
-                            .filter(|a| !matches!(a.view(), ValueView::Pair(..)))
+                            .filter(|a| !a.is_string_pair_value())
                             .collect();
                         match rest.as_slice() {
                             [only] => {

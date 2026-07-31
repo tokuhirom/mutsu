@@ -15,10 +15,7 @@ impl Interpreter {
         // signature binding raises the proper error. (This also covers a BUILD
         // with a positional parameter: `.new` strips positionals before BUILD, so
         // `Foo.new('x', :y)` must die rather than feed 'x' to BUILD.)
-        if args
-            .iter()
-            .any(|a| !matches!(a.view(), ValueView::Pair(..)))
-        {
+        if args.iter().any(|a| !a.is_string_pair_value()) {
             return None;
         }
         // Class-shape facts (attribute defs, MRO-wide type constraints, the

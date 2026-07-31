@@ -426,10 +426,7 @@ impl Interpreter {
             // populates the Capture's positional/named parts; every *other* named
             // arg is dropped (bless ignores unknown attributes), yielding an
             // empty `\()`. A `\(...)` literal is the other way to build one.
-            if args
-                .iter()
-                .any(|a| !matches!(a.view(), ValueView::Pair(..)))
-            {
+            if args.iter().any(|a| !a.is_string_pair_value()) {
                 Some(Err(RuntimeError::new(
                     "Default constructor for 'Capture' only takes named arguments",
                 )))
@@ -509,9 +506,9 @@ impl Interpreter {
     /// dropping top-level `Pair`s strips exactly the named arguments
     /// while preserving every positional pair.
     pub(super) fn strip_named_pair_args(args: Vec<Value>) -> Vec<Value> {
-        if args.iter().any(|a| matches!(a.view(), ValueView::Pair(..))) {
+        if args.iter().any(|a| a.is_string_pair_value()) {
             args.into_iter()
-                .filter(|a| !matches!(a.view(), ValueView::Pair(..)))
+                .filter(|a| !a.is_string_pair_value())
                 .collect()
         } else {
             args

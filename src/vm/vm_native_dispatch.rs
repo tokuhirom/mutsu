@@ -42,7 +42,10 @@ impl Interpreter {
         // the iterator (`materialize_deferred_seq`) before dispatching. `cache`/
         // `raku`/`perl` intentionally keep the Seq lazy (they must NOT pull), so
         // they proceed with the native path.
-        if let ValueView::Seq(items) = target.view()
+        // (The Seq / LazyList probes below are tag-gated: `view()` on a lazy
+        // Match target would materialize it per dispatched method call.)
+        if target.is_seq_value()
+            && let ValueView::Seq(items) = target.view()
             && crate::value::seq_has_deferred_iter(&items)
             && !crate::value::seq_deferred_method_keeps_lazy(method_name.as_str())
         {
@@ -76,7 +79,7 @@ impl Interpreter {
         // the native impl here would materialize the source eagerly — forcing the
         // whole gather body (and its trailing side effects) instead of pulling on
         // demand. Defer.
-        if let ValueView::LazyList(_) = target.view()
+        if target.is_lazy_list_value()
             && Self::is_lazy_pipe_source(target)
             && matches!(method_name.as_str(), "map" | "grep")
         {
@@ -85,7 +88,8 @@ impl Interpreter {
         // A laziness-preserving coercion on a lazy map/grep pipeline returns the
         // pipeline unchanged (it stays pullable). Intercept before the native
         // impl, which would otherwise wrap/empty the pipeline's (empty) cache.
-        if let ValueView::LazyList(ll) = target.view()
+        if target.is_lazy_list_value()
+            && let ValueView::LazyList(ll) = target.view()
             && ll.lazy_pipe.is_some()
             && Self::lazy_pipe_preserving_coercion(method_name.as_str())
         {
@@ -100,7 +104,7 @@ impl Interpreter {
             return Some(Err(err));
         }
         // Early exit for Proxy containers
-        if matches!(target.view(), ValueView::Proxy { .. })
+        if target.is_proxy_value()
             && !matches!(
                 method_name.as_str(),
                 "VAR" | "WHAT" | "WHICH" | "WHERE" | "HOW" | "WHY" | "REPR" | "DEFINITE"
@@ -127,8 +131,31 @@ impl Interpreter {
         if self.mixin_role_has_method(target, &method_name) {
             return None;
         }
+        // Lazy Match: class is statically "Match" — mirror the Instance
+        // bypasses below without materializing. (A Match never matches
+        // Real/Numeric, and the Supply/Supplier arms cannot apply.)
+        if target.is_lazy_match_value() {
+            let is_pure_render = matches!(
+                method_name.as_str(),
+                "gist" | "Str" | "Stringy" | "raku" | "perl"
+            );
+            let render_overridden = is_pure_render && self.has_user_method("Match", &method_name);
+            if (!is_pure_render || render_overridden) && self.has_user_method("Match", "Bridge") {
+                return None;
+            }
+            if matches!(
+                method_name.as_str(),
+                "throw" | "rethrow" | "gist" | "Str" | "Stringy"
+            ) && self.exception_render_needs_interpreter(target, "Match")
+            {
+                return None;
+            }
+            if self.is_native_method("Match", &method_name) {
+                return None;
+            }
+        }
         // Instance-specific bypasses (avoid for non-Instance targets)
-        if matches!(target.view(), ValueView::Instance { .. }) {
+        else if matches!(target.view(), ValueView::Instance { .. }) {
             if let ValueView::Instance { class_name, .. } = target.view() {
                 let cn = class_name.resolve();
                 // Supply methods
@@ -250,8 +277,11 @@ impl Interpreter {
         {
             return None;
         }
-        // Hash-specific bypasses
-        if matches!(target.view(), ValueView::Hash(_)) && args.is_empty() {
+        // Hash-specific bypasses (lazy-Match gate: `view()` would materialize)
+        if !target.is_lazy_match_value()
+            && matches!(target.view(), ValueView::Hash(_))
+            && args.is_empty()
+        {
             let mn = method_name.as_str();
             if (mn == "raku" || mn == "perl" || mn == "keyof")
                 && self.container_type_metadata(target).is_some()
@@ -262,10 +292,11 @@ impl Interpreter {
                 return None;
             }
         }
-        // Typed array .raku/.perl bypass
-        if matches!(target.view(), ValueView::Array(..))
+        // Typed array .raku/.perl bypass (method-name gate first: the `view()`
+        // probe would materialize a lazy Match on every other method call)
+        if matches!(method_name.as_str(), "raku" | "perl")
             && args.is_empty()
-            && matches!(method_name.as_str(), "raku" | "perl")
+            && matches!(target.view(), ValueView::Array(..))
             && self
                 .container_type_metadata(target)
                 .is_some_and(|info| info.value_type != "Any" && info.value_type != "Mu")
@@ -354,13 +385,16 @@ impl Interpreter {
         }
 
         // For Hash values with declared_type "Map", override gist/raku/perl
-        // to use Map.new((...)) format instead of {...} format.
-        if let ValueView::Hash(map) = target.view() {
-            let is_map = matches!(method_name.as_str(), "gist" | "raku" | "perl")
-                && self
-                    .container_type_metadata(target)
-                    .and_then(|info| info.declared_type)
-                    .is_some_and(|dt| dt == "Map");
+        // to use Map.new((...)) format instead of {...} format. (Method-name
+        // gate first: the Hash `view()` probe would materialize a lazy Match
+        // on every other method call.)
+        if matches!(method_name.as_str(), "gist" | "raku" | "perl")
+            && let ValueView::Hash(map) = target.view()
+        {
+            let is_map = self
+                .container_type_metadata(target)
+                .and_then(|info| info.declared_type)
+                .is_some_and(|dt| dt == "Map");
             if is_map {
                 if map.is_empty() {
                     return Some(Ok(Value::str("Map.new".to_string())));

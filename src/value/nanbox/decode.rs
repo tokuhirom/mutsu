@@ -233,6 +233,7 @@ unsafe fn decode_kind(kind: Kind, bits: u64) -> ValueRepr {
         Kind::BagMut => ValueRepr::Bag(unsafe { take_gc::<BagData>(bits) }, true),
         Kind::MixImm => ValueRepr::Mix(unsafe { take_gc::<MixData>(bits) }, false),
         Kind::MixMut => ValueRepr::Mix(unsafe { take_gc::<MixData>(bits) }, true),
+        Kind::Match => ValueRepr::Match(unsafe { take_gc::<MatchNode>(bits) }),
         Kind::Nil => ValueRepr::Nil,
         Kind::Whatever => ValueRepr::Whatever,
         Kind::HyperWhatever => ValueRepr::HyperWhatever,

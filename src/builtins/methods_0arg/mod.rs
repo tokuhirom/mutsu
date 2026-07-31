@@ -308,6 +308,32 @@ pub(crate) fn native_method_0arg(
     let method = method_sym.resolve();
     let method = method.as_str();
 
+    // Lazy-Match scalar fast path: these arms are semantically identical to
+    // the Match block far below, but answered here straight from the capture
+    // node so the probe gauntlet in between (each a `view()`, which would
+    // materialize the Match) never runs. Structural methods (`gist`, `list`,
+    // `hash`, `caps`, ...) fall through and materialize as before.
+    if target.is_lazy_match_value() {
+        match method {
+            "from" => return Some(Ok(Value::int(target.match_from().unwrap_or(0)))),
+            "to" | "pos" => return Some(Ok(Value::int(target.match_to().unwrap_or(0)))),
+            "Str" => {
+                return Some(Ok(target
+                    .match_str_value()
+                    .unwrap_or_else(|| Value::str(String::new()))));
+            }
+            "Bool" => return Some(Ok(Value::truth(!target.match_is_failed()))),
+            "orig" | "target" => {
+                return Some(Ok(target
+                    .match_orig()
+                    .unwrap_or_else(|| Value::str(String::new()))));
+            }
+            "ast" | "made" => return Some(Ok(target.match_ast().unwrap_or(Value::NIL))),
+            "Capture" | "clone" => return Some(Ok(target.clone())),
+            _ => {}
+        }
+    }
+
     // Scalar containers are transparent for method dispatch (except .VAR and
     // .raku/.perl). `.raku`/`.perl` must see the `Scalar` wrapper so an itemized
     // aggregate shows its `$` sigil (`${a=>1}.raku` → `${:a(1)}`); decontainer-

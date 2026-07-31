@@ -141,6 +141,9 @@ impl Interpreter {
         // call and propagated back to env but not to locals), adopt the ContainerRef.
         // Skip for type objects and complex values that should not be replaced.
         if !self.locals[idx].is_container_ref()
+            // A lazy Match counts as an Instance here — probed by tag so this
+            // per-GetLocal check cannot materialize it.
+            && !self.locals[idx].is_lazy_match_value()
             && !matches!(
                 self.locals[idx].view(),
                 ValueView::Package(_)
@@ -180,12 +183,16 @@ impl Interpreter {
         // Resolve a deferred bind token to its current value (Any if the path
         // doesn't exist). The raw local slot is unchanged, so a later write still
         // materializes it; `=:=` reads the raw slot via GetLocalRaw.
-        if let ValueView::HashEntryRef { .. } = val.view() {
+        if val.is_hash_entry_ref_value() {
             self.stack.push(val.hash_entry_read());
             return Ok(());
         }
-        // Force lazy thunks transparently on access
-        if let ValueView::LazyThunk(thunk_data) = val.view() {
+        // Force lazy thunks transparently on access. Both this and the
+        // HashEntryRef resolve above are tag-probed: they run on every
+        // GetLocal, and a `view()` would materialize a lazy Match.
+        if val.is_lazy_thunk_value()
+            && let ValueView::LazyThunk(thunk_data) = val.view()
+        {
             let thunk_data = thunk_data.clone();
             let forced = self.force_lazy_thunk(&thunk_data)?;
             self.stack.push(forced);

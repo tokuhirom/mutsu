@@ -233,6 +233,125 @@ impl NanBox {
         }
     }
 
+    /// Whether this word is a Junction (any flavour) — a pure tag probe.
+    /// Dispatch paths use it to gate their junction auto-threading scans
+    /// without decoding `view()` (which would materialize a lazy Match).
+    #[inline]
+    pub(in crate::value) fn is_junction(&self) -> bool {
+        matches!(
+            classify(self.0.get()),
+            Classified::Kind(
+                Kind::JunctionAny | Kind::JunctionAll | Kind::JunctionOne | Kind::JunctionNone
+            )
+        )
+    }
+
+    /// Whether this word is a `Proxy` — a pure tag probe (same motivation as
+    /// [`Self::is_junction`]).
+    #[inline]
+    pub(in crate::value) fn is_proxy(&self) -> bool {
+        matches!(classify(self.0.get()), Classified::Kind(Kind::Proxy))
+    }
+
+    /// Whether this word is a string-keyed `Pair` — a pure tag probe (the
+    /// named-argument scans in dispatch use it; same motivation as
+    /// [`Self::is_junction`]).
+    #[inline]
+    pub(in crate::value) fn is_string_pair(&self) -> bool {
+        matches!(classify(self.0.get()), Classified::Kind(Kind::Pair))
+    }
+
+    /// Whether this word is a `Pair` OR `ValuePair` — a pure tag probe.
+    #[inline]
+    pub(in crate::value) fn is_any_pair(&self) -> bool {
+        matches!(
+            classify(self.0.get()),
+            Classified::Kind(Kind::Pair | Kind::ValuePair)
+        )
+    }
+
+    /// Whether this word is a `VarRef` — a pure tag probe (the binder strips
+    /// this wrapper once per parameter; same motivation as
+    /// [`Self::is_junction`]).
+    #[inline]
+    pub(in crate::value) fn is_varref(&self) -> bool {
+        matches!(classify(self.0.get()), Classified::Kind(Kind::VarRef))
+    }
+
+    /// Whether this word is a `ContainerRef` — a pure tag probe (checked on
+    /// every `GetLocal`; same motivation as [`Self::is_junction`]).
+    #[inline]
+    pub(in crate::value) fn is_container_ref(&self) -> bool {
+        matches!(classify(self.0.get()), Classified::Kind(Kind::ContainerRef))
+    }
+
+    /// Whether this word is a `HashEntryRef` — a pure tag probe (checked on
+    /// every `GetLocal`).
+    #[inline]
+    pub(in crate::value) fn is_hash_entry_ref(&self) -> bool {
+        matches!(classify(self.0.get()), Classified::Kind(Kind::HashEntryRef))
+    }
+
+    /// Whether this word is a `LazyThunk` — a pure tag probe (checked on
+    /// every `GetLocal`).
+    #[inline]
+    pub(in crate::value) fn is_lazy_thunk(&self) -> bool {
+        matches!(classify(self.0.get()), Classified::Kind(Kind::LazyThunk))
+    }
+
+    /// Whether this word is a `Package` type object — a pure tag probe.
+    #[inline]
+    pub(in crate::value) fn is_package(&self) -> bool {
+        matches!(classify(self.0.get()), Classified::Kind(Kind::Package))
+    }
+
+    /// Whether this word is a `Mixin` — a pure tag probe.
+    #[inline]
+    pub(in crate::value) fn is_mixin(&self) -> bool {
+        matches!(classify(self.0.get()), Classified::Kind(Kind::Mixin))
+    }
+
+    /// Whether this word is a `Seq` — a pure tag probe.
+    #[inline]
+    pub(in crate::value) fn is_seq(&self) -> bool {
+        matches!(classify(self.0.get()), Classified::Kind(Kind::Seq))
+    }
+
+    /// Whether this word is a `LazyList` — a pure tag probe.
+    #[inline]
+    pub(in crate::value) fn is_lazy_list(&self) -> bool {
+        matches!(classify(self.0.get()), Classified::Kind(Kind::LazyList))
+    }
+
+    /// The `MatchNode` pointee if this is a lazy `Match`. The non-forcing
+    /// probe behind the seam accessors' fast paths.
+    #[inline]
+    pub(in crate::value) fn as_match_node(&self) -> Option<&MatchNode> {
+        let bits = self.0.get();
+        match classify(bits) {
+            // SAFETY: Match words carry a Gc<MatchNode>.
+            Classified::Kind(Kind::Match) => Some(unsafe { peek_gc::<MatchNode>(bits) }),
+            _ => None,
+        }
+    }
+
+    /// The erased GC node handle if this is a lazy `Match` — for `gc_trace`,
+    /// which must not go through `view()` (that would materialize the match
+    /// during a collect).
+    #[inline]
+    pub(in crate::value) fn match_node_erased(&self) -> Option<crate::gc::ErasedGc> {
+        let bits = self.0.get();
+        match classify(bits) {
+            Classified::Kind(Kind::Match) => {
+                // SAFETY: Match words carry a Gc<MatchNode>; the handle is
+                // wrapped in ManuallyDrop so the word keeps its reference.
+                let g = ManuallyDrop::new(unsafe { take_gc::<MatchNode>(bits) });
+                Some(g.erased())
+            }
+            _ => None,
+        }
+    }
+
     /// A representation-variant tag for `same_variant`: collapses the kind
     /// space back onto `ValueRepr` discriminants (all six Array kinds are one
     /// variant, IntBoxed is Int, the four Junction kinds are one, etc.).
@@ -256,6 +375,9 @@ impl NanBox {
                 Kind::JunctionAny | Kind::JunctionAll | Kind::JunctionOne | Kind::JunctionNone => {
                     VARIANT_JUNCTION
                 }
+                // A lazy Match presents as an Instance through `view()`, so
+                // variant comparisons group it with Instance.
+                Kind::Match => VARIANT_KIND_BASE + Kind::Instance as u8,
                 other => VARIANT_KIND_BASE + other as u8,
             },
         }
@@ -453,6 +575,17 @@ unsafe fn view_kind<'a>(kind: Kind, bits: u64) -> ValueView<'a> {
                     class_name: attrs.class_name,
                     attributes: gc_guard(bits),
                     id: attrs.id,
+                }
+            }
+            Kind::Match => {
+                // A lazy Match presents as an Instance: force (and memoize)
+                // the one-level materialization. Non-forcing readers use the
+                // seam accessors / `as_match_node` instead of `view()`.
+                let node = peek_gc::<MatchNode>(bits);
+                ValueView::Instance {
+                    class_name: crate::value::match_lazy::match_class_symbol(),
+                    attributes: RefGuard::borrowed(node.force_attrs()),
+                    id: node.id,
                 }
             }
             Kind::ArrayList => ValueView::Array(gc_guard(bits), ArrayKind::List),
