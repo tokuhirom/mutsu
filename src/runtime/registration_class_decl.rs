@@ -1052,7 +1052,26 @@ impl Interpreter {
                         if is_type_decl {
                             self.set_current_package(saved_body_pkg.clone());
                         }
-                        r?;
+                        // A role body statement that dies rejects this
+                        // parameterisation (`role R[::T] { die unless T.REPR eq
+                        // 'CStruct' }`). Restore the topic the composition
+                        // borrowed before unwinding, and report it as Rakudo
+                        // does: X::Role::Instantiation wrapping the original.
+                        if let Err(err) = r {
+                            if err.control.is_none() {
+                                match saved_topic.clone() {
+                                    Some(topic) => {
+                                        self.env.insert("_".to_string(), topic);
+                                    }
+                                    None => {
+                                        self.env.remove("_");
+                                    }
+                                }
+                                self.set_current_package(saved_body_pkg.clone());
+                                return Err(RuntimeError::role_instantiation(base_role_name, err));
+                            }
+                            return Err(err);
+                        }
                     }
                     match saved_topic {
                         Some(topic) => {

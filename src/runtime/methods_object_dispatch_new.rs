@@ -401,7 +401,9 @@ impl Interpreter {
             // deferred body statements with the type parameters bound and pulls
             // in its `BUILD`/`new`; the ad-hoc mixin instance built below has
             // neither, so `R[Int].new` used to skip `BUILD` entirely.
-            if let Some(punned) = self.ensure_parametric_role_pun_class(&base_name_str, type_args) {
+            if let Some(punned) =
+                self.ensure_parametric_role_pun_class(&base_name_str, type_args)?
+            {
                 return self.dispatch_new(Value::package(Symbol::intern(&punned)), args);
             }
             self.ensure_role_punned_to_class(&base_name_str);

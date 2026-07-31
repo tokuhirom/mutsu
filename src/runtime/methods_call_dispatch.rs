@@ -2745,7 +2745,7 @@ impl Interpreter {
                     let base = base_name.resolve();
                     if role.methods.contains_key("new")
                         && let Some(punned) =
-                            self.ensure_parametric_role_pun_class(&base, type_args)
+                            self.ensure_parametric_role_pun_class(&base, type_args)?
                     {
                         return self.call_method_with_values(
                             Value::package(Symbol::intern(&punned)),
