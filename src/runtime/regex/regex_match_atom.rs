@@ -78,14 +78,8 @@ impl Interpreter {
                 {
                     let mut new_caps = RegexCaptures::default();
                     for (k, v) in inner_caps.named.drain() {
-                        new_caps.named.entry(k).or_default().extend(v);
+                        new_caps.named.entry(k).or_default().merge(v);
                     }
-                    for (k, v) in inner_caps.named_subcaps.drain() {
-                        new_caps.named_subcaps.entry(k).or_default().extend(v);
-                    }
-                    new_caps
-                        .named_quantified
-                        .extend(inner_caps.named_quantified.drain());
                     new_caps.positional.append(&mut inner_caps.positional);
                     new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                     indexed.push((i, next, new_caps));
@@ -120,14 +114,8 @@ impl Interpreter {
                 for (next, mut inner_caps) in inner_matches {
                     let mut new_caps = RegexCaptures::default();
                     for (k, v) in inner_caps.named.drain() {
-                        new_caps.named.entry(k).or_default().extend(v);
+                        new_caps.named.entry(k).or_default().merge(v);
                     }
-                    for (k, v) in inner_caps.named_subcaps.drain() {
-                        new_caps.named_subcaps.entry(k).or_default().extend(v);
-                    }
-                    new_caps
-                        .named_quantified
-                        .extend(inner_caps.named_quantified.drain());
                     new_caps.positional.append(&mut inner_caps.positional);
                     new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                     group.push((next, new_caps));
@@ -181,14 +169,8 @@ impl Interpreter {
             {
                 let mut new_caps = RegexCaptures::default();
                 for (k, v) in inner_caps.named.drain() {
-                    new_caps.named.entry(k).or_default().extend(v);
+                    new_caps.named.entry(k).or_default().merge(v);
                 }
-                for (k, v) in inner_caps.named_subcaps.drain() {
-                    new_caps.named_subcaps.entry(k).or_default().extend(v);
-                }
-                new_caps
-                    .named_quantified
-                    .extend(inner_caps.named_quantified.drain());
                 new_caps.positional.append(&mut inner_caps.positional);
                 new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                 // A `<(` / `)>` capture marker inside the group sets the match
@@ -280,7 +262,7 @@ impl Interpreter {
                 {
                     let mut new_caps = RegexCaptures::default();
                     for (k, v) in inner_caps.named.drain() {
-                        new_caps.named.entry(k).or_default().extend(v);
+                        new_caps.named.entry(k).or_default().merge(v);
                     }
                     new_caps.positional.append(&mut inner_caps.positional);
                     new_caps.code_blocks.append(&mut inner_caps.code_blocks);
@@ -386,7 +368,7 @@ impl Interpreter {
                     // returns items in the same order as input (HIGHEST FIRST).
                     // Caller expects LOWEST FIRST, so reverse.
                     let mut result = Self::build_named_candidates_from_inner(
-                        seed, pos, chars, &spec, None, // no sym_key for seed
+                        seed, pos, &spec, None, // no sym_key for seed
                     );
                     result.reverse();
                     return result;
@@ -518,7 +500,7 @@ impl Interpreter {
                 // the same order (one-to-one), so result is HIGHEST FIRST.
                 // Caller expects LOWEST FIRST, so reverse.
                 let mut result =
-                    Self::build_named_candidates_from_inner(best_raw, pos, chars, &spec, None);
+                    Self::build_named_candidates_from_inner(best_raw, pos, &spec, None);
                 result.reverse();
                 result
             } else {
@@ -649,7 +631,6 @@ impl Interpreter {
     pub(super) fn build_named_candidates_from_inner(
         inner_matches: Vec<(usize, RegexCaptures)>,
         pos: usize,
-        chars: &[char],
         spec: &NamedRegexLookupSpec,
         sym_key: Option<&String>,
     ) -> Vec<(usize, RegexCaptures)> {
@@ -667,7 +648,6 @@ impl Interpreter {
                 // the subrule used no markers, so this is a no-op otherwise.
                 let cs = inner_caps.capture_start.unwrap_or(pos).clamp(pos, end);
                 let ce = inner_caps.capture_end.unwrap_or(end).clamp(cs, end);
-                let captured: String = chars[cs..ce].iter().collect();
                 let mut subcap = inner_caps;
                 subcap.from = cs;
                 subcap.to = ce;
@@ -711,15 +691,11 @@ impl Interpreter {
                 // dispatches at reduce time) does — see `REDUCED_SUBRULES`.
                 super::regex_helpers::record_reduced_subrule(&spec.lookup_name, &subcap);
                 new_caps
-                    .named_subcaps
-                    .entry(capture_name.to_string())
-                    .or_default()
-                    .push(subcap);
-                new_caps
                     .named
                     .entry(capture_name.to_string())
                     .or_default()
-                    .push(captured.clone());
+                    .nodes
+                    .push(subcap);
                 if is_alias {
                     new_caps
                         .capture_alias_map
@@ -727,17 +703,13 @@ impl Interpreter {
                 }
                 if let Some(orig_subcap) = original_subcap {
                     new_caps
-                        .named_subcaps
-                        .entry(spec.lookup_name.clone())
-                        .or_default()
-                        .push(std::sync::Arc::new(orig_subcap.into_cap_node()));
-                    new_caps
                         .named
                         .entry(spec.lookup_name.clone())
                         .or_default()
-                        .push(captured);
+                        .nodes
+                        .push(std::sync::Arc::new(orig_subcap.into_cap_node()));
                 }
-            } else if !inner_caps.named.is_empty() || !inner_caps.named_subcaps.is_empty() {
+            } else if !inner_caps.named.is_empty() {
                 // Silent subrule (`<.foo>`) that contains nested captures. The
                 // subrule is hidden from `.hash`, but its OWN action method must
                 // still fire (Rakudo dispatches actions at reduce time regardless
@@ -768,11 +740,7 @@ impl Interpreter {
                 );
                 let subcap = std::sync::Arc::new(subcap.into_cap_node());
                 super::regex_helpers::record_reduced_subrule(&spec.lookup_name, &subcap);
-                new_caps
-                    .named_subcaps
-                    .entry(marker)
-                    .or_default()
-                    .push(subcap);
+                new_caps.named.entry(marker).or_default().nodes.push(subcap);
             } else {
                 // Childless silent subrule (`<.ws>`, `<.CRLF>`, `<.sym>`, ...): no
                 // nested captures and (in practice) no action of interest, so keep

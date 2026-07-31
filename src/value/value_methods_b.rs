@@ -582,15 +582,36 @@ impl Value {
         named: &HashMap<String, Vec<String>>,
         target: crate::runtime::MatchTarget,
     ) -> Self {
-        let m = Self::make_match_object_full(from, to, &[], named, &HashMap::new(), target.clone());
-        if positional_texts.is_empty() {
+        let m = Self::make_match_object_full(from, to, &[], &HashMap::new(), target.clone());
+        if positional_texts.is_empty() && named.is_empty() {
             return m;
         }
-        let list: Vec<Value> = positional_texts
-            .iter()
-            .map(|s| Value::text_leaf_match(s, &target))
-            .collect();
-        m.match_with_attrs(vec![("list", Value::array(list))])
-            .unwrap_or(m)
+        let mut updates: Vec<(&str, Value)> = Vec::new();
+        if !positional_texts.is_empty() {
+            let list: Vec<Value> = positional_texts
+                .iter()
+                .map(|s| Value::text_leaf_match(s, &target))
+                .collect();
+            updates.push(("list", Value::array(list)));
+        }
+        if !named.is_empty() {
+            let named_vals: HashMap<String, Value> = named
+                .iter()
+                .map(|(k, texts)| {
+                    let vals: Vec<Value> = texts
+                        .iter()
+                        .map(|s| Value::text_leaf_match(s, &target))
+                        .collect();
+                    let v = if vals.len() == 1 {
+                        vals[0].clone()
+                    } else {
+                        Value::real_array(vals)
+                    };
+                    (k.clone(), v)
+                })
+                .collect();
+            updates.push(("named", Value::hash(named_vals)));
+        }
+        m.match_with_attrs(updates).unwrap_or(m)
     }
 }

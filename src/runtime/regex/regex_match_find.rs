@@ -7,7 +7,7 @@ impl Interpreter {
     /// STABLE sort, which preserves DFS priority order (highest priority first).
     fn full_match_rank(m: &(usize, RegexCaptures)) -> (usize, usize, usize, usize) {
         let (end, caps) = m;
-        let total_named: usize = caps.named.values().map(|v| v.len()).sum();
+        let total_named: usize = caps.named.values().map(|v| v.nodes.len()).sum();
         (
             *end,
             caps.positional.len(),

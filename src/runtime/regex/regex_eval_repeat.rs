@@ -394,7 +394,7 @@ impl Interpreter {
         // a child's code block accumulates into this match's binding (the
         // `:my %*PLAYED = (); <card>+` shape) rather than a sibling match's.
         let declared_keys = self.install_fresh_rule_dynvars(rule_name);
-        self.reduce_child_axes(&mut caps.named_subcaps, &mut caps.positional, target);
+        self.reduce_child_axes(&mut caps.named, &mut caps.positional, target);
         if caps.code_blocks.is_empty() {
             // Even with no code blocks of its own, a declaring match must record
             // what its binding holds — its action still reads it, and a sibling
@@ -406,14 +406,12 @@ impl Interpreter {
         // block's `$/` still comes from its own matched-so-far context (inside
         // `reduce_run_code_blocks`), so a mid-rule `{ … $/ … }` sees the prefix —
         // only the child `.made` values read via `$<name>` come from here.
-        let node_match = Value::make_match_object_full_q(
+        let node_match = Value::make_match_object_full(
             caps.from as i64,
             caps.to as i64,
             &caps.positional,
             &caps.named,
-            &caps.named_subcaps,
             super::regex_helpers::target_or_empty(target),
-            &caps.named_quantified,
         );
         let blocks = std::mem::take(&mut caps.code_blocks);
         caps.ast = self.reduce_run_code_blocks(blocks, node_match);
@@ -430,7 +428,7 @@ impl Interpreter {
     ) {
         let declared_keys = self.install_fresh_rule_dynvars(rule_name);
         if let Some(kids) = node.children.as_deref_mut() {
-            self.reduce_child_axes(&mut kids.named_subcaps, &mut kids.positional, target);
+            self.reduce_child_axes(&mut kids.named, &mut kids.positional, target);
         }
         let has_blocks = node
             .children
@@ -451,14 +449,12 @@ impl Interpreter {
             .children
             .as_deref_mut()
             .expect("has_blocks implies kids");
-        let node_match = Value::make_match_object_full_q(
+        let node_match = Value::make_match_object_full(
             from as i64,
             to as i64,
             &kids.positional,
             &kids.named,
-            &kids.named_subcaps,
             super::regex_helpers::target_or_empty(target),
-            &kids.named_quantified,
         );
         let blocks = std::mem::take(&mut kids.code_blocks);
         node.ast = self.reduce_run_code_blocks(blocks, node_match);
@@ -469,7 +465,7 @@ impl Interpreter {
     /// accumulator and stored `CapNode`s (their child axes are the same types).
     fn reduce_child_axes(
         &mut self,
-        named_subcaps: &mut HashMap<String, Vec<Arc<CapNode>>>,
+        named: &mut HashMap<String, NamedSlot>,
         positional: &mut [PosSlot],
         target: Option<&MatchTarget>,
     ) {
@@ -484,9 +480,9 @@ impl Interpreter {
         // rare and keep the full walk.
         let skip_untouched = self.grammar_rule_dynvar_decls.is_empty();
         // Children first so a parent block reading a child's `.made` sees it.
-        for (key, scs) in named_subcaps.iter_mut() {
+        for (key, slot) in named.iter_mut() {
             let child_rule = Self::reduce_child_rule_name(key);
-            for sc in scs.iter_mut() {
+            for sc in slot.nodes.iter_mut() {
                 if skip_untouched && !Self::subtree_has_code_blocks(sc) {
                     continue;
                 }
@@ -584,9 +580,9 @@ impl Interpreter {
         if !kids.code_blocks.is_empty() {
             return true;
         }
-        kids.named_subcaps
+        kids.named
             .values()
-            .flatten()
+            .flat_map(|slot| slot.nodes.iter())
             .any(|sc| Self::subtree_has_code_blocks(sc))
             || kids.positional.iter().any(|slot| {
                 slot.subcap

@@ -547,10 +547,20 @@ impl Interpreter {
             .collect();
         env.insert("/".to_string(), Value::array(match_list));
         for (k, v) in &caps.named {
-            let value = if v.len() == 1 {
-                Value::str(v[0].clone())
+            let texts: Vec<String> = v
+                .nodes
+                .iter()
+                .map(|n| {
+                    live_target
+                        .as_ref()
+                        .map(|t| t.span_str(n.from, n.to))
+                        .unwrap_or_default()
+                })
+                .collect();
+            let value = if texts.len() == 1 {
+                Value::str(texts.into_iter().next().unwrap())
             } else {
-                Value::array(v.iter().cloned().map(Value::str).collect())
+                Value::array(texts.into_iter().map(Value::str).collect())
             };
             env.insert(format!("<{}>", k), value);
         }

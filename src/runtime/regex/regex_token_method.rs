@@ -9,7 +9,6 @@
 //! `$meth($cursor)` (roast integration/advent2011-day07.t).
 
 use std::cell::RefCell;
-use std::collections::HashSet;
 
 use super::super::*;
 use super::regex_helpers::NamedRegexLookupSpec;
@@ -106,14 +105,12 @@ impl Interpreter {
             return Ok(Value::NIL);
         };
         caps.target = Some(target.clone());
-        let m = Value::make_match_object_full_q(
+        let m = Value::make_match_object_full(
             pos as i64,
             end as i64,
             &caps.positional,
             &caps.named,
-            &caps.named_subcaps,
             target,
-            &caps.named_quantified,
         );
         LAST_TOKEN_METHOD_MATCH.with(|slot| {
             *slot.borrow_mut() = Some(TokenMethodMatch {
@@ -191,14 +188,12 @@ impl Interpreter {
         if !matches!(meth.view(), ValueView::Sub(_)) {
             return None;
         }
-        let cursor = Value::make_match_object_full_q(
+        let cursor = Value::make_match_object_full(
             pos as i64,
             pos as i64,
             &[],
             &HashMap::new(),
-            &HashMap::new(),
             MatchTarget::from_chars(chars),
-            &HashSet::new(),
         );
         let mut call_args = vec![cursor];
         call_args.extend(arg_values.iter().cloned());
@@ -250,7 +245,6 @@ impl Interpreter {
         Some(Self::build_named_candidates_from_inner(
             vec![(to_abs, inner_caps)],
             pos,
-            chars,
             spec,
             sym.as_ref(),
         ))

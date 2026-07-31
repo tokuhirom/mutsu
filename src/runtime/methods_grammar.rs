@@ -491,14 +491,12 @@ impl Interpreter {
                     .insert(i.to_string(), Value::str(captures.slot_text(v)));
             }
             let alias_map = std::mem::take(&mut captures.capture_alias_map);
-            let match_obj = Value::make_match_object_full_q(
+            let match_obj = Value::make_match_object_full(
                 captures.from as i64,
                 captures.to as i64,
                 &captures.positional,
                 &captures.named,
-                &captures.named_subcaps,
                 gtarget,
-                &captures.named_quantified,
             );
             let match_obj = {
                 let mut updates: Vec<(&str, Value)> = Vec::new();
@@ -619,28 +617,24 @@ impl Interpreter {
     /// Build the Match object a capture node describes, with `orig` set to the
     /// whole parse text so `.orig`/`.prematch` work on it.
     fn match_object_from_captures(caps: &RegexCaptures, text: &str) -> Value {
-        Value::make_match_object_full_q(
+        Value::make_match_object_full(
             caps.from as i64,
             caps.to as i64,
             &caps.positional,
             &caps.named,
-            &caps.named_subcaps,
             caps.target_or_new(text),
-            &caps.named_quantified,
         )
     }
 
     /// [`Self::match_object_from_captures`] for a stored capture node.
     fn match_object_from_cap_node(node: &CapNode, target: &MatchTarget) -> Value {
         let kids = node.kids();
-        Value::make_match_object_full_q(
+        Value::make_match_object_full(
             node.from as i64,
             node.to as i64,
             &kids.positional,
             &kids.named,
-            &kids.named_subcaps,
             target.clone(),
-            &kids.named_quantified,
         )
     }
 

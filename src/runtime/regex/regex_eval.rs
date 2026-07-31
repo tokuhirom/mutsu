@@ -266,8 +266,7 @@ impl Interpreter {
             (caps.match_from + matched_so_far.chars().count()) as i64,
             &caps.positional,
             &caps.named,
-            &HashMap::new(),
-            live_target,
+            live_target.clone(),
         );
         // `$¢` is the current match state at this point in the pattern — the same
         // object as `$/` here (`/ .{ $c = $¢ } /` must leave `$c` with a usable
@@ -292,16 +291,25 @@ impl Interpreter {
             HashMap::new()
         };
 
-        // Set named captures
-        for (k, v) in &caps.named {
+        // Set named captures (texts derive from spans through the engine-scope
+        // subject; silent marker keys stay hidden).
+        for (k, slot) in &caps.named {
+            if k.starts_with(crate::runtime::SILENT_ACTION_MARKER_PREFIX) {
+                continue;
+            }
             if let Some(m) = made_named.get(k) {
                 env.push((format!("<{}>", k), m.clone()));
                 continue;
             }
-            let value = if v.len() == 1 {
-                Value::str(v[0].clone())
+            let texts: Vec<String> = slot
+                .nodes
+                .iter()
+                .map(|n| live_target.span_str(n.from, n.to))
+                .collect();
+            let value = if texts.len() == 1 {
+                Value::str(texts.into_iter().next().unwrap())
             } else {
-                Value::array(v.iter().cloned().map(Value::str).collect())
+                Value::array(texts.into_iter().map(Value::str).collect())
             };
             env.push((format!("<{}>", k), value));
         }
@@ -391,14 +399,12 @@ impl Interpreter {
         // unreachable in practice — this only runs from inside a match).
         let target =
             super::regex_helpers::current_match_target().unwrap_or_else(|| MatchTarget::new(""));
-        let full = Value::make_match_object_full_q(
+        let full = Value::make_match_object_full(
             caps.from as i64,
             caps.to as i64,
             &caps.positional,
             &caps.named,
-            &caps.named_subcaps,
             target,
-            &caps.named_quantified,
         );
         let named_v = full.match_named();
         let Some(ValueView::Hash(named)) = named_v.as_ref().map(Value::view) else {
@@ -466,9 +472,9 @@ impl Interpreter {
             .clone()
             .unwrap_or_else(|| rule_name.clone());
         let Some(sub) = new_caps
-            .named_subcaps
+            .named
             .get(&cap_name)
-            .and_then(|v| v.last())
+            .and_then(|slot| slot.nodes.last())
             .cloned()
         else {
             return;
@@ -521,14 +527,12 @@ impl Interpreter {
         // `run_named_capture_actions`).
         let target =
             super::regex_helpers::current_match_target().unwrap_or_else(|| MatchTarget::new(""));
-        let match_obj = Value::make_match_object_full_q(
+        let match_obj = Value::make_match_object_full(
             sub.from as i64,
             sub.to as i64,
             &kids.positional,
             &kids.named,
-            &kids.named_subcaps,
             target,
-            &kids.named_quantified,
         );
         let mut scratch = Interpreter {
             env: self.env.clone(),

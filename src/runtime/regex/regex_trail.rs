@@ -17,14 +17,6 @@
 
 use super::super::*;
 
-/// Which string-keyed multi-map a `MapVec` undo record refers to.
-#[derive(Clone, Copy)]
-pub(super) enum MapId {
-    Named,
-    NamedSub,
-    HashCap,
-}
-
 /// Saved tail for a positional truncation (slots moved out, moved back on
 /// rewind). Boxed to keep `Undo` small.
 pub(super) struct PosTailRec {
@@ -43,15 +35,20 @@ pub(super) enum Undo {
         idx: usize,
         slot: Box<PosSlot>,
     },
-    /// Truncate `map[key]` to `len`; remove the key if it was newly created.
-    MapVecTrunc {
-        which: MapId,
+    /// Restore a named slot: remove the key if it was newly created, else
+    /// truncate its nodes to `len` and restore the quantified flag.
+    NamedTrunc {
+        key: String,
+        len: usize,
+        present: bool,
+        quantified: bool,
+    },
+    /// Truncate `hash_captures[key]` to `len`; remove a newly created key.
+    HashCapTrunc {
         key: String,
         len: usize,
         present: bool,
     },
-    /// Remove a `named_quantified` entry that this frame inserted.
-    NamedQuantRemove(String),
     /// Restore a `capture_alias_map` entry (None = remove).
     AliasRestore {
         key: String,
@@ -120,36 +117,25 @@ impl CapStore {
                         caps.positional[idx] = *slot;
                     }
                 }
-                Undo::MapVecTrunc {
-                    which,
+                Undo::NamedTrunc {
                     key,
                     len,
                     present,
-                } => match which {
-                    MapId::Named => {
-                        if !present {
-                            caps.named.remove(&key);
-                        } else if let Some(v) = caps.named.get_mut(&key) {
-                            v.truncate(len);
-                        }
+                    quantified,
+                } => {
+                    if !present {
+                        caps.named.remove(&key);
+                    } else if let Some(slot) = caps.named.get_mut(&key) {
+                        slot.nodes.truncate(len);
+                        slot.quantified = quantified;
                     }
-                    MapId::NamedSub => {
-                        if !present {
-                            caps.named_subcaps.remove(&key);
-                        } else if let Some(v) = caps.named_subcaps.get_mut(&key) {
-                            v.truncate(len);
-                        }
+                }
+                Undo::HashCapTrunc { key, len, present } => {
+                    if !present {
+                        caps.hash_captures.remove(&key);
+                    } else if let Some(v) = caps.hash_captures.get_mut(&key) {
+                        v.truncate(len);
                     }
-                    MapId::HashCap => {
-                        if !present {
-                            caps.hash_captures.remove(&key);
-                        } else if let Some(v) = caps.hash_captures.get_mut(&key) {
-                            v.truncate(len);
-                        }
-                    }
-                },
-                Undo::NamedQuantRemove(key) => {
-                    caps.named_quantified.remove(&key);
                 }
                 Undo::AliasRestore { key, prev } => match prev {
                     Some(v) => {
@@ -182,28 +168,15 @@ impl CapStore {
     }
 
     fn record_named_key(&mut self, key: &str) {
-        let (len, present) = match self.caps.named.get(key) {
-            Some(v) => (v.len(), true),
-            None => (0, false),
+        let (len, present, quantified) = match self.caps.named.get(key) {
+            Some(slot) => (slot.nodes.len(), true, slot.quantified),
+            None => (0, false, false),
         };
-        self.trail.push(Undo::MapVecTrunc {
-            which: MapId::Named,
+        self.trail.push(Undo::NamedTrunc {
             key: key.to_string(),
             len,
             present,
-        });
-    }
-
-    fn record_named_sub_key(&mut self, key: &str) {
-        let (len, present) = match self.caps.named_subcaps.get(key) {
-            Some(v) => (v.len(), true),
-            None => (0, false),
-        };
-        self.trail.push(Undo::MapVecTrunc {
-            which: MapId::NamedSub,
-            key: key.to_string(),
-            len,
-            present,
+            quantified,
         });
     }
 
@@ -212,8 +185,7 @@ impl CapStore {
             Some(v) => (v.len(), true),
             None => (0, false),
         };
-        self.trail.push(Undo::MapVecTrunc {
-            which: MapId::HashCap,
+        self.trail.push(Undo::HashCapTrunc {
             key: key.to_string(),
             len,
             present,
@@ -229,14 +201,9 @@ impl CapStore {
     pub(super) fn merge_delta(&mut self, mut delta: RegexCaptures) {
         for (k, v) in delta.named.drain() {
             self.record_named_key(&k);
-            self.caps.named.entry(k).or_default().extend(v);
-        }
-        for (k, v) in delta.named_subcaps.drain() {
-            self.record_named_sub_key(&k);
-            self.caps.named_subcaps.entry(k).or_default().extend(v);
-        }
-        for k in delta.named_quantified.drain() {
-            self.insert_named_quantified(k);
+            let slot = self.caps.named.entry(k).or_default();
+            slot.nodes.extend(v.nodes);
+            slot.quantified |= v.quantified;
         }
         for (k, v) in delta.capture_alias_map.drain() {
             self.insert_alias(k, v);
@@ -272,27 +239,23 @@ impl CapStore {
         }
     }
 
-    pub(super) fn push_named(&mut self, key: &str, val: String) {
+    /// Append one span-bearing entry under a capture name.
+    pub(super) fn push_named_node(&mut self, key: &str, sub: Arc<CapNode>) {
         self.record_named_key(key);
         self.caps
             .named
             .entry(key.to_string())
             .or_default()
-            .push(val);
-    }
-
-    pub(super) fn push_named_subcap(&mut self, key: &str, sub: Arc<CapNode>) {
-        self.record_named_sub_key(key);
-        self.caps
-            .named_subcaps
-            .entry(key.to_string())
-            .or_default()
+            .nodes
             .push(sub);
     }
 
+    /// Mark a name as quantified (renders as an Array even for 0/1 entries).
     pub(super) fn insert_named_quantified(&mut self, name: String) {
-        if self.caps.named_quantified.insert(name.clone()) {
-            self.trail.push(Undo::NamedQuantRemove(name));
+        let already = self.caps.named.get(&name).is_some_and(|s| s.quantified);
+        if !already {
+            self.record_named_key(&name);
+            self.caps.named.entry(name).or_default().quantified = true;
         }
     }
 
@@ -380,7 +343,7 @@ fn split_off_clamped<T>(v: &mut Vec<T>, at: usize) -> Vec<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::super::{PosSlot, RegexCaptures};
+    use super::super::super::{NamedSlot, PosSlot, RegexCaptures};
     use super::CapStore;
 
     fn store_with_base() -> CapStore {
@@ -389,7 +352,7 @@ mod tests {
         init.named
             .entry("x".to_string())
             .or_default()
-            .push("v".to_string());
+            .merge(NamedSlot::leaf(0, 1));
         CapStore::new(init)
     }
 
@@ -403,8 +366,8 @@ mod tests {
             (0, 1)
         );
         assert_eq!(store.caps().named.len(), 1);
-        assert_eq!(store.caps().named["x"], vec!["v".to_string()]);
-        assert!(store.caps().named_subcaps.is_empty());
+        assert_eq!(store.caps().named["x"].nodes.len(), 1);
+        assert!(!store.caps().named["x"].quantified);
         assert!(store.caps().capture_start.is_none());
         assert!(store.caps().sym.is_none());
     }
@@ -419,25 +382,22 @@ mod tests {
             .named
             .entry("x".to_string())
             .or_default()
-            .push("v2".to_string());
-        delta
-            .named
-            .entry("y".to_string())
-            .or_default()
-            .push("w".to_string());
-        delta.named_quantified.insert("y".to_string());
+            .merge(NamedSlot::leaf(2, 3));
+        let y = delta.named.entry("y".to_string()).or_default();
+        y.merge(NamedSlot::leaf(3, 4));
+        y.quantified = true;
         delta.capture_start = Some(3);
         delta.sym = Some("s".to_string());
         store.merge_delta(delta);
         assert_eq!(store.caps().positional.len(), 2);
-        assert_eq!(store.caps().named["x"].len(), 2);
-        assert_eq!(store.caps().named["y"], vec!["w".to_string()]);
-        assert!(store.caps().named_quantified.contains("y"));
+        assert_eq!(store.caps().named["x"].nodes.len(), 2);
+        assert_eq!(store.caps().named["y"].nodes.len(), 1);
+        assert!(store.caps().named["y"].quantified);
         assert_eq!(store.caps().capture_start, Some(3));
         assert_eq!(store.caps().sym.as_deref(), Some("s"));
         store.rewind(m);
         assert_base(&store);
-        assert!(!store.caps().named_quantified.contains("y"));
+        assert!(!store.caps().named.contains_key("y"));
     }
 
     #[test]
@@ -489,16 +449,19 @@ mod tests {
     fn nested_marks_rewind_in_order() {
         let mut store = store_with_base();
         let m1 = store.mark();
-        store.push_named("k", "1".to_string());
-        let m2 = store.mark();
-        store.push_named("k", "2".to_string());
-        store.push_named_subcap(
+        store.push_named_node(
             "k",
             std::sync::Arc::new(super::super::super::CapNode::default()),
         );
+        let m2 = store.mark();
+        store.push_named_node(
+            "k",
+            std::sync::Arc::new(super::super::super::CapNode::default()),
+        );
+        store.insert_named_quantified("k".to_string());
         store.rewind(m2);
-        assert_eq!(store.caps().named["k"], vec!["1".to_string()]);
-        assert!(store.caps().named_subcaps.is_empty());
+        assert_eq!(store.caps().named["k"].nodes.len(), 1);
+        assert!(!store.caps().named["k"].quantified);
         store.rewind(m1);
         assert!(!store.caps().named.contains_key("k"));
     }

@@ -157,43 +157,25 @@ impl MatchNode {
             })
             .collect();
 
+        // Silent-action captures: hidden `<.foo>` subrule matches (stored
+        // under a marker-prefixed key). Absent from `.hash`, but the grammar
+        // action walk fires their action methods via `silent_caps`.
         let mut sub_named: HashMap<String, Value> = HashMap::new();
-        for (key, values) in &kids.named {
-            let subcaps_for_key = kids.named_subcaps.get(key);
-            let vals: Vec<Value> = values
-                .iter()
-                .enumerate()
-                .map(|(i, s)| {
-                    if let Some(scs) = subcaps_for_key
-                        && let Some(sc) = scs.get(i)
-                    {
-                        return self.lazy_child(sc);
-                    }
-                    Value::text_leaf_match(s, &self.target)
-                })
-                .collect();
-            if vals.len() == 1 && !kids.named_quantified.contains(key) {
-                sub_named.insert(key.clone(), vals[0].clone());
-            } else {
-                sub_named.insert(key.clone(), Value::real_array(vals));
-            }
-        }
-        // Quantified named captures that matched zero times render as empty arrays.
-        for qname in &kids.named_quantified {
-            sub_named
-                .entry(qname.clone())
-                .or_insert_with(|| Value::real_array(Vec::new()));
-        }
-
-        // Silent-action captures: hidden `<.foo>` subrule matches (stored under
-        // a marker key in `named_subcaps`). Absent from `named`/`.hash`, but the
-        // grammar action walk fires their action methods via `silent_caps`.
         let mut silent_caps_vals: Vec<Value> = Vec::new();
-        for (key, scs) in &kids.named_subcaps {
+        for (key, slot) in &kids.named {
             if key.starts_with(SILENT_ACTION_MARKER_PREFIX) {
-                for sc in scs {
+                for sc in &slot.nodes {
                     silent_caps_vals.push(self.lazy_child(sc));
                 }
+                continue;
+            }
+            let vals: Vec<Value> = slot.nodes.iter().map(|sc| self.lazy_child(sc)).collect();
+            if vals.len() == 1 && !slot.quantified {
+                sub_named.insert(key.clone(), vals[0].clone());
+            } else {
+                // Quantified names (including zero-iteration ones) and
+                // multi-entry captures render as arrays.
+                sub_named.insert(key.clone(), Value::real_array(vals));
             }
         }
 
@@ -328,12 +310,15 @@ impl Value {
             return None;
         }
         let kids = node.cap.kids();
-        let has_named = !kids.named.is_empty() || !kids.named_quantified.is_empty();
+        let has_named = kids
+            .named
+            .keys()
+            .any(|k| !k.starts_with(SILENT_ACTION_MARKER_PREFIX));
         let has_list = !kids.positional.is_empty();
         let has_silent = kids
-            .named_subcaps
+            .named
             .iter()
-            .any(|(k, scs)| k.starts_with(SILENT_ACTION_MARKER_PREFIX) && !scs.is_empty());
+            .any(|(k, slot)| k.starts_with(SILENT_ACTION_MARKER_PREFIX) && !slot.nodes.is_empty());
         Some((!has_named && !has_list && !has_silent, node.cap.sym.clone()))
     }
 }
@@ -391,9 +376,13 @@ mod tests {
         let mut caps = RegexCaptures::default();
         caps.from = 0;
         caps.to = 2;
-        caps.named.insert("x".to_string(), vec!["b".to_string()]);
-        caps.named_subcaps
-            .insert("x".to_string(), vec![Arc::clone(&child)]);
+        caps.named.insert(
+            "x".to_string(),
+            crate::runtime::NamedSlot {
+                nodes: vec![Arc::clone(&child)],
+                quantified: false,
+            },
+        );
         let parent = Value::lazy_match(Arc::new(caps.into_cap_node()), MatchTarget::new("ab"));
         let named = parent.match_named().expect("named hash");
         let child_val = match named.view() {

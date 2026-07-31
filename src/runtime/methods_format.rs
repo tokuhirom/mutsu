@@ -172,7 +172,6 @@ impl Interpreter {
                         len,
                         &[],
                         &HashMap::new(),
-                        &HashMap::new(),
                         crate::runtime::MatchTarget::new(&fmt),
                     )));
                 }
