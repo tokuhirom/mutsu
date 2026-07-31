@@ -474,6 +474,23 @@ impl Interpreter {
                     return Ok(());
                 }
             }
+            // A mixin answers `:exists` through EXISTS-KEY / EXISTS-POS exactly
+            // as an instance does, and for the same two reasons. A role mixed
+            // into a container may supply them itself — a `does Associative`
+            // role delegating to a private hash (`has %!store handles <AT-KEY
+            // EXISTS-KEY>`) is the common shape, and punning such a role builds
+            // a mixin, not an Instance. Where the role supplies nothing, method
+            // dispatch reaches the inner container's own EXISTS-KEY/EXISTS-POS,
+            // so a plain `%h but R` / `@a but R` answers for its contents.
+            // Without this the subscript fell through every container arm below
+            // and answered False for everything.
+            if matches!(target.view(), ValueView::Mixin(..))
+                && let Some(result) =
+                    self.instance_exists_pos_result(&target, &idx, effective_negated, adverb_bits)?
+            {
+                self.stack.push(result);
+                return Ok(());
+            }
             let idxs = match idx.view() {
                 ValueView::Int(i) => vec![i],
                 ValueView::Array(items, ..) if crate::runtime::utils::is_shaped_array(&target) => {
