@@ -1938,8 +1938,13 @@ impl Interpreter {
             }
             // Role parameterization: e.g. R1[C1] → ParametricRole
             (ValueView::Package(name), _) if self.is_role(&name.resolve()) => {
+                // Only a comma list spreads into several type arguments
+                // (`R[Int, Str]`). An itemized array is ONE argument —
+                // `R[[1, 2]]` parameterises `role R[@l]` with `[1, 2]`, and
+                // spreading it made that two arguments, which then matched no
+                // candidate's arity at all.
                 let type_args = match index.view() {
-                    ValueView::Array(items, ..) => items.to_vec(),
+                    ValueView::Array(items, crate::value::ArrayKind::List) => items.to_vec(),
                     _ => vec![index.clone()],
                 };
                 Value::parametric_role(name, type_args)

@@ -1391,6 +1391,12 @@ pub struct Interpreter {
     /// specific (an ambiguous dispatch). Consumed by the caller to raise an
     /// `X::Multi::Ambiguous` error instead of silently picking one.
     pub(crate) dispatch_ambiguous: bool,
+    /// Roles whose `.new` is currently constructing through their pun. `.new` on
+    /// a role composes it into a class of the same name and re-enters
+    /// `dispatch_new` to run *that class's* constructor; the role name is pushed
+    /// here for the duration so the re-entry takes the class path instead of
+    /// recognising the name as a role again and looping.
+    pub(crate) role_pun_construction: Vec<String>,
     /// Ids currently being rendered by `Mu.rakuseen($id, &code)` — the
     /// cyclic-structure guard for `.raku`/`.gist`. A repeated id means a cycle:
     /// `rakuseen` returns a backreference name instead of re-running `&code`

@@ -460,6 +460,7 @@ impl Interpreter {
             encoding_registry: self.encoding_registry.clone(),
             skip_pseudo_method_native: None,
             dispatch_ambiguous: false,
+            role_pun_construction: Vec::new(),
             rakuseen_active: Vec::new(),
             rakuseen_cycle_hit: std::collections::HashSet::new(),
             raku_leaf_active: Vec::new(),

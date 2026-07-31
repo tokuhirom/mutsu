@@ -111,12 +111,161 @@ impl Interpreter {
         Ok(instance)
     }
 
+    /// Tag a freshly constructed punned-role instance with the mixin markers the
+    /// rest of the runtime keys off: `__mutsu_role__<role>` (this instance does
+    /// the role) and one `__mutsu_attr__<name>` per attribute, plus the role's
+    /// language revision. The markers are seeds — the instance's own attribute
+    /// cell stays the store of record, and the accessor / "is this a role mixin"
+    /// paths refresh from it — so they are taken after construction, with
+    /// whatever BUILD and TWEAK left behind.
+    ///
+    /// A value that is not an instance of the punned role (a `Failure` from a
+    /// failing TWEAK, say) is passed through untouched. `extra` carries the
+    /// markers only a *parameterised* pun needs (the type arguments, the matched
+    /// candidate's role id and its bound parameters).
+    fn mark_punned_role_instance(
+        &mut self,
+        role: Symbol,
+        value: Value,
+        extra: HashMap<String, Value>,
+    ) -> Value {
+        let role_name = role.resolve();
+        let attrs: Vec<(String, Value)> = match value.view() {
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name.resolve() == role_name => attributes
+                .as_map()
+                .iter()
+                .map(|(name, attr)| (name.resolve(), attr.clone()))
+                .collect(),
+            _ => return value,
+        };
+        let mut mixins = extra;
+        mixins.insert(format!("__mutsu_role__{}", role_name), Value::TRUE);
+        for (name, attr) in attrs {
+            mixins.insert(format!("__mutsu_attr__{}", name), attr);
+        }
+        // The language revision comes from the parameterless candidate (this is
+        // bare role punning) so `^language-revision` reports the revision of the
+        // module the role was declared in, not the last-registered candidate's.
+        // A parameterised pun has already supplied its *matched* candidate's
+        // revision through `extra`, which must win over that.
+        if mixins.contains_key("__mutsu_language_revision") {
+            return Value::mixin(value, mixins);
+        }
+        let bare_lang_ver = self
+            .registry()
+            .role_candidates
+            .get(&role_name)
+            .and_then(|candidates| {
+                candidates
+                    .iter()
+                    .find(|c| c.type_params.is_empty())
+                    .map(|c| c.language_version.clone())
+            })
+            .or_else(|| {
+                self.type_metadata
+                    .get(&role_name)
+                    .and_then(|m| m.get("language-revision"))
+                    .map(|v| format!("6.{}", v.to_string_value()))
+            });
+        if let Some(ver) = bare_lang_ver {
+            let revision: String = if let Some(letter) = ver.strip_prefix("6.") {
+                letter.chars().next().unwrap_or('c').to_string()
+            } else {
+                "c".to_string()
+            };
+            mixins.insert(
+                "__mutsu_language_revision".to_string(),
+                Value::str(revision),
+            );
+        }
+        Value::mixin(value, mixins)
+    }
+
+    /// Withdraw the class a role was punned to for one construction, so the name
+    /// goes back to being a role.
+    ///
+    /// Dropping the `ClassDef` is not enough: the pun made the name look like an
+    /// ordinary class, and a *construction plan* for it was cached under that
+    /// name. Left behind, the next `R.new` matched the stale plan on the native
+    /// fast path and built a plain instance — no role mixin markers, so every
+    /// method call on it failed with "No such method". Only the first
+    /// construction in a program worked.
+    fn withdraw_role_pun(&mut self, role_name: &str) {
+        self.registry_mut().classes.remove(role_name);
+        self.registry_mut().hidden_classes.remove(role_name);
+        self.registry_mut().class_composed_roles.remove(role_name);
+        self.clear_private_zeroarg_method_cache();
+        self.native_ctor_plan_cache.clear();
+    }
+
+    /// Bind a parameterised role's type arguments to its type parameters and
+    /// return the resulting name -> value map, for `class_role_param_bindings`.
+    ///
+    /// This is signature binding, not a positional zip: `role R[@l]` slurps its
+    /// arguments into `@l` and `role R[%d]` takes a hash whole, so `R[[1, 2]]`
+    /// must see `@l` as `[1, 2]` rather than as its first element. Running the
+    /// real binder — the same one the candidate search used to decide this
+    /// candidate matches — is what gets that right. It runs against a scratch
+    /// env that is restored afterwards; a candidate with no parameter defs (or
+    /// one that fails to bind, which the search should already have excluded)
+    /// falls back to the positional pairing.
+    fn bind_role_type_params(
+        &mut self,
+        param_defs: &[crate::ast::ParamDef],
+        param_names: &[String],
+        type_args: &[Value],
+    ) -> rustc_hash::FxHashMap<String, Value> {
+        let mut bindings: rustc_hash::FxHashMap<String, Value> = Default::default();
+        if !param_defs.is_empty() {
+            let names: Vec<String> = param_defs.iter().map(|pd| pd.name.clone()).collect();
+            let saved_env = self.env.clone();
+            let bound = self
+                .bind_function_args_values(param_defs, &names, type_args)
+                .is_ok();
+            if bound {
+                for (i, name) in names.iter().enumerate() {
+                    let Some(value) = self.env.get(name).cloned() else {
+                        continue;
+                    };
+                    // Key by the role's declared parameter spelling, which is
+                    // what consumers of `class_role_param_bindings` put back
+                    // into the env for the role body to read. It is not always
+                    // the signature parameter's own name, so both are recorded
+                    // when they differ.
+                    bindings.insert(param_names.get(i).unwrap_or(name).clone(), value.clone());
+                    bindings.insert(name.clone(), value);
+                }
+            }
+            self.env = saved_env;
+            if bound {
+                return bindings;
+            }
+        }
+        for (name, arg) in param_names.iter().cloned().zip(type_args.iter().cloned()) {
+            bindings.insert(name, arg);
+        }
+        bindings
+    }
+
     pub(super) fn dispatch_new(
         &mut self,
         target: Value,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        if let ValueView::Package(_) = target.view() {
+        // A role with defaulted type parameters materialises to its default
+        // parameterisation before constructing — but not while it is already
+        // constructing through its own pun, where re-materialising would send
+        // the delegation below straight back here forever.
+        if let ValueView::Package(name) = target.view()
+            && !self
+                .role_pun_construction
+                .iter()
+                .any(|n| n == &name.resolve())
+        {
             let materialized = self.materialize_default_parametric_role(target.clone())?;
             if materialized != target {
                 return self.dispatch_new(materialized, args);
@@ -258,6 +407,12 @@ impl Interpreter {
             self.ensure_role_punned_to_class(&base_name_str);
             let mut selected_role = self.registry().roles.get(&base_name_str).cloned();
             let mut matched_lang_version: Option<String> = None;
+            // The matched candidate's parameter *signature*, not just the names:
+            // binding the type arguments is real signature binding (a `@l`
+            // parameter slurps, `%d` takes the hash whole), so the pun below
+            // re-runs the same binder the candidate search used rather than
+            // zipping names to arguments positionally.
+            let mut selected_param_defs: Vec<crate::ast::ParamDef> = Vec::new();
             let mut selected_param_names = self
                 .registry()
                 .role_type_params
@@ -343,22 +498,13 @@ impl Interpreter {
                 matching.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.cmp(&a.2)));
                 if let Some((candidate, _, _)) = matching.into_iter().next() {
                     selected_param_names = candidate.type_params.clone();
+                    selected_param_defs = candidate.type_param_defs.clone();
                     matched_lang_version = Some(candidate.language_version.clone());
                     selected_role = Some(candidate.role_def.clone());
                 }
             }
             if let Some(role) = selected_role {
                 let role_id = role.role_id;
-                let mut named_args: HashMap<String, Value> = HashMap::new();
-                let mut positional_args: Vec<Value> = Vec::new();
-                for arg in &args {
-                    if let ValueView::Pair(key, value) = arg.view() {
-                        named_args.insert(key.clone(), value.clone());
-                    } else {
-                        positional_args.push(arg.clone());
-                    }
-                }
-
                 let mut mixins = HashMap::new();
                 mixins.insert(format!("__mutsu_role__{}", base_name), Value::TRUE);
                 mixins.insert(
@@ -377,25 +523,6 @@ impl Interpreter {
                         type_arg.clone(),
                     );
                 }
-                let saved_role_param_env = self.env.clone();
-                for (param_name, type_arg) in selected_param_names.iter().zip(type_args.iter()) {
-                    self.env.insert(param_name.clone(), type_arg.clone());
-                }
-                for (idx, (attr_name, _is_public, default_expr, _, _, _, _)) in
-                    role.attributes.iter().enumerate()
-                {
-                    let value = if let Some(v) = named_args.get(attr_name) {
-                        v.clone()
-                    } else if let Some(v) = positional_args.get(idx) {
-                        v.clone()
-                    } else if let Some(expr) = default_expr {
-                        self.eval_block_value(&[Stmt::Expr(expr.clone())])?
-                    } else {
-                        Value::NIL
-                    };
-                    mixins.insert(format!("__mutsu_attr__{}", attr_name), value);
-                }
-                self.env = saved_role_param_env;
                 // Embed language revision in mixin metadata so
                 // ^language-revision on the punned instance returns
                 // the revision of the matched candidate.
@@ -410,10 +537,52 @@ impl Interpreter {
                         Value::str(revision),
                     );
                 }
-                return Ok(Value::mixin(
-                    Value::make_instance(base_name, HashMap::new()),
-                    mixins,
-                ));
+                // Construct through the *base* role's pun class, with the
+                // matched candidate's type parameters bound for the duration, so
+                // this arrives at the same construction path as every other pun
+                // — attribute seeding, defaults and the BUILD/TWEAK phases.
+                //
+                // `ensure_parametric_role_pun_class` above is the better route
+                // and handles most parameterisations, but it is name-driven and
+                // gives up when an argument has no faithful spelling in a type
+                // name. A Hash argument is exactly that case, and it is the one
+                // that matters: `Cro::Policy::Timeout[%(...)]` fills its
+                // `%.phases` from the parameter inside `BUILD`, so before this
+                // the pun answered `Any` for every phase.
+                let pre_existing_class = self.registry().classes.contains_key(&base_name_str);
+                self.ensure_role_punned_to_class(&base_name_str);
+                let saved_bindings = self
+                    .registry()
+                    .class_role_param_bindings
+                    .get(&base_name_str)
+                    .cloned();
+                let bindings = self.bind_role_type_params(
+                    &selected_param_defs,
+                    &selected_param_names,
+                    type_args,
+                );
+                self.registry_mut()
+                    .class_role_param_bindings
+                    .insert(base_name_str.clone(), bindings);
+                self.role_pun_construction.push(base_name_str.clone());
+                let constructed = self.dispatch_new(Value::package(base_name), args.clone());
+                self.role_pun_construction.pop();
+                match saved_bindings {
+                    Some(saved) => {
+                        self.registry_mut()
+                            .class_role_param_bindings
+                            .insert(base_name_str.clone(), saved);
+                    }
+                    None => {
+                        self.registry_mut()
+                            .class_role_param_bindings
+                            .remove(&base_name_str);
+                    }
+                }
+                if !pre_existing_class {
+                    self.withdraw_role_pun(&base_name_str);
+                }
+                return Ok(self.mark_punned_role_instance(base_name, constructed?, mixins));
             }
         }
 
@@ -1217,7 +1386,15 @@ impl Interpreter {
                     return Ok(self.tag_container_metadata(result, info));
                 }
             }
-            let role = self.registry().roles.get(&class_name.resolve()).cloned();
+            // Not `if let ... else`: the role branch is skipped entirely while
+            // this very role is constructing through its own pun (see the
+            // delegation at the end of the branch), so the re-entry falls
+            // through to the class path below instead of looping here.
+            let role = if self.role_pun_construction.iter().any(|n| n == &cn_resolved) {
+                None
+            } else {
+                self.registry().roles.get(&cn_resolved).cloned()
+            };
             if let Some(role) = role {
                 // Check for attribute conflicts detected during role composition
                 if let Some((attr_name, role_a, role_b)) = role.attribute_conflicts.first() {
@@ -1239,10 +1416,7 @@ impl Interpreter {
                         args.clone(),
                         None,
                     );
-                    self.registry_mut().classes.remove(&role_name);
-                    self.registry_mut().hidden_classes.remove(&role_name);
-                    self.registry_mut().class_composed_roles.remove(&role_name);
-                    self.clear_private_zeroarg_method_cache();
+                    self.withdraw_role_pun(&role_name);
                     match dispatched {
                         Ok((result, _)) => {
                             if let ValueView::Instance {
@@ -1268,172 +1442,41 @@ impl Interpreter {
                         Err(e) => return Err(e),
                     }
                 }
-                let mut named_args: HashMap<String, Value> = HashMap::new();
-                let mut positional_args: Vec<Value> = Vec::new();
-                for arg in &args {
-                    if let ValueView::Pair(key, value) = arg.view() {
-                        named_args.insert(key.clone(), value.clone());
-                    } else {
-                        positional_args.push(arg.clone());
-                    }
-                }
-                if !positional_args.is_empty() {
-                    return Err(constructor_positional_error(&class_name.resolve()));
-                }
-
-                // Collect attributes from this role and all composed parent roles
-                let mut all_attributes = role.attributes.clone();
-                let mut visited = vec![class_name.resolve()];
-                if let Some(parent_names) = self
-                    .registry()
-                    .role_parents
-                    .get(&class_name.resolve())
-                    .cloned()
+                if args
+                    .iter()
+                    .any(|a| !matches!(a.view(), ValueView::Pair(..)))
                 {
-                    let mut role_stack: Vec<String> = parent_names;
-                    while let Some(parent_role_name) = role_stack.pop() {
-                        if !visited.contains(&parent_role_name) {
-                            visited.push(parent_role_name.clone());
-                            if let Some(parent_role) =
-                                self.registry().roles.get(&parent_role_name).cloned()
-                            {
-                                for attr in &parent_role.attributes {
-                                    if !all_attributes.iter().any(|a| a.0 == attr.0) {
-                                        all_attributes.push(attr.clone());
-                                    }
-                                }
-                            }
-                            if let Some(grandparents) =
-                                self.registry().role_parents.get(&parent_role_name).cloned()
-                            {
-                                for gp_name in &grandparents {
-                                    if !visited.contains(gp_name) {
-                                        role_stack.push(gp_name.clone());
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    return Err(constructor_positional_error(&cn_resolved));
                 }
-
-                // The declared types of those attributes, keyed by attribute name.
-                // A role records them per (role, attr) since it has no ClassDef
-                // to hold `attribute_types`; parent roles are folded in first so
-                // this role's own declaration wins on a name clash.
-                let role_attr_types: HashMap<String, String> = {
-                    let cn = class_name.resolve();
-                    let mut m: HashMap<String, String> = HashMap::new();
-                    for owner in visited.iter().rev() {
-                        let base = owner.split_once('[').map(|(b, _)| b).unwrap_or(owner);
-                        for ((r, attr), tc) in &self.registry().role_attribute_types {
-                            if r == base {
-                                m.insert(attr.clone(), tc.replace("::?CLASS", &cn));
-                            }
-                        }
-                    }
-                    m
-                };
-
-                let mut mixins = HashMap::new();
-                mixins.insert(format!("__mutsu_role__{}", class_name), Value::TRUE);
-                // The attribute values go into the punned instance's own cell, not
-                // only into `__mutsu_attr__` mixin markers: that cell is what a
-                // private access (`$!parent`) inside a role method reads and
-                // writes, so it has to be the store of record. The markers are
-                // still written, as the accessor path and the "is this a role
-                // mixin" checks key off them, but they are seeds — a read prefers
-                // the cell whenever the cell has the attribute.
-                let mut instance_attrs: HashMap<String, Value> = HashMap::new();
-                for (attr_name, _is_public, default_expr, _, _, sigil, _) in &all_attributes {
-                    let supplied = if let Some(v) = named_args.get(attr_name) {
-                        Some(v.clone())
-                    } else if let Some(expr) = default_expr {
-                        Some(self.eval_block_value(&[Stmt::Expr(expr.clone())])?)
-                    } else {
-                        None
-                    };
-                    // A punned role type-checks its attributes exactly like the
-                    // consuming-class path (`enforce_attribute_where_constraints`):
-                    // the constraint lives in `role_attribute_types` because the
-                    // role has no ClassDef of its own at declaration time. As
-                    // there, a `@`/`%` constraint names the *element* type and is
-                    // enforced at element assignment, not here.
-                    if let Some(value) = supplied.as_ref()
-                        && !value.is_nil()
-                        && *sigil != '@'
-                        && *sigil != '%'
-                        && let Some(tc) = role_attr_types.get(attr_name)
-                        && (tc.starts_with(char::is_uppercase) || tc.starts_with("::"))
-                        && !self.type_matches_value(tc, value)
-                        && !self.is_container_subclass(tc)
-                    {
-                        return Err(crate::runtime::utils::type_check_assignment_typed_error(
-                            &format!("$!{}", attr_name),
-                            tc,
-                            value,
-                        ));
-                    }
-                    // Every attribute is seeded into the cell, containers
-                    // included: an unsupplied `@`/`%` seeds an empty container
-                    // rather than `Nil`, matching what the class path's
-                    // `seed_attr_value` produces, so `%!h<k> = 1` inside a role
-                    // method has something to write to. The marker keeps the same
-                    // value; the cell is the store of record and the marker-side
-                    // paths refresh from it.
-                    let seeded = match supplied {
-                        Some(v) => v,
-                        None if *sigil == '@' => Value::real_array(Vec::new()),
-                        None if *sigil == '%' => Value::hash(HashMap::new()),
-                        None => Value::NIL,
-                    };
-                    // Tag the container with its declared element/key types, the
-                    // same way the class path's `seed_attr_value` does — without
-                    // it a `has Callable %!c{Mu:U}` in a punned role is a plain
-                    // hash, so type-object keys collide on the empty string.
-                    let seeded = if matches!(sigil, '@' | '%')
-                        && let Some(tc) = role_attr_types.get(attr_name)
-                    {
-                        self.finalize_typed_container_attr(attr_name, *sigil, &tc.clone(), seeded)?
-                    } else {
-                        seeded
-                    };
-                    mixins.insert(format!("__mutsu_attr__{}", attr_name), seeded.clone());
-                    instance_attrs.insert(attr_name.clone(), seeded);
+                // Punning constructs through the ordinary *class* path: compose
+                // the role into a class of the same name and re-enter `.new` on
+                // it, so attribute seeding, `is required`, coercion-typed
+                // attributes and -- the reason this delegation exists -- the
+                // BUILD and TWEAK phases behave exactly as they do for
+                // `class C does R { }`.
+                //
+                // Reproducing construction here instead had drifted from the
+                // class path it was a copy of: BUILD and TWEAK were never run at
+                // all, so a role that initialises its attributes in BUILD punned
+                // to an object with them unset. `Cro::Policy::Timeout` fills its
+                // `%.phases` from a role parameter that way and is instantiated
+                // as a pun, which is how this was found.
+                //
+                // The pun is withdrawn afterwards unless the name was already a
+                // class, so the role stays a role -- the same bookkeeping the
+                // `new`-declaring branch above performs.
+                let pre_existing_class = self.registry().classes.contains_key(&cn_resolved);
+                self.ensure_role_punned_to_class(&cn_resolved);
+                self.role_pun_construction.push(cn_resolved.clone());
+                let constructed = self.dispatch_new(target.clone(), args.clone());
+                self.role_pun_construction.pop();
+                if !pre_existing_class {
+                    self.withdraw_role_pun(&cn_resolved);
                 }
-                // Embed language revision from the matching candidate
-                // (no-params for bare role punning) so ^language-revision
-                // returns the correct value for this role's origin module.
-                let cn_str = class_name.resolve();
-                let bare_lang_ver = self
-                    .registry()
-                    .role_candidates
-                    .get(&cn_str)
-                    .and_then(|candidates| {
-                        candidates
-                            .iter()
-                            .find(|c| c.type_params.is_empty())
-                            .map(|c| c.language_version.clone())
-                    })
-                    .or_else(|| {
-                        self.type_metadata
-                            .get(&cn_str)
-                            .and_then(|m| m.get("language-revision"))
-                            .map(|v| format!("6.{}", v.to_string_value()))
-                    });
-                if let Some(ver) = bare_lang_ver {
-                    let revision: String = if let Some(letter) = ver.strip_prefix("6.") {
-                        letter.chars().next().unwrap_or('c').to_string()
-                    } else {
-                        "c".to_string()
-                    };
-                    mixins.insert(
-                        "__mutsu_language_revision".to_string(),
-                        Value::str(revision),
-                    );
-                }
-                return Ok(Value::mixin(
-                    Value::make_instance(*class_name, instance_attrs),
-                    mixins,
+                return Ok(self.mark_punned_role_instance(
+                    *class_name,
+                    constructed?,
+                    HashMap::new(),
                 ));
             }
             // CUnion repr classes use byte-overlay construction
