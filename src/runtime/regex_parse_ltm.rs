@@ -925,6 +925,18 @@ impl Interpreter {
                     format!("{expanded}{sep_rest_str}")
                 };
             }
+            // The atom in front of `**` is NOT a single atom — i.e. the
+            // quantified atom has preceding tokens (`Z "b" ** 2 % "; "`).
+            // Letting the bare-`%` expansion below at it would treat the WHOLE
+            // prefix (`Z"b"**2`) as the repeated atom and mangle the pattern
+            // (the separator was silently dropped between real iterations).
+            // The per-token parser attaches `Repeat` + separator natively at
+            // any token position, so defer to it. (Sigspace still falls
+            // through: the spaced expansion inserts `<ws>` around the
+            // separator, which the native path does not.)
+            if sep_mode.is_some() && !sigspace {
+                return pattern.to_string();
+            }
             // Fall through to let the normal parser handle ** quantifiers
         }
         if !Self::has_unquoted_ltm_separator(pattern) {

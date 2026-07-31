@@ -44,7 +44,7 @@ impl Interpreter {
         out
     }
 
-    pub(super) fn extract_sym_adverb(name: &str) -> Option<String> {
+    pub(in crate::runtime) fn extract_sym_adverb(name: &str) -> Option<String> {
         // Try «» delimiters first (handles values containing '>')
         let french_marker = ":sym\u{ab}";
         if let Some(start_idx) = name.find(french_marker) {

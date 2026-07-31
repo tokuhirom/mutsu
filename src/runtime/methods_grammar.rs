@@ -317,9 +317,9 @@ impl Interpreter {
         let saved_grammar_dynvars = self.establish_grammar_dynamic_vars(package_name);
         let candidate_from = start_pos.or(continue_pos).unwrap_or(0);
         let result = (|| -> Result<Value, RuntimeError> {
-            let pattern =
+            let (pattern, start_rule_sym) =
                 match self.eval_token_call_values_at(&start_rule, &rule_args, candidate_from) {
-                    Ok(Some(pattern)) => pattern,
+                    Ok(Some(pattern_and_sym)) => pattern_and_sym,
                     Ok(None) => {
                         // Check for pending regex error (e.g., <sym> used outside proto regex)
                         if let Some(err) = Self::take_pending_regex_error() {
@@ -505,6 +505,12 @@ impl Interpreter {
                 }
                 if let Some(ref act) = actions_obj {
                     updates.push(("actions", act.clone()));
+                }
+                // A parse that started directly at a proto token (`:rule` naming
+                // a proto) matched via one `:sym<...>` candidate; record it so
+                // action dispatch can call the sym-specific method.
+                if let Some(ref sym) = start_rule_sym {
+                    updates.push(("sym_variant", Value::str(sym.clone())));
                 }
                 if !alias_map.is_empty() {
                     let alias_hash: HashMap<String, Value> = alias_map

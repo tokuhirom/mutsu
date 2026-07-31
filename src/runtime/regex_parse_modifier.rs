@@ -772,12 +772,23 @@ impl Interpreter {
     }
 
     /// Check if a regex pattern string contains a longname alias
-    /// (e.g., `<IO::File=bar>` or `<::IO::File=bar>`). Returns true if so.
+    /// (e.g., `<IO::File=bar>` or `<::IO::File=bar>`): a `::` in the alias
+    /// position, i.e. before the first `=` that is not a `=>` fat arrow.
+    /// A long name on the RHS (`<dt=Foo::Bar::rule>`) is a legal aliased
+    /// call to a fully-qualified subrule and must NOT be flagged.
     pub(super) fn contains_longname_alias(pattern: &str) -> bool {
-        // Look for <...::...=...> pattern
         let s = pattern.trim();
-        if s.contains("::") && s.contains('=') {
-            return true;
+        let bytes = s.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == b'=' {
+                if i + 1 < bytes.len() && bytes[i + 1] == b'>' {
+                    i += 2;
+                    continue;
+                }
+                return s[..i].contains("::");
+            }
+            i += 1;
         }
         false
     }

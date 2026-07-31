@@ -121,18 +121,23 @@ impl Interpreter {
         name: &str,
         arg_values: &[Value],
     ) -> Result<Option<String>, RuntimeError> {
-        self.eval_token_call_values_at(name, arg_values, 0)
+        Ok(self
+            .eval_token_call_values_at(name, arg_values, 0)?
+            .map(|(pattern, _)| pattern))
     }
 
     /// Like [`eval_token_call_values`], but the LTM candidate filter measures each
     /// candidate's declarative prefix starting at character offset `start_pos`
     /// (for a `:pos(N)`/`:c(N)` subparse) rather than at the start of the subject.
+    /// Returns the winning candidate's pattern together with its `:sym<...>`
+    /// adverb (for a proto token candidate), so a `parse(:rule)` starting
+    /// directly at a proto can dispatch the sym-specific action method.
     pub(super) fn eval_token_call_values_at(
         &mut self,
         name: &str,
         arg_values: &[Value],
         start_pos: usize,
-    ) -> Result<Option<String>, RuntimeError> {
+    ) -> Result<Option<(String, Option<String>)>, RuntimeError> {
         let defs = match self.resolve_token_defs(name) {
             Some(defs) => defs,
             None => return Ok(None),
@@ -158,30 +163,34 @@ impl Interpreter {
         // effects (ADR-0009). For a candidate with no code atom it is a full
         // match — which executes nothing — so the "does this candidate match at
         // all?" filter is unchanged for those.
-        let mut candidates: Vec<(usize, String)> = Vec::new(); // (prefix_match_len, pattern)
+        // (prefix_match_len, pattern, sym adverb of the candidate's def)
+        let mut candidates: Vec<(usize, String, Option<String>)> = Vec::new();
         let mut rejected: Vec<String> = Vec::new();
         for def in defs {
+            let sym = Self::extract_sym_adverb(&def.name.resolve());
             if let Some(pattern) = self.eval_token_def(&def, arg_values)? {
                 if let Some(ref text) = subject {
                     match self.declarative_prefix_match_len(&pattern, text) {
-                        (Some(prefix_match_len), _) => candidates.push((prefix_match_len, pattern)),
+                        (Some(prefix_match_len), _) => {
+                            candidates.push((prefix_match_len, pattern, sym))
+                        }
                         // Measurement stopped at a code atom, so it proves nothing
                         // about whether the candidate matches — keep it (ranked
                         // last) and let the real match decide.
-                        (None, true) => candidates.push((0, pattern)),
+                        (None, true) => candidates.push((0, pattern, sym)),
                         // A fully declarative candidate that does not match at all.
                         (None, false) => rejected.push(pattern),
                     }
                 } else {
-                    candidates.push((0, pattern));
+                    candidates.push((0, pattern, sym));
                 }
             }
         }
         // Sort by declarative prefix match length (longest first). The sort is
         // stable, so an LTM tie falls back to declaration order (as in Rakudo).
         candidates.sort_by_key(|c| std::cmp::Reverse(c.0));
-        if let Some((_, pattern)) = candidates.into_iter().next() {
-            return Ok(Some(pattern));
+        if let Some((_, pattern, sym)) = candidates.into_iter().next() {
+            return Ok(Some((pattern, sym)));
         }
         // Nothing matched declaratively. Normally that is a cheap "this rule
         // cannot match" verdict and the real match is skipped — but during a
@@ -194,7 +203,7 @@ impl Interpreter {
             && self.current_grammar_actions.is_some()
             && !self.has_proto_token(name)
         {
-            return Ok(rejected.pop());
+            return Ok(rejected.pop().map(|p| (p, None)));
         }
         if self.has_proto_token(name) {
             return Err(RuntimeError::new(format!(
