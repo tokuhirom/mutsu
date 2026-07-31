@@ -744,9 +744,33 @@ impl Interpreter {
             Some(r) => r.clone(),
             None => return,
         };
+        // A method copied into the pun still *came from* the role, and has to
+        // say so: `role_origin` is how the rest of the runtime tells a composed
+        // method from one the class declares itself. Left unset, the pun's
+        // construction phases counted the role's `BUILD`/`TWEAK` twice — once as
+        // the composed-role submethod (`class_composed_roles` below finds it)
+        // and again as an apparently class-declared candidate, so a
+        // `submethod BUILD { @!a.push(1) }` punned to `[1, 1]`. Real `does`
+        // composition tags them the same way, which is why it never doubled.
+        let tag_role_origin = |owner: &str, defs: &[MethodDef]| -> Vec<MethodDef> {
+            defs.iter()
+                .map(|md| {
+                    let mut md = md.clone();
+                    if md.original_role.is_none() {
+                        md.original_role = md.role_origin.clone();
+                    }
+                    md.role_origin = Some(owner.to_string());
+                    md
+                })
+                .collect()
+        };
         // Collect attributes and methods from the role itself and all composed parent roles
         let mut all_attributes = role_def.attributes.clone();
-        let mut all_methods: HashMap<String, Vec<MethodDef>> = role_def.methods.clone();
+        let mut all_methods: HashMap<String, Vec<MethodDef>> = role_def
+            .methods
+            .iter()
+            .map(|(name, defs)| (name.clone(), tag_role_origin(role_name, defs)))
+            .collect();
         let mut all_wildcard_handles = role_def.wildcard_handles.clone();
         let mut composed_roles_list = vec![role_name.to_string()];
         if let Some(parent_names) = self.registry().role_parents.get(role_name).cloned() {
@@ -766,7 +790,7 @@ impl Interpreter {
                             all_methods
                                 .entry(method_name.clone())
                                 .or_default()
-                                .extend(method_defs.clone());
+                                .extend(tag_role_origin(&parent_role_name, method_defs));
                         }
                         for wh in &parent_role.wildcard_handles {
                             if !all_wildcard_handles.contains(wh) {
