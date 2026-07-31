@@ -272,7 +272,16 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
                 Expr::AssignExpr { .. }
                     | Expr::IndexAssign { .. }
                     | Expr::MultiDimIndexAssign { .. }
-            ) {
+            )
+            // A parenthesized X/Z meta-op keeps its boundary: the argument-list
+            // lift (`lift_list_infix_in_arg_list`) hoists a BARE meta-op's
+            // preceding comma items into its left operand (list-infix is looser
+            // than the argument comma), but parens close the operand off —
+            // `join "", ("+" X~ @parts)` must keep "" as the separator, not
+            // cross ("", "+") with @parts (Cro::MediaType's subtype action).
+            // The lift only matches an unwrapped MetaOp, so Grouped is enough.
+            || matches!(&result, Expr::MetaOp { meta, .. } if meta == "X" || meta == "Z")
+        {
             Expr::Grouped(Box::new(result))
         } else {
             result
