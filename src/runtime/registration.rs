@@ -213,6 +213,26 @@ impl Interpreter {
         count
     }
 
+    /// True when any class in the MRO above `class_name` provides a concrete
+    /// (non-stub) method of this name, regardless of signature — rakudo's
+    /// name-based satisfaction of role requirements, applied to inheritance.
+    fn inherited_any_concrete_method(&mut self, class_name: &str, method_name: &str) -> bool {
+        let mro = self.class_mro(class_name);
+        for parent in mro.iter().skip(1) {
+            let registry = self.registry();
+            let Some(class_def) = registry.classes.get(parent.as_str()) else {
+                continue;
+            };
+            let Some(defs) = class_def.methods.get(method_name) else {
+                continue;
+            };
+            if defs.iter().any(|def| !Self::is_stub_method_def(def)) {
+                return true;
+            }
+        }
+        false
+    }
+
     fn accessor_matches_stub(
         &mut self,
         class_name: &str,
@@ -283,6 +303,20 @@ impl Interpreter {
                         }
                     }
                     if local_matches == 0 {
+                        // rakudo satisfies a role's required method by NAME — the
+                        // stub's signature is advisory, not enforced (`method f()`
+                        // satisfies a stub `f(Int $x, Str $y --> Str)`). So any
+                        // concrete same-named method in this class satisfies the
+                        // requirement even when no candidate matches the stub's
+                        // positional signature. Cro::HTTP::BodySerializers relies
+                        // on this: the class implements the Cro::Core stub
+                        // `serialize(Cro::Message, $body)` with a proto/multi set
+                        // typed at the narrower Cro::HTTP::Message. The exact-
+                        // signature `matching` above still drives the multiple-
+                        // candidates conflict check, unchanged.
+                        if !concrete.is_empty() {
+                            continue;
+                        }
                         let inherited_matches = self.inherited_matching_method_count(
                             class_name,
                             &method_name,
@@ -307,6 +341,12 @@ impl Interpreter {
                             continue;
                         }
                         if total == 0 {
+                            // Same name-based rule for inherited methods: a parent
+                            // class's concrete method of this name satisfies the
+                            // stub even when its signature differs.
+                            if self.inherited_any_concrete_method(class_name, &method_name) {
+                                continue;
+                            }
                             // rakudo: "Method 'o' must be implemented by A
                             // because it is required by roles: C1, R1." — an
                             // X::Comp-flavored compile error naming every role
