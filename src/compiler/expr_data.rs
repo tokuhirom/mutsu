@@ -220,6 +220,13 @@ impl Compiler {
             flags |= 4;
         }
         flags |= adverb_bits << 4;
+        // Record which bracket the subscript was written with, so the VM can
+        // read `$c[0]` positionally and `$c{0}` as a key lookup on the same
+        // Associative target instead of guessing from the index's type.
+        if let Expr::Index { is_positional, .. } = target {
+            flags |=
+                crate::opcode::SubscriptKind::from_is_positional(*is_positional).to_flag_bits();
+        }
 
         match target {
             Expr::ZenSlice(inner) => {

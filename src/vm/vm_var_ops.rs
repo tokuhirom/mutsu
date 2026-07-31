@@ -147,17 +147,29 @@ impl Interpreter {
         err.is_method_not_found()
     }
 
-    fn call_exists_pos(&mut self, instance: &Value, idx: Value) -> Result<bool, RuntimeError> {
-        // Choose the associative vs positional existence method by the index type,
-        // mirroring the AT-KEY/AT-POS read dispatch (vm_var_index_ops): a string
-        // index is an associative subscript (`$o<k>` / `$o{'k'}`) -> EXISTS-KEY;
-        // any other (typically Int) index is positional (`$o[i]`) -> EXISTS-POS,
-        // falling back to EXISTS-KEY for an object that only does Associative
-        // (e.g. zef's config object, which `handles <... EXISTS-KEY ...>` to a Hash
+    fn call_exists_pos(
+        &mut self,
+        instance: &Value,
+        idx: Value,
+        kind: SubscriptKind,
+    ) -> Result<bool, RuntimeError> {
+        // Which existence method the subscript asks for. When the compiler
+        // recorded the bracket, the syntax decides: `$o[i]` is EXISTS-POS and
+        // `$o{k}` / `$o<k>` is EXISTS-KEY, whatever the index's runtime type.
+        //
+        // Without a recorded bracket (a zen slice, or a target the compiler did
+        // not recognise as an Index) fall back to the index-type heuristic:
+        // a string index is associative, anything else positional with an
+        // EXISTS-KEY fallback for an object that only does Associative (e.g.
+        // zef's config object, which `handles <... EXISTS-KEY ...>` to a Hash
         // attribute and defines no EXISTS-POS).
-        let method_order: &[&str] = match idx.view() {
-            ValueView::Str(_) => &["EXISTS-KEY"],
-            _ => &["EXISTS-POS", "EXISTS-KEY"],
+        let method_order: &[&str] = match kind {
+            SubscriptKind::Positional => &["EXISTS-POS"],
+            SubscriptKind::Associative => &["EXISTS-KEY"],
+            SubscriptKind::Unknown => match idx.view() {
+                ValueView::Str(_) => &["EXISTS-KEY"],
+                _ => &["EXISTS-POS", "EXISTS-KEY"],
+            },
         };
         for method in method_order {
             match self.try_compiled_method_or_interpret(instance.clone(), method, vec![idx.clone()])
@@ -166,6 +178,19 @@ impl Interpreter {
                 Err(err) if Self::is_method_not_found(&err) => continue,
                 Err(err) => return Err(err),
             }
+        }
+        // Nothing supplied the method. A positional subscript still has raku's
+        // `Any.EXISTS-POS` to fall back on — the value is a one-element list
+        // holding itself, so index 0 is the only one that exists. This is what
+        // answers `Foo.new[0]:exists` for a class that declares neither
+        // EXISTS-POS nor AT-POS. An associative subscript has no such default:
+        // `Any.EXISTS-KEY` is always False.
+        if kind == SubscriptKind::Positional {
+            return Ok(match idx.view() {
+                ValueView::Int(i) => i == 0,
+                ValueView::Num(f) => f == 0.0,
+                _ => false,
+            });
         }
         Ok(false)
     }
@@ -194,6 +219,7 @@ impl Interpreter {
         idx: &Value,
         effective_negated: bool,
         adverb_bits: u32,
+        kind: SubscriptKind,
     ) -> Result<Option<Value>, RuntimeError> {
         // A `*-1`-style index is a WhateverCode: resolve it against the
         // subscripted thing's length before asking whether it exists, exactly
@@ -211,7 +237,7 @@ impl Interpreter {
                     let mut pairs = Vec::with_capacity(len);
                     for i in 0..len {
                         let key = Value::int(i as i64);
-                        pairs.push((key.clone(), self.call_exists_pos(instance, key)?));
+                        pairs.push((key.clone(), self.call_exists_pos(instance, key, kind)?));
                     }
                     pairs
                 } else if let [only] = items.as_slice()
@@ -225,20 +251,26 @@ impl Interpreter {
                         let mut pairs = Vec::with_capacity(len);
                         for i in 0..len {
                             let key = Value::int(i as i64);
-                            pairs.push((key.clone(), self.call_exists_pos(instance, key)?));
+                            pairs.push((key.clone(), self.call_exists_pos(instance, key, kind)?));
                         }
                         pairs
                     } else {
                         let mut pairs = Vec::with_capacity(items.len());
                         for key in items.iter() {
-                            pairs.push((key.clone(), self.call_exists_pos(instance, key.clone())?));
+                            pairs.push((
+                                key.clone(),
+                                self.call_exists_pos(instance, key.clone(), kind)?,
+                            ));
                         }
                         pairs
                     }
                 } else {
                     let mut pairs = Vec::with_capacity(items.len());
                     for key in items.iter() {
-                        pairs.push((key.clone(), self.call_exists_pos(instance, key.clone())?));
+                        pairs.push((
+                            key.clone(),
+                            self.call_exists_pos(instance, key.clone(), kind)?,
+                        ));
                     }
                     pairs
                 }
@@ -251,7 +283,7 @@ impl Interpreter {
                 let mut pairs = Vec::with_capacity(len);
                 for i in 0..len {
                     let key = Value::int(i as i64);
-                    pairs.push((key.clone(), self.call_exists_pos(instance, key)?));
+                    pairs.push((key.clone(), self.call_exists_pos(instance, key, kind)?));
                 }
                 pairs
             }
@@ -263,11 +295,14 @@ impl Interpreter {
                 let mut pairs = Vec::with_capacity(len);
                 for i in 0..len {
                     let key = Value::int(i as i64);
-                    pairs.push((key.clone(), self.call_exists_pos(instance, key)?));
+                    pairs.push((key.clone(), self.call_exists_pos(instance, key, kind)?));
                 }
                 pairs
             }
-            _ => vec![(idx.clone(), self.call_exists_pos(instance, idx.clone())?)],
+            _ => vec![(
+                idx.clone(),
+                self.call_exists_pos(instance, idx.clone(), kind)?,
+            )],
         };
 
         let is_multi = pairs.len() != 1

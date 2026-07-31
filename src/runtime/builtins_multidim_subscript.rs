@@ -145,6 +145,17 @@ impl Interpreter {
                 "__mutsu_subscript_adverb expects target, index, and mode",
             ));
         }
+        // Which bracket the subscript was written with, as recorded by the
+        // parser. `None` for a call shape that predates the marker.
+        let subscript_is_positional = args.iter().skip(4).find_map(|a| match a.view() {
+            ValueView::Str(s) if s.as_ref() == crate::ast::SUBSCRIPT_POSITIONAL_MARKER => {
+                Some(true)
+            }
+            ValueView::Str(s) if s.as_ref() == crate::ast::SUBSCRIPT_ASSOCIATIVE_MARKER => {
+                Some(false)
+            }
+            _ => None,
+        });
         // A positional slice adverb can target any Positional, not just a stored
         // `@`-array: `("a".."z")[3,5]:k` indexes a Range, `(1,2,3)[*]:v` a List.
         // Coerce those to a plain array view up-front so the Array arm below owns
@@ -164,6 +175,24 @@ impl Interpreter {
             {
                 target_is_coerced_list = true;
                 Value::real_array(crate::runtime::utils::value_to_list(&t))
+            } else if subscript_is_positional == Some(true)
+                && t.is_one_element_under_positional_subscript()
+            {
+                // Everything that is not Positional is a one-element list
+                // holding itself under `[...]` — raku's `Any.AT-POS`. So
+                // `$i[0]:kv` is `(0, 5)` and `$i[0]:p` is `0 => 5`. Coercing to
+                // that one-element array here lets the Array arm below own the
+                // key/value logic, exactly as for a Range or Seq target. Only a
+                // *positional* subscript coerces: `5<a>:v` is a key lookup on a
+                // non-Associative value, which raku answers with `()` and mutsu
+                // still answers with `Nil`
+                // (todo/tickets/associative-subscript-on-a-non-associative-value.md).
+                //
+                // The element is decontainerized on the way in, as raku's
+                // `Any.AT-POS` is: `(my $c = {a => 1})[0]` reads back as
+                // `{:a(1)}`, not the itemized `${:a(1)}` the `$` variable holds.
+                target_is_coerced_list = true;
+                Value::real_array(vec![t.with_hash_itemized(false)])
             } else {
                 t
             }

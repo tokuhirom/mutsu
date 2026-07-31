@@ -12,6 +12,7 @@ impl Interpreter {
         let has_arg = flags & 2 != 0;
         let is_zen = flags & 4 != 0;
         let adverb_bits = (flags >> 4) & 0xF;
+        let kind = SubscriptKind::from_flags(flags);
 
         // Pop arg if present (it's on top of stack)
         let arg_val = if has_arg {
@@ -88,6 +89,25 @@ impl Interpreter {
                 };
                 let out = Self::nested_exists_slice(&items, &inner, effective_negated, adverb);
                 self.stack.push(Value::array(out));
+                return Ok(());
+            }
+            // An Associative container under a *positional* subscript is not
+            // indexed by key: `Hash`/`Set`/`Bag`/`Mix` do `Associative` but not
+            // `Positional`, so raku reads `$c[0]` through `Any.EXISTS-POS` — the
+            // container is a one-element list holding itself. Only the recorded
+            // bracket can tell this from `$c{0}`, which stays a key lookup and
+            // falls through to the arms below.
+            if kind == SubscriptKind::Positional
+                && target.is_one_element_under_positional_subscript()
+                && let Some(result) = self.instance_exists_pos_result(
+                    &target,
+                    &idx,
+                    effective_negated,
+                    adverb_bits,
+                    kind,
+                )?
+            {
+                self.stack.push(result);
                 return Ok(());
             }
             if let Some(map) = match target.view() {
@@ -468,6 +488,7 @@ impl Interpreter {
                         &idx,
                         effective_negated,
                         adverb_bits,
+                        kind,
                     )?
                 {
                     self.stack.push(result);
@@ -485,8 +506,13 @@ impl Interpreter {
             // Without this the subscript fell through every container arm below
             // and answered False for everything.
             if matches!(target.view(), ValueView::Mixin(..))
-                && let Some(result) =
-                    self.instance_exists_pos_result(&target, &idx, effective_negated, adverb_bits)?
+                && let Some(result) = self.instance_exists_pos_result(
+                    &target,
+                    &idx,
+                    effective_negated,
+                    adverb_bits,
+                    kind,
+                )?
             {
                 self.stack.push(result);
                 return Ok(());
@@ -501,8 +527,13 @@ impl Interpreter {
             // *associative* subscript (`5<a>:exists`) False, because no
             // EXISTS-KEY is found on a scalar.
             if target.is_one_element_scalar()
-                && let Some(result) =
-                    self.instance_exists_pos_result(&target, &idx, effective_negated, adverb_bits)?
+                && let Some(result) = self.instance_exists_pos_result(
+                    &target,
+                    &idx,
+                    effective_negated,
+                    adverb_bits,
+                    kind,
+                )?
             {
                 self.stack.push(result);
                 return Ok(());

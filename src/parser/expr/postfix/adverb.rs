@@ -1,4 +1,4 @@
-use crate::ast::{ExistsAdverb, Expr};
+use crate::ast::{ExistsAdverb, Expr, SUBSCRIPT_ASSOCIATIVE_MARKER, SUBSCRIPT_POSITIONAL_MARKER};
 use crate::parser::expr::expression;
 use crate::parser::helpers::{is_ident_char, ws};
 use crate::parser::parse_result::parse_char;
@@ -393,7 +393,12 @@ pub(crate) fn subscript_adverb_expr_with_cond(
             args,
         };
     }
-    let Expr::Index { target, index, .. } = expr else {
+    let Expr::Index {
+        target,
+        index,
+        is_positional,
+    } = expr
+    else {
         return expr;
     };
     let var_name = match target.as_ref() {
@@ -407,6 +412,19 @@ pub(crate) fn subscript_adverb_expr_with_cond(
         Expr::Literal(Value::str(adverb.to_string())),
         var_name,
     ];
+    // Record which bracket the subscript was written with, alongside the other
+    // marker-tagged extras (`__adverb_cond__`, the `:delete` pair). The runtime
+    // needs it to read `$c[0]:v` positionally — a value that is not Positional
+    // is a one-element list holding itself — while leaving `$c<a>:v` a key
+    // lookup.
+    args.push(Expr::Literal(Value::str(
+        if is_positional {
+            SUBSCRIPT_POSITIONAL_MARKER
+        } else {
+            SUBSCRIPT_ASSOCIATIVE_MARKER
+        }
+        .to_string(),
+    )));
     // When a dynamic condition is provided (e.g., `:k($ok)`), pass it as
     // a named Pair so the runtime can decide keep_missing at evaluation time.
     if let Some(cond_expr) = cond {

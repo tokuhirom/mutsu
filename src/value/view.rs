@@ -692,6 +692,23 @@ impl Value {
         )
     }
 
+    /// Whether a *positional* subscript sees this value as a one-element list
+    /// holding itself. This is [`Self::is_one_element_scalar`] widened to the
+    /// Associative containers: `Hash`/`Set`/`Bag`/`Mix` do `Associative` but
+    /// not `Positional`, so `{a => 1}[0]` is the hash itself and `[1]` does not
+    /// exist — while `{a => 1}{0}` stays an ordinary key lookup.
+    ///
+    /// Only callers that know the subscript was written with `[...]` may use
+    /// this; where the bracket is unknown, use `is_one_element_scalar`, which
+    /// leaves an Associative target to its own key protocol.
+    pub fn is_one_element_under_positional_subscript(&self) -> bool {
+        self.is_one_element_scalar()
+            || matches!(
+                self.view(),
+                ValueView::Hash(_) | ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..)
+            )
+    }
+
     // ---- consuming extractors (move the payload out) ----
 
     /// The backing store and kind if this is exactly an `Array`, consuming

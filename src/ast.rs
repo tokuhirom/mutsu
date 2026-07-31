@@ -11,6 +11,20 @@ fn default_is_positional() -> bool {
     true
 }
 
+/// Marker argument appended to a `__mutsu_subscript_adverb` call when the
+/// subscript was written with `[...]`. The value adverbs (`:kv` / `:p` / `:k` /
+/// `:v`) need the bracket for the same reason `:exists` does: a target that is
+/// not `Positional` is a one-element list holding itself under `[0]`, while
+/// `<a>` on it stays a key lookup. Passed as a marker string alongside the
+/// call's other tagged extras rather than as a fixed argument slot, so the
+/// existing positional arguments keep their indices.
+pub const SUBSCRIPT_POSITIONAL_MARKER: &str = "__subscript_positional__";
+
+/// Marker argument appended to a `__mutsu_subscript_adverb` call when the
+/// subscript was written with `{...}` or `<...>`. See
+/// [`SUBSCRIPT_POSITIONAL_MARKER`].
+pub const SUBSCRIPT_ASSOCIATIVE_MARKER: &str = "__subscript_associative__";
+
 /// A process-global counter assigning each `my class`/lexical `ClassDecl`
 /// declaration site a stable id at parse time. Two distinct source
 /// declarations get distinct ids; a single declaration inside a loop keeps one

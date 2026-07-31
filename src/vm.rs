@@ -4,7 +4,7 @@ use std::sync::Arc;
 use crate::ast::Stmt;
 use crate::env::Env;
 use crate::interpreter::Interpreter;
-use crate::opcode::{CompiledCode, CompiledFns, CompiledFunction, OpCode};
+use crate::opcode::{CompiledCode, CompiledFns, CompiledFunction, OpCode, SubscriptKind};
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{
