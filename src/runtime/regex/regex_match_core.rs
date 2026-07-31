@@ -84,6 +84,43 @@ impl Interpreter {
         }
     }
 
+    /// Collect names that sit under a nested LIST quantifier (`*`, `+`, `**`,
+    /// `%`-separated) inside `atom`. When an enclosing `?` group matches zero
+    /// times, raku still renders those names as EMPTY LISTS (`'/' [ <seg-nz>
+    /// [ '/' <seg> ]* ]?` matching "/" leaves `$<seg>` = []), while names
+    /// under only `?`/unquantified positions stay absent (Nil).
+    fn collect_nested_list_quantified_names(atom: &RegexAtom, out: &mut HashSet<String>) {
+        let visit_tok = |tok: &RegexToken, out: &mut HashSet<String>| {
+            let is_list = matches!(
+                tok.quant,
+                RegexQuant::ZeroOrMore
+                    | RegexQuant::OneOrMore
+                    | RegexQuant::Repeat(..)
+                    | RegexQuant::RepeatCode(_)
+            ) || tok.separator.is_some();
+            if is_list {
+                out.extend(Self::collect_quantified_names_for_token(tok));
+            } else {
+                Self::collect_nested_list_quantified_names(&tok.atom, out);
+            }
+        };
+        match atom {
+            RegexAtom::Group(pat) => {
+                for tok in &pat.tokens {
+                    visit_tok(tok, out);
+                }
+            }
+            RegexAtom::Alternation(alts) | RegexAtom::SequentialAlternation(alts) => {
+                for alt in alts {
+                    for tok in &alt.tokens {
+                        visit_tok(tok, out);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
     /// Collect all named capture names from a regex token.
     pub(super) fn collect_quantified_names_for_token(token: &RegexToken) -> HashSet<String> {
         let mut names = HashSet::new();
@@ -486,6 +523,11 @@ impl Interpreter {
                 // An unmatched `(x)?` reserves `zo_stride` Nil positional slots
                 // so following captures keep their index (`(a)?(b)` → $0=Nil,$1=b).
                 let zo_stride = count_capture_groups(&token.atom);
+                // Names under a nested list quantifier render as empty lists
+                // even when this `?` group matches zero times (see
+                // `collect_nested_list_quantified_names`).
+                let mut zo_list_names = HashSet::new();
+                Self::collect_nested_list_quantified_names(&token.atom, &mut zo_list_names);
                 let mut candidates = self.regex_match_atom_all_with_capture_in_pkg(
                     &token.atom,
                     ctx.chars,
@@ -499,6 +541,9 @@ impl Interpreter {
                         // Atom didn't match — commit to "zero" (no match).
                         let m = store.mark();
                         store.reserve_nil(zo_stride);
+                        for n in &zo_list_names {
+                            store.insert_named_quantified(n.clone());
+                        }
                         let stop = self.walk_tokens(ctx, idx + 1, pos, store, matches);
                         store.rewind(m);
                         return stop;
@@ -509,6 +554,9 @@ impl Interpreter {
                     // Frugal: prefer zero matches — try zero first.
                     let m = store.mark();
                     store.reserve_nil(zo_stride);
+                    for n in &zo_list_names {
+                        store.insert_named_quantified(n.clone());
+                    }
                     let stop = self.walk_tokens(ctx, idx + 1, pos, store, matches);
                     store.rewind(m);
                     if stop {
@@ -530,6 +578,9 @@ impl Interpreter {
                     // Greedy: the zero candidate is tried last.
                     let m = store.mark();
                     store.reserve_nil(zo_stride);
+                    for n in &zo_list_names {
+                        store.insert_named_quantified(n.clone());
+                    }
                     let stop = self.walk_tokens(ctx, idx + 1, pos, store, matches);
                     store.rewind(m);
                     if stop {
