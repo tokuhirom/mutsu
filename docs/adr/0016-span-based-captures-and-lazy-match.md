@@ -336,6 +336,16 @@ comments).
   and `:m`/`:i`-fold capture texts read through consumers derive from the
   original subject rather than the stripped/folded engine space.
 
+*Measured (bench CI, `bench-history.tsv`, `bench-yaml-parse` ÷ `int-arith`):*
+P5 merge 25.65 → P3a intermediate **27.33** (the text vectors' cost: +6.5%
+normalized, larger than the local +2–3% estimate) → P4 layer 1 **24.21**
+(−11.4% vs P3a — the intermediate regression fully recovered, net −5.6% vs
+P5) → layer 2 **24.13** (flat; yaml-parse capture traffic is
+positional-dominated, so the named-side collect removal is below noise —
+layer 2's value is the structural cleanup). Raw wall clock on the L2 runner:
+0.9168 s, the campaign's first sub-second parse (from ~4.07 s at campaign
+start). The grammar-parse pair stayed inside its 0.29–0.33 noise band.
+
 **P5 — Lazy `Match`.** First a pure refactor: funnel the `class_name == "Match"`
 consumer sites through accessor helpers (`match_str` / `match_span` / `match_list` /
 `match_named`) with no behavior change. Then swap the representation behind them to
