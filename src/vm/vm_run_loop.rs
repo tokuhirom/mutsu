@@ -155,7 +155,7 @@ impl Interpreter {
                 // stack contains no routine — otherwise the return is meant
                 // for an enclosing routine that will catch it via its own
                 // call-frame handling further up the stack.
-                if e.is_return() && self.routine_stack().is_empty() {
+                if e.is_return() && self.routine_stack().is_empty() && self.nested_run_depth == 0 {
                     let inner_err = RuntimeError::controlflow_return(true);
                     if self.check_phaser_depth > 0 {
                         return Err(Self::wrap_in_begin_time(inner_err));
@@ -320,8 +320,11 @@ impl Interpreter {
         self.explicit_initializer_context = false;
         self.vardecl_context = false;
         self.loop_cond_active = false;
+        self.nested_run_depth += 1;
 
         let result = f(self);
+
+        self.nested_run_depth = self.nested_run_depth.saturating_sub(1);
 
         // Restore the outer execution registers.
         self.stack = saved_stack;

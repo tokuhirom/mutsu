@@ -60,17 +60,34 @@ impl Interpreter {
             && name.ends_with('>')
         {
             Value::routine_parts(Symbol::intern("GLOBAL"), Symbol::intern(name), false)
-        } else if self.is_name_suppressed(name) {
-            // If we are inside the parent class of the suppressed nested class,
-            // resolve the short name to the qualified name (e.g. Frog -> Forest::Frog).
-            if let Some(qualified) = self.resolve_suppressed_type(name) {
-                Value::package(Symbol::intern(&qualified))
-            } else {
-                return Err(RuntimeError::new(format!(
-                    "X::Undeclared::Symbols: Undeclared name:\n    {} used at line 1",
-                    name,
-                )));
-            }
+        } else if self.is_name_suppressed(name)
+            && let Some(qualified) = self.resolve_suppressed_type(name)
+        {
+            // Inside the parent class of the suppressed nested class the short
+            // name resolves to the qualified name (e.g. Frog -> Forest::Frog) —
+            // and it wins over a same-named entry the CALLER's scope may have
+            // leaked into env (`Header.parse` inside Cro::HTTP::Header must be
+            // the lexical grammar even when the caller has an enum value
+            // `Header` in scope).
+            Value::package(Symbol::intern(&qualified))
+        } else if self.is_name_suppressed(name)
+            // A LOCAL declaration wins over an unrelated module's suppressed
+            // nested type of the same short name: `my enum E <A Header B>`
+            // must resolve `Header` to the enum value even when some loaded
+            // module contains a lexical `my grammar Header` (Cro::HTTP::Header
+            // does; its consumer RequestParser declares that exact enum).
+            // A Package value does NOT count as such a declaration — the
+            // suppressed type itself is seeded into env as a Package, and
+            // treating it as local would defeat export-tag hiding
+            // (t/class-is-export-tag.t).
+            && !self.env().get(name).is_some_and(|v| {
+                !v.is_nil() && !matches!(v.view(), ValueView::Package(_))
+            })
+        {
+            return Err(RuntimeError::new(format!(
+                "X::Undeclared::Symbols: Undeclared name:\n    {} used at line 1",
+                name,
+            )));
         } else if let Some((pkg, sym)) = name.rsplit_once("::")
             && let Some(stripped_sym) = sym.strip_prefix('&')
         {
