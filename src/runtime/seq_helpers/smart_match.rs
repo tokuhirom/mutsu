@@ -758,18 +758,25 @@ impl Interpreter {
                         });
                     }
                     // If the original value is not a Str, store the original value
-                    // as the `orig` attribute so .orig preserves the type
-                    if left.as_str().is_none()
-                        && let ValueView::Instance { attributes, .. } = match_obj.view()
-                    {
-                        attributes.insert("orig".to_string(), left.clone());
+                    // as the `orig` attribute so .orig preserves the type; if
+                    // `make` was called in a code block, set the ast attribute.
+                    // (This was the one site that mutated a live Match's
+                    // attributes in place; the identity-keeping rebuild is
+                    // equivalent — the object is freshly built and unshared.)
+                    let mut updates: Vec<(&str, Value)> = Vec::new();
+                    if left.as_str().is_none() {
+                        updates.push(("orig", left.clone()));
                     }
-                    // If `make` was called in a code block, set the ast attribute
-                    if let Some(made_val) = self.env.get("made").cloned()
-                        && let ValueView::Instance { attributes, .. } = match_obj.view()
-                    {
-                        attributes.insert("ast".to_string(), made_val);
+                    if let Some(made_val) = self.env.get("made").cloned() {
+                        updates.push(("ast", made_val));
                     }
+                    let match_obj = if updates.is_empty() {
+                        match_obj
+                    } else {
+                        match_obj
+                            .match_with_attrs_keeping_id(updates)
+                            .unwrap_or(match_obj)
+                    };
                     // Upgrade positional capture env vars ($0, $1, ...) to Match objects
                     let list_v = match_obj.match_list();
                     if let Some(ValueView::Array(list, _)) = list_v.as_ref().map(Value::view) {
