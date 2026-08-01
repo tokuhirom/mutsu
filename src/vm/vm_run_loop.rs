@@ -793,6 +793,15 @@ impl Interpreter {
             }
             ValueView::Hash(_) => val.with_hash_itemized(true),
             ValueView::Seq(items) => Value::scalar(Value::seq_arc(items.clone())),
+            // `{ ... } but R` is a Mixin wrapping the container, and the
+            // itemization the `$` confers belongs to the container inside it:
+            // `my $h = { a => 1 } but R; $h.raku` is `${:a(1)}`, exactly as it
+            // is without the role. Itemize through the wrapper rather than
+            // letting the Mixin hide the container from this match.
+            ValueView::Mixin(inner, overrides) => Value::mixin_parts(
+                std::sync::Arc::new(Self::itemize_value((**inner).clone())),
+                overrides.clone(),
+            ),
             _ => val,
         }
     }
@@ -806,12 +815,6 @@ impl Interpreter {
     /// install the value itself, not a Scalar container. The topic `_` is
     /// excluded (container-alias writeback, see `itemize_scalar_assign_result`),
     /// as are `&`-sigiled and internal `__mutsu_` names.
-    ///
-    /// TODO: a Hash stored in a scalar should render `${...}` the same way,
-    /// but `HashData.itemized` lives INSIDE the shared data (flipping it via
-    /// `hash_arc_itemized` clones the `HashData`, silently detaching `=`-shared
-    /// hashes like `my $h = f(%x)`). Representing per-holder hash itemization
-    /// needs a Value-level flag (Value-repr rework, ADR-0001 layer 3b).
     pub(crate) fn itemize_scalar_store(name: &str, val: Value) -> Value {
         if name == "_" || name.starts_with('&') || name.starts_with("__mutsu") {
             return val;
@@ -827,6 +830,12 @@ impl Interpreter {
             // `HashData` Gc, so `=`-shared mutation still tracks, and the view
             // stays a plain hash so every consumer is transparent.
             ValueView::Hash(_) => val.with_hash_itemized(true),
+            // A `but`-mixed container keeps the itemization the `$` confers —
+            // see the Mixin arm of `itemize_value`.
+            ValueView::Mixin(inner, overrides) => Value::mixin_parts(
+                std::sync::Arc::new(Self::itemize_scalar_store(name, (**inner).clone())),
+                overrides.clone(),
+            ),
             _ => val,
         }
     }

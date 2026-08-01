@@ -7,9 +7,16 @@ use crate::value::AttrMap;
 /// `gist_value` (the fast say/gist path) and the `.gist` method dispatch so
 /// both render identically.
 pub(crate) fn setbagmix_gist(value: &Value) -> Option<String> {
+    setbagmix_gist_named(value, None)
+}
+
+/// [`setbagmix_gist`] with the type-name wrapper supplied by the caller, for a
+/// `but`-mixed quanthash: the role belongs in the name (`Set+{R}(a)`), and only
+/// the caller holding the `Mixin` value knows it.
+pub(crate) fn setbagmix_gist_named(value: &Value, type_override: Option<&str>) -> Option<String> {
     match value.view() {
         ValueView::Set(s, mutable) => {
-            let type_name = if mutable { "SetHash" } else { "Set" };
+            let type_name = type_override.unwrap_or(if mutable { "SetHash" } else { "Set" });
             let ptr = crate::gc::Gc::as_ptr(&s) as usize;
             let inner = crate::value::with_quanthash_render_guard(ptr, || {
                 let mut keys: Vec<&String> = s.iter().collect();
@@ -26,7 +33,7 @@ pub(crate) fn setbagmix_gist(value: &Value) -> Option<String> {
             Some(format!("{}({})", type_name, inner))
         }
         ValueView::Bag(b, mutable) => {
-            let type_name = if mutable { "BagHash" } else { "Bag" };
+            let type_name = type_override.unwrap_or(if mutable { "BagHash" } else { "Bag" });
             let ptr = crate::gc::Gc::as_ptr(&b) as usize;
             let inner = crate::value::with_quanthash_render_guard(ptr, || {
                 let mut keys: Vec<(&String, &BigInt)> = b.iter().collect();
@@ -47,7 +54,7 @@ pub(crate) fn setbagmix_gist(value: &Value) -> Option<String> {
             Some(format!("{}({})", type_name, inner))
         }
         ValueView::Mix(m, mutable) => {
-            let type_name = if mutable { "MixHash" } else { "Mix" };
+            let type_name = type_override.unwrap_or(if mutable { "MixHash" } else { "Mix" });
             let ptr = crate::gc::Gc::as_ptr(&m) as usize;
             let inner = crate::value::with_quanthash_render_guard(ptr, || {
                 let mut keys: Vec<(&String, &f64)> = m.iter().collect();
@@ -289,6 +296,13 @@ pub(crate) fn gist_value(value: &Value) -> String {
                 && let Some(str_val) = mixins.get("Str")
             {
                 str_val.to_string_value()
+            } else if let Some(rendered) =
+                setbagmix_gist_named(inner, Some(&crate::value::types::what_type_name(value)))
+            {
+                // A quanthash names its type in its gist, and a `but`-mixed one
+                // names the role with it: `Set+{R}(a)`. Every other kind gists
+                // through its inner value unchanged.
+                rendered
             } else {
                 gist_value(inner)
             }
