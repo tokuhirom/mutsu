@@ -121,10 +121,44 @@ when a signature is ambiguous).
 the END-phaser fix. The residue lined up exactly with the two tickets open at
 that point — 30 files on the `$?FILE`/`callframe` failure-report path and 7 on
 `No such method 'file'` — plus ~8 single-file `not ok`s that are ordinary
-pre-existing gaps rather than `Test` differences. Both of those signatures are
-the `$?FILE`/`callframe` bug, now fixed, so **re-run the sweep**: it is the
-cheapest way to see whether step 3 (flipping `runtime_module.rs`) is safe to
-attempt.
+pre-existing gaps rather than `Test` differences.
+
+### Re-run after the `$?FILE`/`callframe` fix (2026-08-01)
+
+Same 1-in-9 sample, with `news/2026-08/module-file-var-and-callframe.md` in.
+Scripts this time: `tmp/sweep.sh` (runs each sampled file twice from the same
+path — verbatim, and with `use Test;` rewritten to `use Test2;`) and
+`tmp/sweep-analyze.sh`. Note the analysis deliberately does **not** compare the
+two runs byte-for-byte: the real module is routinely *more* faithful than the
+native provider (richer `throws-like` subtests, `'<code>' died` descriptions
+instead of `code dies`), so the question is whether a file that passed still
+passes.
+
+| | files |
+| --- | --- |
+| pass under both | **285 / 301** |
+| regress under the real module | 15 |
+| fail under both (pre-existing) | 1 |
+
+None of the 15 is an unfixed `Test` incompatibility:
+
+- **6 files** assert against mutsu's *lenient* native `is` — `is Point.WHAT,
+  '(Point)'` and `is $fh.lines, 'A B C'` fail under `raku` too. These are test
+  files to correct, tracked in
+  `todo/tickets/local-tests-rely-on-a-lenient-native-is.md` (~50 files suite-wide
+  at this sample rate).
+- **4 files** hit `callframe` reporting a frame's `.file` and `.line` from
+  different sources (`# at t/foo.t line 666` for a 106-line file), all through
+  `throws-like` — `todo/tickets/callframe-line-and-file-come-from-different-frames.md`.
+  The rendered output is byte-identical to before the `$?FILE` fix, so this is
+  the remaining half of that problem rather than a regression.
+- The rest are ordinary single-assertion gaps unrelated to `Test`
+  (`orelse` short-circuiting inside a listop argument, `nextsame`+`where`
+  ordering, a `:v<>` version adverb import).
+
+So step 3 is close: what stands between here and flipping `runtime_module.rs` is
+`cmp-ok` (below) plus a pass over the lenient-`is` test files. Run the sweep over
+the *full* set (`tmp/sweep.sh 1`) rather than the sample before attempting it.
 
 One is left:
 
