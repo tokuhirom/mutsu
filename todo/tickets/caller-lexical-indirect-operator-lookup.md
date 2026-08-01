@@ -58,3 +58,42 @@ The pseudo-package machinery mutsu already has (`CALLER::`, `OUTER::`,
 handles *static* names. This ticket is about the `::("...")` indirect form and
 about operator names specifically; a general `&CALLER::LEXICAL::($name)` for
 ordinary sub names is the easier half and is worth doing first.
+
+## Measured (2026-08-01): three independent pieces, and one of them is free
+
+`&`-sigil indirect lookup through a pseudo-package does not work *at all* today
+— not just for operators. It does not even reach the "no such symbol" answer:
+
+```
+$ mutsu -e 'sub f($a,$b) {$a*$b}; my $m = &MY::("f"); say $m(2,3)'
+Impossible coercion from 'Int' into 'Any': no acceptable coercion method found
+$ raku  -e 'sub f($a,$b) {$a*$b}; my $m = &MY::("f"); say $m(2,3)'
+6
+```
+
+So the work splits into three:
+
+1. **`&PSEUDO::("name")` must resolve at all.** The `&` + `SymbolicDeref` path
+   yields something that is not callable, hence the coercion error above. This
+   is the "easier half" named earlier and is a prerequisite for the rest.
+   `Interpreter::resolve_indirect_type_name`
+   (`src/runtime/accessors_stash.rs:142`) already strips a leading `&` and
+   returns `resolve_code_var`, so the gap is upstream of it: the pseudo-package
+   prefix is passed through as part of the name (`LEXICAL::infix:<+>`) instead
+   of selecting a scope.
+2. **Operator names must resolve — but the callable already exists.** `&infix:<+>`
+   as a *static* term works today (`my &f = &infix:<+>; say f(2,3)` prints 5), so
+   there is a mechanism that turns a built-in operator into a `Sub` value; the
+   indirect form only has to reach it. This is much cheaper than the original
+   note implied.
+3. **`LEXICAL::` has to include the setting.** `&MY::("infix:<+>")` is correctly
+   "no such symbol" in raku too — `infix:<+>` is not in the caller's own pad, it
+   is in CORE, and `LEXICAL::` reaches it because the lexical chain ends at the
+   setting. mutsu's `&LEXICAL::(...)` currently answers `(Any)` rather than
+   walking out that far.
+
+Absence-is-a-`Failure` is *already* implemented for the direct form
+(`no_such_symbol_failure` in the same file returns an `X::NoSuchSymbol` Failure,
+which is why `raku`'s own `say $m` on a missing name throws while `$m.defined`
+answers False). Once (1) routes through that function the third requirement
+comes along for free.
