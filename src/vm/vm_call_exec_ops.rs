@@ -108,7 +108,7 @@ impl Interpreter {
             let call_result =
                 self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name);
             self.set_pending_call_arg_sources(None);
-            call_result?;
+            let value = call_result?;
             // Slice F: write any `is rw` param writeback through to the caller's
             // local slot (and clear the pending list so it never leaks to the
             // next call site).
@@ -117,8 +117,10 @@ impl Interpreter {
             // env_dirty precisely from its return merge (matches the hot
             // vm_call_func_ops path). A blanket `= true` here would defeat that
             // precision. See docs/vm-dual-store.md "CP-2 status & corrected plan".
+            self.sink_discarded_call_value(&value)?;
         } else if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
-            native_result?;
+            let value = native_result?;
+            self.sink_discarded_call_value(&value)?;
         } else {
             self.set_pending_call_arg_sources(arg_sources);
             // Carrier may write the caller env by name (e.g. EVAL'd lexicals).
@@ -129,7 +131,7 @@ impl Interpreter {
             let exec_result = loan_env!(self, exec_call_values(&name, args));
             self.set_pending_call_arg_sources(None);
             let written = self.end_carrier(carrier_saved);
-            exec_result?;
+            let value = exec_result?;
             // This bareword carrier (EVAL and other interpreter-only routines)
             // writes caller lexicals through `set_env_with_main_alias` (EVAL's
             // SetGlobal) or — for an embedded regex `{ }`/`:my`/`:let` block —
@@ -138,6 +140,27 @@ impl Interpreter {
             // it wrote into a current-frame slot; cell-boxing keeps any diverged
             // container / ancestor lexical coherent.
             self.writeback_carrier_writes(code, &written);
+            self.sink_discarded_call_value(&value)?;
+        }
+        Ok(())
+    }
+
+    /// A statement-level call discards its value, so that value is *sunk* —
+    /// and sinking an unhandled `Failure` throws, exactly as `OpCode::SinkPop`
+    /// does for the call shapes that leave their result on the stack.
+    /// `OpCode::ExecCall` leaves nothing on the stack, so it never reached
+    /// `SinkPop` and swallowed the Failure instead: `EVAL 'use fatal;
+    /// "foo"[2]';` ran on to the next statement where raku throws.
+    fn sink_discarded_call_value(&mut self, value: &Value) -> Result<(), RuntimeError> {
+        if let Some(err) = self.failure_to_runtime_error_if_unhandled(value) {
+            return Err(err);
+        }
+        // Under `use fatal`, a sunk list/Seq holding an unhandled Failure throws
+        // too; without the pragma such a list stays soft. Same rule as SinkPop.
+        if self.fatal_mode
+            && let Some(err) = self.unhandled_failure_in_list_for_fatal(value)
+        {
+            return Err(err);
         }
         Ok(())
     }
@@ -176,6 +199,8 @@ impl Interpreter {
             // call_compiled_function_named signals env_dirty precisely; no blanket.
             if keep_value {
                 self.stack.push(v);
+            } else {
+                self.sink_discarded_call_value(&v)?;
             }
             return Ok(());
         }
@@ -184,6 +209,8 @@ impl Interpreter {
             let v = native_result?;
             if keep_value {
                 self.stack.push(v);
+            } else {
+                self.sink_discarded_call_value(&v)?;
             }
             return Ok(());
         }
@@ -213,6 +240,8 @@ impl Interpreter {
         self.carrier_writeback_changed_aggregates(code, &pre_env);
         if keep_value {
             self.stack.push(v);
+        } else {
+            self.sink_discarded_call_value(&v)?;
         }
         Ok(())
     }
