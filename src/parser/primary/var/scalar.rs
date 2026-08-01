@@ -331,6 +331,16 @@ pub(crate) fn scalar_var(input: &str) -> PResult<'_, Expr> {
     if full_name == "?TABSTOP" {
         return Ok((rest, Expr::Literal(Value::int(8))));
     }
+    // $?FILE is a compile-time constant too: the file of the compilation unit
+    // being parsed, NOT the file that happens to be running when the code is
+    // reached. Folding it here is what makes a routine defined in a module
+    // report the module's own path. When the file is unknown (EVAL and other
+    // synthesized parses) fall through to the runtime `?FILE` lookup.
+    if full_name == "?FILE"
+        && let Some(file) = crate::parser::stmt::simple::parser_source_file()
+    {
+        return Ok((rest, Expr::Literal(Value::str(file))));
+    }
     // Normalize positional capture variables: $00 → $0, $01 → $1, etc.
     // Strip leading zeros from all-digit variable names so $00 resolves to $0.
     let full_name = if !full_name.is_empty()

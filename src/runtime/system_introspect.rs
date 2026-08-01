@@ -10,11 +10,7 @@ impl Interpreter {
         callsite_line: Option<i64>,
         nblocks: usize,
     ) -> Option<Value> {
-        let file = self
-            .env
-            .get("?FILE")
-            .map(|v| v.to_string_value())
-            .unwrap_or_default();
+        let file = self.executing_source_file().unwrap_or_default();
 
         // Each enclosing `for` block introduces a Raku call frame between the
         // call site and its routine. The compiler counted them (`nblocks`); the
@@ -51,7 +47,12 @@ impl Interpreter {
             // compilation unit) and a `Mu` code object. Anything deeper has no
             // call information and yields Mu (`None` here -> Nil at the caller).
             if depth == stack_len + 1 {
-                return Some(self.setting_frame_value(&file));
+                // The setting frame sits above the *unit's* mainline, so it
+                // reports the unit's file rather than the module a routine
+                // deeper in the walk happened to be defined in.
+                return Some(
+                    self.setting_frame_value(&self.current_source_file().unwrap_or_default()),
+                );
             }
             return None;
         }

@@ -453,7 +453,13 @@ impl Interpreter {
         let preprocessed = Self::maybe_preprocess_roast_directives(&code);
         crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
         crate::parser::set_parser_program_path(self.program_path.clone());
+        // `$?FILE` inside a module is the module's own file, not the script's.
+        // Module parses nest (this module's `use` triggers another load), so
+        // the previous value is restored rather than cleared.
+        let saved_source_file =
+            crate::parser::set_parser_source_file(Some(source_path.to_string_lossy().to_string()));
         let result = parse_dispatch::parse_compilation_unit(&preprocessed);
+        crate::parser::set_parser_source_file(saved_source_file);
         crate::parser::clear_parser_lib_paths();
         // Capture exactly what a later cache hit will have to replay, before
         // anything downstream can disturb it.

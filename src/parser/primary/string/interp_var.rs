@@ -374,6 +374,12 @@ pub(crate) fn try_interpolate_var<'a>(
                 parts.push(Expr::Literal(Value::int(8)));
                 return Some(var_rest);
             }
+            if var_name == "?FILE"
+                && let Some(file) = crate::parser::stmt::simple::parser_source_file()
+            {
+                parts.push(Expr::Literal(Value::str(file)));
+                return Some(var_rest);
+            }
             let (expr, var_rest) = parse_postcircumfix_index(var_rest, Expr::Var(var_name));
             // Handle postcircumfix call interpolation: "$var()" / "$var(args)"
             let (expr, var_rest) = try_parse_interp_call(var_rest, expr);

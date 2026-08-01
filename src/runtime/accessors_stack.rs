@@ -51,13 +51,17 @@ impl Interpreter {
         });
     }
 
-    /// Push a block/closure routine frame.
+    /// Push a block/closure routine frame. `def_file` is the file the block's
+    /// body was written in, known when the frame comes from a closure value
+    /// (`SubData::source_file`); an inlined bare block passes `None` and is
+    /// attributed to the routine that lexically encloses it.
     pub(crate) fn push_block_routine_with_location(
         &mut self,
         package: String,
         name: String,
         line: Option<u32>,
         file: Option<String>,
+        def_file: Option<String>,
     ) {
         self.routine_stack.push(super::RoutineFrame {
             package,
@@ -66,12 +70,38 @@ impl Interpreter {
             file,
             is_method: false,
             is_block: true,
-            def_file: None,
+            def_file,
         });
     }
 
     pub(crate) fn pop_routine(&mut self) {
         self.routine_stack.pop();
+    }
+
+    /// The file the code currently executing was *defined* in — the module path
+    /// for a routine that came from a `use`d module, the script otherwise.
+    ///
+    /// `?FILE` in env only tracks the unit being *loaded*, so once a module's
+    /// mainline has finished it reads the script again; a routine's own file
+    /// survives on its frame as `def_file`. Backtrace rendering already prefers
+    /// `def_file` the same way (`vm_helpers.rs`); `callframe` needs it so a frame
+    /// running inside a module reports the module, which is how a test framework
+    /// walks past its own frames to find the caller's failure site.
+    ///
+    /// An *inlined* bare block records no `def_file` of its own — it belongs to
+    /// the routine that lexically encloses it — so such a frame is skipped in
+    /// favour of the frame below it. A block that came from a closure value does
+    /// carry one and is answered directly, which is what keeps a block written
+    /// in the caller's file attributed there even while a module invokes it.
+    pub(crate) fn executing_source_file(&self) -> Option<String> {
+        for frame in self.routine_stack.iter().rev() {
+            match &frame.def_file {
+                Some(file) => return Some(file.clone()),
+                None if frame.is_block => continue,
+                None => break,
+            }
+        }
+        self.current_source_file()
     }
 
     /// Current routine-stack depth. Paired with [`truncate_routine_stack`] so a
