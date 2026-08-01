@@ -174,6 +174,7 @@ mod class_dispatch;
 mod class_introspection;
 mod ctor_phase_plan;
 mod nqp_ops;
+mod nqp_ops_process;
 pub(crate) use class_introspection::UserMethodOrAccessor;
 pub(crate) mod cstruct_layout;
 mod decl_types;
