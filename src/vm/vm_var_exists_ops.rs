@@ -547,17 +547,12 @@ impl Interpreter {
                     let resolved = self.resolve_whatever_index_by_elems(&target, &idx)?;
                     vec![crate::runtime::to_int(&resolved)]
                 }
-                ValueView::Array(items, ..) if crate::runtime::utils::is_shaped_array(&target) => {
-                    // Shaped array: multi-dimensional exists (e.g. @arr[0;0]:exists).
-                    // An unassigned cell holds its unset seed — Nil or the Any
-                    // type object — and does not exist yet.
-                    let exists = Self::index_array_multidim(&target, items.as_ref(), false)
-                        .ok()
-                        .is_some_and(|v| !v.is_nil() && !v.is_any_type_object());
-                    let result = Value::truth(exists ^ effective_negated);
-                    self.stack.push(result);
-                    return Ok(());
-                }
+                // An Array-valued index is a *slice* — one answer per index —
+                // whatever the target is. `@a[0;1]` is the other subscript, and
+                // it never reaches here: the compiler routes `Expr::MultiDimIndex`
+                // to __mutsu_multidim_exists_adverb (compiler/expr_data.rs), so
+                // the separator the user wrote is what decides, not whether the
+                // target happens to be shaped.
                 ValueView::Array(items, ..) => items
                     .iter()
                     .map(|v| match v.view() {
