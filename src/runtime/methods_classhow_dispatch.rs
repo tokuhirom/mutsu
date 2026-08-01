@@ -662,6 +662,39 @@ impl Interpreter {
                     .filter(|pd| !pd.is_invocant)
                     .cloned()
                     .collect();
+                // A NAMED invocant other than `self` (`anon method (Mu \SELF:
+                // |) {...}` — OO::Monitors' POPULATE hook) is dropped from the
+                // params like any invocant, but the body refers to it by name,
+                // so prepend a `SELF := self` binding and let the dispatch
+                // recompile the adjusted body on demand.
+                let named_invocant: Option<String> = sub_data
+                    .param_defs
+                    .iter()
+                    .find(|pd| pd.is_invocant)
+                    .map(|pd| pd.name.trim_start_matches(['$', '\\']).to_string())
+                    .filter(|n| !n.is_empty() && n != "self");
+                let (method_body, method_compiled) = match named_invocant {
+                    Some(inv_name) => {
+                        let mut body = vec![
+                            crate::ast::Stmt::VarDecl {
+                                name: inv_name.clone(),
+                                expr: crate::ast::Expr::BareWord("self".to_string()),
+                                type_constraint: None,
+                                is_state: false,
+                                is_our: false,
+                                is_dynamic: false,
+                                is_export: false,
+                                export_tags: Vec::new(),
+                                custom_traits: Vec::new(),
+                                where_constraint: None,
+                            },
+                            crate::ast::Stmt::MarkSigillessReadonly(inv_name),
+                        ];
+                        body.extend(sub_data.body.iter().cloned());
+                        (body, None)
+                    }
+                    None => (sub_data.body.clone(), sub_data.compiled_code.clone()),
+                };
                 // The name list has to lose the invocant too, not just
                 // `param_defs`: dispatch binds arguments positionally against
                 // `params`, so leaving `self` in it shifted every argument by one
@@ -685,7 +718,7 @@ impl Interpreter {
                 let def = MethodDef {
                     params: filtered_params,
                     param_defs: filtered_param_defs,
-                    body: std::sync::Arc::new(sub_data.body.clone()),
+                    body: std::sync::Arc::new(method_body),
                     is_rw: sub_data.is_rw,
                     is_private: false,
                     is_multi: false,
@@ -693,7 +726,7 @@ impl Interpreter {
                     role_origin: None,
                     original_role: None,
                     return_type: None,
-                    compiled_code: sub_data.compiled_code.clone(),
+                    compiled_code: method_compiled,
                     delegation: None,
                     is_default: false,
                     deprecated_message: None,

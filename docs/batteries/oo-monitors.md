@@ -2,7 +2,7 @@
 
 **Slot:** Monitors (`monitor` declarator) · **Chosen:** `OO::Monitors`
 (upstream `zef:raku-community-modules` / jnthn, v1.1.7, Artistic-2.0) ·
-**Kind:** Native (provided by the interpreter core)
+**Kind:** Bundled, runs verbatim (`modules/OO-Monitors/`)
 
 ## What it is
 
@@ -21,43 +21,45 @@ monitor Counter {
 }
 ```
 
-## Why it is provided natively (not vendored)
-
 **It is a hard dependency of Cro::HTTP** (connection state, session stores —
-Cro declares most of its shared-state classes as monitors). The Cro campaign
-(`docs/batteries/web-framework.md`) needs it working under mutsu.
+Cro declares most of its shared-state classes as monitors).
 
-**Why rung 3 (native) instead of rung 2 (run the real module):** the upstream
-implementation is ~110 lines of Rakudo Metamodel guts — a
-`Metamodel::ClassHOW` subclass installed via `EXPORTHOW::DECLARE` (a slang
-hook), `.wrap`/`callsame` on every added method, raw `Attribute`
-`get_value`/`set_value`, and NQPArray HLLization. That is the same
-NQP/metamodel surface that put Test::Async out of reach
-(`b2b-test-async-scouting`); implementing enough MOP to run it verbatim is a
-multi-session campaign with no other consumer. mutsu already provides
-`Test`, `JSON::Fast`, and `NativeCall` natively on the same reasoning, and
-the *observable* monitor semantics are small and well-defined. The exit path
-stands: if mutsu ever grows real `EXPORTHOW`/ClassHOW support, the native
-declarator can be retired for the vendored module.
+## How the verbatim module runs under mutsu
 
-**How the native implementation works:**
+The upstream implementation is ~110 lines of Metamodel machinery, and mutsu
+executes all of it (the EXPORTHOW::DECLARE campaign; it was briefly provided
+natively, #5640, until the machinery below landed):
 
-- `use OO::Monitors` is a recognized native module (`runtime_module.rs`) and
-  enables the `monitor` declarator in the parser for the rest of the unit
-  (`use_decl.rs` → `monitor_decl` in `stmt/class/class_decl.rs`). The module
-  export scan preserves the flag across nested parses.
-- `monitor Foo { ... }` parses exactly like `class` and carries a
-  `__mutsu_monitor` marker trait; registration records the class in a
-  process-global monitor set (`vm_typedecl_ops.rs`,
-  `native_methods/state_lock.rs`).
-- Both compiled-method chokepoints (`call_compiled_method` /
-  `call_compiled_method_fast` in `vm_method_dispatch.rs`) serialize calls on
-  a per-instance REENTRANT lock (mutsu's `Lock` runtime), with the same
-  critical-section bracketing as `Lock.protect` so attribute mutations
-  commit across threads. Construction/clone plumbing (`new`, `bless`,
-  `BUILDALL`, `POPULATE`, `clone`, `BUILD`, `TWEAK`) is exempt, matching the
-  upstream wrap exclusions; type-object calls carry no instance and never
-  lock. Subclasses of a monitor stay serialized (MRO check).
+- **`EXPORTHOW::DECLARE` keyword registration** — the parse-time module scan
+  detects `my package EXPORTHOW { package DECLARE { constant monitor =
+  MetamodelX::MonitorHOW } }` and registers `monitor` as a class-like
+  declarator for the importing unit (`module_exports.rs` →
+  `declare_decl` in `stmt/class/class_decl.rs`). The keyword table is
+  unit-scoped and restored around nested module scans; bundled battery
+  paths are part of the parser's scan search path
+  (`parser_scan_lib_paths`).
+- **HOW-driven registration** — a `monitor`-declared class registers
+  natively, then drives the user HOW protocol
+  (`declare_drive_how_protocol`, `runtime/metamodel.rs`): `new_type` (its
+  `callsame` resolves to the registered type; `setup_monitor` adds the
+  `$!MONITR-lock` attribute through the native `add_attribute` bridge),
+  `add_method` per declared method (the override `.wrap`s each Method
+  object — landing in `method_wrap_chains` — and re-adds it via the
+  fully-qualified `self.Metamodel::ClassHOW::add_method`, a no-op for an
+  already-registered method), then the queued user `compose` (reads
+  `self.method_table`, installs a BUILDALL/POPULATE pair and a `clone`
+  via `anon method`).
+- **Construction & callsame bridges** — a user BUILDALL/POPULATE runs at
+  `.new`/`bless` (`run_user_buildall_hook`) so the lock attribute is
+  seeded before any method call; `callsame` from BUILDALL/POPULATE/clone
+  resolves to the native base behavior
+  (`native_mu_base_next_candidate`), and `callsame` from any HOW method
+  falls through to the native ClassHOW metamethods.
+- **Locking** — entirely the module's own wraps: each method call acquires
+  the per-instance `Lock` (reentrant in mutsu, so sibling calls don't
+  deadlock) and releases it in a `LEAVE` inside `if SELF.DEFINITE { ... }`
+  (block-scoped LEAVE in an `if` branch fires correctly — fixed as part of
+  this campaign).
 
 Upstream tests: 5 files, 9 subtests — all pass under mutsu, matching raku,
 including the 4-threads × 1000-increments serialization test. Smoke:
@@ -65,18 +67,15 @@ including the 4-threads × 1000-increments serialization test. Smoke:
 
 ## Provenance and update procedure
 
-The upstream suite is fetched at the pinned commit by the release gate — a
-`bundled_lib` of `-` in `batteries.lock` marks a natively-provided battery
-(no `-I`; the suite runs against the interpreter itself).
-
 | Module | Upstream | Pinned version | Commit |
 | --- | --- | --- | --- |
-| `OO::Monitors` (tests only) | <https://github.com/jnthn/oo-monitors> | v1.1.7 | `5f3af495` (2025-11-05) |
+| `OO::Monitors` | <https://github.com/jnthn/oo-monitors> | v1.1.7 | `5f3af495` (2025-11-05) |
 
-To bump: update the `commit` in `batteries.lock` and re-run
-`scripts/battery-testsuite.sh --update`; there is no vendored tree to
-re-sync. Semantic changes upstream (new exclusions, new declarators) land as
-interpreter changes with pins under `t/`.
+The library is vendored verbatim at `modules/OO-Monitors/` (lib + LICENSE +
+META6.json + README). The upstream suite is fetched at the pinned commit by
+the release gate (`scripts/battery-testsuite.sh`) and runs against the
+bundled lib. To bump: re-copy the upstream `lib/` tree, update the `commit`
+in `batteries.lock`, and re-run `scripts/battery-testsuite.sh --update`.
 
 Verification after a bump:
 
@@ -86,7 +85,5 @@ mutsu -e 'use OO::Monitors; monitor M { method hi { "hi" } }; say M.new.hi'   # 
 
 ## License
 
-Upstream `OO::Monitors` is **Artistic-2.0**; mutsu redistributes none of its
-source (the implementation is original interpreter code), so no license text
-is vendored. The record above credits the upstream design and pins its test
-suite as the compatibility contract.
+Upstream `OO::Monitors` is **Artistic-2.0**; the license text is vendored at
+`modules/OO-Monitors/LICENSE` alongside the redistributed source.

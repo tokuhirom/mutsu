@@ -37,13 +37,6 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, module) = qualified_ident(rest)?;
     let (rest, _) = ws(rest)?;
 
-    // `use OO::Monitors` enables the `monitor` declarator for the rest of
-    // the unit (mutsu provides the monitor semantics natively — see
-    // `monitor_decl` in stmt/class/class_decl.rs).
-    if module == "OO::Monitors" {
-        super::super::simple::enable_monitor_decl();
-    }
-
     // Handle `use variables :D/:U/:_` pragma
     if module == "variables" {
         return parse_use_variables_pragma(rest);

@@ -80,7 +80,7 @@ impl Interpreter {
         // Make module search paths visible to the parser so that `use Foo`
         // inside the EVAL'd code can resolve and register Foo's exported sub
         // names (needed for parenless calls like `use Foo; bar`).
-        crate::parser::set_parser_lib_paths(self.lib_paths.clone());
+        crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
         crate::parser::set_parser_program_path(self.program_path.clone());
         let parse_result = crate::parser::parse_program_with_operators_and_user_subs(
             src,

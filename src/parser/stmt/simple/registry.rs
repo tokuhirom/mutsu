@@ -184,7 +184,7 @@ pub(crate) fn reset_user_subs() {
             set_current_language_version(version);
         }
     });
-    MONITOR_DECL_ENABLED.with(|v| *v.borrow_mut() = false);
+    DECLARE_KEYWORDS.with(|m| m.borrow_mut().clear());
 }
 
 /// Seed the language version an EVAL's nested parse starts at. `None` restores
@@ -201,14 +201,30 @@ pub(crate) fn set_current_language_version(version: &str) {
     });
 }
 
-/// `use OO::Monitors` enables the `monitor` declarator for the rest of the
-/// compilation unit (mutsu provides the monitor semantics natively).
-pub(crate) fn enable_monitor_decl() {
-    MONITOR_DECL_ENABLED.with(|v| *v.borrow_mut() = true);
+/// Register an EXPORTHOW::DECLARE declarator keyword (from a `use`d module's
+/// scan) for the rest of the compilation unit: `keyword Name { ... }` then
+/// parses like `class` with the declarator's HOW protocol driving registration.
+pub(crate) fn register_declare_keyword(keyword: &str, how_type: &str) {
+    DECLARE_KEYWORDS.with(|m| {
+        m.borrow_mut()
+            .insert(keyword.to_string(), how_type.to_string());
+    });
 }
 
-pub(crate) fn monitor_decl_enabled() -> bool {
-    MONITOR_DECL_ENABLED.with(|v| *v.borrow())
+/// The currently registered EXPORTHOW::DECLARE declarator keywords.
+pub(crate) fn declare_keyword_names() -> Vec<String> {
+    DECLARE_KEYWORDS.with(|m| m.borrow().keys().cloned().collect())
+}
+
+/// Snapshot / restore the DECLARE keyword table around a nested module scan
+/// (the nested parse's reset clears it, and any keywords the scanned module
+/// itself imports are lexical to that module, not to the importer).
+pub(in crate::parser) fn declare_keywords_snapshot() -> HashMap<String, String> {
+    DECLARE_KEYWORDS.with(|m| m.borrow().clone())
+}
+
+pub(in crate::parser) fn restore_declare_keywords(saved: HashMap<String, String>) {
+    DECLARE_KEYWORDS.with(|m| *m.borrow_mut() = saved);
 }
 
 pub(crate) fn current_language_version() -> String {

@@ -740,13 +740,21 @@ impl Interpreter {
         let grammar_parse_override = matches!(method_name, "parse" | "subparse" | "parsefile")
             && self.class_is_grammar(receiver_class)
             && self.has_user_method(receiver_class, method_name);
+        // A user BUILDALL/POPULATE/clone (e.g. installed by a custom HOW via
+        // `add_method` — OO::Monitors) likewise needs an MRO frame even as a
+        // single candidate, so its `callsame` reaches the NATIVE base
+        // implementation (`native_mu_base_next_candidate`: the built instance
+        // for BUILDALL/POPULATE, the native attribute-copying clone for clone).
+        let mu_base_override = matches!(method_name, "BUILDALL" | "POPULATE" | "clone")
+            && self.has_user_method(receiver_class, method_name);
+        let native_base_override = grammar_parse_override || mu_base_override;
         // Fast path: a name with at most one *structural* dispatch candidate across
         // the MRO can never produce a deferral frame (arg-matching only reduces the
         // candidate count), so skip the per-call `resolve_all_methods_with_owner`
         // MRO walk + MethodDef clones. The structural shape depends only on
         // (class, method), so it is memoized in `dispatch_multi_candidate` and
         // invalidated with the other method caches on any registry change.
-        if !grammar_parse_override
+        if !native_base_override
             && !self.has_multiple_dispatch_candidates(receiver_class, method_name)
         {
             return false;
@@ -758,9 +766,9 @@ impl Interpreter {
         // per-call `function_body_fingerprint` work below — which Debug-traverses the
         // whole method body AST to derive a candidate identity — for the overwhelmingly
         // common single-method case. Mirrors `push_multi_dispatch_frame`'s `<= 1` guard.
-        // A grammar parse override still pushes a frame (empty `remaining`) so its
-        // `nextsame`/`nextwith` reaches the native fallback.
-        if !grammar_parse_override && all_candidates.len() <= 1 {
+        // A grammar parse / Mu-base override still pushes a frame (empty
+        // `remaining`) so its `nextsame`/`nextwith` reaches the native fallback.
+        if !native_base_override && all_candidates.len() <= 1 {
             return false;
         }
         // Identify the chosen candidate and skip exactly that one
@@ -781,7 +789,7 @@ impl Interpreter {
             }
             remaining.push((owner.resolve(), def));
         }
-        let pushed = !remaining.is_empty() || grammar_parse_override;
+        let pushed = !remaining.is_empty() || native_base_override;
         if pushed {
             let rw_params = chosen
                 .as_ref()

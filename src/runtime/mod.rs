@@ -1451,6 +1451,12 @@ pub struct Interpreter {
     /// `samewith_depth` ties each entry to its samewith frame so the shared
     /// pop helper knows whether the top entry belongs to the frame being popped.
     metamodel_dispatch_stack: Vec<(usize, String, String, Vec<Value>)>,
+    /// The type object of the DECLARE'd class whose registration is currently
+    /// driving the user HOW protocol (`new_type` → `add_method`* → `compose`).
+    /// A `callsame` from a user `new_type` override returns it as the base
+    /// candidate — the native part of `new_type` (creating and registering the
+    /// type) has already run by the time the user hook is called.
+    pending_declare_new_type: Option<Value>,
     /// Wrap chains: sub_id -> stack of (handle_id, wrapper_sub). Outermost is last.
     wrap_chains: HashMap<u64, Vec<(u64, Value)>>,
     /// Maps sub_id to function name for named call wrap chain lookup.

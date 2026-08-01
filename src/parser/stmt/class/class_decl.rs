@@ -128,21 +128,27 @@ pub(crate) fn class_decl(input: &str) -> PResult<'_, Stmt> {
     class_decl_body(rest, false)
 }
 
-/// Parse `monitor Name { ... }` — OO::Monitors' declarator, recognized only
-/// after `use OO::Monitors` (mutsu provides the semantics natively: the class
-/// carries a marker trait and instance-method dispatch serializes on a
-/// per-instance reentrant lock, see `run_instance_method_celled`).
-pub(crate) fn monitor_decl(input: &str) -> PResult<'_, Stmt> {
-    if !super::super::simple::monitor_decl_enabled() {
-        return Err(PError::expected("monitor declaration"));
+/// Parse a declarator registered through a `use`d module's EXPORTHOW::DECLARE
+/// block (`my package EXPORTHOW { package DECLARE { constant kw = SomeHOW } }`):
+/// `kw Name { ... }` parses exactly like `class`, and the resulting ClassDecl
+/// carries a `__mutsu_declare_how` marker trait naming the keyword, so
+/// registration can attach the declarator's HOW to the class.
+pub(crate) fn declare_decl(input: &str) -> PResult<'_, Stmt> {
+    for kw in super::super::simple::declare_keyword_names() {
+        let Some(rest) = keyword(&kw, input) else {
+            continue;
+        };
+        let (rest, _) = ws1(rest)?;
+        let (rest, mut stmt) = class_decl_body(rest, false)?;
+        if let Stmt::ClassDecl { custom_traits, .. } = &mut stmt {
+            custom_traits.push((
+                "__mutsu_declare_how".to_string(),
+                Some(Expr::Literal(Value::str(kw))),
+            ));
+        }
+        return Ok((rest, stmt));
     }
-    let rest = keyword("monitor", input).ok_or_else(|| PError::expected("monitor declaration"))?;
-    let (rest, _) = ws1(rest)?;
-    let (rest, mut stmt) = class_decl_body(rest, false)?;
-    if let Stmt::ClassDecl { custom_traits, .. } = &mut stmt {
-        custom_traits.push(("__mutsu_monitor".to_string(), None));
-    }
-    Ok((rest, stmt))
+    Err(PError::expected("declare declaration"))
 }
 
 /// Parse `augment class ClassName { ... }` declaration (monkey-patching).

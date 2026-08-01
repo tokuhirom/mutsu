@@ -233,12 +233,6 @@ impl Interpreter {
                     // (see runtime/json.rs, dispatched in vm_native_json.rs).
                     | "JSON::Fast"
                     | "JSON::Tiny"
-                    // OO::Monitors: the real distribution is Metamodel/EXPORTHOW
-                    // guts; mutsu provides the `monitor` declarator natively
-                    // (the parser enables it on this `use`, and instance-method
-                    // dispatch serializes on a per-instance lock — see
-                    // run_instance_method_celled).
-                    | "OO::Monitors"
             ) {
             // Track MONKEY-TYPING pragma
             if module == "MONKEY-TYPING" || module == "MONKEY" {

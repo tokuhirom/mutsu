@@ -1,5 +1,6 @@
 //! Type-declaration registration ops: enum / class / augment / role / subset.
 use super::*;
+use crate::ast::Expr;
 use crate::symbol::Symbol;
 
 impl Interpreter {
@@ -284,12 +285,31 @@ impl Interpreter {
             // Store language revision metadata from the version captured at parse time
             self.store_language_revision_from_version(&storage_name, language_version);
 
-            // A `monitor Foo { ... }` declaration (OO::Monitors, provided
-            // natively) parses as a class carrying this marker trait: register
-            // the class so instance-method dispatch serializes on a
-            // per-instance lock (see `run_instance_method_celled`).
-            if custom_traits.iter().any(|(t, _)| t == "__mutsu_monitor") {
-                crate::runtime::native_methods::register_monitor_class(&storage_name);
+            // A class declared with an EXPORTHOW::DECLARE declarator (the
+            // `__mutsu_declare_how` marker trait carries the keyword): attach
+            // an instance of the declarator's HOW type — installed by the
+            // `use`d module as the EXPORTHOW::DECLARE::<keyword> constant — as
+            // the class's meta-object, drive the HOW registration protocol
+            // (`new_type`, `add_method` per declared method), and queue the
+            // user `compose` to run after the custom `is` traits (same
+            // protocol as the EXPORTHOW `class` metaclass mapping below).
+            if let Some((_, Some(Expr::Literal(kw)))) = custom_traits
+                .iter()
+                .find(|(t, _)| t == "__mutsu_declare_how")
+            {
+                let keyword = kw.to_string_value();
+                let how_type =
+                    self.get_env_with_main_alias(&format!("EXPORTHOW::DECLARE::{}", keyword));
+                if let Some(how_type) = how_type {
+                    let has_user_compose =
+                        self.install_custom_class_how(&storage_name, how_type)?;
+                    self.declare_drive_how_protocol(&storage_name)?;
+                    if has_user_compose {
+                        self.registry_mut()
+                            .pending_class_compose
+                            .push(storage_name.clone());
+                    }
+                }
             }
 
             // Dispatch custom `is` traits via trait_mod:<is> if defined.
@@ -301,7 +321,7 @@ impl Interpreter {
                 let type_obj = Value::package(Symbol::intern(&storage_name));
                 // Dispatch explicitly parsed custom traits (with args)
                 for (trait_name, trait_arg) in custom_traits {
-                    if trait_name == "__mutsu_monitor" {
+                    if trait_name == "__mutsu_declare_how" {
                         continue;
                     }
                     let trait_value = if let Some(arg_expr) = trait_arg {

@@ -1,0 +1,28 @@
+{
+  "auth": "zef:raku-community-modules",
+  "authors": [
+    "Jonathan Worthington"
+  ],
+  "build-depends": [
+  ],
+  "depends": [
+  ],
+  "description": "Objects with mutual exclusion and condition variables",
+  "license": "Artistic-2.0",
+  "name": "OO::Monitors",
+  "perl": "6.c",
+  "provides": {
+    "OO::Monitors": "lib/OO/Monitors.rakumod"
+  },
+  "resources": [
+  ],
+  "source-url": "https://github.com/raku-community-modules/OO-Monitors.git",
+  "tags": [
+    "OO",
+    "concurrency",
+    "MOP"
+  ],
+  "test-depends": [
+  ],
+  "version": "1.1.7"
+}

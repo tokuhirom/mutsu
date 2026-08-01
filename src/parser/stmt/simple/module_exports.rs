@@ -12,6 +12,10 @@ struct ModuleScanResult {
     exports: Vec<InlineModuleExport>,
     type_names: Vec<String>,
     enum_values: Vec<String>,
+    /// EXPORTHOW::DECLARE declarator keywords the module exports, as
+    /// `(keyword, HOW type name)` pairs. A `use` of the module makes each
+    /// keyword parse as a class-like declarator for the rest of the unit.
+    declare_keywords: Vec<(String, String)>,
 }
 
 thread_local! {
@@ -88,6 +92,9 @@ pub(crate) fn register_module_exports(module: &str) {
     if let Some(scan) = scan {
         apply_scan_types(&scan);
         apply_module_exports(&scan.exports);
+        for (keyword, how_type) in &scan.declare_keywords {
+            register_declare_keyword(keyword, how_type);
+        }
     }
 }
 
@@ -341,10 +348,12 @@ fn scan_module_source(source: &str) -> ModuleScanResult {
     let saved_package_path = PACKAGE_PATH.with(|p| p.borrow().clone());
     // Save the language version — parsing the module may change it via `use v6.*`
     let saved_language_version = current_language_version();
-    // The `monitor` declarator flag is unit-scoped state the nested
+    // The EXPORTHOW::DECLARE keyword table is unit-scoped state the nested
     // parse's reset would clobber (`use OO::Monitors; monitor Foo {...}`
-    // scans the module between the `use` and the declaration).
-    let saved_monitor_decl = monitor_decl_enabled();
+    // scans the module between the `use` and the declaration). Restored
+    // wholesale, so keywords the scanned module itself imports stay lexical
+    // to that module.
+    let saved_declare_keywords = declare_keywords_snapshot();
     let (stmts, _) = crate::parser::parse_program_partial(source);
     // A `package X::Foo { }` block installs its contents into GLOBAL, so the
     // types it declares are visible to whoever loads the module — including
@@ -376,9 +385,7 @@ fn scan_module_source(source: &str) -> ModuleScanResult {
         *p.borrow_mut() = saved_package_path;
     });
     set_current_language_version(&saved_language_version);
-    if saved_monitor_decl {
-        enable_monitor_decl();
-    }
+    restore_declare_keywords(saved_declare_keywords);
     // Collect the module's declared type names (classes/roles/enums/grammars)
     // for the importer's scope. A `use`d module makes its `our`-scoped and
     // exported types visible to the importer, but mutsu loads modules at run
@@ -462,10 +469,52 @@ fn scan_module_source(source: &str) -> ModuleScanResult {
 
     let mut result: Vec<InlineModuleExport> = exports.into_values().collect();
     result.sort_by(|a, b| a.name.cmp(&b.name));
+    let mut declare_keywords = Vec::new();
+    collect_exporthow_declare(&stmts, &mut declare_keywords);
     ModuleScanResult {
         exports: result,
         type_names,
         enum_values,
+        declare_keywords,
+    }
+}
+
+/// Collect `(keyword, HOW type name)` pairs from a scanned module's
+/// `my package EXPORTHOW { package DECLARE { constant kw = SomeHOW } }`
+/// blocks. A `constant` inside a package parses as an our-scoped VarDecl
+/// carrying the `__constant` marker trait, with the HOW type name as a
+/// bareword initializer. Descends into non-EXPORTHOW packages so a
+/// `unit module Foo;`-wrapped EXPORTHOW block is found too.
+fn collect_exporthow_declare(stmts: &[Stmt], out: &mut Vec<(String, String)>) {
+    for stmt in stmts {
+        let Stmt::Package { name, body, .. } = stmt else {
+            continue;
+        };
+        if name.resolve() != "EXPORTHOW" {
+            collect_exporthow_declare(body, out);
+            continue;
+        }
+        for inner in body {
+            let Stmt::Package { name, body, .. } = inner else {
+                continue;
+            };
+            if name.resolve() != "DECLARE" {
+                continue;
+            }
+            for decl in body {
+                if let Stmt::VarDecl {
+                    name,
+                    expr,
+                    custom_traits,
+                    ..
+                } = decl
+                    && custom_traits.iter().any(|(t, _)| t == "__constant")
+                    && let Expr::BareWord(how_type) = expr
+                {
+                    out.push((name.clone(), how_type.clone()));
+                }
+            }
+        }
     }
 }
 
