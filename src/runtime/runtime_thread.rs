@@ -488,6 +488,7 @@ impl Interpreter {
             method_wrap_chains: self.method_wrap_chains.clone(),
             method_fallbacks: self.method_fallbacks.clone(),
             suppressed_names: self.suppressed_names.clone(),
+            class_scoped_short_names: self.class_scoped_short_names.clone(),
             poisoned_enum_aliases: self.poisoned_enum_aliases.clone(),
             enum_scope_names: self.enum_scope_names.clone(),
             my_scoped_package_items: self.my_scoped_package_items.clone(),

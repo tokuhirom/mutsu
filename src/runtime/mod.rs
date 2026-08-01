@@ -1513,6 +1513,14 @@ pub struct Interpreter {
     method_fallbacks: HashMap<String, Vec<(Value, Value)>>,
     /// Names suppressed by `anon class`. These bare words should error as undeclared.
     suppressed_names: HashSet<String>,
+    /// Short names of types declared *inside a class body* (`class Outer { grammar
+    /// Inner {...} }` records `Inner`). Unlike `suppressed_names` this set is never
+    /// cleared: it records the fact that the short name belongs to some owner
+    /// package, which stays true for the rest of the program even after another
+    /// module registers an unrelated type of the same short name. It gates the
+    /// owner-package-chain probe in `resolve_suppressed_type`, so a method body
+    /// keeps seeing its own class's nested type (see `resolve_suppressed_type`).
+    class_scoped_short_names: HashSet<String>,
     /// Bare enum variant names poisoned by redeclaration from different enums.
     /// Maps bare name -> latest enum package name.
     poisoned_enum_aliases: HashMap<String, String>,

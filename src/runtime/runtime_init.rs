@@ -2205,6 +2205,7 @@ impl Interpreter {
             method_wrap_chains: HashMap::new(),
             method_fallbacks: HashMap::new(),
             suppressed_names: HashSet::new(),
+            class_scoped_short_names: HashSet::new(),
             poisoned_enum_aliases: HashMap::new(),
             enum_scope_names: vec![Vec::new()],
             my_scoped_package_items: HashSet::new(),

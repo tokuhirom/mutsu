@@ -62,6 +62,7 @@ impl Interpreter {
                 nested.user_declared_infix_ops = self.user_declared_infix_ops.clone();
                 nested.set_current_package(self.current_package());
                 nested.suppressed_names = self.suppressed_names.clone();
+                nested.class_scoped_short_names = self.class_scoped_short_names.clone();
                 nested.lexical_class_scopes = self.lexical_class_scopes.clone();
                 nested.var_dynamic_flags = self.var_dynamic_flags.clone();
                 nested.restore_var_type_constraints(self.snapshot_var_type_constraints());

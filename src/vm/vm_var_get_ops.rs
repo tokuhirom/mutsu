@@ -60,15 +60,14 @@ impl Interpreter {
             && name.ends_with('>')
         {
             Value::routine_parts(Symbol::intern("GLOBAL"), Symbol::intern(name), false)
-        } else if self.is_name_suppressed(name)
-            && let Some(qualified) = self.resolve_suppressed_type(name)
-        {
-            // Inside the parent class of the suppressed nested class the short
-            // name resolves to the qualified name (e.g. Frog -> Forest::Frog) —
-            // and it wins over a same-named entry the CALLER's scope may have
-            // leaked into env (`Header.parse` inside Cro::HTTP::Header must be
-            // the lexical grammar even when the caller has an enum value
-            // `Header` in scope).
+        } else if let Some(qualified) = self.resolve_suppressed_type(name) {
+            // Inside the parent class of the nested class the short name resolves
+            // to the qualified name (e.g. Frog -> Forest::Frog) — and it wins over
+            // a same-named entry that another scope leaked into env (`Header.parse`
+            // inside Cro::HTTP::Header must be the lexical grammar even when the
+            // caller has an enum value `Header` in scope, and even after an
+            // unrelated `Cro::HTTP::Router::Header` role registration cleared the
+            // suppression).
             Value::package(Symbol::intern(&qualified))
         } else if self.is_name_suppressed(name)
             // A LOCAL declaration wins over an unrelated module's suppressed
