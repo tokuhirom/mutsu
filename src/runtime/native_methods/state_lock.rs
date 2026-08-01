@@ -38,6 +38,52 @@ pub(in crate::runtime) fn next_lock_id() -> u64 {
     id
 }
 
+// -- OO::Monitors support ---------------------------------------------------
+//
+// A `monitor` declaration (parsed after `use OO::Monitors`) is a class whose
+// instance-method calls are serialized on a per-instance REENTRANT lock —
+// mutsu provides the semantics natively (like Test / JSON::Fast) instead of
+// running the upstream module's Metamodel/EXPORTHOW guts. The registry below
+// is process-global so `start { $monitor.method }` across threads contends on
+// the same lock; the `ANY_MONITOR_CLASS` flag keeps the common no-monitor
+// program at a single atomic load per method dispatch.
+
+static ANY_MONITOR_CLASS: AtomicBool = AtomicBool::new(false);
+
+fn monitor_class_set() -> &'static std::sync::RwLock<std::collections::HashSet<String>> {
+    static SET: OnceLock<std::sync::RwLock<std::collections::HashSet<String>>> = OnceLock::new();
+    SET.get_or_init(|| std::sync::RwLock::new(std::collections::HashSet::new()))
+}
+
+pub(crate) fn register_monitor_class(name: &str) {
+    if let Ok(mut set) = monitor_class_set().write() {
+        set.insert(name.to_string());
+    }
+    ANY_MONITOR_CLASS.store(true, Ordering::Release);
+}
+
+pub(crate) fn any_monitor_class() -> bool {
+    ANY_MONITOR_CLASS.load(Ordering::Acquire)
+}
+
+pub(crate) fn is_monitor_class(name: &str) -> bool {
+    monitor_class_set().read().is_ok_and(|s| s.contains(name))
+}
+
+fn monitor_instance_locks() -> &'static std::sync::Mutex<HashMap<u64, u64>> {
+    static MAP: OnceLock<std::sync::Mutex<HashMap<u64, u64>>> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+/// The monitor lock runtime for an instance id (created on first use).
+pub(crate) fn monitor_lock_for_instance(instance_id: u64) -> Option<Arc<LockRuntime>> {
+    let lock_id = {
+        let mut map = monitor_instance_locks().lock().ok()?;
+        *map.entry(instance_id).or_insert_with(next_lock_id)
+    };
+    lock_runtime_by_id(lock_id)
+}
+
 pub(super) fn next_cancellation_id() -> u64 {
     static COUNTER: AtomicU64 = AtomicU64::new(1);
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);

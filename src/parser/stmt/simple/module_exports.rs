@@ -341,6 +341,10 @@ fn scan_module_source(source: &str) -> ModuleScanResult {
     let saved_package_path = PACKAGE_PATH.with(|p| p.borrow().clone());
     // Save the language version — parsing the module may change it via `use v6.*`
     let saved_language_version = current_language_version();
+    // The `monitor` declarator flag is unit-scoped state the nested
+    // parse's reset would clobber (`use OO::Monitors; monitor Foo {...}`
+    // scans the module between the `use` and the declaration).
+    let saved_monitor_decl = monitor_decl_enabled();
     let (stmts, _) = crate::parser::parse_program_partial(source);
     // A `package X::Foo { }` block installs its contents into GLOBAL, so the
     // types it declares are visible to whoever loads the module — including
@@ -372,6 +376,9 @@ fn scan_module_source(source: &str) -> ModuleScanResult {
         *p.borrow_mut() = saved_package_path;
     });
     set_current_language_version(&saved_language_version);
+    if saved_monitor_decl {
+        enable_monitor_decl();
+    }
     // Collect the module's declared type names (classes/roles/enums/grammars)
     // for the importer's scope. A `use`d module makes its `our`-scoped and
     // exported types visible to the importer, but mutsu loads modules at run

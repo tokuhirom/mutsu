@@ -184,6 +184,7 @@ pub(crate) fn reset_user_subs() {
             set_current_language_version(version);
         }
     });
+    MONITOR_DECL_ENABLED.with(|v| *v.borrow_mut() = false);
 }
 
 /// Seed the language version an EVAL's nested parse starts at. `None` restores
@@ -198,6 +199,16 @@ pub(crate) fn set_current_language_version(version: &str) {
     CURRENT_LANGUAGE_VERSION.with(|v| {
         *v.borrow_mut() = version.to_string();
     });
+}
+
+/// `use OO::Monitors` enables the `monitor` declarator for the rest of the
+/// compilation unit (mutsu provides the monitor semantics natively).
+pub(crate) fn enable_monitor_decl() {
+    MONITOR_DECL_ENABLED.with(|v| *v.borrow_mut() = true);
+}
+
+pub(crate) fn monitor_decl_enabled() -> bool {
+    MONITOR_DECL_ENABLED.with(|v| *v.borrow())
 }
 
 pub(crate) fn current_language_version() -> String {
