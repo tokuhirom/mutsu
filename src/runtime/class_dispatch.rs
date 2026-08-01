@@ -83,6 +83,10 @@ impl Interpreter {
     /// cell already holds every attribute mutation — and `(value, Some(map))`
     /// only when the exit reconcile recovered a `:=`-bound attribute beyond the
     /// cell contents (the caller must commit that map to its cell).
+    ///
+    /// (`monitor` serialization happens deeper, in `call_compiled_method` /
+    /// `call_compiled_method_fast` — the two compiled-execution chokepoints —
+    /// so both this slow path and the VM fast path are covered.)
     pub(crate) fn run_instance_method_celled(
         &mut self,
         receiver_class_name: &str,

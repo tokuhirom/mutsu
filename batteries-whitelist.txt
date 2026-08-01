@@ -95,6 +95,11 @@ NativeLibs	01-basic.t
 NativeLibs	02-cannon-name.t
 NativeLibs	10-search.t
 NativeLibs	20-compile.t
+OO::Monitors	BUILD.rakutest
+OO::Monitors	basic.rakutest
+OO::Monitors	clone.rakutest
+OO::Monitors	new.rakutest
+OO::Monitors	precomp.rakutest
 OpenSSL	01-basic.rakutest
 OpenSSL	03-rsa.rakutest
 OpenSSL	04-crypt.rakutest

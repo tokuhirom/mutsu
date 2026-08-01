@@ -136,8 +136,14 @@ while IFS=$'\t' read -r name bundled_lib test_url commit test_glob extra_include
   fi
 
   # Build the -I list: the bundled library first, then any extra includes
-  # ({clone} expands to the fetched repo root; `-` means none).
-  inc=(-I "$ROOT/$bundled_lib")
+  # ({clone} expands to the fetched repo root; `-` means none). A `-`
+  # bundled_lib means the battery is provided NATIVELY by the interpreter
+  # (OO::Monitors' `monitor` declarator) — no library dir to include; the
+  # upstream suite still runs against the native implementation.
+  inc=()
+  if [ "$bundled_lib" != "-" ]; then
+    inc=(-I "$ROOT/$bundled_lib")
+  fi
   if [ "$extra_includes" != "-" ]; then
     IFS=',' read -r -a extras <<< "$extra_includes"
     for e in "${extras[@]}"; do

@@ -128,6 +128,23 @@ pub(crate) fn class_decl(input: &str) -> PResult<'_, Stmt> {
     class_decl_body(rest, false)
 }
 
+/// Parse `monitor Name { ... }` — OO::Monitors' declarator, recognized only
+/// after `use OO::Monitors` (mutsu provides the semantics natively: the class
+/// carries a marker trait and instance-method dispatch serializes on a
+/// per-instance reentrant lock, see `run_instance_method_celled`).
+pub(crate) fn monitor_decl(input: &str) -> PResult<'_, Stmt> {
+    if !super::super::simple::monitor_decl_enabled() {
+        return Err(PError::expected("monitor declaration"));
+    }
+    let rest = keyword("monitor", input).ok_or_else(|| PError::expected("monitor declaration"))?;
+    let (rest, _) = ws1(rest)?;
+    let (rest, mut stmt) = class_decl_body(rest, false)?;
+    if let Stmt::ClassDecl { custom_traits, .. } = &mut stmt {
+        custom_traits.push(("__mutsu_monitor".to_string(), None));
+    }
+    Ok((rest, stmt))
+}
+
 /// Parse `augment class ClassName { ... }` declaration (monkey-patching).
 /// Also handles `augment role RoleName { ... }` (always illegal — roles are
 /// closed) and the anonymous form `augment class { ... }` (X::Anon::Augment).

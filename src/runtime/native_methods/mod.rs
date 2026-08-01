@@ -24,6 +24,9 @@ pub(crate) use state::{
     split_supply_chunks_into_words, take_supply_channel,
 };
 pub(crate) use state_lock::{acquire_lock, current_thread_id, lock_runtime_by_id, release_lock};
+pub(crate) use state_lock::{
+    any_monitor_class, is_monitor_class, monitor_lock_for_instance, register_monitor_class,
+};
 
 // Re-export items accessed from sibling `runtime` modules. A handful are also
 // re-exported `pub(crate)` below for the VM-side react/supply drive loop
