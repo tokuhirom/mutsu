@@ -1,6 +1,29 @@
 {
   "libraries": [
     {
+      "name": "Crypt::Random",
+      "version": "0.4.1",
+      "description": "Random numbers and bytes mimicking arc4random",
+      "license": "Artistic-2.0",
+      "authors": [
+        "github:skinkade"
+      ],
+      "auth": "",
+      "provides": [
+        "Crypt::Random",
+        "Crypt::Random::Extra",
+        "Crypt::Random::Nix",
+        "Crypt::Random::Win"
+      ],
+      "depends": [
+        "if"
+      ],
+      "upstream": "git://github.com/skinkade/crypt-random",
+      "slot": "Secure randomness (CSPRNG)",
+      "record": "docs/batteries/crypt-random.md",
+      "readme": "# Crypt::Random\n[![Build Status](https://travis-ci.org/skinkade/crypt-random.svg?branch=master)](https://travis-ci.org/skinkade/crypt-random) [![Build status](https://ci.appveyor.com/api/projects/status/9w39bpjclskckwep/branch/master?svg=true)](https://ci.appveyor.com/project/skinkade/crypt-random)\n\nRandom numbers and bytes mimicking `arc4random()`.\n\n\n## Synopsis\n```\nuse Crypt::Random;\n\n# Random positive Int, defaulting to 32-bit\nmy Int $foo = crypt_random();\nmy Int $foo64 = crypt_random(Int(64/8));\n\n# Random Int between 0 and $upper_bound (exclusive)\nmy Int $bar = crypt_random_uniform($upper_bound);\nmy Int $bar128 = crypt_random_uniform($upper_bound, Int(128/8));\n\n# Buf of $len random bytes\nmy Buf $baz = crypt_random_buf($len);\n```\n\n## Extra\nAdditional useful functions built upon the above primitives.\n```\nuse Crypt::Random::Extra;\n\nmy Str $uuid = crypt_random_UUIDv4();\n\nmy Int $prime = crypt_random_prime()\nmy Int $prime2048 = crypt_random_prime(Int(2048/8));\n\n# Random sampling of $set, which can be a Blob or List\nmy Array @sample = crypt_random_sample($set, $count);\n```\n\n## Entropy Sources\nRandom bytes are drawn from `/dev/urandom` on Unix-like systems, and\n`CryptGenRandom()` on Windows.\n\n## Copyright & License\nCopyright 2016 Shawn Kinkade.\n\nThis module may be used under the terms of the Artistic License 2.0.\n"
+    },
+    {
       "name": "DBIish",
       "version": "0.6.8",
       "description": "Database connectivity for Raku",

@@ -1,3 +1,6 @@
+Crypt::Random	01-buf.t
+Crypt::Random	02-value.t
+Crypt::Random	03-uniform.t
 DBIish	01-basic.rakutest
 DBIish	02-meta.rakutest
 DBIish	03-lib-util.rakutest

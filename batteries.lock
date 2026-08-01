@@ -40,3 +40,4 @@ YAMLish	modules/YAMLish/lib	https://github.com/Leont/yamlish.git	2a1d04ab7098e9e
 NativeLibs	modules/NativeLibs/lib	https://github.com/salortiz/NativeLibs.git	f3e78510702af0eeb49b4418dc59008ff4f8cd1b	t/*.t	-
 NativeHelpers::Blob	modules/NativeHelpers-Blob/lib	https://github.com/salortiz/NativeHelpers-Blob.git	54ac6ddf7f557018a54974692a0a97a2b0aca11b	t/*.t	-
 DBIish	modules/DBIish/lib	https://github.com/raku-community-modules/DBIish.git	34f77e7f1581a67d544f88aa2f10fa90cb3df1b4	t/*.rakutest	modules/NativeLibs/lib,modules/NativeHelpers-Blob/lib
+Crypt::Random	modules/Crypt-Random/lib	https://github.com/skinkade/crypt-random.git	c1bf9393ab736ac5e5de2d0c3f56078c178cc071	t/*.t	-

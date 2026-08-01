@@ -109,6 +109,12 @@ SIDECAR = {
         # META6.json has no license key; the dist ships an Artistic-2.0 LICENSE file.
         "license": "Artistic-2.0",
     },
+    "Crypt::Random": {
+        "slot": "Secure randomness (CSPRNG)",
+        "record": "docs/batteries/crypt-random.md",
+        # META6.json has no license key; the README states Artistic License 2.0.
+        "license": "Artistic-2.0",
+    },
 }
 
 

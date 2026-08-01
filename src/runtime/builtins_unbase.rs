@@ -104,7 +104,18 @@ impl Interpreter {
         let mut frac_digits: Vec<i64> = Vec::new();
         let mut saw_dot = false;
 
+        // The bracket body is an ordinary list constructor, so an embedded
+        // iterable flattens: `:256[@digits]` / `:256[$buf.values]` use the
+        // ELEMENTS as digits (raku: `:256[1,2,3]` == `:256[@a]` for @a=1,2,3).
+        let mut flat: Vec<Value> = Vec::new();
         for item in items {
+            if let Some(sub) = item.as_list_items() {
+                flat.extend(sub.iter().cloned());
+            } else {
+                flat.push(item.clone());
+            }
+        }
+        for item in &flat {
             let s = item.to_string_value();
             if s == "." {
                 saw_dot = true;
