@@ -108,6 +108,17 @@ impl Interpreter {
         {
             return self.dispatch_match_method(args[0].clone(), std::slice::from_ref(&target));
         }
+        // `Signature.ACCEPTS($capture)` is `$capture ~~ $signature` — the explicit
+        // form of the bind test. Cro's route matcher calls it directly
+        // (`$handler.signature.ACCEPTS($cap)`), and the smartmatch arm already
+        // implements it; without this it threw X::Method::NotFound.
+        if method == "ACCEPTS"
+            && args.len() == 1
+            && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Signature")
+        {
+            let matched = self.smart_match(&args[0], &target);
+            return Ok(Value::truth(matched));
+        }
         // `Mu.ACCEPTS`: every value can be smart-matched against, and `$x.ACCEPTS($y)` is
         // just `$y ~~ $x`. The builtins carry their own ACCEPTS for the container types
         // (Range, Set, Bag, Pair, ...) and a user class may define one, so this only backs
