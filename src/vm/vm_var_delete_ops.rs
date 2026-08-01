@@ -612,16 +612,19 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let hole_type =
             loan_env!(self, var_type_constraint(var_name)).unwrap_or_else(|| "Any".to_string());
-        // Snapshot the pre-delete contents for the returned (value) tree.
-        let items_snap: Vec<Value> = match self.env().get(var_name).map(Value::view) {
-            Some(ValueView::Array(items, ..)) => items.to_vec(),
-            _ => Vec::new(),
+        // Snapshot the pre-delete contents for the returned (value) tree. The
+        // whole `ArrayData` is kept so the hole predicate sees the same
+        // `initialized` set and element type the live array has. `keep_missing`
+        // is true here, so no slot is dropped either way -- but the snapshot
+        // must not look like a differently-typed array.
+        let data_snap: crate::value::ArrayData = match self.env().get(var_name).map(Value::view) {
+            Some(ValueView::Array(items, ..)) => crate::value::ArrayData::clone(&**items),
+            _ => crate::value::ArrayData::new(Vec::new()),
         };
         let missing = Value::package(crate::symbol::Symbol::intern(&hole_type));
         // Plain `:delete` returns the values, keeping missing slots (as the hole).
         let result = Value::array(Self::format_positional_slice_level(
-            &items_snap,
-            None,
+            &data_snap,
             crate::runtime::PositionalMissing::Default(&missing),
             inner,
             "v",

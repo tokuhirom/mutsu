@@ -1,6 +1,7 @@
 //! Push/append-through-accessor and subscript-adverb (`:exists`/`:delete`/`:kv`...) ops.
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ArrayData;
 
 /// What a positional slice adverb reports for a slot the index does not reach.
 #[derive(Clone, Copy)]
@@ -396,12 +397,14 @@ impl Interpreter {
         if let ValueView::Array(items, ..) = target.view()
             && !assoc_on_non_associative
         {
-            // The set of explicitly element-assigned indices travels with the
-            // array value (embedded `ArrayData::initialized`), so a slot holding a
-            // `Package("Any")` hole is distinguished from a real `Any` value even
-            // after the array crosses scopes/closures.
-            let bound_map: Option<std::collections::HashSet<usize>> = items.initialized.clone();
-            let items_snap: Vec<Value> = items.to_vec();
+            // The whole `ArrayData` is snapshotted, not just its elements: the
+            // hole predicate needs the embedded `initialized` set (which indices
+            // were explicitly assigned) *and* the element type (which type object
+            // is this array's gap marker). Both travel with the array value, so a
+            // `Package` slot stays distinguishable from a real type object even
+            // after the array crosses scopes/closures. The snapshot is taken
+            // before the `:delete` companion below mutates the live binding.
+            let data_snap: ArrayData = ArrayData::clone(&**items);
             // The missing-element default comes from the array's *element type*.
             // Read it from the container value itself (embedded metadata /
             // `is default`) FIRST so it survives rebinding — e.g.
@@ -450,7 +453,7 @@ impl Interpreter {
             // `:delete` companion (`:delete:kv` etc): remove every *leaf* index of
             // the (possibly nested) index tree from the live binding, then format
             // the pre-delete snapshot. The value/key/exists reported are the
-            // pre-deletion state (captured in `items_snap`).
+            // pre-deletion state (captured in `data_snap`).
             if delete_after && let Some(var_name) = var_name.as_ref() {
                 let hole_type = self
                     .var_type_constraint(var_name)
@@ -496,12 +499,8 @@ impl Interpreter {
             }
 
             if !is_multi {
-                let (key, value, exists) = Self::resolve_positional_scalar(
-                    &items_snap,
-                    bound_map.as_ref(),
-                    missing_value,
-                    &indices[0],
-                );
+                let (key, value, exists) =
+                    Self::resolve_positional_scalar(&data_snap, missing_value, &indices[0]);
                 if !keep_missing && !exists {
                     return Ok(Value::array(Vec::new()));
                 }
@@ -514,8 +513,7 @@ impl Interpreter {
                 });
             }
             let out = Self::format_positional_slice_level(
-                &items_snap,
-                bound_map.as_ref(),
+                &data_snap,
                 missing_value,
                 &indices,
                 kind,
@@ -687,12 +685,11 @@ impl Interpreter {
     }
 
     /// One level of a positional slice adverb (`:k`/`:v`/`:p`/`:kv`) applied to
-    /// `items`. A *nested* index element (a sub-list/Range) recurses and becomes
+    /// `data`. A *nested* index element (a sub-list/Range) recurses and becomes
     /// ONE nested list element in the output, preserving the index tree's shape;
     /// a scalar index contributes its formatted key/value entries in place.
     pub(crate) fn format_positional_slice_level(
-        items: &[Value],
-        bound_map: Option<&std::collections::HashSet<usize>>,
+        data: &ArrayData,
         missing_value: PositionalMissing<'_>,
         indices: &[Value],
         kind: &str,
@@ -702,8 +699,7 @@ impl Interpreter {
         for idx in indices {
             if let Some(sub) = Self::nested_index_elements(idx) {
                 let sub_out = Self::format_positional_slice_level(
-                    items,
-                    bound_map,
+                    data,
                     missing_value,
                     &sub,
                     kind,
@@ -712,8 +708,7 @@ impl Interpreter {
                 out.push(Value::array(sub_out));
                 continue;
             }
-            let (key, value, exists) =
-                Self::resolve_positional_scalar(items, bound_map, missing_value, idx);
+            let (key, value, exists) = Self::resolve_positional_scalar(data, missing_value, idx);
             if !keep_missing && !exists {
                 continue;
             }
@@ -745,12 +740,13 @@ impl Interpreter {
         }
     }
 
-    /// Resolve one scalar index against `items`, returning `(key, value, exists)`.
+    /// Resolve one scalar index against `data`, returning `(key, value, exists)`.
     /// Out-of-range or unfilled slots report the container's `missing_value` with
-    /// `exists = false`.
+    /// `exists = false`. `exists` is `ArrayData::hole_at` negated -- the same
+    /// predicate `:exists` uses, so `@a[0]:v` and `@a[0]:exists` cannot disagree
+    /// about whether a slot holds a gap marker or a real value.
     fn resolve_positional_scalar(
-        items: &[Value],
-        bound_map: Option<&std::collections::HashSet<usize>>,
+        data: &ArrayData,
         missing_value: PositionalMissing<'_>,
         idx: &Value,
     ) -> (Value, Value, bool) {
@@ -760,18 +756,11 @@ impl Interpreter {
             _ => idx.to_string_value().parse::<i64>().unwrap_or(-1),
         };
         let key = Value::int(i);
-        if i < 0 || i as usize >= items.len() {
+        if i < 0 || i as usize >= data.len() {
             return (key, missing_value.value_for(i), false);
         }
         let ui = i as usize;
-        let exists = match bound_map {
-            Some(set) => {
-                set.contains(&ui)
-                    || !matches!(items[ui].view(), ValueView::Package(name) if name == "Any")
-            }
-            None => true,
-        };
-        (key, items[ui].clone(), exists)
+        (key, data[ui].clone(), !data.hole_at(ui))
     }
 
     /// Collect every *leaf* integer index of a (possibly nested) slice index tree,
