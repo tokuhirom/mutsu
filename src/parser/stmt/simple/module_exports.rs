@@ -401,61 +401,7 @@ fn scan_module_source(source: &str) -> ModuleScanResult {
     let mut enum_values: Vec<String> = transitive_enum_values;
     collect_module_enum_values(&stmts, &mut enum_values);
     let mut exports: HashMap<String, InlineModuleExport> = HashMap::new();
-    for stmt in &stmts {
-        match stmt {
-            Stmt::SubDecl {
-                name,
-                is_export,
-                export_tags,
-                associativity,
-                precedence_trait,
-                is_test_assertion,
-                ..
-            } if *is_export => {
-                // Only include subs that are in the DEFAULT or MANDATORY export tags.
-                // Subs tagged only with custom tags (e.g. :others) should not be
-                // imported by a plain `use Module`.
-                if export_tags
-                    .iter()
-                    .any(|t| t == "DEFAULT" || t == "MANDATORY")
-                {
-                    let precedence = precedence_trait.as_ref().and_then(|(trait_name, ref_op)| {
-                        resolve_op_precedence(ref_op).map(|ref_level| match trait_name.as_str() {
-                            "tighter" => ref_level + 5,
-                            "looser" => ref_level - 5,
-                            _ => ref_level,
-                        })
-                    });
-                    let resolved = name.resolve();
-                    exports.insert(
-                        resolved.clone(),
-                        InlineModuleExport {
-                            name: resolved,
-                            precedence,
-                            associativity: associativity.clone(),
-                            is_test_assertion: *is_test_assertion,
-                        },
-                    );
-                }
-            }
-            Stmt::ProtoDecl {
-                name, is_export, ..
-            } if *is_export => {
-                // ProtoDecl doesn't carry export_tags; proto declarations with
-                // `is export` default to DEFAULT so always include them.
-                let resolved = name.resolve();
-                exports
-                    .entry(resolved.clone())
-                    .or_insert(InlineModuleExport {
-                        name: resolved,
-                        precedence: None,
-                        associativity: None,
-                        is_test_assertion: false,
-                    });
-            }
-            _ => {}
-        }
-    }
+    collect_exported_subs(&stmts, &mut exports);
     // Fallback scan for modules that use syntax not yet fully covered by parse_program_partial.
     // This keeps imported exported-callables discoverable for statement-call parsing.
     for (name, is_test_assertion) in extract_exported_names_fallback(source) {
@@ -588,6 +534,74 @@ fn collect_module_type_names_under(stmts: &[Stmt], prefix: &str, out: &mut Vec<S
                 collect_module_type_names_under(body, &composed, out);
                 out.push(composed);
                 out.push(name);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Collect `is export` sub/proto declarations from a statement list,
+/// recursing into `module`/`package` (and class/role) bodies: exported subs
+/// routinely live inside a `module Foo { ... }` block (e.g. Cro::HTTP::Router's
+/// `multi route(&route-definition) is export`). The regex fallback misses the
+/// bare-`multi` form (no `sub` keyword), so the AST walk must see them.
+fn collect_exported_subs(stmts: &[Stmt], exports: &mut HashMap<String, InlineModuleExport>) {
+    for stmt in stmts {
+        match stmt {
+            Stmt::SubDecl {
+                name,
+                is_export,
+                export_tags,
+                associativity,
+                precedence_trait,
+                is_test_assertion,
+                ..
+            } if *is_export => {
+                // Only include subs that are in the DEFAULT or MANDATORY export tags.
+                // Subs tagged only with custom tags (e.g. :others) should not be
+                // imported by a plain `use Module`.
+                if export_tags
+                    .iter()
+                    .any(|t| t == "DEFAULT" || t == "MANDATORY")
+                {
+                    let precedence = precedence_trait.as_ref().and_then(|(trait_name, ref_op)| {
+                        resolve_op_precedence(ref_op).map(|ref_level| match trait_name.as_str() {
+                            "tighter" => ref_level + 5,
+                            "looser" => ref_level - 5,
+                            _ => ref_level,
+                        })
+                    });
+                    let resolved = name.resolve();
+                    exports.insert(
+                        resolved.clone(),
+                        InlineModuleExport {
+                            name: resolved,
+                            precedence,
+                            associativity: associativity.clone(),
+                            is_test_assertion: *is_test_assertion,
+                        },
+                    );
+                }
+            }
+            Stmt::ProtoDecl {
+                name, is_export, ..
+            } if *is_export => {
+                // ProtoDecl doesn't carry export_tags; proto declarations with
+                // `is export` default to DEFAULT so always include them.
+                let resolved = name.resolve();
+                exports
+                    .entry(resolved.clone())
+                    .or_insert(InlineModuleExport {
+                        name: resolved,
+                        precedence: None,
+                        associativity: None,
+                        is_test_assertion: false,
+                    });
+            }
+            Stmt::Package { body, .. }
+            | Stmt::ClassDecl { body, .. }
+            | Stmt::RoleDecl { body, .. } => {
+                collect_exported_subs(body, exports);
             }
             _ => {}
         }

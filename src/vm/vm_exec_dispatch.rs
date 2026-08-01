@@ -392,67 +392,13 @@ impl Interpreter {
                         }
                         self.get_env_with_main_alias(bare)
                     })
-                    .or_else(|| {
-                        // Bare-name fallback: when looking up an unqualified
-                        // name (e.g. `msg` or `$msg`) inside a routine whose
-                        // current_package is a real package (e.g. `Gee`), try
-                        // resolving via the package's `our` store. This makes
-                        // `our $msg` accessible from `our sub talk { $msg }`
-                        // when `talk` is invoked from outside the package.
-                        if name.contains("::") {
-                            return None;
-                        }
-                        let cur = self.current_package().to_string();
-                        if cur.is_empty() || cur == "GLOBAL" || cur.contains("::&") {
-                            return None;
-                        }
-                        // Skip special names that shouldn't be package-qualified.
-                        let bare_first = name.trim_start_matches(['$', '@', '%', '&']);
-                        if bare_first.is_empty() {
-                            return None;
-                        }
-                        let first_ch = bare_first.chars().next().unwrap();
-                        if matches!(first_ch, '_' | '/' | '!' | '?' | '*' | '.' | '=')
-                            || first_ch.is_ascii_digit()
-                        {
-                            return None;
-                        }
-                        let candidate = if let Some(rest) = name.strip_prefix('$') {
-                            format!("${cur}::{rest}")
-                        } else if let Some(rest) = name.strip_prefix('@') {
-                            format!("@{cur}::{rest}")
-                        } else if let Some(rest) = name.strip_prefix('%') {
-                            format!("%{cur}::{rest}")
-                        } else if let Some(rest) = name.strip_prefix('&') {
-                            format!("&{cur}::{rest}")
-                        } else {
-                            format!("{cur}::{name}")
-                        };
-                        self.get_our_var(&candidate)
-                            .cloned()
-                            .or_else(|| self.get_env_with_main_alias(&candidate))
-                    })
-                    .or_else(|| {
-                        // Package-block `my` lexical fallback: a named sub defined in
-                        // a `package Foo { my $x = ...; sub f { $x } }` block closes
-                        // over `$x`, but the block scope is dropped on exit and named
-                        // registry subs have no per-sub closure env. When `f` runs
-                        // by-name `current_package` is `Foo`, so resolve the miss via
-                        // the per-package store recorded by `exec_package_scope_op`.
-                        // Gated on `current_package` so it never leaks to bare refs
-                        // after the block (those run under `GLOBAL`).
-                        if name.contains("::") {
-                            return None;
-                        }
-                        let cur = self.current_package().to_string();
-                        if cur.is_empty() || cur == "GLOBAL" {
-                            return None;
-                        }
-                        self.package_lexicals
-                            .get(&cur)
-                            .and_then(|m| m.get(name))
-                            .cloned()
-                    })
+                    // Bare-name package-chain fallback: `our` variables and
+                    // package-block `my` lexicals of the enclosing package
+                    // chain (a named sub's `current_package` is its package; a
+                    // method's is its owner class, whose qualified name walks
+                    // up to the enclosing module). See
+                    // `package_chain_var_fallback`.
+                    .or_else(|| self.package_chain_var_fallback(name))
                     // Anonymous state variable (`$`): fall back to persisted
                     // state so the value survives across closure calls.
                     .or_else(|| self.anon_state_value(name))
