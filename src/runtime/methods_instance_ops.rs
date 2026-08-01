@@ -393,6 +393,9 @@ impl Interpreter {
                         let obj = args.first().ok_or_else(|| {
                             RuntimeError::new("Attribute.get_value expects an object argument")
                         })?;
+                        // The object may arrive wrapped in a Scalar container
+                        // (a `$`-bound alias of the instance); read through it.
+                        let obj = obj.clone().deref_container();
                         let attr_name = attributes
                             .as_map()
                             .get("__mutsu_attr_name")
@@ -423,10 +426,15 @@ impl Interpreter {
                             .get("__mutsu_attr_name")
                             .map(|v| v.to_string_value())
                             .unwrap_or_default();
+                        // Write through a Scalar container wrapper: the shared
+                        // attribute cell of the underlying instance is what the
+                        // object's methods read (a silent no-op here loses e.g.
+                        // OO::Monitors' lock installation).
+                        let obj = args[0].clone().deref_container();
                         if let ValueView::Instance {
                             attributes: obj_attrs,
                             ..
-                        } = args[0].view()
+                        } = obj.view()
                         {
                             let mut updated = obj_attrs.to_map();
                             updated.insert(attr_name, new_val);
@@ -1177,35 +1185,10 @@ impl Interpreter {
                     .cloned()
                     .unwrap_or(Value::NIL));
             }
-            if method == "clone" {
-                let mut attrs: AttrMap = attributes.to_map();
-                // A slot promoted to a `ContainerRef` cell (a `:=`-bound
-                // attribute) must not leak its cell into the clone: snapshot
-                // the inner value so a write to the clone's attribute stays
-                // invisible to the original (raku clones get fresh containers).
-                for v in attrs.values_mut() {
-                    if matches!(v.view(), ValueView::ContainerRef(_)) {
-                        let taken = std::mem::replace(v, Value::NIL);
-                        *v = taken.deref_container();
-                    }
-                }
-                // Build sigil map from class attributes to coerce values properly
-                let class_attrs_info = self.collect_class_attributes(&class_name.resolve());
-                let sigil_map: HashMap<String, char> = class_attrs_info
-                    .iter()
-                    .map(|(name, _, _, _, _, sigil, _)| (name.clone(), *sigil))
-                    .collect();
-                let cn = class_name.resolve();
-                for arg in &args {
-                    if let ValueView::Pair(key, boxed) = arg.view()
-                        && self.is_attribute_buildable(&cn, key)
-                    {
-                        let sigil = sigil_map.get(key.as_str()).copied().unwrap_or('$');
-                        let coerced = Self::coerce_attr_value_by_sigil(boxed.clone(), sigil);
-                        attrs.insert(key.clone(), coerced);
-                    }
-                }
-                return Ok(Value::make_instance(class_name, attrs));
+            if method == "clone"
+                && let Some(result) = self.native_instance_clone_value(&target, &args)
+            {
+                return result;
             }
             if method == "Bool"
                 && args.is_empty()
@@ -2539,6 +2522,54 @@ impl Interpreter {
             }
         }
         parts
+    }
+
+    /// The native attribute-copying clone of an `Instance` value, with `:attr(v)`
+    /// twiddle args applied. Shared between the direct `.clone` dispatch arm and
+    /// the `callsame` base candidate of a user `clone` override
+    /// (`native_mu_base_next_candidate`). `None` when the value is not an
+    /// Instance.
+    pub(super) fn native_instance_clone_value(
+        &mut self,
+        target: &Value,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target.view()
+        else {
+            return None;
+        };
+        let mut attrs: AttrMap = attributes.to_map();
+        // A slot promoted to a `ContainerRef` cell (a `:=`-bound
+        // attribute) must not leak its cell into the clone: snapshot
+        // the inner value so a write to the clone's attribute stays
+        // invisible to the original (raku clones get fresh containers).
+        for v in attrs.values_mut() {
+            if matches!(v.view(), ValueView::ContainerRef(_)) {
+                let taken = std::mem::replace(v, Value::NIL);
+                *v = taken.deref_container();
+            }
+        }
+        // Build sigil map from class attributes to coerce values properly
+        let class_attrs_info = self.collect_class_attributes(&class_name.resolve());
+        let sigil_map: HashMap<String, char> = class_attrs_info
+            .iter()
+            .map(|(name, _, _, _, _, sigil, _)| (name.clone(), *sigil))
+            .collect();
+        let cn = class_name.resolve();
+        for arg in args {
+            if let ValueView::Pair(key, boxed) = arg.view()
+                && self.is_attribute_buildable(&cn, key)
+            {
+                let sigil = sigil_map.get(key.as_str()).copied().unwrap_or('$');
+                let coerced = Self::coerce_attr_value_by_sigil(boxed.clone(), sigil);
+                attrs.insert(key.clone(), coerced);
+            }
+        }
+        Some(Ok(Value::make_instance(class_name, attrs)))
     }
 
     /// Whether a routine body is exactly a yada stub (`...`/`!!!`/`???`), which

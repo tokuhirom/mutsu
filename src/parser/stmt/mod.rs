@@ -117,6 +117,7 @@ const STMT_PARSERS: &[StmtParser] = &[
     class::anon_class_decl,
     class::class_decl,
     class::monitor_decl,
+    class::declare_decl,
     class::role_decl,
     class::grammar_decl,
     class::module_decl,

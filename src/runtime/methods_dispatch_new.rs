@@ -527,7 +527,42 @@ impl Interpreter {
                 Err(failure) => return Ok(failure),
             }
         }
+        // `bless` also runs a user BUILDALL/POPULATE (Rakudo: bless calls
+        // BUILDALL) — see `run_user_buildall_hook` for the semantics.
+        self.run_user_buildall_hook(cn_resolved, &inv, &args)?;
         Ok(inv)
+    }
+
+    /// Run a USER-defined `BUILDALL` (or `POPULATE`) method on a freshly
+    /// constructed instance. Rakudo's construction always goes through
+    /// BUILDALL; mutsu builds natively, so a user BUILDALL — most commonly one
+    /// a custom HOW installed via `add_method` (OO::Monitors seeds the monitor
+    /// lock attribute there) — is called after the native build, and its
+    /// `callsame` resolves to the built instance via
+    /// `native_mu_base_next_candidate`.
+    pub(crate) fn run_user_buildall_hook(
+        &mut self,
+        class_key: &str,
+        instance: &Value,
+        args: &[Value],
+    ) -> Result<(), RuntimeError> {
+        let has_user = |zelf: &mut Self, m: &str| {
+            zelf.class_mro(class_key).iter().any(|c| {
+                zelf.registry()
+                    .classes
+                    .get(c.as_str())
+                    .is_some_and(|cd| cd.methods.contains_key(m))
+            })
+        };
+        let method = if has_user(self, "BUILDALL") {
+            "BUILDALL"
+        } else if has_user(self, "POPULATE") {
+            "POPULATE"
+        } else {
+            return Ok(());
+        };
+        self.call_method_with_values(instance.clone(), method, args.to_vec())?;
+        Ok(())
     }
 
     /// Native `bless` entry for the VM: dispatch straight to `dispatch_bless`,

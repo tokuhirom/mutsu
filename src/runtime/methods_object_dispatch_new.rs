@@ -2278,6 +2278,16 @@ impl Interpreter {
                         );
                     }
                 }
+                // A user BUILDALL/POPULATE (typically installed through a
+                // custom HOW's `add_method` — OO::Monitors seeds the monitor
+                // lock there) runs after the native build; its `callsame`
+                // resolves to the already-built instance as the base
+                // candidate (`native_mu_base_next_candidate`).
+                // TODO: Rakudo's BUILDALL *replaces* the build plan (a user
+                // BUILDALL that never calls back skips attribute
+                // initialization entirely); running it post-build is an
+                // additive approximation.
+                self.run_user_buildall_hook(class_key, &instance, &args)?;
                 return Ok(instance);
             }
         }
@@ -2319,8 +2329,18 @@ impl Interpreter {
                                     "name" => {
                                         let n = value.to_string_value();
                                         attrs.insert("name".to_string(), value.clone());
-                                        attrs
-                                            .insert("__mutsu_attr_name".to_string(), Value::str(n));
+                                        // Storage key is the BARE name (sigil+twigil
+                                        // stripped), matching `^add_attribute`'s class
+                                        // slots and every other Attribute builder — so
+                                        // `get_value`/`set_value` read and write the
+                                        // instance's actual attribute slot.
+                                        let bare = n
+                                            .trim_start_matches(|c: char| "$.!@%&".contains(c))
+                                            .to_string();
+                                        attrs.insert(
+                                            "__mutsu_attr_name".to_string(),
+                                            Value::str(bare),
+                                        );
                                     }
                                     "type" => {
                                         attrs.insert("type".to_string(), value.clone());

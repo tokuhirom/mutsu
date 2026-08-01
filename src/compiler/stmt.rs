@@ -1765,7 +1765,12 @@ impl Compiler {
                     // Bind the scalar placeholder to the (unflattened) condition value.
                     self.emit_set_named_var(ph);
                 }
-                if Self::body_mutates_topic(then_branch) {
+                if Self::has_block_enter_leave_phasers(then_branch) {
+                    // A branch with ENTER/LEAVE/KEEP/UNDO phasers is a real
+                    // block scope: its LEAVE must fire when the branch exits
+                    // (OO::Monitors unlocks its monitor lock this way).
+                    self.compile_phaser_block_scope(then_branch, false);
+                } else if Self::body_mutates_topic(then_branch) {
                     self.synthetic_block_body = true;
                     self.compile_stmt(&Stmt::Block(then_branch.clone()));
                 } else if Self::branch_declares_block_local(then_branch) {
@@ -1788,6 +1793,8 @@ impl Compiler {
                     }
                     if else_branch.len() == 1 && matches!(else_branch[0], Stmt::If { .. }) {
                         self.compile_stmt(&else_branch[0]);
+                    } else if Self::has_block_enter_leave_phasers(else_branch) {
+                        self.compile_phaser_block_scope(else_branch, false);
                     } else if Self::body_mutates_topic(else_branch) {
                         self.synthetic_block_body = true;
                         self.compile_stmt(&Stmt::Block(else_branch.clone()));

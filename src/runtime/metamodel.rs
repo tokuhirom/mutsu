@@ -294,19 +294,14 @@ impl Interpreter {
             return Ok(());
         }
         let instance = self.call_method_with_values(how_type, "new", Vec::new())?;
-        let has_user_find_method = self
-            .registry()
-            .classes
-            .get(&how_class)
-            .map(|cd| cd.mro.clone())
-            .unwrap_or_default()
-            .iter()
-            .any(|c| {
-                self.registry()
-                    .classes
-                    .get(c.as_str())
-                    .is_some_and(|cd| cd.methods.contains_key("find_method"))
-            });
+        // `class_mro` computes and caches the MRO on demand — `ClassDef::mro`
+        // itself is lazily filled and still empty right after a module load.
+        let has_user_find_method = self.class_mro(&how_class).iter().any(|c| {
+            self.registry()
+                .classes
+                .get(c.as_str())
+                .is_some_and(|cd| cd.methods.contains_key("find_method"))
+        });
         let mut reg = self.registry_mut();
         reg.class_how_values
             .insert(grammar_name.to_string(), instance.clone());
@@ -338,13 +333,9 @@ impl Interpreter {
         if !self.registry().classes.contains_key(&how_class) {
             return Ok(false);
         }
-        let mro = self
-            .registry()
-            .classes
-            .get(&how_class)
-            .map(|cd| cd.mro.clone())
-            .unwrap_or_default();
-        let has_user_compose = mro.iter().any(|c| {
+        // `class_mro` computes and caches the MRO on demand — `ClassDef::mro`
+        // itself is lazily filled and still empty right after a module load.
+        let has_user_compose = self.class_mro(&how_class).iter().any(|c| {
             self.registry()
                 .classes
                 .get(c.as_str())
@@ -355,5 +346,111 @@ impl Interpreter {
             .class_how_values
             .insert(class_name.to_string(), instance);
         Ok(has_user_compose)
+    }
+
+    /// Whether the (user) class of the installed HOW instance for `class_name`
+    /// defines `method_name` anywhere in its MRO.
+    fn declare_how_has_user_method(&mut self, how_val: &Value, method_name: &str) -> bool {
+        let ValueView::Instance {
+            class_name: how_class,
+            ..
+        } = how_val.view()
+        else {
+            return false;
+        };
+        self.class_mro(&how_class.resolve()).iter().any(|c| {
+            self.registry()
+                .classes
+                .get(c.as_str())
+                .is_some_and(|cd| cd.methods.contains_key(method_name))
+        })
+    }
+
+    /// Drive the user HOW protocol for a DECLARE'd class right after its
+    /// native registration (Rakudo's World does the same calls during
+    /// compilation): the HOW's `new_type` override runs with `callsame`
+    /// resolving to the already-registered type object, then `add_method`
+    /// runs for every method declared in the body — the override typically
+    /// `.wrap`s the method (landing in `method_wrap_chains` via the Method
+    /// object's owner markers) and re-adds it through the fully-qualified
+    /// native `self.Metamodel::ClassHOW::add_method`, which is a no-op for an
+    /// already-registered method. The user `compose` hook is NOT called here —
+    /// the caller queues it via `pending_class_compose` so it runs after the
+    /// class's custom `is` traits, like the EXPORTHOW `class` mapping.
+    pub(crate) fn declare_drive_how_protocol(
+        &mut self,
+        class_name: &str,
+    ) -> Result<(), RuntimeError> {
+        let Some(how_val) = self.registry().class_how_values.get(class_name).cloned() else {
+            return Ok(());
+        };
+        let type_obj = Value::package(Symbol::intern(class_name));
+        if self.declare_how_has_user_method(&how_val, "new_type") {
+            self.pending_declare_new_type = Some(type_obj.clone());
+            let result = self.call_method_with_values(
+                how_val.clone(),
+                "new_type",
+                vec![Value::pair(
+                    "name".to_string(),
+                    Value::str(class_name.to_string()),
+                )],
+            );
+            self.pending_declare_new_type = None;
+            result?;
+        }
+        if self.declare_how_has_user_method(&how_val, "add_method") {
+            // The declared (public, non-multi) methods, sorted for a
+            // deterministic protocol order. Each is passed as a Method object
+            // carrying its owner markers so a `.wrap` inside the user
+            // `add_method` becomes a class-keyed wrap chain.
+            let mut method_names: Vec<String> = self
+                .registry()
+                .classes
+                .get(class_name)
+                .map(|cd| {
+                    cd.methods
+                        .iter()
+                        .filter(|(_, overloads)| {
+                            overloads.first().is_some_and(|first| {
+                                !first.is_private && !first.is_submethod && !first.is_multi
+                            })
+                        })
+                        .map(|(name, _)| name.clone())
+                        .collect()
+                })
+                .unwrap_or_default();
+            method_names.sort();
+            for method_name in method_names {
+                let Some(overloads) = self
+                    .registry()
+                    .classes
+                    .get(class_name)
+                    .and_then(|cd| cd.methods.get(&method_name).cloned())
+                else {
+                    continue;
+                };
+                let Some(first) = overloads.first() else {
+                    continue;
+                };
+                let method_obj = self.make_method_object_with_owner(
+                    &method_name,
+                    first,
+                    false,
+                    first.return_type.clone(),
+                    Some(&overloads),
+                    Some(class_name),
+                );
+                self.call_method_with_values(
+                    how_val.clone(),
+                    "add_method",
+                    vec![
+                        type_obj.clone(),
+                        Value::str(method_name.clone()),
+                        method_obj,
+                    ],
+                )?;
+            }
+        }
+        Ok(())
     }
 }

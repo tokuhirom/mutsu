@@ -238,7 +238,15 @@ impl Compiler {
             // Bind the scalar placeholder to the (unflattened) condition value.
             self.emit_set_named_var(ph);
         }
-        self.compile_stmts_value(then_branch);
+        // A branch with ENTER/LEAVE/KEEP/UNDO phasers is a real block scope:
+        // its LEAVE must fire when the branch exits, with the branch value
+        // still delivered on the stack (OO::Monitors' method wrapper unlocks
+        // its monitor lock in a LEAVE inside `if SELF.DEFINITE { ... }`).
+        if Self::has_block_enter_leave_phasers(then_branch) {
+            self.compile_phaser_block_scope(then_branch, true);
+        } else {
+            self.compile_stmts_value(then_branch);
+        }
         let jump_end = self.code.emit(OpCode::Jump(0));
         self.code.patch_jump(jump_else);
         if needs_cond_value {
@@ -248,6 +256,8 @@ impl Compiler {
         if else_branch.is_empty() {
             let empty_idx = self.code.add_constant(Value::slip(vec![]));
             self.code.emit(OpCode::LoadConst(empty_idx));
+        } else if Self::has_block_enter_leave_phasers(else_branch) {
+            self.compile_phaser_block_scope(else_branch, true);
         } else {
             self.compile_stmts_value(else_branch);
         }

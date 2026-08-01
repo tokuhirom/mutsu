@@ -145,6 +145,50 @@ impl Interpreter {
             }
             // mutsu has no method cache to publish; the default is a no-op.
             "publish_method_cache" => Some(Ok(Value::NIL)),
+            // `callsame` from a user `new_type` override (OO::Monitors'
+            // MonitorHOW) while a DECLARE'd class is being registered: the
+            // native part of `new_type` — creating and registering the type —
+            // has already run, so the base candidate simply returns the type
+            // object under registration.
+            "new_type" => self.pending_declare_new_type.clone().map(Ok),
+            // Any other native ClassHOW metamethod (`add_method`, `compose`,
+            // `add_attribute`, `attributes`, ...) is the final base candidate
+            // when the user MRO is exhausted — same routing as the direct
+            // native fallback for methods a user HOW does not override.
+            _ if Self::is_classhow_method(&method_name) => {
+                Some(self.dispatch_classhow_method(&method_name, args))
+            }
+            _ => None,
+        }
+    }
+
+    /// When a user BUILDALL/POPULATE/clone method (typically installed by a
+    /// custom HOW's `add_method` — OO::Monitors) exhausts the user MRO via
+    /// `callsame`/`nextsame`, provide the NATIVE Mu base behavior as the final
+    /// candidate: the already-built instance for BUILDALL/POPULATE (mutsu's
+    /// native build ran before the user hook — see `run_user_buildall_hook`),
+    /// and the native attribute-copying clone for `clone`.
+    fn native_mu_base_next_candidate(
+        &mut self,
+        override_args: Option<&[Value]>,
+    ) -> Option<Result<Value, RuntimeError>> {
+        let method_name = self.samewith_context_stack.last().map(|(n, _)| n.clone())?;
+        if !matches!(method_name.as_str(), "BUILDALL" | "POPULATE" | "clone") {
+            return None;
+        }
+        let frame = self.method_dispatch_stack.last()?;
+        let frame_args = frame.args.clone();
+        let invocant = self
+            .env
+            .get("self")
+            .cloned()
+            .unwrap_or_else(|| frame.invocant.clone());
+        match method_name.as_str() {
+            "BUILDALL" | "POPULATE" => Some(Ok(invocant)),
+            "clone" => {
+                let args: Vec<Value> = override_args.map(<[Value]>::to_vec).unwrap_or(frame_args);
+                self.native_instance_clone_value(&invocant, &args)
+            }
             _ => None,
         }
     }
@@ -324,6 +368,10 @@ impl Interpreter {
                     // implementation as the last candidate before giving up.
                     let result = if let Some(res) =
                         self.native_grammar_parse_next_candidate(override_args.as_deref())
+                    {
+                        res?
+                    } else if let Some(res) =
+                        self.native_mu_base_next_candidate(override_args.as_deref())
                     {
                         res?
                     } else {

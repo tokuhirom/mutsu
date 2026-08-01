@@ -145,6 +145,29 @@ pub(crate) fn monitor_decl(input: &str) -> PResult<'_, Stmt> {
     Ok((rest, stmt))
 }
 
+/// Parse a declarator registered through a `use`d module's EXPORTHOW::DECLARE
+/// block (`my package EXPORTHOW { package DECLARE { constant kw = SomeHOW } }`):
+/// `kw Name { ... }` parses exactly like `class`, and the resulting ClassDecl
+/// carries a `__mutsu_declare_how` marker trait naming the keyword, so
+/// registration can attach the declarator's HOW to the class.
+pub(crate) fn declare_decl(input: &str) -> PResult<'_, Stmt> {
+    for kw in super::super::simple::declare_keyword_names() {
+        let Some(rest) = keyword(&kw, input) else {
+            continue;
+        };
+        let (rest, _) = ws1(rest)?;
+        let (rest, mut stmt) = class_decl_body(rest, false)?;
+        if let Stmt::ClassDecl { custom_traits, .. } = &mut stmt {
+            custom_traits.push((
+                "__mutsu_declare_how".to_string(),
+                Some(Expr::Literal(Value::str(kw))),
+            ));
+        }
+        return Ok((rest, stmt));
+    }
+    Err(PError::expected("declare declaration"))
+}
+
 /// Parse `augment class ClassName { ... }` declaration (monkey-patching).
 /// Also handles `augment role RoleName { ... }` (always illegal — roles are
 /// closed) and the anonymous form `augment class { ... }` (X::Anon::Augment).

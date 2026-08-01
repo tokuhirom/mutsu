@@ -442,6 +442,17 @@ impl Interpreter {
             }
         }
 
+        // A fully-qualified call naming a builtin metamodel ancestor
+        // (`self.Metamodel::ClassHOW::add_method($type, $name, $meth)` in a
+        // user HOW override — OO::Monitors' MonitorHOW): dispatch to the
+        // native ClassHOW metamethod implementation. The MRO membership check
+        // above guarantees the receiver really inherits from the metamodel
+        // class, and an overriding user method does not recurse (the qualified
+        // spelling names the parent implementation on purpose).
+        if Self::is_metamodel_class_name(qualifier) && Self::is_classhow_method(actual_method) {
+            return Some(self.dispatch_classhow_method(actual_method, args));
+        }
+
         // Last resort: the qualifier is a NATIVE builtin ancestor (verified in the
         // MRO above) whose method is Rust-implemented rather than a user method —
         // e.g. `self.IO::Path::slurp` from a class that `is IO::Path`. Dispatch it

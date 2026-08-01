@@ -438,6 +438,20 @@ impl Interpreter {
             }
         }
 
+        // A method installed via `.^add_method` with a closure literal
+        // (`anon method { $captured }` — OO::Monitors' POPULATE hook) carries
+        // the frozen creating-scope env so its captures still resolve after
+        // that scope is gone. Merge those names in (self/params inserted
+        // above/below win). Mirrors the same merge in the fast path.
+        if let Some(captured) = &method_def.captured_env {
+            let env = self.env_mut();
+            for (sym, val) in captured.iter() {
+                if !env.contains_key_sym(*sym) {
+                    env.insert_sym(*sym, val.clone());
+                }
+            }
+        }
+
         // Skip invocant param, bind remaining
         let mut bind_params = Vec::new();
         let mut bind_param_defs = Vec::new();
