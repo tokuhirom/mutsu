@@ -203,16 +203,41 @@ fixed:
 | --- | --- | --- |
 | `X::Bind::Slice` was never registered, so its own `.new` did not exist | 2 | `news/2026-08/bind-slice-is-a-real-exception-class.md` |
 | a parse failure had no class at all — the parser's generic `Confused. parse error at …` | 5 | `news/2026-08/parse-failures-carry-a-syntax-exception-class.md` |
-| `use fatal` inside a *string-form* `throws-like` never throws | 1 | open: `todo/tickets/use-fatal-lost-in-a-string-form-throws-like.md` |
+| a bare call statement did not sink its value, so a string-form `throws-like` never threw | 1 | `news/2026-08/statement-call-sinks-its-value.md` |
 
 The one file left over (`t/block-lexical-scope.t`) is not an exception-classing
 bug at all: it wants `X::Undeclared::Symbols ~~ X::Undeclared`, i.e. the
 unregistered-hierarchy problem of
 `todo/deep/exception-class-hierarchy-is-mostly-unregistered.md`.
 
-So what stands between here and flipping `runtime_module.rs` is those two open
-records plus a pass over the lenient-`is` test files. Re-run `tmp/sweep-full.sh`
-to re-measure after each.
+### Re-measured after the parse-failure classes (2026-08-01)
+
+| | before | after |
+| --- | --- | --- |
+| pass under both | 2644 | **2652 / 2722** |
+| regress under the real module | 62 | **57** |
+| passes only under the real module | 1 | 1 |
+| fail under both (pre-existing) | 12 | 12 |
+
+Splitting the 57 by `raku`'s own verdict: **27 files `raku` also fails** (test
+files to correct — `todo/tickets/local-tests-rely-on-a-lenient-native-is.md`)
+and **30 files `raku` passes** (real mutsu gaps). Two systemic causes stand out
+in that 30 and are worth taking before the individual gaps:
+
+- **A class declared inside an EVAL'd code string is named after the *module*
+  that called EVAL.** `throws-like 'class Foo { ... }', X::Attribute::Undeclared`
+  reports `.package-name` as `Test2::Foo`, and `composition-not-composable.t`
+  gets `.target-name` `Test2::B`. `EVAL ..., context => CALLER::` has to compile
+  in the caller's package, not the module's — the same `current_package` family
+  as `news/2026-08/nested-type-short-name-owner-scope.md`.
+- **Exception classes raku names that mutsu does not raise**:
+  `X::Role::Initialization` (arrives as `X::Undeclared::Symbols`),
+  `X::Syntax::Augment::Illegal` (arrives as `X::Augment::NoSuchType`), and
+  `X::Phaser::PrePost` with an empty `.message`.
+
+So what stands between here and flipping `runtime_module.rs` is those, plus a
+pass over the lenient-`is` test files. Re-run `tmp/sweep-full.sh` to re-measure
+after each.
 
 ## Blocker found while doing step 1: the native provider shadows an import — FIXED
 
