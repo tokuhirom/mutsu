@@ -1751,6 +1751,12 @@ impl Interpreter {
         // X::IO::Closed
         register_x("X::IO::Closed", "Exception");
 
+        // X::IO path-resolution exceptions (IO::Path.resolve/:completely and
+        // the ecosystem's child-secure pattern construct these from user code:
+        // `X::IO::NotAChild.new: :path(...), :child(...)`).
+        register_x("X::IO::Resolve", "Exception");
+        register_x("X::IO::NotAChild", "Exception");
+
         // X::Role subtypes
         register_x("X::Role::Parametric::NoSuchCandidate", "Exception");
         register_x("X::Role::Unimplemented::Multi", "Exception");
