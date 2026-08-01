@@ -28,18 +28,27 @@ Unsupported nqp:: op: nqp::getstdout
   in sub plan at Test2.rakumod line 100
 ```
 
-Missing ops — **9 of 11**, all thin:
+Missing ops — **9 of 11**, all thin. Every one of them is used in exactly one or
+two places, so the semantics `Test` actually depends on are narrow:
 
-| op | what it needs |
-| --- | --- |
-| `getstdout`, `getstderr` | return the process's standard handles as VM handles |
-| `setbuffersizefh` | set a handle's buffer size (`Test` unbuffers for TAP ordering) |
-| `can` | does this object have this method |
-| `eqaddr` | object identity |
-| `join`, `split` | string ops over an nqp list |
-| `time`, `time_n` | integer / float wall clock |
+| op | `Test.rakumod` use site | what it needs |
+| --- | --- | --- |
+| `getstdout`, `getstderr`, `setbuffersizefh` | 44-45, `sub _init_io` — `nqp::setbuffersizefh(nqp::getstdout(), 0)` | the process's standard handles as VM handles, and unbuffering them (TAP ordering) |
+| `can` | 743-744 — `try $obj.raku if nqp::can($obj, 'raku')` | does this object have this method |
+| `eqaddr` | 160-161 — `nqp::eqaddr($expected.WHAT, Mu)` | object identity (used on type objects) |
+| `join`, `split` | 461-462 and 772-773 — `nqp::join("\n$indents# ", nqp::split("\n", ...))` | string join/split over an nqp list, for `diag` indentation |
+| `time`, `time_n` | 117-118 — `$time_before = nqp::time` | integer / float wall clock |
 
 Present already: `istype`, `iseq_i`.
+
+Implementation sites on the mutsu side: the `nqp::` arms live in
+`src/runtime/builtins.rs` (`"nqp::atkey"`, `"nqp::sha1"`, `"nqp::decont"`, ...),
+and the "unimplemented op must not alias a builtin" guard that produces the
+error above is `src/runtime/builtins_operators_fallback.rs:967`. Note `join`,
+`split`, `time` and `can` all collide with Raku builtins of the same short name
+— that guard exists precisely so they fail loudly instead of silently answering
+with Raku semantics, so implement them as real full-name arms, not by relaxing
+the guard (see `news/2026-07/qualified-call-no-longer-aliases-a-builtin.md`).
 
 None is in the hard tiers from
 `news/2026-07/nqp-op-layer-measured-and-rejected.md` (no thunk-taking control
@@ -64,3 +73,25 @@ of diffs at once. Sequence it deliberately:
    thing and already loaded from source — check it still composes.
 
 Do not start this in the same PR as anything else.
+
+## Reproducing the measurement in one minute
+
+```bash
+R=<rakudo-2026.06 source tree>          # or re-download the release tarball
+mkdir -p tmp/core
+python3 - <<PY
+s = open("$R/lib/Test.rakumod").read()
+open('tmp/core/Test2.rakumod','w').write(s.replace('unit module Test;','unit module Test2;',1))
+PY
+printf 'use Test2;\nplan 1;\nok 1, "x";\n' > tmp/core/t.raku
+timeout 30 target/debug/mutsu -I tmp/core tmp/core/t.raku
+```
+
+The rename is only to bypass mutsu's `use Test` interception in
+`runtime_module.rs` — nothing else in the file is touched. Today this prints
+`Unsupported nqp:: op: nqp::getstdout`, and each op implemented moves the error
+further down the file. When it runs clean, step 2 above is done.
+
+Beware when re-measuring which ops are missing: **the shell here is zsh**, which
+does not word-split a plain `$var`, so `ops=$(...); for op in $ops` silently
+iterates once. Use `... | while read op` or `$(...)` directly in the `for`.
