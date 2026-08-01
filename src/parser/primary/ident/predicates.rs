@@ -228,6 +228,11 @@ pub(crate) fn is_listop(name: &str) -> bool {
             | "times"
             | "undefine"
             | "unlink"
+            // `item $x` / `item [1,2,3]` — the item-context coercion. Without
+            // it, `@vars.push: item [...]` (rakudo's own Test.rakumod saves its
+            // state that way) parsed `item` as a bare word and dropped the
+            // array literal entirely.
+            | "item"
     ) || is_expr_listop(name)
 }
 
