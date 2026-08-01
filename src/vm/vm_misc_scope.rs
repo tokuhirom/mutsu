@@ -289,14 +289,7 @@ impl Interpreter {
         if let Err(ref e) = body_result
             && Self::is_exceptional_block_exit(e)
         {
-            let err_val = if let Some(ex) = e.exception.as_ref() {
-                *ex.clone()
-            } else {
-                let mut exc_attrs = std::collections::HashMap::new();
-                exc_attrs.insert("message".to_string(), Value::str(e.message.clone()));
-                // Untyped runtime error -> X::AdHoc (see vm_control_ops.rs).
-                Value::make_instance(crate::symbol::Symbol::intern("X::AdHoc"), exc_attrs)
-            };
+            let err_val = e.exception_value();
             self.env_mut().insert("!".to_string(), err_val.clone());
             for (i, name) in code.locals.iter().enumerate() {
                 if name == "!" {
@@ -343,14 +336,7 @@ impl Interpreter {
             if let Err(ref e) = body_result
                 && Self::is_exceptional_block_exit(e)
             {
-                let err_val = if let Some(ex) = e.exception.as_ref() {
-                    *ex.clone()
-                } else {
-                    let mut exc_attrs = std::collections::HashMap::new();
-                    exc_attrs.insert("message".to_string(), Value::str(e.message.clone()));
-                    // Untyped runtime error -> X::AdHoc (see vm_control_ops.rs).
-                    Value::make_instance(crate::symbol::Symbol::intern("X::AdHoc"), exc_attrs)
-                };
+                let err_val = e.exception_value();
                 self.env_mut().insert("!".to_string(), err_val.clone());
                 // Also update the local slot for $! if present
                 for (i, name) in code.locals.iter().enumerate() {

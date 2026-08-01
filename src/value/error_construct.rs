@@ -153,6 +153,58 @@ impl RuntimeError {
         Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 
+    /// Split a message written in the `"X::Type: text"` convention into its
+    /// class name and text. Hundreds of call sites spell a typed exception that
+    /// way in a plain untyped `RuntimeError`; this is what makes the convention
+    /// real instead of decorative. A message that is only a class name
+    /// (`"X::Match::Bool"`) counts too — its text is the class name, matching
+    /// what `typed()` does when no `message` attribute is supplied.
+    fn split_typed_message_convention(message: &str) -> Option<(&str, &str)> {
+        if !message.starts_with("X::") {
+            return None;
+        }
+        let (name, text) = match message.find(": ") {
+            Some(i) => (&message[..i], &message[i + 2..]),
+            None => (message, message),
+        };
+        // Every `::`-separated segment has to look like a type name, so an
+        // ordinary sentence that merely opens with `X::` is left alone.
+        let well_formed = name.split("::").all(|seg| {
+            seg.starts_with(|c: char| c.is_ascii_uppercase())
+                && seg.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        });
+        well_formed.then_some((name, text))
+    }
+
+    /// The exception object this error presents to `CATCH` / `$!` /
+    /// `throws-like`. Prefers a structured exception the error already carries,
+    /// then the `"X::Type: text"` message convention, and finally `X::AdHoc` —
+    /// the class a bare `die "msg"` produces in Raku. `X::AdHoc` IS-A
+    /// `Exception`, so `isa-ok $!, Exception` still matches an untyped error.
+    pub(crate) fn exception_value(&self) -> Value {
+        self.exception_value_with_backtrace(None)
+    }
+
+    /// `exception_value`, plus a `backtrace` attribute for a legacy error that
+    /// only carries its backtrace as a string. Ignored when the error already
+    /// has a structured exception, which carries its own.
+    pub(crate) fn exception_value_with_backtrace(&self, backtrace: Option<Value>) -> Value {
+        if let Some(ex) = self.exception.as_ref() {
+            return (**ex).clone();
+        }
+        let (class_name, text) = Self::split_typed_message_convention(&self.message)
+            .unwrap_or(("X::AdHoc", self.message.as_str()));
+        let mut attrs = HashMap::new();
+        attrs.insert("message".to_string(), Value::str_from(text));
+        if let Some(line) = self.line() {
+            attrs.insert("line".to_string(), Value::int(line as i64));
+        }
+        if let Some(bt) = backtrace {
+            attrs.insert("backtrace".to_string(), bt);
+        }
+        Value::make_instance(Symbol::intern(class_name), attrs)
+    }
+
     /// Create a typed exception error with the given class name and attributes.
     /// This is the general-purpose constructor for structured exceptions.
     pub(crate) fn typed(class_name: &str, attrs: HashMap<String, Value>) -> Self {

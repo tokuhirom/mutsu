@@ -341,26 +341,11 @@ impl Interpreter {
                     return Err(e);
                 }
                 self.stack.truncate(saved_depth);
-                let err_val = if let Some(ex) = e.exception.as_ref() {
-                    *ex.clone()
-                } else {
-                    let mut exc_attrs = std::collections::HashMap::new();
-                    exc_attrs.insert("message".to_string(), Value::str(e.message.clone()));
-                    if let Some(line) = e.line() {
-                        exc_attrs.insert("line".to_string(), Value::int(line as i64));
-                    }
-                    if let Some(bt) = e.backtrace() {
-                        // Build a Backtrace object from the string for
-                        // legacy errors that only have a string backtrace.
-                        let bt_val = Self::backtrace_value_from_string(bt);
-                        exc_attrs.insert("backtrace".to_string(), bt_val);
-                    }
-                    // An untyped runtime error surfaces as X::AdHoc in Raku (the
-                    // class a bare `die "msg"` produces), not the abstract base
-                    // Exception. X::AdHoc IS-A Exception, so `throws-like
-                    // ..., Exception` / `isa-ok $!, Exception` still match.
-                    Value::make_instance(Symbol::intern("X::AdHoc"), exc_attrs)
-                };
+                // Build a Backtrace object from the string for legacy errors
+                // that only have a string backtrace.
+                let err_val = e.exception_value_with_backtrace(
+                    e.backtrace().map(Self::backtrace_value_from_string),
+                );
                 let saved_topic = self.env().get("_").cloned();
                 // Per Raku semantics `$!` is only *updated* to the exception when it
                 // propagates out of the `try` unhandled (swallowed by the implicit
