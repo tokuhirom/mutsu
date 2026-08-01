@@ -28,6 +28,12 @@ impl Interpreter {
         }
         // Record deprecation for cached compiled functions
         self.record_cf_deprecation(cf);
+        // An END phaser registered inside this call closes over this frame's
+        // lexicals; the frame dies on return, so its final values have to be
+        // frozen into the phaser's capture before the env is restored. Recorded
+        // here so the return path can tell "registered during this call" from
+        // "registered earlier" with one integer compare.
+        let end_phaser_count_before = self.end_phaser_count();
         // Inject callsite line BEFORE push_call_frame so the parent env
         // contains the updated ?LINE. This avoids triggering Arc::make_mut
         // deep clone after the env Arc is shared with the call frame.
@@ -553,6 +559,22 @@ impl Interpreter {
                     let v = v.clone();
                     restored_env.insert_sym(*sym, v);
                 }
+            }
+            // Freeze any END phaser registered during this call against the
+            // frame that is about to die. `restored_env` is the caller's env
+            // after the writeback merge, so a name the callee env holds that
+            // `restored_env` does not is exactly a name this frame takes with
+            // it — the captured copy is its last surviving binding. Names that
+            // do propagate stay unfrozen, so a later mutation of the caller's
+            // variable is still what the phaser reads.
+            if self.end_phaser_count() > end_phaser_count_before {
+                let current = self.clone_env();
+                let dying: crate::runtime::NameSet = current
+                    .keys()
+                    .filter(|k| !restored_env.contains_key_sym(**k))
+                    .copied()
+                    .collect();
+                self.update_end_phaser_envs(end_phaser_count_before, &current, &dying);
             }
             *self.env_mut() = restored_env;
         }
