@@ -511,7 +511,11 @@ impl Interpreter {
             return Ok(());
         }
 
-        if !(self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>")) {
+        // The built-in answer for a trait no user handler claims. In Raku the
+        // built-in `trait_mod:<is>` candidates live in the same multi as any
+        // user-declared one, so a user candidate that does not match simply
+        // does not consume the trait; this is what that fallback means here.
+        fn unknown_variable_trait(trait_name: &str) -> Option<RuntimeError> {
             // For uppercase type-like traits (e.g. `is Map`, `is Set`), silently
             // accept them even if trait_mod:<is> is not defined. These are type
             // container traits that may not have runtime trait_mod:<is> handlers.
@@ -520,15 +524,24 @@ impl Interpreter {
                 .next()
                 .is_some_and(|c| c.is_ascii_uppercase())
             {
-                if has_arg {
-                    self.stack.pop();
-                }
-                return Ok(());
+                return None;
             }
-            return Err(RuntimeError::new(format!(
+            Some(RuntimeError::new(format!(
                 "X::Comp::Trait::Unknown: Unknown variable trait 'is {}'",
                 trait_name
-            )));
+            )))
+        }
+
+        if !(self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>")) {
+            match unknown_variable_trait(&trait_name) {
+                Some(err) => return Err(err),
+                None => {
+                    if has_arg {
+                        self.stack.pop();
+                    }
+                    return Ok(());
+                }
+            }
         }
         let trait_value = if has_arg {
             self.stack.pop().unwrap_or(Value::NIL)
@@ -542,8 +555,31 @@ impl Interpreter {
             self,
             call_method_mut_with_values(name, target, "VAR", vec![])
         )?;
-        let named_arg = Value::pair(trait_name, trait_value);
-        self.vm_call_function("trait_mod:<is>", vec![var_obj, named_arg])?;
-        Ok(())
+        let named_arg = Value::pair(trait_name.clone(), trait_value);
+        match self.vm_call_function("trait_mod:<is>", vec![var_obj, named_arg]) {
+            Ok(_) => Ok(()),
+            // No user candidate accepted this trait. `Test.rakumod` exports
+            // `multi sub trait_mod:<is>(Routine:D, :$test-assertion!)`, so
+            // merely importing `Test` used to turn every unrecognised variable
+            // trait into X::Multi::NoMatch instead of X::Comp::Trait::Unknown.
+            // A dispatch failure raised from *inside* a handler that did match
+            // is a real error and still propagates — this only catches the
+            // no-candidate verdict for `trait_mod:<is>` itself.
+            Err(e) if Self::is_trait_mod_no_candidate(&e) => {
+                match unknown_variable_trait(&trait_name) {
+                    Some(err) => Err(err),
+                    None => Ok(()),
+                }
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Whether `e` is the "none of these signatures matches" verdict for
+    /// `trait_mod:<is>` itself, rather than an error from inside a handler.
+    fn is_trait_mod_no_candidate(e: &RuntimeError) -> bool {
+        let msg = &e.message;
+        msg.contains("No matching candidates for proto sub: trait_mod:<is>")
+            || msg.contains("Cannot resolve caller trait_mod:<is>")
     }
 }
