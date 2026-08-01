@@ -366,6 +366,7 @@ mod system_eval_vars;
 mod system_introspect;
 mod tap_state;
 mod test_functions;
+pub(crate) use test_functions::{TEST_MODULE_EXPORTS, is_test_module_export};
 pub(crate) mod thread_compat;
 pub(crate) mod types;
 mod undeclared_routines;

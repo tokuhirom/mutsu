@@ -174,6 +174,16 @@ impl Interpreter {
                     for value in values.iter() {
                         match self.call_sub_value(code.clone(), vec![value.clone()], false) {
                             Ok(_) => {}
+                            // A matching `when` inside the block leaves that
+                            // block with `succeed`. That ends the *eigenstate's*
+                            // iteration, not the THREAD loop — every loop
+                            // construct absorbs it the same way (see the `for`
+                            // body in vm_for_loop_body.rs). Propagating it
+                            // aborted the remaining eigenstates and unwound the
+                            // enclosing routine: Test::Util's
+                            // `is-deeply-junction` guts only the first
+                            // eigenstate of `any(all(1,2), 3)` without this.
+                            Err(e) if e.is_succeed() => {}
                             Err(e) => return Some(Err(e)),
                         }
                     }

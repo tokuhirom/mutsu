@@ -645,41 +645,9 @@ fn is_default_export_from_regex_match_group(caps: &regex::Captures, group: usize
     }
 }
 
-/// Functions exported by `use Test`.
-/// Test functions are implemented natively in Rust (`test_functions.rs`),
-/// not loaded from a `.rakumod` file, so they must be hardcoded here.
-const TEST_EXPORTS: &[&str] = &[
-    "ok",
-    "nok",
-    "is",
-    "isnt",
-    "is-deeply",
-    "is-approx",
-    "cmp-ok",
-    "like",
-    "unlike",
-    "isa-ok",
-    "does-ok",
-    "can-ok",
-    "lives-ok",
-    "dies-ok",
-    "exits-ok",
-    "eval-lives-ok",
-    "eval-dies-ok",
-    "throws-like",
-    "fails-like",
-    "pass",
-    "flunk",
-    "skip",
-    "skip-rest",
-    "todo",
-    "diag",
-    "plan",
-    "done-testing",
-    "bail-out",
-    "subtest",
-    "use-ok",
-    "force_todo",
-    "force-todo",
-    "tap-ok",
-];
+/// Functions exported by `use Test`, re-exported from the runtime so the
+/// parser and the dispatcher cannot drift apart. Test functions are implemented
+/// natively in Rust (`runtime/test_functions/`), not loaded from a `.rakumod`
+/// file, so the set has to be spelled out somewhere; that somewhere is
+/// `runtime::TEST_MODULE_EXPORTS`.
+use crate::runtime::TEST_MODULE_EXPORTS as TEST_EXPORTS;
