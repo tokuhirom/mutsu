@@ -313,10 +313,14 @@ impl Interpreter {
         } else if name.starts_with("Metamodel::") {
             // Meta-object protocol type objects
             Value::package(Symbol::intern(name))
-        } else if name == "nqp::gethostname" {
+        } else if name.starts_with("nqp::") {
             // A no-paren 0-arg `nqp::`-op term dispatches through the builtin nqp
             // compat layer, not the qualified symbol lookup below (which would
-            // raise "Could not find symbol '&gethostname' in 'nqp'").
+            // raise "Could not find symbol '&gethostname' in 'nqp'"). This holds
+            // for the whole reserved `nqp::` namespace, not just the one op that
+            // first needed it: `nqp::time` is written without parentheses all
+            // over rakudo's own `Test.rakumod`. An op mutsu does not implement
+            // still fails loudly in the unsupported-op guard.
             self.call_function(name, Vec::new())?
         } else if name.contains("::") {
             // Check if this is an access to a non-existent enum variant

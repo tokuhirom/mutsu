@@ -496,7 +496,9 @@ impl Interpreter {
                 }
             }
 
-            _ => return None,
+            // The process/introspection half of the table lives in its own
+            // module (file-size limit); an op neither knows still errors.
+            _ => return self.call_nqp_op_process(op, args),
         })
     }
 }
