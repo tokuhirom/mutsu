@@ -3,7 +3,7 @@ plan 19;
 
 # Basic version literal
 is v1.2.3, '1.2.3', 'version literal stringifies';
-is (v1.2.3).WHAT, '(Version)', 'version literal is Version type';
+is (v1.2.3).WHAT.gist, '(Version)', 'version literal is Version type';
 
 # Version with + and - trailing markers. (A trailing marker is only a version
 # character when NOT followed by a word char — an internal `-` before a word,

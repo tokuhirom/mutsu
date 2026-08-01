@@ -6,7 +6,7 @@ is 2i, Complex.new(0, 2), "2i literal";
 isa-ok 2i, Complex, "2i is Complex";
 
 # Construction via arithmetic
-is (3+4i).WHAT, "(Complex)", "3+4i is Complex";
+is (3+4i).WHAT.gist, "(Complex)", "3+4i is Complex";
 is (3+4i).re, 3, "real part";
 is (3+4i).im, 4, "imaginary part";
 

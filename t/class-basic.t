@@ -12,7 +12,7 @@ my $p = Point.new(x => 3, y => 4);
 ok $p.defined, 'instance is defined';
 is $p.x, 3, 'public attribute x accessor';
 is $p.y, 4, 'public attribute y accessor';
-is $p.WHAT, '(Point)', '.WHAT returns class name';
+is $p.WHAT.gist, '(Point)', '.WHAT returns class name';
 
 # Method declaration
 class Greeter {

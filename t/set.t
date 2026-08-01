@@ -41,7 +41,7 @@ my @p = $s.pairs;
 is @p.elems, 3, ".pairs has 3 elements";
 
 # .WHAT
-is $s.WHAT, "(Set)", ".WHAT returns (Set)";
+is $s.WHAT.gist, "(Set)", ".WHAT returns (Set)";
 
 # .gist
 ok $s.gist.contains("Set"), ".gist contains 'Set'";
@@ -89,7 +89,7 @@ my @bkv = $b.kv;
 is @bkv.elems, 6, "bag .kv has 6 elements";
 
 # .WHAT
-is $b.WHAT, "(Bag)", ".WHAT returns (Bag)";
+is $b.WHAT.gist, "(Bag)", ".WHAT returns (Bag)";
 
 # Truthiness
 ok ?$b, "non-empty bag is truthy";
@@ -113,7 +113,7 @@ is $m<a>, 3, "mix subscript returns weight for 'a'";
 is $m<z>, 0, "mix subscript returns 0 for missing";
 
 # .WHAT
-is $m.WHAT, "(Mix)", ".WHAT returns (Mix)";
+is $m.WHAT.gist, "(Mix)", ".WHAT returns (Mix)";
 
 # Truthiness
 ok ?$m, "non-empty mix is truthy";

@@ -23,7 +23,7 @@ is 0 + Day::Sun, 0, "0 + Day::Sun is 0";
 is 0 + Day::Wed, 3, "0 + Day::Wed is 3";
 
 # .WHAT
-is Day::Sun.WHAT, "(Day)", ".WHAT returns enum type name";
+is Day::Sun.WHAT.gist, "(Day)", ".WHAT returns enum type name";
 
 # .raku
 is Day::Mon.raku, "Day::Mon", ".raku returns qualified name";

@@ -3,17 +3,17 @@ plan 30;
 
 # --- Junction construction ---
 my $a = any(1, 2, 3);
-is $a.WHAT, "(Junction)", "any() returns a Junction";
-is $a.elems.WHAT, "(Junction)", "any() junction .elems auto-threads to Junction";
+is $a.WHAT.gist, "(Junction)", "any() returns a Junction";
+is $a.elems.WHAT.gist, "(Junction)", "any() junction .elems auto-threads to Junction";
 
 my $b = all(1, 2, 3);
-is $b.WHAT, "(Junction)", "all() returns a Junction";
+is $b.WHAT.gist, "(Junction)", "all() returns a Junction";
 
 my $c = one(1, 2, 3);
-is $c.WHAT, "(Junction)", "one() returns a Junction";
+is $c.WHAT.gist, "(Junction)", "one() returns a Junction";
 
 my $d = none(1, 2, 3);
-is $d.WHAT, "(Junction)", "none() returns a Junction";
+is $d.WHAT.gist, "(Junction)", "none() returns a Junction";
 
 # --- .gist / .Str ---
 is $a.gist, "any(1, 2, 3)", ".gist shows junction contents";
@@ -47,7 +47,7 @@ ok 2 ~~ any(1, 2, 3), "2 ~~ any(1,2,3) is True";
 nok 5 ~~ any(1, 2, 3), "5 ~~ any(1,2,3) is False";
 
 # --- Arithmetic auto-threading ---
-is (1 + any(2, 3)).WHAT, "(Junction)", "junction arithmetic keeps junction type";
+is (1 + any(2, 3)).WHAT.gist, "(Junction)", "junction arithmetic keeps junction type";
 ok 1 + any(2, 3) == 4, "addition threads over RHS junction";
 ok 6 % any(2, 3) == 0, "modulo threads over RHS junction";
 ok all(4, 6) % 2 == 0, "modulo threads over LHS junction";

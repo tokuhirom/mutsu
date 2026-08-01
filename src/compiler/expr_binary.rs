@@ -433,7 +433,11 @@ impl Compiler {
                 self.code.emit(OpCode::CallDefined);
                 let jump_undef = self.code.emit(OpCode::JumpIfFalse(0));
                 self.code.emit(OpCode::Pop);
-                self.code.emit(OpCode::LoadNil);
+                // Skipping the RHS yields `Empty` -- an empty Slip -- exactly as
+                // the `andthen` arm above does. `Nil` here made `10 notandthen
+                // 42` a one-element list in list context instead of vanishing.
+                let empty_idx = self.code.add_constant(Value::slip(vec![]));
+                self.code.emit(OpCode::LoadConst(empty_idx));
                 let jump_end = self.code.emit(OpCode::Jump(0));
                 self.code.patch_jump(jump_undef);
                 self.code.emit(OpCode::Pop);

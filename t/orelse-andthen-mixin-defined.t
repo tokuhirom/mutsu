@@ -11,7 +11,8 @@ plan 7;
 {
     my Int $i = 1 but role { method defined { False } };
     is ($i orelse "z"), "z", 'orelse runs RHS when the mixin role .defined is False';
-    is ($i andthen "yes"), Nil, 'andthen skips RHS when the mixin role .defined is False';
+    # Skipping the RHS yields `Empty` (an empty Slip), not `Nil`.
+    is-deeply ($i andthen "yes"), Empty, 'andthen skips RHS when the mixin role .defined is False';
     is ($i notandthen "no"), "no", 'notandthen runs RHS when the mixin role .defined is False';
 }
 

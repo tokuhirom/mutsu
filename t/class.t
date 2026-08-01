@@ -13,7 +13,7 @@ is $p.x, 3, "public attribute x";
 is $p.y, 4, "public attribute y";
 
 # .WHAT returns (ClassName)
-is $p.WHAT, "(Point)", ".WHAT";
+is $p.WHAT.gist, "(Point)", ".WHAT";
 
 # .isa checks
 ok $p.isa("Point"), ".isa with own class";

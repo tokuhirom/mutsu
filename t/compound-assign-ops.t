@@ -23,7 +23,7 @@ plan 17;
 # andthen=
 {
     my $x = 3; $x andthen= 5; is $x, 5, 'andthen= when defined assigns RHS';
-    my $y = Int; $y andthen= 5; is $y, '(Int)', 'andthen= when undefined keeps LHS';
+    my $y = Int; $y andthen= 5; is $y.gist, '(Int)', 'andthen= when undefined keeps LHS';
 }
 
 # +<=  (bit shift left assign)

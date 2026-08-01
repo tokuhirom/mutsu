@@ -6,7 +6,7 @@ isa-ok 1/4, Rat, "Int / Int produces Rat";
 isa-ok Rat.new(1, 4), Rat, "Rat.new produces Rat";
 
 # .WHAT
-is (1/4).WHAT, "(Rat)", "Rat.WHAT";
+is (1/4).WHAT.gist, "(Rat)", "Rat.WHAT";
 
 # GCD reduction
 is (2/4).nude.join(","), "1,2", "2/4 reduces to 1/2";
