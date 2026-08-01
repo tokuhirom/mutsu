@@ -159,13 +159,44 @@ None of the 15 is an unfixed `Test` incompatibility:
   (`orelse` short-circuiting inside a listop argument, `nextsame`+`where`
   ordering, a `:v<>` version adverb import).
 
-So step 3 is close: what stands between here and flipping `runtime_module.rs` is
-a pass over the lenient-`is` test files. Run the sweep over the *full* set
-(`tmp/sweep.sh 1`) rather than the sample before attempting it.
-
 `cmp-ok`, the last blocked assertion, was fixed on 2026-08-01 —
 `news/2026-08/caller-lexical-indirect-operator-lookup.md`. Its output is now
 byte-identical to `raku`'s, failing assertions included.
+
+### Full sweep, all 2717 files (2026-08-01)
+
+The sample above is superseded. `tmp/sweep-full.sh` is the parallel (`xargs -P`)
+variant of `tmp/sweep.sh` with no stride; the analysis is the same
+`tmp/sweep-analyze.sh`. Two further scripts split the residue:
+`tmp/sweep-classify.sh` reports each regressed file's **first** failing line (a
+plain diff is misleading here — the real module emits *extra* `ok` lines, so the
+first `>` line of a diff is usually noise), and `tmp/sweep-raku-check.sh` runs
+each regressed file under `raku` to say whether the file itself is wrong.
+
+| | before the typed-exception fix | after |
+| --- | --- | --- |
+| pass under both | 2617 | **2641 / 2717** |
+| regress under the real module | 86 | **64** |
+| passes only under the real module | 1 | 1 |
+| fail under both (pre-existing) | 13 | 12 |
+
+Splitting the 86 by `raku`'s own verdict: **29 files `raku` also fails** (the
+test file is wrong — mostly the lenient-`is` shapes of
+`todo/tickets/local-tests-rely-on-a-lenient-native-is.md`, though a few are
+files `raku` cannot even parse because they exercise mutsu-specific syntax, so
+that bucket is not purely lenient-`is`), and **57 files `raku` passes** — real
+mutsu gaps that only the strict module exposes.
+
+Of those 57, **29 were one root cause**: a compile-time error arriving as
+`X::AdHoc` because its class was spelled only inside the message text.
+`news/2026-08/typed-exception-class-from-the-message-convention.md` fixed 20 of
+them. The other 9 are errors whose message names no class at all (`Confused.
+parse error at …` where raku raises `X::Syntax::Malformed` /
+`X::Bind::Slice` / …) — worth its own pass.
+
+So what stands between here and flipping `runtime_module.rs` is that residue
+plus a pass over the lenient-`is` test files. Re-run `tmp/sweep-full.sh` to
+re-measure after each.
 
 ## Blocker found while doing step 1: the native provider shadows an import — FIXED
 

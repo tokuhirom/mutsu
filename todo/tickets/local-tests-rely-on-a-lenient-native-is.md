@@ -47,5 +47,26 @@ swaps mutsu's provider for the real module — but they have to be corrected
 before that swap, and each correction makes the test *more* faithful to Raku, so
 none of them needs to wait for it.
 
-The cheapest way to enumerate the rest is to re-run the sweep over the full set
-rather than the 1-in-9 sample (`tmp/sweep.sh 1`, see the vendoring ticket).
+## The full enumeration (2026-08-01)
+
+The full sweep has since been run (`tmp/sweep-full.sh`, see the vendoring
+ticket), and `tmp/sweep-raku-check.sh` splits its regressions by whether `raku`
+also fails the file. That bucket holds **29** files, not the ~50 the sample rate
+suggested:
+
+`anon-class-what-gist.t`, `begin-phaser-begintime.t`, `class-basic.t`,
+`class.t`, `complex.t`, `compound-assign-ops.t`, `cpp-constructor-syntax.t`,
+`dotassign-store-and-container-topic.t`, `enum.t`, `float-num.t`, `junction.t`,
+`listop-arg-loose-logical-precedence.t`, `lock.t`, `method-private-errors.t`,
+`misc-builtins.t`, `native-array-decl.t`, `new-operators.t`,
+`operator-adverbs.t`, `orelse-andthen-mixin-defined.t`, `pair-type.t`,
+`placeholder-named-in-method-do.t`, `pod-begin-without-identifier.t`, `rat.t`,
+`set.t`, `typed-container-what.t`, `use-version-short-adverb.t`,
+`variable-traits.t`, `version.t`, `vm-panic-boundary.t`.
+
+**The bucket is not purely lenient-`is`.** Four of them (`enum.t`,
+`placeholder-named-in-method-do.t`, `variable-traits.t`, `version.t`) do not
+even compile under `raku` — they exercise mutsu-specific syntax, so "`raku`
+fails it" says nothing about the assertion style. Check each file individually
+before rewriting it; the two shapes above are the ones to correct, and anything
+else in the list is a different finding.

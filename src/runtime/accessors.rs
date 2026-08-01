@@ -209,11 +209,7 @@ impl Interpreter {
     }
 
     pub(crate) fn fail_error_to_failure_value(&self, err: &RuntimeError) -> Value {
-        let exception = err.exception.as_deref().cloned().unwrap_or_else(|| {
-            let mut attrs = std::collections::HashMap::new();
-            attrs.insert("message".to_string(), Value::str(err.message.clone()));
-            Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
-        });
+        let exception = err.exception_value();
         let mut failure_attrs = std::collections::HashMap::new();
         failure_attrs.insert("exception".to_string(), exception);
         // When UNDO phasers ran for this fail, the Failure is marked as handled
