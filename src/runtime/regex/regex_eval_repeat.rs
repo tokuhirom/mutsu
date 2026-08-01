@@ -229,13 +229,91 @@ impl Interpreter {
         &mut self,
         code_blocks: &[CodeBlockContext],
     ) {
+        // Reduce-time writes to the regex's own `:my`/`:let` lexicals. Each block
+        // carries the snapshot its match position had; a later block must see what
+        // an earlier replayed block wrote on top of that, exactly as the inline
+        // path threads writes forward through `RegexCaptures::regex_vars`.
+        let mut live_regex_vars: HashMap<String, Value> = HashMap::new();
         for ctx in code_blocks {
             let Some(stmts) = self.parse_regex_code_cached(&ctx.code) else {
                 continue;
             };
             self.setup_regex_code_block_env(ctx);
+            let saved = self.install_ctx_regex_vars(ctx, &HashMap::new(), &live_regex_vars);
             let body_result = self.eval_regex_code_block_body(&stmts);
+            self.restore_ctx_regex_vars(&mut live_regex_vars, saved);
             self.park_regex_code_block_error(body_result);
+        }
+    }
+
+    /// The match-wide in-regex lexicals a deferred code block should start from,
+    /// minus the per-rule dynamic variables `install_fresh_rule_dynvars` already
+    /// installed. Those are deliberately left in place for the action walk that
+    /// follows (t/grammar-per-match-dynvar-action.t), so they must not be saved
+    /// and restored around the block the way a `:my` lexical is.
+    fn block_base_vars(
+        vars: &HashMap<String, Value>,
+        declared_keys: &[String],
+    ) -> HashMap<String, Value> {
+        if declared_keys.is_empty() {
+            return vars.clone();
+        }
+        vars.iter()
+            .filter(|(k, _)| !declared_keys.contains(k))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
+    }
+
+    /// Install the regex's own `:my`/`:let` lexicals for a deferred code block, so
+    /// it reads what they held rather than an outer same-named variable.
+    ///
+    /// Three sources, weakest first: `base` (the whole match's lexicals — a
+    /// declarative `:my` at the front of the pattern is hoisted out and lives
+    /// there), the block's own snapshot at its textual position, and `live` —
+    /// writes an earlier deferred block of the same reduce already made.
+    ///
+    /// Returns the caller's own same-named bindings for
+    /// [`Self::restore_ctx_regex_vars`] to put back.
+    fn install_ctx_regex_vars(
+        &mut self,
+        ctx: &CodeBlockContext,
+        base: &HashMap<String, Value>,
+        live: &HashMap<String, Value>,
+    ) -> Vec<(String, Option<Value>)> {
+        let mut effective: HashMap<&String, &Value> = base.iter().collect();
+        effective.extend(ctx.regex_vars.iter());
+        let overrides: Vec<(&String, &Value)> = live
+            .iter()
+            .filter(|(k, _)| effective.contains_key(k))
+            .collect();
+        effective.extend(overrides);
+        let saved: Vec<(String, Option<Value>)> = effective
+            .keys()
+            .map(|k| ((*k).clone(), self.env.get(k.as_str()).cloned()))
+            .collect();
+        for (k, v) in effective {
+            self.env.insert(k.clone(), v.clone());
+        }
+        saved
+    }
+
+    /// Harvest the block's writes to the in-regex lexicals into `live` (so the
+    /// next deferred block sees them) and restore the caller's own bindings.
+    fn restore_ctx_regex_vars(
+        &mut self,
+        live: &mut HashMap<String, Value>,
+        saved: Vec<(String, Option<Value>)>,
+    ) {
+        for (k, _) in &saved {
+            if let Some(now) = self.env.get(k) {
+                live.insert(k.clone(), now.clone());
+            }
+        }
+        for (k, orig) in saved {
+            match orig {
+                Some(v) => self.env.insert(k, v),
+                None => self.env.remove(&k),
+            };
         }
     }
 
@@ -439,7 +517,8 @@ impl Interpreter {
             super::regex_helpers::target_or_empty(target),
         );
         let blocks = std::mem::take(&mut caps.code_blocks);
-        caps.ast = self.reduce_run_code_blocks(blocks, node_match);
+        let base_vars = Self::block_base_vars(&caps.regex_vars, &declared_keys);
+        caps.ast = self.reduce_run_code_blocks(blocks, node_match, &base_vars);
         self.record_rule_dynvars(caps, &declared_keys);
     }
 
@@ -482,7 +561,8 @@ impl Interpreter {
             super::regex_helpers::target_or_empty(target),
         );
         let blocks = std::mem::take(&mut kids.code_blocks);
-        node.ast = self.reduce_run_code_blocks(blocks, node_match);
+        let base_vars = Self::block_base_vars(&kids.regex_vars, &declared_keys);
+        node.ast = self.reduce_run_code_blocks(blocks, node_match, &base_vars);
         self.record_cap_node_dynvars(node, &declared_keys);
     }
 
@@ -544,6 +624,7 @@ impl Interpreter {
         &mut self,
         blocks: Vec<CodeBlockContext>,
         node_match: Value,
+        base_vars: &HashMap<String, Value>,
     ) -> Option<Value> {
         // Named captures carrying a child `.made` (from the recursion above).
         let named_v = node_match.match_named();
@@ -557,6 +638,9 @@ impl Interpreter {
         let saved_match = self.env.get("/").cloned();
         // Fresh `make` slot for this node (do not inherit a sibling's value).
         self.env.remove("made");
+        // Reduce-time writes to the regex's own `:my`/`:let` lexicals, threaded
+        // from one deferred block to the next (see `install_ctx_regex_vars`).
+        let mut live_regex_vars: HashMap<String, Value> = HashMap::new();
         for ctx in &blocks {
             let Some(stmts) = self.parse_regex_code_cached(&ctx.code) else {
                 continue;
@@ -583,7 +667,9 @@ impl Interpreter {
                     self.env.insert("\u{00A2}".to_string(), updated);
                 }
             }
+            let saved_vars = self.install_ctx_regex_vars(ctx, base_vars, &live_regex_vars);
             let body_result = self.eval_regex_code_block_body(&stmts);
+            self.restore_ctx_regex_vars(&mut live_regex_vars, saved_vars);
             self.park_regex_code_block_error(body_result);
         }
         let ast = self.env.get("made").cloned();

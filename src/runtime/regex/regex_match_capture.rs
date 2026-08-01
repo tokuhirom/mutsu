@@ -326,6 +326,17 @@ impl Interpreter {
                         &current_caps.positional,
                         chars,
                     ),
+                    // Lexicals only. A `:my $*x` is a dynamic variable owned by
+                    // the per-rule dynvar machinery, which deliberately leaves
+                    // its write installed for the action walk — snapshotting and
+                    // restoring it around the block would undo that
+                    // (t/grammar-per-match-dynvar-action.t).
+                    regex_vars: current_caps
+                        .regex_vars
+                        .iter()
+                        .filter(|(k, _)| !super::regex_helpers::is_dynamic_regex_var_key(k))
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect(),
                 };
                 // If eager code block collection is enabled, push immediately
                 // so the block is captured even if the overall match fails later.
@@ -487,6 +498,25 @@ impl Interpreter {
                         }
                         if !self.env.contains_key_sym(*k) || self.env.get_sym(*k) != Some(v) {
                             new_caps.regex_vars.insert(k.resolve(), v.clone());
+                        }
+                    }
+                    // The env diff above only sees a *change*. The scratch env is
+                    // cloned from this one, so a declaration whose write reached
+                    // the shared storage compares equal and is missed — which left
+                    // the lexical out of `regex_vars` entirely. It then only worked
+                    // for blocks that run inline (they read the write from `env`);
+                    // a `make`-bearing block, which runs on the reduce walk long
+                    // after that write is gone, saw nothing. Record what the
+                    // declaration itself introduced, by name.
+                    for stmt in stmts.iter() {
+                        let Stmt::VarDecl { name, .. } = stmt else {
+                            continue;
+                        };
+                        if name == "_" || new_caps.regex_vars.contains_key(name) {
+                            continue;
+                        }
+                        if let Some(v) = interp.env.get(name) {
+                            new_caps.regex_vars.insert(name.clone(), v.clone());
                         }
                     }
                     return Some((pos, new_caps));

@@ -163,6 +163,13 @@ impl Drop for EnclosingRegexVarsGuard {
     }
 }
 
+/// Is this env key a dynamic variable (`$*x` is stored as `*x`; `@*a` / `%*h`
+/// keep their sigil)? Such a name declared by an in-regex `:my` belongs to the
+/// per-rule dynvar machinery, not to the regex-lexical snapshot/restore.
+pub(crate) fn is_dynamic_regex_var_key(key: &str) -> bool {
+    key.starts_with('*') || key.starts_with("@*") || key.starts_with("%*")
+}
+
 /// Publish a `:my`/`:let` scalar name to the sub-pattern parses that follow it.
 pub(crate) fn declare_enclosing_regex_var(name: &str) {
     ENCLOSING_REGEX_VARS.with(|s| {
