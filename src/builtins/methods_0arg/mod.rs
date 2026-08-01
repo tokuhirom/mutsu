@@ -569,6 +569,24 @@ pub(crate) fn native_method_0arg(
         {
             return Some(Ok(Value::str(raku_repr::raku_value(target))));
         }
+        // A Set/Bag/Mix names its own type in `.raku` and `.gist`, so a
+        // `but`-mixed one has to name the role with it (`Set+{R}.new("a")`,
+        // `Set+{R}(a)`). Delegating to the inner value below renders the bare
+        // `Set`, dropping the role the way `^name` would without its own arm
+        // just above. Only the wrapper knows the mixed name, so pass it down.
+        if matches!(method, "raku" | "perl" | "gist")
+            && crate::value::role_mixin_suffix(mixins).is_some()
+        {
+            let type_name = crate::value::what_type_name(target);
+            let rendered = if method == "gist" {
+                crate::runtime::utils::setbagmix_gist_named(inner, Some(&type_name))
+            } else {
+                raku_repr::setbagmix_raku_named(inner, Some(&type_name))
+            };
+            if let Some(rendered) = rendered {
+                return Some(Ok(Value::str(rendered)));
+            }
+        }
         // A `.^set_name`-renamed anonymous mixin reports its friendly name for
         // `.^name` (e.g. `Foo.new but role {...}` then `.^set_name('X')` — used
         // by zef's plugin loader). Without this the caret-name would delegate to

@@ -1053,6 +1053,13 @@ pub fn raku_value(v: &Value) -> String {
                     .map(raku_value)
                     .unwrap_or_else(|| "\"\"".to_string());
                 format!("{}.new({}, {})", name, raku_value(inner), str_repr)
+            } else if let Some(rendered) =
+                setbagmix_raku_named(inner, Some(&crate::value::types::what_type_name(v)))
+            {
+                // A quanthash names its type in its `.raku`, and a `but`-mixed
+                // one names the role with it: `Set+{R}.new("a")`. Every other
+                // kind renders through its inner value unchanged.
+                rendered
             } else {
                 raku_value(inner)
             }
@@ -1078,16 +1085,32 @@ pub fn raku_value(v: &Value) -> String {
 /// `raku_value` (recursive element rendering) and the `.raku` method dispatch
 /// so both render identically.
 pub(crate) fn setbagmix_raku(v: &Value) -> Option<String> {
+    setbagmix_raku_named(v, None)
+}
+
+/// [`setbagmix_raku`] with the type name supplied by the caller, for a
+/// `but`-mixed quanthash: the role belongs in the name (`Set+{R}.new("a")`),
+/// and only the caller holding the `Mixin` value knows it. A mixed *empty*
+/// immutable Set/Bag/Mix also loses the lowercase-coercer short form — raku
+/// renders `Set+{R}.new()`, not `set()`, since there is no coercer spelling
+/// that carries the role.
+pub(crate) fn setbagmix_raku_named(v: &Value, type_override: Option<&str>) -> Option<String> {
     match v.view() {
         // An empty *immutable* Set/Bag/Mix renders via its lowercase coercer
         // (`set()`/`bag()`/`mix()`) in Raku, not the non-empty form. The empty
         // mutable variants keep their non-empty form (`SetHash.new()` /
         // `().BagHash` / `().MixHash`), so only special-case the immutable ones.
-        ValueView::Set(s, false) if s.is_empty() => Some("set()".to_string()),
-        ValueView::Bag(b, false) if b.is_empty() => Some("bag()".to_string()),
-        ValueView::Mix(m, false) if m.is_empty() => Some("mix()".to_string()),
+        ValueView::Set(s, false) if s.is_empty() && type_override.is_none() => {
+            Some("set()".to_string())
+        }
+        ValueView::Bag(b, false) if b.is_empty() && type_override.is_none() => {
+            Some("bag()".to_string())
+        }
+        ValueView::Mix(m, false) if m.is_empty() && type_override.is_none() => {
+            Some("mix()".to_string())
+        }
         ValueView::Set(s, mutable) => {
-            let type_name = if mutable { "SetHash" } else { "Set" };
+            let type_name = type_override.unwrap_or(if mutable { "SetHash" } else { "Set" });
             let ptr = crate::gc::Gc::as_ptr(&s) as usize;
             let elems = crate::value::with_quanthash_render_guard(ptr, || {
                 let mut keys: Vec<&String> = s.iter().collect();
@@ -1101,7 +1124,7 @@ pub(crate) fn setbagmix_raku(v: &Value) -> Option<String> {
             Some(format!("{}.new({})", type_name, elems))
         }
         ValueView::Bag(b, mutable) => {
-            let type_name = if mutable { "BagHash" } else { "Bag" };
+            let type_name = type_override.unwrap_or(if mutable { "BagHash" } else { "Bag" });
             let ptr = crate::gc::Gc::as_ptr(&b) as usize;
             let pairs = crate::value::with_quanthash_render_guard(ptr, || {
                 let mut keys: Vec<(&String, &num_bigint::BigInt)> = b.iter().collect();
@@ -1115,7 +1138,7 @@ pub(crate) fn setbagmix_raku(v: &Value) -> Option<String> {
             Some(format!("({}).{}", pairs, type_name))
         }
         ValueView::Mix(m, mutable) => {
-            let type_name = if mutable { "MixHash" } else { "Mix" };
+            let type_name = type_override.unwrap_or(if mutable { "MixHash" } else { "Mix" });
             let ptr = crate::gc::Gc::as_ptr(&m) as usize;
             let pairs = crate::value::with_quanthash_render_guard(ptr, || {
                 let mut keys: Vec<(&String, &f64)> = m.iter().collect();
