@@ -115,6 +115,10 @@ SIDECAR = {
         # META6.json has no license key; the README states Artistic License 2.0.
         "license": "Artistic-2.0",
     },
+    "IO::Path::ChildSecure": {
+        "slot": "Secure path join",
+        "record": "docs/batteries/io-path-childsecure.md",
+    },
 }
 
 

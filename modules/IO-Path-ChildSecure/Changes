@@ -1,0 +1,10 @@
+Revision history for IO-Path-ChildSecure
+
+{{$NEXT}}
+
+1.2  2022-04-22T11:59:58+02:00
+    - Drop the module, we don't need it
+    - Modernize test scripts
+
+1.1  2022-04-21T11:49:24+02:00
+    - First version on the zef ecosystem

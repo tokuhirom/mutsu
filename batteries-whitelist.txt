@@ -77,6 +77,8 @@ HTTP::UserAgent	230-binary-request.rakutest
 HTTP::UserAgent	250-issue-144.rakutest
 HTTP::UserAgent	260-no-proxy.rakutest
 HTTP::UserAgent	270-issue-212.rakutest
+IO::Path::ChildSecure	00-use.rakutest
+IO::Path::ChildSecure	01-operation.rakutest
 MIME::Base64	basic.rakutest
 MIME::Base64	binary-and-long-line.rakutest
 MIME::Base64	oneline.rakutest

@@ -150,6 +150,15 @@ pub fn format_exception_message(class_name: &str, attrs: &AttrMap) -> Option<Str
             let op = attr_str(attrs, "operation");
             Some(format!("Cannot do '{}' on a closed handle", op))
         }
+        "X::IO::Resolve" => Some(format!(
+            "Failed to completely resolve \"{}\"",
+            attr_str(attrs, "path")
+        )),
+        "X::IO::NotAChild" => Some(format!(
+            "Path \"{}\" is not a child of path \"{}\"",
+            attr_str(attrs, "child"),
+            attr_str(attrs, "path")
+        )),
         _ => None,
     }
 }
