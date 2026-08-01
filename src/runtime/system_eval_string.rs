@@ -173,42 +173,9 @@ impl Interpreter {
     }
 
     pub(crate) fn collect_eval_imported_function_names(&self) -> Vec<String> {
-        const TEST_EXPORTS: &[&str] = &[
-            "ok",
-            "nok",
-            "is",
-            "isnt",
-            "is-deeply",
-            "is-approx",
-            "cmp-ok",
-            "like",
-            "unlike",
-            "isa-ok",
-            "does-ok",
-            "can-ok",
-            "lives-ok",
-            "dies-ok",
-            "exits-ok",
-            "eval-lives-ok",
-            "eval-dies-ok",
-            "throws-like",
-            "fails-like",
-            "pass",
-            "flunk",
-            "skip",
-            "skip-rest",
-            "todo",
-            "diag",
-            "plan",
-            "done-testing",
-            "bail-out",
-            "subtest",
-            "use-ok",
-            "force_todo",
-            "force-todo",
-            "tap-ok",
-        ];
-        TEST_EXPORTS
+        // The `Test` module's own exports; the single copy lives in
+        // runtime::test_functions so the parser, EVAL and `exec_call` agree.
+        crate::runtime::TEST_MODULE_EXPORTS
             .iter()
             .map(|name| (*name).to_string())
             .collect()

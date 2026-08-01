@@ -11,6 +11,62 @@ mod util;
 use super::*;
 use crate::value::ValueView;
 
+/// The names `use Test` brings into scope — the export list of the `Test`
+/// module itself, which mutsu provides natively (`use Test` is intercepted, so
+/// no `.rakumod` is ever loaded and no routine is ever registered under these
+/// names).
+///
+/// The single copy: the parser registers exactly this set as `Test`'s exports,
+/// `system_eval_string` reports it as EVAL-visible, and `exec_call` uses it to
+/// decide when an *imported* routine of the same name must beat the native
+/// provider. Keeping one list is what makes that last decision sound — a name
+/// in one copy and not another would be dispatched inconsistently.
+///
+/// This is deliberately narrower than [`Interpreter::is_test_function_name`],
+/// which also covers the `Test::Util` / `Test::Tap` helpers. Those come from
+/// modules that really are loaded from source, so overriding them natively is a
+/// separate provider with its own retirement path.
+pub(crate) const TEST_MODULE_EXPORTS: &[&str] = &[
+    "ok",
+    "nok",
+    "is",
+    "isnt",
+    "is-deeply",
+    "is-approx",
+    "cmp-ok",
+    "like",
+    "unlike",
+    "isa-ok",
+    "does-ok",
+    "can-ok",
+    "lives-ok",
+    "dies-ok",
+    "exits-ok",
+    "eval-lives-ok",
+    "eval-dies-ok",
+    "throws-like",
+    "fails-like",
+    "pass",
+    "flunk",
+    "skip",
+    "skip-rest",
+    "todo",
+    "diag",
+    "plan",
+    "done-testing",
+    "bail-out",
+    "subtest",
+    "use-ok",
+    "force_todo",
+    "force-todo",
+    "tap-ok",
+];
+
+/// Whether `name` is one of the `Test` module's own exports.
+pub(crate) fn is_test_module_export(name: &str) -> bool {
+    TEST_MODULE_EXPORTS.contains(&name)
+}
+
 impl Interpreter {
     pub(crate) fn sync_eval_definition_state(&mut self, nested: &Interpreter) {
         self.type_metadata = nested.type_metadata.clone();
