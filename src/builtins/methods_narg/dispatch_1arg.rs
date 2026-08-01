@@ -2113,9 +2113,34 @@ pub(crate) fn native_method_1arg(
                     .cloned()
                     .unwrap_or(Value::NIL)))
             }
+            // A `Pair` does `Associative` with a single entry.
+            ValueView::Pair(key, value) => Some(Ok(if *key == arg.to_string_value() {
+                value.clone()
+            } else {
+                Value::NIL
+            })),
+            ValueView::ValuePair(key, value) => {
+                Some(Ok(if key.to_string_value() == arg.to_string_value() {
+                    (*value).clone()
+                } else {
+                    Value::NIL
+                }))
+            }
             ValueView::Nil => Some(Ok(Value::package(Symbol::intern("Any")))),
             ValueView::Package(name) if matches!(name.resolve().as_str(), "Any" | "Mu") => {
                 Some(Ok(Value::package(Symbol::intern("Any"))))
+            }
+            // Anything else does not do `Associative`, and raku's `Any.AT-KEY`
+            // fails for it. An Instance/Mixin/Package may carry a user-defined
+            // AT-KEY, so those keep falling through to the runtime dispatcher.
+            _ if !matches!(
+                target.view(),
+                ValueView::Instance { .. } | ValueView::Mixin(..) | ValueView::Package(_)
+            ) =>
+            {
+                Some(Ok(RuntimeError::assoc_indexing_failure(
+                    crate::runtime::utils::value_type_name(target),
+                )))
             }
             _ => None,
         },
@@ -2140,8 +2165,22 @@ pub(crate) fn native_method_1arg(
                 let (key, _) = crate::runtime::utils::quanthash_elem_entry(arg);
                 Some(Ok(Value::truth(data.weights.contains_key(&key))))
             }
+            ValueView::Pair(key, _) => Some(Ok(Value::truth(*key == arg.to_string_value()))),
+            ValueView::ValuePair(key, _) => Some(Ok(Value::truth(
+                key.to_string_value() == arg.to_string_value(),
+            ))),
             ValueView::Nil => Some(Ok(Value::FALSE)),
             ValueView::Package(name) if matches!(name.resolve().as_str(), "Any" | "Mu") => {
+                Some(Ok(Value::FALSE))
+            }
+            // `Any.EXISTS-KEY` is always False, so a value that does not do
+            // `Associative` has no keys at all (the Instance/Mixin/Package
+            // carve-out mirrors the AT-KEY arm above).
+            _ if !matches!(
+                target.view(),
+                ValueView::Instance { .. } | ValueView::Mixin(..) | ValueView::Package(_)
+            ) =>
+            {
                 Some(Ok(Value::FALSE))
             }
             _ => None,

@@ -70,5 +70,5 @@ A hyper over a `Bag` or `Mix` drops the weights — `<a a b>.Bag>>.Str` is
 `("a"=>0,"b"=>0)` where raku keeps `a => 2, b => 1`, and a `Mix` whose weights
 all collapse to 0 renders as the empty `mix()`. That is not itemization (the
 plain form is equally wrong) but the QuantHash result-rebuilding tail, so it is
-recorded separately as
-`todo/tickets/hyper-over-a-bag-or-mix-drops-the-weights.md`.
+fixed separately in
+[hyper-over-a-bag-or-mix-maps-the-weights](hyper-over-a-bag-or-mix-maps-the-weights.md).

@@ -295,6 +295,27 @@ impl RuntimeError {
         Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 
+    /// Create a Failure wrapping the `X::AdHoc` raku's `Any.AT-KEY` fails with:
+    /// a value that does not do `Associative` cannot be subscripted by key.
+    /// `Any:U` is the exception — a type object answers `Any` instead — so the
+    /// caller decides whether to build this at all.
+    pub(crate) fn assoc_indexing_failure(type_name: &str) -> Value {
+        Self::adhoc_failure(&format!(
+            "Type {} does not support associative indexing.",
+            type_name
+        ))
+    }
+
+    /// Create a Failure wrapping an `X::AdHoc` carrying `message`.
+    pub(crate) fn adhoc_failure(message: &str) -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert("message".to_string(), Value::str(message.to_string()));
+        let ex = Value::make_instance(Symbol::intern("X::AdHoc"), attrs);
+        let mut failure_attrs = HashMap::new();
+        failure_attrs.insert("exception".to_string(), ex);
+        Value::make_instance(Symbol::intern("Failure"), failure_attrs)
+    }
+
     /// Create a Failure wrapping an X::Numeric::Underflow exception.
     pub(crate) fn numeric_underflow_failure() -> Value {
         let mut attrs = HashMap::new();
