@@ -712,6 +712,14 @@ impl Interpreter {
             return Err(err);
         }
 
+        // A bare type name in call position may name a package-qualified
+        // declaration: `EVAL 'my role R { has $.x }; 99 but R("ok")'` running
+        // under `unit module M` registers `M::R`, and the snippet's own `R(...)`
+        // still has to find it. Resolve once here, before every branch below
+        // that keys the registry by `name`.
+        let qualified_type = self.resolve_bare_type_name(name);
+        let name: &str = qualified_type.as_deref().unwrap_or(name);
+
         // Invoking a *class* type object coerces: `Foo($x)` is `Foo.COERCE($x)`
         // when the class defines COERCE, else `Foo.new($x)`, else
         // X::Coerce::Impossible — the same protocol the role branch below

@@ -5,6 +5,38 @@ impl Interpreter {
         self.registry().classes.contains_key(name)
     }
 
+    /// The registry key a *bare* type name resolves to, when it is not already
+    /// one.
+    ///
+    /// A `class`/`role` declared under a non-`GLOBAL` package registers
+    /// package-qualified (`Mod::C`) — which matches raku — so a bare `C` in
+    /// *call* position (`C("x")` is a coercion, `99 but R("x")` initializes a
+    /// role's single public attribute) has to walk the same outward package
+    /// chain that bare *routine* lookup walks. Type-object position already did;
+    /// only the call path stopped at the unqualified name and reported "Unknown
+    /// function: C".
+    ///
+    /// The chain is consulted **before** the unqualified key, innermost first,
+    /// because that is the precedence raku gives a lexically inner declaration.
+    /// Consulting the bare name first would let a stale global `R` — say from an
+    /// earlier `EVAL` in the same process — shadow the `Mod::R` the current unit
+    /// just declared.
+    ///
+    /// Returns `None` when the name is already qualified or when nothing along
+    /// the chain matches; the caller then keeps the bare name.
+    pub(crate) fn resolve_bare_type_name(&self, name: &str) -> Option<String> {
+        if name.contains("::") {
+            return None;
+        }
+        self.bare_name_packages().into_iter().find_map(|pkg| {
+            if pkg == "GLOBAL" {
+                return None;
+            }
+            let key = format!("{}::{}", pkg.split("::&").next().unwrap_or(&pkg), name);
+            (self.has_class(&key) || self.has_role(&key)).then_some(key)
+        })
+    }
+
     /// True when `name` was declared via the `package`/`module` declarator (and
     /// is therefore not type-like enough to constrain a variable/parameter).
     /// Used to raise X::Syntax::Variable::BadType / X::Parameter::BadType instead

@@ -76,7 +76,15 @@ Pin candidates: the two `t/` files above under the real `Test` module, plus a
 direct `t/eval-context-package.t` built from the `FatalMod` repro, which is
 green under `raku`.
 
-## A sibling bug in the same area: the package-qualified name stops resolving
+## A sibling bug in the same area: the package-qualified name stops resolving — FIXED
+
+**Resolved** in `news/2026-08/bare-type-name-under-a-package.md`: a bare type
+name now walks the enclosing packages in call position and in `augment`, not
+just in type-object position. Kept below because it is the half of this problem
+that is *not* about `context`, and because the distinction is what makes the
+remaining half legible: the snippet can find its own types again, but they are
+still *named* after the calling module, which is what `context` is supposed to
+change.
 
 Independent of `context`, and worth fixing first because it is narrower. When
 EVAL runs under a non-`GLOBAL` package, a type the snippet declares registers
