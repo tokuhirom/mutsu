@@ -122,9 +122,16 @@ impl Interpreter {
                 // Raku semantics `$!` is then set to that Failure's exception.
                 // A successful try with a non-Failure result resets `$!` to the
                 // `Any` type object (`Nil` is only the initial value of `$!`).
+                // Only a *live* Failure is caught here. One that something
+                // already handled (`$f.defined`, `$f.Bool`, ...) is an ordinary
+                // value by then, so `try` has nothing to catch and `$!` must
+                // stay undefined — raku agrees, and `Test.rakumod`'s `lives-ok`
+                // is `try { $code(); }`, so treating a handled Failure as caught
+                // reported every such block as *died*.
                 let mut failure_exception = None;
                 if let Some(top) = self.stack.last()
                     && matches!(top.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
+                    && !top.is_failure_handled()
                 {
                     top.mark_failure_handled();
                     if let ValueView::Instance { attributes, .. } = top.view()
