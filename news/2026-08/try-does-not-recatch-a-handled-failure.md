@@ -50,7 +50,6 @@ green under `raku` too.
 
 ## What it did not fix
 
-`t/statement-call-sinks-its-value.t` is still red under the aliased module,
-because a `throws-like` immediately before a `lives-ok` leaves `$!` set where the
-`lives-ok`'s own `try` does not reset it —
-`todo/tickets/error-var-leaks-past-a-later-try.md`.
+`t/statement-call-sinks-its-value.t` stayed red under the aliased module for a
+second, unrelated reason — `use fatal` leaking out of an `EVAL`, fixed in
+`news/2026-08/eval-does-not-leak-use-fatal.md`.

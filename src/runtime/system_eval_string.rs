@@ -243,6 +243,12 @@ impl Interpreter {
         }
         let previous_pod = self.env.get("=pod").cloned();
         let saved_in_eval = self.env.get("__mutsu_in_eval").cloned();
+        // A pragma the EVAL'd unit turns on is scoped to that unit. `use fatal`
+        // is the one that bites: mutsu keeps it as an interpreter-wide flag, so
+        // without this the *caller* kept throwing on every later soft Failure
+        // long after the EVAL returned. (`throws-like 'use fatal; ...'` is a
+        // common assertion shape, so one of them poisoned the rest of the file.)
+        let saved_fatal_mode = self.fatal_mode;
         // CALLER:: from the EVAL'd unit's mainline must not resolve directly in
         // the scope that invoked EVAL (see push_eval_caller_frames for the
         // frame layout raku exposes).
@@ -349,6 +355,7 @@ impl Interpreter {
         } else {
             self.env.remove("__mutsu_in_eval");
         }
+        self.fatal_mode = saved_fatal_mode;
         self.restore_routine_registry_eval(routine_snapshot);
         let current_roles = self.registry().roles.clone();
         let current_role_candidates = self.registry().role_candidates.clone();
