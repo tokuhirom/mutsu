@@ -1,6 +1,6 @@
 use Test;
 
-plan 29;
+plan 36;
 
 # `$c[0]` and `$c{0}` are different questions. The `:exists` and value-adverb
 # opcodes learned to carry the subscript's bracket to the runtime; the plain
@@ -17,9 +17,11 @@ plan 29;
 {
     my $h = { a => 1 };
     is-deeply $h[0], { a => 1 }, '$h[0] is the hash';
-    nok $h[1].defined, '$h[1] is out of range (an undefined Failure)';
-    ok ($h[1] ~~ Failure), 'and it is a Failure';
-    is $h[1].exception.^name, 'X::OutOfRange', 'carrying X::OutOfRange';
+    # `.defined` on a Failure both answers False and marks it handled, so the
+    # exception can be inspected afterwards without an unhandled-Failure warning.
+    my $oor = $h[1];
+    nok $oor.defined, '$h[1] is out of range (an undefined Failure)';
+    is $oor.exception.^name, 'X::OutOfRange', 'carrying X::OutOfRange';
 
     # The `{...}` spelling is untouched: it is still a key lookup.
     nok $h{0}.defined, '$h{0} is still the (absent) key 0';
@@ -85,6 +87,39 @@ plan 29;
     my @slice = $h[0..0];
     is-deeply @slice[0], { a => 1 }, 'a range slice reads slot 0';
     is @slice.elems, 1, 'and has one element';
+}
+
+# --- a `[...]` index is a NUMBER, so a string index numifies ---
+# This is the other half of "the bracket decides": `$h["a"]` is not the key `a`
+# under `[...]`, it is a failed `.Int` coercion.
+{
+    my @a = 10, 20, 30;
+    is @a["1"], 20, 'a numeric string index numifies';
+    is @a["1.9"], 20, 'and truncates the way .Int does';
+    # A string that does not numify reads nothing. The two runtimes differ on
+    # *when* the coercion failure surfaces — rakudo throws as the Failure is
+    # bound, mutsu answers the Failure — so assert only what both agree on.
+    nok (try @a["x"]).defined, 'a non-numeric string index reads nothing';
+
+    my $h = { a => 1, '1' => 'one' };
+    nok (try $h["a"]).defined, '$h["a"] is a coercion failure, not the key';
+    nok (try $h["1"]).defined,
+        'and a numeric string index reads the one-element list, not the key "1"';
+    is $h<1>, 'one', 'while the associative spelling still finds that key';
+
+    my $i = 5;
+    is $i["0"], 5, 'a scalar reads slot "0" as slot 0';
+}
+
+# `[...]` on a type name is parameterization, not a subscript, so a string
+# argument must not be numified: `role R[Str $s]` invoked as `R["x"]` still
+# composes.
+{
+    my $composed = 'no';
+    my role R[Str:D $s] { method tag { $s } }
+    my class C does R["x"] { }
+    $composed = C.tag;
+    is $composed, 'x', 'a string role parameter is not read as an index';
 }
 
 # --- the native AT-POS mirrors its EXISTS-POS sibling ---

@@ -55,6 +55,29 @@ impl Interpreter {
         RuntimeError::out_of_range_failure("Index", Value::int(index), "0..0")
     }
 
+    /// The first index a Range subscript addresses, without reifying it (the
+    /// range may be lazy, as in `'foo'[2..*]`).
+    fn range_start_index(index: &Value) -> i64 {
+        match index.view() {
+            ValueView::Range(a, _)
+            | ValueView::RangeExcl(a, _)
+            | ValueView::RangeExclBoth(a, _) => a,
+            ValueView::RangeExclStart(a, _) => a + 1,
+            ValueView::GenericRange { start, .. } => start.to_f64() as i64,
+            _ => 0,
+        }
+    }
+
+    /// The `.Int` of a numified subscript: an integer passes through exactly (so
+    /// a big index keeps its value), anything else truncates toward zero the way
+    /// `Int()` does — `@a["1.9"]` is `@a[1]`.
+    fn numeric_index_to_int(n: &Value) -> i64 {
+        match n.view() {
+            ValueView::Int(i) => i,
+            _ => n.to_f64().trunc() as i64,
+        }
+    }
+
     /// One positional read of a value that does not do `Positional`: it is a
     /// one-element list holding itself, so index 0 answers the value (decontainer-
     /// ized, as `Any.AT-POS` is) and every other index answers the out-of-range
@@ -588,14 +611,47 @@ impl Interpreter {
         };
         // Object hash shortcut: when the target hash has a key_type constraint,
         // use .WHICH-based lookup and enforce key type checking on access.
-        // A Range used as a hash subscript is a multi-key slice: `%h{"b".."c"}`
-        // selects the keys "b","c". (For arrays a Range is a positional slice and
-        // is handled elsewhere, so only expand it for Hash targets here.)
-        let index = if matches!(target.view(), ValueView::Hash(_)) && index.is_range() {
-            Value::array(crate::runtime::utils::value_to_list(&index))
-        } else {
-            index
-        };
+        // A Range used as an ASSOCIATIVE hash subscript is a multi-key slice:
+        // `%h{"b".."c"}` selects the keys "b","c". (For arrays a Range is a
+        // positional slice and is handled elsewhere, so only expand it for Hash
+        // targets here.) A `[...]` Range is positional even on a hash — the hash
+        // is a one-element list there — so it is left for the arm that knows to
+        // throw on an out-of-range start without reifying a lazy range.
+        let mut index =
+            if !is_positional && matches!(target.view(), ValueView::Hash(_)) && index.is_range() {
+                Value::array(crate::runtime::utils::value_to_list(&index))
+            } else {
+                index
+            };
+        // A `[...]` subscript numifies its index — `AT-POS` takes an `Int` — so a
+        // string index is a NUMBER and never a key: `@a["1"]` is `@a[1]`, `"1.9"`
+        // truncates to 1, and a string that does not numify is an X::Str::Numeric
+        // Failure. This is what stops an Associative from reading `$h["a"]` as
+        // the key `a`; the `{...}` spelling, which does ask for a key, is
+        // untouched because it does not set `is_positional`.
+        //
+        // A `Package` target is excluded because `[...]` on a type name is not a
+        // subscript at all but a PARAMETERIZATION (`role Doc[Str $d]` invoked as
+        // `Doc[$doc]` compiles to this same op), and `Instance`/`Mixin` are left
+        // to their own subscript protocol.
+        if is_positional
+            && !matches!(
+                target.view(),
+                ValueView::Package(..) | ValueView::Instance { .. } | ValueView::Mixin(..)
+            )
+            && let ValueView::Str(s) = index.view()
+        {
+            match crate::runtime::str_numeric::parse_raku_str_to_numeric(&s) {
+                Some(n) => index = Value::int(Self::numeric_index_to_int(&n)),
+                None => {
+                    // raku hands the coercion Failure on to `AT-POS`, where it
+                    // surfaces as the read's result.
+                    self.stack
+                        .push(crate::builtins::methods_0arg::str_numeric_failure(&s));
+                    return Ok(());
+                }
+            }
+        }
         if let ValueView::Hash(items) = target.view() {
             let hash_val = Value::hash_with_data(items.clone());
             if let Some(key_type) = self.hash_key_type(&hash_val)
@@ -724,18 +780,29 @@ impl Interpreter {
             {
                 Self::one_element_positional_read(&target, &index)
             }
+            // A RANGE slice of the same one-element list. Unlike the single-index
+            // read, which answers a Failure, an out-of-range range THROWS
+            // eagerly — `'foo'[2..3]` is X::OutOfRange with `got => 2`
+            // (roast S02-types/lists.t) — and it must not reify a lazy range
+            // (`'foo'[2..*]`) to discover that. The range is checked by its
+            // start, because index 0 is the only one in range.
             (_, _)
                 if is_positional
                     && target.is_one_element_under_positional_subscript()
                     && index.is_range() =>
             {
-                let indices = crate::runtime::utils::value_to_list(&index);
-                Value::array(
-                    indices
-                        .iter()
-                        .map(|i| Self::one_element_positional_read(&target, i))
-                        .collect::<Vec<_>>(),
-                )
+                let start = Self::range_start_index(&index);
+                if start >= 1 {
+                    return Err(RuntimeError::out_of_range(
+                        "Index",
+                        Value::int(start),
+                        "0..0",
+                    ));
+                }
+                Value::array(vec![Self::one_element_positional_read(
+                    &target,
+                    &Value::int(0),
+                )])
             }
             // Whatever (*) index on Array: @a[*] returns all elements as a List
             (ValueView::Array(items, _is_arr), ValueView::Whatever) => {
@@ -2092,24 +2159,9 @@ impl Interpreter {
                     Value::NIL
                 }
             }
-            // Array + Str: when positional, coerce numeric string to Int for
-            // positional indexing; when associative, always fail (Array does not
-            // support associative indexing).
-            (ValueView::Array(items, is_arr), ValueView::Str(s)) if is_positional => {
-                if let Ok(i) = s.trim().parse::<i64>() {
-                    if i < 0 {
-                        Self::make_out_of_range_failure(i)
-                    } else {
-                        let default = self.typed_container_default(&Value::array_with_kind(
-                            items.clone(),
-                            is_arr,
-                        ));
-                        self.resolve_array_entry(&items, is_arr, i as usize, default)
-                    }
-                } else {
-                    Self::make_assoc_indexing_failure("Array")
-                }
-            }
+            // Array + Str is only reachable for an ASSOCIATIVE subscript: a
+            // positional one numified its index up front, so it never arrives
+            // here as a Str. An Array does not support associative indexing.
             (ValueView::Array(..), ValueView::Str(_)) => {
                 return Err(RuntimeError::new(
                     "Type Array does not support associative indexing.".to_string(),
