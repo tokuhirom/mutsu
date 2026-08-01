@@ -123,7 +123,7 @@ impl Interpreter {
         None
     }
 
-    fn no_such_symbol_failure(name: &str) -> Value {
+    pub(crate) fn no_such_symbol_failure(name: &str) -> Value {
         let mut ex_attrs = HashMap::new();
         ex_attrs.insert(
             "message".to_string(),

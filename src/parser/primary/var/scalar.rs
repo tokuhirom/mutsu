@@ -29,7 +29,14 @@ fn concat_exprs(left: Expr, right: Expr) -> Expr {
     }
 }
 
-fn parse_symbolic_deref_segments(mut rest: &str, mut combined: Expr) -> PResult<'_, Expr> {
+/// Consume the `::(expr)` / `::Ident` tail of a symbolic deref, appending each
+/// segment to `combined` as `~ "::" ~ <segment>` so the full name is built at
+/// runtime. Shared with the `&`-sigil parser, which needs the same tail after a
+/// package-qualified head (`&CALLER::LEXICAL::("infix:<+>")`).
+pub(super) fn parse_symbolic_deref_segments(
+    mut rest: &str,
+    mut combined: Expr,
+) -> PResult<'_, Expr> {
     loop {
         if let Some(after_sep) = rest.strip_prefix("::(") {
             combined = concat_exprs(combined, Expr::Literal(Value::str("::".to_string())));

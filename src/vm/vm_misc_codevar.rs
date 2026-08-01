@@ -141,6 +141,15 @@ impl Interpreter {
         // For &::("x"), resolve as a code variable (function lookup).
         if sigil == "&" {
             let val = loan_env!(self, resolve_code_var(&name));
+            // A code symbol that is not there is an undefined `Failure`, not a
+            // bare `Nil` — that is what lets a `//` fallback chain try the next
+            // spelling (`&CALLER::LEXICAL::("infix:<$op>") // …` in `cmp-ok`)
+            // while using the result directly still throws X::NoSuchSymbol.
+            let val = if val.is_nil() {
+                Self::no_such_symbol_failure(&format!("&{}", name))
+            } else {
+                val
+            };
             self.stack.push(val);
             return;
         }

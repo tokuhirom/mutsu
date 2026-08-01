@@ -77,10 +77,12 @@ of diffs at once. Sequence it deliberately:
    against a representative sample of `t/` and roast. **IN PROGRESS** — the
    alias exercise has been run both by hand (see "Where the alias stands" below)
    and as a bulk sweep over a 1-in-9 sample of `t/` (see "Bulk sweep" below).
-   Six general interpreter bugs found and fixed; one is left, the unimplemented
-   `&CALLER::LEXICAL::("infix:<…>")`
-   (`todo/tickets/caller-lexical-indirect-operator-lookup.md`), which blocks
-   `cmp-ok` and nothing else.
+   Seven general interpreter bugs found and fixed; **every assertion of the
+   unmodified upstream module now runs**, `cmp-ok` included
+   (`news/2026-08/caller-lexical-indirect-operator-lookup.md`). What is left
+   before step 3 is the pass over the test files that lean on mutsu's lenient
+   native `is` (`todo/tickets/local-tests-rely-on-a-lenient-native-is.md`) and a
+   *full* sweep (`tmp/sweep.sh 1`) rather than the 1-in-9 sample.
 3. Only then flip `runtime_module.rs`, and expect the first full `make roast` to
    be the real review.
 4. `Test::Util` (roast's helper, `roast/packages/Test-Helpers/`) is a separate
@@ -106,6 +108,7 @@ exactly as raku does. Six general bugs were found and fixed getting there:
 | `@vars.push: item [...]` dropping the array, so every `subtest` restored garbage | `news/2026-08/item-is-a-listop.md` |
 | the module's `END` reading `$num_of_tests_run` at its registration-time value, so the plan check reported "You planned 9 tests, but ran 6" on a file that had emitted all nine `ok` lines | `news/2026-08/end-phaser-sees-live-lexicals.md` |
 | `$?FILE` inside a module naming the script, and `callframe` reporting the same, so `proclaim`'s location walk ran off the end of the stack and every *failing* assertion died on `Any.file` | `news/2026-08/module-file-var-and-callframe.md` |
+| `&CALLER::LEXICAL::("infix:<$op>")` splitting into two statements, so `cmp-ok` could not turn its string operator into a callable | `news/2026-08/caller-lexical-indirect-operator-lookup.md` |
 
 ## Bulk sweep (2026-08-01)
 
@@ -157,15 +160,12 @@ None of the 15 is an unfixed `Test` incompatibility:
   ordering, a `:v<>` version adverb import).
 
 So step 3 is close: what stands between here and flipping `runtime_module.rs` is
-`cmp-ok` (below) plus a pass over the lenient-`is` test files. Run the sweep over
-the *full* set (`tmp/sweep.sh 1`) rather than the sample before attempting it.
+a pass over the lenient-`is` test files. Run the sweep over the *full* set
+(`tmp/sweep.sh 1`) rather than the sample before attempting it.
 
-One is left:
-
-- `cmp-ok` needs `&CALLER::LEXICAL::("infix:<$op>")` —
-  `todo/tickets/caller-lexical-indirect-operator-lookup.md`. It is the only
-  assertion still blocked, and it is not Test-specific, so it is worth fixing on
-  its own terms.
+`cmp-ok`, the last blocked assertion, was fixed on 2026-08-01 —
+`news/2026-08/caller-lexical-indirect-operator-lookup.md`. Its output is now
+byte-identical to `raku`'s, failing assertions included.
 
 ## Blocker found while doing step 1: the native provider shadows an import — FIXED
 
