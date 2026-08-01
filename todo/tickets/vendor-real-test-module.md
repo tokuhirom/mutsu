@@ -75,8 +75,9 @@ of diffs at once. Sequence it deliberately:
 2. Vendor `Test.rakumod` verbatim to `modules/Rakudo-Core/lib/Test.rakumod` but
    **do not** remove the interception yet; exercise it under a temporary alias
    against a representative sample of `t/` and roast. **IN PROGRESS** — the
-   alias exercise has been run by hand (see "Where the alias stands" below) and
-   found four general interpreter bugs, all fixed, plus two that are not: an
+   alias exercise has been run both by hand (see "Where the alias stands" below)
+   and as a bulk sweep over a 1-in-9 sample of `t/` (see "Bulk sweep" below).
+   Five general interpreter bugs found and fixed, plus two that are not: an
    unimplemented `&CALLER::LEXICAL::("infix:<…>")`
    (`todo/tickets/caller-lexical-indirect-operator-lookup.md`) and a wrong
    `$?FILE`/`callframe` inside a module
@@ -96,7 +97,7 @@ the happy path already works**: `plan`, `ok`, `nok`, `is`, `isnt`, `is-deeply`,
 `like`, `unlike`, `isa-ok`, `does-ok`, `can-ok`, `dies-ok`, `lives-ok`,
 `is-approx`, `eval-dies-ok`, `eval-lives-ok`, `throws-like`, `subtest`, `todo`,
 `skip`, `pass`, `done-testing` — including nested subtests and the outer
-counter surviving them. Four general bugs were found and fixed getting there:
+counter surviving them. Five general bugs were found and fixed getting there:
 
 | what | fix |
 | --- | --- |
@@ -104,6 +105,25 @@ counter surviving them. Four general bugs were found and fixed getting there:
 | mutsu's native Test provider overruling the module's own routines | `news/2026-08/imported-test-routines-beat-the-native-provider.md` |
 | `proclaim !($got ~~ $rx), $desc` losing its argument list (forward-declared sub, prefix-`!` argument) | `news/2026-08/listop-argument-may-start-with-a-boolean-prefix.md` |
 | `@vars.push: item [...]` dropping the array, so every `subtest` restored garbage | `news/2026-08/item-is-a-listop.md` |
+| the module's `END` reading `$num_of_tests_run` at its registration-time value, so the plan check reported "You planned 9 tests, but ran 6" on a file that had emitted all nine `ok` lines | `news/2026-08/end-phaser-sees-live-lexicals.md` |
+
+## Bulk sweep (2026-08-01)
+
+The by-hand exercise above finds what the happy path needs; a bulk sweep finds
+what the *distribution* of real test files needs. Method: rewrite each `t/*.t`
+file's `use Test;` to `use Test2;`, run it with `-I tmp/core`, and classify the
+first failing line — over a 1-in-9 sample, 301 of 2704 files. Throwaway scripts:
+`tmp/core/classify.sh` (alias run + signature) and `tmp/core/sweep.sh` (diffs the
+aliased run against the same file's native-`Test` run, which is what you want
+when a signature is ambiguous).
+
+**198 / 301 files fully clean** at the start of the sweep, **255 / 301** after
+the END-phaser fix. The residue lines up exactly with the two open tickets above
+— 30 files on the `$?FILE`/`callframe` failure-report path and 7 on
+`No such method 'file'` — plus ~8 single-file `not ok`s that are ordinary
+pre-existing gaps rather than `Test` differences. Re-run the sweep after either
+open ticket lands; it is the cheapest way to see whether step 3 (flipping
+`runtime_module.rs`) is safe to attempt.
 
 Two are left, each with its own ticket:
 

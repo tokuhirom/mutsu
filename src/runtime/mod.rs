@@ -780,6 +780,31 @@ pub(crate) struct BuildWriteFrame {
     pub(crate) written: HashSet<crate::symbol::Symbol>,
 }
 
+/// A registered `END` phaser, held until program exit.
+///
+/// Raku's `END` is a closure over its enclosing lexical scope, so it must see
+/// the *final* value of every lexical it mentions. mutsu's `Env` is value-keyed
+/// rather than cell-keyed, so the body carries a captured copy instead; keeping
+/// that copy faithful is what `dead_keys` is for (see its doc comment).
+#[derive(Clone)]
+pub(crate) struct EndPhaser {
+    pub(crate) body: Vec<crate::ast::Stmt>,
+    /// The lexical env as of the moment the declaring scope died (or as of
+    /// registration, for a scope that is still alive at program exit).
+    pub(crate) env: Env,
+    /// The declaring package. END bodies run at program exit, long after
+    /// `current_package` has returned to GLOBAL — a phaser declared in a
+    /// `unit module Foo` must still see `Foo`'s routines by their bare names.
+    pub(crate) package: String,
+    /// Keys whose declaring scope has since died. At exit the captured value is
+    /// the only surviving one, so it must win over a live same-named variable
+    /// in an enclosing scope — `{ my $a = 42; END { say $a } }` prints 42 even
+    /// when an outer `my $a = 1` is what the exit-time env holds. Every other
+    /// captured key names a variable that is *still alive*, so the live value
+    /// wins and a later mutation is visible, as it is in Raku.
+    pub(crate) dead_keys: NameSet,
+}
+
 pub struct Interpreter {
     env: Env,
     /// Program output sink — stdout/stderr buffers, the immediate-flush flag,
@@ -972,11 +997,8 @@ pub struct Interpreter {
     /// a local before running the module body (so a transitive `use` inside the
     /// body cannot see them) and hands them to the module's `sub EXPORT`.
     pub(crate) pending_use_export_args: Option<Vec<Value>>,
-    /// Registered END phasers: `(body, captured lexical env, declaring package)`.
-    /// The package is captured because END bodies run at program exit, long after
-    /// `current_package` has returned to GLOBAL — a phaser declared in a
-    /// `unit module Foo` must still see `Foo`'s routines by their bare names.
-    end_phasers: Vec<(Vec<Stmt>, Env, String)>,
+    /// Registered END phasers, in registration order (they run in reverse).
+    end_phasers: Vec<EndPhaser>,
     /// Tracks END phaser site_ids to ensure each is registered only once.
     end_phaser_sites: HashSet<u64>,
     chroot_root: Option<PathBuf>,

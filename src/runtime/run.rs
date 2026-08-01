@@ -627,35 +627,27 @@ impl Interpreter {
             // should propagate) and stale captured values (which should not
             // override live values).
             let original_env = self.env.clone();
-            for (body, captured_env, package) in phasers.iter().rev() {
+            for phaser in phasers.iter().rev() {
+                let (body, captured_env, package) = (&phaser.body, &phaser.env, &phaser.package);
                 // Track which keys are being added from captured env
                 // (not already present) so we can remove them after.
                 let mut overlay_keys: Vec<String> = Vec::new();
-                // Overlay captured lexical env on top of current env.
-                // For keys already in the current env, only overlay if the
-                // key was NOT in the original env (meaning it was injected
-                // by a prior END phaser's overlay, not a live program
-                // variable).  This preserves live values and prior-END
-                // modifications while still providing access to captured
-                // lexicals from dead scopes.
+                // Overlay the captured lexical env on top of the current one.
+                // The captured copy only wins for a name whose declaring scope
+                // is gone: either it is absent from the exit-time env entirely,
+                // or it was frozen when its scope died (`dead_keys`), so the
+                // live same-named variable is a *different* one. Every other
+                // captured name still refers to a live variable, and Raku's
+                // END — a closure over the container — sees that variable's
+                // final value, so the live value wins there.
                 for (k, v) in captured_env.iter() {
                     if !self.env.contains_key_sym(*k) {
                         overlay_keys.push(k.resolve());
                         self.env.insert_sym(*k, v.clone());
-                    } else if let Some(orig_v) = original_env.get_sym(*k) {
-                        // Key exists in both current and original env.
-                        // Overlay with captured value only if the captured
-                        // value differs from the original — this indicates
-                        // the captured value comes from a different lexical
-                        // scope (e.g. { my $a = 42; END { ... } }).
-                        if v != orig_v {
-                            self.env.insert_sym(*k, v.clone());
-                        }
-                        // If captured == original, it's the same variable —
-                        // keep the current (possibly mutated) value.
-                    } else {
-                        // Key was added by a prior END phaser's overlay.
-                        // Override with this phaser's captured value.
+                    } else if phaser.dead_keys.contains(k) || !original_env.contains_key_sym(*k) {
+                        // Frozen (dead declaring scope), or a key injected by a
+                        // prior END phaser's overlay — this phaser's capture is
+                        // the authoritative value either way.
                         self.env.insert_sym(*k, v.clone());
                     }
                 }

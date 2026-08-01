@@ -49,7 +49,12 @@ impl Interpreter {
     pub(crate) fn push_end_phaser(&mut self, body: Vec<Stmt>) {
         let captured_env = self.env.clone();
         let package = self.current_package();
-        self.end_phasers.push((body, captured_env, package));
+        self.end_phasers.push(super::EndPhaser {
+            body,
+            env: captured_env,
+            package,
+            dead_keys: crate::runtime::NameSet::default(),
+        });
     }
 
     /// Return the number of currently registered END phasers.
@@ -57,16 +62,31 @@ impl Interpreter {
         self.end_phasers.len()
     }
 
-    /// Update captured envs for END phasers registered since `start_idx`
-    /// with the current values from the given env.  This ensures that END
-    /// phasers see final variable values rather than stale copies captured
-    /// at registration time (e.g., inside closures or block scopes).
-    pub(crate) fn update_end_phaser_envs(&mut self, start_idx: usize, current_env: &Env) {
+    /// Freeze the END phasers registered since `start_idx` against a scope that
+    /// is about to die: refresh their captured values from that scope's final
+    /// env, and record `dying` as the keys the scope takes with it.
+    ///
+    /// A frozen key is the *only* surviving binding of that name for this
+    /// phaser, so at exit it wins over any live same-named variable further out
+    /// (`{ my $a = 42; END { say $a } }`). A key that is not frozen still names
+    /// a live variable, and the live value — including mutations made after
+    /// registration — is what the phaser must see.
+    pub(crate) fn update_end_phaser_envs(
+        &mut self,
+        start_idx: usize,
+        current_env: &Env,
+        dying: &crate::runtime::NameSet,
+    ) {
         for phaser in self.end_phasers[start_idx..].iter_mut() {
-            let captured = &mut phaser.1;
+            let captured = &mut phaser.env;
             for (k, v) in current_env {
                 if captured.contains_key_sym(*k) {
                     captured.insert_sym(*k, v.clone());
+                }
+            }
+            for k in dying {
+                if captured.contains_key_sym(*k) {
+                    phaser.dead_keys.insert(*k);
                 }
             }
         }
@@ -81,7 +101,7 @@ impl Interpreter {
         current_env: &Env,
     ) {
         for phaser in self.end_phasers.iter_mut() {
-            let captured = &mut phaser.1;
+            let captured = &mut phaser.env;
             for k in keys {
                 if captured.contains_key(k)
                     && let Some(v) = current_env.get(k)

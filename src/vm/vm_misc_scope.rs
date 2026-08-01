@@ -373,7 +373,7 @@ impl Interpreter {
         // be removed from env when the block scope is restored below).
         if self.end_phaser_count() > end_phaser_count_before {
             let current = self.env().clone();
-            self.update_end_phaser_envs(end_phaser_count_before, &current);
+            self.update_end_phaser_envs(end_phaser_count_before, &current, &block_declared);
         }
         let current_env = self.env().clone();
         let mut restored_env = saved_env.clone();
