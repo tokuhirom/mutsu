@@ -305,12 +305,28 @@ impl Interpreter {
         if code.contains("&?ROUTINE") && self.routine_stack.is_empty() {
             return Err(RuntimeError::undeclared_symbols("Undeclared name"));
         }
-        if let Some(check_val) = Self::named_value(args, "check")
-            && check_val.truthy()
-        {
-            return self.eval_eval_string_check_only(&code);
+        // `EVAL $code, context => $ctx` compiles the string as if it stood at
+        // `$ctx`'s frame, so a package the snippet declares is named after the
+        // caller and not after whichever module called EVAL. Without this a
+        // `throws-like 'class Foo { ... }', X::...` written against the real
+        // `Test` module reports `Test::Foo`.
+        let saved_package = Self::named_value(args, "context")
+            .and_then(|ctx| Self::eval_context_package(&ctx))
+            .map(|pkg| {
+                let saved = self.current_package();
+                self.set_current_package(pkg);
+                saved
+            });
+        let check_only = Self::named_value(args, "check").is_some_and(|v| v.truthy());
+        let result = if check_only {
+            self.eval_eval_string_check_only(&code)
+        } else {
+            self.eval_eval_string(&code)
+        };
+        if let Some(saved) = saved_package {
+            self.set_current_package(saved);
         }
-        self.eval_eval_string(&code)
+        result
     }
 
     pub(super) fn builtin_dd(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
