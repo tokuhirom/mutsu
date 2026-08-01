@@ -479,14 +479,55 @@ impl Interpreter {
             RegexAtom::VarDecl { code } => {
                 let source = format!("{};", code);
                 if let Some(stmts) = self.parse_regex_code_cached(&source) {
+                    let mut new_caps = RegexCaptures::default();
+                    // An initializer that calls a METHOD has to run on the real
+                    // interpreter: the scratch one below carries only a lean
+                    // registry copy with no classes, so `:my @segs =
+                    // $req.path-segments;` (Cro's route matcher) died with "No
+                    // such method". Evaluate each non-dynamic declaration here,
+                    // with the lexicals declared before it installed around the
+                    // call so a later one can read — and dispatch on — an
+                    // earlier one. Dynamics (`:my %*PLAYED = ()`) and any other
+                    // statement shape keep the scratch path and its env diff.
+                    let mut scratch_stmts: Vec<Stmt> = Vec::new();
+                    for stmt in stmts.iter() {
+                        let Stmt::VarDecl { name, expr, .. } = stmt else {
+                            scratch_stmts.push(stmt.clone());
+                            continue;
+                        };
+                        if name.trim_start_matches(['@', '%']).starts_with('*') || name == "_" {
+                            scratch_stmts.push(stmt.clone());
+                            continue;
+                        }
+                        let mut saved: Vec<(String, Option<Value>)> = Vec::new();
+                        for (k, v) in current_caps.regex_vars.iter().chain(&new_caps.regex_vars) {
+                            saved.push((k.clone(), self.env.get(k).cloned()));
+                            self.env.insert(k.clone(), v.clone());
+                        }
+                        let v = self
+                            .eval_block_value(&[Stmt::Expr(expr.clone())])
+                            .unwrap_or(Value::NIL);
+                        for (k, orig) in saved {
+                            match orig {
+                                Some(prev) => self.env.insert(k, prev),
+                                None => self.env.remove(&k),
+                            };
+                        }
+                        new_caps.regex_vars.insert(name.clone(), v);
+                    }
+                    if scratch_stmts.is_empty() {
+                        return Some((pos, new_caps));
+                    }
                     let mut interp = Interpreter {
                         env: self.env.clone(),
                         current_package: Arc::new(RwLock::new(self.current_package())),
                         ..Self::new_regex_scratch()
                     };
                     self.copy_decl_registry_into(&mut interp);
-                    let _ = interp.eval_block_value(&stmts);
-                    let mut new_caps = RegexCaptures::default();
+                    for (k, v) in current_caps.regex_vars.iter().chain(&new_caps.regex_vars) {
+                        interp.env.insert(k.clone(), v.clone());
+                    }
+                    let _ = interp.eval_block_value(&scratch_stmts);
                     for (k, v) in &interp.env {
                         // The topic is not a `:my` declaration — the scratch run
                         // leaves `$_` holding the declaration's value, and

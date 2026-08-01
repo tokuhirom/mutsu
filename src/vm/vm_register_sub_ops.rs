@@ -290,10 +290,63 @@ impl Interpreter {
                     }
                 }
             }
+            // A sub declared inside a BLOCK scope is lexical: the block-exit
+            // routine-registry restore drops its registration, so a closure
+            // that escapes the block (Cro's RequestParser declares
+            // `my sub fresh-message` in a `supply` block and calls it from a
+            // `whenever`) could no longer resolve the name. Store the real Sub
+            // value under `&name` in env — the closure's captured env carries
+            // it out, and the call fallback (`&name` in env, Sub/WeakSub arm)
+            // dispatches it after the registry miss. Runs on the idempotent
+            // re-registration path too: env was rolled back at the previous
+            // block exit even though the registry entry was reused.
+            // Not inside an EVAL: an EVAL'd compilation unit also runs with a
+            // raised block-scope depth, but a `sub` it declares is lexical to
+            // that unit and must NOT stay callable afterwards
+            // (`EVAL q|sub zzz9 {…}|; zzz9()` dies in raku —
+            // `t/undeclared-routine-compile-time.t`).
+            let in_eval = self
+                .env()
+                .get("__mutsu_in_eval")
+                .is_some_and(|v| v.truthy());
+            if self.block_scope_depth() > 0
+                && !in_eval
+                // An exported sub is part of its module's interface, installed
+                // by the export machinery; the escape hatch is only for a
+                // genuinely block-lexical one. Registering it here also made
+                // the module-load env diff carry the reserved key, which broke
+                // `require M <quux>`'s missing-symbol detection
+                // (roast/S11-modules/require.t 11).
+                && !*is_export
+                && !*multi
+                && name_expr.is_none()
+                && !resolved_name.contains("::")
+                && !resolved_name.contains(':')
+            {
+                let sub_val = Value::make_sub(
+                    Symbol::intern(&self.lexical_closure_package()),
+                    Symbol::intern(&resolved_name),
+                    params.clone(),
+                    param_defs.clone(),
+                    body.clone(),
+                    *is_rw,
+                    self.env().clone(),
+                );
+                // A RESERVED key, not the plain `&name`: while the block is
+                // still live the registry entry is authoritative (it is what
+                // carries `state` variables and wrap chains), and a plain
+                // `&name` would be consulted ahead of it by the bareword and
+                // call paths. Only the post-block-exit fallbacks read this.
+                self.env_mut().insert(
+                    format!("{}{resolved_name}", crate::env::BLOCK_LEXICAL_SUB_PREFIX),
+                    sub_val,
+                );
+            }
             // Note: we intentionally do NOT push the Sub onto the stack or
-            // store it in env here. The interpreter's trailing_sub_value
-            // mechanism handles returning the Sub when it's the last statement
-            // of a block. Pushing would interfere with stack depth tracking.
+            // store it in env here (beyond the block-lexical escape hatch
+            // above). The interpreter's trailing_sub_value mechanism handles
+            // returning the Sub when it's the last statement of a block.
+            // Pushing would interfere with stack depth tracking.
             Ok(())
         } else {
             Err(RuntimeError::new("RegisterSub expects SubDecl"))

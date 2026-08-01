@@ -322,6 +322,10 @@ impl Interpreter {
         self.dispatch_multi_candidate.clear();
     }
 
+    pub(crate) fn block_scope_depth(&self) -> usize {
+        self.block_scope_depth
+    }
+
     pub(crate) fn push_block_scope_depth(&mut self) {
         self.block_scope_depth += 1;
     }
