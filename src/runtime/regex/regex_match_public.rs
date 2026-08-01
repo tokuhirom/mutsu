@@ -447,9 +447,32 @@ impl Interpreter {
             }
         }
 
-        let result = self.regex_match_with_captures_core(&remaining_pattern, text);
+        let mut result = self.regex_match_with_captures_core(&remaining_pattern, text);
         let matched = result.is_some();
         self.registry_mut().token_defs = saved_token_defs;
+        // A declarative `:my`/`:let` lexical is hoisted out of the pattern and
+        // evaluated into `env` above, so an inline `{ … }` block reads it straight
+        // from there. A `make`-bearing block does not run inline — it is replayed
+        // on the reduce walk, which happens after this function has restored `env`
+        // below. Carry the values on the captures so the replay can reinstall them
+        // (`install_ctx_regex_vars`); without this `/ :my $c = 1; … { make $c } /`
+        // reduces with `$c` unset.
+        if let Some(caps) = result.as_mut() {
+            for name in restore_always.keys().chain(restore_on_fail.keys()) {
+                // A `:my $*x` is a DYNAMIC variable, not a regex lexical: the
+                // per-rule dynvar machinery (`install_fresh_rule_dynvars`) owns it
+                // and deliberately leaves it installed for the action walk. Only
+                // the plain lexicals belong here.
+                if super::regex_helpers::is_dynamic_regex_var_key(name)
+                    || caps.regex_vars.contains_key(name)
+                {
+                    continue;
+                }
+                if let Some(v) = self.env.get(name).cloned() {
+                    caps.regex_vars.insert(name.clone(), v);
+                }
+            }
+        }
         self.restore_env_entries(restore_always);
         if !matched {
             self.restore_env_entries(restore_on_fail);

@@ -29,6 +29,12 @@ pub(crate) struct CodeBlockContext {
     pub(crate) named: HashMap<String, Vec<String>>,
     pub(crate) matched_so_far: String,
     pub(crate) positional: Vec<String>,
+    /// The regex's own `:my`/`:let` lexicals as they stood at this block's
+    /// textual position. A `make`-bearing block runs on the reduce-time walk,
+    /// long after the match state that held them is gone, so the values have to
+    /// travel with the block — otherwise `/ :my $c; … { $c = 1 } { make $c } /`
+    /// reduces with `$c` unset.
+    pub(crate) regex_vars: HashMap<String, Value>,
 }
 
 /// A single entry in a quantified capture list: (from, to, subcaptures).
