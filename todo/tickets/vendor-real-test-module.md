@@ -253,27 +253,34 @@ reasons unrelated to `is`'s leniency — mutsu-specific syntax, a module `raku`
 cannot find — and is listed for individual triage in
 `todo/tickets/local-tests-rely-on-a-lenient-native-is.md`.
 
-Three of the 31 are `t/` files this campaign *added* as pins, failing under the
-alias on shapes their own subject does not cover:
-`eval-type-decl-and-phaser-message.t` and `role-initialization.t` on the
-EVAL-package problem below, and `statement-call-sinks-its-value.t` on
-`todo/tickets/handled-failure-still-throws-when-sunk.md`.
+### Six of those causes closed the same day
+
+| cause | fix | files it freed under the alias |
+| --- | --- | --- |
+| a bare type name did not resolve through its enclosing packages in call position or `augment` | `news/2026-08/bare-type-name-under-a-package.md` | `role-initialization.t`, `augment-role-anon.t`, `augment-nosuchtype.t`, `eval-type-decl-and-phaser-message.t` |
+| a `try` re-caught a `Failure` something had already handled | `news/2026-08/try-does-not-recatch-a-handled-failure.md` | — |
+| `use fatal` leaked out of an `EVAL`, so one `throws-like 'use fatal; …'` poisoned the rest of the file | `news/2026-08/eval-does-not-leak-use-fatal.md` | `statement-call-sinks-its-value.t` |
+| `=begin` at end of input was not a Pod directive | `news/2026-08/pod-begin-at-end-of-input.md` | `pod-begin-without-identifier.t` |
+| a type declared in EVAL'd code counted as an undeclared routine; `X::Phaser::PrePost` had an empty `.message` | `news/2026-08/eval-type-decls-and-prepost-message.md` | `phaser-prepost.t` |
+| 40 assertions in 19 files asserted against the lenient native `is` | `news/2026-08/test-files-asserted-against-a-lenient-is.md` | 19 files |
 
 Open systemic causes, in the order worth taking them:
 
 1. **`todo/deep/eval-context-argument-is-ignored.md`** — an EVAL'd snippet's own
-   types are named after the calling *module* (`Test2::Foo`) and its bare
-   references to them stop resolving. Blocks `attribute-undeclared.t`,
-   `composition-not-composable.t`, `role-initialization.t`,
-   `augment-role-anon.t`, `eval-type-decl-and-phaser-message.t`.
-2. **`todo/tickets/handled-failure-still-throws-when-sunk.md`** — `.defined` does
-   not stop a `Failure` from throwing when the block that returns it is sunk, so
-   `lives-ok`'s `try { $code() }` reports *died*.
-3. **`todo/tickets/user-trait-mod-multi-shadows-builtin-traits.md`** — importing
+   types are still *named* after the calling module (`Test2::Foo`), which is what
+   `context` is supposed to change. Blocks `attribute-undeclared.t` and
+   `composition-not-composable.t`. (Its sibling half — the snippet not being able
+   to *find* those types — is fixed, see the table above.)
+2. **`todo/tickets/user-trait-mod-multi-shadows-builtin-traits.md`** — importing
    `Test`'s `trait_mod:<is>` makes every `is` trait dispatch through user
-   multi-dispatch, so an unknown trait is `X::Multi::NoMatch`.
+   multi-dispatch, so an unknown trait is `X::Multi::NoMatch`. Blocks
+   `variable-traits.t`.
+3. **`todo/tickets/use-fatal-leaks-out-of-a-sub-or-do-block.md`** — the same
+   pragma still leaks out of a routine body and a `do {}` block; the `EVAL` half
+   is done.
 4. **`todo/deep/exception-class-hierarchy-is-mostly-unregistered.md`** —
-   `X::Undeclared::Symbols ~~ X::Undeclared` and friends.
+   `X::Undeclared::Symbols ~~ X::Undeclared` and friends. Blocks
+   `block-lexical-scope.t`.
 
 Re-run `tmp/sweep-full.sh` to re-measure after each.
 
