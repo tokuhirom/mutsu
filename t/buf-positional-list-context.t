@@ -4,7 +4,13 @@ use Test;
 # Buf/Blob are Positional: list context yields the elements, so .rotor
 # batches bytes and `for` iterates them (Base64's encoder rotors a Blob).
 
-plan 5;
+plan 7;
+
+# The one-arg FLATTEN rule is different from list coercion: Buf/Blob are
+# Positional but not Iterable, so a composer keeps them whole (rakudo).
+is [Blob.new(1, 2)].elems, 1, '[$blob] is one element';
+my @assigned = Blob.new(1, 2);
+is @assigned.elems, 1, 'my @a = $blob is one element';
 
 is-deeply Blob.new(65).rotor(3, :partial).head, (65,),
     'Blob.rotor iterates bytes, not the Blob as one item';
