@@ -74,13 +74,50 @@ of diffs at once. Sequence it deliberately:
    upstream file all produce correct TAP.
 2. Vendor `Test.rakumod` verbatim to `modules/Rakudo-Core/lib/Test.rakumod` but
    **do not** remove the interception yet; exercise it under a temporary alias
-   against a representative sample of `t/` and roast.
+   against a representative sample of `t/` and roast. **IN PROGRESS** — the
+   alias exercise has been run by hand (see "Where the alias stands" below) and
+   found four general interpreter bugs, all fixed, plus two that are not: an
+   unimplemented `&CALLER::LEXICAL::("infix:<…>")`
+   (`todo/tickets/caller-lexical-indirect-operator-lookup.md`) and a wrong
+   `$?FILE`/`callframe` inside a module
+   (`todo/tickets/file-var-and-callframe-inside-a-module.md`). Those two are
+   what remains before the file is worth vendoring.
 3. Only then flip `runtime_module.rs`, and expect the first full `make roast` to
    be the real review.
 4. `Test::Util` (roast's helper, `roast/packages/Test-Helpers/`) is a separate
    thing and already loaded from source — check it still composes.
 
 Do not start this in the same PR as anything else.
+
+## Where the alias stands (2026-08-01)
+
+Driving the unmodified upstream file under the `Test2` alias, **everything in
+the happy path already works**: `plan`, `ok`, `nok`, `is`, `isnt`, `is-deeply`,
+`like`, `unlike`, `isa-ok`, `does-ok`, `can-ok`, `dies-ok`, `lives-ok`,
+`is-approx`, `eval-dies-ok`, `eval-lives-ok`, `throws-like`, `subtest`, `todo`,
+`skip`, `pass`, `done-testing` — including nested subtests and the outer
+counter surviving them. Four general bugs were found and fixed getting there:
+
+| what | fix |
+| --- | --- |
+| the `nqp::` ops it needs, and bare `nqp::time` in term position | `news/2026-08/nqp-process-ops-for-the-real-test-module.md` |
+| mutsu's native Test provider overruling the module's own routines | `news/2026-08/imported-test-routines-beat-the-native-provider.md` |
+| `proclaim !($got ~~ $rx), $desc` losing its argument list (forward-declared sub, prefix-`!` argument) | `news/2026-08/listop-argument-may-start-with-a-boolean-prefix.md` |
+| `@vars.push: item [...]` dropping the array, so every `subtest` restored garbage | `news/2026-08/item-is-a-listop.md` |
+
+Two are left, each with its own ticket:
+
+- `cmp-ok` needs `&CALLER::LEXICAL::("infix:<$op>")` —
+  `todo/tickets/caller-lexical-indirect-operator-lookup.md`. It is the only
+  assertion still blocked.
+- A **failing** test dies in `proclaim`'s location report, because `$?FILE`
+  inside a module is the main script and `callframe` skips the module's frames
+  — `todo/tickets/file-var-and-callframe-inside-a-module.md`. Every passing
+  assertion is fine; the first failure raises
+  `No such method 'file' for invocant of type 'Any'`. This one is
+  load-bearing: a test framework that cannot report a failure is not usable.
+
+Neither is Test-specific, so both are worth fixing on their own terms.
 
 ## Blocker found while doing step 1: the native provider shadows an import — FIXED
 
