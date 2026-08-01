@@ -483,12 +483,29 @@ impl Compiler {
                 ..
             }
         ) {
+            // A Whatever index is always positional, so the sliced container is
+            // an Array. `type` and `message` mirror what rakudo's exception
+            // carries (`X::Bind::Slice.new(type => Array).message` is
+            // "Cannot bind to Array slice").
             self.compile_expr(&Expr::Call {
                 name: Symbol::intern("die"),
                 args: vec![Expr::MethodCall {
                     target: Box::new(Expr::BareWord("X::Bind::Slice".to_string())),
                     name: Symbol::intern("new"),
-                    args: vec![],
+                    args: vec![
+                        Expr::Binary {
+                            left: Box::new(Expr::Literal(Value::str("type".to_string()))),
+                            op: TokenKind::FatArrow,
+                            right: Box::new(Expr::BareWord("Array".to_string())),
+                        },
+                        Expr::Binary {
+                            left: Box::new(Expr::Literal(Value::str("message".to_string()))),
+                            op: TokenKind::FatArrow,
+                            right: Box::new(Expr::Literal(Value::str(
+                                "Cannot bind to Array slice".to_string(),
+                            ))),
+                        },
+                    ],
                     modifier: None,
                     quoted: false,
                 }],

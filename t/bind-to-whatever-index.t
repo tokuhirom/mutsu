@@ -4,7 +4,7 @@
 # variable-index bind stay valid.
 use Test;
 
-plan 7;
+plan 11;
 
 throws-like { my @a; @a[*-1] := 42 }, X::Bind::Slice,
     'binding [*-1] of an empty array throws X::Bind::Slice';
@@ -12,6 +12,17 @@ throws-like { my @a = 1, 2, 3; @a[*-1] := 42 }, X::Bind::Slice,
     'binding [*-1] of a non-empty array throws X::Bind::Slice';
 throws-like { my @a = 1, 2, 3; @a[*-2] := 42 }, X::Bind::Slice,
     'binding [*-2] throws X::Bind::Slice';
+
+# The exception is a real type, carrying the attributes rakudo's does. It is
+# NOT a subtype of X::Bind despite the name — its only parent is Exception.
+{
+    my $e = (try { my @a; @a[*-1] := 42 }, $!).tail;
+    is $e.message, 'Cannot bind to Array slice', 'the message names the container type';
+    is $e.type.^name, 'Array', '.type is the sliced container type';
+    nok $e ~~ X::Bind, 'X::Bind::Slice does not inherit X::Bind';
+    isa-ok X::Bind::Slice.new(type => Array), X::Bind::Slice,
+        'and the class can be constructed directly';
+}
 
 # Valid binds are unaffected.
 {
