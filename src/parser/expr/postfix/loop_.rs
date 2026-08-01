@@ -1,9 +1,10 @@
 use super::adverb::{
-    DeleteAdverb, build_adverb_error_call, build_user_postcircumfix_adverb_call,
-    collect_remaining_adverbs, determine_subscript_what, multidim_target_var_name,
-    normalize_adverb_name, parse_delete_adverb, parse_dynamic_subscript_adverb,
-    parse_subscript_adverb_with_expr, subscript_adverb_expr_with_cond,
-    supports_postfix_call_adverbs, try_parse_exists_adverb, try_parse_unknown_adverb,
+    DeleteAdverb, apply_delete_to_exists, build_adverb_error_call,
+    build_user_postcircumfix_adverb_call, collect_remaining_adverbs, determine_subscript_what,
+    multidim_target_var_name, normalize_adverb_name, parse_delete_adverb,
+    parse_dynamic_subscript_adverb, parse_subscript_adverb_with_expr,
+    subscript_adverb_expr_with_cond, supports_postfix_call_adverbs, try_parse_exists_adverb,
+    try_parse_unknown_adverb,
 };
 use super::call_method::{
     ParsedBracketIndex, QuotedMethodName, append_call_arg, auto_invoke_bareword_method_target,
@@ -1925,13 +1926,14 @@ fn postfix_expr_loop_from(
                             index: Box::new(index.clone()),
                             is_positional: false,
                         };
-                        if let Some((r_after, mut exists_expr)) =
+                        if let Some((r_after, exists_expr)) =
                             try_parse_exists_adverb(r_after_delete, indexed_expr.clone())
                         {
-                            if let Expr::Exists { delete, .. } = &mut exists_expr {
-                                *delete = matches!(delete_adv, DeleteAdverb::Delete(_));
-                            }
-                            expr = exists_expr;
+                            expr = if matches!(delete_adv, DeleteAdverb::Delete(_)) {
+                                apply_delete_to_exists(exists_expr)
+                            } else {
+                                exists_expr
+                            };
                             rest = r_after;
                             continue;
                         }
@@ -1990,13 +1992,14 @@ fn postfix_expr_loop_from(
         {
             let (r_adv2, _) = ws(rest)?;
             if let Some((r_after_delete, delete_adv)) = parse_delete_adverb(r_adv2)
-                && let Some((r_after, mut exists_expr)) =
+                && let Some((r_after, exists_expr)) =
                     try_parse_exists_adverb(r_after_delete, expr.clone())
             {
-                if let Expr::Exists { delete, .. } = &mut exists_expr {
-                    *delete = matches!(delete_adv, DeleteAdverb::Delete(_));
-                }
-                expr = exists_expr;
+                expr = if matches!(delete_adv, DeleteAdverb::Delete(_)) {
+                    apply_delete_to_exists(exists_expr)
+                } else {
+                    exists_expr
+                };
                 rest = r_after;
                 continue;
             }
@@ -2122,6 +2125,29 @@ fn postfix_expr_loop_from(
             }
             if let Some((r_after_delete, delete_adv)) = parse_delete_adverb(r_adv2) {
                 rest = r_after_delete;
+                // `:exists:delete` — the reverse of the `:delete:exists` order
+                // handled above. `:exists` has already been folded into an
+                // `Expr::Exists`, and that node carries its own `delete` flag,
+                // so the trailing `:delete` sets the flag rather than wrapping
+                // the *answer* in `DELETE-KEY` (which would call it on a Bool,
+                // or on the List a slice answers with).
+                if let Expr::Exists { delete: false, .. } = &expr {
+                    match delete_adv {
+                        DeleteAdverb::NoDelete => {}
+                        DeleteAdverb::Delete(None) => {
+                            expr = apply_delete_to_exists(expr);
+                        }
+                        DeleteAdverb::Delete(Some(cond)) => {
+                            let deleting = apply_delete_to_exists(expr.clone());
+                            expr = Expr::Ternary {
+                                cond: Box::new(cond),
+                                then_expr: Box::new(deleting),
+                                else_expr: Box::new(expr),
+                            };
+                        }
+                    }
+                    continue;
+                }
                 match delete_adv {
                     DeleteAdverb::NoDelete => {
                         // Explicitly non-deleting adverb; expression is unchanged.

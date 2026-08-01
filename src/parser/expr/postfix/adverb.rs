@@ -326,6 +326,68 @@ pub(crate) enum DeleteAdverb {
     Delete(Option<Expr>),
 }
 
+/// Apply a `:delete` adverb to an already-parsed `:exists` node, whichever
+/// order the two were written in (`@a[0]:exists:delete` / `@a[0]:delete:exists`).
+///
+/// A single-dimension subscript just records the flag on the node; the compiler
+/// emits the read and the delete together. A **multi**-dimensional subscript
+/// (`@a[0;1;2]`) cannot: its `:exists` is lowered to a by-value builtin call,
+/// and only the by-name `_dyn` builtin can mutate the variable — so lower to
+/// that here, the same form the dynamic `:$delete` produces with a runtime-true
+/// flag. `:!exists:delete` has no candidate at all there and is an X::Adverb.
+pub(crate) fn apply_delete_to_exists(expr: Expr) -> Expr {
+    let Expr::Exists {
+        target,
+        negated,
+        arg,
+        adverb,
+        ..
+    } = expr
+    else {
+        return expr;
+    };
+    let Expr::MultiDimIndex {
+        target: mdt,
+        dimensions,
+    } = target.as_ref()
+    else {
+        return Expr::Exists {
+            target,
+            negated,
+            delete: true,
+            arg,
+            adverb,
+        };
+    };
+    let var_name = multidim_target_var_name(mdt);
+    if negated {
+        return build_adverb_error_call(
+            "slice",
+            &var_name,
+            &["!exists".to_string(), "delete".to_string()],
+            &[],
+        );
+    }
+    let adverb_str = match adverb {
+        ExistsAdverb::Kv => "kv",
+        ExistsAdverb::P => "p",
+        ExistsAdverb::InvalidK => "k",
+        ExistsAdverb::InvalidV => "v",
+        _ => "none",
+    };
+    let mut args = vec![
+        Expr::Literal(Value::str(var_name)),
+        Expr::Literal(Value::truth(negated)),
+        Expr::Literal(Value::TRUE),
+        Expr::Literal(Value::str(adverb_str.to_string())),
+    ];
+    args.extend(dimensions.iter().cloned());
+    Expr::Call {
+        name: Symbol::intern("__mutsu_multidim_exists_adverb_dyn"),
+        args,
+    }
+}
+
 pub(crate) fn parse_delete_adverb(input: &str) -> Option<(&str, DeleteAdverb)> {
     if input.starts_with(":!delete") && !is_ident_char(input.as_bytes().get(8).copied()) {
         return Some((&input[8..], DeleteAdverb::NoDelete));
