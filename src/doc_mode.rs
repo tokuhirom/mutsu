@@ -365,6 +365,15 @@ fn run_doc_init_blocks(source: &str) -> Result<(String, i64, bool), RuntimeError
         .filter(|s| !matches!(s, Stmt::SetLine(_)))
         .collect();
     let mut interpreter = Interpreter::new();
+    // TODO: call `interpreter.establish_pod_variables(source)?` here so a
+    // `DOC INIT { pod2text($=pod) }` block sees the document it exists to
+    // render. It is not called yet because `$=pod` then reaches
+    // `Pod::To::Text::declarator2text`, whose `next unless $pod.WHEREFORE.WHY`
+    // fires for Sub/Method declarators — their WHEREFORE is a bare type-name
+    // placeholder (`Value::package("Method")`, see `add_declarator_pod_entries`)
+    // that `.WHY` cannot resolve — and an uncatchable X::ControlFlow escapes.
+    // Fixing that means giving a declarator's WHEREFORE the real routine
+    // object: todo/tickets/doc-init-pod-variable.md.
     let mut i = 0usize;
     while i + 1 < stmts.len() {
         let is_doc_marker = matches!(&stmts[i], Stmt::Expr(Expr::BareWord(name)) if name == "DOC");

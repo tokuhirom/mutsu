@@ -177,6 +177,23 @@ role GLOBAL::IO::Socket {
 "#;
 
 impl Interpreter {
+    /// Populate `$=pod` and the declarator doc-comment table (what `.WHY`
+    /// reads) from the program source.
+    ///
+    /// `run` does this before executing the mainline, and `--doc` mode must do
+    /// the same before running `DOC INIT` blocks: those blocks exist precisely
+    /// to render the document (`DOC INIT { use Pod::To::Text; pod2text($=pod) }`),
+    /// so `$=pod` has to be established by the time they run.
+    ///
+    /// A `:key<>` colonpair (empty angle brackets) in Pod config is a fatal
+    /// compile error in Raku, so this surfaces it before the program runs.
+    pub fn establish_pod_variables(&mut self, source: &str) -> Result<(), RuntimeError> {
+        self.collect_doc_comments(source);
+        self.collect_pod_blocks(source)?;
+        self.add_declarator_pod_entries();
+        Ok(())
+    }
+
     pub fn run(&mut self, input: &str) -> Result<String, RuntimeError> {
         // `MUTSU_GC_COLLECT_NOW=1` (§9.2): one collect right at program start.
         crate::gc::startup_collect_if_requested();
@@ -185,11 +202,7 @@ impl Interpreter {
             self.env
                 .insert("*PROGRAM".to_string(), Value::str(String::new()));
         }
-        self.collect_doc_comments(&preprocessed);
-        // A `:key<>` colonpair (empty angle brackets) in Pod config is a fatal
-        // compile error in Raku; surface it before running the program.
-        self.collect_pod_blocks(&preprocessed)?;
-        self.add_declarator_pod_entries();
+        self.establish_pod_variables(&preprocessed)?;
         let file_name = self
             .program_path
             .clone()
