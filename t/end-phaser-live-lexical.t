@@ -13,7 +13,7 @@ use Test;
 # counts tests in exactly that shape, so its END reported "You planned N tests,
 # but ran M" on any file that called lives-ok/dies-ok.
 
-plan 5;
+plan 9;
 
 my $dir = $*TMPDIR.child("mutsu-end-live-{$*PID}");
 $dir.mkdir;
@@ -76,3 +76,30 @@ $d = 7;
 ';
 is run-snippet('lifo.raku', $lifo).lines.join('|'), 'second d=7|first d=50',
     'ENDs run LIFO over one shared live lexical';
+
+# 6-9. A frame that dies still hands the phaser its final state: the captured
+#      copy is the last surviving binding of a name the frame took with it, so
+#      it must be the value the frame ended with, not the value at registration.
+my $in-sub = 'sub f { my $x = 5; END { say "x=$x" }; $x = 7 }
+f();
+';
+is run-snippet('in-sub.raku', $in-sub), 'x=7',
+    'an END inside a sub sees that frame final lexical';
+
+my $in-anon = 'my $b = sub { my $y = 1; END { say "y=$y" }; $y = 3 };
+$b();
+';
+is run-snippet('in-anon.raku', $in-anon), 'y=3',
+    'an END inside an anonymous sub sees that frame final lexical';
+
+my $in-pointy = 'my &c = -> { my $z = 1; END { say "z=$z" }; $z = 4 };
+c();
+';
+is run-snippet('in-pointy.raku', $in-pointy), 'z=4',
+    'an END inside a pointy block sees that frame final lexical';
+
+my $in-method = 'class K { method m { my $w = 1; END { say "w=$w" }; $w = 5 } }
+K.m;
+';
+is run-snippet('in-method.raku', $in-method), 'w=5',
+    'an END inside a method sees that frame final lexical';

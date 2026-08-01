@@ -68,10 +68,8 @@ output under `raku`. In the step-2 survey sample (301 `t/` files run against the
 vendored upstream `Test`), fully-clean files went from 198 to 255; the
 "planned N but ran M" family went from ~40 files to one.
 
-## Still open
+## Follow-up
 
-An `END` registered inside a sub, closing over that sub's *own* lexical, still
-reports the registration-time value: `sub f { my $x = 5; END { say $x }; $x = 7 }`
-prints 5 where Rakudo prints 7. That is the same bug family at a different scope
-— the named-sub return path has several exits and does not yet freeze/refresh —
-and is filed as `todo/tickets/end-phaser-in-a-sub-frame.md`.
+An `END` registered inside a *call* frame — a sub, an anonymous sub, a pointy
+block or a method — needed the same freeze wired into the call return paths;
+that landed right after, in `news/2026-08/end-phaser-in-a-dying-frame.md`.

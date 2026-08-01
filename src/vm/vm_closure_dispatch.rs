@@ -204,6 +204,12 @@ impl Interpreter {
         }
 
         self.push_call_frame();
+        // See the same capture in `call_compiled_function_named_inner`: an END
+        // registered inside this call closes over a frame that dies on return,
+        // so the return path freezes its capture. Only the main return path can
+        // have registered one; the two early exits above it are argument-binding
+        // failures that never run the body.
+        let end_phaser_count_before = self.end_phaser_count();
         let saved_stack_depth = self.call_frames.last().unwrap().saved_stack_depth;
         let saved_state_scope = self.state_scope_id;
         // A NAMED sub's `state` scope is its REGISTRATION clone id (env
@@ -1155,6 +1161,23 @@ impl Interpreter {
             {
                 restored_env.remove(local_name);
             }
+        }
+
+        // Freeze any END phaser registered during this call against the frame
+        // that is about to die: a name the callee env holds that `restored_env`
+        // does not is one this frame takes with it, so the phaser's captured
+        // copy is its last surviving binding. Names that propagate stay
+        // unfrozen and keep reading live. This runs before the `_for_keys`
+        // refresh below, which covers the complementary case (a *captured* outer
+        // name the body mutated, which stays live in the caller).
+        if self.end_phaser_count() > end_phaser_count_before {
+            let current = self.clone_env();
+            let dying: crate::runtime::NameSet = current
+                .keys()
+                .filter(|k| !restored_env.contains_key_sym(**k))
+                .copied()
+                .collect();
+            self.update_end_phaser_envs(end_phaser_count_before, &current, &dying);
         }
 
         *self.env_mut() = restored_env;

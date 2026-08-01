@@ -228,6 +228,10 @@ impl Interpreter {
         }
 
         self.push_call_frame();
+        // See `call_compiled_function_named_inner`: an END registered inside
+        // this method closes over a frame that dies on return, so the return
+        // path freezes its capture against this frame's final env.
+        let end_phaser_count_before = self.end_phaser_count();
         let saved_stack_depth = self.call_frames.last().unwrap().saved_stack_depth;
         // A method gets a fresh, writable `$_` (Any) — it does NOT inherit the
         // caller's topic, so a caller `given`/`with`/`for` that marked `_`
@@ -763,6 +767,11 @@ impl Interpreter {
                 })
                 .collect();
 
+            // Snapshot the callee env for any END phaser registered during this
+            // method, before `take_env` hands it to the merge. Gated on the
+            // phaser count so an ordinary method call never pays the clone.
+            let end_phaser_env =
+                (self.end_phaser_count() > end_phaser_count_before).then(|| self.clone_env());
             // Take sole ownership of caller + callee envs (pop the frame for the
             // saved caller env, take the live callee env) so merge_method_env can
             // mutate the caller env in place without a deep copy.
@@ -814,6 +823,18 @@ impl Interpreter {
             self.pop_routine();
             self.pop_method_class();
             self.set_current_package(saved_package.clone());
+            // A name the callee env held that the merge did not carry into the
+            // caller is one this frame takes with it, so the phaser's captured
+            // copy is its last surviving binding; names that merged through stay
+            // unfrozen and keep reading live.
+            if let Some(current) = end_phaser_env {
+                let dying: crate::runtime::NameSet = current
+                    .keys()
+                    .filter(|k| !merged_env.contains_key_sym(**k))
+                    .copied()
+                    .collect();
+                self.update_end_phaser_envs(end_phaser_count_before, &current, &dying);
+            }
             *self.env_mut() = merged_env;
         }
 
@@ -1077,6 +1098,9 @@ impl Interpreter {
         }
 
         self.push_light_call_frame();
+        // See `call_compiled_function_named_inner`: an END registered inside this
+        // method closes over a frame that dies on return.
+        let end_phaser_count_before = self.end_phaser_count();
         let saved_stack_depth = self.call_frames.last().unwrap().saved_stack_depth;
         // A method gets a fresh, writable `$_` (Any) — clear any readonly mark
         // leaked from the caller's topic (see the slow path above). Journaled by
@@ -1513,6 +1537,16 @@ impl Interpreter {
                 }
             }
         }
+        // Snapshot this frame's final lexical state for any END phaser it
+        // registered. A `my` in a fast-path method usually lives only in a local
+        // slot, so the slots are pushed into the (about-to-be-discarded) callee
+        // env first — otherwise the phaser would keep the value the slot held
+        // when it was registered. Gated on the phaser count, so an ordinary
+        // method call pays one integer compare.
+        let end_phaser_env = (self.end_phaser_count() > end_phaser_count_before).then(|| {
+            self.sync_env_from_locals(cc);
+            self.clone_env()
+        });
         // Phase 3 Stage 2: reconcile all attributes against the live cell +
         // local/env writes before the env is torn down.
         let reconciled = self.reconcile_attrs(&base, cc);
@@ -1574,6 +1608,19 @@ impl Interpreter {
                 }
                 self.set_env(merged);
             }
+        }
+
+        // The caller env is restored now, so a name the callee held that the
+        // caller does not is one this frame took with it: freeze the phaser's
+        // captured copy for those, leave the rest reading live.
+        if let Some(current) = end_phaser_env {
+            let caller = self.clone_env();
+            let dying: crate::runtime::NameSet = current
+                .keys()
+                .filter(|k| !caller.contains_key_sym(**k))
+                .copied()
+                .collect();
+            self.update_end_phaser_envs(end_phaser_count_before, &current, &dying);
         }
 
         let final_result = match result {
