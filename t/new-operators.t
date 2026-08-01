@@ -50,7 +50,9 @@ is (1.5 max 2.5), 2.5, 'infix max with Num';
 
 # andthen basic
 is (42 andthen 100), 100, 'andthen with defined lhs returns rhs';
-is (Nil andthen 100), Nil, 'andthen with Nil lhs returns Nil';
+# `andthen` / `notandthen` yield `Empty` -- an empty Slip -- when they skip
+# their RHS, not `Nil`.
+is-deeply (Nil andthen 100), Empty, 'andthen with Nil lhs returns Empty';
 
 # orelse basic
 is (Nil orelse 42), 42, 'orelse with Nil lhs returns rhs';
@@ -58,7 +60,7 @@ is (10 orelse 42), 10, 'orelse with defined lhs returns lhs';
 
 # notandthen basic
 is (Nil notandthen 42), 42, 'notandthen with Nil lhs returns rhs';
-is (10 notandthen 42), Nil, 'notandthen with defined lhs returns Nil';
+is-deeply (10 notandthen 42), Empty, 'notandthen with defined lhs returns Empty';
 
 # chained orelse
 is (Nil orelse Nil orelse 42), 42, 'chained orelse';

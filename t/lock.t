@@ -3,7 +3,7 @@ use Test;
 plan 10;
 
 my $lock = Lock.new;
-is $lock.WHAT, "(Lock)", "Lock.new returns a Lock";
+is $lock.WHAT.gist, "(Lock)", "Lock.new returns a Lock";
 
 $lock.lock;
 pass "lock acquires lock";
@@ -22,7 +22,9 @@ my $cond = $lock.condition;
 ok $cond.defined, "condition returns a condition variable";
 
 my $async-lock = Lock::Async.new;
-is $async-lock.WHAT, "(Lock::Async)", "Lock::Async.new returns a Lock::Async";
+# `.gist` of a nested type object is its SHORT name (`(Async)`) in Raku, so the
+# fully-qualified name has to come from `.^name`.
+is $async-lock.^name, "Lock::Async", "Lock::Async.new returns a Lock::Async";
 
 $lock.protect({
     my $ready = True;

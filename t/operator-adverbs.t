@@ -24,7 +24,9 @@ $applies = 'zilch';
 is $applies, '1**', 'right-assoc chain: adverb applies to the outermost (leftmost) **';
 
 # user overrides of builtin tokens dispatch even without adverbs
-is (5 - 2), Nil, 'user infix:<-> overrides native Int-Int';
+# The user `infix:<->` body is a statement-modifier `if` that does not fire
+# here, so its value is `Empty` -- an empty Slip -- not `Nil`.
+is-deeply (5 - 2), Empty, 'user infix:<-> overrides native Int-Int';
 sub infix:<*>($a, $b) { 'u*' }
 is (2 * 3), 'u*', 'user infix:<*> overrides native Int-Int';
 is (2 ** 3), 0, 'user infix:<**> overrides native pow';
