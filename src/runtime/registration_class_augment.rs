@@ -19,8 +19,14 @@ impl Interpreter {
             "Blob",
             "Buf",
         ];
+        // A role declared under a non-GLOBAL package registers package-qualified
+        // (`M::R`), so `augment role R` inside that package has to resolve the
+        // bare name the same way every other bare type reference does --
+        // otherwise an existing role reports X::Augment::NoSuchType instead of
+        // the X::Syntax::Augment::Illegal that a *closed* role earns.
         let exists = self.registry().roles.contains_key(name)
             || self.registry().classes.contains_key(name)
+            || self.resolve_bare_type_name(name).is_some()
             || crate::runtime::utils::is_known_type_constraint(name)
             || BUILTIN_ROLES.contains(&name);
         if exists {
@@ -59,6 +65,10 @@ impl Interpreter {
         does_roles: &[String],
     ) -> Result<(), RuntimeError> {
         self.clear_private_zeroarg_method_cache();
+        // `augment class C` inside a non-GLOBAL package names the qualified
+        // declaration `M::C`, the same as every other bare type reference.
+        let qualified = self.resolve_bare_type_name(name);
+        let name: &str = qualified.as_deref().unwrap_or(name);
         // Check if the class exists (user-defined or builtin)
         let is_builtin = !self.registry().classes.contains_key(name);
         if is_builtin {
