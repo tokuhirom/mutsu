@@ -9,7 +9,7 @@
 #
 # Every assertion here also passes unmodified under rakudo.
 use Test;
-plan 12;
+plan 15;
 
 my $msg = 'Can not remove values from a Map';
 
@@ -38,6 +38,17 @@ is-deeply %h.keys.sort.List, ('a', 'b'), '%h is Map: a slice delete removes noth
 
 # Nothing was removed by any of the attempts above.
 is-deeply %h.keys.sort.List, ('a', 'b'), 'the Map still holds both keys';
+
+# --- through the `:delete` adverb on a Map held in a `$` ---
+# This spelling reached the guard only once the delete op stopped resolving its
+# container from the env mirror alone: a scalar-held container lives in its local
+# slot, so the op used to read the `my`-declaration seed and refuse nothing.
+my $m = Map.new("a", 1, "b", 2);
+throws-like { $m<a>:delete }, X::AdHoc, :message($msg),
+    '$-held Map: <k>:delete is refused';
+throws-like { $m{'a'}:delete }, X::AdHoc, :message($msg),
+    '$-held Map: {k}:delete is refused';
+is-deeply $m.keys.sort.List, ('a', 'b'), 'the $-held Map still holds both keys';
 
 # A Capture's `.hash` is a Map too.
 throws-like { \(:x(1)).hash.DELETE-KEY('x') }, X::AdHoc, :message($msg),

@@ -1451,6 +1451,54 @@ impl Interpreter {
         }
     }
 
+    /// Refresh the env mirror of a SCALAR-held container from its authoritative
+    /// local slot when the mirror is stale, so an env-centric subscript handler
+    /// (element assignment, `:delete`) operates on the live container.
+    ///
+    /// A scalar-held container (`my $b = "hi".encode`, `my $m = %h.Map`,
+    /// `my $h = {...}`) skips its env mirror, leaving it at the `my`-declaration
+    /// seed (a type object) — an env read would see `Any` instead of the live
+    /// Blob/Map/Hash, and the handler's closing env-to-slot sync would then write
+    /// that `Any` back over the variable.
+    ///
+    /// Restricted to a scalar target (bare name, no `@`/`%` sigil): an aggregate
+    /// keeps its container in env, whose representation may be more reified
+    /// (lazy/range) than the slot's, so seeding from the slot would clobber it.
+    /// Only fires when the slot holds a real value whose variant differs from the
+    /// env mirror — the scalar decl seed is a type object, so it always differs
+    /// from a live container.
+    pub(super) fn seed_env_from_scalar_slot(
+        &mut self,
+        code: &CompiledCode,
+        slot: Option<u32>,
+        var_name: &str,
+    ) {
+        if var_name.starts_with('@') || var_name.starts_with('%') {
+            return;
+        }
+        // §1.4: the compiler-baked slot is only consulted in the shadow build;
+        // otherwise fall back to the by-name search (see `resolve_local_slot`).
+        let slot = if crate::compiler::shadow_slots_active() {
+            slot
+        } else {
+            None
+        };
+        let Some(slot) = self.resolve_local_slot(code, slot, var_name) else {
+            return;
+        };
+        let slot_val = self.locals[slot].clone();
+        if slot_val.is_nil() {
+            return;
+        }
+        let stale = match self.env().get(var_name) {
+            Some(mirror) => !mirror.same_variant(&slot_val),
+            None => true,
+        };
+        if stale {
+            self.set_env_with_main_alias(var_name, slot_val);
+        }
+    }
+
     pub(super) fn locals_get_by_name(&self, code: &CompiledCode, name: &str) -> Option<Value> {
         self.find_local_slot(code, name)
             .map(|slot| self.locals[slot].clone())

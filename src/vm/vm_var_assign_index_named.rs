@@ -304,28 +304,8 @@ impl Interpreter {
         // its env mirror, so the env reads throughout this env-centric handler
         // would see the stale `my`-decl seed (Any) instead of the live Blob/Map —
         // and an immutable-container element assignment would silently NOT throw.
-        // Seed env from the authoritative slot before the handler runs. Restricted
-        // to a SCALAR target (bare name, no `@`/`%` sigil): an `@`/`%` aggregate
-        // keeps its container in env (aggregate reads are env-first, and env may
-        // hold a more-reified lazy/range representation than the slot — seeding from
-        // the slot would clobber that). Only fires when the slot holds a real value
-        // whose variant differs from the env mirror (the scalar decl seed is a type
-        // object, so it always differs from a live container).
-        if !var_name.starts_with('@')
-            && !var_name.starts_with('%')
-            && let Some(slot) = self.resolve_local_slot(code, eff_slot, &var_name)
-        {
-            let slot_val = self.locals[slot].clone();
-            if !slot_val.is_nil() {
-                let stale = match self.env().get(&var_name) {
-                    Some(e) => !e.same_variant(&slot_val),
-                    None => true,
-                };
-                if stale {
-                    self.set_env_with_main_alias(&var_name, slot_val);
-                }
-            }
-        }
+        // Seed env from the authoritative slot before the handler runs.
+        self.seed_env_from_scalar_slot(code, eff_slot, &var_name);
         // Pre-compute fill value for native typed arrays (e.g. int->0, num->0e0, str->"")
         // Must be done before mutable borrows to avoid borrow conflicts.
         let native_fill = {
