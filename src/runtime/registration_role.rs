@@ -1123,7 +1123,10 @@ impl Interpreter {
         };
         {
             let mut registry = self.registry_mut();
-            let cands = registry.role_candidates.entry(name.to_string()).or_default();
+            let cands = registry
+                .role_candidates
+                .entry(name.to_string())
+                .or_default();
             // Re-registering the same declaration (a `__hoisted` shell followed
             // by the in-place declaration, a module body re-run, a loop) must
             // REPLACE the same-signature candidate, not append a duplicate:
