@@ -40,6 +40,22 @@ impl Interpreter {
                 .get("peer-host")
                 .cloned()
                 .unwrap_or_else(|| Value::str_from("0.0.0.0"))),
+            // The OS-level file descriptor of the underlying TCP stream, used
+            // by NativeCall consumers (Cro::TCP::NoDelay's setsockopt). Only
+            // meaningful for real TCP connections; in-memory test sockets have
+            // no descriptor and report -1.
+            "native-descriptor" => {
+                #[cfg(unix)]
+                if is_real_tcp
+                    && let Some(id) = conn_id
+                    && let Some(stream) = get_tcp_stream(id)
+                    && let Ok(s) = stream.lock()
+                {
+                    use std::os::unix::io::AsRawFd;
+                    return Ok(Value::int(s.as_raw_fd() as i64));
+                }
+                Ok(Value::int(-1))
+            }
             "close" if is_real_tcp => {
                 if let Some(id) = conn_id {
                     if let Some(stream) = get_tcp_stream(id)

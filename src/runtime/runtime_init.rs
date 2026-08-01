@@ -946,6 +946,7 @@ impl Interpreter {
                     "peer-host",
                     "print-to",
                     "write-to",
+                    "native-descriptor",
                 ]
                 .iter()
                 .map(|s| s.to_string())
