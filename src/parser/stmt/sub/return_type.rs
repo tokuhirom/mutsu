@@ -7,6 +7,40 @@ pub(crate) fn skip_return_type_annotation(input: &str) -> Result<&str, PError> {
     Ok(rest)
 }
 
+/// Raku's compile-time error for a `-->` return constraint that is not the last
+/// element of the signature: `sub f (--> Int, $x)`, `sub f ($x; --> Int; $y)`.
+/// Without it the stray tail only reached the caller's `expected ')'`, which
+/// collapses into a generic parse failure and loses the class `throws-like` and
+/// a typed `CATCH` dispatch on.
+fn malformed_return_value_error() -> PError {
+    const WHAT: &str = "return value (return constraints only allowed at the end of the signature)";
+    let message = format!("Malformed {}", WHAT);
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert(
+        "message".to_string(),
+        crate::value::Value::str(message.clone()),
+    );
+    attrs.insert(
+        "what".to_string(),
+        crate::value::Value::str(WHAT.to_string()),
+    );
+    let exception = crate::value::Value::make_instance(
+        crate::symbol::Symbol::intern("X::Syntax::Malformed"),
+        attrs,
+    );
+    PError::fatal_with_exception(message, Box::new(exception))
+}
+
+/// `parse_return_type_annotation` for the signature-final position: the
+/// constraint has to be followed by the closing `)` of the signature.
+fn parse_final_return_type_annotation(input: &str) -> PResult<'_, String> {
+    let (rest, rt) = parse_return_type_annotation(input)?;
+    if !rest.starts_with(')') {
+        return Err(malformed_return_value_error());
+    }
+    Ok((rest, rt))
+}
+
 /// Parse a return type annotation (--> Type) and return both remainder and type name.
 pub(crate) fn parse_return_type_annotation(input: &str) -> PResult<'_, String> {
     let (rest, _) = ws(input)?;
@@ -170,7 +204,7 @@ pub(crate) fn parse_param_list_with_return_inner(
         return Ok((rest, (params, None)));
     }
     if let Some(stripped) = rest.strip_prefix("-->") {
-        let (r, rt) = parse_return_type_annotation(stripped)?;
+        let (r, rt) = parse_final_return_type_annotation(stripped)?;
         return Ok((r, (params, Some(rt))));
     }
     if let Some(r) = rest.strip_prefix(";;") {
@@ -200,7 +234,7 @@ pub(crate) fn parse_param_list_with_return_inner(
         // A typed invocant may be followed directly by the return constraint:
         // `method m(Foo:D: --> Str)` has no positional params after the invocant.
         if let Some(stripped) = rest.strip_prefix("-->") {
-            let (r, rt) = parse_return_type_annotation(stripped)?;
+            let (r, rt) = parse_final_return_type_annotation(stripped)?;
             return Ok((r, (params, Some(rt))));
         }
         let (r, mut p) = parse_single_param(rest)?;
@@ -221,6 +255,11 @@ pub(crate) fn parse_param_list_with_return_inner(
             if r.starts_with(')') {
                 mark_params_as_invocant(&mut params);
                 return Ok((r, (params, return_type)));
+            }
+            if let Some(stripped) = r.strip_prefix("-->") {
+                let (r, rt) = parse_final_return_type_annotation(stripped)?;
+                mark_params_as_invocant(&mut params);
+                return Ok((r, (params, Some(rt))));
             }
             let (r, mut p) = parse_single_param(r)?;
             p.multi_invocant = multi_invocant;
@@ -254,7 +293,7 @@ pub(crate) fn parse_param_list_with_return_inner(
             // Handle --> return type after invocant marker
             if let Some(stripped) = r.strip_prefix("-->") {
                 mark_params_as_invocant(&mut params);
-                let (r, rt) = parse_return_type_annotation(stripped)?;
+                let (r, rt) = parse_final_return_type_annotation(stripped)?;
                 return_type = Some(rt);
                 return Ok((r, (params, return_type)));
             }
@@ -268,6 +307,10 @@ pub(crate) fn parse_param_list_with_return_inner(
             let (r, _) = ws(r)?;
             if r.starts_with(')') {
                 return Ok((r, (params, return_type)));
+            }
+            if let Some(stripped) = r.strip_prefix("-->") {
+                let (r, rt) = parse_final_return_type_annotation(stripped)?;
+                return Ok((r, (params, Some(rt))));
             }
             let (r, mut p) = parse_single_param(r)?;
             p.multi_invocant = multi_invocant;
@@ -287,7 +330,7 @@ pub(crate) fn parse_param_list_with_return_inner(
         }
         if !r.starts_with(',') {
             if let Some(stripped) = r.strip_prefix("-->") {
-                let (r, rt) = parse_return_type_annotation(stripped)?;
+                let (r, rt) = parse_final_return_type_annotation(stripped)?;
                 return_type = Some(rt);
                 return Ok((r, (params, return_type)));
             }
@@ -299,7 +342,7 @@ pub(crate) fn parse_param_list_with_return_inner(
             return Ok((r, (params, return_type)));
         }
         if let Some(stripped) = r.strip_prefix("-->") {
-            let (r, rt) = parse_return_type_annotation(stripped)?;
+            let (r, rt) = parse_final_return_type_annotation(stripped)?;
             return_type = Some(rt);
             return Ok((r, (params, return_type)));
         }
