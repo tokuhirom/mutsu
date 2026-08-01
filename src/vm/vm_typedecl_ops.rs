@@ -4,6 +4,19 @@ use crate::ast::Expr;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    /// Whether a stmt-pool entry is a `__hoisted` declaration-only shell
+    /// emitted by `hoist_type_decl_shells` (compiler). Shell registration
+    /// errors are swallowed at the dispatch site — the in-place declaration
+    /// reports any real error.
+    pub(super) fn stmt_is_hoisted_type_shell(stmt: &Stmt) -> bool {
+        match stmt {
+            Stmt::ClassDecl { custom_traits, .. } | Stmt::RoleDecl { custom_traits, .. } => {
+                custom_traits.iter().any(|(t, _)| t == "__hoisted")
+            }
+            _ => false,
+        }
+    }
+
     pub(super) fn exec_register_enum_op(
         &mut self,
         code: &CompiledCode,
@@ -321,7 +334,9 @@ impl Interpreter {
                 let type_obj = Value::package(Symbol::intern(&storage_name));
                 // Dispatch explicitly parsed custom traits (with args)
                 for (trait_name, trait_arg) in custom_traits {
-                    if trait_name == "__mutsu_declare_how" {
+                    // Internal markers (`__mutsu_declare_how`, `__hoisted`, ...)
+                    // are not user traits; never dispatch them to trait_mod:<is>.
+                    if trait_name.starts_with("__") {
                         continue;
                     }
                     let trait_value = if let Some(arg_expr) = trait_arg {

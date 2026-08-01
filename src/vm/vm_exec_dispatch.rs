@@ -4417,7 +4417,15 @@ impl Interpreter {
             OpCode::RegisterClass(idx) => {
                 self.sync_source_line(code, *ip);
                 self.note_type_body_written_lexicals(code);
-                self.exec_register_class_op(code, *idx)?;
+                if let Err(e) = self.exec_register_class_op(code, *idx) {
+                    // A `__hoisted` shell pre-registration (see
+                    // `hoist_type_decl_shells`) is best-effort: on failure the
+                    // in-place declaration still registers the class and
+                    // reports any real error.
+                    if !Self::stmt_is_hoisted_type_shell(&code.stmt_pool[*idx as usize]) {
+                        return Err(e);
+                    }
+                }
                 *ip += 1;
             }
             OpCode::AugmentClass(idx) => {
@@ -4428,7 +4436,12 @@ impl Interpreter {
             OpCode::RegisterRole(idx) => {
                 self.sync_source_line(code, *ip);
                 self.note_type_body_written_lexicals(code);
-                self.exec_register_role_op(code, *idx)?;
+                if let Err(e) = self.exec_register_role_op(code, *idx) {
+                    // Best-effort shell pre-registration; see RegisterClass.
+                    if !Self::stmt_is_hoisted_type_shell(&code.stmt_pool[*idx as usize]) {
+                        return Err(e);
+                    }
+                }
                 *ip += 1;
             }
             OpCode::RegisterSubset(idx) => {

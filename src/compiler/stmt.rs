@@ -8,7 +8,7 @@ impl Compiler {
     /// `unit role` body. Bare names (no `::`) are rewritten to
     /// `Pkg::Name`. Names that already contain `::` or are top-level
     /// (current_package == "GLOBAL") are returned unchanged.
-    fn qualify_decl_name(&self, stmt: &Stmt) -> Stmt {
+    pub(super) fn qualify_decl_name(&self, stmt: &Stmt) -> Stmt {
         if !self.in_unit_package
             || self.current_package == "GLOBAL"
             || self.current_package.contains("::&")
@@ -2853,6 +2853,7 @@ impl Compiler {
                     // failed with "Unknown function". Sub bodies and inline blocks
                     // already hoist; the non-unit package body did not.
                     self.hoist_sub_decls(body, true);
+                    self.hoist_type_decl_shells(body);
                     for s in body {
                         self.compile_stmt(s);
                     }
