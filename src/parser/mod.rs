@@ -22,7 +22,9 @@ pub(crate) fn interpolate_heredoc_content(content: &str) -> crate::ast::Expr {
     )
 }
 
-pub use stmt::simple::{clear_parser_lib_paths, set_parser_lib_paths, set_parser_program_path};
+pub use stmt::simple::{
+    clear_parser_lib_paths, set_parser_lib_paths, set_parser_program_path, set_parser_source_file,
+};
 
 /// Lower a deferred `Expr::Feed` node into its executable (sink-call) form.
 /// Re-exported for the compiler's `Expr::Feed` arm.

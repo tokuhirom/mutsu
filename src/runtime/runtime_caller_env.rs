@@ -8,11 +8,9 @@ impl Interpreter {
     /// Push caller env with an explicit code (Sub) value for the current frame.
     pub(crate) fn push_caller_env_with_code(&mut self, code: Option<Value>) {
         self.caller_env_stack.push(self.env.clone());
-        let file = self
-            .env
-            .get("?FILE")
-            .map(|v| v.to_string_value())
-            .unwrap_or_default();
+        // The entry describes the frame this call is being made *from*, so its
+        // file is the file the currently-executing routine was defined in.
+        let file = self.executing_source_file().unwrap_or_default();
         let line = self.cur_source_line;
         let code = code.or_else(|| self.block_stack.last().cloned());
         self.callframe_stack.push(CallFrameEntry {

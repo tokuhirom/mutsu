@@ -36,8 +36,10 @@ mod registry;
 mod user_ops;
 
 // `pub` re-exports.
-pub(crate) use lib_paths::parser_program_path;
-pub use lib_paths::{clear_parser_lib_paths, set_parser_lib_paths, set_parser_program_path};
+pub use lib_paths::{
+    clear_parser_lib_paths, set_parser_lib_paths, set_parser_program_path, set_parser_source_file,
+};
+pub(crate) use lib_paths::{parser_program_path, parser_source_file};
 
 // `pub(crate)` re-exports.
 pub(crate) use compile_consts::is_imported_function;
@@ -154,6 +156,13 @@ thread_local! {
 
     /// Program file path, used to find modules relative to the script.
     static PROGRAM_PATH: RefCell<Option<String>> = const { RefCell::new(None) };
+
+    /// The file the compilation unit currently being parsed was read from —
+    /// what `$?FILE` folds to. Unlike `PROGRAM_PATH` (always the script), this
+    /// tracks the module being parsed while `load_module` recurses, so a sub in
+    /// a module reports the module's own path. `None` leaves `$?FILE` as a
+    /// runtime lookup (EVAL and other synthesized parses).
+    static SOURCE_FILE: RefCell<Option<String>> = const { RefCell::new(None) };
 
     /// Operator sub names to pre-register after scope reset (for EVAL).
     static EVAL_OPERATOR_PRESEED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };

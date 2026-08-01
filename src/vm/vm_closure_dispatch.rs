@@ -452,6 +452,7 @@ impl Interpreter {
                 "<pointy-block>".to_string(),
                 call_line,
                 call_file,
+                data.source_file.clone(),
             );
         } else {
             self.push_block_routine_with_location(
@@ -459,6 +460,7 @@ impl Interpreter {
                 data.name.resolve(),
                 call_line,
                 call_file,
+                data.source_file.clone(),
             );
         }
         self.env_mut().insert(

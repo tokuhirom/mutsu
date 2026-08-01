@@ -77,12 +77,10 @@ of diffs at once. Sequence it deliberately:
    against a representative sample of `t/` and roast. **IN PROGRESS** — the
    alias exercise has been run both by hand (see "Where the alias stands" below)
    and as a bulk sweep over a 1-in-9 sample of `t/` (see "Bulk sweep" below).
-   Five general interpreter bugs found and fixed, plus two that are not: an
-   unimplemented `&CALLER::LEXICAL::("infix:<…>")`
-   (`todo/tickets/caller-lexical-indirect-operator-lookup.md`) and a wrong
-   `$?FILE`/`callframe` inside a module
-   (`todo/tickets/file-var-and-callframe-inside-a-module.md`). Those two are
-   what remains before the file is worth vendoring.
+   Six general interpreter bugs found and fixed; one is left, the unimplemented
+   `&CALLER::LEXICAL::("infix:<…>")`
+   (`todo/tickets/caller-lexical-indirect-operator-lookup.md`), which blocks
+   `cmp-ok` and nothing else.
 3. Only then flip `runtime_module.rs`, and expect the first full `make roast` to
    be the real review.
 4. `Test::Util` (roast's helper, `roast/packages/Test-Helpers/`) is a separate
@@ -97,7 +95,8 @@ the happy path already works**: `plan`, `ok`, `nok`, `is`, `isnt`, `is-deeply`,
 `like`, `unlike`, `isa-ok`, `does-ok`, `can-ok`, `dies-ok`, `lives-ok`,
 `is-approx`, `eval-dies-ok`, `eval-lives-ok`, `throws-like`, `subtest`, `todo`,
 `skip`, `pass`, `done-testing` — including nested subtests and the outer
-counter surviving them. Five general bugs were found and fixed getting there:
+counter surviving them, and a *failing* assertion now reports its location
+exactly as raku does. Six general bugs were found and fixed getting there:
 
 | what | fix |
 | --- | --- |
@@ -106,6 +105,7 @@ counter surviving them. Five general bugs were found and fixed getting there:
 | `proclaim !($got ~~ $rx), $desc` losing its argument list (forward-declared sub, prefix-`!` argument) | `news/2026-08/listop-argument-may-start-with-a-boolean-prefix.md` |
 | `@vars.push: item [...]` dropping the array, so every `subtest` restored garbage | `news/2026-08/item-is-a-listop.md` |
 | the module's `END` reading `$num_of_tests_run` at its registration-time value, so the plan check reported "You planned 9 tests, but ran 6" on a file that had emitted all nine `ok` lines | `news/2026-08/end-phaser-sees-live-lexicals.md` |
+| `$?FILE` inside a module naming the script, and `callframe` reporting the same, so `proclaim`'s location walk ran off the end of the stack and every *failing* assertion died on `Any.file` | `news/2026-08/module-file-var-and-callframe.md` |
 
 ## Bulk sweep (2026-08-01)
 
@@ -118,26 +118,20 @@ aliased run against the same file's native-`Test` run, which is what you want
 when a signature is ambiguous).
 
 **198 / 301 files fully clean** at the start of the sweep, **255 / 301** after
-the END-phaser fix. The residue lines up exactly with the two open tickets above
-— 30 files on the `$?FILE`/`callframe` failure-report path and 7 on
+the END-phaser fix. The residue lined up exactly with the two tickets open at
+that point — 30 files on the `$?FILE`/`callframe` failure-report path and 7 on
 `No such method 'file'` — plus ~8 single-file `not ok`s that are ordinary
-pre-existing gaps rather than `Test` differences. Re-run the sweep after either
-open ticket lands; it is the cheapest way to see whether step 3 (flipping
-`runtime_module.rs`) is safe to attempt.
+pre-existing gaps rather than `Test` differences. Both of those signatures are
+the `$?FILE`/`callframe` bug, now fixed, so **re-run the sweep**: it is the
+cheapest way to see whether step 3 (flipping `runtime_module.rs`) is safe to
+attempt.
 
-Two are left, each with its own ticket:
+One is left:
 
 - `cmp-ok` needs `&CALLER::LEXICAL::("infix:<$op>")` —
   `todo/tickets/caller-lexical-indirect-operator-lookup.md`. It is the only
-  assertion still blocked.
-- A **failing** test dies in `proclaim`'s location report, because `$?FILE`
-  inside a module is the main script and `callframe` skips the module's frames
-  — `todo/tickets/file-var-and-callframe-inside-a-module.md`. Every passing
-  assertion is fine; the first failure raises
-  `No such method 'file' for invocant of type 'Any'`. This one is
-  load-bearing: a test framework that cannot report a failure is not usable.
-
-Neither is Test-specific, so both are worth fixing on their own terms.
+  assertion still blocked, and it is not Test-specific, so it is worth fixing on
+  its own terms.
 
 ## Blocker found while doing step 1: the native provider shadows an import — FIXED
 

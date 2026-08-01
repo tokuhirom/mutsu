@@ -207,11 +207,17 @@ impl Interpreter {
             .program_path
             .clone()
             .unwrap_or_else(|| "<unknown>".to_string());
-        self.env.insert("?FILE".to_string(), Value::str(file_name));
+        self.env
+            .insert("?FILE".to_string(), Value::str(file_name.clone()));
         self.cur_source_line = 1;
         crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
         crate::parser::set_parser_program_path(self.program_path.clone());
+        // `$?FILE` folds to the file of the compilation unit being parsed (see
+        // the parser's scalar-var twigil handling); for the mainline that is the
+        // script itself.
+        let saved_source_file = crate::parser::set_parser_source_file(Some(file_name));
         let parse_result = crate::parse_dispatch::parse_compilation_unit(&preprocessed);
+        crate::parser::set_parser_source_file(saved_source_file);
         crate::parser::clear_parser_lib_paths();
         // Emit any parse warnings (e.g. duplicate traits)
         for warning in crate::parser::take_parse_warnings() {

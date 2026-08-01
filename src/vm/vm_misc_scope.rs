@@ -257,6 +257,8 @@ impl Interpreter {
                 String::new(),
                 call_line,
                 call_file,
+                // An inlined bare block belongs to its enclosing routine.
+                None,
             );
         }
 
