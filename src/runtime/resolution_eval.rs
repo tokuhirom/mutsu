@@ -46,7 +46,7 @@ impl Interpreter {
         for pre in &pre_ph {
             let result = self.eval_block_value(std::slice::from_ref(pre))?;
             if !result.truthy() {
-                return Err(Self::make_phaser_prepost_error(true));
+                return Err(crate::runtime::phaser_prepost_error(true, ""));
             }
         }
         // Run main body
@@ -65,7 +65,7 @@ impl Interpreter {
                     if let Some(t) = saved_topic {
                         self.env.insert("_".to_string(), t);
                     }
-                    return Err(Self::make_phaser_prepost_error(false));
+                    return Err(crate::runtime::phaser_prepost_error(false, ""));
                 }
                 Err(e) => {
                     if let Some(t) = saved_topic {

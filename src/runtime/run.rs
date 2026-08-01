@@ -459,7 +459,7 @@ impl Interpreter {
         for pre in &pre_ph {
             let result = self.eval_block_value(std::slice::from_ref(pre))?;
             if !result.truthy() {
-                return Err(Self::make_phaser_prepost_error(true));
+                return Err(crate::runtime::phaser_prepost_error(true, ""));
             }
         }
         self.run_block_raw(&enter_ph)?;
@@ -499,26 +499,13 @@ impl Interpreter {
         body_result
     }
 
-    /// Create an X::Phaser::PrePost error.
-    pub(super) fn make_phaser_prepost_error(is_pre: bool) -> RuntimeError {
-        let phaser_name = if is_pre { "PRE" } else { "POST" };
-        let mut attrs = std::collections::HashMap::new();
-        attrs.insert("phaser".to_string(), Value::str(phaser_name.to_string()));
-        attrs.insert("condition".to_string(), Value::str(String::new()));
-        let exception =
-            Value::make_instance(crate::symbol::Symbol::intern("X::Phaser::PrePost"), attrs);
-        let mut err = RuntimeError::new(format!("Precondition '{}' failed", phaser_name));
-        err.exception = Some(Box::new(exception));
-        err
-    }
-
     /// Run POST phasers (already in reverse source order). Each phaser's result
     /// is checked; if falsy, an X::Phaser::PrePost error is returned immediately.
     fn run_post_phasers(&mut self, post_ph: &[Stmt]) -> Result<(), RuntimeError> {
         for post in post_ph {
             let result = self.eval_block_value(std::slice::from_ref(post))?;
             if !result.truthy() {
-                return Err(Self::make_phaser_prepost_error(false));
+                return Err(crate::runtime::phaser_prepost_error(false, ""));
             }
         }
         Ok(())

@@ -660,6 +660,23 @@ impl Interpreter {
                     out.insert(vname.clone());
                 }
             }
+            // A type name is legitimate in call position — `99 but R("x")`
+            // initializes a role's single public attribute, and `Foo(1)` is a
+            // coercion — so a class/role/subset declared in the same EVAL'd unit
+            // has to count as declared. Without this, `EVAL 'my role R { has
+            // $.x }; 99 but R("ok")'` died with X::Undeclared::Symbols before it
+            // ran. Their bodies are walked too, for a nested declaration.
+            Stmt::ClassDecl { name, body, .. }
+            | Stmt::AugmentClass { name, body, .. }
+            | Stmt::RoleDecl { name, body, .. } => {
+                out.insert(name.resolve());
+                for s in body {
+                    Self::collect_declared_routine_names(s, out);
+                }
+            }
+            Stmt::SubsetDecl { name, .. } => {
+                out.insert(name.resolve());
+            }
             Stmt::SyntheticBlock(body) => {
                 for s in body {
                     Self::collect_declared_routine_names(s, out);
