@@ -1109,22 +1109,37 @@ impl Interpreter {
             .get(name)
             .cloned()
             .unwrap_or_default();
-        self.registry_mut()
-            .role_candidates
-            .entry(name.to_string())
-            .or_default()
-            .push(RoleCandidateDef {
-                type_params: type_params.to_vec(),
-                type_param_defs: type_param_defs.to_vec(),
-                role_def: role_def.clone(),
-                parents: candidate_parents,
-                // The revision the role was *declared* under, snapshotted at parse
-                // time (`Stmt::RoleDecl.language_version`) exactly like a class's.
-                // Reading the parser global here instead would report whatever
-                // revision happens to be active when the declaration executes,
-                // which for a role in a `use`d module is the importer's.
-                language_version: language_version.to_string(),
+        let candidate = RoleCandidateDef {
+            type_params: type_params.to_vec(),
+            type_param_defs: type_param_defs.to_vec(),
+            role_def: role_def.clone(),
+            parents: candidate_parents,
+            // The revision the role was *declared* under, snapshotted at parse
+            // time (`Stmt::RoleDecl.language_version`) exactly like a class's.
+            // Reading the parser global here instead would report whatever
+            // revision happens to be active when the declaration executes,
+            // which for a role in a `use`d module is the importer's.
+            language_version: language_version.to_string(),
+        };
+        {
+            let mut registry = self.registry_mut();
+            let cands = registry.role_candidates.entry(name.to_string()).or_default();
+            // Re-registering the same declaration (a `__hoisted` shell followed
+            // by the in-place declaration, a module body re-run, a loop) must
+            // REPLACE the same-signature candidate, not append a duplicate:
+            // `.HOW.candidates` counts these, and two same-signature candidates
+            // in one scope are impossible in Raku (roast
+            // S14-roles/parameterized-basic.t counts 3, not 6).
+            let sig_match = cands.iter().position(|c| {
+                c.type_params == candidate.type_params
+                    && format!("{:?}", c.type_param_defs)
+                        == format!("{:?}", candidate.type_param_defs)
             });
+            match sig_match {
+                Some(i) => cands[i] = candidate,
+                None => cands.push(candidate),
+            }
+        }
         if self
             .registry()
             .roles
