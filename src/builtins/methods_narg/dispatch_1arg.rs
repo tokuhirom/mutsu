@@ -539,6 +539,23 @@ pub(crate) fn native_method_1arg(
                             })
                             .unwrap_or(Value::NIL)))
                     }
+                    // `Any.AT-POS`: a non-Positional value is a one-element list
+                    // holding itself under a positional subscript, so index 0
+                    // answers the value and everything else is out of range. The
+                    // Associative containers are included, the mirror of the
+                    // `EXISTS-POS` arm below — `%h.AT-POS(0)` is the hash rather
+                    // than a missing-method error, and `%h.AT-POS(1)` the Failure.
+                    _ if target.is_one_element_under_positional_subscript() => {
+                        Some(Ok(if idx == 0 {
+                            target.descalarize().clone()
+                        } else {
+                            crate::value::RuntimeError::out_of_range_failure(
+                                "Index",
+                                Value::int(idx as i64),
+                                "0..0",
+                            )
+                        }))
+                    }
                     _ => None,
                 }
             }

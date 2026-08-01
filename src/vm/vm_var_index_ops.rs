@@ -52,21 +52,40 @@ impl Interpreter {
     /// single-element list) past index 0, e.g. `"foo"[2]`. Raku reports
     /// `what => "Index"`, `range => "0..0"` and the offending index as `got`.
     fn make_scalar_index_out_of_range_failure(index: i64) -> Value {
-        let mut attrs = std::collections::HashMap::new();
-        attrs.insert(
-            "message".to_string(),
-            Value::str_from(&format!(
-                "Index out of range. Is: {}, should be in 0..0",
-                index
-            )),
-        );
-        attrs.insert("what".to_string(), Value::str_from("Index"));
-        attrs.insert("got".to_string(), Value::int(index));
-        attrs.insert("range".to_string(), Value::str_from("0..0"));
-        let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
-        let mut failure_attrs = std::collections::HashMap::new();
-        failure_attrs.insert("exception".to_string(), ex);
-        Value::make_instance(Symbol::intern("Failure"), failure_attrs)
+        RuntimeError::out_of_range_failure("Index", Value::int(index), "0..0")
+    }
+
+    /// One positional read of a value that does not do `Positional`: it is a
+    /// one-element list holding itself, so index 0 answers the value (decontainer-
+    /// ized, as `Any.AT-POS` is) and every other index answers the out-of-range
+    /// Failure. An index list reads each of its elements this way, so a slice
+    /// keeps its shape.
+    fn one_element_positional_read(target: &Value, index: &Value) -> Value {
+        if let ValueView::Array(indices, ..) = index.view() {
+            return Value::array(
+                indices
+                    .iter()
+                    .map(|i| Self::one_element_positional_read(target, i))
+                    .collect::<Vec<_>>(),
+            );
+        }
+        let i = match index.view() {
+            ValueView::Int(i) => i,
+            ValueView::Num(n) => n as i64,
+            // A non-numeric index cannot address the single slot; report it as
+            // the out-of-range it is rather than silently answering the value.
+            _ => return Self::make_scalar_index_out_of_range_failure(1),
+        };
+        if i == 0 {
+            // `Any.AT-POS` hands back the value itself, decontainerized: reading
+            // `$c[0]` out of `my $c = {a => 1}` is `{:a(1)}`, not the itemized
+            // `${:a(1)}` the `$` holds. A hash carries its itemization as a flag
+            // on the value rather than a `Scalar` wrapper, so both axes are
+            // stripped. (No `Array` reaches here — it does `Positional`.)
+            target.descalarize().clone().with_hash_itemized(false)
+        } else {
+            Self::make_scalar_index_out_of_range_failure(i)
+        }
     }
 
     /// Auto-vivifying index: creates intermediate Hash/Array entries and returns
@@ -675,6 +694,49 @@ impl Interpreter {
             // so chained access such as `Nil[0][2]` or `Nil<a><b>` keeps
             // returning Nil rather than an out-of-range Failure.
             (ValueView::Nil, _) => Value::NIL,
+            // A `[...]` read of a value that does not do `Positional` sees it as
+            // a ONE-ELEMENT list holding itself (raku's `Any.AT-POS`): index 0 is
+            // the value, and every other index is an out-of-range Failure. This
+            // has to precede the Hash/Set/Bag/Mix arms below, which answer the
+            // *associative* question — `$s[0]` is the Set itself, while `$s{0}`
+            // stays the membership of the key `0`.
+            //
+            // A `*` subscript is a different question — every index of the
+            // value's own `.list`, which for an Associative is its pairs
+            // (`{a => 1}[*]` is `(:a(1),)`, not the hash) — so it gets its own
+            // arm rather than the one-element rule.
+            (_, ValueView::Whatever)
+                if is_positional && target.is_one_element_under_positional_subscript() =>
+            {
+                // Decontainerized first, so a hash held in a `$` still lists its
+                // pairs rather than counting as the single item its itemization
+                // makes it in list context.
+                let listed = target.clone().with_hash_itemized(false);
+                Value::array(crate::runtime::utils::value_to_list(&listed))
+            }
+            (_, ValueView::Int(_) | ValueView::Num(_) | ValueView::Array(..))
+                if is_positional
+                    && target.is_one_element_under_positional_subscript()
+                    && !matches!(
+                        index.view(),
+                        ValueView::Array(_, crate::value::ArrayKind::ItemList)
+                    ) =>
+            {
+                Self::one_element_positional_read(&target, &index)
+            }
+            (_, _)
+                if is_positional
+                    && target.is_one_element_under_positional_subscript()
+                    && index.is_range() =>
+            {
+                let indices = crate::runtime::utils::value_to_list(&index);
+                Value::array(
+                    indices
+                        .iter()
+                        .map(|i| Self::one_element_positional_read(&target, i))
+                        .collect::<Vec<_>>(),
+                )
+            }
             // Whatever (*) index on Array: @a[*] returns all elements as a List
             (ValueView::Array(items, _is_arr), ValueView::Whatever) => {
                 Value::array_with_kind(items.clone(), crate::value::ArrayKind::List)
