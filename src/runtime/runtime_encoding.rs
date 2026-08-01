@@ -125,6 +125,14 @@ impl Interpreter {
         self.suppressed_names.remove(name);
     }
 
+    /// Record that `name` is the short name of a type declared inside a class
+    /// body, so bareword resolution keeps probing the owner package chain for it
+    /// even after `unsuppress_name` clears the suppression (see
+    /// `class_scoped_short_names`).
+    pub(crate) fn register_class_scoped_short_name(&mut self, name: &str) {
+        self.class_scoped_short_names.insert(name.to_string());
+    }
+
     /// Push a new lexical class scope frame.
     pub(crate) fn push_lexical_class_scope(&mut self) {
         self.lexical_class_scopes.push(Vec::new());
@@ -313,11 +321,20 @@ impl Interpreter {
         }
     }
 
-    /// Resolve a suppressed nested class short name to its qualified form.
-    /// For example, if `Frog` is suppressed and we are inside class `Forest`,
-    /// this returns `Some("Forest::Frog")` if `Forest::Frog` is a known type.
+    /// Resolve a nested class short name to its qualified form through the owner
+    /// package chain. For example, if we are inside class `Forest`, this returns
+    /// `Some("Forest::Frog")` for `Frog` if `Forest::Frog` is a known type.
+    ///
+    /// The probe runs for a name that is either currently suppressed *or* was ever
+    /// registered as a class-body-scoped short name. The latter is what keeps a
+    /// method body seeing its own class's nested type after an unrelated module
+    /// registers a same-named type: registering `Some::Other::Header` calls
+    /// `unsuppress_name("Header")` and binds the short name in the global env, so
+    /// gating on the suppression set alone made `Header.parse` inside
+    /// `Cro::HTTP::Header` dispatch to the foreign type instead of the class's own
+    /// `my grammar Header`.
     pub(crate) fn resolve_suppressed_type(&self, name: &str) -> Option<String> {
-        if !self.suppressed_names.contains(name) {
+        if !self.suppressed_names.contains(name) && !self.class_scoped_short_names.contains(name) {
             return None;
         }
         // Check current package

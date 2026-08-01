@@ -261,6 +261,11 @@ impl Interpreter {
                 .unwrap_or(false);
             if qualified_name != resolved_name && !resolved_name.contains("::") && parent_is_class {
                 self.suppress_name(&resolved_name);
+                // ... and remember the short name permanently, so a later
+                // same-named type in an unrelated module (which clears the
+                // suppression) cannot steal bareword resolution from this
+                // class's own methods.
+                self.register_class_scoped_short_name(&resolved_name);
                 // Register the short name in the lexical env so it resolves
                 // within the enclosing class scope (e.g. `Frog` inside `Forest`).
                 let env = self.env_mut();
