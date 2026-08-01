@@ -699,32 +699,20 @@ impl Interpreter {
             }
             _ => None,
         };
-        let (items, is_shaped, arr_initialized): (
-            &[Value],
-            bool,
-            Option<&std::collections::HashSet<usize>>,
-        ) = match &arr_data {
-            Some((data, shaped)) => (data.as_slice(), *shaped, data.initialized.as_ref()),
-            None => (&[] as &[Value], false, None),
-        };
         // An in-range slot exists unless it is a `Nil` (deleted) or an
-        // autovivification gap (`Package("Any")` not in the embedded
-        // `initialized` set). Mirrors the `:k`/`:p` predicate in
-        // builtins_multidim_subscript so `:exists` agrees with them.
+        // unassigned gap — `ArrayData::hole_at` reads the embedded
+        // `initialized` set, the same predicate `:k`/`:p` use in
+        // builtins_multidim_subscript, so `:exists` agrees with them.
+        //
+        // A shaped array is NOT exempt: it is fixed-size, but `my @a[3]` starts
+        // with every slot unassigned and raku reports `@a[0]:exists` as False
+        // until something is written there (`shaped_array_unassigned` seeds the
+        // empty `initialized` set that says so).
         let slot_present_at = |i: i64| -> bool {
-            if is_shaped {
-                return i >= 0 && (i as usize) < items.len();
-            }
-            if i < 0 {
-                return false;
-            }
-            match items.get(i as usize).map(Value::view) {
-                None | Some(ValueView::Nil) => false,
-                Some(ValueView::Package(name)) if name == "Any" => {
-                    arr_initialized.is_none_or(|s| s.contains(&(i as usize)))
-                }
-                Some(_) => true,
-            }
+            i >= 0
+                && arr_data
+                    .as_ref()
+                    .is_some_and(|(data, _)| !data.hole_at(i as usize))
         };
 
         let is_multi = indices.len() != 1 || is_zen;
@@ -732,8 +720,6 @@ impl Interpreter {
         if !is_multi {
             // Single index
             let i = indices[0];
-            // Shaped arrays are fixed-size: any in-range index exists,
-            // regardless of whether the slot holds the (default) Nil value.
             let slot_present = slot_present_at(i);
             let is_deleted = array_var_name
                 .as_deref()

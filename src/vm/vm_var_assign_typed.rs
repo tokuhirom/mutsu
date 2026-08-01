@@ -197,10 +197,18 @@ impl Interpreter {
                 &coercion_target,
                 explicit_initializer,
             )?;
-            return Ok(Value::array_with_kind(
-                crate::gc::Gc::new(crate::value::ArrayData::new(coerced_items)),
-                kind,
-            ));
+            // Carry the embedded `initialized` set through the coercion: a typed
+            // shaped declaration (`my Int @a[3]`) re-seeds its cells with the
+            // element type object, and dropping the set would make those seeds
+            // read as assigned. A NATIVE element type has no type object — its
+            // unset cells become the numeric/string zero, a real value — so it
+            // has no gap markers to track and keeps the cheaper `None`.
+            let data = if crate::runtime::native_types::is_native_array_element_type(&constraint) {
+                crate::gc::Gc::new(crate::value::ArrayData::new(coerced_items))
+            } else {
+                Value::array_data_keeping_initialized(&items, coerced_items)
+            };
+            return Ok(Value::array_with_kind(data, kind));
         }
 
         if var_name.starts_with('%')
@@ -396,10 +404,12 @@ impl Interpreter {
                     coercion_target,
                     explicit_initializer,
                 )?;
-                coerced_items.push(Value::array_with_kind(
-                    crate::gc::Gc::new(crate::value::ArrayData::new(sub_coerced)),
-                    sub_kind,
-                ));
+                let sub_data = if native_constraint {
+                    crate::gc::Gc::new(crate::value::ArrayData::new(sub_coerced))
+                } else {
+                    Value::array_data_keeping_initialized(&sub_items, sub_coerced)
+                };
+                coerced_items.push(Value::array_with_kind(sub_data, sub_kind));
                 continue;
             }
             let target_type = coercion_target(constraint).unwrap_or_else(|| constraint.to_string());

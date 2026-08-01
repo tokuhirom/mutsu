@@ -99,19 +99,35 @@ impl Interpreter {
     /// yields a catchable `X::` instead of an uncatchable `handle_alloc_error`
     /// abort. (raku aborts with a MoarVM panic on the same input.)
     pub(super) fn make_shaped_array(dims: &[usize]) -> Result<Value, RuntimeError> {
+        // Unused shaped cells hold the Any type object (the untyped element
+        // default), like a statement-form shaped declaration — `(my @b[42])`
+        // must be eqv to `my @a[42]`. A typed shaped decl (`my Int @a[3]`)
+        // re-seeds these cells with its element type via
+        // coerce_typed_array_elements (the unset-seed arm); the `array[T].new`
+        // / `Array[T].new` constructors pass their seed directly.
+        Self::make_shaped_array_seeded(dims, &Value::package(Symbol::intern("Any")))
+    }
+
+    /// [`Self::make_shaped_array`] with an explicit unset-cell seed, for a
+    /// constructor that already knows its element type. A native element type
+    /// seeds the numeric/string zero (`array[int].new(:shape(5))` is five real
+    /// `0`s, so every slot `:exists`), a boxed one the type object (which stays
+    /// a hole until written).
+    pub(super) fn make_shaped_array_seeded(
+        dims: &[usize],
+        seed: &Value,
+    ) -> Result<Value, RuntimeError> {
         if dims.is_empty() {
             return Ok(Value::NIL);
         }
         let len = dims[0];
         if dims.len() == 1 {
             let mut items = Vec::new();
-            // Unused shaped cells hold the Any type object (the untyped
-            // element default), like a statement-form shaped declaration —
-            // `(my @b[42])` must be eqv to `my @a[42]`. A typed shaped decl
-            // (`my Int @a[3]`) re-seeds these cells with its element type via
-            // coerce_typed_array_elements (the unset-seed arm).
-            Self::autoviv_resize(&mut items, len, Value::package(Symbol::intern("Any")))?;
-            let value = Value::shaped_array(items);
+            Self::autoviv_resize(&mut items, len, seed.clone())?;
+            // Every leaf slot starts *unassigned*: `my @a[3]; @a[0]:exists` is
+            // False in raku until something is written there, and the embedded
+            // `initialized` set is what tells a gap marker from a real `Any`.
+            let value = Value::shaped_array_unassigned(items);
             crate::runtime::utils::mark_shaped_array(&value, Some(dims));
             return Ok(value);
         }
@@ -126,7 +142,7 @@ impl Interpreter {
         // §3), so rows cloned from one child would all observe each other's
         // writes (`@md[0;0] = v` would set `[1;0]` too).
         for _ in 0..len {
-            let child = Self::make_shaped_array(&dims[1..])?;
+            let child = Self::make_shaped_array_seeded(&dims[1..], seed)?;
             crate::runtime::utils::mark_shaped_array(&child, Some(&dims[1..]));
             items.push(child);
         }

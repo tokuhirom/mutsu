@@ -197,6 +197,31 @@ impl Value {
     pub fn shaped_array(items: Vec<Value>) -> Self {
         Value::Array(crate::gc::Gc::new(ArrayData::new(items)), ArrayKind::Shaped)
     }
+    /// Create a shaped Array whose slots are all *unassigned*: the declaration
+    /// pre-fills them with the element type object, but raku still reports
+    /// `my @a[3]; @a[0]:exists` as `False` until something is written there.
+    /// An empty `initialized` set says "every gap marker is a hole", where the
+    /// `None` of [`Value::shaped_array`] means "bulk-constructed, no gaps".
+    pub fn shaped_array_unassigned(items: Vec<Value>) -> Self {
+        let mut data = ArrayData::new(items);
+        data.initialized = Some(std::collections::HashSet::new());
+        Value::Array(crate::gc::Gc::new(data), ArrayKind::Shaped)
+    }
+    /// Rebuild an array's backing data with new elements, keeping ONLY the
+    /// `initialized` set of `like`. Deliberately narrower than
+    /// [`Value::array_data_like`]: a typed-element coercion rebuilds every row
+    /// of a shaped array, and carrying `shape` down onto the rebuilt rows makes
+    /// each row look like a shaped array of its own, which routes every element
+    /// write through the multidimensional slow path (measured ~45x on the 100M-cell
+    /// `roast/integration/deep-recursion-initing-native-array.t`).
+    pub(crate) fn array_data_keeping_initialized(
+        like: &ArrayData,
+        items: Vec<Value>,
+    ) -> crate::gc::Gc<ArrayData> {
+        let mut data = ArrayData::new(items);
+        data.initialized = like.initialized.clone();
+        crate::gc::Gc::new(data)
+    }
     /// Build an `crate::gc::Gc<ArrayData>` from a plain element vector.
     pub(crate) fn array_arc(items: Vec<Value>) -> crate::gc::Gc<ArrayData> {
         crate::gc::Gc::new(ArrayData::new(items))
