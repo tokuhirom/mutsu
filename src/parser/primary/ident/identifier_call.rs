@@ -1646,8 +1646,17 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             .map(|(_, t)| t)
             .unwrap_or(name.as_str());
         let short_name_is_type = short_name.starts_with(|c: char| c.is_ascii_uppercase());
-        let hyphen_forward_call =
-            !is_user_sub && !name_is_declared_type && !short_name_is_type && name.contains('-');
+        // A declared enum *value* is a complete nullary term, never a
+        // forward-referenced sub: `%streams{$_}.state !~~ header-c { ... }`
+        // (Cro::HTTP2::GeneralParser) must leave the block to the enclosing
+        // `if`, exactly like the declared-type exclusion above.
+        let name_is_enum_value = crate::parser::stmt::simple::is_user_declared_enum_value(&name)
+            || crate::runtime::utils::is_builtin_enum_value(&name);
+        let hyphen_forward_call = !is_user_sub
+            && !name_is_declared_type
+            && !short_name_is_type
+            && !name_is_enum_value
+            && name.contains('-');
         if is_user_prefix_sub {
             if let Ok((r2, arg)) = expression_no_sequence(r) {
                 return Ok((r2, make_call_expr(call_name.clone(), input, vec![arg])));
