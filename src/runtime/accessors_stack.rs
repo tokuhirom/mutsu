@@ -78,6 +78,24 @@ impl Interpreter {
         self.routine_stack.pop();
     }
 
+    /// The package of the frame `CALLER::` names — the one below the frame
+    /// currently executing. A block frame carries the package its closure was
+    /// created in, so a `subtest { ... }` body written in the test script
+    /// answers the script's package rather than the module's.
+    ///
+    /// With no caller frame the caller is the mainline, whose package is the
+    /// compilation unit's; a script's is `GLOBAL`. (A `unit module` mainline
+    /// calling into another module would want that module's name here, but
+    /// `current_package` has already moved on to the callee by this point, so
+    /// it is not recoverable from the stack.)
+    pub(crate) fn caller_frame_package(&self) -> String {
+        let len = self.routine_stack.len();
+        if len >= 2 {
+            return self.routine_stack[len - 2].package.clone();
+        }
+        "GLOBAL".to_string()
+    }
+
     /// The file the code currently executing was *defined* in — the module path
     /// for a routine that came from a `use`d module, the script otherwise.
     ///

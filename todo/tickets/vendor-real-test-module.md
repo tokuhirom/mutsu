@@ -266,15 +266,15 @@ cannot find — and is listed for individual triage in
 
 Open systemic causes, in the order worth taking them:
 
-1. **`todo/deep/eval-context-argument-is-ignored.md`** — an EVAL'd snippet's own
-   types are still *named* after the calling module (`Test2::Foo`), which is what
-   `context` is supposed to change. Blocks `attribute-undeclared.t` and
-   `composition-not-composable.t`. (Its sibling half — the snippet not being able
-   to *find* those types — is fixed, see the table above.)
-2. **`todo/tickets/user-trait-mod-multi-shadows-builtin-traits.md`** — importing
-   `Test`'s `trait_mod:<is>` makes every `is` trait dispatch through user
-   multi-dispatch, so an unknown trait is `X::Multi::NoMatch`. Blocks
-   `variable-traits.t`.
+1. ~~`todo/deep/eval-context-argument-is-ignored.md`~~ **DONE** —
+   `news/2026-08/eval-context-argument.md`. The `CALLER::` pseudo-stash now
+   records the package of the frame it was taken from and `EVAL`'s `context`
+   argument compiles the snippet there, so an EVAL'd snippet's own types are no
+   longer named after the calling module. Freed `attribute-undeclared.t` and
+   `composition-not-composable.t` under the alias; pin
+   `t/eval-context-package.t`.
+2. ~~`todo/tickets/user-trait-mod-multi-shadows-builtin-traits.md`~~ **DONE** —
+   a user `trait_mod:<is>` that matches nothing keeps the builtin trait (#5689).
 3. **`todo/tickets/use-fatal-leaks-out-of-a-sub-or-do-block.md`** — the same
    pragma still leaks out of a routine body and a `do {}` block; the `EVAL` half
    is done.

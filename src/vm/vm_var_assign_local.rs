@@ -407,6 +407,18 @@ impl Interpreter {
                 .push(Value::hash_with_data(Value::hash_arc(entries)));
             return;
         }
+        if let Some(kind) = name.strip_suffix("::")
+            && (kind == "CALLER" || kind == "CALLERS")
+        {
+            // `CALLER::` is only useful as an `EVAL` context here, and that use
+            // needs the package of the frame it was taken from — which is gone
+            // by the time EVAL runs. Record it on the value itself.
+            let origin = self.caller_frame_package();
+            let stash = loan_env!(self, package_stash_value(kind));
+            Self::stamp_stash_origin_package(&stash, &origin);
+            self.stack.push(stash);
+            return;
+        }
         if let Some(package) = name.strip_suffix("::")
             && package != "MY"
             && !package.is_empty()

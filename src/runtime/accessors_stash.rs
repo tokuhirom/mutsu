@@ -34,6 +34,52 @@ impl Interpreter {
         None
     }
 
+    /// Attribute a pseudo-stash carries to remember the package of the frame it
+    /// was taken from. It is an *attribute*, not a member of the stash's
+    /// `symbols` hash, so it stays invisible to `.keys`/`.gist`; only
+    /// `EVAL $code, context => $stash` reads it back (`eval_context_package`).
+    pub(crate) const STASH_ORIGIN_PACKAGE_ATTR: &str = "__mutsu_origin_package";
+
+    /// Stamp `origin` onto a pseudo-stash value. `CALLER::` names the frame that
+    /// was current *where the stash was taken*, which is not recoverable later:
+    /// `Test.rakumod` writes `my $ctx = CALLER::` in `throws-like` and uses it
+    /// several frames deeper, inside a `subtest { ... }` block, so reading the
+    /// routine stack at EVAL time would pick a different frame.
+    pub(crate) fn stamp_stash_origin_package(stash: &Value, origin: &str) {
+        if let ValueView::Instance { attributes, .. } = stash.view() {
+            attributes.insert(
+                Self::STASH_ORIGIN_PACKAGE_ATTR.to_string(),
+                Value::str(origin.to_string()),
+            );
+        }
+    }
+
+    /// The package an `EVAL ..., context => $ctx` should compile in, or `None`
+    /// when the context value says nothing about a package.
+    pub(crate) fn eval_context_package(ctx: &Value) -> Option<String> {
+        match ctx.view() {
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Stash" => {
+                let map = attributes.as_map();
+                if let Some(origin) = map.get(Self::STASH_ORIGIN_PACKAGE_ATTR) {
+                    return Some(origin.to_string_value());
+                }
+                // A stash for a real package (`Foo::`) compiles in that package.
+                let name = map.get("name")?.to_string_value();
+                let name = Self::normalize_stash_package(&name);
+                (!Self::is_pseudo_package_name(&name)).then_some(name)
+            }
+            ValueView::Package(sym) => {
+                let name = sym.resolve().to_string();
+                (!Self::is_pseudo_package_name(&name)).then_some(name)
+            }
+            _ => None,
+        }
+    }
+
     fn make_stash_instance(package: &str, symbols: HashMap<String, Value>) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("name".to_string(), Value::str(package.to_string()));
