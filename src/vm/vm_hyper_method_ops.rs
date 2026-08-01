@@ -182,6 +182,30 @@ fn itemize_if_descended(source: &Value, result: Value) -> Value {
 }
 
 impl Interpreter {
+    /// The container a hyper walks, with any itemization stripped.
+    ///
+    /// Itemization is a property of the container a value *sits in*, not of the
+    /// thing `>>` is walking, so Rakudo hypers straight through it: `$g>>.Str`
+    /// on `my $g = ${a => 1, b => 2}` is a Hash of stringified values, exactly
+    /// as `%h>>.Str` is. mutsu itemizes a non-Array container by wrapping it in
+    /// a `Scalar` (`Value::item`), which no container gate below matches — the
+    /// Hash-keys gate missed, the QuantHash arms missed, and the target fell
+    /// through to the generic element path, where an itemized value is a single
+    /// element. So the whole hash was stringified and wrapped in a one-element
+    /// list.
+    ///
+    /// The itemized-*list* twin needs nothing here: an itemized Array carries a
+    /// kind flag rather than a wrapper, and `hyper_source_items` already asks for
+    /// its own elements. Per-element itemization is likewise untouched —
+    /// `itemize_if_descended` restores it on each result.
+    /// Returns the unwrapped container and whether it *was* itemized, which a
+    /// mutating hyper needs to restore when it writes the result back to a
+    /// scalar-held target (`$q>>++` leaves `$q` itemized).
+    fn hyper_target(target: Value) -> (Value, bool) {
+        let was_itemized = matches!(target.view(), ValueView::Scalar(..));
+        (target.into_descalarized(), was_itemized)
+    }
+
     /// Write a mutating hyper's result back to its *named* `@`/`%` target
     /// variable precisely. If the variable is bound (holds a shared
     /// `ContainerRef` cell, e.g. `$b := @a`), write through the cell so all
@@ -317,6 +341,7 @@ impl Interpreter {
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("Interpreter stack underflow in HyperMethodCall target")
         })?;
+        let (target, target_was_itemized) = Self::hyper_target(target);
         // The metaobject introspectors are *not* hyper-dispatched in Rakudo:
         // they are compiled as special forms, so `@a>>.WHAT` applies to the
         // Array itself (`Array`, not a per-element list of `Int`s), and a Seq
@@ -741,6 +766,12 @@ impl Interpreter {
                 // Precise writeback to the named `%`-variable (see the Array
                 // arm); avoids corrupting a COW copy `my %g = %h`.
                 self.write_back_hyper_target_var(code, var, new_hash);
+            } else if target_was_itemized && let Some(var) = target_var.as_ref() {
+                // A scalar-held container (`my $q = %p.item; $q>>++`): the
+                // identity scan below only sees plain-Hash bindings, so it would
+                // miss the `Scalar`-wrapped one and the increment would be lost.
+                // Write it back by name, re-itemized — `$q` stays a `${...}`.
+                self.write_back_hyper_target_var(code, var, new_hash.item());
             } else {
                 self.overwrite_hash_bindings_by_identity(&existing, new_hash);
             }
@@ -1055,6 +1086,7 @@ impl Interpreter {
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("Interpreter stack underflow in HyperMethodCallDynamic target")
         })?;
+        let (target, _target_was_itemized) = Self::hyper_target(target);
         // Hyper on a Hash applies to each *value*, preserving the keys, and
         // yields a Hash (mirrors the non-dynamic `exec_hyper_method_call_op`).
         let hash_keys: Option<Vec<String>> = if let ValueView::Hash(map) = target.view() {
