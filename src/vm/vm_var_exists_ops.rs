@@ -45,7 +45,15 @@ impl Interpreter {
             _ => {}
         }
 
+        // Whether the *index form* is a slice (list, Range, zen, `*`), as opposed
+        // to a single index. It is the form that decides the result shape, not
+        // how many indices the form happened to produce: `@a[0,]:exists` and
+        // `@a[0..0]:exists` are one-element slices and answer `(True,)`, while
+        // `@a[0]:exists` and `@a[(0)]:exists` answer a bare `True`. Counting
+        // indices instead collapsed every one-element slice to a scalar.
+        let index_is_slice;
         let (target, indices) = if is_zen {
+            index_is_slice = true;
             let target = self.stack.pop().unwrap_or(Value::NIL);
             Self::throw_if_failure(&target)?;
             let len = match target.view() {
@@ -68,6 +76,20 @@ impl Interpreter {
                     idx = Value::int(crate::runtime::utils::value_to_list(inner).len() as i64);
                 }
                 _ => {}
+            }
+            // A Range index is a *slice* index, exactly like a list one: it names
+            // one index (or key) per element and gets one answer per element.
+            // Expanding it here, above every target dispatch, is what makes that
+            // true for all of them at once -- Array, Hash, Set, Bag, Mix, Stash,
+            // Instance -- instead of adding a Range arm per target kind. Without
+            // it a Range fell through to the single-key tail, was stringified
+            // ("0..1") and looked up as one key, so `@a[0..1]:exists` answered a
+            // single False. The value adverbs never had the bug because
+            // `nested_index_elements` (which they go through) expands a Range the
+            // same way.
+            let idx_from_range = !is_zen && idx.is_range();
+            if idx_from_range {
+                idx = Value::array(crate::runtime::utils::value_to_list(&idx));
             }
             let target = self.stack.pop().unwrap_or(Value::NIL);
             Self::throw_if_failure(&target)?;
@@ -143,7 +165,11 @@ impl Interpreter {
                     ValueView::Array(items, ..) => {
                         // Multi-dimensional hash path (%h{a;b;c}:exists): if we can
                         // traverse through nested hashes, treat this as a single exists.
-                        if items.len() > 1 {
+                        // A Range index is never that -- `%h{'a'..'b'}` asks for two
+                        // keys of one hash, so it must not be read as a path into a
+                        // nested one (`my %h = a => {b => 1}` would otherwise answer a
+                        // single True instead of `(True, False)`).
+                        if items.len() > 1 && !idx_from_range {
                             // `cur` is owned: a `&Value` obtained through a view
                             // guard could not outlive the guard's borrow.
                             let mut cur: Value = target.clone();
@@ -538,6 +564,10 @@ impl Interpreter {
                 self.stack.push(result);
                 return Ok(());
             }
+            // An itemized/parenthesised single index is not a slice; an Array,
+            // Range (expanded above), `*` or `+Inf` index is.
+            index_is_slice = matches!(idx.view(), ValueView::Array(..) | ValueView::Whatever)
+                || matches!(idx.view(), ValueView::Num(f) if f.is_infinite() && f.is_sign_positive());
             let idxs = match idx.view() {
                 ValueView::Int(i) => vec![i],
                 // `@a[*-1]:exists` — a WhateverCode index stands for a concrete
@@ -710,7 +740,7 @@ impl Interpreter {
                     .is_some_and(|(data, _)| !data.hole_at(i as usize))
         };
 
-        let is_multi = indices.len() != 1 || is_zen;
+        let is_multi = index_is_slice;
 
         if !is_multi {
             // Single index
