@@ -48,21 +48,36 @@ upstream `Test.rakumod`, and `raku`):
   them exposed a real compiler bug — `notandthen` loaded `Nil` instead of the
   empty `Slip` its `andthen` sibling loads — which is fixed in the same change.
 
+## A third shape: `lives-ok` takes a `Callable`
+
+`t/variable-traits.t` passed a `Str` to `lives-ok`. The string form is
+`eval-lives-ok`; raku rejects the call at compile time (*Calling lives-ok(Str,
+Str) will never work*), and mutsu's native provider accepted it. It was the only
+such call in the whole of `t/` — corrected in
+`news/2026-08/pod-begin-at-end-of-input.md`, which also fixed
+`t/pod-begin-without-identifier.t` for asserting that a mid-line `=begin` is a
+Pod directive (raku reads it as an infix `=` in term position; a Pod directive
+has to start a line).
+
 ## Still open
 
-Eight files from the sweep's "raku fails it too" bucket are **not** this
-problem and need individual triage; several look like real gaps that only the
-strict module exposes:
+Six files from the sweep's "raku fails it too" bucket are **not** this problem
+and need individual triage. In each of them `raku` fails for a reason unrelated
+to `is`'s leniency — mutsu-specific syntax it cannot parse, or a module it
+cannot find — so the `raku` verdict says nothing about the assertion style and
+each has to be read on its own:
 
 | file | first failure under the real module |
 | --- | --- |
 | `begin-phaser-begintime.t` | `right exception type (X::AdHoc)` for a die in `INIT` |
-| `listop-arg-loose-logical-precedence.t` | `orelse` does not short-circuit on a true listop result |
+| `listop-arg-loose-logical-precedence.t` | `orelse` does not short-circuit on a true listop result (`raku` passes this one) |
 | `method-private-errors.t` | `.calling-package` of `X::Method::Private::Permission` |
 | `placeholder-named-in-method-do.t` | `%_` in a mainline `do {}` is not `X::Placeholder` |
-| `pod-begin-without-identifier.t` | `X::Syntax::Pod::BeginWithoutIdentifier` not raised |
 | `use-version-short-adverb.t` | `Test::Util::ServerPort` cannot be `use`-d with a `:v<>` adverb |
-| `variable-traits.t` | `X::Comp::Trait::Unknown` not raised |
 | `vm-panic-boundary.t` | a VM panic escapes as a Rust panic under the real module |
+
+`t/variable-traits.t` is out of this bucket but still red under the real module,
+for a cause of its own:
+`todo/tickets/user-trait-mod-multi-shadows-builtin-traits.md`.
 
 Re-run `tmp/sweep-full.sh` after each to re-measure.
