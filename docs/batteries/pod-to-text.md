@@ -78,8 +78,26 @@ plus the two behavioural pins listed above, all of which run in the fatal `t/`
 suite. Wiring rakudo's `t/02-rakudo/` selectively into the gate is possible
 later.
 
-## Other rakudo core modules still provided natively
+## Other rakudo core modules — measured 2026-08-01
 
-`Test`, `NativeCall`, `experimental`, `newline` and friends are all ordinary
-Raku files in `rakudo/lib/` too. Each is a candidate to move into
-`modules/Rakudo-Core/` the same way, once the interpreter runs it.
+`Test`, `NativeCall`, `experimental`, `newline` and friends are ordinary Raku
+files in `rakudo/lib/` too, so the obvious question is which one follows.
+Measured, they are nothing like each other — **do not assume a provider is
+retirable without measuring it**:
+
+| module | lines | `nqp::` refs | distinct ops (missing) | parses on mutsu? | verdict |
+| --- | ---: | ---: | --- | --- | --- |
+| `Pod::To::Text` | 168 | 0 | 0 (0) | yes | **done** — this document |
+| `newline` | 5 | 0 | 0 (0) | yes, and loads | moving it changes nothing: `$?NL` stays `Nil` either way, because the `package EXPORT::crlf { BEGIN OUR::<$?NL> := ... }` export mechanism is unimplemented |
+| `Test` | 953 | 90 | 11 (9) | yes, **and loads** | **strongest candidate** — `todo/tickets/vendor-real-test-module.md` |
+| `experimental` | 260 | 10 | 6 (4) | **no** | same parser gap as `NativeCall::Types`, plus `nqp::getcomp` (a compiler object) |
+| `NativeCall` | 1483 | 308 | 76 (61) | **no** | **not retirable** — `use QAST:from<NQP>` + MoarVM dispatch programs; `todo/deep/nativecall-cannot-be-vendored.md` |
+
+What matters is not line count but *what kind* of ops are missing. `Test` needs
+nine thin ones (`getstdout`, `getstderr`, `setbuffersizefh`, `can`, `eqaddr`,
+`join`, `split`, `time`, `time_n`); `NativeCall` needs sixty-one that reach into
+the VM's dispatch machinery and object representation.
+
+Also in `rakudo/lib/` with zero `nqp::` references and no provider here at all —
+candidates to *add* rather than retire: `RakuDoc::To::Text` (319 lines),
+`RakuDoc::To::RakuDoc` (221), `CompUnit::Repository::Staging` (82).
