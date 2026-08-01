@@ -2510,14 +2510,15 @@ impl Interpreter {
                         ValueView::Num(f) if f >= 0.0 => Some(f as usize),
                         _ => None,
                     };
-                    // A shaped array is fixed-size: every in-range slot exists.
-                    // Anywhere else an in-range slot may still be a hole — a
-                    // deleted element or an autovivification gap — and reporting
-                    // those as existing made `:exists` disagree with itself once
-                    // it started dispatching through EXISTS-POS (a mixin).
-                    return Ok(Value::truth(index.is_some_and(|i| {
-                        i < items.len() && (shape.is_some() || !items.hole_at(i))
-                    })));
+                    // An in-range slot may still be a hole — a deleted element
+                    // or an unassigned gap — and reporting those as existing
+                    // made `:exists` disagree with itself once it started
+                    // dispatching through EXISTS-POS (a mixin). A shaped array
+                    // is no exception: it is fixed-size, but `my @a[3]` starts
+                    // with every slot unassigned.
+                    return Ok(Value::truth(
+                        index.is_some_and(|i| i < items.len() && !items.hole_at(i)),
+                    ));
                 }
                 ("ASSIGN-POS", [idx, value]) => {
                     let index = match idx.view() {

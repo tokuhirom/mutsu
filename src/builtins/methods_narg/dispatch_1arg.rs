@@ -589,13 +589,13 @@ pub(crate) fn native_method_1arg(
                 }
             }
             // An in-range slot of a mutable array may still be a hole — a
-            // deleted element or an autovivification gap — and raku reports
-            // those as absent. A shaped array is fixed-size, so every in-range
-            // slot of one exists regardless of what it holds.
+            // deleted element or an unassigned gap — and raku reports those as
+            // absent. A shaped array is no exception: it is fixed-size, but
+            // `my @a[3]` starts with every slot unassigned, so `@a.EXISTS-POS(0)`
+            // is False until something is written there.
             if let ValueView::Array(data, ..) = target.view() {
                 let i = idx as usize;
-                let exists = i < data.len() && (data.shape.is_some() || !data.hole_at(i));
-                return Some(Ok(Value::truth(exists)));
+                return Some(Ok(Value::truth(i < data.len() && !data.hole_at(i))));
             }
             if let Some(items) = target.as_list_items() {
                 return Some(Ok(Value::truth((idx as usize) < items.len())));

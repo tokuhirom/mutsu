@@ -58,7 +58,13 @@ impl Interpreter {
             } else {
                 data
             };
-            let mut shaped = Self::make_shaped_array(&dims)?;
+            // `array[int].new(:shape(5))` allocates five real `0`s, not five
+            // holes, so seed the unset cells from the element type rather than
+            // leaving the untyped `Any` marker behind.
+            let seed = Self::native_fill_for_constraint(
+                type_args.as_ref().and_then(|ta| ta.first()).map(|s| &**s),
+            );
+            let mut shaped = Self::make_shaped_array_seeded(&dims, &seed)?;
             if let Some(ref data_val) = data
                 && let Some(source_shape) = crate::runtime::utils::shaped_array_shape(data_val)
                 && source_shape != dims
