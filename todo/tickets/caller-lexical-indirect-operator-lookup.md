@@ -97,3 +97,68 @@ Absence-is-a-`Failure` is *already* implemented for the direct form
 which is why `raku`'s own `say $m` on a missing name throws while `$m.defined`
 answers False). Once (1) routes through that function the third requirement
 comes along for free.
+
+## Where it actually breaks: it is mostly a PARSER gap
+
+Dumping the AST turns this from "a runtime lookup does not resolve" into three
+concrete sites. The runtime half is nearly done already.
+
+**The `::(...)` postfix does not accept a qualified chain.**
+`src/parser/expr/postfix/loop_.rs:1372` desugars `expr::(key)` to
+`expr.WHO{key}`, but it only fires when the very next characters are `::(`. For
+`&CALLER::LEXICAL::("infix:<+>")` the tail is `::LEXICAL::(`, so the postfix
+declines and the statement **splits in two**:
+
+```
+$ mutsu --dump-ast -e 'my $m = &CALLER::LEXICAL::("infix:<+>")'
+VarDecl { name: "m", expr: CodeVar("CALLER") }          # <-- statement 1
+Expr(IndirectTypeLookup("LEXICAL::" ~ "infix:<+>"))     # <-- statement 2
+```
+
+which is where the bogus `No such symbol 'LEXICAL::infix:<+>'` comes from — it
+is a *separate* lookup of a name that was never meant to exist. The fix is to
+let that postfix consume `::Ident` segments before the final `::(`.
+
+**A non-`$` head has no symbolic-deref path at all.** `Pkg::("name")` in term
+position does not parse:
+
+```
+$ mutsu -e 'say MY::("x")'
+Confused. expected statement: expected identifier after '::' ...
+$ raku  -e 'say GLOBAL::("Int")'
+No such symbol 'GLOBAL::Int'          # parses; resolves at runtime
+```
+
+The `$`-sigil form is fine (`parse_symbolic_deref_segments`,
+`src/parser/primary/var/scalar.rs:32`, is reached from the scalar-var parser and
+`$MY::("x")` works). Only the `&`/bare heads lack it.
+
+**The `&` sigil is dropped from the key.** `&MY::("f")` reaches
+`MY.WHO{"f"}`, but a code symbol lives in the stash as `&f` — raku's own error
+message spells it `'LEXICAL::&f'`. So the desugar has to sigil-prefix the key
+when the head carried `&`.
+
+## What is left on the runtime side
+
+- The `MY`/`LEXICAL` pseudo-stash (`src/vm/vm_var_assign_local.rs:468`) is built
+  from `code.locals` plus `env`, so a `sub f` — which lives in the routine
+  registry, not in `env` — is simply absent: `MY.WHO{"&f"}` answers `(Any)`
+  where raku answers `&f`. Registered routines have to be folded in.
+- Operator names then need **nothing new**:
+  `Interpreter::resolve_indirect_type_name` already strips a leading `&` and
+  calls `resolve_code_var` (`src/runtime/accessors_resolve.rs:181`), which
+  already understands `infix:<…>` / `prefix:<…>` / `postfix:<…>` — that is why
+  the static term `&infix:<+>` works today. Routing the indirect form to the
+  same function is the whole of requirement (2).
+- `LEXICAL::` still has to reach past the current pad to the setting for
+  `infix:<+>`; `resolve_code_var`'s builtin-operator fallback is what supplies
+  that, so it follows from the same routing.
+
+Suggested order: parser chain + sigil first (that alone turns the error into an
+honest "no such symbol"), then the stash contents, then confirm `cmp-ok` end to
+end against `raku`:
+
+```
+$ raku  -e 'use Test; plan 1; cmp-ok 3, "<", 5, "cmp-ok"'
+$ mutsu -I tmp/core -e 'use Test2; plan 1; cmp-ok 3, "<", 5, "cmp-ok"'
+```
