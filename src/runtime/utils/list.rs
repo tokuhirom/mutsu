@@ -514,6 +514,11 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
             if class_name.resolve() == "IO::Path::Parts" {
                 return vec![val.clone()];
             }
+            // Buf/Blob are Positional: list context yields the elements
+            // (`$blob.rotor(3)`, `for $buf { }` iterate bytes, as in rakudo).
+            if let Some(elems) = crate::value::value_buf::buf_elems(&attributes) {
+                return elems;
+            }
             if let Some(ValueView::Array(items, ..)) =
                 attributes.as_map().get("__array_items").map(Value::view)
             {

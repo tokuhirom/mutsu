@@ -1,6 +1,24 @@
 {
   "libraries": [
     {
+      "name": "Base64",
+      "version": "0.1.0",
+      "description": "Lazy base64 encoding and decoding routines",
+      "license": "Artistic-2.0",
+      "authors": [
+        "ugexe"
+      ],
+      "auth": "github:ugexe",
+      "provides": [
+        "Base64"
+      ],
+      "depends": [],
+      "upstream": "https://github.com/ugexe/Raku-Base64",
+      "slot": "Base64 encoding",
+      "record": "docs/batteries/base64.md",
+      "readme": "## Base64\n\nLazy base64 encoding and decoding routines\n\n## Synopsis\n\n    use Base64;\n\n\n    # ENCODING\n\n    > say encode-base64(\"g-g-g-g-g unit\", :str);\n    Zy1nLWctZy1nIHVuaXQ=\n\n    > say encode-base64(\"g-g-g-g-g unit\").raku;\n    (\"Z\", \"y\", \"1\", \"n\", \"L\", \"W\", \"c\", \"t\", \"Z\", \"y\", \"1\", \"n\", \"I\", \"H\", \"V\", \"u\", \"a\", \"X\", \"Q\", \"=\").Seq\n\n    > .print for lazy encode-base64(\"g-g-g-g-g unit\")\n    Zy1nLWctZy1nIHVuaXQ=\n\n\n    # DECODING\n\n    > say decode-base64(\"Zy1nLWctZy1nIHVuaXQ=\", :bin).decode\n    g-g-g-g-g unit\n\n    > say decode-base64(\"Zy1nLWctZy1nIHVuaXQ=\", :bin)\n    Buf:0x<67 2d 67 2d 67 2d 67 2d 67 20 75 6e 69 74>\n\n    > say decode-base64(\"Zy1nLWctZy1nIHVuaXQ=\").raku\n    (103, 45, 103, 45, 103, 45, 103, 45, 103, 32, 117, 110, 105, 116).Seq\n\n## Exports\n\n#### encode-base64($encode-me where Blob|Str, :$pad where Bool:D|Str:D, Str:D :@alpha, Bool:D :$str --> Seq|Str)\n\n    encode-base64($encode-me)                  # Returns a base64 encoded string\n    encode-base64($encode-me, :str)            # Stringify and return the sequence that would be returned\n    encode-base64($encode-me, :!pad)           # No padding\n    encode-base64($encode-me, :pad(\"*\"))       # Alternative padding character\n    encode-base64($encode-me, :uri)            # Use '-' and '_' for chars 63 and 64\n    encode-base64($encode-me, :alpha(1..64))   # Set the entire alphabet\n\nTakes a `Blob` and applies base64 encoding with the requested options. If passed a `Str` it will be converted to a `Blob` via `.ords` first.\n\n    > say encode-base64(\"test\", :str)\n    dGVzdA==\n\n    > say encode-base64(Buf.new(\"test\".ords), :str)\n    dGVzdA==\n\n    > say encode-base64(\"test\").raku'\n    (\"d\", \"G\", \"V\", \"z\", \"d\", \"A\", \"=\", \"=\").Seq\n\n#### decode-base64($decode-me where Blob:D|Str:D, Str:D :@alpha, Bool:D :$bin, Bool:D :$uri --> Seq|Buf)\n\n    decode-base64($decode-me)                  # Decodes a base64 encoded string to a Buf for further decoding\n    decode-base64($encode-me, :bin)            # Return a buffer from the sequence that would be returned\n    decode-base64($decode-me, :uri)            # Use '-' and '_' for chars 63 and 64\n    decode-base64($decode-me, :alpha(1..64))   # Set the entire alphabet\n\nTakes a `Str` and applies base64 decoding with the requested options. If passed a `Blob` it will be converted to a `Str` with `.decode` first.\n\n    > say decode-base64(\"YW55IGNhcm5hbCBwbGVhc3VyZS4=\", :bin).decode\n    any carnal pleasure.\n\n    > say Buf.new(decode-base64(\"YW55IGNhcm5hbCBwbGVhc3VyZS4=\")).decode('utf-8')\n    any carnal pleasure.\n\n    > say decode-base64(\"YW55IGNhcm5hbCBwbGVhc3VyZS4=\").raku\n    (97, 110, 121, 32, 99, 97, 114, 110, 97, 108, 32, 112, 108, 101, 97, 115, 117, 114, 101, 46).Seq\n"
+    },
+    {
       "name": "Crypt::Random",
       "version": "0.4.1",
       "description": "Random numbers and bytes mimicking arc4random",

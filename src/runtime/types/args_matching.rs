@@ -631,7 +631,25 @@ impl Interpreter {
                                 | ValueView::FatRat(..)
                                 | ValueView::BigRat(..)
                         );
-                    if !is_num_widening && !self.type_matches_value(&resolved_constraint, val) {
+                    if pd.name.starts_with('@') || pd.name.starts_with('%') {
+                        // The constraint on a named aggregate param applies to
+                        // the ELEMENTS (`Str:D :@alpha` binds an array of
+                        // defined Strs), same as the positional branch above.
+                        if !self.typed_container_param_matches(
+                            &pd.name,
+                            &resolved_constraint,
+                            val,
+                            None,
+                            None,
+                        ) && self
+                            .typed_container_param_expected(&pd.name, &resolved_constraint)
+                            .is_some()
+                        {
+                            return false;
+                        }
+                    } else if !is_num_widening
+                        && !self.type_matches_value(&resolved_constraint, val)
+                    {
                         return false;
                     }
                 }

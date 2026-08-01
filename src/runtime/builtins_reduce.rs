@@ -138,7 +138,14 @@ impl Interpreter {
         let mut items = Vec::new();
         if args.len() == 2 {
             let arg = &args[1];
-            if matches!(arg.view(), ValueView::Hash(_)) {
+            // A Buf/Blob is not Iterable in rakudo, so the one-arg rule keeps
+            // it whole (mirrors the `[op]` metaop reduction path).
+            let is_buf = matches!(
+                arg.view(),
+                ValueView::Instance { attributes, .. }
+                    if crate::value::value_buf::has_buf_elems(&attributes)
+            );
+            if matches!(arg.view(), ValueView::Hash(_)) || is_buf {
                 items.push(arg.clone());
             } else {
                 items.extend(crate::runtime::value_to_list(arg));

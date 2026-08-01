@@ -66,6 +66,15 @@ impl Compiler {
                     self.code
                         .emit(OpCode::TagContainerRef(name_idx, source_slot));
                 }
+                // A scalar placeholder in the body binds the topic, same as
+                // the statement-position Given arm (`do given 5 { $^a + 1 }`).
+                if let Some(ph) = crate::ast::collect_placeholders_shallow(body)
+                    .into_iter()
+                    .find(|n| n.starts_with('^'))
+                {
+                    self.code.emit(OpCode::Dup);
+                    self.emit_set_named_var(&ph);
+                }
                 let given_idx = self.code.emit(OpCode::DoGivenExpr { body_end: 0 });
                 self.compile_block_inline(body);
                 self.code.patch_body_end(given_idx);

@@ -60,7 +60,17 @@ impl Interpreter {
         if scan && input_is_lazy {
             return self.exec_lazy_scan_reduction(&base_op, negate, &list_value);
         }
-        let mut list = if let ValueView::LazyList(ll) = list_value.view() {
+        // A Buf/Blob does NOT do Iterable in rakudo, so the reduction one-arg
+        // rule keeps it whole (`[~] $blob` IS the blob) even though list
+        // coercion (`for`, `.rotor`, `.list`) yields its bytes.
+        let operand_is_buf = matches!(
+            list_value.view(),
+            ValueView::Instance { attributes, .. }
+                if crate::value::value_buf::has_buf_elems(&attributes)
+        );
+        let mut list = if operand_is_buf {
+            vec![list_value.clone()]
+        } else if let ValueView::LazyList(ll) = list_value.view() {
             self.force_lazy_list_vm(&ll)?
         } else {
             runtime::value_to_list(&list_value)

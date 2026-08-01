@@ -1,3 +1,5 @@
+Base64	00-sanity.rakutest
+Base64	01-basic.rakutest
 Crypt::Random	01-buf.t
 Crypt::Random	02-value.t
 Crypt::Random	03-uniform.t

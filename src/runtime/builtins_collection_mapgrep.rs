@@ -208,7 +208,14 @@ impl Interpreter {
                 Ok(Value::array(result))
             }
         } else {
-            self.eval_grep_over_items(func, list_items)
+            // The sub form returns a Seq like the method form (raku: `grep
+            // *.so, @a` is a Seq, and a `--> Seq` return constraint on a sub
+            // that ends in a grep call must pass).
+            let result = self.eval_grep_over_items(func, list_items)?;
+            Ok(match result.view() {
+                ValueView::Array(items, ..) => Value::seq(items.to_vec()),
+                _ => result,
+            })
         }
     }
 
