@@ -499,17 +499,65 @@ fn postfix_expr_inner(input: &str, allow_ws_dot: bool) -> PResult<'_, Expr> {
         rest
     };
 
-    postfix_expr_loop(rest, expr, allow_ws_dot)
+    // Raku's line-ending-block rule: a closing `}` that is the last thing on
+    // its line terminates the statement, so a `.method` on the NEXT line is a
+    // new (topic) statement, not a chained call. `supply { ... }\n.append(...)`
+    // inside a `given` must call `.append` on the topic (Cro's serializer
+    // tests do exactly this); a `}`-final hash composer behaves the same in
+    // rakudo, while a `)`-final call keeps chaining across the newline.
+    let consumed = &input[..input.len() - rest.len()];
+    postfix_expr_loop_from(rest, expr, allow_ws_dot, brace_newline_state(consumed))
 }
 
-fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PResult<'_, Expr> {
+/// For a just-consumed source span: `(ends in \`}\`, that \`}\` was already
+/// followed by a newline inside the span)`. The parser sometimes consumes the
+/// trailing whitespace (newline included) together with the block, so the
+/// newline may sit either inside the consumed span or ahead in the remainder.
+pub(in crate::parser) fn brace_newline_state(consumed: &str) -> (bool, bool) {
+    let trimmed = consumed.trim_end();
+    let brace = trimmed.ends_with('}');
+    let newline_after = consumed[trimmed.len()..].contains('\n');
+    (brace, newline_after)
+}
+
+fn postfix_expr_loop(rest: &str, expr: Expr, allow_ws_dot: bool) -> PResult<'_, Expr> {
+    postfix_expr_loop_from(rest, expr, allow_ws_dot, (false, false))
+}
+
+fn postfix_expr_loop_from(
+    mut rest: &str,
+    mut expr: Expr,
+    allow_ws_dot: bool,
+    brace_state: (bool, bool),
+) -> PResult<'_, Expr> {
+    let (mut brace_final, mut newline_after_brace) = brace_state;
+    let mut last_iter_start: Option<&str> = None;
     loop {
+        // A postfix op consumed in the previous iteration moves the
+        // "does the expression end in `}` at end of line" state along:
+        // `.map({...})` ends in `)` (keeps chaining), `.map: {...}` ends in
+        // `}` (statement ends at the newline).
+        if let Some(prev) = last_iter_start {
+            let consumed_len = prev.len() - rest.len();
+            if consumed_len > 0 {
+                (brace_final, newline_after_brace) = brace_newline_state(&prev[..consumed_len]);
+            }
+        }
+        last_iter_start = Some(rest);
         // Allow whitespace before dotty postfix call in expression context:
         // e.g. `^3 .map: { ... }`.
         if allow_ws_dot {
             let (r_ws, _) = ws(rest)?;
             if r_ws.starts_with('.') && !r_ws.starts_with("..") {
-                rest = r_ws;
+                // A `}`-final expression followed by a newline ended its
+                // statement (see `postfix_expr_inner`) — do not chain. The
+                // newline is either already inside the consumed span or in
+                // the whitespace being skipped here.
+                let crossed_newline =
+                    newline_after_brace || rest[..rest.len() - r_ws.len()].contains('\n');
+                if !(brace_final && crossed_newline) {
+                    rest = r_ws;
+                }
             }
         }
 
