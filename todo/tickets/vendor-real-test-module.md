@@ -62,8 +62,16 @@ implementation swaps the foundation the entire suite stands on, so a subtle
 difference in `is`/`is-deeply`/`todo`/`subtest` semantics shows up as thousands
 of diffs at once. Sequence it deliberately:
 
-1. Implement the 9 ops, each with a `t/nqp-*.t` pin. They are independently
-   useful — `getstdout`/`getstderr`/`eqaddr`/`can` show up in other real dists.
+1. ~~Implement the 9 ops, each with a `t/nqp-*.t` pin. They are independently
+   useful — `getstdout`/`getstderr`/`eqaddr`/`can` show up in other real
+   dists.~~ **DONE** — `src/runtime/nqp_ops_process.rs`, pinned by
+   `t/nqp-process-ops.t`
+   (`news/2026-08/nqp-process-ops-for-the-real-test-module.md`). One extra fix
+   was needed: a no-paren zero-arg `nqp::` term was special-cased for
+   `gethostname` alone, so bare `nqp::time` — written on ~40 lines of
+   `Test.rakumod` — raised "Could not find symbol '&time' in 'nqp'". With the
+   ops in, `plan`/`ok`/`is`/`isnt`/`is-deeply`/`subtest` from the unmodified
+   upstream file all produce correct TAP.
 2. Vendor `Test.rakumod` verbatim to `modules/Rakudo-Core/lib/Test.rakumod` but
    **do not** remove the interception yet; exercise it under a temporary alias
    against a representative sample of `t/` and roast.
@@ -73,6 +81,37 @@ of diffs at once. Sequence it deliberately:
    thing and already loaded from source — check it still composes.
 
 Do not start this in the same PR as anything else.
+
+## Blocker found while doing step 1: the native provider shadows an import
+
+Step 2's "exercise it under a temporary alias" does not work yet, and the
+reason is a general bug rather than anything about `Test`. `exec_call`
+(`src/runtime/calls.rs:301`) dispatches every name in
+`is_test_function_name()` to `call_test_function` **before** user-routine
+resolution and **without any gate at all** — not even the
+`loaded_modules.contains("Test")` gate its sibling in
+`builtins_operators_fallback.rs:230` applies. So a module that exports its own
+`ok`/`is`/`plan`/... is silently overruled by mutsu's native TAP routines:
+
+```
+$ mutsu -I tmp/core -e 'use Test2; plan 3; ok 1, "first"; zlike("hi", /h/, "z"); ok 1, "third"'
+1..3            # module's plan
+ok 1 - first    # mutsu's NATIVE ok  <-- wrong routine
+ok 1 - zlike    # module's zlike -> module's proclaim, its own counter at 1
+ok 2 - third    # native ok again
+```
+
+The two implementations then keep separate counters, which looks exactly like a
+stale module lexical and costs an hour to misdiagnose — the tell is that the
+module's own `proclaim` is entered only once. `like`/`unlike` are not affected
+only because their argument shapes make the native handler decline.
+
+The fix is the rule from
+`news/2026-07/qualified-call-no-longer-aliases-a-builtin.md`: decide on
+*whether a declaration exists*, not on whether the name is a builtin. A
+user-declared or imported routine must win over the native provider. Do this
+before step 2 — with `use Test` intercepted natively there is no declaration to
+compete with, so the guard cannot regress the ordinary path.
 
 ## Reproducing the measurement in one minute
 
