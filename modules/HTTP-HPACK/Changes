@@ -1,0 +1,11 @@
+Revision history for HTTP-HPACK
+
+{{$NEXT}}
+
+1.0.3  2025-06-03T15:07:38+02:00
+    - Fix windows tests, Samuel Gillespie++
+    - Some minor code streamlining
+    - Update copyright year
+
+1.0.2  2024-11-09T12:07:01+01:00
+    - Initial version as a Raku Community module
