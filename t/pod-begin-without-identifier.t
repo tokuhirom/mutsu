@@ -7,7 +7,9 @@ throws-like "=begin\n", X::Syntax::Pod::BeginWithoutIdentifier;
 throws-like "=begin   \n", X::Syntax::Pod::BeginWithoutIdentifier;
 
 # The error propagates even when the bare `=begin` is not the first statement.
-throws-like "say 1; =begin\nsay 2;", X::Syntax::Pod::BeginWithoutIdentifier;
+# A Pod directive has to start a line -- `say 1; =begin` is an infix `=` in term
+# position in Raku, not a Pod block -- so the `=begin` gets its own line here.
+throws-like "say 1;\n=begin\nsay 2;", X::Syntax::Pod::BeginWithoutIdentifier;
 
 # `=begin pod ... =end pod` is valid and produces no runtime output.
 is EVAL("=begin pod\nHello\n=end pod\n42"), 42,

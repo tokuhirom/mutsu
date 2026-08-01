@@ -235,9 +235,47 @@ in that 30 and are worth taking before the individual gaps:
   `X::Syntax::Augment::Illegal` (arrives as `X::Augment::NoSuchType`), and
   `X::Phaser::PrePost` with an empty `.message`.
 
-So what stands between here and flipping `runtime_module.rs` is those, plus a
-pass over the lenient-`is` test files. Re-run `tmp/sweep-full.sh` to re-measure
-after each.
+### Re-measured after the lenient-`is` pass (2026-08-01)
+
+| | at the start of the day | now |
+| --- | --- | --- |
+| pass under both | 2617 | **2675 / 2725** |
+| regress under the real module | 86 | **37** |
+| passes only under the real module | 1 | 1 |
+| fail under both (pre-existing) | 13 | 12 |
+
+The 37 split **6 that `raku` also fails** and **31 real gaps**. The test-file
+bucket is essentially exhausted: what remains in it
+(`begin-phaser-begintime.t`, `method-private-errors.t`,
+`listop-arg-loose-logical-precedence.t`, `placeholder-named-in-method-do.t`,
+`use-version-short-adverb.t`, `vm-panic-boundary.t`) fails under `raku` for
+reasons unrelated to `is`'s leniency — mutsu-specific syntax, a module `raku`
+cannot find — and is listed for individual triage in
+`todo/tickets/local-tests-rely-on-a-lenient-native-is.md`.
+
+Three of the 31 are `t/` files this campaign *added* as pins, failing under the
+alias on shapes their own subject does not cover:
+`eval-type-decl-and-phaser-message.t` and `role-initialization.t` on the
+EVAL-package problem below, and `statement-call-sinks-its-value.t` on
+`todo/tickets/handled-failure-still-throws-when-sunk.md`.
+
+Open systemic causes, in the order worth taking them:
+
+1. **`todo/deep/eval-context-argument-is-ignored.md`** — an EVAL'd snippet's own
+   types are named after the calling *module* (`Test2::Foo`) and its bare
+   references to them stop resolving. Blocks `attribute-undeclared.t`,
+   `composition-not-composable.t`, `role-initialization.t`,
+   `augment-role-anon.t`, `eval-type-decl-and-phaser-message.t`.
+2. **`todo/tickets/handled-failure-still-throws-when-sunk.md`** — `.defined` does
+   not stop a `Failure` from throwing when the block that returns it is sunk, so
+   `lives-ok`'s `try { $code() }` reports *died*.
+3. **`todo/tickets/user-trait-mod-multi-shadows-builtin-traits.md`** — importing
+   `Test`'s `trait_mod:<is>` makes every `is` trait dispatch through user
+   multi-dispatch, so an unknown trait is `X::Multi::NoMatch`.
+4. **`todo/deep/exception-class-hierarchy-is-mostly-unregistered.md`** —
+   `X::Undeclared::Symbols ~~ X::Undeclared` and friends.
+
+Re-run `tmp/sweep-full.sh` to re-measure after each.
 
 ## Blocker found while doing step 1: the native provider shadows an import — FIXED
 

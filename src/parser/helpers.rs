@@ -162,6 +162,19 @@ fn skip_declarator_doc_comment(input: &str) -> Option<&str> {
     }
 }
 
+/// `X::Syntax::Pod::BeginWithoutIdentifier` — a `=begin` with no block name.
+fn pod_begin_without_identifier_error() -> PError {
+    let msg =
+        "=begin must be followed by an identifier; (did you mean \"=begin pod\"?)".to_string();
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), crate::value::Value::str(msg.clone()));
+    let ex = crate::value::Value::make_instance(
+        crate::symbol::Symbol::intern("X::Syntax::Pod::BeginWithoutIdentifier"),
+        attrs,
+    );
+    PError::fatal_with_exception(msg, Box::new(ex))
+}
+
 /// Parse and skip a Pod block.
 /// Handles `=begin ... =end`, `=for ...`, `=head ...`, `=item ...`, `=comment ...`, etc.
 fn pod_block(input: &str) -> PResult<'_, &str> {
@@ -183,6 +196,19 @@ fn pod_block(input: &str) -> PResult<'_, &str> {
         if !ch.is_whitespace() {
             return Err(PError::expected("pod directive"));
         }
+    } else if keyword == "begin" {
+        // `=begin` as the very last thing in the source has no identifier
+        // either, so it is the same compile error as `=begin\n`. This arm
+        // exists because EVAL trims its argument: `EVAL "=begin\n"` reaches the
+        // parser as a bare `=begin` and used to fall out as a generic parse
+        // failure rather than X::Syntax::Pod::BeginWithoutIdentifier.
+        //
+        // raku distinguishes the two — with no trailing newline it does not read
+        // `=begin` as a Pod directive at all and reports an infix `=` in term
+        // position — but mutsu cannot, because the trim has already erased the
+        // difference by the time the parser runs. Matching the newline form is
+        // the useful half: it is the one real source ever contains.
+        return Err(pod_begin_without_identifier_error());
     } else {
         return Err(PError::expected("pod directive"));
     }
@@ -195,15 +221,7 @@ fn pod_block(input: &str) -> PResult<'_, &str> {
         let target = begin_line.split_whitespace().next().unwrap_or("");
         // `=begin` must be followed by an identifier (the block name).
         if target.is_empty() {
-            let msg = "=begin must be followed by an identifier; (did you mean \"=begin pod\"?)"
-                .to_string();
-            let mut attrs = std::collections::HashMap::new();
-            attrs.insert("message".to_string(), crate::value::Value::str(msg.clone()));
-            let ex = crate::value::Value::make_instance(
-                crate::symbol::Symbol::intern("X::Syntax::Pod::BeginWithoutIdentifier"),
-                attrs,
-            );
-            return Err(PError::fatal_with_exception(msg, Box::new(ex)));
+            return Err(pod_begin_without_identifier_error());
         }
         let is_table = target == "table";
         let mut remaining = rest.get(begin_line_end + 1..).unwrap_or_default();

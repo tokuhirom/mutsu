@@ -8,7 +8,8 @@ throws-like q[my $a is readonly = 5;], X::Comp::Trait::Unknown,
 throws-like q[(my $a is readonly) = 5;], X::Comp::Trait::Unknown,
     q[parenthesized declaration also rejects unsupported variable trait];
 
-lives-ok q[my $a is default(41) = 42;], q[supported variable trait parses];
+# `lives-ok` takes a Callable; the string form is `eval-lives-ok`.
+eval-lives-ok q[my $a is default(41) = 42;], q[supported variable trait parses];
 
 throws-like q[my $a is definitely-invalid = 5;], X::Comp::Trait::Unknown,
     q[unknown variable trait is rejected];
