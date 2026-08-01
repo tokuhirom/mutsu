@@ -5,6 +5,18 @@ impl Interpreter {
     pub(super) fn normalize_categorical_operator_name(name: &str) -> String {
         // Keep categorical operator names as-written. Parenthesized operators
         // like infix:<(==)> are distinct from infix:<==>.
+        //
+        // Only the *quoting* is canonicalised: `infix:«x»` names the same
+        // operator as `infix:<x>`, and `<>` is the spelling the parser bakes in
+        // for the compile-time form (`&infix:«<»` is `CodeVar("infix:<<>")`), so
+        // a name that reaches here as a runtime string has to agree. The
+        // `infix:<<x>>` spelling is deliberately left alone — it is ambiguous
+        // with a single-angle name whose body is itself bracketed.
+        if let Some(colon) = name.find(":\u{ab}")
+            && let Some(body) = name[colon + 1 + '\u{ab}'.len_utf8()..].strip_suffix('\u{bb}')
+        {
+            return format!("{}:<{}>", &name[..colon], body);
+        }
         name.to_string()
     }
 

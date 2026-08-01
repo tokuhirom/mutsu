@@ -41,6 +41,24 @@ fn matching_op_bracket_end(input: &str) -> Option<usize> {
     None
 }
 
+/// Split `Ident::Ident::...::(` into its identifier parts and the remainder
+/// starting at the final `::(`. Returns `None` unless there is at least one
+/// identifier and the chain really ends in a `::(` segment, so ordinary
+/// qualified code refs (`&Foo::Bar::baz`) are left to their own parser.
+fn split_qualified_symbolic_head(input: &str) -> Option<(Vec<String>, &str)> {
+    let mut parts: Vec<String> = Vec::new();
+    let mut rest = input;
+    loop {
+        let (after_ident, ident) = parse_ident_with_hyphens(rest).ok()?;
+        let after_sep = after_ident.strip_prefix("::")?;
+        parts.push(normalize_raku_identifier(ident));
+        if after_sep.starts_with('(') {
+            return Some((parts, after_ident));
+        }
+        rest = after_sep;
+    }
+}
+
 /// Parse a leading-`::` qualified variable name after a sigil, i.e. the
 /// `::Pkg::name` / `::Pkg::('name')` form (`input` starts at the first `::`).
 ///
@@ -465,6 +483,45 @@ pub(crate) fn code_var(input: &str) -> PResult<'_, Expr> {
         }
         let full_name = format!("infix:<{}>", op_name);
         return Ok((rest, Expr::CodeVar(full_name)));
+    }
+    // Handle &Pkg::...::("name") — a package-qualified symbolic code deref, e.g.
+    // `&CALLER::LEXICAL::("infix:<+>")`. The name is built at runtime as
+    // `Pkg::...::<key>` and resolved as a code variable, so the pseudo-package
+    // prefix selects the scope rather than becoming part of the bare name.
+    if let Some((parts, at_scope)) = split_qualified_symbolic_head(input) {
+        let (after_expr, key_expr) = crate::parser::expr::expression(&at_scope[3..])?;
+        let (after_expr, _) = ws(after_expr)?;
+        let (after_expr, _) = parse_char(after_expr, ')')?;
+        // `&CALLER::($expr)::name` is a different construct: the parenthesised
+        // expression names the *package* and the tail names the routine.
+        if parts.len() == 1
+            && parts[0] == "CALLER"
+            && let Some(after_sep) = after_expr.strip_prefix("::")
+            && let Ok((rest, name)) = parse_ident_with_hyphens(after_sep)
+        {
+            return Ok((
+                rest,
+                Expr::IndirectCodeLookup {
+                    package: Box::new(key_expr),
+                    name: normalize_raku_identifier(name),
+                },
+            ));
+        }
+        let combined = Expr::Binary {
+            left: Box::new(Expr::Literal(Value::str(format!("{}::", parts.join("::"))))),
+            op: crate::token_kind::TokenKind::Tilde,
+            right: Box::new(key_expr),
+        };
+        let (rest, combined) = crate::parser::primary::var::scalar::parse_symbolic_deref_segments(
+            after_expr, combined,
+        )?;
+        return Ok((
+            rest,
+            Expr::SymbolicDeref {
+                sigil: "&".to_string(),
+                expr: Box::new(combined),
+            },
+        ));
     }
     // Handle &CALLER::($expr)::name — CALLER prefix followed by indirect lookup
     if let Some(after_caller) = input.strip_prefix("CALLER::(") {

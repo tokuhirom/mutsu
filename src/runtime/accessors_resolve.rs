@@ -179,10 +179,23 @@ impl Interpreter {
     }
 
     pub(crate) fn resolve_code_var(&self, name: &str) -> Value {
-        let normalized_name = Self::normalize_categorical_operator_name(name);
-        if (normalized_name.starts_with("infix:<")
-            || normalized_name.starts_with("prefix:<")
-            || normalized_name.starts_with("postfix:<"))
+        // Handle package-qualified names: strip pseudo-package prefixes and
+        // resolve the bare function name.
+        let bare_name = Self::strip_pseudo_packages(name);
+        let has_packages = bare_name != name;
+        // GLOBAL::/OUR:: are package namespaces that do NOT contain CORE symbols,
+        // unlike the lexical/core pseudo-packages (CORE, SETTING, MY, OUTER, ...).
+        // A builtin name qualified through them is undefined (roast pseudo-6c:
+        // `!defined(&GLOBAL::say)`), so suppress the builtin fast-paths below.
+        let core_visible = !has_packages || !Self::innermost_pseudo_is_package_only(name);
+        // An operator is looked up under its bare categorical name: the scope was
+        // already selected by the pseudo-package prefix, which is how
+        // `&CALLER::LEXICAL::("infix:<+>")` reaches the built-in operator.
+        let normalized_name = Self::normalize_categorical_operator_name(bare_name);
+        if core_visible
+            && (normalized_name.starts_with("infix:<")
+                || normalized_name.starts_with("prefix:<")
+                || normalized_name.starts_with("postfix:<"))
             && normalized_name.ends_with('>')
         {
             // A concrete operator sub bound in env — a `my &infix:<op>` binding or
@@ -223,15 +236,6 @@ impl Interpreter {
                 false,
             );
         }
-        // Handle package-qualified names: strip pseudo-package prefixes and
-        // resolve the bare function name.
-        let bare_name = Self::strip_pseudo_packages(name);
-        let has_packages = bare_name != name;
-        // GLOBAL::/OUR:: are package namespaces that do NOT contain CORE symbols,
-        // unlike the lexical/core pseudo-packages (CORE, SETTING, MY, OUTER, ...).
-        // A builtin name qualified through them is undefined (roast pseudo-6c:
-        // `!defined(&GLOBAL::say)`), so suppress the builtin fast-paths below.
-        let core_visible = !has_packages || !Self::innermost_pseudo_is_package_only(name);
         let lookup_name = bare_name.strip_prefix('*').unwrap_or(bare_name);
         if bare_name == "?ROUTINE" {
             // Skip pointy-block entries to find the enclosing routine
@@ -417,7 +421,8 @@ impl Interpreter {
     /// `GLOBAL::CORE::not` still sees CORE because CORE is the innermost prefix.
     fn innermost_pseudo_is_package_only(name: &str) -> bool {
         let pseudo = [
-            "SETTING", "CALLER", "OUTER", "CORE", "GLOBAL", "MY", "OUR", "DYNAMIC", "UNIT",
+            "SETTING", "CALLER", "CALLERS", "OUTER", "OUTERS", "CORE", "GLOBAL", "LEXICAL", "MY",
+            "OUR", "DYNAMIC", "UNIT",
         ];
         let mut rest = name;
         let mut last: Option<&str> = None;
@@ -444,7 +449,8 @@ impl Interpreter {
     /// from a qualified name and return the final bare function name.
     pub(crate) fn strip_pseudo_packages(name: &str) -> &str {
         let pseudo = [
-            "SETTING", "CALLER", "OUTER", "CORE", "GLOBAL", "MY", "OUR", "DYNAMIC", "UNIT",
+            "SETTING", "CALLER", "CALLERS", "OUTER", "OUTERS", "CORE", "GLOBAL", "LEXICAL", "MY",
+            "OUR", "DYNAMIC", "UNIT",
         ];
         let mut rest = name;
         loop {
