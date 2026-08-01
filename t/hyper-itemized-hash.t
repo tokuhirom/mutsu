@@ -1,6 +1,6 @@
 use Test;
 
-plan 14;
+plan 31;
 
 # Itemization is a property of the container a value sits in, not of the thing
 # `>>` is walking, so a hyper goes straight through it. mutsu itemizes a
@@ -60,10 +60,51 @@ plan 14;
 {
     my $s = <a b>.Set.item;
     is ($s>>.Str).raku, 'Set.new("a","b")', 'an itemized Set hypers over its elements';
-    # A Bag/Mix hyper drops the weights (`<a a b>.Bag>>.Str` is `("a"=>0,"b"=>0)`),
-    # but that is not itemization: the plain form is equally wrong. Recorded in
-    # todo/tickets/hyper-over-a-bag-or-mix-drops-the-weights.md.
     is ($s>>.Str).elems, 2, 'and answers one element per member';
+}
+
+# --- a Bag/Mix hyper maps the WEIGHTS and keeps the elements ---
+#
+# A QuantHash hypers exactly like a Hash: the method sees each weight, never the
+# element, so `<a a b>.Bag>>.uc` is still `a => 2, b => 1` (`2.uc` is `"2"`,
+# which coerces back to `2`). mutsu used to hand the method the whole `elem =>
+# weight` Pair and then look for a weight that was no longer there, so every
+# count came back 0 -- and a Mix, where a 0 weight means "not a member", came
+# back empty.
+{
+    my $b = <a a b>.Bag;
+    is-deeply ($b>>.Str), <a a b>.Bag, 'a Bag hyper keeps each element weight';
+    is-deeply ($b>>.uc), <a a b>.Bag, 'and .uc never reaches the elements';
+    is-deeply ($b.item>>.Str), <a a b>.Bag, 'an itemized Bag behaves identically';
+    is-deeply ($b>>.succ), (a => 3, b => 2).Bag, 'a mapped weight is the new count';
+    is-deeply ($b>>.pred), (a => 1).Bag, 'and a count that drops to 0 leaves the Bag';
+    is-deeply ($b>>.&{ -1 }), Bag.new, 'as does a negative one';
+
+    my $m = (a => 1.5, b => -2.5).Mix;
+    is-deeply ($m>>.Str), (a => 1, b => -2).Mix,
+        'an immutable Mix truncates the mapped weight to Int';
+    is-deeply ($m.item>>.Str), (a => 1, b => -2).Mix, 'itemized or not';
+    is-deeply ($m>>.&{ 0.4 }), Mix.new, 'a Mix weight of 0 drops the element';
+    is-deeply ($m>>.&{ -1.5 }), (a => -1, b => -1).Mix, 'a negative one does not';
+
+    # A MixHash keeps the full Real weight where the immutable Mix truncates.
+    my $mh = (a => 1.5, b => 2.5).MixHash;
+    is-deeply ($mh>>.abs), (a => 1.5, b => 2.5).MixHash, 'a MixHash keeps its Real weights';
+    is ($mh>>.abs).WHAT.^name, 'MixHash', 'and the result is a MixHash';
+
+    my $bh = <a a b>.BagHash;
+    is-deeply ($bh>>.succ), (a => 3, b => 2).BagHash, 'a BagHash hyper yields a BagHash';
+    is-deeply $bh, <a a b>.BagHash, 'leaving the original untouched';
+
+    # A Set has no weight to map: the mapper sees 1 and the element survives
+    # whenever the result is truthy.
+    my $sh = <a b>.SetHash;
+    is-deeply ($sh>>.Str), <a b>.SetHash, 'a SetHash keeps every truthy member';
+    is-deeply ($sh>>.&{ False }), SetHash.new, 'and drops them all when falsy';
+
+    # Non-Str elements keep their type through the rebuild.
+    is-deeply ((1 => 2, 2 => 3).Bag>>.Str), (1 => 2, 2 => 3).Bag,
+        'a Bag of Int elements keeps them Int';
 }
 
 # --- what must NOT change ---

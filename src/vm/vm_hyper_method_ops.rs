@@ -22,6 +22,137 @@ fn hyper_source_items(target: &Value) -> Vec<Value> {
     }
 }
 
+/// Which QuantHash a hyper is walking, and how its result is rebuilt.
+///
+/// A hyper over a Bag/Mix/Set works exactly like a hyper over a Hash: the
+/// method is applied to each *weight*, and the result is a QuantHash of the
+/// same type built from the **original elements** paired with the mapped
+/// weights. `<a a b>.Bag>>.uc` is still `a => 2, b => 1` — `.uc` never sees the
+/// elements, only the counts (`2.uc` is `"2"`, which coerces back to `2`).
+///
+/// The per-type coercion mirrors Rakudo's `deepmap` candidates
+/// (`Baggy`/`Mixy`/`MixHash`/`Set`/`SetHash`): a Bag count truncates to `Int`
+/// and the element is dropped at `<= 0`; an immutable `Mix` truncates to `Int`
+/// too (keeping negatives, dropping `0`) while a `MixHash` keeps the full
+/// `Real` weight; a Set feeds the mapper `1` and keeps the element when the
+/// result is truthy.
+#[derive(Clone, Copy)]
+enum QuantHashHyper {
+    Bag { mutable: bool },
+    Mix { mutable: bool },
+    Set { mutable: bool },
+}
+
+fn quanthash_hyper_kind(target: &Value) -> Option<QuantHashHyper> {
+    match target.view() {
+        ValueView::Bag(_, mutable) => Some(QuantHashHyper::Bag { mutable }),
+        ValueView::Mix(_, mutable) => Some(QuantHashHyper::Mix { mutable }),
+        ValueView::Set(_, mutable) => Some(QuantHashHyper::Set { mutable }),
+        _ => None,
+    }
+}
+
+/// Split a QuantHash's `elem => weight` pair list (as produced by
+/// [`hyper_source_items`]) into the parallel element and weight lists. The
+/// weights become the hyper's items, so the method is applied to them; the
+/// elements are kept aside to rebuild the result.
+fn split_quanthash_items(kind: QuantHashHyper, items: &[Value]) -> (Vec<Value>, Vec<Value>) {
+    let mut elems = Vec::with_capacity(items.len());
+    let mut weights = Vec::with_capacity(items.len());
+    for item in items {
+        let (elem, weight) = match item.view() {
+            ValueView::Pair(k, v) => (Value::str(k.to_string()), v.clone()),
+            ValueView::ValuePair(k, v) => ((*k).clone(), (*v).clone()),
+            // A bare element (no weight recorded): a Set entry, whose weight is 1.
+            _ => (item.clone(), Value::int(1)),
+        };
+        elems.push(elem);
+        // Rakudo's Set/SetHash `deepmap` calls the mapper with the Int `1`, not
+        // with the `True` that `.values` reports.
+        weights.push(match kind {
+            QuantHashHyper::Set { .. } => Value::int(1),
+            _ => weight,
+        });
+    }
+    (elems, weights)
+}
+
+/// `.Int` on a mapped weight, the way Rakudo's Baggy/Mixy `deepmap` coerces it:
+/// truncating towards zero. This is deliberately not plain
+/// [`crate::runtime::utils::to_int`], which parses a string as an integer and so
+/// reads the `"1.5"` that `(a => 1.5).Mix>>.Str` produces as `0` — dropping the
+/// element instead of weighting it `1`.
+fn hyper_weight_as_int(v: &Value) -> i64 {
+    match crate::runtime::utils::to_float_value(v) {
+        Some(f) => f.trunc() as i64,
+        // Not a number at all (a list, an instance, ...): fall back to the
+        // general coercion, which counts elements the way `.Int` on a Cool does.
+        None => crate::runtime::utils::to_int(v),
+    }
+}
+
+/// Rebuild the QuantHash result of a hyper from the original elements and the
+/// per-weight method results. See [`QuantHashHyper`] for the coercion rules.
+fn rebuild_quanthash_hyper(kind: QuantHashHyper, elems: &[Value], results: &[Value]) -> Value {
+    let mut originals = std::collections::HashMap::new();
+    match kind {
+        QuantHashHyper::Bag { mutable } => {
+            let mut counts = std::collections::HashMap::new();
+            for (elem, result) in elems.iter().zip(results) {
+                let count = hyper_weight_as_int(result);
+                if count <= 0 {
+                    continue;
+                }
+                let (key, elem) = crate::runtime::utils::quanthash_elem_entry(elem);
+                crate::runtime::utils::record_quanthash_original(&mut originals, &key, &elem);
+                *counts.entry(key).or_insert(0) += count;
+            }
+            if mutable {
+                Value::bag_hash_typed(counts, originals)
+            } else {
+                Value::bag_typed(counts, originals)
+            }
+        }
+        QuantHashHyper::Mix { mutable } => {
+            let mut weights = std::collections::HashMap::new();
+            for (elem, result) in elems.iter().zip(results) {
+                // An immutable Mix truncates the mapped weight to Int; a
+                // MixHash keeps it Real. Either way a zero weight drops the
+                // element (a negative one does not).
+                let weight = if mutable {
+                    crate::runtime::utils::to_float_value(result).unwrap_or(0.0)
+                } else {
+                    hyper_weight_as_int(result) as f64
+                };
+                if weight == 0.0 {
+                    continue;
+                }
+                let (key, elem) = crate::runtime::utils::quanthash_elem_entry(elem);
+                crate::runtime::utils::record_quanthash_original(&mut originals, &key, &elem);
+                *weights.entry(key).or_insert(0.0) += weight;
+            }
+            if mutable {
+                Value::mix_hash_with_original_keys(weights, originals)
+            } else {
+                Value::mix_with_original_keys(weights, originals)
+            }
+        }
+        QuantHashHyper::Set { mutable } => {
+            let mut set = std::collections::HashSet::new();
+            for (elem, result) in elems.iter().zip(results) {
+                if result.truthy() {
+                    crate::runtime::utils::quanthash_insert_set(&mut set, &mut originals, elem);
+                }
+            }
+            if mutable {
+                Value::set_hash_typed(set, originals)
+            } else {
+                Value::set_typed(set, originals)
+            }
+        }
+    }
+}
+
 /// Whether a hyper subscript index is a *slice* (a Range or multi-element list),
 /// as opposed to a single scalar key/position. `@a>>.[0..2]` / `%h>>.{1,2}`
 /// desugar to `AT-POS`/`AT-KEY`, but a slice index must apply the postcircumfix
@@ -402,6 +533,14 @@ impl Interpreter {
         } else {
             hyper_source_items(&target)
         };
+        // A QuantHash target hypers over its *weights*, keeping the elements
+        // aside to rebuild the same QuantHash type below (see `QuantHashHyper`).
+        let quant_kind = quanthash_hyper_kind(&target);
+        let quant_elems = quant_kind.map(|kind| {
+            let (elems, weights) = split_quanthash_items(kind, &items);
+            items = weights;
+            elems
+        });
         let mut results = Vec::with_capacity(items.len());
         // A "nodal" hyper method (one natively defined on the list type, e.g.
         // .reverse/.sort/.elems) operates on each node rather than recursing to
@@ -417,11 +556,7 @@ impl Interpreter {
         // hyper expression instead of aborting it. Container targets
         // (Hash/Set/Bag/Mix) take their own early-return paths, so we leave their
         // warns propagating as before.
-        let collect_warns = hash_keys.is_none()
-            && !matches!(
-                target.view(),
-                ValueView::Mix(..) | ValueView::Bag(..) | ValueView::Set(..)
-            );
+        let collect_warns = hash_keys.is_none() && quant_kind.is_none();
         let mut pending_warn: Option<RuntimeError> = None;
         for (idx, item) in items.iter_mut().enumerate() {
             let method = Self::rewrite_method_name(method_raw, modifier);
@@ -776,96 +911,12 @@ impl Interpreter {
                 self.overwrite_hash_bindings_by_identity(&existing, new_hash);
             }
         }
-        // Preserve the container type of the target for QuantHash types.
-        // The items list was produced by value_to_list, which yields Pairs
-        // in HashMap iteration order. Reconstruct the same type using the
-        // keys from those pairs and the transformed results.
-        match target.view() {
-            ValueView::Mix(_, is_mutable) => {
-                let mut weights = std::collections::HashMap::new();
-                let mut originals = std::collections::HashMap::new();
-                for (i, item) in items.iter().enumerate() {
-                    if let Some(result) = results.get(i) {
-                        let elem = match item.view() {
-                            ValueView::Pair(k, _) => Value::str(k.clone()),
-                            ValueView::ValuePair(k, _) => (*k).clone(),
-                            _ => item.clone(),
-                        };
-                        let (key, elem) = crate::runtime::utils::quanthash_elem_entry(&elem);
-                        crate::runtime::utils::record_quanthash_original(
-                            &mut originals,
-                            &key,
-                            &elem,
-                        );
-                        weights.insert(
-                            key,
-                            crate::runtime::utils::to_float_value(result).unwrap_or(0.0),
-                        );
-                    }
-                }
-                let result = if is_mutable {
-                    Value::mix_hash_with_original_keys(weights, originals)
-                } else {
-                    Value::mix_with_original_keys(weights, originals)
-                };
-                self.stack.push(result);
-                return Ok(());
-            }
-            ValueView::Bag(_, is_mutable) => {
-                let mut counts = std::collections::HashMap::new();
-                let mut originals = std::collections::HashMap::new();
-                for (i, item) in items.iter().enumerate() {
-                    if let Some(result) = results.get(i) {
-                        let elem = match item.view() {
-                            ValueView::Pair(k, _) => Value::str(k.clone()),
-                            ValueView::ValuePair(k, _) => (*k).clone(),
-                            _ => item.clone(),
-                        };
-                        let (key, elem) = crate::runtime::utils::quanthash_elem_entry(&elem);
-                        crate::runtime::utils::record_quanthash_original(
-                            &mut originals,
-                            &key,
-                            &elem,
-                        );
-                        counts.insert(key, crate::runtime::utils::to_int(result));
-                    }
-                }
-                let result = if is_mutable {
-                    Value::bag_hash_typed(counts, originals)
-                } else {
-                    Value::bag_typed(counts, originals)
-                };
-                self.stack.push(result);
-                return Ok(());
-            }
-            ValueView::Set(_, is_mutable) => {
-                let mut elems = std::collections::HashSet::new();
-                let mut originals = std::collections::HashMap::new();
-                for (i, item) in items.iter().enumerate() {
-                    if let Some(result) = results.get(i) {
-                        let elem = match item.view() {
-                            ValueView::Pair(k, _) => Value::str(k.clone()),
-                            ValueView::ValuePair(k, _) => (*k).clone(),
-                            _ => item.clone(),
-                        };
-                        if result.truthy() {
-                            crate::runtime::utils::quanthash_insert_set(
-                                &mut elems,
-                                &mut originals,
-                                &elem,
-                            );
-                        }
-                    }
-                }
-                let result = if is_mutable {
-                    Value::set_hash_typed(elems, originals)
-                } else {
-                    Value::set_typed(elems, originals)
-                };
-                self.stack.push(result);
-                return Ok(());
-            }
-            _ => {}
+        // Preserve the container type of the target for QuantHash types: pair
+        // the elements set aside above with the per-weight results.
+        if let (Some(kind), Some(elems)) = (quant_kind, &quant_elems) {
+            self.stack
+                .push(rebuild_quanthash_hyper(kind, elems, &results));
+            return Ok(());
         }
         // Hash target: rebuild a Hash pairing the original keys with the
         // per-value results.
@@ -1101,6 +1152,14 @@ impl Interpreter {
         } else {
             hyper_source_items(&target)
         };
+        // A QuantHash target hypers over its *weights* (mirrors the non-dynamic
+        // `exec_hyper_method_call_op`); see `QuantHashHyper`.
+        let quant_kind = quanthash_hyper_kind(&target);
+        let quant_elems = quant_kind.map(|kind| {
+            let (elems, weights) = split_quanthash_items(kind, &items);
+            items = weights;
+            elems
+        });
         let mut results = Vec::with_capacity(items.len());
         let method = (!matches!(
             name_val.view(),
@@ -1252,92 +1311,10 @@ impl Interpreter {
             );
         }
         // Preserve the container type of the target for QuantHash types
-        match target.view() {
-            ValueView::Mix(_, is_mutable) => {
-                let mut weights = std::collections::HashMap::new();
-                let mut originals = std::collections::HashMap::new();
-                for (i, item) in items.iter().enumerate() {
-                    if let Some(result) = results.get(i) {
-                        let elem = match item.view() {
-                            ValueView::Pair(k, _) => Value::str(k.clone()),
-                            ValueView::ValuePair(k, _) => (*k).clone(),
-                            _ => item.clone(),
-                        };
-                        let (key, elem) = crate::runtime::utils::quanthash_elem_entry(&elem);
-                        crate::runtime::utils::record_quanthash_original(
-                            &mut originals,
-                            &key,
-                            &elem,
-                        );
-                        weights.insert(
-                            key,
-                            crate::runtime::utils::to_float_value(result).unwrap_or(0.0),
-                        );
-                    }
-                }
-                let result = if is_mutable {
-                    Value::mix_hash_with_original_keys(weights, originals)
-                } else {
-                    Value::mix_with_original_keys(weights, originals)
-                };
-                self.stack.push(result);
-                return Ok(());
-            }
-            ValueView::Bag(_, is_mutable) => {
-                let mut counts = std::collections::HashMap::new();
-                let mut originals = std::collections::HashMap::new();
-                for (i, item) in items.iter().enumerate() {
-                    if let Some(result) = results.get(i) {
-                        let elem = match item.view() {
-                            ValueView::Pair(k, _) => Value::str(k.clone()),
-                            ValueView::ValuePair(k, _) => (*k).clone(),
-                            _ => item.clone(),
-                        };
-                        let (key, elem) = crate::runtime::utils::quanthash_elem_entry(&elem);
-                        crate::runtime::utils::record_quanthash_original(
-                            &mut originals,
-                            &key,
-                            &elem,
-                        );
-                        counts.insert(key, crate::runtime::utils::to_int(result));
-                    }
-                }
-                let result = if is_mutable {
-                    Value::bag_hash_typed(counts, originals)
-                } else {
-                    Value::bag_typed(counts, originals)
-                };
-                self.stack.push(result);
-                return Ok(());
-            }
-            ValueView::Set(_, is_mutable) => {
-                let mut elems = std::collections::HashSet::new();
-                let mut originals = std::collections::HashMap::new();
-                for (i, item) in items.iter().enumerate() {
-                    if let Some(result) = results.get(i) {
-                        let elem = match item.view() {
-                            ValueView::Pair(k, _) => Value::str(k.clone()),
-                            ValueView::ValuePair(k, _) => (*k).clone(),
-                            _ => item.clone(),
-                        };
-                        if result.truthy() {
-                            crate::runtime::utils::quanthash_insert_set(
-                                &mut elems,
-                                &mut originals,
-                                &elem,
-                            );
-                        }
-                    }
-                }
-                let result = if is_mutable {
-                    Value::set_hash_typed(elems, originals)
-                } else {
-                    Value::set_typed(elems, originals)
-                };
-                self.stack.push(result);
-                return Ok(());
-            }
-            _ => {}
+        if let (Some(kind), Some(elems)) = (quant_kind, &quant_elems) {
+            self.stack
+                .push(rebuild_quanthash_hyper(kind, elems, &results));
+            return Ok(());
         }
         // A Hash target reassembles into a Hash, pairing each key with its result.
         if let Some(keys) = hash_keys {
