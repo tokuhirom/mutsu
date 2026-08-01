@@ -41,28 +41,10 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap_or(Value::NIL);
         if !val.truthy() {
-            let phaser_name = if is_pre { "PRE" } else { "POST" };
-            let condition = condition.unwrap_or_default();
-            let mut attrs = std::collections::HashMap::new();
-            attrs.insert(
-                "phaser".to_string(),
-                Value::str_arc(Arc::new(phaser_name.to_string())),
-            );
-            attrs.insert(
-                "condition".to_string(),
-                Value::str_arc(Arc::new(condition.clone())),
-            );
-            let exception =
-                Value::make_instance(crate::symbol::Symbol::intern("X::Phaser::PrePost"), attrs);
-            // raku: "Precondition '<cond>' failed" / "Postcondition '<cond>' failed".
-            let kind = if is_pre {
-                "Precondition"
-            } else {
-                "Postcondition"
-            };
-            let mut err = RuntimeError::new(format!("{} '{}' failed", kind, condition));
-            err.exception = Some(Box::new(exception));
-            return Err(err);
+            return Err(crate::runtime::phaser_prepost_error(
+                is_pre,
+                &condition.unwrap_or_default(),
+            ));
         }
         Ok(())
     }

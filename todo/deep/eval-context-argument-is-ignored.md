@@ -75,3 +75,25 @@ Sketch of the work:
 Pin candidates: the two `t/` files above under the real `Test` module, plus a
 direct `t/eval-context-package.t` built from the `FatalMod` repro, which is
 green under `raku`.
+
+## A sibling bug in the same area: the package-qualified name stops resolving
+
+Independent of `context`, and worth fixing first because it is narrower. When
+EVAL runs under a non-`GLOBAL` package, a type the snippet declares registers
+package-qualified — which **matches raku** for a plain `EVAL` — but mutsu then
+fails to resolve the snippet's own bare reference to it:
+
+```
+$ raku  -I tmp/core -e 'use FatalMod; say run-plain(q{my role R { has $.x }; (99 but R("ok")).x})'
+ok
+$ mutsu -I tmp/core -e 'use FatalMod; say run-plain(q{my role R { has $.x }; (99 but R("ok")).x})'
+Unknown function: R
+```
+
+The declaration went in as `FatalMod::R`; the `R(...)` in call position looks up
+the bare name and misses. raku resolves it lexically, because a `my`-scoped type
+is in the unit's pad whatever its package-qualified name is. This is what keeps
+`t/role-initialization.t` red under the real `Test` module even after
+`news/2026-08/eval-type-decls-and-prepost-message.md` taught the EVAL
+undeclared-routine scan about type declarations — the scan is happy now, and the
+*runtime* lookup is what fails.

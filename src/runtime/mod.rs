@@ -30,6 +30,32 @@ use crate::value::{
     SharedPromise, Value, make_rat, take_pending_instance_destroys,
 };
 
+/// The `X::Phaser::PrePost` a falsy `PRE`/`POST` phaser throws.
+///
+/// The message is derived from the phaser and its condition source text, and it
+/// has to live on the exception instance as well as on the `RuntimeError` —
+/// `.message` reads the instance attribute, so leaving it off made every
+/// `throws-like ..., message => /.../` assertion see an empty string.
+pub(crate) fn phaser_prepost_error(is_pre: bool, condition: &str) -> RuntimeError {
+    let phaser = if is_pre { "PRE" } else { "POST" };
+    // raku: "Precondition '<cond>' failed" / "Postcondition '<cond>' failed".
+    let kind = if is_pre {
+        "Precondition"
+    } else {
+        "Postcondition"
+    };
+    let message = format!("{} '{}' failed", kind, condition);
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("phaser".to_string(), Value::str(phaser.to_string()));
+    attrs.insert("condition".to_string(), Value::str(condition.to_string()));
+    attrs.insert("message".to_string(), Value::str(message.clone()));
+    let exception =
+        Value::make_instance(crate::symbol::Symbol::intern("X::Phaser::PrePost"), attrs);
+    let mut err = RuntimeError::new(message);
+    err.exception = Some(Box::new(exception));
+    err
+}
+
 /// Flatten arguments for `append` using Raku's "one-arg rule":
 /// if exactly one non-itemized Array/List argument is passed, its elements
 /// are flattened into the result. With multiple arguments, each is appended as-is.
