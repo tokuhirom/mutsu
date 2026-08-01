@@ -50,6 +50,8 @@ File::Directory::Tree	01-basic.rakutest
 File::Temp	01-basic.rakutest
 File::Temp	02-gc.rakutest
 File::Temp	03-tempfile.rakutest
+HTTP::HPACK	encoder.rakutest
+HTTP::HPACK	examples.rakutest
 HTTP::Status	01-basic.rakutest
 HTTP::Status	02-is-tests.rakutest
 HTTP::Status	03-associative.rakutest

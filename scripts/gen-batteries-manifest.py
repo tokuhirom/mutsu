@@ -123,6 +123,10 @@ SIDECAR = {
         "slot": "Base64 encoding",
         "record": "docs/batteries/base64.md",
     },
+    "HTTP::HPACK": {
+        "slot": "HTTP/2 header compression (HPACK)",
+        "record": "docs/batteries/http-hpack.md",
+    },
 }
 
 

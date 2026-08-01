@@ -43,3 +43,4 @@ DBIish	modules/DBIish/lib	https://github.com/raku-community-modules/DBIish.git	3
 Crypt::Random	modules/Crypt-Random/lib	https://github.com/skinkade/crypt-random.git	c1bf9393ab736ac5e5de2d0c3f56078c178cc071	t/*.t	-
 IO::Path::ChildSecure	modules/IO-Path-ChildSecure/lib	https://github.com/raku-community-modules/IO-Path-ChildSecure.git	9f01c370ba0a15a6841113437e14c9f3bf39b015	t/*.rakutest	-
 Base64	modules/Base64/lib	https://github.com/ugexe/Raku-Base64.git	681a50faebcea1aaa5856051ef4a6e2267fcd6d8	t/*.rakutest	-
+HTTP::HPACK	modules/HTTP-HPACK/lib	https://github.com/jnthn/p6-http-hpack.git	c52e0065e7d14836223d8a8d984d124a4f38ba8a	t/*.rakutest	-

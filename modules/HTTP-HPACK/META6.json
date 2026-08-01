@@ -1,0 +1,28 @@
+{
+  "auth": "zef:raku-community-modules",
+  "authors": [
+    "Jonathan Worthington"
+  ],
+  "build-depends": [
+  ],
+  "depends": [
+  ],
+  "description": "Implementation of RFC 7541 HPACK: Header Compression for HTTP/2",
+  "license": "Artistic-2.0",
+  "name": "HTTP::HPACK",
+  "perl": "6.c",
+  "provides": {
+    "HTTP::HPACK": "lib/HTTP/HPACK.rakumod"
+  },
+  "resources": [
+  ],
+  "source-url": "https://github.com/raku-community-modules/HTTP-HPACK.git",
+  "tags": [
+    "HTTP",
+    "7541",
+    "HPACK"
+  ],
+  "test-depends": [
+  ],
+  "version": "1.0.3"
+}

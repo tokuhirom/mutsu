@@ -248,6 +248,25 @@ impl Compiler {
             return;
         }
         if matches!(op, TokenKind::Ident(name) if name == "xx") {
+            // Raku's list repeat re-evaluates the lhs on each repetition (xx
+            // thunks its left side). For a small LITERAL count, unroll the
+            // re-evaluation inline in the CURRENT frame: the thunk path below
+            // wraps the lhs in a closure, where an `is rw` argument's
+            // writeback does not yet reach the captured outer variable
+            // (HTTP::HPACK's `decode-str($packed, $idx) xx 2` advances `$idx`
+            // by reference twice) — see todo/tickets/closure-rw-arg-writeback.md.
+            const XX_UNROLL_MAX: i64 = 32;
+            if Self::xx_lhs_needs_reeval(left)
+                && let Expr::Literal(n_lit) = right
+                && let ValueView::Int(n) = n_lit.view()
+                && (0..=XX_UNROLL_MAX).contains(&n)
+            {
+                for _ in 0..n {
+                    self.compile_expr(left);
+                }
+                self.code.emit(OpCode::MakeArray(n as u32));
+                return;
+            }
             // Raku's list repeat reevaluates call-like lhs expressions on each
             // repetition (e.g. rand/pick). Keep literal/list lhs values as-is.
             if Self::xx_lhs_needs_reeval(left) {

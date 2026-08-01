@@ -373,47 +373,49 @@ impl Compiler {
     /// pure calls are replicated once. (A fully general re-evaluation is blocked
     /// by the thunk-result capture path discarding a value-returning user sub's
     /// result in sink context — tracked separately.)
+    /// Raku's `xx` THUNKS its left side: the expression is re-evaluated for
+    /// every repetition (`rand xx 10` is ten different numbers, and
+    /// `decode-str($packed, $idx) xx 2` advances the rw offset twice —
+    /// HTTP::HPACK's literal-header reader). Only a provably pure value
+    /// expression may skip the thunk and repeat its value — a whitelist of
+    /// "known side-effecting calls" is exactly the incomplete static analysis
+    /// CLAUDE.md warns about (any user sub call has to re-run).
     pub(super) fn xx_lhs_needs_reeval(expr: &Expr) -> bool {
-        matches!(
-            expr,
-            Expr::Call { name, .. } if name == "rand" || name == "pick" || name == "roll" || name == "start" || name == "getc" || name == "get"
-        ) || matches!(
-            expr,
-            Expr::MethodCall { name, target, .. }
-                if name == "rand"
-                    || name == "pick"
-                    || name == "roll"
-                    || name == "take"
-                    || name == "shift"
-                    || name == "pop"
-                    // Mutating methods whose side effect must happen each
-                    // repetition (e.g. `@tree.push(0) xx 2` builds two slots).
-                    || name == "push"
-                    || name == "append"
-                    || name == "unshift"
-                    || name == "prepend"
-                    || name == "splice"
-                    || name == "readchars"
-                    || name == "receive"
-                    || name == "getc"
-                    || name == "get"
-                    || name == "lock"
-                    || (name == "new" && matches!(target.as_ref(), Expr::BareWord(n) if n == "Promise"))
-                    || Self::xx_lhs_needs_reeval(target)
-        ) || matches!(
-            expr,
-            Expr::DynamicMethodCall { target, .. }
-                | Expr::HyperMethodCall { target, .. }
-                | Expr::HyperMethodCallDynamic { target, .. }
-                | Expr::CallOn { target, .. } if Self::xx_lhs_needs_reeval(target)
-        ) || matches!(
-            expr,
-            Expr::Block(_)
-                | Expr::DoBlock { .. }
-                | Expr::AnonSub { .. }
-                | Expr::AnonSubParams { .. }
-                | Expr::Lambda { .. }
-        )
+        !Self::xx_lhs_is_pure_value(expr)
+    }
+
+    /// True when repeating the VALUE is indistinguishable from re-evaluating
+    /// the expression: literals and plain variable reads, plus groupings,
+    /// operator combinations and list/pair composites of those. Anything
+    /// call-like, block-like, or mutating falls out to the thunk path.
+    fn xx_lhs_is_pure_value(expr: &Expr) -> bool {
+        match expr {
+            Expr::Literal(_)
+            | Expr::Var(_)
+            | Expr::ArrayVar(_)
+            | Expr::HashVar(_)
+            | Expr::BareWord(_)
+            | Expr::Whatever => true,
+            Expr::Grouped(inner) => Self::xx_lhs_is_pure_value(inner),
+            Expr::ArrayLiteral(items) => items.iter().all(Self::xx_lhs_is_pure_value),
+            Expr::PositionalPair(value) => Self::xx_lhs_is_pure_value(value),
+            // An operator over pure operands repeats its value too — this
+            // also keeps a placeholder lhs (`$^n + 1 xx $^n + 1`, constant
+            // within one call of the enclosing block) OUT of the thunk path,
+            // where wrapping it in a synthetic block would steal the
+            // placeholder from the enclosing block's signature.
+            Expr::Binary { left, right, .. } => {
+                Self::xx_lhs_is_pure_value(left) && Self::xx_lhs_is_pure_value(right)
+            }
+            // A non-mutating prefix over a pure operand (`|()`, `-$n`) —
+            // roast's `(|() xx *)[^5]` relies on the value-repeat path's Slip
+            // handling. Increment/decrement mutate and must re-evaluate.
+            Expr::Unary { op, expr } => {
+                !matches!(op, TokenKind::PlusPlus | TokenKind::MinusMinus)
+                    && Self::xx_lhs_is_pure_value(expr)
+            }
+            _ => false,
+        }
     }
 
     pub(super) fn flatten_xor_terms<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>) {
