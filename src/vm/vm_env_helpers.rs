@@ -234,6 +234,58 @@ impl Interpreter {
             .cloned()
     }
 
+    /// Resolve a bare free-variable name through the enclosing package chain
+    /// (`M::R` -> `M`): a method of class `M::R` declared inside `module M`
+    /// lexically sees M's `our` variables and package-block `my` lexicals
+    /// (e.g. Cro::HTTP::Router's `our $link-plugin` read from RouteSet
+    /// methods). For each package prefix, the `our` store, the qualified env
+    /// key, and the `package_lexicals` store are consulted in that order.
+    /// Callers use this AFTER the live env misses, so an in-scope binding
+    /// always wins. Never falls through to the bare (GLOBAL) name — the
+    /// lexical alias for `our` is block-scoped.
+    pub(super) fn package_chain_var_fallback(&self, name: &str) -> Option<Value> {
+        if name.contains("::") {
+            return None;
+        }
+        let cur = self.current_package();
+        if cur.is_empty() || cur == "GLOBAL" || cur.contains("::&") {
+            return None;
+        }
+        let bare_first = name.trim_start_matches(['$', '@', '%', '&']);
+        let first_ch = bare_first.chars().next()?;
+        if matches!(first_ch, '_' | '/' | '!' | '?' | '*' | '.' | '=') || first_ch.is_ascii_digit()
+        {
+            return None;
+        }
+        let (sigil, rest) = match name.as_bytes().first() {
+            Some(b'$' | b'@' | b'%' | b'&') => (&name[..1], &name[1..]),
+            _ => ("", name),
+        };
+        let cur = cur.to_string();
+        let mut pkg: &str = &cur;
+        loop {
+            let candidate = format!("{sigil}{pkg}::{rest}");
+            if let Some(v) = self.get_our_var(&candidate).cloned() {
+                return Some(v);
+            }
+            if let Some(v) = self.get_env_with_main_alias(&candidate) {
+                return Some(v);
+            }
+            if let Some(v) = self
+                .package_lexicals
+                .get(pkg)
+                .and_then(|m| m.get(name))
+                .cloned()
+            {
+                return Some(v);
+            }
+            match pkg.rsplit_once("::") {
+                Some((parent, _)) => pkg = parent,
+                None => return None,
+            }
+        }
+    }
+
     /// Return the value of a bare package-block `my` lexical (`package P { my $x;
     /// sub f { $x } }`) recorded in `package_lexicals` by `exec_package_scope_op`.
     /// This store is the *authoritative* lexical scope a package's named subs close
@@ -988,6 +1040,18 @@ impl Interpreter {
             // sibling's. The per-write mirror (`flush_local_to_env`) keeps env
             // tracking the live slot instead. All-false with the gate off.
             if code.dup_named_locals.get(i).copied().unwrap_or(false) {
+                continue;
+            }
+            // Do not CREATE an env entry from a Nil slot: a package block's own
+            // lexical (`module M { our $plugin = ... }`) is deliberately dropped
+            // from env at scope exit (`exec_package_scope_op`) and its local slot
+            // restored to the pre-entry value (Nil). Broadcasting that Nil would
+            // resurrect the dropped name as a stale env shadow that later wins
+            // over the package-store fallbacks (a method of `M::R` reading
+            // `$plugin` got Nil instead of `M`'s `our` value). Updating an
+            // EXISTING entry with Nil stays allowed — only key creation is
+            // suppressed.
+            if self.locals[i].is_nil() && !self.env().contains_key(name) {
                 continue;
             }
             self.set_env_with_main_alias(name, self.locals[i].clone());
