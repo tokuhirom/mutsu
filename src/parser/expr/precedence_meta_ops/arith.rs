@@ -243,8 +243,11 @@ fn prefix_expr_with_ws_dot(input: &str) -> PResult<'_, Expr> {
     // NEXT line is a new (topic) statement, not a chained call
     // (`supply { ... }\n.append-header(...)` inside a `given` — Cro's
     // serializer tests; a `}`-final hash composer behaves the same in rakudo).
-    let consumed = &input[..input.len() - rest.len()];
-    let (brace_final, newline_inside) = crate::parser::expr::postfix::brace_newline_state(consumed);
+    let (brace_final, newline_inside) = crate::parser::expr::postfix::consumed_span(input, rest)
+        .map_or(
+            (false, false),
+            crate::parser::expr::postfix::brace_newline_state,
+        );
     if brace_final {
         let (after_ws, _) = ws(rest)?;
         let crossed_newline = newline_inside || rest[..rest.len() - after_ws.len()].contains('\n');

@@ -505,8 +505,23 @@ fn postfix_expr_inner(input: &str, allow_ws_dot: bool) -> PResult<'_, Expr> {
     // inside a `given` must call `.append` on the topic (Cro's serializer
     // tests do exactly this); a `}`-final hash composer behaves the same in
     // rakudo, while a `)`-final call keeps chaining across the newline.
-    let consumed = &input[..input.len() - rest.len()];
-    postfix_expr_loop_from(rest, expr, allow_ws_dot, brace_newline_state(consumed))
+    let brace_state = consumed_span(input, rest).map_or((false, false), brace_newline_state);
+    postfix_expr_loop_from(rest, expr, allow_ws_dot, brace_state)
+}
+
+/// The span of `input` consumed to reach `rest`, IF `rest` really is a suffix
+/// slice of `input` — checked by pointer provenance, not byte lengths. A
+/// sub-parser can hand back a remainder from elsewhere in the source (the
+/// heredoc reader resumes after the terminator line, e.g. `q:to /结束/;`), and
+/// a `input.len() - rest.len()` subtraction then lands mid-char and panics.
+pub(in crate::parser) fn consumed_span<'a>(input: &'a str, rest: &str) -> Option<&'a str> {
+    let start = input.as_ptr() as usize;
+    let rest_start = rest.as_ptr() as usize;
+    if rest_start >= start && rest_start + rest.len() == start + input.len() {
+        Some(&input[..rest_start - start])
+    } else {
+        None
+    }
 }
 
 /// For a just-consumed source span: `(ends in \`}\`, that \`}\` was already
@@ -537,11 +552,11 @@ fn postfix_expr_loop_from(
         // "does the expression end in `}` at end of line" state along:
         // `.map({...})` ends in `)` (keeps chaining), `.map: {...}` ends in
         // `}` (statement ends at the newline).
-        if let Some(prev) = last_iter_start {
-            let consumed_len = prev.len() - rest.len();
-            if consumed_len > 0 {
-                (brace_final, newline_after_brace) = brace_newline_state(&prev[..consumed_len]);
-            }
+        if let Some(prev) = last_iter_start
+            && let Some(consumed) = consumed_span(prev, rest)
+            && !consumed.is_empty()
+        {
+            (brace_final, newline_after_brace) = brace_newline_state(consumed);
         }
         last_iter_start = Some(rest);
         // Allow whitespace before dotty postfix call in expression context:
