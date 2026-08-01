@@ -34,28 +34,43 @@ The signature-`ACCEPTS`-on-a-Capture half of this is now fixed
 only as a smartmatch, and a reflected signature ignored its literal parameters).
 The route still does not match, and there is a **minimal standalone repro**.
 
-## Minimal repro: a `:my @a = <scalar :my>.method` loses its elements
+## Minimal repro: an array `:my` behind a `^` anchor loses its elements
 
 Instrumenting the router shows `$request.path ~~ $!path-matcher` returning no
-match for `/greet/world`. Reduced from the real generated matcher
-(`tmp/rxroute3.p6`), the smallest differing case is:
+match for `/greet/world`. Bisected all the way down (`tmp/rxanchor2.p6`), the
+trigger is **a leading `^` in front of the declarators**:
 
 ```raku
-class Req { method path-segments() { <greet world> } }
-my $*CRO-ROUTER-REQUEST = Req.new;
-my $rx = EVAL q{regex { ^ :my $req = $*CRO-ROUTER-REQUEST;
-                        :my @segs = $req.path-segments;
-                        [ '/' 'greet' '/' <-[/]>+: { make @segs.elems } | <!> ] $ }};
-say ("/greet/world" ~~ $rx).ast;   # Rakudo: 2    mutsu: 1
+class Req { method segs() { <a b c> } }
+my $*R = Req.new;
+
+say ("x" ~~ /   :my @s = $*R.segs; 'x' { make @s.elems } /).ast;  # raku 3  mutsu 3
+say ("x" ~~ / ^ :my @s = $*R.segs; 'x' { make @s.elems } /).ast;  # raku 3  mutsu 0
+say ("x" ~~ / ^ :my $r = $*R; :my @s = $r.segs; 'x' { make @s.elems } /).ast;
+                                                                  # raku 3  mutsu 1
 ```
 
-so `Capture.new(:list(@segs), …)` gets one element instead of two, the bind
-check rejects the route, and no handler runs. Each ingredient works on its own —
-an array `:my` from a plain array or a sub call is fine, a two-declarator chain
-(`:my $r = …; :my @s = $r.segs;`) is fine outside a group, and a `make` block
-reading an array `:my` is fine — so the trigger is the combination with the
-`[ … | <!> ]` alternation group (which re-seeds the in-regex lexicals for its
-sub-pattern via `InlineVarsSeed`). Start there.
+An inline `{ … }` block sees the same wrong count, so this is *not* the
+reduce-time replay — it is the declaration itself.
+
+**Why the anchor matters.** `parse_regex_declarative_prefix` scans from the very
+front of the pattern for `:name`; a leading `^` makes the loop break immediately,
+so nothing is hoisted. The `:my` then goes down the *other* path — the
+`RegexAtom::VarDecl` atom in `regex_match_capture.rs`, which evaluates the
+declaration in a scratch `Interpreter` and harvests the env diff into
+`RegexCaptures::regex_vars`. That path mishandles an `@`-sigil declaration whose
+RHS is a method call: the elements are lost (0) or collapsed to one.
+
+Cro's generated matcher is exactly the anchored shape
+(`regex { ^ :my $req = …; :my @segs = $req.path-segments; :my $cap; [ … ] $ }`),
+so `Capture.new(:list(@segs), …)` is built with the wrong number of positionals,
+the route's bind check rejects it, and no handler runs.
+
+Two things to decide when fixing: whether the two paths should be unified (the
+declarative-prefix hoist ought to look past leading anchors/adverbs), and,
+independently, why the `VarDecl` scratch harvest loses an array's elements —
+mutsu's dual store is the obvious suspect (`my @s = …` may land in a local slot
+rather than the scratch `env` the harvest reads).
 
 ## Repro
 
