@@ -141,7 +141,14 @@ impl Interpreter {
             match self.run_reuse(&code, &compiled_fns) {
                 Ok(()) => {
                     let val = self.env().get("_").cloned().unwrap_or(Value::NIL);
-                    out.push(val);
+                    // A Slip result contributes its elements per repetition
+                    // (`Slip(1,2) xx *` is 1,2,1,2,… — same as the
+                    // value-repeat path's Slip handling).
+                    if let ValueView::Slip(items) = val.view() {
+                        out.extend(items.iter().cloned());
+                    } else {
+                        out.push(val);
+                    }
                 }
                 Err(e) => {
                     self.stack = saved_stack;
@@ -492,7 +499,15 @@ impl Interpreter {
             }
         } else {
             for _ in 0..repeat {
-                items.push(self.repeat_lhs_once(&left)?);
+                let v = self.repeat_lhs_once(&left)?;
+                // A callable LHS whose call yields a Slip contributes its
+                // elements per repetition (`Slip(1,2) xx *` is 1,2,1,2,…),
+                // mirroring the value-repeat Slip arm above.
+                if let ValueView::Slip(sub) = v.view() {
+                    items.extend(sub.iter().cloned());
+                } else {
+                    items.push(v);
+                }
             }
         }
 
