@@ -27,6 +27,8 @@ is("hello" ~ "-" x 3, "hello---", 'concat with replication');
     ok(!defined($result), 'Large capture var evaluates to undefined');
 }
 
-# join on Instance (Match) objects should not crash
+# join on Instance (Match) objects should not crash. Match.join joins the
+# positional captures (.list), so a capture with no subcaptures joins to ""
+# (raku behavior; see t/match-join-captures.t).
 "abc" ~~ /(abc)/;
-is($0.join(""), "abc", 'join on Match object');
+is($0.join(""), "", 'join on a subcapture-less Match is empty');
