@@ -16,18 +16,7 @@ impl Interpreter {
 
     /// Create a Failure for "Type X does not support associative indexing."
     fn make_assoc_indexing_failure(type_name: &str) -> Value {
-        let mut attrs = std::collections::HashMap::new();
-        attrs.insert(
-            "message".to_string(),
-            Value::str_from(&format!(
-                "Type {} does not support associative indexing.",
-                type_name
-            )),
-        );
-        let ex = Value::make_instance(Symbol::intern("X::AdHoc"), attrs);
-        let mut failure_attrs = std::collections::HashMap::new();
-        failure_attrs.insert("exception".to_string(), ex);
-        Value::make_instance(Symbol::intern("Failure"), failure_attrs)
+        RuntimeError::assoc_indexing_failure(type_name)
     }
 
     /// Create a Failure wrapping X::OutOfRange for effective negative indices.

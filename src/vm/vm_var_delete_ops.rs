@@ -622,7 +622,7 @@ impl Interpreter {
         let result = Value::array(Self::format_positional_slice_level(
             &items_snap,
             None,
-            &missing,
+            crate::runtime::PositionalMissing::Default(&missing),
             inner,
             "v",
             true,

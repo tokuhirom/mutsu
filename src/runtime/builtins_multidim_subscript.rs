@@ -2,6 +2,31 @@
 use super::*;
 use crate::symbol::Symbol;
 
+/// What a positional slice adverb reports for a slot the index does not reach.
+#[derive(Clone, Copy)]
+pub(crate) enum PositionalMissing<'a> {
+    /// The container's element default: `Any` for a plain `@`-array, the
+    /// declared element type or `is default` value for a typed one, `Nil` for a
+    /// Range/Seq coerced to an array view.
+    Default(&'a Value),
+    /// A value that does not do `Positional`, read as the one-element list
+    /// holding itself. raku's `Any.AT-POS` reports every other index as an
+    /// X::OutOfRange over `0..0` carrying that index, so the missing value
+    /// differs per index and cannot be a single default.
+    ScalarOutOfRange,
+}
+
+impl PositionalMissing<'_> {
+    fn value_for(&self, index: i64) -> Value {
+        match self {
+            Self::Default(v) => (*v).clone(),
+            Self::ScalarOutOfRange => {
+                RuntimeError::out_of_range_failure("Index", Value::int(index), "0..0")
+            }
+        }
+    }
+}
+
 impl Interpreter {
     /// Handle push/unshift/append/prepend through an instance accessor.
     /// Called as __mutsu_push_through_accessor(instance, attr_name, method, vals...).
@@ -161,6 +186,10 @@ impl Interpreter {
         // Coerce those to a plain array view up-front so the Array arm below owns
         // the value/key/exists logic (a Hash target keeps its own path).
         let mut target_is_coerced_list = false;
+        // The one-element-list coercion of a non-`Positional` value, which
+        // reports a missing index as an X::OutOfRange over `0..0` rather than as
+        // a container default.
+        let mut target_is_coerced_scalar = false;
         let target = {
             let t = args[0].clone();
             if !matches!(t.view(), ValueView::Array(..) | ValueView::Hash(_))
@@ -182,16 +211,15 @@ impl Interpreter {
                 // holding itself under `[...]` — raku's `Any.AT-POS`. So
                 // `$i[0]:kv` is `(0, 5)` and `$i[0]:p` is `0 => 5`. Coercing to
                 // that one-element array here lets the Array arm below own the
-                // key/value logic, exactly as for a Range or Seq target. Only a
-                // *positional* subscript coerces: `5<a>:v` is a key lookup on a
-                // non-Associative value, which raku answers with `()` and mutsu
-                // still answers with `Nil`
-                // (todo/tickets/associative-subscript-on-a-non-associative-value.md).
+                // key/value logic, exactly as for a Range or Seq target. The
+                // *associative* mirror (`5<a>:v`) is handled by the
+                // `assoc_on_non_associative` path below.
                 //
                 // The element is decontainerized on the way in, as raku's
                 // `Any.AT-POS` is: `(my $c = {a => 1})[0]` reads back as
                 // `{:a(1)}`, not the itemized `${:a(1)}` the `$` variable holds.
                 target_is_coerced_list = true;
+                target_is_coerced_scalar = true;
                 Value::real_array(vec![t.with_hash_itemized(false)])
             } else {
                 t
@@ -347,11 +375,27 @@ impl Interpreter {
         }
         let is_multi = indices.len() != 1 || force_list;
 
+        // An ASSOCIATIVE subscript (`<a>` / `{"a"}`) of a value that does not do
+        // `Associative`. raku's model is uniform: `Any.EXISTS-KEY` is always
+        // `False`, so every key is "missing" — a `keep_missing = False` adverb
+        // finds nothing and yields `()`, while a `keep_missing` one must produce
+        // a value and so calls `Any.AT-KEY`, which fails. An Array target counts:
+        // it does `Positional`, not `Associative`, so `@a<a>:!k` is the key `"a"`
+        // and not the `-1` a numified positional lookup would report.
+        let assoc_on_non_associative = subscript_is_positional == Some(false)
+            && assoc_instance.is_none()
+            && !matches!(
+                target.view(),
+                ValueView::Hash(_) | ValueView::Pair(..) | ValueView::ValuePair(..)
+            );
+
         // Positional targets (real arrays, plus Ranges/Seqs/Lists coerced above)
         // own a recursive path so a *nested* sub-list index preserves its nesting
         // in the result — `@a[(3, (30, (5,)))]:k` yields `(3, ((5,),))`, not a
         // flattened list. A Hash target keeps the original flat path below.
-        if let ValueView::Array(items, ..) = target.view() {
+        if let ValueView::Array(items, ..) = target.view()
+            && !assoc_on_non_associative
+        {
             // The set of explicitly element-assigned indices travels with the
             // array value (embedded `ArrayData::initialized`), so a slot holding a
             // `Package("Any")` hole is distinguished from a real `Any` value even
@@ -379,18 +423,29 @@ impl Interpreter {
                         .and_then(|name| self.var_type_constraint(name))
                 })
                 .map(|t| Value::package(Symbol::intern(&t)));
-            // A Range/List coerced to an array view has no container element
-            // type, so a missing element reads back as `Nil` (matching
-            // `("a".."z")[30]:!v`), not the `Any` a real `@`-array reports.
-            let missing_value = container_default
+            // A `List` has no container element type, so a missing element reads
+            // back as `Nil` — both for one coerced to an array view here
+            // (`("a".."z")[30]:!v`) and for a plain one (`(1,2)[5]:!v`). Only a
+            // real `@`-array reports the `Any` hole; `$[1,2]` counts as one, and
+            // `$(1,2)` does not.
+            let target_is_real_array = !target_is_coerced_list
+                && matches!(target.view(), ValueView::Array(_, kind) if kind.is_real_array());
+            let missing_default = container_default
                 .or(type_constraint_default)
                 .unwrap_or_else(|| {
-                    if target_is_coerced_list {
-                        Value::NIL
-                    } else {
+                    if target_is_real_array {
                         Value::package(Symbol::intern("Any"))
+                    } else {
+                        Value::NIL
                     }
                 });
+            // A *scalar* read as a one-element list fails per index instead:
+            // `5[1]:!v` is an X::OutOfRange over `0..0` carrying the index.
+            let missing_value = if target_is_coerced_scalar {
+                PositionalMissing::ScalarOutOfRange
+            } else {
+                PositionalMissing::Default(&missing_default)
+            };
 
             // `:delete` companion (`:delete:kv` etc): remove every *leaf* index of
             // the (possibly nested) index tree from the live binding, then format
@@ -444,7 +499,7 @@ impl Interpreter {
                 let (key, value, exists) = Self::resolve_positional_scalar(
                     &items_snap,
                     bound_map.as_ref(),
-                    &missing_value,
+                    missing_value,
                     &indices[0],
                 );
                 if !keep_missing && !exists {
@@ -461,7 +516,7 @@ impl Interpreter {
             let out = Self::format_positional_slice_level(
                 &items_snap,
                 bound_map.as_ref(),
-                &missing_value,
+                missing_value,
                 &indices,
                 kind,
                 keep_missing,
@@ -470,7 +525,33 @@ impl Interpreter {
         }
 
         let mut rows: Vec<(Value, Value, bool)> = Vec::with_capacity(indices.len());
+        if assoc_on_non_associative {
+            let missing = Self::any_at_key_value(&target);
+            for idx in &indices {
+                rows.push((Self::subscript_key_value(idx), missing.clone(), false));
+            }
+            return Ok(Self::format_adverb_rows(rows, kind, keep_missing, is_multi));
+        }
         match target.view() {
+            // A `Pair` does `Associative`: its own key reads back its value and
+            // every other key is missing (with the plain `Nil` of an absent
+            // entry, not the `Any.AT-KEY` failure a non-Associative gets).
+            ValueView::Pair(..) | ValueView::ValuePair(..) => {
+                let (pair_key, pair_value) = match target.view() {
+                    ValueView::Pair(k, v) => (k.to_string(), v.clone()),
+                    ValueView::ValuePair(k, v) => (k.to_string_value(), (*v).clone()),
+                    _ => unreachable!("guarded by the arm pattern"),
+                };
+                for idx in &indices {
+                    let exists = idx.to_string_value() == pair_key;
+                    let value = if exists {
+                        pair_value.clone()
+                    } else {
+                        Value::NIL
+                    };
+                    rows.push((Self::subscript_key_value(idx), value, exists));
+                }
+            }
             ValueView::Hash(map) => {
                 // The missing-key default comes from the Hash's *value type* — read
                 // it from the container value itself (via container metadata /
@@ -532,20 +613,33 @@ impl Interpreter {
             });
         }
 
+        Ok(Self::format_adverb_rows(rows, kind, keep_missing, is_multi))
+    }
+
+    /// Format the resolved `(key, value, exists)` rows of an associative slice
+    /// adverb. A row that is missing is dropped unless the adverb was negated
+    /// (`keep_missing`); a single-key subscript yields the bare entry, a slice a
+    /// list of them.
+    fn format_adverb_rows(
+        rows: Vec<(Value, Value, bool)>,
+        kind: &str,
+        keep_missing: bool,
+        is_multi: bool,
+    ) -> Value {
         if !is_multi {
             let Some((key, value, exists)) = rows.into_iter().next() else {
-                return Ok(Value::NIL);
+                return Value::NIL;
             };
             if !keep_missing && !exists {
-                return Ok(Value::array(Vec::new()));
+                return Value::array(Vec::new());
             }
-            return Ok(match kind {
+            return match kind {
                 "kv" => Value::array(vec![key, value]),
                 "p" => Value::value_pair(key, value),
                 "k" => key,
                 "v" => value,
                 _ => Value::NIL,
-            });
+            };
         }
 
         let mut out = Vec::new();
@@ -564,7 +658,32 @@ impl Interpreter {
                 _ => {}
             }
         }
-        Ok(Value::array(out))
+        Value::array(out)
+    }
+
+    /// The key an associative subscript reports, matching the plain-Hash path:
+    /// a subscript word goes through `val()`, so `%h<1>:k` is the `IntStr` `1`
+    /// rather than the string `"1"`.
+    fn subscript_key_value(idx: &Value) -> Value {
+        match idx.view() {
+            ValueView::Str(s) => {
+                super::builtins_collection::builtin_val(&[Value::str(s.to_string())])
+            }
+            _ => idx.clone(),
+        }
+    }
+
+    /// What `Any.AT-KEY` answers for a value that does not do `Associative`: a
+    /// Failure carrying "Type X does not support associative indexing.". A type
+    /// object is the exception — an undefined invocant answers `Any`, so
+    /// `Int<a>:!v` is `Any` where `5<a>:!v` is the Failure.
+    pub(crate) fn any_at_key_value(target: &Value) -> Value {
+        match target.view() {
+            ValueView::Package(_) => Value::package(Symbol::intern("Any")),
+            _ => {
+                RuntimeError::assoc_indexing_failure(crate::runtime::utils::value_type_name(target))
+            }
+        }
     }
 
     /// One level of a positional slice adverb (`:k`/`:v`/`:p`/`:kv`) applied to
@@ -574,7 +693,7 @@ impl Interpreter {
     pub(crate) fn format_positional_slice_level(
         items: &[Value],
         bound_map: Option<&std::collections::HashSet<usize>>,
-        missing_value: &Value,
+        missing_value: PositionalMissing<'_>,
         indices: &[Value],
         kind: &str,
         keep_missing: bool,
@@ -632,7 +751,7 @@ impl Interpreter {
     fn resolve_positional_scalar(
         items: &[Value],
         bound_map: Option<&std::collections::HashSet<usize>>,
-        missing_value: &Value,
+        missing_value: PositionalMissing<'_>,
         idx: &Value,
     ) -> (Value, Value, bool) {
         let i = match idx.view() {
@@ -642,7 +761,7 @@ impl Interpreter {
         };
         let key = Value::int(i);
         if i < 0 || i as usize >= items.len() {
-            return (key, missing_value.clone(), false);
+            return (key, missing_value.value_for(i), false);
         }
         let ui = i as usize;
         let exists = match bound_map {

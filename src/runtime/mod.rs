@@ -154,6 +154,7 @@ mod builtins_multidim;
 mod builtins_multidim_assign;
 mod builtins_multidim_ops;
 mod builtins_multidim_subscript;
+pub(crate) use builtins_multidim_subscript::PositionalMissing;
 mod builtins_operators_coerce;
 mod builtins_operators_fallback;
 mod builtins_operators_infix;
