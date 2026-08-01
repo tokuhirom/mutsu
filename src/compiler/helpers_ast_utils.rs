@@ -550,6 +550,153 @@ impl Compiler {
         Some(result)
     }
 
+    /// Pre-register declaration-only "shells" of class/role declarations, so a
+    /// mainline statement that runs before the textual declaration can already
+    /// construct the type. Emulates Raku's compile-time (BEGIN) type
+    /// composition: the type (attributes, methods, composed roles) exists
+    /// before any mainline statement runs, while procedural statements in the
+    /// class body still execute at their textual position (`say "A"; class C {
+    /// say "B" }` prints A then B). Real-world driver: Cro::HTTP::Router's
+    /// `our $link-plugin = router-plugin-register('link')` at the top of the
+    /// module body constructs `class PluginKey`, declared further down.
+    ///
+    /// Like `hoist_sub_decls`, this only *emits registrations* at the head of
+    /// the scope; the original declarations still compile in place and
+    /// re-register the full class (rebuilding the `ClassDef` from scratch, so
+    /// nothing is duplicated). The shell body keeps only side-effect-free
+    /// declaration statements (`has`/`method`/`does`/`trusts`), so no user
+    /// code runs early. User custom traits are stripped, mirroring
+    /// `hoist_sub_decls`. The `__hoisted` marker makes the VM swallow shell
+    /// registration errors (e.g. a parent type not yet available): a failed
+    /// shell just means no pre-registration, and the in-place registration
+    /// reports any real error.
+    ///
+    /// Lexical (`my`) classes, `unit` classes, runtime-named
+    /// (`class ::($name)`) classes, and stub (`class C { ... }`) declarations
+    /// are not shelled. A declaration preceded only by other declarations (the
+    /// common file layout) is not shelled either: no user code can run before
+    /// it registers in place, so a shell would be pure double-registration
+    /// overhead.
+    pub(super) fn hoist_type_decl_shells(&mut self, stmts: &[Stmt]) {
+        let mut seen_runtime_stmt = false;
+        for stmt in stmts {
+            if !seen_runtime_stmt {
+                // Declaration/pragma statements register symbols but run no
+                // user code; anything else may forward-reference a later type.
+                seen_runtime_stmt = !matches!(
+                    stmt,
+                    Stmt::SetLine(_)
+                        | Stmt::Use { .. }
+                        | Stmt::No { .. }
+                        | Stmt::Need { .. }
+                        | Stmt::Import { .. }
+                        | Stmt::SubDecl { .. }
+                        | Stmt::ProtoDecl { .. }
+                        | Stmt::TokenDecl { .. }
+                        | Stmt::ClassDecl { .. }
+                        | Stmt::RoleDecl { .. }
+                        | Stmt::EnumDecl { .. }
+                        | Stmt::SubsetDecl { .. }
+                );
+                continue;
+            }
+            match stmt {
+                Stmt::ClassDecl {
+                    is_lexical: false,
+                    is_unit: false,
+                    name_expr: None,
+                    body,
+                    ..
+                } if !Self::is_stub_class_body(body) => {
+                    let shell_body = Self::type_decl_shell_body(body);
+                    let mut shell = self.qualify_decl_name(stmt);
+                    if let Stmt::ClassDecl {
+                        body: sbody,
+                        custom_traits,
+                        ..
+                    } = &mut shell
+                    {
+                        *sbody = shell_body;
+                        custom_traits.retain(|(t, _)| {
+                            t.starts_with("__") || t == "default" || t.starts_with("DEPRECATED")
+                        });
+                        custom_traits.push(("__hoisted".to_string(), None));
+                    }
+                    let idx = self.code.add_stmt(shell);
+                    self.code.emit(OpCode::RegisterClass(idx));
+                }
+                Stmt::RoleDecl { .. } => {
+                    let mut shell = self.qualify_decl_name(stmt);
+                    if let Stmt::RoleDecl { custom_traits, .. } = &mut shell {
+                        custom_traits.retain(|(t, _)| {
+                            t.starts_with("__") || t == "default" || t.starts_with("DEPRECATED")
+                        });
+                        custom_traits.push(("__hoisted".to_string(), None));
+                    }
+                    let idx = self.code.add_stmt(shell);
+                    self.code.emit(OpCode::RegisterRole(idx));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// The declaration-only subset of a class body used by
+    /// [`hoist_type_decl_shells`]: attribute/method/composition declarations
+    /// are kept (with user custom traits stripped so trait_mod subs don't run
+    /// twice), every statement with runtime effect is dropped. Class-level
+    /// (`our`/`my`-scoped) attributes with initializers are dropped too — their
+    /// initializer is evaluated eagerly at registration and may depend on
+    /// mainline state.
+    fn type_decl_shell_body(body: &[Stmt]) -> Vec<Stmt> {
+        let mut shell = Vec::new();
+        for s in body {
+            match s {
+                Stmt::SetLine(_) => shell.push(s.clone()),
+                Stmt::HasDecl {
+                    is_our,
+                    is_my,
+                    default,
+                    ..
+                } => {
+                    if (*is_our || *is_my) && default.is_some() {
+                        continue;
+                    }
+                    let mut d = s.clone();
+                    if let Stmt::HasDecl { unknown_traits, .. } = &mut d {
+                        unknown_traits.clear();
+                    }
+                    shell.push(d);
+                }
+                Stmt::MethodDecl { .. } => {
+                    let mut d = s.clone();
+                    if let Stmt::MethodDecl { custom_traits, .. } = &mut d {
+                        custom_traits.retain(|(t, _)| {
+                            t.starts_with("__") || t == "default" || t.starts_with("DEPRECATED")
+                        });
+                    }
+                    shell.push(d);
+                }
+                // ProtoDecl / TokenDecl / SubDecl register (package-scoped)
+                // routines with redeclaration checks; registering them from the
+                // shell would make the in-place registration a spurious
+                // redeclaration. Forward references only need the type shape
+                // (attributes/methods), so they are dropped from the shell.
+                Stmt::DoesDecl { .. } | Stmt::TrustsDecl { .. } => shell.push(s.clone()),
+                Stmt::SyntheticBlock(inner) => {
+                    // `has ($a, $b)` list form arrives as a SyntheticBlock of
+                    // HasDecls; keep the declaration subset of it.
+                    let inner_shell = Self::type_decl_shell_body(inner);
+                    if !inner_shell.is_empty() {
+                        shell.push(Stmt::SyntheticBlock(inner_shell));
+                    }
+                }
+                _ => {}
+            }
+        }
+        shell
+    }
+
     /// Hoist top-level `use Test` declarations to the front of the compilation
     /// unit. In Raku, `use` is a BEGIN-time (compile-time) declaration, so the
     /// Test functions (`plan`, `ok`, `is`, ...) become available throughout the

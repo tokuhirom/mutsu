@@ -39,10 +39,16 @@ impl Interpreter {
             match self.upvalues.get(index as usize) {
                 Some(Some(v)) => v.clone(),
                 // `None` entry (non-cell capture) or out-of-range (non-standard
-                // path): read the captured scalar live from env by name.
+                // path): read the captured scalar live from env by name. A
+                // method body has no upvalue array installed, so a free read of
+                // an enclosing module's `our`/block lexical lands here — resolve
+                // an env miss through the enclosing package chain
+                // (`package_chain_var_fallback`), mirroring GetGlobal.
                 _ => {
                     let name = Self::const_str(code, name_idx);
-                    self.get_env_with_main_alias(name).unwrap_or(Value::NIL)
+                    self.get_env_with_main_alias(name)
+                        .or_else(|| self.package_chain_var_fallback(name))
+                        .unwrap_or(Value::NIL)
                 }
             }
         };

@@ -1640,6 +1640,11 @@ impl Compiler {
             self.code.emit(OpCode::SetCurrentPackage { name_idx });
         }
         self.hoist_sub_decls(stmts, false);
+        // Pre-register declaration-only shells of class/role declarations so a
+        // mainline statement that runs before the textual declaration can
+        // already construct the type (Raku type declarations are compile-time;
+        // see `hoist_type_decl_shells`).
+        self.hoist_type_decl_shells(stmts);
         // Register `our` subs declared inside nested blocks early so they are
         // reachable via `OUR::` before their declaring block runs (Raku
         // installs `our sub`s into the package at compile time).
