@@ -422,7 +422,7 @@ impl Interpreter {
             let Some(default_value) = self.static_default_value_for_typecheck(default_expr) else {
                 continue;
             };
-            if !self.type_matches_value(constraint, &default_value) {
+            if !self.param_value_matches_constraint(&pd.name, constraint, &default_value) {
                 return Err(RuntimeError::new(format!(
                     "X::Parameter::Default::TypeCheck: Type check failed for default value of parameter '{}'; expected {}, got {}",
                     pd.name,

@@ -119,6 +119,10 @@ SIDECAR = {
         "slot": "Secure path join",
         "record": "docs/batteries/io-path-childsecure.md",
     },
+    "Base64": {
+        "slot": "Base64 encoding",
+        "record": "docs/batteries/base64.md",
+    },
 }
 
 

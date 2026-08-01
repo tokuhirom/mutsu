@@ -239,10 +239,13 @@ impl Interpreter {
             && !metadata.value_type.is_empty()
             && container_kind_matches
         {
-            return self.type_matches_value(
-                &resolved_constraint,
-                &Value::package(Symbol::intern(&metadata.value_type)),
-            );
+            // Compare the container's declared VALUE TYPE (a type object)
+            // against the constraint with any :D/:U smiley stripped — the
+            // smiley constrains the elements' definedness, not the type
+            // object (`my Str @u` must satisfy `Str:D :@alpha`).
+            let (base, _smiley) = crate::runtime::types::strip_type_smiley(&resolved_constraint);
+            return self
+                .type_matches_value(base, &Value::package(Symbol::intern(&metadata.value_type)));
         }
 
         if name.starts_with('@') {

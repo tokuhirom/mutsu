@@ -2473,6 +2473,17 @@ impl Compiler {
                     }
                     _ => None,
                 };
+                // A scalar placeholder in the body is the given/with block's
+                // parameter, bound to the topic (`with 2 { $^a == 3 ?? … }`
+                // sees 2). The topic value is on the stack here; keep a copy
+                // for the binding, mirroring the If arm's cond placeholder.
+                if let Some(ph) = crate::ast::collect_placeholders_shallow(body)
+                    .into_iter()
+                    .find(|n| n.starts_with('^'))
+                {
+                    self.code.emit(OpCode::Dup);
+                    self.emit_set_named_var(&ph);
+                }
                 let pointy_param_idx =
                     pointy_param_name.map(|name| self.code.add_constant(Value::str(name)));
                 let given_idx = self.code.emit(OpCode::Given {

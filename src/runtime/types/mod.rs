@@ -589,6 +589,35 @@ impl Interpreter {
         constraint.to_string()
     }
 
+    /// Whether a parameter's default/bound value satisfies its type
+    /// constraint, honoring the sigil: on an `@`/`%` parameter the constraint
+    /// applies to the ELEMENTS (`Str:D :@alpha = @chars64std` accepts an
+    /// array of defined Strs), not to the aggregate itself.
+    pub(in crate::runtime) fn param_value_matches_constraint(
+        &mut self,
+        param_name: &str,
+        constraint: &str,
+        value: &Value,
+    ) -> bool {
+        match param_name.chars().next() {
+            Some('@') => {
+                if let Some(items) = value.as_list_items() {
+                    return items.iter().all(|v| self.type_matches_value(constraint, v));
+                }
+                self.type_matches_value(constraint, value)
+            }
+            Some('%') => {
+                if let ValueView::Hash(map) = value.view() {
+                    return map
+                        .iter()
+                        .all(|(_, v)| self.type_matches_value(constraint, v));
+                }
+                self.type_matches_value(constraint, value)
+            }
+            _ => self.type_matches_value(constraint, value),
+        }
+    }
+
     fn checked_default_param_value(
         &mut self,
         pd: &ParamDef,
@@ -597,7 +626,7 @@ impl Interpreter {
         let value = self.materialize_default_parametric_role(value)?;
         if let Some(constraint) = &pd.type_constraint
             && !constraint.starts_with("::")
-            && !self.type_matches_value(constraint, &value)
+            && !self.param_value_matches_constraint(&pd.name, constraint, &value)
         {
             return Err(RuntimeError::new(format!(
                 "X::Parameter::Default::TypeCheck: Type check failed for default value of parameter '{}'; expected {}, got {}",

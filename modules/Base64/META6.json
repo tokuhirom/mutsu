@@ -1,0 +1,15 @@
+{
+    "name"         : "Base64",
+    "version"      : "0.1.0",
+    "auth"         : "github:ugexe",
+    "authors"      : ["ugexe"],
+    "description"  : "Lazy base64 encoding and decoding routines",
+    "license"      : "Artistic-2.0",
+    "provides"     : { "Base64" : "lib/Base64.rakumod" },
+    "depends"      : [ ],
+    "test-depends" : [ "Test:ver<6.c+>" ],
+    "support"      : {
+        "bugtracker" : "https://github.com/ugexe/Raku-Base64/issues",
+        "source"     : "https://github.com/ugexe/Raku-Base64.git"
+    }
+}

@@ -162,9 +162,12 @@ impl Compiler {
             // VarDecl doesn't push to stack, so no pop needed.
             // 2. Compile the RHS value
             self.compile_expr(&args[2]);
-            // 3. Dup so the assignment result is left on the stack
-            self.code.emit(OpCode::Dup);
-            // 4. Assign to the variable (prefer the baked slot so a `(my $a)`
+            // 3. Assign to the variable. AssignExpr/AssignExprLocal pop the
+            //    value and PUSH the assignment result themselves (assignment
+            //    is an expression), so no Dup — an extra copy here leaks a
+            //    stack slot and corrupts an enclosing expression's operands
+            //    (`65 +< ((state $m = 24) -= 8)` shifted 16 by 16).
+            // 4. Prefer the baked slot so a `(my $a)`
             //    that shadows an enclosing `$a` writes its own slot — §1.4).
             //    EXCEPTION: any AGGREGATE (`@`/`%`) paren-decl target must stay
             //    on the by-name `AssignExpr` even under shadow slots (§1.3
@@ -207,11 +210,11 @@ impl Compiler {
             // `($c = 3) = 4`: an assignment yields the assigned container as an
             // lvalue, so the outer assignment writes through to the same
             // variable. Run the inner assignment for its side effect, then
-            // assign the RHS to the same variable.
+            // assign the RHS to the same variable. (No Dup: the assign op
+            // pushes its own result — see the VarDecl arm above.)
             self.compile_expr(&args[0]);
             self.code.emit(OpCode::Pop);
             self.compile_expr(&args[2]);
-            self.code.emit(OpCode::Dup);
             let var_name = var_name.clone();
             self.emit_assign_local_or_name(&var_name);
             return;

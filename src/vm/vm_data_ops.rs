@@ -68,6 +68,14 @@ impl Interpreter {
                 // (Matches raku and `flat(set(...))`; `value_to_list` would
                 // otherwise decompose it into its key/True pairs.)
                 ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => elems.push(val),
+                // Buf/Blob are Positional but NOT Iterable, so the one-arg
+                // flatten rule keeps them whole too: `[$str.encode]` is one
+                // element, even though `.list`/`.rotor`/`for` yield the bytes.
+                ValueView::Instance { attributes, .. }
+                    if crate::value::value_buf::has_buf_elems(&attributes) =>
+                {
+                    elems.push(val)
+                }
                 // A single infinite *integer* range (`[1..Inf]`, `[1..*]`,
                 // `[^Inf]`, `[0..^*]`) keeps the `[...]` array lazy: build the
                 // same reify-on-demand lazy array `my @a = 1..Inf` produces, so

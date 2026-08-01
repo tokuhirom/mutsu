@@ -2063,11 +2063,12 @@ fn collect_ph_stmt_shallow(stmt: &Stmt, out: &mut Vec<String>) {
                 collect_ph_stmt_shallow(s, out);
             }
         }
-        Stmt::Given { topic, body, .. } => {
+        Stmt::Given { topic, .. } => {
+            // The topic is evaluated in THIS block's scope, but the given/with
+            // body is its OWN `{}` block scope: a placeholder inside it is the
+            // given-block's parameter, bound to the topic (`with 2 { $^a }` is
+            // 2, not the enclosing block's argument) — mirrors the If arm.
             collect_ph_expr_shallow(topic, out);
-            for s in body {
-                collect_ph_stmt_shallow(s, out);
-            }
         }
         Stmt::When { cond, body } => {
             collect_ph_expr_shallow(cond, out);
