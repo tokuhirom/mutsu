@@ -560,6 +560,13 @@ impl Compiler {
                     self.code.emit(OpCode::Die);
                     return;
                 }
+                // A block with a top-level `when`/`default` is where that
+                // `when`'s succeed stops unwinding: `given 5 { { when Int { } };
+                // say "after" }` still runs the `say` (see
+                // `OpCode::SucceedBarrier`). Emitted after the placeholder bail-out
+                // above so the barrier is never left unpatched.
+                let succeed_barrier_idx = Self::body_has_toplevel_when(stmts)
+                    .then(|| self.code.emit(OpCode::SucceedBarrier { body_end: 0 }));
                 let saved_dynamic_scope = self.push_dynamic_scope_lexical();
                 self.seed_user_listop_shadows(stmts);
                 // Snapshot the sigilless bindings that name a native lowercase
@@ -705,6 +712,9 @@ impl Compiler {
                         || !crate::runtime::Interpreter::is_builtin_type(n)
                 });
                 self.pop_dynamic_scope_lexical(saved_dynamic_scope);
+                if let Some(idx) = succeed_barrier_idx {
+                    self.code.patch_succeed_barrier_body_end(idx);
+                }
             }
             Stmt::SyntheticBlock(stmts) => {
                 // Detect `:=` bind context for `@` variables: the parser wraps

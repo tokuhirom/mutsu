@@ -4250,6 +4250,10 @@ impl Interpreter {
                     compiled_fns,
                 )?;
             }
+            OpCode::SucceedBarrier { body_end } => {
+                self.sync_source_line(code, *ip);
+                self.exec_succeed_barrier_op(code, *body_end, ip, compiled_fns)?;
+            }
             OpCode::CheckPhaser {
                 is_pre,
                 condition_idx,

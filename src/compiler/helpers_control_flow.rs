@@ -378,7 +378,9 @@ impl Compiler {
             body_end: 0,
             succeed_boundary: true,
         });
-        self.compile_body_with_implicit_try(stmts);
+        // `succeed_boundary: true` already absorbs the succeed at exactly this
+        // level, so the body does not need its own `SucceedBarrier`.
+        self.compile_body_with_implicit_try_inner(stmts);
         self.code.patch_block_local_body_end(idx);
     }
 
@@ -402,10 +404,41 @@ impl Compiler {
         }
     }
 
+    /// Returns true if a block body has a `when`/`default` among its *own*
+    /// top-level statements. Such a body is where the succeed a matched `when`
+    /// raises stops unwinding (see `OpCode::SucceedBarrier`); a `when` nested in
+    /// an inner block belongs to that inner block instead, so this deliberately
+    /// does not descend into nested blocks/branches/loops. `SyntheticBlock` is the
+    /// parser's inlined wrapper, not a real scope, so it is descended into — same
+    /// rule as `branch_declares_block_local`.
+    pub(super) fn body_has_toplevel_when(stmts: &[Stmt]) -> bool {
+        stmts.iter().any(|s| match s {
+            Stmt::When { .. } | Stmt::Default(_) => true,
+            Stmt::SyntheticBlock(inner) => Self::body_has_toplevel_when(inner),
+            _ => false,
+        })
+    }
+
+    /// Emit `body` wrapped in a `SucceedBarrier` when it contains a top-level
+    /// `when`/`default`, otherwise emit it unchanged.
+    pub(super) fn with_succeed_barrier(&mut self, stmts: &[Stmt], f: impl FnOnce(&mut Self)) {
+        if !Self::body_has_toplevel_when(stmts) {
+            f(self);
+            return;
+        }
+        let idx = self.code.emit(OpCode::SucceedBarrier { body_end: 0 });
+        f(self);
+        self.code.patch_succeed_barrier_body_end(idx);
+    }
+
     /// Compile a block body, automatically wrapping in implicit try if it contains
     /// CATCH or CONTROL blocks. This should be used for any block context (bare blocks,
     /// if branches, loop bodies, sub bodies) to ensure CATCH/CONTROL are not silently ignored.
     pub(super) fn compile_body_with_implicit_try(&mut self, stmts: &[Stmt]) {
+        self.with_succeed_barrier(stmts, |c| c.compile_body_with_implicit_try_inner(stmts));
+    }
+
+    fn compile_body_with_implicit_try_inner(&mut self, stmts: &[Stmt]) {
         let saved = self.push_dynamic_scope_lexical();
         if Self::has_catch_or_control(stmts) {
             self.compile_try(stmts, &None);
