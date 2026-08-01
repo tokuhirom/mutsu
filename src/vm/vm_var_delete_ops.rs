@@ -45,7 +45,15 @@ impl Interpreter {
         let Some(container) = env.get_mut(var_name) else {
             return;
         };
-        container.with_array_mut(|items, _| {
+        container.with_array_mut(|items, kind| {
+            // A shaped array is fixed-size: `:delete` empties a slot, it never
+            // shortens the array. Trimming is only right for an unshaped one
+            // (`my @a; @a[0] = 1; @a[0,1]:delete` really does leave `[]`), so a
+            // trailing delete on `my @z[3]` must keep all three slots — and the
+            // shape metadata that goes with them.
+            if *kind == ArrayKind::Shaped {
+                return;
+            }
             // Container identity (§3): trim through the shared backing node.
             let arr = crate::value::gc_data_mut(items);
             // The explicitly-assigned indices travel with the array (embedded set).

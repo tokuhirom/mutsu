@@ -125,18 +125,22 @@ pub(super) fn multidim_delete(target: &mut Value, indices: &[Value]) -> Value {
                 .unwrap_or_else(default);
         }
         return target
-            .with_array_mut(|items, _kind| {
+            .with_array_mut(|items, kind| {
+                let is_shaped = *kind == ArrayKind::Shaped;
                 let items = crate::value::gc_data_mut(items);
                 let mut out = Vec::with_capacity(items.len());
                 for item in items.iter_mut() {
                     out.push(multidim_delete(item, &indices[1..]));
                 }
-                // Truncate trailing Any values
-                while items
-                    .last()
-                    .is_some_and(|v| matches!(v.view(), ValueView::Package(s) if s == "Any"))
-                {
-                    items.pop();
+                // Truncate trailing Any values -- never on a shaped array,
+                // which is fixed-size (see the indexed arm below).
+                if !is_shaped {
+                    while items
+                        .last()
+                        .is_some_and(|v| matches!(v.view(), ValueView::Package(s) if s == "Any"))
+                    {
+                        items.pop();
+                    }
                 }
                 Value::array(out)
             })
@@ -171,7 +175,8 @@ pub(super) fn multidim_delete(target: &mut Value, indices: &[Value]) -> Value {
             .unwrap();
     }
     target
-        .with_array_mut(|items_gc, _kind| {
+        .with_array_mut(|items_gc, kind| {
+            let is_shaped = *kind == crate::value::ArrayKind::Shaped;
             let i = match head.view() {
                 ValueView::Int(n) => {
                     if n < 0 {
@@ -188,19 +193,31 @@ pub(super) fn multidim_delete(target: &mut Value, indices: &[Value]) -> Value {
                 ValueView::Num(f) => f as usize,
                 _ => return default(),
             };
+            // A shaped array's slot that held nothing deletes to `Nil`, not to
+            // the `Any` hole (raku: `my @a[2;2]; @a[0;1]:delete` → Nil).
+            let was_hole = is_shaped && items_gc.hole_at(i);
             let items = crate::value::gc_data_mut(items_gc);
             if i >= items.len() {
                 return default();
             }
             if indices.len() == 1 {
-                let old = items[i].clone();
+                let old = if was_hole {
+                    Value::NIL
+                } else {
+                    items[i].clone()
+                };
                 items[i] = default();
-                // Truncate trailing Any values
-                while items
-                    .last()
-                    .is_some_and(|v| matches!(v.view(), ValueView::Package(s) if s == "Any"))
-                {
-                    items.pop();
+                // Truncate trailing Any values -- but a shaped array is
+                // fixed-size, so its emptied slots stay. Trimming one turned
+                // `my @a[2;2]; @a[0;1]:delete` into a ragged `[[], [Any, Any]]`
+                // whose later reads then indexed out of bounds.
+                if !is_shaped {
+                    while items
+                        .last()
+                        .is_some_and(|v| matches!(v.view(), ValueView::Package(s) if s == "Any"))
+                    {
+                        items.pop();
+                    }
                 }
                 old
             } else {

@@ -2862,8 +2862,12 @@ impl Interpreter {
         {
             let type_prefix = if let Some(ref dt) = info.declared_type {
                 dt.clone()
-            } else {
+            } else if crate::runtime::native_types::is_native_array_element_type(&info.value_type) {
+                // Only a native element type is the lowercase `array[int]`;
+                // a boxed one is `Array[Int]` (`my Int @a[3]`).
                 format!("array[{}]", info.value_type)
+            } else {
+                format!("Array[{}]", info.value_type)
             };
             // Rakudo renders a shaped array as
             //   array[int].new(:shape(4,), [1, 2, 3, 4])           # 1-D

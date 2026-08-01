@@ -201,14 +201,20 @@ impl Interpreter {
         let Some(i) = Self::index_to_usize(&indices[0]) else {
             return Ok(hole_value());
         };
-        let Some(res) = target.with_array_mut(|items, _| {
+        let Some(res) = target.with_array_mut(|items, kind| {
             if i >= items.len() {
                 return Ok(hole_value());
             }
+            // A shaped array's slot is always in range, so "nothing was there"
+            // cannot show up as a short array: raku reports it by answering
+            // `Nil` rather than the `Any` hole an unshaped out-of-range delete
+            // gives. An explicitly assigned `Any` is not a hole and still
+            // deletes to `Any`.
+            let was_hole = *kind == ArrayKind::Shaped && items.hole_at(i);
             // Container identity (§3): write through a shared backing node.
             let arr = crate::value::gc_data_mut(items);
             if indices.len() == 1 {
-                let prev = arr[i].clone();
+                let prev = if was_hole { Value::NIL } else { arr[i].clone() };
                 arr[i] = hole_value();
                 if let Some(shape) = shape.as_deref() {
                     crate::runtime::utils::mark_shaped_array_items(items, Some(shape));
