@@ -829,6 +829,18 @@ pub(crate) enum OpCode {
         body_end: u32,
         succeed_boundary: bool,
     },
+    /// Succeed barrier around a block body that lexically contains a top-level
+    /// `when`/`default`. The succeed a matched `when` raises unwinds only to the
+    /// innermost block *containing* the `when` statement, so
+    /// `given 5 { if c { when Int { } }; say "after" }` still runs the `say`, and
+    /// `given 5 { while ... { when Int { } }; say "after" }` keeps looping. The
+    /// op adds no scoping of its own — the body's own `BlockScope` /
+    /// `BlockLocalScope` (when there is one) still does that. It runs
+    /// `ip+1 .. body_end` and absorbs a succeed signal, resetting the
+    /// `when_matched` flag so an enclosing `given` does not break out of its body.
+    SucceedBarrier {
+        body_end: u32,
+    },
     /// Check the top-of-stack value; if falsy, throw X::Phaser::PrePost.
     /// `is_pre` distinguishes PRE (true) from POST (false). `condition_idx` is
     /// the constant index of the condition's source text (e.g. `0`), used for
@@ -4047,6 +4059,14 @@ impl CompiledCode {
         match &mut self.ops[idx] {
             OpCode::BlockLocalScope { body_end, .. } => *body_end = target,
             _ => panic!("patch_block_local_body_end on non-BlockLocalScope opcode"),
+        }
+    }
+
+    pub(crate) fn patch_succeed_barrier_body_end(&mut self, idx: usize) {
+        let target = self.ops.len() as u32;
+        match &mut self.ops[idx] {
+            OpCode::SucceedBarrier { body_end } => *body_end = target,
+            _ => panic!("patch_succeed_barrier_body_end on non-SucceedBarrier opcode"),
         }
     }
 

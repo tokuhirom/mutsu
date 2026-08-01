@@ -281,6 +281,43 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Run a block body that lexically contains a top-level `when`/`default`,
+    /// absorbing the succeed signal a matched `when` raises (see
+    /// `OpCode::SucceedBarrier`). Raku unwinds such a succeed only as far as the
+    /// innermost block that *contains* the `when` statement, so an `if` branch, a
+    /// bare block or a loop body around it resumes right after that block instead
+    /// of terminating the enclosing `given`/`with`.
+    ///
+    /// Deliberately does no scoping of its own: it wraps the body the ordinary
+    /// compile path already emitted (including whatever `BlockScope` /
+    /// `BlockLocalScope` that path chose), so it costs one dispatch and no env
+    /// bookkeeping.
+    pub(super) fn exec_succeed_barrier_op(
+        &mut self,
+        code: &CompiledCode,
+        body_end: u32,
+        ip: &mut usize,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        let body_start = *ip + 1;
+        let body_end = body_end as usize;
+        let stack_base = self.stack.len();
+        let saved_when_matched = self.when_matched();
+        match self.run_range(code, body_start, body_end, compiled_fns) {
+            Err(e) if e.is_succeed() => {
+                // Statement position: drop whatever the aborted body had pushed.
+                self.stack.truncate(stack_base);
+                // Reset the match flag too — an enclosing `given` breaks its body
+                // on it after every op, which would skip the rest of the given
+                // (the same reset `exec_do_block_expr_op` does).
+                loan_env!(self, set_when_matched(saved_when_matched));
+            }
+            other => other?,
+        }
+        *ip = body_end;
+        Ok(())
+    }
+
     pub(super) fn exec_while_loop_op(
         &mut self,
         code: &CompiledCode,
