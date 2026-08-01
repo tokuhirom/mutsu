@@ -285,14 +285,6 @@ impl Interpreter {
             // Store language revision metadata from the version captured at parse time
             self.store_language_revision_from_version(&storage_name, language_version);
 
-            // A `monitor Foo { ... }` declaration (OO::Monitors, provided
-            // natively) parses as a class carrying this marker trait: register
-            // the class so instance-method dispatch serializes on a
-            // per-instance lock (see `run_instance_method_celled`).
-            if custom_traits.iter().any(|(t, _)| t == "__mutsu_monitor") {
-                crate::runtime::native_methods::register_monitor_class(&storage_name);
-            }
-
             // A class declared with an EXPORTHOW::DECLARE declarator (the
             // `__mutsu_declare_how` marker trait carries the keyword): attach
             // an instance of the declarator's HOW type — installed by the
@@ -329,7 +321,7 @@ impl Interpreter {
                 let type_obj = Value::package(Symbol::intern(&storage_name));
                 // Dispatch explicitly parsed custom traits (with args)
                 for (trait_name, trait_arg) in custom_traits {
-                    if trait_name == "__mutsu_monitor" || trait_name == "__mutsu_declare_how" {
+                    if trait_name == "__mutsu_declare_how" {
                         continue;
                     }
                     let trait_value = if let Some(arg_expr) = trait_arg {

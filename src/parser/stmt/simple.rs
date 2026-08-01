@@ -43,7 +43,6 @@ pub use lib_paths::{clear_parser_lib_paths, set_parser_lib_paths, set_parser_pro
 pub(crate) use compile_consts::is_imported_function;
 pub(crate) use registry::{current_language_version, set_current_language_version};
 pub(crate) use registry::{declare_keyword_names, register_declare_keyword};
-pub(crate) use registry::{enable_monitor_decl, monitor_decl_enabled};
 
 // `pub(super)` re-exports.
 pub(super) use control_stmts::{
@@ -169,14 +168,10 @@ thread_local! {
     /// `first().uc` when a user sub `first` shadows the `first` listop).
     static EVAL_USER_SUB_PRESEED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
     static CURRENT_LANGUAGE_VERSION: RefCell<String> = RefCell::new("6.d".to_string());
-    /// Whether the `monitor` declarator is recognized — enabled by
-    /// `use OO::Monitors` (mutsu provides the monitor semantics natively).
-    static MONITOR_DECL_ENABLED: RefCell<bool> = const { RefCell::new(false) };
     /// Declarator keywords registered by a `use`d module's EXPORTHOW::DECLARE
     /// (`my package EXPORTHOW { package DECLARE { constant kw = SomeHOW } }`):
     /// keyword → HOW type name. Unit-scoped: cleared on parser reset and
-    /// saved/restored around nested module scans (same discipline as
-    /// MONITOR_DECL_ENABLED).
+    /// saved/restored around nested module scans.
     static DECLARE_KEYWORDS: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
     /// Language version the EVAL'd unit starts at, instead of the 6.d default.
     /// EVAL inherits the caller's language revision in rakudo (`use v6.e.PREVIEW;

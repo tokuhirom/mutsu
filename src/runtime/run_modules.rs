@@ -250,6 +250,17 @@ impl Interpreter {
     /// dev build), or `modules/` beside the binary. Each dist's `lib/` directory
     /// that exists is returned; a missing bundle yields an empty list (the
     /// interpreter simply has no bundled batteries).
+    /// The parser's module-scan search paths: the runtime `lib_paths` followed
+    /// by the bundled-battery paths, in the same precedence order the runtime
+    /// resolves modules. The parse-time scan must see bundled modules too — a
+    /// battery like OO::Monitors registers its EXPORTHOW::DECLARE declarator
+    /// keyword during the scan of `use OO::Monitors`.
+    pub(crate) fn parser_scan_lib_paths(&self) -> Vec<String> {
+        let mut paths = self.lib_paths.clone();
+        paths.extend(self.bundled_lib_paths.iter().cloned());
+        paths
+    }
+
     pub(crate) fn resolve_bundled_lib_paths() -> Vec<String> {
         use std::path::PathBuf;
         let base: Option<PathBuf> = if let Ok(dir) = std::env::var("MUTSU_BUNDLE_DIR") {
@@ -440,7 +451,7 @@ impl Interpreter {
         }
 
         let preprocessed = Self::maybe_preprocess_roast_directives(&code);
-        crate::parser::set_parser_lib_paths(self.lib_paths.clone());
+        crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
         crate::parser::set_parser_program_path(self.program_path.clone());
         let result = parse_dispatch::parse_compilation_unit(&preprocessed);
         crate::parser::clear_parser_lib_paths();

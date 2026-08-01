@@ -209,7 +209,7 @@ impl Interpreter {
             .unwrap_or_else(|| "<unknown>".to_string());
         self.env.insert("?FILE".to_string(), Value::str(file_name));
         self.cur_source_line = 1;
-        crate::parser::set_parser_lib_paths(self.lib_paths.clone());
+        crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
         crate::parser::set_parser_program_path(self.program_path.clone());
         let parse_result = crate::parse_dispatch::parse_compilation_unit(&preprocessed);
         crate::parser::clear_parser_lib_paths();

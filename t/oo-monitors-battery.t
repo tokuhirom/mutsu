@@ -1,10 +1,12 @@
 use Test;
 
-# OO::Monitors is provided NATIVELY (BATTERIES.md §7,
-# docs/batteries/oo-monitors.md): `use OO::Monitors` enables the `monitor`
-# declarator, and a monitor's instance-method calls serialize on a
-# per-instance reentrant lock. The exhaustive check is the release-time gate
-# running the full upstream suite (scripts/battery-testsuite.sh).
+# OO::Monitors runs VERBATIM as a bundled battery (modules/OO-Monitors):
+# its EXPORTHOW::DECLARE block registers the `monitor` declarator, and its
+# MetamodelX::MonitorHOW drives registration through the HOW protocol
+# (new_type/add_method/compose), wrapping every method to serialize on a
+# per-instance reentrant lock. This file pins the observable behavior; the
+# exhaustive check is the release-time gate running the full upstream suite
+# (scripts/battery-testsuite.sh).
 
 plan 6;
 
