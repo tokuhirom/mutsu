@@ -3,7 +3,13 @@ use super::*;
 impl Interpreter {
     pub(super) fn collect_pod_blocks(&mut self, input: &str) -> Result<(), RuntimeError> {
         Self::clear_pod_config_error();
-        let lines: Vec<&str> = input.lines().collect();
+        let raw_lines: Vec<&str> = input.lines().collect();
+        let in_heredoc = Self::heredoc_body_lines(&raw_lines);
+        let lines: Vec<&str> = raw_lines
+            .iter()
+            .zip(&in_heredoc)
+            .map(|(line, masked)| if *masked { "" } else { *line })
+            .collect();
         let mut entries = Vec::new();
         let mut idx = 0usize;
         while idx < lines.len() {

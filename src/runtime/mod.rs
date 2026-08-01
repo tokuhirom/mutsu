@@ -203,6 +203,7 @@ mod io_pod;
 mod io_pod_blocks;
 mod io_pod_config;
 mod io_pod_entries;
+mod io_pod_heredoc;
 mod io_pod_table;
 mod io_sysinfo;
 mod io_sysinfo_vm_config;

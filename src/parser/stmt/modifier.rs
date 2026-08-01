@@ -199,6 +199,13 @@ fn second_modifier_allowed(first: &str, next: &str) -> bool {
 fn expr_ends_with_block(expr: &Expr) -> bool {
     match expr {
         Expr::Try { .. } | Expr::Gather(_) | Expr::DoBlock { .. } | Expr::DoStmt(_) => true,
+        // A bare closure literal is itself block-final: `my &f = sub ($x) { $x }`
+        // / `my &f = -> $x { $x }` ends the statement's text with the closure's
+        // `}`, exactly like `my @a = gather { ... }` below. Without this, the
+        // next line's `if`/`for` is swallowed as a postfix modifier and its
+        // `{ ... }` becomes a bare block that runs unconditionally (rakudo's
+        // `Pod::To::Text` opens with precisely this shape).
+        Expr::AnonSub { .. } | Expr::AnonSubParams { .. } | Expr::Lambda { .. } => true,
         Expr::MethodCall { args, .. }
         | Expr::HyperMethodCall { args, .. }
         | Expr::DynamicMethodCall { args, .. }
