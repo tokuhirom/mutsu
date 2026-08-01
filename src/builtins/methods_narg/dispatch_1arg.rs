@@ -762,6 +762,22 @@ pub(crate) fn native_method_1arg(
                         .join(&sep);
                     Some(Ok(Value::str(joined)))
                 }
+                // Match.join joins the POSITIONAL CAPTURES (`.list`), not the
+                // matched string: `($s ~~ /(..)(..)/).join("-")` is "ab-cd",
+                // and a captureless match joins to "" (its .list is empty).
+                ValueView::Instance { class_name, .. } if class_name == "Match" => {
+                    let sep = arg.to_string_value();
+                    let items: Vec<Value> = target
+                        .match_list()
+                        .and_then(|v| v.as_list_items().map(|i| i.to_vec()))
+                        .unwrap_or_default();
+                    let joined = items
+                        .iter()
+                        .map(|v| v.to_str_context())
+                        .collect::<Vec<_>>()
+                        .join(&sep);
+                    Some(Ok(Value::str(joined)))
+                }
                 ValueView::Pair(k, v) => {
                     let sep = arg.to_string_value();
                     Some(Ok(Value::str(format!(

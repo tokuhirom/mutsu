@@ -425,6 +425,77 @@ impl Interpreter {
                 }
             }
 
+            // -- low-level file handles --
+            // nqp::open($path, $mode) -> byte-oriented handle. Mode letters
+            // follow MoarVM: 'r' read, 'w' write (create+truncate), 'wa'
+            // append (create), 'x' exclusive create. Always binary; nqp
+            // string reads go through explicit decode ops, not the handle.
+            // Driver: Crypt::Random reads /dev/urandom this way.
+            "open" => {
+                let path = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                let mode = args
+                    .get(1)
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_else(|| "r".to_string());
+                let (read, write, append, create, exclusive) = match mode.as_str() {
+                    "r" => (true, false, false, false, false),
+                    "w" => (false, true, false, true, false),
+                    "wa" => (false, true, true, true, false),
+                    "x" => (false, true, false, true, true),
+                    other => {
+                        return Some(Err(RuntimeError::new(format!(
+                            "nqp::open: unknown mode '{other}'"
+                        ))));
+                    }
+                };
+                let path_buf = self.resolve_path(&path);
+                self.open_file_handle(
+                    &path_buf,
+                    read,
+                    write,
+                    append,
+                    true,
+                    false,
+                    Vec::new(),
+                    None,
+                    None,
+                    None,
+                    create,
+                    exclusive,
+                )
+            }
+            // nqp::readfh($fh, $buf, $count) — read up to $count bytes,
+            // REPLACING the buffer's contents (MoarVM semantics), and return
+            // the buffer. A short read (EOF) is not an error.
+            "readfh" => {
+                let fh = args.first().cloned().unwrap_or(Value::NIL);
+                let buf = args.get(1).cloned().unwrap_or(Value::NIL);
+                let count = iarg(args, 2).max(0) as usize;
+                let bytes = match self.read_bytes_from_handle_value(&fh, count) {
+                    Ok(b) => b,
+                    Err(e) => return Some(Err(e)),
+                };
+                let r = buf_bytes_mutate(op, &buf, |dst| {
+                    *dst = bytes;
+                    Ok(())
+                });
+                match r {
+                    Ok(()) => Ok(buf),
+                    Err(e) => Err(e),
+                }
+            }
+            // nqp::closefh($fh) — close and return the handle.
+            "closefh" => {
+                let fh = args.first().cloned().unwrap_or(Value::NIL);
+                match self.close_handle_value(&fh) {
+                    Ok(_) => Ok(fh),
+                    Err(e) => Err(e),
+                }
+            }
+
             _ => return None,
         })
     }
