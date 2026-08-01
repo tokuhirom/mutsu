@@ -238,6 +238,23 @@ pub(crate) fn additive_expr(input: &str) -> PResult<'_, Expr> {
 /// while `-1 * -1 . abs` parses as `-1 * ((-1).abs)` (ws-dot tighter than *).
 fn prefix_expr_with_ws_dot(input: &str) -> PResult<'_, Expr> {
     let (rest, expr) = prefix_expr(input)?;
+    // Raku's line-ending-block rule: an expression whose consumed text ends
+    // with `}` at end of line terminates the statement, so a `.method` on the
+    // NEXT line is a new (topic) statement, not a chained call
+    // (`supply { ... }\n.append-header(...)` inside a `given` — Cro's
+    // serializer tests; a `}`-final hash composer behaves the same in rakudo).
+    let (brace_final, newline_inside) = crate::parser::expr::postfix::consumed_span(input, rest)
+        .map_or(
+            (false, false),
+            crate::parser::expr::postfix::brace_newline_state,
+        );
+    if brace_final {
+        let (after_ws, _) = ws(rest)?;
+        let crossed_newline = newline_inside || rest[..rest.len() - after_ws.len()].contains('\n');
+        if crossed_newline && after_ws.starts_with('.') && !after_ws.starts_with("..") {
+            return Ok((rest, expr));
+        }
+    }
     postfix_expr_continue(rest, expr)
 }
 

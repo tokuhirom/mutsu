@@ -862,6 +862,10 @@ impl Interpreter {
                         match self.call_sub_value(tap_cb.clone(), vec![v.clone()], true) {
                             Ok(_) => {}
                             Err(err) if err.is_react_done() || err.is_last() => break,
+                            // `next` inside a whenever body (this tap callback is
+                            // the body when a chained on-demand supply drives it)
+                            // skips the rest of the body for THIS value only.
+                            Err(err) if err.is_next() => {}
                             Err(err) => return Err(err),
                         }
                     }

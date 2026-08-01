@@ -84,6 +84,13 @@ impl Interpreter {
                                     if err.is_return() || err.return_value.is_some() {
                                         return Err(err);
                                     }
+                                    // `next` inside a whenever body skips the rest
+                                    // of the body for THIS value (Rakudo maps it to
+                                    // a control exception the supply machinery
+                                    // absorbs) — it is not a supply failure.
+                                    if err.is_next() {
+                                        continue;
+                                    }
                                     // Route errors from tap callbacks to the
                                     // supplier's quit handlers (e.g. die inside
                                     // a whenever body in a supply block).
@@ -535,6 +542,13 @@ impl Interpreter {
                                     // consumes it — it is not a supply failure.
                                     if err.is_return() || err.return_value.is_some() {
                                         return Err(err);
+                                    }
+                                    // `next` inside a whenever body skips the rest
+                                    // of the body for THIS value (Rakudo maps it to
+                                    // a control exception the supply machinery
+                                    // absorbs) — it is not a supply failure.
+                                    if err.is_next() {
+                                        continue;
                                     }
                                     // Route errors from tap callbacks to the
                                     // supplier's quit handlers.
