@@ -262,13 +262,25 @@ impl Compiler {
             self.code.emit(OpCode::ExistsIndexAdv(flags));
         }
 
-        if delete
-            && let Expr::Index {
+        // The delete half of `:exists:delete` / `:delete:exists`. A zen slice
+        // names every element, so it deletes the same set the whatever slice
+        // `@a[*]:delete` does — the two only differ in how they were written.
+        // (`@a[]:delete` alone never reaches here: the subscript parser rewrites
+        // a zen slice carrying a *non*-`:exists` adverb into a Whatever index.)
+        let whatever_index;
+        let delete_parts = match target {
+            Expr::Index {
                 target: delete_target,
                 index: delete_index,
                 ..
-            } = target
-        {
+            } => Some((delete_target.as_ref(), delete_index.as_ref())),
+            Expr::ZenSlice(inner) => {
+                whatever_index = Expr::Literal(Value::WHATEVER);
+                Some((inner.as_ref(), &whatever_index))
+            }
+            _ => None,
+        };
+        if delete && let Some((delete_target, delete_index)) = delete_parts {
             if let Some(var_name) = Self::postfix_index_name(delete_target) {
                 if Self::index_assign_target_requires_eval(delete_target) {
                     self.compile_expr(delete_target);
