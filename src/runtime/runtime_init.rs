@@ -1733,6 +1733,10 @@ impl Interpreter {
         // X::Bind
         register_x("X::Bind", "Exception");
         register_x("X::Bind::NativeType", "X::Bind");
+        // Despite the name, `X::Bind::Slice` does not inherit `X::Bind` in
+        // rakudo — its only parent is `Exception` (`.^parents(:local)`), and
+        // `X::Bind::Slice ~~ X::Bind` is False there.
+        register_x("X::Bind::Slice", "Exception");
 
         // X::StubCode
         register_x("X::StubCode", "Exception");

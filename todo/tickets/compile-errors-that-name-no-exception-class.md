@@ -17,8 +17,8 @@ $ mutsu -e 'try { EVAL q{sub f() returns { }} }; say $!.^name'
 
 | file | first failing assertion | class raku raises |
 | --- | --- | --- |
-| `t/bind-to-whatever-index.t` | binding `[*-1]` of an empty array | `X::Bind::Slice` |
-| `t/indexed-bind-in-expression.t` | a Whatever-index bind | `X::Bind::Slice` |
+| ~~`t/bind-to-whatever-index.t`~~ | ~~binding `[*-1]` of an empty array~~ | **done** — `news/2026-08/bind-slice-is-a-real-exception-class.md` |
+| ~~`t/indexed-bind-in-expression.t`~~ | ~~a Whatever-index bind~~ | **done** — same |
 | `t/return-constraint-malformed.t` | a malformed return constraint | `X::Syntax::Malformed` |
 | `t/name-null.t` | a type name with a null component | `X::Syntax::Name::Null` |
 | `t/radix-literals.t` | no numerals in an octal literal | `X::Syntax::Confused` |
