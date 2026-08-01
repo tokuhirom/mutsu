@@ -177,6 +177,15 @@ impl Interpreter {
         // back through the cell (so every alias observes the delete) and restore
         // the cell in env and the local slot.
         let var_name = Self::const_str(code, name_idx).to_string();
+        // Dual store: a scalar-held container (`my $h = {...}; $h<a>:delete`)
+        // keeps its container in the local slot and leaves the env mirror at the
+        // `my`-declaration seed (a type object). Every step below resolves the
+        // container out of env by name, so without this the op reads `Any`,
+        // deletes nothing, and — worse — the closing env-to-slot sync writes that
+        // `Any` over the variable, destroying the container. Seed env from the
+        // authoritative slot first, as the sibling element-assignment handler
+        // does.
+        self.seed_env_from_scalar_slot(code, slot, &var_name);
         // A lazy `@`-array reifies its prefix before an element delete
         // (`@a[i]:delete`) — delete needs a materialized backing. (L2)
         self.reify_lazy_array_slot(&var_name)?;
