@@ -520,6 +520,35 @@ pub(in crate::runtime) fn bind_named_rename_sub_signature(
         if bind_name.is_empty() {
             continue;
         }
+        // An UNSUPPLIED renamed named param arrives here with the outer
+        // param's default (a type object — the outer alias name has no
+        // sigil, so `missing_optional_param_value` cannot see the leaf's).
+        // A sigiled leaf must instead bind its sigil's empty container,
+        // exactly like a plain `:%tls`: `:ssl(:tls(%tls-in))` unsupplied
+        // binds `%tls-in = {}` (Cro::HTTP::Server.new), not an Associative
+        // type error.
+        if matches!(value.view(), ValueView::Package(_)) {
+            if bind_name.starts_with('%') {
+                let empty = Value::hash(std::collections::HashMap::new());
+                if let Some(nested) = &sub_pd.sub_signature {
+                    bind_named_rename_sub_signature(interpreter, nested, &empty)?;
+                } else {
+                    interpreter.bind_param_value(bind_name, empty);
+                    interpreter.set_var_type_constraint(bind_name, sub_pd.type_constraint.clone());
+                }
+                continue;
+            }
+            if bind_name.starts_with('@') {
+                let empty = Value::real_array(Vec::new());
+                if let Some(nested) = &sub_pd.sub_signature {
+                    bind_named_rename_sub_signature(interpreter, nested, &empty)?;
+                } else {
+                    interpreter.bind_param_value(bind_name, empty);
+                    interpreter.set_var_type_constraint(bind_name, sub_pd.type_constraint.clone());
+                }
+                continue;
+            }
+        }
         if let Some(tc) = &sub_pd.type_constraint
             && !interpreter.type_matches_value(tc, value)
         {

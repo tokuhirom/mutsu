@@ -272,11 +272,21 @@ impl Interpreter {
                 // A `:color(:$colour)` alias chain also declares its inner
                 // variable(s); when the param is unsupplied they must still be
                 // in scope (undefined), else the body's `$colour` read throws.
+                // A sigiled leaf (`:ssl(:tls(%tls-in))`) binds its sigil's
+                // empty container instead of the outer type-object seed,
+                // exactly like a plain `:%tls` (Cro::HTTP::Server.new).
                 for (alias_name, alias_slot) in &npb.alias_binds {
+                    let alias_seed = if alias_name.starts_with('%') {
+                        Value::hash(std::collections::HashMap::new())
+                    } else if alias_name.starts_with('@') {
+                        Value::real_array(Vec::new())
+                    } else {
+                        seed.clone()
+                    };
                     if let Some(slot) = alias_slot {
-                        self.locals[*slot] = seed.clone();
+                        self.locals[*slot] = alias_seed.clone();
                     }
-                    self.env_mut().insert(alias_name.clone(), seed.clone());
+                    self.env_mut().insert(alias_name.clone(), alias_seed);
                 }
                 bind_value!(npb.slot, true, seed);
                 continue;
