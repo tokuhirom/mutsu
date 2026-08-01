@@ -49,6 +49,26 @@ fn starts_hyper_prefix_op(s: &str) -> bool {
     rest.starts_with('\u{00AB}') || rest.starts_with("<<")
 }
 
+/// A boolean prefix (`!` or `?`) directly followed by a term-starting
+/// sigil/paren/literal is an unambiguous argument start, so
+/// `proclaim !($got ~~ $rx), $desc` parses as a call even when `proclaim` is
+/// declared further down the file (a *forward*-declared sub does not satisfy
+/// `is_user_sub` at this point, so it falls through to this term-start gate).
+///
+/// Nothing else can appear here: every Raku infix that begins with `!` or `?`
+/// continues with an operator character (`!=`, `!==`, `!~~`, `!=:=`, `??`,
+/// `?|`, `?&`, `?^`), and the negation metaoperator forms (`!eq`, `!eqv`,
+/// `!before`) continue with a letter. Requiring the very next byte to be a
+/// sigil, an opening paren, a quote or a digit excludes all of them.
+fn starts_bool_prefix_arg(s: &str) -> bool {
+    let Some(rest) = s.strip_prefix(['!', '?']) else {
+        return false;
+    };
+    rest.as_bytes().first().is_some_and(|b| {
+        matches!(b, b'(' | b'$' | b'@' | b'%' | b'&' | b'\'' | b'"') || b.is_ascii_digit()
+    })
+}
+
 /// A slip prefix (`|`) directly followed by a term-starting sigil/paren is an
 /// unambiguous argument start, so `unique |$x` / `min |@a` parse as a call with
 /// a flattened argument rather than reading `|` as the infix any-junction. The
@@ -1675,6 +1695,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // (A bare `+`/`-` is left out on purpose: `pi - 1` must stay a
             // subtraction, which needs term-vs-listop knowledge we lack here.)
             || starts_hyper_prefix_op(r)
+            || starts_bool_prefix_arg(r)
             || starts_slip_prefix_arg(r)
             || starts_with_term_keyword(r)
             // A quote construct (`q:to/END/`, `qw<>`, `Q/…/`, …) starts a term,
