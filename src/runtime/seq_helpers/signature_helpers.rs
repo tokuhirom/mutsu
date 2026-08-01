@@ -176,6 +176,16 @@ impl Interpreter {
         candidate: &Value,
         param: &SigParam,
     ) -> bool {
+        // A literal parameter (`:('greet', $name)`) constrains the VALUE, not just
+        // the type the parser inferred from it. Dispatch already honours this; the
+        // reflected signature has to as well, or `\('other', 'x') ~~ :('greet', $n)`
+        // is True because both are `Str` (Cro's route matcher does exactly this
+        // check through `$handler.signature.ACCEPTS($cap)`).
+        if let Some(literal) = &param.literal_value
+            && candidate != literal
+        {
+            return false;
+        }
         if let Some(constraint) = &param.type_constraint
             && !self.type_matches_value(constraint, candidate)
         {

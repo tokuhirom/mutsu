@@ -29,13 +29,33 @@ route {
 and the serializer are all fine — the failure is specific to a route that binds
 segments.
 
-Likely the same `compile-route` machinery as the fixed bug, one layer further
-in: for a route with positional parameters the generated matcher's `$form-cap`
-block builds `Capture.new(:list(@segs[...]), :hash(%unpacks))` from `@segs`, and
-`$bind-check` may add a `<?{ … $han.signature.ACCEPTS($cap) … }>` assertion. So
-the suspects are the `:my @segs` array lexical inside the matcher (the fix
-landed for scalars — check that an `@`-sigil `:my` survives the same paths), and
-the signature-`ACCEPTS`-on-a-Capture assertion.
+The signature-`ACCEPTS`-on-a-Capture half of this is now fixed
+(`news/2026-08/signature-accepts-literal-param.md`: `Signature.ACCEPTS` existed
+only as a smartmatch, and a reflected signature ignored its literal parameters).
+The route still does not match, and there is a **minimal standalone repro**.
+
+## Minimal repro: a `:my @a = <scalar :my>.method` loses its elements
+
+Instrumenting the router shows `$request.path ~~ $!path-matcher` returning no
+match for `/greet/world`. Reduced from the real generated matcher
+(`tmp/rxroute3.p6`), the smallest differing case is:
+
+```raku
+class Req { method path-segments() { <greet world> } }
+my $*CRO-ROUTER-REQUEST = Req.new;
+my $rx = EVAL q{regex { ^ :my $req = $*CRO-ROUTER-REQUEST;
+                        :my @segs = $req.path-segments;
+                        [ '/' 'greet' '/' <-[/]>+: { make @segs.elems } | <!> ] $ }};
+say ("/greet/world" ~~ $rx).ast;   # Rakudo: 2    mutsu: 1
+```
+
+so `Capture.new(:list(@segs), …)` gets one element instead of two, the bind
+check rejects the route, and no handler runs. Each ingredient works on its own —
+an array `:my` from a plain array or a sub call is fine, a two-declarator chain
+(`:my $r = …; :my @s = $r.segs;`) is fine outside a group, and a `make` block
+reading an array `:my` is fine — so the trigger is the combination with the
+`[ … | <!> ]` alternation group (which re-seeds the in-regex lexicals for its
+sub-pattern via `InlineVarsSeed`). Start there.
 
 ## Repro
 
