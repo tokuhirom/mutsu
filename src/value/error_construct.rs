@@ -176,11 +176,31 @@ impl RuntimeError {
         well_formed.then_some((name, text))
     }
 
+    /// The class to fall back on when the error carries neither a structured
+    /// exception nor the `"X::Type: text"` message convention.
+    ///
+    /// A bare `die "msg"` produces `X::AdHoc` in Raku, so that is the default.
+    /// But an error the parser raised is a *syntax* error, and Raku's catch-all
+    /// for one it cannot describe more precisely is `X::Syntax::Confused` —
+    /// which is also what mutsu's own message says ("Confused. parse error at
+    /// ..."). The decision reads the structured `code` rather than the message
+    /// text, so it does not depend on that wording. Sites that raise a more
+    /// specific compile-time class (`X::Undeclared::Symbols`,
+    /// `X::Comp::WheneverOutOfScope`, ...) already attach a structured
+    /// exception and never reach here.
+    ///
+    /// Both classes IS-A `Exception`, so `isa-ok $!, Exception` still matches.
+    fn untyped_exception_class(&self) -> &'static str {
+        match self.code() {
+            Some(code) if code.is_parse() => "X::Syntax::Confused",
+            _ => "X::AdHoc",
+        }
+    }
+
     /// The exception object this error presents to `CATCH` / `$!` /
     /// `throws-like`. Prefers a structured exception the error already carries,
-    /// then the `"X::Type: text"` message convention, and finally `X::AdHoc` —
-    /// the class a bare `die "msg"` produces in Raku. `X::AdHoc` IS-A
-    /// `Exception`, so `isa-ok $!, Exception` still matches an untyped error.
+    /// then the `"X::Type: text"` message convention, and finally the untyped
+    /// fallback class above.
     pub(crate) fn exception_value(&self) -> Value {
         self.exception_value_with_backtrace(None)
     }
@@ -193,7 +213,7 @@ impl RuntimeError {
             return (**ex).clone();
         }
         let (class_name, text) = Self::split_typed_message_convention(&self.message)
-            .unwrap_or(("X::AdHoc", self.message.as_str()));
+            .unwrap_or((self.untyped_exception_class(), self.message.as_str()));
         let mut attrs = HashMap::new();
         attrs.insert("message".to_string(), Value::str_from(text));
         if let Some(line) = self.line() {

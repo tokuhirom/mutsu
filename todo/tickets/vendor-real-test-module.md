@@ -194,9 +194,25 @@ them. The other 9 are errors whose message names no class at all (`Confused.
 parse error at …` where raku raises `X::Syntax::Malformed` /
 `X::Bind::Slice` / …) — worth its own pass.
 
-So what stands between here and flipping `runtime_module.rs` is that residue
-plus a pass over the lenient-`is` test files. Re-run `tmp/sweep-full.sh` to
-re-measure after each.
+### The exception-class residue is closed (2026-08-01)
+
+That pass is done. The 9 split into three unrelated causes and all but one are
+fixed:
+
+| cause | files | fix |
+| --- | --- | --- |
+| `X::Bind::Slice` was never registered, so its own `.new` did not exist | 2 | `news/2026-08/bind-slice-is-a-real-exception-class.md` |
+| a parse failure had no class at all — the parser's generic `Confused. parse error at …` | 5 | `news/2026-08/parse-failures-carry-a-syntax-exception-class.md` |
+| `use fatal` inside a *string-form* `throws-like` never throws | 1 | open: `todo/tickets/use-fatal-lost-in-a-string-form-throws-like.md` |
+
+The one file left over (`t/block-lexical-scope.t`) is not an exception-classing
+bug at all: it wants `X::Undeclared::Symbols ~~ X::Undeclared`, i.e. the
+unregistered-hierarchy problem of
+`todo/deep/exception-class-hierarchy-is-mostly-unregistered.md`.
+
+So what stands between here and flipping `runtime_module.rs` is those two open
+records plus a pass over the lenient-`is` test files. Re-run `tmp/sweep-full.sh`
+to re-measure after each.
 
 ## Blocker found while doing step 1: the native provider shadows an import — FIXED
 

@@ -259,12 +259,24 @@ pub(super) fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, St
         // not consumed by `var_name`, so check the post-sigil text directly.
         if sigil == b'$' {
             let after = &rest[1..];
-            // `my $0`, `my $123` — numeric variables cannot be declared.
-            if after.starts_with(|c: char| c.is_ascii_digit()) {
+            // `my $0`, `my $123` — numeric variables cannot be declared. The
+            // rule is about the digit *property*, not about ASCII: `my $১০kinds`
+            // opens with Bengali digits and Raku rejects it the same way.
+            if after.starts_with(|c: char| c.is_numeric()) {
                 return Err(illegal_my_var_error(
                     "X::Syntax::Variable::Numeric",
                     "Cannot declare a numeric variable",
                     &[],
+                ));
+            }
+            // `my $<combining mark>a` — an identifier may not open with a
+            // combining mark, and Raku reports the declarator itself as
+            // malformed rather than blaming the character.
+            if after.starts_with(unicode_normalization::char::is_combining_mark) {
+                return Err(illegal_my_var_error(
+                    "X::Syntax::Malformed",
+                    &format!("Malformed {}", scope_name),
+                    &[("what", scope_name)],
                 ));
             }
             // `my $<a>` — match variables cannot be declared.

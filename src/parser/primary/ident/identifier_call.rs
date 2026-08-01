@@ -1117,6 +1117,13 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         let mut r = rest;
         while r.starts_with("::") {
             let after = &r[2..];
+            // `Foo::::Bar` — an empty component between `::` separators is a
+            // null name component. The sigilled forms (`$a::::b`) are rejected
+            // by `qualified_ident`; a bareword type name reaches here instead,
+            // and used to fall through to the generic "identifier after '::'".
+            if after.starts_with("::") {
+                return Err(crate::parser::stmt::name_null_error_pub());
+            }
             if let Some(after_brace) = after.strip_prefix('{') {
                 let (r2, _) = ws(after_brace)?;
                 let (r2, key_expr) = expression(r2)?;

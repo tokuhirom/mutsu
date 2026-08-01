@@ -80,7 +80,7 @@ pub(crate) fn parse_raku_ident<'a>(input: &'a str) -> PResult<'a, &'a str> {
 /// Parse a qualified identifier (Foo::Bar::Baz).
 /// `X::Syntax::Name::Null` — a qualified name with an empty component, e.g.
 /// `Foo::::Bar` or `$a::::b`.
-fn name_null_error() -> PError {
+pub(super) fn name_null_error() -> PError {
     let msg = "Name component may not be null".to_string();
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("message".to_string(), crate::value::Value::str(msg.clone()));

@@ -72,6 +72,12 @@ pub(crate) fn constant_decl_pub(input: &str) -> PResult<'_, Stmt> {
     decl::constant_decl(input)
 }
 
+/// Public accessor for the null-name-component error (used by the bareword
+/// type-name parser in `primary/ident`, which qualifies names of its own).
+pub(crate) fn name_null_error_pub() -> super::PError {
+    idents::name_null_error()
+}
+
 /// Public accessor for statement (used by primary.rs for do-statement expressions).
 pub(crate) fn statement_pub(input: &str) -> PResult<'_, Stmt> {
     statement(input)
