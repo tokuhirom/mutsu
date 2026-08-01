@@ -82,10 +82,17 @@ of diffs at once. Sequence it deliberately:
 
 Do not start this in the same PR as anything else.
 
-## Blocker found while doing step 1: the native provider shadows an import
+## Blocker found while doing step 1: the native provider shadows an import — FIXED
 
-Step 2's "exercise it under a temporary alias" does not work yet, and the
-reason is a general bug rather than anything about `Test`. `exec_call`
+**Resolved** (`news/2026-08/imported-test-routines-beat-the-native-provider.md`,
+pin `t/test-fn-import-shadow.t`): an imported routine now beats the native
+provider for the `Test` module's own export list, so step 2's temporary alias
+runs its own routines. The `Test::Util` / `Test::Tap` half of the same rule is
+deferred to `todo/tickets/retire-native-test-util-overrides.md`, which does not
+block this ticket. Kept below because the symptom is so easy to misread.
+
+Step 2's "exercise it under a temporary alias" did not work, and the
+reason was a general bug rather than anything about `Test`. `exec_call`
 (`src/runtime/calls.rs:301`) dispatches every name in
 `is_test_function_name()` to `call_test_function` **before** user-routine
 resolution and **without any gate at all** — not even the
@@ -106,12 +113,11 @@ stale module lexical and costs an hour to misdiagnose — the tell is that the
 module's own `proclaim` is entered only once. `like`/`unlike` are not affected
 only because their argument shapes make the native handler decline.
 
-The fix is the rule from
+The fix was the rule from
 `news/2026-07/qualified-call-no-longer-aliases-a-builtin.md`: decide on
-*whether a declaration exists*, not on whether the name is a builtin. A
-user-declared or imported routine must win over the native provider. Do this
-before step 2 — with `use Test` intercepted natively there is no declaration to
-compete with, so the guard cannot regress the ordinary path.
+*whether a declaration exists*, not on whether the name is a builtin. With
+`use Test` intercepted natively there is no declaration to compete with, so the
+guard cannot regress the ordinary path.
 
 ## Reproducing the measurement in one minute
 
