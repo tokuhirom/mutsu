@@ -536,6 +536,13 @@ impl Interpreter {
             }
         }
 
+        // Make class-body `my` statics visible to every read path in the body.
+        // Injected BEFORE parameter binding so a parameter of the same name still
+        // wins (it simply overwrites), while an unrelated CALLER lexical that
+        // happens to share the name does not: the statics are the class's own
+        // lexicals and the method body is inside their scope.
+        self.inject_class_body_statics(owner_class);
+
         // Bind method parameters
         let rw_bindings = match loan_env!(
             self,
@@ -554,10 +561,6 @@ impl Interpreter {
         };
 
         // Initialize locals from env
-        // Make class-body `my` statics visible to every read path in the body
-        // (params/self inserted above take precedence). No-op unless the owner
-        // class declared statics.
-        self.inject_class_body_statics(owner_class);
         self.locals = vec![Value::NIL; cc.locals.len()];
         for (i, local_name) in cc.locals.iter().enumerate() {
             if let Some(val) = self.env().get(local_name) {
@@ -1220,6 +1223,11 @@ impl Interpreter {
         // GetGlobal in non-compiled paths). Skip self, params, attrs, and other
         // method-local vars since all reads go through GetLocal.
         let skip_env_setup = can_skip_merge && cc.closure_compiled_codes.is_empty();
+        // Make class-body `my` statics visible to every read path in the body.
+        // Injected BEFORE `self`/params are inserted so those still win, while an
+        // unrelated CALLER lexical sharing the name does not — the statics are the
+        // class's own lexicals and the method body is inside their scope.
+        self.inject_class_body_statics(owner_class);
         if skip_env_setup {
             let env = self.env_mut();
             env.insert("self".to_string(), base.clone());
@@ -1292,11 +1300,6 @@ impl Interpreter {
         if let Some(slurpy) = &implicit_named_slurpy {
             self.env_mut().insert("%_".to_string(), slurpy.clone());
         }
-
-        // Make class-body `my` statics visible to every read path in the body
-        // (params/self already inserted above take precedence). No-op unless the
-        // owner class declared statics.
-        self.inject_class_body_statics(owner_class);
 
         // A method installed via `.^add_method` with a closure literal
         // (`method { $captured }`) carries the frozen creating-scope env so its
