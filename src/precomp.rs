@@ -59,8 +59,16 @@ use crate::ast::Stmt;
 use std::collections::hash_map::DefaultHasher;
 use std::fs;
 use std::hash::{Hash, Hasher};
+use std::io;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
+
+#[cfg(test)]
+thread_local! {
+    static TEST_CACHE_DIR: std::cell::RefCell<Option<PathBuf>> = const {
+        std::cell::RefCell::new(None)
+    };
+}
 
 /// Magic bytes for the cache format. Bump the trailing byte whenever the
 /// on-disk encoding changes so stale caches are cleanly rejected by the magic
@@ -140,20 +148,34 @@ fn path_hash(path: &Path) -> String {
 }
 
 /// Get the cache directory, creating it if needed.
-/// Returns None if the cache directory cannot be determined or created.
-fn cache_dir() -> Option<PathBuf> {
+/// Returns an error if the cache directory cannot be determined or created.
+fn cache_dir() -> io::Result<PathBuf> {
+    #[cfg(test)]
+    if let Some(dir) = TEST_CACHE_DIR.with(|cell| cell.borrow().clone()) {
+        fs::create_dir_all(&dir)?;
+        return Ok(dir);
+    }
+
     let base = if let Ok(xdg) = std::env::var("XDG_CACHE_HOME") {
         PathBuf::from(xdg)
     } else if let Ok(home) = std::env::var("HOME") {
         PathBuf::from(home).join(".cache")
     } else {
-        return None;
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "neither XDG_CACHE_HOME nor HOME is set",
+        ));
     };
     let dir = base.join("mutsu").join("precomp");
-    if !dir.exists() {
-        fs::create_dir_all(&dir).ok()?;
+    fs::create_dir_all(&dir)?;
+    Ok(dir)
+}
+
+fn warn_cache_unavailable(err: &dyn std::fmt::Display) {
+    static WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    if WARNED.set(()).is_ok() {
+        eprintln!("Warning: precompilation cache is unavailable: {err}");
     }
-    Some(dir)
 }
 
 /// The thread-local parser state a module's parse leaves behind, which a cache
@@ -230,7 +252,7 @@ fn decode_config() -> impl bincode::config::Config {
 /// Returns `Some(unit)` if a valid cache entry exists, `None` otherwise.
 pub(crate) fn load_cached_unit(source_path: &Path, source: Option<&str>) -> Option<CachedUnit> {
     let canonical = source_path.canonicalize().ok()?;
-    let dir = cache_dir()?;
+    let dir = cache_dir().ok()?;
     let hash = path_hash(&canonical);
     let cache_file = dir.join(format!("{}.bin", hash));
 
@@ -315,8 +337,12 @@ pub(crate) fn save_cached_unit(source_path: &Path, stmts: &[Stmt], effects: &Par
     let Some(canonical) = source_path.canonicalize().ok() else {
         return;
     };
-    let Some(dir) = cache_dir() else {
-        return;
+    let dir = match cache_dir() {
+        Ok(dir) => dir,
+        Err(err) => {
+            warn_cache_unavailable(&err);
+            return;
+        }
     };
     let Some(source_mtime) = source_mtime_nanos(source_path) else {
         return;
@@ -350,19 +376,24 @@ pub(crate) fn save_cached_unit(source_path: &Path, stmts: &[Stmt], effects: &Par
 
     // Write atomically via temp file + rename.
     let tmp_file = temp_cache_path(&cache_file);
-    if fs::write(&tmp_file, &data).is_ok() {
-        if fs::rename(&tmp_file, &cache_file).is_err() {
+    match fs::write(&tmp_file, &data) {
+        Ok(()) => {
+            if let Err(err) = fs::rename(&tmp_file, &cache_file) {
+                warn_cache_unavailable(&err);
+                let _ = fs::remove_file(&tmp_file);
+            }
+        }
+        Err(err) => {
+            warn_cache_unavailable(&err);
             let _ = fs::remove_file(&tmp_file);
         }
-    } else {
-        let _ = fs::remove_file(&tmp_file);
     }
 }
 
 /// Clear all cached precompilation files.
 #[allow(dead_code)]
 pub(crate) fn clear_cache() {
-    if let Some(dir) = cache_dir() {
+    if let Ok(dir) = cache_dir() {
         let _ = fs::remove_dir_all(&dir);
     }
 }
@@ -771,6 +802,9 @@ mod tests {
             suffix
         ));
         let _ = fs::create_dir_all(&path);
+        TEST_CACHE_DIR.with(|cell| {
+            *cell.borrow_mut() = Some(path.join("cache"));
+        });
         path
     }
 }

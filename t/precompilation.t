@@ -1,6 +1,6 @@
 use Test;
 
-plan 6;
+plan 8;
 
 # Test 1: Basic module loading still works
 {
@@ -38,4 +38,21 @@ plan 6;
     my $proc = run($*EXECUTABLE, '-e', $code, :out);
     my $output = $proc.out.slurp.trim;
     is $output, 'precomp-test-output', 'execution with precomp produces correct output';
+}
+
+# A cache is an optimization, so an unavailable cache directory must not stop
+# module loading. Point XDG_CACHE_HOME at a regular file to make directory
+# creation fail deterministically, including when tests run as root.
+{
+    my $not-dir = $*TMPDIR.add("mutsu-precomp-not-dir-{$*PID}");
+    $not-dir.spurt('not a directory');
+    my %env = %*ENV;
+    %env<XDG_CACHE_HOME> = $not-dir.Str;
+    my $code = 'use lib "t/lib"; use ExportTestMod; say "cache-optional"';
+    my $proc = run($*EXECUTABLE, '-e', $code, :env(%env), :out, :err);
+    is $proc.out.slurp.trim, 'cache-optional',
+        'module loading succeeds when the precomp cache is unwritable';
+    like $proc.err.slurp, /'Warning: precompilation cache is unavailable'/,
+        'an unavailable precomp cache emits a warning';
+    unlink $not-dir;
 }
