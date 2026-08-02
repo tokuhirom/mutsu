@@ -340,6 +340,10 @@ impl Compiler {
         if !is_whatever_code {
             compiled.is_pointy_block = true;
         }
+        // `supply { … }` lowers to `Supply.on-demand(-> $__mutsu_supply_emitter_N
+        // { … })`, so the generated emitter parameter identifies the supply body.
+        // See `CompiledCode::is_supply_block_body`.
+        compiled.is_supply_block_body = param.starts_with(crate::parser::SUPPLY_EMITTER_PREFIX);
         let esc = self.escaping_position;
         let cc_idx = self.add_closure_code_baked(compiled, esc);
         let idx = self.code.add_stmt(Stmt::SubDecl {

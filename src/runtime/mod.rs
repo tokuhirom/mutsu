@@ -1088,6 +1088,15 @@ pub struct Interpreter {
     /// bound in env, seeded into `compile_block_value_opts`'s fresh compiler
     /// so its stray-placeholder checks know they are attached.
     pending_eval_placeholder_params: Vec<String>,
+    /// Set right before the interpret path evaluates the body of a `supply { … }`
+    /// block, and consumed by the very next `eval_block_value_inner` so the
+    /// freshly compiled chunk carries `CompiledCode::is_supply_block_body`.
+    ///
+    /// The compiler already marks the supply lambda's own `CompiledCode`, but
+    /// `call_sub_value` does not run that chunk — it re-compiles `data.body` from
+    /// the AST, and that copy would otherwise lose the mark. Consumed (taken) on
+    /// entry, so a nested block compiled from inside the body does not inherit it.
+    pending_supply_block_body: bool,
     /// PredictiveIterator backing a `Seq.new(iterator)`, keyed by the Seq's
     /// Arc pointer (`seq_id`). Kept off the scoped `env` so the association
     /// survives sub/block returns between Seq creation and `.tail`/`.Numeric`

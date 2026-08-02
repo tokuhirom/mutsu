@@ -2118,6 +2118,18 @@ pub(crate) struct CompiledCode {
     /// snapshots the whole env instead of just the free vars. Set during
     /// `compute_needs_env_sync`.
     pub(crate) captures_env_by_name: bool,
+    /// True if this code is the body of a `supply { … }` block — the lambda
+    /// `Supply.on-demand` is handed, recognised by its generated emitter
+    /// parameter (`__mutsu_supply_emitter_N`, see `supply_method_call`).
+    ///
+    /// Such a body is a scope of its own that the caller never re-enters, so the
+    /// names it declares with `my` are private to it: they must not be written
+    /// back to the caller on exit, and the `whenever` closures created inside it
+    /// own them (see `exec_whenever_scope_op`). A `react { … }` block is NOT one
+    /// of these — it compiles inline into the enclosing frame, so its `my`
+    /// declarations genuinely ARE that frame's lexicals and stay shared. Set
+    /// during `compute_needs_env_sync`.
+    pub(crate) is_supply_block_body: bool,
     /// Compile-time identity fingerprint for each `Stmt::SubDecl` in `stmt_pool`,
     /// keyed by its pool index. A `RegisterSub(idx)` opcode re-executes whenever
     /// its enclosing frame runs (e.g. a `my sub` inside a hot routine), but the
@@ -2278,6 +2290,7 @@ impl CompiledCode {
             may_capture_outer_vars: false,
             needs_env_sync: Vec::new(),
             dup_named_locals: Vec::new(),
+            is_supply_block_body: false,
             my_declared_sym: rustc_hash::FxHashSet::default(),
             free_var_syms: Vec::new(),
             free_var_parent_slots: Vec::new(),

@@ -288,12 +288,24 @@ impl Interpreter {
         }
     }
 
+    /// Run a `whenever` scope.
+    ///
+    /// `owned_lexicals` names the lexicals the *enclosing* block (the `supply`
+    /// or `react` body) declared with `my`. The callbacks built here capture the
+    /// live env by value and are later dispatched by whatever thread emits into
+    /// the supply — a thread whose ambient env is the main script's. Without a
+    /// vouch, the call-time merge gives that ambient env priority over the
+    /// capture (see the `merge_all` branch in `call_sub_value`), so a caller
+    /// lexical that merely shares a name with one of the block's own would
+    /// shadow it: lexical scoping degrading into dynamic scoping. Marking them
+    /// authoritative installs the captured binding with overwrite instead.
     pub(crate) fn run_whenever_with_value(
         &mut self,
         supply_val: Value,
         target_var: Option<&str>,
         param: &Option<String>,
         body: &[Stmt],
+        owned_lexicals: &[Symbol],
     ) -> Result<(), RuntimeError> {
         // If the source is a Supplier, convert it to its associated Supply
         // so that subscription registration and tap dispatch work correctly.
@@ -309,7 +321,7 @@ impl Interpreter {
         };
 
         let (main_body, last_bodies, quit_bodies) = Self::split_whenever_body_phasers(body);
-        let callback = Value::make_sub(
+        let callback = Value::make_sub_owning(
             Symbol::intern(&self.current_package()),
             Symbol::intern(""),
             param.iter().cloned().collect(),
@@ -317,11 +329,12 @@ impl Interpreter {
             main_body,
             false,
             self.env.clone(),
+            owned_lexicals.to_vec(),
         );
         let last_callbacks: Vec<Value> = last_bodies
             .into_iter()
             .map(|body| {
-                Value::make_sub(
+                Value::make_sub_owning(
                     Symbol::intern(&self.current_package()),
                     Symbol::intern(""),
                     Vec::new(),
@@ -329,13 +342,14 @@ impl Interpreter {
                     body,
                     false,
                     self.env.clone(),
+                    owned_lexicals.to_vec(),
                 )
             })
             .collect();
         let quit_callbacks: Vec<Value> = quit_bodies
             .into_iter()
             .map(|body| {
-                Value::make_sub(
+                Value::make_sub_owning(
                     Symbol::intern(&self.current_package()),
                     Symbol::intern(""),
                     vec!["_".to_string()],
@@ -343,6 +357,7 @@ impl Interpreter {
                     body,
                     false,
                     self.env.clone(),
+                    owned_lexicals.to_vec(),
                 )
             })
             .collect();

@@ -9,6 +9,12 @@ mod stmt;
 mod whenever_scope;
 use std::sync::OnceLock;
 
+/// Prefix of the emitter parameter `supply { … }` lowers to (see
+/// `primary::ident::supply::supply_method_call`). It is what identifies a
+/// supply-block body after parsing — both for the out-of-scope `whenever` check
+/// and for `CompiledCode::is_supply_block_body`.
+pub(crate) const SUPPLY_EMITTER_PREFIX: &str = "__mutsu_supply_emitter_";
+
 pub(crate) fn is_imported_function(name: &str) -> bool {
     stmt::simple::is_imported_function(name)
 }
