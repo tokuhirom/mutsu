@@ -362,6 +362,18 @@ impl Interpreter {
                 return Some(qualified);
             }
         }
+        // A method composed from a role runs with the *consuming class* on the
+        // method-class stack, but a `my class` declared in the role body is
+        // registered under the ROLE's package (`R::Foo`). Method dispatch binds
+        // `::?ROLE` to the method's originating role, so use that rather than
+        // sweeping every role the class composes — only the role the running
+        // method came from may lend its lexical types.
+        if let Some(ValueView::Package(role)) = self.env().get("?ROLE").map(|v| v.view()) {
+            let qualified = format!("{}::{}", role.resolve(), name);
+            if self.has_type(&qualified) {
+                return Some(qualified);
+            }
+        }
         // The class currently being constructed. A typed attribute's default
         // type object (`has Inner $.x` defaults to `BareWord("Inner")`) is
         // evaluated during construction with no method-class / package context,
