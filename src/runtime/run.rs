@@ -190,8 +190,181 @@ impl Interpreter {
     pub fn establish_pod_variables(&mut self, source: &str) -> Result<(), RuntimeError> {
         self.collect_doc_comments(source);
         self.collect_pod_blocks(source)?;
-        self.add_declarator_pod_entries();
+        self.add_declarator_pod_entries(None);
         Ok(())
+    }
+
+    /// Populate Pod variables while tying declarator blocks to the concrete
+    /// routine and attribute values represented by the already parsed AST.
+    pub(crate) fn establish_pod_variables_from_stmts(
+        &mut self,
+        source: &str,
+        stmts: &[Stmt],
+    ) -> Result<(), RuntimeError> {
+        let mut declarants = std::collections::HashMap::new();
+        Self::collect_pod_declarants(stmts, "GLOBAL", &mut declarants);
+        self.collect_doc_comments(source);
+        self.collect_pod_blocks(source)?;
+        self.add_declarator_pod_entries(Some(&declarants));
+        Ok(())
+    }
+
+    fn collect_pod_declarants(
+        stmts: &[Stmt],
+        package: &str,
+        out: &mut std::collections::HashMap<String, Value>,
+    ) {
+        for stmt in stmts {
+            match stmt {
+                Stmt::SubDecl {
+                    name,
+                    params,
+                    param_defs,
+                    body,
+                    is_rw,
+                    ..
+                } => {
+                    out.insert(
+                        format!("&{}", name.resolve()),
+                        Value::make_sub(
+                            crate::symbol::Symbol::intern(package),
+                            *name,
+                            params.clone(),
+                            param_defs.clone(),
+                            body.clone(),
+                            *is_rw,
+                            crate::env::Env::new(),
+                        ),
+                    );
+                }
+                Stmt::ClassDecl { name, body, .. }
+                | Stmt::RoleDecl { name, body, .. }
+                | Stmt::Package { name, body, .. } => {
+                    let declared = name.resolve();
+                    let nested = if declared.contains("::") || package == "GLOBAL" {
+                        declared
+                    } else {
+                        format!("{package}::{declared}")
+                    };
+                    Self::collect_pod_declarants(body, &nested, out);
+                }
+                Stmt::MethodDecl {
+                    name,
+                    params,
+                    param_defs,
+                    body,
+                    is_rw,
+                    is_submethod,
+                    ..
+                } => {
+                    let mut method_env = crate::env::Env::new();
+                    method_env.insert(
+                        "__mutsu_callable_type".to_string(),
+                        Value::str_from(if *is_submethod { "Submethod" } else { "Method" }),
+                    );
+                    let mut method_params = vec!["self".to_string()];
+                    method_params.extend(params.iter().filter(|p| p.as_str() != "self").cloned());
+                    if !method_params.iter().any(|p| p == "%_") {
+                        method_params.push("%_".to_string());
+                    }
+                    let mut method_param_defs = vec![crate::ast::ParamDef {
+                        name: "self".to_string(),
+                        default: None,
+                        multi_invocant: true,
+                        required: false,
+                        named: false,
+                        slurpy: false,
+                        double_slurpy: false,
+                        onearg: false,
+                        sigilless: false,
+                        type_constraint: None,
+                        literal_value: None,
+                        sub_signature: None,
+                        where_constraint: None,
+                        traits: Vec::new(),
+                        optional_marker: false,
+                        outer_sub_signature: None,
+                        code_signature: None,
+                        is_invocant: true,
+                        shape_constraints: None,
+                        block_param: false,
+                    }];
+                    method_param_defs.extend(
+                        param_defs
+                            .iter()
+                            .filter(|p| p.name.as_str() != "self")
+                            .cloned(),
+                    );
+                    if !method_param_defs.iter().any(|p| p.name == "%_") {
+                        method_param_defs.push(crate::ast::ParamDef {
+                            name: "%_".to_string(),
+                            default: None,
+                            multi_invocant: true,
+                            required: false,
+                            named: true,
+                            slurpy: true,
+                            double_slurpy: false,
+                            onearg: false,
+                            sigilless: false,
+                            type_constraint: None,
+                            literal_value: None,
+                            sub_signature: None,
+                            where_constraint: None,
+                            traits: Vec::new(),
+                            optional_marker: false,
+                            outer_sub_signature: None,
+                            code_signature: None,
+                            is_invocant: false,
+                            shape_constraints: None,
+                            block_param: false,
+                        });
+                    }
+                    out.insert(
+                        format!("{package}::{}", name.resolve()),
+                        Value::make_sub(
+                            crate::symbol::Symbol::intern(package),
+                            *name,
+                            method_params,
+                            method_param_defs,
+                            body.clone(),
+                            *is_rw,
+                            method_env,
+                        ),
+                    );
+                }
+                Stmt::HasDecl {
+                    name,
+                    sigil,
+                    type_constraint,
+                    ..
+                } => {
+                    let bare = name.resolve();
+                    let full_name = format!("{sigil}!{bare}");
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("name".to_string(), Value::str(full_name.clone()));
+                    attrs.insert("__mutsu_attr_name".to_string(), Value::str(bare));
+                    attrs.insert(
+                        "__mutsu_attr_owner".to_string(),
+                        Value::str(package.to_string()),
+                    );
+                    attrs.insert(
+                        "package".to_string(),
+                        Value::package(crate::symbol::Symbol::intern(package)),
+                    );
+                    attrs.insert(
+                        "type".to_string(),
+                        Value::package(crate::symbol::Symbol::intern(
+                            type_constraint.as_deref().unwrap_or("Mu"),
+                        )),
+                    );
+                    out.insert(
+                        format!("{package}::{full_name}"),
+                        Value::make_instance(crate::symbol::Symbol::intern("Attribute"), attrs),
+                    );
+                }
+                _ => {}
+            }
+        }
     }
 
     pub fn run(&mut self, input: &str) -> Result<String, RuntimeError> {
