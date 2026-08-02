@@ -900,6 +900,27 @@ impl Interpreter {
     /// Check if a user-defined function with the given name can accept the
     /// given args (arity + type check). Used to decide whether a user-defined
     /// sub should shadow a same-named builtin.
+    /// Whether a declaration of `name` should beat mutsu's native TAP provider
+    /// for this call. Shared by the two dispatch paths into that provider
+    /// (`exec_call` and `call_function_fallback`) so they agree.
+    ///
+    /// The rule is the one from the qualified-call guard: decide on whether a
+    /// *declaration* exists, not on whether the name is a builtin. `skip` is the
+    /// single exception, because it is both a Test directive and a Raku list
+    /// routine — a user `multi skip($n, +values)` accepts `skip 'reason', 2` on
+    /// signature alone, so the name needs the same shape-based disambiguation
+    /// the three `skip` dispatch sites already apply
+    /// (`t/skip-user-multi-shadows-test.t`).
+    pub(crate) fn user_test_decl_beats_native(&mut self, name: &str, args: &[Value]) -> bool {
+        if !crate::runtime::is_test_module_export(name) {
+            return false;
+        }
+        if name == "skip" && !Self::skip_call_is_list_skip(args) {
+            return false;
+        }
+        self.user_function_matches_call(name, args)
+    }
+
     pub(crate) fn user_function_matches_call(&mut self, name: &str, args: &[Value]) -> bool {
         if !self.has_function(name) && !self.has_multi_function(name) {
             return false;

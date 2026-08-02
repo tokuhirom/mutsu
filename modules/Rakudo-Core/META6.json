@@ -6,7 +6,8 @@
   "license": "Artistic-2.0",
   "perl": "6.d",
   "provides": {
-    "Pod::To::Text": "lib/Pod/To/Text.rakumod"
+    "Pod::To::Text": "lib/Pod/To/Text.rakumod",
+    "Test": "lib/Test.rakumod"
   },
   "depends": [],
   "source-url": "https://github.com/rakudo/rakudo.git"
