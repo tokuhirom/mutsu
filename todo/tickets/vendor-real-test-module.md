@@ -501,8 +501,15 @@ has to fix them first — see `todo/tickets/retire-native-test-tap.md`.
    and a `&`-sigil *named* parameter that never bound at all
    (`news/2026-08/named-callable-parameter-binds.md`) — which is what made
    `tap-ok`'s own `:&emit`/`:&done`/`:&after-tap` guards silently skip.
-3. `todo/tickets/retire-native-test-util-overrides.md` (worth 32 roast files on
-   top of the real `Test`; already 227/228 on its own `t`-side measurement).
+3. ~~`todo/tickets/retire-native-test-util-overrides.md` (worth 32 roast files on
+   top of the real `Test`; already 227/228 on its own `t`-side measurement).~~
+   **DONE** — `news/2026-08/retired-native-test-util-overrides.md`. All 228
+   whitelisted `use Test::Util` files pass with the guard widened. The last
+   blocker was `S03-operators/repeat.t` test 56, and it was not a `Test::Util`
+   difference: a warning raised from a plain arithmetic opcode never reached the
+   `CONTROL` handler `warns-like` installs, and a leaf closure's return path then
+   discarded the handler's writes
+   (`news/2026-08/warn-from-a-non-call-op-reaches-its-control-handler.md`).
 4. Only then step 3.
 
 Re-measure with the command at the top of this section, not with

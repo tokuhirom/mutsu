@@ -2276,6 +2276,7 @@ impl Interpreter {
             shaped_decl_context: false,
             pending_rw_writeback_sources: Vec::new(),
             pending_caller_var_writeback: Vec::new(),
+            inline_control_env_writes: 0,
             local_bind_pairs: Vec::new(),
             otf_compile_cache: HashMap::new(),
             imported_compiled_fns: HashMap::new(),

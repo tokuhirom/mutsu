@@ -498,6 +498,10 @@ impl Interpreter {
                 // raise site carries it up to the installing frame.
                 self.pending_rw_writeback_sources.push(name.clone());
                 self.record_caller_var_writeback(name);
+                // This env write happened without a call opcode, so a leaf
+                // closure between the raise site and the installing frame would
+                // otherwise drop it on return. See `inline_control_env_writes`.
+                self.inline_control_env_writes += 1;
             }
         }
 
