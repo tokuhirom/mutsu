@@ -41,26 +41,34 @@ hiding. They fall into two causes:
 
 | cause | files | shape |
 | --- | --- | --- |
-| a tap callback's `@res.push($_)` collects nothing when the emit runs on a timer/scheduler thread | `S17-supply/classify.t`, `categorize.t`, `interval.t`, `merge.t`, `reduce.t` | `# expected: [0, 1, 2, 3, 4]` / `# got: []` |
+| a tap callback's `@res.push($_)` collects nothing when the emit runs on a timer/scheduler thread — `todo/tickets/array-push-from-a-timer-thread-is-lost.md` | `S17-supply/classify.t`, `categorize.t`, `interval.t`, `merge.t`, `reduce.t` | `# expected: [0, 1, 2, 3, 4]` / `# got: []` |
 | `Supply.rotor` emits `List`s where rakudo emits `Array`s | `S17-supply/rotor.t` | `# expected: [[1, 2, 3], …]` / `# got: [(1, 2, 3), …]` |
 
-The first is very likely the same cross-thread lexical family as
-`t/subtest-threaded-pass-count.t`, whose minimal repro needs no `Test` at all:
+The first was *guessed* to be the same cross-thread lexical family as
+`t/subtest-threaded-pass-count.t` (fixed by
+`news/2026-08/a-callee-parameter-is-not-a-shared-variable.md`). **It is not** —
+re-measured with that fix in, the same 6 files fail. It is its own bug, and it
+needs no `Test`, no module and no routine:
 
 ```raku
-# lib/M.rakumod
-unit module M;
-sub inner($desc) is export { say "inner $desc" }
-sub outer(&body, $desc) is export { body(); say "outer desc=$desc" }
-```
-```raku
-use M;
-outer { my $p = Promise.new; start { $p.keep(True) };
-        await $p.then: { inner("c") } }, "OUTER";
+my @res;
+my $done;
+Supply.interval(0.1).head(3).tap({ @res.push($_) }, :done({ $done = True }));
+for ^40 { last if $done; sleep .1 }
+say "done=$done res=@res[]";
 ```
 
-`raku` prints `outer desc=OUTER`; mutsu prints `outer desc=c` — the callee's
-same-named parameter overwrites the caller's after a thread has run.
+```
+$ raku                     $ mutsu
+done=True res=0 1 2        done=True res=
+```
+
+Note what that isolates: the `:done` callback's write to the **scalar** `$done`
+crosses the timer thread correctly, and only the **array** pushes are lost. So
+this is the `@`-aggregate lane of the shared store (the `__mutsu_atomic_arr::`
+CAS copies), not the scalar lane — a different mechanism from the parameter fix
+above, and adjacent to `354cd623f` ("an array alias survives a thread having
+run") and `t/hyper-array-mutators.t`.
 
 ## Order of work
 
