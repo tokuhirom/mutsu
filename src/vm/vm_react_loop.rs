@@ -147,6 +147,12 @@ impl Interpreter {
         // Each entry is a tuple of (receiver_key, callback) stored as Values
         // We need to reconstruct the actual receivers
         let mut react_subs: Vec<ReactSubscription> = Vec::new();
+        // Lowest `supply_stream_consumers` index this react registered. The
+        // consumers stay registered for the whole event loop: an inner
+        // `whenever` of a `supply { }` source keeps firing after the body has
+        // been run once, and its `emit` reaches the outer whenever's callback
+        // only while that supply's StreamConsumer is still on the stack.
+        let mut stream_base: Option<usize> = None;
 
         for sub_val in &subscriptions {
             if let ValueView::Array(items, ..) = sub_val.view()
@@ -249,6 +255,7 @@ impl Interpreter {
                                 done: false,
                             });
                             let stream_idx = self.supply_stream_consumers.len() - 1;
+                            stream_base.get_or_insert(stream_idx);
                             let (od_res, emitted, body_ran_done) = loan_env!(
                                 self,
                                 run_on_demand_body(on_demand_cb.clone(), Some(emitter_supplier_id),)
@@ -266,7 +273,8 @@ impl Interpreter {
                             if let Err(od_err) = od_res
                                 && !od_err.is_react_done()
                             {
-                                self.supply_stream_consumers.truncate(stream_idx);
+                                self.supply_stream_consumers
+                                    .truncate(stream_base.unwrap_or(stream_idx));
                                 return Err(crate::runtime::Interpreter::wrap_react_died(od_err));
                             }
                             // If the streaming consumer signalled `done`, the
@@ -274,7 +282,8 @@ impl Interpreter {
                             // its LAST callbacks and stop (don't set up the inner
                             // subscriptions or keep polling).
                             if streamed_done {
-                                self.supply_stream_consumers.truncate(stream_idx);
+                                self.supply_stream_consumers
+                                    .truncate(stream_base.unwrap_or(stream_idx));
                                 let last_cbs = items
                                     .get(2)
                                     .and_then(crate::runtime::Interpreter::value_array_items)
@@ -307,6 +316,16 @@ impl Interpreter {
                                     if let Some(mut rsub) = self.value_to_react_subscription(&v) {
                                         rsub.on_demand_done = Some(done_promise.clone());
                                         react_subs.push(rsub);
+                                    } else if let Some(early) = self
+                                        .register_nested_on_demand_source(&v, &mut react_subs, 0)?
+                                    {
+                                        // A chained `supply { }` stage: wired up
+                                        // with its own emitter so the pipeline
+                                        // streams rather than being replayed once.
+                                        if early {
+                                            early_done = true;
+                                            break;
+                                        }
                                     } else if self.replay_inner_static_subscription(&v)?
                                         == Some(true)
                                     {
@@ -317,8 +336,14 @@ impl Interpreter {
                                     let _ = self.call_react_callback(&callback.clone(), vec![v]);
                                 }
                             }
-                            self.supply_stream_consumers.truncate(stream_idx);
+                            // NOTE: the StreamConsumer registered above is left in
+                            // place — it is truncated after the event loop (see
+                            // `stream_base`), so a value arriving later on an inner
+                            // `whenever`'s live source can still be re-emitted to
+                            // this whenever's callback.
                             if early_done {
+                                self.supply_stream_consumers
+                                    .truncate(stream_base.unwrap_or(stream_idx));
                                 return Ok(());
                             }
                             // Supply.on-demand(..., closing => { ... }): the
@@ -411,6 +436,10 @@ impl Interpreter {
             }
         }
 
-        self.drive_react_subscriptions_nested(react_subs, SupplyDrivePolicy::React)
+        let result = self.drive_react_subscriptions_nested(react_subs, SupplyDrivePolicy::React);
+        if let Some(base) = stream_base {
+            self.supply_stream_consumers.truncate(base);
+        }
+        result
     }
 }
