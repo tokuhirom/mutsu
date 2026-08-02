@@ -354,8 +354,12 @@ impl Interpreter {
                     Value::package(Symbol::intern(name))
                 }
             }
-        } else if name.chars().count() == 1 {
-            // Single unicode character — check for vulgar fractions etc.
+        } else if name.chars().count() == 1 && !self.is_name_suppressed(name) {
+            // Single unicode character — check for vulgar fractions etc. A
+            // suppressed name is excluded so a one-letter out-of-scope lexical
+            // class (`{ my class B { } }; B.new`) reaches the undeclared-name
+            // error below instead of degrading to the bareword string "B".
+            // Its `our`-variable case is covered by the shared branch further on.
             let ch = name.chars().next().unwrap();
             if let Some((n, d)) = crate::builtins::unicode::unicode_rat_value(ch) {
                 Value::rat_raw(n, d)
