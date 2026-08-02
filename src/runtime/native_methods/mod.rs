@@ -41,8 +41,9 @@ pub(in crate::runtime) use state::{
 };
 // Supplier registry accessors driven by the VM-side react/supply loop.
 pub(crate) use state::{
-    next_supplier_id, supplier_register_promise, supplier_sink_register, supplier_sink_unregister,
-    supplier_sinks_register_batch, supplier_snapshot, take_promise_combinator_sources,
+    PromiseCombinator, next_supplier_id, supplier_register_promise, supplier_sink_register,
+    supplier_sink_unregister, supplier_sinks_register_batch, supplier_snapshot,
+    take_promise_combinator_sources,
 };
 pub(in crate::runtime) use state_lock::next_lock_id;
 pub(in crate::runtime) use state_lock::next_semaphore_id;

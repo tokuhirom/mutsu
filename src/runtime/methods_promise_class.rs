@@ -232,7 +232,11 @@ impl Interpreter {
                 Ok(p) => p,
                 Err(e) => return Some(Err(e)),
             };
-            super::native_methods::register_promise_combinator_sources(&promise, promises.clone());
+            super::native_methods::register_promise_combinator_sources(
+                &promise,
+                super::native_methods::PromiseCombinator::Allof,
+                promises.clone(),
+            );
             if promises.is_empty() {
                 promise.keep(Value::TRUE, String::new(), String::new());
                 return Some(Ok(ret));
@@ -268,6 +272,15 @@ impl Interpreter {
                 promise.keep(Value::TRUE, String::new(), String::new());
                 return Some(Ok(ret));
             }
+            // Record the sources so that awaiting the composite can still replay
+            // the deferred `Proc::Async` taps of whichever source has settled —
+            // an `anyof` result is a plain `True`, so the `Proc`-result hook in
+            // `await` would otherwise never fire.
+            super::native_methods::register_promise_combinator_sources(
+                &promise,
+                super::native_methods::PromiseCombinator::Anyof,
+                promises.clone(),
+            );
             // Resolve on the first input to settle, via each input's
             // `on_resolve` waiter queue — no polling thread. `try_keep` makes
             // the first resolver win and later ones no-ops.

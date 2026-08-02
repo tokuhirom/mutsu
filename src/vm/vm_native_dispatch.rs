@@ -1,7 +1,41 @@
 use super::*;
 
 impl Interpreter {
+    /// Dispatch a pure native method, then settle any resumable warning it
+    /// raised *at the raise site*.
+    ///
+    /// A pure native method has no `&mut Interpreter`, so the only way it can
+    /// signal `Use of uninitialized value ...` / `Use of Nil in ... context` is
+    /// to return `RuntimeError::warn_signal_with_resume`. Letting that unwind is
+    /// wrong twice over: the resume value rides in `return_value`, which the
+    /// enclosing routine boundary applies as an explicit `return` (abandoning
+    /// the rest of the body), and a `CONTROL { when CX::Warn { … .resume } }`
+    /// handler further up has no raise site left to resume into. `warns-like
+    /// { Int.Numeric }, …` — roast's `Test::Util` idiom — lost every statement
+    /// after the call that way.
+    ///
+    /// [`raise_resumable_warning`](Self::raise_resumable_warning) is the shared
+    /// settle path: print-and-resume when no CONTROL handler is active, run a
+    /// resume-safe handler inline, and otherwise fall back to the same
+    /// unwinding signal as before.
     pub(super) fn try_native_method(
+        &mut self,
+        target: &Value,
+        method_sym: crate::symbol::Symbol,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let result = self.try_native_method_raw(target, method_sym, args);
+        if let Some(Err(e)) = &result
+            && e.is_warn()
+            && let Some(resume) = e.return_value.clone()
+        {
+            let message = e.message.clone();
+            return Some(self.raise_resumable_warning(&message, resume));
+        }
+        result
+    }
+
+    fn try_native_method_raw(
         &mut self,
         target: &Value,
         method_sym: crate::symbol::Symbol,

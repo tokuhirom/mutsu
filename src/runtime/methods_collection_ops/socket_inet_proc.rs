@@ -258,6 +258,46 @@ impl Interpreter {
         }
     }
 
+    /// Replay the deferred `Proc::Async` taps that a settled promise stands for.
+    ///
+    /// The direct case is a promise whose own result is the `Proc` — that is
+    /// `$proc.start`, and it is what `await $promise` / `$promise.result` see.
+    /// A `Promise.allof`/`anyof` composite resolves to a plain `True`, so its
+    /// components' taps would never be replayed even though awaiting the
+    /// composite is exactly how `Test::Util`'s `doesn't-hang` (and any
+    /// "run it, but give up after N seconds" idiom) waits for the child. Walk
+    /// the registered sources and replay every one that has already settled;
+    /// a still-`Planned` source has produced no `Proc` yet, and re-awaiting it
+    /// here would reintroduce the hang the composite exists to avoid.
+    pub(in crate::runtime) fn replay_settled_proc_taps(
+        &mut self,
+        promise: &crate::value::SharedPromise,
+        result: &Value,
+    ) {
+        if let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = result.view()
+            && class_name == "Proc"
+        {
+            self.replay_proc_taps(&attributes);
+            return;
+        }
+        let Some((_, sources)) =
+            super::super::native_methods::take_promise_combinator_sources(promise)
+        else {
+            return;
+        };
+        for source in sources {
+            if !source.is_resolved() {
+                continue;
+            }
+            let (source_result, _, _) = source.wait();
+            self.replay_settled_proc_taps(&source, &source_result);
+        }
+    }
+
     /// Replay deferred Proc::Async taps on the main thread.
     /// Called when a Proc result is retrieved via .result or await.
     pub(in crate::runtime) fn replay_proc_taps(

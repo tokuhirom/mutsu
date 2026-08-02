@@ -843,6 +843,10 @@ impl Interpreter {
             self.output_sink_mut().stderr_output.push('\n');
         }
         if self.tap.bailed_out() {
+            // Rakudo's `bail-out` ends the process with status 255 (`Test.rakumod`
+            // does `exit 255` after emitting "Bail out!"), which is what `prove`
+            // and `Test::Util`'s `is_run ..., :255status` read.
+            self.exit_code = 255;
             return Ok(());
         }
         if let Some(state) = self.tap.state() {

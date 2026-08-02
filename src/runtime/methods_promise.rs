@@ -150,16 +150,10 @@ impl Interpreter {
                     err.exception = Some(Box::new(ex));
                     Err(err)
                 } else {
-                    // Replay deferred taps for Proc::Async results
-                    if let ValueView::Instance {
-                        class_name,
-                        attributes,
-                        ..
-                    } = result.view()
-                        && class_name == "Proc"
-                    {
-                        self.replay_proc_taps(&attributes);
-                    }
+                    // Replay deferred taps for Proc::Async results — the
+                    // promise's own, or those of a settled component of an
+                    // allof/anyof composite.
+                    self.replay_settled_proc_taps(shared, &result);
                     Ok(result)
                 }
             }

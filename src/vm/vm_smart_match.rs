@@ -15,6 +15,16 @@ fn io_path_cleanup_absolute(path: &str, cwd: &str) -> String {
     }
 }
 
+/// Whether `class_name` names the built-in `IO::Path` family — `IO::Path` plus
+/// its SPEC-variant subclasses. Rakudo declares `ACCEPTS` (and the file-test
+/// `:e`/`:d`/… candidates) on `IO::Path`, so every subclass inherits them;
+/// matching the exact name only made `IO::Path::Unix.new('/foo/').add('bar') ~~
+/// IO::Path::Unix.new('/foo/bar')` fall through to the generic instance
+/// comparison and answer False.
+fn is_io_path_family(class_name: &crate::symbol::Symbol) -> bool {
+    Interpreter::is_io_path_lexical_class(class_name.as_str())
+}
+
 /// Extract path and CWD from IO::Path attributes.
 fn io_path_attrs(attrs: &crate::gc::Gc<crate::value::InstanceAttrs>) -> (String, String) {
     let path = attrs
@@ -241,7 +251,7 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
                 attributes: attrs_b,
                 ..
             },
-        ) if cn_a == "IO::Path" && cn_b == "IO::Path" => {
+        ) if is_io_path_family(&cn_a) && is_io_path_family(&cn_b) => {
             let (path_a, cwd_a) = io_path_attrs(&attrs_a);
             let (path_b, cwd_b) = io_path_attrs(&attrs_b);
             Some(
@@ -479,7 +489,7 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
                 ..
             },
             ValueView::Pair(key, val),
-        ) if class_name == "IO::Path"
+        ) if is_io_path_family(&class_name)
             && matches!(val.view(), ValueView::Bool(_))
             && matches!(
                 key.as_str(),
@@ -588,7 +598,7 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
                 attributes: attrs_b,
                 ..
             },
-        ) if cn_b == "IO::Path" && !needs_interpreter_lhs(left) => {
+        ) if is_io_path_family(&cn_b) && !needs_interpreter_lhs(left) => {
             let lhs_str = left.to_string_value();
             let (path_b, cwd_b) = io_path_attrs(&attrs_b);
             let cwd = std::env::current_dir()
@@ -603,7 +613,9 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
         // IO::Path ~~ Str: compare path string representation with string.
         // In Raku, Str.ACCEPTS(IO::Path) stringifies the IO::Path and compares.
         // This handles cases like `dir().grep("filename")` after chdir.
-        (ValueView::Instance { class_name: cn, .. }, ValueView::Str(s)) if cn == "IO::Path" => {
+        (ValueView::Instance { class_name: cn, .. }, ValueView::Str(s))
+            if is_io_path_family(&cn) =>
+        {
             Some(left.to_string_value() == s.as_str())
         }
 

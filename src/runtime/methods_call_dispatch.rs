@@ -530,7 +530,11 @@ impl Interpreter {
                     type_name
                 );
                 let new_val = self.call_method_with_values(target.clone(), "new", vec![])?;
-                return Err(RuntimeError::warn_signal_with_resume(msg, new_val));
+                // Settle the warning here, at the raise site: an unwinding
+                // `warn_signal_with_resume` carries its resume value in
+                // `return_value`, which the enclosing routine boundary applies
+                // as an explicit `return`.
+                return self.raise_resumable_warning(&msg, new_val);
             }
         }
 

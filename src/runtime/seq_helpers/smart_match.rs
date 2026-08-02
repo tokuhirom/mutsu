@@ -840,7 +840,7 @@ impl Interpreter {
                     ..
                 },
                 ValueView::Pair(key, val),
-            ) if class_name == "IO::Path"
+            ) if Self::is_io_path_lexical_class(class_name.as_str())
                 && val.as_bool().is_some()
                 && matches!(
                     key.as_str(),
@@ -1489,7 +1489,9 @@ impl Interpreter {
                     attributes: attrs_b,
                     ..
                 },
-            ) if cn_a == "IO::Path" && cn_b == "IO::Path" => {
+            ) if Self::is_io_path_lexical_class(cn_a.as_str())
+                && Self::is_io_path_lexical_class(cn_b.as_str()) =>
+            {
                 let (path_a, cwd_a) = Self::io_path_attrs_for_accepts(&attrs_a);
                 let (path_b, cwd_b) = Self::io_path_attrs_for_accepts(&attrs_b);
                 Self::io_path_cleanup_absolute(&path_a, &cwd_a)
@@ -1503,7 +1505,7 @@ impl Interpreter {
                     attributes: attrs_b,
                     ..
                 },
-            ) if cn_b == "IO::Path"
+            ) if Self::is_io_path_lexical_class(cn_b.as_str())
                 && !matches!(
                     left.view(),
                     ValueView::Junction { .. }
@@ -1635,7 +1637,9 @@ impl Interpreter {
             // IO::Path ~~ Str: compare path string representation with string.
             // In Raku, Str.ACCEPTS(IO::Path) stringifies the IO::Path and compares.
             // This handles cases like `dir().grep("filename")` after chdir.
-            (ValueView::Instance { class_name: cn, .. }, ValueView::Str(_)) if cn == "IO::Path" => {
+            (ValueView::Instance { class_name: cn, .. }, ValueView::Str(_))
+                if Self::is_io_path_lexical_class(cn.as_str()) =>
+            {
                 left.to_string_value() == right.to_string_value()
             }
             // Instance ~~ Type or other: identity check (false)
