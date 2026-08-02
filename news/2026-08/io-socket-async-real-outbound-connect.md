@@ -52,6 +52,6 @@ Two neighbouring defects surfaced while writing that test and are filed
 separately:
 `todo/tickets/supply-lines-drops-channel-backed-supplies.md` (`.lines` emits
 nothing on a real-TCP Supply) and
-`todo/tickets/proc-async-stdout-is-not-incremental.md` (`Proc::Async` output
+`todo/tickets/procasync-stdout-is-not-incremental.md` (`Proc::Async` output
 arrives only when the child exits, which is why the test hands the port over
 through a file).
