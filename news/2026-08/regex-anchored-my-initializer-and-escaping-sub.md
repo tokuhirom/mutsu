@@ -68,5 +68,5 @@ The matcher now returns the right `Capture`, but the route's bind check
 empty `@handlers`: the matcher is an `EVAL`'d regex, and a regex value is a bare
 pattern string, so embedded code resolves its free variables against the
 *match-time* env rather than the defining scope. Recorded, with a reverted
-prototype's design and two candidate representation fixes, in
-`todo/deep/regex-literals-are-not-closures.md`.
+prototype's design and two candidate representation fixes; fixed shortly
+afterwards — see `news/2026-08/regex-literals-are-closures.md`.

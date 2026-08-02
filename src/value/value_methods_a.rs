@@ -33,6 +33,27 @@ impl Value {
     pub fn regex(s: String) -> Self {
         Value::Regex(Arc::new(s))
     }
+    /// A code-bearing regex literal that closed over `scope` — see
+    /// [`crate::value::RegexClosure`]. Views as a plain `Regex`.
+    pub(crate) fn regex_closure(
+        pattern: Arc<String>,
+        scope: Arc<std::collections::HashMap<String, Value>>,
+    ) -> Self {
+        Value::RegexCaptured(Arc::new(crate::value::RegexClosure { pattern, scope }))
+    }
+    /// The defining scope this regex closed over, or `None` for a regex that
+    /// captured nothing (and for every non-regex value).
+    pub(crate) fn regex_closure_scope(
+        &self,
+    ) -> Option<Arc<std::collections::HashMap<String, Value>>> {
+        if let Some(scope) = self.0.regex_closure_scope() {
+            return Some(scope.clone());
+        }
+        match self.view() {
+            ValueView::RegexWithAdverbs(a) => a.captured.clone(),
+            _ => None,
+        }
+    }
     pub fn rakuast(node: Box<crate::rakuast::RakuAstNode>) -> Self {
         Value::RakuAst(node)
     }

@@ -86,6 +86,18 @@ impl Value {
         if !self.0.value_bearing_arc_payload_uniquely_owned() {
             return;
         }
+        // A code-bearing regex literal's captured scope owns arbitrary `Value`s
+        // and would otherwise be an invisible edge: it VIEWS as a plain Regex
+        // (deliberately — see `Value::RegexCaptured`), so the match arms below
+        // cannot reach it. Probe the repr first.
+        if let Some(scope) = self.0.regex_closure_scope() {
+            if uniquely_owned(scope) {
+                for v in scope.values() {
+                    v.gc_trace(visit);
+                }
+            }
+            return;
+        }
         match self.view() {
             // Migrated `Gc<T>` node variants: yield the node itself. The
             // collector traces the node's own children via its `Trace` impl, so

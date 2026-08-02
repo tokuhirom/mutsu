@@ -175,6 +175,14 @@ impl Interpreter {
                 self.stack.push(code.constants[*idx as usize].clone());
                 *ip += 1;
             }
+            OpCode::LoadRegexClosure {
+                const_idx,
+                captures,
+            } => {
+                let v = self.capture_regex_closure(&code.constants[*const_idx as usize], captures);
+                self.stack.push(v);
+                *ip += 1;
+            }
             OpCode::LoadNil => {
                 self.stack.push(Value::NIL);
                 *ip += 1;

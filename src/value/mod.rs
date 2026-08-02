@@ -1299,6 +1299,15 @@ pub(in crate::value) enum ValueRepr {
     /// A regex literal carrying adverbs. Boxed payload to keep `Value` small
     /// (this variant has 13 fields).
     RegexWithAdverbs(Box<RegexAdverbs>),
+    /// A *code-bearing* regex literal that closed over its defining scope: the
+    /// pattern plus the lexicals its embedded `{ … }` / `<?{ … }>` / `:my`
+    /// code refers to, snapshotted where the literal was evaluated.
+    ///
+    /// Deliberately views as [`ValueView::Regex`] — every existing regex
+    /// consumer sees a plain pattern and needs no change; only the match
+    /// entry points probe the repr (via [`Value::regex_closure_scope`]) to
+    /// install the captured scope for the duration of the match.
+    RegexCaptured(Arc<RegexClosure>),
     Sub(crate::gc::Gc<SubData>),
     /// A weak reference to a Sub (used for &?BLOCK self-references to break cycles).
     /// Upgrade to the strong value when accessed; returns Nil if expired.
@@ -1609,6 +1618,10 @@ impl Value {
         Value::from_repr(ValueRepr::RegexWithAdverbs(adv))
     }
     #[inline]
+    pub(in crate::value) fn RegexCaptured(data: Arc<RegexClosure>) -> Value {
+        Value::from_repr(ValueRepr::RegexCaptured(data))
+    }
+    #[inline]
     pub(in crate::value) fn Sub(data: crate::gc::Gc<SubData>) -> Value {
         Value::from_repr(ValueRepr::Sub(data))
     }
@@ -1732,6 +1745,26 @@ pub struct RegexAdverbs {
     pub sigspace: bool,
     pub samecase: bool,
     pub samespace: bool,
+    /// The defining scope this literal closed over, when its pattern embeds
+    /// code — see [`RegexClosure`]. `None` for every ordinary literal.
+    pub captured: Option<Arc<HashMap<String, Value>>>,
+}
+
+/// Boxed payload of [`Value::RegexCaptured`]: a code-bearing regex literal
+/// together with the snapshot of its defining lexical scope.
+///
+/// A Raku regex is a closure over the scope it was written in, so the code
+/// embedded in its pattern must resolve free variables against the scope where
+/// the *literal* was evaluated, not against whatever env happens to be live at
+/// match time. mutsu stores a regex as a pattern string, so the scope has to
+/// ride along with the value; the match entry points install `scope` into the
+/// env around the match and restore it afterwards.
+#[derive(Debug, Clone)]
+pub struct RegexClosure {
+    pub pattern: Arc<String>,
+    /// Captured lexicals, keyed the way `env` keys them (`$x` -> `x`,
+    /// `@x`/`%x`/`&x` keep their sigil).
+    pub scope: Arc<HashMap<String, Value>>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]

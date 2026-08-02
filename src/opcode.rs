@@ -277,11 +277,32 @@ pub(crate) struct RuntimeHasDeclSpec {
     pub(crate) error: Value,
 }
 
+/// Slot marker in [`OpCode::LoadRegexClosure`]'s capture list: the captured
+/// name has no local slot in the creating frame and must be read from `env`.
+pub(crate) const NOT_A_LOCAL: u32 = u32::MAX;
+
 /// Bytecode operations for the VM.
 #[derive(Debug, Clone)]
 pub(crate) enum OpCode {
     // -- Constants --
     LoadConst(u32),
+    /// Load a *code-bearing* regex literal as the closure it is.
+    ///
+    /// A Raku regex closes over the scope it was written in, but mutsu stores a
+    /// regex as a pattern string, so code embedded in the pattern (`{ … }`,
+    /// `<?{ … }>`, `:my`/`:let` initializers) would otherwise resolve its free
+    /// variables against whatever env is live at *match* time — losing them
+    /// whenever the regex is stored and matched from another frame. This op
+    /// snapshots those lexicals out of the creating frame and attaches them to
+    /// the value (`Value::RegexCaptured`, which still views as a plain Regex).
+    ///
+    /// `captures` pairs each capture's env key (`$x` -> `x`, `@x`/`%x`/`&x`
+    /// keep their sigil) with its local slot in the creating frame, or
+    /// [`NOT_A_LOCAL`] when the name is only reachable through `env`.
+    LoadRegexClosure {
+        const_idx: u32,
+        captures: Arc<Vec<(Symbol, u32)>>,
+    },
     LoadNil,
     LoadTrue,
     LoadFalse,
@@ -3044,7 +3065,7 @@ impl CompiledCode {
     /// regex pattern string, for closure free-variable analysis. Conservative: it
     /// over-approximates (an extra captured var is harmless), and skips capture
     /// references like `$0`/`$<name>` (sigil not followed by an identifier start).
-    fn regex_interpolated_var_names(pattern: &str) -> Vec<String> {
+    pub(crate) fn regex_interpolated_var_names(pattern: &str) -> Vec<String> {
         let bytes = pattern.as_bytes();
         let mut names = Vec::new();
         let mut i = 0;

@@ -457,6 +457,9 @@ fn ser_to_value(sv: SerValue) -> Value {
             sigspace,
             samecase,
             samespace,
+            // A captured defining scope holds live `Value`s; it cannot survive
+            // a serialization round-trip and is not part of the wire format.
+            captured: None,
         })),
         SerValue::Junction { kind, values } => {
             let jk = match kind {

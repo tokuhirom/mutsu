@@ -67,6 +67,9 @@ unsafe fn decode_kind(kind: Kind, bits: u64) -> ValueRepr {
             let a = Arc::unwrap_or_clone(unsafe { take_arc::<RegexAdverbs>(bits) });
             ValueRepr::RegexWithAdverbs(Box::new(a))
         }
+        Kind::RegexCaptured => {
+            ValueRepr::RegexCaptured(unsafe { take_arc::<crate::value::RegexClosure>(bits) })
+        }
         Kind::CustomType => {
             let d = Arc::unwrap_or_clone(unsafe { take_arc::<CustomTypeData>(bits) });
             ValueRepr::CustomType(Box::new(d))

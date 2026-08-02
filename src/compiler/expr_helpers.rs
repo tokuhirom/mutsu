@@ -690,6 +690,45 @@ impl Compiler {
     /// Returns a Hash mapping resource keys to absolute paths on disk.
     /// Compile a regex value as `$_ ~~ /regex/`, so it matches against $_
     /// and sets $/ with the match result.
+    /// The lexicals a regex literal must close over, or `None` when it is an
+    /// ordinary literal that can load as a plain constant.
+    ///
+    /// Only *code-bearing* patterns qualify: without an embedded `{ … }` /
+    /// `<?{ … }>` block or a `:my`/`:let` initializer there is no code whose
+    /// free variables could be stranded, and the existing match-time
+    /// interpolation path already resolves a bare `/$x/`. Names are keyed the
+    /// way `locals`/`env` key them, and paired with the creating frame's local
+    /// slot when there is one.
+    pub(super) fn regex_literal_closure_captures(&self, v: &Value) -> Option<Vec<(Symbol, u32)>> {
+        let pattern = match v.view() {
+            ValueView::Regex(p) => p.as_str().to_string(),
+            ValueView::RegexWithAdverbs(a) => a.pattern.as_str().to_string(),
+            _ => return None,
+        };
+        if !pattern.contains('{') && !pattern.contains(":my ") && !pattern.contains(":let ") {
+            return None;
+        }
+        let mut captures: Vec<(Symbol, u32)> = Vec::new();
+        for name in crate::opcode::CompiledCode::regex_interpolated_var_names(&pattern) {
+            // `$_`, `$/` and the numeric captures are match state, never a
+            // captured lexical; the engine installs them per match position.
+            if name == "_" || name == "/" || name.chars().all(|c| c.is_ascii_digit()) {
+                continue;
+            }
+            let sym = Symbol::intern(&name);
+            if captures.iter().any(|(s, _)| *s == sym) {
+                continue;
+            }
+            let slot = self
+                .local_map
+                .get(name.as_str())
+                .copied()
+                .unwrap_or(crate::opcode::NOT_A_LOCAL);
+            captures.push((sym, slot));
+        }
+        (!captures.is_empty()).then_some(captures)
+    }
+
     pub(super) fn compile_match_regex(&mut self, v: &Value) {
         let lhs_var = Some("_".to_string());
         // Load $_ as the LHS
