@@ -18,6 +18,17 @@ pub(crate) fn big_q_string(input: &str) -> PResult<'_, Expr> {
     if rest.starts_with("::") {
         return Err(PError::expected("Q string"));
     }
+    // A declared symbol wins over the quoting language, as it does in raku:
+    // with `role Q { }` in scope, `$c does Q; say "x";` is a `does` against the
+    // role, not a `Q`-quote delimited by `;` that swallows the next statement.
+    // (`raku -e 'say Q;abc;'` prints `abc`; adding `role Q {}` makes it complain
+    // that the routine `abc` is undeclared.)
+    let word_end = input
+        .find(|c: char| !c.is_ascii_alphabetic())
+        .unwrap_or(input.len());
+    if crate::parser::stmt::simple::is_user_declared_type(&input[..word_end]) {
+        return Err(PError::expected("Q string"));
+    }
 
     // Parse fused adverbs (Qs, Qa, Qb, etc.)
     let mut flags = QuoteFlags::bare_q_big();
@@ -170,6 +181,15 @@ pub(crate) fn q_string(input: &str) -> PResult<'_, Expr> {
     };
 
     if !input.starts_with('q') {
+        return Err(PError::expected("q string"));
+    }
+    // A declared symbol wins over the quoting language, as in raku — see the
+    // note in `big_q_string`. `class qw { }` is unusual but legal, and once
+    // declared, `qw` is that type everywhere.
+    let word_end = input
+        .find(|c: char| !c.is_ascii_alphabetic())
+        .unwrap_or(input.len());
+    if crate::parser::stmt::simple::is_user_declared_type(&input[..word_end]) {
         return Err(PError::expected("q string"));
     }
     let mut after_q = &input[1..];
