@@ -133,6 +133,7 @@ impl Interpreter {
         self.samewith_context_stack.push((proto_name.clone(), None));
         self.routine_stack.push(RoutineFrame {
             package: def.package.resolve(),
+            lexical_package: None,
             name: def.name.resolve(),
             line: None,
             file: None,

@@ -325,6 +325,7 @@ impl Interpreter {
                     .map(|p| p.name.clone())
                     .collect();
                 let def = MethodDef {
+                    lexical_package: self.current_package(),
                     params: effective_params,
                     param_defs: effective_param_defs,
                     body: std::sync::Arc::new(method_body.clone()),
