@@ -1,6 +1,16 @@
 # ADR-0011: RakuAST — a reflection/model layer over the internal AST, and its phasing
 
-- **Status**: Accepted (2026-07-18). Phase 1 implemented (PR #4679); Phases 2–6 pending.
+- **Status**: Accepted (2026-07-18). **Progress (2026-08-02): Phases 1–5 have substantially
+  landed** across ~37 slices (PRs #4679, #4729–#4804 and successors) — read (`Q[…].AST` +
+  `.gist`), the type-object registry, construction, and `EVAL($tree)` lowering through the
+  existing compiler all work, pinned by dual-oracle `t/rakuast-*.t` files that pass under
+  both mutsu and raku. **Phase 6 (macros / `quasi`) is not started, and each landed phase
+  still has an explicit gap list** — the live inventory is
+  [`todo/deep/rakuast-remaining.md`](../../todo/deep/rakuast-remaining.md) (read-direction
+  representation gaps the parser desugars away, advanced parameter construction, and the
+  lowering constructs blocked on representation mismatches). Note for planning: no roast
+  file and no bundled battery consumes this layer, so its remaining work has no downstream
+  dependency (ANALYSIS §7-9).
 - **Context**: The user asked to implement RakuAST. RakuAST is Raku's user-facing AST
   representation (`RakuAST::*` classes, `Q|...|.AST`, `.DEPARSE`, `EVAL(ast)`, and the
   macro/`quasi` machinery built on top). It has essentially **zero roast payoff today**

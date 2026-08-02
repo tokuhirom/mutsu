@@ -455,20 +455,20 @@ the shared+identity case. So:
   before each aliased `&mut` in `vm_var_assign_ops.rs` (fixup_circular_hash / replace_array_refs_in_value /
   fixup_circular_array_refs) to document provable uniqueness. Zero behavior change (debug-only assert);
   the truly-unaudited surface is now just the 51 (c) core.
-- [ ] **Step 3 — the 51 (c) sites = a `CellValue` / interior-mutability campaign** (large,
-      high-blast-radius, **not** a slice) — **DEFERRED (user decision 2026-07-20)**. A first-class
-      element cell (`UnsafeCell`/lock inside the container) makes identity-preserving in-place
-      mutation sound without the raw-pointer cast. **Fused with ADR-0001** (Track B / element cells +
-      GC — do not touch the sites twice); needs a Proposed ADR before starting. This is the only path
-      that removes the UB. Deferred because it is a large architectural commitment for a *soundness*
-      (not correctness/feature) payoff, while 3a already closed the leak that made GC table-stakes;
-      the residue is UB-by-letter + a cross-thread data race that has passed gc-stress/S17 so far.
-      **The mechanism framing is now drafted in [ADR-0013](../docs/adr/0013-container-interior-mutability-cellvalue.md)
-      (Proposed)** — a `GcCell` = `UnsafeCell` + debug/verify borrow-flag newtype that converts the
-      51 sites from a raw-pointer cast to a sound aliased borrow (reads stay `&T`, so zero read-path
-      cost; Miri becomes the acceptance gate), rejecting the whole-container lock (read tax +
-      re-entrancy deadlock) and deferring the narrow cross-thread race to layer 3c. On greenlight,
-      flip ADR-0013 to Accepted and begin at its §4 phase 1.
+- **✅ Step 3 — the (c) sites: PROVENANCE UB FIXED (ADR-0013, landed).** Not the deferred
+      `CellValue` campaign this entry used to describe: per
+      [ADR-0013](docs/adr/0013-container-interior-mutability-cellvalue.md) §7 the `UnsafeCell`
+      was placed in `GcBox.value` (`src/gc/gc_ptr.rs:166`) instead of wrapping each container
+      payload, so **every** `Gc<T>` is interior-mutable at the primitive and all the aliased-write
+      sites became provenance-sound *with no call-site or `Value`-representation churn*. The
+      per-container migration and the `GcCell` newtype were dropped; the fusion-with-Track-B
+      premise no longer applies (ADR-0001 §7).
+- [ ] **Step 3b — close ADR-0013: the Miri gate (§4 phase 4) is still missing.** There is no
+      `miri` job in `.github/workflows/`, so the soundness claim above rests on an argument, not
+      a check. Add it informational-first, then blocking (pin a nightly matching the crate's
+      stabilized-feature usage). Also correct `src/value/aliased_mut.rs`'s module header, which
+      still documents the provenance violation as live and names Track B as the future fix — both
+      false since ADR-0013. The narrow cross-thread race stays deferred to layer 3c by decision.
 - **✅ Step 4 (independent) DONE (2026-07-20)** — hardened the buffered-clone / uniqueness
       invariant. `Gc::verify_unique_for_aliased_mut` machine-checks the `strong == 1 ⟹ unique`
       argument that `make_mut` / `get_mut` and the three (a) `gc_contents_mut` sites rely on, by
@@ -939,10 +939,10 @@ unification / the malloc clusters from `Value` clone/drop and attribute material
       same mechanism as the `named-sub free-var shadow` / dual-store family, not a `Promise` bug.
       The fix belongs with the cell-based capture work above (write back only what the thread
       actually mutated), not with a special case at the `allof`/`anyof` call sites.
-- [ ] Eliminate raw-pointer aliased writes: the old `arc_contents_mut` is dead code now, and the
-      production path moved to `gc::gc_contents_mut` / `Gc::{get,make}_mut` (the unsoundness was
-      moved, not resolved — ANALYSIS rev8 §2.1). With Track B T4–T6 done (news/2026-07.md), start
-      from an inventory of what actually remains.
+- ✅ Eliminate raw-pointer aliased writes — **done via ADR-0013** (the `UnsafeCell` moved into
+      `GcBox`, so `gc::gc_contents_mut` / `Gc::{get,make}_mut` derive interior-mutable provenance).
+      What is left is verification, tracked as §2.1 Step 3b (the Miri gate) — not another
+      inventory.
 - [ ] **★Remove the full locals clone/restore in `BlockScope`** (the final move of the lexical-scope
       slot campaign [docs/lexical-scope-slot-campaign.md](docs/lexical-scope-slot-campaign.md);
       **the perf core** — the root of the malloc/free churn and `Env::get_sym` shown by the #4489
