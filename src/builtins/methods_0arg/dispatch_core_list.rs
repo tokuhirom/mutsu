@@ -453,6 +453,9 @@ pub(super) fn dispatch(
             ValueView::Int(i) => Some(Ok(Value::num((i as f64).sqrt()))),
             ValueView::Num(f) => Some(Ok(Value::num(f.sqrt()))),
             ValueView::Rat(n, d) if d != 0 => Some(Ok(Value::num((n as f64 / d as f64).sqrt()))),
+            ValueView::BigRat(n, d) if !num_traits::Zero::is_zero(d) => {
+                Some(Ok(Value::num(crate::value::bigrat_to_f64(n, d).sqrt())))
+            }
             ValueView::Complex(r, i) => {
                 let mag = (r * r + i * i).sqrt();
                 let re = ((mag + r) / 2.0).sqrt();

@@ -207,6 +207,10 @@ pub(super) fn dispatch(
                 ValueView::Num(f) => Value::num(f.abs()),
                 ValueView::Rat(n, d) => Value::rat_raw(n.abs(), d),
                 ValueView::FatRat(n, d) => Value::fat_rat_raw(n.abs(), d),
+                // A rational whose numerator outgrew `i64` is a `BigRat`, not a
+                // `Rat`; without this arm every numeric method below declines
+                // and the call reports "No such method 'abs'".
+                ValueView::BigRat(n, d) => Value::bigrat(n.magnitude().clone().into(), d.clone()),
                 ValueView::Complex(r, i) => Value::num((r * r + i * i).sqrt()),
                 ValueView::Bool(b) => Value::int(if b { 1 } else { 0 }),
                 _ => return Some(None),
@@ -389,6 +393,23 @@ pub(super) fn dispatch(
                     } else {
                         let sign = n.signum() * d.signum();
                         Value::int(sign)
+                    }
+                }
+                ValueView::BigRat(n, d) => {
+                    use num_bigint::Sign;
+                    let sign_of = |b: &num_bigint::BigInt| match b.sign() {
+                        Sign::Plus => 1i64,
+                        Sign::Minus => -1,
+                        Sign::NoSign => 0,
+                    };
+                    if d.sign() == Sign::NoSign {
+                        match n.sign() {
+                            Sign::Plus => Value::int(1),
+                            Sign::Minus => Value::int(-1),
+                            Sign::NoSign => Value::num(f64::NAN),
+                        }
+                    } else {
+                        Value::int(sign_of(n) * sign_of(d))
                     }
                 }
                 ValueView::BigInt(n) => {

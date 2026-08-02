@@ -99,7 +99,9 @@ fn numeric_to_int(target: &Value) -> Option<Value> {
         ValueView::BigRat(_, d) if d.is_zero() => {
             RuntimeError::divide_by_zero_failure_for_method("Int", "Rational")
         }
-        ValueView::BigRat(n, d) => Value::int((n / d).to_i64().unwrap_or(i64::MAX)),
+        // Truncating a big rational must not silently clamp to `i64::MAX` —
+        // `(16045690981097406464/1).Int` is that integer, not 9223372036854775807.
+        ValueView::BigRat(n, d) => Value::from_bigint(n / d),
         ValueView::Complex(r, _) => Value::int(r as i64),
         _ => return None,
     })
@@ -738,10 +740,8 @@ pub(super) fn dispatch(
                         "Int", "Rational",
                     ))));
                 }
-                ValueView::BigRat(n, d) if !d.is_zero() => {
-                    use num_traits::ToPrimitive;
-                    Value::int((n / d).to_i64().unwrap_or(i64::MAX))
-                }
+                // Do not clamp: a big rational's truncation is a big integer.
+                ValueView::BigRat(n, d) if !d.is_zero() => Value::from_bigint(n / d),
                 ValueView::Str(s) => {
                     if s.trim().is_empty() {
                         // An empty or whitespace-only string coerces to 0, like

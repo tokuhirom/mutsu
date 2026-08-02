@@ -607,6 +607,7 @@ pub(super) fn generic_radix(input: &str) -> PResult<'_, Expr> {
             .unwrap_or_else(|| num_bigint::BigInt::from(0_i64))
     };
     let frac_scale = base_big.pow(frac_clean.len() as u32);
+    let frac_is_zero = num_traits::Zero::is_zero(&frac_value);
     let mut numerator = int_value * &frac_scale + frac_value;
     let mut denominator = frac_scale;
 
@@ -618,6 +619,20 @@ pub(super) fn generic_radix(input: &str) -> PResult<'_, Expr> {
         } else {
             denominator *= scale;
         }
+    }
+
+    // A generic radix *literal* whose fractional digits are all zero is an Int,
+    // even though the same digits written as a plain literal would be a Rat
+    // (`:10<2.0>` is `Int 2`; `2.0` is `Rat 2`) — rakudo's `radcalc` decides on
+    // whether the fraction evaluates to zero, not on whether the final value is
+    // integral, which is why `:16<f.8*16**2>` stays `Rat` despite being 3968.
+    // Without this, `:16<dead_beef*16**8>` came out a Rat big enough to be a
+    // BigRat, and every numeric method that only knows `Rat` declined on it.
+    if frac_is_zero && num_traits::Zero::is_zero(&(&numerator % &denominator)) {
+        return Ok((
+            &r[close_pos + 1..],
+            Expr::Literal(crate::value::Value::from_bigint(numerator / denominator)),
+        ));
     }
 
     Ok((
