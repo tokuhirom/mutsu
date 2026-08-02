@@ -68,6 +68,11 @@ Existing interpreter fallbacks are technical debt. When you encounter one while 
 - Prefer targeted TAP regression tests in `t/` for language behavior changes.
 - Run `make test` before opening a PR; run `make roast` when touching spec-facing behavior.
 - **Test log files**: `make test` and `make roast` save their full output to `tmp/make-test.log` and `tmp/make-roast.log` respectively. **After running tests, always grep the log file instead of re-running the test command.** Do NOT re-run `make test` or `make roast` just to search the output.
+- **Never re-run a full test command in the same work session.** This prohibition also applies when
+  the first run failed because of sandbox permissions, cache permissions, infrastructure, or an
+  apparently unrelated/flaky test. Diagnose the saved log, run only the smallest targeted check if
+  further evidence is essential, and leave the full retry to CI. Do not request elevated permissions
+  merely to repeat `make test` or `make roast`.
 - Keep `roast-whitelist.txt` sorted (`LC_ALL=C sort -c roast-whitelist.txt`); CI fails if it is not sorted.
 - No fixed coverage threshold is configured; rely on regression-focused test additions.
 
