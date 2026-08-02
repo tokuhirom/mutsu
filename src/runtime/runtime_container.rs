@@ -152,7 +152,7 @@ impl Interpreter {
                         | ValueView::Mix(..)
                 ) =>
             {
-                Some((Arc::clone(inner), Arc::clone(m)))
+                Some((Arc::clone(inner), m.clone()))
             }
             _ => None,
         };

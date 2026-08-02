@@ -301,7 +301,7 @@ impl Interpreter {
                                     // array in place so all holders of the Arc see
                                     // it (Raku container semantics).
                                     // SAFETY: aliased in-place mutation of a shared
-                                    // container; see `arc_contents_mut`.
+                                    // container; see `gc_contents_mut`.
                                     unsafe {
                                         crate::value::gc_contents_mut(&items).items[idx] = new_src;
                                     }
@@ -385,7 +385,7 @@ impl Interpreter {
                                     // Write the mutated leaf back into the source
                                     // hash in place (see the Array arm).
                                     // SAFETY: aliased in-place mutation of a shared
-                                    // container; see `arc_contents_mut`.
+                                    // container; see `gc_contents_mut`.
                                     unsafe {
                                         crate::value::gc_contents_mut(&map)
                                             .map

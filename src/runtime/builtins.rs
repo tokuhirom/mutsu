@@ -323,7 +323,7 @@ impl Interpreter {
         }
         // Mixin wrapping a Sub/Routine: check for CALL-ME from mixed-in roles
         let mixin_parts = match target_val.view() {
-            ValueView::Mixin(inner, mixins) => Some((Arc::clone(inner), Arc::clone(mixins))),
+            ValueView::Mixin(inner, mixins) => Some((Arc::clone(inner), mixins.clone())),
             _ => None,
         };
         if let Some((inner, mixins)) = mixin_parts {

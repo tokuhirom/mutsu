@@ -442,7 +442,7 @@ impl<T: Trace + 'static> Gc<T> {
     }
 
     /// Raw `*const T` to the pointee, mirroring `Arc::as_ptr`. Used by
-    /// `gc_contents_mut` (the `Gc` analogue of `arc_contents_mut`) for the
+    /// `gc_contents_mut` for the
     /// deliberate aliased in-place container mutation the migration preserves.
     pub(crate) fn as_ptr(this: &Gc<T>) -> *const T {
         // Reach the payload through the backing Arc's stable address and the
@@ -750,7 +750,7 @@ impl<T: Trace + Clone + 'static> ContainerMakeMut for Gc<T> {
     }
 }
 
-/// `Gc<T>` analog of [`crate::value::aliased_mut::arc_contents_mut`]: a `&mut T`
+/// The codebase's single aliased-container-write primitive: a `&mut T`
 /// aliasing a shared node's value for a deliberate aliased in-place mutation of
 /// a container (Raku container identity — a push through one alias must be
 /// visible through every holder of the same node).

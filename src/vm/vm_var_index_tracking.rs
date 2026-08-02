@@ -199,7 +199,7 @@ impl Interpreter {
             root.with_array_mut(|items, _| {
                 let data: &mut crate::value::ArrayData = if crate::gc::Gc::strong_count(items) > 1 {
                     // SAFETY: aliased in-place mutation of a shared array; same
-                    // contract as the assignment site's `arc_contents_mut` use.
+                    // contract as the assignment site's `gc_contents_mut` use.
                     unsafe { crate::value::gc_contents_mut(items) }
                 } else {
                     crate::gc::Gc::make_mut(items)

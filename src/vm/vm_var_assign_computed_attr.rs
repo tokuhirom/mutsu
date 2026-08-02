@@ -24,14 +24,14 @@ impl Interpreter {
             ValueView::Hash(arc) => {
                 let k = Value::hash_key_encode(key);
                 // SAFETY: aliased in-place mutation of a shared hash; see
-                // `arc_contents_mut`. No live borrow into the map.
+                // `gc_contents_mut`. No live borrow into the map.
                 let hd = unsafe { crate::value::gc_contents_mut(&arc) };
                 Value::hash_insert_through(&mut hd.map, k, val);
             }
             ValueView::Array(arc, _) => {
                 if let Some(i) = Self::index_to_usize(key) {
                     // SAFETY: aliased in-place mutation of a shared array; see
-                    // `arc_contents_mut`.
+                    // `gc_contents_mut`.
                     let v = &mut unsafe { crate::value::gc_contents_mut(&arc) }.items;
                     Self::autoviv_resize(v, i + 1, Value::NIL)?;
                     Value::assign_element_slot(&mut v[i], val);
@@ -70,7 +70,7 @@ impl Interpreter {
             };
             let cell = crate::gc::Gc::new(std::sync::Mutex::new(val));
             // SAFETY: aliased in-place mutation of a shared hash; see
-            // `arc_contents_mut`. No live borrow into the map.
+            // `gc_contents_mut`. No live borrow into the map.
             let hd = unsafe { crate::value::gc_contents_mut(&arc) };
             Value::hash_insert_through(&mut hd.map, key, Value::container_ref(cell.clone()));
             cell

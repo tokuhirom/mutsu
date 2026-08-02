@@ -116,7 +116,7 @@ pub(crate) fn mark_shaped_array_items(
     // "mark after the array Value is already placed" without a write-back through
     // the caller.
     // SAFETY: aliased in-place mutation of a shared container; see
-    // `arc_contents_mut`. No borrow into the array is live across this write.
+    // `gc_contents_mut`. No borrow into the array is live across this write.
     unsafe {
         crate::value::gc_contents_mut(items).shape = Some(shape.to_vec());
     }

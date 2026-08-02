@@ -25,7 +25,7 @@ use crate::gc::{ErasedGc, RootVisitor, Trace, visit_map_values};
 
 use super::{
     ArrayData, BagData, BufData, ChannelState, EnumValue, HashData, InstanceAttrs, LazyList,
-    MixData, PromiseState, SetData, SharedChannel, SharedPromise, SubData, Value,
+    MixData, MixinOverrides, PromiseState, SetData, SharedChannel, SharedPromise, SubData, Value,
 };
 
 /// Whether an `Arc`-shared wrapper is *uniquely owned* — its only holder is the
@@ -140,15 +140,15 @@ impl Value {
             | ValueView::HyperSeq(items)
             | ValueView::RaceSeq(items)
             | ValueView::Slip(items) => trace_shared_slice(&items, visit),
+            // The mixin's overrides map is a `Gc` node of its own, so yield the
+            // node and let its `Trace` impl walk the override values — no
+            // uniqueness gate needed (the shared-wrapper phantom-edge problem
+            // only exists for `Arc` wrappers the collector has to inline).
             ValueView::Mixin(inner, overrides) => {
                 if uniquely_owned(inner) {
                     inner.gc_trace(visit);
                 }
-                if uniquely_owned(overrides) {
-                    for v in overrides.values() {
-                        v.gc_trace(visit);
-                    }
-                }
+                visit(&overrides.erased());
             }
             ValueView::Junction { values, .. } => trace_shared_slice(&values, visit),
             ValueView::GenericRange { start, end, .. } => {
@@ -460,6 +460,24 @@ impl Trace for BufData {
     fn trace(&self, _visit: &mut dyn FnMut(&ErasedGc)) {}
 
     fn drop_gc_edges(&mut self) {}
+}
+
+/// A `Mixin`'s overrides map holds arbitrary `Value`s (a `but`-mixed method
+/// closure, a role-punned instance, an allomorph's `Str` half), any of which
+/// can close a cycle — `my $o = 1 but role { method self-ref { $o } }`. It is a
+/// GC node because `^set_name` writes it in place through every alias
+/// (ADR-0013); being a node also means its edges are traced exactly once,
+/// however many mixin values share the map.
+impl Trace for MixinOverrides {
+    fn trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
+        for v in self.values() {
+            v.gc_trace(visit);
+        }
+    }
+
+    fn drop_gc_edges(&mut self) {
+        self.clear();
+    }
 }
 
 impl Trace for HashData {
@@ -860,6 +878,65 @@ mod tests {
         };
         let value = Value::LazyThunk(Arc::new(data));
         assert_eq!(gc_trace_node_count(&value), 2);
+    }
+
+    /// The `Mixin` overrides map is a `Gc` node so that `$type.^set_name(...)`
+    /// can write it in place and have every alias of the mixed-in value observe
+    /// the new name — the metamethod gets a *clone* of the invocant, and the
+    /// clone shares the node. This is the exact shape of
+    /// `dispatch_classhow_method`'s `set_name` arm, minus the interpreter, so
+    /// the Miri gate (which runs `--lib gc::`, and this module matches) checks
+    /// the aliased `&mut`'s provenance without needing `Interpreter::new`.
+    ///
+    /// Before the migration the map was an `Arc`, whose payload has no
+    /// `UnsafeCell`, so the same write was a Stacked-Borrows violation
+    /// (`todo/tickets/mixin-overrides-aliased-write-is-still-arc.md`).
+    #[test]
+    fn a_mixin_overrides_write_is_visible_through_every_alias() {
+        let value = Value::mixin(Value::Int(42), std::collections::HashMap::new());
+        let alias = value.clone();
+
+        let ValueView::Mixin(_, overrides) = value.view() else {
+            panic!("not a Mixin");
+        };
+        // SAFETY: the aliased in-place container write this variant exists for;
+        // no borrow into the map is dereferenced across the insert.
+        let map = unsafe { crate::gc::gc_contents_mut(overrides) };
+        map.insert("__mutsu_type_name__".to_string(), Value::Int(7));
+
+        let ValueView::Mixin(_, seen) = alias.view() else {
+            panic!("alias is not a Mixin");
+        };
+        assert_eq!(
+            seen.get("__mutsu_type_name__"),
+            Some(&Value::Int(7)),
+            "an in-place overrides write must be visible through every alias"
+        );
+    }
+
+    /// The overrides map being a node (not an inlined `Arc` wrapper) means
+    /// `gc_trace` yields it directly, so a cycle routed through a mixin's
+    /// overrides is reachable — and yields it exactly once however many mixin
+    /// values share the map, which is what the `uniquely_owned` gate the old
+    /// `Arc` shape needed was working around.
+    #[test]
+    fn mixin_traces_its_overrides_node() {
+        let value = Value::mixin(Value::Int(1), std::collections::HashMap::new());
+        assert_eq!(gc_trace_node_count(&value), 1);
+
+        // A nested `Gc` node inside the map is reached through the node's own
+        // `Trace` impl, not by inlining it here — so the mixin still yields
+        // exactly one edge.
+        let mut overrides = std::collections::HashMap::new();
+        overrides.insert("Bool".to_string(), fresh_hash_node());
+        let with_child = Value::mixin(Value::Int(1), overrides);
+        assert_eq!(gc_trace_node_count(&with_child), 1);
+        let mut nested = 0;
+        let ValueView::Mixin(_, map) = with_child.view() else {
+            panic!("not a Mixin");
+        };
+        map.trace(&mut |_| nested += 1);
+        assert_eq!(nested, 1, "the overrides node traces its own Value edges");
     }
 
     #[test]

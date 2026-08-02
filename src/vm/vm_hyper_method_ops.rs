@@ -871,7 +871,7 @@ impl Interpreter {
                 // inner Arc with the slot holding it), plus the by-identity scan
                 // for any top-level binding that COW-detached.
                 // SAFETY: aliased in-place mutation of a shared container; see
-                // `arc_contents_mut`. No borrow into this ArrayData is live
+                // `gc_contents_mut`. No borrow into this ArrayData is live
                 // across the write.
                 unsafe {
                     crate::value::gc_contents_mut(&existing).items = items.clone();
@@ -1301,7 +1301,7 @@ impl Interpreter {
             // nested-element hyper mutation reaches the element (see the twin
             // site in `exec_hyper_method_call_op`).
             // SAFETY: aliased in-place mutation of a shared container; see
-            // `arc_contents_mut`.
+            // `gc_contents_mut`.
             unsafe {
                 crate::value::gc_contents_mut(&existing).items = items.clone();
             }

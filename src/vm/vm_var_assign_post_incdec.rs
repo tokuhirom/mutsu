@@ -753,7 +753,7 @@ impl Interpreter {
                 if use_inplace {
                     // SAFETY: aliased in-place mutation of a shared hash
                     // (strong_count > 1, the shared-cell case); mirrors the
-                    // array arm's `arc_contents_mut` usage.
+                    // array arm's `gc_contents_mut` usage.
                     let h = unsafe { crate::value::gc_contents_mut(h) };
                     Value::hash_insert_through(&mut h.map, key.clone(), new_val.clone());
                 } else {
@@ -776,7 +776,7 @@ impl Interpreter {
                         let a: &mut crate::value::ArrayData = if use_inplace {
                             // SAFETY: aliased in-place mutation of a shared array
                             // (strong_count > 1, the case that needs the shared
-                            // write); see `arc_contents_mut`.
+                            // write); see `gc_contents_mut`.
                             unsafe { crate::value::gc_contents_mut(arr) }
                         } else {
                             crate::gc::Gc::make_mut(arr)

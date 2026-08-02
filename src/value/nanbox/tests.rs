@@ -309,7 +309,10 @@ fn shared_multifield_box_decodes_by_clone_unique_by_move() {
         other => panic!("decoded as {other:?}"),
     }
     // Shared word: both clones decode to the same field pointers.
-    let b = NanBox::from_repr(ValueRepr::Mixin(inner.clone(), Arc::new(HashMap::new())));
+    let b = NanBox::from_repr(ValueRepr::Mixin(
+        inner.clone(),
+        crate::gc::Gc::new(HashMap::new()),
+    ));
     let b2 = b.clone();
     let (r1, r2) = (b.into_repr(), b2.into_repr());
     match (r1, r2) {
@@ -476,7 +479,7 @@ fn every_variant_roundtrips_losslessly() {
         ValueRepr::HyperWhatever,
         ValueRepr::Mixin(
             Arc::new(Value::int(1)),
-            Arc::new(HashMap::from([("Bool".to_string(), Value::truth(true))])),
+            crate::gc::Gc::new(HashMap::from([("Bool".to_string(), Value::truth(true))])),
         ),
         ValueRepr::Capture {
             positional: Box::new(vec![Value::int(1)]),

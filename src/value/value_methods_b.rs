@@ -6,7 +6,7 @@ impl Value {
     pub fn hash_entry_write(&self, val: Value) {
         if let Some((arc, key)) = self.hash_entry_terminal() {
             // SAFETY: aliased in-place mutation of a shared hash; see
-            // `arc_contents_mut`. No borrow into the map is live across the write.
+            // `gc_contents_mut`. No borrow into the map is live across the write.
             let data = unsafe { crate::value::gc_contents_mut(&arc) };
             Value::hash_insert_through(&mut data.map, key, val);
         }
@@ -20,7 +20,7 @@ impl Value {
     pub fn array_push_in_place(&self, val: Value) -> bool {
         if let ValueView::Array(arc, _) = self.view() {
             // SAFETY: aliased in-place mutation of a shared container; see
-            // `arc_contents_mut`. No borrow into the items is live across the push.
+            // `gc_contents_mut`. No borrow into the items is live across the push.
             let data = unsafe { crate::value::gc_contents_mut(&arc) };
             data.items.push(val);
             true
@@ -41,7 +41,7 @@ impl Value {
             return None;
         };
         // SAFETY: aliased in-place mutation of a shared container; see
-        // `arc_contents_mut`. No borrow into the items is live across the write.
+        // `gc_contents_mut`. No borrow into the items is live across the write.
         let data = unsafe { crate::value::gc_contents_mut(&arc) };
         let hole = data
             .default
@@ -94,7 +94,7 @@ impl Value {
     pub fn array_slot_ref(&self, idx: usize, terminal: bool) -> Option<Value> {
         if let ValueView::Array(arc, _kind) = self.view() {
             // SAFETY: aliased in-place mutation of a shared container; see
-            // `arc_contents_mut`. No borrow into the items is live across the
+            // `gc_contents_mut`. No borrow into the items is live across the
             // growth/promotion below.
             let data = unsafe { crate::value::gc_contents_mut(&arc) };
             // Autovivifying past the end fills the gap with the element's type

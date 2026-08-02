@@ -973,7 +973,7 @@ impl Interpreter {
                     updated.insert(mixin_attr_key, value.clone());
                     Self::sync_mixin_attr_to_instance(minner, method, &value);
                     *cell.lock().unwrap() =
-                        Value::mixin_parts(minner.clone(), std::sync::Arc::new(updated));
+                        Value::mixin_parts(minner.clone(), crate::gc::Gc::new(updated));
                     return Ok(value);
                 }
             }
@@ -1015,7 +1015,7 @@ impl Interpreter {
                     );
                     Self::sync_mixin_attr_to_instance(inner, method, &value);
                     let new_mixin =
-                        Value::mixin_parts(inner.clone(), std::sync::Arc::new(updated_mixins));
+                        Value::mixin_parts(inner.clone(), crate::gc::Gc::new(updated_mixins));
                     if let Some(var_name) = target_var {
                         self.env.insert(var_name.to_string(), new_mixin.clone());
                     }
@@ -1039,7 +1039,7 @@ impl Interpreter {
                 updated_mixins.insert(mixin_attr_key, value.clone());
                 Self::sync_mixin_attr_to_instance(inner, method, &value);
                 let new_mixin =
-                    Value::mixin_parts(inner.clone(), std::sync::Arc::new(updated_mixins));
+                    Value::mixin_parts(inner.clone(), crate::gc::Gc::new(updated_mixins));
                 if let Some(var_name) = target_var {
                     self.env.insert(var_name.to_string(), new_mixin.clone());
                 }

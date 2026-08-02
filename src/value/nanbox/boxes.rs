@@ -113,7 +113,7 @@ pub(in crate::value) struct RoutineBox {
 #[derive(Debug, Clone)]
 pub(in crate::value) struct MixinBox(
     pub(in crate::value) Arc<Value>,
-    pub(in crate::value) Arc<HashMap<String, Value>>,
+    pub(in crate::value) Gc<MixinOverrides>,
 );
 
 #[derive(Debug, Clone)]

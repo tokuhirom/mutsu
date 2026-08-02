@@ -81,7 +81,7 @@ impl Value {
         })
     }
     pub fn mixin(inner: Value, overrides: HashMap<String, Value>) -> Self {
-        Value::Mixin(Arc::new(inner), Arc::new(overrides))
+        Value::Mixin(Arc::new(inner), crate::gc::Gc::new(overrides))
     }
     pub fn generic_range(start: Value, end: Value, excl_start: bool, excl_end: bool) -> Self {
         Value::from_repr(ValueRepr::GenericRange {
@@ -379,7 +379,7 @@ impl Value {
             && let Some((hash_arc, key)) = inner.hash_entry_terminal()
         {
             // SAFETY: aliased in-place mutation of a shared container; see
-            // `arc_contents_mut`. No borrow into the map is live across the write.
+            // `gc_contents_mut`. No borrow into the map is live across the write.
             let hd = unsafe { crate::value::gc_contents_mut(&hash_arc) };
             Value::hash_insert_through(&mut hd.map, key, Value::ContainerRef(arc.clone()));
         }
@@ -465,7 +465,7 @@ impl Value {
     pub fn hash_autovivify(&self, key: &str) -> Option<Value> {
         if let ValueView::Hash(arc) = self.view() {
             // SAFETY: aliased in-place mutation of a shared container; see
-            // `arc_contents_mut`. No borrow into the map is live across the write.
+            // `gc_contents_mut`. No borrow into the map is live across the write.
             let data = unsafe { crate::value::gc_contents_mut(&arc) };
             if !data.map.contains_key(key) {
                 let new_hash = Value::hash(HashMap::new());
@@ -498,7 +498,7 @@ impl Value {
     pub fn hash_autovivify_cell(&self, key: &str) -> Option<Value> {
         if let ValueView::Hash(arc) = self.view() {
             // SAFETY: aliased in-place mutation of a shared container; see
-            // `arc_contents_mut`. No borrow into the map is live across the write.
+            // `gc_contents_mut`. No borrow into the map is live across the write.
             let data = unsafe { crate::value::gc_contents_mut(&arc) };
             match data.map.get_mut(key) {
                 Some(elem) => {
@@ -543,7 +543,7 @@ impl Value {
     pub fn hash_slot_ref(&self, key: &str, terminal: bool) -> Option<Value> {
         if let ValueView::Hash(arc) = self.view() {
             // SAFETY: aliased in-place mutation of a shared container; see
-            // `arc_contents_mut`. No borrow into the map is live across the write.
+            // `gc_contents_mut`. No borrow into the map is live across the write.
             let data = unsafe { crate::value::gc_contents_mut(&arc) };
             match data.map.get_mut(key) {
                 Some(elem) => {
@@ -582,7 +582,7 @@ impl Value {
     pub fn hash_assign_at(&self, key: &str, val: Value) -> Option<Value> {
         if let ValueView::Hash(arc) = self.view() {
             // SAFETY: aliased in-place mutation of a shared container; see
-            // `arc_contents_mut`. No borrow into the map is live across the write.
+            // `gc_contents_mut`. No borrow into the map is live across the write.
             let data = unsafe { crate::value::gc_contents_mut(&arc) };
             Value::hash_insert_through(&mut data.map, key.to_string(), val.clone());
             Some(val)

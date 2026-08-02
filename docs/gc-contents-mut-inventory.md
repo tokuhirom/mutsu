@@ -189,11 +189,12 @@ The primitive/definition/re-export layer, not production mutation sites:
   *mut` cast). Doc/SAFETY refs at 315, 328, 344, 349, 396; unit test at 1086–1092.
 - `src/gc/mod.rs:34` — re-export.
 - `src/gc/safepoint.rs:5` — doc comment (re-entry boundary rule).
-- `src/value/aliased_mut.rs` — the audited wrapper module: `arc_contents_mut` (line 69,
-  dead-code Arc analogue), a shadow `gc_contents_mut` (line 84), and `gc_data_mut` (line 107,
-  branches `strong_count > 1 → gc_contents_mut` else `make_mut`). This module *is* the intended
-  single choke point; its module docs (1–35) already document the unsoundness and name Track B
-  / first-class container cells as the real fix.
+- `src/value/aliased_mut.rs` — the audited wrapper module: `gc_data_mut` (branches
+  `strong_count > 1 → gc_contents_mut` else `make_mut`). This module *is* the intended single
+  choke point. It used to also hold `arc_contents_mut`, the `Arc` analogue kept alive by the
+  one still-`Arc`-backed container (the `Mixin` overrides map); that map became a
+  `Gc<MixinOverrides>` node on 2026-08-03 and the `Arc` primitive was deleted, so there is now
+  exactly one aliased-write primitive in the codebase.
 - `src/value/mod.rs:317` — `pub(crate) use crate::gc::gc_contents_mut;` re-export.
 
 ---
