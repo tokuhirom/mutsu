@@ -28,7 +28,7 @@
 
 use crate::ast::{Expr, Stmt};
 
-const SUPPLY_EMITTER_PREFIX: &str = "__mutsu_supply_emitter_";
+use super::SUPPLY_EMITTER_PREFIX;
 
 /// Returns the 1-based source line of the first `whenever` block found outside
 /// the scope of a `react`/`supply` block, or `None` if every `whenever` is

@@ -385,6 +385,49 @@ impl Value {
         }))
     }
 
+    /// Create a new Sub value that lexically OWNS the given captured names.
+    ///
+    /// Same as [`Value::make_sub`], but seeds `SubData::authoritative_captures`
+    /// so the call-time env merge installs those names from the captured env
+    /// with overwrite instead of letting a same-named lexical in whatever frame
+    /// happens to invoke the closure win. Used for bodies built from AST at
+    /// runtime (a `whenever` body), which have no `CompiledCode` and therefore
+    /// no compile-time `authoritative_free_vars` to vouch for them.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn make_sub_owning(
+        package: Symbol,
+        name: Symbol,
+        params: Vec<String>,
+        param_defs: Vec<ParamDef>,
+        body: Vec<Stmt>,
+        is_rw: bool,
+        env: Env,
+        authoritative_captures: Vec<Symbol>,
+    ) -> Self {
+        Value::Sub(crate::gc::Gc::new(SubData {
+            package,
+            name,
+            params,
+            param_defs,
+            body,
+            is_rw,
+            is_raw: false,
+            env,
+            assumed_positional: Vec::new(),
+            assumed_named: HashMap::new(),
+            id: next_instance_id(),
+            empty_sig: false,
+            is_bare_block: false,
+            compiled_code: None,
+            deprecated_message: None,
+            source_line: None,
+            source_file: None,
+            owned_captures: Vec::new(),
+            authoritative_captures,
+            upvalues: Vec::new(),
+        }))
+    }
+
     /// Build a Sub value from an already-populated `SubData` (e.g. a modified
     /// clone of an existing sub's data).
     pub(crate) fn from_sub_data(data: SubData) -> Value {

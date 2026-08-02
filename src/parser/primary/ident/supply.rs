@@ -14,7 +14,7 @@ pub(crate) fn supply_method_call(body: Vec<Stmt>) -> Expr {
     // would resolve to the inner emitter (an infinite emit loop). A per-parse
     // unique name keeps each block's `emit` bound to its own emitter.
     let id = SUPPLY_EMITTER_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let emitter_name = format!("__mutsu_supply_emitter_{id}");
+    let emitter_name = format!("{}{id}", crate::parser::SUPPLY_EMITTER_PREFIX);
     let lowered_body = rewrite_supply_body(body, &emitter_name);
     Expr::MethodCall {
         target: Box::new(Expr::BareWord("Supply".to_string())),

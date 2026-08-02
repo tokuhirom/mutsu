@@ -628,7 +628,15 @@ impl Interpreter {
                     None
                 }
             };
+            // Carry the compiler's supply-body mark onto the chunk
+            // `eval_block_value` is about to compile from `data.body` — see
+            // `pending_supply_block_body`.
+            self.pending_supply_block_body = data
+                .compiled_code
+                .as_ref()
+                .is_some_and(|cc| cc.is_supply_block_body);
             let body_result = self.eval_block_value(&data.body);
+            self.pending_supply_block_body = false;
             if let Some(p) = saved_anon_pkg {
                 self.set_current_package(p);
             }
@@ -703,6 +711,32 @@ impl Interpreter {
             // `sync_locals_from_env` pull. Mirrors `merge_method_env`'s
             // `changed_caller_locals` for the compiled method path.
             let mut captured_outer_writes: Vec<String> = Vec::new();
+            // A name the body declared with its own `my` is block-private and must
+            // never reach the caller, even though it differs from the body-entry
+            // snapshot: that snapshot holds the CALLER's same-named value, so a
+            // fresh `my` always looks like a mutation to the compares below. This
+            // is the same rule `push_block_declared_keys` and the compiled-closure
+            // exit merge (`vm_closure_dispatch`) already apply; only this
+            // interpreter path was missing it, which is how a `supply { my $x … }`
+            // body's lexical escaped into the caller's `$x`. A declared name that
+            // is ALSO a free var refers to the outer binding for its
+            // pre-declaration uses, so its writeback is kept.
+            let body_declared = data
+                .compiled_code
+                .as_ref()
+                .map(|cc| (&cc.my_declared_sym, &cc.free_var_syms));
+            // A name the closure lexically OWNS is likewise not the caller's: it
+            // was installed with overwrite on entry (`is_authoritative` above),
+            // so writing it back would push the closure's private binding onto a
+            // caller lexical that merely shares the name — the `whenever` body of
+            // a `supply { my $x … }`, whose per-instance state lives in
+            // `closure_env_overrides` instead.
+            let is_body_private = |k: crate::symbol::Symbol| {
+                data.authoritative_captures.contains(&k)
+                    || body_declared
+                        .as_ref()
+                        .is_some_and(|(declared, free)| declared.contains(&k) && !free.contains(&k))
+            };
             if merge_all {
                 for (k, v) in self.env.iter() {
                     // Per-call-site index-rw temps are frame-internal; merging a
@@ -720,6 +754,9 @@ impl Interpreter {
                     // non-local-return target (a quit-handler `return` then
                     // escapes its routine instead of returning from it).
                     if k == "__mutsu_callable_id" {
+                        continue;
+                    }
+                    if is_body_private(*k) {
                         continue;
                     }
                     if merged.contains_key_sym(*k) {
@@ -771,6 +808,9 @@ impl Interpreter {
                     // See the merge_all branch: the ambient callable-instance id
                     // is frame-scoped and must never leak into the caller env.
                     if k == "__mutsu_callable_id" {
+                        continue;
+                    }
+                    if is_body_private(*k) {
                         continue;
                     }
                     if matches!(v.view(), ValueView::Array(..)) {

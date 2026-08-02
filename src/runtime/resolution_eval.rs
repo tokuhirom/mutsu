@@ -172,6 +172,9 @@ impl Interpreter {
         if body.is_empty() {
             return Ok(Value::NIL);
         }
+        // Taken (not read) so a block compiled from *inside* this body does not
+        // inherit the mark — see `pending_supply_block_body`.
+        let is_supply_block_body = std::mem::take(&mut self.pending_supply_block_body);
         let let_mark = self.let_saves_len();
         let mut saved_functions = self.registry().functions.clone();
         let saved_proto_subs = self.registry().proto_subs.clone();
@@ -204,7 +207,8 @@ impl Interpreter {
             .filter(|(k, _)| k.starts_with("&") || k.starts_with("__mutsu_callable_id::"))
             .map(|(k, v)| (*k, v.clone()))
             .collect();
-        let (code, compiled_fns) = self.compile_block_value_opts(body, is_eval_unit);
+        let (mut code, compiled_fns) = self.compile_block_value_opts(body, is_eval_unit);
+        code.is_supply_block_body = is_supply_block_body;
         // Multi-frame coherence (env_dirty-deletion path): box any captured-outer
         // scalar this carrier body writes into a shared cell across env + saved
         // frames, so the by-name write survives the owner frame's env restore.

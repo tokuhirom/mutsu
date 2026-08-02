@@ -129,9 +129,31 @@ impl Interpreter {
         let target_var = target_var_idx.map(|idx| Self::const_str(code, idx));
         let stmt = &code.stmt_pool[body_idx as usize];
         if let Stmt::Block(body) = stmt {
+            // Lexicals the enclosing `supply { … }` body declared with `my`. The
+            // `whenever` callbacks built below capture the live env and are
+            // dispatched later from the emitting thread, whose ambient env is
+            // the main script's — these names must resolve to the block's own
+            // binding, not to a caller lexical that happens to share the name.
+            // A name that is also a free var of this frame refers to the OUTER
+            // binding for its pre-declaration uses, so it is not owned here.
+            //
+            // Restricted to a supply body on purpose: a `react { … }` block
+            // compiles inline into the enclosing frame, so `my_declared_sym`
+            // there is the WHOLE frame's declarations — including the lexicals
+            // sibling `whenever`s are supposed to share (t/react-whenever-
+            // shared-lexical.t). See `CompiledCode::is_supply_block_body`.
+            let owned_lexicals: Vec<crate::symbol::Symbol> = if code.is_supply_block_body {
+                code.my_declared_sym
+                    .iter()
+                    .filter(|sym| !code.free_var_syms.contains(sym))
+                    .copied()
+                    .collect()
+            } else {
+                Vec::new()
+            };
             loan_env!(
                 self,
-                run_whenever_with_value(supply_val, target_var, &param, body)
+                run_whenever_with_value(supply_val, target_var, &param, body, &owned_lexicals)
             )?;
             // Slice F (env<->locals coherence): a `my $tap = do whenever $sup {…}`
             // binds the tap handle by writing `env[target_var]` directly (see
