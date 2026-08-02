@@ -12,6 +12,7 @@
 
 use crate::value::{RuntimeError, Value};
 use num_bigint::BigInt;
+use num_traits::ToPrimitive;
 
 /// Read `bits` bits starting at bit offset `from` from `bytes`, big-endian bit
 /// order. When `signed` is true the result is sign-extended (`read-bits`),
@@ -92,17 +93,52 @@ pub(crate) fn write_bits(
     let mut encoded = value.to_bigint();
     encoded = ((encoded % &modulus) + &modulus) % &modulus;
 
-    for i in 0..bits_u {
-        let shift = bits_u - 1 - i;
-        let bit_is_set = ((&encoded >> shift) & BigInt::from(1u8)) != BigInt::from(0u8);
-        let bit_index = from_u + i;
-        let byte_index = bit_index / 8;
-        let bit_in_byte = 7 - (bit_index % 8);
-        if bit_is_set {
-            out[byte_index] |= 1u8 << bit_in_byte;
-        } else {
-            out[byte_index] &= !(1u8 << bit_in_byte);
-        }
+    let first_bit = from_u & 7;
+    let last_bit = required_bits & 7;
+    let first_byte = from_u >> 3;
+    let last_byte = (required_bits - 1) >> 3;
+
+    if last_bit != 0 {
+        encoded <<= 8 - last_bit;
+    }
+
+    let left_mask = if first_bit == 0 {
+        0
+    } else {
+        (((1u16 << first_bit) - 1) as u8) << (8 - first_bit)
+    };
+    // Rakudo retains this single boundary bit rather than every bit to the
+    // right of a partial write. In particular, writing four bits at offset
+    // zero into 0x05 produces 0x30, not 0x35.
+    let right_mask = if last_bit == 0 {
+        0
+    } else {
+        1u8 << (8 - last_bit - 1)
+    };
+    let low_byte = |value: &BigInt| (value & BigInt::from(0xffu16)).to_u8().unwrap_or(0);
+
+    if first_byte == last_byte {
+        out[first_byte] = low_byte(&encoded) | (out[first_byte] & (left_mask | right_mask));
+        return Ok(out);
+    }
+
+    let mut byte_index = last_byte;
+    if last_bit != 0 {
+        out[byte_index] = low_byte(&encoded) | (out[byte_index] & right_mask);
+        encoded >>= 8;
+    } else {
+        byte_index += 1;
+    }
+
+    let last_full_byte = first_byte + usize::from(first_bit != 0);
+    while byte_index > last_full_byte {
+        byte_index -= 1;
+        out[byte_index] = low_byte(&encoded);
+        encoded >>= 8;
+    }
+    if first_bit != 0 {
+        byte_index -= 1;
+        out[byte_index] = low_byte(&encoded) | (out[byte_index] & left_mask);
     }
     Ok(out)
 }

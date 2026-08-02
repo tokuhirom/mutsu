@@ -1691,7 +1691,7 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::IntBitNeg => {
-                self.exec_int_bit_neg_op();
+                self.exec_int_bit_neg_op()?;
                 *ip += 1;
             }
             OpCode::BoolBitNeg => {

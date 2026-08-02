@@ -5,56 +5,6 @@ use crate::value::ValueView;
 use crate::value::value_buf::{buf_bytes_in, buf_bytes_or_empty, set_buf_bytes};
 use num_bigint::BigInt;
 use num_traits::Signed;
-
-fn value_to_bigint(value: &Value) -> BigInt {
-    match value.view() {
-        ValueView::Int(i) => BigInt::from(i),
-        ValueView::BigInt(n) => (**n).clone(),
-        ValueView::Num(f) => BigInt::from(f as i64),
-        ValueView::Rat(n, d) | ValueView::FatRat(n, d) => {
-            if d == 0 {
-                BigInt::from(0)
-            } else {
-                BigInt::from(n / d)
-            }
-        }
-        ValueView::Bool(b) => BigInt::from(i64::from(b)),
-        ValueView::Str(s) => s
-            .trim()
-            .parse::<i64>()
-            .map(BigInt::from)
-            .unwrap_or_else(|_| BigInt::from(0)),
-        _ => BigInt::from(0),
-    }
-}
-
-fn normalize_twos_complement(mut value: BigInt, bits: usize) -> BigInt {
-    if bits == 0 {
-        return BigInt::from(0);
-    }
-    let modulus = BigInt::from(1u8) << bits;
-    value %= &modulus;
-    if value.is_negative() {
-        value += modulus;
-    }
-    value
-}
-
-fn write_bits_into_bytes(bytes: &mut [u8], from: usize, bits: usize, value: &BigInt) {
-    for i in 0..bits {
-        let bit_index = from + i;
-        let byte_index = bit_index / 8;
-        let bit_in_byte = 7 - (bit_index % 8);
-        let src_shift = bits - 1 - i;
-        let bit_is_set = ((value >> src_shift) & BigInt::from(1u8)) == BigInt::from(1u8);
-        if bit_is_set {
-            bytes[byte_index] |= 1 << bit_in_byte;
-        } else {
-            bytes[byte_index] &= !(1 << bit_in_byte);
-        }
-    }
-}
-
 impl Interpreter {
     pub(crate) fn call_method_mut_with_values(
         &mut self,
@@ -2011,19 +1961,9 @@ impl Interpreter {
                 if from < 0 || bits < 0 {
                     return Err(RuntimeError::new("bit offset/length must be non-negative"));
                 }
-                let from = from as usize;
-                let bits = bits as usize;
                 let mut updated = attributes.to_map();
-                let mut bytes = buf_bytes_in(&updated).unwrap_or_default();
-                let required_bits = from.saturating_add(bits);
-                let required_len = required_bits.div_ceil(8);
-                if bytes.len() < required_len {
-                    bytes.resize(required_len, 0);
-                }
-                let value = normalize_twos_complement(value_to_bigint(&args[2]), bits);
-                if bits > 0 {
-                    write_bits_into_bytes(&mut bytes, from, bits, &value);
-                }
+                let bytes = buf_bytes_in(&updated).unwrap_or_default();
+                let bytes = crate::builtins::buf_bits::write_bits(&bytes, from, bits, &args[2])?;
                 set_buf_bytes(&mut updated, class_name, &bytes);
                 let updated_instance =
                     Value::write_back_sharing(&attributes, class_name, updated, target_id);
