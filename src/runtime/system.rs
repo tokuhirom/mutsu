@@ -126,6 +126,22 @@ impl Interpreter {
                     })
                     .copied()
                     .collect();
+                // Removing only the *new* keys is not enough: a `my` whose name the
+                // caller already uses SHADOWS it, and the shared env has one entry
+                // per name, so the declaration overwrites the caller's value in
+                // place. `my $a = 10; EVAL 'my $a = 999'; say $a` printed 999.
+                // Collect the names this snippet declares and snapshot exactly
+                // those, so they are restored afterwards while a plain assignment
+                // (`EVAL '$a = 999'`, which must write through) is untouched.
+                let eval_shadowed: Vec<(crate::symbol::Symbol, Option<Value>)> =
+                    Self::collect_eval_declared_lexical_keys(&stmts)
+                        .into_iter()
+                        .map(|key| {
+                            let sym = crate::symbol::Symbol::intern(&key);
+                            let prev = self.env.get_sym(sym).cloned();
+                            (sym, prev)
+                        })
+                        .collect();
                 // Snapshot stubs already pending in the outer unit. Class/package
                 // decls install at BEGIN time in raku, so an outer stub that is
                 // defined later in the file is NOT undefined from the EVAL's view;
@@ -142,26 +158,33 @@ impl Interpreter {
                 // private call in the EVAL'd string errors even if a preceding
                 // `return` would short-circuit it at runtime.
                 self.validate_private_calls_against_self(&stmts)?;
-                let value = self.eval_block_value_opts(&stmts, true)?;
-                if self.eval_result_is_unresolved_bareword(&stmts, &value) {
-                    return Err(RuntimeError::undeclared_symbols("Undeclared name"));
+                // The lexical cleanup below has to run whatever the snippet did, so
+                // carry the outcome instead of `?`-ing out of the middle: a
+                // `my` in code that then *dies* (`throws-like 'my $x = 1; die …'`
+                // is a common assertion shape) is still EVAL-scoped.
+                let mut outcome = self.eval_block_value_opts(&stmts, true);
+                if let Ok(value) = &outcome
+                    && self.eval_result_is_unresolved_bareword(&stmts, value)
+                {
+                    outcome = Err(RuntimeError::undeclared_symbols("Undeclared name"));
                 }
-                self.check_unresolved_stubs_excluding(&eval_pre_stubs)?;
+                if outcome.is_ok()
+                    && let Err(e) = self.check_unresolved_stubs_excluding(&eval_pre_stubs)
+                {
+                    outcome = Err(e);
+                }
                 // When the last statement is an assignment, the VM pops the
                 // value from the stack, so eval_block_value returns Nil/Any.
                 // In Raku, EVAL returns the value of the last expression,
                 // which for assignments is the assigned value.
-                let value = if value.is_nil()
-                    || matches!(value.view(), ValueView::Package(name) if name == "Any")
+                if let Ok(value) = &mut outcome
+                    && (value.is_nil()
+                        || matches!(value.view(), ValueView::Package(name) if name == "Any"))
+                    && let Some(Stmt::Assign { name, .. }) = stmts.last()
+                    && let Some(assigned) = self.env.get(name).cloned()
                 {
-                    if let Some(Stmt::Assign { name, .. }) = stmts.last() {
-                        self.env.get(name).cloned().unwrap_or(value)
-                    } else {
-                        value
-                    }
-                } else {
-                    value
-                };
+                    *value = assigned;
+                }
                 // Drop the EVAL's own `my` lexicals (plain user lexical keys that
                 // did not exist before) so they don't leak into the caller's pad.
                 let leaked: Vec<crate::symbol::Symbol> = self
@@ -178,7 +201,19 @@ impl Interpreter {
                 for key in leaked {
                     self.env.remove_sym(key);
                 }
-                Ok(value)
+                // Restore the caller's value for each name the snippet re-declared,
+                // so the EVAL's `my` stayed scoped to the EVAL.
+                for (sym, prev) in eval_shadowed {
+                    match prev {
+                        Some(v) => {
+                            self.env.insert_sym(sym, v);
+                        }
+                        None => {
+                            self.env.remove_sym(sym);
+                        }
+                    }
+                }
+                outcome
             }
             Err(parse_err) => {
                 // BEGIN blocks should execute even when a later parse error occurs.
@@ -194,6 +229,66 @@ impl Interpreter {
                 Err(parse_err)
             }
         }
+    }
+
+    /// The env keys of the `my` lexicals an EVAL'd snippet declares, in the form
+    /// the environment uses (scalars sigil-less, `@`/`%` keeping their sigil).
+    ///
+    /// Only plain `my` declarations count: `our` is package-scoped and `state`
+    /// keeps its own cell, and neither shadows a caller lexical the way a `my`
+    /// does. Nested blocks and loop bodies are walked (a `my` there is even more
+    /// clearly EVAL-scoped), but routine/class bodies are not — their lexicals
+    /// live in their own frame and never reach the caller's pad by this route.
+    fn collect_eval_declared_lexical_keys(stmts: &[Stmt]) -> HashSet<String> {
+        fn env_key(name: &str) -> Option<String> {
+            let name = name.strip_prefix('\\').unwrap_or(name);
+            let key = match name.strip_prefix('$') {
+                // Scalars are stored sigil-less (`$a` -> `"a"`).
+                Some(bare) => bare,
+                None => name,
+            };
+            crate::env::is_plain_user_lexical(key).then(|| key.to_string())
+        }
+        fn walk(stmts: &[Stmt], out: &mut HashSet<String>) {
+            for stmt in stmts {
+                match stmt {
+                    Stmt::VarDecl {
+                        name,
+                        is_state,
+                        is_our,
+                        is_dynamic,
+                        ..
+                    } => {
+                        if !*is_state
+                            && !*is_our
+                            && !*is_dynamic
+                            && let Some(key) = env_key(name)
+                        {
+                            out.insert(key);
+                        }
+                    }
+                    Stmt::For { body, .. }
+                    | Stmt::While { body, .. }
+                    | Stmt::Loop { body, .. }
+                    | Stmt::Block(body)
+                    | Stmt::SyntheticBlock(body)
+                    | Stmt::Default(body)
+                    | Stmt::Catch(body) => walk(body, out),
+                    Stmt::If {
+                        then_branch,
+                        else_branch,
+                        ..
+                    } => {
+                        walk(then_branch, out);
+                        walk(else_branch, out);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let mut out = HashSet::new();
+        walk(stmts, &mut out);
+        out
     }
 
     /// When EVAL is called inside a class body, method declarations should be
