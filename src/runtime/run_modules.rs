@@ -705,7 +705,12 @@ impl Interpreter {
             let before_env_keys: std::collections::HashSet<crate::symbol::Symbol> =
                 self.env.keys().copied().collect();
             let saved_imports = std::mem::take(&mut self.module_imported_names);
+            // Pragmas set by a module are lexical to that module. The module
+            // mainline runs in this interpreter, so restore the caller's mode
+            // after it finishes instead of letting `use strict` leak outward.
+            let saved_strict_mode = self.strict_mode;
             let result = self.run_block(&stmts);
+            self.strict_mode = saved_strict_mode;
             let imported = std::mem::replace(&mut self.module_imported_names, saved_imports);
             module_scope_names = self.collect_module_scope_names(&before_env_keys);
             // A re-import of a name an earlier module already installed adds
