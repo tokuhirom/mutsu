@@ -5,6 +5,7 @@ mod args_matching;
 mod binding_helpers;
 mod binding_signature;
 mod coercion;
+mod role_mixin_class;
 mod roles;
 mod signature;
 mod type_matching;

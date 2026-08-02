@@ -596,7 +596,12 @@ pub(crate) struct AttrReadGuard<'a> {
 
 #[derive(Debug)]
 pub(crate) struct InstanceAttrs {
-    class_name: Symbol,
+    /// The object's type, as an interned `Symbol` id. Interior-mutable so that
+    /// `does` can *rebless* the object in place: mixing a role in creates the
+    /// `C+{R}` mixin type and retags this very node, so every alias of the
+    /// instance — not just the variable `does` was written on — sees the mixin
+    /// (Raku's `does` mutates the object; `but` is the copying one).
+    class_name: std::sync::atomic::AtomicU32,
     /// Shared mutable attribute cell.
     ///
     /// Cross-frame *sharing* (the Raku object-identity semantics that makes an

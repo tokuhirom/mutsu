@@ -599,7 +599,34 @@ impl Interpreter {
                 }
             }
         }
+        Self::drop_flattened_role_duplicates(&mut matches);
         matches
+    }
+
+    /// A composed role is *flattened* into the class: its methods are copied in,
+    /// tagged with `role_origin`. mutsu also keeps the role itself in the class's
+    /// MRO, so a walk over every level finds the same method twice — which would
+    /// make `.*`/`.+` call it twice and put a redundant link in the
+    /// `nextsame`/`callsame` chain. (Rakudo does not keep the role in the MRO at
+    /// all, which is why it never sees the duplicate.) Drop the role's own copy
+    /// whenever a class level already carries the flattened one.
+    fn drop_flattened_role_duplicates(matches: &mut Vec<(Symbol, MethodDef)>) {
+        let flattened: HashSet<&str> = matches
+            .iter()
+            .filter_map(|(_, def)| def.role_origin.as_deref())
+            .collect();
+        if flattened.is_empty() {
+            return;
+        }
+        let doomed: Vec<Symbol> = matches
+            .iter()
+            .map(|(owner, _)| *owner)
+            .filter(|owner| flattened.contains(owner.as_str()))
+            .collect();
+        if doomed.is_empty() {
+            return;
+        }
+        matches.retain(|(owner, _)| !doomed.contains(owner));
     }
 
     /// Resolve methods for .*/,+ dispatch: one resolution per MRO level.
@@ -654,6 +681,7 @@ impl Interpreter {
         if any_failed {
             return Vec::new();
         }
+        Self::drop_flattened_role_duplicates(&mut matches);
         matches
     }
 }

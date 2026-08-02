@@ -540,7 +540,7 @@ impl Value {
         id: u64,
     ) -> Value {
         debug_assert_eq!(attrs.id, id, "instance_sharing_cell id mismatch");
-        let attributes = if attrs.class_name == class_name {
+        let attributes = if attrs.class_name() == class_name {
             crate::gc::Gc::clone(attrs)
         } else {
             crate::gc::Gc::new(attrs.with_class(class_name))

@@ -203,7 +203,7 @@ unsafe fn decode_kind(kind: Kind, bits: u64) -> ValueRepr {
         Kind::Instance => {
             let attributes = unsafe { take_gc::<InstanceAttrs>(bits) };
             ValueRepr::Instance {
-                class_name: attributes.class_name,
+                class_name: attributes.class_name(),
                 id: attributes.id,
                 attributes,
             }
