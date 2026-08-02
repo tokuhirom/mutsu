@@ -19,9 +19,14 @@ file-module path was affected.)
 
 Pinned by `t/exported-term-sub.t` with `t/lib/ExportedTerm.rakumod`.
 
-With this, `Cro::HTTP`'s `t/http-router.rakutest` is **fully green (52/52)** — up
-from 19-then-abort at the start of the day, via
+With this, `Cro::HTTP`'s `t/http-router.rakutest` runs **52 subtests with zero
+failures** — up from 19 at the start of the day, via
 `news/2026-08/regex-literals-are-closures.md`,
 `news/2026-08/pointy-single-literal-parameter.md`,
 `news/2026-08/array-alias-survives-a-thread.md` and
 `news/2026-08/imported-sub-shadows-io-builtin.md`.
+
+**The file is not complete**: it still aborts partway (at the variable-segment
+route block, line 175 of 2119) with `No such method 'named' for invocant of
+type 'Str'`. Every route in that block builds fine on its own, so the failure
+is in the combination — the next thing to bisect there.
