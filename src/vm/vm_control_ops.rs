@@ -205,6 +205,13 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let body_start = *ip + 1;
         let body_end = body_end as usize;
+        let owned_slots: rustc_hash::FxHashSet<usize> = code.ops[body_start..body_end]
+            .iter()
+            .filter_map(|op| match op {
+                OpCode::SetLocalDecl { slot, .. } => Some(*slot as usize),
+                _ => None,
+            })
+            .collect();
         // Snapshot the env keys present before the branch runs so that on exit
         // we can tell a *fresh* block-local `my` (no outer binding of that name)
         // apart from one that merely *shadows* an existing outer binding (which
@@ -268,10 +275,8 @@ impl Interpreter {
                 continue;
             }
             self.env_mut().remove_sym(*sym);
-            for idx in 0..code.locals.len().min(self.locals.len()) {
-                if code.local_sym(idx) == Some(*sym) {
-                    // Fresh declaration's slot is unique to it; its pre-branch
-                    // value is Nil (see the entry comment), so reset to Nil.
+            for &idx in &owned_slots {
+                if idx < self.locals.len() && code.local_sym(idx) == Some(*sym) {
                     self.locals[idx] = Value::NIL;
                 }
             }

@@ -1782,7 +1782,7 @@ mod const_pool_dedup {
     }
 
     #[test]
-    fn env_consumers_are_recorded_separately_before_blanket_removal() {
+    fn env_consumers_publish_only_their_selected_slots() {
         let mut code = CompiledCode::new();
         code.locals.push("x".to_string());
         code.locals.push("slot_only".to_string());
@@ -1799,7 +1799,32 @@ mod const_pool_dedup {
         assert!(code.env_consumer_slots.block_local_scope.is_empty());
         assert!(code.env_consumer_slots.whenever.is_empty());
         assert!(code.captures_env_by_name);
-        // Runtime behavior is still blanket-compatible in this migration layer.
+        assert_eq!(code.needs_env_sync, vec![true, false]);
+    }
+
+    #[test]
+    fn block_scope_does_not_force_unrelated_slots_into_env_sync() {
+        let mut code = CompiledCode::new();
+        code.locals.push("inside".to_string());
+        code.locals.push("unrelated".to_string());
+        code.ops.push(OpCode::BlockScope {
+            pre_end: 1,
+            enter_end: 1,
+            body_end: 3,
+            keep_start: 3,
+            undo_start: 3,
+            post_start: 3,
+            end: 3,
+            is_bare_block: true,
+        });
+        code.ops.push(OpCode::LoadNil);
+        code.ops.push(OpCode::SetLocalDecl {
+            slot: 0,
+            explicit_init: true,
+        });
+        code.compute_needs_env_sync();
+
+        assert_eq!(code.env_consumer_slots.block_scope, vec![true, false]);
         assert_eq!(code.needs_env_sync, vec![true, false]);
     }
 }
@@ -2355,7 +2380,11 @@ impl CompiledCode {
                 | OpCode::GetArrayVar(idx)
                 | OpCode::GetHashVar(idx)
                 | OpCode::AssignExpr(idx)
-                | OpCode::TopicDotAssign(idx) => Some(*idx),
+                | OpCode::TopicDotAssign(idx)
+                | OpCode::IndexAssignExprNested { name_idx: idx, .. }
+                | OpCode::IndexAssignDeepNested { name_idx: idx, .. }
+                | OpCode::MultiDimIndexAssign { name_idx: idx, .. } => Some(*idx),
+                OpCode::AtomicCompoundVar { name_idx, .. } => Some(*name_idx),
                 _ => None,
             };
             let Some(name_idx) = name_idx else { continue };
@@ -2367,6 +2396,26 @@ impl CompiledCode {
                 if local == name.as_str() {
                     slots[slot] = true;
                 }
+            }
+        }
+    }
+
+    fn mark_local_access_slots(&self, start: usize, end: usize, slots: &mut [bool]) {
+        let end = end.min(self.ops.len());
+        for op in &self.ops[start.min(end)..end] {
+            let slot = match op {
+                OpCode::GetLocal(slot)
+                | OpCode::GetLocalRaw(slot)
+                | OpCode::SetLocal(slot)
+                | OpCode::AssignExprLocal(slot)
+                | OpCode::StateVarInit(slot, _) => Some(*slot),
+                OpCode::GetLocalMetaAssign { slot, .. } | OpCode::SetLocalDecl { slot, .. } => {
+                    Some(*slot)
+                }
+                _ => None,
+            };
+            if let Some(needed) = slot.and_then(|slot| slots.get_mut(slot as usize)) {
+                *needed = true;
             }
         }
     }
@@ -2731,10 +2780,16 @@ impl CompiledCode {
                 OpCode::BlockScope { end, .. } => {
                     has_block_scope = true;
                     self.mark_name_access_slots(op_idx + 1, *end as usize, &mut block_scope_slots);
+                    self.mark_local_access_slots(op_idx + 1, *end as usize, &mut block_scope_slots);
                 }
                 OpCode::BlockLocalScope { body_end, .. } => {
                     has_block_local_scope = true;
                     self.mark_name_access_slots(
+                        op_idx + 1,
+                        *body_end as usize,
+                        &mut block_local_scope_slots,
+                    );
+                    self.mark_local_access_slots(
                         op_idx + 1,
                         *body_end as usize,
                         &mut block_local_scope_slots,
@@ -2796,6 +2851,17 @@ impl CompiledCode {
                 self.dup_named_locals[i] = true;
             }
         }
+        // ForLoop's iteration-local restore still journals shadowed bindings by
+        // name. Publish only the duplicate-name slots that can participate in
+        // that journal; ordinary loop slots are already covered by the baked
+        // source/body bitmap above.
+        if has_for_loop {
+            for (slot, is_duplicate) in self.dup_named_locals.iter().copied().enumerate() {
+                if is_duplicate {
+                    self.env_consumer_slots.for_loop[slot] = true;
+                }
+            }
+        }
         if n == 0 {
             return;
         }
@@ -2826,7 +2892,11 @@ impl CompiledCode {
                 | OpCode::GetArrayVar(idx)
                 | OpCode::GetHashVar(idx)
                 | OpCode::AssignExpr(idx)
-                | OpCode::TopicDotAssign(idx) => Some(*idx),
+                | OpCode::TopicDotAssign(idx)
+                | OpCode::IndexAssignExprNested { name_idx: idx, .. }
+                | OpCode::IndexAssignDeepNested { name_idx: idx, .. }
+                | OpCode::MultiDimIndexAssign { name_idx: idx, .. } => Some(*idx),
+                OpCode::AtomicCompoundVar { name_idx, .. } => Some(*name_idx),
                 _ => None,
             };
             if let Some(idx) = name_idx
@@ -3035,39 +3105,40 @@ impl CompiledCode {
                 self.needs_env_sync.iter_mut().for_each(|b| *b = true);
             }
         }
-        // ADR-0018 staged runtime conversion: gather/whenever already have
-        // complete analysis-closure slot sets, so their precise bitmaps can
-        // drive per-store env publication now. Block/loop cleanup still journals
-        // some carrier state by name; keep that consumer-local fallback until
-        // the next layer replaces its restore with baked slots. This is no
-        // longer a frame-wide fallback merely because a stored body is present.
-        if !self.env_consumer_slots.block_scope.is_empty()
-            || !self.env_consumer_slots.block_local_scope.is_empty()
-        {
-            self.needs_env_sync
-                .iter_mut()
-                .for_each(|needed| *needed = true);
-        } else {
-            for slot in 0..n {
-                self.needs_env_sync[slot] |= self
+        // ADR-0018: each env-by-name consumer now publishes exactly the slots
+        // its analysis selected. Block restore retains lexical slot identity,
+        // so the presence of a block no longer forces a frame-wide blanket.
+        for slot in 0..n {
+            self.needs_env_sync[slot] |= self
+                .env_consumer_slots
+                .for_loop
+                .get(slot)
+                .copied()
+                .unwrap_or(false)
+                || self
                     .env_consumer_slots
-                    .for_loop
+                    .block_scope
                     .get(slot)
                     .copied()
                     .unwrap_or(false)
-                    || self
-                        .env_consumer_slots
-                        .gather
-                        .get(slot)
-                        .copied()
-                        .unwrap_or(false)
-                    || self
-                        .env_consumer_slots
-                        .whenever
-                        .get(slot)
-                        .copied()
-                        .unwrap_or(false);
-            }
+                || self
+                    .env_consumer_slots
+                    .block_local_scope
+                    .get(slot)
+                    .copied()
+                    .unwrap_or(false)
+                || self
+                    .env_consumer_slots
+                    .gather
+                    .get(slot)
+                    .copied()
+                    .unwrap_or(false)
+                || self
+                    .env_consumer_slots
+                    .whenever
+                    .get(slot)
+                    .copied()
+                    .unwrap_or(false);
         }
     }
 
