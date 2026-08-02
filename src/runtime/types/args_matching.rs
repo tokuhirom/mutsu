@@ -818,10 +818,12 @@ impl Interpreter {
                 .iter()
                 .filter(|p| p.named)
                 .map(|p| {
-                    // Strip sigil for named params with array/hash sigils: :@l -> "l", :%h -> "h"
+                    // Strip the sigil of a sigiled named param: :@l -> "l",
+                    // :%h -> "h", :&c -> "c"
                     p.name
                         .strip_prefix('@')
                         .or_else(|| p.name.strip_prefix('%'))
+                        .or_else(|| p.name.strip_prefix('&'))
                         .unwrap_or(p.name.as_str())
                 })
                 .collect();

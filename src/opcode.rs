@@ -4571,10 +4571,13 @@ impl CompiledFunction {
                 }));
                 continue;
             }
+            // `:@l` / `:%h` / `:&c` are stored with their sigil; the caller's
+            // Pair key is the bare name.
             let match_key = pd
                 .name
                 .strip_prefix('@')
                 .or_else(|| pd.name.strip_prefix('%'))
+                .or_else(|| pd.name.strip_prefix('&'))
                 .unwrap_or(&pd.name);
             let match_key = match_key
                 .strip_prefix('!')

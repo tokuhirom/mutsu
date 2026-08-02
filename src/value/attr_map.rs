@@ -99,10 +99,11 @@ impl AttrKey for String {
 /// attribute cache (`CompiledCode::local_attr_key`) can pre-resolve it at
 /// compile time and hand the VM a ready `Symbol`.
 pub(crate) fn attr_twigil_base(name: &str) -> Option<(&str, bool)> {
-    // Optional `@`/`%` sigil, then the `!` (private) / `.` (public) twigil.
+    // Optional `@`/`%`/`&` sigil, then the `!` (private) / `.` (public) twigil.
     let rest = name
         .strip_prefix('@')
         .or_else(|| name.strip_prefix('%'))
+        .or_else(|| name.strip_prefix('&'))
         .unwrap_or(name);
     let (bare, is_private) = if let Some(b) = rest.strip_prefix('!') {
         (b, true)

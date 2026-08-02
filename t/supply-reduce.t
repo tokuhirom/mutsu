@@ -1,5 +1,5 @@
+use lib $*PROGRAM.parent(2).add("roast/packages/Test-Helpers/lib");
 use Test;
-use lib $*PROGRAM.parent.add("roast/packages/Test-Helpers");
 use Test::Tap;
 
 plan 5;

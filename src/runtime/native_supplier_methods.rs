@@ -37,6 +37,28 @@ impl Interpreter {
                 }
                 Ok(Value::make_instance(Symbol::intern("Supply"), supply_attrs))
             }
+            "__mutsu_interval_tick" => {
+                // One tick of a scheduler-driven `Supply.interval`. The block
+                // the scheduler holds calls this; the value emitted is the
+                // number of ticks so far, so the stream is 0, 1, 2, ... exactly
+                // as a timer-driven interval produces.
+                if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
+                    let (emitted, done, _) = supplier_snapshot(supplier_id);
+                    if done {
+                        return Ok(Value::NIL);
+                    }
+                    let value = Value::int(emitted.len() as i64);
+                    supplier_emit(supplier_id, value.clone());
+                    let actions = supplier_emit_callbacks(supplier_id, &value);
+                    for action in actions {
+                        if let SupplierEmitAction::Call(tap, emitted, delay_seconds) = action {
+                            Self::sleep_for_supply_delay(delay_seconds);
+                            let _ = self.call_supply_tap(tap, vec![emitted], true);
+                        }
+                    }
+                }
+                Ok(Value::NIL)
+            }
             "__mutsu_register_close_phaser" => {
                 // A CLOSE phaser in a supply block registers its body here, on
                 // the emitter's supplier_id, to run when the tap closes or the
@@ -169,8 +191,12 @@ impl Interpreter {
                                     tap_index,
                                     new_acc.clone(),
                                 );
-                                Self::sleep_for_supply_delay(delay_seconds);
-                                let _ = self.call_sub_value(callback, vec![new_acc], true);
+                                // A `reduce` tap shares this accumulator but has
+                                // no callback: it emits once, at done.
+                                if !callback.is_nil() {
+                                    Self::sleep_for_supply_delay(delay_seconds);
+                                    let _ = self.call_sub_value(callback, vec![new_acc], true);
+                                }
                             }
                             SupplierEmitAction::StartCall {
                                 callable,
@@ -383,6 +409,32 @@ impl Interpreter {
                     for zid in get_supplier_zip_latest_state_ids(supplier_id) {
                         let (action, output_sid) = zip_latest_source_done(zid);
                         if matches!(action, ZipAction::AllDone) {
+                            supplier_done(output_sid);
+                            for done_cb in take_supplier_done_callbacks(output_sid) {
+                                let _ = self.invoke_done_callback(done_cb);
+                            }
+                        }
+                    }
+                    // `Supply.reduce` over a live source emits its single
+                    // folded value now, at done, then finishes downstream.
+                    for (dsid, acc) in take_supplier_reduce_results(supplier_id) {
+                        supplier_emit(dsid, acc.clone());
+                        let ds_actions = supplier_emit_callbacks(dsid, &acc);
+                        for ds_action in ds_actions {
+                            if let SupplierEmitAction::Call(tap, emitted, delay_seconds) = ds_action
+                            {
+                                Self::sleep_for_supply_delay(delay_seconds);
+                                let _ = self.call_supply_tap(tap, vec![emitted], true);
+                            }
+                        }
+                        supplier_done(dsid);
+                        for done_cb in take_supplier_done_callbacks(dsid) {
+                            let _ = self.invoke_done_callback(done_cb);
+                        }
+                    }
+                    // A merged Supply is done only once *every* source is.
+                    for mid in get_supplier_merge_state_ids(supplier_id) {
+                        if let Some(output_sid) = merge_source_done(mid) {
                             supplier_done(output_sid);
                             for done_cb in take_supplier_done_callbacks(output_sid) {
                                 let _ = self.invoke_done_callback(done_cb);
@@ -619,8 +671,12 @@ impl Interpreter {
                                     val
                                 };
                                 supplier_produce_update_acc(sid, tap_index, new_acc.clone());
-                                Self::sleep_for_supply_delay(delay_seconds);
-                                self.call_sub_value(callback, vec![new_acc], true)?;
+                                // A `reduce` tap shares this accumulator but has
+                                // no callback: it emits once, at done.
+                                if !callback.is_nil() {
+                                    Self::sleep_for_supply_delay(delay_seconds);
+                                    self.call_sub_value(callback, vec![new_acc], true)?;
+                                }
                             }
                             SupplierEmitAction::StartCall {
                                 callable,
@@ -843,6 +899,32 @@ impl Interpreter {
                     for zid in get_supplier_zip_latest_state_ids(sid) {
                         let (action, output_sid) = zip_latest_source_done(zid);
                         if matches!(action, ZipAction::AllDone) {
+                            supplier_done(output_sid);
+                            for done_cb in take_supplier_done_callbacks(output_sid) {
+                                let _ = self.invoke_done_callback(done_cb);
+                            }
+                        }
+                    }
+                    // `Supply.reduce` over a live source emits its single
+                    // folded value now, at done, then finishes downstream.
+                    for (dsid, acc) in take_supplier_reduce_results(sid) {
+                        supplier_emit(dsid, acc.clone());
+                        let ds_actions = supplier_emit_callbacks(dsid, &acc);
+                        for ds_action in ds_actions {
+                            if let SupplierEmitAction::Call(tap, emitted, delay_seconds) = ds_action
+                            {
+                                Self::sleep_for_supply_delay(delay_seconds);
+                                let _ = self.call_supply_tap(tap, vec![emitted], true);
+                            }
+                        }
+                        supplier_done(dsid);
+                        for done_cb in take_supplier_done_callbacks(dsid) {
+                            let _ = self.invoke_done_callback(done_cb);
+                        }
+                    }
+                    // A merged Supply is done only once *every* source is.
+                    for mid in get_supplier_merge_state_ids(sid) {
+                        if let Some(output_sid) = merge_source_done(mid) {
                             supplier_done(output_sid);
                             for done_cb in take_supplier_done_callbacks(output_sid) {
                                 let _ = self.invoke_done_callback(done_cb);

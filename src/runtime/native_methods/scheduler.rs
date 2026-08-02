@@ -525,27 +525,13 @@ impl Interpreter {
             }
             "progress-by" => {
                 let duration = args.first().map(|v| v.to_f64()).unwrap_or(0.0);
-                let (callbacks, counter_values) = fake_scheduler_progress_by(sched_id, duration);
-                for cb in callbacks {
+                for cb in fake_scheduler_progress_by(sched_id, duration) {
                     let _ = self.call_sub_value(cb, Vec::new(), true);
-                }
-                if !counter_values.is_empty() {
-                    // Push counter values into the active supply emit buffer
-                    // so tap-ok (with :virtual-time scheduler-driven supplies)
-                    // can collect them.
-                    if let Some(buf) = self.supply_emit_buffer.last_mut() {
-                        for v in &counter_values {
-                            buf.push(Value::int(*v));
-                        }
-                    }
-                    return Ok(Value::array(
-                        counter_values.into_iter().map(Value::int).collect(),
-                    ));
                 }
                 Ok(Value::NIL)
             }
             "time" => {
-                let (_, _) = fake_scheduler_progress_by(sched_id, 0.0);
+                let _ = fake_scheduler_progress_by(sched_id, 0.0);
                 Ok(Value::num(0.0))
             }
             _ => Err(RuntimeError::new(format!(

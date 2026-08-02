@@ -247,6 +247,14 @@ impl Interpreter {
                 sub_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
                 sub_supply_attrs.insert("live".to_string(), Value::TRUE);
                 sub_supply_attrs.insert("supplier_id".to_string(), Value::int(sub_sid as i64));
+                // A group Supply is preserving (rakudo backs each bucket with a
+                // `Supplier::Preserving`): the Pair reaches the outer tap before
+                // any value lands in the bucket, so a consumer that taps the
+                // group later — the usual shape, since the outer tap only
+                // collects the pairs — must still see everything emitted while
+                // it was not listening. Without this the bucket's values were
+                // dropped and a late tap saw only `done`.
+                sub_supply_attrs.insert("preserving".to_string(), Value::TRUE);
                 let sub_supply = Value::make_instance(Symbol::intern("Supply"), sub_supply_attrs);
 
                 // Emit Pair(key, supply) to the classify supplier's taps
@@ -261,6 +269,11 @@ impl Interpreter {
             // Emit the value to the sub-supplier
             supplier_emit(sub_supplier_id, value.clone());
             let actions = supplier_emit_callbacks(sub_supplier_id, &value);
+            // A tap that is already listening consumed this emission, so it is
+            // not part of the preserved backlog a later tap replays.
+            if !actions.is_empty() {
+                supplier_mark_preserved_consumed(sub_supplier_id);
+            }
             self.run_supplier_emit_actions(actions);
         }
 

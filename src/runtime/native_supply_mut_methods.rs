@@ -129,6 +129,24 @@ impl Interpreter {
                     }
                 }
 
+                // A scheduler-driven `Supply.interval` has no timer of its own:
+                // hand the scheduler a tick block now that something is
+                // listening, so `$scheduler.cue(&code, :every, :in)` drives the
+                // emissions. Works for any Scheduler, including a user-written
+                // one (roast's `FakeScheduler`), which is the point — mutsu used
+                // to reach this only through its own native `tap-ok`.
+                if attrs.contains_key("scheduler")
+                    && let Some(interval) = attrs.get("scheduler_interval").map(Value::to_f64)
+                    && let Some(ValueView::Int(sid)) = attrs.get("supplier_id").map(Value::view)
+                {
+                    let scheduler = attrs.get("scheduler").cloned().unwrap_or(Value::NIL);
+                    let delay = attrs
+                        .get("scheduler_delay")
+                        .map(Value::to_f64)
+                        .unwrap_or(0.0);
+                    self.cue_scheduler_interval(scheduler, sid as u64, interval, delay)?;
+                }
+
                 // For a `migrate` Supply, also subscribe the outer migrate tap
                 // on the master supply-of-supplies so that emitted inner supplies
                 // switch the forwarded source (the user tap above was registered
@@ -1022,5 +1040,60 @@ impl Interpreter {
                 method
             ))),
         }
+    }
+
+    /// Cue a scheduler-driven `Supply.interval`'s ticks on its Scheduler.
+    ///
+    /// The block handed to `.cue` is synthesized rather than parsed: its body
+    /// is a call to the internal `__mutsu_interval_tick` method on a Supplier
+    /// literal, so the scheduler holds an ordinary first-class `Callable` it
+    /// can store and invoke whenever its clock says to (the same idiom as
+    /// `promise_keeper_block` in `methods_promise_class`).
+    fn cue_scheduler_interval(
+        &mut self,
+        scheduler: Value,
+        supplier_id: u64,
+        interval: f64,
+        delay: f64,
+    ) -> Result<(), RuntimeError> {
+        let mut supplier_attrs = HashMap::new();
+        supplier_attrs.insert("supplier_id".to_string(), Value::int(supplier_id as i64));
+        let supplier = Value::make_instance(Symbol::intern("Supplier"), supplier_attrs);
+        let body = vec![crate::ast::Stmt::Expr(crate::ast::Expr::MethodCall {
+            target: Box::new(crate::ast::Expr::Literal(supplier)),
+            name: Symbol::intern("__mutsu_interval_tick"),
+            args: Vec::new(),
+            modifier: None,
+            quoted: false,
+        })];
+        let tick = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
+            package: Symbol::intern("GLOBAL"),
+            name: Symbol::intern(""),
+            params: Vec::new(),
+            param_defs: Vec::new(),
+            body,
+            is_rw: false,
+            is_raw: false,
+            env: crate::runtime::Env::new(),
+            assumed_positional: Vec::new(),
+            assumed_named: std::collections::HashMap::new(),
+            id: crate::value::next_instance_id(),
+            empty_sig: false,
+            is_bare_block: true,
+            compiled_code: None,
+            deprecated_message: None,
+            source_line: None,
+            source_file: None,
+            owned_captures: Vec::new(),
+            authoritative_captures: Vec::new(),
+            upvalues: Vec::new(),
+        }));
+        let args = vec![
+            tick,
+            Value::pair("every".to_string(), Value::num(interval)),
+            Value::pair("in".to_string(), Value::num(delay)),
+        ];
+        self.call_method_with_values(scheduler, "cue", args)?;
+        Ok(())
     }
 }

@@ -1513,9 +1513,11 @@ impl Interpreter {
                 let scheduler = Self::named_value(&args, "scheduler");
 
                 if let Some(sched) = scheduler {
-                    // Scheduler-driven Supply.interval:
-                    // Store scheduler info; the scheduler will drive emissions
-                    // when progress-by is called.
+                    // Scheduler-driven `Supply.interval`: the scheduler owns the
+                    // clock, so tapping this Supply cues a tick block on it
+                    // (see `cue_scheduler_interval`) rather than starting a
+                    // timer. Back it with a supplier so the tap registers and
+                    // the cued ticks emit through the ordinary path.
                     let mut attrs = HashMap::new();
                     attrs.insert("values".to_string(), Value::array(Vec::new()));
                     attrs.insert("taps".to_string(), Value::array(Vec::new()));
@@ -1523,6 +1525,10 @@ impl Interpreter {
                     attrs.insert("scheduler".to_string(), sched);
                     attrs.insert("scheduler_interval".to_string(), Value::num(period_secs));
                     attrs.insert("scheduler_delay".to_string(), Value::num(initial_delay));
+                    attrs.insert(
+                        "supplier_id".to_string(),
+                        Value::int(super::native_methods::next_supplier_id() as i64),
+                    );
                     return Ok(Value::make_instance(Symbol::intern("Supply"), attrs));
                 }
 

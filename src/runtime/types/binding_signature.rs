@@ -467,6 +467,7 @@ impl Interpreter {
                         .name
                         .strip_prefix('@')
                         .or_else(|| pd.name.strip_prefix('%'))
+                        .or_else(|| pd.name.strip_prefix('&'))
                         .unwrap_or(&pd.name);
                     after_sigil
                         .strip_prefix('!')
@@ -930,15 +931,16 @@ impl Interpreter {
                 {
                     rest
                 } else if pd.named {
-                    // Named params like :@l or :%h have name "@l" or "%h";
-                    // strip the sigil to match the Pair key "l" or "h".
+                    // Named params like :@l, :%h or :&c have name "@l", "%h" or
+                    // "&c"; strip the sigil to match the Pair key "l", "h", "c".
                     // Also strip twigil prefixes: :$!x has name "!x", :$.x has name ".x",
                     // :@!types has name "@!types" -- match against Pair key "types".
-                    // First strip sigil (@, %), then strip twigil (!, .).
+                    // First strip sigil (@, %, &), then strip twigil (!, .).
                     let after_sigil = pd
                         .name
                         .strip_prefix('@')
                         .or_else(|| pd.name.strip_prefix('%'))
+                        .or_else(|| pd.name.strip_prefix('&'))
                         .unwrap_or(&pd.name);
                     after_sigil
                         .strip_prefix('!')
@@ -1978,7 +1980,10 @@ impl Interpreter {
                             || pd.name == format!("@:{}", key)
                             || pd.name == format!("%:{}", key)
                             // Named params with sigils: :@l has name "@l", match key "l"
-                            || (pd.named && (pd.name == format!("@{}", key) || pd.name == format!("%{}", key)))
+                            || (pd.named
+                                && (pd.name == format!("@{}", key)
+                                    || pd.name == format!("%{}", key)
+                                    || pd.name == format!("&{}", key)))
                         {
                             return true;
                         }
