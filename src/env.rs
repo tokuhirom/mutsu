@@ -51,6 +51,15 @@ pub(crate) fn global_base_contains(name: &str) -> bool {
     global_base().is_some_and(|b| b.contains_key(&Symbol::intern(name)))
 }
 
+/// Env-key prefix under which a block-scoped `sub` stores its `Sub` value so a
+/// closure that escapes the block can still call it by bare name (block exit
+/// restores the routine registry, dropping the registration). Reserved rather
+/// than the plain `&name` key: while the block is live the registry entry is
+/// authoritative — it carries `state` variables and the wrap chain — and the
+/// bareword/call paths consult `&name` *ahead* of it. Read only after the
+/// registry misses. See `exec_register_sub_op`.
+pub(crate) const BLOCK_LEXICAL_SUB_PREFIX: &str = "__mutsu_block_lexical_sub::";
+
 /// True if `name` is a *plain user lexical* env key — a `my`/`our`-declared
 /// scalar/array/hash/sub whose name is an ordinary lowercase identifier (stored
 /// scalar-sigilless, e.g. `$x` → `"x"`, `@a` → `"@a"`). These are the only env

@@ -1010,6 +1010,19 @@ impl Interpreter {
             return result;
         }
 
+        // A sub declared lexically in a block, called from a closure that
+        // escaped it: block exit restored the routine registry, so nothing
+        // above could resolve the name, but the closure's captured env still
+        // carries the Sub under a reserved key. Last resort, after every
+        // registry path (see `BLOCK_LEXICAL_SUB_PREFIX`).
+        if let Some(sub_val) = self
+            .env
+            .get(&format!("{}{name}", crate::env::BLOCK_LEXICAL_SUB_PREFIX))
+            .cloned()
+        {
+            return self.eval_call_on_value(sub_val, args.to_vec());
+        }
+
         let suggestions = self.suggest_routine_names(name);
         Err(RuntimeError::undeclared_routine_symbols(
             name,
