@@ -493,6 +493,22 @@ pub(crate) struct NativeCtorPlan {
     pub(crate) has_build: bool,
     pub(crate) has_tweak: bool,
     pub(crate) has_smiley: bool,
+    /// True when this class's attribute set is FULLY known to the registry:
+    /// the class is user-declared and every type in its MRO other than the
+    /// universal roots (`Any`/`Mu`/`Cool`) is user-declared too.
+    ///
+    /// Raku's default `BUILDALL` only initialises DECLARED attributes and
+    /// silently ignores a named argument that names none — upstream
+    /// `Cro::HTTP2::FrameParser` relies on that, splatting a `conn => …` header
+    /// into every frame class. mutsu used to stash such a stray key in the
+    /// instance's attribute map, where `.^attributes` never showed it but
+    /// `eqv`/`===` compared it, so a parsed frame never matched an otherwise
+    /// identical one built by hand. Construction drops the stray key when this
+    /// is true. It has to be false for a class with a BUILTIN base (`is
+    /// Exception`, `is Supplier`, …): those keep attributes of their own
+    /// outside the registry (`message`, `payload`, …) that construction must
+    /// still accept.
+    pub(crate) attrs_fully_known: bool,
     /// A user-defined (or role-composed) public `bless` method anywhere in the
     /// MRO — such a class must take the interpreter's generic dispatch instead
     /// of the native `bless` fork.
