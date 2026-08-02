@@ -420,3 +420,82 @@ further down the file. When it runs clean, step 2 above is done.
 Beware when re-measuring which ops are missing: **the shell here is zsh**, which
 does not word-split a plain `$var`, so `ops=$(...); for op in $ops` silently
 iterates once. Use `... | while read op` or `$(...)` directly in the `for`.
+
+## Step 3 is much further away than the `t/` sweep implies: roast, measured (2026-08-02)
+
+Every measurement above is over `t/`. **roast had never been run under
+`MUTSU_REAL_TEST=1`**, and roast is the larger consumer — 1435 whitelisted
+files, all of them standing on `Test`. Measured on `fdc4ea69d` (release build,
+`prove -j6`, the same per-file timeouts `make roast` uses):
+
+```bash
+MUTSU_REAL_TEST=1 MUTSU_BIN=target/release/mutsu \
+  prove -j6 -e 'scripts/run-roast-test.sh' $(cat roast-whitelist.txt)
+```
+
+| | files |
+| --- | --- |
+| whitelisted (all pass under the native provider — `main` is protected) | 1435 |
+| **regress under the real `Test`** | **343** |
+
+So step 3 cannot be "flip `runtime_module.rs` and expect the first `make roast`
+to be the review": that flip regresses 24% of the whitelist. The `t/` residue
+(21 files, of which 5 `raku` also fails) is not a proxy for it.
+
+### What the 343 are
+
+Split by whether the file loads a roast helper module:
+
+| | files |
+| --- | --- |
+| uses `Test::Util` or `Test::Tap` (269 whitelisted files do) | 159 |
+| uses neither | 184 |
+
+**The helper-module intercept is not the dominant cause.** Flipping
+`user_test_decl_beats_native` from `is_test_module_export` to
+`is_test_function_name` — the one-line retirement in
+`todo/tickets/retire-native-test-util-overrides.md` — was measured on top of
+`MUTSU_REAL_TEST=1`: **343 → 315** (32 files fixed, 4 newly broken). Worth
+having, but it is a tenth of the problem, not the problem.
+
+The 184 non-helper files are ordinary interpreter gaps that only the strict
+module exposes, in the same distribution the `t/` sweep found: 30 abort
+mid-file with a plan mismatch (`# You planned N tests, but ran M`, each from its
+own cause — an unresolved symbol, `skip` rejecting a non-integer count, …), the
+rest are single assertions.
+
+### `Test::Tap` is a second native provider, and retiring it is its own slice
+
+`use Test::Tap` is a native no-op (`runtime_module.rs`), exactly like `use Test`
+— the real `roast/packages/Test-Helpers/lib/Test/Tap.rakumod` is never loaded,
+and `tap-ok` is answered by `src/runtime/test_functions/tap_ok.rs`. That is why
+44 whitelisted files (the `S17-supply` cluster) report `You planned N tests, but
+ran 0` under the real `Test`: the native `tap-ok` and the module keep separate
+counters. It is *not* the `user_test_decl_beats_native` guard — `tap-ok` is
+already in `TEST_MODULE_EXPORTS`, so the guard is consulted and correctly
+declines only because no declaration exists to find.
+
+Deleting the `module == "Test::Tap"` arm makes all 44 load the real module, and
+`elems.t` then passes under both providers. But **6 of the 44 regress under the
+*native* provider** once the real `tap-ok` runs, because it asserts with the
+real `is-deeply` where mutsu's native `tap-ok` was lenient:
+
+| file | what the real `tap-ok` exposes |
+| --- | --- |
+| `S17-supply/rotor.t` | `Supply.rotor` emits `List`s where rakudo emits `Array`s — `[(1,2,3)]` vs `[[1,2,3]]` |
+| `S17-supply/classify.t`, `categorize.t`, `interval.t`, `merge.t`, `reduce.t` | the tap callback's `@res.push($_)` collects **nothing** (`got: []`) when the emit runs on a timer/scheduler thread |
+
+Both are real bugs (`raku` passes all six), so the retirement is a slice that
+has to fix them first — see `todo/tickets/retire-native-test-tap.md`.
+
+### The order this implies
+
+1. Land the individual interpreter gaps the strict module exposes — the 184
+   non-helper roast files and the `t/` residue are the same kind of work.
+2. `todo/tickets/retire-native-test-tap.md` (44 files, 6 real bugs behind it).
+3. `todo/tickets/retire-native-test-util-overrides.md` (worth 32 roast files on
+   top of the real `Test`; already 227/228 on its own `t/`-side measurement).
+4. Only then step 3.
+
+Re-measure with the command at the top of this section, not with
+`scripts/test-module-sweep.sh` alone.
