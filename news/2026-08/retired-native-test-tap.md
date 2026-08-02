@@ -30,7 +30,13 @@ were always undefined and every `after-tap() if &after-tap` guard silently
 skipped (`news/2026-08/named-callable-parameter-binds.md`).
 
 All 44 files now pass with the real module, and the full `make roast` (1435
-files) is green with the intercept gone. `src/runtime/test_functions/tap_ok.rs`
+files) is green with the intercept gone. Measured against the vendoring
+ledger's own yardstick — the whitelist run under `MUTSU_REAL_TEST=1` — the
+regression count drops from **343 to 301**, and the `Test::Tap` share of it
+from **44 to 2**. Those two (`S17-supply/first.t`, `S17-supply/interval.t`)
+report every subtest passing and then exit 255 on the real `Test` module's plan
+check at END, so they are ordinary step-1 residue rather than anything to do
+with this provider. `src/runtime/test_functions/tap_ok.rs`
 is deleted along with its `TEST_MODULE_EXPORTS` / `is_test_function_name` /
 `compile_consts` entries, and with the counter-mode `FakeScheduler` cue that
 existed only to serve it. Three `t/` files that had been relying on the native

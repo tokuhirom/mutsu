@@ -508,6 +508,18 @@ has to fix them first — see `todo/tickets/retire-native-test-tap.md`.
 Re-measure with the command at the top of this section, not with
 `scripts/test-module-sweep.sh` alone.
 
-**Note the 343 figure predates the `Test::Tap` retirement**, and 44 of those
-files were in the S17-supply cluster it covers. Re-measure before planning
-against it.
+### Re-measured after the `Test::Tap` retirement (2026-08-02)
+
+| | before | after |
+| --- | --- | --- |
+| regress under the real `Test`  | 343 | **301 / 1435** |
+| of those, using `Test::Tap` | 44 | **2** |
+| of those, using any helper module | 159 | 117 |
+
+The two `Test::Tap` files left are `S17-supply/first.t` and
+`S17-supply/interval.t`, and neither is a `Test::Tap` problem: both report *all*
+subtests passing and then exit 255 on a plan mismatch at END — the real `Test`
+module's own plan check, i.e. ordinary step-1 residue.
+
+So the remaining work is what step 1 always was: the ~184 non-helper files plus
+the helper-module residue, one general interpreter gap at a time.
