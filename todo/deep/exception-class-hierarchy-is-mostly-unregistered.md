@@ -67,6 +67,16 @@ So the work is:
    match on the class *name*, so the payoff is concentrated in the sites where
    mutsu constructs the exception itself.
 
+A worked example of why step 3 comes first: three files in the Test-vendoring
+sweep were filed here because their failure text named two `X::Undeclared*`
+classes. Two of them (`block-lexical-scope.t`,
+`gate-b-callee-name-collision-and-deref-capture.t`) were not hierarchy problems
+at all — mutsu raised the *wrong class* for an undeclared variable and for a
+call to a CORE term constant
+(`news/2026-08/undeclared-variable-is-not-undeclared-symbols.md`). Registering
+`X::Undeclared::Symbols` under `X::Undeclared` to "fix" them would have baked in
+inheritance raku does not have. Read the failure, do not pattern-match the name.
+
 Step 3 is worth doing first as a cheap sanity check: on the full Test-vendoring
 sweep only 2 of the 9 remaining regressions are caused by an unregistered class,
 so this is a correctness-of-the-type-system task rather than a

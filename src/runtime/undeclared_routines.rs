@@ -21,6 +21,19 @@ use std::collections::HashSet;
 
 use super::Interpreter;
 
+/// Core *term* constants: names that resolve to a value in CORE but are not
+/// routines. Calling one of them is not the same error as calling a name
+/// nobody declared — the symbol exists, it just does not exist under the `&`
+/// sigil — so rakudo answers `X::Undeclared` naming `&e` ("Variable '&e' is
+/// not declared") where an entirely unknown `zzz()` gets the CHECK-time
+/// `X::Undeclared::Symbols`. The two classes are unrelated (`X::Comp` is a
+/// role, not a superclass), so `throws-like 'e()', X::Undeclared` sees the
+/// difference.
+///
+/// `now`, `time` and `rand` are deliberately absent: they are real routines.
+pub(crate) const CORE_TERM_CONSTANTS: &[&str] =
+    &["e", "i", "pi", "tau", "Inf", "NaN", "True", "False"];
+
 /// Native (lowercase) type names that may appear in call position as
 /// coercions/constructors (`int8(...)`) without being routine declarations.
 const NATIVE_TYPE_NAMES: &[&str] = &[

@@ -245,9 +245,7 @@ impl Interpreter {
                 return Err(err);
             }
             if !is_internal && !is_special && !is_private_attr && !self.env().contains_key(name) {
-                return Err(RuntimeError::new(format!(
-                    "X::Undeclared::Symbols: Variable '{name}' is not declared"
-                )));
+                return Err(RuntimeError::undeclared_variable(name));
             }
             // `is default(...)`: return the default value instead of Nil.
             if let Some(def) = self.var_default(name) {

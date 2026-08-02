@@ -17,6 +17,37 @@ impl RuntimeError {
         Self::typed("X::Undeclared", attrs)
     }
 
+    /// X::Undeclared for a *variable* read that found no declaration.
+    ///
+    /// Rakudo splits the two undeclared families by what the symbol is, not by
+    /// when it was noticed: a variable is `X::Undeclared` (`Variable '$x' is
+    /// not declared`) and a bareword/routine is `X::Undeclared::Symbols`
+    /// (`Undeclared routine:\n    zzz used at line 1`). `$x ~~ X::Undeclared`
+    /// is False for the Symbols variant — the two classes share the `X::Comp`
+    /// role, not a superclass — so answering with the wrong one is visible to
+    /// `throws-like`.
+    ///
+    /// `name` is an env key, which for scalars carries no sigil; the reported
+    /// symbol always does.
+    pub(crate) fn undeclared_variable(name: &str) -> Self {
+        let symbol = match name.as_bytes().first() {
+            Some(b'$' | b'@' | b'%' | b'&') => name.to_string(),
+            _ => format!("${name}"),
+        };
+        let mut attrs = HashMap::new();
+        attrs.insert("what".to_string(), Value::str("Variable".to_string()));
+        attrs.insert("symbol".to_string(), Value::str(symbol.clone()));
+        attrs.insert("name".to_string(), Value::str(symbol.clone()));
+        attrs.insert("post".to_string(), Value::str(symbol.clone()));
+        attrs.insert("highexpect".to_string(), Value::array(vec![]));
+        attrs.insert("suggestions".to_string(), Value::array(vec![]));
+        attrs.insert(
+            "message".to_string(),
+            Value::str(format!("Variable '{symbol}' is not declared")),
+        );
+        Self::typed("X::Undeclared", attrs)
+    }
+
     /// X::Undeclared::Symbols - Undeclared name (symbols variant)
     pub(crate) fn undeclared_symbols(message: impl Into<String>) -> Self {
         Self::typed_msg("X::Undeclared::Symbols", message)
