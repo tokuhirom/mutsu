@@ -785,6 +785,16 @@ impl Interpreter {
         // where completed thread output is not lost.
         self.drain_shared_thread_output();
         if !self.end_phasers.is_empty() {
+            // Rakudo latches the process status at the *first* `exit`
+            // (`the-end-is-nigh`): an `exit` raised while one is already
+            // unwinding still ends the block it runs in, but it neither
+            // overwrites the status nor stops the END phasers that have not run
+            // yet. So `END { exit 7 }` decides the status of a program that ends
+            // on its own, and is status-inert in a program that already said
+            // `exit 42` — while the *other* END phasers run either way.
+            let exit_already_requested = self.halted;
+            let saved_exit_lock = self.exit_status_locked;
+            self.exit_status_locked = exit_already_requested;
             // Clear halted flag so END phasers can execute even after exit()
             self.halted = false;
             let phasers = self.end_phasers.clone();
@@ -828,6 +838,14 @@ impl Interpreter {
                 }
                 let body_result = self.run_block(body);
                 self.set_current_package(saved_package);
+                if self.halted {
+                    // This phaser called `exit`. Whatever status it asked for is
+                    // settled now (either it was the first `exit` and owns the
+                    // status, or the lock already held it); let the remaining
+                    // phasers run instead of inheriting the halt.
+                    self.exit_status_locked = true;
+                    self.halted = false;
+                }
                 body_result?;
                 // Remove only the overlay keys (captured lexicals not in
                 // the current scope), keeping mutations to shared variables.
@@ -835,6 +853,11 @@ impl Interpreter {
                     self.env.remove(k);
                 }
             }
+            // Restore the halt for anything downstream that reads it, then drop
+            // the status lock: `finish` also runs for a nested in-process
+            // program (`is_run`), whose interpreter goes on being used.
+            self.halted = exit_already_requested || self.exit_status_locked;
+            self.exit_status_locked = saved_exit_lock;
         }
         self.run_pending_instance_destroys()?;
         // Print deprecation report to stderr at program exit
