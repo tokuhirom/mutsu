@@ -1130,10 +1130,14 @@ impl Compiler {
         {
             bind_stmts.push(bind_stmt(single_param.clone(), Expr::Var("_".to_string())));
         }
-        if let Some(def) = param_def
-            && let Some(sub_params) = &def.sub_signature
-        {
-            let target_name = param.as_deref().unwrap_or("_").to_string();
+        // Unpack a destructuring pattern out of the value already bound to
+        // `target_name`. Used both for the single-pattern pointy block
+        // (`-> [$a, $b]`, whose target is the whole iteration value) and for each
+        // pattern of a multi-parameter one (`-> [$a, $b], [$c, $d]`, whose
+        // targets are the per-element synthetic params bound further below).
+        let destructure_binds = |target_name: String,
+                                 sub_params: &[crate::ast::ParamDef],
+                                 bind_stmts: &mut Vec<Stmt>| {
             let mut positional_index = 0usize;
             for sub in sub_params {
                 if sub.name.is_empty() {
@@ -1285,6 +1289,15 @@ impl Compiler {
                     positional_index += 1;
                 }
             }
+        };
+        if let Some(def) = param_def
+            && let Some(sub_params) = &def.sub_signature
+        {
+            destructure_binds(
+                param.as_deref().unwrap_or("_").to_string(),
+                sub_params,
+                &mut bind_stmts,
+            );
         }
         // `_.elems` on the per-iteration chunk array — the number of source
         // elements that actually flowed into this batch.
@@ -1394,6 +1407,20 @@ impl Compiler {
         }
         if let Some(stmt) = deferred_topic {
             bind_stmts.push(stmt);
+        }
+        // A multi-parameter pointy block may destructure any of its parameters
+        // (`-> [$target, $variant], [$expected, $desc]`). The parameter itself is
+        // bound from its chunk element above; unpack it now that it holds a value.
+        for (i, def) in params_def.iter().enumerate() {
+            if let Some(sub_params) = &def.sub_signature
+                && let Some(name) = params.get(i)
+            {
+                destructure_binds(
+                    name.strip_prefix('\\').unwrap_or(name).to_string(),
+                    sub_params,
+                    &mut bind_stmts,
+                );
+            }
         }
         // Sigilless multi-params (`-> \k, \v`) are raw bindings that alias the
         // source element directly; in Raku they are writable and modifications
