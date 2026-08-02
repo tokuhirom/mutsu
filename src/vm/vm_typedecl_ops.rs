@@ -296,6 +296,14 @@ impl Interpreter {
             // `C1` in the env so that subsequent code inside the same
             // module can refer to it bare. Skip this when the parent
             // package is a class (where suppress_name semantics apply).
+            // TODO: this alias is global, but it belongs to the *declaring*
+            // package's scope. A file-scope `class Cro::Hdr { }` makes bare `Hdr`
+            // resolve to it, where raku reports `Hdr` as an undeclared name, and
+            // that shadows a later same-short-name declaration in an inner scope
+            // (see todo/tickets/package-short-name-alias-is-global.md). Gating it
+            // on `current_package` being the declaring package is NOT enough:
+            // `class URI::Path` is declared at file scope in its own module and
+            // `unit class URI`'s methods legitimately name it bare.
             if qualified_name.contains("::") && !parent_is_class {
                 let short = qualified_name
                     .rsplit_once("::")
@@ -533,6 +541,14 @@ impl Interpreter {
             // in this scope (which may be stored under a mangled name), matching
             // the class-parent remapping in `exec_register_class_op`.
             self.remap_role_parents_via_env(&qualified_name);
+            // A role declared in a CLASS body (`unit class UA; role Connection
+            // { … }`) is scoped to that class, like a nested `my class`. Record
+            // the short name so `resolve_suppressed_type` resolves it through the
+            // owner package chain from the class's own methods — the bare env
+            // alias does not outlive the class body.
+            if !name_str.contains("::") && self.has_class(&current_package) {
+                self.register_class_scoped_short_name(&name_str);
+            }
             if *is_export && !self.suppress_exports {
                 // The compiler may have pre-qualified the role name
                 // (e.g. `R1` → `GH2613::R1`) when compiling under a
@@ -647,10 +663,20 @@ impl Interpreter {
         } = stmt
         {
             let resolved_name = name.resolve();
+            let subset_package = self.current_package().to_string();
             loan_env!(
                 self,
                 register_subset_decl(&resolved_name, base, predicate.as_ref(), version, *is_my)
             );
+            // A subset declared in a CLASS body (`class Req { subset Method of
+            // Str … }`) is scoped to that class, exactly like a nested `my class`.
+            // Record the short name so `resolve_suppressed_type` resolves it
+            // through the owner package chain from the class's own methods and
+            // during construction — the bare env alias `register_subset_decl`
+            // leaves behind does not outlive the class body.
+            if !resolved_name.contains("::") && self.has_class(&subset_package) {
+                self.register_class_scoped_short_name(&resolved_name);
+            }
             // When a subset is declared `is export` inside a module, record it
             // in the export table so `import M` (and `use M`) can find it.
             // The subset type itself is already registered under its bare name
