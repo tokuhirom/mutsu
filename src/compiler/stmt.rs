@@ -3360,7 +3360,32 @@ impl Compiler {
                 let name_idx = self.code.add_constant(Value::str(module.clone()));
                 self.code.emit(OpCode::NeedModule(name_idx));
             }
-            Stmt::EnumDecl { .. } => {
+            Stmt::EnumDecl {
+                name,
+                variants,
+                is_my,
+                ..
+            } => {
+                // A `my enum` binds its type name AND every variant name lexically
+                // in this block, exactly like a `my` variable — so record them as
+                // the block's own declarations. That is what makes them survive
+                // into a `whenever` callback of the enclosing `supply { … }` body
+                // (they are installed with overwrite as `authoritative_captures`)
+                // instead of losing to a same-named outer binding when the callback
+                // runs from the emitting thread's env: `supply { my enum E
+                // <StatusLine Header Body>; whenever … { … Header … } }` resolved
+                // `Header` to a file-scope `class …::Header` alias. It also stops
+                // the binding leaking back to the caller on block exit, which is
+                // what the same set already does for `my $x`.
+                if *is_my {
+                    self.code.my_declared_sym.insert(*name);
+                    self.code.my_declared_enum_sym.insert(*name);
+                    for (variant, _) in variants {
+                        let sym = Symbol::intern(variant);
+                        self.code.my_declared_sym.insert(sym);
+                        self.code.my_declared_enum_sym.insert(sym);
+                    }
+                }
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::RegisterEnum(idx));
             }

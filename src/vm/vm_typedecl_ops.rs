@@ -27,7 +27,7 @@ impl Interpreter {
             name,
             variants,
             is_export,
-            is_my: _,
+            is_my,
             base_type,
             language_version,
         } = stmt
@@ -36,6 +36,18 @@ impl Interpreter {
                 self,
                 register_enum_decl(&name.resolve(), variants, *is_export, base_type.as_deref(),)
             )?;
+            // A `my enum` is lexical: its type name and every variant name die
+            // with the enclosing block, so record them the way `DeclareVar`
+            // records a `my $x`. Block exit otherwise propagated the variant
+            // bindings outwards and a same-named outer symbol stayed clobbered
+            // for the rest of the program (`{ my enum E <Zed> }; Zed` answered
+            // the enum value rather than the file-scope `class Zed`).
+            if *is_my && let Some(set) = self.block_declared_vars.last_mut() {
+                set.insert(*name);
+                for (variant, _) in variants {
+                    set.insert(crate::symbol::Symbol::intern(variant));
+                }
+            }
             // Store language revision metadata from the version captured at parse time
             if !name.resolve().is_empty() {
                 self.store_language_revision_from_version(&name.resolve(), language_version);

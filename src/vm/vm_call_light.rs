@@ -361,7 +361,12 @@ impl Interpreter {
                     {
                         continue;
                     }
-                    if !cf.is_callee_local_sym(*k) {
+                    // A `my enum` the callee declared is one of its own lexicals
+                    // too, but it gets no local slot, so `is_callee_local_sym`
+                    // does not see it and the binding leaked into the caller —
+                    // clobbering a same-named outer symbol for the rest of the
+                    // program.
+                    if !cf.is_callee_local_sym(*k) && !cf.code.my_declared_enum_sym.contains(k) {
                         self.env_mut().insert_sym(*k, v.clone());
                     }
                 }
@@ -384,7 +389,8 @@ impl Interpreter {
                             || k.with_str(|s| s.starts_with('?'))
                             || (bang_is_callee_private
                                 && k.with_str(crate::runtime::utils::is_routine_scoped_error_var))
-                            || cf.is_callee_local_sym(*k))
+                            || cf.is_callee_local_sym(*k)
+                            || cf.code.my_declared_enum_sym.contains(k))
                     });
                 }
             }
