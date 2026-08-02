@@ -127,7 +127,14 @@ impl Interpreter {
     ) -> Value {
         let current = current.map(Value::into_descalarized);
         match current.as_ref().map(Value::view) {
-            Some(ValueView::Hash(_)) if !preserve_hash_entries => value.into_descalarized(),
+            Some(ValueView::Hash(_)) if !preserve_hash_entries => {
+                let value = value.into_descalarized();
+                if matches!(value.view(), ValueView::Hash(_)) {
+                    value
+                } else {
+                    Self::normalize_hash_like_assignment(std::collections::HashMap::new(), value)
+                }
+            }
             Some(ValueView::Hash(existing_hash)) => {
                 // Carry the existing container's `is default(...)` onto the result
                 // so a whole-hash rw-accessor writeback (`$o.h<k> = v`, which
