@@ -94,9 +94,8 @@ Do **not** implement the same Raku operation in multiple places:
 
 Modules with a proven working record (details in [news/2026-06.md](news/2026-06.md)): JSON native
 (`to-json`/`from-json` #3402) / Template::Mustache / File::Temp / File::Directory::Tree /
-HTTP::Parser / MIME::Base64 / HTTP::Server::Tiny (end-to-end HTTP serving) / Tubu (homegrown
-synchronous web framework, `t/lib`) / DBIish (bundled SQLite battery) / NativeCall MVP
-(real SQLite CRUD round-trip) / zef CLI.
+HTTP::Parser / MIME::Base64 / HTTP::Server::Tiny (end-to-end HTTP serving) /
+DBIish (bundled SQLite battery) / NativeCall MVP (real SQLite CRUD round-trip) / zef CLI.
 
 Right now these merely "work" — the three pillars of **bundling, documentation, and continuity
 guarantees** are all missing. To call ourselves batteries-included we need all three — that is this
@@ -106,7 +105,8 @@ section.
 
 - [ ] **Finalize the bundle list**. First candidates (based on working record):
       JSON (native built-in) / Template::Mustache / File::Temp / File::Directory::Tree / HTTP::Parser /
-      MIME::Base64 / HTTP::Server::Tiny / Tubu (sync WAF) / DBIish (SQLite) / NativeCall.
+      MIME::Base64 / HTTP::Server::Tiny / DBIish (SQLite) / NativeCall (the web-framework slot
+      is the Cro campaign below, not a homegrown framework).
       Use "a web blog can be written with the bundle alone" as the selection criterion (the HTTP
       client gap needs investigation).
 - [ ] **Web-framework slot: make Cro run** — surveyed 2026-07-31
@@ -122,10 +122,6 @@ section.
       an installed mutsu resolves them with no extra configuration (make `MUTSULIB` have a built-in
       default, or register a standard lib path in `Interpreter::new()` — same pattern as
       `add_default_site_repo()`). Also verify consistency with the precomp cache.
-- [ ] **Promote the `t/lib` homegrown libraries**: move Tubu out of the test-helper
-      location into a proper bundled module; clean up naming, API, and standalone tests.
-      (The homegrown `DBDishLite` SQLite layer was retired 2026-07-31 — the bundled upstream
-      `DBIish` battery covers it.)
 - [ ] **Documentation**: a usage document per bundled library (overview; the fact that no install is
       needed; API reference; example code). Location: `docs/batteries/` (or starting from a top-level
       `BATTERIES.md`). "Well-documented" is an explicit goal requirement, so documentation is
@@ -399,7 +395,7 @@ sessions).
       request bodies, and `done`/`last` control signals inside `whenever $conn.Supply(...)` (the tap
       callback runs on a worker thread, disconnected from the react control-flow frame). These do not
       fire in the default configuration, so basic serving is unaffected.
-- [ ] Stored Regex `<$var>` lexical capture loss (found via Tubu; separate axis).
+- [ ] Stored Regex `<$var>` lexical capture loss (found via the retired Tubu fixture; separate axis).
 - 📌 **Correction (2026-07-27): the "`MoarVM::Guts::REPRs` is a de-facto wall" verdict recorded here
   (investigation conclusion = news/2026-06.md) is false.** The guts module loads, and the
   off-the-shelf `DBDish::SQLite` passes 8 of `DBIish`'s 9 files at raku parity without going near
