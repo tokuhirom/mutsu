@@ -274,6 +274,22 @@ impl Interpreter {
                     Value::package(Symbol::intern(&storage_name)),
                 );
             }
+            // A lexical type declared in a ROLE body (`role R { my class Foo {} }`)
+            // is private to the role, and the role's own methods must keep seeing
+            // it after they are composed into an arbitrary class — even when an
+            // unrelated same-named type exists at file scope or in another
+            // package. Recording the short name enables the owner-package probe
+            // in `resolve_suppressed_type`, which walks the composed roles of the
+            // running method's class. Unlike the class case the name is NOT
+            // suppressed: a role body is not a package boundary that hides an
+            // outer same-named type from the rest of the file.
+            let parent_is_role = qualified_name
+                .rsplit_once("::")
+                .map(|(parent, _)| self.is_role(parent))
+                .unwrap_or(false);
+            if qualified_name != resolved_name && !resolved_name.contains("::") && parent_is_role {
+                self.register_class_scoped_short_name(&resolved_name);
+            }
             // When a class is declared with an already-qualified name
             // (e.g. the compiler pre-qualified `class C1` inside
             // `unit module M` to `M::C1`), also register the short name
