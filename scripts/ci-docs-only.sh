@@ -19,6 +19,16 @@
 #   scripts/ci-docs-only.sh              # classify the current CI event
 #   scripts/ci-docs-only.sh --self-test  # verify the classifier (runs in CI)
 #   printf 'a\nb\n' | scripts/ci-docs-only.sh --classify   # classify a list
+#
+# It also answers the inverse question for the Miri gate (ADR-0013 §4 phase 4),
+# which is expensive (~25 min) and only meaningful for GC/container code:
+#
+#   scripts/ci-docs-only.sh --gc-value                     # classify the event
+#   printf 'a\nb\n' | scripts/ci-docs-only.sh --classify-gc-value
+#
+# Same fail-safe discipline, opposite default: an unclassifiable diff prints
+# `true` there, because a skipped soundness check is a silently-unchecked merge
+# while a needless one only costs runner minutes.
 
 set -u
 
@@ -57,6 +67,39 @@ classify() {
     echo false
   else
     echo true
+  fi
+}
+
+# The Miri gate's trigger: does this change touch the GC / container-value code
+# whose aliased-write soundness ADR-0013 pins? `src/gc/**` is the collector and
+# the `Gc` primitive; `src/value/**` is every container representation that
+# takes an aliased in-place write. The workflow and this classifier count too --
+# a change to either must re-run the thing it controls.
+is_gc_value_path() {
+  case "$1" in
+    src/gc/*|src/value/*) return 0 ;;
+    .github/workflows/ci.yml|scripts/ci-docs-only.sh) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Reads file paths on stdin. Empty input => `true`: an undeterminable diff must
+# run the check, not skip it (the opposite default from `classify`, because the
+# consequences are reversed -- see the header).
+classify_gc_value() {
+  local saw_any=0 path
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    saw_any=1
+    if is_gc_value_path "$path"; then
+      echo true
+      return
+    fi
+  done
+  if [ "$saw_any" -eq 0 ]; then
+    echo true
+  else
+    echo false
   fi
 }
 
@@ -117,6 +160,28 @@ self_test() {
   check false 'Cargo manifest'          Cargo.toml
   check false 'empty diff'              ''
 
+  check_gc() { # check_gc <expected> <label> <files...>
+    local expected="$1" label="$2"; shift 2
+    local got
+    got=$(printf '%s\n' "$@" | classify_gc_value)
+    if [ "$got" != "$expected" ]; then
+      echo "not ok - gc/$label (expected $expected, got $got)" >&2
+      failures=$((failures + 1))
+    else
+      echo "ok - gc/$label"
+    fi
+  }
+
+  check_gc true  'gc primitive'          src/gc/gc_ptr.rs
+  check_gc true  'container value'       src/value/aliased_mut.rs
+  check_gc true  'gc among others'       src/vm/vm.rs src/gc/collect.rs
+  check_gc true  'the workflow itself'   .github/workflows/ci.yml
+  check_gc true  'this classifier'       scripts/ci-docs-only.sh
+  check_gc true  'empty diff'            ''
+  check_gc false 'unrelated src'         src/vm/vm.rs src/parser/mod.rs
+  check_gc false 'docs only'             PLAN.md docs/adr/0013-x.md
+  check_gc false 'value in another tree' modules/URI/lib/value.rakumod
+
   if [ "$failures" -ne 0 ]; then
     echo "ci-docs-only self-test: $failures failure(s)" >&2
     return 1
@@ -125,14 +190,28 @@ self_test() {
 }
 
 case "${1:-}" in
-  --self-test) self_test; exit $? ;;
-  --classify)  classify; exit 0 ;;
+  --self-test)          self_test; exit $? ;;
+  --classify)           classify; exit 0 ;;
+  --classify-gc-value)  classify_gc_value; exit 0 ;;
 esac
 
 files=$(changed_files 2>/dev/null)
+count=$(printf '%s\n' "$files" | grep -c .)
+
+if [ "${1:-}" = "--gc-value" ]; then
+  # A truncated diff must read as "run it" here, the opposite of the docs-only
+  # guard below.
+  if [ "$count" -gt 300 ]; then
+    echo true
+    exit 0
+  fi
+  printf '%s\n' "$files" | classify_gc_value
+  exit 0
+fi
+
 # Guard against a huge diff: pagination or the API cap could truncate it, and a
 # truncated list must never read as "docs only".
-if [ "$(printf '%s\n' "$files" | grep -c .)" -gt 300 ]; then
+if [ "$count" -gt 300 ]; then
   echo false
   exit 0
 fi

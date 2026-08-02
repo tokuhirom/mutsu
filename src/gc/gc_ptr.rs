@@ -1578,6 +1578,12 @@ mod tests {
     /// with overflow"). Hammer push against a concurrent drainer: no thread
     /// may panic, and once quiescent the count must return exactly to zero.
     #[test]
+    // Not under Miri: 200k allocations across four threads against a spinning
+    // drainer is a race *hammer*, and Miri interprets every one of those steps
+    // — it does not finish in any useful time. The property it defends
+    // (counter ordering) is also not the one the Miri gate is for (aliased-write
+    // provenance, ADR-0013), and gc-stress still runs it natively on every PR.
+    #[cfg_attr(miri, ignore)]
     fn concurrent_buffer_and_drain_never_wraps_the_approx_count() {
         let _serial = lock_buffer_tests();
         // Clear any leftover candidates so the final assertion is exact.

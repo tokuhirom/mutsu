@@ -22,6 +22,8 @@ mod collect;
 mod gc_ptr;
 mod root_visitor;
 mod safepoint;
+#[cfg(test)]
+mod soundness_smoke;
 mod stw;
 
 pub(crate) use collect::collect_at_program_end;
