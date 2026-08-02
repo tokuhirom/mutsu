@@ -318,9 +318,9 @@ impl Interpreter {
         // `is_test_function_name` (which also covers roast's `Test::Util` /
         // `Test::Tap` helpers). Those modules really are loaded from source, so
         // mutsu's natives override live declarations there today; flipping that
-        // is a separate provider retirement that needs `Proc::Async` output taps
-        // and `IO::Path ~~ IO::Path` fixed first — see
-        // todo/tickets/retire-native-test-util-overrides.md.
+        // is a separate provider retirement — see
+        // todo/tickets/retire-native-test-util-overrides.md, which now tracks
+        // the seven roast files the widened guard exposes.
         let user_declared = self.user_test_decl_beats_native(name, &args);
         if !user_declared && let Some(result) = self.call_test_function(name, &args)? {
             return Ok(result);

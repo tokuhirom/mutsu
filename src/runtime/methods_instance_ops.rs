@@ -2003,7 +2003,11 @@ impl Interpreter {
                             "Use of uninitialized value of type {} in numeric context",
                             name
                         );
-                        Err(RuntimeError::warn_signal_with_resume(msg, Value::int(0)))
+                        // Settled at the raise site — see
+                        // `raise_resumable_warning`: an unwinding
+                        // `warn_signal_with_resume` would be applied as an
+                        // explicit `return` by the enclosing routine boundary.
+                        self.raise_resumable_warning(&msg, Value::int(0))
                     }
                 } else {
                     Err(RuntimeError::new(format!(

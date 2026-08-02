@@ -12,7 +12,7 @@
 //! `$s.done` raced the poll).
 use super::*;
 use crate::runtime::native_methods::{
-    SupplyEvent, supplier_sink_unregister, supplier_sinks_register_batch,
+    PromiseCombinator, SupplyEvent, supplier_sink_unregister, supplier_sinks_register_batch,
     take_promise_combinator_sources,
 };
 use crate::runtime::subtest::{ReactSubscription, SupplyDrivePolicy};
@@ -376,8 +376,14 @@ impl Interpreter {
                     react_subs[si].done = true;
                     continue;
                 }
+                // A `whenever Promise.allof(...)` settles only once every source
+                // has, so waiting on the sources is what drives it. `anyof` also
+                // registers its sources (for deferred `Proc::Async` tap replay),
+                // but blocking on all of them would defeat its whole point — let
+                // it fall through to the ordinary receiver poll.
                 if let Some(promise) = react_subs[si].promise.clone()
-                    && let Some(sources) = take_promise_combinator_sources(&promise)
+                    && let Some((kind, sources)) = take_promise_combinator_sources(&promise)
+                    && kind == PromiseCombinator::Allof
                 {
                     for source in sources {
                         source.result_blocking();

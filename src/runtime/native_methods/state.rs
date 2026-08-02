@@ -47,7 +47,18 @@ fn supply_enc_map() -> &'static SupplyEncMap {
     MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
-type PromiseCombinatorMap = std::sync::Mutex<HashMap<usize, Vec<SharedPromise>>>;
+/// Which combinator produced a composite promise. `Promise.allof` settles once
+/// every source has settled, `Promise.anyof` on the first one — the react driver
+/// may only block on the whole source list for `allof`, while deferred
+/// `Proc::Async` tap replay applies to both.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum PromiseCombinator {
+    Allof,
+    Anyof,
+}
+
+type PromiseCombinatorMap =
+    std::sync::Mutex<HashMap<usize, (PromiseCombinator, Vec<SharedPromise>)>>;
 
 fn promise_combinator_map() -> &'static PromiseCombinatorMap {
     static MAP: OnceLock<PromiseCombinatorMap> = OnceLock::new();
@@ -351,7 +362,7 @@ pub(in crate::runtime) fn visit_supply_state_roots(visitor: &mut dyn crate::gc::
         }
     }
     if let Ok(map) = promise_combinator_map().lock() {
-        for promises in map.values() {
+        for (_, promises) in map.values() {
             for p in promises {
                 visitor.visit_value(&Value::promise(p.clone()));
             }
@@ -830,16 +841,17 @@ pub(in crate::runtime) fn get_supply_enc(supply_id: u64) -> Option<String> {
 
 pub(in crate::runtime) fn register_promise_combinator_sources(
     promise: &SharedPromise,
+    kind: PromiseCombinator,
     sources: Vec<SharedPromise>,
 ) {
     if let Ok(mut map) = promise_combinator_map().lock() {
-        map.insert(promise.id(), sources);
+        map.insert(promise.id(), (kind, sources));
     }
 }
 
 pub(crate) fn take_promise_combinator_sources(
     promise: &SharedPromise,
-) -> Option<Vec<SharedPromise>> {
+) -> Option<(PromiseCombinator, Vec<SharedPromise>)> {
     if let Ok(mut map) = promise_combinator_map().lock() {
         map.remove(&promise.id())
     } else {

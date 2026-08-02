@@ -319,16 +319,10 @@ impl Interpreter {
                         // Raku wraps the broken Promise's cause in X::Await::Died.
                         return Err(self.await_died_error(result));
                     }
-                    // Replay deferred Proc::Async taps
-                    if let ValueView::Instance {
-                        class_name,
-                        attributes,
-                        ..
-                    } = result.view()
-                        && class_name == "Proc"
-                    {
-                        self.replay_proc_taps(&attributes);
-                    }
+                    // Replay deferred Proc::Async taps — the promise's own Proc
+                    // result, or those of a settled component of an
+                    // allof/anyof composite.
+                    self.replay_settled_proc_taps(&shared, &result);
                     let result = Self::unwrap_async_status_result(result)?;
                     results.push(result);
                     // Sync shared variables after each thread completes
