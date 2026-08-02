@@ -171,6 +171,19 @@ impl Interpreter {
             );
             RuntimeError::typed("X::Redeclaration", attrs)
         };
+        let qualify_type_name = |name: &str| -> String {
+            let current_package = self.current_package();
+            if let Some(absolute) = name.strip_prefix("GLOBAL::") {
+                absolute.to_string()
+            } else if current_package == "GLOBAL"
+                || name == current_package
+                || name.starts_with(&format!("{current_package}::"))
+            {
+                name.to_string()
+            } else {
+                format!("{current_package}::{name}")
+            }
+        };
 
         // mutsu currently mis-parses `anon sub foo {}` as a bare `anon` term
         // followed by a normal named SubDecl; an anonymous routine installs no
@@ -283,7 +296,11 @@ impl Interpreter {
                     // package-qualified names (containing `::`): simple names may
                     // have leaked into the global registry from block-scoped
                     // declarations (a known scoping limitation).
-                    if !is_stub && !*is_lexical && name.contains("::") && self.has_class(&name) {
+                    if !is_stub
+                        && !*is_lexical
+                        && name.contains("::")
+                        && self.has_class(&qualify_type_name(&name))
+                    {
                         return Err(type_redeclaration(&name));
                     }
                     (name, is_stub)
