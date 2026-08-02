@@ -270,6 +270,20 @@ impl Interpreter {
     /// entry (created by a prior shared push/extend/CAS). Once it exists,
     /// reads prefer it, so every subsequent mutation must go through
     /// `shared_array_mutate` or it is silently lost.
+    /// Whether `@arr` is *genuinely shared* across threads: it already has an
+    /// authoritative `__mutsu_atomic_arr::` entry, or the base name itself is
+    /// bound in the cross-thread store (seeded when a thread was spawned while
+    /// this lexical was live). A name that is in neither is frame-local, and
+    /// routing its mutations through the name-keyed store would detach it from
+    /// every other binding of the same container.
+    pub(crate) fn array_name_is_shared(&self, arr_name: &str) -> bool {
+        self.atomic_array_entry_exists(arr_name)
+            || self
+                .shared_vars
+                .get(arr_name)
+                .is_some_and(|v| matches!(v.view(), ValueView::Array(..)))
+    }
+
     pub(crate) fn atomic_array_entry_exists(&self, arr_name: &str) -> bool {
         let atomic_key = format!("__mutsu_atomic_arr::{arr_name}");
         matches!(

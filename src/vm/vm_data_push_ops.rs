@@ -98,9 +98,20 @@ impl Interpreter {
             }
             // Only a plain lexical `@name` (not an attribute `@!x`/`@.x` or other
             // twigil'd form) has a single shared identity across threads, so only
-            // it may funnel into the name-keyed atomic shared store.
+            // it may funnel into the name-keyed atomic shared store — and only
+            // when this frame can actually be racing: a worker thread (where the
+            // whole point is to serialize concurrent appends), or a name that is
+            // GENUINELY shared already. The store is keyed by NAME, so routing a
+            // *main-thread* frame-local `my @a` through it detaches it from every
+            // other binding of the same container — a `my @t := @a` alias keeps
+            // the original node while the push lands under
+            // `__mutsu_atomic_arr::@a`. `shared_vars_active` never goes back to
+            // false, so without this gate every array push in a program that once
+            // spawned a thread is name-keyed. Mirrors the "genuinely shared" gate
+            // `assign_array_elem_to_shared_var` already applies.
             if matches!(target.view(), ValueView::Array(..) | ValueView::Nil)
                 && Self::is_plain_lexical_array_name(target_name)
+                && (self.is_thread_clone() || self.array_name_is_shared(target_name))
             {
                 let items = match val.view() {
                     ValueView::Slip(items) => items.to_vec(),
