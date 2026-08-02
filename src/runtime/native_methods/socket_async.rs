@@ -347,6 +347,11 @@ impl Interpreter {
                 // Set up a closed flag for the accept thread
                 let closed_flag = Arc::new(AtomicBool::new(false));
                 register_listener_closed_flag(listener_id, closed_flag.clone());
+                // Raised by the accept thread once it has dropped the OS
+                // listener, so `Tap.close` can wait for the port to be free
+                // again instead of returning while it is still accepting.
+                let stopped_flag = Arc::new(AtomicBool::new(false));
+                register_listener_stopped_flag(listener_id, stopped_flag.clone());
 
                 // Create a supply channel so the react event loop can
                 // receive accepted connections
@@ -428,6 +433,11 @@ impl Interpreter {
                             }
                         }
                     }
+                    // Free the port *before* acknowledging, so a `Tap.close`
+                    // that waits on this flag can rely on the listener being
+                    // gone once it returns.
+                    drop(tcp_listener);
+                    stopped_flag.store(true, Ordering::SeqCst);
                 });
 
                 // Build a Supply instance that the react event loop can subscribe to

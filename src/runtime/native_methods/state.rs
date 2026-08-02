@@ -956,12 +956,48 @@ pub(in crate::runtime) fn register_listener_closed_flag(listener_id: u64, flag: 
     }
 }
 
+/// Map of listener_id -> Arc<AtomicBool> that the accept thread raises once it
+/// has dropped the OS listener. `set_listener_closed` waits on it so closing a
+/// Tap actually stops listening before it returns.
+type ListenerStoppedMap = std::sync::Mutex<HashMap<u64, Arc<AtomicBool>>>;
+
+fn listener_stopped_map() -> &'static ListenerStoppedMap {
+    static MAP: OnceLock<ListenerStoppedMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+pub(in crate::runtime) fn register_listener_stopped_flag(listener_id: u64, flag: Arc<AtomicBool>) {
+    if let Ok(mut map) = listener_stopped_map().lock() {
+        map.insert(listener_id, flag);
+    }
+}
+
 #[allow(dead_code)]
 pub(in crate::runtime) fn set_listener_closed(listener_id: u64) {
+    let mut closed_any = false;
     if let Ok(map) = listener_closed_map().lock()
         && let Some(flag) = map.get(&listener_id)
     {
         flag.store(true, Ordering::SeqCst);
+        closed_any = true;
+    }
+    if !closed_any {
+        return;
+    }
+    // Closing a Tap must stop the listener *synchronously*: the OS socket stays
+    // bound until the accept thread notices the flag and drops it, and until
+    // then a `connect` to that port still succeeds (a real TCP connect, since
+    // `dispatch_socket_async_connect` no longer requires an in-process
+    // listener). Wait for the accept thread's acknowledgement, bounded so a
+    // wedged thread cannot hang the interpreter.
+    let stopped = listener_stopped_map()
+        .lock()
+        .ok()
+        .and_then(|map| map.get(&listener_id).cloned());
+    let Some(stopped) = stopped else { return };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    while !stopped.load(Ordering::SeqCst) && std::time::Instant::now() < deadline {
+        crate::gc::block_quiescent(|| std::thread::sleep(std::time::Duration::from_millis(1)));
     }
 }
 
