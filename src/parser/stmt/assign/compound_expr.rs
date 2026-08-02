@@ -162,7 +162,7 @@ pub(crate) fn build_compound_assign_expr(
                 quoted: false,
             };
             let assigned_value = compound_assigned_value_expr(current_value, op, rhs);
-            method_lvalue_assign_expr(
+            method_lvalue_roundtrip_assign_expr(
                 *target,
                 target_var_name,
                 name.resolve(),

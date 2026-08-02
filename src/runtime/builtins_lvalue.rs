@@ -410,6 +410,7 @@ impl Interpreter {
                 "substr-rw",
                 method_args,
                 value,
+                false,
             );
         }
 
@@ -440,6 +441,7 @@ impl Interpreter {
                 "subbuf-rw",
                 method_args,
                 value,
+                false,
             );
         }
 

@@ -1333,6 +1333,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     Expr::ArrayLiteral(args.clone()),
                     assigned_value,
                     Expr::Literal(crate::value::Value::str(topic_name)),
+                    Expr::Literal(crate::value::Value::truth(true)),
                 ],
             });
             return parse_statement_modifier(r, stmt);
@@ -1448,6 +1449,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     Expr::ArrayLiteral(args.clone()),
                     assigned_value,
                     Expr::Literal(crate::value::Value::str(topic_name)),
+                    Expr::Literal(crate::value::Value::truth(true)),
                 ],
             });
             return parse_statement_modifier(r, stmt);
