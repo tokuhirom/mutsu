@@ -222,6 +222,7 @@ impl Interpreter {
                     sub_id: data.id,
                     remaining,
                     args: sanitized_args.clone(),
+                    arg_sources: self.pending_call_arg_sources().cloned(),
                 };
                 let (wrapper_id, wrapper_base_env) = if let ValueView::Sub(wd) = outermost.view() {
                     (Some(wd.id), Some(wd.env.clone()))

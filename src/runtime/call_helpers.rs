@@ -20,6 +20,21 @@ impl Interpreter {
         self.pending_call_arg_sources.as_ref()
     }
 
+    /// A method wrapper (`&m.wrap(-> \SELF, |c { ... })`) is invoked with the
+    /// invocant PREPENDED to the method's arguments, but the pending
+    /// call-site arg-source names were recorded by the call opcode for the
+    /// method's arguments only. Without a shift they are off by one against
+    /// the wrapper's signature, and a sigilless/`is raw`/`is rw` parameter —
+    /// which re-reads its value from the named source variable rather than
+    /// from the argument slot — binds the wrong value: `$obj.m($x, 2)` bound
+    /// the wrapper's `\SELF` to `$x` instead of `$obj` (OO::Monitors' lock
+    /// wrapper then read `$!MONITR-lock` off a Bool).
+    pub(crate) fn shift_arg_sources_for_wrap_invocant(&mut self) {
+        if let Some(sources) = self.pending_call_arg_sources.as_mut() {
+            sources.insert(0, None);
+        }
+    }
+
     pub(crate) fn exec_call_values(
         &mut self,
         name: &str,

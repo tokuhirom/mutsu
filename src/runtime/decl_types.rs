@@ -174,6 +174,12 @@ pub(crate) struct WrapDispatchFrame {
     pub(crate) remaining: Vec<Value>,
     /// Original call arguments.
     pub(crate) args: Vec<Value>,
+    /// Call-site source variable names for the *wrapped routine's* arguments
+    /// (for a method wrap: excluding the invocant, which `args` carries at
+    /// index 0). The outermost wrapper consumes the pending arg sources when
+    /// its own signature binds, so `callsame` reaching the original would
+    /// otherwise see none and reject an `is rw` parameter.
+    pub(crate) arg_sources: Option<Vec<Option<String>>>,
 }
 
 #[derive(Debug, Clone)]

@@ -157,8 +157,10 @@ impl Compiler {
             None
         };
         let needs_cond_value = needs_at_underscore || cond_placeholder.is_some();
+        let mut deferred_container_decl = None;
         if let Some(var_name) = binding_var {
-            let read_expr = self.compile_if_binding_decl(var_name, cond);
+            let (read_expr, deferred) = self.compile_if_binding_decl(var_name, cond);
+            deferred_container_decl = deferred;
             self.compile_expr(&read_expr);
         } else {
             self.compile_expr(cond);
@@ -167,6 +169,7 @@ impl Compiler {
             self.code.emit(OpCode::Dup);
         }
         let jump_else = self.code.emit(OpCode::JumpIfFalse(0));
+        self.compile_if_binding_container_decl(&deferred_container_decl);
         if needs_at_underscore {
             self.code.emit(OpCode::FlattenSlurpy);
             self.emit_set_named_var("@_");
