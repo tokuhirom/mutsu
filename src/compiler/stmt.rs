@@ -3374,7 +3374,22 @@ impl Compiler {
                 // redeclares (the current-scope set is reset on block entry).
                 if !Self::is_stub_class_body(body) {
                     let cname = name.resolve();
-                    if !self.class_names_current_scope.insert(cname.clone()) {
+                    // Package blocks share this compiler scope, so key the
+                    // declaration by the same package-qualified name that
+                    // RegisterClass uses. Otherwise `module A1 { class N::C {} }`
+                    // and `module A2 { class N::C {} }` both occupy the bare
+                    // `N::C` key and the second declaration is rejected.
+                    let redeclaration_key = if let Some(absolute) = cname.strip_prefix("GLOBAL::") {
+                        absolute.to_string()
+                    } else if self.current_package == "GLOBAL"
+                        || cname == self.current_package
+                        || cname.starts_with(&format!("{}::", self.current_package))
+                    {
+                        cname.clone()
+                    } else {
+                        format!("{}::{}", self.current_package, cname)
+                    };
+                    if !self.class_names_current_scope.insert(redeclaration_key) {
                         let sym = cname.rsplit("::").next().unwrap_or(&cname).to_string();
                         let mut attrs = std::collections::HashMap::new();
                         attrs.insert("symbol".to_string(), Value::str(sym));

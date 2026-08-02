@@ -50,17 +50,17 @@ battery work, where `Single.make-value` does `$schema.new.parse($!value)` with
 `$schema` being `YAMLish::Schema::Core`, a grammar declared as
 `grammar Schema::Core is Schema::JSON` inside `unit module YAMLish`.
 
-## Known gap this does NOT close
+## Follow-up: package-aware redeclaration checks
 
-Two packages declaring the *same* nested name still collide at declaration time:
+The declaration-time checks now use the same package-qualified key as type
+registration, so two packages may declare the same written nested name:
 
 ```raku
 module A1 { class N::C { } }
-module A2 { class N::C { } }   # Redeclaration of symbol 'C'.
+module A2 { class N::C { } }
 ```
 
-That check runs against a symbol table that is not package-aware for nested
-names, and it fails the same way before this change. Recorded in
-`todo/tickets/nested-type-redeclaration-across-packages.md`.
+These declare distinct `A1::N::C` and `A2::N::C` types. Redeclaring `N::C`
+twice within one package remains an `X::Redeclaration`.
 
 Pin: `t/nested-type-name-in-package.t` — also passes under raku.
