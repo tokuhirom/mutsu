@@ -61,6 +61,38 @@ pub(crate) fn lookup_sig_info(id: u64) -> Option<SigInfo> {
     guard.as_ref()?.get(&id).cloned()
 }
 
+/// The mixin type a custom parameter trait leaves on the `Parameter` it is
+/// handed, keyed by trait name.
+///
+/// `Signature.params` materializes a fresh `Parameter` on every access (there is
+/// no stored object to mix into), so a role a trait composed at declaration time
+/// would die with the throwaway the trait candidate was called on. Instead
+/// `check_param_custom_traits` records the type the object was reblessed into,
+/// and every later materialization of a parameter carrying that trait is born as
+/// that type. This replays the trait's effect *on the parameter* only — nothing
+/// else its body did.
+static PARAM_TRAIT_MIXIN_TYPES: Mutex<Option<HashMap<String, Symbol>>> = Mutex::new(None);
+
+/// Record that the trait `trait_name` reblesses the `Parameter` it is applied to
+/// into `mixin_type`.
+pub(crate) fn register_param_trait_mixin_type(trait_name: &str, mixin_type: Symbol) {
+    let mut guard = PARAM_TRAIT_MIXIN_TYPES.lock().unwrap();
+    guard
+        .get_or_insert_with(HashMap::new)
+        .insert(trait_name.to_string(), mixin_type);
+}
+
+/// The type a materialized `Parameter` should be born as, given the traits its
+/// declaration carries. `None` when no trait composed anything.
+fn param_trait_mixin_type(traits: &[String]) -> Option<Symbol> {
+    if traits.is_empty() {
+        return None;
+    }
+    let guard = PARAM_TRAIT_MIXIN_TYPES.lock().unwrap();
+    let map = guard.as_ref()?;
+    traits.iter().rev().find_map(|t| map.get(t).copied())
+}
+
 /// Convert a ParamDef (from the parser) to a SigParam (for runtime).
 pub(crate) fn param_def_to_sig_param(p: &ParamDef) -> SigParam {
     let is_capture = p.slurpy && (p.name == "_capture" || p.sigilless);
@@ -241,12 +273,19 @@ fn sig_param_to_parameter_instance_with_owner(p: &SigParam, owner_key: &Option<S
     if let Some(key) = owner_key {
         attrs.insert("__mutsu_owner_sub".to_string(), Value::str(key.clone()));
     }
-    Value::make_instance(Symbol::intern("Parameter"), attrs)
+    Value::make_instance(parameter_class_for(p), attrs)
 }
 
 fn sig_param_to_parameter_instance(p: &SigParam) -> Value {
     let attrs = build_parameter_attrs(p);
-    Value::make_instance(Symbol::intern("Parameter"), attrs)
+    Value::make_instance(parameter_class_for(p), attrs)
+}
+
+/// The type a materialized `Parameter` is born as: `Parameter`, or the mixin
+/// type a custom trait on the declaration composed (see
+/// [`PARAM_TRAIT_MIXIN_TYPES`]).
+fn parameter_class_for(p: &SigParam) -> Symbol {
+    param_trait_mixin_type(&p.traits).unwrap_or_else(|| Symbol::intern("Parameter"))
 }
 
 fn build_parameter_attrs(p: &SigParam) -> HashMap<String, Value> {

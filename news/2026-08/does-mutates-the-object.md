@@ -26,7 +26,7 @@ multi trait_mod:<is>(Parameter:D $param, :$query! --> Nil) is export {
 ```
 
 So this was the root blocker under
-[`todo/tickets/parameter-trait-mixin-does-not-persist.md`](../../todo/tickets/parameter-trait-mixin-does-not-persist.md),
+[`todo/tickets/parameter-objects-have-no-stable-identity.md`](../../todo/tickets/parameter-objects-have-no-stable-identity.md),
 and therefore under Cro::HTTP's router.
 
 ## The mechanism
@@ -77,9 +77,9 @@ class level already carries the flattened one.
 ## What is left
 
 Materialized `Parameter` objects still have no stable identity: `.signature.params`
-rebuilds them on every access, and `check_param_custom_traits` hands the trait
-candidate a throwaway. So a mixin applied *directly* to a `Parameter` now sticks,
-but one applied by a parameter trait is still discarded — see the ticket linked
-above, which is now the only remaining step for Cro's router.
+rebuilds them on every access. The parameter-trait consumer is handled on top of
+this in [`param-trait-mixin-persists.md`](param-trait-mixin-persists.md); the
+identity problem itself stays open in
+[`todo/tickets/parameter-objects-have-no-stable-identity.md`](../../todo/tickets/parameter-objects-have-no-stable-identity.md).
 
 Pinned by `t/does-mutates-the-object.t` (checked against raku).

@@ -64,6 +64,14 @@ impl Interpreter {
             language_version: &language_version,
         };
         self.register_class_decl(&name, &parents, modifiers, &[])?;
+        // A mixin type is synthesized, not written by the user: it must inherit
+        // the base's accessor authority rather than claim its own. Marked
+        // user-declared (which `register_class_decl` does for everything), a
+        // `Parameter+{Query}` would answer `.named` with X::Method::NotFound,
+        // because a built-in base contributes no *declared* attribute list.
+        if !self.user_declared_classes.contains(base_class) {
+            self.user_declared_classes.remove(&name);
+        }
         Ok(name)
     }
 
