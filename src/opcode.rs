@@ -4098,18 +4098,6 @@ impl CompiledCode {
     ///   capture is boxed into a shared `ContainerRef` cell, which the snapshot
     ///   clones), so reads stay coherent without any write-back.
     pub(crate) fn compute_upvalues(&mut self, runtime_bound: &std::collections::HashSet<Symbol>) {
-        // Phase-1 indexed upvalues require the standard closure-dispatch path to
-        // install the aligned array. Inline block scopes handed to thread clones,
-        // and runtime-split whenever/LAST/QUIT callbacks, can execute through
-        // carrier paths without that array. Keep their reads as GetGlobal over
-        // the already-precise captured env; this does not widen env sync or
-        // restore the removed captures_env_by_name blanket.
-        if !self.env_consumer_slots.block_scope.is_empty()
-            || !self.env_consumer_slots.block_local_scope.is_empty()
-            || !self.env_consumer_slots.whenever.is_empty()
-        {
-            return;
-        }
         let own: std::collections::HashSet<&str> = self.locals.iter().map(|s| s.as_str()).collect();
         let written: std::collections::HashSet<Symbol> = self
             .free_var_writes
