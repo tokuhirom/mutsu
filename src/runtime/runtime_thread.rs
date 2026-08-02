@@ -339,6 +339,7 @@ impl Interpreter {
             doc_comments: HashMap::new(),
             doc_comment_list: Vec::new(),
             why_cache: HashMap::new(),
+            why_object_cache: HashMap::new(),
             type_metadata: self.type_metadata.clone(),
             when_matched: false,
             gather_items: Vec::new(),

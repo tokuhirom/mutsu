@@ -7,6 +7,7 @@ impl Interpreter {
         self.doc_comments.clear();
         self.doc_comment_list.clear();
         self.why_cache.clear();
+        self.why_object_cache.clear();
         let mut pending_leading: Option<String> = None;
         // The last declaration that can receive trailing #= comments
         // (doc_key, kind, decl_line, callable_type_override, is_proto, return_type)
@@ -1204,9 +1205,18 @@ impl Interpreter {
                         Value::package(crate::symbol::Symbol::intern("Parameter"))
                     }
                 });
+            let object_id = match wherefore.view() {
+                ValueView::Sub(data) => Some(data.id),
+                ValueView::WeakSub(data) => data.upgrade().map(|data| data.id),
+                ValueView::Instance { id, .. } => Some(id),
+                _ => None,
+            };
             let pod_entry = Interpreter::make_pod_declarator(dc, wherefore);
-            self.why_cache
-                .insert(dc.wherefore_name.clone(), pod_entry.clone());
+            if declarants.is_some()
+                && let Some(object_id) = object_id
+            {
+                self.why_object_cache.insert(object_id, pod_entry.clone());
+            }
             pod_entries.push(pod_entry);
         }
         self.env
