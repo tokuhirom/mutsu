@@ -1677,6 +1677,13 @@ impl Interpreter {
                 // Attribute type constraints (MRO-wide), used to coerce a provided
                 // value for a coercion-typed attribute (`has Int() $.x`).
                 let attr_type_constraints = self.collect_attribute_type_constraints(class_key);
+                // Raku's default BUILDALL ignores a named argument that names no
+                // attribute; storing it would make `eqv` compare a key the object
+                // is not supposed to have. Only when the class's attribute set is
+                // fully known — see `NativeCtorPlan::attrs_fully_known`.
+                let attrs_fully_known = self
+                    .native_ctor_plan(crate::symbol::Symbol::intern(class_key))
+                    .attrs_fully_known;
                 // First, collect constructor args into attrs
                 self.env = saved_default_env.clone();
                 let class_mro = self.class_mro(class_key);
@@ -1720,6 +1727,7 @@ impl Interpreter {
                         ValueView::Pair(k, v) => {
                             if !build_owned_attrs.contains(k.as_str())
                                 && self.is_attribute_buildable(class_key, k)
+                                && (!attrs_fully_known || sigil_map.contains_key(k.as_str()))
                             {
                                 let sigil = sigil_map.get(k).copied().unwrap_or('$');
                                 let mut value = v.clone();

@@ -274,6 +274,7 @@ impl Interpreter {
             has_smiley,
             has_custom_bless,
             has_container_defaults,
+            attrs_fully_known,
         ) = if registered {
             let class_attrs = std::sync::Arc::new(self.collect_class_attributes(cn_resolved));
             let type_constraints =
@@ -320,6 +321,26 @@ impl Interpreter {
                 });
             }
             let has_custom_bless = self.has_user_method(cn_resolved, "bless");
+            // See `NativeCtorPlan::attrs_fully_known`. Roles are flattened into
+            // `ClassDef::attributes` at composition time, so only the MRO's
+            // classes need to be registered for the attribute set to be complete.
+            // Two extra guards keep the built-in attribute-bag classes permissive:
+            // an `Exception` anywhere in the MRO (`message`/`payload`/`got`/… are
+            // not declared anywhere), and a class that declares no attribute at
+            // all (every built-in `X::…` type is registered with an empty
+            // attribute list and used purely as a bag).
+            let attrs_fully_known = !class_attrs.is_empty() && {
+                let registry = self.registry();
+                mro.iter().all(|cls| {
+                    cls != "Exception"
+                        && (matches!(cls.as_str(), "Any" | "Mu" | "Cool")
+                            || registry.classes.contains_key(cls)
+                            // A composed role shows up in the MRO; its attributes
+                            // are flattened into `class_attrs`, so a known role is
+                            // just as complete as a known class.
+                            || registry.roles.contains_key(cls))
+                })
+            };
             // Does any `is default(...)` element default exist keyed by this
             // class? `apply_container_attribute_defaults` looks defaults up by
             // the receiver class name only, so a key with a matching class is
@@ -342,11 +363,13 @@ impl Interpreter {
                 has_smiley,
                 has_custom_bless,
                 has_container_defaults,
+                attrs_fully_known,
             )
         } else {
             (
                 std::sync::Arc::new(Vec::new()),
                 std::sync::Arc::new(HashMap::new()),
+                false,
                 false,
                 false,
                 false,
@@ -399,6 +422,7 @@ impl Interpreter {
             has_build,
             has_tweak,
             has_smiley,
+            attrs_fully_known,
             has_custom_bless,
             has_container_defaults,
             attr_is_types,

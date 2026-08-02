@@ -464,6 +464,11 @@ impl Interpreter {
                             Self::coerce_attr_value_by_sigil(value.clone(), sigil),
                         )
                     }
+                    // Raku's default BUILDALL ignores a named argument that names
+                    // no attribute; storing it would make `eqv` compare a key the
+                    // object is not supposed to have. See
+                    // `NativeCtorPlan::attrs_fully_known`.
+                    None if plan.attrs_fully_known => None,
                     None => attributes.insert(key.clone(), value.clone()),
                 };
                 // An attribute the caller supplied never gets its initializer.
