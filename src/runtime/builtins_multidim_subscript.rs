@@ -55,7 +55,7 @@ impl Interpreter {
                     ValueView::Array(arc, ..) => Some(arc.clone()),
                     _ => None,
                 };
-                let temp_id: u64 = std::sync::Arc::as_ptr(mixins) as u64;
+                let temp_id: u64 = crate::gc::Gc::as_ptr(mixins) as u64;
                 let temp_var = format!("__mutsu_push_mixin_tmp_{}", temp_id);
                 self.env.insert(temp_var.clone(), current.clone());
                 let result = self.call_method_mut_with_values(
@@ -69,7 +69,7 @@ impl Interpreter {
                 let mut updated_mixins = (**mixins).clone();
                 updated_mixins.insert(attr_key, new_value.clone());
                 let new_mixin =
-                    Value::mixin_parts(inner.clone(), std::sync::Arc::new(updated_mixins));
+                    Value::mixin_parts(inner.clone(), crate::gc::Gc::new(updated_mixins));
                 self.propagate_mixin_update_by_arc(mixins, &new_mixin);
                 if let Some(old_arc) = &old_array_arc {
                     self.propagate_shared_array_in_instances(old_arc, &new_value);

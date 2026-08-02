@@ -396,7 +396,7 @@ impl Interpreter {
             {
                 let cell = crate::gc::Gc::new(std::sync::Mutex::new(val.clone()));
                 // SAFETY: aliased in-place mutation of a shared hash; see
-                // `arc_contents_mut`. No live borrow into the map.
+                // `gc_contents_mut`. No live borrow into the map.
                 let hd = unsafe { crate::value::gc_contents_mut(&arc) };
                 Value::hash_insert_through(&mut hd.map, key, Value::container_ref(cell.clone()));
                 let cell_val = Value::container_ref(cell);

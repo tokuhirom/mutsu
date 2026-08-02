@@ -292,6 +292,12 @@ pub(crate) fn seq_sink(arc_ptr: &Arc<Vec<Value>>) {
 /// Shared mutable attribute storage for Proxy subclasses.
 pub(crate) type ProxySubclassAttrs = Arc<Mutex<HashMap<String, Value>>>;
 
+/// The overrides map of a [`ValueRepr::Mixin`]: a type or role name (or one of
+/// the `__mutsu_*__` marker keys) to the value that overrides it. Lives behind
+/// a `Gc` so `^set_name`'s in-place write is sound and so the collector can
+/// trace through it — see the variant's doc comment.
+pub(crate) type MixinOverrides = HashMap<String, Value>;
+
 /// How the bytes of one element read back out of a [`BufData`] node.
 ///
 /// The node stores bytes; this is what says whether those bytes spell an
@@ -467,7 +473,6 @@ mod value_setbagmix;
 mod view;
 pub(crate) mod waker;
 pub(crate) use crate::gc::gc_contents_mut;
-pub(crate) use aliased_mut::arc_contents_mut;
 pub(crate) use aliased_mut::gc_data_mut;
 pub(crate) use attr_map::{AttrKey, AttrMap, attr_twigil_base};
 pub use guards::{ArcRef, GcRef, RefGuard, WeakGcRef};
@@ -1350,8 +1355,17 @@ pub(in crate::value) enum ValueRepr {
     Whatever,
     HyperWhatever,
     /// A value with mixin overrides from the `but` operator.
-    /// Inner value is the original; the HashMap maps type names (e.g. "Bool") to override values.
-    Mixin(Arc<Value>, Arc<HashMap<String, Value>>),
+    /// Inner value is the original; the map maps type names (e.g. "Bool") to
+    /// override values.
+    ///
+    /// The overrides map is a **GC node** (`Gc`, not `Arc`): `$type.^set_name`
+    /// mutates it in place so the new name is visible through every alias of
+    /// the mixed-in object, and only a `Gc` payload — which lives in the
+    /// `GcBox`'s `UnsafeCell` — can hand out that aliased `&mut` with valid
+    /// provenance (ADR-0013). It also makes the map a real collector node, so
+    /// a cycle routed through mixin overrides is traced rather than treated as
+    /// conservatively-rooted.
+    Mixin(Arc<Value>, crate::gc::Gc<MixinOverrides>),
     /// A Capture: positional args + named args.
     /// Both fields are boxed to keep `Value` small (the inline `Vec` + `HashMap`
     /// otherwise made this the largest variant, inflating every `Value`).
@@ -1660,7 +1674,7 @@ impl Value {
     #[inline]
     pub(in crate::value) fn Mixin(
         inner: Arc<Value>,
-        overrides: Arc<HashMap<String, Value>>,
+        overrides: crate::gc::Gc<MixinOverrides>,
     ) -> Value {
         Value::from_repr(ValueRepr::Mixin(inner, overrides))
     }

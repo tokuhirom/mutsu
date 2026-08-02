@@ -1330,7 +1330,7 @@ impl Interpreter {
                     {
                         let cell = crate::gc::Gc::new(std::sync::Mutex::new(val.clone()));
                         // SAFETY: aliased in-place mutation of a shared hash; see
-                        // `arc_contents_mut`. No live borrow into the map.
+                        // `gc_contents_mut`. No live borrow into the map.
                         let hd = unsafe { crate::value::gc_contents_mut(&arc) };
                         Value::hash_insert_through(
                             &mut hd.map,
@@ -3318,11 +3318,11 @@ impl Interpreter {
                     match val.view() {
                         ValueView::Array(arc, _) => {
                             // SAFETY: aliased in-place clear of a shared container;
-                            // see `arc_contents_mut`.
+                            // see `gc_contents_mut`.
                             unsafe { crate::value::gc_contents_mut(&arc).items.clear() };
                         }
                         ValueView::Hash(arc) => {
-                            // SAFETY: aliased in-place clear; see `arc_contents_mut`.
+                            // SAFETY: aliased in-place clear; see `gc_contents_mut`.
                             unsafe { crate::value::gc_contents_mut(&arc).map.clear() };
                         }
                         // Slice 2a: a `=`-array-shared source (`my $r = @ary`) holds
@@ -3336,11 +3336,11 @@ impl Interpreter {
                 if let Some(slot) = self.find_local_slot(code, name) {
                     match self.locals[slot].view() {
                         ValueView::Array(arc, _) => {
-                            // SAFETY: aliased in-place clear; see `arc_contents_mut`.
+                            // SAFETY: aliased in-place clear; see `gc_contents_mut`.
                             unsafe { crate::value::gc_contents_mut(&arc).items.clear() };
                         }
                         ValueView::Hash(arc) => {
-                            // SAFETY: aliased in-place clear; see `arc_contents_mut`.
+                            // SAFETY: aliased in-place clear; see `gc_contents_mut`.
                             unsafe { crate::value::gc_contents_mut(&arc).map.clear() };
                         }
                         ValueView::ContainerRef(cell) => Self::clear_aggregate_cell(&cell),

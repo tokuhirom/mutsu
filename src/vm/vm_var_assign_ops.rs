@@ -188,7 +188,7 @@ impl Interpreter {
         }
         Ok(Some(Value::mixin_parts(
             inner,
-            std::sync::Arc::new(updated_mixins),
+            crate::gc::Gc::new(updated_mixins),
         )))
     }
 
@@ -496,7 +496,7 @@ impl Interpreter {
             // SAFETY: result_arc was just created here; building a
             // self-referential cycle requires the in-place write (a freshly
             // created Arc cannot be made cyclic via `get_mut`). See
-            // `arc_contents_mut`; no borrow into the map is live across the write.
+            // `gc_contents_mut`; no borrow into the map is live across the write.
             // Inventory bucket (a) — provably-unique (docs/gc-contents-mut-inventory.md).
             debug_assert_eq!(
                 result_arc.strong_count(),
@@ -591,7 +591,7 @@ impl Interpreter {
                 seen_hashes.push(new_hash_ptr);
                 // SAFETY: new_hash_arc was just created here; the
                 // self-reference insert and the in-place recursive fixup must
-                // alias it. See `arc_contents_mut`.
+                // alias it. See `gc_contents_mut`.
                 // Inventory bucket (a) — provably-unique (docs/gc-contents-mut-inventory.md).
                 debug_assert_eq!(
                     new_hash_arc.strong_count(),
@@ -651,7 +651,7 @@ impl Interpreter {
             let result_arc = crate::value::Value::array_arc(new_items);
             // SAFETY: result_arc was just created here; building a
             // self-referential cycle and the in-place recursive fixup must alias
-            // it. See `arc_contents_mut`.
+            // it. See `gc_contents_mut`.
             // Inventory bucket (a) — provably-unique (docs/gc-contents-mut-inventory.md).
             debug_assert_eq!(
                 result_arc.strong_count(),

@@ -287,15 +287,36 @@ files** (the inventory's 54/20 has drifted up as new mutation paths reuse the pr
 drift is expected and harmless now that the primitive is sound, but it means the number in
 `docs/gc-contents-mut-inventory.md` is a snapshot, not a budget).
 
-**⚠️ Correction (2026-08-02, same day): "fixed at every call site at once" is wrong by one
-call site.** The `UnsafeCell`-in-`GcBox` fix covers every `Gc`-managed container, which is all
+**⚠️ Correction (2026-08-02, same day): "fixed at every call site at once" was wrong by one
+call site.** The `UnsafeCell`-in-`GcBox` fix covers every `Gc`-managed container, which was all
 of them **except `Mixin`**: `ValueRepr::Mixin(Arc<Value>, Arc<HashMap<String, Value>>)`
-(`src/value/mod.rs`) never migrated to the GC, and `$type.^set_name(...)` writes its overrides
+(`src/value/mod.rs`) never migrated to the GC, and `$type.^set_name(...)` wrote its overrides
 map in place through `arc_contents_mut` (`src/runtime/methods_classhow_dispatch.rs:109`). An
-`Arc` payload has no `UnsafeCell`, so that one site is still the original provenance violation.
+`Arc` payload has no `UnsafeCell`, so that one site was still the original provenance violation.
 `aliased_mut.rs` compounded the error by documenting `arc_contents_mut` as "currently unused".
-Tracked in `todo/tickets/mixin-overrides-aliased-write-is-still-arc.md`; found by writing the
-Miri gate below, which is exactly the kind of thing the gate exists to surface.
+It was found by writing the Miri gate below, which is exactly the kind of thing the gate exists
+to surface.
+
+**⚠️ And a second correction, from measuring rather than reasoning (2026-08-03).** Probing the
+two shapes side by side on the gate's pinned nightly shows Miri accepts *both* the `Arc` and the
+`Gc` aliased write when no shared borrow is live across it, and rejects *both* when one is — so
+§1.3-1's "provenance UB, every run, Miri-detectable" and §2's "valid provenance even while shared
+`&` borrows into the same node exist" are both stronger than the tooling supports. The decision
+(the `UnsafeCell` representation) still stands; what changes is what the residual risk *is* — the
+caller's aliasing obligation, not the representation. Full measurements and the follow-up audit
+in `todo/deep/adr-0013-unsafecell-does-not-license-live-shared-borrows.md`.
+
+**✅ Resolved (2026-08-03).** The overrides map is now `Gc<MixinOverrides>` — the same
+migration every other container already had: a `Trace` impl (its edges traced once per node
+rather than inlined per holder, so the `uniquely_owned` conservatism the `Arc` wrapper needed
+is gone), `Gc::ptr_eq`/`Gc::as_ptr` at the identity sites, and `gc_contents_mut` at the
+`^set_name` write. `arc_contents_mut` was deleted with its last call site, so the codebase has
+exactly one aliased-write primitive again, and every SAFETY comment that pointed at the `Arc`
+one now names the `Gc` one. `value::value_gc::tests::a_mixin_overrides_write_is_visible_through_every_alias`
+reproduces the `^set_name` shape without an `Interpreter`, and the `--lib gc::` filter matches
+`value_gc::tests` — so unlike the `soundness_smoke` tests, that one is inside the Miri gate's
+reach **today**, not after the lazy-magic-vars ticket. Verified by running the gate's exact
+command on the pinned nightly.
 
 **✅ Shipped, blocking — §4 phase 4, the Miri gate.** ci.yml's `miri` job runs
 `cargo miri test --no-default-features --features native --lib gc::` (JIT and FFI dropped —
@@ -326,8 +347,8 @@ through the `Value` layer. `-Zmiri-strict-provenance` is not available to us for
 allocations across four threads) is ignored under Miri because it would not finish; it defends
 counter ordering, not provenance, and gc-stress still runs it natively.
 
-This ADR is therefore closed **except** for the `Mixin` correction above, which the gate cannot
-see today (no test in the subset reaches `^set_name`).
+This ADR is therefore closed: the `Mixin` correction above landed on 2026-08-03, and the gate
+now does see that shape.
 
 **Deferred by decision, not by omission** — problem §1.3-2, the narrow cross-thread race on a
 genuinely shared node, remains routed to ADR-0001 layer 3c (§5 open question 2). The safety
@@ -335,11 +356,13 @@ contract on `gc_contents_mut` states the obligation ("concurrent structural muta
 another thread remains routed through the synchronized shared-store lanes"), and nothing
 mechanically checks it.
 
-**Documentation debt this ADR created.** `src/value/aliased_mut.rs`'s module header still
-carries a "⚠️ Known unsoundness (tracked, not removed here)" section describing the
-`Arc::as_ptr` provenance violation as live and naming Track B as the future fix. Both
-statements are false since this ADR landed. That header is the first thing a reader looking
-for the current soundness posture finds; correcting it is part of closing this ADR.
+**~~Documentation debt this ADR created.~~ Paid 2026-08-03.** `src/value/aliased_mut.rs`'s
+module header used to carry a "⚠️ Known unsoundness (tracked, not removed here)" section
+describing the `Arc::as_ptr` provenance violation as live and naming Track B as the future fix
+— both false since this ADR landed. That header is the first thing a reader looking for the
+current soundness posture finds. It now states the posture that actually holds: no container
+is `Arc`-backed for an aliased write, there is one primitive, and reintroducing an
+`as_ptr as *mut` cast is the thing not to do.
 
 ---
 

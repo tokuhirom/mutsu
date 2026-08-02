@@ -406,7 +406,7 @@ impl Interpreter {
 
     pub(crate) fn propagate_mixin_update_by_arc(
         &mut self,
-        old_mixins: &std::sync::Arc<std::collections::HashMap<String, Value>>,
+        old_mixins: &crate::gc::Gc<crate::value::MixinOverrides>,
         new_mixin: &Value,
     ) {
         // Update top-level env bindings
@@ -415,7 +415,7 @@ impl Interpreter {
             .iter()
             .filter_map(|(sym, val)| match val.view() {
                 ValueView::Mixin(_, existing_mixins)
-                    if std::sync::Arc::ptr_eq(existing_mixins, old_mixins) =>
+                    if crate::gc::Gc::ptr_eq(existing_mixins, old_mixins) =>
                 {
                     Some(*sym)
                 }
@@ -445,7 +445,7 @@ impl Interpreter {
                     .iter()
                     .filter_map(|(sym, val)| match val.view() {
                         ValueView::Mixin(_, existing_mixins)
-                            if std::sync::Arc::ptr_eq(existing_mixins, old_mixins) =>
+                            if crate::gc::Gc::ptr_eq(existing_mixins, old_mixins) =>
                         {
                             Some(*sym)
                         }
@@ -476,7 +476,7 @@ impl Interpreter {
     }
 
     fn update_mixin_in_sub(
-        old_mixins: &std::sync::Arc<std::collections::HashMap<String, Value>>,
+        old_mixins: &crate::gc::Gc<crate::value::MixinOverrides>,
         new_mixin: &Value,
         sub_val: &mut Value,
     ) {
@@ -486,7 +486,7 @@ impl Interpreter {
                 .iter()
                 .filter_map(|(sym, val)| match val.view() {
                     ValueView::Mixin(_, existing_mixins)
-                        if std::sync::Arc::ptr_eq(existing_mixins, old_mixins) =>
+                        if crate::gc::Gc::ptr_eq(existing_mixins, old_mixins) =>
                     {
                         Some(*sym)
                     }

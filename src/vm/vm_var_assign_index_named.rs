@@ -764,7 +764,7 @@ impl Interpreter {
                 if let Some((items, i)) = list_scalar_hit {
                     // Update the Scalar element in-place.
                     // SAFETY: aliased in-place mutation of a shared list backing;
-                    // see `arc_contents_mut`. No borrow into the items is live
+                    // see `gc_contents_mut`. No borrow into the items is live
                     // across the write. (The old code cast the `ArrayData` pointer
                     // straight to `*mut Vec<Value>`, assuming `items` sits at
                     // offset 0; this types it properly as `&mut ArrayData`.)
@@ -1982,7 +1982,7 @@ impl Interpreter {
                             // travels with the hash through copy-on-write.
                             let hd: &mut crate::value::HashData = if use_inplace {
                                 // SAFETY: aliased in-place mutation of a shared
-                                // hash; see `arc_contents_mut`.
+                                // hash; see `gc_contents_mut`.
                                 unsafe { crate::value::gc_contents_mut(hash) }
                             } else {
                                 crate::gc::Gc::make_mut(hash)
@@ -2080,7 +2080,7 @@ impl Interpreter {
                                     let use_inplace = crate::gc::Gc::strong_count(items) > 1;
                                     let arr: &mut crate::value::ArrayData = if use_inplace {
                                         // SAFETY: aliased in-place mutation of a
-                                        // shared array; see `arc_contents_mut`.
+                                        // shared array; see `gc_contents_mut`.
                                         unsafe { crate::value::gc_contents_mut(items) }
                                     } else {
                                         crate::gc::Gc::make_mut(items)
@@ -3424,7 +3424,7 @@ impl Interpreter {
                     None => val.clone(),
                 };
                 // SAFETY: aliased in-place mutation of a shared hash so the change
-                // is visible to all holders of the same Arc; see `arc_contents_mut`.
+                // is visible to all holders of the same Arc; see `gc_contents_mut`.
                 let hd = unsafe { crate::value::gc_contents_mut(&arc) };
                 Value::hash_insert_through(&mut hd.map, key.clone(), stored);
                 // For a fresh-cell bind, write the cell back to the source var
@@ -3442,7 +3442,7 @@ impl Interpreter {
                 if let Ok(i) = key.parse::<usize>() {
                     // SAFETY: aliased in-place mutation of a shared array so the
                     // change is visible to all holders of the same Arc; see
-                    // `arc_contents_mut`.
+                    // `gc_contents_mut`.
                     let v = &mut unsafe { crate::value::gc_contents_mut(&arc) }.items;
                     Self::autoviv_resize(
                         v,

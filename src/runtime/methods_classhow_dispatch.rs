@@ -100,13 +100,13 @@ impl Interpreter {
                         // Store the friendly name on the shared overrides map so a
                         // later `.^name` on any alias of this mixed-in object
                         // returns it. The metamethod receives a clone of the
-                        // invocant, but the clone shares the overrides `Arc`, so an
+                        // invocant, but the clone shares the overrides node, so an
                         // in-place write reaches the caller's value too — matching
                         // Rakudo's in-place mutation of the anonymous metaobject.
                         // SAFETY: aliased in-place mutation of a shared container
-                        // (see `arc_contents_mut`); no borrow into the map is live
-                        // across the insert.
-                        let map = unsafe { crate::value::arc_contents_mut(overrides) };
+                        // (see `gc_contents_mut`); no borrow into the map is live
+                        // across the insert, and the insert does not re-enter the VM.
+                        let map = unsafe { crate::gc::gc_contents_mut(overrides) };
                         map.insert(
                             "__mutsu_type_name__".to_string(),
                             Value::str(new_name.clone()),

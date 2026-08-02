@@ -507,7 +507,7 @@ fn ser_to_value(sv: SerValue) -> Value {
         }),
         SerValue::Mixin(inner, overrides) => Value::Mixin(
             Arc::new(ser_to_value(*inner)),
-            Arc::new(
+            crate::gc::Gc::new(
                 overrides
                     .into_iter()
                     .map(|(k, v)| (k, ser_to_value(v)))

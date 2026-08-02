@@ -33,48 +33,19 @@
 //! layer 3c): concurrent structural mutation must stay routed through the
 //! synchronized shared-store lanes, and nothing mechanically checks that.
 //!
-//! # ⚠️ One container is still `Arc`-backed, so its aliased write is still UB
+//! # No container is `Arc`-backed for an aliased write any more
 //!
-//! ADR-0013 fixed the provenance for `Gc`-managed containers. [`arc_contents_mut`]
-//! below is the `Arc` counterpart and it has **one live call site**: the
-//! `ValueView::Mixin` overrides map (`ValueRepr::Mixin(Arc<Value>,
-//! Arc<HashMap<String, Value>>)`), written in place by `$type.^set_name(...)`.
-//! An `Arc` payload has no `UnsafeCell`, so deriving `&mut` from `Arc::as_ptr`
-//! there is the same provenance violation ADR-0013 removed everywhere else.
-//! Tracked in `todo/tickets/mixin-overrides-aliased-write-is-still-arc.md`.
+//! There used to be an `arc_contents_mut` here — the `Arc` counterpart of the
+//! GC primitive — kept alive by one call site: the `Mixin` overrides map,
+//! written in place by `$type.^set_name(...)`. An `Arc` payload has no
+//! `UnsafeCell`, so that cast was the same provenance violation ADR-0013
+//! removed everywhere else. `ValueRepr::Mixin`'s overrides map is now a
+//! `Gc<MixinOverrides>` node, the write routes through
+//! [`crate::gc::gc_contents_mut`], and the `Arc` primitive is gone.
 //!
-//! Do not add new `as_ptr as *mut` casts: for a `Gc` container route the write
-//! through the GC primitive, and do not give a new container the `Arc` shape
-//! that forces this one.
-
-/// Returns a `&mut T` aliasing the contents of a shared `Arc<T>`, for a
-/// deliberate aliased in-place mutation of a still-`Arc`-backed container.
-///
-/// The returned borrow is tied to the lifetime of the `&Arc<T>` argument, so the
-/// `&mut` cannot outlive the handle it came from (a small improvement over a raw
-/// `Arc::as_ptr as *mut` cast, which produces an unbounded pointer).
-///
-/// # Safety
-///
-/// The caller must guarantee that for the entire lifetime of the returned `&mut`:
-///
-/// * **No aliasing borrow is live.** No other reference (`&T` or `&mut T`) into
-///   the same `Arc`'s contents may exist while this `&mut` is held. In practice:
-///   read what you need out first, then take this borrow, then write, and do not
-///   re-enter the VM (which could observe the container) while it is held.
-/// * **No concurrent access from another thread.**
-///
-/// Beyond those, note that this cast is **itself** a provenance violation — see
-/// the module header's "One container is still `Arc`-backed" section. It has a
-/// single live call site (the `Mixin` overrides map); every other aliased
-/// container write goes through [`crate::gc::gc_contents_mut`], which is sound.
-/// Do not add a second call site: give the container the `Gc` shape instead.
-#[allow(clippy::mut_from_ref)]
-pub(crate) unsafe fn arc_contents_mut<T>(arc: &std::sync::Arc<T>) -> &mut T {
-    // SAFETY: delegated to the caller per the contract above. This is the only
-    // `Arc::as_ptr as *mut` cast in the codebase.
-    unsafe { &mut *(std::sync::Arc::as_ptr(arc) as *mut T) }
-}
+//! Do not reintroduce an `as_ptr as *mut` cast: for a `Gc` container route the
+//! write through the GC primitive, and do not give a new container the `Arc`
+//! shape that would force one.
 
 /// Shared-aware mutable access to a container's backing data for a mutation
 /// of the *variable's own container* (container identity, §3): when the node

@@ -95,7 +95,10 @@ pub enum ValueView<'a> {
     Nil,
     Whatever,
     HyperWhatever,
-    Mixin(&'a Arc<Value>, &'a Arc<HashMap<String, Value>>),
+    Mixin(
+        &'a Arc<Value>,
+        &'a crate::gc::Gc<crate::value::MixinOverrides>,
+    ),
     Capture {
         positional: &'a Vec<Value>,
         named: &'a HashMap<String, Value>,
@@ -490,7 +493,10 @@ impl Value {
     /// Construct a `Mixin` from its parts, preserving the inner value's
     /// `Arc` identity (unlike `Value::mixin`, which re-wraps).
     #[inline]
-    pub(crate) fn mixin_parts(inner: Arc<Value>, overrides: Arc<HashMap<String, Value>>) -> Self {
+    pub(crate) fn mixin_parts(
+        inner: Arc<Value>,
+        overrides: crate::gc::Gc<crate::value::MixinOverrides>,
+    ) -> Self {
         Value::Mixin(inner, overrides)
     }
 

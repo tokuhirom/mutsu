@@ -289,11 +289,11 @@ What is left, in order of tractability:
 - **The cross-thread race is deferred to layer 3c** (ADR-0013 §3, resolved open question 2).
   Concurrent structural mutation must stay routed through the synchronized shared-store
   lanes; nothing checks that it does.
-- **Stale documentation actively misleads.** `value/aliased_mut.rs`'s module header still
-  carries a "⚠️ Known unsoundness (tracked, not removed here)" section describing the
-  `Arc::as_ptr` provenance violation as live, and still points at Track B as the future fix
-  — both untrue since ADR-0013. That file's `arc_contents_mut` is dead code kept for audit.
-  A reader looking for the current soundness posture finds the wrong answer first.
+- **~~Stale documentation actively misleads.~~ Fixed 2026-08-03.** `value/aliased_mut.rs`'s
+  module header no longer describes the `Arc::as_ptr` provenance violation as live, and no
+  longer points at Track B as the future fix. The one container that genuinely still had the
+  `Arc` shape — the `Mixin` overrides map, written in place by `^set_name` — became a
+  `Gc<MixinOverrides>` node, and `arc_contents_mut` was deleted with its last call site.
 
 ### 2.2 `RuntimeError` as a control channel — cheap now, still cohabiting
 

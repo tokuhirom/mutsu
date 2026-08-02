@@ -74,6 +74,22 @@ mod tests {
         assert_eq!(out.trim(), "2");
     }
 
+    /// `$obj.^set_name(...)` writes the mixin's overrides node in place so the
+    /// rename reaches every alias of the mixed-in object (Rakudo mutates the
+    /// anonymous metaobject). The metamethod receives a *clone* of the invocant
+    /// that shares the node, so this is an aliased `gc_contents_mut` write on
+    /// the real VM path — the last container write that was still `Arc`-backed
+    /// (through the deleted `arc_contents_mut`) before the overrides map became
+    /// a `Gc<MixinOverrides>` node.
+    #[test]
+    #[cfg_attr(miri, ignore)] // see the module header: blocked on lazy magic vars
+    fn a_mixin_rename_is_visible_through_an_alias() {
+        let out = run("my $o = 42 but role :: { method greet { 'hi' } }; \
+             my $alias = $o; $o.^set_name('Greeter'); \
+             say $alias.^name; say $o.greet;");
+        assert_eq!(out.trim(), "Greeter\nhi");
+    }
+
     /// A cyclic structure exercises the collector's own `&mut` paths (the
     /// fixup sites that carry the `strong_count == 1` uniqueness assertion) in
     /// addition to the mutation path.
