@@ -1,6 +1,6 @@
 use Test;
 
-plan 12;
+plan 16;
 
 # `if EXPR -> @a { }` tests EXPR itself and only BINDS the container when the
 # branch is taken. Assigning the condition into an `@`/`%` container instead
@@ -57,3 +57,13 @@ sub pick($v) {
 is pick([7, 8]), 'then:2', 'array pointy on the if branch';
 is pick(Any), 'elsif:3', 'array pointy on the elsif branch';
 is pick(0), 'elsif:3', 'falsy condition falls through to the elsif';
+
+# A slurpy array parameter is NOT the plain-container binding above: it has to
+# reach the real signature binder so the slurpy/one-argument rules apply.
+# `+@a` in particular used to look "simple" to the parser and take the plain
+# `my @a := COND` route, which cannot apply the single-argument rule
+# (roast S04-statements/if.t "slurpy parameters on block").
+if 1, 2 -> +@a { is-deeply @a, [1, 2], '+@ applies the single-argument rule' }
+if 42   -> +@a { is-deeply @a, [42],  '+@ with one argument' }
+if 1, 2 -> *@a { is-deeply @a, [1, 2], '*@ flattens the condition list' }
+if 1, 2 -> **@a { is-deeply @a, [(1, 2),], '**@ keeps the condition list intact' }

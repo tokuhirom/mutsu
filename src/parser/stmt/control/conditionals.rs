@@ -89,6 +89,10 @@ fn is_simple_if_binding(param: &ParamDef) -> bool {
         && !param.named
         && !param.slurpy
         && !param.double_slurpy
+        // `+@a` (the single-argument rule) is a slurpy too: it must reach the
+        // real signature binder rather than the simple `my @a := COND`
+        // desugar, which cannot apply the one-arg rule.
+        && !param.onearg
         && param.default.is_none()
         && !param.optional_marker
         && param.type_constraint.is_none()
