@@ -806,8 +806,7 @@ impl Interpreter {
                         for (method_name, method_defs) in &parent_role.methods {
                             all_methods
                                 .entry(method_name.clone())
-                                .or_default()
-                                .extend(tag_role_origin(&parent_role_name, method_defs));
+                                .or_insert_with(|| tag_role_origin(&parent_role_name, method_defs));
                         }
                         for wh in &parent_role.wildcard_handles {
                             if !all_wildcard_handles.contains(wh) {

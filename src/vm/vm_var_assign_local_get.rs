@@ -185,6 +185,29 @@ impl Interpreter {
             self.stack.push(cell_val);
             return Ok(());
         }
+        // Method frames seed attribute locals from their declarations. On a
+        // type-object invocant those defaults are metadata, not instance
+        // storage: reading `$!attr` must fail before the seeded local can make
+        // the type object look like a constructed instance.
+        if name.starts_with('!')
+            && name.len() > 1
+            && !name.starts_with("__")
+            && let Some(self_val) = self.get_env_with_main_alias("self")
+            && !self_val.with_deref(|value| {
+                matches!(
+                    value.view(),
+                    ValueView::Instance { .. } | ValueView::Mixin(..)
+                )
+            })
+        {
+            let class_name = match self_val.view() {
+                ValueView::Package(name) => name.resolve(),
+                _ => crate::value::what_type_name(&self_val),
+            };
+            return Err(RuntimeError::new(format!(
+                "Cannot look up attributes in a {class_name} type object. Did you forget a '.new'?"
+            )));
+        }
         let val = self.locals[idx].clone();
         // Resolve a deferred bind token to its current value (Any if the path
         // doesn't exist). The raw local slot is unchanged, so a later write still

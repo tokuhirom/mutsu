@@ -1,6 +1,6 @@
 use Test;
 
-plan 8;
+plan 12;
 
 # Punning a role by *constructing* an instance runs the role's own `new` with
 # no arguments. A role whose `new` takes a required parameter therefore lost
@@ -31,6 +31,22 @@ role NoNew {
     method other(Int $size) { "plain:$size" }
 }
 is NoNew.other(3), 'plain:3', 'a role without a custom `new` still dispatches';
+
+role ParentCallable {
+    multi method CALL-ME(::?ROLE:U:) { 'no-arg' }
+    multi method CALL-ME(::?ROLE:U: \v) { 'arg:' ~ v }
+}
+is ParentCallable.(), 'no-arg', 'a parent role itself puns to a callable type object';
+role ChildCallable does ParentCallable { }
+is ChildCallable.(), 'no-arg', 'a composed role pun matches a parent role type object';
+is ChildCallable.(3), 'arg:3', 'its parent multi candidates are not duplicated';
+
+role AttributeRole {
+    has $.value = 5;
+    method read-value() { $!value }
+}
+throws-like { AttributeRole.read-value }, Exception,
+    'a role pun does not construct instance attribute storage';
 
 # `.new` on a role still builds an instance through the role's own constructor.
 role WithNew {
