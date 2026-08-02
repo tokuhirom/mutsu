@@ -1796,7 +1796,7 @@ mod const_pool_dedup {
         assert!(code.env_consumer_slots.whenever.is_empty());
         assert!(code.captures_env_by_name);
         // Runtime behavior is still blanket-compatible in this migration layer.
-        assert_eq!(code.needs_env_sync, vec![true, true]);
+        assert_eq!(code.needs_env_sync, vec![true, false]);
     }
 }
 
@@ -2791,10 +2791,6 @@ impl CompiledCode {
         if n == 0 {
             return;
         }
-        if self.captures_env_by_name {
-            self.needs_env_sync.iter_mut().for_each(|b| *b = true);
-            return;
-        }
         let locals_map: std::collections::HashMap<&str, usize> = self
             .locals
             .iter()
@@ -3029,6 +3025,35 @@ impl CompiledCode {
                 || holds_dynamic_substitution
             {
                 self.needs_env_sync.iter_mut().for_each(|b| *b = true);
+            }
+        }
+        // ADR-0018 staged runtime conversion: gather/whenever already have
+        // complete analysis-closure slot sets, so their precise bitmaps can
+        // drive per-store env publication now. Block/loop cleanup still journals
+        // some carrier state by name; keep that consumer-local fallback until
+        // the next layer replaces its restore with baked slots. This is no
+        // longer a frame-wide fallback merely because a stored body is present.
+        if !self.env_consumer_slots.for_loop.is_empty()
+            || !self.env_consumer_slots.block_scope.is_empty()
+            || !self.env_consumer_slots.block_local_scope.is_empty()
+        {
+            self.needs_env_sync
+                .iter_mut()
+                .for_each(|needed| *needed = true);
+        } else {
+            for slot in 0..n {
+                self.needs_env_sync[slot] |= self
+                    .env_consumer_slots
+                    .gather
+                    .get(slot)
+                    .copied()
+                    .unwrap_or(false)
+                    || self
+                        .env_consumer_slots
+                        .whenever
+                        .get(slot)
+                        .copied()
+                        .unwrap_or(false);
             }
         }
     }
