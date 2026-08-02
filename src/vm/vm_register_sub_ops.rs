@@ -363,6 +363,21 @@ impl Interpreter {
                 // `require M <quux>`'s missing-symbol detection
                 // (roast/S11-modules/require.t 11).
                 && !*is_export
+                // A prelude-injected helper (`cglobal`, `nativecast`,
+                // `nativesizeof`, ... — see `inject_nativecall_subs_prelude`)
+                // is an ambient GLOBAL routine, not a block-lexical one: every
+                // compunit that so much as mentions NativeCall carries its own
+                // identical copy, and only the first registration wins. Taking
+                // the escape hatch stored one env-captured copy per module and
+                // let the *last* module loaded answer a later `cglobal` call
+                // with its own closure env, so DBIish's mysql driver probed the
+                // library through the SQLite driver's scope and died with
+                // "Cannot load native library 'libmariadb.so.0'" where it
+                // should have soft-failed. Same reasoning as the `is_export`
+                // gate above: an interface routine is not lexical to a block.
+                && !custom_traits
+                    .iter()
+                    .any(|(t, _)| t == crate::runtime::PRELUDE_SUB_TRAIT)
                 && !*multi
                 && name_expr.is_none()
                 && !resolved_name.contains("::")
