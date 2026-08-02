@@ -270,12 +270,18 @@ impl Interpreter {
     /// resolves them, regardless of the call-site env. Values are pulled fresh
     /// from `package_lexicals` on each method entry, so a prior call's assignment
     /// (persisted there by `writeback_package_scope_var`, since dispatch sets
-    /// `current_package` to the class) is reflected. Only names not already bound
-    /// in the method env (params/attrs/`self` take precedence) are injected. This
-    /// is the load-bearing half of the fix for a class registered inside a
-    /// transient frame (`require` in a sub), whose body env — and thus its statics
-    /// — is gone by the time a method runs. Returns without work when the class has
-    /// no statics (the overwhelmingly common case).
+    /// `current_package` to the class) is reflected. This is the load-bearing half
+    /// of the fix for a class registered inside a transient frame (`require` in a
+    /// sub), whose body env — and thus its statics — is gone by the time a method
+    /// runs. Returns without work when the class has no statics (the overwhelmingly
+    /// common case).
+    ///
+    /// Injection is UNCONDITIONAL, and both call sites run it *before* `self` and
+    /// the parameters are bound: those overwrite it and so still take precedence,
+    /// while a caller lexical that merely shares the name does not. The method body
+    /// is inside the statics' lexical scope, so a same-named binding from the
+    /// calling frame — visible here only because the env is flattened — must never
+    /// shadow them.
     pub(crate) fn inject_class_body_statics(&mut self, class_name: &str) {
         let Some(statics) = self.package_lexicals.get(class_name) else {
             return;
@@ -285,7 +291,6 @@ impl Interpreter {
         }
         let to_inject: Vec<(String, Value)> = statics
             .iter()
-            .filter(|(k, _)| !self.env.contains_key(k.as_str()))
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
         for (k, v) in to_inject {

@@ -2758,8 +2758,38 @@ impl Interpreter {
                 marks.insert(bare.clone());
             }
             let store = self.package_lexicals.entry(name.to_string()).or_default();
+            // Only the names this body genuinely `my`-declared are unbound below.
+            // `body_lexicals` deliberately over-approximates — for a `unit class`
+            // it also picks up everything the body's own `use` statements imported
+            // (`unit class HTTP::UserAgent; use HTTP::UserAgent::Common;` brings in
+            // that module's `%useragents`). Recording those as statics is harmless;
+            // *unbinding* them is not, and it broke the exported `get-ua` that
+            // reads `%useragents`.
+            let mut static_names = Vec::with_capacity(body_lexicals.len());
             for (bare, v) in body_lexicals {
+                if declared_statics.contains(bare.as_str()) {
+                    static_names.push(bare.clone());
+                }
                 store.insert(bare, v);
+            }
+            // The class body is these names' whole scope. Leaving the bare
+            // binding in the env made every class-body `my` a de facto global:
+            // the next class body declaring the same name overwrote it, and the
+            // FIRST class's methods then read the SECOND class's value. Cro has
+            // four `my constant @defaults`, one per selector class, so every
+            // body-parser lookup ran the body *serializer* list. Restore each name
+            // to whatever the enclosing scope had — the authoritative copy now
+            // lives in `package_lexicals`, which method dispatch injects.
+            for bare in static_names {
+                match saved_env.get(&bare) {
+                    Some(previous) => {
+                        let previous = previous.clone();
+                        self.env.insert(bare, previous);
+                    }
+                    None => {
+                        self.env.remove(&bare);
+                    }
+                }
             }
         }
         // A type declared inside this class body (`class Outer { my class Inner
