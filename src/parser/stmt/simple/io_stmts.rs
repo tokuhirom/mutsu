@@ -98,6 +98,15 @@ pub(crate) fn put_stmt(input: &str) -> PResult<'_, Stmt> {
 pub(crate) fn note_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("note", input).ok_or_else(|| PError::expected("note statement"))?;
     shadowed_by_user_sub("note")?;
+    // `note(...)` — parenthesis attached, no space — is an ordinary call, not the
+    // listop statement. Bail out so statement dispatch reaches the general call
+    // parser, exactly as `say(...)` does (`say_stmt` gets there by failing its
+    // `ws1`). Without this, `note` fell through to the no-argument form below and
+    // left `("hi")` behind as a separate statement, so `note("hi")` printed
+    // "Noted" and warned about a string in sink context.
+    if rest.starts_with('(') {
+        return Err(PError::expected("note call with parentheses"));
+    }
     // `note` with no arguments is valid (prints "Noted\n")
     if let Ok((rest2, _)) = ws1(rest) {
         // Check for colon invocant syntax: `note EXPR:` or `note EXPR: arg1, arg2`
