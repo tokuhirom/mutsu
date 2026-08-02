@@ -23,7 +23,7 @@ Method:
 
 mutsu is a Rust implementation of a minimal Raku-compatible interpreter. The roast
 whitelist stands at **1435 / 1464 (98.0%)**, up from rev10's 1433/1464 — and that near-flat
-number is the point: **roast has been mined out since rev10** (PLAN §4), so a year's worth
+number is the point: **roast has been mined out since rev10** (PLAN §3), so a year's worth
 of the project's velocity now shows up in places roast does not measure. The 1096 commits
 since rev10 went almost entirely into (a) the raku-differential compatibility sweep
 (≈100 `news/2026-08/` entries, one general fix each), (b) the batteries campaign — real
@@ -100,7 +100,7 @@ the AST (re-verified 2026-08-02):
 - **Module-sub OTF compile gate** (`def_is_otf_compilable_module_single`,
   `vm/vm_call_func_ops.rs:1991`): unchanged since rev10. The residual exclusions are
   mechanism-level — `state`, sigilless `\x` params, `is encoded(...)`, `start` — each with a
-  documented blocker (PLAN §3).
+  documented blocker (`todo/tickets/otf-compilation-gate-leftovers.md`).
 
 ### 1.2 Closure upvalues — Phase 1 only, unchanged since rev5
 
@@ -132,8 +132,9 @@ One occurrence of any of those five ops in a frame makes **every** local an env-
 target. The blanket is not removable one consumer at a time: block-scope restore re-pulls
 locals from env by name, the loop mechanism writes the loop var to both slot and env,
 `MakeGather`/`WheneverScope` stash a body in `stmt_pool` and run it by name against the live
-env, and closure capture reads free vars from the same mirror. PLAN §5 item 0 records four
-independent mechanisms that a standalone removal deterministically broke.
+env, and closure capture reads free vars from the same mirror.
+`todo/deep/needs-env-sync-blanket-removal.md` records four independent mechanisms that a
+standalone removal deterministically broke.
 
 **The reason this ranks higher in rev11 than in rev10 is not performance.** It is that the
 open correctness tickets in `todo/` cluster on this one mechanism — see §2.4.
@@ -231,7 +232,9 @@ Two structural observations:
 2. **B2b's "custom HOW inheritance is campaign-sized" verdict is partly obsolete.** PLAN
    §B2b still describes HOW subclassing as unbuilt; the OO::Monitors campaign built a
    meaningful part of it. What remains unbuilt is the NQP/QAST/slang layer Test::Async needs,
-   which is a *different* claim. PLAN §B2b should be re-scoped, not simply left deferred.
+   which is a *different* claim. That scouting result now lives in
+   `docs/ecosystem-guts-dependency-survey.md` (PLAN's §1 B2b was dropped 2026-08-02 —
+   Test::Async is not a bundle candidate), and it is the claim to re-scope.
 
 ### 1.10 Representation campaigns — one complete, one half-finished
 
@@ -314,7 +317,8 @@ be silent.
 - **Recursive start/await hang** (deterministic) and **Supply detached-worker panics are
   swallowed** (QUIT propagation unimplemented) — both unchanged since rev10.
 - **No thread pool at all**: 20 `spawn_user_thread` sites, each reserving 256 MiB
-  (`runtime/builtins_system.rs:9`). PLAN §6 measured the consequences (50 idle `cue(:every)`
+  (`runtime/builtins_system.rs:9`). `todo/deep/shared-worker-pool-adr.md` measured the
+  consequences (50 idle `cue(:every)`
   timers → 52 threads / +16.4 GB VmSize). The decision this needs — what `await` does to a
   pooled worker, given mutsu has no continuations — is still an **unwritten Proposed ADR**.
 
@@ -337,9 +341,10 @@ Findings that reduce to it:
   one of the five blanket triggers.
 - `todo/tickets/forward-captured-code-var-snapshot.md` — a forward-captured `&`-lexical is
   snapshotted as `Nil`.
-- PLAN §6's "a joined `start` block writes its stale captured env back over a variable
-  declared after it", where PLAN itself already concludes the fix "belongs with the
-  cell-based capture work, not a special case at the call sites".
+- `todo/tickets/inline-start-blocks-clobber-a-later-declared-variable.md` — "a joined `start`
+  block writes its stale captured env back over a variable declared after it", where the
+  ticket itself already concludes the fix "belongs with the cell-based capture work, not a
+  special case at the call sites".
 
 Each has been triaged as "not a small slice" *individually*, which is the signature of a
 shared mechanism. Fixing them one at a time is not merely slow — each local fix adds another
@@ -401,7 +406,7 @@ No test-specific hardcoded outputs found (re-checked). Two derivation shortcuts 
   container tags, so the unit cost is low, but the growth is a code-shape signal, not just a
   perf one.
 - **`unwrap`/`expect`/`panic!`/`unreachable!` ≈ 1908 (+119)** and **`#[allow(` 178 (+8)**.
-  PLAN §8.3's "mutsu must never Rust-panic on any input" goal is in tension with a metric
+  PLAN §6's "mutsu must never Rust-panic on any input" goal is in tension with a metric
   that has risen every revision.
 - Allocation-failure aborts on user-sized allocations remain guarded via `try_reserve`.
 
@@ -451,7 +456,7 @@ The ranking rule, stated so it can be argued with:
 | 1 | **The env-writeback / lexical-slot fused campaign** — `captures_env_by_name` blanket → precise per-slot sync for its five consumers → `BlockScope` restore → closure capture cells (§1.3, §1.2, §2.4) | **correctness** + perf | Re-ranked from rev10's "top perf lever" to "the largest correctness cluster": at least seven open `todo/` findings reduce to this one mechanism, each individually triaged as "not a small slice". Fixing them separately is not merely slow — each local fix adds another consumer of the mirror. Needs a Proposed ADR first (five mechanisms are known to break on a standalone change). |
 | 2 | **Finish ADR-0015 P3b** (`array[T]` behind the `ArrayData::items` accessor chokepoint) (§1.10) | representation | The one genuinely half-migrated representation left: `Buf`/`CArray` are native-backed with honest `.REPR`/`.WHERE`, `array[T]` is not. The chokepoint refactor is the shared prerequisite, and P3b is simultaneously the fix for roast's shaped-native `array-shapes.t` T36-38 — the last roast item with real leverage. |
 | 3 | **Declaration registration → bytecode, and dispatch-entry consolidation into one type×method table** (§1.1, §3.3; retires §4-1's hand tables) | design | Was a standing "medium" item; the MOP campaign (§1.9) turned it into a *growth surface* — the user HOW protocol now runs inside AST-walking registration (`registration_class_decl.rs` 2882 lines), and `"elems"`-style scattered name matching spread from 8 files to 33. Every further batteries/MOP feature pays interest here, so the cost of deferring is rising rather than flat. |
-| 4 | **Exception-class hierarchy registration** (124 core `X::` classes unregistered, `todo/deep/exception-class-hierarchy-is-mostly-unregistered.md`) | design | A registry/data-model job, not a pile of small fixes, and the prerequisite for PLAN §8.4 error/exception parity — the QA axis that replaced roast as the compatibility signal. |
+| 4 | **Exception-class hierarchy registration** (124 core `X::` classes unregistered, `todo/deep/exception-class-hierarchy-is-mostly-unregistered.md`) | design | A registry/data-model job, not a pile of small fixes, and the prerequisite for PLAN §6 error/exception parity — the QA axis that replaced roast as the compatibility signal. |
 | 5 | **Close ADR-0013**: add the Miri job (informational → blocking), correct the stale unsoundness docs in `value/aliased_mut.rs`, then take the layer-3c cross-thread-race decision explicitly (§2.1) | soundness verification | The mechanism is fixed; the *check* that keeps it fixed does not exist. What shipped is an argument about borrow provenance, and that is exactly the kind of thing a later refactor invalidates with no observable failure. Cheap relative to that risk. |
 | 6 | **Concurrency substrate**: write the shared worker-pool Proposed ADR (still unwritten), then the `Proc::Async` stress segfault, Supply panic → QUIT, and WASM `start`/`Channel` degradation (§2.3) | robustness | 20 spawn sites × 256 MiB is a structural resource decision currently being made by default. Within this row the segfault outranks the rest — a crash is categorically worse than a wrong answer. |
 | 7 | **Guard the ADR-0016 invariant** (§1.10): a `view()`-based variant probe materializes a lazy `Match`. Add a debug counter or lint rather than leaving it as prose | correctness (regression prevention) | Small, but it protects a campaign that just finished; unguarded invariants of this shape are how completed migrations quietly un-finish. |
@@ -460,7 +465,7 @@ The ranking rule, stated so it can be argued with:
 | 10 | **Hygiene, treated as a trend not a chore**: `runtime/mod.rs` re-slim (2495, flagged 4 revisions running), the 300/80 file-size population, the `unwrap`/`clone` slopes, the stale-doc corrections (§5, §6) | hygiene | Every metric here has worsened monotonically for three revisions, which means the current practice is not the stated rule. The actionable form is to fix the trend on files that #1-#4 touch anyway, and to decide deliberately whether the 500-line rule still stands. |
 
 Explicitly **not** ranked as architecture work in rev11: roast whitelist chasing (mined out,
-PLAN §4), and perf levers with no goal-item consumer (PLAN §5 header). Both remain available
+PLAN §3), and perf levers with no goal-item consumer (PLAN §4 header). Both remain available
 as opportunistic work when an item above happens to unblock them.
 
 ---
@@ -488,7 +493,8 @@ Actions taken in this revision (each ADR updated in place with a progress/outcom
 
 Two **missing** ADRs are worth writing, and are listed here rather than drafted unilaterally:
 
-1. **A shared worker pool** — PLAN §6 has specified its content in detail for over two weeks
+1. **A shared worker pool** — `todo/deep/shared-worker-pool-adr.md` has specified its content
+   in detail for over two weeks
    ("the central question is not pool sizing — it is what `await` does to a pooled worker"),
    and the decision is being made by default in the meantime (20 spawn sites, 256 MiB each).
 2. **The batteries adoption policy** — "grow the interpreter until the real upstream module
