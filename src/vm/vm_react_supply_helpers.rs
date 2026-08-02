@@ -47,6 +47,128 @@ impl Interpreter {
         None
     }
 
+    /// Wire a nested `supply { ... }` source — a transform *stage* — into the
+    /// react subscription list, so a multi-stage pipeline streams.
+    ///
+    /// `sub_val` is a `whenever` registration `[Supply, callback, last?, quit?]`
+    /// whose source is itself an on-demand supply. The stage gets its own
+    /// emitter id and `StreamConsumer`, so an `emit` in its body reaches the
+    /// `whenever` body that consumes it, and the `whenever` registrations its
+    /// body produced become ReactSubscriptions in turn — recursing when one of
+    /// *those* is another `supply { }` stage.
+    ///
+    /// Returns `None` when `sub_val` is not an on-demand registration (the
+    /// caller falls back to `replay_inner_static_subscription`), or
+    /// `Some(early_done)` once the stage is wired up.
+    pub(super) fn register_nested_on_demand_source(
+        &mut self,
+        sub_val: &Value,
+        react_subs: &mut Vec<ReactSubscription>,
+        depth: usize,
+    ) -> Result<Option<bool>, RuntimeError> {
+        // Same runaway-nesting guard as `drive_inner_supply_to_consumer`: a
+        // transform sub reused twice in one pipeline shares an emitter binding.
+        if depth > 32 {
+            return Ok(None);
+        }
+        let ValueView::Array(items, ..) = sub_val.view() else {
+            return Ok(None);
+        };
+        if items.len() < 2 {
+            return Ok(None);
+        }
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = items[0].view()
+        else {
+            return Ok(None);
+        };
+        if class_name != "Supply" {
+            return Ok(None);
+        }
+        let attrs = attributes.as_map();
+        // A source with a live channel or supplier is already handled by
+        // `value_to_react_subscription`; only a pure `supply { }` body lands here.
+        let Some(on_demand_cb) = attrs.get("on_demand_callback").cloned() else {
+            return Ok(None);
+        };
+        let callback = items[1].clone();
+        let last_callbacks = items
+            .get(2)
+            .and_then(crate::runtime::Interpreter::value_array_items)
+            .unwrap_or_default();
+
+        let emitter_supplier_id = next_supplier_id();
+        let done_promise = crate::value::SharedPromise::new();
+        crate::runtime::native_methods::supplier_register_promise(
+            emitter_supplier_id,
+            done_promise.clone(),
+        );
+        self.supply_stream_consumers.push(StreamConsumer {
+            supplier_id: emitter_supplier_id,
+            consumer_cb: callback.clone(),
+            done: false,
+        });
+        let stream_idx = self.supply_stream_consumers.len() - 1;
+        let (res, emitted, _) = loan_env!(
+            self,
+            run_on_demand_body(on_demand_cb, Some(emitter_supplier_id))
+        );
+        let streamed_done = self
+            .supply_stream_consumers
+            .get(stream_idx)
+            .map(|c| c.done)
+            .unwrap_or(false);
+        if let Err(e) = res
+            && !e.is_react_done()
+        {
+            self.supply_stream_consumers.truncate(stream_idx);
+            return Err(crate::runtime::Interpreter::wrap_react_died(e));
+        }
+        if streamed_done {
+            self.supply_stream_consumers.truncate(stream_idx);
+            return Ok(Some(true));
+        }
+        // The StreamConsumer stays registered for the life of the react (the
+        // outer loop truncates it), so values arriving later on this stage's own
+        // upstream still flow through it.
+        for v in emitted {
+            if crate::runtime::Interpreter::is_supply_subscription_registration(&v) {
+                if let Some(mut rsub) = self.value_to_react_subscription(&v) {
+                    rsub.on_demand_done = Some(done_promise.clone());
+                    react_subs.push(rsub);
+                } else if let Some(early) =
+                    self.register_nested_on_demand_source(&v, react_subs, depth + 1)?
+                {
+                    if early {
+                        return Ok(Some(true));
+                    }
+                } else if self.replay_inner_static_subscription(&v)? == Some(true) {
+                    return Ok(Some(true));
+                }
+            } else {
+                match self.call_react_callback(&callback.clone(), vec![v]) {
+                    Err(e) if e.is_react_done() => return Ok(Some(true)),
+                    other => {
+                        other?;
+                    }
+                }
+            }
+        }
+        let close_cbs = Self::extract_supply_on_close_callbacks(&attrs);
+        if !close_cbs.is_empty() || !last_callbacks.is_empty() {
+            react_subs.push(ReactSubscription {
+                close_callbacks: close_cbs,
+                last_callbacks,
+                on_demand_done: Some(done_promise),
+                ..ReactSubscription::new(callback)
+            });
+        }
+        Ok(Some(false))
+    }
+
     /// Replay static supply values (non-streaming supplies)
     /// Replay a static supply's values through a `whenever` callback, honouring
     /// the loop-control signals the body may raise: `done` ends the react

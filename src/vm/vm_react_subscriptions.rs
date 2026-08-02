@@ -290,6 +290,14 @@ impl Interpreter {
                     return Ok(());
                 }
             }
+            // A `done` raised by a whenever body that was fed through a
+            // StreamConsumer (an `emit` inside a `supply { }` source re-routed to
+            // the outer whenever's callback) is recorded as `StreamConsumer::done`
+            // rather than propagated — `try_stream_emit` has to swallow it so the
+            // emitting body can unwind. Honour it here: `done` ends the react.
+            if self.supply_stream_consumers.iter().any(|c| c.done) {
+                break 'react_loop;
+            }
             // Phase 1: deliver all queued supplier events in push (= emit)
             // order, honouring per-supplier done/quit.
             if self.dispatch_waker_events(waker, react_subs, &mut progressed)? {
