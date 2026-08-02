@@ -193,10 +193,25 @@ impl Interpreter {
         // under/over-runs, rakudo reports it as a failure with a diagnostic line.
         let plan_mismatch = matches!(subtest_planned, Some(p) if p != subtest_ran);
 
+        // Indentation of the subtest's *own* level, and whether it was TODO'd by
+        // its parent — both captured before `end_subtest` pops back to the
+        // parent's.
+        let subtest_indent = "    ".repeat(self.tap.subtest_depth());
+        let subtest_was_todo = self.tap.subtest_todo_active();
+
         self.tap.set_state(ctx.parent_test_state);
         self.output_sink_mut().output = ctx.parent_output;
         self.halted = ctx.parent_halted;
         self.tap.end_subtest();
+        // Rakudo's subtest closes with its own count on `$failure_output`
+        // (stderr), indented to its level, just as the top-level run does.
+        if subtest_failed > 0 && !subtest_was_todo {
+            let plural = if subtest_failed == 1 { "" } else { "s" };
+            self.emit_stderr(&format!(
+                "{}# You failed {} test{} of {}\n",
+                subtest_indent, subtest_failed, plural, subtest_ran
+            ));
+        }
         let parent_forced_todo_reason = self.tap.state().and_then(|state| {
             let next = state.ran + 1;
             state
