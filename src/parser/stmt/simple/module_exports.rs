@@ -167,6 +167,10 @@ fn is_operator_sub_name(name: &str) -> bool {
         || name.starts_with("postfix:<")
         || name.starts_with("circumfix:<")
         || name.starts_with("postcircumfix:<")
+        // An exported `sub term:<foo>` makes a bareword `foo` a call to it.
+        // Without registering the term symbol the importer parses `foo` as a
+        // plain bareword string (Cro exports `term:<request>`/`term:<response>`).
+        || name.starts_with("term:<")
 }
 
 /// Record exported subs from an inline `module Name { ... }` block.
