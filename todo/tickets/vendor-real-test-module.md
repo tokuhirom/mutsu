@@ -492,10 +492,22 @@ has to fix them first — see `todo/tickets/retire-native-test-tap.md`.
 
 1. Land the individual interpreter gaps the strict module exposes — the 184
    non-helper roast files and the `t/` residue are the same kind of work.
-2. `todo/tickets/retire-native-test-tap.md` (44 files, 6 real bugs behind it).
+2. ~~`todo/tickets/retire-native-test-tap.md` (44 files, 6 real bugs behind
+   it).~~ **DONE** — `news/2026-08/retired-native-test-tap.md`. All 44 pass with
+   the real `Test::Tap` and the intercept is gone. Seven general fixes were
+   needed, none of them the cause the ticket predicted: five live-`Supply`
+   combinator gaps (`news/2026-08/live-supply-combinators.md`), the
+   scheduler-driven interval (`news/2026-08/scheduler-driven-supply-interval.md`),
+   and a `&`-sigil *named* parameter that never bound at all
+   (`news/2026-08/named-callable-parameter-binds.md`) — which is what made
+   `tap-ok`'s own `:&emit`/`:&done`/`:&after-tap` guards silently skip.
 3. `todo/tickets/retire-native-test-util-overrides.md` (worth 32 roast files on
-   top of the real `Test`; already 227/228 on its own `t/`-side measurement).
+   top of the real `Test`; already 227/228 on its own `t`-side measurement).
 4. Only then step 3.
 
 Re-measure with the command at the top of this section, not with
 `scripts/test-module-sweep.sh` alone.
+
+**Note the 343 figure predates the `Test::Tap` retirement**, and 44 of those
+files were in the S17-supply cluster it covers. Re-measure before planning
+against it.

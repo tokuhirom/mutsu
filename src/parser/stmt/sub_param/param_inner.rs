@@ -1100,8 +1100,6 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
                 Some('@') => format!("@{}", name),
                 _ => name,
             }
-        } else if named && original_sigil == b'&' {
-            name
         } else {
             match original_sigil {
                 b'@' => format!("@{}", name),
@@ -1150,8 +1148,6 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
                 Some('@') => format!("@{}", name),
                 _ => name,
             }
-        } else if named && original_sigil == b'&' {
-            name
         } else {
             match original_sigil {
                 b'@' => format!("@{}", name),
@@ -1257,8 +1253,6 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             Some('@') => format!("@{}", name),
             _ => name,
         }
-    } else if named && original_sigil == b'&' {
-        name
     } else if param_sigil == Some(b'@') {
         format!("@{}", name)
     } else if param_sigil == Some(b'%') {

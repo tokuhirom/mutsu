@@ -324,6 +324,7 @@ impl Interpreter {
                     "quit",
                     "Supply",
                     "__mutsu_register_close_phaser",
+                    "__mutsu_interval_tick",
                 ]
                 .iter()
                 .map(|s| s.to_string())

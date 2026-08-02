@@ -50,6 +50,19 @@ impl Interpreter {
         name_idx: u32,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
+        // `&cb` reads a `&`-sigil LEXICAL first when this frame has one — a
+        // `&f` parameter lives in a local slot under its sigiled name, and
+        // `resolve_code_var` only ever consults the env, which a slot-only bind
+        // never reaches (a `:&cb` named param read back as Nil). Checked
+        // against the executing frame's own `code.locals`, so it can never
+        // pick up an enclosing frame's slot numbering.
+        if let Some(slot) = self.find_local_slot(code, &format!("&{}", name)) {
+            let slot_val = self.locals[slot].clone();
+            if !slot_val.is_nil() {
+                self.stack.push(slot_val);
+                return Ok(());
+            }
+        }
         let mut val = loan_env!(self, resolve_code_var(name));
         // Fallback for fast-path method dispatch (skip_env_setup=true):
         // &!attr is not set in env, so read directly from self's instance

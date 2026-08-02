@@ -257,9 +257,6 @@ impl Interpreter {
                 self.monkey_typing = true;
             }
             Ok(())
-        } else if module == "Test::Tap" {
-            // Handle Test::Tap as built-in
-            Ok(())
         } else if module.starts_with("Test::") && !self.require_propagates_missing_module {
             // Load Test:: submodules from source as regular modules.
             // Parse errors should propagate like other `use` failures.

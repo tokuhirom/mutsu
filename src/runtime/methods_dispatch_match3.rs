@@ -286,6 +286,23 @@ impl Interpreter {
                 }
                 None
             }
+            // `Supply.live` is a real method (`method live(Supply:D: --> Bool:D)`),
+            // not an attribute accessor. Reading it as an attribute only answered
+            // for the supplies whose constructor happened to store one, so a
+            // combinator result died with "No such method 'live'"
+            // (`$s1.Supply.merge($s2.Supply).live`).
+            "live" if args.is_empty() => {
+                if let ValueView::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } = target.view()
+                    && class_name == "Supply"
+                {
+                    return Some(self.native_supply(&(attributes).as_map(), "live", Vec::new()));
+                }
+                None
+            }
             "slice" => Some(self.dispatch_slice_method(target, args)),
             "grab" => self.dispatch_grab_method(target, args),
             "grabpairs" => self.dispatch_grabpairs_method(target, args),

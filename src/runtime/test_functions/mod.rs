@@ -3,7 +3,6 @@ mod comparison;
 mod eval_exception;
 mod fails_like;
 mod subprocess;
-mod tap_ok;
 mod tap_subtest;
 mod throws_like;
 mod util;
@@ -59,7 +58,6 @@ pub(crate) const TEST_MODULE_EXPORTS: &[&str] = &[
     "use-ok",
     "force_todo",
     "force-todo",
-    "tap-ok",
 ];
 
 /// Whether `name` is one of the `Test` module's own exports.
@@ -236,7 +234,6 @@ impl Interpreter {
                 | "can-ok"
                 | "todo"
                 | "subtest"
-                | "tap-ok"
                 | "warns-like"
                 | "doesn't-warn"
                 | "is-eqv"
@@ -310,7 +307,6 @@ impl Interpreter {
             "can-ok" => self.test_fn_can_ok(args).map(Some),
             "todo" => self.test_fn_todo(args).map(Some),
             "subtest" => self.test_fn_subtest(args).map(Some),
-            "tap-ok" => self.test_fn_tap_ok(args).map(Some),
             "warns-like" => self.test_fn_warns_like(args).map(Some),
             "doesn't-warn" => self.test_fn_doesnt_warn(args).map(Some),
             "is-eqv" => self.test_fn_is_eqv(args).map(Some),

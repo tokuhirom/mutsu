@@ -103,7 +103,9 @@ impl Interpreter {
                     (pd.named && pd.name == *key)
                         || pd.name == format!(":{}", key)
                         || (pd.named
-                            && (pd.name == format!("@{}", key) || pd.name == format!("%{}", key)))
+                            && (pd.name == format!("@{}", key)
+                                || pd.name == format!("%{}", key)
+                                || pd.name == format!("&{}", key)))
                 });
                 if !consumed {
                     implicit_named.insert(key.to_string(), val.clone());

@@ -551,8 +551,26 @@ impl Interpreter {
         ) {
             return Err(RuntimeError::new("must be code if specified"));
         }
-        if attributes.get("supplier_id").is_some() || attributes.get("on_demand_callback").is_some()
+        // A live (Supplier-backed) source folds as it emits and delivers the
+        // single result when the source is done. Snapshotting `values` here
+        // instead would reduce over an empty list: the reduce Supply is tapped
+        // before anything has been emitted.
+        if let Some(source_sid) = crate::runtime::native_methods::supplier_id_from_attrs(attributes)
         {
+            let downstream_sid = crate::runtime::native_methods::next_supplier_id();
+            crate::runtime::native_methods::register_supplier_reduce_tap(
+                source_sid,
+                callable,
+                downstream_sid,
+            );
+            let mut reduce_attrs = HashMap::new();
+            reduce_attrs.insert("values".to_string(), Value::array(Vec::new()));
+            reduce_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+            reduce_attrs.insert("supplier_id".to_string(), Value::int(downstream_sid as i64));
+            reduce_attrs.insert("live".to_string(), Value::FALSE);
+            return Ok(Value::make_instance(Symbol::intern("Supply"), reduce_attrs));
+        }
+        if attributes.get("on_demand_callback").is_some() {
             let mut reduce_attrs = HashMap::new();
             reduce_attrs.insert("values".to_string(), Value::array(Vec::new()));
             reduce_attrs.insert("taps".to_string(), Value::array(Vec::new()));

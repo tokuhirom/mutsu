@@ -114,5 +114,4 @@ const TEST_ASSERTION_EXPORTS: &[&str] = &[
     "pass",
     "flunk",
     "use-ok",
-    "tap-ok",
 ];

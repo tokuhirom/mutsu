@@ -130,6 +130,11 @@ struct MigrateState {
 struct ProduceState {
     callable: Value,
     accumulator: Option<Value>,
+    /// `Supply.reduce` shares `produce`'s accumulator, but emits nothing until
+    /// the source is done and then emits the single final value to this
+    /// downstream supplier. `None` for a plain `produce`, which emits every
+    /// running value to its own tap callback as it goes.
+    reduce_downstream: Option<u64>,
 }
 
 #[derive(Clone)]
@@ -401,7 +406,10 @@ pub(in crate::runtime) fn register_supplier_migrate_tap(master_sid: u64, downstr
 
 /// Register a verbatim-forward tap on an inner supply that re-emits each value
 /// to the given downstream supplier. Returns the new tap id.
-fn register_supplier_forward_tap(inner_sid: u64, downstream_sid: u64) -> u64 {
+pub(in crate::runtime) fn register_supplier_forward_tap(
+    inner_sid: u64,
+    downstream_sid: u64,
+) -> u64 {
     let tap_id = next_tap_id();
     if let Ok(mut map) = supplier_subscriptions_map().lock() {
         map.entry(inner_sid)
@@ -1168,6 +1176,7 @@ pub(in crate::runtime) fn register_supplier_produce_tap(
                 produce_state: Some(ProduceState {
                     callable,
                     accumulator: None,
+                    reduce_downstream: None,
                 }),
                 start_state: None,
                 batch_state: None,
@@ -1184,6 +1193,71 @@ pub(in crate::runtime) fn register_supplier_produce_tap(
                 transform_state: None,
             });
     }
+}
+
+/// Register a `Supply.reduce` tap on a live supplier: fold every emission into
+/// a running accumulator, emitting nothing until the source is done. The single
+/// final value then goes to `downstream_sid` (see `take_supplier_reduce_results`).
+pub(in crate::runtime) fn register_supplier_reduce_tap(
+    supplier_id: u64,
+    callable: Value,
+    downstream_sid: u64,
+) {
+    if let Ok(mut map) = supplier_subscriptions_map().lock() {
+        map.entry(supplier_id)
+            .or_default()
+            .taps
+            .push(SupplierTapSubscription {
+                callback: Value::NIL,
+                line_mode: false,
+                line_chomp: true,
+                line_buffer: String::new(),
+                delay_seconds: 0.0,
+                unique_filter: None,
+                classify_state: None,
+                elems_trace: None,
+                head_limit: None,
+                head_count: 0,
+                produce_state: Some(ProduceState {
+                    callable,
+                    accumulator: None,
+                    reduce_downstream: Some(downstream_sid),
+                }),
+                start_state: None,
+                batch_state: None,
+                words_mode: false,
+                words_buffer: String::new(),
+                flat_downstream: None,
+                channel_sink: None,
+                zip_tap: None,
+                zip_latest_tap: None,
+                tap_id: next_tap_id(),
+                closed: false,
+                migrate_state: None,
+                forward_downstream: None,
+                transform_state: None,
+            });
+    }
+}
+
+/// The reduce results a finished supplier owes downstream: one
+/// `(downstream_supplier_id, final_value)` per reduce tap. A reduce over an
+/// empty source has no accumulator and emits nothing, matching rakudo.
+pub(in crate::runtime) fn take_supplier_reduce_results(supplier_id: u64) -> Vec<(u64, Value)> {
+    let mut out = Vec::new();
+    if let Ok(mut map) = supplier_subscriptions_map().lock()
+        && let Some(subs) = map.get_mut(&supplier_id)
+    {
+        for tap in subs.taps.iter_mut() {
+            if let Some(ref mut ps) = tap.produce_state
+                && let Some(dsid) = ps.reduce_downstream
+                && let Some(acc) = ps.accumulator.take()
+            {
+                out.push((dsid, acc));
+            }
+        }
+    }
+    out
 }
 
 /// Register a start-transform tap on a supplier.

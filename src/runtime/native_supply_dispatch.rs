@@ -14,6 +14,16 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         match method {
+            // `live` is a real method (`method live(Supply:D: --> Bool:D)`), not
+            // an attribute accessor: every Supply answers it, including the ones
+            // a combinator builds without carrying the attribute forward
+            // (`$s1.Supply.merge($s2.Supply).live` died with "No such method").
+            // A Supplier-backed supply emits to its taps as they arrive and is
+            // live; everything else is on demand.
+            "live" => Ok(match attributes.get("live") {
+                Some(v) => Value::truth(v.truthy()),
+                None => Value::truth(attributes.contains_key("supplier_id")),
+            }),
             "migrate" => {
                 // `migrate` forwards values from the most-recently-emitted inner
                 // Supply of a supply-of-supplies. Requires a live source (a bare
@@ -481,19 +491,64 @@ impl Interpreter {
                 Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
             "merge" => {
-                // Supply.merge: merge multiple supplies into one
-                // For now, just concatenate values from all supplies
+                // Supply.merge interleaves several supplies into one. Collect
+                // the sources: the invocant plus every Supply argument.
+                let mut source_attrs: Vec<AttrMap> = vec![attributes.clone()];
+                for arg in &args {
+                    if let ValueView::Instance {
+                        class_name,
+                        attributes: arg_attrs,
+                        ..
+                    } = arg.view()
+                        && class_name == "Supply"
+                    {
+                        source_attrs.push(arg_attrs.to_map());
+                    }
+                }
+                // A live (Supplier-backed) source must stay connected: a merge
+                // of Suppliers is tapped *before* anything is emitted, so
+                // snapshotting `values` here yields an empty Supply that fires
+                // `done` immediately and drops every later emission.
+                let live_sids: Vec<u64> = source_attrs
+                    .iter()
+                    .filter_map(|a| match a.get("supplier_id").map(Value::view) {
+                        Some(ValueView::Int(sid)) => Some(sid as u64),
+                        _ => None,
+                    })
+                    .collect();
+                if !live_sids.is_empty() {
+                    let downstream_sid = next_supplier_id();
+                    let merge_state_id = register_merge_state(live_sids.len(), downstream_sid);
+                    for sid in &live_sids {
+                        register_supplier_forward_tap(*sid, downstream_sid);
+                        register_merge_source(*sid, merge_state_id);
+                    }
+                    // Values already sitting in a non-live source are part of
+                    // the merged stream too; seed them on the output supplier.
+                    let mut seeded = Vec::new();
+                    for a in &source_attrs {
+                        if a.contains_key("supplier_id") {
+                            continue;
+                        }
+                        if let Some(ValueView::Array(items, ..)) = a.get("values").map(Value::view)
+                        {
+                            seeded.extend(items.iter().cloned());
+                        }
+                    }
+                    let mut new_attrs = HashMap::new();
+                    new_attrs.insert("values".to_string(), Value::array(seeded));
+                    new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    new_attrs.insert("supplier_id".to_string(), Value::int(downstream_sid as i64));
+                    // The merged Supply is on demand, not live — rakudo answers
+                    // `False` for `$s1.Supply.merge($s2.Supply).live`.
+                    new_attrs.insert("live".to_string(), Value::FALSE);
+                    return Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs));
+                }
+                // Every source is already materialized: concatenate.
                 let new_id = next_supply_id();
                 let mut all_values = Vec::new();
-                if let Some(ValueView::Array(items, ..)) = attributes.get("values").map(Value::view)
-                {
-                    all_values.extend(items.iter().cloned());
-                }
-                for arg in &args {
-                    if let ValueView::Instance { attributes, .. } = arg.view()
-                        && let Some(ValueView::Array(items, ..)) =
-                            attributes.as_map().get("values").map(Value::view)
-                    {
+                for a in &source_attrs {
+                    if let Some(ValueView::Array(items, ..)) = a.get("values").map(Value::view) {
                         all_values.extend(items.iter().cloned());
                     }
                 }
@@ -501,6 +556,7 @@ impl Interpreter {
                 new_attrs.insert("values".to_string(), Value::array(all_values));
                 new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
                 new_attrs.insert("supply_id".to_string(), Value::int(new_id as i64));
+                new_attrs.insert("live".to_string(), Value::FALSE);
                 Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
             "unique" => self.supply_unique(attributes, &args),
@@ -745,6 +801,20 @@ impl Interpreter {
                     ValueView::Seq(items) => items.to_vec(),
                     _ => vec![rotored.clone()],
                 };
+                // `Supply.rotor` emits each group as an `Array`, not the `List`
+                // that `List.rotor` produces — rakudo's Supply combinator
+                // collects into an `@batched` array before emitting, so
+                // `.rotor(3 => -2)` gives `[1, 2, 3]`, not `(1, 2, 3)`.
+                let items: Vec<Value> = items
+                    .into_iter()
+                    .map(|group| match group.view() {
+                        ValueView::Array(elems, kind) if !kind.is_itemized() => {
+                            Value::real_array(elems.to_vec())
+                        }
+                        ValueView::Seq(elems) => Value::real_array(elems.to_vec()),
+                        _ => group,
+                    })
+                    .collect();
                 Ok(self.make_supply_from_values(items, attributes))
             }
             "rotate" => {

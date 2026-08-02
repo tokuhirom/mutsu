@@ -59,16 +59,14 @@ pub(in crate::runtime) fn scheduler_loads() -> u64 {
     OUTSTANDING_TASKS.load(Ordering::SeqCst)
 }
 
-// --- FakeScheduler support (for Test::Tap) ---
+// --- FakeScheduler support ---
 
 /// A scheduled item in a FakeScheduler.
 #[derive(Debug, Clone)]
 struct FakeScheduled {
     deadline: f64,
-    /// Regular callback (from user code) or None for counter-mode entries.
+    /// The callback to run once `deadline` is reached.
     callback: Option<Value>,
-    /// Counter index for counter-mode scheduled items.
-    counter_value: i64,
 }
 
 /// Per-instance state for FakeScheduler.
@@ -111,7 +109,6 @@ pub(in crate::runtime) fn fake_scheduler_cue(
                 state.upcoming.push(FakeScheduled {
                     deadline,
                     callback: Some(callback.clone()),
-                    counter_value: -1,
                 });
                 deadline += every;
             }
@@ -120,41 +117,17 @@ pub(in crate::runtime) fn fake_scheduler_cue(
             state.upcoming.push(FakeScheduled {
                 deadline: state.time + delay,
                 callback: Some(callback),
-                counter_value: -1,
             });
         }
     }
 }
 
-/// Register a counter-mode cue: each scheduled item produces an incrementing
-/// integer value instead of calling a callback.
-pub(in crate::runtime) fn fake_scheduler_cue_counter(scheduler_id: u64, every: f64, delay: f64) {
-    if let Ok(mut map) = fake_scheduler_map().lock() {
-        let state = map
-            .entry(scheduler_id)
-            .or_insert_with(|| FakeSchedulerState {
-                time: 0.0,
-                upcoming: Vec::new(),
-            });
-        let mut deadline = state.time + delay;
-        for i in 0..100i64 {
-            state.upcoming.push(FakeScheduled {
-                deadline,
-                callback: None,
-                counter_value: i,
-            });
-            deadline += every;
-        }
-    }
-}
-
-/// Advance time, run callbacks whose deadline <= new time, and return counter
-/// values from counter-mode entries.  Regular callbacks are returned for the
+/// Advance time and return the callbacks whose deadline is now due, for the
 /// caller to execute.
 pub(in crate::runtime) fn fake_scheduler_progress_by(
     scheduler_id: u64,
     duration: f64,
-) -> (Vec<Value>, Vec<i64>) {
+) -> Vec<Value> {
     if let Ok(mut map) = fake_scheduler_map().lock() {
         if let Some(state) = map.get_mut(&scheduler_id) {
             state.time += duration;
@@ -174,21 +147,15 @@ pub(in crate::runtime) fn fake_scheduler_progress_by(
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
             state.upcoming = remaining;
-            let mut callbacks = Vec::new();
-            let mut counter_values = Vec::new();
-            for item in to_run {
-                if let Some(cb) = item.callback {
-                    callbacks.push(cb);
-                } else {
-                    counter_values.push(item.counter_value);
-                }
-            }
-            (callbacks, counter_values)
+            to_run
+                .into_iter()
+                .filter_map(|item| item.callback)
+                .collect()
         } else {
-            (Vec::new(), Vec::new())
+            Vec::new()
         }
     } else {
-        (Vec::new(), Vec::new())
+        Vec::new()
     }
 }
 
