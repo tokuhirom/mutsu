@@ -558,7 +558,11 @@ impl Interpreter {
                     .rsplit_once("::")
                     .map(|(_, s)| s.to_string())
                     .unwrap_or_else(|| qualified_name.clone());
-                if !short.is_empty() && short != qualified_name {
+                // Do not shadow built-in types (e.g. `role Cro::HTTP::Middleware::Pair`
+                // must not make the bare name `Pair` resolve to the user role, which
+                // would break every `when Pair` in the process). Mirrors the same
+                // guard on the class path above.
+                if !short.is_empty() && short != qualified_name && !Self::is_builtin_type(&short) {
                     self.env_mut().entry_or_insert_with(short, || {
                         Value::package(Symbol::intern(&qualified_name))
                     });
