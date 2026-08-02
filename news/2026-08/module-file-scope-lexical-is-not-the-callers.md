@@ -45,7 +45,18 @@ the cell, `set_env_with_main_alias_sym` writes through it. `set_env_plain_lexica
 deliberately does not redirect, so a routine's own plain `my` shadowing a
 compunit lexical stays a distinct variable.
 
-Three details were needed beyond those two chokepoints:
+Four details were needed beyond those two chokepoints:
+
+- **Which package owns the running frame is not `current_package`.** A role method
+  reached through a mixin — `$fh does File::Temp::AutoUnlink`, which is how
+  `File::Temp` arms its temp-file handles — runs with both `current_package` and its
+  method class set to `IO::Handle+{File::Temp::AutoUnlink}`, a name no `::` walk
+  reduces to `File::Temp`. The routine frame already records `lexical_package` ("the
+  package whose compunit lexical routines are visible to this frame"), so that is the
+  first candidate, with `lookup_in_running_package`'s three (method class, frame
+  package, current package) behind it. Missing this made `File::Temp`'s `DESTROY`
+  read a Nil lock, skip its `protect` block entirely, and silently never unlink —
+  caught by the bundled-battery gate, not by `t/` or roast.
 
 - An END phaser declared in a `unit module` compiles under the plain package
   name, which auto-qualifies its free variables, so the store also has to answer
