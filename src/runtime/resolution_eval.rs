@@ -308,6 +308,18 @@ impl Interpreter {
         // Blocks are scope boundaries for temp/let saves.
         self.restore_let_saves(let_mark);
         self.run_pending_instance_destroys()?;
+        // Publish the block's own `my` declarations for `call_sub_value`'s exit
+        // merge — see `Interpreter::last_block_my_declared`. Written here, after
+        // the body (and every block nested in it) has run, so the outermost
+        // block's set is the one that survives. A name that is ALSO a free var
+        // refers to the outer binding for its pre-declaration uses, so it is not
+        // block-private and stays out.
+        self.last_block_my_declared = code
+            .my_declared_sym
+            .iter()
+            .filter(|sym| !code.free_var_syms.contains(sym))
+            .copied()
+            .collect();
         result.map(|value| {
             // When the block's last statement is a sub declaration, its value is
             // the declared sub — not a leftover topic/`$_` value from an earlier

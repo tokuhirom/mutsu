@@ -637,6 +637,13 @@ impl Interpreter {
                 .is_some_and(|cc| cc.is_supply_block_body);
             let body_result = self.eval_block_value(&data.body);
             self.pending_supply_block_body = false;
+            // The `my` names the body just declared, published by
+            // `eval_block_value_inner`. Taken immediately, before anything below
+            // can run another block and overwrite it. This is how a body with no
+            // `CompiledCode` on its `SubData` — one compiled on the fly from AST,
+            // notably a `whenever` body — still gets the block-private treatment
+            // in the exit merge below.
+            let runtime_body_declared = std::mem::take(&mut self.last_block_my_declared);
             if let Some(p) = saved_anon_pkg {
                 self.set_current_package(p);
             }
@@ -733,6 +740,7 @@ impl Interpreter {
             // `closure_env_overrides` instead.
             let is_body_private = |k: crate::symbol::Symbol| {
                 data.authoritative_captures.contains(&k)
+                    || runtime_body_declared.contains(&k)
                     || body_declared
                         .as_ref()
                         .is_some_and(|(declared, free)| declared.contains(&k) && !free.contains(&k))
