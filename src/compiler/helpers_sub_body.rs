@@ -448,7 +448,12 @@ impl Compiler {
         cf.precompute_param_name_syms();
         cf.detect_inner_subs();
         cf.compute_declared_locals();
-        // Contribute this directly-nested named sub's WRITE set to the enclosing
+        // Contribute this directly-nested named sub's cell-requiring capture set
+        // to the enclosing scope. Besides writes, a scalar fed to WrapVarRef
+        // (`key => $value`, `Pair.new(..., $value)`, captures/list aliases) must
+        // retain the captured variable's container identity across the routine
+        // boundary. A named sub has no runtime closure-creation point, so box
+        // these at the owner's declaration just like named-sub writes.
         // scope so `compute_free_vars` can flag the locals it mutates as
         // `needs_cell_named_sub` (the VM then boxes them at their declaration site
         // for cross-call accumulation through a shared cell — see
@@ -460,6 +465,32 @@ impl Compiler {
         // (e.g. a user `trait_mod:<is>` pushing to an outer `@names`) is boxed too.
         let mut nf_writes = cf.code.free_var_writes.clone();
         nf_writes.extend(cf.code.free_var_container_writes.iter().copied());
+        for pair in cf.code.ops.windows(2) {
+            let (OpCode::GetGlobal(name_idx), OpCode::WrapVarRef(wrapped_idx)) =
+                (&pair[0], &pair[1])
+            else {
+                continue;
+            };
+            if name_idx != wrapped_idx {
+                continue;
+            }
+            if let Some(crate::value::ValueView::Str(name)) =
+                cf.code.constants.get(*name_idx as usize).map(Value::view)
+            {
+                let sym = crate::symbol::Symbol::intern(&name);
+                if !cf.code.container_ref_capture_syms.contains(&sym) {
+                    cf.code.container_ref_capture_syms.push(sym);
+                }
+                if let Some(parent_slot) = self.local_map.get(name.as_str()).copied()
+                    && !self
+                        .code
+                        .needs_cell_named_sub_ref_slots
+                        .contains(&parent_slot)
+                {
+                    self.code.needs_cell_named_sub_ref_slots.push(parent_slot);
+                }
+            }
+        }
         self.code
             .named_sub_captures
             .push((nf_writes, cf.code.needs_cell_named_sub_free.clone()));

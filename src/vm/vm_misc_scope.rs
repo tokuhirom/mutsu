@@ -497,6 +497,13 @@ impl Interpreter {
                     if is_block_declared {
                         if owned_slots.contains(&idx) {
                             self.locals[idx] = Value::NIL;
+                        } else {
+                            // The block-entry shadow prelude clears the formerly
+                            // visible outer slot before initializing the fresh
+                            // declaration slot. Restore that exact outer slot;
+                            // never broadcast the value into the owned slot.
+                            self.locals[idx] =
+                                restored_env.get(name).cloned().unwrap_or(Value::NIL);
                         }
                     } else {
                         self.locals[idx] = restored_env.get(name).cloned().unwrap_or(Value::NIL);

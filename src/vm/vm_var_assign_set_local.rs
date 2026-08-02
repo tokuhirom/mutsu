@@ -240,7 +240,9 @@ impl Interpreter {
         // closures are boxed precisely at their creation op, so reusing that set
         // here would over-box unrelated same-named locals (same-named `my` locals
         // share one slot) and break e.g. `let`-restore in a sibling block.
-        let box_decl = self.vardecl_context && !code.needs_cell_named_sub.is_empty();
+        let box_decl = self.vardecl_context
+            && (!code.needs_cell_named_sub.is_empty()
+                || !code.needs_cell_named_sub_ref_slots.is_empty());
         // An `our sub` declared in a bare block captures this local but outlives the
         // block (it lives in the package registry, with no closure env). Box the
         // local AND persist the cell so a call after the block reads the live value.
@@ -251,8 +253,11 @@ impl Interpreter {
             self.sync_our_package_var_from_local(code, idx as usize);
             self.mirror_attr_local_to_cell(code, idx as usize);
             if box_decl
-                && let Some(sym) = code.locals_sym.get(idx as usize)
-                && code.needs_cell_named_sub.contains(sym)
+                && (code
+                    .locals_sym
+                    .get(idx as usize)
+                    .is_some_and(|sym| code.needs_cell_named_sub.contains(sym))
+                    || code.needs_cell_named_sub_ref_slots.contains(&idx))
             {
                 self.box_decl_local_cell(code, idx as usize);
             }

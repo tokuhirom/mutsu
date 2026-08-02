@@ -2081,6 +2081,14 @@ pub(crate) struct CompiledCode {
     /// at their declaration site (`box_decl_local_cell`). Distinct from
     /// `needs_cell_locals` (closure-driven) — see `named_sub_captures`.
     pub(crate) needs_cell_named_sub: Vec<Symbol>,
+    /// Exact owner slots whose containers are captured by `WrapVarRef` in a
+    /// directly nested named sub. Kept slot-addressed so a same-named lexical in
+    /// another block is not boxed at its declaration site.
+    pub(crate) needs_cell_named_sub_ref_slots: Vec<u32>,
+    /// Free variables whose raw container is consumed by `WrapVarRef`. Runtime
+    /// reference wrapping may read a captured env cell only for this explicit
+    /// set; ordinary same-named env cells must not override a shadow value.
+    pub(crate) container_ref_capture_syms: Vec<Symbol>,
     /// Named-sub writes of a NON-own (ancestor) lexical, bubbled up so the ancestor
     /// that declares the local folds it into its own `needs_cell_named_sub`
     /// (mirrors `needs_cell_free_vars` for closures).
@@ -2477,6 +2485,8 @@ impl CompiledCode {
             free_var_container_writes: Vec::new(),
             named_sub_captures: Vec::new(),
             needs_cell_named_sub: Vec::new(),
+            needs_cell_named_sub_ref_slots: Vec::new(),
+            container_ref_capture_syms: Vec::new(),
             needs_cell_named_sub_free: Vec::new(),
             escaping_our_sub_captures: Vec::new(),
             needs_cell_escaping_our_sub: Vec::new(),
