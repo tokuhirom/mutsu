@@ -236,6 +236,10 @@ pub(crate) struct Compiler {
     /// degrade to the literal name string once the creating frame is gone
     /// (escaping closure / `.^add_method`).
     enclosing_sigilless: std::collections::HashSet<String>,
+    /// Local names visible in enclosing compiled frames. A same-named local
+    /// declaration in this compiler shadows a captured binding even though the
+    /// outer binding has no slot in this chunk.
+    enclosing_local_names: std::collections::HashSet<String>,
     /// Placeholder params (`^p` caret-form) an interpret-path caller has
     /// already bound in env before re-compiling this body — see
     /// `seed_prebound_placeholders`.
@@ -358,6 +362,7 @@ impl Compiler {
             outer_constant_names: std::collections::HashSet::new(),
             sigilless_locals: std::collections::HashSet::new(),
             enclosing_sigilless: std::collections::HashSet::new(),
+            enclosing_local_names: std::collections::HashSet::new(),
             prebound_placeholder_params: std::collections::HashSet::new(),
             last_source_line: None,
             pending_index_rw_writebacks: Vec::new(),
@@ -599,6 +604,10 @@ impl Compiler {
             .extend(self.sigilless_locals.iter().cloned());
         sub.enclosing_sigilless
             .extend(self.enclosing_sigilless.iter().cloned());
+        sub.enclosing_local_names
+            .extend(self.local_map.keys().cloned());
+        sub.enclosing_local_names
+            .extend(self.enclosing_local_names.iter().cloned());
     }
 
     /// Bake the scope chain visible right here into the code chunk, and return
@@ -719,7 +728,16 @@ impl Compiler {
             // Only a genuine ancestor shadow needs the outer slot restored on exit.
             frame.insert(
                 name.to_string(),
-                if is_ancestor_shadow { prev } else { None },
+                if is_ancestor_shadow {
+                    prev
+                } else if prev.is_none() && self.enclosing_local_names.contains(name) {
+                    // Cross-frame shadow: no outer slot exists in this chunk.
+                    // u32::MAX is a compile-time-only sentinel telling scope exit
+                    // to remove the dead child mapping and resume GetGlobal.
+                    Some(u32::MAX)
+                } else {
+                    None
+                },
             );
         }
         slot
@@ -879,7 +897,11 @@ impl Compiler {
         // `block_declared_vars` machinery keeps enforcing out-of-scope errors.
         for (name, prev) in frame {
             if let Some(outer_slot) = prev {
-                self.local_map.insert(name, outer_slot);
+                if outer_slot == u32::MAX {
+                    self.local_map.remove(&name);
+                } else {
+                    self.local_map.insert(name, outer_slot);
+                }
             }
         }
     }

@@ -2413,6 +2413,20 @@ impl CompiledCode {
         }
     }
 
+    fn mark_same_named_slot_peers(&self, slots: &mut [bool]) {
+        let selected_names: std::collections::HashSet<&str> = slots
+            .iter()
+            .enumerate()
+            .filter(|(_, selected)| **selected)
+            .map(|(slot, _)| self.locals[slot].as_str())
+            .collect();
+        for (slot, name) in self.locals.iter().enumerate() {
+            if selected_names.contains(name.as_str()) {
+                slots[slot] = true;
+            }
+        }
+    }
+
     fn mark_closure_parent_slots(&self, cc_idx: u32, slots: &mut [bool]) {
         let Some(cc) = self.closure_compiled_codes.get(cc_idx as usize) else {
             return;
@@ -2802,6 +2816,16 @@ impl CompiledCode {
                 }
                 _ => {}
             }
+        }
+        // A block declaration's entry prelude may clear the previously visible
+        // same-named outer slot. Block exit restores that exact peer from env,
+        // so every simultaneously live peer is a dependency of this consumer —
+        // still a precise duplicate-name subset, never a frame-wide blanket.
+        if has_block_scope {
+            self.mark_same_named_slot_peers(&mut block_scope_slots);
+        }
+        if has_block_local_scope {
+            self.mark_same_named_slot_peers(&mut block_local_scope_slots);
         }
         if has_for_loop {
             self.env_consumer_slots.for_loop = for_loop_slots;
@@ -4074,6 +4098,18 @@ impl CompiledCode {
     ///   capture is boxed into a shared `ContainerRef` cell, which the snapshot
     ///   clones), so reads stay coherent without any write-back.
     pub(crate) fn compute_upvalues(&mut self, runtime_bound: &std::collections::HashSet<Symbol>) {
+        // Phase-1 indexed upvalues require the standard closure-dispatch path to
+        // install the aligned array. Inline block scopes handed to thread clones,
+        // and runtime-split whenever/LAST/QUIT callbacks, can execute through
+        // carrier paths without that array. Keep their reads as GetGlobal over
+        // the already-precise captured env; this does not widen env sync or
+        // restore the removed captures_env_by_name blanket.
+        if !self.env_consumer_slots.block_scope.is_empty()
+            || !self.env_consumer_slots.block_local_scope.is_empty()
+            || !self.env_consumer_slots.whenever.is_empty()
+        {
+            return;
+        }
         let own: std::collections::HashSet<&str> = self.locals.iter().map(|s| s.as_str()).collect();
         let written: std::collections::HashSet<Symbol> = self
             .free_var_writes
