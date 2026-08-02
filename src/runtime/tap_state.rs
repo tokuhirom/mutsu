@@ -91,6 +91,12 @@ pub(crate) struct TapState {
     /// Stack tracking whether each nested subtest callable is a Sub (true) or
     /// Block (false). Used by `plan skip-all` to reject Block callables.
     subtest_callable_is_sub: Vec<bool>,
+    /// Stack mirroring rakudo's `$subtest_todo_reason`: whether each nested
+    /// subtest is itself TODO'd by its parent's pending `todo`. rakudo captures
+    /// it when the subtest *starts* (`my $parent_todo = $todo_reason ||
+    /// $subtest_todo_reason`) and `_diag` then routes every diagnostic raised
+    /// under it to `$todo_output` (stdout) rather than `$failure_output`.
+    subtest_todo: Vec<bool>,
     /// Set by `bail-out`; suppresses the trailing plan/summary footer.
     bailed_out: bool,
 }
@@ -144,15 +150,36 @@ impl TapState {
         }
     }
 
+    /// Whether the innermost active subtest is itself TODO'd (directly or
+    /// through an ancestor). False at the top level.
+    pub(crate) fn subtest_todo_active(&self) -> bool {
+        self.subtest_todo.last().copied().unwrap_or(false)
+    }
+
+    /// Whether the *next* test the current state will emit falls inside a
+    /// pending `todo` range — rakudo's `$todo_reason` at the moment a subtest
+    /// starts.
+    pub(crate) fn next_test_is_todo(&self) -> bool {
+        self.state.as_ref().is_some_and(|state| {
+            let next = state.ran + 1;
+            state
+                .force_todo
+                .iter()
+                .any(|range| next >= range.start && next <= range.end)
+        })
+    }
+
     /// Enter a subtest: stash the parent `TestState`, install a fresh one, and
     /// push onto the subtest stack (defaulting the callable kind to Sub).
     /// Returns the parent state to be restored by [`set_state`] on exit.
     pub(crate) fn begin_subtest(&mut self) -> Option<TestState> {
+        let inherits_todo = self.next_test_is_todo() || self.subtest_todo_active();
         let parent = self.state.take();
         self.state = Some(TestState::new());
         self.subtest_depth += 1;
         // Default to true (Sub); callers override via set_subtest_callable_is_sub_last.
         self.subtest_callable_is_sub.push(true);
+        self.subtest_todo.push(inherits_todo);
         parent
     }
 
@@ -161,6 +188,7 @@ impl TapState {
     pub(crate) fn end_subtest(&mut self) {
         self.subtest_depth = self.subtest_depth.saturating_sub(1);
         self.subtest_callable_is_sub.pop();
+        self.subtest_todo.pop();
     }
 
     /// Whether `bail-out` has been called.
@@ -192,6 +220,7 @@ impl TapState {
             state,
             subtest_depth: 0,
             subtest_callable_is_sub: Vec::new(),
+            subtest_todo: Vec::new(),
             bailed_out: false,
         }
     }

@@ -51,18 +51,25 @@ also fixed — they are why the count below is 7 rather than 9:
 - `bail-out` emitted "Bail out!" but exited 0 instead of 255
   (`news/2026-08/bail-out-exits-255.md`).
 
-## Measured residue: 7 files, 4 causes (2026-08-02)
+## Measured residue: 5 files, 3 causes (2026-08-02)
 
-With the guard widened, 221 of the 228 files pass. None of the seven is a
+With the guard widened, 223 of the 228 files pass. None of the five is a
 `Test::Util` incompatibility — each is a mutsu gap the native override was
 hiding. Take them one at a time; the flip lands once they are all closed.
 
 | files | cause |
 | --- | --- |
-| `S24-testing/12-subtest-todo.t` (test 5) | **A failing assertion's `# Failed test at …` diagnostic goes to stdout inside a subtest.** Rakudo splits it: a *TODO*'d failure's diagnostic goes to stdout (`$todo_output`), a real failure's to stderr (`$failure_output`), and a failing subtest also emits `# You failed N tests of M` to stderr. mutsu puts everything on stdout and omits the subtest summary, so the real `is_run`'s `:out`/`:err` predicates see the wrong split. Compare `raku -e 'use Test; plan 1; subtest "foos" => { todo 1; ok 0; ok 0 }'` with stdout and stderr separated. |
+| ~~`S24-testing/12-subtest-todo.t`~~ | **DONE** — the failure-diagnostic stream was chosen by nesting depth rather than by whether the failure was TODO'd, and every stderr diagnostic was emitted twice. `news/2026-08/tap-failure-diagnostics-pick-the-stream-rakudo-picks.md`. |
 | `S19-command-line-options/04-negation.t` (2, 3), `S19-command-line/arguments.t` (6) | **CLI option handling**: mutsu exits 1 where raku exits with a different status for a malformed/negated short option, and writes an unknown-option warning to the wrong stream. |
 | `S26-documentation/02-paragraph.t` (28) | **`--doc=Text` is not recognised**: mutsu treats it as the program file ("Could not open --doc=Text"). The real `is_run` passes it through `:compiler-args`. |
 | `S03-operators/repeat.t` (56), `S16-io/words.t` (11) | one `warns-like` whose message does not match, and `words()` without arguments not reading `$*ARGFILES` — each an ordinary single-assertion gap. |
+
+One difference is *not* in that list because nothing currently asserts on it,
+but the next `is_run` slice will meet it: a file that ends with test failures
+prints `Runtime error: Test failures` on stderr, which rakudo does not. mutsu's
+`run()` returns the failure as a `RuntimeError` and `main` renders it. The exit
+status is already right (1), so the fix is to set `exit_code` and return `Ok`,
+the way the bailed-out branch now does.
 
 ## Then delete what is dead
 

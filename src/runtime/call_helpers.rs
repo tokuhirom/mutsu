@@ -133,7 +133,16 @@ impl Interpreter {
         };
         self.emit_output(&line);
         if record_failure {
-            let to_stderr = !effective_todo && self.tap.subtest_depth() == 0;
+            // Rakudo splits the two diagnostic streams by whether the failure is
+            // TODO'd, not by how deep it is (`_diag`'s `$is_todo`): a TODO'd
+            // failure's diagnostic goes to `$todo_output` (stdout, so it stays
+            // inside the subtest's TAP block) and a real one to
+            // `$failure_output` (stderr). An assertion counts as TODO'd either
+            // in its own right or because the enclosing subtest is
+            // (`$subtest_todo_reason`, captured when the subtest starts).
+            // Keying on `subtest_depth() == 0` instead put *every* in-subtest
+            // failure diagnostic on stdout.
+            let to_stderr = !effective_todo && !self.tap.subtest_todo_active();
             self.emit_test_failure_diag(desc, to_stderr, detail);
             if !effective_todo
                 && self.tap.subtest_depth() == 0
@@ -176,10 +185,16 @@ impl Interpreter {
         } else {
             format!("at line {}", line_no)
         };
+        // A stdout diagnostic is indented later, when `finish_subtest` renders
+        // the subtest's buffered output. A stderr one bypasses that buffer, so
+        // it has to carry the indentation itself — rakudo indents both.
+        let indent = "    ".repeat(self.tap.subtest_depth());
         let mut emit = |msg: String| {
             if to_stderr {
-                self.output_sink_mut().stderr_output.push_str(&msg);
-                eprint!("{}", msg);
+                // `emit_stderr` buffers in nested mode and writes through
+                // otherwise; doing both duplicated every diagnostic, once at the
+                // raise and once when `flush_stderr_buffer` drained the buffer.
+                self.emit_stderr(&format!("{}{}", indent, msg));
             } else {
                 self.emit_output(&msg);
             }
