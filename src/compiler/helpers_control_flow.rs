@@ -144,7 +144,31 @@ impl Compiler {
     /// itemizing it into a scalar container (DBIish's `if self._row -> \r
     /// { r.Array }` must not nest the row array), and it reads back as a bare
     /// word rather than a `$`-variable.
-    pub(super) fn compile_if_binding_decl(&mut self, var_name: &str, cond: &Expr) -> Expr {
+    /// The `@`/`%` case additionally returns a declaration the caller must emit
+    /// INSIDE the then-branch (see the comment below), so this returns
+    /// `(test_expr, deferred_container_decl)`.
+    pub(super) fn compile_if_binding_decl(
+        &mut self,
+        var_name: &str,
+        cond: &Expr,
+    ) -> (Expr, Option<(String, Expr)>) {
+        // `if EXPR -> @a { }` / `-> %h { }` tests EXPR itself, not the bound
+        // container. Assigning the condition into an `@`/`%` container changes
+        // its truthiness — `my @a = Any` is a one-element `[Any]`, which is
+        // true — so a missing hash element (`if %cache{$k} -> @avail { }`, Cro's
+        // connection cache) wrongly ran the block and then handed out `Any`.
+        // Evaluate the condition once into a hidden scalar and test that; the
+        // container itself is only bound once the branch is known to be taken,
+        // because binding a non-Positional condition (`if 0 -> @a`) is a type
+        // error that must not fire when the branch is not entered.
+        if var_name.starts_with('@') || var_name.starts_with('%') {
+            let tmp = format!("__mutsu_tmp_if_cond_{}", self.code.constants.len());
+            self.compile_stmt(&Self::plain_var_decl(tmp.clone(), cond.clone()));
+            return (
+                Expr::Var(tmp.clone()),
+                Some((var_name.to_string(), Expr::Var(tmp))),
+            );
+        }
         let (bare_name, read_expr) = if let Some(bare) = var_name.strip_prefix('\\') {
             self.sigilless_locals.insert(bare.to_string());
             (bare.to_string(), Expr::BareWord(bare.to_string()))
@@ -165,7 +189,34 @@ impl Compiler {
             where_constraint: None,
         };
         self.compile_stmt(&var_decl);
-        read_expr
+        (read_expr, None)
+    }
+
+    /// Emit the deferred `@`/`%` pointy-parameter binding returned by
+    /// [`Self::compile_if_binding_decl`]. A pointy parameter BINDS its argument,
+    /// so an `Array` condition becomes that array rather than a single-element
+    /// copy of it (`if %cache{$k} -> @avail` must see all the elements).
+    pub(super) fn compile_if_binding_container_decl(&mut self, decl: &Option<(String, Expr)>) {
+        let Some((name, source)) = decl else { return };
+        self.bind_vardecl = true;
+        self.compile_stmt(&Self::plain_var_decl(name.clone(), source.clone()));
+        self.bind_vardecl = false;
+    }
+
+    /// A `my NAME = EXPR;` declaration with no traits/constraints.
+    fn plain_var_decl(name: String, expr: Expr) -> Stmt {
+        Stmt::VarDecl {
+            name,
+            expr,
+            type_constraint: None,
+            is_state: false,
+            is_our: false,
+            is_dynamic: false,
+            is_export: false,
+            export_tags: vec![],
+            custom_traits: Vec::new(),
+            where_constraint: None,
+        }
     }
 
     pub(super) fn compile_if_value(
@@ -218,8 +269,10 @@ impl Compiler {
         if pointy_topic_scope {
             self.code.emit(OpCode::EnterPointyTopic);
         }
+        let mut deferred_container_decl = None;
         if let Some(var_name) = binding_var {
-            let read_expr = self.compile_if_binding_decl(var_name, cond);
+            let (read_expr, deferred) = self.compile_if_binding_decl(var_name, cond);
+            deferred_container_decl = deferred;
             self.compile_expr(&read_expr);
         } else {
             self.compile_expr(cond);
@@ -230,6 +283,7 @@ impl Compiler {
             self.code.emit(OpCode::Dup);
         }
         let jump_else = self.code.emit(OpCode::JumpIfFalse(0));
+        self.compile_if_binding_container_decl(&deferred_container_decl);
         if needs_at_underscore {
             // Flatten the duplicated condition into @_.
             self.code.emit(OpCode::FlattenSlurpy);

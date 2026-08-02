@@ -1743,10 +1743,12 @@ impl Compiler {
                 if pointy_topic_scope {
                     self.code.emit(OpCode::EnterPointyTopic);
                 }
+                let mut deferred_container_decl = None;
                 if let Some(var_name) = binding_var {
                     // Desugar: if EXPR -> $var { BODY } else { ELSE }
                     // into: { my $var = EXPR; if $var { BODY } else { ELSE } }
-                    let desugared_cond = self.compile_if_binding_decl(var_name, cond);
+                    let (desugared_cond, deferred) = self.compile_if_binding_decl(var_name, cond);
+                    deferred_container_decl = deferred;
                     self.compile_condition_expr(&desugared_cond);
                 } else {
                     self.compile_condition_expr(cond);
@@ -1757,6 +1759,7 @@ impl Compiler {
                     }
                 }
                 let jump_else = self.code.emit(OpCode::JumpIfFalse(0));
+                self.compile_if_binding_container_decl(&deferred_container_decl);
                 if needs_at_underscore {
                     // Flatten the duplicated condition into @_ (like *@ slurpy).
                     self.code.emit(OpCode::FlattenSlurpy);

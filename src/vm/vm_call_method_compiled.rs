@@ -299,6 +299,7 @@ impl Interpreter {
             sub_id: 0,
             remaining,
             args: call_args.clone(),
+            arg_sources: self.pending_call_arg_sources().cloned(),
         };
         let wrapper_id = if let ValueView::Sub(wd) = outermost.view() {
             Some(wd.id)
@@ -306,6 +307,7 @@ impl Interpreter {
             None
         };
         self.push_wrap_dispatch_frame(frame);
+        self.shift_arg_sources_for_wrap_invocant();
         let result = self.vm_call_sub_value(outermost, call_args, false);
         self.pop_wrap_dispatch_frame();
         // Propagate closure variable mutations from the wrapper back to the

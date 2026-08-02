@@ -249,7 +249,20 @@ impl Interpreter {
         if let Some(frame) = self.wrap_dispatch_stack.last_mut() {
             if let Some(next) = frame.remaining.first().cloned() {
                 frame.remaining.remove(0);
+                let is_override = override_args.is_some();
                 let call_args = override_args.unwrap_or_else(|| frame.args.clone());
+                let is_method_wrap = frame.sub_id == 0;
+                // Restore the original call site's arg-source names: the
+                // outermost wrapper's own binding consumed the pending ones, so
+                // an `is rw` parameter of the next callee (a wrappee or the
+                // original routine) would otherwise have no writable source to
+                // name and die with X::Parameter::RW. `callwith`-style override
+                // args are a different call, so they keep no sources.
+                let frame_arg_sources = frame.arg_sources.clone();
+                let restore_sources = !is_override && frame_arg_sources.is_some();
+                if restore_sources {
+                    self.set_pending_call_arg_sources(frame_arg_sources);
+                }
                 // If this is a method wrap original, separate the invocant
                 // from the args and dispatch as a method call.
                 let result = if let ValueView::Sub(data) = next.view()
@@ -263,6 +276,12 @@ impl Interpreter {
                 } else {
                     // This exact call continues the active wrap chain — it must
                     // run `next` directly, not re-enter the chain from the top.
+                    // An inner *wrapper* sees the same invocant-prepended
+                    // argument list the outermost one did, so its sources need
+                    // the same shift.
+                    if restore_sources && is_method_wrap {
+                        self.shift_arg_sources_for_wrap_invocant();
+                    }
                     if let ValueView::Sub(data) = next.view() {
                         self.wrap_skip_once = Some(data.id);
                     }
@@ -345,8 +364,10 @@ impl Interpreter {
                             sub_id: 0,
                             remaining: wrap_remaining,
                             args: wrap_call_args.clone(),
+                            arg_sources: self.pending_call_arg_sources().cloned(),
                         };
                         self.wrap_dispatch_stack.push(frame);
+                        self.shift_arg_sources_for_wrap_invocant();
                         let result = self.call_sub_value(outermost, wrap_call_args, false);
                         self.wrap_dispatch_stack.pop();
                         let result = result?;
