@@ -64,6 +64,7 @@ impl Interpreter {
             language_version: &language_version,
         };
         self.register_class_decl(&name, &parents, modifiers, &[])?;
+        self.compose_mixin_role_submethods(&name, &fresh);
         // A mixin type is synthesized, not written by the user: it must inherit
         // the base's accessor authority rather than claim its own. Marked
         // user-declared (which `register_class_decl` does for everything), a
@@ -154,6 +155,61 @@ impl Interpreter {
             self.run_mixin_role_build(&reblessed, &attributes, name)?;
         }
         Ok(Some(reblessed))
+    }
+
+    /// Copy the composed roles' submethods onto the mixin type.
+    ///
+    /// `register_class_decl` composes a role's submethods only under the 6.c
+    /// class-declaration rule, but a *runtime* mixin brings them along whatever
+    /// the language revision — `$fh does File::Temp::AutoUnlink` has to make the
+    /// role's `submethod DESTROY` callable on `$fh`. The mixin type is the
+    /// object's own class, so a submethod declared on it is found by ordinary
+    /// resolution (submethods are only excluded when inherited).
+    ///
+    /// `BUILD`/`TWEAK` are left out: they run once, on the object being mixed
+    /// into, via `run_mixin_role_build`.
+    fn compose_mixin_role_submethods(&mut self, class_name: &str, role_names: &[String]) {
+        let mut composed: Vec<(String, Vec<MethodDef>)> = Vec::new();
+        for role_name in role_names {
+            let Some(role) = self.registry().roles.get(role_name).cloned() else {
+                continue;
+            };
+            for (method_name, defs) in &role.methods {
+                if method_name == "BUILD" || method_name == "TWEAK" {
+                    continue;
+                }
+                let submethods: Vec<MethodDef> = defs
+                    .iter()
+                    .filter(|d| d.is_my)
+                    .map(|d| {
+                        let mut d = d.clone();
+                        if d.original_role.is_none() {
+                            d.original_role = d.role_origin.clone();
+                        }
+                        d.role_origin = Some(role_name.clone());
+                        d
+                    })
+                    .collect();
+                if !submethods.is_empty() {
+                    composed.push((method_name.clone(), submethods));
+                }
+            }
+        }
+        if composed.is_empty() {
+            return;
+        }
+        self.clear_private_zeroarg_method_cache();
+        let mut registry = self.registry_mut();
+        let Some(class_def) = registry.classes.get_mut(class_name) else {
+            return;
+        };
+        for (method_name, defs) in composed {
+            class_def
+                .methods
+                .entry(method_name)
+                .or_default()
+                .extend(defs);
+        }
     }
 
     /// Run a role's non-declaration body once, the same way the wrapper path

@@ -48,8 +48,14 @@ now does the same for `Instance` values:
   `X::Role::Composition::Conflict`.
 - `does_rebless_instance` seeds the composed roles' own attributes on the
   already-constructed object and runs their `BUILD`/`TWEAK` submethods directly
-  (a submethod is not inherited, so it cannot be reached by an ordinary method
-  call on the mixin type).
+  (those run once, on the object being mixed into, not on later constructions).
+- The roles' *other* submethods are copied onto the mixin type.
+  `register_class_decl` composes a role's submethods only under the 6.c
+  class-declaration rule, but a runtime mixin brings them along whatever the
+  language revision — `$fh does File::Temp::AutoUnlink` has to make the role's
+  `submethod DESTROY` callable on `$fh`. Since the mixin type is the object's
+  own class, ordinary resolution finds them (a submethod is excluded only when
+  it would be *inherited*).
 
 Because the object is now an ordinary instance of a real class, everything that
 used to need the wrapper — `~~`, `.^name`, `.^roles`, `.^parents`, method

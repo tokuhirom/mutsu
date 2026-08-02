@@ -1,6 +1,6 @@
 use Test;
 
-plan 20;
+plan 22;
 
 # Raku's `does` mixes a role into *the object*, so every reference to it sees
 # the mixin (`but` is the copying one). The object is reblessed into the mixin
@@ -58,6 +58,21 @@ class C { has $.n = 1 }
     is $x.who, 'B', 'a second mixin overrides it';
     is $x.^name, 'C+{A}+{B}', 'each mixin stacks a type on the previous one';
     ok $x ~~ A && $x ~~ B, 'the object does both roles';
+}
+
+# A submethod is not inherited, but the mixin type IS the object's own class, so
+# a role's submethod is callable on it. (File::Temp mixes in a role whose
+# `submethod DESTROY` unlinks the temporary file.)
+{
+    role Closer { submethod shut { 'shut' } }
+    my $x = C.new;
+    $x does Closer;
+    is $x.shut, 'shut', 'a role submethod is callable on the mixed-into object';
+
+    class Sub is C { }
+    my $s = Sub.new;
+    $s does Closer;
+    is $s.shut, 'shut', 'and on a subclass instance too';
 }
 
 # A role attribute is seeded on the already-constructed object.
