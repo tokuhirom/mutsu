@@ -1,6 +1,6 @@
 # ADR-0001: GC adoption — mechanism selection and phasing
 
-- **Status**: Accepted (2026-06-27 — level 1 adopted. The collection-trigger mechanism §4.2 and the A' scope §4.3 remain open)
+- **Status**: Accepted (2026-06-27 — level 1 adopted). **Outcome recorded in §7 (2026-08-02): layers 3a / 3b / 4 have all shipped and are default on; §4.2 was decided by [ADR-0003](0003-default-on-gc-trigger.md); the "Track B is fused with GC, do not start it standalone" rule is superseded by [ADR-0013](0013-container-interior-mutability-cellvalue.md) §7. Only §4.3 (A' scope) and layer 3c remain open.**
 - **Date**: 2026-06-27
 - **Deciders**: tokuhirom, Claude
 - **Related**: [ANALYSIS.md](../../ANALYSIS.md) §2.1 / §1.3 / §5, [PLAN.md](../../PLAN.md) §G(perf) / §I(Track C)
@@ -199,4 +199,45 @@ The deciding factor is that as long as the env HashMap remains on the root path,
 
 ---
 
-*This ADR records the design discussion of 2026-06-27. If the judgment changes, supersede it with a new ADR.*
+---
+
+## 7. Outcome (added 2026-08-02)
+
+This section records what actually shipped against §3's phase plan, so a reader does not
+have to reconstruct it from `news/` and PLAN.md. The *decisions* in §3 are unchanged; only
+their state is reported here.
+
+| Layer | State |
+|---|---|
+| **A. Catch up** (compat + single-thread speed) | ✅ Done — gate assessed in [ADR-0002](0002-phase-a-gate-reassessment.md) (2026-07-03). |
+| **A'. Root consolidation** (§4.3) | ◐ Partly. Shadow slots are default on and the whole-`locals` per-block clones are gone, but env is still on the root path — the `captures_env_by_name` blanket (`opcode.rs:2608`) keeps every local mirrored by name for any frame containing a loop/block/gather/whenever op. This is the open remainder of §4.3, tracked as ANALYSIS §1.3 / §7-3. |
+| **3a. Cycle collector on `Arc`, type-filtered** | ✅ Done, default on (2026-07-05). Trigger mechanism = [ADR-0003](0003-default-on-gc-trigger.md) — **this closes open question §4.2**. |
+| **3a (element cells / Track B half)** | ✅ Resolved differently — see below. |
+| **3b. NaN-boxing** (`size_of::<Value>()` 48→8B) | ✅ Done (2026-07-12), encoding fixed by [ADR-0005](0005-nanbox-representation-encoding.md). |
+| **3c. Biased reference counting** | 🧊 Frozen. Start trigger is unchanged: atomic inc/dec still near the top of the profile after the JIT work. It also owns the deferred cross-thread-race half of ADR-0013. |
+| **4. JIT (Cranelift)** | ✅ Done, default on (2026-07-13); phase plan fulfilled and [ADR-0004](0004-jit-strategy.md) closed (2026-07-15). |
+
+### §5's Track B rule is superseded
+
+§5 told agents: *"Do not start Track B standalone ahead of time. Change the premise to
+integrating it with GC (layer 3a) … one-shot `Arc→Gc` replacement."* The `Arc → Gc`
+replacement shipped; the element-cell half did not, and it was then solved by a **different
+mechanism** than this ADR anticipated: [ADR-0013](0013-container-interior-mutability-cellvalue.md)
+put an `UnsafeCell` in `GcBox` itself, which made all ~59 aliased-write sites
+provenance-sound at the primitive without any per-container migration. So:
+
+- **The "touch the ~79 sites twice" waste argument that motivated the fusion no longer
+  applies** — the sites were not touched at all.
+- **Track-B-style first-class element cells are no longer a prerequisite for soundness.**
+  They remain a *possible* future refinement (per-element identity), but they must be
+  justified on their own merits in a new ADR, not inherited from this one.
+- What genuinely remains of the "one campaign" framing is the **env/lexical** half (A',
+  above), which is a compiler/VM concern, not a GC one.
+
+Agents should therefore read §5's Track B rule as historical. The live guidance is: GC
+mechanism decisions belong to this ADR, container-write soundness to ADR-0013, and the
+lexical-slot/env campaign to its own (not yet written) ADR.
+
+---
+
+*This ADR records the design discussion of 2026-06-27; §7 records the 2026-08-02 outcome. If the judgment changes, supersede it with a new ADR.*

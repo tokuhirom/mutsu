@@ -1,6 +1,12 @@
 # ADR-0007: Grammar/regex matcher — cursor + undo-log (trail) to kill capture-threading churn
 
-- **Status**: Accepted (2026-07-16) — implemented in #4591
+- **Status**: Accepted (2026-07-16) — implemented in #4591. **Successor: the "residual
+  per-subrule ceremony" this ADR explicitly deferred (see §Implementation outcome) is decided
+  and fully implemented by [ADR-0016](0016-span-based-captures-and-lazy-match.md) (span-based
+  captures + lazy `Match`, P1–P5 landed 2026-07-28…31).** Read ADR-0016 before touching the
+  capture representation; this ADR's own §Phasing P2/P3 (lazy all-ends generators, removing
+  by-value `RegexCaptures` threading) describe the *pre-ADR-0016* data model and are
+  historical — the trail/`CapStore` mechanism decided here is unchanged and still current.
 - **Context**: PLAN §5 grammar-parse performance. Follows the incremental Arc-shared
   sub-captures slice (#4586) and the exponential/ceremony fixes (#4556, #4559).
 

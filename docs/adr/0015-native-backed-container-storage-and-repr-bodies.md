@@ -3,6 +3,14 @@
 - **Status**: Accepted (2026-07-27 — tokuhirom: *make `DBIish` work even if it means changing mutsu's
   internals; move mutsu itself closer rather than building a compatibility layer that costs
   performance.* All five Open Questions resolved in §5 accordingly.)
+  **Progress (2026-08-02): P0, P1 (CStruct bodies), P2 (native-backed `Buf`/`Blob`, which took
+  `DBIish` to raku parity on all nine files) and P3a (native-backed `CArray[T]`, which put
+  `NativeHelpers::Blob` on the battery gate) have landed. P3b (`array[T]`, which needs the
+  `ArrayData::items` accessor chokepoint first and is also the fix for roast's shaped-native
+  `array-shapes.t` T36-38) and P3c (reference-element `CArray[Str]`/`CArray[Pointer]`, parity
+  polish) are open.** Until P3b lands, `Buf`/`CArray` are native-backed with honest
+  `.REPR`/`.WHERE` while `array[T]` is not — one concept, two storage models (ANALYSIS §1.10 /
+  §7-2).
 - **Date**: 2026-07-27
 - **Deciders**: tokuhirom, Claude
 - **Related**: [ADR-0001](0001-gc-strategy-and-phasing.md) (non-moving GC — what makes a stable address possible at all; the container type filter this ADR extends), [ADR-0013](0013-container-interior-mutability-cellvalue.md) (interior mutability — the write path into a shared container node), [ADR-0005](0005-nanbox-representation-encoding.md) (NaN-boxing — a new container kind must fit the existing tag scheme), [todo/deep/nativehelpers-blob-moarvm-guts.md](../../todo/deep/nativehelpers-blob-moarvm-guts.md) (the finding this ADR answers), [todo/tickets/dbiish-blockers.md](../../todo/tickets/dbiish-blockers.md) ⑨, PLAN.md §1 B1 (database battery) / §1 B4 (NativeCall remainder)

@@ -1,6 +1,18 @@
 # ADR-0016: Span-based regex captures and lazily materialized `Match` objects
 
-- **Status**: Proposed (2026-07-28)
+- **Status**: **Accepted (2026-07-28; promoted from Proposed 2026-08-02 — the ADR had shipped
+  while still labelled Proposed).** **All five phases have landed**: P1 absolute positions
+  (2026-07-28), P2 `CapNode`/`RegexCaptures` split (2026-07-31), P3a `MatchTarget` + span reads
+  (2026-07-31), P4 one-list-per-axis in two layers (2026-07-31), P5 lazy
+  `ValueRepr::Match(Gc<MatchNode>)` (2026-07-31). Per-phase outcomes, measurements and the
+  behaviour corrections are recorded inline in §Phasing. **Residue, deliberately deferred and
+  not blocking** — capture names are still `String` keys (interning to `Symbol` needs a
+  Symbol-keyed hash map on the Match render path); `CodeBlockContext` keeps a text snapshot,
+  materialized from spans at its single construction site; and the reduce walk / failed
+  partial-parse replay still build eager `Match` objects for `$/` inside in-regex code blocks
+  (small counts, unchanged semantics). **Standing consequence of P5**: a `view()`-based
+  "is it an X?" probe is an anti-pattern anywhere a lazy `Match` can flow — use a tag probe,
+  or the value is materialized and the laziness is lost.
 - **Context**: ADR-0001 Phase A (single-thread speed catch-up, before GC/JIT).
   Direct follow-on to ADR-0007, which removed the *accumulated-state* clone from the
   matcher and explicitly deferred the remaining "**per-subrule ceremony**" — captured-text

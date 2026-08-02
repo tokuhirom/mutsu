@@ -13,13 +13,20 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 - 1 decision = 1 file. `NNNN-kebab-title.md` (sequential numbering).
 - **Status**: `Proposed` (under discussion / awaiting approval) / `Accepted` (final) / `Superseded by ADR-XXXX` (updated).
 - When a decision changes, **do not rewrite the existing ADR** — supersede it with a new ADR and update the old ADR's Status.
+- **Record implementation progress inside the ADR that owns the decision** — a Status suffix
+  for a short state, or an "Outcome" / "Implementation status" section for a phased one.
+  `news/` and PLAN.md are where the *work* is reported; they are not a substitute. An ADR
+  whose recorded state has drifted from what shipped defeats its own purpose: a reader who
+  starts from the ADR either re-litigates a decision that is already executed, or cannot tell
+  which of its phases are done. (The 2026-08-02 ledger review in
+  [ANALYSIS.md §8](../../ANALYSIS.md) found this drift on six of seventeen ADRs.)
 - Written in English (repo-wide English-only documentation rule).
 
 ## Index
 
 | # | Title | Status |
 |---|---|---|
-| [0001](0001-gc-strategy-and-phasing.md) | GC adoption — mechanism selection and phasing | Accepted |
+| [0001](0001-gc-strategy-and-phasing.md) | GC adoption — mechanism selection and phasing | Accepted (layers 3a/3b/4 shipped; outcome in §7) |
 | [0002](0002-phase-a-gate-reassessment.md) | Phase A gate reassessment — confirming the preconditions for starting GC | Accepted |
 | [0003](0003-default-on-gc-trigger.md) | Trigger policy for default-on GC (synchronous + buffer-size threshold + adaptive backoff) | Accepted |
 | [0004](0004-jit-strategy.md) | JIT — mechanism selection and phasing (Cranelift method JIT, no deopt) | Accepted |
@@ -29,10 +36,10 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0008](0008-push-based-supply-event-delivery.md) | Push-based supply event delivery (ReactWaker sinks) | Accepted |
 | [0009](0009-regex-code-assertion-execution-model.md) | Regex code assertions — run inline in the real interpreter, and keep LTM declarative | Accepted |
 | [0010](0010-cross-thread-lexical-sharing-scope.md) | Cross-thread lexical sharing is scoped to a spawn lineage, not the process | Accepted |
-| [0011](0011-rakuast-model-layer-and-phasing.md) | RakuAST — a reflection/model layer over the internal AST, and its phasing | Accepted |
+| [0011](0011-rakuast-model-layer-and-phasing.md) | RakuAST — a reflection/model layer over the internal AST, and its phasing | Accepted (Phases 1–5 landed; Phase 6 open) |
 | [0012](0012-libffi-macos-arm64-vendored-bump.md) | libffi on macOS arm64 — bump the vendored build, do not switch to system libffi | Accepted |
-| [0013](0013-container-interior-mutability-cellvalue.md) | Container interior mutability — kill the `gc_contents_mut` provenance UB with a `GcCell` newtype | Proposed |
+| [0013](0013-container-interior-mutability-cellvalue.md) | Container interior mutability — kill the `gc_contents_mut` provenance UB with a `GcCell` newtype | Accepted (primitive landed; Miri gate outstanding — §8) |
 | [0014](0014-make-test-runs-tap-on-debug-binary.md) | `make test` runs the TAP (`t/`) suite on the debug binary, not release | Accepted |
-| [0015](0015-native-backed-container-storage-and-repr-bodies.md) | Native-backed container storage and synthesised REPR bodies (`BODY_OF`) | Accepted |
-| [0016](0016-span-based-captures-and-lazy-match.md) | Span-based regex captures and lazily materialized `Match` objects | Proposed |
+| [0015](0015-native-backed-container-storage-and-repr-bodies.md) | Native-backed container storage and synthesised REPR bodies (`BODY_OF`) | Accepted (P0–P3a landed; P3b/P3c open) |
+| [0016](0016-span-based-captures-and-lazy-match.md) | Span-based regex captures and lazily materialized `Match` objects | Accepted (P1–P5 all landed) |
 | [0017](0017-cli-option-errors-follow-rakudo.md) | A command-line *option* error follows rakudo — message, stream, and a zero exit status | Accepted |

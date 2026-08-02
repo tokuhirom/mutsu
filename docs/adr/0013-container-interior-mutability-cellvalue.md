@@ -268,5 +268,45 @@ unchanged; only the pointer it derives now carries interior-mutable provenance.
 
 ---
 
-*This ADR is Accepted (mechanism 2b; placement per §7). If the mechanism judgment changes later,
-supersede this ADR rather than rewriting it.*
+---
+
+## 8. Implementation status (added 2026-08-02)
+
+§4's phasing collapsed per §7, so the campaign is now two items — one shipped, one not. Recorded
+here because the ADR previously gave no way to tell them apart.
+
+**✅ Shipped — the primitive change.** `GcBox` stores its payload as `value: UnsafeCell<T>`
+(`src/gc/gc_ptr.rs:166`); `Gc::as_ptr` projects through it with `UnsafeCell::raw_get` and no
+intermediate reference (`gc_ptr.rs:198`); `Gc`'s `Deref` reads through `UnsafeCell::get`;
+`unsafe impl<T: ?Sized + Sync> Sync for GcBox<T>` restores the pre-cell `Sync` posture
+(`gc_ptr.rs:169-176`). `gc_contents_mut` (`gc_ptr.rs:774`) is byte-identical in body but now
+derives its `&mut` from an interior-mutable pointer, so **problem §1.3-1 (provenance UB) is
+fixed at every call site at once**, with the `Value` representation, the NaN-box encoding and
+all call sites untouched — exactly as §7 predicted. Site count as of 2026-08-02: **59 across 24
+files** (the inventory's 54/20 has drifted up as new mutation paths reuse the primitive; the
+drift is expected and harmless now that the primitive is sound, but it means the number in
+`docs/gc-contents-mut-inventory.md` is a snapshot, not a budget).
+
+**❌ Not shipped — §4 phase 4, the Miri gate.** There is no `miri` job in
+`.github/workflows/`. This matters more than a normal missing test: what shipped is an
+*argument* about borrow provenance, and an argument of that kind is precisely what a future
+refactor can invalidate without any observable failure. Until the gate exists, this ADR's
+definition of done is unmet. The toolchain note in §4 still applies (pin a nightly whose
+feature set matches the crate's stabilized-feature usage); start informational, then blocking.
+
+**Deferred by decision, not by omission** — problem §1.3-2, the narrow cross-thread race on a
+genuinely shared node, remains routed to ADR-0001 layer 3c (§5 open question 2). The safety
+contract on `gc_contents_mut` states the obligation ("concurrent structural mutation from
+another thread remains routed through the synchronized shared-store lanes"), and nothing
+mechanically checks it.
+
+**Documentation debt this ADR created.** `src/value/aliased_mut.rs`'s module header still
+carries a "⚠️ Known unsoundness (tracked, not removed here)" section describing the
+`Arc::as_ptr` provenance violation as live and naming Track B as the future fix. Both
+statements are false since this ADR landed. That header is the first thing a reader looking
+for the current soundness posture finds; correcting it is part of closing this ADR.
+
+---
+
+*This ADR is Accepted (mechanism 2b; placement per §7; status per §8). If the mechanism judgment
+changes later, supersede this ADR rather than rewriting it.*
