@@ -1992,6 +1992,7 @@ impl Interpreter {
                         .map(|p| p.name.clone())
                         .collect();
                     let def = MethodDef {
+                        lexical_package: saved_package.clone(),
                         params: effective_params.clone(),
                         param_defs: effective_param_defs.clone(),
                         body: std::sync::Arc::new(method_body.clone()),

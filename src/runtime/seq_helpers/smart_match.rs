@@ -331,6 +331,7 @@ impl Interpreter {
                     // Push routine frame so &?ROUTINE resolves inside code blocks
                     self.routine_stack.push(super::super::RoutineFrame {
                         package: package.resolve(),
+                        lexical_package: None,
                         name: name.resolve(),
                         line: None,
                         file: None,

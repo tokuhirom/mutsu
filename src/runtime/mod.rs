@@ -787,6 +787,8 @@ pub(crate) struct CallFrameEntry {
 #[derive(Clone, Debug)]
 pub(crate) struct RoutineFrame {
     pub package: String,
+    /// Package whose compunit lexical routines are visible to this frame.
+    pub lexical_package: Option<String>,
     pub name: String,
     pub line: Option<u32>,
     pub file: Option<String>,

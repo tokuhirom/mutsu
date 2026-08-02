@@ -24,6 +24,7 @@ impl Interpreter {
     ) {
         self.routine_stack.push(super::RoutineFrame {
             package,
+            lexical_package: None,
             name,
             line,
             file,
@@ -36,12 +37,14 @@ impl Interpreter {
     pub(crate) fn push_method_routine_with_location(
         &mut self,
         package: String,
+        lexical_package: String,
         name: String,
         line: Option<u32>,
         file: Option<String>,
     ) {
         self.routine_stack.push(super::RoutineFrame {
             package,
+            lexical_package: Some(lexical_package),
             name,
             line,
             file,
@@ -65,6 +68,7 @@ impl Interpreter {
     ) {
         self.routine_stack.push(super::RoutineFrame {
             package,
+            lexical_package: None,
             name,
             line,
             file,
@@ -294,8 +298,9 @@ impl Interpreter {
         *self.current_package.write().unwrap() = pkg;
     }
 
-    /// The packages a *bare* (unqualified) routine name is looked up in, from
-    /// innermost outwards and always ending at `GLOBAL`.
+    /// The packages a *bare* (unqualified) routine name is looked up in. A
+    /// method's declaring compunit package follows its owning class, before
+    /// unrelated enclosing namespaces; the walk always ends at `GLOBAL`.
     ///
     /// A `class` declared inside a `module` is registered under the
     /// module-qualified name (`NL::Searcher` for `class Searcher` in
@@ -312,8 +317,15 @@ impl Interpreter {
     /// hard-coded `format!`s.
     pub(crate) fn bare_name_packages(&self) -> Vec<String> {
         let cur = self.current_package();
+        let lexical = self
+            .routine_stack
+            .last()
+            .and_then(|frame| frame.lexical_package.as_deref());
         if cur == "GLOBAL" {
-            return vec![cur];
+            return match lexical {
+                Some(pkg) if pkg != "GLOBAL" => vec![pkg.to_string(), cur],
+                _ => vec![cur],
+            };
         }
         // A `state`-variable scope key is not a package at all; treat it as
         // GLOBAL-only rather than walking its mangled segments.
@@ -325,6 +337,12 @@ impl Interpreter {
         // that, not from the mangled key.
         let head = cur.split("::&").next().unwrap_or("").to_string();
         let mut out = vec![cur];
+        if let Some(pkg) = lexical
+            && pkg != "GLOBAL"
+            && !out.iter().any(|candidate| candidate == pkg)
+        {
+            out.push(pkg.to_string());
+        }
         let mut probe = head;
         while !probe.is_empty() && probe != "GLOBAL" {
             if probe != out[0] {

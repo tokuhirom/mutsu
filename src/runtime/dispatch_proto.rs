@@ -187,6 +187,7 @@ impl Interpreter {
         };
         self.routine_stack.push(RoutineFrame {
             package: def.package.resolve(),
+            lexical_package: None,
             name: def.name.resolve(),
             line: None,
             file: None,
@@ -253,6 +254,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let rewritten = Self::rewrite_proto_dispatch_stmts(&proto.body);
         let method_def = MethodDef {
+            lexical_package: proto.package.resolve(),
             params: proto.params.clone(),
             param_defs: proto.param_defs.clone(),
             body: std::sync::Arc::new(rewritten),

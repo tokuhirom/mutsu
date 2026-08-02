@@ -365,6 +365,7 @@ impl Interpreter {
             {
                 interp.routine_stack.push(super::super::RoutineFrame {
                     package: def.package.resolve(),
+                    lexical_package: None,
                     name: def.name.resolve(),
                     line: None,
                     file: None,

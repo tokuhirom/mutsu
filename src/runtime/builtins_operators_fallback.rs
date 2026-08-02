@@ -520,6 +520,7 @@ impl Interpreter {
             let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);
             self.routine_stack.push(RoutineFrame {
                 package: def.package.resolve(),
+                lexical_package: None,
                 name: def.name.resolve(),
                 line: None,
                 file: None,

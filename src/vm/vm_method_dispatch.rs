@@ -581,6 +581,7 @@ impl Interpreter {
         // Push routine_stack so &?ROUTINE can find the current method
         self.push_method_routine_with_location(
             owner_class.to_string(),
+            method_def.lexical_package.clone(),
             method_name.to_string(),
             self.current_source_line(),
             self.current_source_file(),
@@ -1409,6 +1410,7 @@ impl Interpreter {
 
         self.push_method_routine_with_location(
             owner_class.to_string(),
+            method_def.lexical_package.clone(),
             method_name.to_string(),
             self.current_source_line(),
             self.current_source_file(),

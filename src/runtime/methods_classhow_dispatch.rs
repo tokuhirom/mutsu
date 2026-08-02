@@ -716,6 +716,7 @@ impl Interpreter {
                     .cloned()
                     .collect();
                 let def = MethodDef {
+                    lexical_package: sub_data.package.resolve(),
                     params: filtered_params,
                     param_defs: filtered_param_defs,
                     body: std::sync::Arc::new(method_body),
@@ -790,6 +791,7 @@ impl Interpreter {
                     return Ok(Value::NIL);
                 };
                 let def = MethodDef {
+                    lexical_package: sub_data.package.resolve(),
                     params: sub_data.params.clone(),
                     param_defs: sub_data.param_defs.clone(),
                     body: std::sync::Arc::new(sub_data.body.clone()),

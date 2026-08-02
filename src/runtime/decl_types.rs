@@ -89,6 +89,9 @@ pub(crate) struct SubsetDef {
 
 #[derive(Debug, Clone)]
 pub(crate) struct MethodDef {
+    /// Package containing the method declaration lexically. This can differ
+    /// from the owning class for an explicitly qualified class declaration.
+    pub(crate) lexical_package: String,
     pub(crate) params: Vec<String>,
     pub(crate) param_defs: Vec<ParamDef>,
     /// Method body AST. Wrapped in Arc to make MethodDef clones O(1) since
