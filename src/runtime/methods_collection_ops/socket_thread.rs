@@ -285,12 +285,81 @@ impl Interpreter {
             // Keep the promise with the client socket directly
             promise.keep(client_socket, String::new(), String::new());
         } else {
-            // Break the promise on connection failure
-            let err_msg = format!("Failed to connect to '{}:{}'", host, port);
-            let _ = promise.try_break(Value::str(err_msg));
+            // No in-process listener owns this address, so this is an ordinary
+            // outbound connection: open a real TCP stream. `.listen` already
+            // binds a real `TcpListener`, and the accepted (server) side of a
+            // real connection is driven by the `tcp-real` paths in
+            // `socket_async_conn.rs`; the client side is the same shape, so it
+            // reuses all of that plumbing.
+            match Self::connect_real_tcp(&host, port) {
+                Ok(socket) => {
+                    let conn_id = super::super::native_methods::next_async_socket_id();
+                    let local = socket.local_addr().ok();
+                    let peer = socket.peer_addr().ok();
+                    super::super::native_methods::state::register_tcp_stream(conn_id, socket);
+                    let mut attrs = HashMap::new();
+                    attrs.insert("conn-id".to_string(), Value::int(conn_id as i64));
+                    attrs.insert("tcp-real".to_string(), Value::TRUE);
+                    attrs.insert(
+                        "socket-host".to_string(),
+                        Value::str(
+                            local
+                                .map(|a| a.ip().to_string())
+                                .unwrap_or_else(|| "0.0.0.0".to_string()),
+                        ),
+                    );
+                    attrs.insert(
+                        "socket-port".to_string(),
+                        Value::int(local.map(|a| a.port()).unwrap_or(0) as i64),
+                    );
+                    attrs.insert("peer-host".to_string(), Value::str(host.clone()));
+                    attrs.insert(
+                        "peer-port".to_string(),
+                        Value::int(peer.map(|a| a.port()).unwrap_or(port) as i64),
+                    );
+                    attrs.insert("enc".to_string(), Value::str(enc));
+                    promise.keep(
+                        Value::make_instance(Symbol::intern("IO::Socket::Async"), attrs),
+                        String::new(),
+                        String::new(),
+                    );
+                }
+                Err(e) => {
+                    // Break with a real exception, not a Str: a consumer that
+                    // catches the failure may `.rethrow` it (Cro's pipeline
+                    // QUIT handler does).
+                    let mut ex_attrs = HashMap::new();
+                    ex_attrs.insert(
+                        "message".to_string(),
+                        Value::str(format!("Failed to connect to '{}:{}': {}", host, port, e)),
+                    );
+                    let _ = promise
+                        .try_break(Value::make_instance(Symbol::intern("X::AdHoc"), ex_attrs));
+                }
+            }
         };
 
         Ok(Value::promise(promise))
+    }
+
+    /// Open a real outbound TCP connection for `IO::Socket::Async.connect`.
+    /// Every resolved address is tried in turn, so a host that resolves to both
+    /// IPv6 and IPv4 (`localhost` on a dual-stack box) still connects when only
+    /// one family has a listener.
+    fn connect_real_tcp(host: &str, port: u16) -> std::io::Result<std::net::TcpStream> {
+        let addr = format!("{}:{}", host, port);
+        let addrs: Vec<_> = addr.to_socket_addrs()?.collect();
+        let mut last_err = std::io::Error::new(
+            std::io::ErrorKind::AddrNotAvailable,
+            format!("no addresses found for '{}'", addr),
+        );
+        for sock_addr in addrs {
+            match std::net::TcpStream::connect_timeout(&sock_addr, Duration::from_secs(10)) {
+                Ok(s) => return Ok(s),
+                Err(e) => last_err = e,
+            }
+        }
+        Err(last_err)
     }
 
     /// IO::Socket::Async.bind-udp($host, $port)
