@@ -355,68 +355,65 @@ impl Interpreter {
     /// occupies the very same env key — must not be reachable from the module's own
     /// routines. Returns the shared cell; every read path already derefs.
     ///
-    /// Gated on the table being non-empty (a program that loads no such module pays
-    /// one `is_empty` test per variable access) and on a real `current_package`: the
-    /// module's routines carry the unit package on their `CompiledFunction`, which
-    /// the named-call path installs as `current_package` on every call. A qualified
-    /// name is never a `my` lexical, so it is rejected outright.
+    /// Gated on the table being non-empty, so a program that loads no such module
+    /// pays one `is_empty` test per variable access.
     pub(super) fn unit_scope_lexical(&self, name: &str) -> Option<Value> {
+        self.unit_lexical_slot(name).cloned()
+    }
+
+    /// The store entry `name` names from the frame that is running, or `None`.
+    ///
+    /// A free reference reaches here in one of two shapes, exactly as it does for
+    /// [`Self::package_scope_lexical`]:
+    ///
+    /// * BARE (`output`) — resolved against the frame that is running. The first
+    ///   candidate is the frame's `lexical_package`, i.e. the package whose compunit
+    ///   lexicals are visible to it, because that is the only one that survives a
+    ///   *mixin*: a role method reached through `$fh does M::R` runs with both
+    ///   `current_package` and its method class set to `IO::Handle+{M::R}`, a name
+    ///   no `::` walk reduces to `M`. The remaining candidates mirror
+    ///   `lookup_in_running_package` (method class, frame package, current package),
+    ///   each walked up its `::` chain so a class declared inside the module
+    ///   resolves through its owner.
+    /// * QUALIFIED (`Mod::output`) — emitted when the body compiles under the plain
+    ///   package name and the compiler auto-qualifies its free variables, which is
+    ///   what an END phaser declared in a `unit module` does. Resolved only when the
+    ///   qualifier IS the current package: an explicitly written `$Other::x` is a
+    ///   package variable and must never reach a `my` lexical.
+    fn unit_lexical_slot(&self, name: &str) -> Option<&Value> {
         if self.unit_lexicals.is_empty() || name.is_empty() {
             return None;
         }
         let cur = self.current_package();
-        let key = Self::unit_lexical_key(name, &cur)?;
-        Self::unit_lexical_lookup(&self.unit_lexicals, &cur, &key).cloned()
-    }
-
-    /// The `unit_lexicals` key a free-variable reference resolves to, or `None`
-    /// when the reference cannot name a compunit lexical at all.
-    ///
-    /// A free read reaches here in one of two shapes, exactly as it does for
-    /// [`Self::package_scope_lexical`]: BARE (`output` / `@vars`), or QUALIFIED
-    /// (`MP::output` / `@MP::vars`) when the body compiles under the plain package
-    /// name and the compiler auto-qualifies its free variables — which is what an
-    /// END phaser declared in a `unit module` does. A qualifier naming a
-    /// *different* package is an explicit package-variable access and must not
-    /// reach a `my` lexical, so it is rejected.
-    fn unit_lexical_key<'a>(name: &'a str, cur: &str) -> Option<std::borrow::Cow<'a, str>> {
-        if !name.contains("::") {
-            return Some(std::borrow::Cow::Borrowed(name));
-        }
-        // Only scalars are in the store (see `collect_unit_lexical_names`), and a
-        // scalar is keyed sigil-less, so any sigil here is either the scalar's own
-        // `$` or a shape that cannot match.
-        let rest = name.strip_prefix('$').unwrap_or(name);
-        let (pkg, bare) = rest.rsplit_once("::")?;
-        if pkg != cur {
-            return None;
-        }
-        Some(std::borrow::Cow::Borrowed(bare))
-    }
-
-    /// The owning entry for `name` under `pkg` or any enclosing package of it: a
-    /// class declared inside `unit module M` runs its methods under `M::C` (or
-    /// `C`), and those methods still close over the compunit's file-scope
-    /// lexicals, so the walk goes up the `::` chain the way
-    /// `lookup_in_package_chain` does for `module_scope_lexicals`.
-    fn unit_lexical_lookup<'a>(
-        table: &'a HashMap<String, HashMap<String, Value>>,
-        pkg: &str,
-        name: &str,
-    ) -> Option<&'a Value> {
-        if pkg.is_empty() || pkg == "GLOBAL" || pkg.contains("::&") {
-            return None;
-        }
-        let mut cur = pkg;
-        loop {
-            if let Some(v) = table.get(cur).and_then(|m| m.get(name)) {
-                return Some(v);
+        if name.contains("::") {
+            // Only scalars are in the store (see `collect_unit_lexical_names`) and
+            // a scalar is keyed sigil-less, so the only sigil that can appear here
+            // is its own.
+            let (pkg, bare) = name.strip_prefix('$').unwrap_or(name).rsplit_once("::")?;
+            if pkg != cur || cur.is_empty() || cur == "GLOBAL" {
+                return None;
             }
-            match cur.rsplit_once("::") {
-                Some((parent, _)) => cur = parent,
-                None => return None,
+            return Self::lookup_in_package_chain(&self.unit_lexicals, &cur, bare);
+        }
+        let frame = self.routine_stack().last();
+        let candidates = [
+            frame.and_then(|f| f.lexical_package.as_deref()),
+            self.method_class_stack_top_str(),
+            frame
+                .map(|f| f.package.as_str())
+                .filter(|pkg| !pkg.is_empty() && *pkg != "GLOBAL"),
+            Some(cur.as_str()),
+        ];
+        for candidate in candidates.into_iter().flatten() {
+            if candidate.is_empty() || candidate == "GLOBAL" || candidate.contains("::&") {
+                continue;
+            }
+            if let Some(found) = Self::lookup_in_package_chain(&self.unit_lexicals, candidate, name)
+            {
+                return Some(found);
             }
         }
+        None
     }
 
     /// True when `name` is a file-scope lexical of `pkg`'s own compunit.
@@ -429,12 +426,10 @@ impl Interpreter {
     /// happens to hold under that key, which is exactly the aliasing this store
     /// removes.
     pub(crate) fn is_unit_lexical_of(&self, pkg: &str, name: &str) -> bool {
-        if self.unit_lexicals.is_empty() {
+        if self.unit_lexicals.is_empty() || pkg.is_empty() || pkg == "GLOBAL" {
             return false;
         }
-        Self::unit_lexical_key(name, pkg)
-            .and_then(|key| Self::unit_lexical_lookup(&self.unit_lexicals, pkg, &key))
-            .is_some()
+        Self::lookup_in_package_chain(&self.unit_lexicals, pkg, name).is_some()
     }
 
     /// Write companion of [`Self::unit_scope_lexical`]: when `name` is a file-scope
@@ -444,14 +439,7 @@ impl Interpreter {
     /// loading scope's own `my` uses, which is the collision this store exists to
     /// end.
     pub(super) fn unit_scope_lexical_write(&mut self, name: &str, val: &Value) -> bool {
-        if self.unit_lexicals.is_empty() || name.is_empty() {
-            return false;
-        }
-        let cur = self.current_package();
-        let Some(key) = Self::unit_lexical_key(name, &cur) else {
-            return false;
-        };
-        let Some(slot) = Self::unit_lexical_lookup(&self.unit_lexicals, &cur, &key) else {
+        let Some(slot) = self.unit_lexical_slot(name) else {
             return false;
         };
         if let ValueView::ContainerRef(cell) = slot.view() {
