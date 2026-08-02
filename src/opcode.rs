@@ -182,6 +182,10 @@ pub(crate) struct ForLoopSpec {
     /// exit, exactly as `exec_given_op` does for `given`/`with`. Only set for an
     /// implicit-topic loop (a named parameter does not rebind `$_`).
     pub(crate) topic_local: Option<u32>,
+    /// Local slot that owns the iterable container (`$b` in `for $b.pairs`,
+    /// `%h` in `for %h.values`). Pair/value alias writeback reaches this source
+    /// through env today, so ADR-0018 keeps exactly this slot synchronized.
+    pub(crate) source_container_local: Option<u32>,
     pub(crate) body_end: u32,
     pub(crate) label: Option<String>,
     pub(crate) arity: u32,
@@ -2704,11 +2708,15 @@ impl CompiledCode {
             match op {
                 OpCode::ForLoop(spec) => {
                     has_for_loop = true;
-                    for slot in [spec.param_local, spec.topic_local]
-                        .into_iter()
-                        .flatten()
-                        .chain(spec.source_var_locals.iter().flatten().copied())
-                        .chain(spec.single_array_source_local)
+                    for slot in [
+                        spec.param_local,
+                        spec.topic_local,
+                        spec.source_container_local,
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .chain(spec.source_var_locals.iter().flatten().copied())
+                    .chain(spec.single_array_source_local)
                     {
                         if let Some(needed) = for_loop_slots.get_mut(slot as usize) {
                             *needed = true;
@@ -3033,8 +3041,7 @@ impl CompiledCode {
         // some carrier state by name; keep that consumer-local fallback until
         // the next layer replaces its restore with baked slots. This is no
         // longer a frame-wide fallback merely because a stored body is present.
-        if !self.env_consumer_slots.for_loop.is_empty()
-            || !self.env_consumer_slots.block_scope.is_empty()
+        if !self.env_consumer_slots.block_scope.is_empty()
             || !self.env_consumer_slots.block_local_scope.is_empty()
         {
             self.needs_env_sync
@@ -3044,10 +3051,16 @@ impl CompiledCode {
             for slot in 0..n {
                 self.needs_env_sync[slot] |= self
                     .env_consumer_slots
-                    .gather
+                    .for_loop
                     .get(slot)
                     .copied()
                     .unwrap_or(false)
+                    || self
+                        .env_consumer_slots
+                        .gather
+                        .get(slot)
+                        .copied()
+                        .unwrap_or(false)
                     || self
                         .env_consumer_slots
                         .whenever

@@ -2031,6 +2031,8 @@ impl Compiler {
                 };
                 let source_var_names = Self::for_iterable_var_names(iterable);
                 let source_var_locals = self.for_source_var_locals(&source_var_names);
+                let source_container_local = Self::for_iterable_source_name(iterable)
+                    .and_then(|name| self.local_map.get(&name).copied());
                 // When the block parameter has a type constraint other than Mu
                 // or Junction, junction items should be autothreaded (expanded
                 // into their eigenstates).
@@ -2048,6 +2050,7 @@ impl Compiler {
                             param_idx,
                             param_local,
                             topic_local,
+                            source_container_local,
                             body_end: 0,
                             label: label.clone(),
                             arity,
