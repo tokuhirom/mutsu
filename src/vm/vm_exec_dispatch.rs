@@ -316,6 +316,9 @@ impl Interpreter {
                     // `escaping_our_read` — short-circuiting the env lookup.
                     .escaping_our_read(name)
                     .or_else(|| self.package_scope_lexical(name))
+                    // NB: `get_env_with_main_alias` is also where a file-scope `my`
+                    // of the running routine's own compunit resolves — `env` is not
+                    // authoritative for that name. See `unit_lexicals`.
                     .or_else(|| self.get_env_with_main_alias(name))
                     .or_else(|| {
                         // Fall back to the persistent our_vars store for `our`-scoped
@@ -1424,7 +1427,16 @@ impl Interpreter {
                         _ => {}
                     }
                 }
-                if raw_mode && name.starts_with('@') {
+                // A file-scope `my` of the running routine's own compunit lives in
+                // its shared cell, NOT under the bare env key: that key belongs to
+                // whatever scope loaded the module (see `unit_lexicals`). Writing
+                // env as well would re-create the collision the store removes, so
+                // this write is exclusive — the env/`our`/shared-var stores below
+                // are skipped for it.
+                let unit_lexical_write = self.unit_scope_lexical_write(&name, &val);
+                if unit_lexical_write {
+                    // nothing further: the cell is the only home for this name
+                } else if raw_mode && name.starts_with('@') {
                     // For `constant @x`, bypass set_shared_var's List→Array
                     // normalization so the container type (List) is preserved.
                     self.env_mut().insert(name.clone(), val.clone());
@@ -1447,7 +1459,9 @@ impl Interpreter {
                 // Persist `our`-scoped variables so they survive block-scope
                 // restoration (which only preserves env keys that existed
                 // before the block).  `::('name')` falls back to this store.
-                self.set_our_var(name.clone(), val.clone());
+                if !unit_lexical_write {
+                    self.set_our_var(name.clone(), val.clone());
+                }
                 // Eager `our`-alias sync: a package-qualified store (`$Foo::b = v`)
                 // must be visible immediately through the lexical alias (`$b`)
                 // inside the package, not only after block exit. If a local slot
@@ -1466,7 +1480,7 @@ impl Interpreter {
                 }
                 // Sync to shared_vars for cross-thread visibility.
                 // Skip for raw_mode @-variables to preserve List kind.
-                if !(raw_mode && name.starts_with('@')) {
+                if !(unit_lexical_write || raw_mode && name.starts_with('@')) {
                     loan_env!(self, set_shared_var(&name, val.clone()));
                 }
                 let mut alias_name = self.env().get(&alias_key).and_then(|v| {

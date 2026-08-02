@@ -406,6 +406,7 @@ impl Interpreter {
             our_vars: HashMap::new(),
             package_lexicals: self.package_lexicals.clone(),
             class_body_static_names: self.class_body_static_names.clone(),
+            unit_lexicals: self.unit_lexicals.clone(),
             escaped_our_lexical_cells: self.escaped_our_lexical_cells.clone(),
             escaping_our_lexical_names: self.escaping_our_lexical_names.clone(),
             escaped_our_sub_names: self.escaped_our_sub_names.clone(),

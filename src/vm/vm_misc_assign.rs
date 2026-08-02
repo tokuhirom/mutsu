@@ -494,6 +494,9 @@ impl Interpreter {
             return Ok(());
         }
         self.update_local_if_exists(code, &name, &val);
+        // NB: when `name` is a file-scope `my` of the running routine's own
+        // compunit, this writes the compunit's shared cell and NOT the bare env
+        // key, which belongs to the scope that loaded the module (`unit_lexicals`).
         self.set_env_with_main_alias(&name, val.clone());
         // Persist anonymous state variable (`$`) across closure calls.
         self.sync_anon_state_value(&name, &val);

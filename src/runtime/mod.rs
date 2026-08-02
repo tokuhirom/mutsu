@@ -1277,6 +1277,25 @@ pub struct Interpreter {
     /// (see t/package-lookup.t). `package_scope_lexical`'s qualified branch skips
     /// any (class, name) recorded here.
     pub(crate) class_body_static_names: HashMap<String, std::collections::HashSet<String>>,
+    /// File-scope `my` lexicals of a loaded `unit` compunit, keyed by the unit
+    /// package name then env var name, each holding a shared `ContainerRef` cell.
+    ///
+    /// A module body runs in the env of whatever frame loaded it, so a file-scope
+    /// `my $output` lands in that flat env under the plain key `output` — the SAME
+    /// storage a script's own `my $output` uses. The two then alias one another and
+    /// writes go both ways (`todo/deep/module-file-scope-my-shares-the-callers-env.md`).
+    /// After the module body has run, `load_module` moves those names out of `env`
+    /// into this store and restores whatever the loading scope had under them; the
+    /// module's own routines — which run with `current_package` set to the unit
+    /// package — resolve them here instead, read through `unit_scope_lexical` and
+    /// written through `unit_scope_lexical_write`. Cells, not snapshots, so a write
+    /// from one routine is seen by every other (`_init_io` sets `$output`, `proclaim`
+    /// reads it).
+    ///
+    /// Distinct from `module_scope_lexicals`, which is a *last-resort* read-only
+    /// snapshot keeping a module's bare names reachable once the loading frame is
+    /// gone; this store is authoritative and consulted BEFORE `env`.
+    pub(crate) unit_lexicals: HashMap<String, HashMap<String, Value>>,
     /// Shared cells for block lexicals captured by an `our`-scoped named sub
     /// declared inside a *bare* block (not a package block). Unlike a `my sub`, an
     /// `our sub` is installed into the package registry and stays callable after

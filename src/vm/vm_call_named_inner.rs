@@ -623,11 +623,17 @@ impl Interpreter {
         // (`_`/`@_`/`%_`) is excluded — it is a per-call alias, never a caller
         // lexical. (Cross-frame propagation still relies on the reverse pull.)
         for sym in &cf.code.free_var_writes {
-            sym.with_str(|fname| {
-                if fname != "_" && fname != "@_" && fname != "%_" {
-                    self.pending_rw_writeback_sources.push(fname.to_string());
-                }
-            });
+            // A write to the callee compunit's own file-scope lexical is not a
+            // captured-outer write; replaying it would clobber the caller's
+            // same-named `my` (see `is_unit_lexical_of`).
+            let fname = sym.resolve();
+            if fname != "_"
+                && fname != "@_"
+                && fname != "%_"
+                && !self.is_unit_lexical_of(&cf.package, &fname)
+            {
+                self.pending_rw_writeback_sources.push(fname.to_string());
+            }
         }
 
         match result {
