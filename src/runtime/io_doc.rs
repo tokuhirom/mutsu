@@ -6,6 +6,8 @@ impl Interpreter {
 
         self.doc_comments.clear();
         self.doc_comment_list.clear();
+        self.why_cache.clear();
+        self.why_object_cache.clear();
         let mut pending_leading: Option<String> = None;
         // The last declaration that can receive trailing #= comments
         // (doc_key, kind, decl_line, callable_type_override, is_proto, return_type)
@@ -1149,7 +1151,10 @@ impl Interpreter {
     }
 
     /// Add Pod::Block::Declarator entries to $=pod from doc_comment_list.
-    pub(super) fn add_declarator_pod_entries(&mut self) {
+    pub(super) fn add_declarator_pod_entries(
+        &mut self,
+        declarants: Option<&HashMap<String, Value>>,
+    ) {
         use super::DocDeclKind;
         // Get existing $=pod entries
         let mut pod_entries: Vec<Value> =
@@ -1158,43 +1163,60 @@ impl Interpreter {
             } else {
                 Vec::new()
             };
-        // Add declarator doc entries
-        // TODO: For Sub/Method/Attr, the WHEREFORE should ideally be the actual
-        // runtime object, not a Package placeholder. Currently we use the type
-        // name as a Package value so .^name returns the correct type.
+        // Add declarator doc entries. When the caller has an AST, prefer the
+        // concrete declarant built from it: DOC INIT runs before the program's
+        // registration opcodes, but Pod::To::Text needs both `.WHY` identity and
+        // the routine's real signature at that point.
         for dc in &self.doc_comment_list {
-            let wherefore = match dc.kind {
-                DocDeclKind::Package => {
-                    Value::package(crate::symbol::Symbol::intern(&dc.wherefore_name))
-                }
-                DocDeclKind::Sub => {
-                    // Block declarations (from "my $var = {") use "Block" type
-                    if dc.wherefore_name.starts_with("block:") {
-                        Value::package(crate::symbol::Symbol::intern("Block"))
-                    } else {
-                        // Use callable_type_override if set (Method, Submethod).
-                        // A proto handle's .^name is "Sub" too (Rakudo; "Routine"
-                        // is never a concrete value's type), so no proto case.
-                        let base_type = if let Some(ref ct) = dc.callable_type_override {
-                            ct.as_str()
-                        } else {
-                            "Sub"
-                        };
-                        // For subs with return types (e.g., "anon Str sub {}"),
-                        // produce "Sub+{Callable[Str]}" format
-                        let type_name = if let Some(ref rt) = dc.return_type {
-                            format!("{}+{{Callable[{}]}}", base_type, rt)
-                        } else {
-                            base_type.to_string()
-                        };
-                        Value::package(crate::symbol::Symbol::intern(&type_name))
+            let wherefore = declarants
+                .and_then(|values| values.get(&dc.wherefore_name).cloned())
+                .unwrap_or_else(|| match dc.kind {
+                    DocDeclKind::Package => {
+                        Value::package(crate::symbol::Symbol::intern(&dc.wherefore_name))
                     }
-                }
-                DocDeclKind::GrammarRule => Value::package(crate::symbol::Symbol::intern("Regex")),
-                DocDeclKind::Attr => Value::package(crate::symbol::Symbol::intern("Attribute")),
-                DocDeclKind::Param => Value::package(crate::symbol::Symbol::intern("Parameter")),
+                    DocDeclKind::Sub => {
+                        // Block declarations (from "my $var = {") use "Block" type
+                        if dc.wherefore_name.starts_with("block:") {
+                            Value::package(crate::symbol::Symbol::intern("Block"))
+                        } else {
+                            // Use callable_type_override if set (Method, Submethod).
+                            // A proto handle's .^name is "Sub" too (Rakudo; "Routine"
+                            // is never a concrete value's type), so no proto case.
+                            let base_type = if let Some(ref ct) = dc.callable_type_override {
+                                ct.as_str()
+                            } else {
+                                "Sub"
+                            };
+                            // For subs with return types (e.g., "anon Str sub {}"),
+                            // produce "Sub+{Callable[Str]}" format
+                            let type_name = if let Some(ref rt) = dc.return_type {
+                                format!("{}+{{Callable[{}]}}", base_type, rt)
+                            } else {
+                                base_type.to_string()
+                            };
+                            Value::package(crate::symbol::Symbol::intern(&type_name))
+                        }
+                    }
+                    DocDeclKind::GrammarRule => {
+                        Value::package(crate::symbol::Symbol::intern("Regex"))
+                    }
+                    DocDeclKind::Attr => Value::package(crate::symbol::Symbol::intern("Attribute")),
+                    DocDeclKind::Param => {
+                        Value::package(crate::symbol::Symbol::intern("Parameter"))
+                    }
+                });
+            let object_id = match wherefore.view() {
+                ValueView::Sub(data) => Some(data.id),
+                ValueView::WeakSub(data) => data.upgrade().map(|data| data.id),
+                ValueView::Instance { id, .. } => Some(id),
+                _ => None,
             };
             let pod_entry = Interpreter::make_pod_declarator(dc, wherefore);
+            if declarants.is_some()
+                && let Some(object_id) = object_id
+            {
+                self.why_object_cache.insert(object_id, pod_entry.clone());
+            }
             pod_entries.push(pod_entry);
         }
         self.env

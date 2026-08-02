@@ -977,6 +977,10 @@ pub struct Interpreter {
     doc_comment_list: Vec<DocComment>,
     /// Cache for .WHY results so identity checks (=:=) work
     why_cache: HashMap<String, Value>,
+    /// Pod declarators keyed by the concrete WHEREFORE object's stable id.
+    /// DOC INIT uses AST-built declarants before runtime registration, so a
+    /// name key would collide for multis and same-named parameters.
+    why_object_cache: HashMap<u64, Value>,
     type_metadata: HashMap<String, HashMap<String, Value>>,
     when_matched: bool,
     gather_items: Vec<Vec<Value>>,

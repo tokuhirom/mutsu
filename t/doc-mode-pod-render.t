@@ -3,7 +3,7 @@ use Test;
 use lib $*PROGRAM.parent(2).add("roast/packages/Test-Helpers");
 use Test::Util;
 
-plan 3;
+plan 4;
 
 # --doc renders pod blocks in source order BEFORE declarator blocks, and
 # renders =item bullets (advent2011-day10).
@@ -42,6 +42,26 @@ my $main2 = $main ~ q:to"--END--";
     --END--
 
 is_run($main2, %( out => $expected, err => ''), :compiler-args['--doc'], '--doc + DOC INIT');
+
+my $pod-variable = q:to"END";
+    #| routine docs
+    sub documented(Int $value) { $value }
+
+    DOC INIT {
+        say $=pod.elems;
+        say $=pod[0].WHEREFORE.^name;
+        say $=pod[0].WHEREFORE.WHY === $=pod[0];
+        say $=pod[0].WHEREFORE.signature.params.elems;
+        exit;
+    }
+    END
+
+is_run(
+    $pod-variable,
+    %( out => "1\nSub\nTrue\n1\n", err => ''),
+    :compiler-args['--doc'],
+    'DOC INIT sees $=pod with its concrete routine declarant'
+);
 
 # pod2text renders the Pod object tree
 =begin pod

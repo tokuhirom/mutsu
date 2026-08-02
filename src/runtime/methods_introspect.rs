@@ -375,6 +375,17 @@ impl Interpreter {
 
     /// Dispatch .WHY method — returns a Pod::Block::Declarator instance
     pub(super) fn dispatch_why(&mut self, target: &Value) -> Result<Value, RuntimeError> {
+        let object_id = match target.view() {
+            ValueView::Sub(data) => Some(data.id),
+            ValueView::WeakSub(data) => data.upgrade().map(|data| data.id),
+            ValueView::Instance { id, .. } => Some(id),
+            _ => None,
+        };
+        if let Some(object_id) = object_id
+            && let Some(pod) = self.why_object_cache.get(&object_id)
+        {
+            return Ok(pod.clone());
+        }
         // Return declarator doc comment attached to this type/package/sub
         let keys: Vec<String> = match target.view() {
             ValueView::Package(name) => vec![name.resolve()],
