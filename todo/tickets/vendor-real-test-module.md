@@ -552,3 +552,20 @@ when run alone; they are `-j6` load artifacts, not regressions.
 (`Test.rakumod`'s `@vars` is the one that matters here) because every mutating
 method resolves its receiver by name out of `self.env` — see
 `todo/tickets/module-file-scope-array-and-hash-still-share-the-caller.md`.
+
+**No single dominant cause is left.** The 255 split 110 mid-file aborts
+(`Failed: 0` + a plan mismatch) and 145 files losing individual assertions, and
+grouping the aborts by their last non-TAP line gives a long tail: the largest
+group is 2 files (`Unknown role: CN`; `Did you mean 'flat'?`), and 71 abort with
+no diagnostic line at all. So from here it is one gap at a time rather than
+another leverage play. Two starting points worth naming:
+
+- `S02-names/strict.t` and `S02-lexical-conventions/comments.t` abort with
+  `X::Undeclared: Variable '$time_after' is not declared` raised *inside*
+  `Test.rakumod`'s own `_diag`, reached through `throws-like` → `subtest`. Both
+  files exercise `use strict`, and `throws-like` EVALs its argument, so the
+  module's file-scope lexical is being read from a frame whose package context
+  is the EVAL's rather than the module's. Pre-existing (it fails the same way
+  before the compunit-lexical store), but it is the store's neighbourhood.
+- `skip() was passed a non-integer number of tests` — the real module's `skip`
+  is stricter than the native one about its argument shape.
