@@ -49,6 +49,12 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
             let (r, sub_params) = super::super::parse_param_list_pub(r)?;
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, ')')?;
+            // See the `[` branch below: a comma after the pattern means several
+            // destructuring parameters, one per chunk element.
+            let (after_comma, _) = ws(r)?;
+            if after_comma.starts_with(',') {
+                return parse_multi_destructuring_params(stripped, rw_block);
+            }
             let (r, _) = skip_pointy_return_type(r)?;
             let unpack_name = "__for_unpack".to_string();
             let unpack_def = ParamDef {
@@ -151,6 +157,14 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
                 }
             }
             let (r, _) = parse_char(r, ']')?;
+            // More than one destructuring parameter (`-> [$a, $b], [$c, $d]`)
+            // needs the general multi-parameter path: each pattern binds one
+            // element of the chunk and unpacks it. The single-pattern shape below
+            // instead destructures the whole iteration value.
+            let (after_comma, _) = ws(r)?;
+            if after_comma.starts_with(',') {
+                return parse_multi_destructuring_params(stripped, rw_block);
+            }
             let (r, _) = skip_pointy_return_type(r)?;
             let unpack_name = "__for_unpack".to_string();
             let unpack_def = ParamDef {
@@ -225,7 +239,13 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
             loop {
                 let (r2, _) = parse_char(r, ',')?;
                 let (r2, _) = ws(r2)?;
-                let (r2, next) = parse_for_pointy_param(r2)?;
+                // A later parameter may itself be a destructuring pattern
+                // (`-> $a, [$b, $c]`); it binds one chunk element and unpacks it,
+                // so give it a synthetic name for the compiler to bind first.
+                let (r2, mut next) = parse_destructuring_or_plain_param(r2)?;
+                if next.name.is_empty() {
+                    next.name = format!("__for_unpack_{}", params_def.len());
+                }
                 if next.traits.iter().any(|t| t == "rw") {
                     any_rw = true;
                 }
@@ -263,6 +283,95 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
     } else {
         Ok((input, (None, None, Vec::new(), Vec::new(), false, false)))
     }
+}
+
+/// Parse a pointy parameter list in which at least one parameter is a
+/// destructuring pattern and there is more than one parameter:
+/// `-> [$target, $variant], [$expected, $desc] { ... }`.
+///
+/// Each entry binds one element of the iteration chunk, exactly like an ordinary
+/// multi-parameter pointy block; a pattern entry then unpacks the element it
+/// bound. It gets a synthetic name so the compiler has something to bind to
+/// before destructuring it.
+///
+/// `input` is the text just after the `->` / `<->`.
+fn parse_multi_destructuring_params(input: &str, rw_block: bool) -> PResult<'_, ForParams> {
+    let mut r = input;
+    let mut params = Vec::new();
+    let mut params_def = Vec::new();
+    let mut any_rw = rw_block;
+    loop {
+        let (r2, _) = ws(r)?;
+        let (r2, mut def) = parse_destructuring_or_plain_param(r2)?;
+        if def.sub_signature.is_some() && def.name.is_empty() {
+            def.name = format!("__for_unpack_{}", params_def.len());
+        }
+        if def.traits.iter().any(|t| t == "rw") {
+            any_rw = true;
+        }
+        params.push(if def.sigilless {
+            format!("\\{}", def.name)
+        } else {
+            def.name.clone()
+        });
+        params_def.push(def);
+        let (r2, _) = ws(r2)?;
+        let Some(r3) = r2.strip_prefix(',') else {
+            r = r2;
+            break;
+        };
+        r = r3;
+    }
+    let (r, _) = ws(r)?;
+    let r = if let Some(after_arrow) = r.strip_prefix("-->") {
+        let (after_arrow, _) = super::super::parse_return_type_annotation_pub(after_arrow)?;
+        let (after_arrow, _) = ws(after_arrow)?;
+        after_arrow
+    } else {
+        r
+    };
+    Ok((r, (None, None, params, params_def, any_rw, false)))
+}
+
+/// One entry of a pointy parameter list: a `[...]` / `(...)` destructuring
+/// pattern (returned with an empty name for the caller to fill in) or an
+/// ordinary parameter.
+fn parse_destructuring_or_plain_param(input: &str) -> PResult<'_, ParamDef> {
+    let (open, close) = match input.as_bytes().first() {
+        Some(b'[') => ('[', ']'),
+        Some(b'(') => ('(', ')'),
+        _ => return parse_for_pointy_param(input),
+    };
+    let (r, _) = parse_char(input, open)?;
+    let (r, _) = ws(r)?;
+    let (r, sub_params) = super::super::parse_param_list_pub(r)?;
+    let (r, _) = ws(r)?;
+    let (r, _) = parse_char(r, close)?;
+    Ok((
+        r,
+        ParamDef {
+            name: String::new(),
+            default: None,
+            multi_invocant: true,
+            required: false,
+            named: false,
+            slurpy: false,
+            sigilless: false,
+            type_constraint: None,
+            literal_value: None,
+            sub_signature: Some(sub_params),
+            where_constraint: None,
+            traits: Vec::new(),
+            double_slurpy: false,
+            onearg: false,
+            optional_marker: false,
+            outer_sub_signature: None,
+            code_signature: None,
+            is_invocant: false,
+            shape_constraints: None,
+            block_param: true,
+        },
+    ))
 }
 
 fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
