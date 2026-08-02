@@ -530,3 +530,25 @@ module's own plan check, i.e. ordinary step-1 residue.
 
 So the remaining work is what step 1 always was: the ~184 non-helper files plus
 the helper-module residue, one general interpreter gap at a time.
+
+### Re-measured after the compunit-lexical fix (2026-08-03)
+
+The largest single identified cause in that residue is closed for scalars:
+`news/2026-08/module-file-scope-lexical-is-not-the-callers.md`. A `unit`
+compunit's file-scope `my` scalars now live in their own store instead of sharing
+an env key with the loading scope, so a test file's own `my $output = ''` no
+longer *is* `Test.rakumod`'s `$output`.
+
+| | before | after |
+| --- | --- | --- |
+| regress under the real `Test` | 301 | **255 / 1435** |
+
+18 files fixed against this sweep's own baseline of 271 (the 301 above predates
+the `Test::Util` retirement). Two files appear only in the "after" list —
+`6.d/S32-str/sprintf-e.t` and `S04-exception-handlers/catch.t` — and both pass
+when run alone; they are `-j6` load artifacts, not regressions.
+
+`@`/`%` compunit lexicals were deliberately left sharing the caller's env
+(`Test.rakumod`'s `@vars` is the one that matters here) because every mutating
+method resolves its receiver by name out of `self.env` — see
+`todo/tickets/module-file-scope-array-and-hash-still-share-the-caller.md`.
