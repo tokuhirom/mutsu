@@ -1149,6 +1149,23 @@ impl Interpreter {
                 // (`resolve_role_key`) re-enters the registry/env and must not run
                 // under a held guard.
                 let mut role_stack = self.registry().composed_roles_seed(&mro);
+                // A punned role's synthetic ClassDef MRO starts at Any, while
+                // its composed-role membership is keyed by the pun's own name.
+                // Include that key explicitly so a type object such as R04
+                // satisfies an inherited R01:U invocant constraint just as an
+                // R04 instance does.
+                if let Some(composed) = self
+                    .registry()
+                    .class_composed_roles
+                    .get(&package_name.resolve())
+                {
+                    role_stack.extend(composed.iter().map(|role| {
+                        role.split_once('[')
+                            .map(|(base, _)| base)
+                            .unwrap_or(role.as_str())
+                            .to_string()
+                    }));
+                }
                 let mut seen_roles = HashSet::new();
                 while let Some(role_name) = role_stack.pop() {
                     if !seen_roles.insert(role_name.clone()) {

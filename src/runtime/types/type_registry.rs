@@ -526,6 +526,29 @@ impl Interpreter {
             .is_some_and(|r| r.methods.contains_key(method_name))
     }
 
+    pub(crate) fn role_or_parent_has_method(&self, role_name: &str, method_name: &str) -> bool {
+        let registry = self.registry();
+        let mut stack = vec![role_name.to_string()];
+        let mut seen = std::collections::HashSet::new();
+        while let Some(role) = stack.pop() {
+            let base = role.split_once('[').map_or(role.as_str(), |(base, _)| base);
+            if !seen.insert(base.to_string()) {
+                continue;
+            }
+            if registry
+                .roles
+                .get(base)
+                .is_some_and(|role| role.methods.contains_key(method_name))
+            {
+                return true;
+            }
+            if let Some(parents) = registry.role_parents.get(base) {
+                stack.extend(parents.iter().cloned());
+            }
+        }
+        false
+    }
+
     /// Whether declaring `my <constraint> $x;` without an initializer is a
     /// compile error (`X::Syntax::Variable::MissingInitializer`). This differs
     /// from `is_definite_constraint` in how it treats a subset base: definiteness
