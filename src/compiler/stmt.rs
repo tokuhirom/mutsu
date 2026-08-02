@@ -1987,6 +1987,12 @@ impl Compiler {
                 let param_local = param
                     .as_ref()
                     .and_then(|p| self.local_map.get(p.as_str()).copied());
+                // Only an implicit-topic loop rebinds `$_`; see
+                // `ForLoopSpec::topic_local`.
+                let topic_local = param
+                    .is_none()
+                    .then(|| self.local_map.get("_").copied())
+                    .flatten();
                 let kv_mode = has_rw && Self::for_iterable_is_kv(iterable);
                 // Names of the loop's multi-params whose value is written back to
                 // the source each iteration. Only a *genuinely rw* param writes
@@ -2041,6 +2047,7 @@ impl Compiler {
                         .emit(OpCode::ForLoop(Box::new(crate::opcode::ForLoopSpec {
                             param_idx,
                             param_local,
+                            topic_local,
                             body_end: 0,
                             label: label.clone(),
                             arity,

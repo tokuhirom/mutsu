@@ -23,6 +23,10 @@ impl Interpreter {
                 _ => unreachable!("ForLoop param must be a string constant"),
             });
         let saved_topic = self.env().get("_").cloned();
+        // The topic's local slot, when this frame has one (see
+        // `save_loop_topic_local`): the loop must mirror each item into it.
+        let saved_topic_local = self.save_loop_topic_local(spec);
+        let topic_local = saved_topic_local.as_ref().map(|(s, _)| *s);
         let saved_topic_source = self.topic_source_var.take();
         let was_topic_readonly = self.is_readonly("_");
 
@@ -134,6 +138,15 @@ impl Interpreter {
             if let Some(sym) = topic_sym {
                 self.env_mut().insert_sym(sym, item.clone());
             }
+            // The topic's own local slot (a `sub f ($_) {…}` parameter), which
+            // the body reads via `GetLocal` — see `save_loop_topic_local`. This
+            // is NOT `spec.param_local` (that is the *named* loop parameter's
+            // slot); an implicit-topic loop has none.
+            if param_name.is_none()
+                && let Some(slot) = topic_local
+            {
+                self.locals[slot] = item.clone();
+            }
             if let Some(sym) = param_sym {
                 self.env_mut().insert_sym(sym, item.clone());
                 if let Some(alias) = caret_alias_sym {
@@ -167,7 +180,7 @@ impl Interpreter {
                     }
                     Err(e) if e.is_redo() && Self::label_matches(&e.label, &spec.label) => {
                         if param_name.is_none() {
-                            self.env_mut().insert("_".to_string(), item.clone());
+                            self.set_loop_topic(topic_local, item.clone());
                         }
                         if let Some(ref name) = param_name {
                             self.env_mut().insert(name.clone(), item.clone());
@@ -184,7 +197,7 @@ impl Interpreter {
                             && Self::label_matches(&e.label, &spec.label) =>
                     {
                         if let Some(v) = e.return_value {
-                            self.env_mut().insert("_".to_string(), v.clone());
+                            self.set_loop_topic(topic_local, v.clone());
                             self.stack.push(v);
                         }
                         break 'for_loop;
@@ -243,7 +256,7 @@ impl Interpreter {
                             self.unmark_readonly("_");
                         }
                         self.topic_source_var = saved_topic_source;
-                        self.restore_loop_topic(saved_topic);
+                        self.restore_loop_topic(saved_topic, saved_topic_local);
                         // Gather suspend: pop (body resumes and re-pushes).
                         self.pop_loop_local_scope(code);
                         return Err(e);
@@ -257,7 +270,7 @@ impl Interpreter {
                         if !was_topic_readonly {
                             self.unmark_readonly("_");
                         }
-                        self.restore_loop_topic(saved_topic.clone());
+                        self.restore_loop_topic(saved_topic.clone(), saved_topic_local.clone());
                         self.pop_loop_local_scope(code);
                         return Err(e);
                     }
@@ -282,7 +295,7 @@ impl Interpreter {
             self.unmark_readonly("_");
         }
         self.topic_source_var = saved_topic_source;
-        self.restore_loop_topic(saved_topic);
+        self.restore_loop_topic(saved_topic, saved_topic_local);
         // Defer restoring the named loop param's prior binding to the paired
         // `RestoreForParam` opcode (after the post/LAST phasers), matching
         // `exec_for_loop_body`. Only reached on normal completion / `last` /

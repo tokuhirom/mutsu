@@ -170,6 +170,18 @@ impl CompoundBaseOp {
 pub(crate) struct ForLoopSpec {
     pub(crate) param_idx: Option<u32>,
     pub(crate) param_local: Option<u32>,
+    /// Local slot the frame holds for the TOPIC (`_`), when it has one — a
+    /// `sub f ($_) { … }` parameter or a `my $_`. Distinct from `param_local`,
+    /// which is the *named* loop parameter's slot.
+    ///
+    /// A `for` block binds `$_` as its own implicit parameter, but mutsu keeps
+    /// the loop topic in `env`. When the enclosing frame also has a `_` slot the
+    /// body reads that slot (`GetLocal`), so the loop's topic went unseen and
+    /// `sub f($_) { for 1,2,3 { say $_ } }` printed the argument three times.
+    /// The loop mirrors each item into this slot and restores the entry value on
+    /// exit, exactly as `exec_given_op` does for `given`/`with`. Only set for an
+    /// implicit-topic loop (a named parameter does not rebind `$_`).
+    pub(crate) topic_local: Option<u32>,
     pub(crate) body_end: u32,
     pub(crate) label: Option<String>,
     pub(crate) arity: u32,

@@ -278,6 +278,11 @@ impl Compiler {
         let param_local = param
             .as_ref()
             .and_then(|p| self.local_map.get(p.as_str()).copied());
+        // Only an implicit-topic loop rebinds `$_`; see `ForLoopSpec::topic_local`.
+        let topic_local = param
+            .is_none()
+            .then(|| self.local_map.get("_").copied())
+            .flatten();
         let source_var_names = Self::for_iterable_var_names(iterable);
         let source_var_locals = self.for_source_var_locals(&source_var_names);
         let loop_idx = self
@@ -285,6 +290,7 @@ impl Compiler {
             .emit(OpCode::ForLoop(Box::new(crate::opcode::ForLoopSpec {
                 param_idx,
                 param_local,
+                topic_local,
                 body_end: 0,
                 label: label.clone(),
                 arity,
