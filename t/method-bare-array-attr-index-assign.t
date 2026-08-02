@@ -1,6 +1,6 @@
 use Test;
 
-plan 5;
+plan 11;
 
 # A method whose body is a bare `@!attr`/`%!attr` (no `is rw`, no `return-rw`)
 # exposes that Array/Hash attribute by reference, exactly like Rakudo: an
@@ -21,6 +21,11 @@ class HashAttr {
     method info { %!info }
 }
 
+class RwHashAttr {
+    has %!info = (a => 1, b => 2);
+    method info is rw { %!info }
+}
+
 class ScalarAttr {
     has $!name = 'x';
     method name { $!name }
@@ -36,11 +41,18 @@ is $a.items, <p q r>, 'whole-value assignment into a bare @!attr-returning metho
 my $h = HashAttr.new;
 $h.info<a> = 99;
 is $h.info<a>, 99, 'indexed assignment into a bare %!attr-returning method';
+is $h.info<b>, 2, 'indexed assignment preserves unrelated bare hash accessor entries';
 
-# (Whole-value hash *replacement* through an rw-ish accessor has a separate,
-# pre-existing merge-instead-of-replace bug -- see
-# todo/tickets/rw-accessor-whole-hash-assign-merges-not-replaces.md -- so it is
-# not asserted here.)
+$h.info = { z => 42 };
+is $h.info<z>, 42, 'whole-value assignment through a bare hash accessor stores the new entry';
+is $h.info.elems, 1, 'whole-value assignment through a bare hash accessor replaces old entries';
+
+my $rw = RwHashAttr.new;
+$rw.info<a> = 99;
+is $rw.info<b>, 2, 'indexed assignment preserves unrelated rw hash accessor entries';
+$rw.info = { z => 42 };
+is $rw.info<z>, 42, 'whole-value assignment through an rw hash accessor stores the new entry';
+is $rw.info.elems, 1, 'whole-value assignment through an rw hash accessor replaces old entries';
 
 # A scalar attribute still needs `is rw` -- this fix must not loosen that.
 my $s = ScalarAttr.new;

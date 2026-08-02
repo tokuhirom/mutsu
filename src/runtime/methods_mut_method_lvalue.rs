@@ -95,6 +95,7 @@ impl Interpreter {
         method: &str,
         method_args: Vec<Value>,
         value: Value,
+        preserve_hash_entries: bool,
     ) -> Result<Value, RuntimeError> {
         // If the target variable is deep-readonly (e.g. $_ in a for-loop
         // over an immutable type like Mix/Set/Bag), disallow method-based
@@ -815,7 +816,11 @@ impl Interpreter {
                         None
                     };
                     let mut assigned_value = if method_args.is_empty() {
-                        Self::normalize_rw_accessor_assignment(current, value)
+                        Self::normalize_rw_accessor_assignment(
+                            current,
+                            value,
+                            preserve_hash_entries,
+                        )
                     } else {
                         value
                     };
@@ -886,7 +891,11 @@ impl Interpreter {
                         None
                     };
                     let mut assigned_value = if method_args.is_empty() {
-                        Self::normalize_rw_accessor_assignment(current, value)
+                        Self::normalize_rw_accessor_assignment(
+                            current,
+                            value,
+                            preserve_hash_entries,
+                        )
                     } else {
                         value
                     };
@@ -974,6 +983,7 @@ impl Interpreter {
                 method,
                 method_args,
                 value,
+                preserve_hash_entries,
             );
         }
 
@@ -1186,6 +1196,7 @@ impl Interpreter {
                 let mut assigned_value = Self::normalize_rw_accessor_assignment(
                     updated.get(&attr_key).cloned().map(|v| v.deref_container()),
                     value,
+                    preserve_hash_entries,
                 );
                 // When Nil is assigned to an attribute with `is default(...)`,
                 // restore the default value instead of setting Nil.
@@ -1289,9 +1300,13 @@ impl Interpreter {
         // e.g. Hash::Agnostic's `self.AT-KEY($key) = value`) must reach the
         // container the body yields. Bind the method's params + `self`, then
         // recurse the lvalue assignment into the body's accessor expression.
-        if let Some(result) =
-            self.try_raw_accessor_method_lvalue(&target, &method_def, &method_args, &value)?
-        {
+        if let Some(result) = self.try_raw_accessor_method_lvalue(
+            &target,
+            &method_def,
+            &method_args,
+            &value,
+            preserve_hash_entries,
+        )? {
             return Ok(result);
         }
         // Delegation methods: forward assignment to the delegate
@@ -1320,6 +1335,7 @@ impl Interpreter {
                     target_method,
                     method_args,
                     value,
+                    preserve_hash_entries,
                 )?;
                 let updated_delegate = self.env.get(&temp_var).cloned().unwrap_or(Value::NIL);
                 self.env.remove(&temp_var);
@@ -1372,7 +1388,7 @@ impl Interpreter {
                 None
             };
             let mut assigned_value = if method_args.is_empty() {
-                Self::normalize_rw_accessor_assignment(current, value)
+                Self::normalize_rw_accessor_assignment(current, value, preserve_hash_entries)
             } else {
                 value
             };
@@ -1464,6 +1480,7 @@ impl Interpreter {
                     target_method,
                     method_args,
                     value,
+                    preserve_hash_entries,
                 )?;
                 // Read back the potentially-updated delegate
                 let updated_delegate = self.env.get(&temp_var).cloned().unwrap_or(Value::NIL);
@@ -1536,6 +1553,7 @@ impl Interpreter {
         method_def: &MethodDef,
         method_args: &[Value],
         value: &Value,
+        preserve_hash_entries: bool,
     ) -> Result<Option<Value>, RuntimeError> {
         let stmts: Vec<&Stmt> = method_def
             .body
@@ -1615,6 +1633,7 @@ impl Interpreter {
                 inner_method,
                 inner_arg_vals,
                 value.clone(),
+                preserve_hash_entries,
             )
         })();
         restore(self, saved);

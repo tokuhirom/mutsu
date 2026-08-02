@@ -292,6 +292,7 @@ impl Interpreter {
             &method,
             Vec::new(),
             updated,
+            true,
         )?;
         Ok(effective_value)
     }
@@ -399,6 +400,7 @@ impl Interpreter {
             &method,
             Vec::new(),
             updated,
+            true,
         )?;
         Ok(removed)
     }
@@ -596,6 +598,7 @@ impl Interpreter {
             &method,
             method_args,
             value,
+            false,
         )
     }
 }
