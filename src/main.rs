@@ -23,6 +23,7 @@ fn print_help(program: &str) {
     println!("  --dump-ast     Dump the AST instead of executing");
     println!("  --dump-bytecode  Dump compiled bytecode instead of executing");
     println!("  --doc          Render Pod documentation from the source");
+    println!("  --doc=module   Render it with Pod::To::[module] (only Text)");
     println!("  --repl         Start the interactive REPL");
     println!("  --no-precomp   Disable module precompilation cache");
     println!("  -h, --help     Show this help message");
@@ -182,6 +183,20 @@ fn run_main() {
             dump_bytecode = true;
         } else if arg == "--doc" {
             doc_mode = true;
+        } else if let Some(renderer) = arg.strip_prefix("--doc=") {
+            // `--doc=module` selects `Pod::To::[module]` (rakudo's spelling).
+            // mutsu's `--doc` renderer *is* Pod::To::Text, so `Text` is the one
+            // name it can honour; anything else names a module it does not
+            // have, which rakudo reports as a compile-time "Could not find".
+            // Without this arm the whole `--doc=Text` token was taken for the
+            // program file ("Could not open --doc=Text").
+            if renderer == "Text" {
+                doc_mode = true;
+            } else {
+                eprintln!("===SORRY!===");
+                eprintln!("Could not find Pod::To::{}", renderer);
+                return;
+            }
         } else if arg == "--repl" {
             repl_flag = true;
         } else if arg == "--no-precomp" {

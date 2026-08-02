@@ -223,7 +223,7 @@ fn render_begin_pod_blocks(source: &str) -> String {
                     let heading = rest
                         .trim_start_matches(|c: char| c.is_ascii_digit())
                         .trim_start();
-                    output.push_str(heading);
+                    output.push_str(&decode_pod_entities(heading));
                     output.push('\n');
                     i += 1;
                     continue;
@@ -234,7 +234,7 @@ fn render_begin_pod_blocks(source: &str) -> String {
                         .trim_start_matches(|c: char| c.is_ascii_digit())
                         .trim_start();
                     output.push_str("  * ");
-                    output.push_str(text);
+                    output.push_str(&decode_pod_entities(text));
                     output.push('\n');
                     i += 1;
                     continue;
@@ -243,7 +243,11 @@ fn render_begin_pod_blocks(source: &str) -> String {
                     i += 1;
                     continue;
                 }
-                output.push_str(lines[i].trim_end());
+                // `E<...>` is a Pod formatting code wherever it appears, not
+                // only inside `=for pod` — the `=begin pod` branch used to emit
+                // the line verbatim, so `=begin pod`/`Hello E<alpha>` rendered
+                // as literal `Hello E<alpha>`.
+                output.push_str(&decode_pod_entities(lines[i].trim_end()));
                 output.push('\n');
                 i += 1;
             }
