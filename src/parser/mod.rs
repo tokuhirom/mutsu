@@ -26,9 +26,10 @@ pub use stmt::simple::{
     clear_parser_lib_paths, set_parser_lib_paths, set_parser_program_path, set_parser_source_file,
 };
 
+pub(crate) use expr::precedence::lower_feed_node;
 /// Lower a deferred `Expr::Feed` node into its executable (sink-call) form.
 /// Re-exported for the compiler's `Expr::Feed` arm.
-pub(crate) use expr::precedence::lower_feed_node;
+pub(crate) use stmt::sub::is_builtin_param_trait;
 
 /// Descend a feed chain to its textually-leftmost operand slot — for splitting a
 /// declaration/assignment that binds tighter than the feed.

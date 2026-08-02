@@ -47,28 +47,49 @@ pub(crate) fn skip_optional_trait_arg(input: &str) -> &str {
     input
 }
 
-/// Public wrapper for `validate_param_trait` used by control.rs.
+/// Trait validation for a pointy-block parameter parsed by `parse_for_params`
+/// (`for`/`with`/`while` loop variables, and a bare `-> ... { }` in argument
+/// position).
+///
+/// A loop parameter's traits are lowered away at compile time — only `is copy`
+/// has an effect — so unlike a signature parameter there is no declaration site
+/// that could later dispatch a user `trait_mod:<is>`. The unknown-trait error
+/// therefore has to be raised here, at parse time, or not at all. It is raised
+/// only when the parser has not seen a `trait_mod:<is>` declaration or import,
+/// which is the parse-time approximation of "no candidate could accept it".
 pub(crate) fn validate_param_trait_pub<'a>(
     trait_name: &str,
     existing_traits: &[String],
     input: &'a str,
 ) -> PResult<'a, ()> {
+    if !is_builtin_param_trait(trait_name)
+        && !super::super::simple::is_user_declared_sub("trait_mod:<is>")
+    {
+        return Err(PError::fatal(format!(
+            "Can't use unknown trait 'is' -> '{trait_name}' in a parameter declaration"
+        )));
+    }
     validate_param_trait(trait_name, existing_traits, input)
 }
 
-/// Validate a parameter trait name, returning a fatal parse error for unknown traits.
-/// Also warns on duplicate traits.
+/// True for a trait the signature machinery understands natively. Anything else
+/// is a *custom* parameter trait, legal only when a user `trait_mod:<is>` accepts
+/// a `Parameter`; that can only be known at declaration time, so the check lives
+/// in the VM (`check_param_custom_traits`), not here.
+pub(crate) fn is_builtin_param_trait(trait_name: &str) -> bool {
+    VALID_PARAM_TRAITS.contains(&trait_name) || trait_name == "invocant"
+}
+
+/// Parse-time handling of a parameter trait name. An unknown name is NOT a parse
+/// error: `multi trait_mod:<is>(Parameter:D $p, :$query!)` makes `is query` legal
+/// (Cro::HTTP::Router declares exactly that for `query`/`header`/`cookie`/`auth`).
+/// The declaration-time check that some `trait_mod:<is>` actually accepts it runs
+/// in the VM. Also warns on duplicate traits.
 pub(crate) fn validate_param_trait<'a>(
     trait_name: &str,
     existing_traits: &[String],
     input: &'a str,
 ) -> PResult<'a, ()> {
-    if !VALID_PARAM_TRAITS.contains(&trait_name) {
-        return Err(PError::fatal(format!(
-            "Can't use unknown trait 'is' -> '{}' in a parameter declaration",
-            trait_name
-        )));
-    }
     if existing_traits.iter().any(|t| t == trait_name) {
         add_parse_warning(format!(
             "Potential difficulties:\n    Duplicate 'is {}' trait",

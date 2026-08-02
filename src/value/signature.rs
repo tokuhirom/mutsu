@@ -551,6 +551,12 @@ fn extract_twigil(name: &str) -> &str {
     }
 }
 
+/// One `Parameter` instance for a single declared parameter. Used at declaration
+/// time to hand a custom parameter trait (`:$x is query`) to `trait_mod:<is>`.
+pub(crate) fn make_parameter_value_from_param_def(p: &ParamDef) -> Value {
+    sig_param_to_parameter_instance(&param_def_to_sig_param(p))
+}
+
 #[allow(dead_code)]
 pub(crate) fn make_params_value_from_param_defs(params: &[ParamDef]) -> Value {
     let sig_params: Vec<SigParam> = params.iter().map(param_def_to_sig_param).collect();

@@ -9,7 +9,7 @@ mod pub_shims;
 pub(super) mod simple;
 pub(crate) mod simple_expr_stmt;
 mod stmtlist;
-mod sub;
+pub(crate) mod sub;
 pub(crate) mod sub_param;
 pub(crate) mod word_logical_split;
 
