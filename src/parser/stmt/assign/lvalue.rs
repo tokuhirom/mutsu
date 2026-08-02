@@ -60,7 +60,9 @@ fn method_lvalue_assign_expr_with_intent(
         Some(name) => Expr::Literal(Value::str(name)),
         None => Expr::Literal(Value::NIL),
     });
-    args.push(Expr::Literal(Value::truth(preserve_hash_entries)));
+    if preserve_hash_entries {
+        args.push(Expr::Literal(Value::TRUE));
+    }
     Expr::Call {
         name: Symbol::intern("__mutsu_assign_method_lvalue"),
         args,
