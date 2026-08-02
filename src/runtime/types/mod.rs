@@ -365,8 +365,23 @@ impl Interpreter {
                 // so post-return `$val++` / `$a = …` keep observing one container.
                 if let Some(ValueView::ContainerRef(arc)) =
                     target_env.get(source_name).map(Value::view)
-                    && !updated.is_container_ref()
                 {
+                    // The param's final value may itself be a *different* cell: an
+                    // aliased container argument (`WrapVarRef`) binds the param
+                    // through a fresh cell of its own. Storing that cell into the
+                    // caller's entry replaces the caller's cell, severing it from
+                    // the local slot and from every closure that captured the name
+                    // — a later `@a = ()` then writes the old cell while a by-name
+                    // read finds the new one and reports the pre-call contents.
+                    // Unwrap it and write the value through the caller's cell too.
+                    if let ValueView::ContainerRef(incoming) = updated.view() {
+                        if crate::gc::Gc::ptr_eq(&arc, &incoming) {
+                            continue;
+                        }
+                        let inner = incoming.lock().unwrap().clone();
+                        *arc.lock().unwrap() = inner;
+                        continue;
+                    }
                     *arc.lock().unwrap() = updated;
                     continue;
                 }
