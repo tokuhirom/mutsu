@@ -287,12 +287,47 @@ files** (the inventory's 54/20 has drifted up as new mutation paths reuse the pr
 drift is expected and harmless now that the primitive is sound, but it means the number in
 `docs/gc-contents-mut-inventory.md` is a snapshot, not a budget).
 
-**❌ Not shipped — §4 phase 4, the Miri gate.** There is no `miri` job in
-`.github/workflows/`. This matters more than a normal missing test: what shipped is an
-*argument* about borrow provenance, and an argument of that kind is precisely what a future
-refactor can invalidate without any observable failure. Until the gate exists, this ADR's
-definition of done is unmet. The toolchain note in §4 still applies (pin a nightly whose
-feature set matches the crate's stabilized-feature usage); start informational, then blocking.
+**⚠️ Correction (2026-08-02, same day): "fixed at every call site at once" is wrong by one
+call site.** The `UnsafeCell`-in-`GcBox` fix covers every `Gc`-managed container, which is all
+of them **except `Mixin`**: `ValueRepr::Mixin(Arc<Value>, Arc<HashMap<String, Value>>)`
+(`src/value/mod.rs`) never migrated to the GC, and `$type.^set_name(...)` writes its overrides
+map in place through `arc_contents_mut` (`src/runtime/methods_classhow_dispatch.rs:109`). An
+`Arc` payload has no `UnsafeCell`, so that one site is still the original provenance violation.
+`aliased_mut.rs` compounded the error by documenting `arc_contents_mut` as "currently unused".
+Tracked in `todo/tickets/mixin-overrides-aliased-write-is-still-arc.md`; found by writing the
+Miri gate below, which is exactly the kind of thing the gate exists to surface.
+
+**✅ Shipped, blocking — §4 phase 4, the Miri gate.** ci.yml's `miri` job runs
+`cargo miri test --no-default-features --features native --lib gc::` (JIT and FFI dropped —
+Miri cannot execute either) on a **pinned** nightly: Miri is nightly-only, and an unpinned
+nightly would turn a toolchain update into what looks like a soundness regression. It is a
+**required status check**, not an informational one — on a repository where every PR
+auto-merges, an informational job is a job nobody reads. Cost is controlled by the trigger, not
+by weakening the check: the job is gated on a `gc-value` classification (`scripts/ci-docs-only.sh
+--gc-value`) so it runs only for changes under `src/gc/**` / `src/value/**`, ~8% of merges
+measured over the last 300, and is *skipped* (which branch protection counts as success)
+otherwise.
+
+**Its current reach is the primitive, not yet the VM.** All 33 `gc::` unit tests are Miri-clean,
+including `gc_contents_mut_writes_through_a_shared_node`, which is the exact aliased-write shape
+this ADR made sound. The interpreter-level half — `gc::soundness_smoke`, four tiny Raku programs
+run through a real `Interpreter` so Miri watches the VM take an aliased `&mut` into a shared node
+while other handles are live — exists but is `#[cfg_attr(miri, ignore)]`: `Interpreter::new()`
+shells out to `uname`/`hostname` while building `$*DISTRO`/`$*KERNEL`, and Miri cannot spawn a
+process. `todo/tickets/magic-vars-should-be-built-lazily.md` unblocks it; dropping that
+`cfg_attr` is what answers §4's warning that a primitive-only run "mostly re-proves std's
+`UnsafeCell` guarantee".
+
+**Two limits to state honestly.** (1) Miri reports `integer-to-pointer cast` on the NaN-boxed
+`Value` (ADR-0005), so it falls back to permissive provenance for pointers recovered from the
+box: checking is precise for the typed `Gc<T>` paths the unit tests exercise and best-effort
+through the `Value` layer. `-Zmiri-strict-provenance` is not available to us for the same reason.
+(2) One race-hammer test (`concurrent_buffer_and_drain_never_wraps_the_approx_count`, 200k
+allocations across four threads) is ignored under Miri because it would not finish; it defends
+counter ordering, not provenance, and gc-stress still runs it natively.
+
+This ADR is therefore closed **except** for the `Mixin` correction above, which the gate cannot
+see today (no test in the subset reaches `^set_name`).
 
 **Deferred by decision, not by omission** — problem §1.3-2, the narrow cross-thread race on a
 genuinely shared node, remains routed to ADR-0001 layer 3c (§5 open question 2). The safety

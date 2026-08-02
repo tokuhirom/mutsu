@@ -39,6 +39,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       docs-only: ${{ steps.detect.outputs.docs-only }}
+      gc-value: ${{ steps.detect.outputs.gc-value }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -54,6 +55,12 @@ jobs:
           result=$(scripts/ci-docs-only.sh)
           echo "docs-only=$result" >> "$GITHUB_OUTPUT"
           echo "docs-only=$result"
+          # Second, independent question for the `miri` job below: does this
+          # change touch the GC / container-value code whose aliased-write
+          # soundness ADR-0013 pins? Same script, opposite fail-safe default.
+          gc=$(scripts/ci-docs-only.sh --gc-value)
+          echo "gc-value=$gc" >> "$GITHUB_OUTPUT"
+          echo "gc-value=$gc"
         env:
           GH_TOKEN: ${{ github.token }}
           # GITHUB_EVENT_NAME / GITHUB_SHA / GITHUB_REPOSITORY come from the
@@ -306,6 +313,97 @@ jobs:
           scripts/battery-testsuite.sh
         env:
           MUTSU_BIN: target/release/mutsu
+
+  # ADR-0013 §4 phase 4: the acceptance gate for the GC's aliased-write
+  # soundness. What ADR-0013 shipped is an *argument* about borrow provenance —
+  # a `Gc` payload lives in a `GcBox`'s `UnsafeCell`, so the aliased `&mut` that
+  # container mutation hands out has valid provenance. No ordinary test can see
+  # that: a provenance violation is UB that happens to work, so `make test` and
+  # the whole roast suite stay green either way. Miri turns the argument into a
+  # check, and a future refactor can invalidate the argument with no observable
+  # failure — which is why this is a REQUIRED check and not an informational
+  # one. An informational job on a repo where every PR auto-merges is a job
+  # nobody reads.
+  #
+  # It is expensive (~20-25 min, most of it compiling the crate to MIR), so it
+  # is gated on the `gc-value` classification: only a change under `src/gc/**`
+  # or `src/value/**` (plus this workflow and the classifier itself) can affect
+  # the property, which is ~8% of merges measured over the last 300. Like the
+  # docs-only skip above this must be a job-level `if:`, never a workflow-level
+  # `paths` filter — a check run that is never created stays pending forever and
+  # blocks the merge it was supposed to guard.
+  miri:
+    needs: changes
+    if: needs.changes.outputs.gc-value == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      # Miri only ships on nightly, and the nightly must be PINNED: an unpinned
+      # `nightly` silently changes the interpreter (and its Stacked Borrows
+      # model) under the job, which would turn a toolchain update into what
+      # looks like a soundness regression — on a required check. Bump this
+      # deliberately, in its own PR, and read the diff in Miri's behaviour.
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          toolchain: nightly-2026-08-01
+          components: miri, rust-src
+
+      - name: Cache cargo (rust-cache)
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "ci-miri"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: cargo miri setup
+        run: cargo miri setup
+
+      # `--no-default-features --features native` drops the two things Miri
+      # fundamentally cannot execute: the Cranelift JIT (it emits real machine
+      # code) and FFI calls. Neither is reachable from the subset below.
+      #
+      # `gc::` selects the collector and `Gc` primitive tests, including
+      # `gc_contents_mut_writes_through_a_shared_node` — the exact aliased-write
+      # shape ADR-0013 made sound — and, because the filter is a substring
+      # match, `value::value_gc::` too, which is the container side. Measured
+      # 2026-08-02: 47 pass, 5 ignored, ~19s of interpretation (the wall clock is
+      # dominated by compiling the crate to MIR). It also selects
+      # `gc::soundness_smoke` (the VM-level half), which is
+      # `#[cfg_attr(miri, ignore)]` for now because `Interpreter::new()` shells
+      # out and Miri cannot spawn a process; see
+      # todo/tickets/magic-vars-should-be-built-lazily.md.
+      #
+      # Two limits worth knowing before trusting a green run: Miri reports
+      # `integer-to-pointer cast` on the NaN-boxed `Value`, so provenance
+      # checking is precise for typed `Gc<T>` paths and best-effort through the
+      # `Value` layer (`-Zmiri-strict-provenance` is unavailable to us for the
+      # same reason); and the `Mixin` overrides map is still `Arc`-backed, a
+      # live provenance violation no test in this subset reaches.
+      #
+      # `--test-threads=1` keeps a failure attributable to a single test.
+      #
+      # ── If a test makes this job too slow, mark it `#[cfg_attr(miri, ignore)]`
+      # ── rather than dropping the subset or loosening the gate.
+      # Miri interprets every step, so a test that hammers a race (threads ×
+      # tens of thousands of iterations) can run for hours where it takes
+      # milliseconds natively. `concurrent_buffer_and_drain_never_wraps_the_approx_count`
+      # in `src/gc/gc_ptr.rs` is the worked example: 200k allocations across four
+      # threads against a spinning drainer, ignored under Miri with a comment
+      # saying why. Two conditions make that legitimate — say both in the
+      # comment you leave:
+      #   1. the property the test defends is NOT aliased-write provenance (the
+      #      one thing this gate exists for), and
+      #   2. something else still runs it natively (gc-stress, `make test`).
+      # If a test IS about provenance and is too slow, shrink the test — do not
+      # ignore it.
+      - name: cargo miri test (GC / container subset)
+        env:
+          # The GC's stats and verify hooks read the clock and the environment.
+          MIRIFLAGS: -Zmiri-disable-isolation
+        run: |
+          cargo miri test --no-default-features --features native \
+            --lib gc:: -- --test-threads=1
 
   wasm-e2e:
     # Skipped on a documentation-only change — see the `changes` job.
