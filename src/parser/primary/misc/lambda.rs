@@ -193,6 +193,12 @@ pub(crate) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
         }
         let simple_single = first.traits.is_empty()
             && first.shape_constraints.is_none()
+            // A literal parameter (`-> 'about' { … }`) carries its constraint in
+            // `literal_value`, which the name-only `Lambda` form cannot hold —
+            // the block would then accept ANY argument, and its `.signature`
+            // would report no constraint (Cro's router compiles a route's URL
+            // segments from exactly that constraint).
+            && first.literal_value.is_none()
             && !first.named
             && !first.slurpy
             && !first.double_slurpy
