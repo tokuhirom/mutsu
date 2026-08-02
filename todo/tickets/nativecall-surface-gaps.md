@@ -71,3 +71,20 @@ done
   [`news/2026-07/cstruct-handles-carry-their-registered-name.md`](../../news/2026-07/cstruct-handles-carry-their-registered-name.md).
 - **By-value CStructs and callbacks** — recorded in `runtime/nativecall.rs`'s
   module docs as follow-up work; no dist in the batteries needs them yet.
+  (Argument-position CStructs work: a struct is an opaque native handle passed
+  by pointer, which is what made the genuine OpenSSL + IO::Socket::SSL binding
+  run a real `https://` GET — see
+  [`news/2026-07/openssl-battery-https.md`](../../news/2026-07/openssl-battery-https.md).
+  What is missing is **by-value** field-layout marshalling and generic C
+  callbacks.)
+- **A *returned* `CArray[T]` is surfaced as the raw `Pointer` it carries** —
+  there is no length with which to reify a Raku array, so the return is handed
+  back as the pointer instead of an indexable `CArray`. Rakudo returns a
+  `CArray` you can index (reading past the end is the caller's problem).
+- **Native-backed `array[T]` (ADR-0015 P3b) and reference-element
+  `CArray[Str]`/`CArray[Pointer]` (P3c)** are tracked in
+  [ADR-0015](../../docs/adr/0015-native-backed-container-storage-and-repr-bodies.md),
+  not here. P3b also fixes `array-shapes.t` T36-38.
+
+(This section absorbs PLAN.md's former "§1 B4 NativeCall remainder" bullet,
+2026-08-02 — the plan file keeps the outline, the inventory lives here.)

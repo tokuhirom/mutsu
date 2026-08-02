@@ -295,10 +295,12 @@ generally:
 new pass/fail count.~~ Done 2026-07-18 — see the per-suite standing at the
 top of this section (10 PASS / 1 FAIL).
 
-**Test::Async is out of scope for this frontier** (PLAN.md §1 B5): its
-blocker is custom Metamodel HOW inheritance
-(`Metamodel::ParametricRoleHOW`), a campaign-sized MOP feature that the
-mzef dependency chain does not need.
+**Test::Async is out of scope for this frontier**: its blocker is custom
+Metamodel HOW inheritance (`Metamodel::ParametricRoleHOW`), a campaign-sized
+MOP feature that the mzef dependency chain does not need. It is **not a bundle
+candidate** (user decision; PLAN.md's §1 B2b was dropped 2026-08-02) — the full
+scouting result and the start trigger, should one ever appear, are in
+[`ecosystem-guts-dependency-survey.md`](ecosystem-guts-dependency-survey.md).
 
 Still open (load-side leftovers):
 

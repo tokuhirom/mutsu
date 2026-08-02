@@ -52,6 +52,33 @@ on it, **all as `test-depends` only** (needed to run those dists' own test
 suites, never at runtime/install), and concentrated in one author's (vrurg)
 ecosystem.
 
+### Test::Async scouting result (2026-07-19) — kept here since PLAN.md no longer carries it
+
+Test::Async is **not planned for bundling** (user decision; PLAN.md's §1 B2b was
+dropped 2026-08-02). The scouting conclusion is preserved because it is the
+concrete evidence for the `deep_guts` classification above:
+
+- The visible blocker is custom Metamodel HOW inheritance —
+  `'Test::Async::Metamodel::BundleHOW' cannot inherit from
+  'Metamodel::ParametricRoleHOW' because it is unknown`. That *is* a real MOP
+  feature (user-visible subclasses of the built-in metamodel classes, with
+  mutsu's role/class machinery dispatching through the user's HOW overrides).
+- But it is **necessary and nowhere near sufficient**: Test::Async's `EXPORT`
+  installs a **grammar slang** (`define_slang` plus custom
+  `package_declarator:sym<test-bundle>` tokens that swap the role HOW mid-parse
+  via `set_how`), builds `QAST` nodes, and drives the `$*W` World / `NQPHLL` —
+  the MoarVM compiler-guts layer mutsu deliberately lacks.
+- So the only viable route is **(b) a narrow per-declarator shim**: parse
+  `test-bundle` / `test-hub` / `test-reporter` as built-in role declarations with
+  native bundle wiring, ignoring the NQP `EXPORT` grammar. It is still
+  multi-session work.
+- **Start trigger**, if a bundle-candidate module ever hard-depends on
+  Test::Async: start from the (b) shim; do **not** attempt the general
+  NQP/QAST/slang machinery.
+- Prerequisite groundwork that already landed: the `::?CLASS` parameter fixes
+  (#4669). Error text and history:
+  [`mzef-install-pipeline.md`](mzef-install-pipeline.md) "Test-phase frontier".
+
 ## Interpretation
 
 - **The genuinely guts-blocked tail is small: ~5%** (at most ~10% if you count
