@@ -1772,9 +1772,44 @@ mod const_pool_dedup {
             "the index is compile-time scaffolding"
         );
     }
+
+    #[test]
+    fn env_consumers_are_recorded_separately_before_blanket_removal() {
+        let mut code = CompiledCode::new();
+        code.locals.push("x".to_string());
+        code.ops.push(OpCode::MakeGather(0, None));
+        code.compute_needs_env_sync();
+
+        assert_eq!(code.env_consumer_slots.gather, vec![true]);
+        assert!(code.env_consumer_slots.for_loop.is_empty());
+        assert!(code.env_consumer_slots.block_scope.is_empty());
+        assert!(code.env_consumer_slots.block_local_scope.is_empty());
+        assert!(code.env_consumer_slots.whenever.is_empty());
+        assert!(code.captures_env_by_name);
+        assert_eq!(code.needs_env_sync, vec![true]);
+    }
 }
 
 /// A compiled chunk of bytecode.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct EnvConsumerSlots {
+    pub(crate) for_loop: Vec<bool>,
+    pub(crate) block_scope: Vec<bool>,
+    pub(crate) block_local_scope: Vec<bool>,
+    pub(crate) gather: Vec<bool>,
+    pub(crate) whenever: Vec<bool>,
+}
+
+impl EnvConsumerSlots {
+    fn any_consumer(&self) -> bool {
+        self.for_loop.iter().any(|needed| *needed)
+            || self.block_scope.iter().any(|needed| *needed)
+            || self.block_local_scope.iter().any(|needed| *needed)
+            || self.gather.iter().any(|needed| *needed)
+            || self.whenever.iter().any(|needed| *needed)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct CompiledCode {
     pub(crate) ops: Vec<OpCode>,
@@ -1915,6 +1950,11 @@ pub(crate) struct CompiledCode {
     /// Locals that are only accessed via GetLocal don't need env sync,
     /// reducing env size and clone cost.
     pub(crate) needs_env_sync: Vec<bool>,
+    /// Per-consumer lexical-slot synchronization sets. During ADR-0018's first
+    /// migration layer these preserve the old frame-wide behavior; subsequent
+    /// layers narrow each bitmap independently before deleting
+    /// `captures_env_by_name`.
+    pub(crate) env_consumer_slots: EnvConsumerSlots,
     /// Bitmap: true if local[i]'s NAME occupies more than one `locals` slot —
     /// a genuine inner-block shadow under the `MUTSU_SHADOW_SLOTS` gate (§1.4).
     /// The name-keyed env can hold only ONE value per name, so the whole-locals
@@ -2330,6 +2370,7 @@ impl CompiledCode {
             has_env_writes: false,
             may_capture_outer_vars: false,
             needs_env_sync: Vec::new(),
+            env_consumer_slots: EnvConsumerSlots::default(),
             dup_named_locals: Vec::new(),
             is_supply_block_body: false,
             my_declared_sym: rustc_hash::FxHashSet::default(),
@@ -2605,18 +2646,41 @@ impl CompiledCode {
         // early return) so zero-local closures wrapping a `whenever`/`gather` are
         // covered too. Recursion-heavy code without these (e.g. `fib`) is
         // unaffected and still skips the per-call flush for its slot-only params.
-        self.captures_env_by_name = self.ops.iter().any(|op| {
-            matches!(
-                op,
-                OpCode::ForLoop(..)
-                    | OpCode::BlockScope { .. }
-                    | OpCode::BlockLocalScope { .. }
-                    | OpCode::MakeGather(..)
-                    | OpCode::WheneverScope { .. }
-            )
-        });
         let n = self.locals.len();
         self.needs_env_sync = vec![false; n];
+        self.env_consumer_slots = EnvConsumerSlots::default();
+        let mut has_for_loop = false;
+        let mut has_block_scope = false;
+        let mut has_block_local_scope = false;
+        let mut has_gather = false;
+        let mut has_whenever = false;
+        for op in &self.ops {
+            match op {
+                OpCode::ForLoop(..) => has_for_loop = true,
+                OpCode::BlockScope { .. } => has_block_scope = true,
+                OpCode::BlockLocalScope { .. } => has_block_local_scope = true,
+                OpCode::MakeGather(..) => has_gather = true,
+                OpCode::WheneverScope { .. } => has_whenever = true,
+                _ => {}
+            }
+        }
+        let blanket = vec![true; n];
+        if has_for_loop {
+            self.env_consumer_slots.for_loop = blanket.clone();
+        }
+        if has_block_scope {
+            self.env_consumer_slots.block_scope = blanket.clone();
+        }
+        if has_block_local_scope {
+            self.env_consumer_slots.block_local_scope = blanket.clone();
+        }
+        if has_gather {
+            self.env_consumer_slots.gather = blanket.clone();
+        }
+        if has_whenever {
+            self.env_consumer_slots.whenever = blanket;
+        }
+        self.captures_env_by_name = self.env_consumer_slots.any_consumer();
         // §1.4 shadow slots: flag every slot whose name occupies more than one
         // `locals` slot (a genuine inner-block shadow under MUTSU_SHADOW_SLOTS)
         // so the whole-locals env broadcasts skip them — see `dup_named_locals`.
