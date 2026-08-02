@@ -34,3 +34,5 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0013](0013-container-interior-mutability-cellvalue.md) | Container interior mutability — kill the `gc_contents_mut` provenance UB with a `GcCell` newtype | Proposed |
 | [0014](0014-make-test-runs-tap-on-debug-binary.md) | `make test` runs the TAP (`t/`) suite on the debug binary, not release | Accepted |
 | [0015](0015-native-backed-container-storage-and-repr-bodies.md) | Native-backed container storage and synthesised REPR bodies (`BODY_OF`) | Accepted |
+| [0016](0016-span-based-captures-and-lazy-match.md) | Span-based regex captures and lazily materialized `Match` objects | Proposed |
+| [0017](0017-cli-option-errors-follow-rakudo.md) | A command-line *option* error follows rakudo — message, stream, and a zero exit status | Accepted |

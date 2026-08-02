@@ -51,17 +51,17 @@ also fixed — they are why the count below is 7 rather than 9:
 - `bail-out` emitted "Bail out!" but exited 0 instead of 255
   (`news/2026-08/bail-out-exits-255.md`).
 
-## Measured residue: 5 files, 3 causes (2026-08-02)
+## Measured residue: 2 files, 2 causes (2026-08-02)
 
-With the guard widened, 223 of the 228 files pass. None of the five is a
+With the guard widened, 226 of the 228 files pass. Neither of the two is a
 `Test::Util` incompatibility — each is a mutsu gap the native override was
-hiding. Take them one at a time; the flip lands once they are all closed.
+hiding. Take them one at a time; the flip lands once they are both closed.
 
 | files | cause |
 | --- | --- |
 | ~~`S24-testing/12-subtest-todo.t`~~ | **DONE** — the failure-diagnostic stream was chosen by nesting depth rather than by whether the failure was TODO'd, and every stderr diagnostic was emitted twice. `news/2026-08/tap-failure-diagnostics-pick-the-stream-rakudo-picks.md`. |
-| `S19-command-line-options/04-negation.t` (2, 3), `S19-command-line/arguments.t` (6) | **CLI option handling**: mutsu exits 1 where raku exits with a different status for a malformed/negated short option, and writes an unknown-option warning to the wrong stream. |
-| `S26-documentation/02-paragraph.t` (28) | **`--doc=Text` is not recognised**: mutsu treats it as the program file ("Could not open --doc=Text"). The real `is_run` passes it through `:compiler-args`. |
+| ~~`S19-command-line-options/04-negation.t` (2, 3), `S19-command-line/arguments.t` (6)~~ | **DONE** — an unrecognised switch was taken for the program file, and an option-parsing error exited 1 where rakudo exits 0. Decision recorded in [ADR-0017](../../docs/adr/0017-cli-option-errors-follow-rakudo.md); `news/2026-08/cli-option-errors-follow-rakudo.md`. |
+| ~~`S26-documentation/02-paragraph.t` (28)~~ | **DONE** — `--doc=Text` was not recognised (and `E<...>` was not decoded inside `=begin pod`). `news/2026-08/doc-equals-renderer-and-entities-in-begin-pod.md`. |
 | `S03-operators/repeat.t` (56), `S16-io/words.t` (11) | one `warns-like` whose message does not match, and `words()` without arguments not reading `$*ARGFILES` — each an ordinary single-assertion gap. |
 
 One difference is *not* in that list because nothing currently asserts on it,
