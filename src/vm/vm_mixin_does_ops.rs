@@ -351,7 +351,7 @@ impl Interpreter {
                 if let Some(tn) = &left_type_object {
                     return Err(Self::does_type_object_error("does", tn));
                 }
-                return loan_env!(self, eval_does_values_list(left, items.as_ref()));
+                return loan_env!(self, eval_does_values_list_mutating(left, items.as_ref()));
             }
         }
         // Check if the RHS is a role that needs to be composed onto the value.
@@ -360,7 +360,7 @@ impl Interpreter {
             if let Some(tn) = &left_type_object {
                 return Err(Self::does_type_object_error("does", tn));
             }
-            return loan_env!(self, eval_does_values(left, right));
+            return loan_env!(self, eval_does_values_mutating(left, right));
         }
         // When the RHS is an enum value, `does` acts as a mixin (like `but`).
         if matches!(right.view(), ValueView::Enum { .. }) {

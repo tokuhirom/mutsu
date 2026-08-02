@@ -572,7 +572,7 @@ unsafe fn view_kind<'a>(kind: Kind, bits: u64) -> ValueView<'a> {
             Kind::Instance => {
                 let attrs = peek_gc::<InstanceAttrs>(bits);
                 ValueView::Instance {
-                    class_name: attrs.class_name,
+                    class_name: attrs.class_name(),
                     attributes: gc_guard(bits),
                     id: attrs.id,
                 }

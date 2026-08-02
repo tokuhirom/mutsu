@@ -124,7 +124,8 @@ impl NanBox {
                 // through `instance_sharing_cell`, which forks the node when
                 // the class differs) — the pointee is the single stored source.
                 debug_assert_eq!(
-                    attributes.class_name, class_name,
+                    attributes.class_name(),
+                    class_name,
                     "Instance class_name diverged from its InstanceAttrs"
                 );
                 debug_assert_eq!(

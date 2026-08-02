@@ -35,9 +35,21 @@ impl Interpreter {
                 let named_arg = Value::pair(trait_name.clone(), Value::TRUE);
                 loan_env!(
                     self,
-                    call_function("trait_mod:<is>", vec![param_val, named_arg])
+                    call_function("trait_mod:<is>", vec![param_val.clone(), named_arg])
                 )
                 .map_err(|_| unknown())?;
+                // A trait body is almost always `$param does SomeRole`, which
+                // reblesses the object in place — so the type it left on this
+                // very handle IS the trait's effect on a parameter. Record it,
+                // because `Signature.params` builds a fresh `Parameter` on every
+                // access and the throwaway we just passed in is about to die.
+                if let ValueView::Instance { class_name, .. } = param_val.view()
+                    && class_name != "Parameter"
+                {
+                    crate::value::signature::register_param_trait_mixin_type(
+                        trait_name, class_name,
+                    );
+                }
             }
             if let Some(subs) = &p.sub_signature {
                 self.check_param_custom_traits(subs)?;

@@ -75,6 +75,18 @@ thread_local! {
 }
 
 impl Symbol {
+    /// The raw interned id. Only for storing a `Symbol` where a plain integer is
+    /// needed (an `AtomicU32` slot); pair with [`Symbol::from_raw`].
+    pub(crate) fn raw(self) -> u32 {
+        self.0
+    }
+
+    /// Rebuild a `Symbol` from an id produced by [`Symbol::raw`]. Ids are
+    /// append-only and never remapped, so a round trip is always valid.
+    pub(crate) fn from_raw(id: u32) -> Symbol {
+        Symbol(id)
+    }
+
     /// Intern a string and return its `Symbol`.  If the string has already been
     /// interned, the existing symbol is returned (idempotent).
     pub fn intern(s: &str) -> Symbol {

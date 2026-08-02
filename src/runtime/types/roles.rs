@@ -156,6 +156,41 @@ impl Interpreter {
         None
     }
 
+    /// The mutating form used by the `does` operator: on a real object the role
+    /// is composed into *the object* (Rakudo reblesses it into `C+{R}`), so every
+    /// alias sees it. Everything else — an `Int`, a `Str`, a punned role — falls
+    /// back to the copying wrapper that `but` also uses.
+    pub(crate) fn eval_does_values_mutating(
+        &mut self,
+        left: Value,
+        right: Value,
+    ) -> Result<Value, RuntimeError> {
+        if let Some(application) = self.extract_role_application(&right)
+            && let Some(reblessed) = self.does_rebless_instance(&left, &[application])?
+        {
+            return Ok(reblessed);
+        }
+        self.eval_does_values(left, right)
+    }
+
+    /// The mutating form of `$obj does (RoleA, RoleB)`.
+    pub(crate) fn eval_does_values_list_mutating(
+        &mut self,
+        left: Value,
+        roles: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let applications: Vec<(String, Vec<Value>)> = roles
+            .iter()
+            .filter_map(|role| self.extract_role_application(role))
+            .collect();
+        if applications.len() == roles.len()
+            && let Some(reblessed) = self.does_rebless_instance(&left, &applications)?
+        {
+            return Ok(reblessed);
+        }
+        self.eval_does_values_list(left, roles)
+    }
+
     pub(crate) fn eval_does_values(
         &mut self,
         left: Value,

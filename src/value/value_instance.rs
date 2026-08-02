@@ -73,7 +73,7 @@ impl Clone for InstanceAttrs {
             *v = std::mem::replace(v, Value::NIL).detach_shared_container();
         }
         Self {
-            class_name: self.class_name,
+            class_name: std::sync::atomic::AtomicU32::new(self.class_name().raw()),
             attributes: Arc::new(RwLock::new(map)),
             id: self.id,
             queue_destroy: false,
@@ -94,7 +94,7 @@ impl InstanceAttrs {
         }
         let cell: AttrCell = Arc::new(RwLock::new(attributes));
         Self {
-            class_name,
+            class_name: std::sync::atomic::AtomicU32::new(class_name.raw()),
             attributes: cell,
             id,
             queue_destroy,
@@ -109,12 +109,26 @@ impl InstanceAttrs {
             *counts.entry(id).or_insert(0) += 1;
         }
         Self {
-            class_name,
+            class_name: std::sync::atomic::AtomicU32::new(class_name.raw()),
             attributes: cell,
             id,
             queue_destroy,
             finalized: std::sync::atomic::AtomicBool::new(false),
         }
+    }
+
+    /// The object's current type. Reads the interior-mutable slot that
+    /// [`InstanceAttrs::rebless`] writes.
+    pub(crate) fn class_name(&self) -> Symbol {
+        Symbol::from_raw(self.class_name.load(std::sync::atomic::Ordering::Relaxed))
+    }
+
+    /// Retag this object's type in place. Every alias shares this node, so the
+    /// new type is immediately visible everywhere — that is what makes Raku's
+    /// `does` a mutation of the object rather than of one variable.
+    pub(crate) fn rebless(&self, class_name: Symbol) {
+        self.class_name
+            .store(class_name.raw(), std::sync::atomic::Ordering::Relaxed);
     }
 
     // --- Attribute access API (Phase 3 — encapsulation boundary) ---
@@ -312,7 +326,7 @@ impl InstanceAttrs {
         }
         let _ = PENDING_INSTANCE_DESTROYS.try_with(|pending| {
             pending.borrow_mut().push(PendingInstanceDestroy {
-                class_name: self.class_name,
+                class_name: self.class_name(),
                 attributes: read_attrs(&self.attributes).clone(),
             });
         });

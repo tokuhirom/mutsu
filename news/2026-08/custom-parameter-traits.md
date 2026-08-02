@@ -44,7 +44,7 @@ This clears the parse barrier on the upstream Cro::HTTP router suite:
 `http-router.rakutest` and `http-router-named-urls.t` get much further.
 
 Still missing, and tracked in
-`todo/tickets/parameter-trait-mixin-does-not-persist.md`: the `does` mixin a
+`todo/tickets/parameter-objects-have-no-stable-identity.md`: the `does` mixin a
 trait applies is dropped, because `.signature.params` re-materializes a fresh
 `Parameter` from the `ParamDef` on every access. Cro reads the mixin back when
 generating a route matcher, so `is query` parameters do not yet route.
