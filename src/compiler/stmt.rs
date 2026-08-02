@@ -3484,7 +3484,7 @@ impl Compiler {
                 // parent's post-registration writes. See
                 // surface_stashed_body_free_vars for the mechanism.
                 let analysis_param = vec![param.clone().unwrap_or_else(|| "$_".to_string())];
-                self.surface_stashed_body_free_vars(&analysis_param, body);
+                let analysis_cc_idx = self.surface_stashed_body_free_vars(&analysis_param, body);
                 let param_idx = param
                     .as_ref()
                     .map(|p| self.code.add_constant(Value::str(p.clone())));
@@ -3503,6 +3503,7 @@ impl Compiler {
                 };
                 self.code.emit(OpCode::WheneverScope {
                     body_idx,
+                    analysis_cc_idx,
                     param_idx,
                     target_var_idx,
                 });
