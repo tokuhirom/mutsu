@@ -36,6 +36,10 @@ run_one() {
         > "$WORK/$name.native" 2>&1 )
     ( cd "$WORK" && MUTSU_REAL_TEST=1 timeout 90 "$MUTSU" -I "$ROOT/t/lib" "t/$name" \
         > "$WORK/$name.real" 2>&1 )
+    # A failing file exits non-zero, and a short plan exits 255 -- which xargs
+    # treats as "abort the whole run". The exit status is not the signal here;
+    # the captured output is.
+    return 0
 }
 export -f run_one
 export ROOT WORK MUTSU

@@ -1816,6 +1816,7 @@ impl Interpreter {
             tap: TapState::default(),
             halted: false,
             exit_code: 0,
+            exit_status_locked: false,
             main_hidden_from_usage: std::collections::HashSet::new(),
             explicit_run_main: false,
             nested_mode: false,

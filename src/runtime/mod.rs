@@ -863,6 +863,12 @@ pub struct Interpreter {
     tap: TapState,
     halted: bool,
     exit_code: i64,
+    /// Set while the END phasers run for a program that is already exiting, and
+    /// once any END phaser has itself called `exit`. A further `exit` still
+    /// unwinds but leaves [`Self::exit_code`] alone — rakudo latches the process
+    /// status at the first `exit` (`the-end-is-nigh`), so `exit 42; END { exit 7 }`
+    /// exits 42. See `Interpreter::finish` and `builtin_exit`.
+    exit_status_locked: bool,
     /// Body fingerprints (see [`crate::ast::function_body_fingerprint`]) of MAIN
     /// candidates declared `is hidden-from-USAGE`. Such a candidate is skipped
     /// when generating the usage message (but still participates in dispatch).

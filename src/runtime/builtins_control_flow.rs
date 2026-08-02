@@ -275,6 +275,14 @@ impl Interpreter {
             Some(_) => args.first().unwrap().to_f64() as i64,
             _ => 0,
         };
+        // An `exit` raised while the process is already exiting (an END phaser's
+        // own `exit`) still unwinds, but the status was decided by the first
+        // one — rakudo's `the-end-is-nigh` latch. See `finish`.
+        let code = if self.exit_status_locked {
+            self.exit_code
+        } else {
+            code
+        };
         self.halted = true;
         self.exit_code = code;
         // Signal any sleeping threads that the process should exit.
