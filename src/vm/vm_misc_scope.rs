@@ -199,6 +199,17 @@ impl Interpreter {
         let undo_start = undo_start as usize;
         let post_start = post_start as usize;
         let end = end as usize;
+        // ADR-0018 BlockScope restore: declaration opcodes carry the exact
+        // lexical slot owned by this block. Keep that identity through cleanup
+        // instead of broadcasting a name-keyed env value to every same-named
+        // slot in the frame.
+        let owned_slots: rustc_hash::FxHashSet<usize> = code.ops[pre_start..end]
+            .iter()
+            .filter_map(|op| match op {
+                OpCode::SetLocalDecl { slot, .. } => Some(*slot as usize),
+                _ => None,
+            })
+            .collect();
         let routine_snapshot = self.snapshot_routine_registry();
         let saved_env = self.env().clone();
         // Under shadow slots (default) the block exit uses a targeted Nil-reset of
@@ -478,13 +489,18 @@ impl Interpreter {
             //     which `restored_env` still holds because propagation was skipped
             //     for these names in the loop above.
             for (idx, name) in code.locals.iter().enumerate() {
-                let non_propagating = name == "_"
-                    || name.starts_with('*')
-                    || code
-                        .local_sym(idx)
-                        .is_some_and(|s| block_declared.contains(&s));
+                let is_block_declared = code
+                    .local_sym(idx)
+                    .is_some_and(|s| block_declared.contains(&s));
+                let non_propagating = name == "_" || name.starts_with('*') || is_block_declared;
                 if non_propagating {
-                    self.locals[idx] = restored_env.get(name).cloned().unwrap_or(Value::NIL);
+                    if is_block_declared {
+                        if owned_slots.contains(&idx) {
+                            self.locals[idx] = Value::NIL;
+                        }
+                    } else {
+                        self.locals[idx] = restored_env.get(name).cloned().unwrap_or(Value::NIL);
+                    }
                 }
             }
         }
