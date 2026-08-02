@@ -7,7 +7,7 @@ use super::{
     class_decl_body, method_decl_body, method_decl_body_my, module_decl, package_decl_my,
     parse_statement_modifier, role_decl, sub_decl_body,
 };
-use crate::ast::Stmt;
+use crate::ast::{Expr, Stmt};
 use crate::symbol::Symbol;
 use crate::value::Value;
 
@@ -277,6 +277,25 @@ pub(super) fn try_keyword_dispatch(
             return parse_statement_modifier(rest, stmt).map(Some);
         }
         return Ok(Some((rest, stmt)));
+    }
+
+    // my/our <declarator> Name { ... } for a declarator registered through a
+    // `use`d module's EXPORTHOW::DECLARE block (e.g. OO::Monitors' `monitor`).
+    // Checked after every built-in keyword above, so a module cannot shadow
+    // `class`/`role`/`subset`/.... Mirrors the unscoped `class::declare_decl`.
+    for kw in super::super::simple::declare_keyword_names() {
+        let Some(r) = keyword(&kw, rest) else {
+            continue;
+        };
+        let (r, _) = ws1(r)?;
+        let (r, mut stmt) = class_decl_body(r, !is_our)?;
+        if let Stmt::ClassDecl { custom_traits, .. } = &mut stmt {
+            custom_traits.push((
+                "__mutsu_declare_how".to_string(),
+                Some(Expr::Literal(Value::str(kw))),
+            ));
+        }
+        return Ok(Some((r, stmt)));
     }
 
     Ok(None)
