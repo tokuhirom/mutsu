@@ -3158,6 +3158,33 @@ impl CompiledCode {
         }
     }
 
+    /// Bare routine names referenced by this body or a nested closure body.
+    ///
+    /// Closure creation uses this to pin an existing lexical `&name` binding.
+    /// In particular, a `use` inside `EVAL` installs exported routines in the
+    /// EVAL scope, and a returned closure must retain only the imports its
+    /// bytecode can actually call after that scope is restored.
+    pub(crate) fn bare_callee_names(&self) -> std::collections::HashSet<Symbol> {
+        let mut names = std::collections::HashSet::new();
+        self.collect_bare_callee_names(&mut names);
+        names
+    }
+
+    fn collect_bare_callee_names(&self, names: &mut std::collections::HashSet<Symbol>) {
+        for op in &self.ops {
+            if let Some(idx) = Self::op_callee_name_const_idx(op)
+                && let Some(ValueView::Str(name)) =
+                    self.constants.get(idx as usize).map(Value::view)
+                && !name.contains("::")
+            {
+                names.insert(Symbol::intern(&name));
+            }
+        }
+        for nested in &self.closure_compiled_codes {
+            nested.collect_bare_callee_names(names);
+        }
+    }
+
     /// The `closure_compiled_codes` index an op embeds, for the ops that create a
     /// closure value (and so snapshot the creating frame's env at that point).
     fn op_closure_code_idx(op: &OpCode) -> Option<u32> {
