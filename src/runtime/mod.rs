@@ -1097,6 +1097,17 @@ pub struct Interpreter {
     /// the AST, and that copy would otherwise lose the mark. Consumed (taken) on
     /// entry, so a nested block compiled from inside the body does not inherit it.
     pending_supply_block_body: bool,
+    /// Names the block `eval_block_value_inner` most recently FINISHED running
+    /// declared with its own `my` (excluding those it also uses as free
+    /// variables). Written just before that function returns, so after a call
+    /// the value belongs to the outermost block that just completed — nested
+    /// blocks run and publish their own set first, and are overwritten.
+    ///
+    /// `call_sub_value`'s exit merge reads it to keep such names out of the
+    /// caller: a body compiled on the fly from AST (a `whenever` body, a
+    /// `supply` block body) has no `CompiledCode` on its `SubData`, so the
+    /// compile-time `my_declared_sym` is otherwise unreachable from there.
+    last_block_my_declared: Vec<Symbol>,
     /// PredictiveIterator backing a `Seq.new(iterator)`, keyed by the Seq's
     /// Arc pointer (`seq_id`). Kept off the scoped `env` so the association
     /// survives sub/block returns between Seq creation and `.tail`/`.Numeric`
