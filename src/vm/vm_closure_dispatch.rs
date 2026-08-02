@@ -366,6 +366,7 @@ impl Interpreter {
             .free_var_syms
             .iter()
             .filter_map(|k| {
+                let persisted = self.get_closure_captured_state(data.id, *k);
                 // Per-instance frozen state only exists for free vars the body
                 // (or a nested closure) actually WRITES. A read-only free var
                 // must always resolve to the live caller binding — e.g. a
@@ -373,7 +374,10 @@ impl Interpreter {
                 // rewritten by the mainline between calls (`my Str $e = "Yes";
                 // ... $e = "No"`) would otherwise be clobbered by the value
                 // persisted at the end of the previous call.
-                if !cc.free_var_writes.contains(k) && !cc.free_var_container_writes.contains(k) {
+                if !cc.free_var_writes.contains(k)
+                    && !cc.free_var_container_writes.contains(k)
+                    && persisted.is_none()
+                {
                     return None;
                 }
                 // Skip box-on-capture cells: a ContainerRef-captured lexical is a
@@ -391,8 +395,7 @@ impl Interpreter {
                 if k.with_str(crate::env::is_dynamic_var_name) {
                     return None;
                 }
-                self.get_closure_captured_state(data.id, *k)
-                    .map(|val| (*k, val.clone()))
+                persisted.map(|val| (*k, val.clone()))
             })
             .collect();
         for (k, val) in cap_overrides {
@@ -858,6 +861,46 @@ impl Interpreter {
                     let __v = self.locals[i].clone();
                     self.env_mut().insert(local_name.clone(), __v);
                 }
+            }
+        }
+
+        // An rw-argument call can update a captured lexical only by its source
+        // name. Argument evaluation installs the dereferenced value in this
+        // closure's overlay, hiding the ContainerRef stored in `data.env`; the
+        // call-site drain has no local slot here from which to recover the cell.
+        // Rejoin the overlay to the captured cell before persisting/merging the
+        // closure state so both this closure's next invocation and its creator
+        // observe the writeback.
+        let pending_sources: rustc_hash::FxHashSet<Symbol> = self
+            .pending_rw_writeback_sources
+            .iter()
+            .chain(self.pending_caller_var_writeback.iter())
+            .map(|name| Symbol::intern(name))
+            .collect();
+        for source in pending_sources {
+            // Dynamic variables belong to the live dynamic frame, never to the
+            // closure's lexical capture/state (same rule as cap_overrides and
+            // the normal persistence loop below).
+            if source.with_str(crate::env::is_dynamic_var_name) {
+                continue;
+            }
+            let Some(updated) = self.env().get_sym(source).cloned() else {
+                continue;
+            };
+            let Some(captured) = data.env.get_sym(source) else {
+                continue;
+            };
+            if let ValueView::ContainerRef(cell) = captured.view() {
+                let cell = cell.clone();
+                if !matches!(updated.view(), ValueView::ContainerRef(ref incoming) if crate::gc::Gc::ptr_eq(&cell, incoming))
+                {
+                    let updated = updated.into_deref();
+                    Value::store_through_cell(&cell, &updated);
+                }
+                self.env_mut()
+                    .insert_sym(source, Value::container_ref(cell));
+            } else {
+                self.set_closure_captured_state(data.id, source, updated);
             }
         }
 

@@ -9,7 +9,7 @@ use Test;
 # clear. Triggered here via the hyper function-op, which binds the left lvalue
 # by reference through a synthetic source variable.
 
-plan 6;
+plan 7;
 
 sub keep (\a, \b) { "kept" }     # writable param, does NOT mutate
 sub bump (\a, \b) { a = "bumped" }  # writable param, mutates
@@ -36,4 +36,16 @@ sub bump (\a, \b) { a = "bumped" }  # writable param, mutates
     $y >>[&m]<< 0;
     is $x, "bumped", "first lvalue written back";
     is $y, "bumped", "second lvalue written back";
+}
+
+# The call-site writeback must update through the closure's captured cell. If
+# it replaces the closure frame's local slot with a plain value, the next call
+# starts from the creation-time capture again and writes 1 a second time.
+{
+    my $i = 0;
+    sub increment($out is rw) { $out++ }
+    my $thunk = { increment($i) };
+    $thunk();
+    $thunk();
+    is $i, 2, "rw argument writeback preserves a closure's captured cell";
 }
