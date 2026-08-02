@@ -15,16 +15,14 @@ use crate::value::ValueView;
 /// no `.rakumod` is ever loaded and no routine is ever registered under these
 /// names).
 ///
-/// The single copy: the parser registers exactly this set as `Test`'s exports,
-/// `system_eval_string` reports it as EVAL-visible, and `exec_call` uses it to
-/// decide when an *imported* routine of the same name must beat the native
-/// provider. Keeping one list is what makes that last decision sound — a name
-/// in one copy and not another would be dispatched inconsistently.
+/// The single copy: the parser registers exactly this set as `Test`'s exports
+/// and `system_eval_string` reports it as EVAL-visible.
 ///
 /// This is deliberately narrower than [`Interpreter::is_test_function_name`],
 /// which also covers the `Test::Util` / `Test::Tap` helpers. Those come from
-/// modules that really are loaded from source, so overriding them natively is a
-/// separate provider with its own retirement path.
+/// modules that really are loaded from source; `user_test_decl_beats_native`
+/// therefore consults the *wider* list, so a declaration found in one of those
+/// modules beats the native provider.
 pub(crate) const TEST_MODULE_EXPORTS: &[&str] = &[
     "ok",
     "nok",
@@ -59,11 +57,6 @@ pub(crate) const TEST_MODULE_EXPORTS: &[&str] = &[
     "force_todo",
     "force-todo",
 ];
-
-/// Whether `name` is one of the `Test` module's own exports.
-pub(crate) fn is_test_module_export(name: &str) -> bool {
-    TEST_MODULE_EXPORTS.contains(&name)
-}
 
 impl Interpreter {
     pub(crate) fn sync_eval_definition_state(&mut self, nested: &Interpreter) {

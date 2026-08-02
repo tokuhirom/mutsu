@@ -911,8 +911,16 @@ impl Interpreter {
     /// signature alone, so the name needs the same shape-based disambiguation
     /// the three `skip` dispatch sites already apply
     /// (`t/skip-user-multi-shadows-test.t`).
+    ///
+    /// The name set is the *wide* one (`is_test_function_name`), not just the
+    /// `Test` module's own exports: roast's `Test::Util` / `Test::Tap` helpers
+    /// (`is_run`, `doesn't-hang`, `tap-ok`, …) really are loaded from source, so
+    /// the routine the file imported must win over the native provider. Keeping
+    /// the native handlers only as the fallback for a file that calls a helper
+    /// *without* loading its module is what retires those two rung-3 providers
+    /// (`todo/tickets/retire-native-test-util-overrides.md`).
     pub(crate) fn user_test_decl_beats_native(&mut self, name: &str, args: &[Value]) -> bool {
-        if !crate::runtime::is_test_module_export(name) {
+        if !Self::is_test_function_name(name) {
             return false;
         }
         if name == "skip" && !Self::skip_call_is_list_skip(args) {

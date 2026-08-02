@@ -13,8 +13,10 @@ warns-like 'warn "testwarning"', /testwarning/, 'matches full warning text';
 # Warn with partial regex
 warns-like 'warn "something-went-wrong"', /wrong/, 'partial regex match';
 
-# Multiple warns - stderr captures all
-warns-like 'warn "first"; warn "second"', /first/, 'first warning captured';
+# Multiple warns - `warns-like` resumes each one and keeps the LAST message
+# (its CONTROL handler overwrites `$message` per warning), so asserting on the
+# first one fails under rakudo too.
+warns-like 'warn "first"; warn "second"', /second/, 'last warning captured';
 
 # Warn inside a block
 warns-like 'for 1..1 { warn "loopwarn" }', /loopwarn/, 'warn inside loop';

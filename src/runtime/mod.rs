@@ -392,7 +392,7 @@ mod system_eval_vars;
 mod system_introspect;
 mod tap_state;
 mod test_functions;
-pub(crate) use test_functions::{TEST_MODULE_EXPORTS, is_test_module_export};
+pub(crate) use test_functions::TEST_MODULE_EXPORTS;
 pub(crate) mod thread_compat;
 pub(crate) mod types;
 mod undeclared_routines;
@@ -1828,6 +1828,21 @@ pub struct Interpreter {
     /// must not consume it; (2) the value is read from env at drain time, same as
     /// the rw list. Drained at the same call sites, with retain-on-miss semantics.
     pub(crate) pending_caller_var_writeback: Vec<String>,
+    /// Bumped every time a resume-safe `CONTROL` handler is run INLINE at a warn
+    /// raise site (`try_resume_safe_control_inline`) and writes one of the
+    /// installing frame's lexicals into `env`.
+    ///
+    /// That write is an outward mutation made *without* a call opcode, which is
+    /// exactly the invariant a leaf closure's return path relies on when it
+    /// skips the caller-writeback env scan (`needs_caller_writeback` in
+    /// `call_compiled_closure_with_topic`: "no calls were made, so nothing the
+    /// caller cares about can have changed"). A closure like
+    /// `warns-like`'s `{ 'x' x Int }` makes no calls at all — the warning comes
+    /// straight out of an arithmetic opcode — so without this counter the
+    /// handler's `$did-warn = True` is discarded with the frame's env
+    /// (`roast/S03-operators/repeat.t` test 56). Frames snapshot it on entry and
+    /// force the scan when it moved.
+    pub(crate) inline_control_env_writes: u64,
     pub(crate) local_bind_pairs: Vec<(usize, usize)>,
     pub(crate) otf_compile_cache: HashMap<u64, CompiledFunction>,
     /// Compiled bodies of subs defined in `use`d modules, captured at module-load

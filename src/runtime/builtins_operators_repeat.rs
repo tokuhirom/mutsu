@@ -220,12 +220,8 @@ impl Interpreter {
                 "x" => {
                     if let ValueView::Package(name) = rhs.view()
                         && name == "Int"
-                        && !self.warning_suppressed()
                     {
-                        self.write_warn_to_stderr(&format!(
-                            "Use of uninitialized value of type {} in numeric context",
-                            name
-                        ));
+                        self.warn_uninitialized_repeat_count(&name.resolve())?;
                     }
                     if matches!(rhs.view(), ValueView::Whatever) {
                         acc = self.make_x_whatevercode(acc);
@@ -253,12 +249,8 @@ impl Interpreter {
                     const LAZY_CACHE_CALLABLE: usize = 256;
                     if let ValueView::Package(name) = rhs.view()
                         && name == "Int"
-                        && !self.warning_suppressed()
                     {
-                        self.write_warn_to_stderr(&format!(
-                            "Use of uninitialized value of type {} in numeric context",
-                            name
-                        ));
+                        self.warn_uninitialized_repeat_count(&name.resolve())?;
                     }
                     let is_callable = matches!(
                         acc.view(),

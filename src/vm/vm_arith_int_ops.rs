@@ -5,6 +5,25 @@ use std::sync::Arc;
 use unicode_normalization::UnicodeNormalization;
 
 impl Interpreter {
+    /// `"x" x Int` / `1 xx Int` warn that the repeat count is an uninitialized
+    /// type object. The warning is resumable, so it has to reach a `CONTROL {
+    /// when CX::Warn { … .resume } }` handler up the stack instead of going
+    /// straight to stderr — that is what `Test::Util`'s `warns-like` installs.
+    /// A raise from a plain opcode has no call boundary of its own, so it also
+    /// has to run the caller-writeback drain a call would have run; otherwise
+    /// the handler's `$did-warn = True` never reaches the installing frame's
+    /// slots (`roast/S03-operators/repeat.t` test 56).
+    pub(crate) fn warn_uninitialized_repeat_count(
+        &mut self,
+        type_name: &str,
+    ) -> Result<(), RuntimeError> {
+        let caller_code = self.current_code;
+        let message = format!("Use of uninitialized value of type {type_name} in numeric context");
+        self.raise_resumable_warning(&message, Value::NIL)?;
+        self.reconcile_caller_after_internal_dispatch(caller_code);
+        Ok(())
+    }
+
     fn is_xx_reeval_thunk(data: &crate::value::SubData) -> bool {
         if !data.params.is_empty()
             || !data.param_defs.is_empty()
@@ -363,12 +382,8 @@ impl Interpreter {
         // Warn on uninitialized type object used as repeat count
         if let ValueView::Package(name) = right.view()
             && name == "Int"
-            && !self.warning_suppressed()
         {
-            self.write_warn_to_stderr(&format!(
-                "Use of uninitialized value of type {} in numeric context",
-                name
-            ));
+            self.warn_uninitialized_repeat_count(&name.resolve())?;
         }
 
         // Whatever on RHS produces a WhateverCode closure
@@ -450,12 +465,8 @@ impl Interpreter {
         // Warn on uninitialized type object used as repeat count
         if let ValueView::Package(name) = right.view()
             && name == "Int"
-            && !self.warning_suppressed()
         {
-            self.write_warn_to_stderr(&format!(
-                "Use of uninitialized value of type {} in numeric context",
-                name
-            ));
+            self.warn_uninitialized_repeat_count(&name.resolve())?;
         }
 
         // A finite `xx` count is eager in Raku (materializes all N elements,
