@@ -40,6 +40,7 @@ check-flaky-list:
 
 roast:
 	@mkdir -p tmp
+	@rm -f temp-file-RT-126006-test
 	(cargo build --release && MUTSU_BIN=$(MUTSU_BIN) prove -j$(PROVE_JOBS) -e 'scripts/run-roast-test.sh' $(shell cat roast-whitelist.txt)) 2>&1 | tee tmp/make-roast.log
 
 check-roast-whitelist:

@@ -403,7 +403,9 @@ The prose list here is *context* (why each historical flake happened, and the de
 - `roast/S02-types/hash.t`, `roast/S09-typed-arrays/hashes.t` — the "CI-load-sensitive timeout" label is stale: both complete in ~0.3s on a release build now. A failure here is real — see triage below.
 - `t/io-socket-recv-limit.t` — the "fails under `-j4` load" label was wrong: it was a deterministic **port collision**. `IO::Socket::Async.listen(host, 0)` did not let the OS assign an ephemeral port; it substituted one from a process-local counter seeded identically in every process, so concurrent mutsu processes all asked for the same port and whichever bound second died. On top of that, this file and `t/io-socket-async-bin.t` both hardcoded 19995 (serial: 5/5 PASS, `-j2`: 5/5 FAIL). Fixed in #4512 — port 0 now reaches `bind()`, and the test asks the tap for the port it got. **Never hardcode a port in a new test**: listen on 0 and read `.socket-port`.
 
-Also: before a local `make roast`, `rm -f temp-file-RT-126006-test` — a stale temp file left by an interrupted `roast/S32-io/spurt.t` makes that test abort with "cannot run test while file ... exists".
+`make roast` removes `temp-file-RT-126006-test` before starting: a stale copy
+left by an interrupted `roast/S32-io/spurt.t` would otherwise make that test
+abort with "cannot run test while file ... exists".
 
 ### Triaging a suspected-flaky failure — don't mislabel a real bug
 
