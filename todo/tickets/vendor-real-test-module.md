@@ -73,9 +73,12 @@ of diffs at once. Sequence it deliberately:
    ops in, `plan`/`ok`/`is`/`isnt`/`is-deeply`/`subtest` from the unmodified
    upstream file all produce correct TAP.
 2. Vendor `Test.rakumod` verbatim to `modules/Rakudo-Core/lib/Test.rakumod` but
-   **do not** remove the interception yet; exercise it under a temporary alias
-   against a representative sample of `t/` and roast. **IN PROGRESS** — the
-   alias exercise has been run both by hand (see "Where the alias stands" below)
+   **do not** remove the interception yet; exercise it against a representative
+   sample of `t/` and roast. **IN PROGRESS** — the file is now vendored (md5
+   `f34dec45d52ad099c37f42fdbd93e277`, `news/2026-08/test-module-vendored-behind-a-switch.md`)
+   and driven by **`MUTSU_REAL_TEST=1`**, which replaced the throwaway
+   `unit module Test2;` rename; the sweep is `scripts/test-module-sweep.sh`.
+   The exercise has been run both by hand (see "Where the alias stands" below)
    and as a bulk sweep over a 1-in-9 sample of `t/` (see "Bulk sweep" below).
    Seven general interpreter bugs found and fixed; **every assertion of the
    unmodified upstream module now runs**, `cmp-ok` included
@@ -282,7 +285,45 @@ Open systemic causes, in the order worth taking them:
    `X::Undeclared::Symbols ~~ X::Undeclared` and friends. Blocks
    `block-lexical-scope.t`.
 
-Re-run `tmp/sweep-full.sh` to re-measure after each.
+Re-run `scripts/test-module-sweep.sh` to re-measure after each.
+
+### Re-measured under the real switch, not the alias (2026-08-02)
+
+With `news/2026-08/eval-context-argument.md` and the vendoring in
+(`news/2026-08/test-module-vendored-behind-a-switch.md`):
+
+| | at the start of 2026-08-01 | now |
+| --- | --- | --- |
+| pass under both | 2617 | **2693 / 2732** |
+| regress under the real module | 86 | **26** |
+| passes only under the real module | 1 | 1 |
+| fail under both (pre-existing) | 13 | 12 |
+
+The 26 split **6 that `raku` also fails** — `listop-arg-loose-logical-precedence.t`,
+`use-version-short-adverb.t`, `begin-phaser-begintime.t`,
+`method-private-errors.t`, `vm-panic-boundary.t`,
+`placeholder-named-in-method-do.t`, all in
+`todo/tickets/local-tests-rely-on-a-lenient-native-is.md`'s individual-triage
+list — and **20 real mutsu gaps**:
+
+```
+bigrat-sort-compare.t      block-lexical-scope.t     emit-done-controlflow.t
+error-reporting-quality.t  group-of.t                io-cathandle-lazy.t
+is-lazy-io-lines.t         leave-in-if-branch.t      multi-where-otf-dispatch.t
+proxy-list-transparency.t  subscript-adverbs.t       throws-like-gather-sink.t
+undeclared-when-type.t     whatever-code-fixes.t     handles-proto-dispatch-mut-invocant.t
+gate-b-callee-name-collision-and-deref-capture.t     module-file-var-and-callframe.t
+qualified-call-does-not-alias-builtin.t              test-assertion-line-number.t
+throws-like-outer-var-writeback.t
+```
+
+Several of the last group are mutsu's *own* pins, written against the native
+provider's wording or its `throws-like` shape; those are files to re-point at
+the real module rather than interpreter gaps. Triage each before assuming a bug.
+
+Exit status was measured for the first time and is already faithful — a failing
+assertion exits 1, a short plan exits 255 — which is what `prove` reads, so
+step 3 does not need work there.
 
 ## Blocker found while doing step 1: the native provider shadows an import — FIXED
 

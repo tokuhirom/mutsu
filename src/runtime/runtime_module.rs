@@ -1,6 +1,24 @@
 use super::*;
 
 impl Interpreter {
+    /// Whether `use Test` should load the vendored upstream `Test.rakumod`
+    /// (`modules/Rakudo-Core/lib/Test.rakumod`) instead of being recognized as a
+    /// no-op that leaves mutsu's native TAP provider in charge.
+    ///
+    /// Step 2 of `todo/tickets/vendor-real-test-module.md` calls for exercising
+    /// the real module *without* removing the interception, because every `t/`
+    /// file and every roast file stands on `Test`: swapping the implementation
+    /// swaps the foundation of the whole suite, and a subtle difference in
+    /// `is`/`is-deeply`/`todo`/`subtest` shows up as thousands of diffs at once.
+    /// Until step 3 flips it for good, `MUTSU_REAL_TEST=1` is how the real module
+    /// is driven — the sweep tooling uses it, and it replaces the throwaway
+    /// `unit module Test2;` rename the exercise ran under before.
+    pub(crate) fn real_test_module_enabled() -> bool {
+        std::env::var("MUTSU_REAL_TEST")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false)
+    }
+
     /// Save current function/class keys for lexical import scoping.
     pub(crate) fn push_import_scope(&mut self) {
         let func_keys: HashSet<Symbol> = self.registry().functions.keys().copied().collect();
@@ -203,7 +221,7 @@ impl Interpreter {
         if module == "NativeCall" {
             self.register_nativecall_exports();
         }
-        let result = if module == "Test"
+        let result = if (module == "Test" && !Self::real_test_module_enabled())
             || matches!(
                 module,
                 "strict"

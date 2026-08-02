@@ -321,8 +321,7 @@ impl Interpreter {
         // is a separate provider retirement that needs `Proc::Async` output taps
         // and `IO::Path ~~ IO::Path` fixed first — see
         // todo/tickets/retire-native-test-util-overrides.md.
-        let user_declared = crate::runtime::is_test_module_export(name)
-            && self.user_function_matches_call(name, &args);
+        let user_declared = self.user_test_decl_beats_native(name, &args);
         if !user_declared && let Some(result) = self.call_test_function(name, &args)? {
             return Ok(result);
         }

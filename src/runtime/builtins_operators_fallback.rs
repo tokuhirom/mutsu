@@ -227,8 +227,21 @@ impl Interpreter {
                 )));
             }
         }
-        if (self.loaded_modules.contains("Test")
-            || self.loaded_modules.iter().any(|m| m.starts_with("Test::")))
+        // Same rule as the `exec_call` guard (`calls.rs`): a module that exports
+        // its own `ok`/`is`/`plan`/... beats mutsu's native TAP provider, and the
+        // decision is made on whether a *declaration* exists, not on whether the
+        // name is a builtin. This is the second dispatch path into the native
+        // provider, and it was missing the guard — so a call that reached the
+        // fallback here (a listop whose name did not resolve to a compiled
+        // function at the call site) was answered natively even though the real
+        // `Test.rakumod` had exported one. The two implementations then kept
+        // separate counters: under `MUTSU_REAL_TEST=1` the native `plan` recorded
+        // a plan nobody ran against, and `finish()` reported "You planned 14
+        // test, but ran 0" on a file whose assertions had all passed.
+        let user_declared = self.user_test_decl_beats_native(name, args);
+        if !user_declared
+            && (self.loaded_modules.contains("Test")
+                || self.loaded_modules.iter().any(|m| m.starts_with("Test::")))
             && let Some(result) = self.call_test_function(name, args)?
         {
             return Ok(result);
