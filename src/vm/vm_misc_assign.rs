@@ -560,9 +560,22 @@ impl Interpreter {
     /// taken from the chunk's pre-interned constant symbols: no `String`, no
     /// hashing.
     pub(super) fn exec_wrap_var_ref_op(&mut self, code: &CompiledCode, name_idx: u32) {
-        let value = self.stack.pop().unwrap_or(Value::NIL);
-        self.stack
-            .push(Value::varref(code.const_sym(name_idx), value, None));
+        let mut value = self.stack.pop().unwrap_or(Value::NIL);
+        // GetGlobal intentionally dereferences a captured cell for ordinary
+        // value reads. WrapVarRef is different: it denotes the variable's
+        // container (`key => $outer`, `Pair.new(..., $outer)`, rw args), so keep
+        // the raw captured cell when one exists in the lexical environment.
+        // This is the no-local-slot half of capture_var_cell: an outer lexical
+        // cannot be found in the callee's `code.locals`, but its creator slot and
+        // this env entry share the same ContainerRef.
+        let sym = code.const_sym(name_idx);
+        if code.container_ref_capture_syms.contains(&sym)
+            && let Some(captured) = self.env().get_sym(sym)
+            && captured.is_container_ref()
+        {
+            value = captured.clone();
+        }
+        self.stack.push(Value::varref(sym, value, None));
     }
 
     /// Validate and coerce a value for native integer type assignment.
