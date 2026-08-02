@@ -1752,7 +1752,6 @@ impl Interpreter {
         // term-symbol block and `:=` alias chain below stay unconditional.
         let skip_env_write = !is_bind
             && !is_constant
-            && !code.captures_env_by_name
             && !code.needs_env_sync.get(idx).copied().unwrap_or(true)
             && !crate::opcode::reflective_name_access_possible()
             && Self::term_symbol_from_name(name).is_none();
