@@ -2762,6 +2762,47 @@ impl Interpreter {
                 store.insert(bare, v);
             }
         }
+        // A type declared inside this class body (`class Outer { my class Inner
+        // {} }`) binds its SHORT name in the env so the rest of the body can name
+        // it. That binding must not outlive the body: the class body is the name's
+        // scope, and leaving it behind clobbers a same-named file-scope class for
+        // the rest of the program, and out-lives any later inner-scope declaration
+        // of the same name (a `my enum <... Header ...>` in a supply block could
+        // not shadow `Cro::HTTP::Header`'s `my grammar Header`). Methods do not
+        // need the binding — `resolve_suppressed_type` resolves a nested short
+        // name through the owner package chain — so restore each one to whatever
+        // the enclosing scope had.
+        let nested_short_names: Vec<String> = self
+            .env
+            .iter()
+            .filter_map(|(k, v)| {
+                let bare = k.resolve();
+                if bare.contains("::") {
+                    return None;
+                }
+                let ValueView::Package(p) = v.view() else {
+                    return None;
+                };
+                let target = p.resolve();
+                let prefix = format!("{name}::{bare}");
+                // The storage name is either exactly `Outer::Inner` or the
+                // mangled `Outer::Inner\0<decl-id>` form a lexical class gets
+                // when it collides with an out-of-scope namesake.
+                (target == prefix || target.starts_with(&format!("{prefix}\u{0}")))
+                    .then(|| bare.to_string())
+            })
+            .collect();
+        for bare in nested_short_names {
+            match saved_env.get(&bare) {
+                Some(previous) => {
+                    let previous = previous.clone();
+                    self.env.insert(bare, previous);
+                }
+                None => {
+                    self.env.remove(&bare);
+                }
+            }
+        }
         self.set_current_package(saved_package);
         if let Err(err) = self.resolve_class_stub_requirements(name, &mut class_def) {
             restore_previous_state(self);

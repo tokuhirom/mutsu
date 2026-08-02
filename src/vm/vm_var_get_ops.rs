@@ -69,24 +69,6 @@ impl Interpreter {
             // unrelated `Cro::HTTP::Router::Header` role registration cleared the
             // suppression).
             Value::package(Symbol::intern(&qualified))
-        } else if self.is_name_suppressed(name)
-            // A LOCAL declaration wins over an unrelated module's suppressed
-            // nested type of the same short name: `my enum E <A Header B>`
-            // must resolve `Header` to the enum value even when some loaded
-            // module contains a lexical `my grammar Header` (Cro::HTTP::Header
-            // does; its consumer RequestParser declares that exact enum).
-            // A Package value does NOT count as such a declaration — the
-            // suppressed type itself is seeded into env as a Package, and
-            // treating it as local would defeat export-tag hiding
-            // (t/class-is-export-tag.t).
-            && !self.env().get(name).is_some_and(|v| {
-                !v.is_nil() && !matches!(v.view(), ValueView::Package(_))
-            })
-        {
-            return Err(RuntimeError::new(format!(
-                "X::Undeclared::Symbols: Undeclared name:\n    {} used at line 1",
-                name,
-            )));
         } else if let Some((pkg, sym)) = name.rsplit_once("::")
             && let Some(stripped_sym) = sym.strip_prefix('&')
         {
@@ -372,8 +354,12 @@ impl Interpreter {
                     Value::package(Symbol::intern(name))
                 }
             }
-        } else if name.chars().count() == 1 {
-            // Single unicode character — check for vulgar fractions etc.
+        } else if name.chars().count() == 1 && !self.is_name_suppressed(name) {
+            // Single unicode character — check for vulgar fractions etc. A
+            // suppressed name is excluded so a one-letter out-of-scope lexical
+            // class (`{ my class B { } }; B.new`) reaches the undeclared-name
+            // error below instead of degrading to the bareword string "B".
+            // Its `our`-variable case is covered by the shared branch further on.
             let ch = name.chars().next().unwrap();
             if let Some((n, d)) = crate::builtins::unicode::unicode_rat_value(ch) {
                 Value::rat_raw(n, d)
@@ -413,6 +399,22 @@ impl Interpreter {
             // (a `require` inside a method); `module_scope_lexicals` keeps it attached
             // to the module instead. Last resort, after every live-env route.
             module_val
+        } else if self.is_name_suppressed(name) {
+            // Nothing in scope resolved the name and it is the short name of a
+            // type private to some class body — raku reports that as undeclared
+            // rather than degrading it to a bareword string.
+            //
+            // This check is deliberately LAST. Suppression means "this short name
+            // is not visible as a *type* out here", not "poison the name for every
+            // kind of symbol": a later declaration in an inner scope — an enum
+            // member, a sub, a constant — must still win. Checking it early made
+            // `my enum Expecting <StatusLine Header Body>` unusable in any program
+            // that had loaded `Cro::HTTP::Header` (whose body declares
+            // `my grammar Header`).
+            return Err(RuntimeError::new(format!(
+                "X::Undeclared::Symbols: Undeclared name:\n    {} used at line 1",
+                name,
+            )));
         } else {
             Value::str(name.to_string())
         };

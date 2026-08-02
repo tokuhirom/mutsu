@@ -158,6 +158,16 @@ impl Interpreter {
         }
     }
 
+    /// The names the innermost lexical class scope has claimed so far. Block exit
+    /// consults this to keep a `my class` binding from propagating out with the
+    /// general "a Package declared in a block stays visible" rule.
+    pub(crate) fn lexical_class_scope_names(&self) -> &[String] {
+        self.lexical_class_scopes
+            .last()
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
     /// Register a class name as lexically scoped in the current block.
     pub(crate) fn register_lexical_class(&mut self, name: String) {
         if let Some(scope) = self.lexical_class_scopes.last_mut() {

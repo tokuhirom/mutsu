@@ -364,6 +364,11 @@ impl Interpreter {
             self.update_end_phaser_envs(end_phaser_count_before, &current, &block_declared);
         }
         let current_env = self.env().clone();
+        // A `my class` is lexical: its bare binding dies with the block, so it is
+        // exempt from the "a Package declared in a block stays visible" rule
+        // below. Without this the binding outlived the block and `{ my class B
+        // { } }; B.new` resolved instead of reporting an undeclared name.
+        let lexical_class_names: Vec<String> = self.lexical_class_scope_names().to_vec();
         let mut restored_env = saved_env.clone();
         for (k, v) in current_env {
             // Package-qualified names (e.g. Test1::ns, Foo::Bar) are package-global
@@ -389,6 +394,7 @@ impl Interpreter {
             if matches!(v.view(), ValueView::Package(_))
                 && !saved_env.contains_key_sym(k)
                 && k.with_str(|s| s.chars().next().is_some_and(|c| c.is_ascii_uppercase()))
+                && !k.with_str(|s| lexical_class_names.iter().any(|n| n == s))
             {
                 restored_env.insert_sym(k, v);
                 continue;
