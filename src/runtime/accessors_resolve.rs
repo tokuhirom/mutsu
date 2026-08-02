@@ -144,7 +144,7 @@ impl Interpreter {
     /// Build a first-class `Sub` value from a resolved `FunctionDef`, capturing
     /// the current env so the callable outlives its defining scope. Shared by the
     /// operator and ordinary code-var resolution paths.
-    fn sub_value_from_function_def(&self, def: crate::runtime::FunctionDef) -> Value {
+    pub(crate) fn sub_value_from_function_def(&self, def: crate::runtime::FunctionDef) -> Value {
         let mut captured_env = self.env.clone();
         if let Some(ref return_type) = def.return_type {
             captured_env.insert(

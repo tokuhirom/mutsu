@@ -38,7 +38,7 @@ impl Interpreter {
             )
     }
 
-    pub(super) fn resolve_function(&self, name: &str) -> Option<Arc<FunctionDef>> {
+    pub(crate) fn resolve_function(&self, name: &str) -> Option<Arc<FunctionDef>> {
         if name.contains("::") {
             // Try direct lookup first
             if let Some(def) = self

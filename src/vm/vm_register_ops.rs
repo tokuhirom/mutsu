@@ -501,6 +501,7 @@ impl Interpreter {
             // Attribute-twigil keys are per-frame materializations of `self`'s
             // attributes — never snapshot them (see the filtered branch below).
             flat.retain(|k, _| !k.with_str(Self::is_attr_twigil_env_key));
+            self.capture_bare_callees(cc, &mut flat);
             self.materialize_frame_self_into_capture(code, &mut flat);
             return flat;
         }
@@ -547,8 +548,55 @@ impl Interpreter {
                 env.insert_sym(*sym, val.clone());
             }
         }
+        // A bare call records only its sigilless callee in bytecode, so it is
+        // not normally part of `free_var_syms`. Preserve an existing lexical
+        // code binding for each callee the closure (or a nested closure it may
+        // create later) actually references. This is the escape gate for an
+        // imported sub installed by `use` inside EVAL: PopImportScope may remove
+        // the registry alias, while the escaping closure still owns `&name`.
+        self.capture_bare_callees(cc, &mut env);
         self.materialize_frame_self_into_capture(code, &mut env);
         env
+    }
+
+    fn capture_bare_callees(&self, cc: &CompiledCode, env: &mut Env) {
+        // Import aliases only need this escape gate for re-entrant source EVAL:
+        // ordinary module/package execution retains its lexical registry state
+        // through the existing module-scope machinery.
+        if self.env().get("__mutsu_in_eval").is_none() {
+            return;
+        }
+        for name in cc.bare_callee_names() {
+            let resolved_name = name.resolve();
+            if self.has_proto(&resolved_name) || self.has_multi_candidates(&resolved_name) {
+                continue;
+            }
+            let Some(def) = self
+                .resolve_function(&resolved_name)
+                .map(|def| (*def).clone())
+            else {
+                continue;
+            };
+            // Same-package routines continue to use normal compiled/registry
+            // dispatch. A different defining package means this bare name is a
+            // lexical import alias; pinning just those aliases avoids changing
+            // ordinary closure dispatch throughout the program.
+            if def
+                .package
+                .with_str(|package| package == self.current_package())
+            {
+                continue;
+            }
+            let code_name = name.with_str(|name| format!("&{name}"));
+            let code_sym = Symbol::intern(&code_name);
+            if !env.contains_key_sym(code_sym)
+                && let Some(value) = self.env().get_sym(code_sym)
+            {
+                env.insert_sym(code_sym, value.clone());
+            } else if !env.contains_key_sym(code_sym) {
+                env.insert_sym(code_sym, self.sub_value_from_function_def(def));
+            }
+        }
     }
 
     /// Attribute-twigil env keys (`!x`, `@!x`, `%.x`, …): per-frame
