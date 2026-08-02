@@ -522,7 +522,22 @@ impl Interpreter {
                 method.as_str(),
                 "kv" | "iterator" | "lazy" | "WHAT" | "^name" | "does" | "isa"
             ) {
-            self.force_if_lazy_io_lines(target)?
+            let forced = self.force_if_lazy_io_lines(target)?;
+            // `.cache` is what makes a Seq *repeatable* in rakudo — after it the
+            // Seq serves its cached elements instead of throwing "already in use
+            // /consumed". (Measured: `.list`/`.List` do NOT; they consume like
+            // any other method.) mutsu's lazy IO-lines value only records
+            // "consumed", so forcing it here and dropping the result on the
+            // floor left the receiver variable holding a spent value, and the
+            // very next method call on it died. Store the reified Seq back over
+            // the receiver so the caching contract holds. Every other method
+            // deliberately does NOT write back: a Seq consumed by `.map` really
+            // is spent.
+            if method == "cache" && !target_name.is_empty() {
+                self.env_mut().insert(target_name.clone(), forced.clone());
+                self.record_caller_var_writeback(&target_name);
+            }
+            forced
         } else {
             target
         };
