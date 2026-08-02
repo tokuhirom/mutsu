@@ -325,7 +325,7 @@ Exit status was measured for the first time and is already faithful — a failin
 assertion exits 1, a short plan exits 255 — which is what `prove` reads, so
 step 3 does not need work there.
 
-### Triaged, 17 left (2026-08-02)
+### Triaged, 15 left (2026-08-02)
 
 `module-file-var-and-callframe.t` now passes, and so does `leave-in-if-branch.t`
 — its `@events = ()` between assertions was silently dropped because the real
@@ -337,7 +337,9 @@ statement call with a named argument, which severed the caller's container cell
 argument, and an EVAL'd `my` clobbered a same-named caller lexical (it was NOT
 a native-provider-shaped pin after all;
 `news/2026-08/eval-my-stays-scoped-to-the-eval.md`, pin
-`t/eval-my-shadows-caller-lexical.t`). The other 17 all read
+`t/eval-my-shadows-caller-lexical.t`). Those two fixes also freed
+`handles-proto-dispatch-mut-invocant.t` and `multi-where-otf-dispatch.t`
+without further work. The other 15 all read
 `native / real=FAIL / raku` — rakudo runs the *same module* over the same file
 successfully, so the difference is genuinely in mutsu.
 
@@ -346,7 +348,7 @@ successfully, so the difference is genuinely in mutsu.
 | exception-class hierarchy | `block-lexical-scope.t`, `gate-b-callee-name-collision-and-deref-capture.t`, `undeclared-when-type.t` | all fail on `right exception type (X::Undeclared / X::Comp::Group)` — one cause, `todo/deep/exception-class-hierarchy-is-mostly-unregistered.md` |
 | the pin asserts *native-provider* behaviour | `qualified-call-does-not-alias-builtin.t` (asserts `Test::ok(1)` **dies** — under the real module `Test::ok` legitimately exists), `test-assertion-line-number.t` | re-point the test file; not an interpreter gap |
 | deferred `Seq` reification destroys the value | `is-lazy-io-lines.t` | `todo/deep/deferred-seq-materialization-destroys-the-original.md` — the real `is` opens with `$got.defined`, which guts a lazy `.lines` |
-| individual gaps | `bigrat-sort-compare.t` (`cmp-ok` calls `infix:«<»` as a *routine value*; FatRat vs Num answers differently there than the compiled operator), `proxy-list-transparency.t` (`is-deeply` does not FETCH `Proxy` list elements — reports `$(Proxy, Proxy)`), `emit-done-controlflow.t`, `error-reporting-quality.t`, `group-of.t`, `handles-proto-dispatch-mut-invocant.t`, `io-cathandle-lazy.t`, `multi-where-otf-dispatch.t`, `subscript-adverbs.t`, `throws-like-gather-sink.t`, `whatever-code-fixes.t` | one at a time |
+| individual gaps | `bigrat-sort-compare.t` (`cmp-ok` calls `infix:«<»` as a *routine value*; FatRat vs Num answers differently there than the compiled operator), `proxy-list-transparency.t` (`is-deeply` does not FETCH `Proxy` list elements — reports `$(Proxy, Proxy)`), `emit-done-controlflow.t`, `error-reporting-quality.t`, `group-of.t`, `io-cathandle-lazy.t` (**aborts with a stack overflow** under the real module: `.cache` on a lazy Seq still answers `Seq`, so `is-deeply`'s Seq-narrowing candidate re-dispatches to itself forever — `todo/deep/cache-on-a-lazy-seq-must-not-answer-seq.md`), `subscript-adverbs.t`, `throws-like-gather-sink.t` (+ part of `emit-done-controlflow.t`: `todo/deep/eval-context-frame-owns-the-return-target.md`), `whatever-code-fixes.t` | one at a time |
 
 `tmp/recheck.sh <file>.t …` runs the named files native / real / raku and is the
 per-file tool; `scripts/test-module-sweep.sh` is the full measurement. Note the
