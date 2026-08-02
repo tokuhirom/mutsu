@@ -30,14 +30,19 @@ took the v0.19.0 release run down (the tag was pushed, the publish was skipped).
 The `test` job in `ci.yml` therefore also runs the gate on a push to `main`,
 which attributes drift to a commit within minutes of the merge.
 
-**On a PR — only when the PR is about the batteries.** The same step runs on a
-pull request that touches `batteries.lock`, `batteries-whitelist.txt`,
-`batteries-exclude.txt`, `scripts/battery-testsuite.sh`, a shipped `modules/`
-tree, or `vendor/zef/` — the changes whose whole point is to move the baseline.
-An ordinary PR skips it: the run clones 17 upstream repositories, and the merge
-path should not depend on the network. Cost when it does run is small (~75s of
-suites; the job has already built the release binary for roast), so this does
-not lengthen ordinary CI at all.
+**On every PR.** The gate used to be skipped on an ordinary pull request — it
+clones 17 upstream repositories, and the merge path was not supposed to depend
+on the network. That trade turned out to be the wrong way round. Post-merge
+detection tells you a battery broke, but by then the breakage is on `main`, and
+the person who finds it is whoever next opens a batteries-touching PR — blocked
+by a regression they did not cause, on a branch where it is hardest to attribute.
+`DBIish/01-basic.rakutest` went from 35/35 to 27/35 exactly that way
+(`news/2026-08/prelude-helper-not-block-lexical.md`): the offending PR did not
+touch `modules/`, so its own CI never ran the gate.
+
+So it runs on every PR now. The cost is what it always was — ~75s of suites, on
+a job that has already built the release binary for roast — and a
+documentation-only PR skips the whole job anyway.
 
 The pin tests under `t/` are not a substitute. They cover bugs that have already
 been found; the gate is the net for the ones that have not.
@@ -51,7 +56,7 @@ been found; the gate is the net for the ones that have not.
 | `batteries-exclude.txt` | Files the gate must never run, same `name<TAB>testfile` shape. Skipped in both modes, so they can neither block a release nor enter the baseline. |
 | `scripts/battery-testsuite.sh` | The harness. Fetches each suite at its pinned commit, runs it against the bundled library, and enforces (or, with `--update`, regenerates) the whitelist. |
 | `release.yml` `batteries` job | Runs the harness on every release build; `needs` gates the publish job. |
-| `ci.yml` `test` job, last two steps | Runs the same harness post-merge on `main`, and on a PR that touches the batteries. The `Should the bundled-library gate run?` step holds the path filter. |
+| `ci.yml` `test` job, last step | Runs the same harness on every PR and every push to `main`. No path filter — see "On every PR" above for why. |
 
 ## Running it
 

@@ -279,36 +279,28 @@ jobs:
       # v0.19.0 release run down with it. The pin tests in `t/` only cover bugs
       # already found; this is the net for the unknown ones.
       #
-      # It runs here on a push to `main` (attributing drift to a commit within
-      # minutes) and on a PR that touches the batteries themselves — a whitelist
-      # edit, a re-pin in batteries.lock, a change to a shipped `modules/` tree
-      # or to the gate script. It deliberately does NOT run on an ordinary PR:
-      # it clones 17 upstream repositories, and the merge path should not depend
-      # on that. Cost when it does run is small — the suites themselves take
-      # ~75s, and this job has already built the release binary for roast.
-      - name: Should the bundled-library gate run?
-        id: batteries
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          changed="$(gh pr diff "${{ github.event.pull_request.number }}" --name-only)"
-          if printf '%s\n' "$changed" | grep -qE '^(batteries\.lock|batteries-whitelist\.txt|batteries-exclude\.txt|scripts/battery-testsuite\.sh|modules/|vendor/zef/)'; then
-            echo "  PR touches the batteries — running the gate."
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "  PR does not touch the batteries — the gate runs post-merge."
-            echo "run=false" >> "$GITHUB_OUTPUT"
-          fi
-
+      # It runs on EVERY run of this job — every PR and every push to `main`.
+      #
+      # It used to run only post-merge and on a PR that touched the batteries
+      # themselves, on the reasoning that an ordinary PR's merge path should not
+      # depend on cloning 17 upstream repositories. That reasoning was wrong in
+      # practice, and the failure mode is worse than the one it avoided: a
+      # general interpreter change lands green, breaks a bundled library, and
+      # the breakage is only discovered by the *next* batteries-touching PR,
+      # which is then blocked by a regression it did not cause. That is exactly
+      # what happened to `DBIish/01-basic.rakutest` — the block-lexical-sub
+      # escape hatch took NativeCall's prelude helpers with it, dropping the
+      # suite from 35/35 to 27/35 (news/2026-08/prelude-helper-not-block-lexical.md).
+      # `make test` cannot catch these: the pin tests in `t/` only cover bugs
+      # already found, and this is the net for the unknown ones.
+      #
+      # The cost is small: the suites take ~75s, this job has already built the
+      # release binary for roast, and a documentation-only PR skips the whole
+      # job anyway (see the `changes` job).
       - name: Bundled-library test suites
-        if: steps.batteries.outputs.run == 'true'
         # libssl for the OpenSSL / IO::Socket::SSL batteries' NativeCall at
-        # runtime; installed here rather than in the job's apt step so an
-        # ordinary PR does not pay for it.
+        # runtime; installed here rather than in the job's apt step so the
+        # cost lands next to the step that needs it.
         run: |
           sudo apt-get install -y libssl-dev
           scripts/battery-testsuite.sh
