@@ -365,14 +365,16 @@ impl Interpreter {
         Ok(())
     }
 
-    pub(super) fn exec_int_bit_neg_op(&mut self) {
+    pub(super) fn exec_int_bit_neg_op(&mut self) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap();
+        let val = self.coerce_numeric_bridge_value(val)?;
         if let Some(n) = val.as_int() {
             self.stack.push(Value::int(!n));
         } else {
             let n = val.to_bigint();
             self.stack.push(Value::from_bigint(!n));
         }
+        Ok(())
     }
 
     pub(super) fn exec_bool_bit_neg_op(&mut self) {

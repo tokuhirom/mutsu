@@ -6,7 +6,13 @@ use Test;
 # and are shared by both the bytecode VM (try_native_buf_mut) and the
 # interpreter fallback, so these results must match exactly.
 
-plan 23;
+plan 27;
+
+{
+    my $b = Buf.new(0xFF, 0x00);
+    is $b.Numeric, 2, 'Buf.Numeric returns its element count';
+    is +^$b, -3, 'numeric bitwise negation numifies Buf';
+}
 
 # --- write-uintN / read-uintN round trips ---
 {
@@ -59,6 +65,14 @@ plan 23;
     $b.write-bits(4, 4, -1);
     is $b.read-ubits(0, 8), 0xFF, 'write-bits fills nibble';
     is $b.read-bits(4, 4), -1, 'read-bits sign extends';
+}
+{
+    my $b = Buf.new(0x05, 0xAA);
+    $b.write-ubits(0, 4, 3);
+    is $b, Buf.new(0x30, 0xAA), 'write-ubits applies Rakudo partial-byte mask';
+    my $c = Buf.new(0x05, 0xAA);
+    $c.write-bits(0, 4, 3);
+    is $c, Buf.new(0x30, 0xAA), 'write-bits applies Rakudo partial-byte mask';
 }
 
 # --- aliasing: same buf object observed through two variables ---
