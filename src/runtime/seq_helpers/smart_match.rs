@@ -3,6 +3,16 @@ use crate::symbol::Symbol;
 use crate::value::ValueView;
 use crate::value::signature::{extract_sig_info, signature_smartmatch};
 
+/// One lexical a regex closure installed for the duration of a match: the
+/// binding it shadowed (`None` = the name was unbound) and the value it put
+/// there, so [`Interpreter::uninstall_regex_closure_scope`] can tell an
+/// untouched shadow from one the embedded code wrote through.
+pub(crate) struct RegexClosureBinding {
+    name: String,
+    shadowed: Option<Value>,
+    installed: Value,
+}
+
 impl Interpreter {
     /// Extract path and CWD from IO::Path attributes for ACCEPTS comparison.
     fn io_path_attrs_for_accepts(
@@ -50,13 +60,99 @@ impl Interpreter {
         left.to_string_value()
     }
 
+    /// Install a code-bearing regex's captured defining scope for the duration
+    /// of a match, returning the bindings it shadowed (for
+    /// [`Self::uninstall_regex_closure_scope`]).
+    ///
+    /// A regex is a closure: the free variables of the code embedded in its
+    /// pattern belong to the scope the *literal* was written in, so they must
+    /// win over a same-named lexical that happens to be live at the match site.
+    /// Installing them into `env` for the whole match — rather than at each of
+    /// the half-dozen places the engine evaluates embedded code — means the
+    /// inline `{ … }` blocks, the `<?{ … }>` assertions, the `:my`/`:let`
+    /// initializers and the reduce-time `make` replay all see them, while the
+    /// regex's OWN lexicals still win because the engine installs those on top.
+    pub(crate) fn install_regex_closure_scope(
+        &mut self,
+        regex: &Value,
+    ) -> Option<Vec<RegexClosureBinding>> {
+        let scope = regex.regex_closure_scope()?;
+        let saved: Vec<RegexClosureBinding> = scope
+            .iter()
+            .map(|(k, v)| RegexClosureBinding {
+                name: k.clone(),
+                shadowed: self.env.get(k.as_str()).cloned(),
+                installed: v.clone(),
+            })
+            .collect();
+        for (k, v) in scope.iter() {
+            self.env.insert(k.clone(), v.clone());
+        }
+        Some(saved)
+    }
+
+    /// Undo [`Self::install_regex_closure_scope`].
+    ///
+    /// A binding the embedded code *rebound* is left alone: a regex code block
+    /// assigning to a lexical is a closure write, and dropping it would lose
+    /// `/ a { $n = 42 } /`'s effect. Only the untouched shadows are put back.
+    pub(crate) fn uninstall_regex_closure_scope(
+        &mut self,
+        saved: Option<Vec<RegexClosureBinding>>,
+    ) {
+        let Some(saved) = saved else { return };
+        for b in saved {
+            let rebound = self
+                .env
+                .get(b.name.as_str())
+                .is_none_or(|now| !now.same_binding(&b.installed));
+            if rebound {
+                continue;
+            }
+            match b.shadowed {
+                Some(v) => self.env.insert(b.name, v),
+                None => self.env.remove(&b.name),
+            };
+        }
+    }
+
+    /// Run `f` with `regex`'s captured defining scope installed, when it has
+    /// one. `regex` is an `Option` so callers can pass a maybe-regex argument
+    /// straight through.
+    pub(crate) fn with_regex_closure_scope<T>(
+        &mut self,
+        regex: Option<Value>,
+        f: impl FnOnce(&mut Self) -> T,
+    ) -> T {
+        let Some(saved) = regex
+            .as_ref()
+            .and_then(|r| self.install_regex_closure_scope(r))
+        else {
+            return f(self);
+        };
+        let out = f(self);
+        self.uninstall_regex_closure_scope(Some(saved));
+        out
+    }
+
     pub(crate) fn smart_match(&mut self, left: &Value, right: &Value) -> bool {
+        // A regex literal that closed over its defining scope (`RegexCaptured`)
+        // needs that scope live while its embedded code runs.
+        if let Some(saved) = self.install_regex_closure_scope(right) {
+            let r = self.smart_match_inner(left, right);
+            self.uninstall_regex_closure_scope(Some(saved));
+            return r;
+        }
+        self.smart_match_inner(left, right)
+    }
+
+    fn smart_match_inner(&mut self, left: &Value, right: &Value) -> bool {
         // A first-class element container on the LHS (`ContainerRef`, e.g. a
         // `.grep(...).head` rw alias / `:=`-bound slot) is transparent to
         // smartmatch — test the contained value (Raku container semantics).
         if let ValueView::ContainerRef(cell) = left.view() {
             let inner = cell.lock().unwrap().clone();
-            return self.smart_match(&inner, right);
+            return self.smart_match_inner(&inner, right);
         }
         match (left.view(), right.view()) {
             // Whatever on RHS always matches (ACCEPTS returns True for any value)

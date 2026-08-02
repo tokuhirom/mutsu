@@ -223,6 +223,7 @@ impl NanBox {
                 Kind::CustomType => unique::<CustomTypeData>(bits),
                 Kind::CustomTypeInstance => unique::<CustomTypeInstanceData>(bits),
                 Kind::Mixin => unique::<MixinBox>(bits),
+                Kind::RegexCaptured => unique::<crate::value::RegexClosure>(bits),
                 // Seq/Slip/Junction/LazyThunk payloads are the shared Arc
                 // itself (not a box) — their existing `uniquely_owned` gates
                 // in `value_gc` read the same count. Node kinds (Array, Hash,
@@ -244,6 +245,21 @@ impl NanBox {
                 Kind::JunctionAny | Kind::JunctionAll | Kind::JunctionOne | Kind::JunctionNone
             )
         )
+    }
+
+    /// The defining scope a code-bearing regex literal closed over, when this
+    /// word is a `RegexCaptured`. A tag probe first, so the (overwhelmingly
+    /// common) plain-regex and non-regex cases cost one compare.
+    #[inline]
+    pub(in crate::value) fn regex_closure_scope(
+        &self,
+    ) -> Option<&Arc<std::collections::HashMap<String, Value>>> {
+        let bits = self.0.get();
+        if !matches!(classify(bits), Classified::Kind(Kind::RegexCaptured)) {
+            return None;
+        }
+        // SAFETY: kind-checked above; the word is live for this borrow.
+        Some(&unsafe { peek_arc::<crate::value::RegexClosure>(bits) }.scope)
     }
 
     /// Whether this word is a `Proxy` — a pure tag probe (same motivation as
@@ -430,6 +446,12 @@ unsafe fn view_kind<'a>(kind: Kind, bits: u64) -> ValueView<'a> {
             Kind::Uni => ValueView::Uni(peek_arc::<UniData>(bits)),
             Kind::RakuAst => ValueView::RakuAst(peek_arc::<crate::rakuast::RakuAstNode>(bits)),
             Kind::RegexWithAdverbs => ValueView::RegexWithAdverbs(peek_arc::<RegexAdverbs>(bits)),
+            // Deliberately views as a plain Regex: the captured scope is
+            // invisible to every regex consumer, and only the match entry
+            // points probe the repr for it (`Value::regex_closure_scope`).
+            Kind::RegexCaptured => ValueView::Regex(RefGuard::borrowed(
+                &peek_arc::<crate::value::RegexClosure>(bits).pattern,
+            )),
             Kind::CustomType => ValueView::CustomType(peek_arc::<CustomTypeData>(bits)),
             Kind::CustomTypeInstance => {
                 ValueView::CustomTypeInstance(peek_arc::<CustomTypeInstanceData>(bits))

@@ -38,10 +38,6 @@ plan 5;
     }
     my $rs = RouteSet.new;
     $rs.generate();
-    # A regex value is a pattern string, so embedded code resolves its free
-    # variables against the MATCH-time env; carrying the defining scope needs a
-    # representation change (todo/deep/regex-literals-are-not-closures.md).
-    todo 'a regex literal does not yet capture its defining scope';
     is $rs.route("greet"), "idx=1 args=99",
         'stored EVAL\'d regex still reads the defining method\'s lexical array';
 }

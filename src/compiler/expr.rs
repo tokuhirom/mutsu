@@ -73,7 +73,20 @@ impl Compiler {
                 }
                 _ => {
                     let idx = self.code.add_constant(v.clone());
-                    self.code.emit(OpCode::LoadConst(idx));
+                    // A code-bearing regex literal is a closure over the scope
+                    // it is written in, so it loads through `LoadRegexClosure`
+                    // instead of a plain constant — see that op's doc comment.
+                    match self.regex_literal_closure_captures(v) {
+                        Some(captures) => {
+                            self.code.emit(OpCode::LoadRegexClosure {
+                                const_idx: idx,
+                                captures: std::sync::Arc::new(captures),
+                            });
+                        }
+                        None => {
+                            self.code.emit(OpCode::LoadConst(idx));
+                        }
+                    }
                 }
             },
             // Grouped (parenthesized) expression — transparent wrapper

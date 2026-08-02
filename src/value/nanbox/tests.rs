@@ -438,6 +438,15 @@ fn every_variant_roundtrips_losslessly() {
             sigspace: false,
             samecase: false,
             samespace: false,
+            captured: None,
+        })),
+        ValueRepr::RegexCaptured(Arc::new(crate::value::RegexClosure {
+            pattern: Arc::new("a { $x }".to_string()),
+            scope: Arc::new(
+                [("x".to_string(), Value::int(3))]
+                    .into_iter()
+                    .collect::<std::collections::HashMap<_, _>>(),
+            ),
         })),
         ValueRepr::Sub(sample_sub()),
         ValueRepr::Junction {

@@ -119,6 +119,9 @@ pub(in crate::value) enum Kind {
     Uni,
     RakuAst,
     RegexWithAdverbs,
+    /// A code-bearing regex literal plus its captured defining scope. Views as
+    /// `ValueView::Regex`, so it is transparent to every regex consumer.
+    RegexCaptured,
     CustomType,
     CustomTypeInstance,
     Range,
@@ -412,6 +415,7 @@ unsafe fn payload_op(kind: Kind, bits: u64, op: PayloadOp) {
             Kind::Uni => arc_op::<UniData>(bits, op),
             Kind::RakuAst => arc_op::<crate::rakuast::RakuAstNode>(bits, op),
             Kind::RegexWithAdverbs => arc_op::<RegexAdverbs>(bits, op),
+            Kind::RegexCaptured => arc_op::<crate::value::RegexClosure>(bits, op),
             Kind::CustomType => arc_op::<CustomTypeData>(bits, op),
             Kind::CustomTypeInstance => arc_op::<CustomTypeInstanceData>(bits, op),
             Kind::Range

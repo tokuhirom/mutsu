@@ -220,8 +220,14 @@ impl Interpreter {
                     _ => None,
                 }
             }
-            "match" => Some(self.dispatch_match_method(target, &args)),
-            "subst" => Some(self.dispatch_subst(target, &args)),
+            // A regex argument may be a closure over its defining scope; install
+            // it around the match the same way `~~` does.
+            "match" => Some(self.with_regex_closure_scope(args.first().cloned(), |me| {
+                me.dispatch_match_method(target, &args)
+            })),
+            "subst" => Some(self.with_regex_closure_scope(args.first().cloned(), |me| {
+                me.dispatch_subst(target, &args)
+            })),
             "wordcase" if !args.is_empty() => Some(self.dispatch_wordcase(target, &args)),
             "comb" if !args.is_empty() => {
                 if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply")

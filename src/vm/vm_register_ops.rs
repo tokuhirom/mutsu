@@ -16,6 +16,52 @@ impl Interpreter {
         })
     }
 
+    /// Attach the defining scope to a code-bearing regex literal
+    /// (`OpCode::LoadRegexClosure`).
+    ///
+    /// Reads each listed name out of the creating frame — its local slot when
+    /// the compiler baked one, otherwise `env` — and hands back a
+    /// `Value::RegexCaptured` (or an adverb-bearing regex with its `captured`
+    /// field filled). A name that resolves nowhere is simply left out, so the
+    /// value is byte-equivalent to today's plain constant when nothing is
+    /// captured. A capture that is already a shared `ContainerRef` cell is kept
+    /// AS the cell, so later writes through it stay visible to the regex.
+    pub(super) fn capture_regex_closure(
+        &mut self,
+        base: &Value,
+        captures: &[(Symbol, u32)],
+    ) -> Value {
+        let mut scope: HashMap<String, Value> = HashMap::new();
+        for (sym, slot) in captures {
+            let name = sym.resolve();
+            let from_local = (*slot != crate::opcode::NOT_A_LOCAL)
+                .then(|| self.locals.get(*slot as usize))
+                .flatten()
+                .filter(|v| !v.is_nil())
+                .cloned();
+            let Some(v) = from_local.or_else(|| self.env().get(name.as_str()).cloned()) else {
+                continue;
+            };
+            if v.is_nil() {
+                continue;
+            }
+            scope.insert(name.to_string(), v);
+        }
+        if scope.is_empty() {
+            return base.clone();
+        }
+        let scope = std::sync::Arc::new(scope);
+        match base.view() {
+            ValueView::Regex(p) => Value::regex_closure(std::sync::Arc::clone(&p), scope),
+            ValueView::RegexWithAdverbs(a) => {
+                let mut adv = a.clone();
+                adv.captured = Some(scope);
+                Value::regex_with_adverbs(adv)
+            }
+            _ => base.clone(),
+        }
+    }
+
     pub(super) fn exec_make_gather_op(
         &mut self,
         code: &CompiledCode,

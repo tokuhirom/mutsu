@@ -113,6 +113,7 @@ impl NanBox {
                 }),
             ),
             ValueRepr::RegexWithAdverbs(adv) => pack_arc(Kind::RegexWithAdverbs, Arc::new(*adv)),
+            ValueRepr::RegexCaptured(data) => pack_arc(Kind::RegexCaptured, data),
             ValueRepr::Sub(data) => pack_gc(Kind::Sub, data),
             ValueRepr::WeakSub(w) => pack_weak(Kind::WeakSub, w),
             ValueRepr::Instance {
