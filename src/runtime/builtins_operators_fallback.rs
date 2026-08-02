@@ -1036,6 +1036,12 @@ impl Interpreter {
             return self.eval_call_on_value(sub_val, args.to_vec());
         }
 
+        // A CORE term constant called as a routine is `X::Undeclared` naming
+        // `&name`, not the undeclared-routine class -- see CORE_TERM_CONSTANTS.
+        if crate::runtime::undeclared_routines::CORE_TERM_CONSTANTS.contains(&name) {
+            return Err(RuntimeError::undeclared_variable(&format!("&{name}")));
+        }
+
         let suggestions = self.suggest_routine_names(name);
         Err(RuntimeError::undeclared_routine_symbols(
             name,
