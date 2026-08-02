@@ -14,6 +14,15 @@ fn print_error(prefix: &str, err: &RuntimeError, source: Option<&str>, program_n
 }
 
 fn print_help(program: &str) {
+    print!("{}", usage_text(program));
+}
+
+fn usage_text(program: &str) -> String {
+    let mut out = String::new();
+    macro_rules! println {
+        () => { out.push('\n') };
+        ($($arg:tt)*) => {{ out.push_str(&format!($($arg)*)); out.push('\n'); }};
+    }
     println!("Usage: {} [OPTIONS] [FILE | -e CODE]", program);
     println!();
     println!("Options:");
@@ -42,11 +51,33 @@ fn print_help(program: &str) {
     println!("  MUTSU_CRASH_DIR");
     println!("                 Directory to write crash reports to");
     println!("                 (default: tmp/crash)");
+    out
 }
 
+/// A command-line option that cannot be negated. The message goes to *stdout*
+/// and the process ends **successfully** — see `docs/adr/0017` for why an
+/// option-parsing error is not a failure exit.
 fn print_negation_error(option: &str) -> ! {
     println!("SORRY! Option '{}' cannot be negated", option);
-    std::process::exit(1);
+    std::process::exit(0);
+}
+
+/// An option mutsu does not know, reported the way rakudo reports it: the
+/// message and the usage text on *stderr*, exit status **0** (ADR-0017). Long
+/// options are named without their `=value` part, matching
+/// `Illegal option --nosucharg` for `--nosucharg=foo`.
+///
+/// Without this, an unknown `--switch` fell through to "this must be the
+/// program file" and died with `Could not open --switch`.
+fn illegal_option(program: &str, arg: &str) -> ! {
+    if let Some(long) = arg.strip_prefix("--") {
+        let name = long.split('=').next().unwrap_or(long);
+        eprintln!("Illegal option --{}", name);
+    } else {
+        eprintln!("No such option {}", arg);
+    }
+    eprint!("{}", usage_text(program));
+    std::process::exit(0);
 }
 
 fn handle_negated_short_option(
@@ -261,12 +292,18 @@ fn run_main() {
                 std::process::exit(1);
             }
             preload_modules.push(module.to_string());
-        } else {
-            filtered_args.push(arg.clone());
-            // If this looks like a filename (not a flag), mark source as seen
-            if !arg.starts_with('-') || arg == "-" {
+        } else if arg == "--" {
+            // End of switches: whatever follows is the program file (and then
+            // its own arguments), even if it starts with a dash.
+            if let Some(file) = iter.next() {
+                filtered_args.push(file.clone());
                 seen_source = true;
             }
+        } else if arg.starts_with('-') && arg != "-" {
+            illegal_option(&args[0], arg);
+        } else {
+            filtered_args.push(arg.clone());
+            seen_source = true;
         }
     }
 
