@@ -269,6 +269,8 @@ impl Compiler {
         self.suppress_list_var_alias = true;
         self.compile_expr(&normalized_iterable);
         self.suppress_list_var_alias = saved_suppress;
+        let source_container_local = Self::for_iterable_source_name(iterable)
+            .and_then(|name| self.local_map.get(&name).copied());
         if let Some(source_name) = Self::for_iterable_source_name(iterable) {
             let source_slot = self.local_map.get(source_name.as_str()).copied();
             let source_idx = self.code.add_constant(Value::str(source_name));
@@ -291,6 +293,7 @@ impl Compiler {
                 param_idx,
                 param_local,
                 topic_local,
+                source_container_local,
                 body_end: 0,
                 label: label.clone(),
                 arity,
