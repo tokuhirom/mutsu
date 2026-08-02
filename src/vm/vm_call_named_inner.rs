@@ -535,6 +535,11 @@ impl Interpreter {
                 }
                 if restored_env.contains_key_sym(*k)
                     && !cf.is_callee_local_sym(*k)
+                    // A `my enum` this body declared is its own lexical, but it
+                    // gets no local slot, so `is_callee_local_sym` misses it and
+                    // the binding overwrote a same-named caller symbol for the
+                    // rest of the program.
+                    && !cf.code.my_declared_enum_sym.contains(k)
                     && !k.with_str(|s| {
                         rw_sources.contains(s)
                             // Per-call-site index-rw temps are frame-internal;

@@ -1935,6 +1935,14 @@ pub(crate) struct CompiledCode {
     /// var (used before its declaration, so it refers to the outer binding)
     /// keeps the writeback.
     pub(crate) my_declared_sym: rustc_hash::FxHashSet<Symbol>,
+    /// The subset of `my_declared_sym` bound by a `my enum` — its type name and
+    /// every variant name. Unlike a `my` variable these get no local slot, so
+    /// every bareword read of one looks like a free variable to
+    /// `compute_free_vars`; that free-var status would then exempt them from the
+    /// very writeback filter `my_declared_sym` exists for. They are subtracted
+    /// from `free_var_syms` instead, which is also what keeps them resolving to
+    /// the block's own binding inside a `whenever` callback.
+    pub(crate) my_declared_enum_sym: rustc_hash::FxHashSet<Symbol>,
     /// Free variables this code (and its nested closures) reference from an
     /// enclosing scope: names used via GetGlobal-family ops that are not this
     /// code's own locals. For a closure body this is the set of captured
@@ -2325,6 +2333,7 @@ impl CompiledCode {
             dup_named_locals: Vec::new(),
             is_supply_block_body: false,
             my_declared_sym: rustc_hash::FxHashSet::default(),
+            my_declared_enum_sym: rustc_hash::FxHashSet::default(),
             free_var_syms: Vec::new(),
             free_var_parent_slots: Vec::new(),
             upvalue_parent_slots: Vec::new(),
@@ -3640,6 +3649,14 @@ impl CompiledCode {
         }
         self.needs_cell_escaping_our_sub = nceos.into_iter().collect();
         self.needs_cell_escaping_our_sub_free = nceos_free.into_iter().collect();
+        // A `my enum`'s type and variant names are this code's OWN lexical
+        // bindings, but they get no local slot, so every bareword read of one
+        // landed in `free` above. Left there, the free-var exemption in the
+        // closure-exit writeback filters would push the block-private binding
+        // back onto a same-named caller lexical. See `my_declared_enum_sym`.
+        if !self.my_declared_enum_sym.is_empty() {
+            free.retain(|sym| !self.my_declared_enum_sym.contains(sym));
+        }
         self.free_var_syms = free.into_iter().collect();
         self.outer_ref_names = outer_ref_names;
         self.free_var_writes = free_writes.into_iter().collect();
