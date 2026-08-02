@@ -1798,7 +1798,6 @@ mod const_pool_dedup {
         assert!(code.env_consumer_slots.block_scope.is_empty());
         assert!(code.env_consumer_slots.block_local_scope.is_empty());
         assert!(code.env_consumer_slots.whenever.is_empty());
-        assert!(code.captures_env_by_name);
         assert_eq!(code.needs_env_sync, vec![true, false]);
     }
 
@@ -1979,10 +1978,8 @@ pub(crate) struct CompiledCode {
     /// Locals that are only accessed via GetLocal don't need env sync,
     /// reducing env size and clone cost.
     pub(crate) needs_env_sync: Vec<bool>,
-    /// Per-consumer lexical-slot synchronization sets. During ADR-0018's first
-    /// migration layer these preserve the old frame-wide behavior; subsequent
-    /// layers narrow each bitmap independently before deleting
-    /// `captures_env_by_name`.
+    /// Per-consumer lexical-slot synchronization sets (ADR-0018). Their union
+    /// contributes to `needs_env_sync` without widening unrelated slots.
     pub(crate) env_consumer_slots: EnvConsumerSlots,
     /// Bitmap: true if local[i]'s NAME occupies more than one `locals` slot —
     /// a genuine inner-block shadow under the `MUTSU_SHADOW_SLOTS` gate (§1.4).
@@ -2224,18 +2221,6 @@ pub(crate) struct CompiledCode {
     /// after every interpreter-native call, which kept such routines
     /// permanently out of the name-keyed call caches by accident.)
     pub(crate) uses_callframe: bool,
-    /// True if this code runs an inline body that reads the frame's lexicals *by
-    /// name* through a path the `free_var_syms` op-scan cannot see: loop/block
-    /// bodies that thread control temps through `env` by name (`ForLoop`,
-    /// `BlockScope`, `BlockLocalScope`), and the two ops that stash a body in the
-    /// `stmt_pool` and compile/run it at runtime against the live env
-    /// (`MakeGather`, `WheneverScope`). For such a frame `free_var_syms` is
-    /// *incomplete*, so two consumers fall back to the whole env: the dual-store
-    /// flush blanket (`compute_needs_env_sync`) marks every local env-synced, and
-    /// the closure upvalue capture (`capture_closure_env`, single-store Slice E)
-    /// snapshots the whole env instead of just the free vars. Set during
-    /// `compute_needs_env_sync`.
-    pub(crate) captures_env_by_name: bool,
     /// True if this code is the body of a `supply { … }` block — the lambda
     /// `Supply.on-demand` is handed, recognised by its generated emitter
     /// parameter (`__mutsu_supply_emitter_N`, see `supply_method_call`).
@@ -2500,7 +2485,6 @@ impl CompiledCode {
             outer_code_var_names: std::collections::HashSet::new(),
             needs_cell_free_vars: Vec::new(),
             has_calls: false,
-            captures_env_by_name: false,
             sub_fingerprints: std::collections::HashMap::new(),
             upvalue_syms: Vec::new(),
             env_only_decls: Vec::new(),
@@ -2834,8 +2818,6 @@ impl CompiledCode {
         if has_whenever {
             self.env_consumer_slots.whenever = whenever_slots;
         }
-        self.captures_env_by_name =
-            has_for_loop || has_block_scope || has_block_local_scope || has_gather || has_whenever;
         // §1.4 shadow slots: flag every slot whose name occupies more than one
         // `locals` slot (a genuine inner-block shadow under MUTSU_SHADOW_SLOTS)
         // so the whole-locals env broadcasts skip them — see `dup_named_locals`.
@@ -4081,12 +4063,9 @@ impl CompiledCode {
     /// index-based upvalues: rewrite their pure-read ops to `GetUpvalue(i)` and
     /// record the captured order in `upvalue_syms`. Must run AFTER
     /// `compute_free_vars` / `compute_needs_env_sync` (it consumes `free_var_syms`,
-    /// `free_var_writes`, `free_var_container_writes`, `captures_env_by_name`).
+    /// `free_var_writes`, `free_var_container_writes`).
     ///
     /// Conservative by design (Phase 1):
-    /// - Skips entirely when `captures_env_by_name` (loop/block/gather/whenever or
-    ///   reflective bodies read lexicals by name through paths the op-scan cannot
-    ///   rewrite).
     /// - A variable is eligible only if it is a plain user lexical, is NEVER
     ///   written anywhere in the closure subtree (not in `free_var_writes` /
     ///   `free_var_container_writes`), and appears in this code's ops only through
@@ -4095,9 +4074,6 @@ impl CompiledCode {
     ///   capture is boxed into a shared `ContainerRef` cell, which the snapshot
     ///   clones), so reads stay coherent without any write-back.
     pub(crate) fn compute_upvalues(&mut self, runtime_bound: &std::collections::HashSet<Symbol>) {
-        if self.captures_env_by_name {
-            return;
-        }
         let own: std::collections::HashSet<&str> = self.locals.iter().map(|s| s.as_str()).collect();
         let written: std::collections::HashSet<Symbol> = self
             .free_var_writes

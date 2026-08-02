@@ -426,14 +426,11 @@ impl Interpreter {
     /// drops only the bulk non-free plain user lexicals, which the body provably
     /// cannot reference.
     ///
-    /// Two cases keep the whole-env snapshot (`clone_env`) because `free_var_syms`
-    /// is *not* a complete account of the names the body reads:
-    /// - **reflective** programs (`EVAL` / `CALLER::` / symbolic deref) can read a
-    ///   caller lexical under any name (process-global flag, set at finalize);
-    /// - **`captures_env_by_name`** frames run an inline body that reads lexicals
-    ///   by name through a path the op-scan misses (`whenever`/`gather` bodies
-    ///   stashed in the `stmt_pool`, loop/block control temps) — see the field on
-    ///   [`CompiledCode`].
+    /// Reflective programs (`EVAL` / `CALLER::` / symbolic deref) keep the
+    /// whole-env snapshot because they can read a caller lexical under any name.
+    /// Inline/stored-body consumers no longer widen closure capture: their exact
+    /// dependencies are represented by `free_var_syms` and the per-consumer slot
+    /// sets from ADR-0018.
     ///
     /// **Slice E Part 2 (the upvalue read):** a free variable that is one of *this*
     /// frame's own locals is read straight from the slot store
@@ -454,7 +451,7 @@ impl Interpreter {
         let Some(cc) = cc else {
             return self.clone_env();
         };
-        if cc.captures_env_by_name || crate::opcode::reflective_name_access_possible() {
+        if crate::opcode::reflective_name_access_possible() {
             let mut flat = self.clone_env();
             // Even when capturing the whole env by name, a slot-only local (a
             // pointy-block/sub parameter that this frame never mirrors into `env`,
