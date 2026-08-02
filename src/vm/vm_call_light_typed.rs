@@ -586,11 +586,17 @@ impl Interpreter {
         // this body writes so the call-site op writes them straight through to the
         // caller's local slots (see `call_compiled_function_positional_light`).
         for sym in &cf.code.free_var_writes {
-            sym.with_str(|fname| {
-                if fname != "_" && fname != "@_" && fname != "%_" {
-                    self.pending_rw_writeback_sources.push(fname.to_string());
-                }
-            });
+            // A write to the callee compunit's own file-scope lexical is not a
+            // captured-outer write; replaying it would clobber the caller's
+            // same-named `my` (see `is_unit_lexical_of`).
+            let fname = sym.resolve();
+            if fname != "_"
+                && fname != "@_"
+                && fname != "%_"
+                && !self.is_unit_lexical_of(&cf.package, &fname)
+            {
+                self.pending_rw_writeback_sources.push(fname.to_string());
+            }
         }
 
         match result {

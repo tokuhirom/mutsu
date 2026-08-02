@@ -336,7 +336,7 @@ impl Interpreter {
     /// come from the running frame: the method's class first, then the routine
     /// frame's package, then whatever package is current — each walked up its
     /// `::` chain like `resolve_type_name_for_owner`.
-    fn lookup_in_running_package<'a, V>(
+    pub(crate) fn lookup_in_running_package<'a, V>(
         &'a self,
         table: &'a HashMap<String, HashMap<String, V>>,
         name: &str,
@@ -362,7 +362,7 @@ impl Interpreter {
     /// package and walking up its `::` chain. For sites where the anchor is not
     /// the running frame but a specific declaration — e.g. a CStruct attribute
     /// whose type alias must resolve in the scope of the class that declared it.
-    fn lookup_in_package_chain<'a, V>(
+    pub(crate) fn lookup_in_package_chain<'a, V>(
         table: &'a HashMap<String, HashMap<String, V>>,
         owner: &str,
         name: &str,

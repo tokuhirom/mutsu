@@ -2151,6 +2151,7 @@ impl Interpreter {
             our_vars: HashMap::new(),
             package_lexicals: HashMap::new(),
             class_body_static_names: HashMap::new(),
+            unit_lexicals: HashMap::new(),
             escaped_our_lexical_cells: HashMap::new(),
             escaping_our_lexical_names: std::collections::HashSet::new(),
             escaped_our_sub_names: std::collections::HashSet::new(),

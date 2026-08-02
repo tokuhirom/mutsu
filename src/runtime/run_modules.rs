@@ -676,12 +676,27 @@ impl Interpreter {
             // record X so that `register_exported_sub` can mirror exports into
             // `unit_module_exported_subs` for tag validation.
             let unit_name = Self::detect_unit_package_name(&stmts);
-            let pushed_unit = if let Some(name) = unit_name {
+            let pushed_unit = if let Some(name) = unit_name.clone() {
                 self.unit_module_loading_stack.push(name);
                 true
             } else {
                 false
             };
+            // The module body runs in the CALLER's env (see below), so its
+            // file-scope `my` declarations land under the same plain env keys the
+            // loading scope uses for its own `my`s — one storage cell, writes going
+            // both ways. Snapshot whatever the caller has under those names so the
+            // module's own initializers cannot clobber them, and move the module's
+            // values into `unit_lexicals` once the body has run.
+            let unit_lex_names: Vec<String> = if unit_name.is_some() {
+                Self::collect_unit_lexical_names(&stmts)
+            } else {
+                Vec::new()
+            };
+            let saved_unit_lex: Vec<(String, Option<Value>)> = unit_lex_names
+                .iter()
+                .map(|n| (n.clone(), self.env.get(n).cloned()))
+                .collect();
             let before_function_keys: std::collections::HashSet<crate::symbol::Symbol> =
                 self.registry().functions.keys().copied().collect();
             // Capture the module's compiled sub bodies (keyed by fingerprint) so a
@@ -718,6 +733,38 @@ impl Interpreter {
             // this module's scope (see `module_imported_names`).
             module_scope_names.extend(imported);
             module_type_aliases = self.module_type_aliases_of(&module_scope_names);
+            // Take the compunit's own file-scope lexicals out of `env` and into
+            // `unit_lexicals`, restoring the loading scope's values under those
+            // names. They stay out of `module_scope_names` so there is a single
+            // authoritative store for them (that one is a last-resort read-only
+            // snapshot, and a stale copy of a mutable lexical is worse than a miss).
+            if let Some(unit) = unit_name.as_deref()
+                && !unit_lex_names.is_empty()
+            {
+                for name in &unit_lex_names {
+                    module_scope_names.remove(name);
+                    let value = self.env.get(name).cloned().unwrap_or(Value::NIL);
+                    let cell = if value.is_container_ref() {
+                        value
+                    } else {
+                        value.into_container_ref()
+                    };
+                    self.unit_lexicals
+                        .entry(unit.to_string())
+                        .or_default()
+                        .insert(name.clone(), cell);
+                }
+                for (name, saved) in saved_unit_lex {
+                    match saved {
+                        Some(v) => {
+                            self.env.insert(name, v);
+                        }
+                        None => {
+                            self.env.remove(&name);
+                        }
+                    }
+                }
+            }
             match saved_qfile {
                 Some(f) => {
                     self.env.insert("?FILE".to_string(), f);
@@ -797,6 +844,54 @@ impl Interpreter {
         self.current_distribution = saved_distribution;
         self.current_distribution_frame_floor = saved_distribution_floor;
         Ok(())
+    }
+
+    /// The env keys of a `unit` compunit's own file-scope `my`/`state` variables.
+    /// These are lexical to the compunit, so they must not be left sharing an env
+    /// key with the loading scope — see [`Interpreter::unit_lexicals`].
+    ///
+    /// Only top-level declarations qualify: anything nested in a block already has
+    /// its own scope. `our` variables are package variables (legitimately shared),
+    /// `$*dynamic`s are dynamically scoped by definition, and an `is export`
+    /// variable is meant to reach the caller, so all three stay in `env`.
+    ///
+    /// **Scalars only.** A `@`/`%` compunit lexical is still shared with the
+    /// loading scope: every mutating method resolves its receiver by name straight
+    /// out of `self.env` (`call_method_mut_with_values` and the ~20
+    /// `env_mut().get_mut(name)` sites), so moving the container out of `env` would
+    /// make `@a.push` silently mutate a *different* array instead of isolating it.
+    /// See `todo/tickets/module-file-scope-array-and-hash-still-share-the-caller.md`.
+    fn collect_unit_lexical_names(stmts: &[crate::ast::Stmt]) -> Vec<String> {
+        let mut names: Vec<String> = Vec::new();
+        for s in stmts {
+            let crate::ast::Stmt::VarDecl {
+                name,
+                is_our,
+                is_dynamic,
+                is_export,
+                ..
+            } = s
+            else {
+                continue;
+            };
+            if *is_our || *is_dynamic || *is_export || name.contains("::") {
+                continue;
+            }
+            // A scalar `my $x` is stored sigil-less (env key `x`); `@`/`%` keep
+            // their sigil and are out of scope here (see the doc comment).
+            // Twigils and compiler-internal keys never start with a letter.
+            if !name
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+            {
+                continue;
+            }
+            if !names.iter().any(|n| n == name) {
+                names.push(name.clone());
+            }
+        }
+        names
     }
 
     /// The file-scope bare names a module body just installed into `env`: entries

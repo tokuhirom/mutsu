@@ -349,6 +349,106 @@ impl Interpreter {
             .cloned()
     }
 
+    /// Read a file-scope `my` lexical of the compunit the running routine belongs
+    /// to (see [`Interpreter::unit_lexicals`]). Consulted BEFORE `env`, because the
+    /// whole point of the store is that the loading scope's same-named `my` — which
+    /// occupies the very same env key — must not be reachable from the module's own
+    /// routines. Returns the shared cell; every read path already derefs.
+    ///
+    /// Gated on the table being non-empty, so a program that loads no such module
+    /// pays one `is_empty` test per variable access.
+    pub(super) fn unit_scope_lexical(&self, name: &str) -> Option<Value> {
+        self.unit_lexical_slot(name).cloned()
+    }
+
+    /// The store entry `name` names from the frame that is running, or `None`.
+    ///
+    /// A free reference reaches here in one of two shapes, exactly as it does for
+    /// [`Self::package_scope_lexical`]:
+    ///
+    /// * BARE (`output`) — resolved against the frame that is running. The first
+    ///   candidate is the frame's `lexical_package`, i.e. the package whose compunit
+    ///   lexicals are visible to it, because that is the only one that survives a
+    ///   *mixin*: a role method reached through `$fh does M::R` runs with both
+    ///   `current_package` and its method class set to `IO::Handle+{M::R}`, a name
+    ///   no `::` walk reduces to `M`. The remaining candidates mirror
+    ///   `lookup_in_running_package` (method class, frame package, current package),
+    ///   each walked up its `::` chain so a class declared inside the module
+    ///   resolves through its owner.
+    /// * QUALIFIED (`Mod::output`) — emitted when the body compiles under the plain
+    ///   package name and the compiler auto-qualifies its free variables, which is
+    ///   what an END phaser declared in a `unit module` does. Resolved only when the
+    ///   qualifier IS the current package: an explicitly written `$Other::x` is a
+    ///   package variable and must never reach a `my` lexical.
+    fn unit_lexical_slot(&self, name: &str) -> Option<&Value> {
+        if self.unit_lexicals.is_empty() || name.is_empty() {
+            return None;
+        }
+        let cur = self.current_package();
+        if name.contains("::") {
+            // Only scalars are in the store (see `collect_unit_lexical_names`) and
+            // a scalar is keyed sigil-less, so the only sigil that can appear here
+            // is its own.
+            let (pkg, bare) = name.strip_prefix('$').unwrap_or(name).rsplit_once("::")?;
+            if pkg != cur || cur.is_empty() || cur == "GLOBAL" {
+                return None;
+            }
+            return Self::lookup_in_package_chain(&self.unit_lexicals, &cur, bare);
+        }
+        let frame = self.routine_stack().last();
+        let candidates = [
+            frame.and_then(|f| f.lexical_package.as_deref()),
+            self.method_class_stack_top_str(),
+            frame
+                .map(|f| f.package.as_str())
+                .filter(|pkg| !pkg.is_empty() && *pkg != "GLOBAL"),
+            Some(cur.as_str()),
+        ];
+        for candidate in candidates.into_iter().flatten() {
+            if candidate.is_empty() || candidate == "GLOBAL" || candidate.contains("::&") {
+                continue;
+            }
+            if let Some(found) = Self::lookup_in_package_chain(&self.unit_lexicals, candidate, name)
+            {
+                return Some(found);
+            }
+        }
+        None
+    }
+
+    /// True when `name` is a file-scope lexical of `pkg`'s own compunit.
+    ///
+    /// A routine of that compunit writing such a name is writing its module's own
+    /// lexical, NOT a captured-outer lexical of whoever called it — so the write
+    /// must not be replayed into the caller's local slot the way an ordinary
+    /// free-variable write is (`free_var_writes` → `pending_rw_writeback_sources`).
+    /// Replaying it would push the caller's own same-named `my` to whatever `env`
+    /// happens to hold under that key, which is exactly the aliasing this store
+    /// removes.
+    pub(crate) fn is_unit_lexical_of(&self, pkg: &str, name: &str) -> bool {
+        if self.unit_lexicals.is_empty() || pkg.is_empty() || pkg == "GLOBAL" {
+            return false;
+        }
+        Self::lookup_in_package_chain(&self.unit_lexicals, pkg, name).is_some()
+    }
+
+    /// Write companion of [`Self::unit_scope_lexical`]: when `name` is a file-scope
+    /// lexical of the running routine's own compunit, update its shared cell in
+    /// place and report `true` so the caller skips the bare `env` store entirely.
+    /// Writing `env` as well would put the module's value back under the key the
+    /// loading scope's own `my` uses, which is the collision this store exists to
+    /// end.
+    pub(super) fn unit_scope_lexical_write(&mut self, name: &str, val: &Value) -> bool {
+        let Some(slot) = self.unit_lexical_slot(name) else {
+            return false;
+        };
+        if let ValueView::ContainerRef(cell) = slot.view() {
+            cell.lock().unwrap().clone_from(val);
+            return true;
+        }
+        false
+    }
+
     /// Resolve an `OUR::`-qualified *variable* read (scalar/array/hash) scoped
     /// to the current package. `OUR::` names the `our` variables of the current
     /// package: `$OUR::x` inside `package A {}` is `A::x`; at file scope
@@ -503,6 +603,16 @@ impl Interpreter {
     }
 
     pub(crate) fn get_env_with_main_alias(&self, name: &str) -> Option<Value> {
+        // A file-scope lexical of the running routine's own compunit is NOT in
+        // `env` — that key belongs to whatever scope loaded the module. This is
+        // the by-name chokepoint every remaining reader goes through (a mutating
+        // method's receiver, `@a.push`'s writeback, ...), so the redirect lives
+        // here rather than in each of them. Yields the cell's current value: a
+        // container's `Gc` is shared with the cell, so an in-place mutation of
+        // what this returns is a mutation of the module's own container.
+        if let Some(v) = self.unit_scope_lexical(name) {
+            return Some(v.into_deref());
+        }
         // Raku allows underscore variants of kebab-case identifiers
         // (e.g. $*EXECUTABLE_NAME is equivalent to $*EXECUTABLE-NAME).
         // Try the kebab-case equivalent first if the name contains underscores.
@@ -632,6 +742,14 @@ impl Interpreter {
         name_sym: Option<Symbol>,
         value: Value,
     ) {
+        // Write companion of the redirect in `get_env_with_main_alias`: the
+        // compunit's own cell is this name's only home while one of its routines
+        // is running, so the write must not land on the loading scope's env key.
+        // `set_env_plain_lexical` deliberately does NOT redirect — a routine's own
+        // plain `my` shadowing a compunit lexical is a distinct variable.
+        if self.unit_scope_lexical_write(name, &value) {
+            return;
+        }
         // Slice B (docs/vm-single-store.md): while a carrier (EVAL / interpreter
         // fallback) is active, log every by-name env write so the carrier-return
         // writeback can reconcile exactly these names into the caller's slots
