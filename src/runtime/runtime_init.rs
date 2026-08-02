@@ -2170,6 +2170,7 @@ impl Interpreter {
             let_saves: Vec::new(),
             grammar_rule_dynvar_decls: HashMap::new(),
             supply_emit_buffer: Vec::new(),
+            active_supply_emitters: Vec::new(),
             pending_promise_whenever_arms: Vec::new(),
             supply_emit_timed_buffer: Vec::new(),
             supply_stream_consumers: Vec::new(),

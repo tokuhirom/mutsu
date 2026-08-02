@@ -76,7 +76,7 @@ impl Interpreter {
                         match action {
                             SupplierEmitAction::Call(tap, emitted, delay_seconds) => {
                                 Self::sleep_for_supply_delay(delay_seconds);
-                                if let Err(err) = self.call_sub_value(tap, vec![emitted], true) {
+                                if let Err(err) = self.call_supply_tap(tap, vec![emitted], true) {
                                     // A `return` inside the tap callback targets the
                                     // callback's lexically enclosing routine: propagate
                                     // the signal unchanged so that routine's call frame
@@ -192,7 +192,7 @@ impl Interpreter {
                                         ds_action
                                     {
                                         Self::sleep_for_supply_delay(delay_seconds);
-                                        let _ = self.call_sub_value(tap, vec![emitted], true);
+                                        let _ = self.call_supply_tap(tap, vec![emitted], true);
                                     }
                                 }
                             }
@@ -212,7 +212,7 @@ impl Interpreter {
                                         ) = ds_action
                                         {
                                             Self::sleep_for_supply_delay(delay_seconds);
-                                            let _ = self.call_sub_value(tap, vec![emitted], true);
+                                            let _ = self.call_supply_tap(tap, vec![emitted], true);
                                         }
                                     }
                                 }
@@ -245,7 +245,7 @@ impl Interpreter {
                                         ) = da
                                         {
                                             Self::sleep_for_supply_delay(delay_seconds);
-                                            let _ = self.call_sub_value(tap, vec![emitted], true);
+                                            let _ = self.call_supply_tap(tap, vec![emitted], true);
                                         }
                                     }
                                 }
@@ -278,7 +278,7 @@ impl Interpreter {
                                         ) = da
                                         {
                                             Self::sleep_for_supply_delay(delay_seconds);
-                                            let _ = self.call_sub_value(tap, vec![emitted], true);
+                                            let _ = self.call_supply_tap(tap, vec![emitted], true);
                                         }
                                     }
                                 }
@@ -338,7 +338,7 @@ impl Interpreter {
                             if let SupplierEmitAction::Call(tap, emitted, delay_seconds) = ds_action
                             {
                                 Self::sleep_for_supply_delay(delay_seconds);
-                                let _ = self.call_sub_value(tap, vec![emitted], true);
+                                let _ = self.call_supply_tap(tap, vec![emitted], true);
                             }
                         }
                         supplier_done(dsid);
@@ -347,10 +347,10 @@ impl Interpreter {
                         }
                     }
                     for (tap, emitted) in flush_supplier_line_taps(supplier_id) {
-                        let _ = self.call_sub_value(tap, vec![emitted], true);
+                        let _ = self.call_supply_tap(tap, vec![emitted], true);
                     }
                     for (tap, emitted) in flush_supplier_words_taps(supplier_id) {
-                        let _ = self.call_sub_value(tap, vec![emitted], true);
+                        let _ = self.call_supply_tap(tap, vec![emitted], true);
                     }
                     for done_cb in take_supplier_done_callbacks(supplier_id) {
                         self.invoke_done_callback(done_cb)?;
@@ -414,10 +414,10 @@ impl Interpreter {
                     supplier_quit(supplier_id, reason.clone());
                     close_supplier_channel_taps(supplier_id, Some(reason.clone()));
                     for (tap, emitted) in flush_supplier_line_taps(supplier_id) {
-                        self.call_sub_value(tap, vec![emitted], true)?;
+                        self.call_supply_tap(tap, vec![emitted], true)?;
                     }
                     for (tap, emitted) in flush_supplier_words_taps(supplier_id) {
-                        self.call_sub_value(tap, vec![emitted], true)?;
+                        self.call_supply_tap(tap, vec![emitted], true)?;
                     }
                     let (_, _, quit_reason) = supplier_snapshot(supplier_id);
                     if let Some(reason) = quit_reason {
@@ -535,7 +535,7 @@ impl Interpreter {
                         match action {
                             SupplierEmitAction::Call(tap, emitted, delay_seconds) => {
                                 Self::sleep_for_supply_delay(delay_seconds);
-                                if let Err(err) = self.call_sub_value(tap, vec![emitted], true) {
+                                if let Err(err) = self.call_supply_tap(tap, vec![emitted], true) {
                                     // A `return` inside the tap callback targets the
                                     // callback's lexically enclosing routine: propagate
                                     // the signal unchanged so that routine's call frame
@@ -642,7 +642,7 @@ impl Interpreter {
                                         ds_action
                                     {
                                         Self::sleep_for_supply_delay(delay_seconds);
-                                        self.call_sub_value(tap, vec![emitted], true)?;
+                                        self.call_supply_tap(tap, vec![emitted], true)?;
                                     }
                                 }
                             }
@@ -662,7 +662,7 @@ impl Interpreter {
                                         ) = ds_action
                                         {
                                             Self::sleep_for_supply_delay(delay_seconds);
-                                            self.call_sub_value(tap, vec![emitted], true)?;
+                                            self.call_supply_tap(tap, vec![emitted], true)?;
                                         }
                                     }
                                 }
@@ -695,7 +695,7 @@ impl Interpreter {
                                         ) = da
                                         {
                                             Self::sleep_for_supply_delay(delay_seconds);
-                                            let _ = self.call_sub_value(tap, vec![emitted], true);
+                                            let _ = self.call_supply_tap(tap, vec![emitted], true);
                                         }
                                     }
                                 }
@@ -728,7 +728,7 @@ impl Interpreter {
                                         ) = da
                                         {
                                             Self::sleep_for_supply_delay(delay_seconds);
-                                            let _ = self.call_sub_value(tap, vec![emitted], true);
+                                            let _ = self.call_supply_tap(tap, vec![emitted], true);
                                         }
                                     }
                                 }
@@ -789,7 +789,7 @@ impl Interpreter {
                             if let SupplierEmitAction::Call(tap, emitted, delay_seconds) = ds_action
                             {
                                 Self::sleep_for_supply_delay(delay_seconds);
-                                self.call_sub_value(tap, vec![emitted], true)?;
+                                self.call_supply_tap(tap, vec![emitted], true)?;
                             }
                         }
                         // Propagate done to downstream batch suppliers
@@ -807,10 +807,10 @@ impl Interpreter {
                         }
                     }
                     for (tap, emitted) in flush_supplier_line_taps(sid) {
-                        self.call_sub_value(tap, vec![emitted], true)?;
+                        self.call_supply_tap(tap, vec![emitted], true)?;
                     }
                     for (tap, emitted) in flush_supplier_words_taps(sid) {
-                        self.call_sub_value(tap, vec![emitted], true)?;
+                        self.call_supply_tap(tap, vec![emitted], true)?;
                     }
                     for done_cb in take_supplier_done_callbacks(sid) {
                         self.invoke_done_callback(done_cb)?;
@@ -882,10 +882,10 @@ impl Interpreter {
                     let sid = supplier_id as u64;
                     close_supplier_channel_taps(sid, Some(reason.clone()));
                     for (tap, emitted) in flush_supplier_line_taps(sid) {
-                        self.call_sub_value(tap, vec![emitted], true)?;
+                        self.call_supply_tap(tap, vec![emitted], true)?;
                     }
                     for (tap, emitted) in flush_supplier_words_taps(sid) {
-                        self.call_sub_value(tap, vec![emitted], true)?;
+                        self.call_supply_tap(tap, vec![emitted], true)?;
                     }
                     // Run any `whenever` QUIT phasers first. If one handles the
                     // exception (a when/default matched, or it called done), the

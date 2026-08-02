@@ -6,6 +6,35 @@ use crate::symbol::Symbol;
 use crate::value::AttrMap;
 
 impl Interpreter {
+    /// Call a `whenever`/tap callback with the callback's own supply emitter
+    /// made dynamically visible, so a bare `emit` inside a *sub* the callback
+    /// calls reaches the right supply. The emitter is the
+    /// `__mutsu_supply_emitter_<id>` lexical the parser binds as the on-demand
+    /// body's parameter; a callback written inside a `supply` block captures it,
+    /// while an unrelated tap callback does not and pushes nothing.
+    pub(crate) fn call_supply_tap(
+        &mut self,
+        tap: Value,
+        args: Vec<Value>,
+        propagate_return: bool,
+    ) -> Result<Value, RuntimeError> {
+        let emitter = tap.as_sub().and_then(|data| {
+            data.env
+                .keys()
+                .find(|k| k.with_str(|s| s.starts_with("__mutsu_supply_emitter_")))
+                .and_then(|k| data.env.get_sym(*k).cloned())
+        });
+        let pushed = emitter.is_some();
+        if let Some(e) = emitter {
+            self.active_supply_emitters.push(e);
+        }
+        let res = self.call_sub_value(tap, args, propagate_return);
+        if pushed {
+            self.active_supply_emitters.pop();
+        }
+        res
+    }
+
     /// Phase A of the on-demand supply runtime, shared by `tap`/`act`, the react
     /// event loop, `await`/`.Promise`, and `supply_get_values`. Builds an emitter
     /// `Supplier` (with a `supplier_id` when `emitter_supplier_id` is `Some`), runs
@@ -28,7 +57,11 @@ impl Interpreter {
         });
         self.supply_emit_buffer.push(Vec::new());
         let done_before = supplier_done_count();
+        // A bare `emit` reached from a *sub* called by the body is not rewritten
+        // to `$emitter.emit(...)`, so it needs the emitter dynamically.
+        self.active_supply_emitters.push(emitter.clone());
         let result = self.call_sub_value(on_demand_cb, vec![emitter], false);
+        self.active_supply_emitters.pop();
         let body_ran_done = supplier_done_count() > done_before;
         let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
         (result, emitted, body_ran_done)

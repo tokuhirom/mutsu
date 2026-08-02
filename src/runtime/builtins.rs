@@ -856,9 +856,26 @@ impl Interpreter {
                 }
             }
             "emit" => {
-                // Top-level `emit` outside a supply block raises a CX::Emit
-                // control exception that a CONTROL block can observe.
                 let value = args.first().cloned().unwrap_or(Value::NIL);
+                // `emit` is caught by the innermost *dynamically* enclosing
+                // supply, not the lexically enclosing one: a sub declared
+                // outside a supply block still emits into it when called from
+                // inside (raku prints `1, 2` for
+                // `sub e($x) { emit $x }; supply { e(1); emit 2 }`). The
+                // parser's `supply` rewrite only reaches `emit` written
+                // directly in the body, so route through the active emit
+                // buffer here — the same buffer the `.emit` method form uses.
+                if let Some(emitter) = self.active_supply_emitters.last().cloned() {
+                    return self
+                        .call_method_with_values(emitter, "emit", vec![value])
+                        .map(|_| Value::NIL);
+                }
+                if let Some(buf) = self.supply_emit_buffer.last_mut() {
+                    buf.push(value);
+                    return Ok(Value::NIL);
+                }
+                // Outside any supply block this is a CX::Emit control
+                // exception that a CONTROL block can observe.
                 Err(RuntimeError::emit_signal(value))
             }
             "return" => {
