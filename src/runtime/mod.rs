@@ -1369,6 +1369,15 @@ pub struct Interpreter {
     /// per-match `:my $*FINAL` is not read as the last match's value.
     pub(crate) grammar_rule_dynvar_decls: HashMap<String, Vec<String>>,
     pub(super) supply_emit_buffer: Vec<Vec<Value>>,
+    /// Emitter `Supplier`s of the `supply` blocks whose code is currently on the
+    /// stack, innermost last. `emit` is caught by the innermost *dynamically*
+    /// enclosing supply, so a `sub` that is not lexically inside the block still
+    /// emits into it when called from within — the parser's `supply` rewrite
+    /// (`emit x` -> `$__mutsu_supply_emitter_N.emit(x)`) only reaches `emit`
+    /// written directly in the body, and a nested sub's closure never captured
+    /// the emitter. Pushed around a `whenever` body invoked as a live-supplier
+    /// tap, where the emitter is recovered from the callback's captured env.
+    pub(super) active_supply_emitters: Vec<Value>,
     /// `whenever <Promise>` sources inside a `supply` block, rewritten to a
     /// stand-in supplier and waiting to be armed. A supplier keeps no backlog,
     /// so the promise must not be armed until the consumer has registered the
