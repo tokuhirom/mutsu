@@ -199,6 +199,33 @@ impl Interpreter {
                 }
             }
         };
+        // A parameter is a fresh per-invocation binding, exactly like the `my`
+        // that `exec_set_var_dynamic_op` marks: while the cross-thread shared
+        // store is active its writes must stay thread-local instead of leaking
+        // to the parent through the name-keyed store. Without this, two
+        // routines that merely happen to share a parameter name alias each
+        // other once a thread has run — `sub inner($desc) {...}` called from
+        // inside `await start {...}` in `sub outer($desc) {...}` left `outer`'s
+        // `$desc` holding `inner`'s argument (`t/thread-callee-param-does-not-
+        // clobber-caller.t`). Scalars only, for the same reason as the `my`
+        // case: `@`/`%` names back the atomic element stores and `&` names are
+        // routines.
+        if self.shared_vars_active {
+            for pd in &cf.param_defs {
+                let name = pd.name.as_str();
+                if name.is_empty()
+                    || name == "_"
+                    || name == "self"
+                    || name.starts_with('@')
+                    || name.starts_with('%')
+                    || name.starts_with('&')
+                {
+                    continue;
+                }
+                self.thread_redeclared_vars
+                    .insert(name.trim_start_matches('$').to_string());
+            }
+        }
         self.prepare_definite_return_slot(return_spec.as_deref());
 
         // Raku: $! is scoped per routine — fresh Nil on entry.
