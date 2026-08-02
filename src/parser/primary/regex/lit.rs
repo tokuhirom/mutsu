@@ -991,6 +991,13 @@ pub(in crate::parser::primary) fn version_lit(input: &str) -> PResult<'_, Expr> 
     let (rest, version) = take_while1(rest, |c: char| {
         c.is_ascii_alphanumeric() || c == '.' || c == '*' || c == '+'
     })?;
+    // A v-plus-digits spelling is also a valid routine identifier. When it is
+    // immediately followed by call parentheses, let the identifier parser
+    // handle it so declared routines such as `sub v1 {}; v1()` win, and an
+    // undeclared `v1()` receives the normal undeclared-routine diagnostic.
+    if version.bytes().all(|b| b.is_ascii_digit()) && rest.starts_with('(') {
+        return Err(PError::expected("version number"));
+    }
     // If the version chars are immediately followed by an identifier joiner
     // (`-` / `'`) leading into another word char, the whole run is one
     // identifier (`v4-split`, `v1'foo`), not a version term — reject so the
