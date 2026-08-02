@@ -1520,6 +1520,10 @@ pub(crate) enum OpCode {
     },
     WheneverScope {
         body_idx: u32,
+        /// Analysis-only compiled form of the stmt-pool body. It is never
+        /// executed, but supplies precise free-variable parent slots to
+        /// ADR-0018's env-consumer analysis.
+        analysis_cc_idx: u32,
         param_idx: Option<u32>,
         target_var_idx: Option<u32>,
     },
@@ -1777,16 +1781,22 @@ mod const_pool_dedup {
     fn env_consumers_are_recorded_separately_before_blanket_removal() {
         let mut code = CompiledCode::new();
         code.locals.push("x".to_string());
-        code.ops.push(OpCode::MakeGather(0, None));
+        code.locals.push("slot_only".to_string());
+        let mut gather_body = CompiledCode::new();
+        gather_body.free_var_parent_slots.push(Some(0));
+        code.closure_compiled_codes
+            .push(std::sync::Arc::new(gather_body));
+        code.ops.push(OpCode::MakeGather(0, Some(0)));
         code.compute_needs_env_sync();
 
-        assert_eq!(code.env_consumer_slots.gather, vec![true]);
+        assert_eq!(code.env_consumer_slots.gather, vec![true, false]);
         assert!(code.env_consumer_slots.for_loop.is_empty());
         assert!(code.env_consumer_slots.block_scope.is_empty());
         assert!(code.env_consumer_slots.block_local_scope.is_empty());
         assert!(code.env_consumer_slots.whenever.is_empty());
         assert!(code.captures_env_by_name);
-        assert_eq!(code.needs_env_sync, vec![true]);
+        // Runtime behavior is still blanket-compatible in this migration layer.
+        assert_eq!(code.needs_env_sync, vec![true, true]);
     }
 }
 
@@ -1798,16 +1808,6 @@ pub(crate) struct EnvConsumerSlots {
     pub(crate) block_local_scope: Vec<bool>,
     pub(crate) gather: Vec<bool>,
     pub(crate) whenever: Vec<bool>,
-}
-
-impl EnvConsumerSlots {
-    fn any_consumer(&self) -> bool {
-        self.for_loop.iter().any(|needed| *needed)
-            || self.block_scope.iter().any(|needed| *needed)
-            || self.block_local_scope.iter().any(|needed| *needed)
-            || self.gather.iter().any(|needed| *needed)
-            || self.whenever.iter().any(|needed| *needed)
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -2337,6 +2337,47 @@ impl ConstKey {
 }
 
 impl CompiledCode {
+    fn mark_name_access_slots(&self, start: usize, end: usize, slots: &mut [bool]) {
+        let end = end.min(self.ops.len());
+        for op in &self.ops[start.min(end)..end] {
+            let name_idx = match op {
+                OpCode::GetGlobal(idx)
+                | OpCode::SetGlobal(idx)
+                | OpCode::SetGlobalRaw(idx)
+                | OpCode::PostIncrement(idx, _)
+                | OpCode::PostDecrement(idx, _)
+                | OpCode::PreIncrement(idx, _)
+                | OpCode::PreDecrement(idx, _)
+                | OpCode::GetArrayVar(idx)
+                | OpCode::GetHashVar(idx)
+                | OpCode::AssignExpr(idx)
+                | OpCode::TopicDotAssign(idx) => Some(*idx),
+                _ => None,
+            };
+            let Some(name_idx) = name_idx else { continue };
+            let Some(ValueView::Str(name)) = self.constants.get(name_idx as usize).map(Value::view)
+            else {
+                continue;
+            };
+            for (slot, local) in self.locals.iter().enumerate() {
+                if local == name.as_str() {
+                    slots[slot] = true;
+                }
+            }
+        }
+    }
+
+    fn mark_closure_parent_slots(&self, cc_idx: u32, slots: &mut [bool]) {
+        let Some(cc) = self.closure_compiled_codes.get(cc_idx as usize) else {
+            return;
+        };
+        for slot in cc.free_var_parent_slots.iter().flatten() {
+            if let Some(needed) = slots.get_mut(*slot as usize) {
+                *needed = true;
+            }
+        }
+    }
+
     pub(crate) fn new() -> Self {
         Self {
             ops: Vec::new(),
@@ -2654,33 +2695,74 @@ impl CompiledCode {
         let mut has_block_local_scope = false;
         let mut has_gather = false;
         let mut has_whenever = false;
-        for op in &self.ops {
+        let mut for_loop_slots = vec![false; n];
+        let mut block_scope_slots = vec![false; n];
+        let mut block_local_scope_slots = vec![false; n];
+        let mut gather_slots = vec![false; n];
+        let mut whenever_slots = vec![false; n];
+        for (op_idx, op) in self.ops.iter().enumerate() {
             match op {
-                OpCode::ForLoop(..) => has_for_loop = true,
-                OpCode::BlockScope { .. } => has_block_scope = true,
-                OpCode::BlockLocalScope { .. } => has_block_local_scope = true,
-                OpCode::MakeGather(..) => has_gather = true,
-                OpCode::WheneverScope { .. } => has_whenever = true,
+                OpCode::ForLoop(spec) => {
+                    has_for_loop = true;
+                    for slot in [spec.param_local, spec.topic_local]
+                        .into_iter()
+                        .flatten()
+                        .chain(spec.source_var_locals.iter().flatten().copied())
+                        .chain(spec.single_array_source_local)
+                    {
+                        if let Some(needed) = for_loop_slots.get_mut(slot as usize) {
+                            *needed = true;
+                        }
+                    }
+                    self.mark_name_access_slots(
+                        op_idx + 1,
+                        spec.body_end as usize,
+                        &mut for_loop_slots,
+                    );
+                }
+                OpCode::BlockScope { end, .. } => {
+                    has_block_scope = true;
+                    self.mark_name_access_slots(op_idx + 1, *end as usize, &mut block_scope_slots);
+                }
+                OpCode::BlockLocalScope { body_end, .. } => {
+                    has_block_local_scope = true;
+                    self.mark_name_access_slots(
+                        op_idx + 1,
+                        *body_end as usize,
+                        &mut block_local_scope_slots,
+                    );
+                }
+                OpCode::MakeGather(_, Some(cc_idx)) => {
+                    has_gather = true;
+                    self.mark_closure_parent_slots(*cc_idx, &mut gather_slots);
+                }
+                OpCode::MakeGather(_, None) => has_gather = true,
+                OpCode::WheneverScope {
+                    analysis_cc_idx, ..
+                } => {
+                    has_whenever = true;
+                    self.mark_closure_parent_slots(*analysis_cc_idx, &mut whenever_slots);
+                }
                 _ => {}
             }
         }
-        let blanket = vec![true; n];
         if has_for_loop {
-            self.env_consumer_slots.for_loop = blanket.clone();
+            self.env_consumer_slots.for_loop = for_loop_slots;
         }
         if has_block_scope {
-            self.env_consumer_slots.block_scope = blanket.clone();
+            self.env_consumer_slots.block_scope = block_scope_slots;
         }
         if has_block_local_scope {
-            self.env_consumer_slots.block_local_scope = blanket.clone();
+            self.env_consumer_slots.block_local_scope = block_local_scope_slots;
         }
         if has_gather {
-            self.env_consumer_slots.gather = blanket.clone();
+            self.env_consumer_slots.gather = gather_slots;
         }
         if has_whenever {
-            self.env_consumer_slots.whenever = blanket;
+            self.env_consumer_slots.whenever = whenever_slots;
         }
-        self.captures_env_by_name = self.env_consumer_slots.any_consumer();
+        self.captures_env_by_name =
+            has_for_loop || has_block_scope || has_block_local_scope || has_gather || has_whenever;
         // §1.4 shadow slots: flag every slot whose name occupies more than one
         // `locals` slot (a genuine inner-block shadow under MUTSU_SHADOW_SLOTS)
         // so the whole-locals env broadcasts skip them — see `dup_named_locals`.

@@ -4415,6 +4415,7 @@ impl Interpreter {
             }
             OpCode::WheneverScope {
                 body_idx,
+                analysis_cc_idx: _,
                 param_idx,
                 target_var_idx,
             } => {
