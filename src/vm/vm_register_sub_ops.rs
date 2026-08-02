@@ -3,6 +3,49 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    /// A parameter may carry a trait the signature machinery does not know
+    /// (`sub f($x is nonesuch)`). That is legal only when some user
+    /// `trait_mod:<is>` accepts a `Parameter` — Cro::HTTP::Router declares
+    /// `multi trait_mod:<is>(Parameter:D $param, :$query!)` and friends. The
+    /// parser therefore records the name instead of rejecting it, and the
+    /// declaration site checks it here, the same way a *sub*-level custom trait
+    /// is checked in `exec_register_proto_sub_op`.
+    pub(crate) fn check_param_custom_traits(
+        &mut self,
+        params: &[crate::ast::ParamDef],
+    ) -> Result<(), RuntimeError> {
+        for p in params.iter() {
+            for trait_name in &p.traits {
+                if crate::parser::is_builtin_param_trait(trait_name) {
+                    continue;
+                }
+                let unknown = || {
+                    RuntimeError::new(format!(
+                        "Can't use unknown trait 'is' -> '{trait_name}' in a parameter declaration."
+                    ))
+                };
+                if !self.has_proto("trait_mod:<is>") && !self.has_multi_candidates("trait_mod:<is>")
+                {
+                    return Err(unknown());
+                }
+                // Hand the candidate a real Parameter, the way raku does. A
+                // dispatch failure means no candidate accepts this trait name,
+                // which is raku's compile-time "unknown trait" error.
+                let param_val = crate::value::signature::make_parameter_value_from_param_def(p);
+                let named_arg = Value::pair(trait_name.clone(), Value::TRUE);
+                loan_env!(
+                    self,
+                    call_function("trait_mod:<is>", vec![param_val, named_arg])
+                )
+                .map_err(|_| unknown())?;
+            }
+            if let Some(subs) = &p.sub_signature {
+                self.check_param_custom_traits(subs)?;
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn exec_make_lambda_op(
         &mut self,
         code: &CompiledCode,
@@ -21,6 +64,7 @@ impl Interpreter {
             ..
         } = stmt
         {
+            self.check_param_custom_traits(param_defs)?;
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             self.box_captured_lexicals(code, &compiled_code);
             let owned_captures = self.compute_owned_captures(&compiled_code);
@@ -154,6 +198,7 @@ impl Interpreter {
             } else {
                 name.resolve()
             };
+            self.check_param_custom_traits(param_defs)?;
             // Compile-time declaration fingerprint for this site (absent for a
             // runtime-resolved `name_expr` sub), enabling the idempotent
             // re-registration fast path inside `register_sub_decl_fp`.

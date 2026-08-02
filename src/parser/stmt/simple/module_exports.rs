@@ -122,6 +122,13 @@ fn apply_module_exports(exports: &[InlineModuleExport]) {
     for export in exports {
         // Register operator subs into user_subs so that the parser's
         // prefix/infix/postfix/circumfix matchers pick them up.
+        // An imported `trait_mod:<is>` is what makes a custom parameter trait
+        // (`:$x is query`) legal, so the parser has to know it was imported
+        // before it decides whether an unknown trait name is an error. It is not
+        // an operator sub — it needs none of the precedence/term machinery below.
+        if export.name.starts_with("trait_mod:<") {
+            register_user_sub(&export.name);
+        }
         if is_operator_sub_name(&export.name) {
             register_user_sub(&export.name);
             register_user_callable_term_symbol(&export.name);

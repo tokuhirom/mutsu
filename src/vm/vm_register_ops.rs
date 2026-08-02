@@ -192,6 +192,7 @@ impl Interpreter {
             ..
         } = stmt
         {
+            self.check_param_custom_traits(param_defs)?;
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             self.box_captured_lexicals(code, &compiled_code);
             let owned_captures = self.compute_owned_captures(&compiled_code);
