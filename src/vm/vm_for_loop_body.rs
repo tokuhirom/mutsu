@@ -7,8 +7,13 @@ impl Interpreter {
     /// loop's topic must never survive into the enclosing scope. mutsu keeps the
     /// topic in env, so every exit path (normal, `last`/`next`, error) restores
     /// the value captured before the loop, or removes the key when there was
-    /// none.
-    pub(super) fn restore_loop_topic(&mut self, saved: Option<Value>) {
+    /// none. `saved_local` additionally restores the topic's *local slot* when
+    /// the frame has one — see [`Interpreter::save_loop_topic_local`].
+    pub(super) fn restore_loop_topic(
+        &mut self,
+        saved: Option<Value>,
+        saved_local: Option<(usize, Value)>,
+    ) {
         match saved {
             Some(v) => {
                 self.env_mut().insert("_".to_string(), v);
@@ -17,6 +22,29 @@ impl Interpreter {
                 self.env_mut().remove("_");
             }
         }
+        if let Some((slot, v)) = saved_local {
+            self.locals[slot] = v;
+        }
+    }
+
+    /// The frame's local slot for `$_` (compiler-baked in
+    /// [`ForLoopSpec::topic_local`]), together with its value on loop entry —
+    /// `None` when the topic has no slot in this frame, which is the common case.
+    ///
+    /// `code.locals` positions never move within a frame, so the slot index
+    /// stays valid across the body.
+    pub(super) fn save_loop_topic_local(&mut self, spec: &ForLoopSpec) -> Option<(usize, Value)> {
+        let slot = spec.topic_local? as usize;
+        Some((slot, self.locals.get(slot)?.clone()))
+    }
+
+    /// Bind the loop's implicit topic: `env["_"]` plus the frame's topic slot
+    /// when it has one (see [`Interpreter::save_loop_topic_local`]).
+    pub(super) fn set_loop_topic(&mut self, topic_local: Option<usize>, val: Value) {
+        if let Some(slot) = topic_local {
+            self.locals[slot] = val.clone();
+        }
+        self.env_mut().insert("_".to_string(), val);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -93,6 +121,10 @@ impl Interpreter {
         // implicit parameter), so the enclosing `$_` is restored on every exit —
         // normal, `last`/`next`, and error.
         let saved_topic = self.env().get("_").cloned();
+        // The topic's local slot, when this frame has one (see
+        // `save_loop_topic_local`): the loop must mirror each item into it.
+        let saved_topic_local = self.save_loop_topic_local(spec);
+        let topic_local = saved_topic_local.as_ref().map(|(s, _)| *s);
         let saved_topic_source = self.topic_source_var.take();
         let saved_quanthash_bind = std::mem::take(&mut self.quanthash_bind_params);
         // The tagged source name plus its compile-time-baked local slot (§1.5):
@@ -260,7 +292,7 @@ impl Interpreter {
             // Only set $_ when no named parameter is given (for @list { ... })
             // When -> $k is used, $_ should remain from the enclosing scope
             if param_name.is_none() {
-                self.env_mut().insert("_".to_string(), item.clone());
+                self.set_loop_topic(topic_local, item.clone());
             }
             if let Some(ref name) = param_name {
                 self.env_mut().insert(name.clone(), item.clone());
@@ -469,7 +501,7 @@ impl Interpreter {
                     }
                     Err(e) if e.is_redo() && Self::label_matches(&e.label, &spec.label) => {
                         if param_name.is_none() {
-                            self.env_mut().insert("_".to_string(), item.clone());
+                            self.set_loop_topic(topic_local, item.clone());
                         }
                         if let Some(ref name) = param_name {
                             self.env_mut().insert(name.clone(), item.clone());
@@ -521,7 +553,7 @@ impl Interpreter {
                             if let Some(ref mut coll) = collected {
                                 Self::collect_loop_value(coll, v.clone());
                             } else {
-                                self.env_mut().insert("_".to_string(), v.clone());
+                                self.set_loop_topic(topic_local, v.clone());
                                 // Push return value on stack so enclosing compiled
                                 // closures can see it as the block result.
                                 self.stack.push(v);
@@ -652,7 +684,7 @@ impl Interpreter {
                         }
                         self.topic_source_var = saved_topic_source;
                         self.quanthash_bind_params = saved_quanthash_bind.clone();
-                        self.restore_loop_topic(saved_topic);
+                        self.restore_loop_topic(saved_topic, saved_topic_local);
                         self.pop_loop_local_scope(code);
                         return Err(e);
                     }
@@ -667,7 +699,7 @@ impl Interpreter {
                         {
                             self.unmark_readonly(name);
                         }
-                        self.restore_loop_topic(saved_topic.clone());
+                        self.restore_loop_topic(saved_topic.clone(), saved_topic_local.clone());
                         self.pop_loop_local_scope(code);
                         return Err(e);
                     }
@@ -756,7 +788,7 @@ impl Interpreter {
         }
         self.topic_source_var = saved_topic_source;
         self.quanthash_bind_params = saved_quanthash_bind.clone();
-        self.restore_loop_topic(saved_topic);
+        self.restore_loop_topic(saved_topic, saved_topic_local);
         if let Some(coll) = collected {
             let mut coll = coll;
             for (idx, name) in deferred_container_refs {

@@ -40,6 +40,10 @@ impl Interpreter {
                 _ => unreachable!("ForLoop param must be a string constant"),
             });
         let saved_topic = self.env().get("_").cloned();
+        // The topic's local slot, when this frame has one (see
+        // `save_loop_topic_local`): the loop must mirror each item into it.
+        let saved_topic_local = self.save_loop_topic_local(spec);
+        let topic_local = saved_topic_local.as_ref().map(|(s, _)| *s);
         let saved_topic_source = self.topic_source_var.take();
         let was_topic_readonly = self.is_readonly("_");
 
@@ -87,7 +91,7 @@ impl Interpreter {
 
             self.topic_source_var = None;
             if param_name.is_none() {
-                self.env_mut().insert("_".to_string(), item.clone());
+                self.set_loop_topic(topic_local, item.clone());
             }
             if let Some(ref name) = param_name {
                 self.env_mut().insert(name.clone(), item.clone());
@@ -119,7 +123,7 @@ impl Interpreter {
                     }
                     Err(e) if e.is_redo() && Self::label_matches(&e.label, &spec.label) => {
                         if param_name.is_none() {
-                            self.env_mut().insert("_".to_string(), item.clone());
+                            self.set_loop_topic(topic_local, item.clone());
                         }
                         if let Some(ref name) = param_name {
                             self.env_mut().insert(name.clone(), item.clone());
@@ -190,7 +194,7 @@ impl Interpreter {
                             self.unmark_readonly("_");
                         }
                         self.topic_source_var = saved_topic_source;
-                        self.restore_loop_topic(saved_topic);
+                        self.restore_loop_topic(saved_topic, saved_topic_local);
                         return Err(e);
                     }
                     Err(e) => {
@@ -202,7 +206,7 @@ impl Interpreter {
                         if !was_topic_readonly {
                             self.unmark_readonly("_");
                         }
-                        self.restore_loop_topic(saved_topic.clone());
+                        self.restore_loop_topic(saved_topic.clone(), saved_topic_local.clone());
                         return Err(e);
                     }
                 }
@@ -221,7 +225,7 @@ impl Interpreter {
             self.unmark_readonly("_");
         }
         self.topic_source_var = saved_topic_source;
-        self.restore_loop_topic(saved_topic);
+        self.restore_loop_topic(saved_topic, saved_topic_local);
         Ok(())
     }
 
@@ -250,6 +254,10 @@ impl Interpreter {
         let _writes_back_topic =
             spec.param_idx.is_none() && spec.param_local.is_none() && spec.arity <= 1;
         let saved_topic = self.env().get("_").cloned();
+        // The topic's local slot, when this frame has one (see
+        // `save_loop_topic_local`): the loop must mirror each item into it.
+        let saved_topic_local = self.save_loop_topic_local(spec);
+        let topic_local = saved_topic_local.as_ref().map(|(s, _)| *s);
         let saved_topic_source = self.topic_source_var.take();
         let mut collected = if spec.collect { Some(Vec::new()) } else { None };
         let stack_base = if spec.collect {
@@ -299,7 +307,7 @@ impl Interpreter {
 
             // Set up parameters
             if param_name.is_none() {
-                self.env_mut().insert("_".to_string(), item.clone());
+                self.set_loop_topic(topic_local, item.clone());
             }
             if let Some(ref name) = param_name {
                 self.env_mut().insert(name.clone(), item.clone());
@@ -342,7 +350,7 @@ impl Interpreter {
                     }
                     Err(e) if e.is_redo() && Self::label_matches(&e.label, &spec.label) => {
                         if param_name.is_none() {
-                            self.env_mut().insert("_".to_string(), item.clone());
+                            self.set_loop_topic(topic_local, item.clone());
                         }
                         if let Some(ref name) = param_name {
                             self.env_mut().insert(name.clone(), item.clone());
@@ -364,7 +372,7 @@ impl Interpreter {
                         {
                             self.unmark_readonly(name);
                         }
-                        self.restore_loop_topic(saved_topic.clone());
+                        self.restore_loop_topic(saved_topic.clone(), saved_topic_local.clone());
                         return Err(e);
                     }
                 }
@@ -381,7 +389,7 @@ impl Interpreter {
             self.unmark_readonly(name);
         }
         self.topic_source_var = saved_topic_source;
-        self.restore_loop_topic(saved_topic);
+        self.restore_loop_topic(saved_topic, saved_topic_local);
         if let Some(coll) = collected {
             self.stack.push(Value::array(coll));
         }
