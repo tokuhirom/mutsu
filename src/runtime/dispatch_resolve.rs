@@ -219,23 +219,22 @@ impl Interpreter {
             return None;
         }
         if name.contains("::") {
+            // Block access to my-scoped (non-our) package items. Checked before
+            // the arity-keyed candidate scan below, not only on the exact-name
+            // hit: a `multi sub` is
+            // registered under `Pkg::name/arity` keys, so the exact-name lookup
+            // misses and the scan would hand back the very routine this gate
+            // exists to hide (`MScope::multi-lex(1)` answered where raku says
+            // "Could not find symbol '&multi-lex' in 'MScope'").
+            if self.qualified_name_hidden_here(name) {
+                return None;
+            }
             if let Some(def) = self
                 .registry()
                 .functions
                 .get(&Symbol::intern(name))
                 .cloned()
             {
-                // Block access to my-scoped (non-our) package items from outside
-                // their declaring package.
-                if self.is_my_scoped_package_item(name)
-                    && let Some((pkg_prefix, _)) = name.rsplit_once("::")
-                    && pkg_prefix != self.current_package()
-                    && !self
-                        .current_package()
-                        .starts_with(&format!("{}::", pkg_prefix))
-                {
-                    return None;
-                }
                 return Some(def);
             }
             let prefix = format!("{}/{arity}:", name);
@@ -290,22 +289,14 @@ impl Interpreter {
             {
                 return Some(def);
             }
+            // Visibility was decided by the gate at the top of this branch.
             if let Some(def) = self
                 .registry()
                 .functions
                 .get(&Symbol::intern(name))
                 .cloned()
             {
-                if !self.is_my_scoped_package_item(name) {
-                    return Some(def);
-                } else if let Some((pkg_prefix, _)) = name.rsplit_once("::")
-                    && (pkg_prefix == self.current_package()
-                        || self
-                            .current_package()
-                            .starts_with(&format!("{}::", pkg_prefix)))
-                {
-                    return Some(def);
-                }
+                return Some(def);
             }
             // Try qualifying with the current package prefix when the
             // prefix package is visible in the current scope (i.e., exists

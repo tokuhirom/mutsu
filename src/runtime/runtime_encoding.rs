@@ -276,6 +276,16 @@ impl Interpreter {
             && !self.our_scoped_package_items.contains(fq_name)
     }
 
+    /// Must a call to this qualified name stay unresolved? True for a
+    /// `my`-scoped package item. A plain `sub f` in a module or class body is
+    /// lexical: it is exported and callable under its short name, but it is
+    /// never in the package stash, so raku answers "Could not find symbol '&f'
+    /// in 'M'" for `M::f()` — from *inside* the declaring package as well as
+    /// from outside. Only `our sub f` is a package symbol.
+    pub(crate) fn qualified_name_hidden_here(&self, fq_name: &str) -> bool {
+        fq_name.contains("::") && self.is_my_scoped_package_item(fq_name)
+    }
+
     pub(crate) fn is_name_suppressed(&self, name: &str) -> bool {
         self.suppressed_names.contains(name)
     }

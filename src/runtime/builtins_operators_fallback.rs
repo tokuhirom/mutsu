@@ -1001,10 +1001,19 @@ impl Interpreter {
         // not a decoration to be discarded.
         if let Some(pos) = name.rfind("::") {
             let short_name = &name[pos + 2..];
-            if self.qualified_retry_resolves(short_name, args) {
+            let package = &name[..pos];
+            // ... and only when the package really is one mutsu never saw. A
+            // package it *does* know has already had its chance through the
+            // registry, and a plain `sub` in a module is `my`-scoped: raku says
+            // `MScope::lex-sub()` is "Could not find symbol '&lex-sub' in
+            // 'MScope'" even while the same routine is imported and callable
+            // under its short name, and only `our sub` is reachable that way.
+            // Stripping here would resurrect every lexical routine of every
+            // loaded module under its package name.
+            if !self.is_known_package(package) && self.qualified_retry_resolves(short_name, args) {
                 return self.call_function(short_name, args.to_vec());
             }
-            return Err(self.no_such_qualified_symbol(&name[..pos], short_name));
+            return Err(self.no_such_qualified_symbol(package, short_name));
         }
 
         // NativeCall's `explicitly-manage($str)` marks a value's C-side buffer
@@ -1088,6 +1097,18 @@ impl Interpreter {
     /// `Could not find symbol '&index' in 'GLOBAL::Foo::Bar'` (an `X::AdHoc`).
     /// A package raku knows about is named bare — `class C {}; C::foo()` says
     /// `in 'C'` — while one it has never seen is reported under `GLOBAL::`.
+    /// Is `package` a package mutsu actually registered (class, role, module,
+    /// or a declared stub)? An unknown one is what raku reports as
+    /// `GLOBAL::Foo::Bar`, and it is the only case in which a qualified call
+    /// may retry under its short name.
+    fn is_known_package(&self, package: &str) -> bool {
+        !package.is_empty()
+            && (self.has_class(package)
+                || self.has_role(package)
+                || self.registry().package_kinds.contains_key(package)
+                || self.registry().package_stubs.contains(package))
+    }
+
     fn no_such_qualified_symbol(&self, package: &str, short_name: &str) -> RuntimeError {
         // An explicitly written `GLOBAL::` qualifier resolves through the
         // pseudo-package, and raku then names the symbol without its `&` sigil:
@@ -1098,10 +1119,7 @@ impl Interpreter {
             None if package == "GLOBAL" => ("", ""),
             None => (package, "&"),
         };
-        let known = self.has_class(package)
-            || self.has_role(package)
-            || self.registry().package_kinds.contains_key(package)
-            || self.registry().package_stubs.contains(package);
+        let known = self.is_known_package(package);
         let qualified = if package.is_empty() {
             "GLOBAL".to_string()
         } else if known {

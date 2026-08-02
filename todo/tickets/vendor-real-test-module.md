@@ -325,7 +325,7 @@ Exit status was measured for the first time and is already faithful — a failin
 assertion exits 1, a short plan exits 255 — which is what `prove` reads, so
 step 3 does not need work there.
 
-### Triaged, 15 left (2026-08-02), then 13
+### Triaged, 15 left (2026-08-02), then 13, then 12
 
 `module-file-var-and-callframe.t` now passes, and so does `leave-in-if-branch.t`
 — its `@events = ()` between assertions was silently dropped because the real
@@ -346,7 +346,7 @@ successfully, so the difference is genuinely in mutsu.
 | group | files | note |
 | --- | --- | --- |
 | ~~exception-class hierarchy~~ | ~~`block-lexical-scope.t`, `gate-b-callee-name-collision-and-deref-capture.t`~~, `undeclared-when-type.t` | **not one cause, and not the hierarchy ticket.** The first two were mutsu raising the *wrong class*: an undeclared variable read and a call to a CORE term constant both answered `X::Undeclared::Symbols` where raku answers `X::Undeclared` (the two are unrelated — `X::Comp` is a role, not a superclass — so registering one under the other would have been wrong). Fixed: `news/2026-08/undeclared-variable-is-not-undeclared-symbols.md`. `undeclared-when-type.t` is separate: `when SomeUndeclaredType` is `X::Comp::Group` in raku (a *parse* failure, "needs parens to avoid gobbling block") and `X::Undeclared::Symbols` in mutsu |
-| the pin asserts *native-provider* behaviour | `qualified-call-does-not-alias-builtin.t` (asserts `Test::ok(1)` **dies** — under the real module `Test::ok` legitimately exists), `test-assertion-line-number.t` | re-point the test file; not an interpreter gap |
+| ~~the pin asserts *native-provider* behaviour~~ | ~~`qualified-call-does-not-alias-builtin.t`~~, `test-assertion-line-number.t` | **the first was mislabelled and the label's reasoning was wrong.** "Under the real module `Test::ok` legitimately exists" is not true: rakudo's `Test.rakumod` declares `multi sub ok(...) is export`, a *lexical*, so `raku -e 'use Test; Test::ok(1,"q")'` says `Could not find symbol '&ok' in 'Test'` exactly as the pin asserts. mutsu leaked every module's lexical `sub`/`multi sub` under its package name. Fixed: `news/2026-08/module-sub-is-not-a-package-symbol.md`. **Verify a "re-point the pin" label against `raku` before believing it** |
 | deferred `Seq` reification destroys the value | `is-lazy-io-lines.t` | `todo/deep/deferred-seq-materialization-destroys-the-original.md` — the real `is` opens with `$got.defined`, which guts a lazy `.lines` |
 | individual gaps | `bigrat-sort-compare.t` (`cmp-ok` calls `infix:«<»` as a *routine value*; FatRat vs Num answers differently there than the compiled operator), `proxy-list-transparency.t` (`is-deeply` does not FETCH `Proxy` list elements — reports `$(Proxy, Proxy)`), `emit-done-controlflow.t`, `error-reporting-quality.t`, `group-of.t`, `io-cathandle-lazy.t` (**aborts with a stack overflow** under the real module: `.cache` on a lazy Seq still answers `Seq`, so `is-deeply`'s Seq-narrowing candidate re-dispatches to itself forever — `todo/deep/cache-on-a-lazy-seq-must-not-answer-seq.md`), `subscript-adverbs.t`, `throws-like-gather-sink.t` (+ part of `emit-done-controlflow.t`: `todo/deep/eval-context-frame-owns-the-return-target.md`), `whatever-code-fixes.t` | one at a time |
 
