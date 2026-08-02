@@ -38,12 +38,17 @@ fn check_io_func_followed_by_loop<'a>(name: &str, rest_after_ws: &'a str) -> PRe
     Ok((rest_after_ws, ()))
 }
 
-/// A user-declared `sub` named like an IO builtin (`say`/`print`/`put`/`note`)
-/// shadows the builtin listop form in its lexical scope: `sub say(...) {...}; say
-/// $x` must call the user sub, not the builtin. Bail out of the builtin-statement
-/// parse so statement dispatch falls through to the general listop-call parser.
+/// A `sub` named like an IO builtin (`say`/`print`/`put`/`note`) shadows the
+/// builtin listop form in its lexical scope: `sub say(...) {...}; say $x` must
+/// call the sub, not the builtin. Bail out of the builtin-statement parse so
+/// statement dispatch falls through to the general listop-call parser.
+///
+/// An *imported* sub shadows it exactly as a locally-declared one does — the
+/// lexical scope does not care where the binding came from. `Cro::HTTP::Router`
+/// exports `put` (the HTTP verb), so `put -> 'product' { … }` inside a `route`
+/// block is a route declaration, not a print.
 fn shadowed_by_user_sub(name: &str) -> PResult<'_, ()> {
-    if is_user_declared_sub(name) {
+    if is_user_declared_sub(name) || is_imported_function(name) {
         return Err(PError::expected("io builtin shadowed by user sub"));
     }
     Ok(("", ()))
