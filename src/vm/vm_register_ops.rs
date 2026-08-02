@@ -451,11 +451,7 @@ impl Interpreter {
         let Some(cc) = cc else {
             return self.clone_env();
         };
-        if crate::opcode::reflective_name_access_possible()
-            || !cc.env_consumer_slots.block_scope.is_empty()
-            || !cc.env_consumer_slots.block_local_scope.is_empty()
-            || !cc.env_consumer_slots.whenever.is_empty()
-        {
+        if crate::opcode::reflective_name_access_possible() {
             let mut flat = self.clone_env();
             // Even when capturing the whole env by name, a slot-only local (a
             // pointy-block/sub parameter that this frame never mirrors into `env`,
