@@ -592,13 +592,15 @@ impl Interpreter {
             let name = v.to_string_value();
             if name.is_empty() { None } else { Some(name) }
         });
+        let preserve_hash_entries =
+            matches!(args.get(5).map(Value::view), Some(ValueView::Bool(true)));
         self.assign_method_lvalue_with_values(
             target_var.as_deref(),
             target,
             &method,
             method_args,
             value,
-            false,
+            preserve_hash_entries,
         )
     }
 }

@@ -7,6 +7,41 @@ pub(crate) fn method_lvalue_assign_expr(
     method_args: Vec<Expr>,
     value: Expr,
 ) -> Expr {
+    method_lvalue_assign_expr_with_intent(
+        target,
+        target_var_name,
+        method_name,
+        method_args,
+        value,
+        false,
+    )
+}
+
+pub(crate) fn method_lvalue_roundtrip_assign_expr(
+    target: Expr,
+    target_var_name: Option<String>,
+    method_name: String,
+    method_args: Vec<Expr>,
+    value: Expr,
+) -> Expr {
+    method_lvalue_assign_expr_with_intent(
+        target,
+        target_var_name,
+        method_name,
+        method_args,
+        value,
+        true,
+    )
+}
+
+fn method_lvalue_assign_expr_with_intent(
+    target: Expr,
+    target_var_name: Option<String>,
+    method_name: String,
+    method_args: Vec<Expr>,
+    value: Expr,
+    preserve_hash_entries: bool,
+) -> Expr {
     // `$(EXPR) = value` lowers `$(EXPR)` to `EXPR.item`, but the item
     // contextualizer is transparent as an lvalue: it names the same container as
     // `EXPR`. Assign straight through to `EXPR` (`$(@a[0]) = ...` writes `@a[0]`)
@@ -25,6 +60,7 @@ pub(crate) fn method_lvalue_assign_expr(
         Some(name) => Expr::Literal(Value::str(name)),
         None => Expr::Literal(Value::NIL),
     });
+    args.push(Expr::Literal(Value::truth(preserve_hash_entries)));
     Expr::Call {
         name: Symbol::intern("__mutsu_assign_method_lvalue"),
         args,

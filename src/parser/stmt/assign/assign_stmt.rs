@@ -86,6 +86,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                     Expr::ArrayLiteral(Vec::new()),
                     updated_value,
                     Expr::Literal(Value::str(name.clone())),
+                    Expr::Literal(Value::truth(true)),
                 ],
             };
             let stmt = Stmt::Expr(assign_call);
