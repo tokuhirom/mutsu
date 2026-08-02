@@ -236,17 +236,24 @@ impl Interpreter {
             state.planned.is_some()
         };
         if !already_planned {
+            // `effective_ran`, not the local `ran`: once a test has run on a
+            // spawned thread (a `start` block, a Promise or Supply callback) the
+            // count lives in the shared atomic and this thread's `ran` is stale.
+            // A file whose assertions all happen inside supply taps — upstream
+            // Cro's `t/http2-frame-parser.rakutest` — emitted `1..3` after
+            // running 26 tests, and prove failed it on the plan alone.
             let ran = {
                 let state = self.tap.ensure_state();
-                state.planned = Some(state.ran);
-                state.ran
+                let ran = state.effective_ran();
+                state.planned = Some(ran);
+                ran
             };
             self.emit_output(&format!("1..{}\n", ran));
         }
         // Return True if all tests passed and plan matches, False otherwise
         let state = self.tap.state().unwrap();
         let plan_matches = match state.planned {
-            Some(planned) => planned == state.ran,
+            Some(planned) => planned == state.effective_ran(),
             None => true,
         };
         let all_passed = state.failed == 0 && plan_matches;
