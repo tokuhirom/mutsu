@@ -395,6 +395,7 @@ impl Interpreter {
             pending_eval_placeholder_params: Vec::new(),
             pending_supply_block_body: false,
             pending_supply_emitter_sym: None,
+            pending_supply_authoritative_free_vars: Vec::new(),
             last_block_my_declared: Vec::new(),
             predictive_seq_iters: self.predictive_seq_iters.clone(),
             protect_block_cache: HashMap::new(),

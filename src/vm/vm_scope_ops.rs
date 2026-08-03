@@ -164,6 +164,30 @@ impl Interpreter {
                 {
                     owned.push(sym);
                 }
+                // The body's never-written free variables are owned too. A supply
+                // block body is a scope its caller never re-enters, and its
+                // `whenever` callbacks are dispatched much later from an arbitrary
+                // frame — so a lexical it captured must not be re-resolved against
+                // whoever happens to dispatch it. Two live instances of one parse
+                // site make this concrete: with
+                // `Cro::HTTP::Router::RouteSet.transformer`'s
+                // `supply { whenever $requests { … } }` instantiated for both the
+                // outer route set and a delegated inner one, the inner body's
+                // callback saw the OUTER `$requests`.
+                //
+                // Only `authoritative_free_vars` qualify — the captures the
+                // *creating frame* vouched for as never written after the capture.
+                // A capture the supply body writes is shared state whose updates
+                // must reach the declaring frame (`whenever $s.on-close({ $closed
+                // = True })`), and one the declaring frame reassigns after the
+                // block was built must still be read live (`my $gate = 0; my $sup
+                // = supply { … emit $gate … }; $gate = 9`) — freezing either here
+                // would be a by-value snapshot that silently goes stale.
+                for sym in &code.authoritative_free_vars {
+                    if !owned.contains(sym) {
+                        owned.push(*sym);
+                    }
+                }
                 owned
             } else {
                 Vec::new()

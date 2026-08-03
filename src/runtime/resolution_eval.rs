@@ -176,6 +176,8 @@ impl Interpreter {
         // inherit the mark — see `pending_supply_block_body`.
         let is_supply_block_body = std::mem::take(&mut self.pending_supply_block_body);
         let supply_emitter_sym = std::mem::take(&mut self.pending_supply_emitter_sym);
+        let supply_authoritative_free_vars =
+            std::mem::take(&mut self.pending_supply_authoritative_free_vars);
         let let_mark = self.let_saves_len();
         let mut saved_functions = self.registry().functions.clone();
         let saved_proto_subs = self.registry().proto_subs.clone();
@@ -211,6 +213,11 @@ impl Interpreter {
         let (mut code, compiled_fns) = self.compile_block_value_opts(body, is_eval_unit);
         code.is_supply_block_body = is_supply_block_body;
         code.supply_emitter_sym = supply_emitter_sym;
+        for sym in supply_authoritative_free_vars {
+            if !code.authoritative_free_vars.contains(&sym) {
+                code.authoritative_free_vars.push(sym);
+            }
+        }
         // Multi-frame coherence (env_dirty-deletion path): box any captured-outer
         // scalar this carrier body writes into a shared cell across env + saved
         // frames, so the by-name write survives the owner frame's env restore.
