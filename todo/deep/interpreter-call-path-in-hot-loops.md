@@ -84,6 +84,16 @@ Passing the block through a *module* sub (`sub s-amp(&code) { code() }`, importe
 takes under the vendored `Test`, and is why the real module inflates heavy roast files past the
 30 s per-file budget (`todo/tickets/vendor-real-test-module.md`).
 
+**Measured negative result (2026-08-03): fixing the block-local surcharge did NOT move the
+real-`Test` files.** `MUTSU_REAL_TEST=1 MUTSU_FUDGE=1 mutsu roast/S04-declarations/state.t` is
+410.0 G retired instructions before the fix and 409.1 G after (-0.2%). That is expected in hindsight
+and worth writing down so nobody re-chases it: `state.t`'s hot loop is
+`lives-ok { for ^2000000 { $ = foo } }`, whose callee `foo` is declared at **file scope** — it is
+row B plus the module-sub indirection, not row C. The remaining real-`Test` deficit is therefore the
+general per-call cost (row B, ~340 ns/call, 13.8× raku) plus the `&code`-through-a-module-sub
+multiplier, and *that* is what the vendored-`Test` campaign is blocked on. Attack row B next, not
+the declaration site.
+
 ### Trap: raku will delete your benchmark
 
 `for ^1000000 { $n = f($n) }` with `$n` never read afterwards measures nothing under raku — its

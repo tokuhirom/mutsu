@@ -66,6 +66,15 @@ C/B goes from **1.66x to 1.03x** — the declaration site no longer changes what
 general call-path deficit against raku that `todo/deep/interpreter-call-path-in-hot-loops.md` tracks
 (rows A and B) is untouched; only the block-local surcharge is gone.
 
+## What it does *not* fix
+
+`MUTSU_REAL_TEST=1 roast/S04-declarations/state.t` — the file that motivated looking here — is
+410.0 G instructions before and 409.1 G after (**-0.2%**, i.e. nothing). Its hot loop is
+`lives-ok { for ^2000000 { $ = foo } }` and `foo` is declared at *file* scope, so it is row B plus
+the `&code`-through-a-module-sub multiplier, not row C. The vendored-`Test` campaign is blocked on
+the **general** per-call cost (row B is still ~13.8x raku), not on the declaration site. Recorded in
+`todo/deep/interpreter-call-path-in-hot-loops.md` so it is not re-chased.
+
 Pinned by `t/block-local-sub-dispatch.t`, which covers what the widened cache could break: sibling
 blocks re-declaring the same name, a block-local sub shadowing a file-scope one and the file-scope
 one coming back afterwards, the same shape reached through a closure argument, and a block-local sub
