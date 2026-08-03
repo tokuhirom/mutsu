@@ -211,6 +211,26 @@ impl RuntimeError {
         Self::typed("X::Syntax::WithoutElse", attrs)
     }
 
+    /// X::Syntax::DuplicatedPrefix - a run of the same prefix character where a
+    /// term was expected (`~~1`, `^^5`). rakudo reports the run in `prefixes`,
+    /// which `roast/S03-operators/misc.t` matches on, and suggests the spaced
+    /// spelling in a second line.
+    pub(crate) fn duplicated_prefix(prefixes: &str) -> Self {
+        let single = prefixes
+            .chars()
+            .next()
+            .map(String::from)
+            .unwrap_or_default();
+        let msg = format!(
+            "Expected a term, but found either infix {prefixes} or redundant prefix {single}\n  \
+             (to suppress this message, please use a space like {single} {single})"
+        );
+        let mut attrs = HashMap::new();
+        attrs.insert("prefixes".to_string(), Value::str(prefixes.to_string()));
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        Self::typed("X::Syntax::DuplicatedPrefix", attrs)
+    }
+
     /// X::Syntax::UnlessElse - `unless` followed by an `else`-family keyword.
     /// The `without` twin of this is [`Self::without_else`]; roast matches the
     /// `keyword` attribute on both (`S04-statements/unless.t`).

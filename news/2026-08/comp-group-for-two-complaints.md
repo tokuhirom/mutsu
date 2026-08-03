@@ -66,7 +66,9 @@ Each change is deliberately narrow, because the neighbouring shapes are
 Pin: `t/comp-group-two-complaints.t`, which also asserts the shapes that must
 *not* become groups.
 
-The two files left in the cluster need an unterminated-regex diagnosis
-(`roast/S05-metasyntax/regex.t`) and paired-delimiter validation
-(`roast/S02-literals/quoting-unicode.t`); the first is written up in
-`todo/tickets/unterminated-regex-has-no-diagnosis.md`.
+The two files left in the cluster: `roast/S05-metasyntax/regex.t` needed an
+unterminated-regex diagnosis (done —
+`news/2026-08/unterminated-regex-diagnosis.md`), and
+`roast/S02-literals/quoting-unicode.t` turned out to need the `X::Comp` *role*
+rather than the delimiter validation first guessed
+(`todo/deep/exception-class-hierarchy-is-mostly-unregistered.md`).
