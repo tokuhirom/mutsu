@@ -142,7 +142,15 @@ impl Interpreter {
             // there is the WHOLE frame's declarations — including the lexicals
             // sibling `whenever`s are supposed to share (t/react-whenever-
             // shared-lexical.t). See `CompiledCode::is_supply_block_body`.
-            let owned_lexicals: Vec<crate::symbol::Symbol> = if code.is_supply_block_body {
+            //
+            // A `whenever` registered from inside ANOTHER `whenever`'s body runs
+            // in a chunk re-compiled from that callback's AST, which is not the
+            // supply body and so computes nothing below. The enclosing callback's
+            // own owned set rides in on `inherited_owned_lexicals` and applies to
+            // both shapes.
+            let mut owned_lexicals: Vec<crate::symbol::Symbol> =
+                code.inherited_owned_lexicals.clone();
+            if code.is_supply_block_body {
                 let mut owned: Vec<crate::symbol::Symbol> = code
                     .my_declared_sym
                     .iter()
@@ -188,10 +196,12 @@ impl Interpreter {
                         owned.push(*sym);
                     }
                 }
-                owned
-            } else {
-                Vec::new()
-            };
+                for sym in owned {
+                    if !owned_lexicals.contains(&sym) {
+                        owned_lexicals.push(sym);
+                    }
+                }
+            }
             loan_env!(
                 self,
                 run_whenever_with_value(supply_val, target_var, &param, body, &owned_lexicals)

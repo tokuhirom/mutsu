@@ -178,6 +178,8 @@ impl Interpreter {
         let supply_emitter_sym = std::mem::take(&mut self.pending_supply_emitter_sym);
         let supply_authoritative_free_vars =
             std::mem::take(&mut self.pending_supply_authoritative_free_vars);
+        let whenever_inherited_owned =
+            std::mem::take(&mut self.pending_whenever_inherited_owned);
         let let_mark = self.let_saves_len();
         let mut saved_functions = self.registry().functions.clone();
         let saved_proto_subs = self.registry().proto_subs.clone();
@@ -213,6 +215,7 @@ impl Interpreter {
         let (mut code, compiled_fns) = self.compile_block_value_opts(body, is_eval_unit);
         code.is_supply_block_body = is_supply_block_body;
         code.supply_emitter_sym = supply_emitter_sym;
+        code.inherited_owned_lexicals = whenever_inherited_owned;
         for sym in supply_authoritative_free_vars {
             if !code.authoritative_free_vars.contains(&sym) {
                 code.authoritative_free_vars.push(sym);
