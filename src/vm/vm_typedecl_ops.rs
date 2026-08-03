@@ -4,17 +4,21 @@ use crate::ast::Expr;
 use crate::symbol::Symbol;
 
 impl Interpreter {
-    /// Whether a stmt-pool entry is a `__hoisted` declaration-only shell
-    /// emitted by `hoist_type_decl_shells` (compiler). Shell registration
-    /// errors are swallowed at the dispatch site — the in-place declaration
-    /// reports any real error.
-    pub(super) fn stmt_is_hoisted_type_shell(stmt: &Stmt) -> bool {
-        match stmt {
-            Stmt::ClassDecl { custom_traits, .. } | Stmt::RoleDecl { custom_traits, .. } => {
-                custom_traits.iter().any(|(t, _)| t == "__hoisted")
-            }
-            _ => false,
-        }
+    /// Whether a typed class/role plan is a `__hoisted` declaration-only shell emitted by
+    /// `hoist_type_decl_shells`. The opcode operand no longer indexes `stmt_pool`, so shell
+    /// detection must read the same typed plan pool as registration itself.
+    pub(super) fn class_plan_is_hoisted(code: &CompiledCode, idx: u32) -> bool {
+        code.class_decl_plans[idx as usize]
+            .custom_traits
+            .iter()
+            .any(|(name, _)| name == "__hoisted")
+    }
+
+    pub(super) fn role_plan_is_hoisted(code: &CompiledCode, idx: u32) -> bool {
+        code.role_decl_plans[idx as usize]
+            .custom_traits
+            .iter()
+            .any(|(name, _)| name == "__hoisted")
     }
 
     pub(super) fn exec_register_enum_op(

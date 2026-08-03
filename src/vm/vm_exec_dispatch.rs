@@ -4413,7 +4413,7 @@ impl Interpreter {
                     // `hoist_type_decl_shells`) is best-effort: on failure the
                     // in-place declaration still registers the class and
                     // reports any real error.
-                    if !Self::stmt_is_hoisted_type_shell(&code.stmt_pool[*idx as usize]) {
+                    if !Self::class_plan_is_hoisted(code, *idx) {
                         return Err(e);
                     }
                 }
@@ -4429,7 +4429,7 @@ impl Interpreter {
                 self.note_type_body_written_lexicals(code);
                 if let Err(e) = self.exec_register_role_op(code, *idx) {
                     // Best-effort shell pre-registration; see RegisterClass.
-                    if !Self::stmt_is_hoisted_type_shell(&code.stmt_pool[*idx as usize]) {
+                    if !Self::role_plan_is_hoisted(code, *idx) {
                         return Err(e);
                     }
                 }
