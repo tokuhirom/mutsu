@@ -730,3 +730,38 @@ are the best-value place to start, since an abort costs a whole file:
 `roast/S12-methods/qualified.t` is worth a second look too: its Malformed
 assertion passes now and the file moved on to `Cannot dispatch to method me on
 Parent because it is not inherited or done by Bar` in its inheritance subtest.
+
+### Working the diagnostic-free aborts (2026-08-04)
+
+Two of the listed aborts were taken, and both were general interpreter bugs the
+strict module merely exposed. Neither was in `Test.rakumod` and neither was
+about assertions.
+
+| file | cause | fix |
+| --- | --- | --- |
+| `S02-types/capture.t` (now 46/46) | the atomic shared-array store seeded itself from an **undereferenced `ContainerRef`**, so it started EMPTY and dropped `Test.rakumod`'s whole `@vars` subtest stack the first time the file spawned a thread | `news/2026-08/shared-array-mutation-through-a-container-cell.md` |
+| `S04-statements/given.t` (still failing, one step further) | an EVAL'd `sub` collided with a routine only the **registry** knew about, so `produce-tester`'s per-subtest `sub test-given` raised "Redeclaration of routine" | `news/2026-08/eval-sub-shadows-a-registered-routine.md` |
+
+Three things worth carrying forward:
+
+- **`@`/`%` module lexicals are `ContainerRef` cells as seen from the module's
+  own subs.** Any code that reads an env binding's `ValueView` and expects a
+  bare `Array`/`Hash` is wrong there. The bug above matched neither arm and
+  silently took the `_ => default()` branch.
+- **A fix in this campaign routinely unmasks the next bug.** The `given.t` fix
+  made `roast/S04-statements/return.t` test 15 fail — it had been passing
+  because the EVAL died of the very redeclaration being removed, so the
+  snippet's `return` was never exercised. Local full `make roast` caught it; the
+  underlying lexotic-`return` bug is fixed in the same PR.
+- **`!routine_stack.is_empty()` is not "is a routine live".** A bare block, a
+  `for` body and an *anonymous* `sub` all push a `RoutineFrame` with
+  `is_block: true`. `Interpreter::enclosing_routine_exists()` is the predicate
+  that asks the real question — but it is only correct for an EVAL *unit*; the
+  other users of that compile path recompile closure bodies where the live frame
+  IS the routine.
+
+`given.t`'s next wall is its own ticket:
+`todo/tickets/lexical-amp-binding-does-not-shadow-a-routine.md` — `my &f = ...`
+does not shadow an outer `sub f` for a bare-name call, so
+`my &test-given = produce-tester $condition; test-given topic, ...` still
+reaches the earlier subtest's 3-positional `test-given`.
