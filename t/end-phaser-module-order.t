@@ -12,7 +12,7 @@ use Test;
 # ran before the file's own `END { is ... }` and reported "You planned 2 tests,
 # but ran 1" on a file that went on to emit both.
 
-plan 5;
+plan 6;
 
 my $dir = $*TMPDIR.child("mutsu-end-order-{$*PID}");
 $dir.mkdir;
@@ -64,6 +64,15 @@ like run-snippet('nested.raku', $lib ~ 'use EndOrderNest;
 END { say "script" }
 '), / 'script N A' $ /,
     'a module used by a module installs its END first, so it runs last';
+
+# A `use` reached from an EVAL is *not* compile-time, so its module's END is
+# installed after everything the script declared and therefore runs first --
+# the opposite of the plain `use` above. File::Temp's own test suite depends on
+# this: it EVALs `use File::Temp` precisely so the module's unlink-at-END runs
+# before the file's END inspects the files.
+is run-snippet('evaled.raku', $lib ~ 'END { say "script" }
+"use EndOrderA".EVAL;
+'), 'A script', "a module used from an EVAL installs its END last, so it runs first";
 
 # Two ENDs in the same compunit are unaffected: still reverse source order.
 is run-snippet('same.raku', 'END { say "first" }

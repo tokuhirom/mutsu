@@ -51,11 +51,11 @@ impl Interpreter {
     /// the main compunit declares) or inside a block/sub/`EVAL` of the main
     /// compunit (installed as the compiler walked past it, after any `use`).
     pub(crate) fn push_end_phaser(&mut self, body: Vec<Stmt>) {
-        let base = if self.module_load_depth > 0 {
-            super::end_order::MODULE
-        } else {
-            super::end_order::RUNTIME
-        };
+        let base = self
+            .module_load_order
+            .last()
+            .copied()
+            .unwrap_or(super::end_order::RUNTIME);
         self.push_end_phaser_ordered(body, base);
     }
 

@@ -36,11 +36,20 @@ still breaks ties within a class):
 | --- | --- |
 | a module's ENDs, in load order | earliest — a nested `use` installs the inner module's first |
 | the main compunit's top-level ENDs, in source order | after every module |
-| ENDs the main compunit registers while running (a block, a sub, an `EVAL`) | last, i.e. run first |
+| ENDs the main compunit registers while running (a block, a sub, an `EVAL`) — and any module it `use`s *from* an `EVAL` | last, i.e. run first |
 
-Which class a registration belongs to is decided by a new `module_load_depth`,
-bumped around `load_module` — a depth rather than a flag because a module may
-`use` another one.
+Which class a registration belongs to is decided by a new `module_load_order`
+stack, pushed around `load_module` — a stack rather than a flag because a module
+may `use` another one, and the nested load inherits its loader's class.
+
+A `use` reached from an **`EVAL`** is the one that is *not* `MODULE`: rakudo
+compiles the EVAL'd snippet at run time, so it installs that module's ENDs after
+everything the main compunit declared and they run *before* the script's — the
+opposite of a plain `use`. `File::Temp`'s own test suite turns on exactly this
+distinction: `03-tempfile.rakutest` writes `'use File::Temp; …'.EVAL` with a
+comment saying it does so to make the module's unlink-at-END run before the
+file's own END inspects the files. Classifying every `load_module` as `MODULE`
+inverted that and cost the file five assertions.
 
 `roast/S04-phasers/multiple.t`, `ascending-order.t`, `descending-order.t` and
 `interpolate.t` all pass under `MUTSU_REAL_TEST=1`. Pin:

@@ -1115,10 +1115,11 @@ pub struct Interpreter {
     /// Monotonic tie-breaker for [`EndPhaser::order`], so phasers within one
     /// [`end_order`] class keep the order they were registered in.
     end_phaser_seq: u64,
-    /// How many module bodies are currently executing. An END registered while
-    /// this is non-zero belongs to a module, and rakudo would have installed it
-    /// at the `use` — i.e. before the main compunit's own.
-    module_load_depth: usize,
+    /// One entry per module body currently executing, holding the [`end_order`]
+    /// class the END phasers it registers belong to. Empty while the main
+    /// compunit runs. See `load_module` for why a `use` reached from an `EVAL`
+    /// is not `end_order::MODULE`.
+    module_load_order: Vec<u64>,
     /// Tracks END phaser site_ids to ensure each is registered only once.
     end_phaser_sites: HashSet<u64>,
     chroot_root: Option<PathBuf>,
