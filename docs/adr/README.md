@@ -43,3 +43,5 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0015](0015-native-backed-container-storage-and-repr-bodies.md) | Native-backed container storage and synthesised REPR bodies (`BODY_OF`) | Accepted (P0–P3a landed; P3b/P3c open) |
 | [0016](0016-span-based-captures-and-lazy-match.md) | Span-based regex captures and lazily materialized `Match` objects | Accepted (P1–P5 all landed) |
 | [0017](0017-cli-option-errors-follow-rakudo.md) | A command-line *option* error follows rakudo — message, stream, and a zero exit status | Accepted |
+| [0018](0018-slot-addressed-lexical-capture-and-env-sync.md) | Slot-addressed lexical capture and env synchronization | Accepted |
+| [0019](0019-compiled-declarations-and-unified-method-dispatch.md) | Compile declarations and unify method dispatch entries | Proposed |
