@@ -178,8 +178,7 @@ impl Interpreter {
         let supply_emitter_sym = std::mem::take(&mut self.pending_supply_emitter_sym);
         let supply_authoritative_free_vars =
             std::mem::take(&mut self.pending_supply_authoritative_free_vars);
-        let whenever_inherited_owned =
-            std::mem::take(&mut self.pending_whenever_inherited_owned);
+        let whenever_inherited_owned = std::mem::take(&mut self.pending_whenever_inherited_owned);
         let let_mark = self.let_saves_len();
         let mut saved_functions = self.registry().functions.clone();
         let saved_proto_subs = self.registry().proto_subs.clone();

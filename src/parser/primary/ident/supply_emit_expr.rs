@@ -35,8 +35,8 @@ fn emitter_call(emitter_name: &str, args: Vec<Expr>) -> Expr {
     }
 }
 
-fn rewrite_boxed(expr: Box<Expr>, emitter: &str) -> Box<Expr> {
-    Box::new(rewrite_expr(*expr, emitter))
+fn rewrite_boxed(expr: Expr, emitter: &str) -> Box<Expr> {
+    Box::new(rewrite_expr(expr, emitter))
 }
 
 fn rewrite_all(exprs: Vec<Expr>, emitter: &str) -> Vec<Expr> {
@@ -68,19 +68,19 @@ pub(crate) fn rewrite_expr(expr: Expr, emitter: &str) -> Expr {
             then_expr,
             else_expr,
         } => Expr::Ternary {
-            cond: rewrite_boxed(cond, emitter),
-            then_expr: rewrite_boxed(then_expr, emitter),
-            else_expr: rewrite_boxed(else_expr, emitter),
+            cond: rewrite_boxed(*cond, emitter),
+            then_expr: rewrite_boxed(*then_expr, emitter),
+            else_expr: rewrite_boxed(*else_expr, emitter),
         },
         Expr::Binary { left, op, right } => Expr::Binary {
-            left: rewrite_boxed(left, emitter),
+            left: rewrite_boxed(*left, emitter),
             op,
-            right: rewrite_boxed(right, emitter),
+            right: rewrite_boxed(*right, emitter),
         },
-        Expr::Grouped(e) => Expr::Grouped(rewrite_boxed(e, emitter)),
+        Expr::Grouped(e) => Expr::Grouped(rewrite_boxed(*e, emitter)),
         Expr::Unary { op, expr } => Expr::Unary {
             op,
-            expr: rewrite_boxed(expr, emitter),
+            expr: rewrite_boxed(*expr, emitter),
         },
         Expr::MethodCall {
             target,
@@ -89,7 +89,7 @@ pub(crate) fn rewrite_expr(expr: Expr, emitter: &str) -> Expr {
             modifier,
             quoted,
         } => Expr::MethodCall {
-            target: rewrite_boxed(target, emitter),
+            target: rewrite_boxed(*target, emitter),
             name,
             args: rewrite_all(args, emitter),
             modifier,
