@@ -342,11 +342,19 @@ impl Interpreter {
                 shared.get(&atomic_key).map(Value::view),
                 Some(ValueView::Array(..))
             ) {
-                let seed = match shared
+                // The env binding may be a `ContainerRef` cell rather than a
+                // bare Array — every lexical a closure captures is boxed into
+                // one, which is exactly the shape a *module* file-scope `@a`
+                // has when its own subs reach it. Reading the cell's view
+                // without dereferencing it matched neither arm and seeded the
+                // atomic entry EMPTY, silently dropping everything already in
+                // the array (`Test.rakumod`'s `@vars` subtest stack lost its
+                // outer frame the first time a test file spawned a thread).
+                let local = shared
                     .get(arr_name)
                     .or_else(|| self.env.get(arr_name))
-                    .map(Value::view)
-                {
+                    .map(Value::deref_container);
+                let seed = match local.as_ref().map(Value::view) {
                     Some(ValueView::Array(elems, _)) => elems.as_ref().clone(),
                     _ => crate::value::ArrayData::default(),
                 };
@@ -384,8 +392,16 @@ impl Interpreter {
         } else {
             self.mark_shared_var_dirty(arr_name);
             // Update the local env so this thread observes its own push
-            // immediately even on direct env reads.
-            self.env.insert(arr_name.to_string(), updated.clone());
+            // immediately even on direct env reads. A `ContainerRef` binding is
+            // written *through*: the cell is the array's identity for every
+            // other holder (a closure's captured copy, a `:=` alias), so
+            // replacing the binding with a bare Array would detach them all and
+            // freeze them at the pre-mutation contents.
+            if let Some(ValueView::ContainerRef(cell)) = self.env.get(arr_name).map(Value::view) {
+                *cell.lock().unwrap_or_else(|e| e.into_inner()) = updated.clone();
+            } else {
+                self.env.insert(arr_name.to_string(), updated.clone());
+            }
         }
         (result, updated)
     }
