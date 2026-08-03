@@ -143,11 +143,28 @@ impl Interpreter {
             // sibling `whenever`s are supposed to share (t/react-whenever-
             // shared-lexical.t). See `CompiledCode::is_supply_block_body`.
             let owned_lexicals: Vec<crate::symbol::Symbol> = if code.is_supply_block_body {
-                code.my_declared_sym
+                let mut owned: Vec<crate::symbol::Symbol> = code
+                    .my_declared_sym
                     .iter()
                     .filter(|sym| !code.free_var_syms.contains(sym))
                     .copied()
-                    .collect()
+                    .collect();
+                // The block's own emitter is its PARAMETER, not a `my`, so the
+                // filter above never sees it — yet it is the one name that MUST
+                // resolve to this instance. The generated name is unique per
+                // parse site but shared by every runtime instance of that site,
+                // so a supply chain built by calling the same routine twice
+                // (`$s = xform($s); $s = xform($s)`, exactly what Cro's
+                // middleware pipeline does) has two live instances of one block:
+                // tapping the outer one runs the inner one's body, whose binding
+                // then answered the OUTER body's `emit`, feeding the outer supply
+                // its own output forever.
+                if let Some(sym) = code.supply_emitter_sym
+                    && !owned.contains(&sym)
+                {
+                    owned.push(sym);
+                }
+                owned
             } else {
                 Vec::new()
             };

@@ -2319,6 +2319,15 @@ pub(crate) struct CompiledCode {
     /// declarations genuinely ARE that frame's lexicals and stay shared. Set
     /// during `compute_needs_env_sync`.
     pub(crate) is_supply_block_body: bool,
+    /// The generated emitter parameter of a `supply { … }` body
+    /// (`__mutsu_supply_emitter_N`), interned. `Some` exactly when
+    /// `is_supply_block_body`.
+    ///
+    /// The name is unique per *parse site* but shared by every runtime *instance*
+    /// of that site, so the `whenever` closures a body creates must own it — see
+    /// `exec_whenever_scope_op`. It has no compiled local slot (a `supply` body's
+    /// `locals` is empty), so it cannot be recovered from `locals_sym`.
+    pub(crate) supply_emitter_sym: Option<Symbol>,
     /// Ordered list of this closure's read-only plain-lexical free variables that
     /// have been promoted to index-based upvalues. Index `i` in this list is the
     /// operand of the `GetUpvalue(i)` ops that `compute_upvalues` rewrites in
@@ -2570,6 +2579,7 @@ impl CompiledCode {
             env_consumer_slots: EnvConsumerSlots::default(),
             dup_named_locals: Vec::new(),
             is_supply_block_body: false,
+            supply_emitter_sym: None,
             my_declared_sym: rustc_hash::FxHashSet::default(),
             my_declared_enum_sym: rustc_hash::FxHashSet::default(),
             free_var_syms: Vec::new(),

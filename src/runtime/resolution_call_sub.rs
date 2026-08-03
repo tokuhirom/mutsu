@@ -637,8 +637,26 @@ impl Interpreter {
                 .compiled_code
                 .as_ref()
                 .is_some_and(|cc| cc.is_supply_block_body);
+            // The emitter's name rides along so the recompiled chunk can tell the
+            // `whenever` closures it builds to own it (`exec_whenever_scope_op`).
+            // A `SubData` compiled on the fly has no `compiled_code`, so fall back
+            // to the parameter list, which is where the name came from anyway.
+            self.pending_supply_emitter_sym = data
+                .compiled_code
+                .as_ref()
+                .and_then(|cc| cc.supply_emitter_sym)
+                .or_else(|| {
+                    data.params
+                        .iter()
+                        .find(|p| p.starts_with(crate::parser::SUPPLY_EMITTER_PREFIX))
+                        .map(|p| Symbol::intern(p))
+                });
+            if self.pending_supply_emitter_sym.is_some() {
+                self.pending_supply_block_body = true;
+            }
             let body_result = self.eval_block_value(&data.body);
             self.pending_supply_block_body = false;
+            self.pending_supply_emitter_sym = None;
             // The `my` names the body just declared, published by
             // `eval_block_value_inner`. Taken immediately, before anything below
             // can run another block and overwrite it. This is how a body with no
