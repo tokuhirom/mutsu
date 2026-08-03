@@ -253,6 +253,8 @@ impl Value {
     pub(crate) fn array_data_like(like: &ArrayData, items: Vec<Value>) -> crate::gc::Gc<ArrayData> {
         crate::gc::Gc::new(ArrayData {
             items,
+            native_storage: like.native_storage.clone(),
+            native_dirty: like.native_dirty,
             value_type: like.value_type.clone(),
             key_type: like.key_type.clone(),
             declared_type: like.declared_type.clone(),

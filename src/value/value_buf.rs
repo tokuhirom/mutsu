@@ -157,6 +157,24 @@ fn encode_elems(elems: &[Value], width: u8, kind: ElemKind) -> Vec<u8> {
     bytes
 }
 
+/// Build the payload node used by a native numeric `array[T]`.
+pub(crate) fn make_native_array_storage(elem_type: &str, elems: &[Value]) -> Option<Gc<BufData>> {
+    let (width, kind) = native_elem_type(elem_type)?;
+    Some(Gc::new(BufData::new(
+        encode_elems(elems, width, kind),
+        width,
+        kind,
+    )))
+}
+
+pub(crate) fn decode_storage(data: &BufData) -> Vec<Value> {
+    decode_elems(data)
+}
+
+pub(crate) fn encode_storage(data: &BufData, elems: &[Value]) -> Vec<u8> {
+    encode_elems(elems, data.width, data.kind)
+}
+
 /// The bit pattern one element occupies, as the `u64` its `width` low bytes
 /// spell. For a float element that is the IEEE-754 encoding at the element
 /// width; for an integer element it is [`elem_to_u64`].

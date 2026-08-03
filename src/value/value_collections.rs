@@ -151,6 +151,8 @@ impl ArrayData {
     pub fn new(items: Vec<Value>) -> Self {
         ArrayData {
             items,
+            native_storage: None,
+            native_dirty: false,
             value_type: None,
             key_type: None,
             declared_type: None,
@@ -167,22 +169,84 @@ impl ArrayData {
 
     /// Borrow the element vector through the representation chokepoint.
     pub(crate) fn items(&self) -> &Vec<Value> {
+        self.sync_native_items();
         &self.items
     }
 
     /// Mutably borrow the element vector through the representation chokepoint.
     pub(crate) fn items_mut(&mut self) -> &mut Vec<Value> {
+        self.native_dirty = self.native_storage.is_some();
         &mut self.items
+    }
+
+    /// Promote a numeric `array[T]` to the shared native payload node.
+    pub(crate) fn promote_native_storage(&mut self, elem_type: &str) {
+        // A shaped array stores row arrays at this level. Native storage is
+        // promoted per flat numeric array only; encoding a row object as a
+        // scalar would destroy the shape (and its nested values).
+        if self
+            .items
+            .iter()
+            .any(|value| matches!(value.view(), crate::value::ValueView::Array(..)))
+        {
+            return;
+        }
+        if self.native_storage.is_none()
+            && let Some(node) =
+                crate::value::value_buf::make_native_array_storage(elem_type, &self.items)
+        {
+            self.native_storage = Some(node);
+        }
+    }
+
+    pub(crate) fn native_storage_address(&self) -> Option<usize> {
+        self.native_storage
+            .as_ref()
+            .map(|node| node.bytes.as_ptr() as usize)
+    }
+
+    pub(crate) fn native_storage_node(&self) -> Option<crate::gc::Gc<BufData>> {
+        self.native_storage.clone()
+    }
+
+    pub(crate) fn native_repr_body_address(&self) -> Option<usize> {
+        self.native_storage
+            .as_ref()
+            .map(|node| node.body.address(node))
     }
 
     /// Move all elements out through the representation chokepoint.
     pub(crate) fn take_items(&mut self) -> Vec<Value> {
+        self.sync_native_items();
         std::mem::take(&mut self.items)
     }
 
     /// Consume the array data and return its elements.
     pub(crate) fn into_items(self) -> Vec<Value> {
+        self.sync_native_items();
         self.items
+    }
+
+    fn sync_native_items(&self) {
+        let Some(node) = &self.native_storage else {
+            return;
+        };
+        let decoded = if self.native_dirty {
+            let bytes = crate::value::value_buf::encode_storage(node, &self.items);
+            unsafe {
+                let data = crate::value::gc_contents_mut(node);
+                data.bytes.clear();
+                data.bytes.extend_from_slice(&bytes);
+            }
+            self.items.clone()
+        } else {
+            crate::value::value_buf::decode_storage(node)
+        };
+        unsafe {
+            let this = self as *const Self as *mut Self;
+            std::ptr::addr_of_mut!((*this).items).write(decoded);
+            std::ptr::addr_of_mut!((*this).native_dirty).write(false);
+        }
     }
 
     /// Whether index `i` is a hole (a deleted slot or an autovivification
