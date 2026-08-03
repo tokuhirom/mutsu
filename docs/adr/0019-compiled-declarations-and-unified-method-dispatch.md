@@ -151,6 +151,11 @@ these declaration kinds by inspecting the generic statement pool. Their `legacy_
 remain until structural registration and declaration-time expressions become plan operations and
 compiled child chunks.
 
+The three declaration entry opcodes have been consolidated into `RegisterDecl`, whose compact
+operand selects a tagged `CompiledDeclPlanRef`. Sub/class/role plans retain their typed cold-data
+pools, while VM opcode dispatch and declaration-sensitive compiler analysis now share one bytecode
+entry.
+
 The dispatch layer now has a canonical `BuiltinMethodEntry` keyed by owner type and method name,
 including native arity bits. Built-in introspection derives its name list from those entries. The
 catalog is still populated through the transitional native probes and slow-path declarations;

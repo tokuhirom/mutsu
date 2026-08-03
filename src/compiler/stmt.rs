@@ -3039,7 +3039,7 @@ impl Compiler {
                     return;
                 }
                 let idx = self.code.add_sub_decl_plan(stmt);
-                self.code.emit(OpCode::RegisterSub(idx));
+                self.code.emit(OpCode::RegisterDecl(idx));
                 if name_expr.is_some() {
                     // Runtime-resolved sub names cannot be keyed reliably in compiled_fns.
                     return;
@@ -3141,7 +3141,7 @@ impl Compiler {
                     custom_traits: vec![("__mutsu_method_decl".to_string(), None)],
                 };
                 let idx = self.code.add_sub_decl_plan(&lowered);
-                self.code.emit(OpCode::RegisterSub(idx));
+                self.code.emit(OpCode::RegisterDecl(idx));
                 if name_expr.is_none() {
                     let mut method_params: Vec<String> = vec![
                         "self".to_string(),
@@ -3450,7 +3450,7 @@ impl Compiler {
                 // (e.g. `class D` inside `unit module A::B` → `A::B::D`).
                 let stmt = self.qualify_decl_name(stmt);
                 let idx = self.code.add_class_decl_plan(&stmt);
-                self.code.emit(OpCode::RegisterClass(idx));
+                self.code.emit(OpCode::RegisterDecl(idx));
             }
             Stmt::AugmentClass { .. } => {
                 let idx = self.code.add_stmt(stmt.clone());
@@ -3462,7 +3462,7 @@ impl Compiler {
                 self.record_type_body_captures(body);
                 let stmt = self.qualify_decl_name(stmt);
                 let idx = self.code.add_role_decl_plan(&stmt);
-                self.code.emit(OpCode::RegisterRole(idx));
+                self.code.emit(OpCode::RegisterDecl(idx));
             }
             Stmt::SubsetDecl { .. } => {
                 let idx = self.code.add_stmt(stmt.clone());

@@ -47,12 +47,14 @@ mod declaration_plan_tests {
                 .all(|stmt| !matches!(stmt, crate::ast::Stmt::SubDecl { .. })),
             "compiled sub declarations must not remain executable generic statements"
         );
-        assert!(code.ops.iter().all(|op| match op {
-            crate::opcode::OpCode::RegisterSub(idx) => {
-                (*idx as usize) < code.sub_decl_plans.len()
-            }
-            _ => true,
-        }));
+        assert!(code.ops.iter().any(|op| matches!(
+            op,
+            crate::opcode::OpCode::RegisterDecl(idx)
+                if matches!(
+                    code.decl_plans.get(*idx as usize),
+                    Some(crate::opcode::CompiledDeclPlanRef::Sub(_))
+                )
+        )));
     }
 
     #[test]
@@ -69,15 +71,22 @@ mod declaration_plan_tests {
             stmt,
             crate::ast::Stmt::ClassDecl { .. } | crate::ast::Stmt::RoleDecl { .. }
         )));
-        assert!(code.ops.iter().all(|op| match op {
-            crate::opcode::OpCode::RegisterClass(idx) => {
-                (*idx as usize) < code.class_decl_plans.len()
-            }
-            crate::opcode::OpCode::RegisterRole(idx) => {
-                (*idx as usize) < code.role_decl_plans.len()
-            }
-            _ => true,
-        }));
+        assert!(code.ops.iter().any(|op| matches!(
+            op,
+            crate::opcode::OpCode::RegisterDecl(idx)
+                if matches!(
+                    code.decl_plans.get(*idx as usize),
+                    Some(crate::opcode::CompiledDeclPlanRef::Class(_))
+                )
+        )));
+        assert!(code.ops.iter().any(|op| matches!(
+            op,
+            crate::opcode::OpCode::RegisterDecl(idx)
+                if matches!(
+                    code.decl_plans.get(*idx as usize),
+                    Some(crate::opcode::CompiledDeclPlanRef::Role(_))
+                )
+        )));
     }
 }
 mod const_fold;

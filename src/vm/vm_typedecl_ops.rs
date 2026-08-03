@@ -4,21 +4,47 @@ use crate::ast::Expr;
 use crate::symbol::Symbol;
 
 impl Interpreter {
-    /// Whether a typed class/role plan is a `__hoisted` declaration-only shell emitted by
-    /// `hoist_type_decl_shells`. The opcode operand no longer indexes `stmt_pool`, so shell
-    /// detection must read the same typed plan pool as registration itself.
-    pub(super) fn class_plan_is_hoisted(code: &CompiledCode, idx: u32) -> bool {
-        code.class_decl_plans[idx as usize]
-            .custom_traits
-            .iter()
-            .any(|(name, _)| name == "__hoisted")
-    }
-
-    pub(super) fn role_plan_is_hoisted(code: &CompiledCode, idx: u32) -> bool {
-        code.role_decl_plans[idx as usize]
-            .custom_traits
-            .iter()
-            .any(|(name, _)| name == "__hoisted")
+    pub(super) fn exec_register_decl_op(
+        &mut self,
+        code: &CompiledCode,
+        idx: u32,
+    ) -> Result<(), RuntimeError> {
+        match code.decl_plans.get(idx as usize).copied() {
+            Some(crate::opcode::CompiledDeclPlanRef::Sub(plan_idx)) => {
+                self.exec_register_sub_op(code, plan_idx)
+            }
+            Some(crate::opcode::CompiledDeclPlanRef::Class(plan_idx)) => {
+                self.note_type_body_written_lexicals(code);
+                match self.exec_register_class_op(code, plan_idx) {
+                    Ok(()) => Ok(()),
+                    Err(_)
+                        if code.class_decl_plans[plan_idx as usize]
+                            .custom_traits
+                            .iter()
+                            .any(|(name, _)| name == "__hoisted") =>
+                    {
+                        Ok(())
+                    }
+                    Err(error) => Err(error),
+                }
+            }
+            Some(crate::opcode::CompiledDeclPlanRef::Role(plan_idx)) => {
+                self.note_type_body_written_lexicals(code);
+                match self.exec_register_role_op(code, plan_idx) {
+                    Ok(()) => Ok(()),
+                    Err(_)
+                        if code.role_decl_plans[plan_idx as usize]
+                            .custom_traits
+                            .iter()
+                            .any(|(name, _)| name == "__hoisted") =>
+                    {
+                        Ok(())
+                    }
+                    Err(error) => Err(error),
+                }
+            }
+            None => Err(RuntimeError::new("RegisterDecl plan index out of bounds")),
+        }
     }
 
     pub(super) fn exec_register_enum_op(
