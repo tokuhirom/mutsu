@@ -71,17 +71,28 @@ Two things stand out, and the second is the new one:
 - The per-call cost is ~340 ns (B) on top of a ~140 ns/iteration loop, so a call is worth ~3
   arithmetic iterations. raku's B/C are *faster* than its A because its optimizer inlines the callee
   outright; mutsu's JIT bails at the call boundary (see above), so the gap is the whole call path.
-- **C is 1.7× slower per call than B for an identical body and arity.** Nothing about invoking a sub
-  should depend on where it was declared, so that 1.7× is pure mutsu-internal overhead on
-  block-local routine declarations — and it is not a corner case: roast bodies and `Test.rakumod`'s
-  own helpers declare subs inside blocks constantly. With a zero-arg callee the same comparison was
-  1259 ms vs 4843 ms, i.e. **3.8×**. Start here; it is the one part of this ticket that looks like a
-  bug rather than a general "calls are expensive".
+- ~~**C is 1.7× slower per call than B for an identical body and arity.**~~ **Fixed** — see
+  `news/2026-08/block-local-sub-call-path.md`. A routine declared inside a block is OTF-compiled and
+  was dispatched through `otf_call_cache`, which re-derived the whole callsite analysis on every
+  call and moved a ~1 kB `CompiledFunction` in and out of a `HashMap` around each one. Measured by
+  retired instructions (`perf stat instructions:u`, 1M iterations, release): C went **9.20 G → 5.70 G**
+  against B's 5.54 G, i.e. from **1.66×** B to **1.03×**. The remaining rows (A/B vs raku) are
+  unchanged — that is the general call-path cost this ticket still tracks.
 
 Passing the block through a *module* sub (`sub s-amp(&code) { code() }`, imported) adds a further
 ~1.5× on top of every row — which is exactly the shape every `lives-ok`/`throws-like`/`subtest` body
 takes under the vendored `Test`, and is why the real module inflates heavy roast files past the
 30 s per-file budget (`todo/tickets/vendor-real-test-module.md`).
+
+**Measured negative result (2026-08-03): fixing the block-local surcharge did NOT move the
+real-`Test` files.** `MUTSU_REAL_TEST=1 MUTSU_FUDGE=1 mutsu roast/S04-declarations/state.t` is
+410.0 G retired instructions before the fix and 409.1 G after (-0.2%). That is expected in hindsight
+and worth writing down so nobody re-chases it: `state.t`'s hot loop is
+`lives-ok { for ^2000000 { $ = foo } }`, whose callee `foo` is declared at **file scope** — it is
+row B plus the module-sub indirection, not row C. The remaining real-`Test` deficit is therefore the
+general per-call cost (row B, ~340 ns/call, 13.8× raku) plus the `&code`-through-a-module-sub
+multiplier, and *that* is what the vendored-`Test` campaign is blocked on. Attack row B next, not
+the declaration site.
 
 ### Trap: raku will delete your benchmark
 

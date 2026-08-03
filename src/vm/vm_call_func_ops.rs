@@ -330,10 +330,31 @@ impl Interpreter {
             let name_str = Self::const_str(code, name_idx);
             let name_sym = code.const_sym(name_idx);
             if self.pos_light_call_cache_gen == self.fn_resolve_gen {
-                if let Some((cached_key, cached_fp)) = self.pos_light_call_cache.get(&name_sym)
-                    && let Some(cf) = compiled_fns.get(cached_key)
-                    && cf.fingerprint == *cached_fp
-                {
+                // An OTF-compiled body is owned by the cache rather than by
+                // `compiled_fns`, so take an `Arc` handle to it and let the
+                // borrow on `self` end before the call below.
+                let mut otf_hold: Option<Arc<CompiledFunction>> = None;
+                let cur_pkg_sym = self.current_package_sym();
+                let cached: Option<&CompiledFunction> =
+                    match self.pos_light_call_cache.get(&name_sym) {
+                        Some(crate::runtime::PosLightTarget::Compiled { key, fingerprint }) => {
+                            let (key, fingerprint) = (*key, *fingerprint);
+                            compiled_fns
+                                .get(&key)
+                                .filter(|cf| cf.fingerprint == fingerprint)
+                        }
+                        Some(crate::runtime::PosLightTarget::Otf {
+                            callsite_package,
+                            cf,
+                        }) => {
+                            if *callsite_package == cur_pkg_sym {
+                                otf_hold = Some(Arc::clone(cf));
+                            }
+                            None
+                        }
+                        None => None,
+                    };
+                if let Some(cf) = cached.or(otf_hold.as_deref()) {
                     let arity_usize = arity as usize;
                     if self.stack.len() >= arity_usize {
                         // One fused pass over the args (J4d): junction detection
@@ -481,8 +502,10 @@ impl Interpreter {
         // OTF-compiled function cache check: for user-defined functions that
         // were compiled on-the-fly (not in compiled_fns), use the cached
         // compiled form to avoid the expensive interpreter fallback.
-        // We take() the CF from the cache to avoid holding a borrow on self,
-        // then put it back after the call.
+        // The body is `Arc`-shared, so releasing the borrow on `self` costs one
+        // refcount bump; the entry stays in the table (it used to be `remove`d
+        // and re-`insert`ed around every call, memcpying a ~1 kB
+        // `CompiledFunction` twice per call — see `otf_call_cache`'s doc).
         if !skip_name_caches {
             let name_str = Self::const_str(code, name_idx);
             let name_sym = code.const_sym(name_idx);
@@ -496,21 +519,28 @@ impl Interpreter {
                 // from the package it was resolved under (PLAN 8.22): a `unit
                 // module Foo`'s non-exported sub must not stay callable by its
                 // bare name once control returns to the consumer's GLOBAL scope.
-                // Peek the package before removing so a mismatch leaves the entry
-                // in place for the package that does own it.
+                // A package mismatch leaves the entry in place for the package
+                // that does own it.
                 let cur_pkg_sym = self.current_package_sym();
-                if !self.has_multi_candidates_cached(name_str)
-                    && self
+                if !self.has_multi_candidates_cached_sym(name_sym)
+                    && let Some((def_pkg_sym, cf)) = self
                         .otf_call_cache
                         .get(&name_sym)
-                        .is_some_and(|(pkg, _, _)| *pkg == cur_pkg_sym)
-                    && let Some((_, def_pkg_sym, cf)) = self.otf_call_cache.remove(&name_sym)
+                        .filter(|(pkg, _, _)| *pkg == cur_pkg_sym)
+                        .map(|(_, def_pkg, cf)| (*def_pkg, Arc::clone(cf)))
                     && !cf.has_inner_subs
                 {
                     let arity_usize = arity as usize;
                     if self.stack.len() >= arity_usize && !self.stack_args_have_slip(arity_usize) {
                         let start = self.stack.len() - arity_usize;
-                        let args: Vec<Value> = self.stack.drain(start..).collect();
+                        // Pooled args buffer (mirrors the two light-call cached
+                        // paths above): `drain(..).collect()` was one malloc/free
+                        // per call on this path, which every block-local sub call
+                        // takes. Only the cold `call_compiled_function_named` arm
+                        // consumes the `Vec`; the light arms borrow it and it goes
+                        // back to the pool below.
+                        let mut args = self.take_locals_from_pool(0);
+                        args.extend(self.stack.drain(start..));
 
                         // Extract callsite line for deprecation tracking
                         let cl = crate::runtime::Interpreter::peek_callsite_line(&args);
@@ -547,6 +577,21 @@ impl Interpreter {
                             && !named_share
                             && Self::is_positional_light_call_eligible(&cf, name_str)
                         {
+                            // Promote to the ultra-fast positional cache at the
+                            // top of this function, so the next call skips this
+                            // whole preamble (eligibility re-analysis, arg-source
+                            // decode, junction/slip/share re-scans) instead of
+                            // re-deriving it per call. `has_junction` /
+                            // `stack_args_have_slip` / the share checks above are
+                            // per-CALL properties, and that path re-checks all of
+                            // them in its own fused scan before dispatching.
+                            self.pos_light_call_cache.insert(
+                                name_sym,
+                                crate::runtime::PosLightTarget::Otf {
+                                    callsite_package: cur_pkg_sym,
+                                    cf: Arc::clone(&cf),
+                                },
+                            );
                             self.call_compiled_function_positional_light(
                                 &cf,
                                 &args,
@@ -565,7 +610,7 @@ impl Interpreter {
                             self.set_pending_call_arg_sources(decoded_sources);
                             let r = self.call_compiled_function_named(
                                 &cf,
-                                args,
+                                std::mem::take(&mut args),
                                 compiled_fns,
                                 &pkg,
                                 name_str,
@@ -577,9 +622,7 @@ impl Interpreter {
                             }
                             r
                         };
-                        // Put CF back in cache
-                        self.otf_call_cache
-                            .insert(name_sym, (cur_pkg_sym, def_pkg_sym, cf));
+                        self.recycle_locals(args);
                         let result = result?;
                         // Slice F: drain this frame's recorded captured-outer
                         // writes, plus (env_dirty-gated) reconcile to catch a
@@ -593,10 +636,6 @@ impl Interpreter {
                         // return merge. No blanket mark needed.
                         return Ok(());
                     }
-                    // Put CF back if we couldn't use it (stack underflow, or a Slip
-                    // arg that must be flattened by the slow path below).
-                    self.otf_call_cache
-                        .insert(name_sym, (cur_pkg_sym, def_pkg_sym, cf));
                 }
             } else {
                 self.otf_call_cache.clear();
@@ -1096,8 +1135,13 @@ impl Interpreter {
                     if !self.pos_light_call_cache.contains_key(&name_sym) {
                         for (key, func) in compiled_fns {
                             if std::ptr::eq(func, cf) {
-                                self.pos_light_call_cache
-                                    .insert(name_sym, (*key, cf.fingerprint));
+                                self.pos_light_call_cache.insert(
+                                    name_sym,
+                                    crate::runtime::PosLightTarget::Compiled {
+                                        key: *key,
+                                        fingerprint: cf.fingerprint,
+                                    },
+                                );
                                 break;
                             }
                         }

@@ -19,15 +19,23 @@ impl Interpreter {
     /// Cached version of the Interpreter-native [`Self::has_multi_candidates`].
     /// Uses `fn_resolve_gen` for invalidation so it's O(1) on cache hit.
     pub(super) fn has_multi_candidates_cached(&mut self, name: &str) -> bool {
+        self.has_multi_candidates_cached_sym(Symbol::intern(name))
+    }
+
+    /// `has_multi_candidates_cached` for a callsite that already holds the
+    /// name's pre-interned `Symbol` (every `CallFunc` does, via
+    /// `CompiledCode::const_sym`). The cache is `Symbol`-keyed, so taking the
+    /// `&str` form only to re-`intern` it hashed the name string on every call —
+    /// it profiled as the `hash_one` + `memcmp` pair on the OTF dispatch path.
+    pub(super) fn has_multi_candidates_cached_sym(&mut self, sym: Symbol) -> bool {
         if self.multi_candidates_cache_gen != self.fn_resolve_gen {
             self.multi_candidates_cache.clear();
             self.multi_candidates_cache_gen = self.fn_resolve_gen;
         }
-        let sym = Symbol::intern(name);
         if let Some(&cached) = self.multi_candidates_cache.get(&sym) {
             return cached;
         }
-        let result = self.has_multi_candidates(name);
+        let result = self.has_multi_candidates(&sym.resolve());
         self.multi_candidates_cache.insert(sym, result);
         result
     }
@@ -120,7 +128,7 @@ impl Interpreter {
     pub(super) fn otf_compile_function_def(
         &mut self,
         def: &crate::ast::FunctionDef,
-    ) -> CompiledFunction {
+    ) -> Arc<CompiledFunction> {
         let pkg = def.package.resolve();
         let fingerprint =
             crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
@@ -176,7 +184,8 @@ impl Interpreter {
         cf.precompute_param_name_syms();
         cf.detect_inner_subs();
         cf.compute_declared_locals();
-        self.otf_compile_cache.insert(cache_key, cf.clone());
+        let cf = Arc::new(cf);
+        self.otf_compile_cache.insert(cache_key, Arc::clone(&cf));
         cf
     }
 
@@ -213,7 +222,7 @@ impl Interpreter {
             // the same package this (uncached) call does.
             let cur_pkg_sym = self.current_package_sym();
             self.otf_call_cache
-                .insert(name_sym, (cur_pkg_sym, def.package, cf.clone()));
+                .insert(name_sym, (cur_pkg_sym, def.package, Arc::clone(&cf)));
             self.otf_call_cache_gen = self.fn_resolve_gen;
         }
 
