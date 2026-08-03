@@ -276,12 +276,41 @@ impl Interpreter {
 
                 // Bind a real TCP listener (retry briefly if port is still held
                 // by a recently-closed listener thread)
-                let bind_addr = format!("{}:{}", host, port);
+                let bind_spec = format!("{}:{}", host, port);
+                // Resolve to ONE address and bind exactly that. `TcpListener::bind`
+                // on a `&str` walks every address the host resolves to and takes
+                // the first that succeeds — and `localhost` resolves to both
+                // `[::1]` and `127.0.0.1`. So re-listening on a port whose
+                // previous listener was still bound to the first address quietly
+                // bound the *other* one instead of reporting the conflict: two
+                // listeners for one `localhost:port` coexisted, a client reached
+                // whichever its own resolution picked (so a *stopped* server kept
+                // answering), and a third round finally failed with EADDRINUSE
+                // once both stacks were taken. Binding a single resolved address
+                // makes a genuinely-busy port a real error the retry loop below
+                // waits out. (`todo/tickets/async-listener-not-freed-when-
+                // relistening-in-a-loop.md`)
+                use std::net::ToSocketAddrs;
+                let bind_addr = match bind_spec.to_socket_addrs().ok().and_then(|mut a| a.next()) {
+                    Some(addr) => addr,
+                    None => {
+                        if let Some(q) = quit_cb.clone() {
+                            let mut attrs = HashMap::new();
+                            attrs.insert(
+                                "message".to_string(),
+                                Value::str(format!("Failed to resolve '{}'", host)),
+                            );
+                            let ex = Value::make_instance(Symbol::intern("Exception"), attrs);
+                            let _ = self.call_sub_value(q, vec![ex], true);
+                        }
+                        return Ok(Value::make_instance(Symbol::intern("Tap"), HashMap::new()));
+                    }
+                };
                 let tcp_listener = {
                     let mut last_err = None;
                     let mut bound = None;
                     for attempt in 0..10 {
-                        match std::net::TcpListener::bind(&bind_addr) {
+                        match std::net::TcpListener::bind(bind_addr) {
                             Ok(l) => {
                                 bound = Some(l);
                                 break;
