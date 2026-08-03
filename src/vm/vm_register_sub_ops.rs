@@ -183,8 +183,7 @@ impl Interpreter {
         code: &CompiledCode,
         idx: u32,
     ) -> Result<(), RuntimeError> {
-        let stmt = &code.stmt_pool[idx as usize];
-        if let Stmt::SubDecl {
+        if let Some(crate::opcode::CompiledSubDeclPlan {
             name,
             name_expr,
             params,
@@ -192,7 +191,7 @@ impl Interpreter {
             return_type,
             associativity,
             signature_alternates,
-            body,
+            legacy_body: body,
             multi,
             is_rw,
             is_raw,
@@ -201,8 +200,8 @@ impl Interpreter {
             is_test_assertion,
             supersede,
             custom_traits,
-            ..
-        } = stmt
+            fingerprint: site_fp,
+        }) = code.sub_decl_plans.get(idx as usize)
         {
             let resolved_name = if let Some(expr) = name_expr {
                 self.vm_eval_block_value(&[Stmt::Expr(expr.clone())])?
@@ -214,7 +213,6 @@ impl Interpreter {
             // Compile-time declaration fingerprint for this site (absent for a
             // runtime-resolved `name_expr` sub), enabling the idempotent
             // re-registration fast path inside `register_sub_decl_fp`.
-            let site_fp = code.sub_fingerprints.get(&idx).copied();
             let outcome = self.loan_env_for(|i| {
                 i.register_sub_decl_fp(
                     &resolved_name,
@@ -229,7 +227,7 @@ impl Interpreter {
                     *is_test_assertion,
                     *supersede,
                     custom_traits,
-                    site_fp,
+                    *site_fp,
                 )
             })?;
             // An idempotent re-registration of an already-installed identical sub

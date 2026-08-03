@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::ast::{ParamDef, Stmt};
+use crate::ast::{Expr, ParamDef, Stmt};
 use crate::symbol::Symbol;
 use crate::value::{Value, ValueView};
 
@@ -1844,6 +1844,30 @@ pub(crate) struct EnvConsumerSlots {
 }
 
 #[derive(Debug, Clone)]
+pub(crate) struct CompiledSubDeclPlan {
+    pub(crate) name: Symbol,
+    pub(crate) name_expr: Option<Expr>,
+    pub(crate) params: Vec<String>,
+    pub(crate) param_defs: Vec<ParamDef>,
+    pub(crate) return_type: Option<String>,
+    pub(crate) associativity: Option<String>,
+    pub(crate) signature_alternates: Vec<(Vec<String>, Vec<ParamDef>)>,
+    /// Compatibility payload for the routine registry. Method bodies already execute from
+    /// `CompiledFunction`; this AST is removed when the registry adapter is retired in ADR-0019
+    /// stage 1.
+    pub(crate) legacy_body: Vec<Stmt>,
+    pub(crate) multi: bool,
+    pub(crate) is_rw: bool,
+    pub(crate) is_raw: bool,
+    pub(crate) is_export: bool,
+    pub(crate) export_tags: Vec<String>,
+    pub(crate) is_test_assertion: bool,
+    pub(crate) supersede: bool,
+    pub(crate) custom_traits: Vec<(String, Option<Expr>)>,
+    pub(crate) fingerprint: Option<u64>,
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct CompiledCode {
     pub(crate) ops: Vec<OpCode>,
     /// Static ip -> source line table, parallel to `ops` (0 = unknown). Replaces
@@ -1863,6 +1887,9 @@ pub(crate) struct CompiledCode {
     /// chunk stops growing, so it costs no memory in the executed code.
     const_index: rustc_hash::FxHashMap<ConstKey, u32>,
     pub(crate) stmt_pool: Vec<Stmt>,
+    /// Typed declaration plans consumed by `RegisterSub`. Unlike `stmt_pool`, every entry is
+    /// known to be a sub declaration, so the VM does not inspect or execute a source statement.
+    pub(crate) sub_decl_plans: Vec<CompiledSubDeclPlan>,
     pub(crate) locals: Vec<String>,
     /// Pre-interned Symbol for each local name. Avoids Symbol::intern()
     /// on every env sync in hot paths.
@@ -2249,14 +2276,6 @@ pub(crate) struct CompiledCode {
     /// declarations genuinely ARE that frame's lexicals and stay shared. Set
     /// during `compute_needs_env_sync`.
     pub(crate) is_supply_block_body: bool,
-    /// Compile-time identity fingerprint for each `Stmt::SubDecl` in `stmt_pool`,
-    /// keyed by its pool index. A `RegisterSub(idx)` opcode re-executes whenever
-    /// its enclosing frame runs (e.g. a `my sub` inside a hot routine), but the
-    /// declaration it installs is constant. The fingerprint lets the registrar
-    /// recognize an idempotent re-registration in O(1) — without re-deriving the
-    /// `FunctionDef` from the AST — and skip perturbing the resolution caches.
-    /// Computed once here at compile time (see `add_stmt`).
-    pub(crate) sub_fingerprints: std::collections::HashMap<u32, u64>,
     /// Ordered list of this closure's read-only plain-lexical free variables that
     /// have been promoted to index-based upvalues. Index `i` in this list is the
     /// operand of the `GetUpvalue(i)` ops that `compute_upvalues` rewrites in
@@ -2475,6 +2494,7 @@ impl CompiledCode {
             constants: Vec::new(),
             const_index: rustc_hash::FxHashMap::default(),
             stmt_pool: Vec::new(),
+            sub_decl_plans: Vec::new(),
             locals: Vec::new(),
             locals_sym: Vec::new(),
             locals_alias_sym: Vec::new(),
@@ -2529,7 +2549,6 @@ impl CompiledCode {
             outer_code_var_names: std::collections::HashSet::new(),
             needs_cell_free_vars: Vec::new(),
             has_calls: false,
-            sub_fingerprints: std::collections::HashMap::new(),
             upvalue_syms: Vec::new(),
             env_only_decls: Vec::new(),
             const_syms: std::sync::OnceLock::new(),
@@ -4651,23 +4670,35 @@ impl CompiledCode {
 
     pub(crate) fn add_stmt(&mut self, stmt: Stmt) -> u32 {
         let idx = self.stmt_pool.len() as u32;
-        // Record a declaration fingerprint for SubDecls so a re-executed
-        // `RegisterSub(idx)` (e.g. a `my sub` inside a hot routine) can be
-        // recognized as an idempotent no-op without re-deriving the FunctionDef.
-        if let Stmt::SubDecl {
+        self.stmt_pool.push(stmt);
+        idx
+    }
+
+    pub(crate) fn add_sub_decl_plan(&mut self, stmt: &Stmt) -> u32 {
+        let Stmt::SubDecl {
+            name,
+            name_expr,
             params,
             param_defs,
-            body,
             return_type,
+            associativity,
+            signature_alternates,
+            body,
             multi,
             is_rw,
             is_raw,
-            name_expr,
+            is_export,
+            export_tags,
+            is_test_assertion,
+            supersede,
+            custom_traits,
             ..
-        } = &stmt
-            && name_expr.is_none()
-        {
-            let fp = crate::ast::sub_registration_fingerprint(
+        } = stmt
+        else {
+            panic!("add_sub_decl_plan expects SubDecl");
+        };
+        let fingerprint = name_expr.is_none().then(|| {
+            crate::ast::sub_registration_fingerprint(
                 params,
                 param_defs,
                 body,
@@ -4675,10 +4706,28 @@ impl CompiledCode {
                 *multi,
                 *is_rw,
                 *is_raw,
-            );
-            self.sub_fingerprints.insert(idx, fp);
-        }
-        self.stmt_pool.push(stmt);
+            )
+        });
+        let idx = self.sub_decl_plans.len() as u32;
+        self.sub_decl_plans.push(CompiledSubDeclPlan {
+            name: *name,
+            name_expr: name_expr.clone(),
+            params: params.clone(),
+            param_defs: param_defs.clone(),
+            return_type: return_type.clone(),
+            associativity: associativity.clone(),
+            signature_alternates: signature_alternates.clone(),
+            legacy_body: body.clone(),
+            multi: *multi,
+            is_rw: *is_rw,
+            is_raw: *is_raw,
+            is_export: *is_export,
+            export_tags: export_tags.clone(),
+            is_test_assertion: *is_test_assertion,
+            supersede: *supersede,
+            custom_traits: custom_traits.clone(),
+            fingerprint,
+        });
         idx
     }
 }

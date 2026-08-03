@@ -139,4 +139,8 @@ each instruction.
 
 ## Implementation status
 
-Not started. This ADR is the bottom layer of the implementation stack.
+Stage 1 is in progress. `RegisterSub` now indexes a typed `CompiledSubDeclPlan` pool rather than
+`CompiledCode::stmt_pool`; all normal, hoisted, nested-`our`, and top-level-method lowering sites use
+the plan, and the VM no longer pattern-matches `Stmt::SubDecl`. The plan still carries
+`legacy_body` for the existing routine-registry adapter. Replacing that field with the compiled
+routine reference is the next declaration slice.
