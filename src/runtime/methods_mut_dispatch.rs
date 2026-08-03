@@ -1351,7 +1351,7 @@ impl Interpreter {
                                     // `array_push_in_place` — no live borrow into the items,
                                     // and we do not re-enter the VM while the borrow is held.
                                     let data = unsafe { crate::value::gc_contents_mut(arc_items) };
-                                    data.items.extend(vals);
+                                    data.items_mut().extend(vals);
                                 } else {
                                     crate::gc::Gc::make_mut(arc_items).extend(vals);
                                 }
@@ -1416,9 +1416,9 @@ impl Interpreter {
                                 // Shared backing array: in-place interior mutation (see `push`).
                                 let items = if crate::gc::Gc::strong_count(arc_items) > 1 {
                                     // SAFETY: same contract as `array_push_in_place`.
-                                    unsafe { &mut crate::value::gc_contents_mut(arc_items).items }
+                                    unsafe { crate::value::gc_contents_mut(arc_items).items_mut() }
                                 } else {
-                                    crate::gc::Gc::make_mut(arc_items)
+                                    crate::gc::Gc::make_mut(arc_items).items_mut()
                                 };
                                 if items.is_empty() {
                                     make_empty_array_failure_what("pop", &empty_what)
@@ -1457,9 +1457,9 @@ impl Interpreter {
                             // observes the change. See the `push` branch above.
                             let items = if crate::gc::Gc::strong_count(arc_items) > 1 {
                                 // SAFETY: same contract as `array_push_in_place`.
-                                unsafe { &mut crate::value::gc_contents_mut(arc_items).items }
+                                unsafe { crate::value::gc_contents_mut(arc_items).items_mut() }
                             } else {
-                                crate::gc::Gc::make_mut(arc_items)
+                                crate::gc::Gc::make_mut(arc_items).items_mut()
                             };
                             for (i, arg) in normalized_args.iter().enumerate() {
                                 items.insert(i, arg.clone());
@@ -1491,9 +1491,9 @@ impl Interpreter {
                             // Shared backing array: in-place interior mutation (see `push`).
                             let items = if crate::gc::Gc::strong_count(arc_items) > 1 {
                                 // SAFETY: same contract as `array_push_in_place`.
-                                unsafe { &mut crate::value::gc_contents_mut(arc_items).items }
+                                unsafe { crate::value::gc_contents_mut(arc_items).items_mut() }
                             } else {
-                                crate::gc::Gc::make_mut(arc_items)
+                                crate::gc::Gc::make_mut(arc_items).items_mut()
                             };
                             for (i, arg) in flat_values.iter().enumerate() {
                                 items.insert(i, arg.clone());
@@ -1542,9 +1542,9 @@ impl Interpreter {
                                 // Shared backing array: in-place interior mutation (see `push`).
                                 let items = if crate::gc::Gc::strong_count(arc_items) > 1 {
                                     // SAFETY: same contract as `array_push_in_place`.
-                                    unsafe { &mut crate::value::gc_contents_mut(arc_items).items }
+                                    unsafe { crate::value::gc_contents_mut(arc_items).items_mut() }
                                 } else {
-                                    crate::gc::Gc::make_mut(arc_items)
+                                    crate::gc::Gc::make_mut(arc_items).items_mut()
                                 };
                                 if items.is_empty() {
                                     make_empty_array_failure_what("shift", &empty_what)

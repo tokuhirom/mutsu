@@ -171,10 +171,10 @@ impl Interpreter {
                 )));
             }
             let idx = idx as usize;
-            if idx >= data.items.len() {
-                data.items.resize(idx + 1, Value::NIL);
+            if idx >= data.items().len() {
+                data.items_mut().resize(idx + 1, Value::NIL);
             }
-            data.items[idx] = value.clone();
+            data.items_mut()[idx] = value.clone();
             Value::array_with_kind(crate::gc::Gc::new(data), kind)
         } else {
             let key = index_value.to_string_value();

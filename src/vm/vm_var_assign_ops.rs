@@ -661,12 +661,12 @@ impl Interpreter {
             result_arc.verify_unique_for_aliased_mut("fixup_circular_array_refs");
             let data = unsafe { crate::value::gc_contents_mut(&result_arc) };
             for idx in &circular_indices {
-                data.items[*idx] = Value::array_with_kind(result_arc.clone(), *kind);
+                data.items_mut()[*idx] = Value::array_with_kind(result_arc.clone(), *kind);
             }
             for idx in &hash_fixup_indices {
                 let mut seen = Vec::new();
                 Self::replace_array_refs_in_value(
-                    &mut data.items[*idx],
+                    &mut data.items_mut()[*idx],
                     *old_ptr,
                     &result_arc,
                     *kind,
@@ -691,7 +691,7 @@ impl Interpreter {
         let new_ptr = crate::gc::Gc::as_ptr(new_gc) as usize;
         let mut new_data = (**new_gc).clone();
         let mut seen = Vec::new();
-        for item in new_data.items.iter_mut() {
+        for item in new_data.items_mut().iter_mut() {
             Self::replace_array_refs_in_value(item, new_ptr, old_gc, kind, &mut seen);
         }
         // SAFETY: single audited aliased in-place write; `new_data` is a fresh

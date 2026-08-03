@@ -774,7 +774,7 @@ impl Interpreter {
                     // SAFETY: audited aliased in-place container write (see
                     // value::aliased_mut); no borrow into the node is live.
                     let data = unsafe { crate::value::gc_contents_mut(&items) };
-                    data.items.resize(n, Value::int(0));
+                    data.items_mut().resize(n, Value::int(0));
                     return Ok(target.clone());
                 }
                 Ok(target)

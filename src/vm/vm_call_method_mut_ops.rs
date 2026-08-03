@@ -1002,12 +1002,12 @@ impl Interpreter {
                         && self.atomic_array_entry_exists(&target_name) =>
                 {
                     let (result, _) = self.shared_array_mutate(&target_name, |data, _| {
-                        if data.items.is_empty() {
+                        if data.items().is_empty() {
                             crate::runtime::utils::make_empty_array_failure_what(&method, "Array")
                         } else if method == "shift" {
-                            data.items.remove(0)
+                            data.items_mut().remove(0)
                         } else {
-                            data.items.pop().unwrap_or(Value::NIL)
+                            data.items_mut().pop().unwrap_or(Value::NIL)
                         }
                     });
                     self.stack.push(result);

@@ -1687,7 +1687,7 @@ impl Interpreter {
 
             // Collect results, avoiding duplicates at segment boundaries
             let items: Option<Vec<Value>> = match seg_result.view() {
-                ValueView::Array(items, ..) => Some(items.as_ref().clone().items),
+                ValueView::Array(items, ..) => Some(items.as_ref().clone().into_items()),
                 ValueView::LazyList(ll) => ll.cache.lock().unwrap().clone(),
                 _ => None,
             };

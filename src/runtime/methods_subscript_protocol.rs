@@ -82,16 +82,16 @@ impl Interpreter {
         let mut container = target.clone();
         let deleted = container.with_array_mut(|gc, _| {
             let data = crate::value::gc_data_mut(gc);
-            if index >= data.items.len() {
+            if index >= data.items().len() {
                 return Value::NIL;
             }
-            let old = std::mem::replace(&mut data.items[index], Value::NIL);
+            let old = std::mem::replace(&mut data.items_mut()[index], Value::NIL);
             if let Some(initialized) = data.initialized.as_mut() {
                 initialized.remove(&index);
             }
-            while !data.items.is_empty() && data.hole_at(data.items.len() - 1) {
-                let last = data.items.len() - 1;
-                data.items.pop();
+            while !data.items().is_empty() && data.hole_at(data.items().len() - 1) {
+                let last = data.items().len() - 1;
+                data.items_mut().pop();
                 if let Some(set) = data.initialized.as_mut() {
                     set.remove(&last);
                 }

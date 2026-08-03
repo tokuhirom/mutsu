@@ -715,7 +715,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                 ValueView::Array(items, ..) => {
                     let mut reversed = (**items).clone();
                     reversed.reverse();
-                    Value::seq(reversed.items)
+                    Value::seq(reversed.into_items())
                 }
                 ValueView::Seq(items) | ValueView::Slip(items) => {
                     let mut reversed = (**items).clone();
@@ -745,7 +745,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                 ValueView::Array(items, ..) => {
                     let mut sorted = (**items).clone();
                     sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
-                    Value::seq(sorted.items)
+                    Value::seq(sorted.into_items())
                 }
                 ValueView::Seq(items) | ValueView::Slip(items) => {
                     let mut sorted = (**items).clone();

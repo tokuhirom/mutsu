@@ -263,10 +263,10 @@ impl Interpreter {
                         // value::aliased_mut) — same pattern as deepmap's
                         // element writeback; no borrow into the node is live.
                         let data = unsafe { crate::value::gc_contents_mut(&items) };
-                        if data.items.len() <= idx {
-                            data.items.resize(idx + 1, Value::int(0));
+                        if data.items().len() <= idx {
+                            data.items_mut().resize(idx + 1, Value::int(0));
                         }
-                        data.items[idx] = val.clone();
+                        data.items_mut()[idx] = val.clone();
                         Ok(val)
                     }
                     _ => Err(RuntimeError::new(format!(

@@ -1139,7 +1139,7 @@ pub struct HashData {
 /// via pointer reuse.
 #[derive(Debug, Clone, Default)]
 pub struct ArrayData {
-    pub items: Vec<Value>,
+    items: Vec<Value>,
     /// Element value-type constraint (e.g. `Int` for `my Int @a`), if any.
     pub value_type: Option<String>,
     /// Key-type constraint — unused for arrays, present so the shared

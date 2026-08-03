@@ -3354,7 +3354,7 @@ impl Interpreter {
                         ValueView::Array(arc, _) => {
                             // SAFETY: aliased in-place clear of a shared container;
                             // see `gc_contents_mut`.
-                            unsafe { crate::value::gc_contents_mut(&arc).items.clear() };
+                            unsafe { crate::value::gc_contents_mut(&arc).items_mut().clear() };
                         }
                         ValueView::Hash(arc) => {
                             // SAFETY: aliased in-place clear; see `gc_contents_mut`.
@@ -3372,7 +3372,7 @@ impl Interpreter {
                     match self.locals[slot].view() {
                         ValueView::Array(arc, _) => {
                             // SAFETY: aliased in-place clear; see `gc_contents_mut`.
-                            unsafe { crate::value::gc_contents_mut(&arc).items.clear() };
+                            unsafe { crate::value::gc_contents_mut(&arc).items_mut().clear() };
                         }
                         ValueView::Hash(arc) => {
                             // SAFETY: aliased in-place clear; see `gc_contents_mut`.

@@ -223,7 +223,7 @@ pub(super) fn dispatch(
                             match v.view() {
                                 ValueView::Array(rows, k) => {
                                     let mut d = (**rows).clone();
-                                    for item in d.items.iter_mut() {
+                                    for item in d.items_mut().iter_mut() {
                                         *item = clone_rows(item);
                                     }
                                     Value::array_with_kind(crate::gc::Gc::new(d), k)
@@ -231,7 +231,7 @@ pub(super) fn dispatch(
                                 _ => v.clone(),
                             }
                         }
-                        for item in data.items.iter_mut() {
+                        for item in data.items_mut().iter_mut() {
                             *item = clone_rows(item);
                         }
                     }

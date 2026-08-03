@@ -20,7 +20,7 @@ impl Interpreter {
                     {
                         match single.view() {
                             ValueView::Array(items, _) => {
-                                values = items.as_ref().clone().items;
+                                values = items.as_ref().clone().into_items();
                             }
                             ValueView::Seq(items) | ValueView::Slip(items) => {
                                 values = items.as_ref().clone();
@@ -303,7 +303,8 @@ impl Interpreter {
                                     // SAFETY: aliased in-place mutation of a shared
                                     // container; see `gc_contents_mut`.
                                     unsafe {
-                                        crate::value::gc_contents_mut(&items).items[idx] = new_src;
+                                        crate::value::gc_contents_mut(&items).items_mut()[idx] =
+                                            new_src;
                                     }
                                 }
                                 result.push(v);

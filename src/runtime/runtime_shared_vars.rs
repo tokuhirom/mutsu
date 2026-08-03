@@ -143,10 +143,10 @@ impl Interpreter {
             .with_entry_mut(key, |val| {
                 val.with_array_mut(|arc, kind| {
                     let data = crate::gc::Gc::make_mut(arc);
-                    if idx >= data.items.len() {
-                        data.items.resize(idx + 1, Value::NIL);
+                    if idx >= data.items().len() {
+                        data.items_mut().resize(idx + 1, Value::NIL);
                     }
-                    data.items[idx] = value.clone();
+                    data.items_mut()[idx] = value.clone();
                     if *kind == ArrayKind::List {
                         *kind = ArrayKind::Array;
                     }

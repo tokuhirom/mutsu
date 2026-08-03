@@ -331,7 +331,7 @@ impl Interpreter {
         match val.view() {
             ValueView::Array(arc_vec, kind) => {
                 let mut data = (**arc_vec).clone();
-                for v in data.items.iter_mut() {
+                for v in data.items_mut().iter_mut() {
                     *v = Self::deep_copy_value(v);
                 }
                 Value::array_with_kind(crate::gc::Gc::new(data), kind)

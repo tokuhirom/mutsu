@@ -32,7 +32,7 @@ impl Interpreter {
                 if let Some(i) = Self::index_to_usize(key) {
                     // SAFETY: aliased in-place mutation of a shared array; see
                     // `gc_contents_mut`.
-                    let v = &mut unsafe { crate::value::gc_contents_mut(&arc) }.items;
+                    let v = unsafe { crate::value::gc_contents_mut(&arc) }.items_mut();
                     Self::autoviv_resize(v, i + 1, Value::NIL)?;
                     Value::assign_element_slot(&mut v[i], val);
                 }

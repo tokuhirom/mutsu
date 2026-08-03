@@ -233,10 +233,10 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
         // Array/List ~~ Numeric: a list smart-matched against a number compares
         // numerically (`@a == $n`), and a list's numeric value is its element
         // count — so `[1,2,3] ~~ 3` is True (3 elems), `~~ 2` is False.
-        (ValueView::Array(a, _), ValueView::Int(b)) => Some(a.items.len() as i64 == b),
-        (ValueView::Array(a, _), ValueView::Num(b)) => Some(a.items.len() as f64 == b),
+        (ValueView::Array(a, _), ValueView::Int(b)) => Some(a.items().len() as i64 == b),
+        (ValueView::Array(a, _), ValueView::Num(b)) => Some(a.items().len() as f64 == b),
         (ValueView::Array(a, _), ValueView::Rat(n, d)) => {
-            Some(d != 0 && a.items.len() as i64 * d == n)
+            Some(d != 0 && a.items().len() as i64 * d == n)
         }
 
         // IO::Path ~~ IO::Path: compare by cleanup.absolute

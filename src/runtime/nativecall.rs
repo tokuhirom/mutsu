@@ -439,7 +439,7 @@ pub fn call_native_with_out_args(
         {
             let sz = carray_elem_size(*elem);
             arr.with_array_inplace(|data, _kind| {
-                for (i, cell) in data.items.iter_mut().enumerate() {
+                for (i, cell) in data.items_mut().iter_mut().enumerate() {
                     let off = i * sz;
                     if off + sz <= buf.len() {
                         *cell = decode_carray_elem(*elem, &buf[off..off + sz]);
@@ -1032,7 +1032,7 @@ fn marshal_carray_arg(
         .ok_or_else(|| "CArray parameter is missing its element type".to_string())?;
     let list = match resolve_array_value(raw) {
         Some(arr) => arr
-            .with_array_inplace(|data, _| data.items.clone())
+            .with_array_inplace(|data, _| data.items().clone())
             .unwrap_or_default(),
         // A bare type object / Any becomes a null pointer.
         None => Vec::new(),

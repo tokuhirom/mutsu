@@ -116,7 +116,7 @@ impl Interpreter {
             lookup_key.to_string(),
             Value::array_with_kind(crate::gc::Gc::new(items), kind),
         );
-        Ok(Some(result.items))
+        Ok(Some(result.into_items()))
     }
 
     /// Interpreter-native implementation of xx-repeat for thunks.

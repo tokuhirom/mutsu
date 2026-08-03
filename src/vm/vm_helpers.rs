@@ -27,7 +27,7 @@ impl Interpreter {
     pub(super) fn clear_aggregate_cell(cell: &crate::gc::Gc<std::sync::Mutex<Value>>) {
         let mut guard = cell.lock().unwrap();
         if (*guard)
-            .with_array_mut(|arc, _| crate::gc::Gc::make_mut(arc).items.clear())
+            .with_array_mut(|arc, _| crate::gc::Gc::make_mut(arc).items_mut().clear())
             .is_none()
             && (*guard)
                 .with_hash_mut(|arc| crate::gc::Gc::make_mut(arc).map.clear())

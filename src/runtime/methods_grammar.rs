@@ -235,7 +235,7 @@ impl Interpreter {
                             rule_args = positional.clone();
                         }
                         ValueView::Array(arr, _) => {
-                            rule_args = arr.as_ref().clone().items;
+                            rule_args = arr.as_ref().clone().into_items();
                         }
                         _ => {
                             rule_args = vec![value.clone()];

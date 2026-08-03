@@ -165,6 +165,26 @@ impl ArrayData {
         self.value_type.is_some() || self.key_type.is_some() || self.declared_type.is_some()
     }
 
+    /// Borrow the element vector through the representation chokepoint.
+    pub(crate) fn items(&self) -> &Vec<Value> {
+        &self.items
+    }
+
+    /// Mutably borrow the element vector through the representation chokepoint.
+    pub(crate) fn items_mut(&mut self) -> &mut Vec<Value> {
+        &mut self.items
+    }
+
+    /// Move all elements out through the representation chokepoint.
+    pub(crate) fn take_items(&mut self) -> Vec<Value> {
+        std::mem::take(&mut self.items)
+    }
+
+    /// Consume the array data and return its elements.
+    pub(crate) fn into_items(self) -> Vec<Value> {
+        self.items
+    }
+
     /// Whether index `i` is a hole (a deleted slot or an autovivification
     /// gap), as opposed to an explicitly-assigned element. The canonical
     /// predicate mirrored by `:exists`/`:k`/`:p`: a literal `Nil` slot is a
@@ -188,13 +208,13 @@ impl ArrayData {
 impl std::ops::Deref for ArrayData {
     type Target = Vec<Value>;
     fn deref(&self) -> &Vec<Value> {
-        &self.items
+        self.items()
     }
 }
 
 impl std::ops::DerefMut for ArrayData {
     fn deref_mut(&mut self) -> &mut Vec<Value> {
-        &mut self.items
+        self.items_mut()
     }
 }
 

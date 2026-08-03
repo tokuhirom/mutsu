@@ -1032,7 +1032,7 @@ impl Compiler {
                         && match expr {
                             Expr::Literal(lit) => match lit.view() {
                                 ValueView::Nil => true,
-                                ValueView::Array(ad, _) => ad.items.is_empty(),
+                                ValueView::Array(ad, _) => ad.items().is_empty(),
                                 _ => false,
                             },
                             Expr::Hash(pairs) => pairs.is_empty(),

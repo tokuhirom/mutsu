@@ -528,7 +528,7 @@ impl Interpreter {
             let is_default = match expr {
                 Expr::Literal(v) => match v.view() {
                     ValueView::Nil => true,
-                    ValueView::Array(d, _) => d.items.is_empty(),
+                    ValueView::Array(d, _) => d.items().is_empty(),
                     _ => false,
                 },
                 Expr::Hash(items) => items.is_empty(),
