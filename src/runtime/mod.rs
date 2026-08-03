@@ -853,6 +853,32 @@ pub(crate) struct EndPhaser {
     pub(crate) dead_keys: NameSet,
 }
 
+/// What a name in `pos_light_call_cache` resolves to.
+///
+/// Both variants denote a body that `is_positional_light_call_eligible` has
+/// already accepted for this name, so the hot `CallFunc` path can dispatch to
+/// `call_compiled_function_positional_light` without re-running the eligibility
+/// and argument-shape analysis. They differ only in who owns the body.
+#[derive(Debug, Clone)]
+pub(crate) enum PosLightTarget {
+    /// A body the compiler emitted ahead of time; it lives in `compiled_fns`
+    /// and is re-validated against its fingerprint on each hit.
+    Compiled { key: Symbol, fingerprint: u64 },
+    /// A body compiled on the fly from its `FunctionDef` AST — the shape every
+    /// routine declared inside a block takes, because its `compiled_fns` key is
+    /// namespaced by the enclosing closure and bare-name resolution cannot
+    /// reach it. Before this variant existed, such a call could never reach the
+    /// ultra-fast path: it hit `otf_call_cache` further down `exec_call_func_op`
+    /// and re-derived the callsite analysis on every single call, which made a
+    /// block-local sub 1.7x more expensive to call than an identical file-scope
+    /// one. `callsite_package` mirrors `otf_call_cache`'s package keying (the
+    /// same bare name means different routines in different packages).
+    Otf {
+        callsite_package: Symbol,
+        cf: Arc<CompiledFunction>,
+    },
+}
+
 pub struct Interpreter {
     env: Env,
     /// Program output sink — stdout/stderr buffers, the immediate-flush flag,
@@ -1869,7 +1895,7 @@ pub struct Interpreter {
     /// force the scan when it moved.
     pub(crate) inline_control_env_writes: u64,
     pub(crate) local_bind_pairs: Vec<(usize, usize)>,
-    pub(crate) otf_compile_cache: HashMap<u64, CompiledFunction>,
+    pub(crate) otf_compile_cache: HashMap<u64, Arc<CompiledFunction>>,
     /// Compiled bodies of subs defined in `use`d modules, captured at module-load
     /// time and keyed by the sub's body/signature fingerprint. Unlike the per-call
     /// `otf_compile_cache` (which a worker thread starts *empty* — every thread
@@ -1906,7 +1932,7 @@ pub struct Interpreter {
     pub(crate) fn_base_name_cache_gen: u64,
     pub(crate) light_call_cache: rustc_hash::FxHashMap<Symbol, (Symbol, u64)>,
     pub(crate) light_call_cache_gen: u64,
-    pub(crate) pos_light_call_cache: rustc_hash::FxHashMap<Symbol, (Symbol, u64)>,
+    pub(crate) pos_light_call_cache: rustc_hash::FxHashMap<Symbol, PosLightTarget>,
     pub(crate) pos_light_call_cache_gen: u64,
     /// Bare names that appear as a `&`-sigil parameter in some registered sub
     /// (e.g. `foo` from `sub callit(&foo) {...}`). A call to such a name may be
@@ -2053,7 +2079,16 @@ pub struct Interpreter {
     /// `once`); reading `current_package()` at the callsite instead would give
     /// the caller's package, which only happened to agree while every module sub
     /// registered into GLOBAL.
-    pub(crate) otf_call_cache: rustc_hash::FxHashMap<Symbol, (Symbol, Symbol, CompiledFunction)>,
+    /// The body is `Arc`-shared, not owned by value: the hot dispatch path in
+    /// `exec_call_func_op` used to `remove()` the entry, run the call, and
+    /// `insert()` it back purely to avoid holding a borrow on `self`. A
+    /// `CompiledFunction` embeds a whole `CompiledCode` (~1 kB of `Vec`/`HashMap`
+    /// headers), so that round trip memcpy'd the struct out of and back into the
+    /// table on EVERY call — it profiled as the single largest cost of calling a
+    /// block-local sub (`memmove` alone was 15% of the run). Cloning the `Arc`
+    /// is one refcount bump and leaves the table untouched.
+    pub(crate) otf_call_cache:
+        rustc_hash::FxHashMap<Symbol, (Symbol, Symbol, Arc<CompiledFunction>)>,
     pub(crate) otf_call_cache_gen: u64,
     pub(crate) check_phaser_depth: u32,
     /// Depth of `with_nested_registers` re-entry (nested VM runs: closure

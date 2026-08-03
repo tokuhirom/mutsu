@@ -71,12 +71,13 @@ Two things stand out, and the second is the new one:
 - The per-call cost is ~340 ns (B) on top of a ~140 ns/iteration loop, so a call is worth ~3
   arithmetic iterations. raku's B/C are *faster* than its A because its optimizer inlines the callee
   outright; mutsu's JIT bails at the call boundary (see above), so the gap is the whole call path.
-- **C is 1.7× slower per call than B for an identical body and arity.** Nothing about invoking a sub
-  should depend on where it was declared, so that 1.7× is pure mutsu-internal overhead on
-  block-local routine declarations — and it is not a corner case: roast bodies and `Test.rakumod`'s
-  own helpers declare subs inside blocks constantly. With a zero-arg callee the same comparison was
-  1259 ms vs 4843 ms, i.e. **3.8×**. Start here; it is the one part of this ticket that looks like a
-  bug rather than a general "calls are expensive".
+- ~~**C is 1.7× slower per call than B for an identical body and arity.**~~ **Fixed** — see
+  `news/2026-08/block-local-sub-call-path.md`. A routine declared inside a block is OTF-compiled and
+  was dispatched through `otf_call_cache`, which re-derived the whole callsite analysis on every
+  call and moved a ~1 kB `CompiledFunction` in and out of a `HashMap` around each one. Measured by
+  retired instructions (`perf stat instructions:u`, 1M iterations, release): C went **9.20 G → 5.70 G**
+  against B's 5.54 G, i.e. from **1.66×** B to **1.03×**. The remaining rows (A/B vs raku) are
+  unchanged — that is the general call-path cost this ticket still tracks.
 
 Passing the block through a *module* sub (`sub s-amp(&code) { code() }`, imported) adds a further
 ~1.5× on top of every row — which is exactly the shape every `lives-ok`/`throws-like`/`subtest` body
