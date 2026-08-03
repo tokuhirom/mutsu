@@ -63,8 +63,20 @@ impl Interpreter {
             .param_defs
             .iter()
             .filter_map(|pd| {
-                if pd.name.is_empty() || pd.name.starts_with('@') || pd.name.starts_with('%') {
+                if pd.name.is_empty() {
                     None
+                } else if pd.name.starts_with('@') || pd.name.starts_with('%') {
+                    // An `@`/`%` parameter is normally the caller's own container,
+                    // so the return merge propagates the callee's mutations back
+                    // under that name. A *slurpy* one never is: the binder builds
+                    // a fresh Array/Hash out of the leftover arguments
+                    // (`bind_function_args_values`), so writing it back only
+                    // clobbers a same-named lexical of the caller. That is how
+                    // `Test.rakumod`'s `throws-like(..., *%matcher)` came back
+                    // from a nested `fails-like(..., *%matcher)` holding the
+                    // callee's matcher and then called `.instead` on the wrong
+                    // exception (roast S24-testing/fails-like.t).
+                    (pd.slurpy || pd.double_slurpy).then(|| pd.name.clone())
                 } else if let Some(name) = pd.name.strip_prefix(':') {
                     Some(name.to_string())
                 } else {
