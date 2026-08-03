@@ -458,7 +458,15 @@ impl Interpreter {
         // Sync back: BUILD submethods may have modified closure variables.
         self.carrier_writeback_changed_aggregates(code, &pre_env);
         let name = Self::const_str(code, name_idx).to_string();
-        self.env_mut().insert(name.clone(), updated.clone());
+        // The same by-name store an assignment uses, NOT a raw `env.insert`:
+        // `set_env_with_main_alias` is what redirects a compunit lexical to its
+        // own cell, logs the write into the active carrier so the carrier-return
+        // writeback reconciles it into the caller's slot, and maintains the
+        // `Main::`/dynamic aliases. `$x does R` rebinds `$x` exactly as `=`
+        // does, so it has to travel the same road — a raw insert landed in a
+        // tier the caller never read, and `lives-ok { $a does role { has $.cool } }`
+        // left `$a` un-mixed (roast/S14-roles/anonymous.t).
+        self.set_env_with_main_alias(&name, updated.clone());
         // §1.5: mirror into the compiler-baked local slot when known, else by name.
         self.write_local_slot_or_name(code, slot, &name, updated.clone());
         // Capture Mixin value for trait_mod writeback: when `$r does Role`
