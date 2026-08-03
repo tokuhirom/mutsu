@@ -30,4 +30,20 @@ to its next gap (`my $x =` wants `X::Syntax::Malformed`).
 `@arr [0]` fails before any block alternative is reached, and rakudo's
 "Missing block" there comes from a different rule.
 
+Two things had to give way for it:
+
+- **`X::Syntax::Missing` ranks last among classified diagnoses.** "A block was
+  required here" is the weakest thing the parser can say — a block is an
+  alternative almost everywhere — so any other named class describes the
+  construct better. Without the ranking, `sub twigil:<@>() { }` reported
+  `X::Syntax::Missing` instead of the `X::Syntax::Extension::Category` a sibling
+  alternative had diagnosed.
+- **mutsu's native `throws-like` recognised a parse failure by the words "parse
+  error" in its message.** A failure the parser diagnoses precisely says only
+  what is wrong ("Missing block"), so that substring test stopped firing and
+  `roast/S32-exceptions/misc2.t` / `roast/S06-operator-overloading/sub.t` lost
+  the leniency that lets any parse failure match an `X::Syntax` type when no
+  structured exception is attached. It now reads the structured parse `code`
+  instead, the way its own `X::Comp` branch already did.
+
 Pin: `t/missing-block-exception.t` (passes verbatim under `raku`).
