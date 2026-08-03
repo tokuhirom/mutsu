@@ -27,39 +27,59 @@ bugs behind it have been fixed:
   (`news/2026-08/supply-block-captured-lexical.md`, pinned by
   `t/supply-block-captured-lexical.t`).
 
-## The remaining bug: `RouteHandler.invoke` never emits its response
+## The remaining bug: the outer route set ping-pongs with the body serializer
 
-Routing is now entirely correct. `tmp/bm3.p6` (`route { before-matched
-LowerCase; delegate <*> => $application }`) reaches the delegated route set's
-own handler, matching raku step for step — and then stops:
+Routing is now **entirely correct**, matching raku step for step: `tmp/dg1.p6`
+(`route { delegate <*> => $inner }`) reaches the delegated route set's own
+`RouteHandler`, which runs and produces a 200. The response then loops forever
+between two stages of the delegate pipeline:
 
 ```
-[DBG-T] whenever fired, self=RouteSet|1169 requests=Supply|2499   <- inner, correct
-[DBG] routing-outcome for /index.shtml = (0, \("index.shtml"))
-[DBG] handler 0 = Cro::HTTP::Router::RouteSet::RouteHandler args=\("index.shtml")
-                                       <- raku prints `handler emitted Cro::HTTP::Response` here
+[DBG-T] body entered,   self=RouteSet|1219                 <- outer route set
+[DBG-D] step3 body-serializers
+[DBG-T] body entered,   self=RouteSet|1169                 <- delegated route set
+[DBG] handler emitted Cro::HTTP::Response from routeset RouteSet|1169   <- correct, once
+[DBG-S] body-serializer stage got Cro::HTTP::Response
+[DBG] handler emitted Cro::HTTP::Response from routeset RouteSet|1219   <- outer, forever
+[DBG-S] body-serializer stage got Cro::HTTP::Response
+[DBG] handler emitted Cro::HTTP::Response from routeset RouteSet|1219
+…
 ```
 
-So the next thing to dig into is `RouteHandler.invoke`
-(`lib/Cro/HTTP/Router.rakumod`, around line 205-264), specifically the
-`@!before-matched`-taken branch:
+raku prints exactly two `handler emitted` lines and returns.
+
+The two stages are `DelegateHandler.invoke`'s
 
 ```raku
-my $current = supply emit $request;
-$current = self!append-middleware($current, @!before-matched, %connection-state);
-my $response = supply whenever $current -> $req {
-    whenever self!invoke-internal($req, $args) { emit $_; }
-}
-return self!append-middleware($response, @!after-matched, %connection-state);
+$current = $!transform.transformer($current);        # the delegated RouteSet
+$current = self!append-body-serializers($current);   # supply whenever $pipeline { … emit $_ }
 ```
 
-The `whenever` nested inside a `whenever` body — registered while the drive loop
-is already running, so it goes onto `pending_react_subscriptions` rather than a
-registration frame (`runtime/subtest.rs`, `run_whenever_with_value`) — is the
-prime suspect, together with `!invoke-internal`'s `start { … }` block. Note the
-handler that *does* work (`include`, and `delegate` with no middleware) takes
-the `else` branch, `return self!invoke-internal($request, $args)`, which has no
-nested `whenever` at all — that asymmetry is the lead.
+and the OUTER `RouteSet.transformer`'s
+
+```raku
+whenever $handler.invoke($request, $args) -> $response { emit $response }
+```
+
+which is legitimately subscribed to the body-serializer stage's output (that is
+what `$handler.invoke` returns). Its `emit $response` should go *downstream* to
+the connection's response pipeline; instead it lands back in the body-serializer
+stage, which re-emits, and round it goes.
+
+That is the same emitter-cross-talk family as #5830 / #5831, one level further
+out: an `emit` in a `whenever` body reaching the emitter of the supply block
+whose frame happens to be *dispatching* it, rather than its own. Note this
+`emit` sits in a `whenever` **nested inside another `whenever` body**, so its
+callback is built by `run_whenever_with_value` at dispatch time
+(`src/runtime/subtest.rs:391-419`, the `pending_react_subscriptions` path) —
+`exec_whenever_scope_op`'s `owned_lexicals` is computed from the *enclosing
+supply body's* `CompiledCode`, so check whether the nested registration still
+gets one. Reproduce with `CRODBG=1 bash tmp/crorund.sh tmp/dg1.p6` and compare
+against `tmp/crorunraku.sh`.
+
+Synthetic versions of this shape do NOT reproduce (`tmp/nest1.p6`,
+`tmp/nest2.p6` — nested `whenever <Promise>` two route-set layers deep, both
+green). Grow those toward the server rather than shrinking further.
 
 ## Reproducers
 
