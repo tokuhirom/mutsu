@@ -77,6 +77,13 @@ impl Interpreter {
         // has an explicit label that matches. Unlabeled do blocks should let
         // these signals propagate to the enclosing loop construct.
         let has_label = label.is_some();
+        // ...and only a LABELLED block counts as a loop-control handler for the
+        // purpose of deciding whether a `next` has anywhere to go
+        // (`runtime/loop_handler_depth.rs`). An unlabelled `do {}` must leave
+        // the depth alone, or `try { { next } }` would look handled and go on
+        // raising an uncatchable signal instead of `X::ControlFlow`.
+        let _loop_handler =
+            has_label.then(crate::runtime::loop_handler_depth::LoopHandlerGuard::new);
         let result = loop {
             match self.run_range(code, body_start, end, compiled_fns) {
                 Ok(()) => break Ok(()),

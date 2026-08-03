@@ -12,6 +12,12 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<(Value, AttrMap), RuntimeError> {
+        // This construct handles `next`/`last`/`redo`, so a loop-control
+        // statement raised anywhere in its dynamic extent has somewhere to go
+        // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
+        // would convert the signal into a thrown `X::ControlFlow` and silently
+        // break this loop.
+        let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
         match method {
             "emit" => {
                 let value = args.first().cloned().unwrap_or(Value::NIL);

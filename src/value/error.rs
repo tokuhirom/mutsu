@@ -418,6 +418,46 @@ impl RuntimeError {
         }
     }
 
+    /// The `X::ControlFlow` a loop-control statement becomes when there is no
+    /// construct to act on. `next` outside any loop is still a *control*
+    /// exception in rakudo — a `CONTROL` block catches it — but an ordinary
+    /// `try` catches it too, and `$!` ends up holding it:
+    ///
+    /// ```raku
+    /// try { my $i; { $i++; next; $i--; } };
+    /// say $!.^name;      # X::ControlFlow
+    /// say $!.illegal;    # next
+    /// ```
+    ///
+    /// So it keeps its `control` flag (that is what routes it to a `CONTROL`
+    /// block) *and* carries the typed exception, and the pair of those two is
+    /// what [`Self::is_illegal_control`] reads to stop `try` passing it through
+    /// the way it passes a signal that some loop is waiting for.
+    pub(crate) fn control_flow_illegal(control: Control, illegal: &str, enclosing: &str) -> Self {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("illegal".to_string(), Value::str(illegal.to_string()));
+        attrs.insert("enclosing".to_string(), Value::str(enclosing.to_string()));
+        attrs.insert(
+            "message".to_string(),
+            Value::str(format!("{illegal} without {enclosing}")),
+        );
+        let mut err = Self::typed("X::ControlFlow", attrs);
+        err.control = Some(control);
+        err
+    }
+
+    /// A loop-control signal raised with no construct to act on (see
+    /// [`Self::control_flow_illegal`]). `try` must **not** pass this one
+    /// through: there is nothing further up that would consume it, so passing
+    /// it on makes it uncatchable.
+    pub(crate) fn is_illegal_control(&self) -> bool {
+        self.exception.is_some()
+            && matches!(
+                self.control,
+                Some(Control::Next) | Some(Control::Last) | Some(Control::Redo)
+            )
+    }
+
     pub(crate) fn goto_signal(label: String) -> Self {
         Self {
             message: "X::ControlFlow".to_string(),

@@ -58,6 +58,12 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
         resume_index: usize,
     ) -> Result<bool, RuntimeError> {
+        // This construct handles `next`/`last`/`redo`, so a loop-control
+        // statement raised anywhere in its dynamic extent has somewhere to go
+        // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
+        // would convert the signal into a thrown `X::ControlFlow` and silently
+        // break this loop.
+        let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
         // `true`  = the loop ran every item to completion;
         // `false` = it exited early via `last` or `return` (the live-array
         // continuation in `exec_for_loop_op` must NOT pick up newly-pushed tail

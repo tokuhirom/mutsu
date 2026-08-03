@@ -189,6 +189,12 @@ impl Interpreter {
         block: &Value,
         target: &Value,
     ) -> Result<Value, RuntimeError> {
+        // This construct handles `next`/`last`/`redo`, so a loop-control
+        // statement raised anywhere in its dynamic extent has somewhere to go
+        // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
+        // would convert the signal into a thrown `X::ControlFlow` and silently
+        // break this loop.
+        let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
         match target.view() {
             ValueView::Array(items, kind) => {
                 let mut result = Vec::new();
@@ -275,6 +281,12 @@ impl Interpreter {
         target: &Value,
         itemize_result: bool,
     ) -> Result<Value, RuntimeError> {
+        // This construct handles `next`/`last`/`redo`, so a loop-control
+        // statement raised anywhere in its dynamic extent has somewhere to go
+        // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
+        // would convert the signal into a thrown `X::ControlFlow` and silently
+        // break this loop.
+        let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
         match target.view() {
             // Type objects (e.g. Array, Hash) — return as-is to avoid hanging
             ValueView::Package(_) => Ok(target.clone()),
@@ -429,6 +441,12 @@ impl Interpreter {
         block: &Value,
         target: &Value,
     ) -> Result<Value, RuntimeError> {
+        // This construct handles `next`/`last`/`redo`, so a loop-control
+        // statement raised anywhere in its dynamic extent has somewhere to go
+        // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
+        // would convert the signal into a thrown `X::ControlFlow` and silently
+        // break this loop.
+        let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
         match target.view() {
             // nodemap always returns a List, even from a real Array or a Seq.
             // Compare Rakudo: `[2,3].nodemap(*+1).WHAT` is `List`.
@@ -476,6 +494,12 @@ impl Interpreter {
 
     /// Apply duckmap to a single element: try the block, on failure descend.
     fn duckmap_element(&mut self, block: &Value, value: &Value) -> Result<Value, RuntimeError> {
+        // This construct handles `next`/`last`/`redo`, so a loop-control
+        // statement raised anywhere in its dynamic extent has somewhere to go
+        // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
+        // would convert the signal into a thrown `X::ControlFlow` and silently
+        // break this loop.
+        let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
         // Try to call the block with this value
         match self.call_sub_value(block.clone(), vec![value.clone()], false) {
             Ok(result) => Ok(result),

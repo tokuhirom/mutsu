@@ -241,6 +241,7 @@ mod io_sysinfo_vm_config;
 mod iterator_protocol;
 pub(crate) mod json;
 mod lock_reentry;
+pub(crate) mod loop_handler_depth;
 mod main_args;
 mod match_target;
 mod metamodel;

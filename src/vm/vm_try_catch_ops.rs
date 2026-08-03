@@ -203,6 +203,11 @@ impl Interpreter {
                     || e.is_emit()
                     || e.is_done()
                     || e.is_react_done())
+                    // ...except a loop-control signal raised with no construct
+                    // to act on. There is nothing further up that would consume
+                    // it, so passing it through makes `X::ControlFlow`
+                    // uncatchable (`runtime/loop_handler_depth.rs`).
+                    && !e.is_illegal_control()
                     && control_begin >= end =>
             {
                 self.discard_let_saves(let_mark);

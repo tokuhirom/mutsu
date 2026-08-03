@@ -16,6 +16,12 @@ impl Interpreter {
         loop_end: usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
+        // This construct handles `next`/`last`/`redo`, so a loop-control
+        // statement raised anywhere in its dynamic extent has somewhere to go
+        // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
+        // would convert the signal into a thrown `X::ControlFlow` and silently
+        // break this loop.
+        let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
         let param_name = spec
             .param_idx
             .map(|idx| match code.constants[idx as usize].view() {

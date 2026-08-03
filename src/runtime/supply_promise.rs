@@ -160,6 +160,12 @@ impl Interpreter {
         &mut self,
         attributes: &AttrMap,
     ) -> Result<Vec<Value>, RuntimeError> {
+        // This construct handles `next`/`last`/`redo`, so a loop-control
+        // statement raised anywhere in its dynamic extent has somewhere to go
+        // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
+        // would convert the signal into a thrown `X::ControlFlow` and silently
+        // break this loop.
+        let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
         if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
             let (_, emitted, _) = self.run_on_demand_body(on_demand_cb.clone(), None);
             // Expand `whenever` subscription markers: a cold (supplier-less)
@@ -505,6 +511,12 @@ impl Interpreter {
         last_cbs: &[Value],
         quit_cbs: &[Value],
     ) -> (Vec<Value>, Option<Value>) {
+        // This construct handles `next`/`last`/`redo`, so a loop-control
+        // statement raised anywhere in its dynamic extent has somewhere to go
+        // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
+        // would convert the signal into a thrown `X::ControlFlow` and silently
+        // break this loop.
+        let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
         // Materialize the source through `supply_get_values` so a nested
         // on-demand source (`whenever (supply { ... }) { ... }`) is itself
         // replayed rather than read as an (empty) values snapshot.
@@ -607,6 +619,12 @@ impl Interpreter {
         quit_cbs: &[Value],
         last_value: &mut Value,
     ) -> Result<(), RuntimeError> {
+        // This construct handles `next`/`last`/`redo`, so a loop-control
+        // statement raised anywhere in its dynamic extent has somewhere to go
+        // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
+        // would convert the signal into a thrown `X::ControlFlow` and silently
+        // break this loop.
+        let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
         // Materialize the source through `supply_get_values` (same as
         // `replay_cold_whenever_capture`): an on-demand source (`whenever $src`
         // where $src is a stored `supply { emit ... }`) keeps its values behind
