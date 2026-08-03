@@ -1105,7 +1105,9 @@ impl Interpreter {
                     // this broad writeback path even when the authoritative
                     // binding was only read; never replay that installed value
                     // into the ambient caller env on return.
-                    && !data.authoritative_captures.contains(k)
+                    && (!data.authoritative_captures.contains(k)
+                        || cc.free_var_writes.contains(k)
+                        || cc.free_var_container_writes.contains(k))
                     && (restored_env.contains_key_sym(*k)
                         || captured_names.contains(k)
                         || (meta_possible

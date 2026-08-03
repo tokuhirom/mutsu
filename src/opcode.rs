@@ -2431,8 +2431,21 @@ impl CompiledCode {
         let Some(cc) = self.closure_compiled_codes.get(cc_idx as usize) else {
             return;
         };
-        for slot in cc.free_var_parent_slots.iter().flatten() {
-            if let Some(needed) = slots.get_mut(*slot as usize) {
+        for (idx, sym) in cc.free_var_syms.iter().enumerate() {
+            // A self-referential stored body can be analyzed while its binding
+            // initializer is still being compiled (`my @a := gather { ... @a
+            // ... }`), leaving the baked parent slot absent even though the
+            // declaration slot is already present in this frame. Resolve that
+            // exact same-name slot here; it is still a per-consumer slot, not a
+            // frame-wide fallback.
+            let slot = cc
+                .free_var_parent_slots
+                .get(idx)
+                .copied()
+                .flatten()
+                .map(|slot| slot as usize)
+                .or_else(|| sym.with_str(|name| self.locals.iter().rposition(|n| n == name)));
+            if let Some(needed) = slot.and_then(|slot| slots.get_mut(slot)) {
                 *needed = true;
             }
         }

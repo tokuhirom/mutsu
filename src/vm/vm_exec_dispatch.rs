@@ -556,6 +556,20 @@ impl Interpreter {
                     *ip += 1;
                     return Ok(());
                 }
+                // A `:=`-bound gather may read the array currently being
+                // produced. MakeGather tags that exact self-reference; expose
+                // the live take collector instead of recursively forcing the
+                // LazyList (or reading its pre-declaration env snapshot).
+                if self
+                    .env()
+                    .get(&format!("__mutsu_gather_self_ref::{name}"))
+                    .is_some()
+                {
+                    self.stack
+                        .push(Value::real_array(self.current_gather_items()));
+                    *ip += 1;
+                    return Ok(());
+                }
                 let val = self
                     .get_env_with_main_alias(name)
                     .or_else(|| self.get_local_by_bare_name(code, name))
