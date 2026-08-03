@@ -262,6 +262,14 @@ impl Interpreter {
                 );
                 let mut on_demand_quit: Option<Value> = None;
                 let mut done_group_marker: Option<Value> = None;
+                // Every subscription this tap creates upstream, so closing the
+                // returned Tap tears the whole chain down (raku: closing a tap
+                // closes the supply block, which closes its `whenever`
+                // subscriptions, cascading to the original source). Entries are
+                // either a `[supplier_id, tap_id]` pair or a nested Tap handle
+                // from a chained on-demand source; `native_tap`'s "close" walks
+                // them recursively.
+                let mut upstream_taps: Vec<Value> = Vec::new();
                 let values = if let Some(on_demand_cb) = attrs.get("on_demand_callback").cloned() {
                     // Give the emitter a supplier_id so that when a `whenever`
                     // body calls `$emitter.emit(val)`, the value can be dispatched
@@ -380,6 +388,12 @@ impl Interpreter {
                             {
                                 let supplier_id = sid as u64;
                                 register_supplier_tap(supplier_id, body_cb.clone(), 0.0);
+                                if let Some(tid) = last_supplier_tap_id(supplier_id) {
+                                    upstream_taps.push(Value::array(vec![
+                                        Value::int(supplier_id as i64),
+                                        Value::int(tid as i64),
+                                    ]));
+                                }
                                 // Raku serializes all `whenever` handlers of one
                                 // supply block ("only in one whenever block at a
                                 // time"). Tag this source trigger with the block's
@@ -402,6 +416,12 @@ impl Interpreter {
                                         delay_seconds,
                                     );
                                     outer_tap_registered = true;
+                                    if let Some(tid) = last_supplier_tap_id(emitter_supplier_id) {
+                                        upstream_taps.push(Value::array(vec![
+                                            Value::int(emitter_supplier_id as i64),
+                                            Value::int(tid as i64),
+                                        ]));
+                                    }
                                 }
                                 // Supplier::Preserving source: replay the backlog
                                 // buffered before this whenever subscribed (after
@@ -504,6 +524,12 @@ impl Interpreter {
                                         delay_seconds,
                                     );
                                     outer_tap_registered = true;
+                                    if let Some(tid) = last_supplier_tap_id(emitter_supplier_id) {
+                                        upstream_taps.push(Value::array(vec![
+                                            Value::int(emitter_supplier_id as i64),
+                                            Value::int(tid as i64),
+                                        ]));
+                                    }
                                 }
                                 if let Some(ref qf) = quit_cb {
                                     register_supplier_quit_callback(
@@ -557,6 +583,12 @@ impl Interpreter {
                                         delay_seconds,
                                     );
                                     outer_tap_registered = true;
+                                    if let Some(tid) = last_supplier_tap_id(emitter_supplier_id) {
+                                        upstream_taps.push(Value::array(vec![
+                                            Value::int(emitter_supplier_id as i64),
+                                            Value::int(tid as i64),
+                                        ]));
+                                    }
                                 }
                                 let last_cbs = Self::value_array_items(&arr[2]).unwrap_or_default();
                                 let quit_cbs = Self::value_array_items(&arr[3]).unwrap_or_default();
@@ -585,28 +617,40 @@ impl Interpreter {
                                 if let Some(q) = quit_cbs.first() {
                                     tap_args.push(Value::pair("quit".to_string(), q.clone()));
                                 }
-                                // TODO: thread the inner Tap into the outer Tap
-                                // handle so closing the outer tap tears down a
-                                // still-live inner pipeline.
-                                if let Err(err) = self.call_method_with_values(
+                                // The inner Tap is threaded into the outer Tap
+                                // handle (`upstream_taps`) so closing the outer
+                                // tap tears down a still-live inner pipeline.
+                                match self.call_method_with_values(
                                     inner_supply.clone(),
                                     "tap",
                                     tap_args,
                                 ) {
-                                    let reason = err
-                                        .exception
-                                        .as_deref()
-                                        .cloned()
-                                        .unwrap_or_else(|| Value::str(err.message.clone()));
-                                    if let Some(ref qf) = quit_cb {
-                                        self.call_supply_quit_handler(qf.clone(), reason)?;
-                                    } else {
-                                        return Err(Self::runtime_error_from_supply_reason(reason));
+                                    Ok(inner_tap) => {
+                                        if matches!(inner_tap.view(), ValueView::Instance { .. }) {
+                                            upstream_taps.push(inner_tap);
+                                        }
                                     }
-                                    return Ok((
-                                        Value::make_instance(Symbol::intern("Tap"), HashMap::new()),
-                                        attrs,
-                                    ));
+                                    Err(err) => {
+                                        let reason = err
+                                            .exception
+                                            .as_deref()
+                                            .cloned()
+                                            .unwrap_or_else(|| Value::str(err.message.clone()));
+                                        if let Some(ref qf) = quit_cb {
+                                            self.call_supply_quit_handler(qf.clone(), reason)?;
+                                        } else {
+                                            return Err(Self::runtime_error_from_supply_reason(
+                                                reason,
+                                            ));
+                                        }
+                                        return Ok((
+                                            Value::make_instance(
+                                                Symbol::intern("Tap"),
+                                                HashMap::new(),
+                                            ),
+                                            attrs,
+                                        ));
+                                    }
                                 }
                             } else {
                                 // Cold (supplier-less, non-on-demand) whenever
@@ -1005,6 +1049,10 @@ impl Interpreter {
                 if let Some(cid) = close_supplier_id {
                     tap_handle_attrs
                         .insert("close_supplier_id".to_string(), Value::int(cid as i64));
+                }
+                if !upstream_taps.is_empty() {
+                    tap_handle_attrs
+                        .insert("upstream_taps".to_string(), Value::array(upstream_taps));
                 }
                 let tap_instance = Value::make_instance(Symbol::intern("Tap"), tap_handle_attrs);
                 Ok((tap_instance, attrs))
