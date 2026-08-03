@@ -445,7 +445,10 @@ pub(crate) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
             },
         ));
     }
+    // rakudo's own wording, `Missing "while" or "until"` — which is also what
+    // makes the exception's `.what` attribute derivable (see
+    // `RuntimeError::exception_value_with_backtrace`).
     Err(PError::fatal(
-        "X::Syntax::Missing: \"while\" or \"until\" required after repeat".to_string(),
+        "X::Syntax::Missing: Missing \"while\" or \"until\"".to_string(),
     ))
 }

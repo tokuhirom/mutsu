@@ -216,6 +216,18 @@ impl RuntimeError {
             .unwrap_or((self.untyped_exception_class(), self.message.as_str()));
         let mut attrs = HashMap::new();
         attrs.insert("message".to_string(), Value::str_from(text));
+        // `X::Syntax::Missing`'s message IS `Missing {what}` in rakudo, so the
+        // attribute the roast tests match on (`what => 'block'`,
+        // `what => '"while" or "until"'`) can be derived from it rather than
+        // spelled twice — the same "derive it the way rakudo derives it so the
+        // two cannot disagree" rule the typed-attribute pass used. Without it a
+        // `throws-like …, X::Syntax::Missing, what => …` matched the class and
+        // then died on `No such method 'what'`, aborting the file.
+        if class_name == "X::Syntax::Missing"
+            && let Some(what) = text.strip_prefix("Missing ")
+        {
+            attrs.insert("what".to_string(), Value::str_from(what));
+        }
         if let Some(line) = self.line() {
             attrs.insert("line".to_string(), Value::int(line as i64));
         }

@@ -223,10 +223,12 @@ pub(crate) fn stmt_list_with_mode(
             && let Ok((after_decl, mut main_sub)) = sub::top_level_main_semicolon_decl(r)
         {
             if saw_compunit_declarator {
-                return Err(PError::raw(
+                return Err(PError::raw_with_what(
                     "X::UnitScope::TooLate: A unit-scoped sub declaration is too late in the compilation unit"
                         .to_string(),
                     Some(r.len()),
+                    "X::UnitScope::TooLate",
+                    "sub",
                 ));
             }
             let (tail_rest, tail_stmts) = stmt_list_with_mode(after_decl, false, emit_setline)?;
@@ -241,12 +243,14 @@ pub(crate) fn stmt_list_with_mode(
             && let Ok((after_multi, _)) = ws1(after_multi)
             && sub::top_level_main_semicolon_decl(after_multi).is_ok()
         {
-            return Err(PError::raw(
+            return Err(PError::raw_with_what(
                 "X::UnitScope::Invalid: A unit-scoped sub definition is not allowed except on a MAIN sub; \
                  Please use the block form. If you did not mean to declare a unit-scoped sub, \
                  perhaps you accidentally placed a semicolon after routine's definition?"
                     .to_string(),
                 Some(r.len()),
+                "X::UnitScope::Invalid",
+                "sub",
             ));
         }
         // `unit class`/`unit role`/`unit grammar` (semicolon form): the rest of
