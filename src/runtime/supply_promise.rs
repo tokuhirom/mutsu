@@ -441,6 +441,7 @@ impl Interpreter {
                 promise: promise.clone(),
                 deadline: crate::runtime::thread_compat::Instant::now() + Duration::from_secs(30),
                 last_value: seed,
+                emitter_supplier_id: Some(emitter_supplier_id),
             },
         )
     }

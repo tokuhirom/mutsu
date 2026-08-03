@@ -260,6 +260,20 @@ impl Interpreter {
         result
     }
 
+    /// Is this value one of the 4-element `[source, body, [LAST…], [QUIT…]]`
+    /// arrays `whenever` registers, rather than a value a supply body emitted?
+    fn is_whenever_subscription_marker(value: &Value) -> bool {
+        let ValueView::Array(items, ..) = value.view() else {
+            return false;
+        };
+        items.len() == 4
+            && matches!(
+                items[0].view(),
+                ValueView::Promise(_) | ValueView::Channel(_) | ValueView::Instance { .. }
+            )
+            && matches!(items[1].view(), ValueView::Sub(_))
+    }
+
     /// Adopt any `whenever` subscription registered while the drive loop was
     /// running (a `whenever` inside another `whenever`'s body) and wire its
     /// source into this loop's waker. Returns `Ok(true)` when building the
@@ -494,8 +508,18 @@ impl Interpreter {
                                 let cb_result =
                                     self.call_react_callback(&sub.callback.clone(), vec![value]);
                                 let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
-                                if let Some(last) = emitted.last() {
-                                    *last_value = last.clone();
+                                for item in emitted {
+                                    // A `whenever` nested in this body registered
+                                    // its subscription marker into the same
+                                    // frame. It is not a value the supply
+                                    // emitted: hand it to the adoption queue
+                                    // instead of letting it become the promise's
+                                    // result.
+                                    if Self::is_whenever_subscription_marker(&item) {
+                                        self.pending_react_subscriptions.push(item);
+                                    } else {
+                                        *last_value = item;
+                                    }
                                 }
                                 if promise.is_resolved() {
                                     return Ok(());
@@ -609,15 +633,30 @@ impl Interpreter {
                         break;
                     }
                 }
-                SupplyDrivePolicy::Promise { promise, .. } => {
+                SupplyDrivePolicy::Promise {
+                    promise,
+                    last_value,
+                    emitter_supplier_id,
+                    ..
+                } => {
                     if promise.is_resolved() {
                         return Ok(());
                     }
-                    // All channels closed without the promise resolving:
-                    // complete the await with Nil (matching the legacy
-                    // supply_promise_on_demand loop).
+                    // Every `whenever` finished, so the `supply { ... }` block
+                    // is done -- Raku keeps its promise with the final value it
+                    // emitted. `done`ing the emitter supplier resolves the
+                    // promise through the registry with exactly that value;
+                    // keeping `Nil` here (as this used to) reported a supply
+                    // that had emitted as though it never had, so
+                    // `await (supply { whenever $p { emit … } })` answered Nil
+                    // after waiting out the whole 30s deadline.
                     if all_done || react_subs.iter().all(|s| s.done) {
-                        promise.keep(Value::NIL, String::new(), String::new());
+                        if let Some(sid) = emitter_supplier_id {
+                            crate::runtime::native_methods::supplier_done(*sid);
+                        }
+                        if !promise.is_resolved() {
+                            promise.keep(last_value.clone(), String::new(), String::new());
+                        }
                         return Ok(());
                     }
                 }
