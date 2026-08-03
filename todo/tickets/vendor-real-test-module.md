@@ -760,8 +760,31 @@ Three things worth carrying forward:
   other users of that compile path recompile closure bodies where the live frame
   IS the routine.
 
-`given.t`'s next wall is its own ticket:
-`todo/tickets/lexical-amp-binding-does-not-shadow-a-routine.md` — `my &f = ...`
-does not shadow an outer `sub f` for a bare-name call, so
-`my &test-given = produce-tester $condition; test-given topic, ...` still
-reaches the earlier subtest's 3-positional `test-given`.
+### Six files closed on 2026-08-04, and none of the causes was in `Test`
+
+| file | assertions | cause | fix |
+| --- | --- | --- | --- |
+| `S02-types/capture.t` | 46 | the atomic shared-array store seeded from an **undereferenced `ContainerRef`**, so it started EMPTY and dropped `Test.rakumod`'s whole `@vars` subtest stack the first time the file spawned a thread | `news/2026-08/shared-array-mutation-through-a-container-cell.md` |
+| `S04-statements/given.t` | 54 | **three** independent bugs in a row (see below) | three PRs |
+| `S04-statements/repeat.t` | 21 | `X::Syntax::Missing` had no `.what` | `news/2026-08/syntax-missing-and-unitscope-carry-what.md` |
+| `S06-other/main-semicolon.t` | 10 | `X::UnitScope::*` had no `.what`, and a *soft* parse diagnosis dropped its structured exception | same |
+| `S28-named-variables/init-instant.t` | 3 | `Instant` was not `Numeric`, so `is-approx` matched no candidate and fell through to the **native** provider's separate counter | `news/2026-08/instant-and-duration-do-real.md` |
+| `S02-types/instants-and-durations.t` | 36 | same, plus the `Real.abs` the relation then needed | same |
+
+`given.t` took three: an EVAL'd `sub` colliding with a routine only the registry
+knew about (`news/2026-08/eval-sub-shadows-a-registered-routine.md`), the
+lexotic-`return` bug that fix unmasked, and `my &f = ...` not shadowing an outer
+`sub f` for a bare-name call
+(`news/2026-08/lexical-amp-binding-shadows-a-routine.md`). **Budget three
+independent general bugs per file, not one.**
+
+Two measurement rules this batch produced, both learned the hard way:
+
+- **Measure the whole file's assertion count, not its first `not ok`.** Widening
+  `Instant`'s type relations took `instants-and-durations.t` from 38 assertions
+  to 3 — the right `is-approx` candidate was finally selected and then died on a
+  missing `Real.abs`. A first-failure check shows nothing there, because the
+  file aborts before asserting.
+- **Do not write a pin against `throws-like`'s named matchers.** mutsu's native
+  `throws-like` does not check them, so a `throws-like …, X::…, what => …` pin
+  passes without the fix. Read the attribute off the caught exception instead.
