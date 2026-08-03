@@ -45,6 +45,9 @@ impl Interpreter {
                 nested.registry_mut().proto_subs = self.registry().proto_subs.clone();
                 nested.registry_mut().proto_tokens = self.registry().proto_tokens.clone();
                 nested.registry_mut().classes = self.registry().classes.clone();
+                nested
+                    .registry_mut()
+                    .replace_method_entries_from(&self.registry());
                 nested.registry_mut().class_trusts = self.registry().class_trusts.clone();
                 nested.registry_mut().class_composed_roles =
                     self.registry().class_composed_roles.clone();
@@ -571,6 +574,9 @@ impl Interpreter {
                 nested.registry_mut().proto_subs = self.registry().proto_subs.clone();
                 nested.registry_mut().proto_tokens = self.registry().proto_tokens.clone();
                 nested.registry_mut().classes = self.registry().classes.clone();
+                nested
+                    .registry_mut()
+                    .replace_method_entries_from(&self.registry());
                 nested.registry_mut().roles = self.registry().roles.clone();
                 nested.registry_mut().subsets = self.registry().subsets.clone();
                 nested.registry_mut().enum_types = self.registry().enum_types.clone();
