@@ -622,7 +622,7 @@ impl Compiler {
                         });
                         custom_traits.push(("__hoisted".to_string(), None));
                     }
-                    let idx = self.code.add_stmt(shell);
+                    let idx = self.code.add_class_decl_plan(&shell);
                     self.code.emit(OpCode::RegisterClass(idx));
                 }
                 Stmt::RoleDecl { .. } => {
@@ -633,7 +633,7 @@ impl Compiler {
                         });
                         custom_traits.push(("__hoisted".to_string(), None));
                     }
-                    let idx = self.code.add_stmt(shell);
+                    let idx = self.code.add_role_decl_plan(&shell);
                     self.code.emit(OpCode::RegisterRole(idx));
                 }
                 _ => {}

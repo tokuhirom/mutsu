@@ -84,8 +84,7 @@ impl Interpreter {
         self.func_multi_resolve_cache.clear();
         self.func_multi_type_cacheable.clear();
         self.dispatch_multi_candidate.clear();
-        let stmt = &code.stmt_pool[idx as usize];
-        if let Stmt::ClassDecl {
+        if let Some(crate::opcode::CompiledClassDeclPlan {
             name,
             name_expr,
             parents,
@@ -95,12 +94,11 @@ impl Interpreter {
             hidden_parents,
             does_parents,
             repr,
-            body,
+            legacy_body: body,
             language_version,
             custom_traits,
             decl_id,
-            ..
-        } = stmt
+        }) = code.class_decl_plans.get(idx as usize)
         {
             let resolved_name = if let Some(expr) = name_expr {
                 self.vm_eval_block_value(&[Stmt::Expr(expr.clone())])?
@@ -511,18 +509,17 @@ impl Interpreter {
         code: &CompiledCode,
         idx: u32,
     ) -> Result<(), RuntimeError> {
-        let stmt = &code.stmt_pool[idx as usize];
-        if let Stmt::RoleDecl {
+        if let Some(crate::opcode::CompiledRoleDeclPlan {
             name,
             type_params,
             type_param_defs,
             is_export,
             export_tags,
-            body,
+            legacy_body: body,
             is_rw,
             language_version,
             custom_traits,
-        } = stmt
+        }) = code.role_decl_plans.get(idx as usize)
         {
             let name_str = name.resolve();
             let current_package = self.current_package().to_string();

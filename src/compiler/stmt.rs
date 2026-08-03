@@ -3449,7 +3449,7 @@ impl Compiler {
                 // registers it under the correct nested package
                 // (e.g. `class D` inside `unit module A::B` → `A::B::D`).
                 let stmt = self.qualify_decl_name(stmt);
-                let idx = self.code.add_stmt(stmt);
+                let idx = self.code.add_class_decl_plan(&stmt);
                 self.code.emit(OpCode::RegisterClass(idx));
             }
             Stmt::AugmentClass { .. } => {
@@ -3461,7 +3461,7 @@ impl Compiler {
                 // Same as RegisterClass above: a role method has no creation op.
                 self.record_type_body_captures(body);
                 let stmt = self.qualify_decl_name(stmt);
-                let idx = self.code.add_stmt(stmt);
+                let idx = self.code.add_role_decl_plan(&stmt);
                 self.code.emit(OpCode::RegisterRole(idx));
             }
             Stmt::SubsetDecl { .. } => {

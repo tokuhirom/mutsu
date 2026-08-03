@@ -1868,6 +1868,39 @@ pub(crate) struct CompiledSubDeclPlan {
 }
 
 #[derive(Debug, Clone)]
+pub(crate) struct CompiledClassDeclPlan {
+    pub(crate) name: Symbol,
+    pub(crate) name_expr: Option<Expr>,
+    pub(crate) parents: Vec<String>,
+    pub(crate) class_is_rw: bool,
+    pub(crate) is_hidden: bool,
+    pub(crate) is_lexical: bool,
+    pub(crate) hidden_parents: Vec<String>,
+    pub(crate) does_parents: Vec<String>,
+    pub(crate) repr: Option<String>,
+    /// Compatibility payload for the class/role registry walker. Declaration-time expressions
+    /// move to compiled child chunks in the next ADR-0019 stage.
+    pub(crate) legacy_body: Vec<Stmt>,
+    pub(crate) language_version: String,
+    pub(crate) custom_traits: Vec<(String, Option<Expr>)>,
+    pub(crate) decl_id: u64,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct CompiledRoleDeclPlan {
+    pub(crate) name: Symbol,
+    pub(crate) type_params: Vec<String>,
+    pub(crate) type_param_defs: Vec<ParamDef>,
+    pub(crate) is_export: bool,
+    pub(crate) export_tags: Vec<String>,
+    /// Compatibility payload for the role-composition registry walker.
+    pub(crate) legacy_body: Vec<Stmt>,
+    pub(crate) is_rw: bool,
+    pub(crate) language_version: String,
+    pub(crate) custom_traits: Vec<(String, Option<Expr>)>,
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct CompiledCode {
     pub(crate) ops: Vec<OpCode>,
     /// Static ip -> source line table, parallel to `ops` (0 = unknown). Replaces
@@ -1890,6 +1923,8 @@ pub(crate) struct CompiledCode {
     /// Typed declaration plans consumed by `RegisterSub`. Unlike `stmt_pool`, every entry is
     /// known to be a sub declaration, so the VM does not inspect or execute a source statement.
     pub(crate) sub_decl_plans: Vec<CompiledSubDeclPlan>,
+    pub(crate) class_decl_plans: Vec<CompiledClassDeclPlan>,
+    pub(crate) role_decl_plans: Vec<CompiledRoleDeclPlan>,
     pub(crate) locals: Vec<String>,
     /// Pre-interned Symbol for each local name. Avoids Symbol::intern()
     /// on every env sync in hot paths.
@@ -2495,6 +2530,8 @@ impl CompiledCode {
             const_index: rustc_hash::FxHashMap::default(),
             stmt_pool: Vec::new(),
             sub_decl_plans: Vec::new(),
+            class_decl_plans: Vec::new(),
+            role_decl_plans: Vec::new(),
             locals: Vec::new(),
             locals_sym: Vec::new(),
             locals_alias_sym: Vec::new(),
@@ -4727,6 +4764,75 @@ impl CompiledCode {
             supersede: *supersede,
             custom_traits: custom_traits.clone(),
             fingerprint,
+        });
+        idx
+    }
+
+    pub(crate) fn add_class_decl_plan(&mut self, stmt: &Stmt) -> u32 {
+        let Stmt::ClassDecl {
+            name,
+            name_expr,
+            parents,
+            class_is_rw,
+            is_hidden,
+            is_lexical,
+            hidden_parents,
+            does_parents,
+            repr,
+            body,
+            language_version,
+            custom_traits,
+            decl_id,
+            ..
+        } = stmt
+        else {
+            panic!("add_class_decl_plan expects ClassDecl");
+        };
+        let idx = self.class_decl_plans.len() as u32;
+        self.class_decl_plans.push(CompiledClassDeclPlan {
+            name: *name,
+            name_expr: name_expr.clone(),
+            parents: parents.clone(),
+            class_is_rw: *class_is_rw,
+            is_hidden: *is_hidden,
+            is_lexical: *is_lexical,
+            hidden_parents: hidden_parents.clone(),
+            does_parents: does_parents.clone(),
+            repr: repr.clone(),
+            legacy_body: body.clone(),
+            language_version: language_version.clone(),
+            custom_traits: custom_traits.clone(),
+            decl_id: *decl_id,
+        });
+        idx
+    }
+
+    pub(crate) fn add_role_decl_plan(&mut self, stmt: &Stmt) -> u32 {
+        let Stmt::RoleDecl {
+            name,
+            type_params,
+            type_param_defs,
+            is_export,
+            export_tags,
+            body,
+            is_rw,
+            language_version,
+            custom_traits,
+        } = stmt
+        else {
+            panic!("add_role_decl_plan expects RoleDecl");
+        };
+        let idx = self.role_decl_plans.len() as u32;
+        self.role_decl_plans.push(CompiledRoleDeclPlan {
+            name: *name,
+            type_params: type_params.clone(),
+            type_param_defs: type_param_defs.clone(),
+            is_export: *is_export,
+            export_tags: export_tags.clone(),
+            legacy_body: body.clone(),
+            is_rw: *is_rw,
+            language_version: language_version.clone(),
+            custom_traits: custom_traits.clone(),
         });
         idx
     }

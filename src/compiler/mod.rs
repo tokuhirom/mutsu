@@ -54,6 +54,31 @@ mod declaration_plan_tests {
             _ => true,
         }));
     }
+
+    #[test]
+    fn type_declarations_leave_the_generic_statement_pool() {
+        let (stmts, _) = crate::parse_dispatch::parse_source(
+            "role R { method r { 1 } }; class C does R { method c { 2 } }; C.new.c",
+        )
+        .expect("source parses");
+        let (code, _) = Compiler::new().compile(&stmts);
+
+        assert!(!code.class_decl_plans.is_empty());
+        assert!(!code.role_decl_plans.is_empty());
+        assert!(code.stmt_pool.iter().all(|stmt| !matches!(
+            stmt,
+            crate::ast::Stmt::ClassDecl { .. } | crate::ast::Stmt::RoleDecl { .. }
+        )));
+        assert!(code.ops.iter().all(|op| match op {
+            crate::opcode::OpCode::RegisterClass(idx) => {
+                (*idx as usize) < code.class_decl_plans.len()
+            }
+            crate::opcode::OpCode::RegisterRole(idx) => {
+                (*idx as usize) < code.role_decl_plans.len()
+            }
+            _ => true,
+        }));
+    }
 }
 mod const_fold;
 mod expr;
