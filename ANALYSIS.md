@@ -47,12 +47,12 @@ Overall assessment as of rev11:
   registry + HOW-driven class registration, `runtime/metamodel.rs`). Both are described in
   §1.8/§1.9 — and both push load onto the one subsystem that is still tree-walking
   (declaration registration, §1.1).
-- **One representation campaign finished, one did not.** ADR-0016 (span-based captures +
-  lazy `Match`) landed all five phases in four days at the end of July and corrected five
-  real compatibility bugs on the way; it left behind one unenforced invariant (a `view()`
-  probe materializes a lazy `Match`). ADR-0015 stopped after P3a: `Buf`/`CArray` are
-  native-backed, `array[T]` is not, and the accessor chokepoint that would unify them is
-  unbuilt (§1.10).
+- **The two representation campaigns are now landed, with small verification residues.**
+  ADR-0016 (span-based captures + lazy `Match`) landed all five phases in four days at the
+  end of July and corrected five real compatibility bugs on the way; it left behind one
+  unenforced invariant (a `view()` probe materializes a lazy `Match`). ADR-0015 P3b has now
+  landed (`array[T]` is native-backed behind the `ArrayData::items` chokepoint, with honest
+  VMArray `.REPR`/`.WHERE` at the native boundary); only optional P3c remains (§1.10).
 - **Performance remains a surplus, not a problem.** At HEAD the bench CI ratio vs Rakudo is
   below 1.0 on every benchmark except `bench-ctor` (1.21), `bench-tak` (1.06) and
   interpreter-only `bench-fib` (0.98). Per PLAN's 2026-07-16 priority reset, perf is polish;
@@ -234,13 +234,13 @@ Two structural observations:
   "is it an X?" probe materializes a lazy `Match`, so variant probes on paths a `Match` can
   reach must be tag probes. That is an invariant with no mechanical enforcement — a plausible
   future regression, and worth a lint or a debug counter.
-- **ADR-0015 (native-backed container storage) is half-finished.** P0/P1/P2/P3a landed
-  (CStruct bodies, native-backed `Buf`/`Blob`, native-backed `CArray[T]`); **P3b**
-  (`array[T]`, which needs the `ArrayData::items` accessor chokepoint and is also the fix for
-  roast's shaped-native `array-shapes.t` T36-38) and P3c (reference-element `CArray`) are
-  open. So `Buf` and `CArray` have honest `.REPR`/`.WHERE` while `array[T]` does not — one
-  concept, two storage models, with the chokepoint refactor that would unify them still
-  unbuilt.
+- **ADR-0015 (native-backed container storage) is complete through P3b.** P0/P1/P2/P3a
+  landed (CStruct bodies, native-backed `Buf`/`Blob`, native-backed `CArray[T]`), and P3b
+  is now merged: all `ArrayData` element access goes through the accessor chokepoint and
+  numeric `array[T]` storage is synchronized with the native payload at the VMArray/native
+  boundary. Targeted array, CArray, shaped-array, and native-storage regressions pass, as
+  do the full CI test, GC-stress, JIT-stress, Miri, and WASM jobs. Only optional P3c
+  (reference-element `CArray`) remains.
 
 A half-migrated representation is the most expensive shape of debt in this codebase: it
 doubles the surface every unrelated fix must satisfy and silently invites new code to pick
@@ -435,7 +435,7 @@ The ranking rule, stated so it can be argued with:
 | # | Item | Kind | Why here |
 |---|------|------|----------|
 | 1 | **The env-writeback / lexical-slot fused campaign** (§1.3, §1.2, §2.4) | **completed** | ADR-0018 is Accepted; PR #5759 and its stacked implementation fixes are merged, with targeted normal/GC/JIT regressions and CI green. Future work is follow-up cleanup or optimization. |
-| 2 | **Finish ADR-0015 P3b** (`array[T]` behind the `ArrayData::items` accessor chokepoint) (§1.10) | representation | The one genuinely half-migrated representation left: `Buf`/`CArray` are native-backed with honest `.REPR`/`.WHERE`, `array[T]` is not. The chokepoint refactor is the shared prerequisite, and P3b is simultaneously the fix for roast's shaped-native `array-shapes.t` T36-38 — the last roast item with real leverage. |
+| 2 | **Complete ADR-0015 P3b** (`array[T]` behind the `ArrayData::items` accessor chokepoint) (§1.10) | **completed** | PR #5785 is merged with native-backed numeric `array[T]`, boundary-only payload materialization, and the accessor refactor. Follow-up work is optional P3c reference-element `CArray` support. |
 | 3 | **Declaration registration → bytecode, and dispatch-entry consolidation into one type×method table** (§1.1, §3.3; retires §4-1's hand tables) | design | Was a standing "medium" item; the MOP campaign (§1.9) turned it into a *growth surface* — the user HOW protocol now runs inside AST-walking registration (`registration_class_decl.rs` 2882 lines), and `"elems"`-style scattered name matching spread from 8 files to 33. Every further batteries/MOP feature pays interest here, so the cost of deferring is rising rather than flat. |
 | 4 | **Exception-class hierarchy registration** (124 core `X::` classes unregistered, `todo/deep/exception-class-hierarchy-is-mostly-unregistered.md`) | design | A registry/data-model job, not a pile of small fixes, and the prerequisite for PLAN §8.4 error/exception parity — the QA axis that replaced roast as the compatibility signal. |
 | 5 | **Close ADR-0013**: add the Miri job (informational → blocking), correct the stale unsoundness docs in `value/aliased_mut.rs`, then take the layer-3c cross-thread-race decision explicitly (§2.1) | soundness verification | The mechanism is fixed; the *check* that keeps it fixed does not exist. What shipped is an argument about borrow provenance, and that is exactly the kind of thing a later refactor invalidates with no observable failure. Cheap relative to that risk. |
@@ -467,7 +467,7 @@ Actions taken in this revision (each ADR updated in place with a progress/outcom
 | 0007 trail matcher | Recorded its own implementation outcome, but its explicitly deferred "per-subrule ceremony" became ADR-0016 with no forward pointer. | Added the successor link and marked the P2-P3 phasing superseded. |
 | 0011 RakuAST | Status read "Phase 1 implemented (PR #4679); Phases 2-6 pending" while Phases 2-5 had substantially landed across ~37 slices. | Status corrected; pointer to `todo/deep/rakuast-remaining.md` as the live gap list. |
 | 0013 container interior mutability | Status was accurate about the *decision*, but §4's phasing did not record that the primitive change shipped, and the README index still listed it `Proposed`. The undone phase (Miri) was indistinguishable from the done ones. | Added §8 "Implementation status"; index corrected. |
-| 0015 native-backed storage | Phase markers were inline ("landed"/"open") but the status line gave no summary, so the campaign's state required reading the whole ADR. | Status line now carries the P0-P3c state. |
+| 0015 native-backed storage | The prior entry stopped at P3a and left the P3b completion unrecorded. | Recorded P3b (PR #5785) as landed, including the `ArrayData::items` chokepoint and native-boundary behavior; P3c remains optional. |
 | 0016 span-based captures | Status `Proposed` while **all five phases** had shipped to `main` — a fully-implemented ADR still labelled as a proposal, which is the most misleading drift found in this review (it invites a reader to re-litigate a decision that is already executed). | Promoted to `Accepted`; the phase state, the deliberate residue, and P5's standing `view()`-probe constraint summarized at the top. |
 | 0003, 0004, 0005, 0006, 0009, 0010, 0012, 0014, 0017 | Accurate; 0004 and 0009 already carry closing addenda. | No change. |
 | 0002 | Historical gate record; still accurate. | No change. |
