@@ -470,11 +470,19 @@ impl Interpreter {
     fn sync_state_locals(&mut self, code: &CompiledCode) {
         for (slot, key) in &code.state_locals {
             let local_name = &code.locals[*slot];
-            let val = self
-                .env()
-                .get(local_name)
-                .cloned()
-                .unwrap_or_else(|| self.locals[*slot].clone());
+            // A slot-only state local has no current env mirror under the
+            // precise-sync regime; an older declaration seed may still be
+            // present there.  Persist the authoritative slot in that case.
+            // Name-based consumers are folded into `needs_env_sync` and retain
+            // the env-first path for their out-of-slot mutations.
+            let val = if code.needs_env_sync.get(*slot).copied().unwrap_or(true) {
+                self.env()
+                    .get(local_name)
+                    .cloned()
+                    .unwrap_or_else(|| self.locals[*slot].clone())
+            } else {
+                self.locals[*slot].clone()
+            };
             let scoped_key = self.scoped_state_key(key);
             self.set_state_var(scoped_key, val);
         }

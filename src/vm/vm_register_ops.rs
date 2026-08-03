@@ -81,6 +81,31 @@ impl Interpreter {
             self.box_captured_lexicals(code, &analysis_cc);
             let mut env = self.env().clone();
             env.insert("__mutsu_lazylist_from_gather".to_string(), Value::TRUE);
+            // A forward aggregate free var with no baked parent slot is the
+            // self-reference in a binding initializer (`my @a := gather {
+            // ... @a ... }`). Tag it before the LazyList is built; GetArrayVar
+            // then exposes the live take collector while this gather is being
+            // forced, instead of reading the pre-declaration Any snapshot.
+            if let Some(analysis) = &analysis_cc {
+                for (i, sym) in analysis.free_var_syms.iter().enumerate() {
+                    let has_baked_slot = analysis
+                        .free_var_parent_slots
+                        .get(i)
+                        .copied()
+                        .flatten()
+                        .is_some();
+                    let is_forward_aggregate = !has_baked_slot
+                        && sym.with_str(|name| {
+                            (name.starts_with('@') || name.starts_with('%'))
+                                && code.locals.iter().any(|local| local == name)
+                        });
+                    if is_forward_aggregate {
+                        sym.with_str(|name| {
+                            env.insert(format!("__mutsu_gather_self_ref::{name}"), Value::TRUE);
+                        });
+                    }
+                }
+            }
             // Compile the gather body to bytecode for Interpreter-native forcing.
             // A `sub` declared in the body is lexical to it, so compile through a
             // `Stmt::Block` (whose `BlockScope` restores the routine registry) when there

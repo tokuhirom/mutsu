@@ -7,7 +7,7 @@ use Test;
 # runs under a scoped overlay whose parent is the gather's captured env; its
 # writes land in the overlay and side effects on captured/outer vars propagate.
 
-plan 10;
+plan 11;
 
 # --- basic gather ---
 my @g = gather { take $_ * 2 for 1..5 };
@@ -18,6 +18,14 @@ my $count = 0;
 my @h = gather { for 1..3 { $count++; take $count } };
 is @h.List, (1, 2, 3), 'gather body sees mutated captured var';
 is $count, 3, 'captured var mutation persists after gather force';
+
+my @dups = 1, 2, 2, 3, 3, 3;
+my @uniq = gather for @dups {
+    state $previous = take $_;
+    next if $_ === $previous;
+    $previous = take $_;
+}
+is @uniq, (1, 2, 3), 'gather for preserves a state lexical across iterations';
 
 # --- lazy gather + slice forces the coroutine path ---
 my @lazy = lazy gather { my $i = 0; loop { take $i++ } };
