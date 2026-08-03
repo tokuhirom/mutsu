@@ -1171,6 +1171,13 @@ impl Interpreter {
         fully
     }
 
+    /// Unlike the two mirrors below, this one DOES keep publishing to the
+    /// cross-thread store. It runs at frame teardown (`run_inner`), where the
+    /// frame's own bindings — parameters included — are exactly what a worker
+    /// spawned from this routine must see under their names: roast
+    /// `S17-channel/stress.t`'s `sub bogosort_concurrent(@list)` reaches its
+    /// `@list` from inside a `start` block through this lane, and without the
+    /// publish it read the *previous* sub's same-named parameter instead.
     pub(super) fn sync_env_from_locals(&mut self, code: &CompiledCode) {
         for (i, name) in code.locals.iter().enumerate() {
             // §1.4 shadow slots: a name occupying several slots (an inner-block
@@ -1214,6 +1221,8 @@ impl Interpreter {
     /// either already present in env (declared, captured, `our`, dynamic) or
     /// forced there by the reflective-access flag — never slot-only.
     pub(super) fn sync_env_from_locals_declared(&mut self, code: &CompiledCode) {
+        let saved_suppress = self.suppress_shared_publish;
+        self.suppress_shared_publish = true;
         for (i, name) in code.locals.iter().enumerate() {
             if code.dup_named_locals.get(i).copied().unwrap_or(false) {
                 continue;
@@ -1223,9 +1232,12 @@ impl Interpreter {
             }
             self.set_env_with_main_alias(name, self.locals[i].clone());
         }
+        self.suppress_shared_publish = saved_suppress;
     }
 
     pub(super) fn sync_regex_interpolation_env_from_locals(&mut self, code: &CompiledCode) {
+        let saved_suppress = self.suppress_shared_publish;
+        self.suppress_shared_publish = true;
         for (i, name) in code.locals.iter().enumerate() {
             if name == "_"
                 || name == "/"
@@ -1260,6 +1272,7 @@ impl Interpreter {
             }
             self.set_env_with_main_alias(name, self.locals[i].clone());
         }
+        self.suppress_shared_publish = saved_suppress;
     }
 
     /// Check if a local name looks like a bare function parameter (no sigil).

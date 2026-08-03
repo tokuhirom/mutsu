@@ -30,6 +30,32 @@ correct saved value) yet the post-loop read still saw the loop value, so the
 post-loop `GetLocal` resolves a *different* slot. Working out which slot each
 side owns is the actual work here.
 
+## It also leaks across frames through the cross-thread lane
+
+Because the binding is a `Stmt::Assign`, it compiles to a by-name store, which
+publishes into the bare-name cross-thread lane exactly like an ordinary
+assignment — a real `my` would have been masked by `thread_redeclared_vars`. So
+the loop parameter of a multi-param `for` in one routine overwrites a *different*
+routine's live same-named lexical:
+
+```
+for ^3 -> $i { ...anything that awaits a Cro request... ; say "round $i" }
+```
+
+printed `round 2` in every iteration, because `Cro.compose`'s
+`for @components-in.kv -> $i, $comp` (`Cro.rakumod:560`, six components) had
+published its own `$i` under the bare name `i`, and the caller's `await` pulled
+it back. Confirmed with `rust-gdb` breaking on the shared-store write: the
+backtrace is `set_env_with_main_alias("i") <- exec_for_loop_body <-
+call_compiled_method("Cro", "compose")`. Renaming the caller's loop variable
+makes it go away, which is how it was isolated.
+
+This is the strongest argument for fixing the binding form itself (making the
+multi-param bind a real per-iteration declaration) rather than patching the
+save/restore: one change would settle the value clobber, this lane leak, and the
+type-constraint save/restore added in
+`news/2026-08/for-multi-param-stale-type-constraint.md`.
+
 ## Why it matters
 
 Same family as the shared-lane container escape

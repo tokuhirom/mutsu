@@ -1381,6 +1381,24 @@ pub struct Interpreter {
     /// in-flight window closes that hole; the store is republished normally once
     /// the initializer's value lands. Empty for single-threaded programs.
     pub(crate) thread_decl_in_flight: std::collections::HashSet<String>,
+    /// Set while an *incidental* locals -> env mirror is running: the I/O
+    /// pre-sync (`sync_env_from_locals_declared`, run before Say/Put/Print/Note
+    /// so a `$*OUT` override or a `.gist` sees fresh values) and the regex
+    /// interpolation pre-sync. Both exist purely so a name-based reader in THIS
+    /// interpreter can observe the frame's live slots through `env`.
+    ///
+    /// `set_env_with_main_alias` does double duty: it writes `env` AND publishes
+    /// to the cross-thread shared store. Publishing from these two is wrong,
+    /// because the store is keyed by BARE NAME while the mirror walks *whichever
+    /// frame happens to be printing*: a callee's parameter `$url` overwrote the
+    /// lane belonging to the caller's own `my $url`, and the caller's next
+    /// `sync_shared_vars_to_env` pulled it back — `Cro::HTTP::Client.get("$url/")`
+    /// grew a `/` on the caller's URL on every request, so the third server on a
+    /// port answered 404.
+    ///
+    /// Frame *teardown* (`sync_env_from_locals`) is deliberately NOT suppressed;
+    /// see the comment there.
+    pub(crate) suppress_shared_publish: bool,
     /// Union of every executed `CompiledCode::type_body_written_lexicals`:
     /// lexicals written by a registered class/role method body. These keep the
     /// name-keyed `shared_vars` lane even when a spawned block also captures
