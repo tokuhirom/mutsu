@@ -2431,6 +2431,18 @@ impl CompiledCode {
         let Some(cc) = self.closure_compiled_codes.get(cc_idx as usize) else {
             return;
         };
+        // Hand-built/runtime metadata from older callers may carry only the
+        // parallel parent-slot vector and no symbol list. Preserve that exact
+        // slot-addressed representation rather than dropping the consumer
+        // dependency when the symbol-side fallback has nothing to iterate.
+        if cc.free_var_syms.is_empty() {
+            for slot in cc.free_var_parent_slots.iter().flatten() {
+                if let Some(needed) = slots.get_mut(*slot as usize) {
+                    *needed = true;
+                }
+            }
+            return;
+        }
         for (idx, sym) in cc.free_var_syms.iter().enumerate() {
             // A self-referential stored body can be analyzed while its binding
             // initializer is still being compiled (`my @a := gather { ... @a
