@@ -620,24 +620,12 @@ impl Interpreter {
                 // then skip matches that overlap with already-selected ones
                 let non_overlapping = self.select_non_overlapping_matches(all);
                 if non_overlapping.is_empty() {
-                    self.env.insert(
-                        "/".to_string(),
-                        Value::array_with_kind(
-                            crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
-                            crate::value::ArrayKind::List,
-                        ),
-                    );
+                    self.clear_multi_match_state();
                     return false;
                 }
                 let selected = if let Some(needed) = *repeat {
                     if non_overlapping.len() < needed {
-                        self.env.insert(
-                            "/".to_string(),
-                            Value::array_with_kind(
-                                crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
-                                crate::value::ArrayKind::List,
-                            ),
-                        );
+                        self.clear_multi_match_state();
                         return false;
                     }
                     non_overlapping.into_iter().take(needed).collect::<Vec<_>>()
@@ -680,7 +668,7 @@ impl Interpreter {
                     self.regex_match_all_with_captures(&pattern, &text)
                 };
                 if all.is_empty() {
-                    self.clear_match_state();
+                    self.clear_multi_match_state();
                     return false;
                 }
                 // Keep longest match at each starting position
@@ -723,7 +711,7 @@ impl Interpreter {
                     self.regex_match_all_with_captures(&pattern, &text)
                 };
                 if all.is_empty() {
-                    self.clear_match_state();
+                    self.clear_multi_match_state();
                     return false;
                 }
                 // :exhaustive orders matches by start position ascending and,
@@ -733,7 +721,7 @@ impl Interpreter {
                     let earliest = all.iter().map(|c| c.from).min().unwrap_or(0);
                     all.retain(|c| c.from == earliest);
                     if all.len() < needed {
-                        self.clear_match_state();
+                        self.clear_multi_match_state();
                         return false;
                     }
                     all.into_iter().take(needed).collect::<Vec<_>>()

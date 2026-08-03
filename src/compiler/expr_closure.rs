@@ -183,14 +183,25 @@ impl Compiler {
             };
             let has_explicit_sig =
                 params.is_empty() || params.iter().all(|p| !is_placeholder_param(p));
-            let body_placeholders = crate::ast::collect_placeholders(body);
+            // Only placeholders belonging to THIS block conflict with its
+            // signature. A nested block owns the placeholders written inside it
+            // (`-> $b, $i { ({ $^a + $^b }, { $^a * $^b })[$i](1, 2) }` is legal),
+            // so the scan must stop at every nested `{}` — the deep
+            // `collect_placeholders` used to report the inner block's own `$^a`
+            // as an override of the outer signature. This is the same collector
+            // the `sub` declaration check uses (`placeholder_overrides_signature_error`),
+            // so — as there — the implicit slurpies it reports (`@_` / `%_`) are
+            // legal when explicitly declared as parameters (`-> @_ { … @_ }`).
+            let declared: std::collections::HashSet<&str> =
+                params.iter().map(String::as_str).collect();
+            let body_placeholders: Vec<String> = crate::ast::collect_unattached_placeholders(body)
+                .into_iter()
+                .filter(|ph| !declared.contains(ph.as_str()))
+                .collect();
             if has_explicit_sig && !body_placeholders.is_empty() {
-                let ph_name = &body_placeholders[0];
-                let display = if let Some(stripped) = ph_name.strip_prefix('^') {
-                    format!("$^{}", stripped)
-                } else {
-                    format!("${}", ph_name)
-                };
+                // `collect_unattached_placeholders` already returns display names
+                // (`$^x`, `@_`).
+                let display = body_placeholders[0].clone();
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert(
                     "message".to_string(),

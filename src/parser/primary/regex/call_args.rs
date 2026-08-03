@@ -1,7 +1,7 @@
 //! Call argument list parsing and related helpers.
 
 use crate::ast::Expr;
-use crate::parser::expr::{expression, listop_arg_expr};
+use crate::parser::expr::{expression, listop_arg_expr_list_infix};
 use crate::parser::helpers::ws;
 use crate::parser::parse_result::{PResult, parse_char};
 
@@ -11,6 +11,10 @@ use crate::parser::parse_result::{PResult, parse_char};
 /// argument before the loose word-logical operators `and`/`or`/`andthen`/… which
 /// are looser than the colon-method comma list, so `.contains: 'a' and .contains:
 /// 'b'` is `(.contains: 'a') and (.contains: 'b')`, not `.contains('a' and …)`.
+///
+/// The list-infix operators (`Z`/`X`/meta-ops/infix funcs) bind TIGHTER than
+/// that comma, so the parsed argument is extended with them — otherwise
+/// `blob32.new: $H Z+ $M` reads as `(blob32.new: $H) Z+ $M`.
 pub(super) fn parse_colon_method_arg(input: &str) -> PResult<'_, Expr> {
     if input.starts_with(':')
         && !input.starts_with("::")
@@ -18,7 +22,7 @@ pub(super) fn parse_colon_method_arg(input: &str) -> PResult<'_, Expr> {
     {
         return Ok(result);
     }
-    listop_arg_expr(input)
+    listop_arg_expr_list_infix(input)
 }
 
 pub(super) fn has_unescaped_statement_boundary(input: &str) -> bool {

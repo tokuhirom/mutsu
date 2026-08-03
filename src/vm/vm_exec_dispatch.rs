@@ -629,6 +629,12 @@ impl Interpreter {
                             .collect();
                         Value::real_array(pairs)
                     }
+                    // NOTE: a Buf/Blob is deliberately NOT unwrapped to its
+                    // element list here. `@$blob` lowers to `$blob.list` (see
+                    // `@$x` in the parser), so it never reaches this opcode;
+                    // what does reach it is a genuine `@`-sigil variable whose
+                    // container IS a Buf (`my @a is Buf`), and there `@a` must
+                    // stay the Buf itself so `@a ~~ Buf` holds (S02-types/is-type.t).
                     // Array-contextualizing a Seq (`@$s`) caches it, so it may be
                     // read repeatedly. If the Seq's iterator was already taken
                     // (e.g. by `.skip`/`.iterator`) and not cached, throw.
@@ -1075,6 +1081,10 @@ impl Interpreter {
                                 )
                             }
                         }
+                        // `CoerceToList` already decided a lazy list stays lazy
+                        // (an infinite `constant @primes = grep …` cannot be
+                        // reified); re-wrapping it here would undo that.
+                        ValueView::LazyList(_) | ValueView::Seq(_) => raw_val,
                         _ => Value::array_with_kind(
                             crate::gc::Gc::new(crate::value::ArrayData::new(vec![raw_val])),
                             crate::value::ArrayKind::List,
@@ -2589,6 +2599,17 @@ impl Interpreter {
                             }
                         }
                     }
+                    // A lazy list keeps its laziness behind `constant @x`, exactly
+                    // as behind `my @x`: `constant @primes = grep *.is-prime, 2 .. *`
+                    // (Digest::SHA2) is infinite, and wrapping it as a single
+                    // element made `@primes[^8]` read `((...) Nil Nil …)`.
+                    ValueView::LazyList(list) if list.preserve_lazy_on_array_assign() => val,
+                    ValueView::LazyList(list) => Value::array_with_kind(
+                        crate::gc::Gc::new(crate::value::ArrayData::new(
+                            self.force_lazy_list_vm(&list)?,
+                        )),
+                        crate::value::ArrayKind::List,
+                    ),
                     _ => Value::array_with_kind(
                         crate::gc::Gc::new(crate::value::ArrayData::new(vec![val])),
                         crate::value::ArrayKind::List,
@@ -3426,15 +3447,15 @@ impl Interpreter {
                 self.exec_post_decrement_op(code, *name_idx, *slot)?;
                 *ip += 1;
             }
-            OpCode::PostIncrementIndex(name_idx) => {
+            OpCode::PostIncrementIndex(name_idx, slot) => {
                 let pre = self.attr_elem_env_snapshot(code, *name_idx);
-                self.exec_post_increment_index_op(code, *name_idx)?;
+                self.exec_post_increment_index_op(code, *name_idx, *slot)?;
                 self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
                 *ip += 1;
             }
-            OpCode::PostDecrementIndex(name_idx) => {
+            OpCode::PostDecrementIndex(name_idx, slot) => {
                 let pre = self.attr_elem_env_snapshot(code, *name_idx);
-                self.exec_post_decrement_index_op(code, *name_idx)?;
+                self.exec_post_decrement_index_op(code, *name_idx, *slot)?;
                 self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
                 *ip += 1;
             }
@@ -3548,12 +3569,12 @@ impl Interpreter {
                 self.exec_pre_decrement_op(code, *name_idx, *slot)?;
                 *ip += 1;
             }
-            OpCode::PreIncrementIndex(name_idx) => {
-                self.exec_pre_increment_index_op(code, *name_idx)?;
+            OpCode::PreIncrementIndex(name_idx, slot) => {
+                self.exec_pre_increment_index_op(code, *name_idx, *slot)?;
                 *ip += 1;
             }
-            OpCode::PreDecrementIndex(name_idx) => {
-                self.exec_pre_decrement_index_op(code, *name_idx)?;
+            OpCode::PreDecrementIndex(name_idx, slot) => {
+                self.exec_pre_decrement_index_op(code, *name_idx, *slot)?;
                 *ip += 1;
             }
 

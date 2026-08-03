@@ -1362,6 +1362,13 @@ impl Interpreter {
                     };
                     // Check element type constraints from container metadata
                     self.check_array_value_element_types(&target, &normalized_args)?;
+                    // A native integer array stores through the native slot, so
+                    // each pushed element wraps to the element width, exactly as
+                    // an assignment does (`my uint8 @e; @e.push(300)` -> 44).
+                    let normalized_args: Vec<Value> = normalized_args
+                        .into_iter()
+                        .map(|v| self.wrap_native_int_for_var(&key, v))
+                        .collect();
                     let slot_is_array = matches!(
                         self.env.get(&key).map(Value::view),
                         Some(ValueView::Array(..))

@@ -1458,7 +1458,7 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
             Expr::MethodCall {
                 target: Box::new(Expr::Var("_".to_string())),
                 name,
-                args,
+                args: crate::parser::primary::lift_list_infix_in_arg_list(args),
                 modifier,
                 quoted: false,
             },

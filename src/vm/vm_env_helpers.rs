@@ -1615,11 +1615,40 @@ impl Interpreter {
     /// reading/mutating slot-first there would lose a `%h is MixHash; %h<a>--`
     /// update (roast S02-types/mixhash.t, sethash.t).
     pub(super) fn gate_local_slot(&self, code: &CompiledCode, name: &str) -> Option<usize> {
-        let slot = self.find_local_slot(code, name)?;
+        self.gate_local_slot_at(code, None, name)
+    }
+
+    /// [`Self::gate_local_slot`] that prefers a compile-time-baked slot over the
+    /// by-name search (§1.5) — the by-name form is ambiguous once a name
+    /// occupies several `code.locals` entries (a shadowing `my` in a bare
+    /// block).
+    pub(super) fn gate_local_slot_at(
+        &self,
+        code: &CompiledCode,
+        slot: Option<u32>,
+        name: &str,
+    ) -> Option<usize> {
+        let slot = self.resolve_local_slot(code, slot, name)?;
         if !code.plain_locals.get(slot).copied().unwrap_or(false) {
             return None;
         }
         Some(slot)
+    }
+
+    /// [`Self::gate_local_slot_value`] with a compile-time-baked slot.
+    pub(super) fn gate_local_slot_value_at(
+        &self,
+        code: &CompiledCode,
+        slot: Option<u32>,
+        name: &str,
+    ) -> Option<Value> {
+        let slot = self.gate_local_slot_at(code, slot, name)?;
+        let val = self.locals.get(slot)?;
+        if val.is_nil() {
+            None
+        } else {
+            Some(val.clone())
+        }
     }
 
     /// Resolve a local slot for `name`, preferring the compile-time-baked `slot`

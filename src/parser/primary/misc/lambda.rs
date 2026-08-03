@@ -40,7 +40,35 @@ pub(crate) fn capture_literal(input: &str) -> PResult<'_, Expr> {
 
 /// Parse `-> $param { body }` or `-> $a, $b { body }` arrow lambda.
 /// Also handles `<-> $a, $b { body }` (rw pointy block) where all params get `is rw`.
+///
+/// A pointy block ALWAYS has an explicit signature — even `-> { … }`, which
+/// declares zero parameters — so a placeholder written directly in its body
+/// cannot become its parameter the way it would in a bare `{ … }` block.
+/// Rakudo rejects that at compile time (`-> { $^a }` is
+/// `X::Signature::Placeholder`), so the check belongs here in the parser rather
+/// than as a deferred `Die` in the closure's bytecode: buried inside a routine
+/// that is never called, the deferred form would never fire.
 pub(crate) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
+    let (rest, expr) = arrow_lambda_inner(input)?;
+    let (body, param_defs): (&[crate::ast::Stmt], Vec<crate::ast::ParamDef>) = match &expr {
+        Expr::AnonSubParams {
+            body, param_defs, ..
+        } => (body, param_defs.clone()),
+        Expr::Lambda { param, body, .. } => (
+            body,
+            vec![crate::parser::stmt::sub_param::make_param(param.clone())],
+        ),
+        _ => (&[], Vec::new()),
+    };
+    if let Some(err) =
+        crate::parser::stmt::sub::placeholder_overrides_signature_error(body, &param_defs)
+    {
+        return Err(err);
+    }
+    Ok((rest, expr))
+}
+
+fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
     let is_rw_block = input.starts_with("<->");
     if !is_rw_block && !input.starts_with("->") {
         return Err(PError::expected("arrow lambda"));

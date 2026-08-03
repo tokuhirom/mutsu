@@ -269,6 +269,12 @@ impl Interpreter {
             }
         }
 
+        // A push onto a native integer array stores through the native slot, so
+        // the value wraps to the element width exactly as an assignment does
+        // (`my uint32 @W; @W.push(6535351809)` stores 2240384513). Without this,
+        // `@W` held out-of-range values and Digest::SHA1's message schedule
+        // (whose rotate relies on uint32 truncation) computed the wrong digest.
+        let val = self.wrap_native_int_push_value(target_name, val);
         let mut val_slot = Some(val);
         // Container identity (§3): append through the shared backing node —
         // no COW, no local-slot zeroing dance — so every by-value holder of
@@ -309,5 +315,41 @@ impl Interpreter {
         // pull would be redundant. (The interpreter-fallback push branches above,
         // for shared/shaped/non-simple-array targets, keep their conservative mark.)
         Ok(())
+    }
+
+    /// Wrap a pushed value (or every element of a pushed `Slip`) to the native
+    /// integer width of `target_name`'s element type. A no-op for boxed arrays.
+    fn wrap_native_int_push_value(&mut self, target_name: &str, val: Value) -> Value {
+        let Some(constraint) = self.native_int_element_constraint(target_name) else {
+            return val;
+        };
+        match val.view() {
+            ValueView::Slip(items) => Value::slip(
+                items
+                    .iter()
+                    .map(|v| Self::wrap_native_int_by_constraint(&constraint, v.clone()))
+                    .map(|r| r.unwrap_or(Value::NIL))
+                    .collect(),
+            ),
+            _ => Self::wrap_native_int_by_constraint(&constraint, val.clone()).unwrap_or(val),
+        }
+    }
+
+    /// The native integer element type of the array variable `name`, if any.
+    pub(crate) fn native_int_element_constraint(&mut self, name: &str) -> Option<String> {
+        let constraint = self.var_type_constraint_fast(name)?.to_string();
+        crate::runtime::native_types::is_native_int_type(&constraint).then_some(constraint)
+    }
+
+    /// Wrap every element of a multi-argument push/append onto a native integer
+    /// array (`my uint8 @e; @e.push(1, 300, 2)` stores `1, 44, 2`).
+    pub(crate) fn wrap_native_int_items(&mut self, name: &str, items: Vec<Value>) -> Vec<Value> {
+        let Some(constraint) = self.native_int_element_constraint(name) else {
+            return items;
+        };
+        items
+            .into_iter()
+            .map(|v| Self::wrap_native_int_by_constraint(&constraint, v.clone()).unwrap_or(v))
+            .collect()
     }
 }

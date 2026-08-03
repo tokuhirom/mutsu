@@ -41,8 +41,13 @@ impl Compiler {
         } else if let Expr::Index { target, index, .. } = expr {
             if let Some(name) = Self::postfix_index_name(target) {
                 self.compile_expr(index);
+                // §1.5: bake the base container's scope-correct slot (as
+                // `IndexAssignExprNamed` already does), so a shadowing inner
+                // `my $b` is not resolved to the outer `$b`'s slot by name.
+                let target_slot = self.local_map.get(&name).copied();
                 let name_idx = self.code.add_constant(Value::str(name));
-                self.code.emit(OpCode::PostIncrementIndex(name_idx));
+                self.code
+                    .emit(OpCode::PostIncrementIndex(name_idx, target_slot));
             } else {
                 // Nested index (e.g. $foo[0][0]++): read old value, increment,
                 // write back via IndexAssign, and return old value.
@@ -139,8 +144,10 @@ impl Compiler {
         } else if let Expr::Index { target, index, .. } = expr {
             if let Some(name) = Self::postfix_index_name(target) {
                 self.compile_expr(index);
+                let target_slot = self.local_map.get(&name).copied();
                 let name_idx = self.code.add_constant(Value::str(name));
-                self.code.emit(OpCode::PostDecrementIndex(name_idx));
+                self.code
+                    .emit(OpCode::PostDecrementIndex(name_idx, target_slot));
             } else {
                 // Nested index (e.g. $foo[0][0]--): read old value, decrement,
                 // write back via IndexAssign, and return old value.
