@@ -153,6 +153,7 @@ impl Interpreter {
         let mut best_shape_sorted = best_shape.clone();
         best_shape_sorted.sort();
         if tied.len() > 1
+            && !tied.iter().any(Self::candidate_has_typed_named_param)
             && tied
                 .iter()
                 .all(|def| !self.candidate_uses_order_sensitive_dispatch(def))
@@ -177,6 +178,32 @@ impl Interpreter {
         Some(matches.remove(0))
     }
 
+    /// Whether any *named* parameter of `def` carries a type constraint.
+    ///
+    /// Narrowness in Raku is computed from the POSITIONAL parameters only —
+    /// named parameters decide whether a candidate is *applicable*, never how
+    /// narrow it is. So two candidates that differ only in the types of their
+    /// named parameters land in the same narrowness group, and rakudo does not
+    /// call that ambiguous: a candidate with type-constrained nameds needs a
+    /// trial bind, and the FIRST one that binds wins.
+    ///
+    /// ```text
+    /// multi f(Str :$a,     :$b) { "A" }
+    /// multi f(    :$a, Str :$b) { "B" }
+    /// f(a => "x", b => "y")   # "A" -- declaration order, not ambiguous
+    /// ```
+    ///
+    /// (Both are applicable; A is simply declared first. Reversing the two
+    /// declarations makes the call return "B".) The positional analogue
+    /// `multi g(Str $a, $b)` / `multi g($a, Str $b)` really is ambiguous, in
+    /// rakudo and here alike, which is why this only suppresses the report when
+    /// a named type constraint is what tied the candidates.
+    fn candidate_has_typed_named_param(def: &Arc<FunctionDef>) -> bool {
+        Self::dispatch_visible_params(def)
+            .into_iter()
+            .any(|p| p.named && p.type_constraint.is_some())
+    }
+
     pub(super) fn candidate_specificity_rank(
         &self,
         def: &FunctionDef,
@@ -194,7 +221,16 @@ impl Interpreter {
         def: &FunctionDef,
         args: &[Value],
     ) -> (usize, usize, usize, usize, usize, usize, usize) {
-        let params = Self::dispatch_visible_params(def);
+        let all_params = Self::dispatch_visible_params(def);
+        // Type narrowness is computed from the POSITIONAL parameters only.
+        // A named parameter's type decides whether the candidate is
+        // *applicable*, never how narrow it is — `multi p(Any :$a)` and
+        // `multi p(Int :$a)` are equally narrow in rakudo, so `p(a => 1)`
+        // picks whichever is declared first (verified against rakudo; the
+        // positional pair `multi r(Any $x, Int :$a)` / `multi r(Int $x, Any
+        // :$a)` still resolves to the `Int $x` one). See
+        // `candidate_has_typed_named_param` for the matching ambiguity rule.
+        let params: Vec<&ParamDef> = all_params.iter().copied().filter(|p| !p.named).collect();
         let param_args = self.dispatch_param_arguments(&params, args);
         let effective: Vec<Option<&str>> = params
             .iter()
@@ -236,7 +272,10 @@ impl Interpreter {
             })
             .count();
         let subsig_count = params.iter().filter(|p| p.sub_signature.is_some()).count();
-        let named_count = params.iter().filter(|p| p.named).count();
+        // How MANY nameds a candidate declares is still a tie-break (a
+        // signature that accepts more of the call's nameds is the better fit);
+        // only their *types* are excluded above.
+        let named_count = all_params.iter().filter(|p| p.named).count();
         let trait_count = params
             .iter()
             .filter(|p| {
@@ -355,27 +394,11 @@ impl Interpreter {
         let mut pos_idx = 0usize;
         for pd in params.iter() {
             if let Some(constraint) = &pd.type_constraint {
-                // For named params, find the matching Pair arg
+                // A named parameter's type does not contribute to narrowness
+                // (see `candidate_specificity_rank_for_args`), so it must not
+                // move the distance either — otherwise `multi p(Int :$a)` would
+                // still outrank `multi p(Any :$a)` on the secondary key.
                 if pd.named {
-                    let bare_name = pd.name.trim_start_matches(|c: char| "$@%&".contains(c));
-                    let named_val = args.iter().find_map(|a| {
-                        if let ValueView::Pair(key, val) = a.view() {
-                            if key == bare_name {
-                                Some(val.clone())
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        }
-                    });
-                    if let Some(val) = named_val {
-                        let effective = self.effective_dispatch_constraint(constraint, Some(&val));
-                        let base = Self::constraint_base_name(effective);
-                        total += self.type_hierarchy_distance_with_var_type(base, &val, None);
-                    } else {
-                        total += 1000;
-                    }
                     continue;
                 }
                 if pos_idx < args.len() {
