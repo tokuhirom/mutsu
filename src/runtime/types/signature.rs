@@ -810,14 +810,25 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
             if sub_pd.name.starts_with('@')
                 && !matches!(
                     candidate.view(),
-                    ValueView::Array(..) | ValueView::Nil | ValueView::Slip(_)
+                    ValueView::Array(..) | ValueView::Nil | ValueView::Slip(_) | ValueView::Seq(_)
                 )
+                && !candidate.is_range()
             {
                 return Err(RuntimeError::typecheck_binding_parameter_value(
                     &sub_pd.name,
                     "Positional",
                     candidate,
                 ));
+            }
+            // A `@` parameter listifies an Iterable that is not already
+            // Positional, so a destructured `Seq` element binds as a `List` —
+            // `-> [@a, $b] {...}` given `[(1,2).Seq, 9]` sees `@a.^name` as
+            // `List` in Rakudo, and `@a` must stay usable after the Seq is
+            // consumed. A `Range` is Positional already and binds unchanged.
+            if sub_pd.name.starts_with('@')
+                && let ValueView::Seq(items) = candidate.view()
+            {
+                candidate = Value::array(items.as_ref().clone());
             }
             if sub_pd.name.starts_with('%')
                 && !matches!(candidate.view(), ValueView::Hash(..) | ValueView::Nil)

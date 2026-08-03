@@ -222,6 +222,20 @@ impl Interpreter {
                 ValueView::Array(..) if base_class_name == "CArray" => {
                     items.extend(crate::runtime::utils::value_to_list(arg));
                 }
+                // `Array.new(|c)` slurps with `+@`, so the single-argument rule
+                // applies: `Array.new((1,2))`, `Array.new([1,2])` and
+                // `Array.new(@a)` are all two elements, while
+                // `Array.new(@a, 3)` keeps `@a` whole (the `**@`-style behaviour
+                // the arm above documents) and `List.new((1,2))` — a `**@`
+                // slurpy — stays one element. An itemized `$(...)`/`$[...]` is a
+                // single value and is never unwrapped by the rule.
+                ValueView::Array(_, kind)
+                    if matches!(base_class_name, "Array" | "array")
+                        && args.len() == 1
+                        && !kind.is_itemized() =>
+                {
+                    items.extend(crate::runtime::utils::value_to_list(arg));
+                }
                 _ => items.push(arg.clone()),
             }
         }
