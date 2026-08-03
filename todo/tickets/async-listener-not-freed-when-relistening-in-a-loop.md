@@ -1,80 +1,80 @@
-# Re-`listen`ing on one port in a loop leaks listeners and then fails to bind
+# A `my $tap` in a loop body reverts to the previous iteration's Tap once a connection is accepted
 
 ```raku
-my $port = 31422;
-for ^4 -> $round {
-    my $tap = IO::Socket::Async.listen('localhost', $port).tap(
-        -> $conn { $conn.close; },
-        quit => -> $e { note "round $round quit: $e" });
-    my $c = await IO::Socket::Async.connect('localhost', $port);
+my $port = 31427;
+for ^3 -> $round {
+    my $tap = IO::Socket::Async.listen('localhost', $port).tap(-> $c { $c.close; });
+    my $c = await IO::Socket::Async.connect('localhost', $port);   # <- the trigger
     $c.close;
+    note "round $round tap=", $tap.WHICH;
     $tap.close;
-    note "round $round done";
 }
 ```
 
 ```
-round 0 done
-round 1 done
-round 2 done
-round 3 quit: Failed to bind: Address already in use (os error 98)
-round 3 done
+round 0 tap=Tap|46
+round 1 tap=Tap|46      <- round 0's Tap object, not the one just created
+round 2 tap=Tap|77
 ```
 
-raku runs all four rounds. The failure is **deterministic** (same round every run)
-and predates the tap-close cascade fix — verified by A/B against `main`
-(`news/2026-08/supply-tap-close-cascades-upstream.md`).
+Without the `connect` (`tmp/cap10.p6`) every round gets its own Tap
+(`46 / 88 / 130`), including with an unrelated `await start { 1 }` in the body.
+It is accepting a **connection** that does it.
 
-## Evidence
-
-`ss -tan` taken while the loop runs shows **two** LISTEN sockets on the port at
-once, on different addresses:
-
-```
-LISTEN  127.0.0.1:31423   0.0.0.0:*
-LISTEN  [::1]:31423       [::]:*
-TIME-WAIT [::1]:50528 -> [::1]:31423
-...
-```
-
-`'localhost'` resolves to both `127.0.0.1` and `[::1]`, and
-`std::net::TcpListener::bind` picks one; different rounds can pick different
-ones, so two rounds' listeners coexist happily and a third collides with
-whichever address it draws. That also explains the *wrong-answer* symptom that
-shows up before the bind error: the client's `connect` resolves to the address of
-a **previous** round's still-live listener, so it is served by the stale round
-(`round 2 got: 'R1'`).
-
-Only the loop shape fails. A single `listen` / `tap.close` pair frees the port
-correctly (`ss` shows no LISTEN afterwards), and `set_listener_closed`
-(`src/runtime/native_methods/state.rs`) does wait for the accept thread's
-`stopped` acknowledgement before returning, so the close handshake itself works.
-
-## Likely fixes to evaluate
-
-1. **Resolve the host once and bind every address it yields** (or bind a single,
-   deterministic one), so `localhost` does not silently mean "either stack" —
-   raku/libuv binds what it resolved and reports a real conflict.
-2. **Set `SO_REUSEADDR` before `bind`** (raku does; std's `TcpListener::bind`
-   does not). Needs `socket2`, or `libc::setsockopt` behind the existing optional
-   `libc` feature — note `libc` is not available in the wasm build, so this needs
-   a cfg split.
-
-Both are worth doing; (1) is the actual cause of the cross-round answers.
+`gdb` on `native_tap` shows the same `attributes` pointer for round 0 and round 1
+(`attributes=0x7fffe00adb50` both times), and `register_async_listener` /
+`set_listener_closed` disagree: round 1 registers listener **2** and then closes
+listener **1**. So round 1's listener is never closed and stays bound forever.
 
 ## Why it matters
 
-It is the remaining blocker for the vendored Cro::HTTP multi-server tests. With
-the tap-close cascade fixed, `Cro::Service.stop` really does stop the server —
-so `t/http-middleware.rakutest`'s first subtest now passes 4/4 (was 2/4), but the
-file then **hangs** on the later servers instead of answering from the stale
-listener. `t/http-auth-basic`, `http-session-*` and `router-auth` are all the
-same shape. Repro against the real dist: `tmp/mw6.p6` (six sequential
-`Cro::HTTP::Server`s on one port) answers for two rounds and then returns empty
-bodies.
+This is the whole "a stopped Cro server keeps serving" family, and it is what
+still blocks the vendored Cro::HTTP multi-server tests after
+`news/2026-08/supply-tap-close-cascades-upstream.md` made `Cro::Service.stop`
+close its pipeline properly:
 
-Pin when fixed: a `t/io-socket-async-relisten-loop.t` running the loop above
-(remember: never hardcode a port — listen on 0 and read the tap's `.socket-port`,
-per the `t/io-socket-recv-limit.t` lesson; this repro needs a fixed port only
-because it re-binds the same one deliberately, so allocate it once from a port-0
-listen and reuse that number).
+- `tmp/mw6.p6` (six sequential `Cro::HTTP::Server`s on one port) serves two
+  rounds and then returns empty bodies;
+- `t/http-middleware.rakutest` passes its first subtest 4/4 and then hangs;
+- `http-auth-basic`, `http-session-*` and `router-auth` are the same shape.
+
+It is almost certainly the "secondary anomaly" recorded with
+`news/2026-08/threaded-array-mutation-escapes-to-the-caller.md`: a
+`for 1..3 -> $i { say "round $i"; …Cro request…; say "round $i status" }` printed
+`round 2 status` in *every* iteration. Same shape — a loop-body scalar reverting
+to another iteration's value once a request has run. `tmp/mw6.p6` reproduces that
+one directly (it prints `round 2:` six times).
+
+## Where to look
+
+The accepted connection runs the tap callback on a spawned worker
+(`spawn_gc_helper_thread` / `spawn_user_thread` in
+`src/runtime/native_methods/socket_async.rs`), which arms the cross-thread shared
+lane. The caller's `my $tap` is a plain scalar, so the suspect is the stale
+snapshot path — `sync_shared_vars_to_env` / `pending_caller_var_writeback`
+pulling the previous iteration's value back over the live binding, the same
+mechanism `thread_redeclared_vars` masks for re-declared names
+(`src/runtime/runtime_shared_vars.rs`). Note the loop body's `my $tap` *is* a
+re-declaration each iteration, so either the mask is not being set here (the
+compiler skips `SetVarDynamic` for a `my` it considers already declared in the
+scope — see `is_default_init` / `already_declared` in `src/compiler/stmt.rs`) or
+it is being cleared by the spawn before the next round.
+
+Start by checking whether `"tap"` is in `thread_redeclared_vars` at the point of
+round 1's `GetLocal`, with `rust-gdb -batch` on `exec_get_local_op`.
+
+## Related, already fixed here
+
+`IO::Socket::Async.listen` used to `TcpListener::bind(&str)`, which walks *every*
+address the host resolves to and takes the first that succeeds. `localhost`
+resolves to both `[::1]` and `127.0.0.1`, so a re-listen whose previous listener
+was still bound to the first address quietly bound the *other* one: two listeners
+for one `localhost:port` coexisted (visible as two LISTEN rows in `ss -tan`), a
+client reached whichever its own resolution picked, and only a third round hit
+EADDRINUSE. `listen` now resolves once and binds that single address, so a
+genuinely-busy port is a real error the existing retry loop waits out — which is
+what made the stale-`$tap` bug above visible at round 2 instead of round 3.
+
+Pin when the `$tap` bug is fixed: a `t/io-socket-async-relisten-loop.t` running
+the loop above. Never hardcode a port — allocate one from a port-0 listen and
+reuse that number (per the `t/io-socket-recv-limit.t` lesson).
