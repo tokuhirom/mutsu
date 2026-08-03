@@ -176,8 +176,7 @@ generation and invalidate the resolve, fast, multi, constructor, and private-met
 unit when it changes. This removes correctness dependence on registration sites remembering every
 individual cache before the read side switches to `MethodEntry`.
 
-User-method presence checks and overload lookup now read compiled and delegation candidates from
-`MethodEntry.user_candidates`. `compile_class_methods` republishes its compiled candidates through
-the table. The remaining compatibility read is explicit: an uncompiled candidate (notably one
-installed by EVAL/MOP for on-demand compilation) is still read from `ClassDef::methods` until that
-on-demand compiler writes its result back through the canonical entry.
+User-method presence checks and overload lookup now read every candidate from
+`MethodEntry.user_candidates`, including uncompiled EVAL/MOP candidates. The on-demand compiler
+updates `ClassDef::methods` and immediately republishes the compiled candidates through the table,
+so dispatch no longer falls back to the class method mirror when reading overloads.

@@ -330,24 +330,18 @@ impl Registry {
         class_name: &str,
         method_name: &str,
     ) -> Option<Vec<MethodDef>> {
-        let candidates = self
-            .method_entries
+        self.method_entries
             .get(&MethodEntryKey {
                 owner: Symbol::intern(class_name),
                 name: Symbol::intern(method_name),
             })
             .filter(|entry| !entry.user_candidates.is_empty())
-            .map(|entry| entry.user_candidates.clone());
-        if candidates.as_ref().is_some_and(|defs| {
-            defs.iter()
-                .all(|def| def.compiled_code.is_some() || def.delegation.is_some())
-        }) {
-            return candidates;
-        }
-        self.classes
-            .get(class_name)
-            .and_then(|class| class.methods.get(method_name))
-            .cloned()
+            .map(|entry| entry.user_candidates.clone())
+    }
+
+    pub(crate) fn replace_method_entries_from(&mut self, source: &Self) {
+        self.method_entries = source.method_entries.clone();
+        self.bump_method_generation();
     }
 
     fn bump_method_generation(&mut self) {

@@ -343,7 +343,10 @@ impl Interpreter {
             self.compose_role_into_augmented_class(name, role_name);
         }
 
-        self.registry_mut().sync_user_method_entries(name);
+        // Augmentation is a declaration boundary just like an ordinary class
+        // declaration. Compile newly installed bodies once here, then publish
+        // the compiled candidates through the canonical method table.
+        self.compile_class_methods(name);
         self.set_current_package(saved_package);
         Ok(())
     }
@@ -869,6 +872,10 @@ impl Interpreter {
         self.registry_mut()
             .class_composed_roles
             .insert(role_name.to_string(), composed_roles_list);
+        // A role pun materializes a new dispatch owner. Compile its copied
+        // declarations once at that boundary so VM dispatch sees them in the
+        // canonical method-entry table immediately.
+        self.compile_class_methods(role_name);
         // When punning a bare role (no type params), update the language
         // revision metadata from the matching candidate so that
         // `.^language-revision` on the pun instance returns the correct

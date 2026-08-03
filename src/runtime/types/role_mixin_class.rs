@@ -210,6 +210,10 @@ impl Interpreter {
                 .or_default()
                 .extend(defs);
         }
+        drop(registry);
+        // These submethods are added after register_class_decl has compiled the
+        // synthesized mixin class, so compile the completed declaration once.
+        self.compile_class_methods(class_name);
     }
 
     /// Run a role's non-declaration body once, the same way the wrapper path
