@@ -1454,6 +1454,22 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         return Ok((r2, supply_method_call(block_body)));
     }
 
+    // `supply STATEMENT` — the statement-prefix form (S06), e.g.
+    // `my $s = supply emit $req;` or `supply for ^3 { emit $_ }`. The statement
+    // becomes the whole supply body, so `emit` inside it binds to this block's
+    // emitter instead of escaping as an unhandled CX::Emit.
+    if name == "supply"
+        && let Ok((r_after, stmt)) = crate::parser::stmt::statement_pub(r)
+    {
+        // As for `gather`, the statement parse eats the terminating `;` but the
+        // supply expression must stop before it.
+        let r_after = restore_do_stmt_terminator(r, r_after);
+        if let crate::ast::Stmt::Expr(Expr::DoBlock { body, label: None }) = &stmt {
+            return Ok((r_after, supply_method_call(body.clone())));
+        }
+        return Ok((r_after, supply_method_call(vec![stmt])));
+    }
+
     // set/bag/mix followed immediately by < (no whitespace) is a parse error
     if matches!(name.as_str(), "set" | "bag" | "mix")
         && rest.starts_with('<')

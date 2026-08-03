@@ -408,18 +408,22 @@ fn build_parameter_attrs(p: &SigParam) -> HashMap<String, Value> {
         attrs.insert("default".to_string(), default_sub);
     }
 
-    // .constraints: for literal values, store the literal directly;
-    // for where clauses, convert the constraint Expr to a Value;
-    // for unconstrained params, Bool(true) smartmatches against anything
-    if let Some(ref lit) = p.literal_value {
-        attrs.insert("constraints".to_string(), lit.clone());
+    // .constraints is always an `all()` junction of the parameter's value
+    // constraints (a literal value, or the code of a `where` clause). An
+    // unconstrained parameter yields the empty `all()`, which both smartmatches
+    // truely against anything and autothreads a call zero times — code such as
+    // Cro's route compiler relies on the latter to detect "no constraints".
+    let constraint_items: Vec<Value> = if let Some(ref lit) = p.literal_value {
+        vec![lit.clone()]
     } else if let Some(ref where_expr) = p.where_constraint {
-        let constraint_val = where_expr_to_value(where_expr);
-        attrs.insert("constraints".to_string(), constraint_val);
+        vec![where_expr_to_value(where_expr)]
     } else {
-        // Unconstrained param: .constraints smartmatches truely against anything
-        attrs.insert("constraints".to_string(), Value::Bool(true));
-    }
+        Vec::new()
+    };
+    attrs.insert(
+        "constraints".to_string(),
+        Value::junction(crate::value::JunctionKind::All, constraint_items),
+    );
 
     if let Some(sub) = &p.sub_signature {
         attrs.insert(
