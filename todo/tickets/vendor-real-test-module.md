@@ -557,8 +557,9 @@ method resolves its receiver by name out of `self.env` — see
 (`Failed: 0` + a plan mismatch) and 145 files losing individual assertions, and
 grouping the aborts by their last non-TAP line gives a long tail: the largest
 group is 2 files (`Unknown role: CN`; `Did you mean 'flat'?`), and 71 abort with
-no diagnostic line at all. So from here it is one gap at a time rather than
-another leverage play. Two starting points worth naming:
+no diagnostic line at all. ~~So from here it is one gap at a time rather than
+another leverage play.~~ (Wrong — see "Stop concluding one-at-a-time" below.)
+Two starting points worth naming:
 
 ### Re-measured 2026-08-03, and a quarter of the residue is a *timeout* class
 
@@ -714,8 +715,11 @@ line at all, 2 apiece for `The object is-a 'Nil'`, `code dies` and
 `binding of not yet existing elements should autovivify (3)`, and a long tail of
 one-offs. The `right exception type` family is down to singletons.
 
-So from here it is genuinely one file at a time. The 9 diagnostic-free aborts
-are the best-value place to start, since an abort costs a whole file:
+~~So from here it is genuinely one file at a time.~~ **This conclusion has now
+been written three times (2026-08-03 midday, 2026-08-03 evening, and once
+before) and has been wrong every time — see "Stop concluding one-at-a-time"
+below.** The 9 diagnostic-free aborts are still the best-value place to start,
+since an abort costs a whole file:
 `integration/99problems-41-to-50.t`, `integration/advent2009-day20.t`,
 `integration/advent2012-day14.t`, `integration/advent2013-day10.t`,
 `S02-types/{instants-and-durations,capture}.t`,
@@ -788,3 +792,43 @@ Two measurement rules this batch produced, both learned the hard way:
 - **Do not write a pin against `throws-like`'s named matchers.** mutsu's native
   `throws-like` does not check them, so a `throws-like …, X::…, what => …` pin
   passes without the fix. Read the attribute off the caught exception instead.
+
+## Stop concluding "from here it is one at a time" (2026-08-04)
+
+That sentence has been written into this file three times, from three separate
+first-`not ok` histograms, and the very next session has disproved it every
+time. On 2026-08-04 it was disproved hardest: **8 fixes closed 8 files, and
+three of the 8 closed two files each.**
+
+| fix | files it closed |
+| --- | --- |
+| `X::Syntax::Missing` / `X::UnitScope::*` gain `.what` | `S04-statements/repeat.t`, `S06-other/main-semicolon.t` |
+| `Instant`/`Duration` are `Cool` + `does Real` | `S28-named-variables/init-instant.t`, `S02-types/instants-and-durations.t` |
+| a closure's writeback sees a `does` mixin as a change | `S14-roles/anonymous.t`, `S14-roles/parameterized-mixin.t` |
+
+The reasoning error is specific and repeatable, so name it rather than the
+conclusion: **the first failing assertion is a symptom, and the histogram
+buckets symptoms. Causes are shared one or two levels below it.** Two files
+whose first `not ok` reads `right exception type (X::Syntax::Missing)` and
+`... (X::UnitScope::Invalid)` land in different buckets and have one cause (no
+parse-error class carried its attributes). Two files that abort with
+`No such method 'cool'` and `No such method 'attr'` look like two missing
+methods and are one comparison using the wrong equality.
+
+So when the histogram flattens, that is a signal to **stop classifying by
+symptom**, not a signal that leverage is exhausted. What actually predicts a
+2-file fix:
+
+- Two files whose diagnostics name **different members of one mechanism**
+  (two exception classes; two methods of one role; two flavours of one
+  writeback).
+- A file that aborts on a *missing method of a type mutsu models wrong* — the
+  type relation is the cause and it will be wrong for every sibling type too.
+- Anything reached through `Test.rakumod`'s own routines (`is-approx`,
+  `throws-like`, `subtest`): the module dispatches on Raku type constraints, so
+  one wrong relation silently diverts *every* call of that shape to the native
+  provider.
+
+Write the next status note as "the largest *mechanism* cluster is N", and only
+after trying to merge symptom buckets that share a mechanism. Do not write
+"one at a time" again without that step.
