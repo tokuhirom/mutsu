@@ -325,6 +325,31 @@ impl Registry {
         self.bump_method_generation();
     }
 
+    pub(crate) fn user_method_overloads(
+        &self,
+        class_name: &str,
+        method_name: &str,
+    ) -> Option<Vec<MethodDef>> {
+        let candidates = self
+            .method_entries
+            .get(&MethodEntryKey {
+                owner: Symbol::intern(class_name),
+                name: Symbol::intern(method_name),
+            })
+            .filter(|entry| !entry.user_candidates.is_empty())
+            .map(|entry| entry.user_candidates.clone());
+        if candidates.as_ref().is_some_and(|defs| {
+            defs.iter()
+                .all(|def| def.compiled_code.is_some() || def.delegation.is_some())
+        }) {
+            return candidates;
+        }
+        self.classes
+            .get(class_name)
+            .and_then(|class| class.methods.get(method_name))
+            .cloned()
+    }
+
     fn bump_method_generation(&mut self) {
         self.method_generation = self.method_generation.wrapping_add(1);
         if self.method_generation == 0 {
@@ -576,10 +601,14 @@ impl Registry {
     pub(crate) fn class_has_method(&mut self, class_name: &str, method_name: &str) -> bool {
         let mro = self.class_mro(class_name);
         for cn in mro.iter() {
-            if let Some(class_def) = self.classes.get(cn.as_str())
-                && (class_def.methods.contains_key(method_name)
-                    || class_def.native_methods.contains(method_name))
-            {
+            let has_user = self
+                .user_method_overloads(cn.as_str(), method_name)
+                .is_some();
+            let has_native = self
+                .classes
+                .get(cn.as_str())
+                .is_some_and(|class| class.native_methods.contains(method_name));
+            if has_user || has_native {
                 return true;
             }
         }
@@ -595,8 +624,9 @@ impl Registry {
     pub(crate) fn class_has_user_method(&mut self, class_name: &str, method_name: &str) -> bool {
         let mro = self.class_mro(class_name);
         for cn in mro.iter() {
-            if let Some(class_def) = self.classes.get(cn.as_str())
-                && class_def.methods.contains_key(method_name)
+            if self
+                .user_method_overloads(cn.as_str(), method_name)
+                .is_some()
             {
                 return true;
             }
@@ -612,10 +642,7 @@ impl Registry {
         class_name: &str,
         method_name: &str,
     ) -> Option<Vec<MethodDef>> {
-        self.classes
-            .get(class_name)
-            .and_then(|class| class.methods.get(method_name))
-            .cloned()
+        self.user_method_overloads(class_name, method_name)
     }
 
     /// Bound role type parameters for `class_name` (e.g. the `::T` -> value map

@@ -111,6 +111,7 @@ impl Interpreter {
         if let Some(class_def) = self.registry_mut().classes.get_mut(class_name) {
             Self::compile_methods_for_map(&mut class_def.methods, class_name, dist);
         }
+        self.registry_mut().sync_user_method_entries(class_name);
     }
 
     /// Compile method bodies for a given role.
