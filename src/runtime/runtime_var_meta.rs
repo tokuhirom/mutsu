@@ -128,6 +128,44 @@ impl Interpreter {
         }
     }
 
+    /// Re-attach the key type of an object hash that is being bound to a `%`
+    /// parameter whose own declaration says nothing about keys.
+    ///
+    /// Object-hash-ness lives in two places: `HashData::key_type` on the value,
+    /// and the name-keyed `var_hash_key_constraints` / `__mutsu_hash_key_type::`
+    /// metadata every subscript path consults. Binding `my %o{Mu}` to a plain
+    /// `sub f(%h)` parameter registered `%h` with the implicit value type `Any`
+    /// and NO key type — which both hid the object-hash keying from `%h`'s
+    /// subscripts (they stringified the key object, warning
+    /// "Use of uninitialized value of type S in string context") and, because the
+    /// registration re-tags the value, stripped `key_type` off the *caller's*
+    /// hash. The entries stay physically `.WHICH`-keyed either way, so dropping
+    /// the flag does not un-key them; it just makes them unreadable.
+    ///
+    /// A parameter imposes no key type of its own, so fold the argument's key
+    /// type into the constraint (`Any` -> `Any{Mu}`) and let the normal
+    /// registration path carry it. An explicitly key-typed parameter
+    /// (`%h{Str}`) already carries one and is left alone.
+    fn keep_object_hash_key_type(&self, name: &str, constraint: Option<String>) -> Option<String> {
+        if !name.starts_with('%') {
+            return constraint;
+        }
+        let Some(value_type) = constraint.as_deref() else {
+            return constraint;
+        };
+        if value_type.contains('{') {
+            return constraint;
+        }
+        let key_type = self.env.get(name).and_then(|v| match v.view() {
+            ValueView::Hash(map) => map.key_type.clone().filter(|kt| !kt.is_empty()),
+            _ => None,
+        });
+        match key_type {
+            Some(kt) => Some(format!("{value_type}{{{kt}}}")),
+            None => constraint,
+        }
+    }
+
     /// Register the type constraint of a *bound routine parameter*. For scalar
     /// parameters the constraint is written ONLY to the `env`-keyed
     /// `__mutsu_type::name` metadata (which is scoped — dropped when the callee's
@@ -144,6 +182,7 @@ impl Interpreter {
     /// consulted via the global map / container metadata for element checks.
     pub(crate) fn bind_param_type_constraint(&mut self, name: &str, constraint: Option<String>) {
         if name.starts_with('@') || name.starts_with('%') {
+            let constraint = self.keep_object_hash_key_type(name, constraint);
             self.set_var_type_constraint(name, constraint);
             return;
         }
