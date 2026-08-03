@@ -2069,6 +2069,12 @@ pub struct Interpreter {
     pub(crate) last_method_resolve: Option<(Symbol, Symbol, Symbol, Arc<MethodDef>)>,
     pub(crate) fast_method_cache:
         rustc_hash::FxHashMap<(Symbol, Symbol), crate::vm::FastMethodCacheEntry>,
+    /// Static built-in type×method handler IDs. Built-in rows are immutable, so
+    /// this avoids taking the registry lock after the first native call shape.
+    pub(crate) native_method_handler_cache: rustc_hash::FxHashMap<
+        (Symbol, Symbol),
+        Option<crate::builtins::builtin_type_methods::NativeMethodHandlerId>,
+    >,
     /// Memoized `class -> NativeCtorPlan` for the native default constructor.
     /// Cleared wherever `fast_method_cache` is cleared, plus the MOP class-shape
     /// mutators (`Attribute.set_build`, `^add_attribute`, `^add_method`,
