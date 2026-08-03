@@ -1197,6 +1197,16 @@ pub struct Interpreter {
     /// `authoritative_free_vars` itself — it has no enclosing frame to vouch.
     /// Travels with `pending_supply_block_body`.
     pending_supply_authoritative_free_vars: Vec<Symbol>,
+    /// The `authoritative_captures` of the closure whose body `eval_block_value`
+    /// is about to re-compile, so the carrier chunk can hand them to any
+    /// `whenever` it registers (`CompiledCode::inherited_owned_lexicals`).
+    ///
+    /// This is what lets a `whenever` nested inside another `whenever`'s body
+    /// keep the outer callback's owned lexicals — above all the supply block's
+    /// shared-per-parse-site emitter name. Travels the same way as
+    /// `pending_supply_authoritative_free_vars`, but is NOT restricted to supply
+    /// bodies: a `whenever` callback has no `CompiledCode` of its own at all.
+    pending_whenever_inherited_owned: Vec<Symbol>,
     /// Names the block `eval_block_value_inner` most recently FINISHED running
     /// declared with its own `my` (excluding those it also uses as free
     /// variables). Written just before that function returns, so after a call

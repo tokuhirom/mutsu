@@ -2335,6 +2335,22 @@ pub(crate) struct CompiledCode {
     /// `exec_whenever_scope_op`. It has no compiled local slot (a `supply` body's
     /// `locals` is empty), so it cannot be recovered from `locals_sym`.
     pub(crate) supply_emitter_sym: Option<Symbol>,
+    /// Lexicals an *enclosing* `whenever` callback already owns, handed down so a
+    /// `whenever` nested inside that callback's body owns them too.
+    ///
+    /// A `whenever` registered at the top level of a `supply { … }` body gets its
+    /// owned set computed from the body's own `CompiledCode`
+    /// (`exec_whenever_scope_op`). A `whenever` registered from *inside* another
+    /// `whenever`'s body cannot: the chunk it runs in is a fresh compile of that
+    /// callback's AST, which knows nothing of the supply body that created it. So
+    /// the callback's `SubData::authoritative_captures` — exactly the set the
+    /// supply body vouched for — rides along here (see
+    /// `Interpreter::pending_whenever_inherited_owned`). Without it the nested
+    /// callback's `emit` re-resolved the shared emitter name against whichever
+    /// sibling instance of the same parse site happened to be dispatching it
+    /// (Cro's `whenever $handler.invoke(…) { emit $response }` ping-ponged with
+    /// the delegated route set forever).
+    pub(crate) inherited_owned_lexicals: Vec<Symbol>,
     /// Ordered list of this closure's read-only plain-lexical free variables that
     /// have been promoted to index-based upvalues. Index `i` in this list is the
     /// operand of the `GetUpvalue(i)` ops that `compute_upvalues` rewrites in
@@ -2587,6 +2603,7 @@ impl CompiledCode {
             dup_named_locals: Vec::new(),
             is_supply_block_body: false,
             supply_emitter_sym: None,
+            inherited_owned_lexicals: Vec::new(),
             my_declared_sym: rustc_hash::FxHashSet::default(),
             my_declared_enum_sym: rustc_hash::FxHashSet::default(),
             free_var_syms: Vec::new(),

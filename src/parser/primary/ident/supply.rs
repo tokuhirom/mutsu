@@ -30,7 +30,7 @@ pub(crate) fn supply_method_call(body: Vec<Stmt>) -> Expr {
     }
 }
 
-fn rewrite_supply_body(stmts: Vec<Stmt>, emitter_name: &str) -> Vec<Stmt> {
+pub(super) fn rewrite_supply_body(stmts: Vec<Stmt>, emitter_name: &str) -> Vec<Stmt> {
     // Phasers are set up at block entry, not when control textually reaches them.
     // Hoist top-level CLOSE phaser registrations to the front of the body so a
     // CLOSE that appears after a (potentially non-terminating) loop is still
@@ -100,7 +100,11 @@ fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
                     quoted: false,
                 });
             }
-            Stmt::Expr(expr)
+            // `emit` can also appear *within* an expression — the ternary
+            // `$x ~~ T ?? emit($x) !! die "…"` that Cro's middleware role uses.
+            // Leaving it bare fell back to the dynamic emitter stack, which in a
+            // pipeline is a neighbouring stage's emitter.
+            Stmt::Expr(super::supply_emit_expr::rewrite_expr(expr, emitter_name))
         }
         Stmt::Call { name, args } if name.resolve().as_str() == "emit" => {
             // Statement-form `emit ARGS;` becomes `$emitter.emit(ARGS)`.
