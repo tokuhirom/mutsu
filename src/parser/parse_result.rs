@@ -110,19 +110,36 @@ impl PError {
         panic_message: &str,
         message: String,
     ) -> Self {
-        let panic = crate::value::Value::make_exception(
-            "X::Comp::AdHoc",
-            &[
-                (
-                    "message",
-                    crate::value::Value::str(panic_message.to_string()),
-                ),
-                (
-                    "payload",
-                    crate::value::Value::str(panic_message.to_string()),
-                ),
-            ],
-        );
+        Self::comp_group_with_panic(
+            complaint,
+            is_worry,
+            crate::value::Value::make_exception(
+                "X::Comp::AdHoc",
+                &[
+                    (
+                        "message",
+                        crate::value::Value::str(panic_message.to_string()),
+                    ),
+                    (
+                        "payload",
+                        crate::value::Value::str(panic_message.to_string()),
+                    ),
+                ],
+            ),
+            message,
+        )
+    }
+
+    /// [`Self::comp_group`] for a panic that has a more specific class than
+    /// `X::Comp::AdHoc` — rakudo raises `X::Comp::FailGoal` when it ran off the
+    /// end of the input looking for a closing delimiter, and carries the goal it
+    /// was after.
+    pub fn comp_group_with_panic(
+        complaint: crate::value::Value,
+        is_worry: bool,
+        panic: crate::value::Value,
+        message: String,
+    ) -> Self {
         let (sorrows, worries) = if is_worry {
             (Vec::new(), vec![complaint])
         } else {

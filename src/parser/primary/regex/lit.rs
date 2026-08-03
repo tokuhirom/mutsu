@@ -35,6 +35,47 @@ use super::subst::{
 };
 use super::trans::{parse_trans_adverbs, process_trans_escapes};
 
+/// A delimiter that unambiguously opens a regex once the `m`/`rx`/`s` keyword
+/// has been read: the four bracket pairs and `/`. Reaching the end of input
+/// while scanning one of these is an unterminated regex and nothing else, so
+/// the parse can commit to a diagnosis instead of backtracking.
+///
+/// The other delimiters `m//` accepts (`m-…-`, `m!…!`, …) stay recoverable:
+/// `m-bar` is an ordinary identifier, and the existing statement-boundary check
+/// below exists precisely because those candidates are ambiguous.
+fn delim_commits_to_regex(open_ch: char) -> bool {
+    matches!(open_ch, '/' | '{' | '[' | '(' | '<')
+}
+
+/// The error rakudo raises for a regex whose closing delimiter never arrives:
+/// an `X::Comp::Group` carrying `Regex not terminated.` as its sorrow and an
+/// `X::Comp::FailGoal` naming the delimiter it was looking for. Without this,
+/// mutsu simply backtracked out of the regex literal and whichever alternative
+/// parse failed last supplied the exception — three unterminated regexes gave
+/// three unrelated classes (`X::Undeclared::Symbols`, `X::Syntax::Confused`,
+/// `X::Str::Numeric`). Pinned by `t/unterminated-regex.t`.
+fn unterminated_regex_error(close_ch: char) -> PError {
+    const SORROW: &str = "Regex not terminated.";
+    let sorrow = Value::make_exception(
+        "X::Comp::AdHoc",
+        &[
+            ("message", Value::str(SORROW.to_string())),
+            ("payload", Value::str(SORROW.to_string())),
+        ],
+    );
+    let goal = close_ch.to_string();
+    let panic_message = format!("Couldn't find terminator {goal}");
+    let panic = Value::make_exception(
+        "X::Comp::FailGoal",
+        &[
+            ("goal", Value::str(goal)),
+            ("message", Value::str(panic_message.clone())),
+            ("payload", Value::str(panic_message)),
+        ],
+    );
+    PError::comp_group_with_panic(sorrow, false, panic, SORROW.to_string())
+}
+
 fn parse_topic_brace_index(input: &str) -> PResult<'_, Expr> {
     let (r, first) = expression(input)?;
     let mut current_dim = vec![first];
@@ -185,6 +226,9 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
             // insensitivity (the `m:ignoremark` form already prepends `:m`).
             let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
             return Ok((rest, Expr::Literal(Value::regex(pattern))));
+        }
+        if delim_commits_to_regex(open_ch) {
+            return Err(unterminated_regex_error(close_ch));
         }
         return Err(PError::expected("regex closing delimiter"));
     }
@@ -953,6 +997,9 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     };
                     return Ok((rest, Expr::MatchRegex(regex_val)));
                 }
+                if delim_commits_to_regex(open_ch) {
+                    return Err(unterminated_regex_error(close_ch));
+                }
             }
         }
     }
@@ -960,11 +1007,16 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     // Bare /pattern/
     if input.starts_with('/') && !input.starts_with("//") {
         let r = &input[1..];
-        if let Some((pattern, rest)) = scan_to_delim(r, '/', '/', false)
-            && !pattern.is_empty()
-        {
-            validate_regex_pattern_or_perror(pattern)?;
-            return Ok((rest, Expr::Literal(Value::regex(pattern.to_string()))));
+        match scan_to_delim(r, '/', '/', false) {
+            Some((pattern, rest)) if !pattern.is_empty() => {
+                validate_regex_pattern_or_perror(pattern)?;
+                return Ok((rest, Expr::Literal(Value::regex(pattern.to_string()))));
+            }
+            // `regex_lit` is only reached in *term* position, where a leading
+            // `/` cannot be division — so running off the end of the input here
+            // is an unterminated regex, not a reason to backtrack.
+            None => return Err(unterminated_regex_error('/')),
+            _ => {}
         }
     }
 
