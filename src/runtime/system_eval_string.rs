@@ -258,11 +258,26 @@ impl Interpreter {
         // Record the `&name` code-vars that already exist in the enclosing scope,
         // so a sub declared inside this EVAL may shadow them without being treated
         // as a redeclaration (see registration_sub.rs).
+        //
+        // `visible_keys_where`, not `keys()`: the redeclaration check this feeds
+        // resolves the name with `env.get`, which walks the parent chain and the
+        // base tier, while `keys()` exposes only the innermost tier's overlay.
+        // A name reachable through the chain was therefore *found* by the check
+        // but *absent* from the shadow snapshot, so an EVAL'd `sub f` collided
+        // with an outer `f` instead of shadowing it — which is what
+        // `roast/S04-statements/given.t` does, EVALing a fresh `sub test-given`
+        // per subtest while an earlier subtest's `my sub test-given` is still
+        // reachable.
         crate::runtime::registration_sub::push_eval_outer_amp_names(
             self.env
-                .keys()
-                .map(|k| k.resolve().to_string())
-                .filter(|k| k.starts_with('&')),
+                .visible_keys_where(|k| k.starts_with('&'))
+                .into_iter(),
+        );
+        // ...and the registry counterpart, which is what the redeclaration
+        // checks against `functions` consult. Interned `Symbol`s, so no strings
+        // are allocated to take it.
+        crate::runtime::registration_sub::push_eval_outer_routine_keys(
+            self.registry().functions.keys().copied(),
         );
         self.env.insert("__mutsu_in_eval".to_string(), Value::TRUE);
         // A `:key<>` colonpair (empty angle brackets) in the EVAL'd source's Pod
@@ -461,6 +476,7 @@ impl Interpreter {
             self.env.remove("_");
         }
         crate::runtime::registration_sub::pop_eval_outer_amp_names();
+        crate::runtime::registration_sub::pop_eval_outer_routine_keys();
         result
     }
 }

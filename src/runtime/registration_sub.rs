@@ -26,6 +26,41 @@ thread_local! {
     /// a redeclaration — but a name declared *inside* the same EVAL
     /// (`EVAL 'my &x; sub x {}'`) is NOT in this set and still conflicts.
     static EVAL_OUTER_AMP_NAMES: RefCell<Vec<HashSet<String>>> = const { RefCell::new(Vec::new()) };
+
+    /// The registry counterpart of `EVAL_OUTER_AMP_NAMES`: the routine keys
+    /// (`Pkg::name`, and `Pkg::name/arity` for multis) already registered when
+    /// an `EVAL` began.
+    ///
+    /// The `&name` binding and the registry entry are two records of the same
+    /// declaration, and the redeclaration checks consult both — so exempting
+    /// only the first is not enough. They also do not always agree about what
+    /// exists: a `my sub` declared inside a block that runs as a *callable*
+    /// leaves a registry entry reachable after the block without leaving an
+    /// `&name` in any visible env tier, which is exactly the state
+    /// `roast/S04-statements/given.t` EVALs its `sub test-given` into.
+    ///
+    /// Keyed by interned `Symbol`, so taking the snapshot allocates no strings.
+    static EVAL_OUTER_ROUTINE_KEYS: RefCell<Vec<HashSet<Symbol>>> =
+        const { RefCell::new(Vec::new()) };
+}
+
+/// Push the set of registry routine keys that exist as an `EVAL` begins.
+pub(crate) fn push_eval_outer_routine_keys(keys: impl Iterator<Item = Symbol>) {
+    let set: HashSet<Symbol> = keys.collect();
+    EVAL_OUTER_ROUTINE_KEYS.with(|stack| stack.borrow_mut().push(set));
+}
+
+/// Pop the routine-key snapshot when an EVAL finishes.
+pub(crate) fn pop_eval_outer_routine_keys() {
+    EVAL_OUTER_ROUTINE_KEYS.with(|stack| {
+        stack.borrow_mut().pop();
+    });
+}
+
+/// Whether a routine under `key` was registered before the innermost active EVAL.
+fn is_outer_routine_key(key: Symbol) -> bool {
+    EVAL_OUTER_ROUTINE_KEYS
+        .with(|stack| stack.borrow().last().is_some_and(|set| set.contains(&key)))
 }
 
 /// Push the set of `&name` keys currently in `env` as the outer-amp snapshot for
@@ -851,20 +886,39 @@ impl Interpreter {
             .functions
             .get(&single_key_sym)
             .is_some_and(|existing| Self::is_stub_routine_body(&existing.body));
+        // These REGISTRY checks need the EVAL shadow exemption too, and the
+        // `&name` snapshot cannot supply it: the two records of a declaration
+        // do not always agree about what exists. A `my sub` declared inside a
+        // block that runs as a *callable* leaves a registry entry reachable
+        // afterwards without leaving an `&name` in any visible env tier — so
+        // `shadows_outer_eval_name` was false while `has_single` was true, and
+        // an EVAL'd `sub` of that name raised "Redeclaration of routine"
+        // instead of shadowing it. `roast/S04-statements/given.t` is exactly
+        // that: it EVALs a fresh `sub test-given` per subtest while an earlier
+        // subtest's `my sub test-given` is still registered.
+        let shadows_outer_eval_single = is_in_eval && is_outer_routine_key(single_key_sym);
+        let shadows_outer_eval_multi = is_in_eval
+            && self
+                .registry()
+                .functions
+                .keys()
+                .filter(|k| k.resolve().starts_with(&multi_prefix))
+                .all(|k| is_outer_routine_key(*k));
         if multi {
             if has_single
                 && !has_proto
                 && !allow_redeclare
                 && !allow_lexical_shadow
+                && !shadows_outer_eval_single
                 && !has_user_custom_traits
             {
                 return Err(RuntimeError::redeclaration_routine(name));
             }
         } else if !allow_redeclare && !allow_lexical_shadow && !has_user_custom_traits {
-            if has_multi && !has_proto {
+            if has_multi && !has_proto && !shadows_outer_eval_multi {
                 return Err(RuntimeError::redeclaration_routine(name));
             }
-            if has_single && !existing_is_stub {
+            if has_single && !existing_is_stub && !shadows_outer_eval_single {
                 return Err(RuntimeError::redeclaration_routine(name));
             }
         }

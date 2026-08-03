@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
@@ -768,6 +768,40 @@ impl Env {
         }
         for (k, v) in self.inner.iter() {
             out.insert(k.resolve(), v.clone());
+        }
+        out
+    }
+
+    /// Every name VISIBLE from this env whose resolved key satisfies `keep`,
+    /// walking the parent chain and the immutable base tier the way
+    /// [`Self::get`] does — unlike [`Self::keys`], which exposes only this
+    /// tier's overlay.
+    ///
+    /// Key-only, so it costs no `Value` clones: [`Self::flatten`] answers the
+    /// same question but deep-copies every value, which is far too expensive
+    /// for a per-`EVAL` snapshot.
+    pub fn visible_keys_where(&self, keep: impl Fn(&str) -> bool + Copy) -> HashSet<String> {
+        let mut out: HashSet<String> = match &self.parent {
+            Some(parent) => parent.visible_keys_where(keep),
+            None => global_base()
+                .map(|b| {
+                    b.keys()
+                        .map(|k| k.resolve())
+                        .filter(|k| keep(k))
+                        .collect::<HashSet<String>>()
+                })
+                .unwrap_or_default(),
+        };
+        if let Some(tomb) = &self.tombstones {
+            for k in tomb {
+                out.remove(&k.resolve());
+            }
+        }
+        for k in self.inner.keys() {
+            let name = k.resolve();
+            if keep(&name) {
+                out.insert(name);
+            }
         }
         out
     }

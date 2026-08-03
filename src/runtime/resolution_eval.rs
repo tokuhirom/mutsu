@@ -105,8 +105,30 @@ impl Interpreter {
         if is_eval_unit {
             compiler.mark_as_eval_unit();
         }
-        compiler.is_routine = !self.routine_stack.is_empty();
-        compiler.lexically_in_routine = !self.routine_stack.is_empty();
+        // For an EVAL'd compilation unit's mainline the question is whether a
+        // *routine* lexically encloses the `EVAL` call — and a mainline
+        // `{ ... }` block, a `for` body and a closure all push a `RoutineFrame`
+        // too (`is_block: true`), so `!routine_stack.is_empty()` answers a
+        // different one. Counting a block frame made an `EVAL` run from inside
+        // such a block compile its snippet as "inside a routine", and a
+        // `return` in the snippet's own pointy block then did a *non-local*
+        // return — out of whatever sub later called that block — instead of
+        // throwing `X::ControlFlow::Return`
+        // (`roast/S04-statements/return.t` test 15). Both flags feed the same
+        // decision (`compile_closure_body_with_routine_flag` ORs them into a
+        // nested block's own), so both ask the same question.
+        //
+        // Only for an EVAL unit. The other callers hand this an ordinary
+        // closure/sub BODY to (re-)compile, and there the live frame is the
+        // routine being run — including an anonymous `sub`, which pushes a
+        // block frame — so narrowing it would turn their `return` into a throw.
+        let in_routine = if is_eval_unit {
+            self.enclosing_routine_exists()
+        } else {
+            !self.routine_stack.is_empty()
+        };
+        compiler.is_routine = in_routine;
+        compiler.lexically_in_routine = in_routine;
         // Let a nested closure in this body recognize the enclosing routine's
         // sigilless parameters (`\attr`) as lexical captures rather than
         // barewords. The fresh compiler otherwise has no signature context.
