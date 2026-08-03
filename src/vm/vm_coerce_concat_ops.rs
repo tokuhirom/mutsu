@@ -119,6 +119,22 @@ impl Interpreter {
             | ValueView::RangeExclStart(..)
             | ValueView::RangeExclBoth(..)
             | ValueView::GenericRange { .. } => crate::runtime::utils::value_to_list(&val),
+            // A `Buf`/`Blob` is Positional, so `|$buf` slips its ELEMENTS, at the
+            // buffer's own width — `|blob32.new(7, 8)` is `slip(7, 8)`, not a
+            // one-item slip holding the buffer. `Digest::RIPEMD` ends with
+            // `map |*.polymod(256 xx 3), |$reduced_blob32`, which fed the
+            // WhateverCode the whole Blob and digested a numified 0.
+            // A type object (`|Buf`) carries no element storage and stays one
+            // item, as in Rakudo.
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
+                && crate::value::value_buf::has_buf_elems(&attributes) =>
+            {
+                crate::value::value_buf::buf_elems_or_empty(&attributes)
+            }
             _ => vec![val],
         };
         self.stack.push(Value::slip(items));

@@ -27,27 +27,32 @@ addressing, `Xxx` per-element thunking, `polymod` precision, and `.roll` on a
 `Str` range — all fixed in `news/2026-08/digest-md5-four-fixes.md`. `t/md5.t`
 passes in full.
 
-## 2. `rmd160` returns a four-byte zero digest
+## 2. `rmd160` is correct once per process — MOSTLY FIXED
 
-The original symptom here — a `WhateverCode` reaching an `@`-sigil parameter —
-was a chain of four general bugs, all reduced and fixed in
-`news/2026-08/slurpy-single-argument-rule-and-friends.md`: `map`/`grep`/`Array.new`
-ignoring the slurpy single-argument rule (which fed the destructure the *first
-element* of a tuple instead of the tuple), `*.comb».parse-base(16)` not currying
-because a hyper method call was invisible to the Whatever machinery, and an `@`
-parameter in a sub-signature rejecting a `Seq`/`Range`.
+The original symptom — a `WhateverCode` reaching an `@`-sigil parameter — was a
+chain of six general bugs, all reduced and fixed:
 
-`rmd160` now runs to completion, and the test's *expected* `Blob` is correct too
-(the `polymod` precision fix). What remains is a wrong digest: every input yields
-`Blob[uint8]:0x<00 00 00 00>` — four bytes rather than twenty. The suspect is the
-outer pipeline
+- `news/2026-08/slurpy-single-argument-rule-and-friends.md`:
+  `map`/`grep`/`Array.new` ignoring the slurpy single-argument rule (which fed
+  the destructure the *first element* of a tuple instead of the tuple),
+  `*.comb».parse-base(16)` not currying because a hyper method call was invisible
+  to the Whatever machinery, and an `@` parameter in a sub-signature rejecting a
+  `Seq`/`Range`.
+- `news/2026-08/start-block-destructured-array-param.md`: a destructured `@`
+  parameter frozen at the first spawn's value on the shared-var name lane (so the
+  second `start` branch computed the wrong half of the round), and `|$blob32`
+  slipping the buffer instead of its elements (so the digest render numified the
+  whole Blob to 0 and emitted four zero bytes).
 
-    blob8.new: map |*.polymod(256 xx 3),
-      |reduce -> blob32 $h, @words { blob32.new: [Z+] map {$_[[^5].rotate(++$)]},
-                                      $h, |await map -> [&f, $r, @K, $s] { start {...} }, ... }
-
-i.e. the `start`/`await` fan-out, the `[Z+]` reduction over five-element rotations,
-or `map |*.polymod(256 xx 3)` slipping. Not yet reduced.
+`rmd160` now returns the correct digest for every RFC vector — but only for the
+**first** call in a process. Its output stage rotates the five hash words with
+`map { $_[[^5].rotate(++$)] }`, and mutsu never resets an anonymous `$` state
+variable when its enclosing routine is re-entered, so later calls in the same
+process rotate by the wrong amount and return a correct-but-rotated digest. That
+is an independent bug with its own minimal repro:
+`todo/tickets/anonymous-state-var-not-reset-per-routine-call.md`. Fixing it should
+take `t/ripemd.t` to a full pass (its `'a' x 1_000_000` vector is slow in a debug
+build — use a release binary).
 
 ## 3. `sha512` / `sha384` return an empty digest
 
