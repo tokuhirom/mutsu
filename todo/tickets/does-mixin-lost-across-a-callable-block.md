@@ -49,16 +49,31 @@ the whole file is whitelisted today and only the real module exposes it.
   variable is a plain value, not a `ContainerRef` — the lexical was never boxed,
   because `call1 { ... }` is an immediately-invoked call argument and the
   boxing gate (`needs_cell_locals`) deliberately excludes those for perf.
+- **Not the by-name store.** `exec_does_var_op` used a raw `env.insert` where an
+  assignment uses `set_env_with_main_alias`; that WAS a real bug and is fixed
+  (`news/2026-08/does-writes-through-the-assignment-store.md`), but it fixes a
+  *different* symptom (a `does` on a compunit's own file-scope lexical) and
+  leaves this one untouched.
 - **Not the by-name write classification alone.** Adding `OpCode::DoesVar` to
   `op_name_const_idx` / `op_name_write_const_idx` in `src/opcode.rs` — so the
   block records the variable in `free_var_syms` / `free_var_writes` exactly as
   an `AssignExpr` would — changes nothing observable. That patch was measured
-  and reverted rather than shipped; whatever carries an `AssignExpr` write back
-  out of such a block is not keyed only on that set, so the next step is to find
-  the runtime writeback path an assignment takes (`vm_call_fast.rs:317`,
-  `vm_call_light.rs:421`, `vm_call_named_inner.rs:566` all drain
-  `free_var_writes`; one of them is presumably not reached for this shape) and
-  make `exec_does_var_op`'s rebinding travel the same road.
+  and reverted rather than shipped.
+
+## Where the next attempt should start (measured)
+
+Both the working assignment case and the failing `does` case reach the *same*
+writeback, `vm_closure_dispatch::call_compiled_closure_with_topic`, and their
+closure metadata there is identical: `cc.free_var_syms` and `cc.free_var_writes`
+each hold exactly the one symbol, and `cc.my_declared_sym` is empty in both. The
+`free_var_writes`-draining paths in `vm_call_fast.rs`, `vm_call_light.rs` and
+`vm_call_named_inner.rs` are *not* what carries the assignment — the enclosing
+routine's own `free_var_writes` is empty, as it must be.
+
+So the divergence is after that point: the `unchanged_free` comparison at
+`vm_closure_dispatch.rs:1083` (`free_at_entry` vs the current env) or the broad
+env scan below it. Instrument those two — not the compile-time analysis, which
+has now been cleared twice.
 - **`.^name` is a red herring.** `say $p.^name` prints `Hash` rather than
   `Hash+{<anon|1>}` even in the cases that work, so it cannot be used to detect
   the loss. Assert on the mixed-in attribute instead. (The `.^name` rendering of
