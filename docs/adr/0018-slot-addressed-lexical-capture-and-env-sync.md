@@ -1,23 +1,23 @@
 # ADR-0018: Slot-addressed lexical capture and precise environment synchronization
 
-- **Status**: Proposed
-- **Date**: 2026-08-02
+- **Status**: Accepted
+- **Date**: 2026-08-03
 - **Deciders**: tokuhirom, Codex
 - **Related**: [ADR-0001](0001-gc-strategy-and-phasing.md), [ADR-0010](0010-cross-thread-lexical-sharing-scope.md), [ADR-0013](0013-container-interior-mutability-cellvalue.md), [ANALYSIS.md](../../ANALYSIS.md) §1.2/§1.3/§2.4, [lexical-scope-slot campaign](../lexical-scope-slot-campaign.md)
 
 ## Context
 
 Compiled lexical reads and writes are slot-addressed, but several runtime mechanisms still
-observe or publish those lexicals through the name-keyed `Env`. `CompiledCode` currently
-sets `captures_env_by_name` when it contains any `ForLoop`, `BlockScope`,
-`BlockLocalScope`, `MakeGather`, or `WheneverScope`. That one bit overrides the existing
-per-slot `needs_env_sync` analysis and makes every local an env-mirror target.
+observe or publish those lexicals through the name-keyed `Env`. Historically,
+`CompiledCode` set `captures_env_by_name` when it contained any `ForLoop`, `BlockScope`,
+`BlockLocalScope`, `MakeGather`, or `WheneverScope`; that bit overrode per-slot analysis and
+made every local an env-mirror target. The campaign has replaced that blanket with precise
+consumer metadata.
 
-The blanket is load-bearing because the five consumers do not yet carry a complete account
-of the slots they observe. Block exit has historically recovered mutations by name, loop
-machinery publishes its parameter and control state through env, gather and whenever execute
-stored bodies against a live env, and closure construction falls back to materializing that
-env. Removing only the blanket deterministically breaks all four mechanism families.
+The blanket was load-bearing because the five consumers did not carry a complete account of
+the slots they observed. Block exit recovered mutations by name, loop machinery published
+control state through env, gather and whenever executed stored bodies against a live env, and
+closure construction materialized that env. Those boundaries now carry explicit slot sets.
 
 The mirror is also unsound as lexical identity. Two simultaneously-live shadowed bindings
 with the same name collapse to one env key. A nested call can therefore replace a closure's
@@ -42,8 +42,8 @@ whole vector.
 Every consumer must use its own set when publishing to or importing from env. A missing slot
 in static metadata is conservative for that consumer only: it may request a frame-wide sync
 at the boundary while the migration is Proposed, but it may not silently widen every store in
-the frame. The temporary conservative escape hatch is deleted before this ADR becomes
-Accepted.
+the frame. The temporary conservative escape hatch has been removed; reflective and dynamic
+name-based facilities remain explicit compatibility boundaries.
 
 ### Block restore
 
@@ -89,8 +89,14 @@ metadata and do not publish that lexical under its bare name. Process-wide inter
    clones and rw/container mutation sinks.
 5. Remove `captures_env_by_name`, the whole-vector `needs_env_sync.fill(true)`, and closure
    whole-env fallback for ordinary lexicals.
-6. Close the related `todo/` findings only when their reproductions are pinned and pass, then
-   change this ADR to Accepted.
+6. Close the related `todo/` findings once their reproductions are pinned and passing, and
+   accept this ADR. **Completed 2026-08-03 in PR #5759 (including the stacked campaign PRs).**
+
+The five consumers now synchronize their precise slot sets; block restore is slot-addressed;
+closure captures use shared cells where mutation can escape; and ordinary compiled captures
+no longer fall back to a whole environment. Reflective name access and stored-body metadata
+remain intentionally supported. Targeted normal, GC-stress, and JIT-stress regressions pass,
+and the merged campaign CI is green.
 
 Each step is independently buildable and testable. Ordered implementation layers use stacked
 PRs; no intermediate layer may rely on a higher layer to restore correctness.
@@ -100,7 +106,7 @@ PRs; no intermediate layer may rely on a higher layer to restore correctness.
 - Shadowed lexicals retain distinct identities across blocks, closures, calls and threads.
 - Block cleanup cannot leak or resurrect bindings through a same-named env entry.
 - Closure creation becomes proportional to its captures instead of the size of the ambient
-  environment once the final fallback is removed.
+  environment after removal of the final fallback.
 - Reflective name access still pays an explicit synchronization cost. That boundary is honest:
   reflection asks for names, while ordinary compiled execution uses slots.
 - The migration touches compiler analysis, scope execution, closure dispatch and concurrency.
@@ -125,4 +131,3 @@ concurrent writers.
 Rejected. It would make every scalar access pay container indirection and would expand the
 `ContainerRef`-blind surface unnecessarily. Boxing occurs at escape/capture boundaries; an
 uncertain escaping capture is boxed, while a non-escaping local stays a plain slot value.
-

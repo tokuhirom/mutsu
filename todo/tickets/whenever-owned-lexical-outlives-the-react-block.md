@@ -1,5 +1,11 @@
 # A `whenever` callback's owned lexical is left behind in the ambient env
 
+**Status: Resolved (PR #5773/#5776, merged via campaign PR #5759).**
+
+The callback boundary now restores authoritative captures by slot and excludes read-only
+authoritative installs from broad closure writeback while retaining genuine free-variable
+writes. `t/supply-block-enum-lexical.t` covers the post-`react` non-leak regression.
+
 A `supply { }` body's `my` declarations are its own lexicals, and the `whenever`
 callbacks nested in it capture them as `authoritative_captures` (installed with
 overwrite on entry, so they win over a same-named caller lexical when the
