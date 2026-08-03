@@ -27,6 +27,23 @@ pub(in crate::runtime) fn positional_values_from_unpack_target(value: &Value) ->
     }
 }
 
+/// Whether a sub-signature destructures a `Pair` purely by its named parts, as
+/// `Pair (:key($k), :value($v))` does.
+///
+/// A `Pair`'s capture is `\(:key(…), :value(…))` — two named parts and no
+/// positional one (`(2 => 'x').Capture.list` is `()` in rakudo) — but
+/// `positional_values_from_unpack_target` reports the pair itself as a
+/// one-element positional list, which the positional-destructure forms rely on.
+/// So such a sub-signature leaves that element unconsumed by construction, and
+/// the leftover-positional check has to sit this one out.
+fn destructures_pair_by_name(value: &Value, sub_params: &[ParamDef]) -> bool {
+    matches!(
+        value.unwrap_varref().view(),
+        ValueView::Pair(..) | ValueView::ValuePair(..)
+    ) && !sub_params.is_empty()
+        && sub_params.iter().all(|p| p.named)
+}
+
 pub(in crate::runtime) fn varref_from_value(value: &Value) -> Option<(String, Value)> {
     indexed_varref_from_value(value).map(|(name, inner, _)| (name, inner))
 }
@@ -444,7 +461,18 @@ pub(in crate::runtime) fn sub_signature_matches_value(
         {
             return false;
         }
+        // A named sub-param's parens are either a RENAME/alias target
+        // (`:key($k)`, `:die(:$throw)` — plain inner params with no nested
+        // signature of their own) or a genuine destructure (`:value((:key($d),
+        // …))`). Only the latter takes the candidate apart; a rename binds the
+        // whole candidate to the inner name and so always matches. Treating a
+        // rename as a destructure asked the candidate for a positional element
+        // it does not have (a `Pair`/`Array` value under `:value($rest)`), so
+        // the candidate was rejected. `bind_sub_signature_from_value` already
+        // draws this distinction; dispatch matching has to agree with it or a
+        // signature that binds fine is never selected.
         if let Some(sub) = &pd.sub_signature
+            && !(pd.named && sub.iter().all(|p| p.sub_signature.is_none()))
             && !sub_signature_matches_value(interpreter, sub, &candidate)
         {
             return false;
@@ -455,9 +483,14 @@ pub(in crate::runtime) fn sub_signature_matches_value(
             return false;
         }
     }
-    // If there are unconsumed positional elements and no slurpy param, the match fails
+    // If there are unconsumed positional elements and no slurpy param, the match
+    // fails — unless this is an all-named destructure of a Pair, which consumes
+    // no positional element by construction (see `destructures_pair_by_name`).
     let has_slurpy = sub_params.iter().any(|p| !p.named && p.slurpy);
-    if !has_slurpy && positional_idx < positional.len() {
+    if !has_slurpy
+        && positional_idx < positional.len()
+        && !destructures_pair_by_name(value, sub_params)
+    {
         return false;
     }
     // Reject unexpected named arguments (for the multi-dispatch case where the
@@ -472,6 +505,28 @@ pub(in crate::runtime) fn sub_signature_matches_value(
             .any(|p| p.slurpy && (p.named || p.name.starts_with('%')));
         if !has_named_slurpy {
             for key in named.keys() {
+                let consumed = sub_params.iter().any(|p| {
+                    p.named && p.name.trim_start_matches(|c: char| "$@%&".contains(c)) == key
+                });
+                if !consumed {
+                    return false;
+                }
+            }
+        }
+    }
+    // Same rule for the Pair unpack: its capture is exactly `\(:key(…),
+    // :value(…))`, so a sub-signature that names only one of the two leaves the
+    // other unconsumed and does not match (rakudo rejects
+    // `Pair (:key($k))` against `2 => 'x'` for that reason).
+    if matches!(
+        value.unwrap_varref().view(),
+        ValueView::Pair(..) | ValueView::ValuePair(..)
+    ) {
+        let has_named_slurpy = sub_params
+            .iter()
+            .any(|p| p.slurpy && (p.named || p.name.starts_with('%')));
+        if !has_named_slurpy && sub_params.iter().any(|p| p.named) {
+            for key in ["key", "value"] {
                 let consumed = sub_params.iter().any(|p| {
                     p.named && p.name.trim_start_matches(|c: char| "$@%&".contains(c)) == key
                 });
