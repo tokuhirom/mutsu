@@ -417,7 +417,14 @@ impl Interpreter {
     ) -> bool {
         let mf = store.mark();
         if stride > 0 {
-            store.fold_quantified(base_len, stride);
+            // Raku listifies every quantified capture, even for a single
+            // iteration: `(a)+`, `(a)*`, `(a)**1` and `(a)**0..1` all bind `$0`
+            // to an Array. A bare `?` is the sole exception — it binds a Match.
+            let fold_single = !matches!(
+                ctx.pattern.tokens[idx].quant,
+                crate::runtime::regex_types::RegexQuant::ZeroOrOne
+            );
+            store.fold_quantified(base_len, stride, fold_single);
         }
         let stop = self.walk_tokens(ctx, idx + 1, at, store, matches);
         store.rewind(mf);

@@ -313,7 +313,7 @@ impl CapStore {
     }
 
     /// Trailed `fold_quantified_captures`: save the unfolded tail, then fold.
-    pub(super) fn fold_quantified(&mut self, base_len: usize, stride: usize) {
+    pub(super) fn fold_quantified(&mut self, base_len: usize, stride: usize, fold_single: bool) {
         if stride == 0 {
             return;
         }
@@ -328,7 +328,12 @@ impl CapStore {
         };
         self.caps.positional.extend(rec.slots.iter().cloned());
         self.trail.push(Undo::PosTail(Box::new(rec)));
-        super::regex_helpers::fold_quantified_captures(&mut self.caps, base_len, stride);
+        super::regex_helpers::fold_quantified_captures(
+            &mut self.caps,
+            base_len,
+            stride,
+            fold_single,
+        );
     }
 }
 
@@ -428,7 +433,7 @@ mod tests {
         store.push_positional(PosSlot::span(1, 2));
         store.push_positional(PosSlot::span(2, 3));
         let mf = store.mark();
-        store.fold_quantified(1, 1);
+        store.fold_quantified(1, 1, true);
         assert_eq!(store.caps().positional.len(), 2); // folded into one slot
         assert!(store.caps().positional[1].quantified.is_some());
         store.rewind(mf);
