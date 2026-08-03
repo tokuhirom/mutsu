@@ -7,8 +7,8 @@ interpreter bugs found while running it were fixed (see
 `news/2026-08/digest-dist-seven-fixes.md`), then four more that its roast
 fallout exposed (`news/2026-08/digest-dist-followup-four-fixes.md`);
 `Digest::SHA1` and `Digest::SHA2`'s `sha224`/`sha256` now produce correct
-digests. Blocker 1 below is fixed
-(`news/2026-08/for-modifier-placeholder-scope.md`); three remain, each an
+digests. Blockers 1 (`news/2026-08/for-modifier-placeholder-scope.md`) and 4
+(`news/2026-08/named-params-do-not-narrow.md`) are fixed; two remain, each an
 independent general bug.
 
 Reproduce with the vendored-in-zef-store copy:
@@ -43,7 +43,14 @@ is in the block pipeline: `blob64`, `state buf64 $w`, the `$H[]` zen slice, the
 `(8*$data).polymod(256 xx 15).reverse` length encoding, or `map * mod 2**64` over
 a Blob. `sha384` is `sha512` with a different initial hash, so it falls with it.
 
-## 4. `HMAC`'s named-parameter multis dispatch as ambiguous
+## 4. `HMAC`'s named-parameter multis dispatch as ambiguous — FIXED
+
+Fixed by excluding named parameters from narrowness; see
+`news/2026-08/named-params-do-not-narrow.md`. `hmac(key => "Jefe", …)` now
+produces the RFC 2202 vector. The residual declaration-order tie-break is
+`todo/tickets/multi-tie-break-declaration-order.md`.
+
+<details><summary>original report</summary>
 
     hmac key => "Jefe", msg => "…", hash => &sha1, block-size => 64
     # mutsu: Ambiguous call to 'hmac()'
@@ -59,6 +66,8 @@ With both `:$key` and `:$msg` passed as `Str`, candidates 1 and 2 each constrain
 one named parameter and leave the other untyped. Rakudo resolves this (it runs
 candidate 1, then `samewith` reaches candidate 2, then 3); mutsu calls it
 ambiguous. The narrowness comparison for *named* parameters is the thing to fix.
+
+</details>
 
 ## Also relevant: `Digest::HMAC` itself
 
