@@ -560,6 +560,58 @@ group is 2 files (`Unknown role: CN`; `Did you mean 'flat'?`), and 71 abort with
 no diagnostic line at all. So from here it is one gap at a time rather than
 another leverage play. Two starting points worth naming:
 
+### Re-measured 2026-08-03, and a quarter of the residue is a *timeout* class
+
+Two fixes landed against the 255
+(`news/2026-08/strict-does-not-reject-a-declared-bind.md`,
+`news/2026-08/typed-exceptions-carry-their-attributes.md`), and the sweep was
+re-run on `b9affee86`: **248 / 1435**. But re-running each of those 248 **alone**
+with a 120 s timeout shows **64 of them pass** — so the honest count is
+
+| | files |
+| --- | --- |
+| genuine failures | **185** |
+| pass alone, fail under `prove -j6` | 64 |
+
+That second bucket is not flakiness in the usual sense and must not be
+quarantined: it is the real module's per-assertion cost. **10 of the 64 exceed
+the 30 s per-file budget even with the machine to themselves** (22–61 s:
+`S04-declarations/state.t`, `S03-buf/read-write-bits.t`, and the six
+`sprintf-*.t`), and the other 54 are the same effect under contention.
+
+Two different causes hide in there, and they need different answers:
+
+- `S32-str/sprintf-d.t` — 0.9 s native, **22.2 s** real, **19.1 s raku**. mutsu
+  is as fast as rakudo here; the file is simply 4565 interpreted `Test`
+  assertions. Nothing to fix in the interpreter — the roast runner needs a
+  bigger budget for these files once the switch flips.
+- `S04-declarations/state.t` — 3.7 s native, **61.8 s** real, **0.9 s raku**, a
+  67× deficit. Its `lives-ok { … for ^2000000 { $ = foo } }` takes 2.9 s under
+  the native provider and 40.3 s under the module's, for byte-identical user
+  code. Isolated: a block invoked through an imported sub costs ~1.5× more per
+  iteration, and a callee declared *inside* that block costs another 1.7–3.8×.
+  Recorded in `todo/deep/interpreter-call-path-in-hot-loops.md`; that is the
+  real blocker of the two.
+
+So step 3 needs the call path as well as the 185 correctness gaps.
+
+### Named starting points (from the 2026-08-03 abort classification)
+
+- ~~`S02-names/strict.t` / `S02-lexical-conventions/comments.t`~~ **DONE** —
+  `news/2026-08/strict-does-not-reject-a-declared-bind.md`.
+- ~~six files aborting on a missing exception attribute~~ **DONE** —
+  `news/2026-08/typed-exceptions-carry-their-attributes.md`. Two of that family
+  are left: `X::Match::Bool` has no `.instead` (`S24-testing/fails-like.t`) and
+  `X::Syntax::Pod::BeginWithoutIdentifier` has no `.filename`
+  (`S32-exceptions/misc2.t`) — the latter is the `X::Comp` file/line metadata
+  rather than a per-class attribute.
+- `skip() was passed a non-integer number of tests` — still open; the shape that
+  triggers it is not any of the ordinary `skip 'reason', N` forms (all of those
+  were checked against the real module and pass), so find the file from the
+  sweep rather than guessing.
+
+### (superseded) the 2026-08-03 pre-fix notes
+
 - `S02-names/strict.t` and `S02-lexical-conventions/comments.t` abort with
   `X::Undeclared: Variable '$time_after' is not declared` raised *inside*
   `Test.rakumod`'s own `_diag`, reached through `throws-like` → `subtest`. Both
