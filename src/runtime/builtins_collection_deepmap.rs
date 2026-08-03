@@ -1,6 +1,19 @@
 use super::*;
 use crate::value::ValueView;
 
+/// A `Range` is `Iterable`, so the `*map` family descends into it exactly as it
+/// descends into a `List`: `(1..4).deepmap(*+1)` is `(2 4 6 8)`, and a nested
+/// one itemizes like a List sublist — `(1, (2..3)).deepmap(*+1)` is
+/// `(2, $(3, 4))`. mutsu keeps ranges out of the `Array` view variant, so
+/// without this every arm below treats a range as a *leaf* and hands the whole
+/// Range to the block, which silently answers a Range (`2..8`) instead of
+/// calling the block per element.
+fn range_as_list(value: &Value) -> Option<Value> {
+    value
+        .is_range()
+        .then(|| Value::array(crate::runtime::utils::value_to_list(value)))
+}
+
 impl Interpreter {
     /// `cross(@a, @b, ...)` — Cartesian product of lists.
     /// With `with => &op`, applies the operator to each pair instead of making tuples.
@@ -189,6 +202,9 @@ impl Interpreter {
         block: &Value,
         target: &Value,
     ) -> Result<Value, RuntimeError> {
+        if let Some(list) = range_as_list(target) {
+            return self.duckmap_iterate(block, &list);
+        }
         // This construct handles `next`/`last`/`redo`, so a loop-control
         // statement raised anywhere in its dynamic extent has somewhere to go
         // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
@@ -281,6 +297,9 @@ impl Interpreter {
         target: &Value,
         itemize_result: bool,
     ) -> Result<Value, RuntimeError> {
+        if let Some(list) = range_as_list(target) {
+            return self.deepmap_iterate_inner(block, &list, itemize_result);
+        }
         // This construct handles `next`/`last`/`redo`, so a loop-control
         // statement raised anywhere in its dynamic extent has somewhere to go
         // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
@@ -298,13 +317,14 @@ impl Interpreter {
                 let child_itemize = !kind.is_real_array();
                 let mut result = Vec::new();
                 for (idx, item) in items.iter().enumerate() {
-                    let is_leaf = !matches!(
-                        item.view(),
-                        ValueView::Package(_)
-                            | ValueView::Array(..)
-                            | ValueView::Seq(_)
-                            | ValueView::Hash(_)
-                    );
+                    let is_leaf = !item.is_range()
+                        && !matches!(
+                            item.view(),
+                            ValueView::Package(_)
+                                | ValueView::Array(..)
+                                | ValueView::Seq(_)
+                                | ValueView::Hash(_)
+                        );
                     if is_leaf {
                         match self.deepmap_leaf_call(block, item) {
                             Ok((v, new_src)) => {
@@ -379,13 +399,14 @@ impl Interpreter {
             ValueView::Hash(map) => {
                 let mut result = std::collections::HashMap::new();
                 for (k, v) in map.iter() {
-                    let is_leaf = !matches!(
-                        v.view(),
-                        ValueView::Package(_)
-                            | ValueView::Array(..)
-                            | ValueView::Seq(_)
-                            | ValueView::Hash(_)
-                    );
+                    let is_leaf = !v.is_range()
+                        && !matches!(
+                            v.view(),
+                            ValueView::Package(_)
+                                | ValueView::Array(..)
+                                | ValueView::Seq(_)
+                                | ValueView::Hash(_)
+                        );
                     if is_leaf {
                         match self.deepmap_leaf_call(block, v) {
                             Ok((val, new_src)) => {
@@ -441,6 +462,9 @@ impl Interpreter {
         block: &Value,
         target: &Value,
     ) -> Result<Value, RuntimeError> {
+        if let Some(list) = range_as_list(target) {
+            return self.nodemap_iterate(block, &list);
+        }
         // This construct handles `next`/`last`/`redo`, so a loop-control
         // statement raised anywhere in its dynamic extent has somewhere to go
         // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
@@ -510,6 +534,13 @@ impl Interpreter {
             Err(_) => {
                 // Block rejected the value (type mismatch, etc.)
                 // Try to descend into iterable structures
+                if let Some(list) = range_as_list(value) {
+                    let mut result = Vec::new();
+                    for item in list.as_list_items().unwrap_or_default() {
+                        result.push(self.duckmap_element(block, item)?);
+                    }
+                    return Ok(Value::array(result));
+                }
                 match value.view() {
                     ValueView::Array(items, kind) => {
                         let mut result = Vec::new();
