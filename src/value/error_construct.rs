@@ -159,7 +159,7 @@ impl RuntimeError {
     /// real instead of decorative. A message that is only a class name
     /// (`"X::Match::Bool"`) counts too — its text is the class name, matching
     /// what `typed()` does when no `message` attribute is supplied.
-    fn split_typed_message_convention(message: &str) -> Option<(&str, &str)> {
+    pub(crate) fn split_typed_message_convention(message: &str) -> Option<(&str, &str)> {
         if !message.starts_with("X::") {
             return None;
         }

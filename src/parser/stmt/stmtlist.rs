@@ -393,6 +393,14 @@ pub(crate) fn stmt_list_with_mode(
                 if e.is_fatal() {
                     return Err(e);
                 }
+                // An alternative that named its exception class diagnosed this
+                // input precisely; flattening it into the "expected statement at
+                // line N: …" description below would bury the class inside a
+                // longer string and leave the failure classed
+                // `X::Syntax::Confused`.
+                if e.typed_convention_message().is_some() {
+                    return Err(e);
+                }
                 let consumed = input.len() - r.len();
                 let line_num = input[..consumed].matches('\n').count() + 1;
                 let context: String = r.chars().take(80).collect();
