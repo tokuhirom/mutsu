@@ -239,7 +239,20 @@ fn strip_expected_prefix(s: &str) -> &str {
 
 /// Merge a context description with existing message parts.
 /// `context` may optionally have an "expected " prefix (which is stripped).
+///
+/// A **fatal** error is returned verbatim. Its message is a diagnosis, not one
+/// alternative among many, and [`PError::is_fatal`] only inspects the first
+/// message — pushing a context description in front of it would both bury the
+/// diagnosis inside an "expected A or B or FATAL:…" list and silently demote
+/// the error to a recoverable one, so the enclosing alternation would go on to
+/// try other productions and report something unrelated.
 pub(super) fn merge_expected_messages(context: &str, existing: &[String]) -> Vec<String> {
+    if existing
+        .first()
+        .is_some_and(|m| m.starts_with(FATAL_PREFIX))
+    {
+        return existing.to_vec();
+    }
     let key = strip_expected_prefix(context).trim();
     let mut result: Vec<String> = Vec::with_capacity(1 + existing.len());
     if !key.is_empty() {

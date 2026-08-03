@@ -80,8 +80,8 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::PostDecrement(..)
             | OpCode::PreIncrement(..)
             | OpCode::PreDecrement(..)
-            | OpCode::PreIncrementIndex(_)
-            | OpCode::PreDecrementIndex(_)
+            | OpCode::PreIncrementIndex(..)
+            | OpCode::PreDecrementIndex(..)
             // Arith predicates
             | OpCode::DivisibleBy
             | OpCode::NotDivisibleBy

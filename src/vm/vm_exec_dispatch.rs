@@ -629,24 +629,12 @@ impl Interpreter {
                             .collect();
                         Value::real_array(pairs)
                     }
-                    // A Buf/Blob is Positional, so an `@`-sigil read yields its
-                    // element list (`@$blob` is `$blob.list`) — the value that
-                    // flattens and slips element-wise. Without this, `flat @$msg,
-                    // 0x80` kept the whole Blob as a single element (Digest::SHA1's
-                    // padding then produced 13 words instead of 14).
-                    ValueView::Instance {
-                        class_name,
-                        attributes,
-                        ..
-                    } if crate::runtime::utils::is_native_elems_class(&class_name.resolve()) => {
-                        match crate::value::value_buf::buf_elems_as_array(
-                            &attributes.as_map(),
-                            crate::value::ArrayKind::List,
-                        ) {
-                            Some(list) => list,
-                            None => val.clone(),
-                        }
-                    }
+                    // NOTE: a Buf/Blob is deliberately NOT unwrapped to its
+                    // element list here. `@$blob` lowers to `$blob.list` (see
+                    // `@$x` in the parser), so it never reaches this opcode;
+                    // what does reach it is a genuine `@`-sigil variable whose
+                    // container IS a Buf (`my @a is Buf`), and there `@a` must
+                    // stay the Buf itself so `@a ~~ Buf` holds (S02-types/is-type.t).
                     // Array-contextualizing a Seq (`@$s`) caches it, so it may be
                     // read repeatedly. If the Seq's iterator was already taken
                     // (e.g. by `.skip`/`.iterator`) and not cached, throw.
@@ -3431,15 +3419,15 @@ impl Interpreter {
                 self.exec_post_decrement_op(code, *name_idx, *slot)?;
                 *ip += 1;
             }
-            OpCode::PostIncrementIndex(name_idx) => {
+            OpCode::PostIncrementIndex(name_idx, slot) => {
                 let pre = self.attr_elem_env_snapshot(code, *name_idx);
-                self.exec_post_increment_index_op(code, *name_idx)?;
+                self.exec_post_increment_index_op(code, *name_idx, *slot)?;
                 self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
                 *ip += 1;
             }
-            OpCode::PostDecrementIndex(name_idx) => {
+            OpCode::PostDecrementIndex(name_idx, slot) => {
                 let pre = self.attr_elem_env_snapshot(code, *name_idx);
-                self.exec_post_decrement_index_op(code, *name_idx)?;
+                self.exec_post_decrement_index_op(code, *name_idx, *slot)?;
                 self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
                 *ip += 1;
             }
@@ -3553,12 +3541,12 @@ impl Interpreter {
                 self.exec_pre_decrement_op(code, *name_idx, *slot)?;
                 *ip += 1;
             }
-            OpCode::PreIncrementIndex(name_idx) => {
-                self.exec_pre_increment_index_op(code, *name_idx)?;
+            OpCode::PreIncrementIndex(name_idx, slot) => {
+                self.exec_pre_increment_index_op(code, *name_idx, *slot)?;
                 *ip += 1;
             }
-            OpCode::PreDecrementIndex(name_idx) => {
-                self.exec_pre_decrement_index_op(code, *name_idx)?;
+            OpCode::PreDecrementIndex(name_idx, slot) => {
+                self.exec_pre_decrement_index_op(code, *name_idx, *slot)?;
                 *ip += 1;
             }
 

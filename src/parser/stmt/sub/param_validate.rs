@@ -463,7 +463,16 @@ pub(crate) fn placeholder_overrides_signature_error(
             attrs.insert("line".to_string(), Value::int(line));
             attrs.insert("message".to_string(), Value::str(message.clone()));
             let ex = Value::make_instance(Symbol::intern("X::Signature::Placeholder"), attrs);
-            return Some(PError::fatal_with_exception(message, Box::new(ex)));
+            // Spell the parse-error message in the `"X::Type: text"` convention
+            // as well as attaching the structured exception: an expression-level
+            // caller (a pointy block nested in an `anon sub` argument list, say)
+            // reaches `parse_program` through `map_err` sites that rebuild the
+            // `PError` and drop its `exception`, and the convention is what keeps
+            // the class from being downgraded to `X::Syntax::Confused` there.
+            return Some(PError::fatal_with_exception(
+                format!("X::Signature::Placeholder: {}", message),
+                Box::new(ex),
+            ));
         }
     }
     None

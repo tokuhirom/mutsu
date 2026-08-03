@@ -17,6 +17,22 @@ impl Interpreter {
         }
     }
 
+    /// Clear match state after a failed *multi-match* (`:g` / `:ov` / `:ex`).
+    /// Those adverbs make the match return a `List` of `Match`es, so a failure
+    /// leaves `$/` an **empty List**, not `Nil` — `+@$/` must be 0. (A plain
+    /// match returns a single `Match`, so its failure leaves `Nil`, which is
+    /// what `clear_match_state` does.)
+    pub(in crate::runtime) fn clear_multi_match_state(&mut self) {
+        self.clear_match_state();
+        self.env.insert(
+            "/".to_string(),
+            Value::array_with_kind(
+                crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
+                crate::value::ArrayKind::List,
+            ),
+        );
+    }
+
     pub(in crate::runtime) fn apply_single_regex_captures(&mut self, captures: &RegexCaptures) {
         let make_capture_match = |capture: &str, from: usize, to: usize| {
             let mut attrs = HashMap::new();

@@ -358,38 +358,48 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
+        slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
-        self.exec_inc_dec_index_op(code, name_idx, true, false)
+        self.exec_inc_dec_index_op(code, name_idx, slot, true, false)
     }
 
     pub(super) fn exec_post_decrement_index_op(
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
+        slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
-        self.exec_inc_dec_index_op(code, name_idx, false, false)
+        self.exec_inc_dec_index_op(code, name_idx, slot, false, false)
     }
 
     pub(super) fn exec_pre_increment_index_op(
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
+        slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
-        self.exec_inc_dec_index_op(code, name_idx, true, true)
+        self.exec_inc_dec_index_op(code, name_idx, slot, true, true)
     }
 
     pub(super) fn exec_pre_decrement_index_op(
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
+        slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
-        self.exec_inc_dec_index_op(code, name_idx, false, true)
+        self.exec_inc_dec_index_op(code, name_idx, slot, false, true)
     }
 
+    /// `slot` is the compile-time-resolved local slot of the *base container*
+    /// (§1.5). It disambiguates a name that occupies several `code.locals`
+    /// entries — a bare block shares its enclosing frame's locals, so an inner
+    /// `my $b` shadowing an outer one gets a second slot under the same name and
+    /// the by-name search would find the outer.
     pub(crate) fn exec_inc_dec_index_op(
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
+        slot: Option<u32>,
         increment: bool,
         return_new: bool,
     ) -> Result<(), RuntimeError> {
@@ -423,7 +433,7 @@ impl Interpreter {
         // Gate OFF (default) is byte-identical: the slot equals the env mirror, so
         // the env read is used exactly as before.
         let container = self
-            .gate_local_slot_value(code, &name)
+            .gate_local_slot_value_at(code, slot, &name)
             .or_else(|| self.get_env_with_main_alias(&name));
         // Resolve a WhateverCode / Whatever index (`@a[*-1]++`, `@a[*-2]--`)
         // against the container's length before using it as the key — otherwise
@@ -734,7 +744,7 @@ impl Interpreter {
         // half (and its backing node is shared, so this is still in-place). Gate
         // OFF (default) uses `env.get_mut` exactly as before (byte-identical).
         let gate_slot = self
-            .gate_local_slot(code, &name)
+            .gate_local_slot_at(code, slot, &name)
             .filter(|&s| !self.locals[s].is_nil());
         let modified_in_place = if let Some(container_value) = match gate_slot {
             Some(s) => self.locals.get_mut(s),

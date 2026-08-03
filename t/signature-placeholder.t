@@ -1,6 +1,6 @@
 use Test;
 
-plan 10;
+plan 11;
 
 # A routine with an explicit signature (even empty) may not use placeholder
 # variables in its body -> X::Signature::Placeholder.
@@ -19,9 +19,16 @@ throws-like 'sub f() { $:named }', X::Signature::Placeholder,
 # Without an explicit signature, placeholders define the signature implicitly.
 lives-ok { EVAL 'sub f { $^x }; f(1)' }, 'placeholder defines implicit signature';
 
-# A placeholder captured by an inner block is fine.
-lives-ok { EVAL 'sub g() { -> { $^y } }' },
-    'placeholder captured by nested block is allowed';
+# A placeholder captured by an inner BARE block is fine — the bare block has no
+# signature of its own, so the placeholder becomes its parameter. A pointy block
+# always has one (even `-> { … }`, which declares zero parameters), so the same
+# placeholder there is an override and rakudo rejects it at compile time
+# (roast/S04-declarations/implicit-parameter.t test 16).
+lives-ok { EVAL 'sub g() { { $^y } }' },
+    'placeholder captured by nested bare block is allowed';
+
+throws-like 'sub g() { -> { $^y } }', X::Signature::Placeholder,
+    placeholder => '$^y';
 
 # The message is the canonical Rakudo one.
 throws-like 'sub h() { $^z }', X::Signature::Placeholder,

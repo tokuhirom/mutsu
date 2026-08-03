@@ -1046,8 +1046,8 @@ pub(crate) enum OpCode {
     // campaign.md). `None` for a non-local / temp-value target (env-by-name).
     PreIncrement(u32, Option<u32>),
     PreDecrement(u32, Option<u32>),
-    PreIncrementIndex(u32),
-    PreDecrementIndex(u32),
+    PreIncrementIndex(u32, Option<u32>),
+    PreDecrementIndex(u32, Option<u32>),
 
     // -- Variable access --
     GetCaptureVar(u32),
@@ -1062,8 +1062,15 @@ pub(crate) enum OpCode {
     // value target), where the writeback stays env-by-name.
     PostIncrement(u32, Option<u32>),
     PostDecrement(u32, Option<u32>),
-    PostIncrementIndex(u32),
-    PostDecrementIndex(u32),
+    /// `$c[i]++` / `%h<k>--`. The optional second field is the same §1.5
+    /// compile-time-resolved local slot as `PostIncrement`'s: the *base
+    /// container's* slot. Without it the VM located the container by name, which
+    /// picks the FIRST `code.locals` entry with that name — so an inner
+    /// `my $b = [0, 3]` shadowing an outer `my $b` inside the same frame
+    /// (a bare block, which shares the enclosing frame's locals) incremented the
+    /// OUTER array's element.
+    PostIncrementIndex(u32, Option<u32>),
+    PostDecrementIndex(u32, Option<u32>),
     /// Named index assignment: `var[idx] = value` where `var` is a known
     /// variable name. `is_positional` records whether the subscript was
     /// `[...]` (positional) or `{...}`/`<...>` (associative); used to
@@ -3337,10 +3344,10 @@ impl CompiledCode {
             // ONLY use of an outer aggregate is `%h{$k}++` / `:delete` never
             // captured it, so the mutation vanished once the closure escaped its
             // declaring frame (Track B T6 probe).
-            OpCode::PostIncrementIndex(name_idx)
-            | OpCode::PostDecrementIndex(name_idx)
-            | OpCode::PreIncrementIndex(name_idx)
-            | OpCode::PreDecrementIndex(name_idx) => Some(*name_idx),
+            OpCode::PostIncrementIndex(name_idx, _)
+            | OpCode::PostDecrementIndex(name_idx, _)
+            | OpCode::PreIncrementIndex(name_idx, _)
+            | OpCode::PreDecrementIndex(name_idx, _) => Some(*name_idx),
             OpCode::DeleteIndexNamed(name_idx, _) => Some(*name_idx),
             OpCode::IndexAssignPseudoStashNamed { stash_name_idx, .. } => Some(*stash_name_idx),
             OpCode::IndexAssignPseudoStashKeyed { stash_name_idx } => Some(*stash_name_idx),
@@ -4289,12 +4296,12 @@ impl CompiledCode {
                     | OpCode::IndexElemAutoviv { .. }
                     | OpCode::PostIncrement(..)
                     | OpCode::PostDecrement(..)
-                    | OpCode::PostIncrementIndex(_)
-                    | OpCode::PostDecrementIndex(_)
+                    | OpCode::PostIncrementIndex(..)
+                    | OpCode::PostDecrementIndex(..)
                     | OpCode::PreIncrement(..)
                     | OpCode::PreDecrement(..)
-                    | OpCode::PreIncrementIndex(_)
-                    | OpCode::PreDecrementIndex(_)
+                    | OpCode::PreIncrementIndex(..)
+                    | OpCode::PreDecrementIndex(..)
                     | OpCode::MultiDimIndexAssign { .. }
                     | OpCode::MultiDimIndexAssignGeneric(_)
                     | OpCode::CallFunc { .. }
