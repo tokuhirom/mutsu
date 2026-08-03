@@ -32,8 +32,9 @@ pub(in crate::runtime) use state::{
     register_promise_combinator_sources, register_supply_quit_tap, register_supply_tap,
     register_udp_bound_socket, set_supply_collected_bytes, set_supply_collected_output,
     set_supply_enc, supplier_done_deferred, supplier_emit, supplier_id_from_attrs,
-    supplier_mark_preserved_consumed, supplier_quit, supplier_reset, supplier_reset_keep_quit,
-    supplier_take_preserved_backlog, supply_channel_map, supply_channel_map_pub,
+    supplier_mark_preserved_consumed, supplier_mark_terminal_delivered, supplier_quit,
+    supplier_reset, supplier_reset_keep_quit, supplier_take_preserved_backlog,
+    supplier_take_preserved_terminal, supply_channel_map, supply_channel_map_pub,
     take_supply_collected_bytes, udp_port_in_use,
 };
 // Supplier registry accessors driven by the VM-side react/supply loop.

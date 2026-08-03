@@ -403,6 +403,30 @@ impl Interpreter {
                         });
                         continue;
                     }
+                    // A live `Supplier`-backed source has no channel of its own:
+                    // it pushes through the supplier registry's sinks, exactly as
+                    // `react { whenever $supplier.Supply { … } }` does. Replaying
+                    // it as a static source instead (what this used to do) read
+                    // whatever it had emitted *so far* and then ran the LAST
+                    // phaser, so `Promise(supply { whenever $live { … } })`
+                    // resolved before the producer had emitted anything —
+                    // a Cro response body parsed on the socket thread arrived
+                    // after the promise was already kept with an empty Buf.
+                    if let Some(ValueView::Int(supplier_id)) =
+                        inner_map.get("supplier_id").map(Value::view)
+                        && matches!(
+                            inner_map.get("live").map(Value::view),
+                            Some(ValueView::Bool(true))
+                        )
+                    {
+                        react_subs.push(crate::runtime::subtest::ReactSubscription {
+                            supplier_id: Some(supplier_id as u64),
+                            last_callbacks: last_cbs,
+                            quit_callbacks: quit_cbs,
+                            ..crate::runtime::subtest::ReactSubscription::new(callback)
+                        });
+                        continue;
+                    }
                     // No live channel: a static/finite source. Replay it now.
                     let mut lv = static_last_value.take().unwrap_or(Value::NIL);
                     self.replay_static_whenever_promise(

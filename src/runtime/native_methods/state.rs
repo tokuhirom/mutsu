@@ -165,6 +165,11 @@ struct SupplierRuntimeState {
     /// were already delivered to a tap (live dispatch or backlog replay);
     /// values at/above it are the buffered backlog the next tap must replay.
     preserved_consumed: usize,
+    /// `Supplier::Preserving`: the terminal `done` has been handed to a tap —
+    /// either delivered live (a tap was listening when it arrived) or claimed by
+    /// the one later tap that replays it. Taps after that see nothing at all,
+    /// exactly as Rakudo's single `@!replay` list gives.
+    preserved_terminal_delivered: bool,
     /// Push sinks registered by consuming drive loops (react / `await
     /// $supply` / control waits). Every emit/done/quit is pushed to each
     /// registered sink under this registry's lock, so a later
@@ -440,6 +445,31 @@ pub(in crate::runtime) fn supplier_take_preserved_backlog(supplier_id: u64) -> V
     } else {
         Vec::new()
     }
+}
+
+/// `Supplier::Preserving`: record that `done` was delivered live, to a tap that
+/// was already listening. The terminal event is part of the same replay list as
+/// the buffered values, so once it has been delivered no later tap sees this
+/// supply at all.
+pub(in crate::runtime) fn supplier_mark_terminal_delivered(supplier_id: u64) {
+    if let Ok(mut map) = supplier_state_map().lock() {
+        map.entry(supplier_id)
+            .or_default()
+            .preserved_terminal_delivered = true;
+    }
+}
+
+/// `Supplier::Preserving`: claim the preserved terminal event for the tap being
+/// registered now. Returns true exactly once, for the first tap to replay it.
+pub(in crate::runtime) fn supplier_take_preserved_terminal(supplier_id: u64) -> bool {
+    if let Ok(mut map) = supplier_state_map().lock() {
+        let state = map.entry(supplier_id).or_default();
+        if !state.preserved_terminal_delivered {
+            state.preserved_terminal_delivered = true;
+            return true;
+        }
+    }
+    false
 }
 
 /// `Supplier::Preserving`: a live tap just received the current emission, so

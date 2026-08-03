@@ -828,8 +828,15 @@ impl Interpreter {
             }
             "done" => {
                 bump_supplier_done_count();
+                let preserving = attrs.contains_key("preserving");
                 attrs.insert("done".to_string(), Value::TRUE);
                 if let Some(supplier_id) = supplier_id_from_attrs(&attrs) {
+                    // With a tap already listening the done is delivered now, so
+                    // it is not left in the preserved replay list for a later
+                    // tap; with nothing listening it stays there for exactly one.
+                    if preserving && supplier_tap_count(supplier_id) > 0 {
+                        supplier_mark_terminal_delivered(supplier_id);
+                    }
                     supplier_done(supplier_id);
                 }
                 if let Some(ValueView::Int(supplier_id)) = attrs.get("supplier_id").map(Value::view)
@@ -932,10 +939,21 @@ impl Interpreter {
                         }
                     }
                     close_all_supplier_taps(sid);
-                    supplier_reset(sid);
+                    // A `Supplier::Preserving` keeps its whole terminal state:
+                    // the un-replayed backlog AND the done flag outlive `.done`,
+                    // so a tap made afterwards still replays the buffered values
+                    // and then sees `done` (Raku: `$p.emit(1); $p.done;
+                    // $p.Supply.tap` delivers 1 then done). Resetting here made
+                    // such a supply silent, which is how a Cro response body
+                    // parsed before the consumer tapped it vanished.
+                    if !preserving {
+                        supplier_reset(sid);
+                    }
                 }
-                attrs.insert("done".to_string(), Value::FALSE);
-                attrs.remove("emitted");
+                if !preserving {
+                    attrs.insert("done".to_string(), Value::FALSE);
+                    attrs.remove("emitted");
+                }
                 Ok((Value::NIL, attrs))
             }
             "quit" => {
