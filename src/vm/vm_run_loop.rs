@@ -520,11 +520,30 @@ impl Interpreter {
                 continue;
             }
             let local_name = &code.locals[*slot];
-            let val = self
-                .env()
-                .get(local_name)
-                .cloned()
-                .unwrap_or_else(|| self.locals[*slot].clone());
+            // Same store-selection rule as the routine-exit sibling in
+            // `vm_closure_dispatch` (see its comment): read whichever store is
+            // authoritative for this slot. Once ADR-0018 narrowed a for-loop
+            // frame's env sync from a frame-wide blanket to the loop's own baked
+            // slots, a plain `state $t` in the body no longer mirrors to env, so
+            // an env-first read persisted the value the DECLARATION seeded and
+            // the accumulation vanished (`gather { for 1..3 { state $t = 0; $t =
+            // $t + 1; take $t } }` yielded 1 1 1). A state var that IS
+            // env-synced keeps its mirror current and may have been written
+            // there by name — a dynamic `s///` replacement bumping it leaves the
+            // slot at the pre-replacement value — so that case still reads env
+            // first.
+            let slot_authoritative = !code.needs_env_sync.get(*slot).copied().unwrap_or(false);
+            let val = if slot_authoritative {
+                self.locals
+                    .get(*slot)
+                    .cloned()
+                    .unwrap_or_else(|| self.env().get(local_name).cloned().unwrap_or(Value::NIL))
+            } else {
+                self.env()
+                    .get(local_name)
+                    .cloned()
+                    .unwrap_or_else(|| self.locals[*slot].clone())
+            };
             let scoped_key = self.scoped_state_key(key);
             self.set_state_var(scoped_key, val);
         }
