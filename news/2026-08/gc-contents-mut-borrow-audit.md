@@ -3,9 +3,9 @@
 `gc::gc_contents_mut` is the codebase's single aliased-container-write primitive, and it takes
 `&Gc<T>` while returning `&mut T`. That signature means the borrow checker offers **nothing** at its
 62 call sites: keeping a `Deref`'d `&T` alive across the write compiles fine, and it is the one
-failure mode Miri actually catches. `todo/deep/adr-0013-unsafecell-does-not-license-live-shared-borrows.md`
-had asked for an audit of whether any site does that; it was blocked until `gc::soundness_smoke`
-could run under Miri, which it now can.
+failure mode Miri actually catches. ADR-0013's second correction had asked for an audit of whether
+any site does that; it was blocked until `gc::soundness_smoke` could run under Miri, which it now
+can.
 
 ## Narrowing first, reading second
 
@@ -61,8 +61,17 @@ The probes run in the Miri job's first step, which keeps the leak check ON — s
 self-referential probes sever their own edge before returning rather than leaving the collector a
 cycle to reclaim.
 
-What is still owed is the ADR-0013 §8 note. The primitive's own doc comment currently repeats the
-over-promise ("valid provenance **even while shared `&` reads via `Deref` are live**") one paragraph
-above a `# Safety` clause that says the opposite — and the measurements back the Safety clause. That
-sentence is what a future call site would read before deciding it may keep a borrow, so the doc fix
-and the ADR note belong together.
+## The prose is fixed where a reader actually meets it
+
+The remaining debt was the over-promising text itself. `gc_contents_mut`'s own doc comment claimed
+the `&mut` has valid provenance "**even while shared `&` reads via `Deref` are live**" — one
+paragraph above a `# Safety` clause saying the opposite, which the measurements back. That is the
+sentence a future call site would read before deciding it may keep a borrow. It and
+`value::aliased_mut`'s module header now state the derivation fact (`Gc::as_ptr` uses
+`UnsafeCell::raw_get`, so no `&T` is cast away) without extending it into a licence, and both point
+at the Miri-pinned probes rather than repeating a claim that can rot.
+
+ADR-0013 §8 carries the two measurement tables — the original `Arc`-vs-`Gc` probes and the
+call-site shapes — plus the audit result, and the ADR is closed: the gate now sees the `Mixin`
+shape, the VM's real call sites, *and* the aliasing obligation has been audited rather than merely
+stated. The `todo/deep/` finding that opened all this is closed with it.

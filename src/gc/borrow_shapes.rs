@@ -6,8 +6,7 @@
 //! [`crate::gc::gc_contents_mut`] takes `&Gc<T>` and returns `&mut T`, so the
 //! borrow checker offers **no** protection at its ~62 call sites: keeping a
 //! Deref'd `&T` alive across the write compiles fine and is the one failure mode
-//! Miri actually catches (see
-//! `todo/deep/adr-0013-unsafecell-does-not-license-live-shared-borrows.md`).
+//! Miri actually catches (ADR-0013 §8).
 //!
 //! Auditing those sites by hand turns almost entirely on one question: which
 //! operations touch the *payload* and which touch only the `GcBox` header? Real
@@ -29,7 +28,8 @@
 //!
 //! A `Deref` **is** a payload access, and holding one across the write is UB —
 //! that shape is deliberately absent here, because a test that triggers UB fails
-//! the gate rather than documenting it. It is recorded in the todo file instead.
+//! the gate rather than documenting it. It is recorded in ADR-0013 §8's
+//! measurement table instead.
 
 #[cfg(test)]
 mod tests {

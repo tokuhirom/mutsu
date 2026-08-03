@@ -756,9 +756,21 @@ impl<T: Trace + Clone + 'static> ContainerMakeMut for Gc<T> {
 /// visible through every holder of the same node).
 ///
 /// Since ADR-0013 the payload lives in the [`GcBox`]'s `UnsafeCell`, so
-/// [`Gc::as_ptr`] hands back an interior-mutable pointer and this `&mut` has
-/// **valid provenance** even while shared `&` reads (via [`Gc`]'s [`Deref`]) are
-/// live — the provenance UB of the old `as_ptr as *mut` cast is gone.
+/// [`Gc::as_ptr`] derives this pointer with `UnsafeCell::raw_get` — no
+/// intermediate reference — rather than casting a `&T` away.
+///
+/// **That is about how the pointer is derived, not about what callers may hold
+/// across the write.** [`Gc`]'s [`Deref`] hands out a real `&T`, and a write
+/// through this `&mut` invalidates it exactly as it would for an `Arc`:
+/// measured on the gate's pinned nightly, a `&T` taken *before* the write and
+/// used *after* it is UB under both Stacked and Tree Borrows. An earlier
+/// revision of this comment claimed the `&mut` stays valid "even while shared
+/// `&` reads are live"; it did not, and the `# Safety` clause below is the
+/// accurate statement. See ADR-0013 §8 for the measurements and
+/// `src/gc/borrow_shapes.rs` for the shapes that ARE sound
+/// across the write (`Gc::clone`, `Gc::as_ptr`, the counts, and a raw pointer
+/// derived *before* a later `Deref` read) — those are pinned by Miri, so this
+/// paragraph cannot rot again without a test failing.
 ///
 /// # Safety
 ///
