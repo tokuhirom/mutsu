@@ -115,6 +115,12 @@ impl Interpreter {
         sub: &mut ReactSubscription,
         value: Value,
     ) -> Result<bool, RuntimeError> {
+        // This construct handles `next`/`last`/`redo`, so a loop-control
+        // statement raised anywhere in its dynamic extent has somewhere to go
+        // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
+        // would convert the signal into a thrown `X::ControlFlow` and silently
+        // break this loop.
+        let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
         match self.call_react_callback(&sub.callback.clone(), vec![value.clone()]) {
             Ok(_) => Ok(false),
             Err(e) if e.is_react_done() => Ok(true),

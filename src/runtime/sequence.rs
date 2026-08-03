@@ -151,6 +151,12 @@ impl Interpreter {
         closure_env: &mut Option<crate::env::Env>,
         suppress_generator_error: bool,
     ) -> Result<Option<Value>, RuntimeError> {
+        // This construct handles `next`/`last`/`redo`, so a loop-control
+        // statement raised anywhere in its dynamic extent has somewhere to go
+        // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
+        // would convert the signal into a thrown `X::ControlFlow` and silently
+        // break this loop.
+        let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
         let genfn = generator;
         let val = if let ValueView::Sub(data) = genfn.view() {
             if self.sequence_has_registered_routine(&data.package.resolve(), &data.name.resolve()) {

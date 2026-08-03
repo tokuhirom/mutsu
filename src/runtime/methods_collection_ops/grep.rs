@@ -8,6 +8,12 @@ impl Interpreter {
         target: Value,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
+        // This construct handles `next`/`last`/`redo`, so a loop-control
+        // statement raised anywhere in its dynamic extent has somewhere to go
+        // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
+        // would convert the signal into a thrown `X::ControlFlow` and silently
+        // break this loop.
+        let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
         // A role mixin over a list-ish value greps the inner elements (see
         // mixin_iteration_target on the map dispatch).
         let target = Self::mixin_iteration_target(target);

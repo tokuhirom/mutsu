@@ -187,6 +187,12 @@ impl Interpreter {
         func: Option<Value>,
         list_items: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // This construct handles `next`/`last`/`redo`, so a loop-control
+        // statement raised anywhere in its dynamic extent has somewhere to go
+        // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
+        // would convert the signal into a thrown `X::ControlFlow` and silently
+        // break this loop.
+        let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
         if let Some(ValueView::Sub(data)) = func.as_ref().map(Value::view) {
             let requires_full_binding = data.param_defs.iter().any(|pd| {
                 pd.named
@@ -574,6 +580,12 @@ impl Interpreter {
         list_items: &[Value],
         from_end: bool,
     ) -> Option<Result<Option<(usize, Value)>, RuntimeError>> {
+        // This construct handles `next`/`last`/`redo`, so a loop-control
+        // statement raised anywhere in its dynamic extent has somewhere to go
+        // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
+        // would convert the signal into a thrown `X::ControlFlow` and silently
+        // break this loop.
+        let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
         let ValueView::Sub(data) = func.view() else {
             return None;
         };
@@ -762,6 +774,12 @@ pub(crate) fn find_first_match_generic(
     list_items: &[Value],
     from_end: bool,
 ) -> Result<Option<(usize, Value)>, RuntimeError> {
+    // This construct handles `next`/`last`/`redo`, so a loop-control
+    // statement raised anywhere in its dynamic extent has somewhere to go
+    // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
+    // would convert the signal into a thrown `X::ControlFlow` and silently
+    // break this loop.
+    let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
     if list_items.is_empty() {
         return Ok(None);
     }

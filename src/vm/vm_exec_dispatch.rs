@@ -3281,17 +3281,45 @@ impl Interpreter {
             }
 
             // -- Loop control --
+            //
+            // With no construct on the dynamic chain to act on, a loop-control
+            // statement is an ordinary catchable `X::ControlFlow`, not a signal
+            // (`try { { next } }` in rakudo leaves `$!` holding it). The check
+            // has to be dynamic: `sub f { next }` called from a loop body is
+            // legal, so neither the lexical nesting nor the call boundary
+            // answers it. See `runtime/loop_handler_depth.rs`.
             OpCode::Last(label) => {
+                if !crate::runtime::loop_handler_depth::loop_handler_in_scope() {
+                    return Err(RuntimeError::control_flow_illegal(
+                        crate::value::Control::Last,
+                        "last",
+                        "loop construct",
+                    ));
+                }
                 let mut sig = RuntimeError::last_signal();
                 sig.label = label.clone();
                 return Err(sig);
             }
             OpCode::Next(label) => {
+                if !crate::runtime::loop_handler_depth::loop_handler_in_scope() {
+                    return Err(RuntimeError::control_flow_illegal(
+                        crate::value::Control::Next,
+                        "next",
+                        "loop construct",
+                    ));
+                }
                 let mut sig = RuntimeError::next_signal();
                 sig.label = label.clone();
                 return Err(sig);
             }
             OpCode::Redo(label) => {
+                if !crate::runtime::loop_handler_depth::loop_handler_in_scope() {
+                    return Err(RuntimeError::control_flow_illegal(
+                        crate::value::Control::Redo,
+                        "redo",
+                        "loop construct",
+                    ));
+                }
                 let mut sig = RuntimeError::redo_signal();
                 sig.label = label.clone();
                 return Err(sig);
