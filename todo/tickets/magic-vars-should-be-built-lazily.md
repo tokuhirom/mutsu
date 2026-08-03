@@ -24,6 +24,18 @@ platform pays the instance construction. The project's headline metric is startu
 which makes this the wrong place to be eager. The values are process constants, so they should be
 **delayed until first access and then cached**, which is what Rakudo effectively does.
 
+Nothing here is lazy yet — "cached" in slice 1 means *once per process*, not *on demand*. The
+one-line repro: `strace -f -e trace=uname ./target/debug/mutsu -e 'say 1'` still shows one `uname`,
+for a program that never touches `$*KERNEL` or `$*DISTRO`.
+
+**Measure before choosing a design.** Which of the three rows above dominates is *unmeasured*. The
+`uname(2)` is ~1µs, so the plausible-but-unverified guess is that the instance construction (five
+Instances, Version parses, a 32-element signal array, the `vm_config` hash) outweighs it on Linux
+while macOS is dominated by `sw_vers`. If that holds, slice 2's payoff is in skipping the
+*construction*, not the syscall — which also decides how much base-tier surgery is worth it. Profile
+a release/`--profile profiling` startup first (see PERFORMANCE.md's note that document-worthy numbers
+come from the bench CI, not local runs).
+
 Note that laziness subsumes the macOS problem: `sw_vers` only runs if the program actually reads
 `$*DISTRO`. Replacing it with a `SystemVersion.plist` read is the alternative, but it cannot be
 verified from this workspace (no macOS host), and the current shell-out is at least known-correct.
