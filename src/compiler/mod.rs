@@ -626,6 +626,25 @@ impl Compiler {
             .collect()
     }
 
+    /// Whether a `my &name` (or `&name := …`) binding is declared in a lexical
+    /// scope that is still ACTIVE at this point of the compilation.
+    ///
+    /// Raku's rule is that such a binding shadows any package/registry routine
+    /// of the same name, so a bare-name call must reach the binding. Asking
+    /// `local_map` instead would be wrong: it is monotonic, so it keeps names
+    /// left behind by already-popped SIBLING blocks and would capture a call
+    /// that is no longer in the binding's scope.
+    pub(crate) fn amp_binding_in_active_scope(&self, name: &str) -> bool {
+        if name.contains("::") {
+            return false;
+        }
+        let key = format!("&{name}");
+        self.enclosing_scopes
+            .iter()
+            .chain(self.local_scopes.iter())
+            .any(|frame| frame.contains_key(&key))
+    }
+
     /// Hand a nested body's compiler the chain it is being compiled inside, so a
     /// symbolic deref in that body still sees the enclosing scopes.
     /// Seed the enclosing-sigilless set from an interpret-path caller (the multi

@@ -1040,6 +1040,18 @@ impl Interpreter {
         };
         // resolve_code_var handles pseudo-package stripping internally
         let mut target = loan_env!(self, resolve_code_var(&name));
+        // A `&`-sigil binding may live only in this frame's LOCAL SLOT, never in
+        // env — that is how a `&`-sigil named parameter binds (`sub f(:&cb)`,
+        // see `news/2026-08/named-callable-parameter-binds.md`). `&cb()` in such
+        // a body therefore answered "Unknown function: cb" while `&cb.defined`
+        // worked, because only the env was consulted.
+        if target.is_nil()
+            && let Some(slot) = self.find_local_slot(code, &format!("&{name}"))
+            && let Some(val) = self.locals.get(slot)
+            && !val.is_nil()
+        {
+            target = val.clone();
+        }
         // Fallback for fast-path method dispatch (skip_env_setup=true):
         // &!attr is not set in env, so read directly from self's instance
         // attributes when available.
