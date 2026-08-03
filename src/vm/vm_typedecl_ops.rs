@@ -4,16 +4,46 @@ use crate::ast::Expr;
 use crate::symbol::Symbol;
 
 impl Interpreter {
-    /// Whether a stmt-pool entry is a `__hoisted` declaration-only shell
-    /// emitted by `hoist_type_decl_shells` (compiler). Shell registration
-    /// errors are swallowed at the dispatch site — the in-place declaration
-    /// reports any real error.
-    pub(super) fn stmt_is_hoisted_type_shell(stmt: &Stmt) -> bool {
-        match stmt {
-            Stmt::ClassDecl { custom_traits, .. } | Stmt::RoleDecl { custom_traits, .. } => {
-                custom_traits.iter().any(|(t, _)| t == "__hoisted")
+    pub(super) fn exec_register_decl_op(
+        &mut self,
+        code: &CompiledCode,
+        idx: u32,
+    ) -> Result<(), RuntimeError> {
+        match code.decl_plans.get(idx as usize).copied() {
+            Some(crate::opcode::CompiledDeclPlanRef::Sub(plan_idx)) => {
+                self.exec_register_sub_op(code, plan_idx)
             }
-            _ => false,
+            Some(crate::opcode::CompiledDeclPlanRef::Class(plan_idx)) => {
+                self.note_type_body_written_lexicals(code);
+                match self.exec_register_class_op(code, plan_idx) {
+                    Ok(()) => Ok(()),
+                    Err(_)
+                        if code.class_decl_plans[plan_idx as usize]
+                            .custom_traits
+                            .iter()
+                            .any(|(name, _)| name == "__hoisted") =>
+                    {
+                        Ok(())
+                    }
+                    Err(error) => Err(error),
+                }
+            }
+            Some(crate::opcode::CompiledDeclPlanRef::Role(plan_idx)) => {
+                self.note_type_body_written_lexicals(code);
+                match self.exec_register_role_op(code, plan_idx) {
+                    Ok(()) => Ok(()),
+                    Err(_)
+                        if code.role_decl_plans[plan_idx as usize]
+                            .custom_traits
+                            .iter()
+                            .any(|(name, _)| name == "__hoisted") =>
+                    {
+                        Ok(())
+                    }
+                    Err(error) => Err(error),
+                }
+            }
+            None => Err(RuntimeError::new("RegisterDecl plan index out of bounds")),
         }
     }
 
@@ -84,8 +114,7 @@ impl Interpreter {
         self.func_multi_resolve_cache.clear();
         self.func_multi_type_cacheable.clear();
         self.dispatch_multi_candidate.clear();
-        let stmt = &code.stmt_pool[idx as usize];
-        if let Stmt::ClassDecl {
+        if let Some(crate::opcode::CompiledClassDeclPlan {
             name,
             name_expr,
             parents,
@@ -95,12 +124,11 @@ impl Interpreter {
             hidden_parents,
             does_parents,
             repr,
-            body,
+            legacy_body: body,
             language_version,
             custom_traits,
             decl_id,
-            ..
-        } = stmt
+        }) = code.class_decl_plans.get(idx as usize)
         {
             let resolved_name = if let Some(expr) = name_expr {
                 self.vm_eval_block_value(&[Stmt::Expr(expr.clone())])?
@@ -511,18 +539,17 @@ impl Interpreter {
         code: &CompiledCode,
         idx: u32,
     ) -> Result<(), RuntimeError> {
-        let stmt = &code.stmt_pool[idx as usize];
-        if let Stmt::RoleDecl {
+        if let Some(crate::opcode::CompiledRoleDeclPlan {
             name,
             type_params,
             type_param_defs,
             is_export,
             export_tags,
-            body,
+            legacy_body: body,
             is_rw,
             language_version,
             custom_traits,
-        } = stmt
+        }) = code.role_decl_plans.get(idx as usize)
         {
             let name_str = name.resolve();
             let current_package = self.current_package().to_string();

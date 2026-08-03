@@ -391,11 +391,13 @@ impl Interpreter {
         };
         // Raku semantics: `sub foo(...) { ... }` as the last statement
         // of a block returns the Sub. If the return value is Nil/Any and
-        // the last opcode was RegisterSub, create the Sub value.
+        // the last opcode was RegisterDecl(Sub), create the Sub value.
         if result.is_ok()
             && (ret_val.is_nil()
                 || matches!(ret_val.view(), ValueView::Package(n) if n.resolve() == "Any"))
-            && let Some(crate::opcode::OpCode::RegisterSub(idx)) = cf.code.ops.last()
+            && let Some(crate::opcode::OpCode::RegisterDecl(idx)) = cf.code.ops.last()
+            && let Some(crate::opcode::CompiledDeclPlanRef::Sub(plan_idx)) =
+                cf.code.decl_plans.get(*idx as usize)
             && let Some(crate::opcode::CompiledSubDeclPlan {
                 name: sub_name,
                 params,
@@ -403,7 +405,7 @@ impl Interpreter {
                 legacy_body: body,
                 is_rw,
                 ..
-            }) = cf.code.sub_decl_plans.get(*idx as usize)
+            }) = cf.code.sub_decl_plans.get(*plan_idx as usize)
         {
             ret_val = Value::make_sub(
                 Symbol::intern(&self.current_package()),

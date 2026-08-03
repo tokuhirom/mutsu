@@ -341,7 +341,7 @@ impl Compiler {
                 });
             }
             let idx = self.code.add_sub_decl_plan(&hoisted);
-            self.code.emit(OpCode::RegisterSub(idx));
+            self.code.emit(OpCode::RegisterDecl(idx));
         }
     }
 
@@ -370,10 +370,10 @@ impl Compiler {
         Some(self.code.add_constant(Value::str(qualified)))
     }
 
-    /// Hoist sub declarations: emit RegisterSub for all SubDecl statements
+    /// Hoist sub declarations: emit RegisterDecl(Sub) for all SubDecl statements
     /// before executing the rest of the block, so that `&name` references
     /// are available before the sub declaration appears in source order.
-    /// Note: we only emit RegisterSub here, not compile_sub_body, because
+    /// Note: we only emit RegisterDecl here, not compile_sub_body, because
     /// the normal SubDecl handling will compile the body. Compiling here
     /// would cause the compiled_functions map (which is flat) to be overwritten
     /// by later hoists from other scopes.
@@ -425,7 +425,7 @@ impl Compiler {
                     });
                 }
                 let idx = self.code.add_sub_decl_plan(&hoisted);
-                self.code.emit(OpCode::RegisterSub(idx));
+                self.code.emit(OpCode::RegisterDecl(idx));
             }
         }
     }
@@ -622,8 +622,8 @@ impl Compiler {
                         });
                         custom_traits.push(("__hoisted".to_string(), None));
                     }
-                    let idx = self.code.add_stmt(shell);
-                    self.code.emit(OpCode::RegisterClass(idx));
+                    let idx = self.code.add_class_decl_plan(&shell);
+                    self.code.emit(OpCode::RegisterDecl(idx));
                 }
                 Stmt::RoleDecl { .. } => {
                     let mut shell = self.qualify_decl_name(stmt);
@@ -633,8 +633,8 @@ impl Compiler {
                         });
                         custom_traits.push(("__hoisted".to_string(), None));
                     }
-                    let idx = self.code.add_stmt(shell);
-                    self.code.emit(OpCode::RegisterRole(idx));
+                    let idx = self.code.add_role_decl_plan(&shell);
+                    self.code.emit(OpCode::RegisterDecl(idx));
                 }
                 _ => {}
             }

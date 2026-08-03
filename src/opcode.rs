@@ -1507,14 +1507,12 @@ pub(crate) enum OpCode {
     /// When `false`, the op is at top level with no lexical routine and
     /// throws `X::ControlFlow::Return` directly.
     ReturnFromNonRoutine(bool),
-    RegisterSub(u32),
+    RegisterDecl(u32),
     RegisterToken(u32),
     RegisterProtoSub(u32),
     RegisterProtoToken(u32),
     RegisterEnum(u32),
-    RegisterClass(u32),
     AugmentClass(u32),
-    RegisterRole(u32),
     RegisterSubset(u32),
     SubtestScope {
         body_end: u32,
@@ -1868,6 +1866,46 @@ pub(crate) struct CompiledSubDeclPlan {
 }
 
 #[derive(Debug, Clone)]
+pub(crate) struct CompiledClassDeclPlan {
+    pub(crate) name: Symbol,
+    pub(crate) name_expr: Option<Expr>,
+    pub(crate) parents: Vec<String>,
+    pub(crate) class_is_rw: bool,
+    pub(crate) is_hidden: bool,
+    pub(crate) is_lexical: bool,
+    pub(crate) hidden_parents: Vec<String>,
+    pub(crate) does_parents: Vec<String>,
+    pub(crate) repr: Option<String>,
+    /// Compatibility payload for the class/role registry walker. Declaration-time expressions
+    /// move to compiled child chunks in the next ADR-0019 stage.
+    pub(crate) legacy_body: Vec<Stmt>,
+    pub(crate) language_version: String,
+    pub(crate) custom_traits: Vec<(String, Option<Expr>)>,
+    pub(crate) decl_id: u64,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct CompiledRoleDeclPlan {
+    pub(crate) name: Symbol,
+    pub(crate) type_params: Vec<String>,
+    pub(crate) type_param_defs: Vec<ParamDef>,
+    pub(crate) is_export: bool,
+    pub(crate) export_tags: Vec<String>,
+    /// Compatibility payload for the role-composition registry walker.
+    pub(crate) legacy_body: Vec<Stmt>,
+    pub(crate) is_rw: bool,
+    pub(crate) language_version: String,
+    pub(crate) custom_traits: Vec<(String, Option<Expr>)>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CompiledDeclPlanRef {
+    Sub(u32),
+    Class(u32),
+    Role(u32),
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct CompiledCode {
     pub(crate) ops: Vec<OpCode>,
     /// Static ip -> source line table, parallel to `ops` (0 = unknown). Replaces
@@ -1887,9 +1925,14 @@ pub(crate) struct CompiledCode {
     /// chunk stops growing, so it costs no memory in the executed code.
     const_index: rustc_hash::FxHashMap<ConstKey, u32>,
     pub(crate) stmt_pool: Vec<Stmt>,
-    /// Typed declaration plans consumed by `RegisterSub`. Unlike `stmt_pool`, every entry is
+    /// Typed declaration plans consumed through `RegisterDecl`. Unlike `stmt_pool`, every entry is
     /// known to be a sub declaration, so the VM does not inspect or execute a source statement.
     pub(crate) sub_decl_plans: Vec<CompiledSubDeclPlan>,
+    pub(crate) class_decl_plans: Vec<CompiledClassDeclPlan>,
+    pub(crate) role_decl_plans: Vec<CompiledRoleDeclPlan>,
+    /// The single declaration-registration operand pool. `RegisterDecl(i)` selects one tagged
+    /// typed plan here; declaration-specific metadata stays out of the hot opcode enum.
+    pub(crate) decl_plans: Vec<CompiledDeclPlanRef>,
     pub(crate) locals: Vec<String>,
     /// Pre-interned Symbol for each local name. Avoids Symbol::intern()
     /// on every env sync in hot paths.
@@ -2495,6 +2538,9 @@ impl CompiledCode {
             const_index: rustc_hash::FxHashMap::default(),
             stmt_pool: Vec::new(),
             sub_decl_plans: Vec::new(),
+            class_decl_plans: Vec::new(),
+            role_decl_plans: Vec::new(),
+            decl_plans: Vec::new(),
             locals: Vec::new(),
             locals_sym: Vec::new(),
             locals_alias_sym: Vec::new(),
@@ -3080,9 +3126,7 @@ impl CompiledCode {
             let defines_lazy_body = self.ops.iter().any(|op| {
                 matches!(
                     op,
-                    OpCode::RegisterSub(_)
-                        | OpCode::RegisterClass(_)
-                        | OpCode::RegisterRole(_)
+                    OpCode::RegisterDecl(_)
                         // A deferred END body (`PhaserEnd`, run after the frame
                         // exits) and a compile-time BEGIN/CHECK body (`CheckPhaser`)
                         // reconstruct the installing frame's lexicals BY NAME from
@@ -4328,9 +4372,7 @@ impl CompiledCode {
                     | OpCode::HyperMethodCallDynamic { .. }
                     | OpCode::BlockScope { .. }
                     | OpCode::BlockLocalScope { .. }
-                    | OpCode::RegisterSub(_)
-                    | OpCode::RegisterClass(_)
-                    | OpCode::RegisterRole(_)
+                    | OpCode::RegisterDecl(_)
                     | OpCode::RegisterEnum(_)
                     | OpCode::RegisterPackage { .. }
                     | OpCode::RegisterPackageMy { .. }
@@ -4708,7 +4750,7 @@ impl CompiledCode {
                 *is_raw,
             )
         });
-        let idx = self.sub_decl_plans.len() as u32;
+        let plan_idx = self.sub_decl_plans.len() as u32;
         self.sub_decl_plans.push(CompiledSubDeclPlan {
             name: *name,
             name_expr: name_expr.clone(),
@@ -4728,6 +4770,81 @@ impl CompiledCode {
             custom_traits: custom_traits.clone(),
             fingerprint,
         });
+        let idx = self.decl_plans.len() as u32;
+        self.decl_plans.push(CompiledDeclPlanRef::Sub(plan_idx));
+        idx
+    }
+
+    pub(crate) fn add_class_decl_plan(&mut self, stmt: &Stmt) -> u32 {
+        let Stmt::ClassDecl {
+            name,
+            name_expr,
+            parents,
+            class_is_rw,
+            is_hidden,
+            is_lexical,
+            hidden_parents,
+            does_parents,
+            repr,
+            body,
+            language_version,
+            custom_traits,
+            decl_id,
+            ..
+        } = stmt
+        else {
+            panic!("add_class_decl_plan expects ClassDecl");
+        };
+        let plan_idx = self.class_decl_plans.len() as u32;
+        self.class_decl_plans.push(CompiledClassDeclPlan {
+            name: *name,
+            name_expr: name_expr.clone(),
+            parents: parents.clone(),
+            class_is_rw: *class_is_rw,
+            is_hidden: *is_hidden,
+            is_lexical: *is_lexical,
+            hidden_parents: hidden_parents.clone(),
+            does_parents: does_parents.clone(),
+            repr: repr.clone(),
+            legacy_body: body.clone(),
+            language_version: language_version.clone(),
+            custom_traits: custom_traits.clone(),
+            decl_id: *decl_id,
+        });
+        let idx = self.decl_plans.len() as u32;
+        self.decl_plans.push(CompiledDeclPlanRef::Class(plan_idx));
+        idx
+    }
+
+    pub(crate) fn add_role_decl_plan(&mut self, stmt: &Stmt) -> u32 {
+        let Stmt::RoleDecl {
+            name,
+            type_params,
+            type_param_defs,
+            is_export,
+            export_tags,
+            body,
+            is_rw,
+            language_version,
+            custom_traits,
+        } = stmt
+        else {
+            panic!("add_role_decl_plan expects RoleDecl");
+        };
+        let plan_idx = self.role_decl_plans.len() as u32;
+        self.role_decl_plans.push(CompiledRoleDeclPlan {
+            name: *name,
+            type_params: type_params.clone(),
+            type_param_defs: type_param_defs.clone(),
+            is_export: *is_export,
+            export_tags: export_tags.clone(),
+            legacy_body: body.clone(),
+            is_rw: *is_rw,
+            language_version: language_version.clone(),
+            custom_traits: custom_traits.clone(),
+        });
+        let idx = self.decl_plans.len() as u32;
+        self.decl_plans.push(CompiledDeclPlanRef::Role(plan_idx));
         idx
     }
 }
@@ -4850,7 +4967,7 @@ pub(crate) struct CompiledFunction {
     /// nested functions can capture them via closure.
     pub(crate) has_inner_subs: bool,
     /// True if the function body *directly* declares a lexical routine via a
-    /// top-level `RegisterSub` / `RegisterSubset` opcode (`my sub`, a bare
+    /// top-level `RegisterDecl(Sub)` / `RegisterSubset` opcode (`my sub`, a bare
     /// nested `sub`/`regex`/`token`/`rule`, or a `subset`). Such a routine is
     /// lexically scoped to this body and — unless it escapes by being returned —
     /// must be removed from the (program-global) routine registry when the call
@@ -5046,10 +5163,8 @@ impl CompiledFunction {
             || self.code.ops.iter().any(|op| {
                 matches!(
                     op,
-                    OpCode::RegisterSub(..)
+                    OpCode::RegisterDecl(..)
                         | OpCode::RegisterSubset(..)
-                        | OpCode::RegisterClass(..)
-                        | OpCode::RegisterRole(..)
                         // CallOnValue/CallOnCodeVar may invoke closures that do `return`
                         // targeting an outer routine, requiring the routine stack.
                         | OpCode::CallOnValue { .. }
@@ -5061,11 +5176,14 @@ impl CompiledFunction {
         // A routine declared directly in this body (not inside a nested
         // BlockScope, which restores the registry itself) is lexical to the
         // body and must be unregistered on return unless it escapes.
-        self.declares_inner_routines = self
-            .code
-            .ops
-            .iter()
-            .any(|op| matches!(op, OpCode::RegisterSub(..) | OpCode::RegisterSubset(..)));
+        self.declares_inner_routines = self.code.ops.iter().any(|op| match op {
+            OpCode::RegisterDecl(idx) => matches!(
+                self.code.decl_plans.get(*idx as usize),
+                Some(CompiledDeclPlanRef::Sub(_))
+            ),
+            OpCode::RegisterSubset(..) => true,
+            _ => false,
+        });
     }
 
     /// Compute the set of variable names declared locally in this function

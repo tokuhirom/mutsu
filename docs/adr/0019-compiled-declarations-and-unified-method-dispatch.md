@@ -145,6 +145,17 @@ the plan, and the VM no longer pattern-matches `Stmt::SubDecl`. The plan still c
 `legacy_body` for the existing routine-registry adapter. Replacing that field with the compiled
 routine reference is the next declaration slice.
 
+`RegisterClass` and `RegisterRole` now likewise index typed class/role declaration-plan pools for
+both source-order declarations and hoisted forward-reference shells. The VM no longer discovers
+these declaration kinds by inspecting the generic statement pool. Their `legacy_body` adapters
+remain until structural registration and declaration-time expressions become plan operations and
+compiled child chunks.
+
+The three declaration entry opcodes have been consolidated into `RegisterDecl`, whose compact
+operand selects a tagged `CompiledDeclPlanRef`. Sub/class/role plans retain their typed cold-data
+pools, while VM opcode dispatch and declaration-sensitive compiler analysis now share one bytecode
+entry.
+
 The dispatch layer now has a canonical `BuiltinMethodEntry` keyed by owner type and method name,
 including native arity bits. Built-in introspection derives its name list from those entries. The
 catalog is still populated through the transitional native probes and slow-path declarations;

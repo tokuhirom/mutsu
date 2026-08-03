@@ -4344,9 +4344,9 @@ impl Interpreter {
                 self.exec_make_block_closure_op(code, *idx, *cc_idx)?;
                 *ip += 1;
             }
-            OpCode::RegisterSub(idx) => {
+            OpCode::RegisterDecl(idx) => {
                 self.sync_source_line(code, *ip);
-                self.exec_register_sub_op(code, *idx)?;
+                self.exec_register_decl_op(code, *idx)?;
                 *ip += 1;
             }
             OpCode::RegisterToken(idx) => {
@@ -4405,34 +4405,9 @@ impl Interpreter {
                 self.exec_register_enum_op(code, *idx)?;
                 *ip += 1;
             }
-            OpCode::RegisterClass(idx) => {
-                self.sync_source_line(code, *ip);
-                self.note_type_body_written_lexicals(code);
-                if let Err(e) = self.exec_register_class_op(code, *idx) {
-                    // A `__hoisted` shell pre-registration (see
-                    // `hoist_type_decl_shells`) is best-effort: on failure the
-                    // in-place declaration still registers the class and
-                    // reports any real error.
-                    if !Self::stmt_is_hoisted_type_shell(&code.stmt_pool[*idx as usize]) {
-                        return Err(e);
-                    }
-                }
-                *ip += 1;
-            }
             OpCode::AugmentClass(idx) => {
                 self.sync_source_line(code, *ip);
                 self.exec_augment_class_op(code, *idx)?;
-                *ip += 1;
-            }
-            OpCode::RegisterRole(idx) => {
-                self.sync_source_line(code, *ip);
-                self.note_type_body_written_lexicals(code);
-                if let Err(e) = self.exec_register_role_op(code, *idx) {
-                    // Best-effort shell pre-registration; see RegisterClass.
-                    if !Self::stmt_is_hoisted_type_shell(&code.stmt_pool[*idx as usize]) {
-                        return Err(e);
-                    }
-                }
                 *ip += 1;
             }
             OpCode::RegisterSubset(idx) => {
