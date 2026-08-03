@@ -442,26 +442,18 @@ pub(crate) fn unless_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, cond) = condition_expr(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
-    // unless cannot have else/elsif/orwith — check but consume the trailing clause
+    // `unless` cannot have else/elsif/orwith. rakudo rejects this at COMPILE
+    // time with `X::Syntax::UnlessElse`, carrying the offending `keyword`
+    // (roast S04-statements/unless.t matches on it). mutsu used to lower it to
+    // a runtime `Stmt::Die` whose message merely *spelled* the class, which
+    // arrived as a plain `X::AdHoc` — and let the rest of the file compile.
+    // The `without` twin already goes through `RuntimeError::without_else`.
     let (check, _) = ws(rest)?;
     for kw in &["else", "elsif", "orwith"] {
-        if let Some(r) = keyword(kw, check) {
-            // Consume the rest of the invalid clause to produce a hard error
-            let (r, _) = ws(r)?;
-            // Skip condition (if any) and block
-            let r = if kw != &"else" {
-                if let Ok((r, _)) = expression(r) { r } else { r }
-            } else {
-                r
-            };
-            let (r, _) = ws(r)?;
-            let r = if let Ok((r, _)) = block(r) { r } else { r };
-            return Ok((
-                r,
-                Stmt::Die(Expr::Literal(crate::value::Value::str(format!(
-                    "X::Syntax::UnlessElse: unless does not allow '{kw}'"
-                )))),
-            ));
+        if keyword(kw, check).is_some() {
+            return Err(PError::from_typed(crate::value::RuntimeError::unless_else(
+                kw,
+            )));
         }
     }
     Ok((

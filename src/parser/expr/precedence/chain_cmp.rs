@@ -214,6 +214,33 @@ pub(in crate::parser::expr) fn parse_negated_meta_comparison_op(
     Some((op, len + 1))
 }
 
+/// The range operator spelling at the start of `r`, if any. Longest match
+/// first, and `...` (the sequence operator) is deliberately not one of these.
+fn peek_range_op(r: &str) -> Option<&'static str> {
+    for op in ["^..^", "^..", "..^"] {
+        if r.starts_with(op) && !(op == "^.." && r.starts_with("^...")) {
+            return Some(op);
+        }
+    }
+    if r.starts_with("..") && !r.starts_with("...") {
+        return Some("..");
+    }
+    None
+}
+
+/// The range operators are non-associative, so `1..2..3` is a compile error in
+/// rakudo (`X::Syntax::NonAssociative`, carrying both spellings) rather than
+/// something to parse. `range_expr` builds one range and returns, so the
+/// trailing `..3` used to be left unconsumed and the statement failed with the
+/// parser's generic "Confused" — a diagnosis that named neither operator.
+fn reject_chained_range(after_rhs: &str, left_op: &'static str) -> Result<(), PError> {
+    let (r, _) = ws(after_rhs)?;
+    match peek_range_op(r) {
+        Some(right_op) => Err(non_associative_pair_error(left_op, right_op)),
+        None => Ok(()),
+    }
+}
+
 /// Range: ..  ..^  ^..  ^..^
 pub(crate) fn range_expr(input: &str) -> PResult<'_, Expr> {
     let (rest, left) = structural_expr(input)?;
@@ -225,6 +252,7 @@ pub(crate) fn range_expr(input: &str) -> PResult<'_, Expr> {
         let (r, right) = structural_expr(r).map_err(|err| {
             enrich_expected_error(err, "expected range RHS after '^..^'", r.len())
         })?;
+        reject_chained_range(r, "^..^")?;
         return Ok((
             r,
             Expr::Binary {
@@ -240,6 +268,7 @@ pub(crate) fn range_expr(input: &str) -> PResult<'_, Expr> {
         let (r, _) = ws(stripped)?;
         let (r, right) = structural_expr(r)
             .map_err(|err| enrich_expected_error(err, "expected range RHS after '^..'", r.len()))?;
+        reject_chained_range(r, "^..")?;
         return Ok((
             r,
             Expr::Binary {
@@ -254,6 +283,7 @@ pub(crate) fn range_expr(input: &str) -> PResult<'_, Expr> {
         let (r, _) = ws(stripped)?;
         let (r, right) = structural_expr(r)
             .map_err(|err| enrich_expected_error(err, "expected range RHS after '..^'", r.len()))?;
+        reject_chained_range(r, "..^")?;
         return Ok((
             r,
             Expr::Binary {
@@ -269,6 +299,7 @@ pub(crate) fn range_expr(input: &str) -> PResult<'_, Expr> {
         let (r, _) = ws(r)?;
         let (r, right) = structural_expr(r)
             .map_err(|err| enrich_expected_error(err, "expected range RHS after '..'", r.len()))?;
+        reject_chained_range(r, "..")?;
         return Ok((
             r,
             Expr::Binary {
