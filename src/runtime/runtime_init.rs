@@ -2317,7 +2317,6 @@ impl Interpreter {
             method_cache_generation: 0,
             last_method_resolve: None,
             fast_method_cache: rustc_hash::FxHashMap::default(),
-            native_method_handler_cache: rustc_hash::FxHashMap::default(),
             native_ctor_plan_cache: rustc_hash::FxHashMap::default(),
             multi_resolve_cache: rustc_hash::FxHashMap::default(),
             multi_type_cacheable: rustc_hash::FxHashMap::default(),

@@ -297,24 +297,6 @@ impl Registry {
         entries.into_iter().map(|entry| entry.name).collect()
     }
 
-    pub(crate) fn builtin_method_handler(
-        &self,
-        type_name: &str,
-        method_name: Symbol,
-    ) -> Option<crate::builtins::builtin_type_methods::NativeMethodHandlerId> {
-        let owner = crate::builtins::builtin_type_methods::canonical_builtin_owner(type_name);
-        if owner.is_empty() {
-            return None;
-        }
-        self.method_entries
-            .get(&MethodEntryKey {
-                owner: Symbol::intern(owner),
-                name: method_name,
-            })
-            .and_then(|entry| entry.builtin)
-            .map(|entry| entry.handler)
-    }
-
     pub(crate) fn sync_user_method_entries(&mut self, class_name: &str) {
         let owner = Symbol::intern(class_name);
         self.method_entries.retain(|key, entry| {
@@ -812,14 +794,6 @@ mod tests {
                 ..
             })
         ));
-        assert_eq!(
-            registry.builtin_method_handler("Str", Symbol::intern("chars")),
-            Some(crate::builtins::builtin_type_methods::NativeMethodHandlerId::PureArity)
-        );
-        assert_eq!(
-            registry.builtin_method_handler("Str", Symbol::intern("definitely-absent")),
-            None
-        );
     }
 
     #[test]

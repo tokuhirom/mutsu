@@ -366,25 +366,14 @@ impl Interpreter {
         {
             return Some(result);
         }
-        let type_name = crate::runtime::utils::value_type_name(target);
-        let type_sym = crate::symbol::Symbol::intern(type_name);
-        let cache_key = (type_sym, method_sym);
-        let handler = if let Some(handler) = self.native_method_handler_cache.get(&cache_key) {
-            *handler
+        let mut result = if args.len() == 2 {
+            crate::builtins::native_method_2arg(target, method_sym, &args[0], &args[1])
+        } else if args.len() == 1 {
+            crate::builtins::native_method_1arg(target, method_sym, &args[0])
+        } else if args.is_empty() {
+            crate::builtins::native_method_0arg(target, method_sym)
         } else {
-            let handler = self
-                .registry()
-                .builtin_method_handler(type_name, method_sym);
-            self.native_method_handler_cache.insert(cache_key, handler);
-            handler
-        }?;
-        let mut result = match handler {
-            crate::builtins::builtin_type_methods::NativeMethodHandlerId::PureArity => match args {
-                [a, b] => crate::builtins::native_method_2arg(target, method_sym, a, b),
-                [a] => crate::builtins::native_method_1arg(target, method_sym, a),
-                [] => crate::builtins::native_method_0arg(target, method_sym),
-                _ => return None,
-            },
+            return None;
         };
 
         // For gather-based LazyList, .List and .values preserve laziness

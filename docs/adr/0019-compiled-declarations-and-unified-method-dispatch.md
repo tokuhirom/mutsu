@@ -160,10 +160,8 @@ The dispatch layer now has a canonical `BuiltinMethodEntry` keyed by owner type 
 Built-in introspection derives its name list from those entries. The
 runtime `Registry` owns those entries in a `(owner, method)` map, seeds them from static data at
 construction without invoking native handlers, and serves built-in introspection from that map.
-Each built-in entry now carries a static `NativeMethodHandlerId`, and the VM pure-native dispatch
-entry admits modeled built-in calls through the registry row before invoking the arity-specific
-implementation behind that ID. Remaining compatibility call paths still invoke the arity helpers
-directly and must be routed through the shared entry.
+Replacing the transitional arity-specific dispatch functions with static native handler IDs and
+routing dispatch reads through the shared entry remain open.
 
 `MethodEntry` now carries both an optional built-in descriptor and ordered user candidates, so a
 user override and its built-in fallback share one `(owner, method)` row. Class declaration,
