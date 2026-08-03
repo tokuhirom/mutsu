@@ -337,7 +337,15 @@ impl Interpreter {
                 } else if expected_normalized == "X::Syntax::Confused" {
                     err.message.contains("Confused") || err.message.contains("parse error")
                 } else if expected_normalized.starts_with("X::Syntax") {
-                    err.message.contains(expected_normalized) || err.message.contains("parse error")
+                    err.message.contains(expected_normalized)
+                        || err.message.contains("parse error")
+                        // A parse failure with no structured exception matches any
+                        // `X::Syntax` type here, and "parse error" in the message
+                        // text is a fragile way to recognise one: a failure the
+                        // parser diagnosed precisely says only what is wrong
+                        // ("Missing block"). Read the structured code instead, the
+                        // way the `X::Comp` branch below already does.
+                        || err.code().is_some_and(|c| c.is_parse())
                 } else if expected_normalized == "X::Comp"
                     || expected_normalized == "X::Comp::Group"
                 {
