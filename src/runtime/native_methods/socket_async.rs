@@ -217,22 +217,6 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn async_supplier_quit_value(&mut self, supplier_id: u64, reason: Value) {
-        supplier_quit(supplier_id, reason.clone());
-        for (tap, emitted) in flush_supplier_line_taps(supplier_id) {
-            let _ = self.call_sub_value(tap, vec![emitted], true);
-        }
-        for (tap, emitted) in flush_supplier_words_taps(supplier_id) {
-            let _ = self.call_sub_value(tap, vec![emitted], true);
-        }
-        for quit_cb in take_supplier_quit_callbacks(supplier_id) {
-            let _ = self.call_sub_value(quit_cb, vec![reason.clone()], true);
-        }
-        for done_cb in take_supplier_done_callbacks(supplier_id) {
-            let _ = self.invoke_done_callback(done_cb);
-        }
-    }
-
     pub(in crate::runtime) fn native_socket_async_listener(
         &mut self,
         attributes: &AttrMap,
@@ -338,9 +322,7 @@ impl Interpreter {
                     AsyncSocketListenerState {
                         host: host.clone(),
                         port: actual_port,
-                        callback: callback.clone(),
                         closed: false,
-                        encoding: enc.clone(),
                     },
                 );
 
@@ -555,19 +537,14 @@ impl Interpreter {
             "Supply" => {
                 let id =
                     udp_id.ok_or_else(|| RuntimeError::new("Missing UDP socket id for Supply"))?;
-                // Stamped as `supplier_id` below, so allocate from the supplier
-                // counter (see async_socket_supply_in_memory for the collision
-                // this avoids).
+                // Stamped as `supplier_id` below, so it must come from the
+                // SUPPLIER counter: every downstream registration
+                // (register_supplier_tap / supplier_done / emit) keys the
+                // supplier registry with it, and `next_supply_id()` is a
+                // separate counter that also starts at 1 -- drawing from it
+                // cross-delivered a same-numbered `Supplier.new`'s emissions
+                // to this socket's tap.
                 let supply_id = next_supplier_id();
-                register_async_supply(
-                    supply_id,
-                    AsyncSocketSupplyState {
-                        is_bin: false,
-                        encoding: "utf-8".to_string(),
-                        text_buffer: String::new(),
-                        byte_buffer: Vec::new(),
-                    },
-                );
                 update_udp_bound_socket(id, |s| s.supply_ids.push(supply_id));
 
                 let mut attrs = HashMap::new();

@@ -188,15 +188,6 @@ impl Interpreter {
         Ok(Value::seq_arc(std::sync::Arc::new(items[..count].to_vec())))
     }
 
-    pub(in crate::runtime) fn callback_uses_supply_list(callback: &Value) -> bool {
-        if let ValueView::Sub(data) = callback.view() {
-            let dbg = format!("{:?}", data.body);
-            dbg.contains("\"Supply\"") && dbg.contains("\"list\"")
-        } else {
-            false
-        }
-    }
-
     pub(in crate::runtime) fn split_host_port_literal(input: &str) -> (String, Option<u16>) {
         let s = input.trim();
         if s.is_empty() {
