@@ -25,10 +25,18 @@ pub(crate) fn foreach_stmt(input: &str) -> PResult<'_, Stmt> {
 /// block gobbled by a comma list / list-op, e.g. the trailing `{ say 3 }` in
 /// `for 1, 2, 3, { say 3 }`. A brace block parses as `AnonSub`/`AnonSubParams`/
 /// `Block`; in a comma list it lands as the final element of an `ArrayLiteral`.
+///
+/// An *empty* or key-value-looking brace also parses as `Expr::Hash`, and an
+/// infix's right operand is another place the block gets eaten: `for 1.. { }`
+/// leaves `1 .. {}` with the loop's block as the range endpoint. rakudo answers
+/// all of these the same way — the "Expression needs parens to avoid gobbling
+/// block" sorrow — so they belong here, not in the plain `X::Syntax::Missing`
+/// branch (`for 1..2`, which really is just missing its block).
 fn expr_ends_with_block(expr: &Expr) -> bool {
     match expr {
-        Expr::AnonSub { .. } | Expr::AnonSubParams { .. } | Expr::Block(_) => true,
+        Expr::AnonSub { .. } | Expr::AnonSubParams { .. } | Expr::Block(_) | Expr::Hash(_) => true,
         Expr::ArrayLiteral(items) => items.last().is_some_and(expr_ends_with_block),
+        Expr::Binary { right, .. } => expr_ends_with_block(right),
         _ => false,
     }
 }

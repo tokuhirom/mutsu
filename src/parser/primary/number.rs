@@ -53,6 +53,61 @@ fn make_confused_error(reason: &str) -> PError {
     PError::fatal_with_exception(message, Box::new(exception))
 }
 
+/// `1__0`: a run of two or more underscores *between digits*. A single
+/// underscore between digits is a legal separator, so `scan_decimal_digits`
+/// simply stops before an invalid one and lets the statement parse fail with a
+/// generic "Confused" — which told the reader nothing. rakudo diagnoses this
+/// precisely ("Only isolated underscores are allowed inside numbers") as a
+/// *sorrow* and then panics on the leftover, so what it throws is an
+/// `X::Comp::Group` (roast/S02-literals/underscores.t).
+///
+/// Deliberately narrow: the run must be digit-delimited on both sides. A
+/// trailing `10_` or a leading `_10` is a different (and differently-typed)
+/// error in rakudo — `X::Syntax::Confused` and `X::Undeclared::Symbols` — and
+/// both are already right, so this must not claim them.
+fn check_multi_underscore(input: &str) -> Result<(), PError> {
+    let bytes = input.as_bytes();
+    let mut i = 0;
+    let mut saw_digit = false;
+    while i < bytes.len() {
+        let c = bytes[i];
+        if c.is_ascii_digit() {
+            saw_digit = true;
+            i += 1;
+            continue;
+        }
+        if c != b'_' {
+            break;
+        }
+        let run_start = i;
+        while i < bytes.len() && bytes[i] == b'_' {
+            i += 1;
+        }
+        let run_len = i - run_start;
+        let followed_by_digit = bytes.get(i).is_some_and(u8::is_ascii_digit);
+        if run_len >= 2 && saw_digit && followed_by_digit {
+            const COMPLAINT: &str = "Only isolated underscores are allowed inside numbers";
+            let sorrow = Value::make_exception(
+                "X::Comp::AdHoc",
+                &[
+                    ("message", Value::str(COMPLAINT.to_string())),
+                    ("payload", Value::str(COMPLAINT.to_string())),
+                ],
+            );
+            return Err(PError::comp_group(
+                sorrow,
+                false,
+                "Confused",
+                COMPLAINT.to_string(),
+            ));
+        }
+        if !followed_by_digit {
+            break;
+        }
+    }
+    Ok(())
+}
+
 fn hex_alpha_value(c: char) -> Option<u32> {
     match c {
         'a'..='f' => Some(10 + (c as u32 - 'a' as u32)),
@@ -249,6 +304,7 @@ pub(super) fn parse_int_radix(clean: &str, radix: u32) -> Expr {
 
 /// Parse an integer literal (including underscore separators).
 pub(super) fn integer(input: &str) -> PResult<'_, Expr> {
+    check_multi_underscore(input)?;
     // Hex: 0x...
     if let Some(result) = parse_prefixed_radix(input, "0x", "0X", 16, |c| {
         decimal_digit_value(c).or_else(|| hex_alpha_value(c))
@@ -336,6 +392,7 @@ pub(super) fn integer(input: &str) -> PResult<'_, Expr> {
 /// Parse a decimal number literal.
 /// In Raku, decimal literals without exponent are Rat, with exponent are Num.
 pub(super) fn decimal(input: &str) -> PResult<'_, Expr> {
+    check_multi_underscore(input)?;
     let (rest, int_clean) = scan_decimal_digits(input).ok_or_else(|| PError::expected("digits"))?;
     let (rest, _) = parse_char(rest, '.')?;
     // The first character after the dot must be a digit, not an underscore.

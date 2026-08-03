@@ -89,6 +89,50 @@ impl PError {
         }
     }
 
+    /// Build the fatal `X::Comp::Group` rakudo throws when one construct draws
+    /// *two* complaints: a specific diagnosis plus the fatal one it leads to.
+    ///
+    /// rakudo's compiler accumulates worries, sorrows and at most one panic, and
+    /// only collapses to a single exception when it collected exactly one thing
+    /// (a lone panic, or a lone sorrow with no worries). Anything else is an
+    /// `X::Comp::Group` — which is why `throws-like 'say', X::Comp::Group` is the
+    /// right expectation for a bare `say`: the "Unsupported use of bare say"
+    /// advice is a worry and the parse then panics on the missing argument.
+    ///
+    /// Use this only where rakudo genuinely collects two complaints. A site
+    /// reproducing a lone rakudo panic (or a lone sorrow) must keep throwing
+    /// that exception directly: `my Int $a of Str` is
+    /// `X::Syntax::Variable::ConflictingTypes`, and only the double-`of` form,
+    /// which sorrows twice, is a group.
+    pub fn comp_group(
+        complaint: crate::value::Value,
+        is_worry: bool,
+        panic_message: &str,
+        message: String,
+    ) -> Self {
+        let panic = crate::value::Value::make_exception(
+            "X::Comp::AdHoc",
+            &[
+                (
+                    "message",
+                    crate::value::Value::str(panic_message.to_string()),
+                ),
+                (
+                    "payload",
+                    crate::value::Value::str(panic_message.to_string()),
+                ),
+            ],
+        );
+        let (sorrows, worries) = if is_worry {
+            (Vec::new(), vec![complaint])
+        } else {
+            (vec![complaint], Vec::new())
+        };
+        let group =
+            crate::value::Value::make_comp_group(message.clone(), Some(panic), sorrows, worries);
+        Self::fatal_with_exception(message, Box::new(group))
+    }
+
     /// Build the fatal `X::Obsolete` parse error for a Perl 5 construct.
     ///
     /// `old` names the construct and `replacement` the Raku spelling; rakudo

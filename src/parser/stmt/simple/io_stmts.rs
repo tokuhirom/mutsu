@@ -4,13 +4,30 @@ use super::*;
 fn check_bare_io_func<'a>(name: &str, rest: &'a str) -> PResult<'a, ()> {
     let trimmed = rest.trim_start();
     if trimmed.is_empty() || trimmed.starts_with(';') || trimmed.starts_with('}') {
-        return Err(PError::fatal(format!(
-            "X::Comp: Unsupported use of bare \"{}\". \
-             In Raku please use: .{} if you meant to call it as a method on $_, \
+        // rakudo collects TWO complaints here: a *worry* explaining the bare
+        // form, and then a panic because the argument list is missing. Two
+        // collected complaints is exactly the condition for `X::Comp::Group`,
+        // which is what roast/S16-io/bare-say.t asks for — a lone `X::Comp`
+        // would be right only if rakudo had stopped at the worry.
+        let advice = format!(
+            "Unsupported use of bare \"{name}\". \
+             In Raku please use: .{name} if you meant to call it as a method on $_, \
              or use an explicit invocant or argument, \
-             or use &{} to refer to the function as a noun.",
-            name, name, name
-        )));
+             or use &{name} to refer to the function as a noun."
+        );
+        let worry = Value::make_exception(
+            "X::Comp::AdHoc",
+            &[
+                ("message", Value::str(advice.clone())),
+                ("payload", Value::str(advice.clone())),
+            ],
+        );
+        return Err(PError::comp_group(
+            worry,
+            true,
+            &format!("Argument to \"{name}\" seems to be malformed"),
+            advice,
+        ));
     }
     Ok((rest, ()))
 }

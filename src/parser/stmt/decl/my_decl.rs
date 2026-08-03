@@ -635,45 +635,48 @@ fn parse_variable_traits<'a>(
         rest = r2;
     }
 
-    // Postfix container typing: my @a of Int; my %h of Int;
-    if let Some(after_of) = keyword("of", rest) {
-        let (r, _) = ws1(after_of)?;
-        let (r, tc) = parse_type_constraint_expr(r).ok_or_else(|| PError::expected("type"))?;
-        let (r, _) = ws(r)?;
-        // A postfix `of Type` that follows an explicit prefix type
-        // (`my Int $a of Str`) declares the type twice, which is
-        // X::Syntax::Variable::ConflictingTypes.
-        if let Some(outer) = type_constraint.as_ref() {
-            let mut attrs = std::collections::HashMap::new();
-            attrs.insert(
-                "outer".to_string(),
-                crate::value::Value::package(crate::symbol::Symbol::intern(outer)),
-            );
-            attrs.insert(
-                "inner".to_string(),
-                crate::value::Value::package(crate::symbol::Symbol::intern(&tc)),
-            );
-            let msg = format!(
-                "{} not allowed here; variable list already declared with type {}",
-                tc, outer
-            );
-            attrs.insert("message".to_string(), crate::value::Value::str(msg.clone()));
-            let ex = crate::value::Value::make_instance(
-                crate::symbol::Symbol::intern("X::Syntax::Variable::ConflictingTypes"),
-                attrs,
-            );
-            return Err(PError::fatal_with_exception(
-                format!("X::Syntax::Variable::ConflictingTypes: {}", msg),
-                Box::new(ex),
-            ));
+    // Postfix container typing (`my @a of Int`) and `is` traits, which may
+    // alternate: `my Int $a of Str is default("z") of Rat` declares the type
+    // three times over. Each redundant `of` is a *sorrow* in rakudo, and the
+    // parse keeps going — which is why the double-`of` form is an
+    // `X::Comp::Group` while the single one is a plain
+    // `X::Syntax::Variable::ConflictingTypes` (roast S04-declarations/my-6e.t).
+    // Collect them here and decide at the end rather than throwing on the first.
+    let mut type_conflicts: Vec<(crate::value::Value, String)> = Vec::new();
+    loop {
+        let mut progressed = false;
+        if let Some(after_of) = keyword("of", rest) {
+            let (r, _) = ws1(after_of)?;
+            let (r, tc) = parse_type_constraint_expr(r).ok_or_else(|| PError::expected("type"))?;
+            let (r, _) = ws(r)?;
+            if let Some(outer) = type_constraint.as_ref() {
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert(
+                    "outer".to_string(),
+                    crate::value::Value::package(crate::symbol::Symbol::intern(outer)),
+                );
+                attrs.insert(
+                    "inner".to_string(),
+                    crate::value::Value::package(crate::symbol::Symbol::intern(&tc)),
+                );
+                let msg = format!(
+                    "{} not allowed here; variable list already declared with type {}",
+                    tc, outer
+                );
+                attrs.insert("message".to_string(), crate::value::Value::str(msg.clone()));
+                type_conflicts.push((
+                    crate::value::Value::make_instance(
+                        crate::symbol::Symbol::intern("X::Syntax::Variable::ConflictingTypes"),
+                        attrs,
+                    ),
+                    msg,
+                ));
+            }
+            *type_constraint = Some(tc);
+            rest = r;
+            progressed = true;
         }
-        *type_constraint = Some(tc);
-        rest = r;
-    }
-    // Parse `is` traits that come after `of`
-    {
-        let mut r = rest;
-        while let Some(after_is) = keyword("is", r) {
+        while let Some(after_is) = keyword("is", rest) {
             let (r2, _) = ws1(after_is)?;
             let (r2, trait_name) = ident(r2)?;
             let is_builtin = is_supported_variable_trait(&trait_name);
@@ -688,15 +691,37 @@ fn parse_variable_traits<'a>(
                 if include_in_traits {
                     custom_traits.push((trait_name.clone(), Some(trait_arg)));
                 }
-                r = r3;
+                rest = r3;
             } else {
                 if include_in_traits {
                     custom_traits.push((trait_name.clone(), None));
                 }
-                r = r2;
+                rest = r2;
             }
+            progressed = true;
         }
-        rest = r;
+        if !progressed {
+            break;
+        }
+    }
+    if let Some((first, first_msg)) = type_conflicts.first() {
+        if type_conflicts.len() == 1 {
+            return Err(PError::fatal_with_exception(
+                format!("X::Syntax::Variable::ConflictingTypes: {}", first_msg),
+                Box::new(first.clone()),
+            ));
+        }
+        let rendered = type_conflicts
+            .iter()
+            .map(|(_, m)| m.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let sorrows = type_conflicts.iter().map(|(v, _)| v.clone()).collect();
+        let group = crate::value::Value::make_comp_group(rendered, None, sorrows, Vec::new());
+        return Err(PError::fatal_with_exception(
+            format!("X::Comp::Group: {}", first_msg),
+            Box::new(group),
+        ));
     }
     if is_hash {
         *type_constraint = match (type_constraint.take(), hash_key_constraint.take()) {
