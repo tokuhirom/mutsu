@@ -577,6 +577,7 @@ pub(crate) fn value_c_address(v: &Value) -> usize {
             }
             _ => 0,
         },
+        ValueView::Array(data, _) => data.native_storage_address().unwrap_or(0),
         ValueView::Scalar(inner) => value_c_address(inner),
         ValueView::ContainerRef(cell) => cell.lock().ok().map(|g| value_c_address(&g)).unwrap_or(0),
         ValueView::VarRef { value, .. } => value_c_address(value),
@@ -963,6 +964,7 @@ fn marshal_arg(ps: &ParamSpec, raw: &Value) -> Result<(libffi::middle::Type, Arg
 #[cfg(feature = "libffi")]
 fn buf_storage_node(v: &Value) -> Option<crate::gc::Gc<crate::value::BufData>> {
     match v.view() {
+        ValueView::Array(data, _) => data.native_storage_node(),
         ValueView::Instance { attributes, .. } => {
             crate::value::value_buf::buf_storage_node(&attributes)
         }

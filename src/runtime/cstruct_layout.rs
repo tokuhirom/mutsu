@@ -718,6 +718,14 @@ impl crate::runtime::Interpreter {
         if !matches!(method, "REPR" | "WHERE") {
             return None;
         }
+        if let ValueView::Array(data, _) = target.view()
+            && let Some(body) = data.native_repr_body_address()
+        {
+            return Some(match method {
+                "REPR" => Value::str_from("VMArray"),
+                _ => Value::int(body as i64),
+            });
+        }
         let ValueView::Instance {
             class_name,
             attributes,

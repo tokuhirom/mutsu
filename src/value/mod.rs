@@ -1140,6 +1140,11 @@ pub struct HashData {
 #[derive(Debug, Clone, Default)]
 pub struct ArrayData {
     items: Vec<Value>,
+    /// Native numeric `array[T]` payload, when this array has been promoted
+    /// to ADR-0015 P3b storage. The boxed vector remains a derived cache for
+    /// the legacy collection API and is refreshed by the accessor chokepoint.
+    native_storage: Option<crate::gc::Gc<BufData>>,
+    native_dirty: bool,
     /// Element value-type constraint (e.g. `Int` for `my Int @a`), if any.
     pub value_type: Option<String>,
     /// Key-type constraint — unused for arrays, present so the shared
