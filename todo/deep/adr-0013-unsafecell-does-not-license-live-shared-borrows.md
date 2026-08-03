@@ -60,7 +60,45 @@ Wanted:
   the pointer from a reference, which *would* be the UB the ADR describes — the inventory in
   `docs/gc-contents-mut-inventory.md` is the place to look).
 - Audit whether any of the ~62 call sites holds a Deref'd borrow across its write. That is the
-  failure mode Miri *does* catch, and `gc::soundness_smoke` is the vehicle — once
-  `todo/tickets/magic-vars-should-be-built-lazily.md` unblocks running it under Miri.
+  failure mode Miri *does* catch. **Unblocked 2026-08-03** (#5775): `gc::soundness_smoke` now runs
+  under Miri, so the vehicle exists. Progress below.
 - Then amend ADR-0013 (a superseding note in §8, not a rewrite of §1.3 — the decision itself still
   stands; the `UnsafeCell` is the right representation regardless).
+
+## Audit progress (started 2026-08-03)
+
+**The primitive gives the borrow checker nothing to work with.** `gc_contents_mut(gc: &Gc<T>) ->
+&mut T` takes a *shared* reference, so nothing stops a call site from holding a Deref'd `&T` from
+the very same handle across the write. The obligation is 100% on the author at all 62 sites.
+
+**Narrowing.** `tmp/audit_gc_contents_mut.py` (throwaway; re-create from this description) takes the
+identifier passed to each call and lists every later mention of it inside the enclosing function. A
+site whose argument is never mentioned again cannot hold a borrow across the write and is clear by
+construction. Result: **62 sites — 20 clear, 42 to read by hand** (the 42 include false positives
+from same-named bindings in sibling match arms of very long functions, which the coarse function
+boundary cannot separate).
+
+**Finding 1 — the primitive's own doc repeats the over-promise.** `src/gc/gc_ptr.rs` (the
+`gc_contents_mut` doc comment, just above its `# Safety`) says the `&mut` has valid provenance
+"**even while shared `&` reads (via `Gc`'s `Deref`) are live**". The `# Safety` clause immediately
+below says the opposite and is the accurate one ("no other `&`/`&mut` into this value is
+*dereferenced* for the lifetime of the returned borrow"), and the probes above back the Safety
+clause. This sentence is load-bearing in the wrong direction: it is what a future call site would
+read before deciding it may keep a borrow. Fix it with the ADR §8 note.
+
+**Finding 2 — the escaping-raw-pointer family is the fragile one, and Miri cannot see it.**
+`src/runtime/nativecall.rs` (`marshal_arg`'s `CType::Buf` arm and `marshal_carray_arg`) derives a
+raw `data_ptr` *from* the `&mut` and hands it to C, retaining the node alongside it:
+
+```rust
+let data_ptr = unsafe { crate::value::gc_contents_mut(&node) }.bytes.as_mut_ptr();
+(Type::pointer(), ArgOwner::BufBytes { node: Some(node), buf: Vec::new(), data_ptr: ... })
+```
+
+Every other site takes the `&mut`, writes, and drops it within a few lines. This one lets a pointer
+derived from that `&mut` outlive the call and be written by C over an arbitrary window, while a live
+`Gc` handle to the same node sits next to it. Under Stacked Borrows any Deref of `node` in that
+window pops the derived tag and the C write becomes UB. Whether it is *reachable* needs a read of
+what touches the Buf during an FFI call — but note the Miri job runs `--no-default-features
+--features native` precisely to drop FFI, so **the gate will never catch this family**. It needs an
+argument, not a test.
