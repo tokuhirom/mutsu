@@ -407,12 +407,23 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
                 // inside an "expected A or B or …" list and leave the exception
                 // classed `X::Syntax::Confused`.
                 if let Some(typed) = e.typed_convention_message() {
-                    Err(with_parse_hint(RuntimeError::with_location(
+                    let mut err = RuntimeError::with_location(
                         typed.to_string(),
                         RuntimeErrorCode::ParseExpected,
                         line_num,
                         col_num,
-                    )))
+                    );
+                    // A SOFT diagnosis may still carry a structured exception —
+                    // the message convention preserves only the class, and some
+                    // sites also need the attributes rakudo's exception has
+                    // (`X::UnitScope::Invalid.what`). The fatal branch above
+                    // already forwards it; without the same here, a
+                    // `throws-like …, X::…, what => …` matched the class and
+                    // then died on `No such method 'what'`.
+                    if let Some(ex) = e.exception {
+                        err.exception = Some(ex);
+                    }
+                    Err(with_parse_hint(err))
                 } else if let Some(context) = near_snippet(tail, 60) {
                     Err(with_parse_hint(RuntimeError::with_location(
                         format!(

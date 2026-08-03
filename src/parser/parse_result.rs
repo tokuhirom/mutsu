@@ -59,6 +59,35 @@ impl PError {
         }
     }
 
+    /// [`Self::raw`], plus the `what` attribute rakudo's exception carries.
+    ///
+    /// The `"X::Type: text"` message convention preserves the *class* but
+    /// nothing else, so a `throws-like …, X::UnitScope::Invalid, what => "sub"`
+    /// matched the class and then died on `No such method 'what'`, aborting the
+    /// file (`roast/S06-other/main-semicolon.t`). Stays SOFT — these sites are
+    /// best-error candidates the statement dispatcher may still back out of, so
+    /// they must not become fatal.
+    pub fn raw_with_what(
+        message: String,
+        remaining_len: Option<usize>,
+        class_name: &str,
+        what: &str,
+    ) -> Self {
+        let text = crate::value::RuntimeError::split_typed_message_convention(&message)
+            .map(|(_, t)| t)
+            .unwrap_or(message.as_str());
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), crate::value::Value::str_from(text));
+        attrs.insert("what".to_string(), crate::value::Value::str_from(what));
+        let exception =
+            crate::value::Value::make_instance(crate::symbol::Symbol::intern(class_name), attrs);
+        PError {
+            messages: vec![message],
+            remaining_len,
+            exception: Some(Box::new(exception)),
+        }
+    }
+
     /// Build a fatal (non-recoverable) parse error.
     /// Fatal errors are not swallowed by the statement dispatcher.
     pub fn fatal(message: String) -> Self {

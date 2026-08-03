@@ -259,21 +259,25 @@ pub(crate) fn sub_decl_body(
             ));
         }
         if !has_explicit_signature {
-            return Err(PError::raw(
+            return Err(PError::raw_with_what(
                 "X::UnitScope::Invalid: A unit-scoped sub definition is not allowed except on a MAIN sub; \
                  Please use the block form. If you did not mean to declare a unit-scoped sub, \
                  perhaps you accidentally placed a semicolon after routine's definition?"
                     .to_string(),
                 Some(rest.len()),
+                "X::UnitScope::Invalid",
+                "sub",
             ));
         }
         if name == "MAIN" && !allow_main_semicolon_decl {
-            return Err(PError::raw(
+            return Err(PError::raw_with_what(
                 "X::UnitScope::Invalid: A unit-scoped sub definition is not allowed except on a MAIN sub; \
                  Please use the block form. If you did not mean to declare a unit-scoped sub, \
                  perhaps you accidentally placed a semicolon after routine's definition?"
                     .to_string(),
                 Some(rest.len()),
+                "X::UnitScope::Invalid",
+                "sub",
             ));
         }
         return Ok((
