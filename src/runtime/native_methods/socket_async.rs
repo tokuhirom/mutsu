@@ -359,10 +359,17 @@ impl Interpreter {
                     // Use a short timeout on accept so we can check the closed flag
                     // TcpListener doesn't have set_timeout, so we use non-blocking + sleep
                     let _ = tcp_listener.set_nonblocking(true);
+                    // Set once the close flag is seen: the backlog is drained
+                    // one last time before the thread stops. The OS completes
+                    // the TCP handshake without this thread's help, so a peer
+                    // whose `connect` has already returned is an ESTABLISHED
+                    // connection sitting in the backlog -- dropping it because
+                    // `Tap.close` won the 10ms poll race would lose a
+                    // connection the client believes it made.
+                    let mut draining = false;
                     loop {
-                        if closed_flag.load(Ordering::SeqCst) {
-                            let _ = tx.send(SupplyEvent::Done);
-                            break;
+                        if !draining && closed_flag.load(Ordering::SeqCst) {
+                            draining = true;
                         }
                         match tcp_listener.accept() {
                             Ok((stream, peer_addr)) => {
@@ -403,6 +410,11 @@ impl Interpreter {
                                 }
                             }
                             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                                if draining {
+                                    // Backlog empty and the tap is closed.
+                                    let _ = tx.send(SupplyEvent::Done);
+                                    break;
+                                }
                                 // No pending connection, sleep briefly
                                 crate::gc::block_quiescent(|| {
                                     std::thread::sleep(std::time::Duration::from_millis(10))
