@@ -5,45 +5,18 @@
 //! Built-in types have no user-level class definition, so this information
 //! cannot be read off the `registry().classes` map; it lives here instead.
 //!
-//! ## Derived by probing, not a hand-maintained per-type table
-//!
-//! mutsu's native method dispatch (`builtins/methods_0arg/`,
-//! `builtins/methods_narg/`) is `match method { "chars" => ..., }` arms, so the
-//! set of methods a type responds to cannot be *enumerated* out of the dispatch
-//! code. But it CAN be *probed*: `native_method_*arg(value, name).is_some()`
-//! answers "does this value's dispatch recognize `name`?" — the same recognition
-//! `.^can` relies on.
-//!
-//! So for a concrete type with a representative [`builtin_sample_value`] (Str,
-//! Int, List, Hash, ...), [`introspected_type_method_names`] derives `.^methods`
-//! by filtering a broad [`METHOD_UNIVERSE`] of candidate names through
-//! [`native_responds_to`] against the sample. A name the type does not actually
-//! dispatch is dropped, so `.^methods` stays consistent with `.^can` and cannot
-//! list a phantom method. This replaces the former hand-maintained per-type
-//! lists for the native surface.
-//!
-//! Two things still need declared data, kept in the `*_METHODS` consts below:
-//! - **slow-path methods** (block-taking `map`/`grep`/`sort`/... live behind
-//!   `&mut self` and are invisible to the pure native probe), and
-//! - **abstract / sample-less types** (`Any`/`Mu`/`Cool`/`Sub`/`IO::*`), which
-//!   have no instance to probe.
-//!
-//! These are unioned in by `introspected_type_method_names`.
-//!
-//! Because the probe is per-*value*, `.^methods` reports every method the value
-//! can respond to (including ones inherited from Cool/Any), so it is a superset
-//! of Rakudo's own-level `.^methods` — but it is internally consistent with
-//! `.^can`, and the roast introspection tests (which assert only non-emptiness
-//! and the `List(:all) > Any(:all) > Mu` ordering for built-ins) pass.
+//! The catalog is static: constructing an [`Interpreter`](crate::runtime::Interpreter)
+//! must never execute native methods merely to discover their names. The runtime
+//! registry copies these entries once and serves introspection from that table.
 //!
 //! ## Keep in sync with dispatch
 //!
-//! When you add a *native* method whose NAME is not already present, add it to
-//! `METHOD_UNIVERSE`; the probe then surfaces it for every type that dispatches
-//! it. Slow-path / abstract-type methods go in the relevant `*_METHODS` const.
-//! `t/can-methods-drift.t` and the unit tests below guard consistency.
+//! Add a native or slow-path method to the owning static slice in this module.
+//! `t/can-methods-drift.t` guards the callable/introspectable contract.
 
+#[cfg(test)]
 use crate::symbol::Symbol;
+#[cfg(test)]
 use crate::value::Value;
 
 /// Numeric/stringy coercion methods shared verbatim (same order) by the leaf
@@ -74,6 +47,7 @@ const STR_OWN: &[&str] = &[
     "pred",
     "rindex",
     "samecase",
+    "samemark",
     "split",
     "starts-with",
     "substr",
@@ -91,6 +65,8 @@ const STR_OWN: &[&str] = &[
     "NFKD",
     "encode",
     "uniparse",
+    "unimatch",
+    "uniprops",
     "parse-names",
     "parse-base",
     "subst",
@@ -500,6 +476,7 @@ pub(crate) fn builtin_type_method_names(type_name: &str) -> Vec<&'static str> {
 /// rather than a hand-maintained list: e.g. `"abc"` responds to `chars`/`uc`/
 /// `samemark` but not `abs`, while `2` responds to `abs` but not `chars`, so the
 /// same `METHOD_UNIVERSE` yields each type's correct subset automatically.
+#[cfg(test)]
 pub(crate) fn builtin_sample_value(type_name: &str) -> Option<Value> {
     if crate::runtime::utils::is_buf_or_blob_class(type_name) {
         return Some(crate::value::value_buf::make_buf(
@@ -539,10 +516,12 @@ pub(crate) fn builtin_sample_value(type_name: &str) -> Option<Value> {
 /// `.^methods` (which filters `METHOD_UNIVERSE` through this) stays consistent
 /// with `.^can`. It does NOT cover slow-path methods (those needing `&mut self`,
 /// e.g. block-taking `map`/`grep`/`sort`); those remain in the declared lists.
+#[cfg(test)]
 pub(crate) fn native_responds_to(value: &Value, method_name: &str) -> bool {
     native_method_arities(value, method_name) != 0
 }
 
+#[cfg(test)]
 fn native_method_arities(value: &Value, method_name: &str) -> u8 {
     let sym = Symbol::intern(method_name);
     let mut arities = u8::from(crate::builtins::native_method_0arg(value, sym).is_some());
@@ -573,6 +552,7 @@ fn native_method_arities(value: &Value, method_name: &str) -> u8 {
 /// type does not actually dispatch is silently dropped — making the universe
 /// safe to keep broad. Add a name here when introducing a native method whose
 /// name is not already present.
+#[cfg(test)]
 pub(crate) const METHOD_UNIVERSE: &[&str] = &[
     // String / Cool
     "chars",
@@ -735,60 +715,55 @@ pub(crate) const METHOD_UNIVERSE: &[&str] = &[
     "WHICH",
 ];
 
-/// The method names a built-in `type_name` exposes for `.^methods` / `.^can`.
-/// For concrete types with a sample value the set is *derived* by probing the
-/// real native dispatch (`METHOD_UNIVERSE` ∩ what the sample responds to); for
-/// abstract/sample-less types it falls back to the declared list.
 /// One canonical built-in type×method entry. User candidates will use the same shape once
-/// ADR-0019's registry migration lands; for now `native_arities` distinguishes a native handler
-/// from a slow-path entry whose implementation still lives in `runtime/methods_*`.
+/// ADR-0019's registry migration lands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct BuiltinMethodEntry {
     pub(crate) owner: &'static str,
     pub(crate) name: &'static str,
-    /// Bit N means that the native dispatch recognizes N positional arguments.
-    /// Zero denotes a registered slow-path/abstract method.
-    pub(crate) native_arities: u8,
+    /// Stable catalog order used by `.^methods`.
+    pub(crate) order: u16,
 }
 
+/// Built-in owners whose method entries are installed into the runtime registry.
+/// Aliases such as `FatRat` and `Method` resolve through [`canonical_builtin_owner`]
+/// and therefore do not need duplicate table rows.
+pub(crate) const BUILTIN_METHOD_OWNERS: &[&str] = &[
+    "Str",
+    "Int",
+    "Num",
+    "Rat",
+    "Complex",
+    "List",
+    "Array",
+    "Hash",
+    "Bool",
+    "Range",
+    "Sub",
+    "Signature",
+    "IO::Path",
+    "IO::Handle",
+    "Cool",
+    "Any",
+    "Mu",
+    "Blob",
+];
+
 /// The canonical built-in method entries for one owner type. Both dispatch admission and
-/// introspection are migrated to consume this type×method catalog; during the transition the
-/// catalog is populated from the native recognizers plus the remaining slow-path declarations.
+/// introspection consume this static type×method catalog.
 pub(crate) fn builtin_method_entries(type_name: &str) -> Vec<BuiltinMethodEntry> {
-    let Some(sample) = builtin_sample_value(type_name) else {
-        return builtin_type_method_names(type_name)
-            .into_iter()
-            .map(|name| BuiltinMethodEntry {
-                owner: canonical_builtin_owner(type_name),
-                name,
-                native_arities: 0,
-            })
-            .collect();
-    };
-    let mut names: Vec<&'static str> = METHOD_UNIVERSE
-        .iter()
-        .copied()
-        .filter(|m| native_responds_to(&sample, m))
-        .collect();
-    // Union in any declared name the native probe can't reach (slow-path,
-    // block-taking methods like map/grep/sort live behind `&mut self` and are
-    // not visible to the pure native probe), so nothing regresses.
-    for declared in builtin_type_method_names(type_name) {
-        if !names.contains(&declared) {
-            names.push(declared);
-        }
-    }
-    names
+    builtin_type_method_names(type_name)
         .into_iter()
-        .map(|name| BuiltinMethodEntry {
+        .enumerate()
+        .map(|(order, name)| BuiltinMethodEntry {
             owner: canonical_builtin_owner(type_name),
             name,
-            native_arities: native_method_arities(&sample, name),
+            order: order as u16,
         })
         .collect()
 }
 
-fn canonical_builtin_owner(type_name: &str) -> &'static str {
+pub(crate) fn canonical_builtin_owner(type_name: &str) -> &'static str {
     match type_name {
         "Str" => "Str",
         "Int" => "Int",
@@ -812,6 +787,7 @@ fn canonical_builtin_owner(type_name: &str) -> &'static str {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn introspected_type_method_names(type_name: &str) -> Vec<&'static str> {
     builtin_method_entries(type_name)
         .into_iter()
@@ -989,7 +965,7 @@ mod tests {
             .into_iter()
             .find(|entry| entry.name == "chars")
             .expect("Str×chars entry");
-        assert_ne!(chars.native_arities & 1, 0);
+        assert_eq!(chars.order, 0);
     }
 
     #[test]
