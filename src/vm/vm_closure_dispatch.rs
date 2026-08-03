@@ -657,7 +657,14 @@ impl Interpreter {
         // `enter_routine_package` on the named-call paths).
         let saved_pkg = {
             let pkg = data.package.resolve();
-            if !pkg.is_empty() && pkg != "GLOBAL" && !pkg.contains("::&") {
+            // `GLOBAL` counts: a block declared at file scope and *invoked from
+            // a module* (`Test::Util`'s `group-of` calling the caller's block)
+            // must still declare its classes in `GLOBAL`, not in the module's
+            // package. Skipping the restore for GLOBAL left the callee's package
+            // in place, so `group-of { … my class Foo {} … }` named the class
+            // `Test::Util::Foo` and every message quoting it diverged from raku
+            // (roast/integration/error-reporting.t).
+            if !pkg.is_empty() && !pkg.contains("::&") && pkg != self.current_package() {
                 let saved = self.current_package();
                 self.set_current_package(pkg);
                 Some(saved)
