@@ -125,11 +125,26 @@ impl Interpreter {
         if constraint == "Str" && value_type == "str" {
             return true;
         }
-        // Numeric hierarchy: Int is a Numeric, Num is a Numeric
+        // Numeric hierarchy: Int is a Numeric, Num is a Numeric.
+        // `Instant`/`Duration` belong here too -- rakudo's are `Cool` types that
+        // `does Real` (`Instant.^mro` is `((Instant) (Cool) (Any) (Mu))`), so
+        // `now ~~ Numeric` is True. Leaving them out meant an `is-approx $a, $b`
+        // over two Instants matched none of `Test.rakumod`'s
+        // `is-approx(Numeric, Numeric, ...)` candidates and fell through to
+        // mutsu's native provider, which keeps its own counter -- the test count
+        // reset mid-file (roast/S28-named-variables/init-instant.t).
         if constraint == "Numeric"
             && matches!(
                 value_type,
-                "Int" | "Num" | "Rat" | "FatRat" | "Complex" | "Bool" | "UInt"
+                "Int"
+                    | "Num"
+                    | "Rat"
+                    | "FatRat"
+                    | "Complex"
+                    | "Bool"
+                    | "UInt"
+                    | "Instant"
+                    | "Duration"
             )
         {
             return true;
@@ -137,7 +152,7 @@ impl Interpreter {
         if constraint == "Real"
             && matches!(
                 value_type,
-                "Int" | "Num" | "Rat" | "FatRat" | "Bool" | "UInt" | "Duration"
+                "Int" | "Num" | "Rat" | "FatRat" | "Bool" | "UInt" | "Instant" | "Duration"
             )
         {
             return true;
@@ -188,6 +203,8 @@ impl Interpreter {
                     | "Map"
                     | "Range"
                     | "Seq"
+                    | "Instant"
+                    | "Duration"
             )
         {
             return true;
