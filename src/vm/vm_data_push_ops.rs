@@ -108,9 +108,13 @@ impl Interpreter {
             // `__mutsu_atomic_arr::@a`. `shared_vars_active` never goes back to
             // false, so without this gate every array push in a program that once
             // spawned a thread is name-keyed. Mirrors the "genuinely shared" gate
-            // `assign_array_elem_to_shared_var` already applies.
+            // `assign_array_elem_to_shared_var` already applies. A name this
+            // lineage re-declared is frame-local on a worker thread too — the
+            // store is keyed by name for the WHOLE process, so a worker's own
+            // `my @a` would otherwise be the parent's `@a`.
             if matches!(target.view(), ValueView::Array(..) | ValueView::Nil)
                 && Self::is_plain_lexical_array_name(target_name)
+                && !self.container_name_is_redeclared(target_name)
                 && (self.is_thread_clone() || self.array_name_is_shared(target_name))
             {
                 let items = match val.view() {

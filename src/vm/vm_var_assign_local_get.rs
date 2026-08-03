@@ -121,7 +121,16 @@ impl Interpreter {
         // internal shared key. Check it first so reads pick up the latest
         // CAS'd value (for `%`: a thread's own `%h{$k} = $v` lands in the
         // atomic entry, and the base-key snapshot below is stale).
-        if name.starts_with('@') {
+        //
+        // None of that applies to a name this lineage RE-DECLARED: the store's
+        // entries under it describe the shadowed outer binding, so preferring
+        // them would resurrect a foreign container over this frame's own `my
+        // @a` (the write side is masked in `set_shared_var_sym`; this is its
+        // read twin, mirroring the scalar gate further down).
+        let container_redeclared = self.container_name_is_redeclared(name);
+        if container_redeclared {
+            // fall through to the local/env read
+        } else if name.starts_with('@') {
             let atomic_key = format!("__mutsu_atomic_arr::{name}");
             if let Some(shared_val) = self.get_shared_var(&atomic_key) {
                 self.locals[idx] = shared_val.clone();
@@ -139,7 +148,8 @@ impl Interpreter {
         // Shared @/% variables may be mutated by sibling threads while this Interpreter
         // still holds an old local snapshot. Prefer the shared copy so reads
         // observe the latest value without forcing array COW on every push.
-        if (name.starts_with('@') || name.starts_with('%'))
+        if !container_redeclared
+            && (name.starts_with('@') || name.starts_with('%'))
             && let Some(shared_val) = self.get_shared_var(name)
         {
             self.stack.push(shared_val);

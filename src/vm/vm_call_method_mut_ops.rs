@@ -939,9 +939,16 @@ impl Interpreter {
         // call_method_mut_with_values → push_to_shared_var) for the common case
         // of pushing simple values to a shared array inside a tight loop
         // (e.g. Lock::Async.protect { push @target, $i }).
+        // ...but not for a name this lineage RE-DECLARED: the store's entry under
+        // it belongs to the shadowed outer binding, so funnelling a routine's own
+        // `my @a` through it makes the two the same array (a nested sub's `push
+        // @components` landing in the caller's `@components` broke every
+        // multi-server Cro::HTTP test — see
+        // `news/2026-08/threaded-array-mutation-escapes-to-the-caller.md`).
         if target_name.starts_with('@')
             && matches!(target.view(), ValueView::Array(..))
             && self.shared_vars_active
+            && !self.container_name_is_redeclared(&target_name)
         {
             // Only a plain *lexical* `@name` is a single variable shared across
             // threads. Instance-attribute arrays (`@!order` / `@.order`) and
@@ -2250,7 +2257,17 @@ impl Interpreter {
         // metadata-bearing containers need element checks / typed empty Failures.
         // (Shared `push`/`unshift` are intercepted earlier by the shared-array
         // fast path in `exec_call_method_mut_op`.)
-        if self.shared_vars_active
+        //
+        // A name this lineage RE-DECLARED is exempt: it is a frame-local
+        // container that deliberately gets no shared-store lane, so the
+        // shared-array fast path does not intercept it and the interpreter
+        // fallback cannot reach it either — `box_decl_local_container_cell` put
+        // a `ContainerRef` cell in the env entry and the fallback's plain
+        // `env.get_mut(..).with_array_mut(..)` does not descend cells, so it
+        // silently rebuilt a detached array (`my @a; @a.push("n");
+        // @a.append(...)` inside a `start` block lost the append). This path
+        // does descend, via `env_root_descended_mut`.
+        if (self.shared_vars_active && !self.container_name_is_redeclared(target_name))
             || loan_env!(self, var_type_constraint(target_name)).is_some()
             || self.container_type_metadata(target).is_some()
         {

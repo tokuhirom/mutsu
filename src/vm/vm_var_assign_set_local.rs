@@ -1902,15 +1902,25 @@ impl Interpreter {
         // fresh binding shadowing the captured outer lexical: mark the name so
         // subsequent writes stay thread-local instead of leaking to the parent
         // through the shared store (`start { my $x ... }` / a pointy-if
-        // binding must not clobber the caller's same-named lexical). Scalars
-        // only: `@`/`%` names back the name-keyed atomic element stores
-        // (concurrent push/unshift), which need the shared entry maintained on
-        // every write, and `state` sharing goes through the dedicated
-        // shared-state cells — both must keep propagating.
+        // binding must not clobber the caller's same-named lexical).
+        //
+        // A plain lexical `my @a` / `my %h` is masked for the same reason: the
+        // store is keyed by BARE NAME and so cannot represent two concurrently
+        // live bindings of one name. Without this, once any thread has run, a
+        // routine's own `my @components` *is* the caller's `@components` —
+        // `box_decl_local_container_cell` publishes the fresh per-binding cell
+        // under the shared name key and every later read prefers it
+        // (`todo/deep/threaded-array-mutation-escapes-to-the-caller.md`, the
+        // top blocker for the vendored Cro::HTTP round-trip suite). The mask is
+        // lifted at the next spawn, which force-`declare`s this binding's
+        // current value into the lineage (`clone_for_thread`), so a genuinely
+        // shared `@a` keeps working. `&` names are routines and `state` sharing
+        // goes through the dedicated shared-state cells — both must keep
+        // propagating. Twigil'd forms (`@!x`, `%*y`) share a name across
+        // instances/dynamic scopes by design and keep the name lane.
         if self.shared_vars_active
-            && !name.starts_with('@')
-            && !name.starts_with('%')
             && !name.starts_with('&')
+            && (!name.starts_with(['@', '%']) || Self::is_plain_lexical_name(name))
         {
             let is_state = code
                 .state_locals

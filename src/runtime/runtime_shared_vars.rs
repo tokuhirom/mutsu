@@ -20,6 +20,11 @@ impl Interpreter {
         if !key.starts_with('%') || !self.shared_vars_active {
             return None;
         }
+        // A `my %h` re-declared under the shared lane is a fresh container that
+        // only shares a name with the store's entry — write it locally.
+        if self.container_name_is_redeclared(key) {
+            return None;
+        }
         // A genuinely-shared plain lexical `%name` is routed through the
         // `__mutsu_atomic_hash::` shared store, the same way concurrent `.push`
         // is (see `shared_array_extend`). Writing the base key directly lets a
@@ -105,6 +110,10 @@ impl Interpreter {
         if !key.starts_with('@') || !self.shared_vars_active {
             return None;
         }
+        // See `assign_hash_elem_to_shared_var`.
+        if self.container_name_is_redeclared(key) {
+            return None;
+        }
         // A genuinely-shared plain lexical `@name` routes through the
         // `__mutsu_atomic_arr::` shared store (same as concurrent `.push`, see
         // `shared_array_extend`) so a sibling thread's stale `set_shared_var`
@@ -172,6 +181,24 @@ impl Interpreter {
     #[allow(dead_code)]
     pub(crate) fn get_shared_var(&self, key: &str) -> Option<Value> {
         self.shared_vars.get(key)
+    }
+
+    /// Whether a `@`/`%` name is currently masked by a re-declaration in this
+    /// lineage (`thread_redeclared_vars`), i.e. the frame's binding is a fresh
+    /// container that merely shares a *name* with whatever the cross-thread
+    /// store holds.
+    ///
+    /// `set_shared_var_sym` and `sync_shared_vars_to_env` consult
+    /// `thread_redeclared_vars` directly for the write and bulk-read sides; the
+    /// container-specific routes (`push_to_shared_var`, the element-assign
+    /// write-throughs, the `GetLocal` shared preference) each decide "is this
+    /// name genuinely shared?" by *presence* in the store, which a masked name
+    /// still satisfies — the entry is simply the outer binding's. They ask here
+    /// instead so a re-declared container stays frame-local on every axis.
+    pub(crate) fn container_name_is_redeclared(&self, key: &str) -> bool {
+        self.shared_vars_active
+            && key.starts_with(['@', '%'])
+            && self.thread_redeclared_vars.contains(key)
     }
 
     /// Snapshot the set of keys currently present in `shared_vars`. Used by the
