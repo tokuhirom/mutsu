@@ -404,6 +404,8 @@ impl Interpreter {
         let mut def = self.registry_mut().classes.remove(old_name)?;
         def.mro = std::sync::Arc::from(Vec::<Symbol>::new());
         self.registry_mut().classes.insert(new_name.clone(), def);
+        self.registry_mut().sync_user_method_entries(old_name);
+        self.registry_mut().sync_user_method_entries(&new_name);
         if self.user_declared_classes.remove(old_name) {
             self.user_declared_classes.insert(new_name.clone());
         }
@@ -506,6 +508,8 @@ impl Interpreter {
             } else {
                 reg.class_role_param_bindings.remove(name);
             }
+            drop(reg);
+            this.registry_mut().sync_user_method_entries(name);
         };
 
         // Detect X::Redeclaration when a class redefines a role in the same scope.
@@ -1577,11 +1581,13 @@ impl Interpreter {
         self.registry_mut()
             .classes
             .insert(name.to_string(), class_def.clone());
+        self.registry_mut().sync_user_method_entries(name);
         if is_stub_body {
             self.registry_mut().class_stubs.insert(name.to_string());
             self.registry_mut()
                 .classes
                 .insert(name.to_string(), class_def);
+            self.registry_mut().sync_user_method_entries(name);
             let mut stack = Vec::new();
             let _ = self.compute_class_mro(name, &mut stack)?;
             return Ok(deferred_custom_traits);
@@ -2519,6 +2525,7 @@ impl Interpreter {
                     self.registry_mut()
                         .classes
                         .insert(name.to_string(), class_def.clone());
+                    self.registry_mut().sync_user_method_entries(name);
                     self.run_block_raw(std::slice::from_ref(stmt))?;
                     for outer_name in saved_env.keys() {
                         let class_scoped_name = format!("{}::{}", name, outer_name);
@@ -2597,6 +2604,7 @@ impl Interpreter {
                     self.registry_mut()
                         .classes
                         .insert(name.to_string(), class_def.clone());
+                    self.registry_mut().sync_user_method_entries(name);
                     // Mark this class as "being defined" so a `has`-attribute
                     // declaration executed by a *compile-time* phaser
                     // (`class Foo { BEGIN EVAL q[has $.x] }`) attaches to it
@@ -2658,6 +2666,7 @@ impl Interpreter {
             self.registry_mut()
                 .classes
                 .insert(name.to_string(), class_def.clone());
+            self.registry_mut().sync_user_method_entries(name);
         }
         // Fire class-body LEAVE phasers in LIFO order now that the body scope
         // is being left. They run while the class package/env are still active
@@ -2846,6 +2855,7 @@ impl Interpreter {
         self.registry_mut()
             .classes
             .insert(name.to_string(), class_def);
+        self.registry_mut().sync_user_method_entries(name);
         let mut stack = Vec::new();
         if let Err(err) = self.compute_class_mro(name, &mut stack) {
             restore_previous_state(self);

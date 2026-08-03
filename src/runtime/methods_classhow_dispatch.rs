@@ -765,6 +765,7 @@ impl Interpreter {
                 if let Some(class_def) = self.registry_mut().classes.get_mut(&class_name) {
                     class_def.methods.insert(method_name, vec![def]);
                 }
+                self.registry_mut().sync_user_method_entries(&class_name);
                 // Class shape changed (an added BUILD/TWEAK/new flips ctor
                 // eligibility) — drop cached construction plans.
                 self.native_ctor_plan_cache.clear();
@@ -821,6 +822,7 @@ impl Interpreter {
                         false
                     };
                 if inserted {
+                    self.registry_mut().sync_user_method_entries(&class_name);
                     self.native_ctor_plan_cache.clear();
                     return Ok(Value::NIL);
                 }

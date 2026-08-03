@@ -46,6 +46,12 @@ pub(crate) struct MethodEntryKey {
     pub(crate) name: Symbol,
 }
 
+#[derive(Clone, Default)]
+pub(crate) struct MethodEntry {
+    pub(crate) builtin: Option<crate::builtins::builtin_type_methods::BuiltinMethodEntry>,
+    pub(crate) user_candidates: Vec<MethodDef>,
+}
+
 /// Program declaration registry. See module docs.
 ///
 /// Fields are migrated here group-by-group (PLAN.md PR-A). Fields are
@@ -58,8 +64,7 @@ pub(crate) struct MethodEntryKey {
 pub(crate) struct Registry {
     /// Canonical type x method table. It initially owns the built-in entries;
     /// declaration registration will add user candidates to the same table.
-    pub(crate) method_entries:
-        HashMap<MethodEntryKey, crate::builtins::builtin_type_methods::BuiltinMethodEntry>,
+    pub(crate) method_entries: HashMap<MethodEntryKey, MethodEntry>,
     /// `enum Name (...)` declarations: enum name -> [(variant name, value)].
     pub(crate) enum_types: HashMap<String, Vec<(String, EnumValue)>>,
     /// `subset Name of Base where { ... }` declarations.
@@ -267,8 +272,9 @@ impl Registry {
                     owner: Symbol::intern(entry.owner),
                     name: Symbol::intern(entry.name),
                 };
-                let old = self.method_entries.insert(key, entry);
-                debug_assert!(old.is_none(), "duplicate built-in method entry");
+                let slot = self.method_entries.entry(key).or_default();
+                debug_assert!(slot.builtin.is_none(), "duplicate built-in method entry");
+                slot.builtin = Some(entry);
             }
         }
     }
@@ -282,10 +288,36 @@ impl Registry {
         let mut entries: Vec<_> = self
             .method_entries
             .iter()
-            .filter_map(|(key, entry)| (key.owner == owner).then_some(*entry))
+            .filter_map(|(key, entry)| (key.owner == owner).then_some(entry.builtin).flatten())
             .collect();
         entries.sort_unstable_by_key(|entry| entry.order);
         entries.into_iter().map(|entry| entry.name).collect()
+    }
+
+    pub(crate) fn sync_user_method_entries(&mut self, class_name: &str) {
+        let owner = Symbol::intern(class_name);
+        self.method_entries.retain(|key, entry| {
+            if key.owner == owner {
+                entry.user_candidates.clear();
+            }
+            entry.builtin.is_some() || !entry.user_candidates.is_empty()
+        });
+        let Some(methods) = self
+            .classes
+            .get(class_name)
+            .map(|class| class.methods.clone())
+        else {
+            return;
+        };
+        for (name, candidates) in methods {
+            self.method_entries
+                .entry(MethodEntryKey {
+                    owner,
+                    name: Symbol::intern(&name),
+                })
+                .or_default()
+                .user_candidates = candidates;
+        }
     }
 }
 
@@ -570,7 +602,7 @@ impl Registry {
     ) -> Option<Vec<MethodDef>> {
         self.classes
             .get(class_name)
-            .and_then(|c| c.methods.get(method_name))
+            .and_then(|class| class.methods.get(method_name))
             .cloned()
     }
 
@@ -719,10 +751,16 @@ mod tests {
             registry.builtin_method_names("Str"),
             crate::builtins::builtin_type_methods::introspected_type_method_names("Str")
         );
-        assert!(registry.method_entries.contains_key(&MethodEntryKey {
-            owner: Symbol::intern("Str"),
-            name: Symbol::intern("chars"),
-        }));
+        assert!(matches!(
+            registry.method_entries.get(&MethodEntryKey {
+                owner: Symbol::intern("Str"),
+                name: Symbol::intern("chars"),
+            }),
+            Some(MethodEntry {
+                builtin: Some(_),
+                ..
+            })
+        ));
     }
 
     #[test]
@@ -738,5 +776,44 @@ mod tests {
             registry.builtin_method_names("Method"),
             registry.builtin_method_names("Sub")
         );
+    }
+
+    #[test]
+    fn user_override_shares_the_builtin_method_entry() {
+        let mut registry = Registry::default();
+        registry.seed_builtin_method_entries();
+        let method = MethodDef {
+            lexical_package: "GLOBAL".to_string(),
+            params: Vec::new(),
+            param_defs: Vec::new(),
+            body: std::sync::Arc::new(Vec::new()),
+            is_rw: false,
+            is_private: false,
+            is_multi: false,
+            is_my: false,
+            role_origin: None,
+            original_role: None,
+            return_type: None,
+            compiled_code: None,
+            delegation: None,
+            is_default: false,
+            deprecated_message: None,
+            is_submethod: false,
+            captured_env: None,
+        };
+        let mut class = ClassDef::default();
+        class.methods.insert("chars".to_string(), vec![method]);
+        registry.classes.insert("Str".to_string(), class);
+        registry.sync_user_method_entries("Str");
+
+        let entry = registry
+            .method_entries
+            .get(&MethodEntryKey {
+                owner: Symbol::intern("Str"),
+                name: Symbol::intern("chars"),
+            })
+            .expect("Str.chars entry");
+        assert!(entry.builtin.is_some());
+        assert_eq!(entry.user_candidates.len(), 1);
     }
 }
