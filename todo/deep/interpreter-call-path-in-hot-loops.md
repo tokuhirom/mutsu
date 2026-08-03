@@ -56,6 +56,40 @@ Target that specifically: intern the parameter names and bind by `Symbol`/slot.
   line from the op's ip via `op_lines` breaks line-exactness (the marker captures the *parse-time*
   line, which differs on multi-line assertions — `test-assertion-line-number.t` pins the number).
 
+## Re-measured 2026-08-03, and it is worse than the 1.85× above says
+
+Driving the same shapes with the result *used* (see the trap below), release build, 1M iterations:
+
+| shape | mutsu | raku | ratio |
+| --- | --- | --- | --- |
+| A `$n = $n + 1` | 143 ms | 53 ms | 2.7× |
+| B `$n = outer-fn($n)`, `outer-fn` declared at file scope | 484 ms | 35 ms | **13.8×** |
+| C same, but the sub is declared **inside the calling block** | 840 ms | 34 ms | **24.7×** |
+
+Two things stand out, and the second is the new one:
+
+- The per-call cost is ~340 ns (B) on top of a ~140 ns/iteration loop, so a call is worth ~3
+  arithmetic iterations. raku's B/C are *faster* than its A because its optimizer inlines the callee
+  outright; mutsu's JIT bails at the call boundary (see above), so the gap is the whole call path.
+- **C is 1.7× slower per call than B for an identical body and arity.** Nothing about invoking a sub
+  should depend on where it was declared, so that 1.7× is pure mutsu-internal overhead on
+  block-local routine declarations — and it is not a corner case: roast bodies and `Test.rakumod`'s
+  own helpers declare subs inside blocks constantly. With a zero-arg callee the same comparison was
+  1259 ms vs 4843 ms, i.e. **3.8×**. Start here; it is the one part of this ticket that looks like a
+  bug rather than a general "calls are expensive".
+
+Passing the block through a *module* sub (`sub s-amp(&code) { code() }`, imported) adds a further
+~1.5× on top of every row — which is exactly the shape every `lives-ok`/`throws-like`/`subtest` body
+takes under the vendored `Test`, and is why the real module inflates heavy roast files past the
+30 s per-file budget (`todo/tickets/vendor-real-test-module.md`).
+
+### Trap: raku will delete your benchmark
+
+`for ^1000000 { $n = f($n) }` with `$n` never read afterwards measures nothing under raku — its
+optimizer removes the loop, and B/C come back at 8–13 ms, i.e. *faster than an empty arithmetic
+loop*. That reads as a 140–370× mutsu deficit and is an artifact. Always return the accumulator
+from the benchmarked block and print it.
+
 ## Prerequisite
 
 The deeper fix (removing per-call env materialization) is the lexical-scope slot campaign —
