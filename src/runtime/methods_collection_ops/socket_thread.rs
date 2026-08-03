@@ -207,137 +207,62 @@ impl Interpreter {
             .unwrap_or_else(|| "utf-8".to_string());
 
         let promise = SharedPromise::new();
-        if let Some((_listener_id, listener)) =
-            super::super::native_methods::lookup_async_listener(&host, port)
-        {
-            let defer_accept = Self::callback_uses_supply_list(&listener.callback);
-            let client_id = super::super::native_methods::next_async_socket_id();
-            let server_id = super::super::native_methods::next_async_socket_id();
-            let client_local_port = super::super::native_methods::allocate_async_listen_port();
-            let server_host = if listener.host == "0.0.0.0" {
-                host.clone()
-            } else {
-                listener.host.clone()
-            };
-
-            super::super::native_methods::register_async_connection(
-                client_id,
-                super::super::native_methods::AsyncSocketConnState {
-                    peer_id: Some(server_id),
-                    encoding: enc.clone(),
-                    closed: false,
-                    peer_closed: false,
-                    supply_ids: Vec::new(),
-                    pending_bytes: Vec::new(),
-                    deferred_accept_callback: None,
-                    deferred_accept_socket: None,
-                },
-            );
-            super::super::native_methods::register_async_connection(
-                server_id,
-                super::super::native_methods::AsyncSocketConnState {
-                    peer_id: Some(client_id),
-                    encoding: listener.encoding.clone(),
-                    closed: false,
-                    peer_closed: false,
-                    supply_ids: Vec::new(),
-                    pending_bytes: Vec::new(),
-                    deferred_accept_callback: None,
-                    deferred_accept_socket: None,
-                },
-            );
-
-            let mut client_attrs = HashMap::new();
-            client_attrs.insert("conn-id".to_string(), Value::int(client_id as i64));
-            client_attrs.insert("socket-host".to_string(), Value::str(host.clone()));
-            client_attrs.insert(
-                "socket-port".to_string(),
-                Value::int(client_local_port as i64),
-            );
-            client_attrs.insert("peer-host".to_string(), Value::str(server_host.clone()));
-            client_attrs.insert("peer-port".to_string(), Value::int(port as i64));
-            client_attrs.insert("enc".to_string(), Value::str(enc));
-            let client_socket =
-                Value::make_instance(Symbol::intern("IO::Socket::Async"), client_attrs);
-
-            let mut server_attrs = HashMap::new();
-            server_attrs.insert("conn-id".to_string(), Value::int(server_id as i64));
-            server_attrs.insert("socket-host".to_string(), Value::str(server_host.clone()));
-            server_attrs.insert("socket-port".to_string(), Value::int(port as i64));
-            server_attrs.insert("peer-host".to_string(), Value::str(host.clone()));
-            server_attrs.insert(
-                "peer-port".to_string(),
-                Value::int(client_local_port as i64),
-            );
-            server_attrs.insert("enc".to_string(), Value::str(listener.encoding));
-            let server_socket =
-                Value::make_instance(Symbol::intern("IO::Socket::Async"), server_attrs);
-
-            if defer_accept {
-                super::super::native_methods::update_async_connection(server_id, |conn| {
-                    conn.deferred_accept_callback = Some(listener.callback.clone());
-                    conn.deferred_accept_socket = Some(server_socket.clone());
-                });
-            } else {
-                let _ = self.call_sub_value(listener.callback, vec![server_socket], true);
+        // Every `connect` opens a real TCP stream, including one aimed at a
+        // listener in THIS process. `.listen` binds a real `TcpListener` and
+        // its accept thread produces `tcp-real` connections, so a loopback
+        // connect goes through exactly the same OS plumbing as an outbound
+        // one — which is what gives both ends a real file descriptor.
+        // `.native-descriptor` used to answer -1 for the in-process case (it
+        // was short-circuited to an in-memory socket pair with no fd), so
+        // NativeCall consumers of it died: Cro::TCP::NoDelay's
+        // `setsockopt(TCP_NODELAY)` failed on the bogus fd, taking down every
+        // Cro client that talks to a server in its own process.
+        match Self::connect_real_tcp(&host, port) {
+            Ok(socket) => {
+                let conn_id = super::super::native_methods::next_async_socket_id();
+                let local = socket.local_addr().ok();
+                let peer = socket.peer_addr().ok();
+                super::super::native_methods::state::register_tcp_stream(conn_id, socket);
+                let mut attrs = HashMap::new();
+                attrs.insert("conn-id".to_string(), Value::int(conn_id as i64));
+                attrs.insert("tcp-real".to_string(), Value::TRUE);
+                attrs.insert(
+                    "socket-host".to_string(),
+                    Value::str(
+                        local
+                            .map(|a| a.ip().to_string())
+                            .unwrap_or_else(|| "0.0.0.0".to_string()),
+                    ),
+                );
+                attrs.insert(
+                    "socket-port".to_string(),
+                    Value::int(local.map(|a| a.port()).unwrap_or(0) as i64),
+                );
+                attrs.insert("peer-host".to_string(), Value::str(host.clone()));
+                attrs.insert(
+                    "peer-port".to_string(),
+                    Value::int(peer.map(|a| a.port()).unwrap_or(port) as i64),
+                );
+                attrs.insert("enc".to_string(), Value::str(enc));
+                promise.keep(
+                    Value::make_instance(Symbol::intern("IO::Socket::Async"), attrs),
+                    String::new(),
+                    String::new(),
+                );
             }
-
-            // Keep the promise with the client socket directly
-            promise.keep(client_socket, String::new(), String::new());
-        } else {
-            // No in-process listener owns this address, so this is an ordinary
-            // outbound connection: open a real TCP stream. `.listen` already
-            // binds a real `TcpListener`, and the accepted (server) side of a
-            // real connection is driven by the `tcp-real` paths in
-            // `socket_async_conn.rs`; the client side is the same shape, so it
-            // reuses all of that plumbing.
-            match Self::connect_real_tcp(&host, port) {
-                Ok(socket) => {
-                    let conn_id = super::super::native_methods::next_async_socket_id();
-                    let local = socket.local_addr().ok();
-                    let peer = socket.peer_addr().ok();
-                    super::super::native_methods::state::register_tcp_stream(conn_id, socket);
-                    let mut attrs = HashMap::new();
-                    attrs.insert("conn-id".to_string(), Value::int(conn_id as i64));
-                    attrs.insert("tcp-real".to_string(), Value::TRUE);
-                    attrs.insert(
-                        "socket-host".to_string(),
-                        Value::str(
-                            local
-                                .map(|a| a.ip().to_string())
-                                .unwrap_or_else(|| "0.0.0.0".to_string()),
-                        ),
-                    );
-                    attrs.insert(
-                        "socket-port".to_string(),
-                        Value::int(local.map(|a| a.port()).unwrap_or(0) as i64),
-                    );
-                    attrs.insert("peer-host".to_string(), Value::str(host.clone()));
-                    attrs.insert(
-                        "peer-port".to_string(),
-                        Value::int(peer.map(|a| a.port()).unwrap_or(port) as i64),
-                    );
-                    attrs.insert("enc".to_string(), Value::str(enc));
-                    promise.keep(
-                        Value::make_instance(Symbol::intern("IO::Socket::Async"), attrs),
-                        String::new(),
-                        String::new(),
-                    );
-                }
-                Err(e) => {
-                    // Break with a real exception, not a Str: a consumer that
-                    // catches the failure may `.rethrow` it (Cro's pipeline
-                    // QUIT handler does).
-                    let mut ex_attrs = HashMap::new();
-                    ex_attrs.insert(
-                        "message".to_string(),
-                        Value::str(format!("Failed to connect to '{}:{}': {}", host, port, e)),
-                    );
-                    let _ = promise
-                        .try_break(Value::make_instance(Symbol::intern("X::AdHoc"), ex_attrs));
-                }
+            Err(e) => {
+                // Break with a real exception, not a Str: a consumer that
+                // catches the failure may `.rethrow` it (Cro's pipeline
+                // QUIT handler does).
+                let mut ex_attrs = HashMap::new();
+                ex_attrs.insert(
+                    "message".to_string(),
+                    Value::str(format!("Failed to connect to '{}:{}': {}", host, port, e)),
+                );
+                let _ =
+                    promise.try_break(Value::make_instance(Symbol::intern("X::AdHoc"), ex_attrs));
             }
-        };
+        }
 
         Ok(Value::promise(promise))
     }

@@ -377,8 +377,11 @@ impl Interpreter {
             })
             .collect();
 
-        // Check if we're in a react block (supply_emit_buffer has an entry)
-        if !self.supply_emit_buffer.is_empty() {
+        // Check if we're in a react block (supply_emit_buffer has an entry), or
+        // inside a running react drive loop -- a `whenever` nested in another
+        // `whenever`'s body registers while the loop is already driving, after
+        // the body's own registration frame was popped.
+        if !self.supply_emit_buffer.is_empty() || self.react_active > 0 {
             if let ValueView::Instance { class_name, .. } = supply_val.view()
                 && class_name == "IO::Socket::Async::Listener"
             {
@@ -401,6 +404,11 @@ impl Interpreter {
             ]);
             if let Some(last) = self.supply_emit_buffer.last_mut() {
                 last.push(sub);
+            } else {
+                // No registration frame: this `whenever` ran inside a
+                // `whenever` body, so hand it to the drive loop, which adopts
+                // it on its next round.
+                self.pending_react_subscriptions.push(sub);
             }
 
             // Also register taps on the supply for non-react backward compat

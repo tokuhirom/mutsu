@@ -73,32 +73,10 @@ pub(super) fn cancellation_map() -> &'static CancellationMap {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct AsyncSocketConnState {
-    pub(crate) peer_id: Option<u64>,
-    pub(crate) encoding: String,
-    pub(crate) closed: bool,
-    pub(crate) peer_closed: bool,
-    pub(crate) supply_ids: Vec<u64>,
-    pub(crate) pending_bytes: Vec<u8>,
-    pub(crate) deferred_accept_callback: Option<Value>,
-    pub(crate) deferred_accept_socket: Option<Value>,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct AsyncSocketSupplyState {
-    pub(crate) is_bin: bool,
-    pub(crate) encoding: String,
-    pub(crate) text_buffer: String,
-    pub(crate) byte_buffer: Vec<u8>,
-}
-
-#[derive(Debug, Clone)]
 pub(crate) struct AsyncSocketListenerState {
     pub(crate) host: String,
     pub(crate) port: u16,
-    pub(crate) callback: Value,
     pub(crate) closed: bool,
-    pub(crate) encoding: String,
 }
 
 /// UDP bound socket state
@@ -111,19 +89,7 @@ pub(crate) struct UdpBoundSocketState {
 }
 
 type UdpBoundSocketMap = std::sync::Mutex<HashMap<u64, UdpBoundSocketState>>;
-type AsyncSocketConnMap = std::sync::Mutex<HashMap<u64, AsyncSocketConnState>>;
-type AsyncSocketSupplyMap = std::sync::Mutex<HashMap<u64, AsyncSocketSupplyState>>;
 type AsyncSocketListenerMap = std::sync::Mutex<HashMap<u64, AsyncSocketListenerState>>;
-
-fn async_socket_conn_map() -> &'static AsyncSocketConnMap {
-    static MAP: OnceLock<AsyncSocketConnMap> = OnceLock::new();
-    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
-}
-
-fn async_socket_supply_map() -> &'static AsyncSocketSupplyMap {
-    static MAP: OnceLock<AsyncSocketSupplyMap> = OnceLock::new();
-    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
-}
 
 fn async_socket_listener_map() -> &'static AsyncSocketListenerMap {
     static MAP: OnceLock<AsyncSocketListenerMap> = OnceLock::new();
@@ -585,20 +551,6 @@ pub(in crate::runtime) fn next_async_listener_id() -> u64 {
     COUNTER.fetch_add(1, Ordering::Relaxed)
 }
 
-pub(in crate::runtime) fn allocate_async_listen_port() -> u16 {
-    static COUNTER: AtomicU64 = AtomicU64::new(43000);
-    loop {
-        let candidate = COUNTER.fetch_add(1, Ordering::Relaxed) as u16;
-        let occupied = async_socket_listener_map()
-            .lock()
-            .ok()
-            .is_some_and(|map| map.values().any(|l| !l.closed && l.port == candidate));
-        if !occupied && candidate != 0 {
-            return candidate;
-        }
-    }
-}
-
 pub(in crate::runtime) fn register_async_listener(
     listener_id: u64,
     state: AsyncSocketListenerState,
@@ -616,27 +568,6 @@ pub(in crate::runtime) fn close_async_listener(listener_id: u64) {
     }
 }
 
-pub(in crate::runtime) fn lookup_async_listener(
-    host: &str,
-    port: u16,
-) -> Option<(u64, AsyncSocketListenerState)> {
-    if let Ok(map) = async_socket_listener_map().lock() {
-        for (id, listener) in map.iter() {
-            if listener.closed || listener.port != port {
-                continue;
-            }
-            if listener.host == host
-                || listener.host == "0.0.0.0"
-                || listener.host == "::"
-                || (host == "localhost" && listener.host == "127.0.0.1")
-            {
-                return Some((*id, listener.clone()));
-            }
-        }
-    }
-    None
-}
-
 #[allow(dead_code)]
 pub(in crate::runtime) fn async_port_in_use(host: &str, port: u16) -> bool {
     if let Ok(map) = async_socket_listener_map().lock() {
@@ -647,68 +578,6 @@ pub(in crate::runtime) fn async_port_in_use(host: &str, port: u16) -> bool {
         });
     }
     false
-}
-
-pub(in crate::runtime) fn register_async_connection(conn_id: u64, state: AsyncSocketConnState) {
-    if let Ok(mut map) = async_socket_conn_map().lock() {
-        map.insert(conn_id, state);
-    }
-}
-
-pub(in crate::runtime) fn get_async_connection(conn_id: u64) -> Option<AsyncSocketConnState> {
-    async_socket_conn_map()
-        .lock()
-        .ok()
-        .and_then(|map| map.get(&conn_id).cloned())
-}
-
-pub(in crate::runtime) fn update_async_connection<F>(conn_id: u64, f: F)
-where
-    F: FnOnce(&mut AsyncSocketConnState),
-{
-    if let Ok(mut map) = async_socket_conn_map().lock()
-        && let Some(state) = map.get_mut(&conn_id)
-    {
-        f(state);
-    }
-}
-
-pub(super) fn take_deferred_accept_callback(conn_id: u64) -> Option<(Value, Value)> {
-    if let Ok(mut map) = async_socket_conn_map().lock()
-        && let Some(state) = map.get_mut(&conn_id)
-        && let (Some(callback), Some(socket)) = (
-            state.deferred_accept_callback.take(),
-            state.deferred_accept_socket.take(),
-        )
-    {
-        Some((callback, socket))
-    } else {
-        None
-    }
-}
-
-pub(in crate::runtime) fn register_async_supply(supply_id: u64, state: AsyncSocketSupplyState) {
-    if let Ok(mut map) = async_socket_supply_map().lock() {
-        map.insert(supply_id, state);
-    }
-}
-
-pub(in crate::runtime) fn get_async_supply(supply_id: u64) -> Option<AsyncSocketSupplyState> {
-    async_socket_supply_map()
-        .lock()
-        .ok()
-        .and_then(|map| map.get(&supply_id).cloned())
-}
-
-pub(in crate::runtime) fn update_async_supply<F>(supply_id: u64, f: F)
-where
-    F: FnOnce(&mut AsyncSocketSupplyState),
-{
-    if let Ok(mut map) = async_socket_supply_map().lock()
-        && let Some(state) = map.get_mut(&supply_id)
-    {
-        f(state);
-    }
 }
 
 pub(crate) fn next_supplier_id() -> u64 {

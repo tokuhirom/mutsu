@@ -16,9 +16,6 @@ impl Interpreter {
             return self.native_socket_async_udp(attributes, method, args);
         }
 
-        // Check if this is a real TCP connection (from listener accept)
-        let is_real_tcp = attributes.get("tcp-real").and_then(Value::as_bool) == Some(true);
-
         let conn_id = attributes
             .get("conn-id")
             .and_then(|v| v.as_int().map(|i| i as u64));
@@ -41,13 +38,10 @@ impl Interpreter {
                 .cloned()
                 .unwrap_or_else(|| Value::str_from("0.0.0.0"))),
             // The OS-level file descriptor of the underlying TCP stream, used
-            // by NativeCall consumers (Cro::TCP::NoDelay's setsockopt). Only
-            // meaningful for real TCP connections; in-memory test sockets have
-            // no descriptor and report -1.
+            // by NativeCall consumers (Cro::TCP::NoDelay's setsockopt).
             "native-descriptor" => {
                 #[cfg(unix)]
-                if is_real_tcp
-                    && let Some(id) = conn_id
+                if let Some(id) = conn_id
                     && let Some(stream) = get_tcp_stream(id)
                     && let Ok(s) = stream.lock()
                 {
@@ -56,7 +50,7 @@ impl Interpreter {
                 }
                 Ok(Value::int(-1))
             }
-            "close" if is_real_tcp => {
+            "close" => {
                 if let Some(id) = conn_id {
                     if let Some(stream) = get_tcp_stream(id)
                         && let Ok(s) = stream.lock()
@@ -67,16 +61,10 @@ impl Interpreter {
                 }
                 Ok(Value::NIL)
             }
-            "close" => {
-                self.async_socket_close_in_memory(conn_id)?;
-                Ok(Value::NIL)
+            "Supply" => self.async_socket_supply_real_tcp(conn_id, &args, attributes),
+            "write" | "print" => {
+                self.async_socket_write_real_tcp(conn_id, method, &args, attributes)
             }
-            "Supply" if is_real_tcp => self.async_socket_supply_real_tcp(conn_id, &args),
-            "Supply" => self.async_socket_supply_in_memory(conn_id, &args, attributes),
-            "write" | "print" if is_real_tcp => {
-                self.async_socket_write_real_tcp(conn_id, method, &args)
-            }
-            "write" | "print" => self.async_socket_write_in_memory(conn_id, method, &args),
             _ => Err(RuntimeError::new(format!(
                 "No method '{}' on IO::Socket::Async",
                 method
@@ -84,53 +72,104 @@ impl Interpreter {
         }
     }
 
-    fn async_socket_close_in_memory(&mut self, conn_id: Option<u64>) -> Result<(), RuntimeError> {
-        if let Some(id) = conn_id
-            && let Some(state) = get_async_connection(id)
-        {
-            update_async_connection(id, |conn| {
-                conn.closed = true;
-            });
-            for sid in &state.supply_ids {
-                self.async_supplier_done_value(*sid);
+    /// The socket's text encoding: `.Supply(:enc(...))` / `.print(:enc(...))`
+    /// wins over the `:enc` the socket was created with, which defaults to
+    /// UTF-8.
+    fn socket_encoding(args: &[Value], attributes: &AttrMap) -> String {
+        Self::named_value(args, "enc")
+            .map(|v| v.to_string_value())
+            .or_else(|| attributes.get("enc").map(Value::to_string_value))
+            .unwrap_or_else(|| "utf-8".to_string())
+            .to_lowercase()
+    }
+
+    /// True for the single-byte encodings a socket can decode incrementally
+    /// without any carry-over state (every byte is a whole character, and none
+    /// of them is a combining mark).
+    fn is_single_byte_encoding(enc: &str) -> bool {
+        matches!(enc, "latin-1" | "latin1" | "iso-8859-1" | "ascii")
+    }
+
+    /// The exception a text-mode socket Supply quits with when the peer sends
+    /// bytes that are not valid UTF-8.
+    fn malformed_utf8_exception() -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert(
+            "message".to_string(),
+            Value::str_from("Malformed UTF-8 on socket Supply"),
+        );
+        Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
+    }
+
+    /// Decode one socket read in text mode, carrying the two kinds of
+    /// incompleteness a byte stream can end with.
+    ///
+    /// `pending_bytes` holds a truncated UTF-8 sequence; `pending_text` holds a
+    /// trailing grapheme cluster that a following combining mark could still
+    /// extend. Returns the text that is safe to emit now, `Ok(None)` when this
+    /// read produced nothing complete, and `Err(())` when the bytes are not
+    /// UTF-8 at all — which quits the Supply rather than substituting U+FFFD.
+    fn decode_socket_chunk(
+        chunk: &[u8],
+        enc: &str,
+        pending_bytes: &mut Vec<u8>,
+        pending_text: &mut String,
+    ) -> Result<Option<String>, ()> {
+        use unicode_segmentation::UnicodeSegmentation;
+        if Self::is_single_byte_encoding(enc) {
+            if enc == "ascii" && chunk.iter().any(|b| *b > 0x7F) {
+                return Err(());
             }
-            if let Some(peer_id) = state.peer_id
-                && let Some(peer) = get_async_connection(peer_id)
-            {
-                update_async_connection(peer_id, |conn| {
-                    conn.peer_closed = true;
-                });
-                if let Some((callback, socket)) = take_deferred_accept_callback(peer_id) {
-                    let _ = self.call_sub_value(callback, vec![socket], true);
-                }
-                for sid in &peer.supply_ids {
-                    if let Some(supply) = get_async_supply(*sid)
-                        && !supply.is_bin
-                        && !supply.text_buffer.is_empty()
-                    {
-                        let _ = self.async_supplier_emit_value(
-                            *sid,
-                            Value::str(supply.text_buffer.clone()),
-                        );
-                        update_async_supply(*sid, |st| st.text_buffer.clear());
-                    }
-                    self.async_supplier_done_value(*sid);
-                }
-            }
+            let s: String = chunk.iter().map(|b| *b as char).collect();
+            return Ok(if s.is_empty() { None } else { Some(s) });
         }
-        Ok(())
+        pending_bytes.extend_from_slice(chunk);
+        let decoded = match std::str::from_utf8(pending_bytes) {
+            Ok(s) => {
+                let s = s.to_string();
+                pending_bytes.clear();
+                s
+            }
+            Err(e) if e.error_len().is_none() => {
+                // Truncated (not invalid) tail: decode the valid prefix and keep
+                // the rest for the next read.
+                let valid_up_to = e.valid_up_to();
+                let s = std::str::from_utf8(&pending_bytes[..valid_up_to])
+                    .unwrap_or_default()
+                    .to_string();
+                pending_bytes.drain(..valid_up_to);
+                s
+            }
+            Err(_) => return Err(()),
+        };
+        pending_text.push_str(&decoded);
+        // Hold back the final grapheme cluster: the next packet may carry a
+        // combining mark that belongs to it. A cluster made of Control/CR/LF is
+        // the exception — UAX #29 always breaks after one, so nothing can extend
+        // it and holding it back would strand the trailing newline of a line
+        // -oriented protocol until the peer closed the connection.
+        let split_at = match pending_text.grapheme_indices(true).next_back() {
+            Some((_, g)) if g.chars().all(char::is_control) => pending_text.len(),
+            Some((i, _)) => i,
+            None => 0,
+        };
+        let ready: String = pending_text[..split_at].to_string();
+        pending_text.drain(..split_at);
+        Ok(if ready.is_empty() { None } else { Some(ready) })
     }
 
     fn async_socket_supply_real_tcp(
         &mut self,
         conn_id: Option<u64>,
         args: &[Value],
+        attributes: &AttrMap,
     ) -> Result<Value, RuntimeError> {
         let id = conn_id.ok_or_else(|| RuntimeError::new("Missing async conn-id"))?;
         // `.Supply(:bin)` must emit `Buf[uint8]` chunks (raw bytes), not decoded
         // `Str`. This is the exact point HTTP::Server::Tiny's handler needs: it
         // feeds the emitted value to `parse-http-request`, which expects a Blob.
         let is_bin = Self::named_bool(args, "bin");
+        let enc = Self::socket_encoding(args, attributes);
         let supply_id = next_supply_id();
         let (tx, rx) = super::supply_channel::supply_event_channel();
         if let Ok(mut map) = supply_channel_map().lock() {
@@ -146,23 +185,59 @@ impl Interpreter {
                 crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
                     use std::io::Read;
                     let mut buf = [0u8; 4096];
+                    // Text mode carries decoding state across reads: TCP splits
+                    // wherever it likes, so a read can end mid-UTF-8-sequence
+                    // (`pending_bytes`) or mid-grapheme (`pending_text`, e.g. a
+                    // "u" whose COMBINING DOT ABOVE is in the next packet).
+                    // Emitting either half on its own is wrong, so both are held
+                    // back until the next read resolves them or the stream ends.
+                    let mut pending_bytes: Vec<u8> = Vec::new();
+                    let mut pending_text = String::new();
                     loop {
                         match crate::gc::block_quiescent(|| reader.read(&mut buf)) {
                             Ok(0) => {
+                                if !is_bin && !pending_text.is_empty() {
+                                    let _ = tx.send(SupplyEvent::Emit(Value::str(std::mem::take(
+                                        &mut pending_text,
+                                    ))));
+                                }
                                 let _ = tx.send(SupplyEvent::Done);
                                 break;
                             }
                             Ok(n) => {
                                 let value = if is_bin {
-                                    Self::make_buf(buf[..n].to_vec())
+                                    Some(Self::make_buf(buf[..n].to_vec()))
                                 } else {
-                                    Value::str(String::from_utf8_lossy(&buf[..n]).to_string())
+                                    match Self::decode_socket_chunk(
+                                        &buf[..n],
+                                        &enc,
+                                        &mut pending_bytes,
+                                        &mut pending_text,
+                                    ) {
+                                        Ok(text) => text.map(Value::str),
+                                        // Not UTF-8: Raku quits the Supply with
+                                        // the decode failure rather than
+                                        // substituting replacement characters.
+                                        Err(()) => {
+                                            let _ = tx.send(SupplyEvent::Quit(
+                                                Self::malformed_utf8_exception(),
+                                            ));
+                                            break;
+                                        }
+                                    }
                                 };
-                                if tx.send(SupplyEvent::Emit(value)).is_err() {
+                                if let Some(value) = value
+                                    && tx.send(SupplyEvent::Emit(value)).is_err()
+                                {
                                     break;
                                 }
                             }
                             Err(_) => {
+                                if !is_bin && !pending_text.is_empty() {
+                                    let _ = tx.send(SupplyEvent::Emit(Value::str(std::mem::take(
+                                        &mut pending_text,
+                                    ))));
+                                }
                                 let _ = tx.send(SupplyEvent::Done);
                                 break;
                             }
@@ -179,116 +254,12 @@ impl Interpreter {
         Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
     }
 
-    fn async_socket_supply_in_memory(
-        &mut self,
-        conn_id: Option<u64>,
-        args: &[Value],
-        attributes: &AttrMap,
-    ) -> Result<Value, RuntimeError> {
-        let id = conn_id.ok_or_else(|| RuntimeError::new("Missing async conn-id"))?;
-        let is_bin = Self::named_bool(args, "bin");
-        let supply_enc = Self::named_value(args, "enc")
-            .map(|v| v.to_string_value())
-            .or_else(|| attributes.get("enc").map(Value::to_string_value))
-            .unwrap_or_else(|| "utf-8".to_string());
-        // This id is stamped into the Supply's `supplier_id` attribute and every
-        // downstream registration (register_supplier_tap, supplier_done, emit)
-        // keys the SUPPLIER registry with it — so it must come from the supplier
-        // counter. Allocating from `next_supply_id()` (a separate counter, also
-        // starting at 1) collided with a genuine `Supplier.new` of the same
-        // number, cross-delivering that supplier's emissions to this socket's
-        // tap (seen as Cro::TCP::Message objects arriving on a client's
-        // `.Supply(:bin)` tap).
-        let supply_id = next_supplier_id();
-        register_async_supply(
-            supply_id,
-            AsyncSocketSupplyState {
-                is_bin,
-                encoding: supply_enc,
-                text_buffer: String::new(),
-                byte_buffer: Vec::new(),
-            },
-        );
-        update_async_connection(id, |conn| conn.supply_ids.push(supply_id));
-
-        let mut initial_values: Vec<Value> = Vec::new();
-        let mut is_supplier_done = false;
-        let mut attrs = HashMap::new();
-        attrs.insert("values".to_string(), Value::array(Vec::new()));
-        attrs.insert("taps".to_string(), Value::array(Vec::new()));
-        attrs.insert("live".to_string(), Value::TRUE);
-        attrs.insert("supplier_id".to_string(), Value::int(supply_id as i64));
-        if let Some(conn_state) = get_async_connection(id) {
-            is_supplier_done = conn_state.closed || conn_state.peer_closed;
-            if !conn_state.pending_bytes.is_empty() {
-                self.decode_pending_bytes_to_supply(
-                    &conn_state.pending_bytes,
-                    supply_id,
-                    is_bin,
-                    &mut initial_values,
-                );
-                update_async_connection(id, |conn| conn.pending_bytes.clear());
-            }
-        }
-        if is_supplier_done
-            && !is_bin
-            && let Some(supply) = get_async_supply(supply_id)
-            && !supply.text_buffer.is_empty()
-        {
-            initial_values.push(Value::str(supply.text_buffer.clone()));
-            update_async_supply(supply_id, |st| st.text_buffer.clear());
-        }
-        attrs.insert("values".to_string(), Value::array(initial_values));
-        if is_supplier_done {
-            supplier_done(supply_id);
-            attrs.insert("supplier_done".to_string(), Value::TRUE);
-            attrs.insert("live".to_string(), Value::FALSE);
-        }
-        Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
-    }
-
-    fn decode_pending_bytes_to_supply(
-        &mut self,
-        pending_bytes: &[u8],
-        supply_id: u64,
-        is_bin: bool,
-        initial_values: &mut Vec<Value>,
-    ) {
-        if is_bin {
-            initial_values.push(Self::make_buf(pending_bytes.to_vec()));
-        } else if let Some(supply) = get_async_supply(supply_id) {
-            let decoded = if supply.encoding.eq_ignore_ascii_case("utf-8") {
-                String::from_utf8_lossy(pending_bytes).to_string()
-            } else if supply.encoding.eq_ignore_ascii_case("latin-1")
-                || supply.encoding.eq_ignore_ascii_case("iso-8859-1")
-            {
-                pending_bytes
-                    .iter()
-                    .map(|b| char::from_u32(*b as u32).unwrap_or('\u{FFFD}'))
-                    .collect()
-            } else {
-                self.decode_with_encoding(pending_bytes, &supply.encoding)
-                    .unwrap_or_default()
-            };
-            if !decoded.is_empty() {
-                let mut start = 0usize;
-                for (idx, ch) in decoded.char_indices() {
-                    if ch == '\n' {
-                        initial_values.push(Value::str(decoded[start..=idx].to_string()));
-                        start = idx + ch.len_utf8();
-                    }
-                }
-                let tail = decoded[start..].to_string();
-                update_async_supply(supply_id, |st| st.text_buffer = tail);
-            }
-        }
-    }
-
     fn async_socket_write_real_tcp(
         &mut self,
         conn_id: Option<u64>,
         method: &str,
         args: &[Value],
+        attributes: &AttrMap,
     ) -> Result<Value, RuntimeError> {
         let promise = SharedPromise::new();
         let result = (|| -> Result<Value, RuntimeError> {
@@ -309,7 +280,14 @@ impl Interpreter {
                     .last()
                     .map(|v| self.render_str_value(v))
                     .unwrap_or_default();
-                text.into_bytes()
+                // `.print` encodes with the socket's `:enc`, so a latin-1 socket
+                // puts one byte per codepoint on the wire rather than UTF-8.
+                let enc = Self::socket_encoding(args, attributes);
+                if enc == "utf-8" || enc == "utf8" {
+                    text.into_bytes()
+                } else {
+                    self.encode_with_encoding(&text, &enc)?
+                }
             };
             if bytes.is_empty() {
                 return Ok(Self::async_socket_kept(Value::TRUE));
@@ -335,140 +313,5 @@ impl Interpreter {
             ),
         }
         Ok(Value::promise(promise))
-    }
-
-    fn async_socket_write_in_memory(
-        &mut self,
-        conn_id: Option<u64>,
-        method: &str,
-        args: &[Value],
-    ) -> Result<Value, RuntimeError> {
-        let promise = SharedPromise::new();
-        let result = (|| -> Result<Value, RuntimeError> {
-            let id = conn_id.ok_or_else(|| RuntimeError::new("Missing async conn-id"))?;
-            let state = get_async_connection(id)
-                .ok_or_else(|| RuntimeError::new("Unknown async socket connection"))?;
-            if state.closed {
-                return Ok(Self::async_socket_broken(Value::str_from(
-                    "Socket is closed",
-                )));
-            }
-            let peer_id = state
-                .peer_id
-                .ok_or_else(|| RuntimeError::new("Peer missing"))?;
-            let peer = get_async_connection(peer_id)
-                .ok_or_else(|| RuntimeError::new("Unknown peer connection"))?;
-
-            let bytes = if method == "write" {
-                args.last()
-                    .and_then(Self::extract_bytes)
-                    .unwrap_or_else(|| {
-                        args.last()
-                            .map(Value::to_string_value)
-                            .unwrap_or_default()
-                            .into_bytes()
-                    })
-            } else {
-                let text = args
-                    .last()
-                    .map(|v| self.render_str_value(v))
-                    .unwrap_or_default();
-                self.encode_with_encoding(&text, &state.encoding)?
-            };
-            if bytes.is_empty() {
-                return Ok(Self::async_socket_kept(Value::TRUE));
-            }
-            if peer.closed {
-                return Ok(Self::async_socket_broken(Value::str_from(
-                    "Socket is closed",
-                )));
-            }
-
-            if peer.supply_ids.is_empty() {
-                update_async_connection(peer_id, |conn| {
-                    conn.pending_bytes.extend_from_slice(&bytes);
-                });
-                return Ok(Self::async_socket_kept(Value::TRUE));
-            }
-
-            self.deliver_bytes_to_peer_supplies(&peer.supply_ids, &bytes);
-            Ok(Self::async_socket_kept(Value::TRUE))
-        })();
-
-        match result {
-            Ok(v) => promise.keep(v, String::new(), String::new()),
-            Err(e) => promise.keep(
-                Self::async_socket_broken(Value::str(e.message)),
-                String::new(),
-                String::new(),
-            ),
-        }
-        Ok(Value::promise(promise))
-    }
-
-    fn deliver_bytes_to_peer_supplies(&mut self, supply_ids: &[u64], bytes: &[u8]) {
-        for sid in supply_ids {
-            if let Some(supply) = get_async_supply(*sid) {
-                if supply.is_bin {
-                    let buf = Self::make_buf(bytes.to_vec());
-                    let _ = self.async_supplier_emit_value(*sid, buf);
-                } else {
-                    let mut pending = supply.byte_buffer.clone();
-                    pending.extend_from_slice(bytes);
-                    let (decoded, remainder) = if supply.encoding.eq_ignore_ascii_case("utf-8") {
-                        match std::str::from_utf8(&pending) {
-                            Ok(s) => (s.to_string(), Vec::new()),
-                            Err(e) => {
-                                if e.error_len().is_none() {
-                                    let valid = &pending[..e.valid_up_to()];
-                                    let valid_decoded =
-                                        std::str::from_utf8(valid).unwrap_or("").to_string();
-                                    (valid_decoded, pending[e.valid_up_to()..].to_vec())
-                                } else {
-                                    self.async_supplier_quit_value(
-                                        *sid,
-                                        Value::str_from("Malformed UTF-8 on socket Supply"),
-                                    );
-                                    continue;
-                                }
-                            }
-                        }
-                    } else if supply.encoding.eq_ignore_ascii_case("latin-1")
-                        || supply.encoding.eq_ignore_ascii_case("iso-8859-1")
-                    {
-                        (
-                            pending
-                                .iter()
-                                .map(|b| char::from_u32(*b as u32).unwrap_or('\u{FFFD}'))
-                                .collect(),
-                            Vec::new(),
-                        )
-                    } else {
-                        match self.decode_with_encoding(&pending, &supply.encoding) {
-                            Ok(s) => (s, Vec::new()),
-                            Err(e) => {
-                                self.async_supplier_quit_value(*sid, Value::str(e.message));
-                                continue;
-                            }
-                        }
-                    };
-                    let mut merged = supply.text_buffer.clone();
-                    merged.push_str(&decoded);
-                    let mut start = 0usize;
-                    for (idx, ch) in merged.char_indices() {
-                        if ch == '\n' {
-                            let chunk = merged[start..=idx].to_string();
-                            let _ = self.async_supplier_emit_value(*sid, Value::str(chunk));
-                            start = idx + ch.len_utf8();
-                        }
-                    }
-                    let tail = merged[start..].to_string();
-                    update_async_supply(*sid, |st| {
-                        st.text_buffer = tail;
-                        st.byte_buffer = remainder;
-                    });
-                }
-            }
-        }
     }
 }

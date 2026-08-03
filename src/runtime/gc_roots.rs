@@ -207,6 +207,10 @@ impl Interpreter {
         for vec in &self.supply_emit_buffer {
             visit_slice(visitor, vec);
         }
+        // A marker queued here holds the whenever's source Supply and its
+        // callbacks, and it is the ONLY thing holding them between the nested
+        // `whenever` running and the drive loop's next round.
+        visit_slice(visitor, &self.pending_react_subscriptions);
         for vec in &self.supply_emit_timed_buffer {
             for (v, _) in vec {
                 visitor.visit_value(v);
