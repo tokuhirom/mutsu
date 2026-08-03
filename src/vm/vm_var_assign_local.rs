@@ -164,8 +164,8 @@ impl Interpreter {
                 // Clone the ArrayData so shape/default/type metadata survive;
                 // only the items are rewritten.
                 let mut data = (**items).clone();
-                data.items =
-                    crate::runtime::utils::nil_elems_to_any(std::mem::take(&mut data.items));
+                let old_items = data.take_items();
+                *data.items_mut() = crate::runtime::utils::nil_elems_to_any(old_items);
                 assigned = Value::array_with_kind(crate::gc::Gc::new(data), kind);
             }
             let class_name = match self.locals[idx].view() {

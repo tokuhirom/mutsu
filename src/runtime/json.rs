@@ -166,7 +166,7 @@ fn jsonify(val: &Value, opts: &ToJsonOpts, level: usize, out: &mut String) {
                 jsonify(inner, opts, level, out);
             }
         }
-        ValueView::Array(arr, _) => jsonify_seq(&arr.items, opts, level, out),
+        ValueView::Array(arr, _) => jsonify_seq(arr.items(), opts, level, out),
         ValueView::Seq(items)
         | ValueView::Slip(items)
         | ValueView::HyperSeq(items)

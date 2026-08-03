@@ -439,7 +439,7 @@ pub fn call_native_with_out_args(
         {
             let sz = carray_elem_size(*elem);
             arr.with_array_inplace(|data, _kind| {
-                for (i, cell) in data.items.iter_mut().enumerate() {
+                for (i, cell) in data.items_mut().iter_mut().enumerate() {
                     let off = i * sz;
                     if off + sz <= buf.len() {
                         *cell = decode_carray_elem(*elem, &buf[off..off + sz]);
@@ -577,6 +577,7 @@ pub(crate) fn value_c_address(v: &Value) -> usize {
             }
             _ => 0,
         },
+        ValueView::Array(data, _) => data.native_storage_address().unwrap_or(0),
         ValueView::Scalar(inner) => value_c_address(inner),
         ValueView::ContainerRef(cell) => cell.lock().ok().map(|g| value_c_address(&g)).unwrap_or(0),
         ValueView::VarRef { value, .. } => value_c_address(value),
@@ -963,6 +964,7 @@ fn marshal_arg(ps: &ParamSpec, raw: &Value) -> Result<(libffi::middle::Type, Arg
 #[cfg(feature = "libffi")]
 fn buf_storage_node(v: &Value) -> Option<crate::gc::Gc<crate::value::BufData>> {
     match v.view() {
+        ValueView::Array(data, _) => data.native_storage_node(),
         ValueView::Instance { attributes, .. } => {
             crate::value::value_buf::buf_storage_node(&attributes)
         }
@@ -1032,7 +1034,7 @@ fn marshal_carray_arg(
         .ok_or_else(|| "CArray parameter is missing its element type".to_string())?;
     let list = match resolve_array_value(raw) {
         Some(arr) => arr
-            .with_array_inplace(|data, _| data.items.clone())
+            .with_array_inplace(|data, _| data.items().clone())
             .unwrap_or_default(),
         // A bare type object / Any becomes a null pointer.
         None => Vec::new(),

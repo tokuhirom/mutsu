@@ -658,10 +658,10 @@ impl Interpreter {
                             crate::value::ArrayKind::Array,
                         ),
                     };
-                    if idx_u >= items.items.len() {
-                        items.items.resize(idx_u + 1, Value::NIL);
+                    if idx_u >= items.items().len() {
+                        items.items_mut().resize(idx_u + 1, Value::NIL);
                     }
-                    items.items[idx_u] = val.clone();
+                    items.items_mut()[idx_u] = val.clone();
                     *storage = Value::array_with_kind(crate::gc::Gc::new(items), kind);
                 });
                 self.stack.push(val);
@@ -769,7 +769,7 @@ impl Interpreter {
                     // straight to `*mut Vec<Value>`, assuming `items` sits at
                     // offset 0; this types it properly as `&mut ArrayData`.)
                     let data = unsafe { crate::value::gc_contents_mut(&items) };
-                    data.items[i] = Value::scalar(val.clone());
+                    data.items_mut()[i] = Value::scalar(val.clone());
                     self.stack.push(val);
                     return Ok(());
                 }
@@ -2600,7 +2600,7 @@ impl Interpreter {
         ) {
             let outer_keys: Vec<Value> = match outer_idx.view() {
                 ValueView::Junction { values, .. } => values.as_ref().clone(),
-                ValueView::Array(a, ..) => a.items.to_vec(),
+                ValueView::Array(a, ..) => a.items().to_vec(),
                 _ => unreachable!(),
             };
             // A scalar RHS goes to every junction key; a slice/junction RHS
@@ -2713,7 +2713,7 @@ impl Interpreter {
                 Some(ValueView::Array(arr, ..)) => inner_key
                     .parse::<usize>()
                     .ok()
-                    .and_then(|i| arr.items.get(i).cloned()),
+                    .and_then(|i| arr.items().get(i).cloned()),
                 _ => None,
             };
             self.resolve_whatever_index_for_target(outer_idx, inner_container.as_ref())
@@ -2998,7 +2998,7 @@ impl Interpreter {
         {
             let outer_keys: Vec<Value> = match outermost.view() {
                 ValueView::Junction { values, .. } => values.as_ref().clone(),
-                ValueView::Array(a, ..) => a.items.to_vec(),
+                ValueView::Array(a, ..) => a.items().to_vec(),
                 _ => unreachable!(),
             };
             let vals: Vec<Value> = match (outermost.view(), raw_val_for_junction.view()) {
@@ -3372,7 +3372,7 @@ impl Interpreter {
                         (values.as_ref().clone(), vals)
                     }
                     ValueView::Array(keys, ..) => {
-                        (keys.items.to_vec(), self.assignment_rhs_values(&val)?)
+                        (keys.items().to_vec(), self.assignment_rhs_values(&val)?)
                     }
                     _ => unreachable!(),
                 };
@@ -3443,7 +3443,7 @@ impl Interpreter {
                     // SAFETY: aliased in-place mutation of a shared array so the
                     // change is visible to all holders of the same Arc; see
                     // `gc_contents_mut`.
-                    let v = &mut unsafe { crate::value::gc_contents_mut(&arc) }.items;
+                    let v = unsafe { crate::value::gc_contents_mut(&arc) }.items_mut();
                     Self::autoviv_resize(
                         v,
                         i + 1,

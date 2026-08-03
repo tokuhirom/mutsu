@@ -60,7 +60,8 @@ impl Interpreter {
             }
             Some(ValueView::Array(a, kind)) => {
                 let mut data = a.as_ref().clone();
-                for v in data.items.iter_mut() {
+                data.clear_native_storage();
+                for v in data.items_mut().iter_mut() {
                     let taken = std::mem::replace(v, Value::NIL);
                     *v = Self::boxed_elem_cell(taken);
                 }
@@ -196,24 +197,28 @@ impl Interpreter {
             return c;
         }
         let (mut data, kind) = match arr.view() {
-            ValueView::Array(a, kind) => (a.as_ref().clone(), kind),
+            ValueView::Array(a, kind) => {
+                let mut data = a.as_ref().clone();
+                data.clear_native_storage();
+                (data, kind)
+            }
             _ => (
                 crate::value::ArrayData::new(Vec::new()),
                 crate::value::ArrayKind::Array,
             ),
         };
-        while data.items.len() <= idx {
-            data.items.push(Self::boxed_elem_cell(Value::int(0)));
+        while data.items().len() <= idx {
+            data.items_mut().push(Self::boxed_elem_cell(Value::int(0)));
         }
         let seed = {
-            let v = &data.items[idx];
+            let v = &data.items()[idx];
             if let ValueView::ContainerRef(c) = v.view() {
                 return c.clone();
             }
             v.clone()
         };
         let cell = crate::gc::Gc::new(std::sync::Mutex::new(seed));
-        data.items[idx] = Value::container_ref(cell.clone());
+        data.items_mut()[idx] = Value::container_ref(cell.clone());
         let updated = Value::array_with_kind(crate::gc::Gc::new(data), kind);
         shared.insert(atomic_key.to_string(), updated.clone());
         drop(shared);

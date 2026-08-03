@@ -484,7 +484,7 @@ impl Interpreter {
         val: &Value,
     ) -> Result<Vec<Value>, RuntimeError> {
         Ok(match val.view() {
-            ValueView::Array(v, ..) => v.as_ref().clone().items,
+            ValueView::Array(v, ..) => v.as_ref().clone().into_items(),
             ValueView::Seq(v) | ValueView::Slip(v) => v.iter().cloned().collect(),
             ValueView::Range(a, b) => {
                 let end = b.min(a.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));

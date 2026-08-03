@@ -101,7 +101,9 @@ impl Interpreter {
             }};
         }
         if value
-            .with_array_mut(|arc, _kind| embed_type_info!(arc))
+            .with_array_mut(|arc, _kind| {
+                embed_type_info!(arc);
+            })
             .is_some()
         {
             return value;

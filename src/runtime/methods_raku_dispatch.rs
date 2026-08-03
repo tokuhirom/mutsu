@@ -173,8 +173,8 @@ impl Interpreter {
         match value.view() {
             ValueView::Array(data, kind) => {
                 let mut rebuilt = ArrayData::clone(&data);
-                let items = std::mem::take(&mut rebuilt.items);
-                rebuilt.items = items
+                let items = rebuilt.take_items();
+                *rebuilt.items_mut() = items
                     .iter()
                     .map(|item| self.expand_raku_leaves(item, active, depth + 1))
                     .collect();

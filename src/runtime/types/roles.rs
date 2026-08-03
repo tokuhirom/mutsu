@@ -291,7 +291,7 @@ impl Interpreter {
             }
             ValueView::Pair(name, boxed) if self.registry().roles.contains_key(name) => {
                 if let ValueView::Array(args, ..) = boxed.view() {
-                    Some((name.clone(), args.as_ref().clone().items))
+                    Some((name.clone(), args.as_ref().clone().into_items()))
                 } else {
                     None
                 }

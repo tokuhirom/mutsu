@@ -188,7 +188,7 @@ impl Interpreter {
         }
         fn flatten_to_list(v: &Value) -> Vec<Value> {
             match v.view() {
-                ValueView::Array(items, ..) => items.as_ref().clone().items,
+                ValueView::Array(items, ..) => items.as_ref().clone().into_items(),
                 ValueView::Seq(items) | ValueView::Slip(items) => items.as_ref().clone(),
                 ValueView::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
                 _ => vec![v.clone()],

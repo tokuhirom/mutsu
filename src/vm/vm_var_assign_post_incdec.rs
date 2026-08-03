@@ -499,10 +499,10 @@ impl Interpreter {
                         crate::value::ArrayKind::Array,
                     ),
                 };
-                if i >= items.items.len() {
-                    items.items.resize(i + 1, Value::NIL);
+                if i >= items.items().len() {
+                    items.items_mut().resize(i + 1, Value::NIL);
                 }
-                items.items[i] = new_val.clone();
+                items.items_mut()[i] = new_val.clone();
                 *st = Value::array_with_kind(crate::gc::Gc::new(items), kind);
             });
             self.stack

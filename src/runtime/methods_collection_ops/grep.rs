@@ -341,7 +341,7 @@ impl Interpreter {
                     && let ValueView::Array(filtered_items, fkind) = filtered.view()
                 {
                     let mut data = (**filtered_items).clone();
-                    data.items = shared_cells;
+                    *data.items_mut() = shared_cells;
                     Value::array_with_kind(crate::gc::Gc::new(data), fkind)
                 } else {
                     filtered

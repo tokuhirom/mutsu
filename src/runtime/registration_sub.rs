@@ -1502,7 +1502,7 @@ impl Interpreter {
                 let expr = variants[0].1.as_ref().unwrap();
                 let v = self.eval_block_value(&[Stmt::Expr(expr.clone())])?;
                 let raw_items: Vec<Value> = match v.view() {
-                    ValueView::Array(items, _) => items.as_ref().clone().items,
+                    ValueView::Array(items, _) => items.as_ref().clone().into_items(),
                     ValueView::Seq(items) | ValueView::Slip(items) => items.as_ref().clone(),
                     ValueView::Hash(map) => map
                         .iter()

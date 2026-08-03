@@ -88,7 +88,7 @@ impl Interpreter {
                     let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
                     (*guard).with_array_mut(|arc, _| {
                         let data = crate::gc::Gc::make_mut(arc);
-                        data.items.extend(items);
+                        data.items_mut().extend(items);
                     });
                     let result = guard.clone();
                     drop(guard);
@@ -213,9 +213,9 @@ impl Interpreter {
                         let val = val_slot.take().expect("push value present");
                         match val.view() {
                             ValueView::Slip(slip_items) => {
-                                data.items.extend(slip_items.iter().cloned())
+                                data.items_mut().extend(slip_items.iter().cloned())
                             }
-                            _ => data.items.push(val),
+                            _ => data.items_mut().push(val),
                         }
                     })
                     .is_some();
@@ -274,8 +274,10 @@ impl Interpreter {
             v.with_array_inplace(|data, _| {
                 let val = val_slot.take().expect("push value present");
                 match val.view() {
-                    ValueView::Slip(slip_items) => data.items.extend(slip_items.iter().cloned()),
-                    _ => data.items.push(val),
+                    ValueView::Slip(slip_items) => {
+                        data.items_mut().extend(slip_items.iter().cloned())
+                    }
+                    _ => data.items_mut().push(val),
                 }
             })
         });

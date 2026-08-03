@@ -253,6 +253,11 @@ impl Value {
     pub(crate) fn array_data_like(like: &ArrayData, items: Vec<Value>) -> crate::gc::Gc<ArrayData> {
         crate::gc::Gc::new(ArrayData {
             items,
+            // `items` is a rebuilt authoritative vector; an old payload may
+            // describe the previous vector and must not be carried across.
+            native_storage: None,
+            native_dirty: false,
+            native_snapshot: None,
             value_type: like.value_type.clone(),
             key_type: like.key_type.clone(),
             declared_type: like.declared_type.clone(),

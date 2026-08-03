@@ -254,9 +254,9 @@ impl Interpreter {
                 let front = matches!(method, "unshift" | "prepend");
                 target.with_array_inplace(|data, _| {
                     if front {
-                        data.items.splice(0..0, vals);
+                        data.items_mut().splice(0..0, vals);
                     } else {
-                        data.items.extend(vals);
+                        data.items_mut().extend(vals);
                     }
                 });
                 Ok(target)
@@ -273,12 +273,12 @@ impl Interpreter {
                 }
                 let removed = target
                     .with_array_inplace(|data, _| {
-                        if data.items.is_empty() {
+                        if data.items().is_empty() {
                             None
                         } else if method == "shift" {
-                            Some(data.items.remove(0))
+                            Some(data.items_mut().remove(0))
                         } else {
-                            data.items.pop()
+                            data.items_mut().pop()
                         }
                     })
                     .flatten();
@@ -303,7 +303,7 @@ impl Interpreter {
         data: &mut crate::value::ArrayData,
         args: &[Value],
     ) -> Vec<Value> {
-        let len = data.items.len();
+        let len = data.items().len();
         let resolve = |v: &Value| -> i64 {
             match v.view() {
                 ValueView::Int(i) => i,
@@ -336,9 +336,9 @@ impl Interpreter {
                 _ => replacement.push(arg.clone()),
             }
         }
-        let removed: Vec<Value> = data.items.drain(start..end).collect();
+        let removed: Vec<Value> = data.items_mut().drain(start..end).collect();
         for (i, item) in replacement.into_iter().enumerate() {
-            data.items.insert(start + i, item);
+            data.items_mut().insert(start + i, item);
         }
         removed
     }

@@ -75,7 +75,7 @@ pub(super) fn dispatch(
                 {
                     crate::runtime::utils::shaped_array_leaves(target)
                 } else {
-                    (**items).clone().items
+                    (**items).clone().into_items()
                 };
                 sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
                 Some(Ok(Value::seq(sorted)))
@@ -96,7 +96,7 @@ pub(super) fn dispatch(
                 let mut reversed = (**items).clone();
                 reversed.reverse();
                 // .reverse returns a Seq in Raku, not an Array
-                Some(Ok(Value::seq(reversed.items)))
+                Some(Ok(Value::seq(reversed.into_items())))
             }
             ValueView::Range(a, b)
             | ValueView::RangeExcl(a, b)

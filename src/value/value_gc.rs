@@ -447,6 +447,8 @@ impl Trace for ArrayData {
         // Clearing the elements drops every outgoing edge. `&mut self` is
         // supplied by the collector via the backing `Arc` (gc::gc_drop_edges).
         self.items.clear();
+        self.native_storage = None;
+        self.native_dirty = false;
         self.default = None;
     }
 }

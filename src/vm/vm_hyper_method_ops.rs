@@ -874,7 +874,7 @@ impl Interpreter {
                 // `gc_contents_mut`. No borrow into this ArrayData is live
                 // across the write.
                 unsafe {
-                    crate::value::gc_contents_mut(&existing).items = items.clone();
+                    *crate::value::gc_contents_mut(&existing).items_mut() = items.clone();
                 }
                 loan_env!(
                     self,
@@ -1303,7 +1303,7 @@ impl Interpreter {
             // SAFETY: aliased in-place mutation of a shared container; see
             // `gc_contents_mut`.
             unsafe {
-                crate::value::gc_contents_mut(&existing).items = items.clone();
+                *crate::value::gc_contents_mut(&existing).items_mut() = items.clone();
             }
             loan_env!(
                 self,

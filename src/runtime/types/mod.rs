@@ -317,7 +317,7 @@ impl Interpreter {
             // (`@arr[idx]`).
             if let Some((slurpy_key, elem_idx, src_idx)) = decode_slurpy_rw_param(param_name) {
                 let Some(elem) = self.env.get(slurpy_key).and_then(|v| match v.view() {
-                    ValueView::Array(arr, _) => arr.items.get(elem_idx).cloned(),
+                    ValueView::Array(arr, _) => arr.items().get(elem_idx).cloned(),
                     _ => None,
                 }) else {
                     continue;
@@ -332,8 +332,8 @@ impl Interpreter {
                             .and_then(Value::into_array)
                         {
                             let mut data = (*arr).clone();
-                            if i < data.items.len() {
-                                data.items[i] = elem;
+                            if i < data.items().len() {
+                                data.items_mut()[i] = elem;
                                 target_env.insert(
                                     source_name.clone(),
                                     Value::array_with_kind(crate::gc::Gc::new(data), kind),

@@ -660,7 +660,7 @@ impl Interpreter {
                     }
                 }
             }
-            let mut arr = Value::real_array(items.items);
+            let mut arr = Value::real_array(items.into_items());
             arr = self.tag_container_metadata(
                 arr,
                 super::ContainerTypeInfo {

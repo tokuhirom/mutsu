@@ -209,7 +209,7 @@ impl Interpreter {
         if !multi_param_names.is_empty() {
             if let ValueView::Array(chunk, _) = item.view() {
                 for (i, name) in multi_param_names.iter().enumerate() {
-                    if let Some(bound) = chunk.items.get(i)
+                    if let Some(bound) = chunk.items().get(i)
                         && changed(name, bound)
                     {
                         return Some(RuntimeError::assignment_ro(Some(name)));
@@ -345,7 +345,7 @@ impl Interpreter {
         // turning `array[int]` into a bare `Array` and breaking later `.WHAT`,
         // `.raku`, and shaped `:delete`-dies behaviour).
         let mut new_data = (*items).clone();
-        new_data.items[actual_idx] = current_topic;
+        new_data.items_mut()[actual_idx] = current_topic;
         let updated_value = Value::array_with_kind(crate::gc::Gc::new(new_data), kind);
         self.write_back_container_source(code, source, source_slot, &raw_source, updated_value);
     }

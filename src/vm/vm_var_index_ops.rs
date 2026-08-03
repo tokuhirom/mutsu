@@ -802,7 +802,7 @@ impl Interpreter {
             // flat List (e.g. `[0,[1,[2,3]]][**]` == `(0,1,2,3)`).
             (ValueView::Array(items, _is_arr), ValueView::HyperWhatever) => {
                 let mut leaves = Vec::new();
-                Self::hyperwhatever_hammer_collect(&items.items, &mut leaves);
+                Self::hyperwhatever_hammer_collect(items.items(), &mut leaves);
                 Value::array(leaves)
             }
             (ValueView::Array(items, is_arr), ValueView::Int(i)) => {
@@ -2308,7 +2308,7 @@ impl Interpreter {
         for item in items {
             match item.view() {
                 ValueView::Array(data, _) => {
-                    Self::hyperwhatever_hammer_collect(&data.items, out);
+                    Self::hyperwhatever_hammer_collect(data.items(), out);
                 }
                 _ => out.push(item.clone()),
             }

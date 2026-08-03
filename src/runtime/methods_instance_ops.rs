@@ -2362,7 +2362,7 @@ impl Interpreter {
                 }
                 _ => {}
             }
-            Ok(Value::real_array(items.clone().items))
+            Ok(Value::real_array(items.clone().into_items()))
         }) {
             result
         } else {

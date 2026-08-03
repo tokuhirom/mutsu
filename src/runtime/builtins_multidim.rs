@@ -148,7 +148,7 @@ pub(super) fn multidim_delete(target: &mut Value, indices: &[Value]) -> Value {
     }
     // List/Array as index means "multiple indices in this dimension"
     if let ValueView::Array(idx_items, ..) = head.view() {
-        let idx_list: Vec<Value> = idx_items.as_ref().clone().items;
+        let idx_list: Vec<Value> = idx_items.as_ref().clone().into_items();
         let mut out = Vec::with_capacity(idx_list.len());
         for idx in &idx_list {
             let mut sub_indices = vec![idx.clone()];

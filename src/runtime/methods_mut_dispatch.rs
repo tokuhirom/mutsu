@@ -871,6 +871,20 @@ impl Interpreter {
                                 if !matches!(v.view(), ValueView::Nil)
                                     && !self.type_matches_value(&constraint, v)
                                 {
+                                    let expected_name = self
+                                        .container_type_metadata(&target)
+                                        .and_then(|info| info.declared_type)
+                                        .or_else(|| {
+                                            (self.var_type_constraint(&key).is_none())
+                                                .then(|| "Array".to_string())
+                                        })
+                                        .unwrap_or_else(|| {
+                                            if crate::runtime::native_types::is_native_array_element_type(&constraint) {
+                                                format!("array[{constraint}]")
+                                            } else {
+                                                format!("Array[{constraint}]")
+                                            }
+                                        });
                                     return Err(RuntimeError::typed(
                                         "X::TypeCheck::Splice",
                                         [
@@ -892,9 +906,13 @@ impl Interpreter {
                                             ),
                                             (
                                                 "expected".to_string(),
-                                                Value::package(crate::symbol::Symbol::intern(
-                                                    &constraint,
-                                                )),
+                                                if self.var_type_constraint(&key).is_some() {
+                                                    Value::package(crate::symbol::Symbol::intern(
+                                                        &expected_name,
+                                                    ))
+                                                } else {
+                                                    Value::str(expected_name.clone())
+                                                },
                                             ),
                                         ]
                                         .into_iter()
@@ -925,13 +943,34 @@ impl Interpreter {
                             };
                             for v in &candidates {
                                 if !v.is_nil() && !self.type_matches_value(&constraint, v) {
-                                    return Err(
-                                        crate::runtime::utils::type_check_element_typed_error(
-                                            "@_",
-                                            &constraint,
-                                            v,
-                                        ),
-                                    );
+                                    let expected_name = info
+                                        .declared_type
+                                        .clone()
+                                        .unwrap_or_else(|| {
+                                            if crate::runtime::native_types::is_native_array_element_type(&constraint) {
+                                                format!("array[{constraint}]")
+                                            } else {
+                                                format!("Array[{constraint}]")
+                                            }
+                                        });
+                                    return Err(RuntimeError::typed(
+                                        "X::TypeCheck::Splice",
+                                        [
+                                            ("action".to_string(), Value::str_from("splice")),
+                                            (
+                                                "got".to_string(),
+                                                Value::package(crate::symbol::Symbol::intern(
+                                                    crate::runtime::utils::value_type_name(v),
+                                                )),
+                                            ),
+                                            (
+                                                "expected".to_string(),
+                                                Value::str(expected_name.clone()),
+                                            ),
+                                        ]
+                                        .into_iter()
+                                        .collect(),
+                                    ));
                                 }
                             }
                         }
@@ -1351,7 +1390,7 @@ impl Interpreter {
                                     // `array_push_in_place` — no live borrow into the items,
                                     // and we do not re-enter the VM while the borrow is held.
                                     let data = unsafe { crate::value::gc_contents_mut(arc_items) };
-                                    data.items.extend(vals);
+                                    data.items_mut().extend(vals);
                                 } else {
                                     crate::gc::Gc::make_mut(arc_items).extend(vals);
                                 }
@@ -1416,9 +1455,9 @@ impl Interpreter {
                                 // Shared backing array: in-place interior mutation (see `push`).
                                 let items = if crate::gc::Gc::strong_count(arc_items) > 1 {
                                     // SAFETY: same contract as `array_push_in_place`.
-                                    unsafe { &mut crate::value::gc_contents_mut(arc_items).items }
+                                    unsafe { crate::value::gc_contents_mut(arc_items).items_mut() }
                                 } else {
-                                    crate::gc::Gc::make_mut(arc_items)
+                                    crate::gc::Gc::make_mut(arc_items).items_mut()
                                 };
                                 if items.is_empty() {
                                     make_empty_array_failure_what("pop", &empty_what)
@@ -1457,9 +1496,9 @@ impl Interpreter {
                             // observes the change. See the `push` branch above.
                             let items = if crate::gc::Gc::strong_count(arc_items) > 1 {
                                 // SAFETY: same contract as `array_push_in_place`.
-                                unsafe { &mut crate::value::gc_contents_mut(arc_items).items }
+                                unsafe { crate::value::gc_contents_mut(arc_items).items_mut() }
                             } else {
-                                crate::gc::Gc::make_mut(arc_items)
+                                crate::gc::Gc::make_mut(arc_items).items_mut()
                             };
                             for (i, arg) in normalized_args.iter().enumerate() {
                                 items.insert(i, arg.clone());
@@ -1491,9 +1530,9 @@ impl Interpreter {
                             // Shared backing array: in-place interior mutation (see `push`).
                             let items = if crate::gc::Gc::strong_count(arc_items) > 1 {
                                 // SAFETY: same contract as `array_push_in_place`.
-                                unsafe { &mut crate::value::gc_contents_mut(arc_items).items }
+                                unsafe { crate::value::gc_contents_mut(arc_items).items_mut() }
                             } else {
-                                crate::gc::Gc::make_mut(arc_items)
+                                crate::gc::Gc::make_mut(arc_items).items_mut()
                             };
                             for (i, arg) in flat_values.iter().enumerate() {
                                 items.insert(i, arg.clone());
@@ -1542,9 +1581,9 @@ impl Interpreter {
                                 // Shared backing array: in-place interior mutation (see `push`).
                                 let items = if crate::gc::Gc::strong_count(arc_items) > 1 {
                                     // SAFETY: same contract as `array_push_in_place`.
-                                    unsafe { &mut crate::value::gc_contents_mut(arc_items).items }
+                                    unsafe { crate::value::gc_contents_mut(arc_items).items_mut() }
                                 } else {
-                                    crate::gc::Gc::make_mut(arc_items)
+                                    crate::gc::Gc::make_mut(arc_items).items_mut()
                                 };
                                 if items.is_empty() {
                                     make_empty_array_failure_what("shift", &empty_what)
