@@ -11,17 +11,26 @@ use super::*;
 /// Pushes/pops a lexical import scope so that `use` inside a block
 /// only affects that block and its children.
 pub(crate) fn block(input: &str) -> PResult<'_, Vec<Stmt>> {
-    let (input, _) = parse_char(input, '{')?;
+    let (input, _) =
+        parse_char(input, '{').map_err(|_| PError::expected_at(MISSING_BLOCK, input))?;
     simple::push_scope();
     let result = block_inner(input);
     simple::pop_scope();
     result
 }
 
+/// The diagnosis rakudo gives whenever a block was required and not found —
+/// `X::Syntax::Missing` with `what => 'block'`, rendered "Missing block". It
+/// covers the opening brace (`if 1; 2`, `sub foo-($x) {}`) and the closing one
+/// (`{my $x = 2;`) alike. Spelled in the `"X::Type: text"` convention so the
+/// class survives to `$!` (`news/2026-08/parse-error-keeps-its-exception-class.md`).
+pub(crate) const MISSING_BLOCK: &str = "X::Syntax::Missing: Missing block";
+
 pub(crate) fn block_inner(input: &str) -> PResult<'_, Vec<Stmt>> {
     let (input, stmts) = stmt_list_with_mode(input, false, true)?;
     let (input, _) = ws(input)?;
-    let (input, _) = parse_char(input, '}')?;
+    let (input, _) =
+        parse_char(input, '}').map_err(|_| PError::expected_at(MISSING_BLOCK, input))?;
     Ok((input, stmts))
 }
 
