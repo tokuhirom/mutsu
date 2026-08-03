@@ -211,6 +211,17 @@ impl RuntimeError {
         Self::typed("X::Syntax::WithoutElse", attrs)
     }
 
+    /// X::Syntax::UnlessElse - `unless` followed by an `else`-family keyword.
+    /// The `without` twin of this is [`Self::without_else`]; roast matches the
+    /// `keyword` attribute on both (`S04-statements/unless.t`).
+    pub(crate) fn unless_else(keyword: &str) -> Self {
+        let msg = format!("\"unless\" does not take \"{keyword}\", please rewrite using \"if\"");
+        let mut attrs = HashMap::new();
+        attrs.insert("keyword".to_string(), Value::str(keyword.to_string()));
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        Self::typed("X::Syntax::UnlessElse", attrs)
+    }
+
     /// X::Comp::Trait::Scope - a trait applied under a scope that does not take it.
     ///
     /// `type`/`subtype` split the trait (`is` / `export`), `declaring` names what
