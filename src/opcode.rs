@@ -1787,6 +1787,11 @@ mod const_pool_dedup {
         code.locals.push("x".to_string());
         code.locals.push("slot_only".to_string());
         let mut gather_body = CompiledCode::new();
+        // `free_var_parent_slots` is built by mapping over `free_var_syms`
+        // (`add_closure_code_baked`), so the two are index-aligned and the same
+        // length. Seed both: the slot alone is a state no compiler run produces,
+        // and the consumer-slot fold walks the syms to reach it.
+        gather_body.free_var_syms.push(Symbol::intern("x"));
         gather_body.free_var_parent_slots.push(Some(0));
         code.closure_compiled_codes
             .push(std::sync::Arc::new(gather_body));
