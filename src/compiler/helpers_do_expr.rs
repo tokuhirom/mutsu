@@ -78,6 +78,16 @@ impl Compiler {
             self.code.patch_body_end(do_idx);
             return;
         }
+        // An import is lexical to the block that asked for it, and a `do {}`
+        // block is a block: `my (&plan) = do { use Test; (&plan) }` must take
+        // the routines it names as values and leave everything else the module
+        // exports out of the enclosing scope (roast/S32-list/skip.t imports
+        // selectively precisely so the CORE `skip` stays visible). The
+        // statement-form bare block already does this in `Stmt::Block`.
+        let import_scoped = Self::has_use_stmt(body);
+        if import_scoped {
+            self.code.emit(OpCode::PushImportScope);
+        }
         let idx = self.code.emit(OpCode::DoBlockExpr {
             body_end: 0,
             label: label.clone(),
@@ -86,6 +96,9 @@ impl Compiler {
         });
         self.compile_block_inline(body);
         self.code.patch_body_end(idx);
+        if import_scoped {
+            self.code.emit(OpCode::PopImportScope);
+        }
     }
 
     pub(super) fn compile_do_block_expr_scoped(&mut self, body: &[Stmt], label: &Option<String>) {

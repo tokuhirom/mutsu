@@ -1,5 +1,20 @@
 # `use` inside a block leaks its imports to the enclosing scope
 
+**Partly fixed (2026-08-03)** —
+`news/2026-08/do-block-import-scope-and-imported-protos.md`. A `do { }` block now
+opens an import scope like a bare block does, and `pop_import_scope` rolls back
+the two proto tables (`proto_subs` / `proto_functions`) as well as
+`functions`/`classes`. That closed the `roast/S32-list/skip.t` case described
+below (55/55 under both providers); pin `t/use-in-do-block-is-scoped.t`.
+
+What is left is the `env` half described under "Why it is not a one-liner", plus
+the specific `Test` symptom in the minimal repro at the bottom: `&ok` stays
+reachable after `{ use Test; }` because mutsu's **native TAP provider** is gated
+on `loaded_modules`, which is deliberately never rolled back. That is not the
+import scope — it goes away with the native provider itself (step 3 of
+`todo/tickets/vendor-real-test-module.md`), so do not "fix" it by scoping
+`loaded_modules`.
+
 In raku an import is lexical to the block that asked for it:
 
 ```raku

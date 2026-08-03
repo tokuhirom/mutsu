@@ -19,32 +19,38 @@ impl Interpreter {
             .unwrap_or(false)
     }
 
-    /// Save current function/class keys for lexical import scoping.
+    /// Save current function/class/proto keys for lexical import scoping.
     pub(crate) fn push_import_scope(&mut self) {
-        let func_keys: HashSet<Symbol> = self.registry().functions.keys().copied().collect();
-        let class_keys: HashSet<String> = self.registry().classes.keys().cloned().collect();
-        self.import_scope_stack.push((
-            func_keys,
-            class_keys,
-            self.newline_mode,
-            self.strict_mode,
-            self.fatal_mode,
-            self.monkey_typing,
-        ));
+        let snapshot = {
+            let reg = self.registry();
+            crate::runtime::ImportScopeSnapshot {
+                functions: reg.functions.keys().copied().collect(),
+                classes: reg.classes.keys().cloned().collect(),
+                proto_subs: reg.proto_subs.iter().cloned().collect(),
+                proto_functions: reg.proto_functions.keys().copied().collect(),
+                newline_mode: self.newline_mode,
+                strict_mode: self.strict_mode,
+                fatal_mode: self.fatal_mode,
+                monkey_typing: self.monkey_typing,
+            }
+        };
+        self.import_scope_stack.push(snapshot);
     }
 
-    /// Restore function/class registries to the last saved snapshot,
+    /// Restore function/class/proto registries to the last saved snapshot,
     /// removing any entries added since the push.
     pub(crate) fn pop_import_scope(&mut self) {
-        if let Some((
-            func_snapshot,
-            class_snapshot,
-            newline_mode,
-            strict_mode,
-            fatal_mode,
-            monkey_typing,
-        )) = self.import_scope_stack.pop()
-        {
+        if let Some(snapshot) = self.import_scope_stack.pop() {
+            let crate::runtime::ImportScopeSnapshot {
+                functions: func_snapshot,
+                classes: class_snapshot,
+                proto_subs: proto_sub_snapshot,
+                proto_functions: proto_fn_snapshot,
+                newline_mode,
+                strict_mode,
+                fatal_mode,
+                monkey_typing,
+            } = snapshot;
             // Remove functions added since the push, EXCEPT a module's own
             // fully-qualified source definitions (`Fancy::Utilities::lolgreet`,
             // `Fancy::Utilities::EXPORT::ALL::lolgreet`). Those persist as long
@@ -71,6 +77,26 @@ impl Interpreter {
             // still removed with the import scope.
             self.registry_mut().classes.retain(|key, _| {
                 class_snapshot.contains(key) || (key.contains("::") && !key.starts_with("GLOBAL::"))
+            });
+            // `proto sub name(|) is export` imports under the importing package
+            // (`GLOBAL::skip`) into BOTH proto tables, and `has_proto` reads the
+            // name set. Left behind, an imported proto kept a bare call on the
+            // user-routine dispatch path after the block exited — which is what
+            // made `roast/S32-list/skip.t`'s selective `do { use Test; ... }`
+            // import still hand `skip(5, @a)` a VarRef-wrapped array instead of
+            // the flattened list the core routine expects. Same keep-rule as
+            // functions: the module's own `Test::skip` stays for a later
+            // re-import, only the `GLOBAL::` alias goes.
+            self.registry_mut().proto_subs.retain(|key| {
+                proto_sub_snapshot.contains(key)
+                    || (key.contains("::") && !key.starts_with("GLOBAL::"))
+            });
+            self.registry_mut().proto_functions.retain(|key, _| {
+                if proto_fn_snapshot.contains(key) {
+                    return true;
+                }
+                let ks = key.resolve();
+                ks.contains("::") && !ks.starts_with("GLOBAL::")
             });
             self.newline_mode = newline_mode;
             self.strict_mode = strict_mode;
