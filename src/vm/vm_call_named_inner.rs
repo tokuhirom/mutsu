@@ -396,14 +396,14 @@ impl Interpreter {
             && (ret_val.is_nil()
                 || matches!(ret_val.view(), ValueView::Package(n) if n.resolve() == "Any"))
             && let Some(crate::opcode::OpCode::RegisterSub(idx)) = cf.code.ops.last()
-            && let crate::ast::Stmt::SubDecl {
+            && let Some(crate::opcode::CompiledSubDeclPlan {
                 name: sub_name,
                 params,
                 param_defs,
-                body,
+                legacy_body: body,
                 is_rw,
                 ..
-            } = &cf.code.stmt_pool[*idx as usize]
+            }) = cf.code.sub_decl_plans.get(*idx as usize)
         {
             ret_val = Value::make_sub(
                 Symbol::intern(&self.current_package()),

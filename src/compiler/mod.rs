@@ -29,6 +29,32 @@ pub(crate) fn shadow_slots_active() -> bool {
     static ACTIVE: OnceLock<bool> = OnceLock::new();
     *ACTIVE.get_or_init(|| std::env::var_os("MUTSU_NO_SHADOW_SLOTS").is_none())
 }
+
+#[cfg(test)]
+mod declaration_plan_tests {
+    use super::Compiler;
+
+    #[test]
+    fn sub_declarations_leave_the_generic_statement_pool() {
+        let (stmts, _) = crate::parse_dispatch::parse_source("sub f($x) { $x + 1 }; f(2)")
+            .expect("source parses");
+        let (code, _) = Compiler::new().compile(&stmts);
+
+        assert!(!code.sub_decl_plans.is_empty());
+        assert!(
+            code.stmt_pool
+                .iter()
+                .all(|stmt| !matches!(stmt, crate::ast::Stmt::SubDecl { .. })),
+            "compiled sub declarations must not remain executable generic statements"
+        );
+        assert!(code.ops.iter().all(|op| match op {
+            crate::opcode::OpCode::RegisterSub(idx) => {
+                (*idx as usize) < code.sub_decl_plans.len()
+            }
+            _ => true,
+        }));
+    }
+}
 mod const_fold;
 mod expr;
 mod expr_binary;
