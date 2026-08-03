@@ -213,6 +213,27 @@ pub(super) fn dispatch(
                 ValueView::BigRat(n, d) => Value::bigrat(n.magnitude().clone().into(), d.clone()),
                 ValueView::Complex(r, i) => Value::num((r * r + i * i).sqrt()),
                 ValueView::Bool(b) => Value::int(if b { 1 } else { 0 }),
+                // `Instant`/`Duration` `does Real`, so `Real.abs` applies — and
+                // it keeps the type (`Instant.abs` is an `Instant`,
+                // `Duration.abs` a `Duration`), because rakudo's `Real.abs`
+                // is `self < 0 ?? -self !! self` on the value itself. They store
+                // their seconds as a Real `value` attribute, the same shape the
+                // `.Rat`/`.Int` arms coerce.
+                ValueView::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if matches!(class_name.resolve().as_str(), "Duration" | "Instant") => {
+                    let inner = attributes.as_map().get("value")?.clone();
+                    let abs_inner = match dispatch(&inner, "abs") {
+                        Some(Some(Ok(v))) => v,
+                        Some(Some(Err(e))) => return Some(Some(Err(e))),
+                        _ => return Some(None),
+                    };
+                    let mut attrs = attributes.as_map().clone();
+                    attrs.insert("value".to_string(), abs_inner);
+                    Value::make_instance(class_name, attrs)
+                }
                 _ => return Some(None),
             };
             Some(Some(Ok(result)))
