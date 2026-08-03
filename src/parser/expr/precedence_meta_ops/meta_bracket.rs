@@ -224,9 +224,15 @@ pub(crate) fn parse_meta_op(input: &str) -> Option<(String, String, usize)> {
         // precede the shorter forms: `...` before `..`, `^..^` before `^..`, `..^`
         // before `..`. This lets `R..`/`R^..^`/etc. (reversed range) parse as a
         // meta-op over the range base op.
-        "...^", "...", "…^", "…", "^..^", "^..", "..^", "..", "**", "=>", "==", "!=:=", "=:=", "!=",
-        "<=", ">=", "~~", "%%", "//", "&&", "||", "+&", "+|", "+^", "+<", "+>", "~&", "~|", "~^",
-        "~", "+", "-", "*", "/", "%", "<", ">", ",",
+        // `===` must precede `==`, and `^^` must precede the bare `^` at the
+        // end — a metaop base is matched by longest spelling, and a shorter
+        // prefix winning silently changes the program: `1 Z^^ 2` used to parse
+        // as bare `Z` over `^(^2)` and die with `X::Range::InvalidArg` instead
+        // of zipping two booleans. The range/sequence forms above are ordered
+        // for the same reason.
+        "...^", "...", "…^", "…", "^..^", "^..", "..^", "..", "**", "=>", "===", "==", "!=:=",
+        "=:=", "!=", "<=", ">=", "~~", "%%", "//", "&&", "||", "^^", "+&", "+|", "+^", "+<", "+>",
+        "~&", "~|", "~^", "~", "+", "-", "*", "/", "%", "^", "<", ">", ",",
     ];
     for op in ops {
         if r.starts_with(op) {

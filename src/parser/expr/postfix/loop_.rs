@@ -102,7 +102,49 @@ fn parse_prefix_listop_operand(input: &str) -> PResult<'_, Expr> {
     }
 }
 
+/// A run of two or more of the same prefix-ish character at the start of
+/// `input`. `^` and `~` are each both a valid *prefix* operator and the first
+/// half of an infix (`^^`/`~~`), which is exactly the ambiguity rakudo's
+/// message describes. `!!` is not one — `!!1` is an ordinary double negation.
+///
+/// rakudo also diagnoses `??` this way, and mutsu deliberately does not (yet):
+/// `Z??` has to be `X::Syntax::CannotMeta` (roast S03-operators/ternary.t), and
+/// mutsu's metaop scanner falls back to a *bare* `Z` there rather than
+/// recognising the attempted meta, so the `??` arrives here looking exactly
+/// like term position. Claiming it would trade one roast file for another. The
+/// same trap in reverse is why `^^` is safe only since the scanner started
+/// taking `Z^^`/`X^^`/`R^^` as single infix tokens.
+///
+/// `???` (the warn-flavoured yada stub) would be the other wrinkle if `?` were
+/// included: it is a real term, so only a run of exactly two would count.
+/// Reports the first two characters even when the run is longer: rakudo's
+/// `prefixes` for `^^^1` is `"^^"`, not `"^^^"`.
+fn duplicated_prefix_run(input: &str) -> Option<&str> {
+    let first = input.chars().next()?;
+    if !matches!(first, '^' | '~') {
+        return None;
+    }
+    let len = input.chars().take_while(|&c| c == first).count();
+    // `^` and `~` are ASCII, so two of them are two bytes.
+    (len >= 2).then(|| &input[..2])
+}
+
 pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
+    // `^`, `~` and `?` are each both a prefix operator AND the first half of an
+    // infix (`^^`/`~~`/`??`), so a doubled one in *term* position is ambiguous
+    // and rakudo refuses it by name: `X::Syntax::DuplicatedPrefix`, carrying the
+    // run in `prefixes` (roast/S03-operators/misc.t matches on it). Without this
+    // mutsu happily read `^^5` as `^(^5)` — a different program.
+    //
+    // This only became safe once the metaop scanner claimed `Z^^`/`X^^`/`R^^`
+    // as single infix tokens: while it took only the `Z`, the `^^` arrived here
+    // in what looked like term position and this check rejected valid code
+    // (`todo/tickets/duplicated-prefix-needs-metaop-aware-placement.md`).
+    if let Some(prefixes) = duplicated_prefix_run(input) {
+        return Err(PError::from_typed(
+            crate::value::RuntimeError::duplicated_prefix(prefixes),
+        ));
+    }
     if let Some(rest) = input.strip_prefix("++⚛") {
         let (rest, expr) = postfix_expr(rest)?;
         if let Some(name) = atomic_var_name(&expr) {
