@@ -20,7 +20,18 @@ impl Interpreter {
             return self.call_method_with_values(args[1].clone(), "map", method_args);
         }
         let mut list_items = Vec::new();
+        // Rakudo's `map(&code, +values)` slurps under the single-argument rule:
+        // exactly one list argument is flattened into its elements, but two or
+        // more are each one element of their own. So
+        // `map -> [$a, $b] {...}, (1,2), (3,4)` runs the block twice over two
+        // pairs, not four times over four Ints — which is what makes
+        // `Digest::RIPEMD`'s `map -> [&a,$b,@c,$d] {...}, (...), (...)` bind.
+        let single_arg_rule = args.len() <= 2;
         for (idx, arg) in args.iter().skip(1).enumerate() {
+            if !single_arg_rule {
+                list_items.push(arg.clone());
+                continue;
+            }
             // Check if this argument came from a $ variable (itemized container).
             // Scalar variables don't have a sigil prefix in arg_sources, while
             // @array and %hash variables start with '@' and '%' respectively.
@@ -140,7 +151,14 @@ impl Interpreter {
             return self.call_method_with_values(args[1].clone(), "grep", method_args);
         }
         let mut list_items = Vec::new();
+        // `grep(&matcher, +values)` slurps under the same single-argument rule
+        // as `map` above: two or more list arguments are two or more elements.
+        let single_arg_rule = args.len() <= 2;
         for arg in args.iter().skip(1) {
+            if !single_arg_rule {
+                list_items.push(arg.clone());
+                continue;
+            }
             match arg.view() {
                 // Only flatten List-kind arrays (from @-sigiled variables).
                 // Array-kind (from [...] literals) are kept as individual items,

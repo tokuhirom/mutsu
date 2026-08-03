@@ -27,16 +27,27 @@ addressing, `Xxx` per-element thunking, `polymod` precision, and `.roll` on a
 `Str` range — all fixed in `news/2026-08/digest-md5-four-fixes.md`. `t/md5.t`
 passes in full.
 
-## 2. A WhateverCode cannot bind to a `@`-sigil parameter
+## 2. `rmd160` returns a four-byte zero digest
 
-`Digest::RIPEMD`:
+The original symptom here — a `WhateverCode` reaching an `@`-sigil parameter —
+was a chain of four general bugs, all reduced and fixed in
+`news/2026-08/slurpy-single-argument-rule-and-friends.md`: `map`/`grep`/`Array.new`
+ignoring the slurpy single-argument rule (which fed the destructure the *first
+element* of a tuple instead of the tuple), `*.comb».parse-base(16)` not currying
+because a hyper method call was invisible to the Whatever machinery, and an `@`
+parameter in a sub-signature rejecting a `Seq`/`Range`.
 
-    X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '@';
-      expected Positional but got WhateverCode (WhateverCode.new)
+`rmd160` now runs to completion, and the test's *expected* `Blob` is correct too
+(the `polymod` precision fix). What remains is a wrong digest: every input yields
+`Blob[uint8]:0x<00 00 00 00>` — four bytes rather than twenty. The suspect is the
+outer pipeline
 
-from `rmd160`'s destructuring loop signature `-> [&f, $r, @K, $s] { … }` fed by a
-list whose elements include `*`-derived WhateverCodes. Not yet reduced to a
-minimal repro.
+    blob8.new: map |*.polymod(256 xx 3),
+      |reduce -> blob32 $h, @words { blob32.new: [Z+] map {$_[[^5].rotate(++$)]},
+                                      $h, |await map -> [&f, $r, @K, $s] { start {...} }, ... }
+
+i.e. the `start`/`await` fan-out, the `[Z+]` reduction over five-element rotations,
+or `map |*.polymod(256 xx 3)` slipping. Not yet reduced.
 
 ## 3. `sha512` / `sha384` return an empty digest
 

@@ -110,7 +110,7 @@ fn contains_xx_with_bare_whatever(expr: &Expr) -> bool {
                 || contains_xx_with_bare_whatever(right)
         }
         Expr::Unary { expr, .. } => contains_xx_with_bare_whatever(expr),
-        Expr::MethodCall { target, args, .. } => {
+        Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
             contains_xx_with_bare_whatever(target)
                 || args.iter().any(contains_xx_with_bare_whatever)
         }
@@ -236,7 +236,12 @@ pub(crate) fn contains_whatever(expr: &Expr) -> bool {
         {
             false
         }
-        Expr::MethodCall { target, .. } | Expr::DynamicMethodCall { target, .. } => {
+        // A hyper method call curries exactly like a plain one: `*.comb».uc` is
+        // a WhateverCode, not an eager `Whatever.comb».uc`.
+        Expr::MethodCall { target, .. }
+        | Expr::DynamicMethodCall { target, .. }
+        | Expr::HyperMethodCall { target, .. }
+        | Expr::HyperMethodCallDynamic { target, .. } => {
             contains_whatever(target) || is_wrapped_whatevercode(target)
         }
         Expr::CallOn { target, .. } => {
@@ -364,9 +369,10 @@ pub(crate) fn count_whatever(expr: &Expr) -> usize {
         } => count_whatever(left),
         Expr::Binary { left, right, .. } => count_whatever(left) + count_whatever(right),
         Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => count_whatever(expr),
-        Expr::MethodCall { target, .. } | Expr::DynamicMethodCall { target, .. } => {
-            count_whatever(target)
-        }
+        Expr::MethodCall { target, .. }
+        | Expr::DynamicMethodCall { target, .. }
+        | Expr::HyperMethodCall { target, .. }
+        | Expr::HyperMethodCallDynamic { target, .. } => count_whatever(target),
         Expr::CallOn { target, .. } => {
             // Only the *target* of an invocation curries. A Whatever passed as a
             // call *argument* (`$sub(*)`, `&infix:<+>(*, 42)`) is a Whatever value
@@ -411,7 +417,7 @@ pub(crate) fn expr_contains_topic(expr: &Expr) -> bool {
         Expr::Whatever => false,
         Expr::Binary { left, right, .. } => expr_contains_topic(left) || expr_contains_topic(right),
         Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => expr_contains_topic(expr),
-        Expr::MethodCall { target, args, .. } => {
+        Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
             expr_contains_topic(target) || args.iter().any(expr_contains_topic)
         }
         Expr::CallOn { target, args } => {

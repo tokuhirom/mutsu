@@ -138,6 +138,31 @@ pub(crate) fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Exp
             args: args.clone(),
             modifier: *modifier,
         },
+        // A hyper method call curries on its target exactly like a plain one.
+        Expr::HyperMethodCall {
+            target,
+            name,
+            args,
+            modifier,
+            quoted,
+        } => Expr::HyperMethodCall {
+            target: Box::new(replace_whatever_numbered(target, counter)),
+            name: *name,
+            args: args.clone(),
+            modifier: *modifier,
+            quoted: *quoted,
+        },
+        Expr::HyperMethodCallDynamic {
+            target,
+            name_expr,
+            args,
+            modifier,
+        } => Expr::HyperMethodCallDynamic {
+            target: Box::new(replace_whatever_numbered(target, counter)),
+            name_expr: name_expr.clone(),
+            args: args.clone(),
+            modifier: *modifier,
+        },
         // Only the *target* of an invocation curries; a Whatever passed as a call
         // *argument* stays a Whatever value (see `count_whatever`/`contains_whatever`),
         // so the args are left untouched rather than replaced by numbered params.
@@ -208,6 +233,22 @@ fn rename_var(expr: &Expr, old_name: &str, new_name: &str) -> Expr {
             modifier,
             quoted,
         } => Expr::MethodCall {
+            target: Box::new(rename_var(target, old_name, new_name)),
+            name: *name,
+            args: args
+                .iter()
+                .map(|a| rename_var(a, old_name, new_name))
+                .collect(),
+            modifier: *modifier,
+            quoted: *quoted,
+        },
+        Expr::HyperMethodCall {
+            target,
+            name,
+            args,
+            modifier,
+            quoted,
+        } => Expr::HyperMethodCall {
             target: Box::new(rename_var(target, old_name, new_name)),
             name: *name,
             args: args
@@ -307,6 +348,31 @@ pub(crate) fn replace_whatever_single(expr: &Expr) -> Expr {
             args,
             modifier,
         } => Expr::DynamicMethodCall {
+            target: Box::new(replace_whatever_single(target)),
+            name_expr: name_expr.clone(),
+            args: args.clone(),
+            modifier: *modifier,
+        },
+        // A hyper method call curries on its target exactly like a plain one.
+        Expr::HyperMethodCall {
+            target,
+            name,
+            args,
+            modifier,
+            quoted,
+        } => Expr::HyperMethodCall {
+            target: Box::new(replace_whatever_single(target)),
+            name: *name,
+            args: args.clone(),
+            modifier: *modifier,
+            quoted: *quoted,
+        },
+        Expr::HyperMethodCallDynamic {
+            target,
+            name_expr,
+            args,
+            modifier,
+        } => Expr::HyperMethodCallDynamic {
             target: Box::new(replace_whatever_single(target)),
             name_expr: name_expr.clone(),
             args: args.clone(),
