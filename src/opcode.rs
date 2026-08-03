@@ -1837,6 +1837,17 @@ pub(crate) struct CompiledCode {
     /// Maps local slot indices to qualified package names for `our` variables.
     /// Used by BlockScope restoration to sync local slots from their global values.
     pub(crate) our_locals: Vec<(usize, String)>,
+    /// Names this chunk *binds as parameters* through a by-name store rather than
+    /// a local slot — today the multi-parameter `for` head (`for %h.kv -> $k, $v`),
+    /// whose binds the compiler desugars to plain assignments at the top of the
+    /// loop body (`build_for_bind_stmts`).
+    ///
+    /// Such a name is declared by the loop signature, but nothing in the emitted
+    /// `SetGlobal` says so, which made `use strict` reject the bind itself as a
+    /// write to an undeclared variable. Recorded here (compile-time data, read
+    /// only on the cold strict-check path) instead of spending an extra opcode
+    /// per parameter per iteration to carry the fact at runtime.
+    pub(crate) param_bind_names: Vec<String>,
     /// Scalar locals declared with a `:=` bind (`my $x := EXPR`). Such a binding
     /// is immutable — the local is never reassigned — so its captured snapshot in
     /// a closure can never go stale, even when the local is also handed to a call
@@ -2314,6 +2325,7 @@ impl CompiledCode {
             plain_locals: Vec::new(),
             state_locals: Vec::new(),
             our_locals: Vec::new(),
+            param_bind_names: Vec::new(),
             scalar_bind_locals: Vec::new(),
             param_local_slots: Vec::new(),
             lex_scopes: Vec::new(),
