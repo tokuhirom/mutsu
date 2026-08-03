@@ -286,7 +286,7 @@ pub(in crate::runtime) fn named_values_from_unpack_target(
         }
         // A list of Pairs (e.g. `(a => 1, b => 2)`) destructured by named
         // params `(:$a, :$b)` binds each pair's key to its value.
-        ValueView::Array(data, _) => pairs_in_list_to_named(&data.items()),
+        ValueView::Array(data, _) => pairs_in_list_to_named(data.items()),
         ValueView::Seq(items) | ValueView::Slip(items) => pairs_in_list_to_named(&items),
         ValueView::Instance { attributes, .. } => HashMap::from(&*attributes.as_map()),
         _ => std::collections::HashMap::new(),
