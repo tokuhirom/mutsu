@@ -1,87 +1,93 @@
-# `supply whenever f(...)` loses its subscription when `f` has a local
+# A supply block's free variables leak to the caller when its `whenever` fires
 
-`Cro::HTTP::Middleware::Response`-based middleware never reaches the client. The
-middleware runs, appends its header, emits; the role's outer `transformer` supply
-receives it and emits it too; a raw socket read proves the server writes a
-complete, correct response to the wire — and yet
-`await Cro::HTTP::Client.get(...)` in the same process resolves to `Nil`. The
-same middleware written directly as a `Cro::Transform` (what
-`t/http-middleware.rakutest`'s first subtest does) works.
+`Cro::HTTP::Middleware::*`-based middleware still does not reach the client.
+With `before-matched LowerCase` installed in a route block, the middleware runs
+once, lowercases the target, emits — and the request then re-enters the route
+matcher with the *wrong* route set state, so the client's
+`await Cro::HTTP::Client.get(...)` resolves to `Nil`.
 
-This is why that file passes its first subtest 4/4 and then hangs.
+## What has already been fixed (do not re-investigate)
 
-## Minimal trigger
+The original form of this ticket blamed `supply whenever f(...)` losing its
+subscription when `f` had a local. That framing is **obsolete** — three separate
+bugs behind it have been fixed:
 
-`Cro::HTTP::Middleware::Response.transformer` reaches its `process` through a
-helper (`wrap-response-logging`, `lib/Cro/HTTP/Middleware.rakumod:29`):
+- `Parameter.constraints` now returns an `all()` junction, so Cro's route
+  compiler stops adding a bogus signature bind check (see
+  `news/2026-08/cro-delegate-route-block.md`).
+- `supply STATEMENT` parses, so `DelegateHandler.invoke`'s
+  `my $current = supply emit $req;` no longer dies on a supply worker (same
+  news entry). This alone made `route { delegate <*> => $inner }` work.
+- A supply block's generated emitter is now owned by the `whenever` closures it
+  creates, so two live instances of one parse site no longer feed each other
+  (`news/2026-08/supply-block-reinstantiated.md`, pinned by
+  `t/supply-block-reinstantiated.t`). This removed the infinite
+  `[lc] target=...` loop.
 
-```raku
-supply whenever wrap-response-logging(self, $pipeline, { self.process($_) }) -> $response { ... }
-```
+## The remaining bug
 
-Reproduced with a *local* copy of the role, so no vendored file is involved. Only
-the helper's body varies (`tmp/mwvar.sh` builds each variant from `tmp/mw16.p6`;
-run them with `bash tmp/crorun.sh`):
-
-| # | body of `sub my-wrap-logging(Any $middleware, Supply $pipeline, &process --> Supply)` | result |
-| - | --- | --- |
-| L | `process($pipeline)` | works |
-| K | `my $x; process($pipeline)` | **broken** |
-| M | `my $x = process($pipeline); $x` | **broken** |
-| I | `if False { my $x; } else { process($pipeline) }` | **broken** |
-| H | `if False { my $zzqqx77 = 1; } else { process($pipeline) }` | **broken** |
-| G | `if False { process($pipeline); } else { process($pipeline) }` | works |
-| F | `if False { $middleware.WHAT; } else { process($pipeline) }` | works |
-| A | `if False { } else { process($pipeline) }` | works |
-
-**K vs L is the whole bug: one `my $x;` in the callee.** It needs no
-initializer, the name is irrelevant (H uses a name nothing else could collide
-with), and it need not even execute (I) — so the damage is not a runtime write
-but something about the callee having a local at all. F/G show an ordinary
-statement or a call in the same position is harmless.
-
-## The subscription, not the value
-
-Binding the call's result before the `whenever` **fixes it** (`tmp/mwv-K2.p6`):
+`Cro::HTTP::Router::RouteSet.transformer` is
 
 ```raku
-my $s = my-wrap-logging(self, $pipeline, { self.process($_) });
-supply whenever $s -> $response { ... }      # works
+method transformer(Supply:D $requests) {
+    supply {
+        whenever $requests -> $request { ... @!handlers ... }
+    }
+}
 ```
 
-So the callee returns the right Supply; what breaks is `supply whenever` applied
-directly to the *call expression* when that callee has locals. That is the thing
-to fix — and the `my $s` form is the workaround to confirm any candidate fix
-against.
+A `delegate` puts **two live instances** of this one parse site in the pipeline:
+the outer route set (which owns the `DelegateHandler`) and the delegated inner
+route set. Instrumenting the body shows the second dispatch running with the
+*inner* invocant but the *outer* `$requests`:
 
-## What does NOT reproduce it
+```
+[DBG-T] body entered,   self=RouteSet|1169 requests=Supply|2499   <- inner, correct
+  [lc] got /index.SHTML
+[DBG-T] whenever fired, self=RouteSet|1169 requests=Supply|2103   <- outer's $requests
+```
 
-All green on mutsu and raku, so the Cro `Cro::HTTP::Server` pipeline is still a
-required ingredient — do not keep shrinking, grow these toward the server:
+`self` is right because `resolution_call_sub.rs` force-installs a closure's
+captured `self` (it is lexical in Raku). `$requests` is wrong because it is an
+ordinary free variable of the supply block — a parameter of the enclosing
+`transformer` frame, which has already returned — and the `merge_all`
+caller-priority merge in `resolution_call_sub.rs` lets the *calling* frame's
+same-named binding win for anything that is not in `authoritative_free_vars` /
+`authoritative_captures`.
 
-- `tmp/whenever-call.p6` — exactly the `supply whenever wrap(...)` shape with a
-  `my $unused;` in `wrap`, tapped directly. Passes.
-- `tmp/deadmy2.p6` — the full role / `does Cro::Transform` shape, tapped directly.
-- `tmp/deadmy4.p6` — the same role composed via `Cro.compose(Inc, Doubler)` over
-  a `Cro::Message`, then tapped. So plain `Cro.compose` is not enough either.
+`exec_whenever_scope_op` (`src/vm/vm_scope_ops.rs`) already builds an
+`owned_lexicals` list for exactly this reason, but it covers only the supply
+body's `my` declarations plus (now) its emitter. A supply block body is a scope
+its caller never re-enters and whose `whenever` callbacks are dispatched later
+from arbitrary frames and threads, so **its free variables should be owned too**
+— that is the shape of the fix to try first:
 
-The failing reproducer is `tmp/mwv-K.p6`; `tmp/mwv-noafter.p6` is the control
-(same file, middleware not installed — passes, so the helper alone is harmless).
-`tmp/mwraw2.p6` is the raw-socket read that proves the server side is correct.
+```rust
+owned.extend(code.free_var_syms.iter().copied());
+```
 
-## Where to look
+Captures that genuinely must stay live are `ContainerRef` cells, and those are
+force-installed ahead of the authoritative check (`resolution_call_sub.rs:411`),
+so owning free vars by name should not freeze a shared cell. This needs a real
+`make test` + roast run: it widens the authoritative set for every supply block
+in the codebase.
 
-Between `deadmy4.p6` (passes) and `mwv-K.p6` (fails) what is left is the
-`Cro::HTTP::Server` pipeline: the connection manager, the sink end, the
-`before`/`after` insertion around the application, and the fact that the
-middleware runs on the worker thread handling the socket. Add those to
-`deadmy4.p6` one at a time. Once it reproduces standalone, the question is how
-the `whenever` operand's Supply is captured when the operand is a call whose
-frame has locals — compare the K and L variants' bytecode for the `supply
-whenever` operand (`--dump-bytecode`).
+## Reproducers
+
+- `tmp/bm1.p6` — `route { before-matched LowerCase; after-matched STS; delegate
+  <*> => $application }`. Fails on mutsu, passes on `raku`.
+- `tmp/bm3.p6` — the same with only `before-matched`; the trace above comes from
+  this one.
+- `tmp/dg1.p6`, `tmp/dg2.p6` (`DGVAR=A..D`) — the plain `delegate` variants,
+  which all pass now.
+- Run them with `bash tmp/crorund.sh <file>` (debug binary) / `tmp/crorun.sh`
+  (release) / `tmp/crorunraku.sh` (raku). `CRODBG=1` turns on the `[DBG…]` notes
+  that the staged copy of `Cro/HTTP/Router.rakumod` carries — those edits live
+  only in `tmp/cro-work/` and must not be vendored.
 
 ## Blast radius
 
-`http-middleware`, `http-session-inmemory`, `http-session-persistent`,
-`router-auth`, `http-auth-basic*` and `http-log-file` in the vendored Cro::HTTP
-suite all use `Cro::HTTP::Middleware::*` roles and should move together with this.
+`http-middleware` (subtest 2 onward), `http-session-inmemory`,
+`http-session-persistent`, `router-auth`, `http-auth-basic*` and
+`http-log-file` in the vendored Cro::HTTP suite all use
+`Cro::HTTP::Middleware::*` and should move together with this.

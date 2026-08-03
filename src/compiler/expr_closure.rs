@@ -355,6 +355,9 @@ impl Compiler {
         // { … })`, so the generated emitter parameter identifies the supply body.
         // See `CompiledCode::is_supply_block_body`.
         compiled.is_supply_block_body = param.starts_with(crate::parser::SUPPLY_EMITTER_PREFIX);
+        compiled.supply_emitter_sym = compiled
+            .is_supply_block_body
+            .then(|| crate::symbol::Symbol::intern(param));
         let esc = self.escaping_position;
         let cc_idx = self.add_closure_code_baked(compiled, esc);
         let idx = self.code.add_stmt(Stmt::SubDecl {

@@ -1188,6 +1188,9 @@ pub struct Interpreter {
     /// the AST, and that copy would otherwise lose the mark. Consumed (taken) on
     /// entry, so a nested block compiled from inside the body does not inherit it.
     pending_supply_block_body: bool,
+    /// The emitter parameter name that goes with `pending_supply_block_body`, so
+    /// the re-compiled chunk also carries `CompiledCode::supply_emitter_sym`.
+    pending_supply_emitter_sym: Option<Symbol>,
     /// Names the block `eval_block_value_inner` most recently FINISHED running
     /// declared with its own `my` (excluding those it also uses as free
     /// variables). Written just before that function returns, so after a call
