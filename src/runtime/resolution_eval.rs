@@ -269,6 +269,18 @@ impl Interpreter {
                 *is_rw,
                 self.env.clone(),
             )),
+            // A trailing `class`/`role` declaration makes the block's value the
+            // type object: `EVAL 'unit class UC0 is export; has $.x = 42;'`
+            // answers the class, and `my $c = do { class :: { } }` the anonymous
+            // one. Registration has already installed the (possibly mangled)
+            // storage name in the env under the declared name, so read it back
+            // instead of re-deriving the mangling here. Registration used to
+            // publish it by writing `$_` — which is the block-value channel, but
+            // also the *caller's topic*, so `for ^3 { class C { }; say $_ }`
+            // printed the type object three times instead of 0, 1, 2.
+            Some(Stmt::ClassDecl { name, .. }) | Some(Stmt::RoleDecl { name, .. }) => {
+                self.env.get_sym(*name).cloned()
+            }
             _ => None,
         };
         self.block_scope_depth = self.block_scope_depth.saturating_sub(1);

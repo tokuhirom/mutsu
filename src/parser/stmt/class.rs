@@ -26,6 +26,7 @@ pub(crate) use token_body::{
 // Shared declarator helpers used across submodules.
 pub(crate) use class_decl::{
     meta_setter_stmt, parse_declarator_traits, parse_optional_bracket_suffix,
+    reject_trailing_postfix,
 };
 pub(crate) use package_decl::{
     check_pseudo_package_in_decl, export_name_clash_error, extract_exported_subs,

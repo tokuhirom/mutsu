@@ -237,10 +237,11 @@ impl Interpreter {
             // that `Foo.new` inside this scope produces instances tagged with
             // this declaration's identity, not an earlier same-named class's.
             let env = self.env_mut();
-            env.insert(
-                "_".to_string(),
-                Value::package(Symbol::intern(&storage_name)),
-            );
+            // NB: registering a type must NOT touch `$_`. A `class`/`role`
+            // declaration is not an expression whose value becomes the topic,
+            // and writing the type object there clobbered the enclosing
+            // topic — `for ^3 { class C { }; say $_ }` printed the type object
+            // three times instead of 0, 1, 2.
             // Always insert the class type object so that class names take
             // precedence over same-named `$`-sigiled variables (whose stripped
             // name may already be in the env).
@@ -578,10 +579,7 @@ impl Interpreter {
             self.store_language_revision_from_version(&qualified_name, language_version);
             // Compile role method bodies to bytecode
             self.compile_role_methods(&qualified_name);
-            self.env_mut().insert(
-                "_".to_string(),
-                Value::package(Symbol::intern(&qualified_name)),
-            );
+            // See `exec_register_class_op`: a declaration does not set the topic.
             self.env_mut().insert(
                 qualified_name.clone(),
                 Value::package(Symbol::intern(&qualified_name)),
