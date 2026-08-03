@@ -156,8 +156,9 @@ operand selects a tagged `CompiledDeclPlanRef`. Sub/class/role plans retain thei
 pools, while VM opcode dispatch and declaration-sensitive compiler analysis now share one bytecode
 entry.
 
-The dispatch layer now has a canonical `BuiltinMethodEntry` keyed by owner type and method name,
-including native arity bits. Built-in introspection derives its name list from those entries. The
-catalog is still populated through the transitional native probes and slow-path declarations;
-replacing those inputs with static native handler IDs, then admitting user candidates into the same
-entry type, remains open.
+The dispatch layer now has a canonical `BuiltinMethodEntry` keyed by owner type and method name.
+Built-in introspection derives its name list from those entries. The
+runtime `Registry` owns those entries in a `(owner, method)` map, seeds them from static data at
+construction without invoking native handlers, and serves built-in introspection from that map.
+Replacing the transitional arity-specific dispatch functions with static native handler IDs, then
+admitting user candidates into the same entry type, remains open.

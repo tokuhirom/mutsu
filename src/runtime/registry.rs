@@ -37,6 +37,15 @@ use crate::value::{EnumValue, RuntimeError, Value};
 
 use super::{ClassDef, MethodDef, RoleCandidateDef, RoleDef, SubsetDef};
 
+/// Canonical method-table key. Both built-in handlers and user candidates will
+/// occupy this namespace; the latter still live in `ClassDef::methods` during
+/// the next migration step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct MethodEntryKey {
+    pub(crate) owner: Symbol,
+    pub(crate) name: Symbol,
+}
+
 /// Program declaration registry. See module docs.
 ///
 /// Fields are migrated here group-by-group (PLAN.md PR-A). Fields are
@@ -47,6 +56,10 @@ use super::{ClassDef, MethodDef, RoleCandidateDef, RoleDef, SubsetDef};
 /// `Debug`, and nothing needs to format the registry.
 #[derive(Clone, Default)]
 pub(crate) struct Registry {
+    /// Canonical type x method table. It initially owns the built-in entries;
+    /// declaration registration will add user candidates to the same table.
+    pub(crate) method_entries:
+        HashMap<MethodEntryKey, crate::builtins::builtin_type_methods::BuiltinMethodEntry>,
     /// `enum Name (...)` declarations: enum name -> [(variant name, value)].
     pub(crate) enum_types: HashMap<String, Vec<(String, EnumValue)>>,
     /// `subset Name of Base where { ... }` declarations.
@@ -238,6 +251,42 @@ pub(crate) struct Registry {
     /// an ancestor in the MRO) has a proto body here, the body runs first and
     /// its `{*}` dispatches to the matching multi candidate.
     pub(crate) proto_methods: HashMap<(String, String), FunctionDef>,
+}
+
+impl Registry {
+    /// Install the static built-in catalog when a registry is constructed.
+    /// This is data-only initialization: it must not invoke native handlers.
+    pub(crate) fn seed_builtin_method_entries(&mut self) {
+        use crate::builtins::builtin_type_methods::{
+            BUILTIN_METHOD_OWNERS, builtin_method_entries,
+        };
+
+        for owner in BUILTIN_METHOD_OWNERS {
+            for entry in builtin_method_entries(owner) {
+                let key = MethodEntryKey {
+                    owner: Symbol::intern(entry.owner),
+                    name: Symbol::intern(entry.name),
+                };
+                let old = self.method_entries.insert(key, entry);
+                debug_assert!(old.is_none(), "duplicate built-in method entry");
+            }
+        }
+    }
+
+    pub(crate) fn builtin_method_names(&self, type_name: &str) -> Vec<&'static str> {
+        let owner = crate::builtins::builtin_type_methods::canonical_builtin_owner(type_name);
+        if owner.is_empty() {
+            return Vec::new();
+        }
+        let owner = Symbol::intern(owner);
+        let mut entries: Vec<_> = self
+            .method_entries
+            .iter()
+            .filter_map(|(key, entry)| (key.owner == owner).then_some(*entry))
+            .collect();
+        entries.sort_unstable_by_key(|entry| entry.order);
+        entries.into_iter().map(|entry| entry.name).collect()
+    }
 }
 
 /// Structural lookups over the declaration registry (PR-B: read-side migration).
@@ -656,3 +705,38 @@ pub(crate) type RegistryReadGuard<'a> =
 /// [`ReentrantWriteGuard`]: crate::runtime::lock_reentry::ReentrantWriteGuard
 pub(crate) type RegistryWriteGuard<'a> =
     crate::runtime::lock_reentry::ReentrantWriteGuard<'a, Registry>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn builtin_method_catalog_is_registry_owned_and_ordered() {
+        let mut registry = Registry::default();
+        registry.seed_builtin_method_entries();
+
+        assert_eq!(
+            registry.builtin_method_names("Str"),
+            crate::builtins::builtin_type_methods::introspected_type_method_names("Str")
+        );
+        assert!(registry.method_entries.contains_key(&MethodEntryKey {
+            owner: Symbol::intern("Str"),
+            name: Symbol::intern("chars"),
+        }));
+    }
+
+    #[test]
+    fn builtin_method_catalog_resolves_type_aliases() {
+        let mut registry = Registry::default();
+        registry.seed_builtin_method_entries();
+
+        assert_eq!(
+            registry.builtin_method_names("FatRat"),
+            registry.builtin_method_names("Rat")
+        );
+        assert_eq!(
+            registry.builtin_method_names("Method"),
+            registry.builtin_method_names("Sub")
+        );
+    }
+}

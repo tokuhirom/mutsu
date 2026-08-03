@@ -94,12 +94,10 @@ impl Interpreter {
     }
 
     pub(super) fn collect_builtin_type_methods(&self, type_name: &str, result: &mut Vec<Value>) {
-        // Method names are *derived from the real native dispatch* for concrete
-        // types (probe a sample value against `METHOD_UNIVERSE`), falling back to
-        // a declared list only for abstract/sample-less types. See
-        // `builtins::builtin_type_methods` for the rationale.
-        let methods =
-            crate::builtins::builtin_type_methods::introspected_type_method_names(type_name);
+        // The registry owns the canonical type x method entries. Catalog
+        // construction is static and introspection does not construct or probe
+        // a parallel entry set on every query.
+        let methods = self.registry().builtin_method_names(type_name);
         self.push_native_method_objects(&methods, result);
     }
 
