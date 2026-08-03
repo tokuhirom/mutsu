@@ -60,25 +60,47 @@ start { sleep 0.2; $outer.keep(1); sleep 0.4; $inner.keep(2) }
 say await $p;      # raku: "1/2"   mutsu: hangs to the 30s deadline, then Nil
 ```
 
-## Why it is large
+Even without nesting the completion is wrong, which is the first thing to fix:
 
-- The subscription set has to become **mutable while the loop runs**: a body
-  that calls `whenever` must be able to append to the set the driver is
-  iterating, and the new source's waker must be registered on the live
-  `ReactWaker`. `drive_react_subscriptions_loop` takes `&mut [ReactSubscription]`
-  (a slice — cannot grow) and registers wakers once, up front, in
-  `drive_react_subscriptions_inner`.
-- The "supply is done when all its whenevers have completed" rule has to hold
-  over that growing set, not over the initial one. Today an empty set means
-  "keep with the last value", which is what silently produced `Any`.
-- The same registration path is shared by `react`, `supply`-block taps and this
-  `Promise` coercion (three `SupplyDrivePolicy` variants), so the fix has to be
-  made in the shared driver rather than in the Promise policy alone.
-- `Promise(<supply>)` is driven **synchronously on the calling thread** with a
-  30-second deadline. Raku returns a `Promise` immediately and resolves it from
-  the supply's own scheduling. Cro calls this inside `method request`, so mutsu
-  blocks the requester for the whole exchange. Fixing the nesting without also
-  fixing this leaves a semantic difference that will bite concurrent clients.
+```raku
+my $a = Promise.new;
+my $p = Promise(supply { whenever $a -> $v { emit "got $v" } });
+start { sleep 0.2; $a.keep(1) }
+say await $p;      # raku: "got 1" at once   mutsu: Nil after 30 seconds
+```
+
+## What is left, and what was tried
+
+The **growable subscription set is already in place** (the `react` fix): the
+shared drive loop adopts `pending_react_subscriptions` each round and registers
+the new sources' wakers. What the `Promise` policy still gets wrong is
+*completion*, and it is a distinct problem from the nesting:
+
+1. **`Promise(supply { whenever $p { emit … } })` never completes early.** Even
+   the un-nested case sits until the 30-second deadline and is then kept with
+   `Nil`. Raku's rule is "kept when the Supply is done, with the final value",
+   and a `supply` block is done once all its `whenever`s have completed — so the
+   loop should keep the promise the moment every subscription is done.
+   The deadline path (`promise.keep(Value::NIL, …)`) should use the last value
+   too.
+2. **The emitted value does not reach `last_value`.** An `emit` inside a
+   `supply` body is rewritten to `$emitter.emit(…)` and goes to the *supplier
+   registry* keyed by the `emitter_supplier_id` that `supply_promise_on_demand`
+   allocated — not to the `supply_emit_buffer` frame the Promise policy pushes
+   around each callback. So "keep with the last emitted value" has to read the
+   emitter supplier, not that frame. A naive `all_done → keep(last_value)` was
+   tried and still answered `Nil` for this reason; do not repeat it without
+   fixing the value source first.
+3. **A `whenever` marker registered by a nested body lands in that same
+   `supply_emit_buffer` frame**, where the Promise policy currently treats
+   `emitted.last()` as an emitted value. Markers must be split out (they are the
+   4-element `[source, body, [LAST…], [QUIT…]]` arrays) and handed to
+   `pending_react_subscriptions` instead.
+4. **`Promise(<supply>)` is driven synchronously on the calling thread** with a
+   30-second deadline. Raku returns a `Promise` immediately and resolves it from
+   the supply's own scheduling. Cro calls this inside `method request`, so mutsu
+   blocks the requester for the whole exchange. Fixing completion without also
+   fixing this leaves a semantic difference that will bite concurrent clients.
 
 ## Affected
 
