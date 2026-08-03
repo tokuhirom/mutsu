@@ -67,6 +67,30 @@ impl Interpreter {
         None
     }
 
+    /// Whether a captured free variable's binding CHANGED across a closure call,
+    /// comparing its value at entry with its value at exit.
+    ///
+    /// Plain `!=` is the wrong test. `Value`'s equality is Raku's *semantic*
+    /// equality, and a `does` mixin is equal to the value it wraps — so
+    /// `$x does R` inside the closure left `entry=Hash now=Mixin` reported as
+    /// **unchanged**, the name landed in `unchanged_free`, and the writeback
+    /// skipped it. `lives-ok { $a does role { has $.cool } }` therefore never
+    /// reached the caller (`roast/S14-roles/anonymous.t`,
+    /// `S14-roles/parameterized-mixin.t`).
+    ///
+    /// A change of *representation* is a change even when the two compare equal,
+    /// so the discriminant is checked first. That only ever adds writebacks the
+    /// old test missed, and each of them is a genuine mutation.
+    fn free_var_changed(entry: Option<&Value>, now: Option<&Value>) -> bool {
+        match (entry, now) {
+            (None, None) => false,
+            (Some(a), Some(b)) => {
+                std::mem::discriminant(&a.view()) != std::mem::discriminant(&b.view()) || a != b
+            }
+            _ => true,
+        }
+    }
+
     /// Call a compiled closure (a `Sub` value with compiled_code).
     pub(super) fn call_compiled_closure(
         &mut self,
@@ -1011,7 +1035,7 @@ impl Interpreter {
             .free_var_syms
             .iter()
             .zip(free_at_entry.iter())
-            .any(|(k, old)| self.env().get_sym(*k) != old.as_ref());
+            .any(|(k, old)| Self::free_var_changed(old.as_ref(), self.env().get_sym(*k)));
         // A writable parameter (sigilless `\a`, `is rw`, or `is raw`) bound to a
         // caller-provided container writes the mutation into this frame's env
         // under the *source container's* name (e.g. the synthetic `__mutsu_*`
@@ -1084,7 +1108,7 @@ impl Interpreter {
                 .free_var_syms
                 .iter()
                 .zip(free_at_entry.iter())
-                .filter(|(k, old)| self.env().get_sym(**k) == old.as_ref())
+                .filter(|(k, old)| !Self::free_var_changed(old.as_ref(), self.env().get_sym(**k)))
                 .map(|(k, _)| *k)
                 .collect();
             // Caller lexicals this scan writes back with a *changed* value. They are
@@ -1166,7 +1190,7 @@ impl Interpreter {
                         && *k != at_underscore_sym
                         && !param_names.contains(k)
                         && restored_env.contains_key_sym(*k)
-                        && self.env().get_sym(*k) != old.as_ref()
+                        && Self::free_var_changed(old.as_ref(), self.env().get_sym(*k))
                     {
                         self.pending_rw_writeback_sources
                             .push(k.resolve().to_string());
