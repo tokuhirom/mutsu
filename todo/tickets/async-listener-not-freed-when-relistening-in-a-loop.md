@@ -60,8 +60,24 @@ compiler skips `SetVarDynamic` for a `my` it considers already declared in the
 scope — see `is_default_init` / `already_declared` in `src/compiler/stmt.rs`) or
 it is being cleared by the spawn before the next round.
 
-Start by checking whether `"tap"` is in `thread_redeclared_vars` at the point of
-round 1's `GetLocal`, with `rust-gdb -batch` on `exec_get_local_op`.
+Two facts are already established with `rust-gdb -batch`, so don't re-derive
+them:
+
+- **The mask *is* being set.** Breaking on the `thread_redeclared_vars.insert`
+  in `exec_set_var_dynamic_op` prints `c`, `tap`, `c`: round 0's `my $tap` runs
+  before any thread has armed the lane (so it is correctly not masked — there is
+  nothing to shadow yet) and round 1's `my $tap` *is* masked. So the write side
+  (`set_shared_var_sym`) and the bulk read side (`sync_shared_vars_to_env`) are
+  both already gated for this name.
+- **The stale value therefore arrives some other way.** `$tap.close` takes its
+  invocant off the stack from a `GetLocal`, and `exec_get_local_op` prefers
+  `self.locals[idx]` for a non-Nil scalar — so the suspect is a writeback into
+  the *slot* (or into `env` on a path that bypasses the slot) which skips the
+  mask. `sync_shared_vars_for_names` (`src/runtime/runtime_shared_vars.rs`) is
+  one such path: unlike `sync_shared_vars_to_env` it does **not** consult
+  `thread_redeclared_vars` at all. `pending_caller_var_writeback` /
+  `apply_pending_rw_writeback`, which drain a synced name straight into the
+  caller's slot, are the other two candidates. Check those three first.
 
 ## Related, already fixed here
 
