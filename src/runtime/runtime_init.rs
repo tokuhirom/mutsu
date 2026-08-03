@@ -2157,6 +2157,7 @@ impl Interpreter {
             escaped_our_sub_names: std::collections::HashSet::new(),
             state_vars: HashMap::new(),
             thread_redeclared_vars: std::collections::HashSet::new(),
+            thread_decl_in_flight: std::collections::HashSet::new(),
             type_body_written_lexicals: std::collections::HashSet::new(),
             closure_captured_state: HashMap::new(),
             once_values: Arc::new(crate::runtime::once_store::OnceStore::default()),

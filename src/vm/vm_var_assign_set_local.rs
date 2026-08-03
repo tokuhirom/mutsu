@@ -248,6 +248,14 @@ impl Interpreter {
         // local AND persist the cell so a call after the block reads the live value.
         let box_decl_our = self.vardecl_context && !code.needs_cell_escaping_our_sub.is_empty();
         let r = self.exec_set_local_op_inner(code, idx);
+        // The store that ends a declaration's in-flight window: from here the
+        // slot holds the new binding, so a spawn may unmask the name again (see
+        // `thread_decl_in_flight`). Only ever non-empty in threaded programs.
+        if !self.thread_decl_in_flight.is_empty()
+            && let Some(name) = code.locals.get(idx as usize)
+        {
+            self.thread_decl_in_flight.remove(name);
+        }
         // Phase 3 Stage 2: write-through scalar attribute writes to the cell.
         if r.is_ok() {
             self.sync_our_package_var_from_local(code, idx as usize);
@@ -1928,6 +1936,12 @@ impl Interpreter {
                 .any(|(_, key)| key.contains(&format!("::{}@", name)));
             if !is_state {
                 self.thread_redeclared_vars.insert(name.to_string());
+                // The initializer has not run yet, so neither this frame's slot
+                // nor `env` holds the new binding. Mark the window so a spawn
+                // performed BY the initializer cannot unmask the name and let the
+                // shadowed outer value be pulled back over it
+                // (`thread_decl_in_flight`). Cleared by the store that ends it.
+                self.thread_decl_in_flight.insert(name.to_string());
             }
         }
         // A fresh declaration without an explicit type must not inherit stale

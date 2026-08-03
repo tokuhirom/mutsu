@@ -1365,6 +1365,21 @@ pub struct Interpreter {
     /// parent's *current* bindings). Only populated while
     /// `shared_vars_active`; empty (zero-cost) for single-threaded programs.
     pub(crate) thread_redeclared_vars: std::collections::HashSet<String>,
+    /// Subset of [`Self::thread_redeclared_vars`] whose declaration is still
+    /// *in flight*: the `my` has run but its initializer has not stored a value
+    /// yet, so neither the slot nor `env` holds the new binding — both still
+    /// carry the shadowed OUTER value.
+    ///
+    /// `clone_for_thread` normally drops a re-declaration mask because it
+    /// force-seeds the name's *current* value into the child lineage first. That
+    /// premise fails for a name in this set: a spawn that happens **inside the
+    /// initializer** (`my $tap = Supply.tap(...)`, whose `.tap` starts a worker)
+    /// would seed the outer binding's value and then unmask the name, so the
+    /// next `sync_shared_vars_to_env` pulls that stale value back over the
+    /// binding the initializer is about to create. Keeping the mask for the
+    /// in-flight window closes that hole; the store is republished normally once
+    /// the initializer's value lands. Empty for single-threaded programs.
+    pub(crate) thread_decl_in_flight: std::collections::HashSet<String>,
     /// Union of every executed `CompiledCode::type_body_written_lexicals`:
     /// lexicals written by a registered class/role method body. These keep the
     /// name-keyed `shared_vars` lane even when a spawned block also captures

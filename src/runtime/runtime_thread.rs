@@ -169,7 +169,14 @@ impl Interpreter {
                 // EXCEPT names this thread re-declared: their entry (if any)
                 // belongs to the shadowed outer binding, so bind the current one
                 // into this lineage, shadowing the ancestor's.
-                if self.thread_redeclared_vars.contains(&key) {
+                // A declaration still in flight has no "current" value to bind:
+                // `val` is the binding this `my` is about to shadow, so publishing
+                // it would overwrite the lane with a value that is about to be
+                // stale. Seed it only to give the child *something* under the name
+                // (it captured the outer binding), and keep the mask below.
+                if self.thread_redeclared_vars.contains(&key)
+                    && !self.thread_decl_in_flight.contains(&key)
+                {
                     shared.declare(&key, val.clone());
                 } else {
                     shared.seed_if_absent(&key, || val.clone());
@@ -206,8 +213,19 @@ impl Interpreter {
         // the next `await`'s `sync_shared_vars_to_env` pull the stale Nil back
         // over the live binding (`$port` in roast S17-promise/
         // nonblocking-await.t's socket server went Nil → connect to port 0).
-        self.thread_redeclared_vars
-            .retain(|n| captured_scalars.contains(n.trim_start_matches('$')));
+        //
+        // A name whose declaration is still IN FLIGHT is excluded for the same
+        // reason from the other direction: the seed above took the value of the
+        // binding this `my` is about to SHADOW, because the initializer that
+        // produced this very spawn has not stored anything yet. Unmasking would
+        // let the next `sync_shared_vars_to_env` pull that outer value back over
+        // the new binding — `my $tap = IO::Socket::Async.listen(...).tap({...})`
+        // in a loop reverted to the previous iteration's `Tap`, which is what
+        // made a restarted `Cro::HTTP::Server` keep answering from the old one.
+        self.thread_redeclared_vars.retain(|n| {
+            captured_scalars.contains(n.trim_start_matches('$'))
+                || self.thread_decl_in_flight.contains(n)
+        });
         let mut referenced_handle_ids = std::collections::HashSet::new();
         for value in self.env.values() {
             if let Some(id) = Self::handle_id_from_value(value) {
@@ -417,6 +435,9 @@ impl Interpreter {
             // stay env-local, and a stale same-named ancestor entry must not be
             // pulled over the captured copy at a sync point.
             thread_redeclared_vars: captured_scalars.clone(),
+            // The child starts no declaration of its own; its own `my`s populate
+            // this as they run.
+            thread_decl_in_flight: std::collections::HashSet::new(),
             // A worker can instantiate a type registered on the parent, so the
             // set of method-written lexicals travels with the clone.
             type_body_written_lexicals: self.type_body_written_lexicals.clone(),
