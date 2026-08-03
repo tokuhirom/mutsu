@@ -2106,6 +2106,8 @@ impl Interpreter {
             pending_dist_selectors: Vec::new(),
             pending_use_export_args: None,
             end_phasers: Vec::new(),
+            end_phaser_seq: 0,
+            module_load_depth: 0,
             end_phaser_sites: HashSet::new(),
             chroot_root: None,
             loaded_modules: HashSet::new(),

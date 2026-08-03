@@ -46,14 +46,38 @@ impl Interpreter {
         )
     }
 
+    /// Register an END phaser found while *running*: inside a module body (in
+    /// which case rakudo would have installed it at the `use`, before anything
+    /// the main compunit declares) or inside a block/sub/`EVAL` of the main
+    /// compunit (installed as the compiler walked past it, after any `use`).
     pub(crate) fn push_end_phaser(&mut self, body: Vec<Stmt>) {
+        let base = if self.module_load_depth > 0 {
+            super::end_order::MODULE
+        } else {
+            super::end_order::RUNTIME
+        };
+        self.push_end_phaser_ordered(body, base);
+    }
+
+    /// Register one of the main compunit's top-level END phasers. These are
+    /// registered eagerly, before the body runs, so that they still run when
+    /// the body dies — which is why they need an explicit install order rather
+    /// than the position they happen to land in.
+    pub(crate) fn push_end_phaser_main(&mut self, body: Vec<Stmt>) {
+        self.push_end_phaser_ordered(body, super::end_order::MAIN);
+    }
+
+    fn push_end_phaser_ordered(&mut self, body: Vec<Stmt>, order_base: u64) {
         let captured_env = self.env.clone();
         let package = self.current_package();
+        let order = order_base + self.end_phaser_seq;
+        self.end_phaser_seq += 1;
         self.end_phasers.push(super::EndPhaser {
             body,
             env: captured_env,
             package,
             dead_keys: crate::runtime::NameSet::default(),
+            order,
         });
     }
 

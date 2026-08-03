@@ -421,7 +421,7 @@ impl Interpreter {
                     body,
                 } = stmt
                 {
-                    self.push_end_phaser(body.clone());
+                    self.push_end_phaser_main(body.clone());
                     false
                 } else {
                     true
@@ -797,7 +797,14 @@ impl Interpreter {
             self.exit_status_locked = exit_already_requested;
             // Clear halted flag so END phasers can execute even after exit()
             self.halted = false;
-            let phasers = self.end_phasers.clone();
+            // Run in reverse *install* order, which is not the registration
+            // order: the main compunit's top-level ENDs are registered eagerly
+            // above, before any `use` has loaded a module. `EndPhaser::order`
+            // records where rakudo would have installed each one; the sort is
+            // stable, so phasers within one class keep their registration
+            // order. See `end_order`.
+            let mut phasers = self.end_phasers.clone();
+            phasers.sort_by_key(|p| p.order);
             // Save the env state before any END phasers run.  This lets us
             // distinguish between variables set by prior END phasers (which
             // should propagate) and stale captured values (which should not

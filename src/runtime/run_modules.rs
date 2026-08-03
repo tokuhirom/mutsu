@@ -592,7 +592,21 @@ impl Interpreter {
         )
     }
 
+    /// Load and run a module, tracking that a module body is executing.
+    ///
+    /// The depth is what tells `push_end_phaser` that an END belongs to a
+    /// module: rakudo installs those at the `use` (compile time), before any of
+    /// the loading compunit's own, and the exit-time LIFO order then puts the
+    /// script's ENDs first. It has to be a depth rather than a flag because a
+    /// module may `use` another one.
     pub(super) fn load_module(&mut self, module: &str) -> Result<(), RuntimeError> {
+        self.module_load_depth += 1;
+        let result = self.load_module_inner(module);
+        self.module_load_depth -= 1;
+        result
+    }
+
+    fn load_module_inner(&mut self, module: &str) -> Result<(), RuntimeError> {
         // Snapshot the `use` args (set by `exec_use_module_op`) before running
         // the module body: a transitive `use` inside the body would otherwise
         // overwrite the field. Handed to the module's `sub EXPORT`, if any.
