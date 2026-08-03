@@ -51,6 +51,24 @@ impl Interpreter {
         if attributes.contains_key("on_demand_callback") {
             return self.supply_get_values(attributes);
         }
+        // A live, channel-backed supply (an `IO::Socket::Async` read stream)
+        // materializes by draining its channel until the producer signals done:
+        // its values never land in the `values` attribute, so reading that would
+        // report an open stream as an empty one (roast S32-io/IO-Socket-Async.t
+        // collects a whole connection with `@got.append: $conn.Supply.list`).
+        if !attributes.contains_key("proc_output")
+            && let Some(sid) = attributes.get("supply_id").and_then(Value::as_int)
+            && let Some(rx) = crate::runtime::native_methods::take_supply_channel(sid as u64)
+        {
+            let mut items = Vec::new();
+            while let Ok(event) = rx.recv() {
+                match event {
+                    crate::runtime::native_methods::SupplyEvent::Emit(value) => items.push(value),
+                    _ => break,
+                }
+            }
+            return Ok(items);
+        }
         let mut items = match attributes.get("values").map(Value::view) {
             Some(ValueView::Array(values, ..)) => values.to_vec(),
             _ => Vec::new(),

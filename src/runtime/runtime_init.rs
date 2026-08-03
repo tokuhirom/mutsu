@@ -2177,6 +2177,8 @@ impl Interpreter {
             let_saves: Vec::new(),
             grammar_rule_dynvar_decls: HashMap::new(),
             supply_emit_buffer: Vec::new(),
+            pending_react_subscriptions: Vec::new(),
+            nested_react_callbacks: std::collections::HashSet::new(),
             active_supply_emitters: Vec::new(),
             pending_promise_whenever_arms: Vec::new(),
             supply_emit_timed_buffer: Vec::new(),

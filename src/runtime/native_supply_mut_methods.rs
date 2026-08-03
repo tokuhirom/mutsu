@@ -234,8 +234,10 @@ impl Interpreter {
                     let mut thread_interp = self.clone_for_thread();
                     let cb = tap_cb.clone();
                     let delay = delay_seconds;
+                    let done = done_cb.clone();
+                    let quit = quit_cb.clone();
                     crate::runtime::builtins_system::spawn_user_thread(move || {
-                        Self::run_supply_act_loop(&mut thread_interp, &rx, &cb, delay);
+                        Self::run_supply_act_loop(&mut thread_interp, &rx, &cb, delay, done, quit);
                     });
                     let tap_instance = Value::make_instance(Symbol::intern("Tap"), HashMap::new());
                     return Ok((tap_instance, attrs));
@@ -505,7 +507,14 @@ impl Interpreter {
                                 let mut driver = self.clone_for_thread();
                                 let body_cb = body_cb.clone();
                                 crate::runtime::builtins_system::spawn_user_thread(move || {
-                                    Self::run_supply_act_loop(&mut driver, &rx, &body_cb, 0.0);
+                                    Self::run_supply_act_loop(
+                                        &mut driver,
+                                        &rx,
+                                        &body_cb,
+                                        0.0,
+                                        None,
+                                        None,
+                                    );
                                 });
                             } else if let ValueView::Instance {
                                 attributes: inner_attrs,

@@ -1,6 +1,12 @@
 # `Promise(supply { ... })` ignores a `whenever` registered from inside another whenever's body
 
-This is the remaining structural blocker for the Cro::HTTP **client**. Every
+This is the remaining structural blocker for the Cro::HTTP **client**.
+
+**The `react` half of this is fixed** (see
+`news/2026-08/react-adopts-nested-whenever.md`): `run_react_event_loop`'s drive
+loop adopts subscriptions a running `whenever` body registers. The
+`Promise`/`await` half below still builds its set once and resolves as soon as
+that set drains. Every
 `Cro::HTTP::Client` request is one of these:
 
 ```raku

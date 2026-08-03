@@ -415,16 +415,41 @@ impl Interpreter {
     /// Background event loop for Supply.act on live supplies (e.g., signal).
     /// Receives events from the channel and calls the callback.
     /// If the callback calls `exit`, terminates the entire process.
+    ///
+    /// `done_cb` / `quit_cb` are the tap's `done =>` / `quit =>` handlers: a
+    /// channel-backed source signals the end of the stream with a
+    /// `SupplyEvent::Done`/`Quit`, and dropping out of the loop without running
+    /// them left an `IO::Socket::Async` reader waiting forever for the `done`
+    /// that a closed peer had already sent (roast S32-io/IO-Socket-Async.t
+    /// "Echo server").
     pub(in crate::runtime) fn run_supply_act_loop(
         interp: &mut Interpreter,
         rx: &super::supply_channel::SupplyReceiver,
         cb: &Value,
         delay_seconds: f64,
+        done_cb: Option<Value>,
+        quit_cb: Option<Value>,
     ) {
         use std::io::Write;
-        while let Ok(SupplyEvent::Emit(value)) = rx.recv() {
+        loop {
+            let (value, end_cb) = match rx.recv() {
+                Ok(SupplyEvent::Emit(value)) => (value, None),
+                Ok(SupplyEvent::Done) => match done_cb {
+                    Some(ref cb) => (Value::NIL, Some((cb.clone(), Vec::new()))),
+                    None => break,
+                },
+                Ok(SupplyEvent::Quit(reason)) => match quit_cb {
+                    Some(ref cb) => (Value::NIL, Some((cb.clone(), vec![reason]))),
+                    None => break,
+                },
+                Err(_) => break,
+            };
+            let is_end = end_cb.is_some();
             Self::sleep_for_supply_delay(delay_seconds);
-            let result = interp.call_sub_value(cb.clone(), vec![value], true);
+            let result = match end_cb {
+                Some((end, args)) => interp.call_sub_value(end, args, true),
+                None => interp.call_sub_value(cb.clone(), vec![value], true),
+            };
             // Flush stdout (check both the per-interpreter buffer and the
             // shared thread output buffer used by thread clones).
             if !interp.output_sink().output.is_empty() {
@@ -464,6 +489,9 @@ impl Interpreter {
                 );
                 let _ = std::io::stderr().flush();
                 std::process::exit(1);
+            }
+            if is_end {
+                break;
             }
         }
     }

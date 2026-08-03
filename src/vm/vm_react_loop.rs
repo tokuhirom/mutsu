@@ -50,7 +50,9 @@ impl Interpreter {
         // that a sibling `whenever` just updated), clobbering the sibling's write.
         // Drop this callback's per-instance state so it reads the shared lexical
         // from the live caller env — which every sibling writes back to.
-        if let ValueView::Sub(data) = cb.view() {
+        if let ValueView::Sub(data) = cb.view()
+            && !self.nested_react_callbacks.contains(&data.id)
+        {
             self.clear_closure_captured_state_for(data.id);
         }
         let topic = args.first().cloned();
@@ -153,8 +155,36 @@ impl Interpreter {
         // been run once, and its `emit` reaches the outer whenever's callback
         // only while that supply's StreamConsumer is still on the stack.
         let mut stream_base: Option<usize> = None;
+        if self.build_react_subscriptions(&subscriptions, &mut react_subs, &mut stream_base)? {
+            if let Some(base) = stream_base {
+                self.supply_stream_consumers.truncate(base);
+            }
+            return Ok(());
+        }
 
-        for sub_val in &subscriptions {
+        let result = self.drive_react_subscriptions_nested(react_subs, SupplyDrivePolicy::React);
+        if let Some(base) = stream_base {
+            self.supply_stream_consumers.truncate(base);
+        }
+        result
+    }
+
+    /// Turn the `whenever` markers a react/supply body registered into
+    /// [`ReactSubscription`]s. Returns `Ok(true)` when the react is already
+    /// finished (a `done` fired while replaying a static source), in which case
+    /// the caller must not drive the loop.
+    ///
+    /// Called once for the markers the body itself registered, and again from
+    /// the drive loop for every marker a running `whenever` body adds — a
+    /// `whenever` nested inside another `whenever`'s body is registered only
+    /// when that body runs, which is long after the initial batch.
+    pub(crate) fn build_react_subscriptions(
+        &mut self,
+        subscriptions: &[Value],
+        react_subs: &mut Vec<ReactSubscription>,
+        stream_base: &mut Option<usize>,
+    ) -> Result<bool, RuntimeError> {
+        for sub_val in subscriptions {
             if let ValueView::Array(items, ..) = sub_val.view()
                 && items.len() >= 2
             {
@@ -290,11 +320,11 @@ impl Interpreter {
                                     .unwrap_or_default();
                                 for last_cb in &last_cbs {
                                     match self.call_react_callback(&last_cb.clone(), Vec::new()) {
-                                        Err(e) if e.is_react_done() => return Ok(()),
+                                        Err(e) if e.is_react_done() => return Ok(true),
                                         _ => {}
                                     }
                                 }
-                                return Ok(());
+                                return Ok(true);
                             }
                             // The emitted items may include subscription registrations
                             // from `whenever` inside the supply body. Live sources
@@ -316,8 +346,8 @@ impl Interpreter {
                                     if let Some(mut rsub) = self.value_to_react_subscription(&v) {
                                         rsub.on_demand_done = Some(done_promise.clone());
                                         react_subs.push(rsub);
-                                    } else if let Some(early) = self
-                                        .register_nested_on_demand_source(&v, &mut react_subs, 0)?
+                                    } else if let Some(early) =
+                                        self.register_nested_on_demand_source(&v, react_subs, 0)?
                                     {
                                         // A chained `supply { }` stage: wired up
                                         // with its own emitter so the pipeline
@@ -344,7 +374,7 @@ impl Interpreter {
                             if early_done {
                                 self.supply_stream_consumers
                                     .truncate(stream_base.unwrap_or(stream_idx));
-                                return Ok(());
+                                return Ok(true);
                             }
                             // Supply.on-demand(..., closing => { ... }): the
                             // `closing` callback runs when the supply is closed.
@@ -382,7 +412,7 @@ impl Interpreter {
                                 &callback,
                                 &last_cbs,
                             )? {
-                                return Ok(());
+                                return Ok(true);
                             }
                             continue;
                         }
@@ -393,7 +423,7 @@ impl Interpreter {
                             .unwrap_or_default();
                         for last_cb in &last_cbs {
                             match self.call_react_callback(&last_cb.clone(), Vec::new()) {
-                                Err(e) if e.is_react_done() => return Ok(()),
+                                Err(e) if e.is_react_done() => return Ok(true),
                                 _ => {}
                             }
                         }
@@ -435,11 +465,6 @@ impl Interpreter {
                 }
             }
         }
-
-        let result = self.drive_react_subscriptions_nested(react_subs, SupplyDrivePolicy::React);
-        if let Some(base) = stream_base {
-            self.supply_stream_consumers.truncate(base);
-        }
-        result
+        Ok(false)
     }
 }

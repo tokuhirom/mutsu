@@ -1440,6 +1440,21 @@ pub struct Interpreter {
     /// per-match `:my $*FINAL` is not read as the last match's value.
     pub(crate) grammar_rule_dynvar_decls: HashMap<String, Vec<String>>,
     pub(super) supply_emit_buffer: Vec<Vec<Value>>,
+    /// `whenever` subscription markers registered while a react drive loop is
+    /// already running (a `whenever` nested inside another `whenever`'s body).
+    /// The loop adopts them on its next round; see
+    /// `Interpreter::adopt_newly_registered_subscriptions`.
+    pub(crate) pending_react_subscriptions: Vec<Value>,
+    /// Sub ids of the callbacks of such nested `whenever`s. A sibling
+    /// `whenever` of the react body shares that body's lexicals, so its
+    /// callback must re-read them from the live caller env on every value --
+    /// hence `call_react_callback` drops the callback's per-instance closure
+    /// state. A NESTED `whenever` closes over the *enclosing whenever body's*
+    /// frame, which has already exited by the time values arrive, so for it
+    /// that per-instance state is the only copy of those lexicals (an
+    /// accumulator like `my Buf $in-buf` in HTTP::UserAgent's TestServer) and
+    /// dropping it resets them on every value.
+    pub(crate) nested_react_callbacks: std::collections::HashSet<u64>,
     /// Emitter `Supplier`s of the `supply` blocks whose code is currently on the
     /// stack, innermost last. `emit` is caught by the innermost *dynamically*
     /// enclosing supply, so a `sub` that is not lexically inside the block still

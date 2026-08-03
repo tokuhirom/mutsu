@@ -220,7 +220,7 @@ impl Interpreter {
             .enumerate()
             .filter_map(|(i, sub)| sub.supplier_id.map(|sid| (sid, i)))
             .collect();
-        let sink_regs: Vec<(u64, u64)> = supplier_sinks_register_batch(&regs, &waker);
+        let mut sink_regs: Vec<(u64, u64)> = supplier_sinks_register_batch(&regs, &waker);
         // Promise / channel / mpsc-receiver sources still deliver their
         // payloads through the existing receiver / poll paths, but wake the
         // loop instantly instead of waiting out the idle cap.
@@ -243,7 +243,8 @@ impl Interpreter {
         // Publish this loop's waker so sources wired up mid-loop (a nested
         // `whenever` tapping an async on-demand supply) can wake it too.
         let prev_waker = self.current_react_waker.replace(waker.clone());
-        let result = self.drive_react_subscriptions_loop(&mut react_subs, policy, &waker);
+        let result =
+            self.drive_react_subscriptions_loop(&mut react_subs, policy, &waker, &mut sink_regs);
         self.current_react_waker = prev_waker;
         for (sid, sink_id) in sink_regs {
             supplier_sink_unregister(sid, sink_id);
@@ -259,13 +260,73 @@ impl Interpreter {
         result
     }
 
+    /// Adopt any `whenever` subscription registered while the drive loop was
+    /// running (a `whenever` inside another `whenever`'s body) and wire its
+    /// source into this loop's waker. Returns `Ok(true)` when building the
+    /// subscription already ended the react.
+    fn adopt_newly_registered_subscriptions(
+        &mut self,
+        react_subs: &mut Vec<ReactSubscription>,
+        waker: &ReactWaker,
+        sink_regs: &mut Vec<(u64, u64)>,
+    ) -> Result<bool, RuntimeError> {
+        if self.pending_react_subscriptions.is_empty() {
+            return Ok(false);
+        }
+        let pending = std::mem::take(&mut self.pending_react_subscriptions);
+        for marker in &pending {
+            if let ValueView::Array(items, ..) = marker.view()
+                && items.len() >= 2
+                && let ValueView::Sub(data) = items[1].view()
+            {
+                self.nested_react_callbacks.insert(data.id);
+            }
+        }
+        let first_new = react_subs.len();
+        let mut stream_base = None;
+        let finished = self.build_react_subscriptions(&pending, react_subs, &mut stream_base)?;
+        let new_supplier_regs: Vec<(u64, usize)> = react_subs[first_new..]
+            .iter()
+            .enumerate()
+            .filter_map(|(i, sub)| sub.supplier_id.map(|sid| (sid, first_new + i)))
+            .collect();
+        sink_regs.extend(supplier_sinks_register_batch(&new_supplier_regs, waker));
+        for sub in &react_subs[first_new..] {
+            if let Some(p) = &sub.promise {
+                let w = waker.clone();
+                let _ = p.on_resolve(Box::new(move |_, _, _, _| w.notify()));
+            }
+            if let Some(p) = &sub.on_demand_done {
+                let w = waker.clone();
+                let _ = p.on_resolve(Box::new(move |_, _, _, _| w.notify()));
+            }
+            if let Some(ch) = &sub.channel {
+                ch.register_waker(waker);
+            }
+            if let Some(rx) = &sub.receiver {
+                rx.register_waker(waker);
+            }
+        }
+        Ok(finished)
+    }
+
     fn drive_react_subscriptions_loop(
         &mut self,
-        react_subs: &mut [ReactSubscription],
+        react_subs: &mut Vec<ReactSubscription>,
         mut policy: SupplyDrivePolicy,
         waker: &ReactWaker,
+        sink_regs: &mut Vec<(u64, u64)>,
     ) -> Result<(), RuntimeError> {
         'react_loop: loop {
+            // A `whenever` nested inside another `whenever`'s body only
+            // registers when that body runs, which is inside this loop. Adopt
+            // whatever the last round registered, so the react keeps running
+            // until the nested subscription is done too (without this, the
+            // outer subscription completing ended the react and the inner one
+            // never fired at all).
+            if self.adopt_newly_registered_subscriptions(react_subs, waker, sink_regs)? {
+                break 'react_loop;
+            }
             // GC park point: an idle react loop blocks on the waker without
             // dispatching bytecode, so it would never reach the backedge
             // safepoint — park here so a stop-the-world can proceed while the
