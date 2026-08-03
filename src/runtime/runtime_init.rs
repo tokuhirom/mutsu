@@ -2096,6 +2096,10 @@ impl Interpreter {
                     }
                     roles
                 };
+                let class_names: Vec<String> = registry.classes.keys().cloned().collect();
+                for class_name in class_names {
+                    registry.sync_user_method_entries(&class_name);
+                }
                 Arc::new(RwLock::new(registry))
             },
             registry_write_gen: std::sync::atomic::AtomicU64::new(0),

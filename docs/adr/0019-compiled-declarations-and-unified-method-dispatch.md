@@ -160,5 +160,12 @@ The dispatch layer now has a canonical `BuiltinMethodEntry` keyed by owner type 
 Built-in introspection derives its name list from those entries. The
 runtime `Registry` owns those entries in a `(owner, method)` map, seeds them from static data at
 construction without invoking native handlers, and serves built-in introspection from that map.
-Replacing the transitional arity-specific dispatch functions with static native handler IDs, then
-admitting user candidates into the same entry type, remains open.
+Replacing the transitional arity-specific dispatch functions with static native handler IDs and
+routing dispatch reads through the shared entry remain open.
+
+`MethodEntry` now carries both an optional built-in descriptor and ordered user candidates, so a
+user override and its built-in fallback share one `(owner, method)` row. Class declaration,
+rollback, augmentation, role composition, MOP `add_method`, partial registration, and `EVAL`
+restoration synchronize user candidates into the table. Dispatch still reads the compatibility
+`ClassDef::methods` mirror until compiled-candidate replacement and generation invalidation move
+with it in the next stage.

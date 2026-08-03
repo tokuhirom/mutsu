@@ -425,6 +425,10 @@ impl Interpreter {
         self.registry_mut()
             .class_role_param_bindings
             .extend(current_class_role_param_bindings);
+        let class_names: Vec<String> = self.registry().classes.keys().cloned().collect();
+        for class_name in class_names {
+            self.registry_mut().sync_user_method_entries(&class_name);
+        }
         for key in current_type_keys.union(&snapshot_type_keys) {
             if let Some(value) = current_env.get(key).cloned() {
                 self.env.insert(key.clone(), value);

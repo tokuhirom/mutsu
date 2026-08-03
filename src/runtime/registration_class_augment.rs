@@ -343,6 +343,7 @@ impl Interpreter {
             self.compose_role_into_augmented_class(name, role_name);
         }
 
+        self.registry_mut().sync_user_method_entries(name);
         self.set_current_package(saved_package);
         Ok(())
     }
@@ -437,6 +438,7 @@ impl Interpreter {
             .entry(name.to_string())
             .or_default()
             .extend(composed);
+        self.registry_mut().sync_user_method_entries(name);
         // Recompile so the fast path sees the newly composed methods.
         self.compile_class_methods(name);
     }

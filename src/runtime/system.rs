@@ -354,6 +354,7 @@ impl Interpreter {
                         class_def.methods.insert(resolved_method_name, vec![def]);
                     }
                 }
+                self.registry_mut().sync_user_method_entries(&class_name);
             } else {
                 remaining.push(stmt);
             }
