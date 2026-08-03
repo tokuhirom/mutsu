@@ -106,6 +106,17 @@ impl Compiler {
         {
             return;
         }
+        // A `my &f` binding visible right here SHADOWS any package/registry
+        // routine of the same name, so the bare-name call must reach the
+        // binding — exactly as `&f(...)` does. Without this, `my &f = ...; f(1)`
+        // dispatched to an outer `sub f` and usually died on its arity ("Too few
+        // positionals passed"). Compile it as the `&f(...)` form, which already
+        // has an opcode (`CallOnCodeVar`).
+        if name.with_str(|n| self.amp_binding_in_active_scope(n)) {
+            let target = Expr::CodeVar(name.resolve().to_string());
+            self.compile_expr_call_on(&target, args);
+            return;
+        }
         let suppress_listop_rewrite =
             suppress_listop_rewrite || self.user_listop_shadows.contains(&name.resolve());
         // `callframe`/`caller` inside N enclosing `for` blocks must report the
