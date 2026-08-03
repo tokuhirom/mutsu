@@ -718,11 +718,19 @@ pub(crate) const METHOD_UNIVERSE: &[&str] = &[
 /// One canonical built-in type×method entry. User candidates will use the same shape once
 /// ADR-0019's registry migration lands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NativeMethodHandlerId {
+    PureArity,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct BuiltinMethodEntry {
     pub(crate) owner: &'static str,
     pub(crate) name: &'static str,
     /// Stable catalog order used by `.^methods`.
     pub(crate) order: u16,
+    /// Static dispatch target. Arity-specific functions are implementation
+    /// details behind this ID, not independent method lookup sources.
+    pub(crate) handler: NativeMethodHandlerId,
 }
 
 /// Built-in owners whose method entries are installed into the runtime registry.
@@ -759,6 +767,7 @@ pub(crate) fn builtin_method_entries(type_name: &str) -> Vec<BuiltinMethodEntry>
             owner: canonical_builtin_owner(type_name),
             name,
             order: order as u16,
+            handler: NativeMethodHandlerId::PureArity,
         })
         .collect()
 }
