@@ -469,10 +469,13 @@ fn parse_variable_traits<'a>(
             }
             if trait_name == "export" {
                 if !is_our {
-                    return Err(PError::fatal(
-                        "X::Comp::Trait::Scope: Trait 'is export' not allowed on my-scoped variable"
-                            .to_string(),
-                    ));
+                    return Err(PError::from_typed(crate::value::RuntimeError::trait_scope(
+                        "is",
+                        "export",
+                        "variable",
+                        "my",
+                        &["our"],
+                    )));
                 }
                 has_export_trait = true;
                 let (r3, tags) = parse_export_trait_tags(r2)?;

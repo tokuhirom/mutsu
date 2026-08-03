@@ -68,23 +68,6 @@ fn condition_expr(input: &str) -> PResult<'_, Expr> {
     }
 }
 
-/// Build a fatal, structured `X::Obsolete` parse error carrying `old` /
-/// `replacement` attributes so that `throws-like` can match them.
-pub(in crate::parser) fn make_obsolete_error(
-    old: &str,
-    replacement: Option<&str>,
-    message: &str,
-) -> PError {
-    let mut attrs = std::collections::HashMap::new();
-    attrs.insert("old".to_string(), Value::str(old.to_string()));
-    if let Some(rep) = replacement {
-        attrs.insert("replacement".to_string(), Value::str(rep.to_string()));
-    }
-    attrs.insert("message".to_string(), Value::str(message.to_string()));
-    let exception = Value::make_instance(crate::symbol::Symbol::intern("X::Obsolete"), attrs);
-    PError::fatal_with_exception(message.to_string(), Box::new(exception))
-}
-
 /// Detect the Perl 5 `for my $x (LIST) { }` foreach pattern: a `my`/`our`/
 /// `state` declaration of a single variable immediately followed by a
 /// parenthesized list. In Raku the topic variable goes in a pointy block

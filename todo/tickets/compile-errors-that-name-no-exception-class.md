@@ -15,6 +15,17 @@ $ raku  -e 'try { EVAL q{sub f() returns { }} }; say $!.^name'
 $ mutsu -e 'try { EVAL q{sub f() returns { }} }; say $!.^name'
 ```
 
+**Re-measured 2026-08-03: six of the seven now pass** under `MUTSU_REAL_TEST=1`
+(`t/return-constraint-malformed.t`, `t/name-null.t`, `t/radix-literals.t`,
+`t/unicode-identifiers.t`, `t/modifier-cond-ending-in-block.t`,
+`t/block-lexical-scope.t`) — later exception-class work closed them without the
+individual passes this table anticipated. Only `t/out-of-range-scalar-index.t`
+still fails, and not for the reason listed: it reaches `X::OutOfRange` correctly
+but the class has no `.comment` attribute, and rakudo's `DateTime` range errors
+are `X::Temporal::OutOfRange` with `.what`/`.got`/`.range`/`.comment`. That is
+the same shape as `news/2026-08/typed-exceptions-carry-their-attributes.md`, so
+what is left here is an attribute pass, not a classing pass.
+
 | file | first failing assertion | class raku raises |
 | --- | --- | --- |
 | ~~`t/bind-to-whatever-index.t`~~ | ~~binding `[*-1]` of an empty array~~ | **done** — `news/2026-08/bind-slice-is-a-real-exception-class.md` |

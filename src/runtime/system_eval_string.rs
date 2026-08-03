@@ -237,8 +237,10 @@ impl Interpreter {
         let saved_topic = self.env.get("_").cloned();
         let trimmed = code.trim();
         if trimmed == "<>" || trimmed == "<STDIN>" {
-            return Err(RuntimeError::new(
-                "X::Obsolete: The degenerate case <> and old angle forms like <STDIN> are disallowed.",
+            return Err(RuntimeError::obsolete(
+                trimmed,
+                "lines() to read input, ('') to represent a null string or () to \
+                 represent an empty list",
             ));
         }
         let previous_pod = self.env.get("=pod").cloned();

@@ -346,10 +346,7 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
             // rand() and rand(N) are Perl 5 syntax — throw X::Obsolete
             let after_ws = after;
             if after_ws.starts_with('(') {
-                return Err(PError::fatal(
-                    "X::Obsolete: Unsupported use of rand().  In Raku please use: rand."
-                        .to_string(),
-                ));
+                return Err(PError::obsolete("rand()", "rand"));
             }
             return Ok((
                 &input[4..],

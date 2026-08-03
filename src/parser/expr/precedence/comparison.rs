@@ -19,11 +19,7 @@ pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
             || after.starts_with("m/")
             || after.starts_with("m ")
         {
-            return Err(PError::fatal_at(
-                "X::Obsolete: Unsupported use of =~ to do pattern matching; in Raku please use ~~"
-                    .to_string(),
-                r,
-            ));
+            return Err(PError::obsolete_at("=~ to do pattern matching", "~~", r));
         }
     }
     if r.starts_with("!~") && !r.starts_with("!~~") {
@@ -33,9 +29,9 @@ pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
             || after.starts_with("m/")
             || after.starts_with("m ")
         {
-            return Err(PError::fatal_at(
-                "X::Obsolete: Unsupported use of !~ to do pattern matching; in Raku please use !~~"
-                    .to_string(),
+            return Err(PError::obsolete_at(
+                "!~ to do negated pattern matching",
+                "!~~",
                 r,
             ));
         }

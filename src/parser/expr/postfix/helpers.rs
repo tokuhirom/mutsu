@@ -1,7 +1,6 @@
 use crate::ast::{Expr, Stmt};
 use crate::parser::helpers::is_non_breaking_space;
 use crate::parser::parse_result::PError;
-use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::{Value, ValueView};
 
@@ -70,19 +69,10 @@ pub(crate) fn extract_range_negative_end(expr: &Expr) -> Option<String> {
 
 /// Build a fatal X::Obsolete parse error for negative subscripts.
 pub(crate) fn make_negative_subscript_error(neg_val: &str) -> PError {
-    let old = format!("a negative {} subscript to index from the end", neg_val);
-    let replacement = format!("a function such as *{}", neg_val);
-    let message = format!(
-        "X::Obsolete: Unsupported use of {}. In Raku please use: {}.",
-        old, replacement
-    );
-    let err = crate::value::RuntimeError::obsolete(&old, &replacement);
-    let mut attrs = std::collections::HashMap::new();
-    attrs.insert("old".to_string(), Value::str(old));
-    attrs.insert("replacement".to_string(), Value::str(replacement));
-    attrs.insert("message".to_string(), Value::str(err.message.clone()));
-    let exception = Value::make_instance(Symbol::intern("X::Obsolete"), attrs);
-    PError::fatal_with_exception(message, Box::new(exception))
+    PError::obsolete(
+        &format!("a negative {neg_val} subscript to index from the end"),
+        &format!("a function such as *{neg_val}"),
+    )
 }
 
 /// Check if a character is valid inside an angle-bracket word key (`<key>`).

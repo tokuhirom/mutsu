@@ -295,10 +295,9 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     if is_without {
         for kw in &["else", "orwith", "elsif"] {
             if keyword(kw, rest).is_some() {
-                return Err(PError::fatal(format!(
-                    "X::Syntax::WithoutElse: '{}' is not allowed on 'without'",
-                    kw
-                )));
+                return Err(PError::from_typed(
+                    crate::value::RuntimeError::without_else(kw),
+                ));
             }
         }
     }

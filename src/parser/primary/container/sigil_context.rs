@@ -153,8 +153,8 @@ pub(crate) fn itemized_brace_expr(input: &str) -> PResult<'_, Expr> {
         ))
     } else {
         // ${expr} where expr is not a hash is Perl 5 scalar dereference syntax
-        Err(crate::parser::parse_result::PError::fatal(
-            "X::Obsolete: Unsupported use of ${expr}. In Raku please use: $(expr).".to_string(),
+        Err(crate::parser::parse_result::PError::obsolete(
+            "${expr}", "$(expr)",
         ))
     }
 }

@@ -80,6 +80,41 @@ impl PError {
         }
     }
 
+    /// Build the fatal `X::Obsolete` parse error for a Perl 5 construct.
+    ///
+    /// `old` names the construct and `replacement` the Raku spelling; rakudo
+    /// renders both into the message *and* exposes them as `.old`/`.replacement`,
+    /// which `throws-like 'qr/a/', X::Obsolete, old => …, replacement => …`
+    /// reads. Every obsolete-syntax rejection goes through here so none of them
+    /// arrives as a bare message with no attributes to match on.
+    pub fn obsolete(old: &str, replacement: &str) -> Self {
+        Self::from_typed(crate::value::RuntimeError::obsolete(old, replacement))
+    }
+
+    /// Turn a typed [`crate::value::RuntimeError`] into a fatal parse error that
+    /// keeps its exception object.
+    ///
+    /// The `RuntimeError` constructors in `src/value/error_typed.rs` are the one
+    /// place a given `X::` class's attributes and message are spelled out; a
+    /// parse-time raise of the same class goes through here instead of
+    /// re-deriving them, so the two cannot drift apart. A caller must pass a
+    /// *typed* error — an untyped one degrades to a plain fatal message.
+    pub fn from_typed(err: crate::value::RuntimeError) -> Self {
+        let message = err.message.clone();
+        match err.exception {
+            Some(exception) => Self::fatal_with_exception(message, exception),
+            None => Self::fatal(message),
+        }
+    }
+
+    /// [`Self::obsolete`] that also records the failure position (`input` is the
+    /// unconsumed rest at the error site), like [`Self::fatal_at`].
+    pub fn obsolete_at(old: &str, replacement: &str, input: &str) -> Self {
+        let mut err = Self::obsolete(old, replacement);
+        err.remaining_len = Some(input.len());
+        err
+    }
+
     /// Get the formatted message string (used by tests).
     #[allow(dead_code)]
     pub fn message(&self) -> String {

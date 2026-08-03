@@ -179,10 +179,16 @@ impl Interpreter {
             // type does. Only raise MissingInitializer when one is truly required;
             // otherwise the Nil (type-object) default is allowed at declaration.
             if self.constraint_requires_initializer(constraint) {
-                return Err(RuntimeError::new(format!(
-                    "X::Syntax::Variable::MissingInitializer: Variable definition of type {} needs to be given an initializer",
-                    constraint
-                )));
+                // A `:D` the source did not write came from `use variables :D`
+                // (that is exactly what `apply_variables_pragma` rewrote), and
+                // rakudo reports it as `implicit`.
+                let implicit = (constraint != raw_constraint)
+                    .then(|| format!("{} by pragma", self.variables_pragma));
+                return Err(RuntimeError::missing_initializer(
+                    constraint,
+                    "variable",
+                    implicit.as_deref(),
+                ));
             }
             return Ok(());
         }
