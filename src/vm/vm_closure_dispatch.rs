@@ -1097,6 +1097,17 @@ impl Interpreter {
                     && *k != self_sym
                     && !rw_sources.contains(k)
                     && !param_names.contains(k)
+                    // A runtime-built callback (notably a `whenever` body)
+                    // force-installs these captured bindings so they beat an
+                    // unrelated same-named caller lexical.  That install is
+                    // call-private, not a mutation of the caller binding.  A
+                    // callback containing `emit` has `cc.has_calls`, so it takes
+                    // this broad writeback path even when the authoritative
+                    // binding was only read; never replay that installed value
+                    // into the ambient caller env on return.
+                    && (!data.authoritative_captures.contains(k)
+                        || cc.free_var_writes.contains(k)
+                        || cc.free_var_container_writes.contains(k))
                     && (restored_env.contains_key_sym(*k)
                         || captured_names.contains(k)
                         || (meta_possible

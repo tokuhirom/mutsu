@@ -2042,6 +2042,8 @@ impl Compiler {
                 };
                 let source_var_names = Self::for_iterable_var_names(iterable);
                 let source_var_locals = self.for_source_var_locals(&source_var_names);
+                let source_container_local = Self::for_iterable_source_name(iterable)
+                    .and_then(|name| self.local_map.get(&name).copied());
                 // When the block parameter has a type constraint other than Mu
                 // or Junction, junction items should be autothreaded (expanded
                 // into their eigenstates).
@@ -2059,6 +2061,7 @@ impl Compiler {
                             param_idx,
                             param_local,
                             topic_local,
+                            source_container_local,
                             body_end: 0,
                             label: label.clone(),
                             arity,
@@ -3495,7 +3498,25 @@ impl Compiler {
                 // parent's post-registration writes. See
                 // surface_stashed_body_free_vars for the mechanism.
                 let analysis_param = vec![param.clone().unwrap_or_else(|| "$_".to_string())];
-                self.surface_stashed_body_free_vars(&analysis_param, body);
+                // LAST/QUIT callbacks are split out of the whenever body at
+                // runtime. Compile their statements inline only in the
+                // analysis copy so their outer lexical reads contribute to the
+                // parent-slot inventory; the executable stmt_pool body retains
+                // the original Phaser nodes.
+                let mut analysis_body = Vec::new();
+                for stmt in body {
+                    if let Stmt::Phaser {
+                        kind: PhaserKind::Last | PhaserKind::Quit,
+                        body: phaser_body,
+                    } = stmt
+                    {
+                        analysis_body.extend(phaser_body.iter().cloned());
+                    } else {
+                        analysis_body.push(stmt.clone());
+                    }
+                }
+                let analysis_cc_idx =
+                    self.surface_stashed_body_free_vars(&analysis_param, &analysis_body);
                 let param_idx = param
                     .as_ref()
                     .map(|p| self.code.add_constant(Value::str(p.clone())));
@@ -3514,6 +3535,7 @@ impl Compiler {
                 };
                 self.code.emit(OpCode::WheneverScope {
                     body_idx,
+                    analysis_cc_idx,
                     param_idx,
                     target_var_idx,
                 });

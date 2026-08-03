@@ -1,6 +1,6 @@
 use Test;
 
-plan 8;
+plan 9;
 
 # A `my enum` binds its type name AND every variant name lexically in the block
 # that declares it, so those names must (a) win over a same-named outer symbol
@@ -38,6 +38,8 @@ react {
 is @got[0], 'SBEL-State', 'and inside the whenever callback too';
 is @got[1], 'SBEL-Header', 'the variant is the enum value, not the class';
 is @got[2], 2, 'a later variant keeps its ordinal';
+is SBEL-Header.^name, 'SBEL-Header',
+    'the callback does not leave its authoritative variant in the caller env';
 
 # --- (b) the binding dies with its block.
 

@@ -263,6 +263,10 @@ impl Interpreter {
         self.gather_items.pop()
     }
 
+    pub(crate) fn current_gather_items(&self) -> Vec<Value> {
+        self.gather_items.last().cloned().unwrap_or_default()
+    }
+
     pub(crate) fn push_gather_take_limit(&mut self, limit: Option<usize>) {
         self.gather_take_limits.push(limit);
     }

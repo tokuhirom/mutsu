@@ -182,6 +182,10 @@ pub(crate) struct ForLoopSpec {
     /// exit, exactly as `exec_given_op` does for `given`/`with`. Only set for an
     /// implicit-topic loop (a named parameter does not rebind `$_`).
     pub(crate) topic_local: Option<u32>,
+    /// Local slot that owns the iterable container (`$b` in `for $b.pairs`,
+    /// `%h` in `for %h.values`). Pair/value alias writeback reaches this source
+    /// through env today, so ADR-0018 keeps exactly this slot synchronized.
+    pub(crate) source_container_local: Option<u32>,
     pub(crate) body_end: u32,
     pub(crate) label: Option<String>,
     pub(crate) arity: u32,
@@ -1520,6 +1524,10 @@ pub(crate) enum OpCode {
     },
     WheneverScope {
         body_idx: u32,
+        /// Analysis-only compiled form of the stmt-pool body. It is never
+        /// executed, but supplies precise free-variable parent slots to
+        /// ADR-0018's env-consumer analysis.
+        analysis_cc_idx: u32,
         param_idx: Option<u32>,
         target_var_idx: Option<u32>,
     },
@@ -1772,9 +1780,69 @@ mod const_pool_dedup {
             "the index is compile-time scaffolding"
         );
     }
+
+    #[test]
+    fn env_consumers_publish_only_their_selected_slots() {
+        let mut code = CompiledCode::new();
+        code.locals.push("x".to_string());
+        code.locals.push("slot_only".to_string());
+        let mut gather_body = CompiledCode::new();
+        // `free_var_parent_slots` is built by mapping over `free_var_syms`
+        // (`add_closure_code_baked`), so the two are index-aligned and the same
+        // length. Seed both: the slot alone is a state no compiler run produces,
+        // and the consumer-slot fold walks the syms to reach it.
+        gather_body.free_var_syms.push(Symbol::intern("x"));
+        gather_body.free_var_parent_slots.push(Some(0));
+        code.closure_compiled_codes
+            .push(std::sync::Arc::new(gather_body));
+        code.ops.push(OpCode::MakeGather(0, Some(0)));
+        code.compute_needs_env_sync();
+
+        assert_eq!(code.env_consumer_slots.gather, vec![true, false]);
+        assert!(code.env_consumer_slots.for_loop.is_empty());
+        assert!(code.env_consumer_slots.block_scope.is_empty());
+        assert!(code.env_consumer_slots.block_local_scope.is_empty());
+        assert!(code.env_consumer_slots.whenever.is_empty());
+        assert_eq!(code.needs_env_sync, vec![true, false]);
+    }
+
+    #[test]
+    fn block_scope_does_not_force_unrelated_slots_into_env_sync() {
+        let mut code = CompiledCode::new();
+        code.locals.push("inside".to_string());
+        code.locals.push("unrelated".to_string());
+        code.ops.push(OpCode::BlockScope {
+            pre_end: 1,
+            enter_end: 1,
+            body_end: 3,
+            keep_start: 3,
+            undo_start: 3,
+            post_start: 3,
+            end: 3,
+            is_bare_block: true,
+        });
+        code.ops.push(OpCode::LoadNil);
+        code.ops.push(OpCode::SetLocalDecl {
+            slot: 0,
+            explicit_init: true,
+        });
+        code.compute_needs_env_sync();
+
+        assert_eq!(code.env_consumer_slots.block_scope, vec![true, false]);
+        assert_eq!(code.needs_env_sync, vec![true, false]);
+    }
 }
 
 /// A compiled chunk of bytecode.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct EnvConsumerSlots {
+    pub(crate) for_loop: Vec<bool>,
+    pub(crate) block_scope: Vec<bool>,
+    pub(crate) block_local_scope: Vec<bool>,
+    pub(crate) gather: Vec<bool>,
+    pub(crate) whenever: Vec<bool>,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct CompiledCode {
     pub(crate) ops: Vec<OpCode>,
@@ -1926,6 +1994,9 @@ pub(crate) struct CompiledCode {
     /// Locals that are only accessed via GetLocal don't need env sync,
     /// reducing env size and clone cost.
     pub(crate) needs_env_sync: Vec<bool>,
+    /// Per-consumer lexical-slot synchronization sets (ADR-0018). Their union
+    /// contributes to `needs_env_sync` without widening unrelated slots.
+    pub(crate) env_consumer_slots: EnvConsumerSlots,
     /// Bitmap: true if local[i]'s NAME occupies more than one `locals` slot —
     /// a genuine inner-block shadow under the `MUTSU_SHADOW_SLOTS` gate (§1.4).
     /// The name-keyed env can hold only ONE value per name, so the whole-locals
@@ -2023,6 +2094,14 @@ pub(crate) struct CompiledCode {
     /// at their declaration site (`box_decl_local_cell`). Distinct from
     /// `needs_cell_locals` (closure-driven) — see `named_sub_captures`.
     pub(crate) needs_cell_named_sub: Vec<Symbol>,
+    /// Exact owner slots whose containers are captured by `WrapVarRef` in a
+    /// directly nested named sub. Kept slot-addressed so a same-named lexical in
+    /// another block is not boxed at its declaration site.
+    pub(crate) needs_cell_named_sub_ref_slots: Vec<u32>,
+    /// Free variables whose raw container is consumed by `WrapVarRef`. Runtime
+    /// reference wrapping may read a captured env cell only for this explicit
+    /// set; ordinary same-named env cells must not override a shadow value.
+    pub(crate) container_ref_capture_syms: Vec<Symbol>,
     /// Named-sub writes of a NON-own (ancestor) lexical, bubbled up so the ancestor
     /// that declares the local folds it into its own `needs_cell_named_sub`
     /// (mirrors `needs_cell_free_vars` for closures).
@@ -2158,18 +2237,6 @@ pub(crate) struct CompiledCode {
     /// after every interpreter-native call, which kept such routines
     /// permanently out of the name-keyed call caches by accident.)
     pub(crate) uses_callframe: bool,
-    /// True if this code runs an inline body that reads the frame's lexicals *by
-    /// name* through a path the `free_var_syms` op-scan cannot see: loop/block
-    /// bodies that thread control temps through `env` by name (`ForLoop`,
-    /// `BlockScope`, `BlockLocalScope`), and the two ops that stash a body in the
-    /// `stmt_pool` and compile/run it at runtime against the live env
-    /// (`MakeGather`, `WheneverScope`). For such a frame `free_var_syms` is
-    /// *incomplete*, so two consumers fall back to the whole env: the dual-store
-    /// flush blanket (`compute_needs_env_sync`) marks every local env-synced, and
-    /// the closure upvalue capture (`capture_closure_env`, single-store Slice E)
-    /// snapshots the whole env instead of just the free vars. Set during
-    /// `compute_needs_env_sync`.
-    pub(crate) captures_env_by_name: bool,
     /// True if this code is the body of a `supply { … }` block — the lambda
     /// `Supply.on-demand` is handed, recognised by its generated emitter
     /// parameter (`__mutsu_supply_emitter_N`, see `supply_method_call`).
@@ -2308,6 +2375,98 @@ impl ConstKey {
 }
 
 impl CompiledCode {
+    fn mark_name_access_slots(&self, start: usize, end: usize, slots: &mut [bool]) {
+        let end = end.min(self.ops.len());
+        for op in &self.ops[start.min(end)..end] {
+            let name_idx = match op {
+                OpCode::GetGlobal(idx)
+                | OpCode::SetGlobal(idx)
+                | OpCode::SetGlobalRaw(idx)
+                | OpCode::PostIncrement(idx, _)
+                | OpCode::PostDecrement(idx, _)
+                | OpCode::PreIncrement(idx, _)
+                | OpCode::PreDecrement(idx, _)
+                | OpCode::GetArrayVar(idx)
+                | OpCode::GetHashVar(idx)
+                | OpCode::AssignExpr(idx)
+                | OpCode::TopicDotAssign(idx)
+                | OpCode::IndexAssignExprNested { name_idx: idx, .. }
+                | OpCode::IndexAssignDeepNested { name_idx: idx, .. }
+                | OpCode::MultiDimIndexAssign { name_idx: idx, .. } => Some(*idx),
+                OpCode::AtomicCompoundVar { name_idx, .. } => Some(*name_idx),
+                _ => None,
+            };
+            let Some(name_idx) = name_idx else { continue };
+            let Some(ValueView::Str(name)) = self.constants.get(name_idx as usize).map(Value::view)
+            else {
+                continue;
+            };
+            for (slot, local) in self.locals.iter().enumerate() {
+                if local == name.as_str() {
+                    slots[slot] = true;
+                }
+            }
+        }
+    }
+
+    fn mark_local_access_slots(&self, start: usize, end: usize, slots: &mut [bool]) {
+        let end = end.min(self.ops.len());
+        for op in &self.ops[start.min(end)..end] {
+            let slot = match op {
+                OpCode::GetLocal(slot)
+                | OpCode::GetLocalRaw(slot)
+                | OpCode::SetLocal(slot)
+                | OpCode::AssignExprLocal(slot)
+                | OpCode::StateVarInit(slot, _) => Some(*slot),
+                OpCode::GetLocalMetaAssign { slot, .. } | OpCode::SetLocalDecl { slot, .. } => {
+                    Some(*slot)
+                }
+                _ => None,
+            };
+            if let Some(needed) = slot.and_then(|slot| slots.get_mut(slot as usize)) {
+                *needed = true;
+            }
+        }
+    }
+
+    fn mark_same_named_slot_peers(&self, slots: &mut [bool]) {
+        let selected_names: std::collections::HashSet<&str> = slots
+            .iter()
+            .enumerate()
+            .filter(|(_, selected)| **selected)
+            .map(|(slot, _)| self.locals[slot].as_str())
+            .collect();
+        for (slot, name) in self.locals.iter().enumerate() {
+            if selected_names.contains(name.as_str()) {
+                slots[slot] = true;
+            }
+        }
+    }
+
+    fn mark_closure_parent_slots(&self, cc_idx: u32, slots: &mut [bool]) {
+        let Some(cc) = self.closure_compiled_codes.get(cc_idx as usize) else {
+            return;
+        };
+        for (idx, sym) in cc.free_var_syms.iter().enumerate() {
+            // A self-referential stored body can be analyzed while its binding
+            // initializer is still being compiled (`my @a := gather { ... @a
+            // ... }`), leaving the baked parent slot absent even though the
+            // declaration slot is already present in this frame. Resolve that
+            // exact same-name slot here; it is still a per-consumer slot, not a
+            // frame-wide fallback.
+            let slot = cc
+                .free_var_parent_slots
+                .get(idx)
+                .copied()
+                .flatten()
+                .map(|slot| slot as usize)
+                .or_else(|| sym.with_str(|name| self.locals.iter().rposition(|n| n == name)));
+            if let Some(needed) = slot.and_then(|slot| slots.get_mut(slot)) {
+                *needed = true;
+            }
+        }
+    }
+
     pub(crate) fn new() -> Self {
         Self {
             ops: Vec::new(),
@@ -2342,6 +2501,7 @@ impl CompiledCode {
             has_env_writes: false,
             may_capture_outer_vars: false,
             needs_env_sync: Vec::new(),
+            env_consumer_slots: EnvConsumerSlots::default(),
             dup_named_locals: Vec::new(),
             is_supply_block_body: false,
             my_declared_sym: rustc_hash::FxHashSet::default(),
@@ -2354,6 +2514,8 @@ impl CompiledCode {
             free_var_container_writes: Vec::new(),
             named_sub_captures: Vec::new(),
             needs_cell_named_sub: Vec::new(),
+            needs_cell_named_sub_ref_slots: Vec::new(),
+            container_ref_capture_syms: Vec::new(),
             needs_cell_named_sub_free: Vec::new(),
             escaping_our_sub_captures: Vec::new(),
             needs_cell_escaping_our_sub: Vec::new(),
@@ -2367,7 +2529,6 @@ impl CompiledCode {
             outer_code_var_names: std::collections::HashSet::new(),
             needs_cell_free_vars: Vec::new(),
             has_calls: false,
-            captures_env_by_name: false,
             sub_fingerprints: std::collections::HashMap::new(),
             upvalue_syms: Vec::new(),
             env_only_decls: Vec::new(),
@@ -2617,18 +2778,100 @@ impl CompiledCode {
         // early return) so zero-local closures wrapping a `whenever`/`gather` are
         // covered too. Recursion-heavy code without these (e.g. `fib`) is
         // unaffected and still skips the per-call flush for its slot-only params.
-        self.captures_env_by_name = self.ops.iter().any(|op| {
-            matches!(
-                op,
-                OpCode::ForLoop(..)
-                    | OpCode::BlockScope { .. }
-                    | OpCode::BlockLocalScope { .. }
-                    | OpCode::MakeGather(..)
-                    | OpCode::WheneverScope { .. }
-            )
-        });
         let n = self.locals.len();
         self.needs_env_sync = vec![false; n];
+        self.env_consumer_slots = EnvConsumerSlots::default();
+        let mut has_for_loop = false;
+        let mut has_block_scope = false;
+        let mut has_block_local_scope = false;
+        let mut has_gather = false;
+        let mut has_whenever = false;
+        let mut for_loop_slots = vec![false; n];
+        let mut block_scope_slots = vec![false; n];
+        let mut block_local_scope_slots = vec![false; n];
+        let mut gather_slots = vec![false; n];
+        let mut whenever_slots = vec![false; n];
+        for (op_idx, op) in self.ops.iter().enumerate() {
+            match op {
+                OpCode::ForLoop(spec) => {
+                    has_for_loop = true;
+                    for slot in [
+                        spec.param_local,
+                        spec.topic_local,
+                        spec.source_container_local,
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .chain(spec.source_var_locals.iter().flatten().copied())
+                    .chain(spec.single_array_source_local)
+                    {
+                        if let Some(needed) = for_loop_slots.get_mut(slot as usize) {
+                            *needed = true;
+                        }
+                    }
+                    self.mark_name_access_slots(
+                        op_idx + 1,
+                        spec.body_end as usize,
+                        &mut for_loop_slots,
+                    );
+                }
+                OpCode::BlockScope { end, .. } => {
+                    has_block_scope = true;
+                    self.mark_name_access_slots(op_idx + 1, *end as usize, &mut block_scope_slots);
+                    self.mark_local_access_slots(op_idx + 1, *end as usize, &mut block_scope_slots);
+                }
+                OpCode::BlockLocalScope { body_end, .. } => {
+                    has_block_local_scope = true;
+                    self.mark_name_access_slots(
+                        op_idx + 1,
+                        *body_end as usize,
+                        &mut block_local_scope_slots,
+                    );
+                    self.mark_local_access_slots(
+                        op_idx + 1,
+                        *body_end as usize,
+                        &mut block_local_scope_slots,
+                    );
+                }
+                OpCode::MakeGather(_, Some(cc_idx)) => {
+                    has_gather = true;
+                    self.mark_closure_parent_slots(*cc_idx, &mut gather_slots);
+                }
+                OpCode::MakeGather(_, None) => has_gather = true,
+                OpCode::WheneverScope {
+                    analysis_cc_idx, ..
+                } => {
+                    has_whenever = true;
+                    self.mark_closure_parent_slots(*analysis_cc_idx, &mut whenever_slots);
+                }
+                _ => {}
+            }
+        }
+        // A block declaration's entry prelude may clear the previously visible
+        // same-named outer slot. Block exit restores that exact peer from env,
+        // so every simultaneously live peer is a dependency of this consumer —
+        // still a precise duplicate-name subset, never a frame-wide blanket.
+        if has_block_scope {
+            self.mark_same_named_slot_peers(&mut block_scope_slots);
+        }
+        if has_block_local_scope {
+            self.mark_same_named_slot_peers(&mut block_local_scope_slots);
+        }
+        if has_for_loop {
+            self.env_consumer_slots.for_loop = for_loop_slots;
+        }
+        if has_block_scope {
+            self.env_consumer_slots.block_scope = block_scope_slots;
+        }
+        if has_block_local_scope {
+            self.env_consumer_slots.block_local_scope = block_local_scope_slots;
+        }
+        if has_gather {
+            self.env_consumer_slots.gather = gather_slots;
+        }
+        if has_whenever {
+            self.env_consumer_slots.whenever = whenever_slots;
+        }
         // §1.4 shadow slots: flag every slot whose name occupies more than one
         // `locals` slot (a genuine inner-block shadow under MUTSU_SHADOW_SLOTS)
         // so the whole-locals env broadcasts skip them — see `dup_named_locals`.
@@ -2654,11 +2897,18 @@ impl CompiledCode {
                 self.dup_named_locals[i] = true;
             }
         }
-        if n == 0 {
-            return;
+        // ForLoop's iteration-local restore still journals shadowed bindings by
+        // name. Publish only the duplicate-name slots that can participate in
+        // that journal; ordinary loop slots are already covered by the baked
+        // source/body bitmap above.
+        if has_for_loop {
+            for (slot, is_duplicate) in self.dup_named_locals.iter().copied().enumerate() {
+                if is_duplicate {
+                    self.env_consumer_slots.for_loop[slot] = true;
+                }
+            }
         }
-        if self.captures_env_by_name {
-            self.needs_env_sync.iter_mut().for_each(|b| *b = true);
+        if n == 0 {
             return;
         }
         let locals_map: std::collections::HashMap<&str, usize> = self
@@ -2688,7 +2938,11 @@ impl CompiledCode {
                 | OpCode::GetArrayVar(idx)
                 | OpCode::GetHashVar(idx)
                 | OpCode::AssignExpr(idx)
-                | OpCode::TopicDotAssign(idx) => Some(*idx),
+                | OpCode::TopicDotAssign(idx)
+                | OpCode::IndexAssignExprNested { name_idx: idx, .. }
+                | OpCode::IndexAssignDeepNested { name_idx: idx, .. }
+                | OpCode::MultiDimIndexAssign { name_idx: idx, .. } => Some(*idx),
+                OpCode::AtomicCompoundVar { name_idx, .. } => Some(*name_idx),
                 _ => None,
             };
             if let Some(idx) = name_idx
@@ -2896,6 +3150,41 @@ impl CompiledCode {
             {
                 self.needs_env_sync.iter_mut().for_each(|b| *b = true);
             }
+        }
+        // ADR-0018: each env-by-name consumer now publishes exactly the slots
+        // its analysis selected. Block restore retains lexical slot identity,
+        // so the presence of a block no longer forces a frame-wide blanket.
+        for slot in 0..n {
+            self.needs_env_sync[slot] |= self
+                .env_consumer_slots
+                .for_loop
+                .get(slot)
+                .copied()
+                .unwrap_or(false)
+                || self
+                    .env_consumer_slots
+                    .block_scope
+                    .get(slot)
+                    .copied()
+                    .unwrap_or(false)
+                || self
+                    .env_consumer_slots
+                    .block_local_scope
+                    .get(slot)
+                    .copied()
+                    .unwrap_or(false)
+                || self
+                    .env_consumer_slots
+                    .gather
+                    .get(slot)
+                    .copied()
+                    .unwrap_or(false)
+                || self
+                    .env_consumer_slots
+                    .whenever
+                    .get(slot)
+                    .copied()
+                    .unwrap_or(false);
         }
     }
 
@@ -3828,12 +4117,9 @@ impl CompiledCode {
     /// index-based upvalues: rewrite their pure-read ops to `GetUpvalue(i)` and
     /// record the captured order in `upvalue_syms`. Must run AFTER
     /// `compute_free_vars` / `compute_needs_env_sync` (it consumes `free_var_syms`,
-    /// `free_var_writes`, `free_var_container_writes`, `captures_env_by_name`).
+    /// `free_var_writes`, `free_var_container_writes`).
     ///
     /// Conservative by design (Phase 1):
-    /// - Skips entirely when `captures_env_by_name` (loop/block/gather/whenever or
-    ///   reflective bodies read lexicals by name through paths the op-scan cannot
-    ///   rewrite).
     /// - A variable is eligible only if it is a plain user lexical, is NEVER
     ///   written anywhere in the closure subtree (not in `free_var_writes` /
     ///   `free_var_container_writes`), and appears in this code's ops only through
@@ -3842,9 +4128,6 @@ impl CompiledCode {
     ///   capture is boxed into a shared `ContainerRef` cell, which the snapshot
     ///   clones), so reads stay coherent without any write-back.
     pub(crate) fn compute_upvalues(&mut self, runtime_bound: &std::collections::HashSet<Symbol>) {
-        if self.captures_env_by_name {
-            return;
-        }
         let own: std::collections::HashSet<&str> = self.locals.iter().map(|s| s.as_str()).collect();
         let written: std::collections::HashSet<Symbol> = self
             .free_var_writes

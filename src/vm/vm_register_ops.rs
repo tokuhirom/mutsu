@@ -81,6 +81,31 @@ impl Interpreter {
             self.box_captured_lexicals(code, &analysis_cc);
             let mut env = self.env().clone();
             env.insert("__mutsu_lazylist_from_gather".to_string(), Value::TRUE);
+            // A forward aggregate free var with no baked parent slot is the
+            // self-reference in a binding initializer (`my @a := gather {
+            // ... @a ... }`). Tag it before the LazyList is built; GetArrayVar
+            // then exposes the live take collector while this gather is being
+            // forced, instead of reading the pre-declaration Any snapshot.
+            if let Some(analysis) = &analysis_cc {
+                for (i, sym) in analysis.free_var_syms.iter().enumerate() {
+                    let has_baked_slot = analysis
+                        .free_var_parent_slots
+                        .get(i)
+                        .copied()
+                        .flatten()
+                        .is_some();
+                    let is_forward_aggregate = !has_baked_slot
+                        && sym.with_str(|name| {
+                            (name.starts_with('@') || name.starts_with('%'))
+                                && code.locals.iter().any(|local| local == name)
+                        });
+                    if is_forward_aggregate {
+                        sym.with_str(|name| {
+                            env.insert(format!("__mutsu_gather_self_ref::{name}"), Value::TRUE);
+                        });
+                    }
+                }
+            }
             // Compile the gather body to bytecode for Interpreter-native forcing.
             // A `sub` declared in the body is lexical to it, so compile through a
             // `Stmt::Block` (whose `BlockScope` restores the routine registry) when there
@@ -426,14 +451,11 @@ impl Interpreter {
     /// drops only the bulk non-free plain user lexicals, which the body provably
     /// cannot reference.
     ///
-    /// Two cases keep the whole-env snapshot (`clone_env`) because `free_var_syms`
-    /// is *not* a complete account of the names the body reads:
-    /// - **reflective** programs (`EVAL` / `CALLER::` / symbolic deref) can read a
-    ///   caller lexical under any name (process-global flag, set at finalize);
-    /// - **`captures_env_by_name`** frames run an inline body that reads lexicals
-    ///   by name through a path the op-scan misses (`whenever`/`gather` bodies
-    ///   stashed in the `stmt_pool`, loop/block control temps) — see the field on
-    ///   [`CompiledCode`].
+    /// Reflective programs (`EVAL` / `CALLER::` / symbolic deref) keep the
+    /// whole-env snapshot because they can read a caller lexical under any name.
+    /// Inline/stored-body consumers no longer widen closure capture: their exact
+    /// dependencies are represented by `free_var_syms` and the per-consumer slot
+    /// sets from ADR-0018.
     ///
     /// **Slice E Part 2 (the upvalue read):** a free variable that is one of *this*
     /// frame's own locals is read straight from the slot store
@@ -454,7 +476,7 @@ impl Interpreter {
         let Some(cc) = cc else {
             return self.clone_env();
         };
-        if cc.captures_env_by_name || crate::opcode::reflective_name_access_possible() {
+        if crate::opcode::reflective_name_access_possible() {
             let mut flat = self.clone_env();
             // Even when capturing the whole env by name, a slot-only local (a
             // pointy-block/sub parameter that this frame never mirrors into `env`,
