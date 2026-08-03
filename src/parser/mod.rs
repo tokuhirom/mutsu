@@ -396,7 +396,24 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
                 let tail = &source[consumed..];
                 let near_offset = consumed + leading_ws_bytes(tail);
                 let (line_num, col_num) = line_col_at_offset(source, near_offset);
-                if let Some(context) = near_snippet(tail, 60) {
+                // One of the alternatives that failed here may have diagnosed the
+                // input precisely and named its Raku exception class in the
+                // `"X::Type: text"` convention (`X::Syntax::CannotMeta: Cannot do
+                // . because it is too fiddly`). Every message merged into a
+                // `PError` shares the same furthest failure position
+                // (`update_best_error` only merges at an equal score), so such a
+                // message describes *this* failure and is strictly better than
+                // the generic "Confused." wrapper — which would otherwise bury it
+                // inside an "expected A or B or …" list and leave the exception
+                // classed `X::Syntax::Confused`.
+                if let Some(typed) = e.typed_convention_message() {
+                    Err(with_parse_hint(RuntimeError::with_location(
+                        typed.to_string(),
+                        RuntimeErrorCode::ParseExpected,
+                        line_num,
+                        col_num,
+                    )))
+                } else if let Some(context) = near_snippet(tail, 60) {
                     Err(with_parse_hint(RuntimeError::with_location(
                         format!(
                             "Confused. parse error at line {}, column {}: {} — near: {:?}",

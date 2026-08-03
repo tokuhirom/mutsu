@@ -115,6 +115,18 @@ impl PError {
         err
     }
 
+    /// The first alternative written in the `"X::Type: text"` convention, if
+    /// any. Such a message is a *diagnosis* — the parser recognised the
+    /// construct and knows which Raku exception class rejects it — so a caller
+    /// that would otherwise flatten this error into a generic "expected …"
+    /// description should propagate it instead. Losing it downgrades the
+    /// exception to `X::Syntax::Confused`.
+    pub fn typed_convention_message(&self) -> Option<&str> {
+        self.messages.iter().find_map(|m| {
+            crate::value::RuntimeError::split_typed_message_convention(m).map(|_| m.as_str())
+        })
+    }
+
     /// Get the formatted message string (used by tests).
     #[allow(dead_code)]
     pub fn message(&self) -> String {
