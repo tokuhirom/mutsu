@@ -86,19 +86,48 @@ below says the opposite and is the accurate one ("no other `&`/`&mut` into this 
 clause. This sentence is load-bearing in the wrong direction: it is what a future call site would
 read before deciding it may keep a borrow. Fix it with the ADR §8 note.
 
-**Finding 2 — the escaping-raw-pointer family is the fragile one, and Miri cannot see it.**
-`src/runtime/nativecall.rs` (`marshal_arg`'s `CType::Buf` arm and `marshal_carray_arg`) derives a
-raw `data_ptr` *from* the `&mut` and hands it to C, retaining the node alongside it:
+**Finding 2 — the rule is about ORDER, and it is now pinned.** `src/gc/borrow_shapes.rs` measures
+the shapes call sites actually perform while the aliased `&mut` is live, on the gate's pinned
+toolchain:
+
+| shape | Stacked | Tree |
+| --- | --- | --- |
+| `Gc::clone` of the same node while the `&mut` is live (self-reference build) | ok | ok |
+| `Gc::as_ptr` while the `&mut` is live (identity comparison) | ok | ok |
+| `Gc::strong_count` / `Gc::ptr_eq` while the `&mut` is live (the aliased-vs-unique routing) | ok | ok |
+| whole-payload overwrite whose replacement carries a handle to the node being overwritten | ok | ok |
+| raw pointer derived from the `&mut`, **then** a `Deref` read, **then** a write through the pointer | ok | ok |
+| `&T` Deref'd **before** the write and **used after** it | **UB** | **UB** |
+
+So the obligation is not "never touch the node" — it is specifically: **anything carried across the
+write must be a raw pointer or a handle-level operation; a `Deref`'d `&T` must not be used after
+it.** `Gc::clone`, `as_ptr` and the counts all touch only the `GcBox` header (or project through
+the `UnsafeCell` with `raw_get`), so they never conflict. The last two rows are the same two
+operations in the two possible orders, and only one order is sound — a raw pointer derived first
+sits *below* a later shared read on the borrow stack, so the read pushes above it rather than
+popping it, whereas a `&T` taken first is popped by the write.
+
+The first four rows are what clears the audit mechanically; the probes fail the moment one of those
+operations starts going through `Deref`.
+
+**Audit result: 60 of 62 sites clear, 2 rest on the FFI argument.** After the narrowing and the
+probes, every site falls into one of: the argument is never mentioned again (38); the later mention
+is the `&mut`'s own field, which happens to share the variable's name (`data.items` where the
+argument is also called `items` — 6); the later mention is `Gc::make_mut` on the *other* branch of
+the same aliased-vs-unique `if` (10); or the later mention is a `Gc::clone` / `as_ptr` cleared by
+the probes above (6). No site was found holding a Deref'd borrow across its write.
+
+The two remaining are `src/runtime/nativecall.rs` (`marshal_arg`'s `CType::Buf` arm and
+`marshal_carray_arg`), the only family that lets a pointer derived from the `&mut` outlive the call:
 
 ```rust
 let data_ptr = unsafe { crate::value::gc_contents_mut(&node) }.bytes.as_mut_ptr();
 (Type::pointer(), ArgOwner::BufBytes { node: Some(node), buf: Vec::new(), data_ptr: ... })
 ```
 
-Every other site takes the `&mut`, writes, and drops it within a few lines. This one lets a pointer
-derived from that `&mut` outlive the call and be written by C over an arbitrary window, while a live
-`Gc` handle to the same node sits next to it. Under Stacked Borrows any Deref of `node` in that
-window pops the derived tag and the C write becomes UB. Whether it is *reachable* needs a read of
-what touches the Buf during an FFI call — but note the Miri job runs `--no-default-features
---features native` precisely to drop FFI, so **the gate will never catch this family**. It needs an
-argument, not a test.
+By the table above this shape is sound — the pointer is derived first and reads through the retained
+node push above it. But the Miri job runs `--no-default-features --features native` precisely to
+drop FFI, so **the real path can never be checked**; `nativecall_shape_raw_pointer_survives_a_later_deref`
+in `borrow_shapes.rs` is the stand-in. What would break it is an intervening `&T` taken before a
+C-side write and used after it, which this code does not do (it stores only `node` and `data_ptr`,
+never a reference). Re-examine if that struct ever grows a borrow.

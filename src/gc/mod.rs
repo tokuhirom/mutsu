@@ -18,6 +18,8 @@
 //!   `Value` reachable from execution state (§11 steps 1-2; verification /
 //!   future tracing infra — the candidate-buffer collector does not consume it).
 
+#[cfg(test)]
+mod borrow_shapes;
 mod collect;
 mod gc_ptr;
 mod root_visitor;
