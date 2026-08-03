@@ -313,6 +313,7 @@ fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stm
             mode,
             rw_block,
             explicit_zero_params,
+            is_statement_modifier: false,
         },
     ))
 }

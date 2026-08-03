@@ -189,6 +189,9 @@ fn lower_for(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         mode: crate::ast::ForMode::Normal,
         rw_block: false,
         explicit_zero_params: false,
+        // RakuAST spells the modifier form as `StatementModifierFor`, which this
+        // lowering does not cover; a `RakuAst::Statement::For` is the block form.
+        is_statement_modifier: false,
     })
 }
 

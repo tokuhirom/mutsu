@@ -175,6 +175,7 @@ fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
             mode,
             rw_block,
             explicit_zero_params,
+            is_statement_modifier,
         } => Stmt::For {
             iterable,
             param,
@@ -186,6 +187,7 @@ fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
             mode,
             rw_block,
             explicit_zero_params,
+            is_statement_modifier,
         },
         Stmt::Given {
             topic,

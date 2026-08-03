@@ -81,6 +81,7 @@ impl Interpreter {
                 mode,
                 rw_block,
                 explicit_zero_params,
+                is_statement_modifier,
             } => Stmt::For {
                 iterable: Self::rewrite_proto_dispatch_expr(iterable),
                 body: Self::rewrite_proto_dispatch_stmts(body),
@@ -92,6 +93,7 @@ impl Interpreter {
                 mode: *mode,
                 rw_block: *rw_block,
                 explicit_zero_params: *explicit_zero_params,
+                is_statement_modifier: *is_statement_modifier,
             },
             Stmt::Loop {
                 init,

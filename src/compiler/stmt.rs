@@ -1855,6 +1855,9 @@ impl Compiler {
                 mode,
                 rw_block,
                 explicit_zero_params,
+                // Only the placeholder collectors in `ast.rs` care whether this
+                // loop came from the statement-modifier form; codegen is identical.
+                is_statement_modifier: _,
             } => {
                 // `for @a[*] { ... }` — a whole-array Whatever slice iterates the
                 // same elements as `for @a`, including aliasing for write-back

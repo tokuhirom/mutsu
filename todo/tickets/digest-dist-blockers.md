@@ -4,8 +4,11 @@ grondilu's `Digest` dist (`libdigest-raku`, Artistic-2.0) provides `Digest::MD5`
 `Digest::SHA1`, `Digest::SHA2`, `Digest::SHA3`, `Digest::RIPEMD` and `HMAC`, and
 is the dependency of `Digest::HMAC:ver<1.0.7>:auth<zef:jjmerelo>`. Seven general
 interpreter bugs found while running it were fixed (see
-`news/2026-08/digest-dist-seven-fixes.md`); `Digest::SHA1` and `Digest::SHA2`'s
-`sha224`/`sha256` now produce correct digests. Four blockers remain, each an
+`news/2026-08/digest-dist-seven-fixes.md`), then four more that its roast
+fallout exposed (`news/2026-08/digest-dist-followup-four-fixes.md`);
+`Digest::SHA1` and `Digest::SHA2`'s `sha224`/`sha256` now produce correct
+digests. Blocker 1 below is fixed
+(`news/2026-08/for-modifier-placeholder-scope.md`); three remain, each an
 independent general bug.
 
 Reproduce with the vendored-in-zef-store copy:
@@ -13,32 +16,13 @@ Reproduce with the vendored-in-zef-store copy:
     D=~/.zef/store/libdigest-raku/74E0CB00D9501F6422E8C95959D6C212224112F7
     timeout 300 ./target/debug/mutsu -I $D/lib $D/t/md5.t
 
-## 1. A placeholder is invisible inside a `for` statement modifier
+## 1. A placeholder is invisible inside a `for` statement modifier — FIXED
 
-`Digest::MD5` and `Digest::RIPEMD` both build their message block with
-
-    $^b.push($_) for (@$msg, 0x80, 0x00 xx …).flat.rotor(4).map({ :256[@^a.reverse] });
-
-Minimal repro:
-
-    my $f = { say $^b for (1, 2) }; $f(42);
-    # raku:  42 42
-    # mutsu: True True
-
-The placeholder is not collected as the enclosing block's parameter, so the block
-compiles as an `AnonSub` with no signature and `$^b` evaluates to `True`. Root
-cause: `collect_ph_stmt_shallow`'s `Stmt::For` arm deliberately does NOT descend
-into the loop body, because a `for` **block** body is its own placeholder scope
-(`for @a { $^x }` gives the loop the parameter). A `for` **statement modifier** is
-not a block — its body is evaluated in the enclosing scope — but the AST does not
-distinguish the two forms: both are `Stmt::For` with `param: None, params: []`.
-The block form's body happens to start with a `SetLine`, which the codebase
-already uses as a pointy-block heuristic elsewhere (`is_pointy` in
-`compiler/expr_closure.rs`), but the honest fix is an explicit
-`statement_modifier: bool` field on `Stmt::For` (and the same question applies to
-`while`/`until` modifiers). Affects: `src/ast.rs` (`Stmt::For`,
-`collect_ph_stmt_shallow`, `collect_unattached_ph_stmt`), every `Stmt::For`
-construction site in the parser.
+Fixed by the `is_statement_modifier` field on `Stmt::For`; see
+`news/2026-08/for-modifier-placeholder-scope.md`. `Digest::MD5` now runs to
+completion, though it still produces a wrong digest (a further bug, not yet
+reduced — `md5("abc")` gives `fe2be2927d9087ecb52bcb1fedc50c16` instead of
+`900150983cd24fb0d6963f7d28e17f72`).
 
 ## 2. A WhateverCode cannot bind to a `@`-sigil parameter
 

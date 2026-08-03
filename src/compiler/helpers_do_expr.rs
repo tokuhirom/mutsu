@@ -378,6 +378,9 @@ impl Compiler {
             mode: crate::ast::ForMode::Normal,
             rw_block: false,
             explicit_zero_params: false,
+            // Placeholders were already resolved on the source `lazy for` node;
+            // this synthesized loop wraps an ordinary block body.
+            is_statement_modifier: false,
         };
         // Build gather block wrapping the for loop, then mark it `.lazy` so the
         // body does not run until the resulting Seq is consumed (`lazy for`

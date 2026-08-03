@@ -167,6 +167,7 @@ impl Compiler {
                 mode,
                 rw_block,
                 explicit_zero_params,
+                is_statement_modifier,
             } => Stmt::For {
                 iterable: iterable.clone(),
                 param: param.clone(),
@@ -184,6 +185,7 @@ impl Compiler {
                 mode: *mode,
                 rw_block: *rw_block,
                 explicit_zero_params: *explicit_zero_params,
+                is_statement_modifier: *is_statement_modifier,
             },
             Stmt::Loop {
                 init,
