@@ -961,7 +961,12 @@ fn count_pattern_capture_groups(pat: &RegexPattern) -> usize {
 /// Fold quantified captures. After a quantifier loop, positional entries from
 /// `base_len` onward may contain repeated captures from multiple iterations.
 /// If `stride` > 0 (captures per iteration), fold them into quantified lists.
-pub(super) fn fold_quantified_captures(caps: &mut RegexCaptures, base_len: usize, stride: usize) {
+pub(super) fn fold_quantified_captures(
+    caps: &mut RegexCaptures,
+    base_len: usize,
+    stride: usize,
+    fold_single: bool,
+) {
     if stride == 0 {
         return;
     }
@@ -980,10 +985,15 @@ pub(super) fn fold_quantified_captures(caps: &mut RegexCaptures, base_len: usize
         }
         return;
     }
-    if new_entries <= stride {
-        // Exactly one iteration — mutsu keeps the single capture un-folded.
-        // TODO: Raku makes `*`/`+` always a List even for one match (`(z)*`
-        // matching once yields `List(1)`); folding here has wider blast radius.
+    if new_entries < stride {
+        // Fewer captures than one iteration's worth: malformed, leave as is.
+        return;
+    }
+    if new_entries == stride && !fold_single {
+        // A bare `?` is the one quantifier Raku does NOT listify: `(a)?` binds
+        // `$0` to a Match (or Nil), unlike `(a)**0..1`, which yields a
+        // one-element Array. Every other quantifier folds even a single
+        // iteration (`fold_single`).
         return;
     }
     let iterations = new_entries / stride;
