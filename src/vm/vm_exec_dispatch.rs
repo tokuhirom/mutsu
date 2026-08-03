@@ -915,12 +915,19 @@ impl Interpreter {
                 // (an expression-position `my` — `ok my $x = 7, 'desc'` — compiles
                 // to MarkVarDeclContext + SetGlobal when no local slot exists), so
                 // `use strict` must not reject it as an undeclared write.
+                // A file-scope `my` of the running routine's own compunit lives in
+                // `unit_lexicals`, not `env` (that is the store's purpose — see
+                // `unit_scope_lexical`), so an `env`-only test reports a module
+                // writing its own module-level lexical as undeclared. It is
+                // declared; the write below goes to the same store.
                 if self.strict_mode
                     && !self.vardecl_context
                     && !is_attr_twigil
                     && !is_internal_temp
                     && !name.contains("::")
                     && !self.env().contains_key(&name)
+                    && !self.has_unit_scope_lexical(&name)
+                    && !code.param_bind_names.iter().any(|n| n == &name)
                 {
                     return Err(self.strict_undeclared_error(&name));
                 }

@@ -1938,6 +1938,14 @@ impl Compiler {
                 let mut bind_prefix: Vec<Stmt> = Vec::new();
                 if !bind_stmts.is_empty() {
                     bind_prefix = bind_stmts;
+                    // The loop signature DECLARES these names; the binds below are
+                    // plain assignments, so record them for `use strict` (see
+                    // `CompiledCode::param_bind_names`).
+                    for p in params {
+                        if !self.code.param_bind_names.contains(p) {
+                            self.code.param_bind_names.push(p.clone());
+                        }
+                    }
                     // After binding multi-param variables, mark them readonly
                     // (unless the block uses `<->` or `is rw`).
                     // Skip @-sigil and %-sigil params: they bind to a mutable

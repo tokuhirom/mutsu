@@ -416,6 +416,18 @@ impl Interpreter {
         None
     }
 
+    /// True when `name` resolves to a file-scope lexical of the compunit the
+    /// running routine belongs to — the non-cloning predicate form of
+    /// [`Self::unit_scope_lexical`].
+    ///
+    /// `use strict` needs this: such a name is declared, but its home is this
+    /// store rather than `env` (that is the whole point of the store), so an
+    /// `env`-only "is it declared?" test rejects a module writing its own
+    /// file-scope `my` from any frame that does not also carry it in `env`.
+    pub(super) fn has_unit_scope_lexical(&self, name: &str) -> bool {
+        self.unit_lexical_slot(name).is_some()
+    }
+
     /// True when `name` is a file-scope lexical of `pkg`'s own compunit.
     ///
     /// A routine of that compunit writing such a name is writing its module's own
