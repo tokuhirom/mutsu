@@ -103,15 +103,6 @@ impl Interpreter {
         if value
             .with_array_mut(|arc, _kind| {
                 embed_type_info!(arc);
-                if info
-                    .declared_type
-                    .as_deref()
-                    .is_some_and(|name| name.starts_with("array["))
-                    && crate::runtime::native_types::is_native_array_element_type(&info.value_type)
-                {
-                    crate::gc::ContainerMakeMut::container_make_mut(arc)
-                        .promote_native_storage(&info.value_type);
-                }
             })
             .is_some()
         {

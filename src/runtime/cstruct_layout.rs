@@ -622,6 +622,21 @@ impl crate::runtime::Interpreter {
                 args.len()
             ))));
         }
+        if let ValueView::Array(array, _) = args[1].view() {
+            let elem_type = array
+                .declared_type
+                .as_deref()
+                .and_then(|name| {
+                    name.strip_prefix("array[")
+                        .and_then(|s| s.strip_suffix(']'))
+                })
+                .or(array.value_type.as_deref());
+            if let Some(elem_type) = elem_type
+                && crate::runtime::native_types::is_native_array_element_type(elem_type)
+            {
+                unsafe { crate::value::gc_contents_mut(&array) }.promote_native_storage(elem_type);
+            }
+        }
         // `nativecast(:(num64 --> num64), $ptr)` — cast a raw C function pointer
         // to a *signature*, yielding something callable. This is how a symbol
         // looked up at runtime becomes a usable routine (`NativeLibs`'
@@ -724,6 +739,28 @@ impl crate::runtime::Interpreter {
             return Some(match method {
                 "REPR" => Value::str_from("VMArray"),
                 _ => Value::int(body as i64),
+            });
+        }
+        if let ValueView::Array(data, _) = target.view()
+            && let Some(elem_type) = data
+                .declared_type
+                .as_deref()
+                .and_then(|name| {
+                    name.strip_prefix("array[")
+                        .and_then(|s| s.strip_suffix(']'))
+                })
+                .or(data.value_type.as_deref())
+            && crate::runtime::native_types::is_native_array_element_type(elem_type)
+        {
+            if method == "WHERE" {
+                unsafe { crate::value::gc_contents_mut(&data) }.promote_native_storage(elem_type);
+                if let Some(body) = data.native_repr_body_address() {
+                    return Some(Value::int(body as i64));
+                }
+            }
+            return Some(match method {
+                "REPR" => Value::str_from("VMArray"),
+                _ => Value::int(data.items().as_ptr() as i64),
             });
         }
         let ValueView::Instance {

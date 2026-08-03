@@ -871,6 +871,20 @@ impl Interpreter {
                                 if !matches!(v.view(), ValueView::Nil)
                                     && !self.type_matches_value(&constraint, v)
                                 {
+                                    let expected_name = self
+                                        .container_type_metadata(&target)
+                                        .and_then(|info| info.declared_type)
+                                        .or_else(|| {
+                                            (self.var_type_constraint(&key).is_none())
+                                                .then(|| "Array".to_string())
+                                        })
+                                        .unwrap_or_else(|| {
+                                            if crate::runtime::native_types::is_native_array_element_type(&constraint) {
+                                                format!("array[{constraint}]")
+                                            } else {
+                                                format!("Array[{constraint}]")
+                                            }
+                                        });
                                     return Err(RuntimeError::typed(
                                         "X::TypeCheck::Splice",
                                         [
@@ -892,9 +906,13 @@ impl Interpreter {
                                             ),
                                             (
                                                 "expected".to_string(),
-                                                Value::package(crate::symbol::Symbol::intern(
-                                                    &constraint,
-                                                )),
+                                                if self.var_type_constraint(&key).is_some() {
+                                                    Value::package(crate::symbol::Symbol::intern(
+                                                        &expected_name,
+                                                    ))
+                                                } else {
+                                                    Value::str(expected_name.clone())
+                                                },
                                             ),
                                         ]
                                         .into_iter()
@@ -925,13 +943,34 @@ impl Interpreter {
                             };
                             for v in &candidates {
                                 if !v.is_nil() && !self.type_matches_value(&constraint, v) {
-                                    return Err(
-                                        crate::runtime::utils::type_check_element_typed_error(
-                                            "@_",
-                                            &constraint,
-                                            v,
-                                        ),
-                                    );
+                                    let expected_name = info
+                                        .declared_type
+                                        .clone()
+                                        .unwrap_or_else(|| {
+                                            if crate::runtime::native_types::is_native_array_element_type(&constraint) {
+                                                format!("array[{constraint}]")
+                                            } else {
+                                                format!("Array[{constraint}]")
+                                            }
+                                        });
+                                    return Err(RuntimeError::typed(
+                                        "X::TypeCheck::Splice",
+                                        [
+                                            ("action".to_string(), Value::str_from("splice")),
+                                            (
+                                                "got".to_string(),
+                                                Value::package(crate::symbol::Symbol::intern(
+                                                    crate::runtime::utils::value_type_name(v),
+                                                )),
+                                            ),
+                                            (
+                                                "expected".to_string(),
+                                                Value::str(expected_name.clone()),
+                                            ),
+                                        ]
+                                        .into_iter()
+                                        .collect(),
+                                    ));
                                 }
                             }
                         }
