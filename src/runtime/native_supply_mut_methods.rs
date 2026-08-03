@@ -466,6 +466,19 @@ impl Interpreter {
                                 {
                                     whenever_on_close.extend(cbs.iter().cloned());
                                 }
+                                // A Supplier::Preserving source that already
+                                // finished hands its terminal event to this
+                                // subscription along with the backlog above: no
+                                // future `done` will ever run the callbacks just
+                                // registered, so run them now.
+                                if inner_attrs.as_map().contains_key("preserving")
+                                    && supplier_snapshot(supplier_id).1
+                                    && supplier_take_preserved_terminal(supplier_id)
+                                {
+                                    for done_cb in take_supplier_done_callbacks(supplier_id) {
+                                        self.invoke_done_callback(done_cb)?;
+                                    }
+                                }
                             } else if let ValueView::Instance {
                                 attributes: inner_attrs,
                                 ..
@@ -822,16 +835,20 @@ impl Interpreter {
                             attrs.get("live").map(Value::view),
                             Some(ValueView::Bool(true))
                         );
-                        if is_live {
-                            // Supplier::Preserving: replay the backlog buffered
-                            // while no tap listened, exactly once.
-                            if attrs.contains_key("preserving")
-                                && Self::supply_has_active_callback(&tap_cb)
-                            {
+                        // Supplier::Preserving: replay the backlog buffered while
+                        // no tap listened, exactly once. This is checked before
+                        // `live`, because a preserving supplier that is already
+                        // `done` yields a non-live Supply whose backlog must
+                        // still reach this tap — and only the *un-replayed* part
+                        // of it, so a second tap gets nothing.
+                        if attrs.contains_key("preserving") {
+                            if Self::supply_has_active_callback(&tap_cb) {
                                 supplier_take_preserved_backlog(supplier_id as u64)
                             } else {
                                 Vec::new()
                             }
+                        } else if is_live {
+                            Vec::new()
                         } else {
                             let (snap_values, _, _) = supplier_snapshot(supplier_id as u64);
                             if !snap_values.is_empty() {
@@ -949,9 +966,17 @@ impl Interpreter {
                                 done
                             };
                         if supplier_is_done {
-                            // `done_fn` may be a marker/chain when this tap is
-                            // the chained inner tap of an enclosing whenever.
-                            self.invoke_done_callback(done_fn)?;
+                            // A Supplier::Preserving that finished before anyone
+                            // tapped it hands its terminal event to exactly one
+                            // later tap, just like the buffered values; taps
+                            // after that see nothing at all.
+                            if !attrs.contains_key("preserving")
+                                || supplier_take_preserved_terminal(supplier_id as u64)
+                            {
+                                // `done_fn` may be a marker/chain when this tap is
+                                // the chained inner tap of an enclosing whenever.
+                                self.invoke_done_callback(done_fn)?;
+                            }
                         } else {
                             register_supplier_done_callback(supplier_id as u64, done_fn);
                         }
