@@ -2237,14 +2237,22 @@ pub(crate) type RoutineRegistrySnapshot = (
     rustc_hash::FxHashSet<Symbol>,
 );
 
-pub(crate) type ImportScopeSnapshot = (
-    HashSet<Symbol>,
-    HashSet<String>,
-    NewlineMode,
-    bool,
-    bool,
-    bool,
-);
+/// What a lexical import scope (`{ use Foo; ... }`) restores when it pops: the
+/// registry key sets that existed before the `use`, plus the pragma flags `use`
+/// can flip. Every symbol table an import writes into has to be listed here —
+/// `proto_subs`/`proto_functions` were missing, so an imported `proto sub skip`
+/// stayed visible to `has_proto` after the block and kept `skip(5, @a)` on the
+/// user-routine argument path (VarRef-wrapped) instead of the list builtin's.
+pub(crate) struct ImportScopeSnapshot {
+    pub(crate) functions: HashSet<Symbol>,
+    pub(crate) classes: HashSet<String>,
+    pub(crate) proto_subs: HashSet<String>,
+    pub(crate) proto_functions: HashSet<Symbol>,
+    pub(crate) newline_mode: NewlineMode,
+    pub(crate) strict_mode: bool,
+    pub(crate) fatal_mode: bool,
+    pub(crate) monkey_typing: bool,
+}
 
 impl Default for Interpreter {
     fn default() -> Self {
