@@ -300,6 +300,30 @@ where
 }
 
 /// Handle simple assignment (`=`).
+/// A declaration whose `=` is followed by *nothing readable* is
+/// `X::Syntax::Malformed`, `what => 'initializer'` — raku's "Malformed
+/// initializer" for `my $x = `. The `=` is the commit point: past it there is no
+/// other reading of the text, so the error is *fatal* rather than a soft one
+/// that lets the whole declaration alternative backtrack. Left soft, it reached
+/// the parser's generic "Confused." and lost the class
+/// (`roast/S04-statements/terminator.t`).
+///
+/// "Nothing readable" is the load-bearing part, and only `rhs_input` can tell us
+/// so. An RHS that parsed *some* of itself before failing has already produced
+/// the better diagnosis, and rakudo reports that one instead — `my @a = 1, => 2`
+/// is `X::Syntax::InfixInTermPosition` and `my $foo = { given $bar { when Real
+/// { 1 } ... } }` is plain `X::Syntax::Confused`, both of which this masked
+/// when it converted every failure (`roast/S32-exceptions/misc2.t`,
+/// `roast/S03-operators/ternary.t`). A fatal or already-classified error is
+/// likewise left alone.
+fn malformed_initializer(err: PError, rhs_input: &str) -> PError {
+    let failed_immediately = err.remaining_len.is_none_or(|len| len >= rhs_input.len());
+    if err.exception.is_some() || err.is_fatal() || !failed_immediately {
+        return err;
+    }
+    PError::malformed("initializer")
+}
+
 fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     let (rest, _) = ws(input)?;
     // class-scope routine aliasing form:
@@ -348,10 +372,12 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     // The RHS is parsed at a precedence that stops before the loose
     // word-logicals (`and`/`or`/`andthen`/...): in Raku they are looser than the
     // declaration's `=`, so `my $x = 1 and 2` is `(my $x = 1) and 2`.
+    let rhs_input = rest;
     let (rest, expr) = if s.is_array || s.is_hash {
-        parse_assign_expr_or_comma_no_word_logical(rest)?
+        parse_assign_expr_or_comma_no_word_logical(rest)
+            .map_err(|e| malformed_initializer(e, rhs_input))?
     } else {
-        expression_no_word_logical(rest)?
+        expression_no_word_logical(rest).map_err(|e| malformed_initializer(e, rhs_input))?
     };
     // Capture a trailing word-logical tail, seeded by a re-read of the declared
     // variable. It is re-attached below as a scopeless `SyntheticBlock` second

@@ -89,6 +89,33 @@ impl PError {
         }
     }
 
+    /// Build the fatal `X::Syntax::Malformed` rakudo throws when a construct is
+    /// recognised but its body cannot be read — `Malformed initializer`,
+    /// `Malformed class-qualified postfix call`, ... `what` is both the tail of
+    /// the message and the exception's `.what` attribute, which the roast tests
+    /// match on.
+    ///
+    /// These are always *fatal*: the construct's opener is the commit point, so
+    /// letting the alternative backtrack only loses the diagnosis to the
+    /// parser's generic "Confused."
+    pub fn malformed(what: &str) -> Self {
+        let message = format!("X::Syntax::Malformed: Malformed {}", what);
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert(
+            "message".to_string(),
+            crate::value::Value::str(message.clone()),
+        );
+        attrs.insert(
+            "what".to_string(),
+            crate::value::Value::str(what.to_string()),
+        );
+        let exception = crate::value::Value::make_instance(
+            crate::symbol::Symbol::intern("X::Syntax::Malformed"),
+            attrs,
+        );
+        PError::fatal_with_exception(message, Box::new(exception))
+    }
+
     /// Build the fatal `X::Comp::Group` rakudo throws when one construct draws
     /// *two* complaints: a specific diagnosis plus the fatal one it leads to.
     ///

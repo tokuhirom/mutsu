@@ -1090,6 +1090,16 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
         return Err(PError::expected("topic method call"));
     }
     let r = &input[1..];
+    // `.::` with no name after it is the same error as the postfix form
+    // (`$x.::`) — raku's "Malformed class-qualified postfix call". The topic
+    // form never reached that check, so a bare `.::` fell through every
+    // alternative and came out as the generic "Confused."
+    // (`roast/S12-methods/qualified.t`).
+    if let Some(after_colons) = r.strip_prefix("::")
+        && !after_colons.starts_with(|c: char| c.is_alphanumeric() || c == '_')
+    {
+        return Err(PError::malformed("class-qualified postfix call"));
+    }
     // .=method — mutating topic method call: $_ = $_.method(args)
     if let Some(stripped) = r.strip_prefix('=') {
         let (r, _) = ws(stripped)?;
