@@ -121,11 +121,35 @@ pub(crate) fn meta_setter_stmt(type_name: &str, key: &str, value: Expr) -> Stmt 
     })
 }
 
+/// A `.` on the SAME LINE as a type declaration's closing brace is a **postfix
+/// on the type object** — `class It { ... }.new` builds an instance — not a new
+/// `$_.method` statement. Raku agrees even across a space: it parses
+/// `class C { } .say` as `(class C { }).say`, and only a newline before the `.`
+/// starts a fresh statement.
+///
+/// The statement parser cannot express that, so it declines here and lets the
+/// expression-statement path (`anon_class_expr` & friends, which accept a named
+/// class too) parse the declaration and its postfix as one expression. Before
+/// this, the declaration was taken as a statement and the orphaned `.new`
+/// became `$_.new` — which "worked" only because registering a type wrote the
+/// type object into `$_`, and that write is what clobbered the enclosing topic.
+pub(crate) fn reject_trailing_postfix(rest: &str) -> Result<(), PError> {
+    let after_hspace = rest.trim_start_matches([' ', '\t']);
+    if after_hspace.starts_with('.') && !after_hspace.starts_with("..") {
+        return Err(PError::expected(
+            "type declaration not followed by a postfix",
+        ));
+    }
+    Ok(())
+}
+
 /// Parse `class` declaration.
 pub(crate) fn class_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("class", input).ok_or_else(|| PError::expected("class declaration"))?;
     let (rest, _) = ws1(rest)?;
-    class_decl_body(rest, false)
+    let (rest, stmt) = class_decl_body(rest, false)?;
+    reject_trailing_postfix(rest)?;
+    Ok((rest, stmt))
 }
 
 /// Parse a declarator registered through a `use`d module's EXPORTHOW::DECLARE

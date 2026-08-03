@@ -428,6 +428,8 @@ pub(crate) fn role_decl(input: &str) -> PResult<'_, Stmt> {
         );
     }
     super::super::simple::register_user_type(&name);
+    // `role R { ... }.^name` is one expression; see `reject_trailing_postfix`.
+    super::reject_trailing_postfix(rest)?;
 
     let role_stmt = Stmt::RoleDecl {
         name: Symbol::intern(&name),

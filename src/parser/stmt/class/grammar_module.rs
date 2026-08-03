@@ -191,6 +191,8 @@ pub(crate) fn grammar_decl(input: &str) -> PResult<'_, Stmt> {
         block(r)?
     };
     super::super::simple::register_user_type(&name);
+    // `grammar G { ... }.parse($s)` is one expression; see `reject_trailing_postfix`.
+    super::reject_trailing_postfix(rest)?;
     Ok((
         rest,
         Stmt::ClassDecl {
