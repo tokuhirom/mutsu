@@ -495,12 +495,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     if attributes.as_map().contains_key("on_demand_callback") {
                         return None;
                     }
-                    // Likewise a live, channel-backed supply (an
+                    // Likewise `.list` on a live, channel-backed supply (an
                     // `IO::Socket::Async` read stream): its values arrive on a
                     // channel that only the stateful path can drain, and
                     // answering the empty `values` attribute here would report
                     // an open stream as an empty one.
-                    if attributes.as_map().contains_key("supply_id")
+                    if method == "list"
+                        && attributes.as_map().contains_key("supply_id")
                         && !attributes.as_map().contains_key("proc_output")
                     {
                         return None;

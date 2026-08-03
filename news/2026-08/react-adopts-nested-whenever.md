@@ -53,6 +53,18 @@ the server never saw a complete request and the whole
 `230-binary-request.rakutest` suite hung. Adopted callbacks are recorded in
 `nested_react_callbacks` and keep their state.
 
+## Only `.list` drains
+
+`.list` on a live channel-backed Supply has to block until the stream is done —
+its values arrive on a channel and never land in the `values` attribute, so
+reading that reported an open stream as an empty one. Draining it in the shared
+`supply_list_values` helper was wrong, though: every Supply *combinator* goes
+through the same helper to materialize its source, so
+`Supply.interval(.1).map({ … })` started waiting out a stream that never ends
+(roast `integration/advent2013-day19.t` hung). The drain belongs to the
+`.list`/`.Array` coercion entry point alone; the combinators stay lazy on a
+live source.
+
 Pin: `t/react-nested-whenever.t` (five shapes, including two levels of nesting,
 `done` from a nested body, and a `Channel` source), plus the roast tests this
 unblocked: `S17-promise/nonblocking-await.t`'s "Got 20 responses from async

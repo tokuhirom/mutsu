@@ -37,10 +37,31 @@ impl Interpreter {
                 } = target.view()
                     && class_name == "Supply"
                 {
-                    return Some(
-                        self.supply_list_values(&attributes.as_map(), true)
-                            .map(Value::array),
-                    );
+                    // A live, channel-backed supply (an `IO::Socket::Async`
+                    // read stream) materializes by draining its channel until
+                    // the producer signals done: its values never land in the
+                    // `values` attribute, so `supply_list_values` would report
+                    // an open stream as an empty one (roast
+                    // S32-io/IO-Socket-Async.t collects a whole connection with
+                    // `@got.append: $conn.Supply.list`). Only this `.list`/
+                    // `.Array` entry point blocks -- the combinators must stay
+                    // lazy on a live source, or `Supply.interval(.1).map({ … })`
+                    // would wait out a stream that never ends.
+                    let attrs = attributes.as_map();
+                    if !attrs.contains_key("proc_output")
+                        && let Some(sid) = attrs.get("supply_id").and_then(Value::as_int)
+                        && let Some(rx) =
+                            crate::runtime::native_methods::take_supply_channel(sid as u64)
+                    {
+                        let mut items = Vec::new();
+                        while let Ok(crate::runtime::native_methods::SupplyEvent::Emit(value)) =
+                            rx.recv()
+                        {
+                            items.push(value);
+                        }
+                        return Some(Ok(Value::array(items)));
+                    }
+                    return Some(self.supply_list_values(&attrs, true).map(Value::array));
                 }
                 None
             }
