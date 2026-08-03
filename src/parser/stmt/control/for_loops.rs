@@ -18,11 +18,7 @@ pub(crate) fn foreach_stmt(input: &str) -> PResult<'_, Stmt> {
     if rest.starts_with('(') || rest.starts_with(';') || rest.trim_start().is_empty() {
         return Err(PError::expected("foreach (obsolete) check"));
     }
-    Err(make_obsolete_error(
-        "'foreach'",
-        Some("'for'"),
-        "X::Obsolete: Unsupported use of 'foreach'. In Raku please use: 'for'.",
-    ))
+    Err(PError::obsolete("'foreach'", "'for'"))
 }
 
 /// Return true if `expr` is (or ends in) a bare brace block — used to detect a
@@ -177,11 +173,7 @@ fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stm
     // C-style `for (init; test; incr) { }` is obsolete — Raku uses `loop`.
     // Detected by a top-level `;` inside the parenthesized iterable.
     if rest.starts_with('(') && paren_has_toplevel_semicolon(rest) {
-        return Err(make_obsolete_error(
-            "C-style \"for\"",
-            Some("\"loop\""),
-            "X::Obsolete: Unsupported use of C-style \"for\". In Raku please use: \"loop\".",
-        ));
+        return Err(PError::obsolete("C-style \"for\"", "\"loop\""));
     }
     // Try to detect `<->` (rw pointy block) before the expression parser
     // consumes the `<` as a comparison operator.

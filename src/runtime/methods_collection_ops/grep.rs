@@ -201,17 +201,20 @@ impl Interpreter {
                 ValueView::Pair(key, value) if key == "p" => has_p = value.truthy(),
                 ValueView::Pair(key, value) if key == "v" => {
                     if !value.truthy() {
-                        return Err(RuntimeError::new(
-                            "X::Adverb: Unexpected adverb 'v' passed to grep",
+                        return Err(RuntimeError::unexpected_adverb(
+                            &["v".to_string()],
+                            "grep",
+                            crate::runtime::utils::value_type_name(&target),
                         ));
                     }
                     // :v is the default behavior, just ignore when truthy
                 }
                 ValueView::Pair(key, _) => {
-                    return Err(RuntimeError::new(format!(
-                        "X::Adverb: Unexpected adverb '{}'",
-                        key
-                    )));
+                    return Err(RuntimeError::unexpected_adverb(
+                        &[key.to_string()],
+                        "grep",
+                        crate::runtime::utils::value_type_name(&target),
+                    ));
                 }
                 _ => positional_args.push(arg.clone()),
             }

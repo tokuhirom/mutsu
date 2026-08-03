@@ -204,9 +204,7 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
         && let Ok((_r2, inner)) = crate::parser::primary::misc::block_or_hash_expr(rest)
         && !matches!(inner, crate::ast::Expr::Hash(_))
     {
-        return Err(PError::fatal(
-            "X::Obsolete: Unsupported use of @{expr}. In Raku please use: @(expr).".to_string(),
-        ));
+        return Err(PError::obsolete("@{expr}", "@(expr)"));
     }
     // Handle @<name> — list coercion of a named capture variable from $/
     // (e.g., after a regex match, @<fie> gives the positional elements of $<fie>)

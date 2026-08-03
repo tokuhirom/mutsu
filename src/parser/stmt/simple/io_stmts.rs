@@ -25,13 +25,14 @@ fn check_io_func_followed_by_loop<'a>(name: &str, rest_after_ws: &'a str) -> PRe
                 || next_char == Some('\t')
                 || next_char == Some('\n')
             {
-                return Err(PError::fatal(format!(
-                    "X::Obsolete: Unsupported use of bare \"{}\". \
-                     In Raku please use: .{} if you meant to call it as a method on $_, \
-                     or use an explicit invocant or argument, \
-                     or use &{} to refer to the function as a noun.",
-                    name, name, name
-                )));
+                return Err(PError::obsolete(
+                    &format!("bare \"{name}\""),
+                    &format!(
+                        ".{name} if you meant to call it as a method on $_, or use \
+                         an explicit invocant or argument, or use &{name} to refer \
+                         to the function as a noun"
+                    ),
+                ));
             }
         }
     }

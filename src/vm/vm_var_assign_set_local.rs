@@ -1163,10 +1163,14 @@ impl Interpreter {
                 // require an initializer — only an explicit `:D` smiley on the
                 // declared type does. Skip when no initializer is required.
                 if self.constraint_requires_initializer(&constraint) {
-                    return Err(RuntimeError::new(format!(
-                        "X::Syntax::Variable::MissingInitializer: Variable definition of type {} needs to be given an initializer",
-                        constraint
-                    )));
+                    // The constraint reached here already stored (the declaration
+                    // applied any `use variables` pragma), so `implicit` cannot be
+                    // recovered at this site — the TypeCheck opcode path reports it.
+                    return Err(RuntimeError::missing_initializer(
+                        &constraint,
+                        "variable",
+                        None,
+                    ));
                 }
             }
             // A `:=` bind stores a `ContainerRef` cell (e.g. `my Offset $o := @a[$i]`

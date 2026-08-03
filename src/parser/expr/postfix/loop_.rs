@@ -604,8 +604,9 @@ fn postfix_expr_loop_from(
             }
         }
         if rest.starts_with("->") {
-            return Err(PError::fatal(
-                "X::Obsolete: Perl -> is dead. Please use '.' instead.".to_string(),
+            return Err(PError::obsolete(
+                "-> as postfix",
+                "either . to call a method, or whitespace to delimit a pointy block",
             ));
         }
         // `:exists` / `:!exists` on a bare named match capture (`$<foo>:exists`)
@@ -686,11 +687,7 @@ fn postfix_expr_loop_from(
                 if trimmed.starts_with(['"', '\'', '$', '@', '%'])
                     || trimmed.starts_with(|c: char| c.is_ascii_digit())
                 {
-                    return Err(PError::fatal(
-                        "X::Obsolete: Unsupported use of . to concatenate strings; \
-                         in Raku please use ~"
-                            .to_string(),
-                    ));
+                    return Err(PError::obsolete(". to concatenate strings", "~"));
                 }
             }
             expr = auto_invoke_bareword_method_target(expr);

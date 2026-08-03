@@ -207,10 +207,9 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // only the bare `new Foo` / `new Foo(...)` indirect form is C++ syntax.
             && (!tail.starts_with(':') || tail.starts_with("::"))
         {
-            return Err(PError::fatal(
-                "X::Obsolete: Unsupported use of C++ constructor syntax.  \
-                 In Raku please use: method call syntax."
-                    .to_string(),
+            return Err(PError::obsolete(
+                "C++ constructor syntax",
+                "method call syntax",
             ));
         }
     }
@@ -320,11 +319,9 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     // routine call instead (e.g. `sub undef {}; undef()`), so only flag the
     // bare-term use.
     if name == "undef" && !rest.starts_with('(') {
-        return Err(crate::parser::stmt::control::make_obsolete_error(
-            "undef",
-            None,
-            "X::Obsolete: Unsupported use of undef as a value. \
-             In Raku please use: an appropriate type object such as Any.",
+        return Err(PError::obsolete(
+            "undef as a value",
+            "an appropriate type object such as Any",
         ));
     }
 
@@ -465,11 +462,10 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 let (r_ws, _) = ws(r)?;
                 for kw in &["while", "until", "for", "given"] {
                     if keyword(kw, r_ws).is_some() {
-                        return Err(PError::raw(
-                            format!(
-                                "X::Obsolete: Unsupported use of do...{kw}. In Raku please use: repeat...while or repeat...until."
-                            ),
-                            Some(r_ws.len()),
+                        return Err(PError::obsolete_at(
+                            &format!("do...{kw}"),
+                            "repeat...while or repeat...until",
+                            r_ws,
                         ));
                     }
                 }
@@ -1846,11 +1842,14 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     // bare ..." (e.g. `ord.Cool`). A real call (`ord $x` / `ord('A')`) parses as
     // a listop/call before reaching this fallback, so it is unaffected.
     if is_terminator_or_dot && matches!(name.as_str(), "ord" | "chr" | "lc" | "uc" | "abs") {
-        return Err(PError::fatal(format!(
-            "X::Obsolete: Unsupported use of bare \"{name}\".  In Raku please use: \
-             .{name} if you meant to call it as a method on $_, or use an explicit \
-             invocant or argument."
-        )));
+        return Err(PError::obsolete(
+            &format!("bare \"{name}\""),
+            &format!(
+                ".{name} if you meant to call it as a method on $_, or use an \
+                 explicit invocant or argument, or use &{name} to refer to the \
+                 function as a noun"
+            ),
+        ));
     }
 
     // Method-like: .new, .elems etc. is handled at expression level

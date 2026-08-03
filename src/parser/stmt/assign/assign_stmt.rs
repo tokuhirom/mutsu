@@ -416,10 +416,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             || after.starts_with("m/")
             || after.starts_with("m ")
         {
-            return Err(PError::fatal(
-                "X::Obsolete: Unsupported use of =~ to do pattern matching; in Raku please use ~~"
-                    .to_string(),
-            ));
+            return Err(PError::obsolete("=~ to do pattern matching", "~~"));
         }
     }
     // Simple assignment

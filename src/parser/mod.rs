@@ -796,7 +796,13 @@ is_run q<use lib '> ~ $pkg-path ~ q<'; use GH2897-B; (^3).map( { my-counter } ).
     fn parse_program_rejects_explicit_do_block_with_postfix_for() {
         let src = r#"my $i; do { $i++ } for 1..3;"#;
         let err = parse_program(src).expect_err("expected do...for parse error");
-        assert!(err.message.contains("X::Obsolete"), "{err:?}");
+        // The class lives in the attached exception object, not in the message
+        // text — see `PError::obsolete`.
+        let class = match err.exception.as_ref().map(|ex| ex.view()) {
+            Some(crate::value::ValueView::Instance { class_name, .. }) => class_name.to_string(),
+            _ => String::new(),
+        };
+        assert_eq!(class, "X::Obsolete", "{err:?}");
     }
 
     #[test]

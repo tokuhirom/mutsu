@@ -176,6 +176,95 @@ impl RuntimeError {
         Self::typed("X::Obsolete", attrs)
     }
 
+    /// X::Syntax::Variable::MissingInitializer - a `:D` declaration with no value.
+    ///
+    /// `.type` is the declared type as written (`Int:D`) and `.what` names the
+    /// kind of declaration; `throws-like 'my Int:D $a',
+    /// X::Syntax::Variable::MissingInitializer, type => 'Int:D'` reads both.
+    /// `implicit` is set when the `:D` was not written but came from a
+    /// `use variables :D` pragma; rakudo then says so in the message too.
+    pub(crate) fn missing_initializer(
+        type_display: &str,
+        what: &str,
+        implicit: Option<&str>,
+    ) -> Self {
+        let implicit_note = implicit.map_or(String::new(), |i| format!(" (implicit {i})"));
+        let msg = format!(
+            "Variable definition of type {type_display}{implicit_note} needs to be given an initializer"
+        );
+        let mut attrs = HashMap::new();
+        attrs.insert("type".to_string(), Value::str(type_display.to_string()));
+        attrs.insert("what".to_string(), Value::str(what.to_string()));
+        if let Some(i) = implicit {
+            attrs.insert("implicit".to_string(), Value::str(i.to_string()));
+        }
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        Self::typed("X::Syntax::Variable::MissingInitializer", attrs)
+    }
+
+    /// X::Syntax::WithoutElse - `without` followed by an `else`-family keyword.
+    pub(crate) fn without_else(keyword: &str) -> Self {
+        let msg = format!("\"without\" does not take \"{keyword}\", please rewrite using \"with\"");
+        let mut attrs = HashMap::new();
+        attrs.insert("keyword".to_string(), Value::str(keyword.to_string()));
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        Self::typed("X::Syntax::WithoutElse", attrs)
+    }
+
+    /// X::Comp::Trait::Scope - a trait applied under a scope that does not take it.
+    ///
+    /// `type`/`subtype` split the trait (`is` / `export`), `declaring` names what
+    /// carries it, `scope` the declarator used, and `supported` the list of
+    /// declarators that would have worked — all four are matched by
+    /// `roast/S11-modules/import.t`.
+    pub(crate) fn trait_scope(
+        trait_type: &str,
+        subtype: &str,
+        declaring: &str,
+        scope: &str,
+        supported: &[&str],
+    ) -> Self {
+        let supported_list = supported.join(", ");
+        let msg = format!(
+            "Can't apply trait '{trait_type} {subtype}' on a {scope} scoped {declaring}. \
+             Only {supported_list} scoped {declaring}s are supported."
+        );
+        let mut attrs = HashMap::new();
+        attrs.insert("type".to_string(), Value::str(trait_type.to_string()));
+        attrs.insert("subtype".to_string(), Value::str(subtype.to_string()));
+        attrs.insert("declaring".to_string(), Value::str(declaring.to_string()));
+        attrs.insert("scope".to_string(), Value::str(scope.to_string()));
+        attrs.insert(
+            "supported".to_string(),
+            Value::array(
+                supported
+                    .iter()
+                    .map(|s| Value::str(s.to_string()))
+                    .collect(),
+            ),
+        );
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        Self::typed("X::Comp::Trait::Scope", attrs)
+    }
+
+    /// X::Adverb - an adverb the callee does not accept.
+    ///
+    /// `.unexpected` is a *list* of the offending adverb names (rakudo hands it a
+    /// Seq), `.what` the routine and `.source` the invocant type.
+    pub(crate) fn unexpected_adverb(unexpected: &[String], what: &str, source: &str) -> Self {
+        let names = unexpected.join("', '");
+        let msg = format!("Unexpected adverb '{names}' passed to {what} on '{source}'.");
+        let mut attrs = HashMap::new();
+        attrs.insert(
+            "unexpected".to_string(),
+            Value::array(unexpected.iter().map(|s| Value::str(s.clone())).collect()),
+        );
+        attrs.insert("what".to_string(), Value::str(what.to_string()));
+        attrs.insert("source".to_string(), Value::str(source.to_string()));
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        Self::typed("X::Adverb", attrs)
+    }
+
     /// X::Immutable - Cannot modify an immutable value
     pub(crate) fn immutable(typename: &str, method: &str) -> Self {
         let msg = format!("Cannot call '{}' on an immutable '{}'", method, typename);

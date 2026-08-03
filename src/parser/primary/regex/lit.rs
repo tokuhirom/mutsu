@@ -95,17 +95,12 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         || input.starts_with("y{")
         || input.starts_with("y|")
     {
-        return Err(PError::fatal(
-            "X::Obsolete: Unsupported use of y///. In Raku please use: tr///.".to_string(),
-        ));
+        return Err(PError::obsolete("y///", "tr///"));
     }
 
     // qr// is obsolete Perl 5 syntax — reject with X::Obsolete
     if input.starts_with("qr/") || input.starts_with("qr{") || input.starts_with("qr[") {
-        return Err(PError::fatal(
-            "X::Obsolete: Unsupported use of qr for regex quoting. In Raku please use: rx//."
-                .to_string(),
-        ));
+        return Err(PError::obsolete("qr for regex quoting", "rx//"));
     }
 
     // rx/pattern/ or rx{pattern}

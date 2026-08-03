@@ -65,11 +65,10 @@ fn parse_quote_word_list<'a>(
     // A bare *empty* `<>` is the obsolete Perl diamond. `< >` (with whitespace)
     // is a legal empty `List`, so only the truly-empty form errors.
     if reject_lt_operators && content.is_empty() {
-        return Err(crate::parser::stmt::control::make_obsolete_error(
+        return Err(crate::parser::parse_result::PError::obsolete(
             "<>",
-            None,
-            "Unsupported use of <>. In Raku please use: lines() to read input, \
-             ('') to represent a null string or () to represent an empty list.",
+            "lines() to read input, ('') to represent a null string or () to \
+             represent an empty list",
         ));
     }
     if quoted_words {
