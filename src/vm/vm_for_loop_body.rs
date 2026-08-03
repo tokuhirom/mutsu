@@ -213,6 +213,34 @@ impl Interpreter {
                 (name.clone(), val, was_readonly, sigilless_ro)
             })
             .collect();
+        // A multi-parameter loop (`-> $k, $v`) binds its parameters with plain
+        // assignments emitted into the body prefix (`build_for_bind_stmts`), and
+        // `SetLocal` type-checks an assignment against the *name-keyed* constraint
+        // map. That map is not block-scoped, so an unrelated `my Int $v` anywhere
+        // in the program made `-> $k, $v` reject every non-Int value
+        // ("Type check failed in assignment to $v; expected Int"). A parameter is
+        // a fresh binding that shadows whatever the name meant outside, so clear
+        // the constraint for the duration of the loop and restore it after — the
+        // same contract `bind_param_type_constraint` gives an untyped routine
+        // parameter, minus the permanent loss of the enclosing lexical's type.
+        // (The single-param form binds natively and never had this problem.)
+        //
+        // Loop parameter types themselves are still unenforced: `ForLoopSpec`
+        // carries no per-parameter constraint. See
+        // `todo/tickets/for-loop-multi-param-types-unenforced.md`.
+        let saved_multi_param_types: Vec<(String, Option<String>)> = spec
+            .multi_param_names
+            .iter()
+            .map(|name| {
+                let tc = loan_env!(self, var_type_constraint(name));
+                (name.clone(), tc)
+            })
+            .collect();
+        for (name, tc) in &saved_multi_param_types {
+            if tc.is_some() {
+                self.vm_set_var_type_constraint(name, None);
+            }
+        }
         // Save the single named loop param (`for ... -> $x`) too, so a loop in a
         // called sub that reuses the same variable name does not clobber an outer
         // loop's binding of that name (the env keys these by bare name). Skip
@@ -754,6 +782,12 @@ impl Interpreter {
                 self.env_mut().insert(sigilless_key, ro_val);
             } else {
                 self.env_mut().remove(&sigilless_key);
+            }
+        }
+        // Restore the enclosing type constraint each multi-param name shadowed.
+        for (name, tc) in saved_multi_param_types {
+            if tc.is_some() {
+                self.vm_set_var_type_constraint(&name, tc);
             }
         }
         // Defer restoring the single named loop param's prior binding until
