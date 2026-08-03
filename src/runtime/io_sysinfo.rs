@@ -147,18 +147,7 @@ impl Interpreter {
                 )
             }
             "linux" => {
-                use std::sync::OnceLock;
-                static DISTRO_UNAME_R: OnceLock<String> = OnceLock::new();
-                let kernel_release = DISTRO_UNAME_R
-                    .get_or_init(|| {
-                        Command::new("uname")
-                            .arg("-r")
-                            .output()
-                            .ok()
-                            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-                            .unwrap_or_default()
-                    })
-                    .clone();
+                let kernel_release = super::io_sysinfo_host::host_info().release.clone();
                 let mut distro_desc = String::new();
                 if let Ok(content) = std::fs::read_to_string("/etc/os-release") {
                     for line in content.lines() {
@@ -195,18 +184,7 @@ impl Interpreter {
                 )
             }
             _ => {
-                use std::sync::OnceLock;
-                static FALLBACK_UNAME_R: OnceLock<String> = OnceLock::new();
-                let kernel_release = FALLBACK_UNAME_R
-                    .get_or_init(|| {
-                        Command::new("uname")
-                            .arg("-r")
-                            .output()
-                            .ok()
-                            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-                            .unwrap_or_default()
-                    })
-                    .clone();
+                let kernel_release = super::io_sysinfo_host::host_info().release.clone();
                 (
                     os.to_string(),
                     "unknown".to_string(),
@@ -395,9 +373,9 @@ impl Interpreter {
     }
 
     pub(super) fn make_kernel_instance() -> Value {
-        use std::sync::OnceLock;
-        static UNAME_R: OnceLock<String> = OnceLock::new();
-        static UNAME_M: OnceLock<String> = OnceLock::new();
+        // One cached `uname(2)` covers release, hardware and hostname; see
+        // `io_sysinfo_host`. This used to be three `fork`/`exec`s per startup.
+        let host = super::io_sysinfo_host::host_info();
 
         let os = std::env::consts::OS;
         let arch = std::env::consts::ARCH;
@@ -409,29 +387,15 @@ impl Interpreter {
             _ => os.to_string(),
         };
 
-        // Kernel release (e.g., "6.18.7-76061807-generic") — cached
-        let release = UNAME_R
-            .get_or_init(|| {
-                Command::new("uname")
-                    .arg("-r")
-                    .output()
-                    .ok()
-                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-                    .unwrap_or_default()
-            })
-            .clone();
+        // Kernel release (e.g., "6.18.7-76061807-generic")
+        let release = host.release.clone();
 
-        // Hardware (e.g., "x86_64") — cached
-        let hardware = UNAME_M
-            .get_or_init(|| {
-                Command::new("uname")
-                    .arg("-m")
-                    .output()
-                    .ok()
-                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-                    .unwrap_or_else(|| arch.to_string())
-            })
-            .clone();
+        // Hardware (e.g., "x86_64")
+        let hardware = if host.machine.is_empty() {
+            arch.to_string()
+        } else {
+            host.machine.clone()
+        };
 
         // Architecture (mapped from Rust's ARCH constant)
         let arch_str = match arch {
@@ -450,17 +414,8 @@ impl Interpreter {
             32
         };
 
-        // Hostname — cached
-        static HOSTNAME: OnceLock<String> = OnceLock::new();
-        let hostname = HOSTNAME
-            .get_or_init(|| {
-                Command::new("hostname")
-                    .output()
-                    .ok()
-                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-                    .unwrap_or_default()
-            })
-            .clone();
+        // Hostname (`uname -n`, the same string the `hostname` command prints)
+        let hostname = host.hostname.clone();
 
         // Version from release string
         let version = Self::parse_version_string(&release);

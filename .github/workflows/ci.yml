@@ -368,18 +368,18 @@ jobs:
       # shape ADR-0013 made sound — and, because the filter is a substring
       # match, `value::value_gc::` too, which is the container side. Measured
       # 2026-08-02: 47 pass, 5 ignored, ~19s of interpretation (the wall clock is
-      # dominated by compiling the crate to MIR). It also selects
-      # `gc::soundness_smoke` (the VM-level half), which is
-      # `#[cfg_attr(miri, ignore)]` for now because `Interpreter::new()` shells
-      # out and Miri cannot spawn a process; see
-      # todo/tickets/magic-vars-should-be-built-lazily.md.
+      # dominated by compiling the crate to MIR).
       #
-      # Two limits worth knowing before trusting a green run: Miri reports
+      # It runs in TWO steps because only the second half can be leak-checked;
+      # see the step comments below.
+      #
+      # One limit worth knowing before trusting a green run: Miri reports
       # `integer-to-pointer cast` on the NaN-boxed `Value`, so provenance
       # checking is precise for typed `Gc<T>` paths and best-effort through the
       # `Value` layer (`-Zmiri-strict-provenance` is unavailable to us for the
-      # same reason); and the `Mixin` overrides map is still `Arc`-backed, a
-      # live provenance violation no test in this subset reaches.
+      # same reason). The `Mixin` overrides map was the other one until #5771
+      # made it a `Gc<MixinOverrides>` node; `gc::soundness_smoke`'s
+      # `a_mixin_rename_is_visible_through_an_alias` now covers it.
       #
       # `--test-threads=1` keeps a failure attributable to a single test.
       #
@@ -397,13 +397,37 @@ jobs:
       #   2. something else still runs it natively (gc-stress, `make test`).
       # If a test IS about provenance and is too slow, shrink the test — do not
       # ignore it.
-      - name: cargo miri test (GC / container subset)
+      # Step 1 — the primitive and container tests. These allocate only what they
+      # assert on, so Miri's leak check stays ON here: a `Gc` node that outlives
+      # its test is a collector bug worth failing for.
+      - name: cargo miri test (GC / container primitives)
         env:
           # The GC's stats and verify hooks read the clock and the environment.
           MIRIFLAGS: -Zmiri-disable-isolation
         run: |
           cargo miri test --no-default-features --features native \
-            --lib gc:: -- --test-threads=1
+            --lib gc:: -- --test-threads=1 --skip gc::soundness_smoke
+
+      # Step 2 — the VM-level half (`gc::soundness_smoke`): a real `Interpreter`
+      # running a Raku program, so Miri watches the actual `gc_contents_mut` call
+      # sites rather than the primitive alone. This is the coverage ADR-0013 §4
+      # asked for, unblocked once startup stopped shelling out to `uname`.
+      #
+      # `-Zmiri-ignore-leaks` is REQUIRED here and is not a weakening of the
+      # gate: a whole interpreter intentionally leaves memory live at exit —
+      # process-lifetime statics (the env base tier, interned symbols) and
+      # uncollected reference cycles, which is exactly the condition the cycle
+      # collector exists to reclaim on demand rather than at teardown. Leak
+      # reports would drown the provenance errors this job is here to catch.
+      # Aliasing/provenance checking is UNAFFECTED by the flag.
+      #
+      # Measured 2026-08-03: 5 pass, ~245s of interpretation.
+      - name: cargo miri test (VM call sites)
+        env:
+          MIRIFLAGS: -Zmiri-disable-isolation -Zmiri-ignore-leaks
+        run: |
+          cargo miri test --no-default-features --features native \
+            --lib gc::soundness_smoke -- --test-threads=1
 
   wasm-e2e:
     # Skipped on a documentation-only change — see the `changes` job.
