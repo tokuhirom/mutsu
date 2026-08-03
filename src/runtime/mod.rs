@@ -2063,6 +2063,8 @@ pub struct Interpreter {
     pub(crate) prepared_fn_defs: HashMap<Symbol, (u64, Arc<FunctionDef>)>,
     pub(crate) method_resolve_cache:
         rustc_hash::FxHashMap<(Symbol, Symbol), crate::vm::MethodResolveEntry>,
+    /// Registry method generation observed when the method caches were last valid.
+    pub(crate) method_cache_generation: u64,
     #[allow(clippy::type_complexity)]
     pub(crate) last_method_resolve: Option<(Symbol, Symbol, Symbol, Arc<MethodDef>)>,
     pub(crate) fast_method_cache:

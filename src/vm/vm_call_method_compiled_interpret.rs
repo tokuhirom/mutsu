@@ -480,6 +480,7 @@ impl Interpreter {
             _ => None,
         };
         if let Some(class_sym) = class_sym_opt {
+            self.refresh_method_caches_for_generation();
             let cn = class_sym.as_str();
             let cache_key = (class_sym, method_sym);
 
