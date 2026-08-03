@@ -358,7 +358,13 @@ impl Interpreter {
         // name is a fresh binding shadowing the captured outer lexical, so its
         // writes stay env-local; the next `clone_for_thread` binds the current
         // value into this lineage (`declare`) and clears the mask.
-        if self.shared_vars_active && !self.thread_redeclared_vars.contains(key) {
+        // A blanket locals -> env mirror is a coherence pass over THIS frame's
+        // slots, not an assignment: the bare-name lane must not be republished
+        // from it (see `suppress_shared_publish`).
+        if self.shared_vars_active
+            && !self.suppress_shared_publish
+            && !self.thread_redeclared_vars.contains(key)
+        {
             // Ensure @-variables always store Array(true) (real Arrays) in the
             // cross-thread shared store, which backs the atomic-array CAS
             // mechanism and expects non-flattening Array semantics. This must
@@ -653,3 +659,7 @@ impl Interpreter {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "runtime_shared_vars_tests.rs"]
+mod tests;

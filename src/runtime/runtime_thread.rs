@@ -438,6 +438,7 @@ impl Interpreter {
             // The child starts no declaration of its own; its own `my`s populate
             // this as they run.
             thread_decl_in_flight: std::collections::HashSet::new(),
+            suppress_shared_publish: false,
             // A worker can instantiate a type registered on the parent, so the
             // set of method-written lexicals travels with the clone.
             type_body_written_lexicals: self.type_body_written_lexicals.clone(),
