@@ -19,14 +19,21 @@
 //!
 //! # Soundness posture (ADR-0013)
 //!
-//! The old `unsafe { &mut *(Arc::as_ptr(arc) as *mut _) }` shape was a provenance
-//! violation under Stacked/Tree Borrows even single-threaded. That is **fixed**:
-//! since [ADR-0013](../../../docs/adr/0013-container-interior-mutability-cellvalue.md)
-//! a `Gc` payload lives in the `GcBox`'s `UnsafeCell`, so `Gc::as_ptr` hands back
-//! an interior-mutable pointer and the aliased `&mut` has valid provenance. The
-//! fix landed at the primitive, so every call site became sound at once — there
-//! is no per-container migration and, contrary to what this header used to say,
-//! Track B is not the fix (ADR-0001 §7).
+//! Since [ADR-0013](../../../docs/adr/0013-container-interior-mutability-cellvalue.md)
+//! a `Gc` payload lives in the `GcBox`'s `UnsafeCell`, so `Gc::as_ptr` derives
+//! its pointer with `UnsafeCell::raw_get` instead of casting a `&T` away. That
+//! landed at the primitive, so there is no per-container migration and,
+//! contrary to what this header used to say, Track B is not the fix
+//! (ADR-0001 §7).
+//!
+//! **What it does not buy is the right to hold a borrow across the write.**
+//! ADR-0013 §8 records the correction: measured on the gate's pinned nightly, a
+//! `&T` taken *before* an aliased write and used *after* it is UB under both
+//! Stacked and Tree Borrows — for a `Gc` exactly as for an `Arc`. The residual
+//! risk here is therefore the caller's aliasing discipline, not the
+//! representation. `src/gc/borrow_shapes.rs` pins which operations ARE sound
+//! across the write (`Gc::clone`, `Gc::as_ptr`, `strong_count`/`ptr_eq`, and a
+//! raw pointer derived *before* a later `Deref` read).
 //!
 //! What remains deferred, by decision rather than omission, is the **narrow
 //! cross-thread race** on a genuinely shared node (ADR-0013 §1.3-2 → ADR-0001

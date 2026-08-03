@@ -298,13 +298,31 @@ It was found by writing the Miri gate below, which is exactly the kind of thing 
 to surface.
 
 **⚠️ And a second correction, from measuring rather than reasoning (2026-08-03).** Probing the
-two shapes side by side on the gate's pinned nightly shows Miri accepts *both* the `Arc` and the
-`Gc` aliased write when no shared borrow is live across it, and rejects *both* when one is — so
-§1.3-1's "provenance UB, every run, Miri-detectable" and §2's "valid provenance even while shared
-`&` borrows into the same node exist" are both stronger than the tooling supports. The decision
-(the `UnsafeCell` representation) still stands; what changes is what the residual risk *is* — the
-caller's aliasing obligation, not the representation. Full measurements and the follow-up audit
-in `todo/deep/adr-0013-unsafecell-does-not-license-live-shared-borrows.md`.
+two shapes side by side on the gate's pinned nightly (`nightly-2026-08-01`), each a
+`HashMap<String, Value>` behind the respective smart pointer:
+
+| probe | Stacked | Tree |
+| --- | --- | --- |
+| `Arc::as_ptr as *mut` write, no `&T` live across it | ok | ok |
+| `gc_contents_mut` write, no `&T` live across it | ok | ok |
+| `Arc::as_ptr as *mut` write, a Deref'd `&T` used after the write | UB | UB |
+| `gc_contents_mut` write, a Deref'd `&T` used after the write | UB | UB |
+
+Miri accepts *both* pointer types when no shared borrow is live across the write, and rejects
+*both* when one is. Two conclusions, both contrary to the text above. **The bare `Arc` shape is not
+flagged**: `Arc::as_ptr` reads the `NonNull` out of the handle, so the pointer carries the original
+allocation's provenance and never passed through a `&T` — "provenance UB, every run,
+Miri-detectable" (§1.3-1) does not describe it. **And the `UnsafeCell` does not license live shared
+borrows**: `Gc`'s `Deref` hands out a real `&T` and the write invalidates it exactly as it would for
+an `Arc`, so §2's "valid provenance even while shared `&` borrows into the same node exist" is
+stronger than the tooling supports. The `UnsafeCell` matters for how `Gc::as_ptr` *derives* the
+pointer (`raw_get`, no intermediate reference), not for what callers may hold across the write —
+which is what the primitive's own `# Safety` clause always said.
+
+The decision (the `UnsafeCell` representation) still stands; what changes is what the residual risk
+*is* — the caller's aliasing obligation, not the representation. That reframing is what made §1.3's
+sizing wrong: the "broad provenance UB, dominant, cheap to fix" half was mis-stated, and the whole
+of the residual risk sits in the aliasing discipline at the call sites. Hence the audit below.
 
 **✅ Resolved (2026-08-03).** The overrides map is now `Gc<MixinOverrides>` — the same
 migration every other container already had: a `Trace` impl (its edges traced once per node
@@ -329,15 +347,22 @@ by weakening the check: the job is gated on a `gc-value` classification (`script
 measured over the last 300, and is *skipped* (which branch protection counts as success)
 otherwise.
 
-**Its current reach is the primitive, not yet the VM.** All 33 `gc::` unit tests are Miri-clean,
-including `gc_contents_mut_writes_through_a_shared_node`, which is the exact aliased-write shape
-this ADR made sound. The interpreter-level half — `gc::soundness_smoke`, four tiny Raku programs
-run through a real `Interpreter` so Miri watches the VM take an aliased `&mut` into a shared node
-while other handles are live — exists but is `#[cfg_attr(miri, ignore)]`: `Interpreter::new()`
-shells out to `uname`/`hostname` while building `$*DISTRO`/`$*KERNEL`, and Miri cannot spawn a
-process. `todo/tickets/magic-vars-should-be-built-lazily.md` unblocks it; dropping that
-`cfg_attr` is what answers §4's warning that a primitive-only run "mostly re-proves std's
-`UnsafeCell` guarantee".
+**✅ Its reach now includes the VM (2026-08-03).** The interpreter-level half —
+`gc::soundness_smoke`, five tiny Raku programs run through a real `Interpreter` so Miri watches the
+VM take an aliased `&mut` into a shared node while other handles are live — was
+`#[cfg_attr(miri, ignore)]` because `Interpreter::new()` shelled out to `uname`/`hostname` while
+building `$*DISTRO`/`$*KERNEL` and Miri cannot spawn a process. Startup now probes the host with one
+cached `uname(2)` whose fallback arm — the one `cfg(miri)` selects — reads `/proc`
+(`src/runtime/io_sysinfo_host.rs`), and `local_timezone_offset_secs` got a `not(miri)` arm into its
+documented "offset unknown → 0" branch. The `cfg_attr`s are gone, which is what answers §4's warning
+that a primitive-only run "mostly re-proves std's `UnsafeCell` guarantee".
+
+The job runs the subset in **two steps** for one reason: only the primitives can be leak-checked. A
+whole interpreter intentionally leaves memory live at exit — process-lifetime statics (the env base
+tier, interned symbols) plus uncollected reference cycles, which is precisely what the cycle
+collector reclaims on demand rather than at teardown — so the interpreter-level step passes
+`-Zmiri-ignore-leaks`. That flag does not touch aliasing or provenance checking; without it, leak
+reports drown the errors the job exists to catch.
 
 **Two limits to state honestly.** (1) Miri reports `integer-to-pointer cast` on the NaN-boxed
 `Value` (ADR-0005), so it falls back to permissive provenance for pointers recovered from the
@@ -347,8 +372,45 @@ through the `Value` layer. `-Zmiri-strict-provenance` is not available to us for
 allocations across four threads) is ignored under Miri because it would not finish; it defends
 counter ordering, not provenance, and gc-stress still runs it natively.
 
-This ADR is therefore closed: the `Mixin` correction above landed on 2026-08-03, and the gate
-now does see that shape.
+**✅ The audit the second correction called for is done (2026-08-03).** The correction above changed
+what the residual risk *is* — the caller's aliasing obligation rather than the representation — so
+it owed an answer to "does any call site actually violate it?". `src/gc/borrow_shapes.rs` answers it
+by measuring the shapes call sites perform while the aliased `&mut` is live, and the result is a
+sharper rule than "no other borrow":
+
+| shape | Stacked | Tree |
+| --- | --- | --- |
+| `Gc::clone` of the same node (the self-reference build in `fixup_circular_array_refs`) | ok | ok |
+| `Gc::as_ptr` (identity comparison) | ok | ok |
+| `Gc::strong_count` / `Gc::ptr_eq` (the aliased-vs-unique routing) | ok | ok |
+| whole-payload overwrite whose replacement carries a handle to the node being overwritten | ok | ok |
+| raw pointer derived from the `&mut`, **then** a `Deref` read, **then** a write through the pointer | ok | ok |
+| `&T` Deref'd **before** the write and **used after** it | **UB** | **UB** |
+
+The last two rows are the same two operations in the two possible orders and only one is sound: a
+raw pointer derived first sits *below* a later shared read on the borrow stack, so the read pushes
+above it rather than popping it, while a `&T` taken first is popped by the write. The obligation is
+therefore **"anything carried across the write must be a raw pointer or a handle-level operation,
+and a `Deref`'d `&T` must not be used after it"** — narrower and more checkable than the safety
+comment's wording. The first four rows are what let the audit clear whole families of call sites
+mechanically; they are Miri-pinned, so the claim cannot rot silently.
+
+**Audit result: 60 of 62 sites clear, none holding a Deref'd borrow across its write.** The two
+exceptions are `nativecall.rs`'s buffer marshalling (`marshal_arg`'s `CType::Buf` and
+`marshal_carray_arg`), the only family that lets a pointer derived from the `&mut` outlive the call.
+By the table that shape is sound and the code retains only the node and the pointer, never a
+reference — but the gate drops FFI on purpose, so the real path can never be checked and
+`nativecall_shape_raw_pointer_survives_a_later_deref` stands in for it. Re-examine if that struct
+ever grows a borrow.
+
+The over-promising prose itself is fixed at the two places a reader actually meets it: the
+`gc_contents_mut` doc comment (which said the `&mut` stays valid "even while shared `&` reads are
+live", one paragraph above a `# Safety` clause saying the opposite) and `value::aliased_mut`'s
+module header.
+
+This ADR is therefore closed: the `Mixin` correction above landed on 2026-08-03, the gate now sees
+that shape *and* the VM's real call sites, and the aliasing obligation it left behind has been
+audited rather than merely stated.
 
 **Deferred by decision, not by omission** — problem §1.3-2, the narrow cross-thread race on a
 genuinely shared node, remains routed to ADR-0001 layer 3c (§5 open question 2). The safety

@@ -101,8 +101,8 @@ contradicts ADR-0013 §2's claim that the `UnsafeCell` gives a `&mut` with valid
 while shared `&` borrows into the same node exist" — the `UnsafeCell` fixes how `Gc::as_ptr`
 *derives* its pointer (no intermediate reference), not the caller's obligation. The accurate
 statement of the contract is the one `gc_contents_mut`'s own SAFETY doc already makes: no other
-`&`/`&mut` into the value may be dereferenced for the lifetime of the returned borrow. Recorded
-for follow-up in `todo/deep/adr-0013-unsafecell-does-not-license-live-shared-borrows.md`.
+`&`/`&mut` into the value may be dereferenced for the lifetime of the returned borrow. Followed up
+the same week: ADR-0013 §8 now carries the measurement table and the call-site audit it prompted.
 
 That does not make this change pointless — it removes the codebase's last `as_ptr as *mut` cast
 so there is one audited primitive with one documented contract, and it turns the overrides map
