@@ -629,6 +629,24 @@ impl Interpreter {
                             .collect();
                         Value::real_array(pairs)
                     }
+                    // A Buf/Blob is Positional, so an `@`-sigil read yields its
+                    // element list (`@$blob` is `$blob.list`) — the value that
+                    // flattens and slips element-wise. Without this, `flat @$msg,
+                    // 0x80` kept the whole Blob as a single element (Digest::SHA1's
+                    // padding then produced 13 words instead of 14).
+                    ValueView::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } if crate::runtime::utils::is_native_elems_class(&class_name.resolve()) => {
+                        match crate::value::value_buf::buf_elems_as_array(
+                            &attributes.as_map(),
+                            crate::value::ArrayKind::List,
+                        ) {
+                            Some(list) => list,
+                            None => val.clone(),
+                        }
+                    }
                     // Array-contextualizing a Seq (`@$s`) caches it, so it may be
                     // read repeatedly. If the Seq's iterator was already taken
                     // (e.g. by `.skip`/`.iterator`) and not cached, throw.
@@ -1075,6 +1093,10 @@ impl Interpreter {
                                 )
                             }
                         }
+                        // `CoerceToList` already decided a lazy list stays lazy
+                        // (an infinite `constant @primes = grep …` cannot be
+                        // reified); re-wrapping it here would undo that.
+                        ValueView::LazyList(_) | ValueView::Seq(_) => raw_val,
                         _ => Value::array_with_kind(
                             crate::gc::Gc::new(crate::value::ArrayData::new(vec![raw_val])),
                             crate::value::ArrayKind::List,
@@ -2589,6 +2611,17 @@ impl Interpreter {
                             }
                         }
                     }
+                    // A lazy list keeps its laziness behind `constant @x`, exactly
+                    // as behind `my @x`: `constant @primes = grep *.is-prime, 2 .. *`
+                    // (Digest::SHA2) is infinite, and wrapping it as a single
+                    // element made `@primes[^8]` read `((...) Nil Nil …)`.
+                    ValueView::LazyList(list) if list.preserve_lazy_on_array_assign() => val,
+                    ValueView::LazyList(list) => Value::array_with_kind(
+                        crate::gc::Gc::new(crate::value::ArrayData::new(
+                            self.force_lazy_list_vm(&list)?,
+                        )),
+                        crate::value::ArrayKind::List,
+                    ),
                     _ => Value::array_with_kind(
                         crate::gc::Gc::new(crate::value::ArrayData::new(vec![val])),
                         crate::value::ArrayKind::List,

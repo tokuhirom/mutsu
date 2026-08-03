@@ -56,6 +56,33 @@ impl Interpreter {
                 *self.stack.last_mut().unwrap() = value.clone();
             }
         }
+        // A Buf/Blob assigned to a NATIVE typed array spreads element-wise:
+        // `my uint32 @W = $blob32` gives one element per buffer element (rakudo's
+        // `array[uint32].STORE` reads the buffer directly). This is specific to
+        // native arrays — a boxed `my Int @b = $blob` still sees the Blob as a
+        // single element and fails its element type check, as in rakudo.
+        // Digest::SHA1's message schedule (`my uint32 @W = $M`) needs this.
+        if var_name.is_some_and(|name| name.starts_with('@'))
+            && crate::runtime::native_types::is_native_array_element_type(base_constraint)
+        {
+            let spread = match value.view() {
+                ValueView::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if crate::runtime::utils::is_native_elems_class(&class_name.resolve()) => {
+                    crate::value::value_buf::buf_elems_as_array(
+                        &attributes.as_map(),
+                        crate::value::ArrayKind::List,
+                    )
+                }
+                _ => None,
+            };
+            if let Some(list) = spread {
+                value = list;
+                *self.stack.last_mut().unwrap() = value.clone();
+            }
+        }
         // Lazy values cannot be stored in native typed arrays
         if var_name.is_some_and(|name| name.starts_with('@'))
             && crate::runtime::native_types::is_native_array_element_type(base_constraint)

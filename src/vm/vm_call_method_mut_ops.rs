@@ -480,6 +480,18 @@ impl Interpreter {
         } else {
             raw_args
         };
+        // Elements appended to a NATIVE integer array store through the native
+        // slot, so each one wraps to the element width exactly as an assignment
+        // does (`my uint8 @e; @e.push(1, 300, 2)` stores 1, 44, 2). Done here,
+        // before the several push/append dispatch branches below, so every one
+        // of them sees already-wrapped values.
+        let args = if matches!(method.as_str(), "push" | "unshift" | "append" | "prepend")
+            && !args.is_empty()
+        {
+            self.wrap_native_int_items(&target_name, args)
+        } else {
+            args
+        };
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("Interpreter stack underflow in CallMethodMut target".to_string())
         })?;
@@ -979,6 +991,9 @@ impl Interpreter {
                     } else {
                         crate::runtime::flatten_append_args(args.clone())
                     };
+                    // Stored through a native slot, so each element wraps to the
+                    // element width (`my uint8 @e; @e.push(1, 300, 2)` -> 1, 44, 2).
+                    let items = self.wrap_native_int_items(&target_name, items);
                     let front = matches!(method.as_str(), "unshift" | "prepend");
                     let result = self.shared_array_extend(&target_name, items, front);
                     self.stack.push(result);

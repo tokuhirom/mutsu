@@ -278,6 +278,9 @@ impl Interpreter {
                 &mut env,
                 &mut upvalues,
             );
+            // See the note in `vm_register_sub_ops`: a lexically-inherited
+            // `__mutsu_return_type` would be enforced on this closure's return.
+            env.remove("__mutsu_return_type");
             if let Some(rt) = return_type {
                 env.insert("__mutsu_return_type".to_string(), Value::str(rt.clone()));
             }

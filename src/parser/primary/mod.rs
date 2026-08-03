@@ -845,7 +845,18 @@ mod tests {
     fn primary_parses_array_match_var() {
         let (rest, expr) = primary("@$/").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(expr, Expr::ArrayVar(ref n) if n.as_str() == "/"));
+        // `@$/` is a positional deref of the SCALAR `$/` — a `.list` method call
+        // on it, the same node `@($/)` builds — not the array variable `@/`.
+        // (The `%$/` counterpart below has always been a `.hash` call.)
+        assert!(matches!(
+            expr,
+            Expr::MethodCall {
+                ref target,
+                ref name,
+                ..
+            } if matches!(target.as_ref(), Expr::Grouped(inner) if matches!(inner.as_ref(), Expr::Var(n) if n.as_str() == "/"))
+                && name.resolve() == "list"
+        ));
     }
 
     #[test]

@@ -779,13 +779,12 @@ impl Interpreter {
                         crate::gc::Gc::new(crate::value::ArrayData::new(items.to_vec())),
                         crate::value::ArrayKind::List,
                     ),
-                    ValueView::LazyList(list) => {
-                        let items = self.force_lazy_list_vm(&list)?;
-                        Value::array_with_kind(
-                            crate::gc::Gc::new(crate::value::ArrayData::new(items)),
-                            crate::value::ArrayKind::List,
-                        )
-                    }
+                    // `CoerceToList` runs first for every `constant @x` and has
+                    // already applied the constant-@ list semantics, including the
+                    // decision to keep an unreifiable lazy list lazy (Digest::SHA2's
+                    // `constant @primes = grep *.is-prime, 2 .. *` is infinite).
+                    // Re-wrapping it here made `@primes[^8]` read `([...] Nil Nil …)`.
+                    ValueView::LazyList(_) => raw_popped.clone(),
                     ValueView::LazyIoLines { .. } => {
                         let forced = self.force_if_lazy_io_lines(raw_popped.clone())?;
                         let items = runtime::value_to_list(&forced);

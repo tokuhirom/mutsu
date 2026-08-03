@@ -361,6 +361,19 @@ pub(in crate::parser) fn listop_arg_expr(input: &str) -> PResult<'_, Expr> {
     Ok((rest, expr))
 }
 
+/// Parse one colon-method argument (`$obj.meth: HERE, ...`) at listop
+/// precedence, then absorb the list-infix operators that bind tighter than the
+/// comma separating the arguments — the same two-step the bare listop path
+/// (`call_arg_expr` + [`extend_listop_arg_list_infix`]) performs.
+///
+/// Without the second step `blob32.new: $H Z+ $M` parsed as
+/// `(blob32.new: $H) Z+ $M`, which silently produced a `Seq` instead of a Blob
+/// (it made Digest::SHA1 return its initial hash constants unchanged).
+pub(in crate::parser) fn listop_arg_expr_list_infix(input: &str) -> PResult<'_, Expr> {
+    let (rest, expr) = listop_arg_expr(input)?;
+    extend_listop_arg_list_infix(rest, input, expr)
+}
+
 /// Extend an already-parsed listop argument with the list-infix operators
 /// (Z/X/meta ops/infix funcs), which bind tighter than the comma separating
 /// listop arguments. Feed operators (`==>`/`<==`) are NOT consumed — they stay

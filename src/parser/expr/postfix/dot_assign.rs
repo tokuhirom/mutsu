@@ -1,6 +1,6 @@
 use super::call_method::{QuotedMethodName, parse_quoted_method_name};
 use crate::ast::{Expr, Stmt};
-use crate::parser::expr::listop_arg_expr;
+use crate::parser::expr::listop_arg_expr_list_infix;
 use crate::parser::helpers::ws;
 use crate::parser::parse_result::{PResult, parse_char};
 use crate::parser::primary::{colonpair_expr, parse_call_arg_list, primary};
@@ -498,7 +498,7 @@ pub(crate) fn parse_dot_assign<'a>(input: &'a str, expr: Expr) -> PResult<'a, Ex
         // is `($x .=new: 1) andthen $y`, not `$x .=new(1 andthen $y)`.
         let r2 = &r[1..];
         let (r2, _) = ws(r2)?;
-        let (r2, first_arg) = listop_arg_expr(r2)?;
+        let (r2, first_arg) = listop_arg_expr_list_infix(r2)?;
         let mut args = vec![first_arg];
         let mut r_inner = r2;
         loop {
@@ -521,11 +521,14 @@ pub(crate) fn parse_dot_assign<'a>(input: &'a str, expr: Expr) -> PResult<'a, Ex
                 r_inner = r3;
                 break;
             }
-            let (r3, next) = listop_arg_expr(r3)?;
+            let (r3, next) = listop_arg_expr_list_infix(r3)?;
             args.push(next);
             r_inner = r3;
         }
-        (r_inner, args)
+        (
+            r_inner,
+            crate::parser::primary::lift_list_infix_in_arg_list(args),
+        )
     } else if r.starts_with(':') && !r.starts_with("::") {
         // Fake-infix adverb form (space before ':'): .=method :key<val>
         let mut args = Vec::new();

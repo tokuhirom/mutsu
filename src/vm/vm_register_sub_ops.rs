@@ -84,6 +84,12 @@ impl Interpreter {
             let upvalues = self.capture_upvalues(code, &compiled_code);
             // Upvalue snapshot (single-store Slice E); see `capture_closure_env`.
             let mut env = self.capture_closure_env(code, &compiled_code);
+            // A return type belongs to the routine that declared it and is never
+            // inherited lexically. The captured env may carry the *enclosing*
+            // routine's `__mutsu_return_type`, which would then be enforced on
+            // this block's own return (`sub f(--> blob32) { ({ $^a + $^b })[0](…) }`
+            // reported the inner block's Int as a bad `blob32` return).
+            env.remove("__mutsu_return_type");
             if let Some(rt) = return_type {
                 env.insert("__mutsu_return_type".to_string(), Value::str(rt.clone()));
             }

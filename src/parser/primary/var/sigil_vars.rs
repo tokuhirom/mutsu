@@ -194,8 +194,25 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
                 },
             ));
         }
-        if let Ok((r2, Expr::Var(name))) = scalar_var(rest) {
-            return Ok((r2, Expr::ArrayVar(name)));
+        // `@$x` is the positional deref of the SCALAR `$x` — the same node
+        // `@($x)` produces — never the separate array variable `@x`. Emitting
+        // `ArrayVar(name)` conflated the two: with both `my $b` and `my @b` in
+        // scope `@$b` read `@b`, and inside a routine `@$_` read the implicit
+        // slurpy `@_` (which is what made `map { blob32.new: @$_ }` collapse
+        // each chunk to one element in Digest::SHA1).
+        if let Ok((r2, expr @ Expr::Var(_))) = scalar_var(rest) {
+            return Ok((
+                r2,
+                Expr::MethodCall {
+                    // `Grouped` so the subscript-assign lvalue path recognizes it
+                    // exactly as it does for the spelled-out `@($x)[0] = …`.
+                    target: Box::new(Expr::Grouped(Box::new(expr))),
+                    name: crate::symbol::Symbol::intern("list"),
+                    args: vec![],
+                    modifier: None,
+                    quoted: false,
+                },
+            ));
         }
     }
     // @{expr} is Perl 5 array dereference syntax — throw X::Obsolete
