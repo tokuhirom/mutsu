@@ -68,8 +68,11 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
         let id = ANON_CLASS_COUNTER.fetch_add(1, Ordering::Relaxed);
         (rest, format!("__ANON_CLASS_{id}__"), Vec::new(), Vec::new())
     } else if rest.starts_with(|c: char| c.is_ascii_uppercase() || c == '_') {
-        // Named class in expression context: `class Foo { ... }`
-        let (r, class_name) = parse_ident_with_hyphens(rest)?;
+        // Named class in expression context: `class Foo { ... }`. The name may
+        // be QUALIFIED — `class X::Foo is Exception {}.new.throw` is the shape
+        // roast/S04-exceptions/exceptions-alternatives.t uses — so stopping at
+        // the first `::` would leave `::Foo is Exception` unparsed.
+        let (r, class_name) = parse_qualified_ident_with_hyphens(rest)?;
         let (r, _) = ws(r)?;
         // Parse optional `is Parent` / `does Role` clauses
         let mut parents = Vec::new();
@@ -133,15 +136,27 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
     ))
 }
 
-/// Parse an anonymous grammar expression: `grammar { ... }`
+/// Parse a grammar expression: `grammar { ... }`, `grammar :: { ... }`, or the
+/// named `grammar G { ... }` — the last one reached through the expression path
+/// whenever a postfix follows the closing brace (`grammar G { … }.parse($s)`),
+/// which the statement parser declines for exactly that reason.
 pub(crate) fn anon_grammar_expr(input: &str) -> PResult<'_, Expr> {
     let rest = keyword("grammar", input).ok_or_else(|| PError::expected("anonymous grammar"))?;
     let (rest, _) = ws(rest)?;
+    let rest = rest.strip_prefix("::").map_or(rest, |r| r.trim_start());
+    let (rest, name) = if rest.starts_with('{') {
+        let id = ANON_CLASS_COUNTER.fetch_add(1, Ordering::Relaxed);
+        (rest, format!("__ANON_GRAMMAR_{id}__"))
+    } else if rest.starts_with(|c: char| c.is_ascii_uppercase() || c == '_') {
+        let (r, grammar_name) = parse_qualified_ident_with_hyphens(rest)?;
+        let (r, _) = ws(r)?;
+        (r, grammar_name)
+    } else {
+        return Err(PError::expected("'{' for anonymous grammar"));
+    };
     if !rest.starts_with('{') {
         return Err(PError::expected("'{' for anonymous grammar"));
     }
-    let id = ANON_CLASS_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let name = format!("__ANON_GRAMMAR_{id}__");
     let (rest, body) = parse_block_body(rest)?;
     Ok((
         rest,
@@ -155,7 +170,10 @@ pub(crate) fn anon_grammar_expr(input: &str) -> PResult<'_, Expr> {
     ))
 }
 
-/// Parse an anonymous role expression: `role { ... }` or `role :: { ... }`
+/// Parse a role expression: `role { ... }`, `role :: { ... }`, or the named
+/// `role R { ... }` — the last one reached through the expression path whenever
+/// a postfix follows the closing brace (`role R { … }.^name`), which the
+/// statement parser declines for exactly that reason.
 pub(crate) fn anon_role_expr(input: &str) -> PResult<'_, Expr> {
     let rest = keyword("role", input).ok_or_else(|| PError::expected("anonymous role"))?;
     let (rest, _) = ws(rest)?;
@@ -166,12 +184,19 @@ pub(crate) fn anon_role_expr(input: &str) -> PResult<'_, Expr> {
     } else {
         rest
     };
-    // Must be followed by '{' (no name) to be an anonymous role
+    let (rest, name) = if rest.starts_with('{') {
+        let id = ANON_ROLE_COUNTER.fetch_add(1, Ordering::Relaxed);
+        (rest, format!("__ANON_ROLE_{id}__"))
+    } else if rest.starts_with(|c: char| c.is_ascii_uppercase() || c == '_') {
+        let (r, role_name) = parse_qualified_ident_with_hyphens(rest)?;
+        let (r, _) = ws(r)?;
+        (r, role_name)
+    } else {
+        return Err(PError::expected("'{' for anonymous role"));
+    };
     if !rest.starts_with('{') {
         return Err(PError::expected("'{' for anonymous role"));
     }
-    let id = ANON_ROLE_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let name = format!("__ANON_ROLE_{id}__");
     let (rest, body) = parse_block_body(rest)?;
     Ok((
         rest,

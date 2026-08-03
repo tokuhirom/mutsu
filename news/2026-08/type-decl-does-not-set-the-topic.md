@@ -83,13 +83,25 @@ a space: `for ^2 { class C { } .say }` prints `(C)` twice, not `0` and `1`. Only
 a newline before the `.` starts a fresh statement (`0`, `1` — which mutsu
 already got right). So the statement-level `class_decl` / `role_decl` /
 `grammar_decl` parsers now decline when a `.` follows on the same line
-(`reject_trailing_postfix`), and the expression-statement path — whose
-`anon_class_expr` accepts a named class too — parses declaration and postfix as
-the single expression they are.
+(`reject_trailing_postfix`), and the expression-statement path parses
+declaration and postfix as the single expression they are.
 
-Pin: `t/type-decl-does-not-set-topic.t` (12 assertions covering class/role/
+Handing those three declarators to the expression path exposed how narrow it
+was. `anon_class_expr` accepted a named class but stopped its name at the first
+`::`, so `class X::Foo is Exception {}.new.throw` — the shape
+`roast/S04-exceptions/exceptions-alternatives.t` uses — left `::Foo is
+Exception` unparsed and the `{}` was read as an empty Hash, giving "No such
+method 'throw' for invocant of type 'Hash'". Its sibling `anon_role_expr` and
+`anon_grammar_expr` accepted *only* the anonymous form, so a named
+`role R { … }.^name` or `grammar G { … }.parse($s)` did not parse at all. All
+three take a qualified name now, which is also what makes `role R { … }.^name`
+and `grammar G { … }.parse($s)` work for the first time — before, they merely
+appeared to, by reading the type back out of the topic the registration had
+just clobbered.
+
+Pin: `t/type-decl-does-not-set-topic.t` (16 assertions covering class/role/
 grammar in a loop, at the top level and under `given`; the anonymous-role `but`
 mixin; the type object still being the value of an anonymous declaration
-expression, of a same-line postfix in a routine body and of an `EVAL`'d unit;
-and a newline before the next statement keeping the topic). It passes under real
-`raku` too.
+expression, of a same-line postfix in a routine body and of an `EVAL`'d unit; a
+qualified name with an `is Parent` clause and a postfix; and a newline before
+the next statement keeping the topic). It passes under real `raku` too.

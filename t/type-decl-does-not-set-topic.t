@@ -11,7 +11,7 @@ use Test;
 # The block value still has to be the type object where Raku says it is, so both
 # halves are checked here.
 
-plan 12;
+plan 16;
 
 # --- the topic survives a declaration ---------------------------------------
 
@@ -76,6 +76,26 @@ plan 12;
 {
     my $t = EVAL 'unit class UCT is export; has $.x = 42;';
     is $t.new.x, 42, 'EVAL of a unit class compilation unit returns the class';
+}
+
+# The same-line postfix reaches the expression path for every declarator, and
+# for a QUALIFIED name too — `class X::Foo is Exception {}.new.throw` is the
+# shape roast/S04-exceptions/exceptions-alternatives.t uses, and stopping the
+# name at the first `::` left `::Foo is Exception` unparsed.
+{
+    sub role-name { role R9 { method z { 4 } }.^name }
+    is role-name(), 'R9', 'role Name { ... }.^name in a routine body is one expression';
+}
+
+{
+    sub parse-it { grammar G9 { token TOP { \d+ } }.parse('42') }
+    is ~parse-it(), '42', 'grammar Name { ... }.parse(...) in a routine body is one expression';
+}
+
+{
+    my $ex = class X::Qualified::Boom is Exception { method message { 'boom' } }.new;
+    is $ex.message, 'boom', 'a qualified class name parses with `is Parent` and a postfix';
+    dies-ok { $ex.throw }, 'and the instance it yields is throwable';
 }
 
 # A `.method` on the NEXT line is a new statement on the topic, not a postfix.
