@@ -198,6 +198,7 @@ impl Interpreter {
         self.registry_mut().classes.remove(role_name);
         self.registry_mut().hidden_classes.remove(role_name);
         self.registry_mut().class_composed_roles.remove(role_name);
+        self.registry_mut().sync_user_method_entries(role_name);
         self.clear_private_zeroarg_method_cache();
         self.native_ctor_plan_cache.clear();
     }
