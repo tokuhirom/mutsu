@@ -451,7 +451,7 @@ pub(in crate::runtime) fn supplier_mark_preserved_consumed(supplier_id: u64) {
     }
 }
 
-pub(in crate::runtime) fn supplier_done(supplier_id: u64) {
+pub(crate) fn supplier_done(supplier_id: u64) {
     if let Ok(mut map) = supplier_state_map().lock() {
         let state = map.entry(supplier_id).or_default();
         if state.done || state.quit_reason.is_some() {

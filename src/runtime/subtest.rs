@@ -87,6 +87,13 @@ pub(crate) enum SupplyDrivePolicy {
         promise: crate::value::SharedPromise,
         deadline: crate::runtime::thread_compat::Instant,
         last_value: Value,
+        /// The supplier the `supply { ... }` body's `emit` writes to. A supply
+        /// is done once all of its `whenever`s have completed, and Raku keeps
+        /// its promise with the final value it emitted -- which lives in this
+        /// supplier's `emitted` list, not in the drive loop's own capture. The
+        /// loop signals completion by `done`ing it, which resolves the promise
+        /// through the registry with exactly that value.
+        emitter_supplier_id: Option<u64>,
     },
 }
 
