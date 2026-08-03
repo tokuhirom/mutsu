@@ -10,6 +10,23 @@ impl Interpreter {
         &self.routine_stack
     }
 
+    /// Whether an actual **routine** (sub/method) encloses the running code —
+    /// not merely some frame. A bare `{ ... }` block, a `for` body and a
+    /// closure all push a `RoutineFrame` with `is_block: true`, so
+    /// `!routine_stack.is_empty()` answers "is any frame live", which is a
+    /// different question.
+    ///
+    /// It matters for `return`: a `return` in a non-routine block does a
+    /// *non-local* return when a routine lexically encloses it, and throws
+    /// `X::ControlFlow::Return` when none does. Deciding that from
+    /// `is_empty()` made an `EVAL` run inside a mainline `{ ... }` block
+    /// compile its snippet as "inside a routine", so a `return` in the
+    /// snippet's own pointy block returned from whatever sub later called it
+    /// instead of throwing (`roast/S04-statements/return.t` test 15).
+    pub(crate) fn enclosing_routine_exists(&self) -> bool {
+        self.routine_stack.iter().any(|f| !f.is_block)
+    }
+
     /// Push a new routine frame. `line` and `file` record the call-site
     /// in the *caller* (the line/file where this function was called from);
     /// `def_file` is the file the routine's body lives in (None = main
