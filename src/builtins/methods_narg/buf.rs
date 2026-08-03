@@ -144,6 +144,51 @@ pub(crate) fn buf_get_bytes(target: &Value) -> Option<Vec<u8>> {
     None
 }
 
+/// A Buf/Blob instance's raw storage bytes together with its element width —
+/// what the byte-addressed `read-*` methods index into.
+///
+/// The offset those methods take counts **elements**: `$buf.read-uint32(1)` on
+/// a `buf32` reads element 1, i.e. byte `1 * 4`. For a width-1 buffer (`Buf`,
+/// `Blob`, `buf8`, …) the width is 1 and this is exactly [`buf_get_bytes`].
+pub(crate) fn buf_get_raw_bytes(target: &Value) -> Option<(Vec<u8>, usize)> {
+    if let ValueView::Instance {
+        class_name,
+        attributes,
+        ..
+    } = target.view()
+    {
+        let cn = class_name.resolve();
+        if crate::runtime::utils::is_buf_or_blob_class(&cn) {
+            let bytes = crate::value::value_buf::buf_raw_bytes(&attributes)?;
+            return Some((bytes, crate::value::value_buf::buf_elem_width(&cn)));
+        }
+    }
+    None
+}
+
+/// Where a byte-addressed read of `size` bytes at element `offset` starts in
+/// `bytes`, or the out-of-range error. See [`buf_get_raw_bytes`] for why the
+/// offset is scaled by the element width.
+pub(crate) fn read_byte_offset(
+    bytes: &[u8],
+    offset: i64,
+    size: usize,
+    width: usize,
+) -> Result<usize, RuntimeError> {
+    let width = width.max(1);
+    let start = (offset >= 0)
+        .then(|| (offset as usize).checked_mul(width))
+        .flatten();
+    match start {
+        Some(off) if off.checked_add(size).is_some_and(|end| end <= bytes.len()) => Ok(off),
+        _ => Err(RuntimeError::new(format!(
+            "read from out of range. Is: {}, should be in 0..{}",
+            offset,
+            bytes.len() / width
+        ))),
+    }
+}
+
 pub(crate) fn to_int_val(v: &Value) -> i64 {
     match v.view() {
         ValueView::Int(i) => i,

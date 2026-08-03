@@ -1,10 +1,10 @@
 use super::allomorph::out_of_range_failure;
 use super::base::{BaseDigits, f64_to_rat, rat_to_base};
 use super::buf::{
-    bigint_to_value, buf_class_name, buf_get_bytes, buf_get_int_items, is_buf_like,
-    make_buf_from_int_items, out_of_range_error, read_f32_endian, read_f64_endian,
-    read_int_method_info, read_int_value, read_ubits_from_bytes, resolve_buf_index,
-    resolve_buf_len, to_int_val,
+    bigint_to_value, buf_class_name, buf_get_int_items, buf_get_raw_bytes, is_buf_like,
+    make_buf_from_int_items, out_of_range_error, read_byte_offset, read_f32_endian,
+    read_f64_endian, read_int_method_info, read_int_value, read_ubits_from_bytes,
+    resolve_buf_index, resolve_buf_len, to_int_val,
 };
 use super::flatten::{flatten_target, is_hammer_pair, parse_flat_depth};
 use super::fmt_contains::{fmt_joinable_target, fmt_single_or_pair};
@@ -268,7 +268,7 @@ pub(crate) fn native_method_2arg(
             }
         }
         "read-ubits" | "read-bits" => {
-            let bytes = buf_get_bytes(target)?;
+            let (bytes, _) = buf_get_raw_bytes(target)?;
             let from = runtime::to_int(arg1);
             let bits = runtime::to_int(arg2);
             if from < 0 || bits < 0 {
@@ -305,7 +305,7 @@ pub(crate) fn native_method_2arg(
                     method, type_name,
                 ))));
             }
-            let bytes = buf_get_bytes(target)?;
+            let (bytes, width) = buf_get_raw_bytes(target)?;
             let offset_i64 = to_int_val(arg1);
             let endian_val = match arg2.view() {
                 ValueView::Enum { value, .. } => value.as_i64(),
@@ -313,18 +313,10 @@ pub(crate) fn native_method_2arg(
                 _ => 0, // NativeEndian
             };
             let size: usize = if method == "read-num32" { 4 } else { 8 };
-            if offset_i64 < 0
-                || (offset_i64 as usize)
-                    .checked_add(size)
-                    .is_none_or(|end| end > bytes.len())
-            {
-                return Some(Err(RuntimeError::new(format!(
-                    "read from out of range. Is: {}, should be in 0..{}",
-                    offset_i64,
-                    bytes.len()
-                ))));
-            }
-            let offset = offset_i64 as usize;
+            let offset = match read_byte_offset(&bytes, offset_i64, size, width) {
+                Ok(off) => off,
+                Err(e) => return Some(Err(e)),
+            };
             let result = if size == 4 {
                 read_f32_endian(&bytes[offset..offset + 4], endian_val)
             } else {
@@ -341,7 +333,7 @@ pub(crate) fn native_method_2arg(
                     method, type_name,
                 ))));
             }
-            let bytes = buf_get_bytes(target)?;
+            let (bytes, width) = buf_get_raw_bytes(target)?;
             let offset_i64 = to_int_val(arg1);
             let endian_val = match arg2.view() {
                 ValueView::Enum { value, .. } => value.as_i64(),
@@ -349,18 +341,10 @@ pub(crate) fn native_method_2arg(
                 _ => 0, // NativeEndian
             };
             let (size, signed) = read_int_method_info(method);
-            if offset_i64 < 0
-                || (offset_i64 as usize)
-                    .checked_add(size)
-                    .is_none_or(|end| end > bytes.len())
-            {
-                return Some(Err(RuntimeError::new(format!(
-                    "read from out of range. Is: {}, should be in 0..{}",
-                    offset_i64,
-                    bytes.len()
-                ))));
-            }
-            let offset = offset_i64 as usize;
+            let offset = match read_byte_offset(&bytes, offset_i64, size, width) {
+                Ok(off) => off,
+                Err(e) => return Some(Err(e)),
+            };
             Some(Ok(read_int_value(
                 &bytes[offset..offset + size],
                 size,

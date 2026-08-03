@@ -230,6 +230,9 @@ impl Interpreter {
         // instead of accreting float noise. Any operand outside that domain (Num,
         // BigRat, negatives, a zero divisor, an infinite source, or an i128
         // overflow) falls through to the float loop below unchanged.
+        if let Some(exact) = polymod_exact_int(target, &divisors, has_infinite) {
+            return Ok(Value::seq(exact));
+        }
         if !has_infinite && let Some(exact) = polymod_exact(target, &divisors) {
             return Ok(Value::seq(exact));
         }
@@ -353,6 +356,59 @@ impl Interpreter {
             Ok(Value::array(processed))
         }
     }
+}
+
+/// A non-negative integer operand as a `BigInt`. `None` for anything else — a
+/// `Num`, a `Rat`, or a negative — which sends `polymod` on to the rational and
+/// float paths below.
+fn polymod_int(v: &Value) -> Option<num_bigint::BigInt> {
+    use num_bigint::{BigInt, Sign};
+    match v.view() {
+        ValueView::Int(n) if n >= 0 => Some(BigInt::from(n)),
+        ValueView::BigInt(n) if n.as_ref().sign() != Sign::Minus => Some(n.as_ref().clone()),
+        ValueView::Bool(b) => Some(BigInt::from(u8::from(b))),
+        _ => None,
+    }
+}
+
+/// Exact integer `polymod`, in arbitrary precision.
+///
+/// The rational path below is capped at `i128`, so an invocant wider than that
+/// — `parse-base($md5_hex, 16).polymod(256 xx *)`, a 128-bit digest — overflowed
+/// it and fell through to the `f64` loop, which cannot represent the number at
+/// all and produced zeros (or, for an infinite divisor list, nothing). Integer
+/// operands are the overwhelmingly common case, so they get their own `BigInt`
+/// loop ahead of the rational one.
+///
+/// `has_infinite` marks a divisor list that continues past the elements reified
+/// so far (`256 xx *`): the decomposition then stops as soon as the invocant is
+/// exhausted, and no final quotient is appended.
+fn polymod_exact_int(target: &Value, divisors: &[Value], has_infinite: bool) -> Option<Vec<Value>> {
+    use num_traits::{One, Zero};
+    let mut n = polymod_int(target)?;
+    let mut result = Vec::with_capacity(divisors.len() + 1);
+    for d in divisors {
+        let d = polymod_int(d)?;
+        if d.is_zero() {
+            // Zero divisor: leave the float path's own INFINITY handling in place.
+            return None;
+        }
+        if has_infinite {
+            if n.is_zero() {
+                return Some(result);
+            }
+            // Every further step would divide by one and never terminate.
+            if d.is_one() {
+                result.push(Value::from_bigint(n));
+                return Some(result);
+            }
+        }
+        let (q, r) = (&n / &d, &n % &d);
+        result.push(Value::from_bigint(r));
+        n = q;
+    }
+    result.push(Value::from_bigint(n));
+    Some(result)
 }
 
 /// A non-negative Int/Rat as an exact rational `(num, den)` with `den > 0`.

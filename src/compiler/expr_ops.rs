@@ -356,6 +356,28 @@ impl Compiler {
         }
     }
 
+    /// A literal list rewritten as a list of argument-less thunks, one per
+    /// element — the operand shape a thunky base operator under `X`/`Z` needs,
+    /// so it can re-evaluate a single element without re-running its siblings.
+    ///
+    /// `None` when the operand is not a list literal, which is exactly when
+    /// Rakudo evaluates it once as an ordinary value.
+    fn per_element_thunks(left: &Expr) -> Option<Expr> {
+        let Expr::ArrayLiteral(elems) = left else {
+            return None;
+        };
+        Some(Expr::ArrayLiteral(
+            elems
+                .iter()
+                .map(|elem| Expr::AnonSub {
+                    body: vec![Stmt::Expr(elem.clone())],
+                    is_rw: false,
+                    is_block: true,
+                })
+                .collect(),
+        ))
+    }
+
     /// Compile MetaOp (Rop, Xop, Zop).
     pub(super) fn compile_expr_meta_op(&mut self, meta: &str, op: &str, left: &Expr, right: &Expr) {
         if meta == "X" && matches!(op, "and" | "&&" | "or" | "||" | "andthen" | "orelse") {
@@ -375,15 +397,26 @@ impl Compiler {
             self.compile_expr(&rewritten);
             return;
         }
-        if meta == "X" && op == "xx" && matches!(left, Expr::ArrayLiteral(_)) {
-            let thunked = Expr::AnonSub {
-                body: vec![Stmt::Expr(left.clone())],
-                is_rw: false,
-                is_block: true,
+        // `Xxx` / `Zxx` over a literal list: `xx` re-evaluates its left operand
+        // once per repetition, and under a cross/zip that re-evaluation is
+        // *per element* — `($i++, 100) Xxx 3` is `(0,1,2), (100,100,100)`, not
+        // three copies of the whole list. So each element gets its own thunk and
+        // the carrier repeats one element at a time. A left side that is not a
+        // list literal (`$i++ Xxx 3`, `@a Xxx 3`, `(...).list Xxx 3`) is a single
+        // already-evaluated value in Rakudo too, and falls through to the
+        // ordinary MetaOp path.
+        if matches!(meta, "X" | "Z")
+            && op == "xx"
+            && let Some(thunks) = Self::per_element_thunks(left)
+        {
+            let carrier = if meta == "X" {
+                "__mutsu_cross_xx"
+            } else {
+                "__mutsu_zip_xx"
             };
             let rewritten = Expr::Call {
-                name: Symbol::intern("__mutsu_reverse_xx"),
-                args: vec![right.clone(), thunked],
+                name: Symbol::intern(carrier),
+                args: vec![right.clone(), thunks],
             };
             self.compile_expr(&rewritten);
             return;
@@ -421,20 +454,6 @@ impl Compiler {
                     left.clone(),
                     thunked,
                 ],
-            };
-            self.compile_expr(&rewritten);
-            return;
-        }
-        // Zxx with list left side: thunk the left side
-        if meta == "Z" && op == "xx" && matches!(left, Expr::ArrayLiteral(_)) {
-            let thunked = Expr::AnonSub {
-                body: vec![Stmt::Expr(left.clone())],
-                is_rw: false,
-                is_block: true,
-            };
-            let rewritten = Expr::Call {
-                name: Symbol::intern("__mutsu_zip_xx"),
-                args: vec![right.clone(), thunked],
             };
             self.compile_expr(&rewritten);
             return;

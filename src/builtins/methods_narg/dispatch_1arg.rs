@@ -3,9 +3,9 @@ use super::base::{
     BaseDigits, f64_to_rat, parse_radix_checked, range_pick_n_fast, rat_base_repeating, rat_to_base,
 };
 use super::buf::{
-    buf_class_name, buf_get_bytes, buf_get_int_items, is_buf_like, make_buf_from_int_items,
-    out_of_range_error, range_bounds, read_f32_ne, read_f64_ne, read_int_method_info,
-    read_int_value, resolve_buf_index, to_int_val,
+    buf_class_name, buf_get_int_items, buf_get_raw_bytes, is_buf_like, make_buf_from_int_items,
+    out_of_range_error, range_bounds, read_byte_offset, read_f32_ne, read_f64_ne,
+    read_int_method_info, read_int_value, resolve_buf_index, to_int_val,
 };
 use super::flatten::{flatten_target, is_hammer_pair, parse_flat_depth};
 use super::fmt_contains::{
@@ -1826,11 +1826,20 @@ pub(crate) fn native_method_1arg(
                         if let Some(result) = crate::builtins::methods_0arg::dispatch_core_range::generic_range_pick_one_pub(start, end, excl_start, excl_end) {
                             return Some(result);
                         }
-                        // Non-integer numeric endpoints (Rat/Num/FatRat):
-                        // enumerate via `.succ` (value_to_list preserves the
-                        // endpoint type) so a picked element keeps its type —
-                        // `(1.1..3.1).roll(n)` yields Rats, not Nums.
-                        if start.is_numeric() {
+                        // Any other endpoint pair — non-integer numeric
+                        // (Rat/Num/FatRat) or non-numeric (`'a'..'z'`) — is
+                        // enumerated via `.succ` (value_to_list preserves the
+                        // endpoint type) and sampled from that, so a picked
+                        // element keeps its type: `(1.1..3.1).roll(n)` yields
+                        // Rats, not Nums, and `('a'..'z').roll(n)` yields
+                        // distinct letters rather than 'a' every time.
+                        //
+                        // An unbounded end (`1..*`, `'a'..Inf`) has no
+                        // enumeration to sample, so it keeps answering the start
+                        // element rather than trying to reify the range.
+                        let unbounded = matches!(end.view(), ValueView::Whatever)
+                            || matches!(end.view(), ValueView::Num(f) if f.is_infinite());
+                        if !unbounded {
                             let vals = crate::runtime::utils::value_to_list(range);
                             if !vals.is_empty() {
                                 let idx = (crate::builtins::rng::builtin_rand() * vals.len() as f64)
@@ -2018,21 +2027,13 @@ pub(crate) fn native_method_1arg(
                     method, type_name,
                 ))));
             }
-            let bytes = buf_get_bytes(target)?;
+            let (bytes, width) = buf_get_raw_bytes(target)?;
             let offset_i64 = to_int_val(arg);
             let size: usize = if method == "read-num32" { 4 } else { 8 };
-            if offset_i64 < 0
-                || (offset_i64 as usize)
-                    .checked_add(size)
-                    .is_none_or(|end| end > bytes.len())
-            {
-                return Some(Err(RuntimeError::new(format!(
-                    "read from out of range. Is: {}, should be in 0..{}",
-                    offset_i64,
-                    bytes.len()
-                ))));
-            }
-            let offset = offset_i64 as usize;
+            let offset = match read_byte_offset(&bytes, offset_i64, size, width) {
+                Ok(off) => off,
+                Err(e) => return Some(Err(e)),
+            };
             let result = if size == 4 {
                 read_f32_ne(&bytes[offset..offset + 4])
             } else {
@@ -2049,21 +2050,13 @@ pub(crate) fn native_method_1arg(
                     method, type_name,
                 ))));
             }
-            let bytes = buf_get_bytes(target)?;
+            let (bytes, width) = buf_get_raw_bytes(target)?;
             let offset_i64 = to_int_val(arg);
             let (size, signed) = read_int_method_info(method);
-            if offset_i64 < 0
-                || (offset_i64 as usize)
-                    .checked_add(size)
-                    .is_none_or(|end| end > bytes.len())
-            {
-                return Some(Err(RuntimeError::new(format!(
-                    "read from out of range. Is: {}, should be in 0..{}",
-                    offset_i64,
-                    bytes.len()
-                ))));
-            }
-            let offset = offset_i64 as usize;
+            let offset = match read_byte_offset(&bytes, offset_i64, size, width) {
+                Ok(off) => off,
+                Err(e) => return Some(Err(e)),
+            };
             // NativeEndian default
             let endian: i64 = if cfg!(target_endian = "little") { 1 } else { 2 };
             Some(Ok(read_int_value(

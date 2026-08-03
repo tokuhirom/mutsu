@@ -2,7 +2,9 @@ use super::methods_signature_errors::make_x_immutable_error;
 use super::*;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
-use crate::value::value_buf::{buf_bytes_in, buf_bytes_or_empty, set_buf_bytes};
+use crate::value::value_buf::{
+    buf_elem_width, buf_raw_bytes_in, buf_raw_bytes_or_empty, set_buf_raw_bytes,
+};
 use num_bigint::BigInt;
 use num_traits::Signed;
 impl Interpreter {
@@ -290,7 +292,7 @@ impl Interpreter {
         } = target.view()
             && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
         {
-            let bytes = buf_bytes_or_empty(&attributes);
+            let bytes = buf_raw_bytes_or_empty(&attributes);
 
             if (method == "read-ubits" || method == "read-bits") && args.len() == 2 {
                 let Some(from) = Self::value_to_non_negative_i64(&args[0]) else {
@@ -327,7 +329,7 @@ impl Interpreter {
                 };
                 let written = crate::builtins::buf_bits::write_bits(&bytes, from, bits, &args[2])?;
                 let mut updated_attrs = attributes.to_map();
-                set_buf_bytes(&mut updated_attrs, class_name, &written);
+                set_buf_raw_bytes(&mut updated_attrs, class_name, written);
                 return Ok(Value::write_back_sharing(
                     &attributes,
                     class_name,
@@ -372,12 +374,17 @@ impl Interpreter {
                 ValueView::Num(f) => f as i64,
                 _ => 0,
             };
-            let mut bytes = buf_bytes_or_empty(&attributes);
+            let mut bytes = buf_raw_bytes_or_empty(&attributes);
             crate::builtins::buf_write_num::apply_write_num(
-                &mut bytes, method, offset_i64, value_val, endian_val,
+                &mut bytes,
+                method,
+                offset_i64,
+                value_val,
+                endian_val,
+                buf_elem_width(&cn),
             )?;
             let mut updated_attrs = attributes.to_map();
-            set_buf_bytes(&mut updated_attrs, class_name, &bytes);
+            set_buf_raw_bytes(&mut updated_attrs, class_name, bytes);
             let updated = Value::write_back_sharing(&attributes, class_name, updated_attrs, id);
             self.env.insert(target_var.to_string(), updated.clone());
             return Ok(updated);
@@ -408,10 +415,15 @@ impl Interpreter {
                 };
                 let mut bytes: Vec<u8> = Vec::new();
                 crate::builtins::buf_write_num::apply_write_num(
-                    &mut bytes, method, offset_i64, &args[1], endian_val,
+                    &mut bytes,
+                    method,
+                    offset_i64,
+                    &args[1],
+                    endian_val,
+                    buf_elem_width(&cn),
                 )?;
                 let normalized = crate::runtime::utils::normalize_buf_type_name(&cn);
-                return Ok(crate::builtins::buf_write_num::make_buf_value(
+                return Ok(crate::builtins::buf_write_num::make_buf_value_from_raw(
                     &normalized,
                     bytes,
                 ));
@@ -453,12 +465,17 @@ impl Interpreter {
                 ValueView::Num(f) => f as i64,
                 _ => 0,
             };
-            let mut bytes = buf_bytes_or_empty(&attributes);
+            let mut bytes = buf_raw_bytes_or_empty(&attributes);
             crate::builtins::buf_write_int::apply_write_int(
-                &mut bytes, method, offset_i64, value_val, endian_val,
+                &mut bytes,
+                method,
+                offset_i64,
+                value_val,
+                endian_val,
+                buf_elem_width(&cn),
             )?;
             let mut updated_attrs = attributes.to_map();
-            set_buf_bytes(&mut updated_attrs, class_name, &bytes);
+            set_buf_raw_bytes(&mut updated_attrs, class_name, bytes);
             let updated = Value::write_back_sharing(&attributes, class_name, updated_attrs, id);
             self.env.insert(target_var.to_string(), updated.clone());
             return Ok(updated);
@@ -489,10 +506,15 @@ impl Interpreter {
                 };
                 let mut bytes: Vec<u8> = Vec::new();
                 crate::builtins::buf_write_int::apply_write_int(
-                    &mut bytes, method, offset_i64, &args[1], endian_val,
+                    &mut bytes,
+                    method,
+                    offset_i64,
+                    &args[1],
+                    endian_val,
+                    buf_elem_width(&cn),
                 )?;
                 let normalized = crate::runtime::utils::normalize_buf_type_name(&cn);
-                return Ok(crate::builtins::buf_write_num::make_buf_value(
+                return Ok(crate::builtins::buf_write_num::make_buf_value_from_raw(
                     &normalized,
                     bytes,
                 ));
@@ -2008,9 +2030,9 @@ impl Interpreter {
                     return Err(RuntimeError::new("bit offset/length must be non-negative"));
                 }
                 let mut updated = attributes.to_map();
-                let bytes = buf_bytes_in(&updated).unwrap_or_default();
+                let bytes = buf_raw_bytes_in(&updated).unwrap_or_default();
                 let bytes = crate::builtins::buf_bits::write_bits(&bytes, from, bits, &args[2])?;
-                set_buf_bytes(&mut updated, class_name, &bytes);
+                set_buf_raw_bytes(&mut updated, class_name, bytes);
                 let updated_instance =
                     Value::write_back_sharing(&attributes, class_name, updated, target_id);
                 self.env

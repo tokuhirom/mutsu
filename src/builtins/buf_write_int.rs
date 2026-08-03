@@ -6,7 +6,7 @@
 //   (similarly for write-int8, write-uint16, ..., write-int128)
 
 use crate::symbol::Symbol;
-use crate::value::value_buf::{buf_bytes_or_empty, set_buf_bytes};
+use crate::value::value_buf::{buf_elem_width, buf_raw_bytes_or_empty, set_buf_raw_bytes};
 use crate::value::{InstanceAttrs, RuntimeError, Value, ValueView};
 
 /// Returns Some((byte_size, is_signed)) if the method is a write-int/uint method.
@@ -55,28 +55,58 @@ fn to_u128_value(value: &Value) -> u128 {
     }
 }
 
-/// Apply a write-int/uint write to a byte vector (resizing if needed).
-pub(crate) fn apply_write_int(
+/// Where a `write-int*` / `write-num*` of `size` bytes at element `offset`
+/// lands in a buffer's raw storage, growing that storage if the write runs past
+/// its end.
+///
+/// The offset counts **elements**, not bytes: Rakudo's `$buf.write-uint32(1, …)`
+/// overwrites element 1 of a `buf32`, and spans elements 1 and 2 of a `buf16`.
+/// So the byte position is `offset * width`, and every width-1 buffer — `Buf`,
+/// `Blob`, `buf8`, the overwhelmingly common case — keeps exactly the plain byte
+/// offset it always had.
+///
+/// The growth rule reproduces MoarVM's, which mixes the units: a write past the
+/// end resizes the buffer to `offset + size` *elements*. That reads like a slip
+/// in `MVMArray`, but it is observable — `buf32.new(1,2).write-uint32(2, $v)`
+/// leaves six elements, not three — so mutsu matches it rather than inventing a
+/// tidier rule.
+pub(crate) fn write_byte_offset(
     bytes: &mut Vec<u8>,
     method: &str,
     offset: i64,
-    value: &Value,
-    endian_val: i64,
-) -> Result<(), RuntimeError> {
-    let (size, _signed) = write_int_info(method).expect("not a write-int method");
+    size: usize,
+    width: usize,
+) -> Result<usize, RuntimeError> {
     if offset < 0 {
         return Err(RuntimeError::new(format!(
             "Cannot write to a negative offset for {}: {}",
             method, offset
         )));
     }
-    let off = offset as usize;
-    let needed = off
-        .checked_add(size)
-        .ok_or_else(|| RuntimeError::new(format!("{} offset {} too large", method, offset)))?;
-    if bytes.len() < needed {
-        bytes.resize(needed, 0u8);
+    let width = width.max(1);
+    let too_large = || RuntimeError::new(format!("{} offset {} too large", method, offset));
+    let off = (offset as usize).checked_mul(width).ok_or_else(too_large)?;
+    let end = off.checked_add(size).ok_or_else(too_large)?;
+    if bytes.len() < end {
+        let elems = (offset as usize).checked_add(size).ok_or_else(too_large)?;
+        let grown = elems.checked_mul(width).ok_or_else(too_large)?;
+        bytes.resize(grown, 0u8);
     }
+    Ok(off)
+}
+
+/// Apply a write-int/uint write to a buffer's raw storage bytes (resizing if
+/// needed). `width` is the buffer's element width — see [`write_byte_offset`].
+pub(crate) fn apply_write_int(
+    bytes: &mut Vec<u8>,
+    method: &str,
+    offset: i64,
+    value: &Value,
+    endian_val: i64,
+    width: usize,
+) -> Result<(), RuntimeError> {
+    let (size, _signed) = write_int_info(method).expect("not a write-int method");
+    let off = write_byte_offset(bytes, method, offset, size, width)?;
 
     let raw = to_u128_value(value);
 
@@ -186,7 +216,7 @@ pub(crate) fn try_native_buf_write(
             if !crate::runtime::utils::is_buf_or_blob_class(&cn) {
                 return None;
             }
-            bytes = buf_bytes_or_empty(&attributes);
+            bytes = buf_raw_bytes_or_empty(&attributes);
             inst = Some(BufWriteCell {
                 attributes: attributes.clone(),
                 class_sym: class_name,
@@ -213,12 +243,13 @@ pub(crate) fn try_native_buf_write(
     } else {
         0
     };
+    let width = buf_elem_width(&cn);
     let res = if is_num {
         crate::builtins::buf_write_num::apply_write_num(
-            &mut bytes, method, offset_i64, &args[1], endian_val,
+            &mut bytes, method, offset_i64, &args[1], endian_val, width,
         )
     } else {
-        apply_write_int(&mut bytes, method, offset_i64, &args[1], endian_val)
+        apply_write_int(&mut bytes, method, offset_i64, &args[1], endian_val, width)
     };
     if let Err(e) = res {
         return Some(Err(e));
@@ -226,7 +257,7 @@ pub(crate) fn try_native_buf_write(
     match inst {
         Some(cell) => {
             let mut updated_map = cell.attributes.to_map();
-            set_buf_bytes(&mut updated_map, cell.class_sym, &bytes);
+            set_buf_raw_bytes(&mut updated_map, cell.class_sym, bytes);
             Some(Ok(Value::write_back_sharing(
                 &cell.attributes,
                 cell.class_sym,
@@ -236,7 +267,7 @@ pub(crate) fn try_native_buf_write(
         }
         None => {
             let normalized = crate::runtime::utils::normalize_buf_type_name(&cn);
-            Some(Ok(crate::builtins::buf_write_num::make_buf_value(
+            Some(Ok(crate::builtins::buf_write_num::make_buf_value_from_raw(
                 &normalized,
                 bytes,
             )))

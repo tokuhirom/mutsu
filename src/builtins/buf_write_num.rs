@@ -43,28 +43,20 @@ pub(crate) fn to_f64_value(value: &Value) -> f64 {
     }
 }
 
-/// Apply a write-num write to a byte slice (resizing if needed).
+/// Apply a write-num write to a buffer's raw storage bytes (resizing if
+/// needed). `width` is the buffer's element width — see
+/// [`crate::builtins::buf_write_int::write_byte_offset`].
 pub(crate) fn apply_write_num(
     bytes: &mut Vec<u8>,
     method: &str,
     offset: i64,
     value: &Value,
     endian_val: i64,
+    width: usize,
 ) -> Result<(), RuntimeError> {
     let size = write_num_size(method).expect("not a write-num method");
-    if offset < 0 {
-        return Err(RuntimeError::new(format!(
-            "Cannot write to a negative offset for {}: {}",
-            method, offset
-        )));
-    }
-    let off = offset as usize;
-    let needed = off
-        .checked_add(size)
-        .ok_or_else(|| RuntimeError::new(format!("write-num offset {} too large", offset)))?;
-    if bytes.len() < needed {
-        bytes.resize(needed, 0u8);
-    }
+    let off =
+        crate::builtins::buf_write_int::write_byte_offset(bytes, method, offset, size, width)?;
     let v = to_f64_value(value);
     if size == 4 {
         let v32 = v as f32;
@@ -85,8 +77,15 @@ pub(crate) fn apply_write_num(
     Ok(())
 }
 
-/// Build a fresh Buf instance value from a byte vector.
+/// Build a fresh Buf instance value from a byte vector, one element per byte.
 pub(crate) fn make_buf_value(class_name: &str, bytes: Vec<u8>) -> Value {
     use crate::symbol::Symbol;
     crate::value::value_buf::make_buf_from_bytes(Symbol::intern(class_name), &bytes)
+}
+
+/// Build a fresh Buf instance value over *raw storage bytes* — already laid out
+/// at `class_name`'s element width, as the `write-*` methods produce them.
+pub(crate) fn make_buf_value_from_raw(class_name: &str, bytes: Vec<u8>) -> Value {
+    use crate::symbol::Symbol;
+    crate::value::value_buf::make_buf_from_raw_bytes(Symbol::intern(class_name), bytes)
 }
