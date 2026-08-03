@@ -643,7 +643,16 @@ impl Interpreter {
         // observe the latest CAS'd value. Without the hash arm, a thread's own
         // `%h{$k} = $v` (routed through `shared_hash_elem_set`) was invisible
         // to its own re-read: the base-key snapshot below is stale.
-        if name.starts_with('@') {
+        //
+        // Both preferences are skipped for a name this lineage RE-DECLARED: the
+        // store is keyed by BARE NAME across the whole process, so its entries
+        // under such a name describe the *shadowed* outer binding, and
+        // preferring them makes a routine's (or a worker's) own `my @a` read as
+        // the caller's. See `container_name_is_redeclared`.
+        let redeclared = self.container_name_is_redeclared(name);
+        if redeclared {
+            // fall through to the env read below
+        } else if name.starts_with('@') {
             let atomic_key = format!("__mutsu_atomic_arr::{name}");
             if let Some(v) = self.get_shared_var(&atomic_key) {
                 return Some(v);
@@ -657,7 +666,8 @@ impl Interpreter {
         // Thread-clone @/% lookups must prefer the shared copy. Child thread
         // env snapshots can lag behind sibling mutations even when Lock::Async
         // serializes the writes through shared_vars.
-        if self.is_thread_clone()
+        if !redeclared
+            && self.is_thread_clone()
             && (name.starts_with('@') || name.starts_with('%'))
             && let Some(v) = self.get_shared_var(name)
         {

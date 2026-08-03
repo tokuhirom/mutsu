@@ -638,7 +638,13 @@ impl Interpreter {
         // A plain lexical `@name` already present in the shared store routes
         // through the atomic store (see `push_to_existing_shared_array`); when
         // absent it is thread-local and falls through to the env path below.
-        if key.starts_with('@') && self.shared_vars_active && Self::is_plain_lexical_array_name(key)
+        // A name this lineage re-declared skips BOTH shared branches: the entry
+        // under it belongs to the shadowed outer binding.
+        if self.container_name_is_redeclared(key) {
+            // fall through to the env path below
+        } else if key.starts_with('@')
+            && self.shared_vars_active
+            && Self::is_plain_lexical_array_name(key)
         {
             let in_shared = {
                 let atomic_key = format!("__mutsu_atomic_arr::{key}");
