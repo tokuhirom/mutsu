@@ -592,7 +592,35 @@ impl Interpreter {
         )
     }
 
+    /// Load and run a module, recording which [`super::end_order`] class the
+    /// ENDs its body registers belong to.
+    ///
+    /// A plain `use` is compile-time in rakudo, so the module's ENDs are
+    /// installed before any of the loading compunit's own and the exit-time
+    /// LIFO order then puts the script's first — that is `MODULE`. A `use`
+    /// reached from an `EVAL` is *not* compile-time: rakudo installs it when
+    /// the EVAL runs, i.e. after everything the main compunit declared, so it
+    /// stays in the `RUNTIME` class and its ENDs run *before* the script's.
+    /// (`File::Temp`'s test suite depends on exactly this: it EVALs
+    /// `use File::Temp` so that the module's unlink-at-END runs before the
+    /// file's own END inspects the files.)
+    ///
+    /// It is a stack rather than a flag because a module may `use` another one;
+    /// a nested load inherits its loader's class, since a module reached from
+    /// an EVAL'd `use` is just as runtime-installed as the outer one.
     pub(super) fn load_module(&mut self, module: &str) -> Result<(), RuntimeError> {
+        let order = match self.module_load_order.last() {
+            Some(&inherited) => inherited,
+            None if self.env.get("__mutsu_in_eval").is_some() => super::end_order::RUNTIME,
+            None => super::end_order::MODULE,
+        };
+        self.module_load_order.push(order);
+        let result = self.load_module_inner(module);
+        self.module_load_order.pop();
+        result
+    }
+
+    fn load_module_inner(&mut self, module: &str) -> Result<(), RuntimeError> {
         // Snapshot the `use` args (set by `exec_use_module_op`) before running
         // the module body: a transitive `use` inside the body would otherwise
         // overwrite the field. Handed to the module's `sub EXPORT`, if any.

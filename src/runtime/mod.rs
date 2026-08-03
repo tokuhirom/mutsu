@@ -852,6 +852,34 @@ pub(crate) struct EndPhaser {
     /// captured key names a variable that is *still alive*, so the live value
     /// wins and a later mutation is visible, as it is in Raku.
     pub(crate) dead_keys: NameSet,
+    /// Install order, which is what decides the exit-time run order (END
+    /// phasers run in reverse of it). It is NOT the registration order: mutsu
+    /// registers the main compunit's top-level ENDs *eagerly*, before the body
+    /// runs, so a `use` on line 1 registers the module's END after them even
+    /// though rakudo installs it first. See [`end_order`].
+    pub(crate) order: u64,
+}
+
+/// Install-order bases for [`EndPhaser::order`]; lowest = installed earliest =
+/// run last.
+///
+/// rakudo installs an END phaser when the compunit that declares it is
+/// *compiled*, so `use M` on line 1 installs `M`'s ENDs before any of the
+/// script's own, and the LIFO run order then puts the script's first. mutsu
+/// loads modules at run time and hoists the main compunit's top-level ENDs to
+/// before the body (so they still run when the body dies), which reverses the
+/// two. Sorting by these bases at exit restores rakudo's order without giving
+/// up the hoist.
+pub(crate) mod end_order {
+    /// A module's ENDs, in load order — a nested `use` installs the inner
+    /// module's first, exactly as rakudo does.
+    pub(crate) const MODULE: u64 = 0;
+    /// The main compunit's top-level ENDs, in source order.
+    pub(crate) const MAIN: u64 = 1 << 40;
+    /// ENDs the main compunit registers while running (inside a block, a sub,
+    /// an `EVAL`). rakudo installs these as it compiles past them, i.e. after
+    /// everything a `use` at the top of the file brought in.
+    pub(crate) const RUNTIME: u64 = 2 << 40;
 }
 
 /// What a name in `pos_light_call_cache` resolves to.
@@ -1084,6 +1112,14 @@ pub struct Interpreter {
     pub(crate) pending_use_export_args: Option<Vec<Value>>,
     /// Registered END phasers, in registration order (they run in reverse).
     end_phasers: Vec<EndPhaser>,
+    /// Monotonic tie-breaker for [`EndPhaser::order`], so phasers within one
+    /// [`end_order`] class keep the order they were registered in.
+    end_phaser_seq: u64,
+    /// One entry per module body currently executing, holding the [`end_order`]
+    /// class the END phasers it registers belong to. Empty while the main
+    /// compunit runs. See `load_module` for why a `use` reached from an `EVAL`
+    /// is not `end_order::MODULE`.
+    module_load_order: Vec<u64>,
     /// Tracks END phaser site_ids to ensure each is registered only once.
     end_phaser_sites: HashSet<u64>,
     chroot_root: Option<PathBuf>,
