@@ -46,7 +46,7 @@ The third line was `roast/S03-operators/ternary.t` test 28 going red in
 first two are fixed at the source and the check is safe.
 
 `?` is deliberately **not** in the set, even though rakudo diagnoses `??` the
-same way. `Z??` has to be `X::Syntax::CannotMeta`, and mutsu's scanner still
+same way — tracked in `todo/tickets/duplicated-prefix-question-mark.md`. `Z??` has to be `X::Syntax::CannotMeta`, and mutsu's scanner still
 falls back to a bare `Z` there rather than recognising the attempted meta — so
 claiming `??` would trade one roast file for another. Two further wrinkles are
 worth recording for whoever adds it: `???` is the warn-flavoured yada stub, a
@@ -63,8 +63,9 @@ as well.
 
 ## Still open: `roast/S03-operators/misc.t`
 
-Its tests 35 and 36 remain its only real failures under the real `Test` module
-(38 is a `# TODO`), and neither reaches the new check:
+Filed as `todo/tickets/duplicated-prefix-question-mark.md`. Its tests 35 and 36
+remain its only real failures under the real `Test` module (38 is a `# TODO`),
+and neither reaches the new check:
 
 * `1%^^1` (no spaces) — mutsu lexes `%^^1` as a *placeholder hash variable*.
   The `^` twigil accepts any following text, so `%^1` parses as a variable too

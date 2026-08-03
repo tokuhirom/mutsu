@@ -81,3 +81,29 @@ Step 3 is worth doing first as a cheap sanity check: on the full Test-vendoring
 sweep only 2 of the 9 remaining regressions are caused by an unregistered class,
 so this is a correctness-of-the-type-system task rather than a
 sweep-clearing one, and it should be sized accordingly.
+
+## A roast file that is blocked on the *role* half alone (2026-08-03)
+
+`roast/S02-literals/quoting-unicode.t` loses seven assertions under the real
+`Test` module, six of them `Can't mix curly quote with ASCII quote`
+(`throws-like { EVAL '“phooey"' }, X::Comp`). mutsu's diagnosis is **already
+byte-identical to rakudo's**:
+
+```
+X::Comp::FailGoal | Unable to parse expression in curly double quotes;
+                    couldn't find final '”' (corresponding starter was at line 1)
+```
+
+The only difference is membership: `X::Comp::FailGoal ~~ X::Comp` is `True` in
+rakudo and `False` in mutsu, and `X::Comp::FailGoal` is not in `register_x` at
+all. Note that rakudo's `.^mro` there is `X::Comp::FailGoal Exception Any Mu` —
+`X::Comp` is **not** in it. It is a role, which is exactly the structural point
+above: registering `X::Comp` as a *parent* would give the wrong `.^mro` while
+happening to make `~~` answer correctly.
+
+The file's seventh loss (line 93, `m\c[SNOWMAN].\c[COMET]` wanting
+`X::Comp::Group`) is separate — see
+`news/2026-08/unterminated-regex-diagnosis.md`.
+
+So this file is a good step-3 probe: it needs *only* the role decision, no
+per-class attribute work.

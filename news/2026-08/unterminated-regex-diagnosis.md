@@ -47,6 +47,10 @@ passes under `raku` as well.
 ## The other file in the same cluster
 
 `roast/S02-literals/quoting-unicode.t` also wants an `X::Comp::Group` (line 93,
-`m\c[SNOWMAN].\c[COMET]`), and is **not** freed by this: it loses seven
-assertions, six of them "Can't mix curly quote with ASCII quote" — arbitrary
-paired-delimiter validation, a separate piece of work.
+`m\c[SNOWMAN].\c[COMET]`), and is **not** freed by this. Measured on
+2026-08-03: its other six losses are *not* paired-delimiter validation as first
+guessed — mutsu's diagnosis there is already byte-identical to rakudo's
+(`X::Comp::FailGoal`, same message), and the only difference is that
+`X::Comp::FailGoal ~~ X::Comp` is False because `X::Comp` is an unregistered
+*role*. Recorded as a step-3 probe in
+`todo/deep/exception-class-hierarchy-is-mostly-unregistered.md`.
