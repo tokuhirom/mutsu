@@ -600,15 +600,73 @@ So step 3 needs the call path as well as the 185 correctness gaps.
 - ~~`S02-names/strict.t` / `S02-lexical-conventions/comments.t`~~ **DONE** —
   `news/2026-08/strict-does-not-reject-a-declared-bind.md`.
 - ~~six files aborting on a missing exception attribute~~ **DONE** —
-  `news/2026-08/typed-exceptions-carry-their-attributes.md`. Two of that family
-  are left: `X::Match::Bool` has no `.instead` (`S24-testing/fails-like.t`) and
-  `X::Syntax::Pod::BeginWithoutIdentifier` has no `.filename`
-  (`S32-exceptions/misc2.t`) — the latter is the `X::Comp` file/line metadata
-  rather than a per-class attribute.
-- `skip() was passed a non-integer number of tests` — still open; the shape that
-  triggers it is not any of the ordinary `skip 'reason', N` forms (all of those
-  were checked against the real module and pass), so find the file from the
-  sweep rather than guessing.
+  `news/2026-08/typed-exceptions-carry-their-attributes.md`. One of that family
+  is left: `X::Syntax::Pod::BeginWithoutIdentifier` has no `.filename`
+  (`S32-exceptions/misc2.t`) — that one is the `X::Comp` file/line metadata
+  rather than a per-class attribute. The other, "`X::Match::Bool` has no
+  `.instead`" (`S24-testing/fails-like.t`), **was not an attribute gap at all**:
+  rakudo has no `.instead` there either, and the test matches on `.message`.
+  mutsu asked for `.instead` because `throws-like`'s `*%matcher` had been
+  overwritten by the nested `fails-like`'s
+  (`news/2026-08/slurpy-parameter-does-not-leak-to-the-caller.md`). A missing-method
+  error inside `Test.rakumod` is as likely to be the *wrong value* as a missing
+  method — check what the module thinks it is holding first.
+- ~~`skip() was passed a non-integer number of tests`~~ — found: the file is
+  `roast/S32-list/skip.t`, and it is not a `skip`-shape problem. The file
+  deliberately imports selectively (`BEGIN my (&plan, …) = do { use Test; … }`)
+  so that the *core* `skip` routine stays visible, and mutsu leaks a `use` inside
+  a block into the enclosing scope, so `Test`'s `skip` answered instead. That is
+  the general bug to fix (`use` is lexically scoped in raku); it is not on the
+  `skip` implementation at all.
+
+### Classifying the 145 assertion-losers, and the clusters it found (2026-08-03)
+
+The 185 genuine failures split 40 mid-file aborts and 145 files that merely lose
+assertions. Classifying the 145 by their *first* `not ok` (`tmp/classify-assert.sh`,
+run under `xargs -P4`) turns them into something workable — and one cluster
+dominates:
+
+| first failing assertion | files |
+| --- | --- |
+| `right exception type (X::…)` | **17** |
+| everything else | 128, a long tail of one-offs |
+
+Splitting that 17 by the class asked for: `X::Syntax::CannotMeta` 6,
+`X::Comp::Group` 5, `X::Syntax::Missing` 4, `X::UnitScope::Invalid` 2,
+`X::Syntax::NonAssociative` 2, then singletons.
+
+**`X::Syntax::CannotMeta` and friends were not missing at all** — the parser had
+already diagnosed the construct precisely and named the class in the message, and
+two layers of error flattening buried it
+(`news/2026-08/parse-error-keeps-its-exception-class.md`). Do not read a
+"right exception type" failure as "mutsu does not raise that class" before
+checking whether the diagnosis is already in the message text.
+
+Landed against this residue on 2026-08-03:
+
+| fix | what it freed |
+| --- | --- |
+| `news/2026-08/slurpy-parameter-does-not-leak-to-the-caller.md` — a callee's `*%slurpy` overwrote the caller's same-named binding, so `throws-like`'s `%matcher` came back holding `fails-like`'s | `S24-testing/fails-like.t` |
+| `news/2026-08/parse-error-keeps-its-exception-class.md` — a classified parse diagnosis survives the "Confused." wrapper | `S03-metaops/not.t`, `S03-metaops/zip.t`, `S03-operators/is-divisible-by.t` |
+| `news/2026-08/pair-subsignature-dispatch.md` — dispatch could not match `Pair (:key(…), :value(…))`, so `Test::Util`'s `group-of` lost to the native provider | `S03-metaops/cross.t`, `S03-operators/arith.t` (with the above) |
+| `news/2026-08/missing-block-is-a-syntax-missing.md` — a required-but-absent block is `X::Syntax::Missing` | `S04-statements/if.t`, `S02-names/identifier.t` |
+
+Still open in the named clusters:
+
+- **`X::Comp::Group` (5 files)** — mutsu never groups compile-time errors, so a
+  `throws-like …, X::Comp::Group` has nothing to match. Needs the sorrows/panic
+  collection rakudo's `X::Comp::Group` carries, not a message tweak.
+- **`X::Syntax::Missing`, the remainder** — `S04-statements/terminator.t` moved on
+  to wanting `X::Syntax::Malformed` for `my $x =`, and
+  `S02-lexical-conventions/minimal-whitespace.t`'s `@arr [0]` fails before any
+  block alternative is reached (rakudo's "Missing block" there comes from a
+  different rule).
+- **`X::ControlFlow` (3 files: `S04-statements/do.t`, `redo.t`,
+  `S04-blocks-and-statements/pointy.t`)** — a `next`/`last`/`redo` with no
+  enclosing loop is a control *signal* in mutsu, which `try`/`CATCH` deliberately
+  passes through, so it is uncatchable. Filed as
+  `todo/deep/loop-control-signal-is-not-catchable.md`: the only correct fix is a
+  dynamic loop-handler depth, and the sweep has to be complete to be safe.
 
 ### (superseded) the 2026-08-03 pre-fix notes
 
