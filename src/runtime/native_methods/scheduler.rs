@@ -145,9 +145,45 @@ impl Interpreter {
                 ) {
                     close_supplier_tap(supplier_id as u64, tap_id as u64);
                 }
+                // Cascade upstream. In raku, closing a tap closes the supply
+                // block that produced it, which closes the `whenever`
+                // subscriptions inside it, which closes *their* sources — all
+                // the way down to the original Supplier or listener. Without
+                // this the block kept running: its CLOSE phasers never fired and
+                // values still reached the (closed) tap callback, so
+                // `Cro::Service.stop` left the old listener serving and a second
+                // server on the same port never got a request.
+                if let Some(ValueView::Array(entries, ..)) =
+                    attributes.get("upstream_taps").map(Value::view)
+                {
+                    for entry in entries.iter().cloned().collect::<Vec<_>>() {
+                        match entry.view() {
+                            ValueView::Array(pair, ..) if pair.len() == 2 => {
+                                if let (ValueView::Int(sid), ValueView::Int(tid)) =
+                                    (pair[0].view(), pair[1].view())
+                                {
+                                    close_supplier_tap(sid as u64, tid as u64);
+                                }
+                            }
+                            // A chained on-demand source's own Tap handle:
+                            // recurse so its `whenever`s close in turn.
+                            ValueView::Instance {
+                                class_name,
+                                attributes: inner,
+                                ..
+                            } if class_name == "Tap" => {
+                                let inner = inner.as_map().clone();
+                                self.native_tap(&inner, "close")?;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
                 // Fire any CLOSE-phaser callbacks registered on this tap's
                 // supply emitter (run once — taking empties the list, so a
-                // later normal termination won't run them again).
+                // later normal termination won't run them again). After the
+                // cascade, so a chain's CLOSE phasers run source-first, as raku
+                // does.
                 if let Some(ValueView::Int(cid)) =
                     attributes.get("close_supplier_id").map(Value::view)
                 {
