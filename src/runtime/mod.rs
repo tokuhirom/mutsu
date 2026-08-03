@@ -121,7 +121,10 @@ fn current_process_id() -> i64 {
 /// Get the local timezone offset in seconds (west-negative, east-positive).
 /// Returns 0 (UTC) on WASM or if the offset cannot be determined.
 pub(crate) fn local_timezone_offset_secs() -> i64 {
-    #[cfg(all(not(target_arch = "wasm32"), feature = "native"))]
+    // Miri cannot call a foreign function, so it takes the documented
+    // "offset could not be determined" arm below rather than aborting the
+    // interpreter it is trying to check.
+    #[cfg(all(not(target_arch = "wasm32"), not(miri), feature = "native"))]
     {
         // Use libc::localtime_r to retrieve the tm_gmtoff field which gives
         // the UTC offset in seconds for the current local timezone.
@@ -132,7 +135,7 @@ pub(crate) fn local_timezone_offset_secs() -> i64 {
             tm.tm_gmtoff
         }
     }
-    #[cfg(not(all(not(target_arch = "wasm32"), feature = "native")))]
+    #[cfg(not(all(not(target_arch = "wasm32"), not(miri), feature = "native")))]
     {
         0
     }
@@ -233,6 +236,7 @@ mod io_pod_entries;
 mod io_pod_heredoc;
 mod io_pod_table;
 mod io_sysinfo;
+mod io_sysinfo_host;
 mod io_sysinfo_vm_config;
 mod iterator_protocol;
 pub(crate) mod json;
