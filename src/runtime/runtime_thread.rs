@@ -609,6 +609,7 @@ impl Interpreter {
             registered_fn_fingerprints: Default::default(),
             prepared_fn_defs: HashMap::new(),
             method_resolve_cache: rustc_hash::FxHashMap::default(),
+            method_cache_generation: 0,
             last_method_resolve: None,
             fast_method_cache: rustc_hash::FxHashMap::default(),
             native_ctor_plan_cache: rustc_hash::FxHashMap::default(),

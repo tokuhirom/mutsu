@@ -171,5 +171,7 @@ restoration synchronize user candidates into the table. Dispatch still reads the
 with it in the next stage.
 
 Every built-in seed and user-candidate synchronization advances the registry's monotonic method
-generation. Dispatch caches do not consume it yet; wiring that generation into resolved-call cache
-keys is the prerequisite for switching their read side to `MethodEntry` safely.
+generation. Resolver and fast-dispatch entry points compare it with the interpreter's observed
+generation and invalidate the resolve, fast, multi, constructor, and private-method caches as one
+unit when it changes. This removes correctness dependence on registration sites remembering every
+individual cache before the read side switches to `MethodEntry`.

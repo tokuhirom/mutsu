@@ -1,6 +1,22 @@
 use super::*;
 
 impl Interpreter {
+    pub(crate) fn refresh_method_caches_for_generation(&mut self) {
+        let generation = self.registry().method_generation;
+        if self.method_cache_generation == generation {
+            return;
+        }
+        self.method_cache_generation = generation;
+        self.method_resolve_cache.clear();
+        self.last_method_resolve = None;
+        self.fast_method_cache.clear();
+        self.native_ctor_plan_cache.clear();
+        self.multi_resolve_cache.clear();
+        self.multi_type_cacheable.clear();
+        self.dispatch_multi_candidate.clear();
+        self.clear_private_zeroarg_method_cache();
+    }
+
     /// Try compiled method fast path; fall back to interpreter.
     ///
     /// Wrapper that preserves the caller's env `self`: the inner dispatch can run
@@ -129,6 +145,7 @@ impl Interpreter {
         crate::symbol::Symbol,
         std::sync::Arc<crate::runtime::MethodDef>,
     )> {
+        self.refresh_method_caches_for_generation();
         // Non-multi resolution depends only on (class, method) — not on arg
         // types/values — so it can be memoized. This mirrors the cache hierarchy
         // already used by the interpret path (`vm_call_method_compiled_interpret`);
