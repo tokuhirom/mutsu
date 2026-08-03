@@ -12,6 +12,12 @@ use crate::value::RuntimeError;
 ///   "Confused. parse error at line 1, column 1: expected expected statement ..."
 /// We extract a cleaner version for display.
 fn short_parse_message(msg: &str) -> String {
+    // A message written in the `"X::Type: text"` convention already *is* the
+    // diagnosis; rakudo prints only the text ("Missing block"), with the class
+    // reachable through `$!`. Drop the class prefix for display.
+    if let Some((_, text)) = RuntimeError::split_typed_message_convention(msg) {
+        return text.to_string();
+    }
     // Remember the "Confused" marker: rakudo renders "Confused" as the SORRY
     // message body and roast checks stderr for it (S02-one-pass-parsing/misc.t),
     // so it is re-prefixed onto the simplified message below.

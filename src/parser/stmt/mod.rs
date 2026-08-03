@@ -14,7 +14,7 @@ pub(crate) mod sub_param;
 pub(crate) mod word_logical_split;
 
 use super::memo::{MemoEntry, MemoStats, ParseMemo};
-use super::parse_result::{PError, PResult, parse_char, update_best_error};
+use super::parse_result::{MISSING_BLOCK, PError, PResult, parse_char, update_best_error};
 use std::cell::RefCell;
 use std::collections::HashMap;
 
