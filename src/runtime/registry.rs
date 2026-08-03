@@ -65,6 +65,8 @@ pub(crate) struct Registry {
     /// Canonical type x method table. It initially owns the built-in entries;
     /// declaration registration will add user candidates to the same table.
     pub(crate) method_entries: HashMap<MethodEntryKey, MethodEntry>,
+    /// Monotonic invalidation generation for the canonical method table.
+    pub(crate) method_generation: u64,
     /// `enum Name (...)` declarations: enum name -> [(variant name, value)].
     pub(crate) enum_types: HashMap<String, Vec<(String, EnumValue)>>,
     /// `subset Name of Base where { ... }` declarations.
@@ -277,6 +279,7 @@ impl Registry {
                 slot.builtin = Some(entry);
             }
         }
+        self.bump_method_generation();
     }
 
     pub(crate) fn builtin_method_names(&self, type_name: &str) -> Vec<&'static str> {
@@ -307,6 +310,7 @@ impl Registry {
             .get(class_name)
             .map(|class| class.methods.clone())
         else {
+            self.bump_method_generation();
             return;
         };
         for (name, candidates) in methods {
@@ -317,6 +321,14 @@ impl Registry {
                 })
                 .or_default()
                 .user_candidates = candidates;
+        }
+        self.bump_method_generation();
+    }
+
+    fn bump_method_generation(&mut self) {
+        self.method_generation = self.method_generation.wrapping_add(1);
+        if self.method_generation == 0 {
+            self.method_generation = 1;
         }
     }
 }
@@ -782,6 +794,7 @@ mod tests {
     fn user_override_shares_the_builtin_method_entry() {
         let mut registry = Registry::default();
         registry.seed_builtin_method_entries();
+        let seeded_generation = registry.method_generation;
         let method = MethodDef {
             lexical_package: "GLOBAL".to_string(),
             params: Vec::new(),
@@ -805,6 +818,7 @@ mod tests {
         class.methods.insert("chars".to_string(), vec![method]);
         registry.classes.insert("Str".to_string(), class);
         registry.sync_user_method_entries("Str");
+        assert!(registry.method_generation > seeded_generation);
 
         let entry = registry
             .method_entries
@@ -815,5 +829,19 @@ mod tests {
             .expect("Str.chars entry");
         assert!(entry.builtin.is_some());
         assert_eq!(entry.user_candidates.len(), 1);
+
+        let override_generation = registry.method_generation;
+        registry.classes.remove("Str");
+        registry.sync_user_method_entries("Str");
+        assert!(registry.method_generation > override_generation);
+        let entry = registry
+            .method_entries
+            .get(&MethodEntryKey {
+                owner: Symbol::intern("Str"),
+                name: Symbol::intern("chars"),
+            })
+            .expect("built-in entry survives user removal");
+        assert!(entry.builtin.is_some());
+        assert!(entry.user_candidates.is_empty());
     }
 }

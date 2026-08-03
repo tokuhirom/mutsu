@@ -169,3 +169,7 @@ rollback, augmentation, role composition, MOP `add_method`, partial registration
 restoration synchronize user candidates into the table. Dispatch still reads the compatibility
 `ClassDef::methods` mirror until compiled-candidate replacement and generation invalidation move
 with it in the next stage.
+
+Every built-in seed and user-candidate synchronization advances the registry's monotonic method
+generation. Dispatch caches do not consume it yet; wiring that generation into resolved-call cache
+keys is the prerequisite for switching their read side to `MethodEntry` safely.
