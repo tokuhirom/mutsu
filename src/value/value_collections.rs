@@ -209,6 +209,15 @@ impl ArrayData {
         self.native_storage.clone()
     }
 
+    /// Detach the native payload when a caller is about to replace or reshape
+    /// the boxed element vector.  The vector is authoritative for such a
+    /// reconstruction; retaining the old payload would let the next accessor
+    /// decode stale values back over the new elements.
+    pub(crate) fn clear_native_storage(&mut self) {
+        self.native_storage = None;
+        self.native_dirty = false;
+    }
+
     pub(crate) fn native_repr_body_address(&self) -> Option<usize> {
         self.native_storage
             .as_ref()

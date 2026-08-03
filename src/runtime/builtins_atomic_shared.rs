@@ -60,6 +60,7 @@ impl Interpreter {
             }
             Some(ValueView::Array(a, kind)) => {
                 let mut data = a.as_ref().clone();
+                data.clear_native_storage();
                 for v in data.items_mut().iter_mut() {
                     let taken = std::mem::replace(v, Value::NIL);
                     *v = Self::boxed_elem_cell(taken);
@@ -196,7 +197,11 @@ impl Interpreter {
             return c;
         }
         let (mut data, kind) = match arr.view() {
-            ValueView::Array(a, kind) => (a.as_ref().clone(), kind),
+            ValueView::Array(a, kind) => {
+                let mut data = a.as_ref().clone();
+                data.clear_native_storage();
+                (data, kind)
+            }
             _ => (
                 crate::value::ArrayData::new(Vec::new()),
                 crate::value::ArrayKind::Array,
