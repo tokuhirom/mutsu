@@ -679,3 +679,54 @@ Still open in the named clusters:
   before the compunit-lexical store), but it is the store's neighbourhood.
 - `skip() was passed a non-integer number of tests` — the real module's `skip`
   is stricter than the native one about its argument shape.
+
+### Re-measured 2026-08-03 (evening), and the residue has no dominant cause left
+
+Sweep on `fd2e24b75` (`prove -j6`, release): **190 / 1435**. Re-run alone with a
+180 s budget: **PASS 71 / FAIL 119**, so the honest count is **119**, down from
+132 at midday. Three fixes landed against it that afternoon, and re-running the
+same 119 alone with all three in gives **PASS 6 / FAIL 113**:
+
+| fix | files it freed |
+| --- | --- |
+| `news/2026-08/three-parse-failures-keep-their-malformed-class.md` | `S04-statements/terminator.t`, `S02-literals/pairs.t` |
+| `news/2026-08/end-phasers-run-in-install-order.md` | all four of `S04-phasers/{multiple,ascending-order,descending-order,interpolate}.t` |
+| `news/2026-08/range-is-iterable-for-the-map-family.md` | — (a hand-probe finding, not in the residue) |
+
+Both of the first two were *general* interpreter bugs that only the strict
+module exposed, and neither was "mutsu cannot do this":
+
+- The three `X::Syntax::Malformed` files had all been rejected already — each
+  rejection was a *soft* parse error, so the alternative backtracked and the
+  class was lost to the generic "Confused." **Do not read a "right exception
+  type" failure as a missing class** (the third time this lesson has been
+  recorded here).
+- The four phaser files were an **END ordering** bug: a module's END ran before
+  the script's, and under the real module the module's END *is* the plan check,
+  so the file reported "You planned 2 tests, but ran 1" and then emitted the
+  missing `ok`. **A plan mismatch is not always a lost assertion — check
+  whether the count is right but the order wrong.**
+
+Classifying the remaining 113 by first `not ok` (excluding `# TODO`-marked
+lines, which are expected failures and must be filtered out — `tmp/classify-first-fail.sh`
+does not) leaves **no cluster larger than 2**: 9 files abort with no diagnostic
+line at all, 2 apiece for `The object is-a 'Nil'`, `code dies` and
+`binding of not yet existing elements should autovivify (3)`, and a long tail of
+one-offs. The `right exception type` family is down to singletons.
+
+So from here it is genuinely one file at a time. The 9 diagnostic-free aborts
+are the best-value place to start, since an abort costs a whole file:
+`integration/99problems-41-to-50.t`, `integration/advent2009-day20.t`,
+`integration/advent2012-day14.t`, `integration/advent2013-day10.t`,
+`S02-types/{instants-and-durations,capture}.t`,
+`S04-exception-handlers/control.t`, `S04-statements/{given,repeat}.t`,
+`S06-operator-overloading/sub.t`, `S06-other/main-semicolon.t`,
+`S09-typed-arrays/native-num.t`, `S12-subset/subtypes.t`,
+`S14-roles/{anonymous,parameterized-mixin}.t`,
+`S24-testing/11-plan-skip-all-subtests.t`, `S28-named-variables/init-instant.t`,
+`S29-context/die.t`, `S32-io/io-path.t`, `S32-num/{complex,real-bridge}.t`,
+`S32-temporal/DateTime.t`.
+
+`roast/S12-methods/qualified.t` is worth a second look too: its Malformed
+assertion passes now and the file moved on to `Cannot dispatch to method me on
+Parent because it is not inherited or done by Bar` in its inheritance subtest.
