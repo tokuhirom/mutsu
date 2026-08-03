@@ -28,9 +28,14 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
     if digit_end > 0 && r[digit_end..].starts_with('<') {
         return Err(PError::expected("generic radix literal"));
     }
-    // :2 or :36 alone (digits with no <, (, or [ suffix) is a malformed radix literal.
-    // Only trigger this when the remaining part doesn't start with an identifier char
-    // (to avoid blocking :123name colonpairs).
+    // `:2` / `:36` with no `<`, `(` or `[` body and no identifier after it is a
+    // malformed radix literal — raku's "Malformed radix number". The identifier
+    // exclusion is what keeps `:123name` (a numeric-value colonpair) parsing;
+    // note a *combining mark* is not alphabetic, so `:7\x[308]a` lands here
+    // exactly as raku's does (`roast/S02-literals/pairs.t`).
+    //
+    // Fatal, not a soft decline: with nothing left that could parse this text,
+    // a soft error only loses the diagnosis to the parser's generic "Confused."
     if digit_end > 0 {
         let after = &r[digit_end..];
         let next_ch = after.chars().next();
@@ -41,7 +46,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             && !after.starts_with('(')
             && !after.starts_with('[')
         {
-            return Err(PError::expected("generic radix literal"));
+            return Err(PError::malformed("radix number"));
         }
     }
     // :[ ... ]: itemized array literal — `:[]` is `$[]`, `:[1,2]` is `$[1,2]`

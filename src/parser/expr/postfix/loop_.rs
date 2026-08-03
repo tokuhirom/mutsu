@@ -990,9 +990,7 @@ fn postfix_expr_loop_from(
                     rest = r2;
                     continue;
                 } else {
-                    return Err(PError::fatal(
-                        "X::Syntax::Malformed: Malformed qualified method name".to_string(),
-                    ));
+                    return Err(PError::malformed("class-qualified postfix call"));
                 }
             }
             // Parse method name
