@@ -785,6 +785,14 @@ pub(crate) enum Stmt {
         /// True when `-> {}` (empty pointy block) was used, meaning the block
         /// explicitly declares zero parameters. Passing any argument should throw.
         explicit_zero_params: bool,
+        /// True when this loop came from the `EXPR for LIST` **statement
+        /// modifier** form rather than the `for LIST { ... }` block form. A
+        /// modifier body is not a block: it is evaluated in the enclosing
+        /// scope, so a placeholder in it (`{ say $^b for 1, 2 }`) belongs to
+        /// the *enclosing* block, not to the loop. The block form is its own
+        /// placeholder scope (`for @a { $^x }` gives the loop the parameter).
+        #[serde(default)]
+        is_statement_modifier: bool,
     },
     Say(Vec<Expr>),
     Put(Vec<Expr>),
@@ -1410,7 +1418,21 @@ fn collect_unattached_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
         Stmt::If { cond, .. } | Stmt::While { cond, .. } | Stmt::When { cond, .. } => {
             collect_unattached_ph_expr(cond, out)
         }
-        Stmt::For { iterable, .. } => collect_unattached_ph_expr(iterable, out),
+        Stmt::For {
+            iterable,
+            body,
+            is_statement_modifier,
+            ..
+        } => {
+            collect_unattached_ph_expr(iterable, out);
+            // A `for` statement modifier is not a block — its body runs in the
+            // enclosing scope, so a placeholder there is unattached here too.
+            if *is_statement_modifier {
+                for s in body {
+                    collect_unattached_ph_stmt(s, out);
+                }
+            }
+        }
         Stmt::Given { topic, .. } => collect_unattached_ph_expr(topic, out),
         Stmt::Label { stmt, .. } => collect_unattached_ph_stmt(stmt, out),
         // Everything else (blocks, sub/class decls, ...) is a boundary.
@@ -2028,12 +2050,27 @@ fn collect_ph_stmt_shallow(stmt: &Stmt, out: &mut Vec<String>) {
                 collect_ph_stmt_shallow(s, out);
             }
         }
-        Stmt::For { iterable, .. } => {
-            // A `for` body is its own placeholder scope: with no explicit loop
-            // signature its placeholders become the loop's parameters (see
+        Stmt::For {
+            iterable,
+            body,
+            is_statement_modifier,
+            ..
+        } => {
+            // A `for` BLOCK body is its own placeholder scope: with no explicit
+            // loop signature its placeholders become the loop's parameters (see
             // parser::stmt::control::for_loops), so they must not also be claimed
             // by the enclosing block/sub. Only the iterable is in this scope.
+            //
+            // A `for` STATEMENT MODIFIER has no block: `$^b.push($_) for @list`
+            // evaluates its body in the enclosing scope, so `$^b` is the
+            // *enclosing* block's parameter (`{ say $^b for 1, 2 }` called with
+            // 42 prints "42" twice). Descend in that case.
             collect_ph_expr_shallow(iterable, out);
+            if *is_statement_modifier {
+                for s in body {
+                    collect_ph_stmt_shallow(s, out);
+                }
+            }
         }
         Stmt::Loop { body, .. } | Stmt::React { body } => {
             for s in body {
@@ -2349,10 +2386,30 @@ fn check_bare_var_stmt(stmt: &Stmt, bare_name: &str, found: &mut bool) {
         Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e, _) => {
             check_bare_var_expr(e, bare_name, found);
         }
-        Stmt::Assign { expr, .. } => check_bare_var_expr(expr, bare_name, found),
+        Stmt::Assign { expr, .. } | Stmt::VarDecl { expr, .. } => {
+            check_bare_var_expr(expr, bare_name, found)
+        }
         Stmt::Say(es) | Stmt::Put(es) | Stmt::Print(es) | Stmt::Note(es) => {
             for e in es {
                 check_bare_var_expr(e, bare_name, found);
+            }
+        }
+        // A `for` statement MODIFIER is not a block: its body is part of this
+        // statement and runs in this scope, so `$^b` there declares this block's
+        // `$b` (`{ say $^b for 1; say $b }`). A `for` BLOCK owns its
+        // placeholders, so `{ for 1 { $^b }; say $b }` really is undeclared —
+        // only the iterable is in this scope there.
+        Stmt::For {
+            iterable,
+            body,
+            is_statement_modifier,
+            ..
+        } => {
+            check_bare_var_expr(iterable, bare_name, found);
+            if *is_statement_modifier {
+                for s in body {
+                    check_bare_var_stmt(s, bare_name, found);
+                }
             }
         }
         Stmt::Call { args, .. } => {

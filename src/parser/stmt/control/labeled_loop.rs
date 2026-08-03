@@ -51,6 +51,7 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
                 mode: crate::ast::ForMode::Normal,
                 rw_block,
                 explicit_zero_params,
+                is_statement_modifier: false,
             },
         ));
     }
@@ -135,6 +136,9 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
                 mode: crate::ast::ForMode::Normal,
                 rw_block: false,
                 explicit_zero_params: false,
+                // A labeled `do {}` / bare `{}` lowered to a dummy loop: the
+                // body is a real block, so it owns its placeholders.
+                is_statement_modifier: false,
             },
         ));
     }
@@ -156,6 +160,9 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
                 mode: crate::ast::ForMode::Normal,
                 rw_block: false,
                 explicit_zero_params: false,
+                // A labeled `do {}` / bare `{}` lowered to a dummy loop: the
+                // body is a real block, so it owns its placeholders.
+                is_statement_modifier: false,
             },
         ));
     }
