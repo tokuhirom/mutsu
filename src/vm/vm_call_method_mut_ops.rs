@@ -2682,7 +2682,7 @@ impl Interpreter {
         if cn == "Blob" || cn.starts_with("Blob[") || cn.starts_with("blob") {
             return None;
         }
-        let mut bytes = crate::value::value_buf::buf_bytes_or_empty(&attributes);
+        let mut bytes = crate::value::value_buf::buf_raw_bytes_or_empty(&attributes);
         // Compute the new bytes via the shared pure transform.
         let new_bytes: Vec<u8> = if is_write_bits {
             if args.len() != 3 {
@@ -2713,13 +2713,14 @@ impl Interpreter {
             } else {
                 0
             };
+            let width = crate::value::value_buf::buf_elem_width(&cn);
             let res = if is_write_num {
                 crate::builtins::buf_write_num::apply_write_num(
-                    &mut bytes, method, offset_i64, &args[1], endian_val,
+                    &mut bytes, method, offset_i64, &args[1], endian_val, width,
                 )
             } else {
                 crate::builtins::buf_write_int::apply_write_int(
-                    &mut bytes, method, offset_i64, &args[1], endian_val,
+                    &mut bytes, method, offset_i64, &args[1], endian_val, width,
                 )
             };
             if let Err(e) = res {
@@ -2731,7 +2732,7 @@ impl Interpreter {
         // (so aliases observing the same buf see the mutation), then refresh the
         // receiver binding to match the interpreter's `env.insert(target_var, ...)`.
         let mut updated_attrs = attributes.to_map();
-        crate::value::value_buf::set_buf_bytes(&mut updated_attrs, class_name, &new_bytes);
+        crate::value::value_buf::set_buf_raw_bytes(&mut updated_attrs, class_name, new_bytes);
         let updated = Value::write_back_sharing(&attributes, class_name, updated_attrs, id);
         self.env_mut()
             .insert(target_name.to_string(), updated.clone());

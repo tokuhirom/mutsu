@@ -414,31 +414,58 @@ impl Interpreter {
         Ok(Value::array(out))
     }
 
-    /// Zip xx with thunked left side: `<a b c> Zxx (0,1,0)`
-    /// For each count in the right list, re-evaluates the thunk `count` times,
-    /// extracting element at position `i`. Preserves side-effect semantics.
+    /// `<a b c> Zxx (0,1,0)` — zip with a per-element thunked left side.
+    ///
+    /// The left list arrives as one argument-less thunk per element (see
+    /// `Compiler::per_element_thunks`). Element `i` is paired with count `i` and
+    /// re-evaluated that many times, so a side effect in element `i` fires
+    /// exactly as often as that element is repeated: `($v++, 5) Zxx (2,3)` is
+    /// `((0,1), (5,5,5))` and leaves `$v` at 2, not 5.
     pub(super) fn builtin_zip_xx(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         if args.len() != 2 {
             return Err(RuntimeError::new(
-                "__mutsu_zip_xx expects right_list and left_thunk",
+                "__mutsu_zip_xx expects right_list and left_thunks",
             ));
         }
-        let right_values = crate::runtime::value_to_list(&args[0]);
-        let thunk = args[1].clone();
+        let counts = crate::runtime::value_to_list(&args[0]);
+        let thunks = crate::runtime::value_to_list(&args[1]);
         let mut out = Vec::new();
-        for (i, count_val) in right_values.iter().enumerate() {
-            let count = crate::runtime::to_int(count_val).max(0) as usize;
-            let mut repeated = Vec::with_capacity(count);
-            for _ in 0..count {
-                let val = self.eval_call_on_value(thunk.clone(), Vec::new())?;
-                let items = crate::runtime::value_to_list(&val);
-                if i >= items.len() {
-                    return Ok(Value::seq(out));
-                }
-                repeated.push(items.into_iter().nth(i).unwrap_or(Value::NIL));
-            }
-            out.push(Value::seq(repeated));
+        for (thunk, count_val) in thunks.iter().zip(counts.iter()) {
+            out.push(self.repeat_xx_thunk(thunk, count_val)?);
         }
         Ok(Value::seq(out))
+    }
+
+    /// `<a b c> Xxx (2,3)` — cross with a per-element thunked left side.
+    ///
+    /// Left element outer, count inner, matching Rakudo's cross order: each
+    /// element's thunk is re-evaluated once per repetition of each count, so
+    /// `($t++, 5) Xxx (2,3)` is `((0,1), (2,3,4), (5,5), (5,5,5))`.
+    pub(super) fn builtin_cross_xx(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() != 2 {
+            return Err(RuntimeError::new(
+                "__mutsu_cross_xx expects right_list and left_thunks",
+            ));
+        }
+        let counts = crate::runtime::value_to_list(&args[0]);
+        let thunks = crate::runtime::value_to_list(&args[1]);
+        let mut out = Vec::with_capacity(thunks.len() * counts.len());
+        for thunk in &thunks {
+            for count_val in &counts {
+                out.push(self.repeat_xx_thunk(thunk, count_val)?);
+            }
+        }
+        Ok(Value::seq(out))
+    }
+
+    /// One `element xx count` under a cross/zip meta-op: the element's thunk run
+    /// `count` times, its results collected into a `Seq`.
+    fn repeat_xx_thunk(&mut self, thunk: &Value, count: &Value) -> Result<Value, RuntimeError> {
+        let count = crate::runtime::to_int(count).max(0) as usize;
+        let mut repeated = Vec::with_capacity(count);
+        for _ in 0..count {
+            repeated.push(self.eval_call_on_value(thunk.clone(), Vec::new())?);
+        }
+        Ok(Value::seq(repeated))
     }
 }

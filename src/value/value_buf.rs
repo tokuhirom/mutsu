@@ -531,6 +531,65 @@ pub(crate) fn set_buf_bytes(map: &mut AttrMap, class_name: Symbol, bytes: &[u8])
     set_buf_elems(map, class_name, bytes_to_elems(bytes));
 }
 
+/// The buffer's storage exactly as the node holds it: `elems * width` bytes,
+/// little-endian within each element.
+///
+/// This is the byte string the *byte-addressed* methods — `read-int*` /
+/// `read-uint*` / `read-num*` / `write-*` / the bit accessors — index into.
+/// [`buf_bytes`] is the wrong source for them on a wide buffer, because it
+/// projects each element down to its low byte, losing three quarters of a
+/// `buf32`. Rakudo addresses the real storage: `$buf.read-uint32($offset)`
+/// starts `$offset * width` bytes in, so on a `buf32` offset 1 is element 1
+/// rather than element 0's second byte.
+///
+/// For every width-1 buffer (`Buf`, `Blob`, `utf8`, `buf8`, …) this is
+/// byte-for-byte what [`buf_bytes`] returns.
+pub(crate) fn buf_raw_bytes(attrs: &InstanceAttrs) -> Option<Vec<u8>> {
+    buf_raw_bytes_in(&attrs.as_map())
+}
+
+/// [`buf_raw_bytes`] against an attribute map already in hand.
+pub(crate) fn buf_raw_bytes_in(map: &AttrMap) -> Option<Vec<u8>> {
+    Some(node_in(map)?.bytes.clone())
+}
+
+/// [`buf_raw_bytes`] with an absent buffer read as empty.
+pub(crate) fn buf_raw_bytes_or_empty(attrs: &InstanceAttrs) -> Vec<u8> {
+    buf_raw_bytes(attrs).unwrap_or_default()
+}
+
+/// Store raw storage bytes — already at `class_name`'s element width — into a
+/// map being built or updated. The counterpart of [`buf_raw_bytes`]; use
+/// [`set_buf_bytes`] when the bytes are meant as one element each instead.
+///
+/// A trailing partial element is zero-padded out to a whole one, so a caller
+/// that grew the storage by a byte count that is not a multiple of the width
+/// still leaves a well-formed buffer behind.
+pub(crate) fn set_buf_raw_bytes(map: &mut AttrMap, class_name: Symbol, bytes: Vec<u8>) {
+    let (width, kind) = elem_type(&class_name.resolve());
+    map.insert(
+        ELEMS_ATTR,
+        storage_value(pad_to_width(bytes, width), width, kind),
+    );
+}
+
+/// A fresh `Buf`/`Blob`-shaped instance of `class_name` over raw storage bytes.
+pub(crate) fn make_buf_from_raw_bytes(class_name: Symbol, bytes: Vec<u8>) -> Value {
+    let mut map = AttrMap::new();
+    set_buf_raw_bytes(&mut map, class_name, bytes);
+    Value::make_instance(class_name, map)
+}
+
+/// Round a raw byte string up to a whole number of `width`-byte elements.
+fn pad_to_width(mut bytes: Vec<u8>, width: u8) -> Vec<u8> {
+    let w = width.max(1) as usize;
+    let rem = bytes.len() % w;
+    if rem != 0 {
+        bytes.resize(bytes.len() + (w - rem), 0u8);
+    }
+    bytes
+}
+
 /// A fresh `Buf`/`Blob`-shaped instance of `class_name` over raw bytes.
 pub(crate) fn make_buf_from_bytes(class_name: Symbol, bytes: &[u8]) -> Value {
     make_buf(class_name, bytes_to_elems(bytes))

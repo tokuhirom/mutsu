@@ -390,6 +390,7 @@ impl Interpreter {
             "__mutsu_zip_shortcircuit" => self.builtin_zip_shortcircuit(&args),
             "__mutsu_zip_shortcircuit_topic" => self.builtin_zip_shortcircuit_topic(&args),
             "__mutsu_zip_xx" => self.builtin_zip_xx(&args),
+            "__mutsu_cross_xx" => self.builtin_cross_xx(&args),
             "__mutsu_zip_assign" => self.builtin_zip_assign(&args),
             "__mutsu_bind_index_value" => Ok(Value::pair(
                 "__mutsu_bind_index_value".to_string(),

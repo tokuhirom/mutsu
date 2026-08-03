@@ -383,8 +383,10 @@ impl Interpreter {
                 let (size, endian) = flag_size_endian(iarg(args, 3));
                 let method = write_method_for(size, op == "writeint");
                 let r = buf_bytes_mutate(op, &buf, |bytes| {
+                    // `buf_bytes_mutate` hands over one byte per element, so the
+                    // offset is already a plain byte offset — width 1.
                     crate::builtins::buf_write_int::apply_write_int(
-                        bytes, method, offset, &val, endian,
+                        bytes, method, offset, &val, endian, 1,
                     )
                 });
                 match r {

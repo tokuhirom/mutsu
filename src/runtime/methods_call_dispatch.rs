@@ -11,7 +11,8 @@ use crate::symbol::Symbol;
 use crate::value::ValueView;
 use crate::value::signature::extract_sig_info;
 use crate::value::value_buf::{
-    buf_bytes_or_empty, buf_elems_or_empty, make_buf, set_buf_bytes, with_buf_bytes,
+    buf_elem_width, buf_elems_or_empty, buf_raw_bytes_or_empty, make_buf, set_buf_raw_bytes,
+    with_buf_bytes,
 };
 
 impl Interpreter {
@@ -802,7 +803,7 @@ impl Interpreter {
                     } => {
                         let cn = class_name.resolve();
                         if crate::runtime::utils::is_buf_or_blob_class(&cn) {
-                            let v = buf_bytes_or_empty(&attributes);
+                            let v = buf_raw_bytes_or_empty(&attributes);
                             (
                                 true,
                                 Some(cn),
@@ -843,14 +844,19 @@ impl Interpreter {
                 };
                 let mut bytes = base_bytes;
                 crate::builtins::buf_write_num::apply_write_num(
-                    &mut bytes, method, offset_i64, &args[1], endian_val,
+                    &mut bytes,
+                    method,
+                    offset_i64,
+                    &args[1],
+                    endian_val,
+                    buf_elem_width(&cn),
                 )?;
                 if is_inst {
                     let class_sym = class_sym_opt.unwrap();
                     let id = id_opt.unwrap();
                     let updated_cell = attrs_opt.unwrap();
                     let mut updated_map = updated_cell.to_map();
-                    set_buf_bytes(&mut updated_map, class_sym, &bytes);
+                    set_buf_raw_bytes(&mut updated_map, class_sym, bytes);
                     return Ok(Value::write_back_sharing(
                         &updated_cell,
                         class_sym,
@@ -859,7 +865,7 @@ impl Interpreter {
                     ));
                 }
                 let normalized = crate::runtime::utils::normalize_buf_type_name(&cn);
-                return Ok(crate::builtins::buf_write_num::make_buf_value(
+                return Ok(crate::builtins::buf_write_num::make_buf_value_from_raw(
                     &normalized,
                     bytes,
                 ));
@@ -887,7 +893,7 @@ impl Interpreter {
                     } => {
                         let cn = class_name.resolve();
                         if crate::runtime::utils::is_buf_or_blob_class(&cn) {
-                            let v = buf_bytes_or_empty(&attributes);
+                            let v = buf_raw_bytes_or_empty(&attributes);
                             (
                                 true,
                                 Some(cn),
@@ -928,14 +934,19 @@ impl Interpreter {
                 };
                 let mut bytes = base_bytes;
                 crate::builtins::buf_write_int::apply_write_int(
-                    &mut bytes, method, offset_i64, &args[1], endian_val,
+                    &mut bytes,
+                    method,
+                    offset_i64,
+                    &args[1],
+                    endian_val,
+                    buf_elem_width(&cn),
                 )?;
                 if is_inst {
                     let class_sym = class_sym_opt.unwrap();
                     let id = id_opt.unwrap();
                     let updated_cell = attrs_opt.unwrap();
                     let mut updated_map = updated_cell.to_map();
-                    set_buf_bytes(&mut updated_map, class_sym, &bytes);
+                    set_buf_raw_bytes(&mut updated_map, class_sym, bytes);
                     return Ok(Value::write_back_sharing(
                         &updated_cell,
                         class_sym,
@@ -944,7 +955,7 @@ impl Interpreter {
                     ));
                 }
                 let normalized = crate::runtime::utils::normalize_buf_type_name(&cn);
-                return Ok(crate::builtins::buf_write_num::make_buf_value(
+                return Ok(crate::builtins::buf_write_num::make_buf_value_from_raw(
                     &normalized,
                     bytes,
                 ));
