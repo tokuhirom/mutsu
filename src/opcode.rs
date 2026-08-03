@@ -1857,6 +1857,11 @@ pub(crate) struct CompiledSubDeclPlan {
     pub(crate) return_type: Option<String>,
     pub(crate) associativity: Option<String>,
     pub(crate) signature_alternates: Vec<(Vec<String>, Vec<ParamDef>)>,
+    /// Stable keys of the bytecode routines compiled for the primary signature
+    /// and its alternates. The compiler keeps this association explicit; the
+    /// next adapter slice preserves it while importing modules and installs
+    /// through these keys directly.
+    pub(crate) compiled_routine_keys: Vec<Symbol>,
     /// Compatibility payload for the routine registry. Method bodies already execute from
     /// `CompiledFunction`; this AST is removed when the registry adapter is retired in ADR-0019
     /// stage 1.
@@ -4793,6 +4798,7 @@ impl CompiledCode {
             return_type: return_type.clone(),
             associativity: associativity.clone(),
             signature_alternates: signature_alternates.clone(),
+            compiled_routine_keys: Vec::new(),
             legacy_body: body.clone(),
             multi: *multi,
             is_rw: *is_rw,
@@ -4807,6 +4813,14 @@ impl CompiledCode {
         let idx = self.decl_plans.len() as u32;
         self.decl_plans.push(CompiledDeclPlanRef::Sub(plan_idx));
         idx
+    }
+
+    pub(crate) fn set_sub_decl_compiled_routine_keys(&mut self, decl_idx: u32, keys: Vec<Symbol>) {
+        let Some(CompiledDeclPlanRef::Sub(plan_idx)) = self.decl_plans.get(decl_idx as usize)
+        else {
+            panic!("declaration plan is not a sub");
+        };
+        self.sub_decl_plans[*plan_idx as usize].compiled_routine_keys = keys;
     }
 
     pub(crate) fn add_class_decl_plan(&mut self, stmt: &Stmt) -> u32 {

@@ -103,7 +103,7 @@ impl Compiler {
         state_group: Option<&str>,
         is_rw: bool,
         is_raw: bool,
-    ) {
+    ) -> Option<crate::symbol::Symbol> {
         self.compile_sub_body_with_deprecation(
             name,
             params,
@@ -115,7 +115,7 @@ impl Compiler {
             is_rw,
             is_raw,
             None,
-        );
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -131,7 +131,7 @@ impl Compiler {
         is_rw: bool,
         is_raw: bool,
         deprecated_info: Option<(String, String, String, String)>,
-    ) {
+    ) -> Option<crate::symbol::Symbol> {
         // Before compiling the sub body, check for heredoc interpolations
         // that reference variables not visible at the outer scope (where the
         // heredoc terminator physically appears in Raku).
@@ -139,7 +139,7 @@ impl Compiler {
             let idx = self.code.add_constant(err);
             self.code.emit(OpCode::LoadConst(idx));
             self.code.emit(OpCode::Die);
-            return;
+            return None;
         }
         let sink_last_expr = return_type
             .map(|s| Self::is_definite_return_spec(s))
@@ -523,8 +523,9 @@ impl Compiler {
             });
             self.code.escaping_our_sub_captures.push(esc);
         }
-        self.compiled_functions
-            .insert(crate::symbol::Symbol::intern(&key), cf);
+        let key = crate::symbol::Symbol::intern(&key);
+        self.compiled_functions.insert(key, cf);
+        Some(key)
     }
 
     fn compile_routine_body_stmts(

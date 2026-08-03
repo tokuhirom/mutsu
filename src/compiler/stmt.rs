@@ -3083,7 +3083,8 @@ impl Compiler {
                 // captures are boxed + persisted (escaping_our_sub_captures).
                 let prev_our = self.compiling_our_sub;
                 self.compiling_our_sub = custom_traits.iter().any(|(t, _)| t == "__our_scoped");
-                self.compile_sub_body_with_deprecation(
+                let mut compiled_routine_keys = Vec::new();
+                if let Some(key) = self.compile_sub_body_with_deprecation(
                     &name_str,
                     params,
                     param_defs,
@@ -3094,10 +3095,12 @@ impl Compiler {
                     *is_rw,
                     *is_raw,
                     deprecated_info.clone(),
-                );
+                ) {
+                    compiled_routine_keys.push(key);
+                }
                 self.compiling_our_sub = prev_our;
                 for (alt_params, alt_param_defs) in signature_alternates {
-                    self.compile_sub_body_with_deprecation(
+                    if let Some(key) = self.compile_sub_body_with_deprecation(
                         &name_str,
                         alt_params,
                         alt_param_defs,
@@ -3108,8 +3111,12 @@ impl Compiler {
                         *is_rw,
                         *is_raw,
                         deprecated_info.clone(),
-                    );
+                    ) {
+                        compiled_routine_keys.push(key);
+                    }
                 }
+                self.code
+                    .set_sub_decl_compiled_routine_keys(idx, compiled_routine_keys);
             }
             Stmt::MethodDecl {
                 name,
@@ -3153,17 +3160,22 @@ impl Compiler {
                         "?ROLE".to_string(),
                     ];
                     method_params.extend(params.iter().cloned());
-                    self.compile_sub_body(
-                        &name.resolve(),
-                        &method_params,
-                        param_defs,
-                        return_type.as_ref(),
-                        body,
-                        *multi,
-                        None,
-                        *is_rw,
-                        false,
-                    );
+                    let compiled_routine_keys = self
+                        .compile_sub_body(
+                            &name.resolve(),
+                            &method_params,
+                            param_defs,
+                            return_type.as_ref(),
+                            body,
+                            *multi,
+                            None,
+                            *is_rw,
+                            false,
+                        )
+                        .into_iter()
+                        .collect();
+                    self.code
+                        .set_sub_decl_compiled_routine_keys(idx, compiled_routine_keys);
                 }
             }
             Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. } => {
