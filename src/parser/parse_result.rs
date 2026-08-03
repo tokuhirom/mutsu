@@ -15,6 +15,15 @@ pub(super) struct PError {
 /// Sentinel prefix for fatal (non-recoverable) parse errors.
 pub(super) const FATAL_PREFIX: &str = "FATAL:";
 
+/// The diagnosis rakudo gives whenever a block was required and not found —
+/// `X::Syntax::Missing` with `what => 'block'`, rendered "Missing block". It
+/// covers the opening brace (`if 1; 2`, `sub foo-($x) {}`) and the closing one
+/// (`{my $x = 2;`) alike. Spelled in the `"X::Type: text"` convention so the
+/// class survives to `$!`
+/// (`news/2026-08/parse-error-keeps-its-exception-class.md`), and treated
+/// specially by [`PError::typed_convention_message`].
+pub(crate) const MISSING_BLOCK: &str = "X::Syntax::Missing: Missing block";
+
 impl PError {
     /// Check if this is a fatal (non-recoverable) parse error.
     pub fn is_fatal(&self) -> bool {
@@ -121,10 +130,30 @@ impl PError {
     /// that would otherwise flatten this error into a generic "expected …"
     /// description should propagate it instead. Losing it downgrades the
     /// exception to `X::Syntax::Confused`.
+    ///
+    /// [`MISSING_BLOCK`] is special-cased twice over, because "a block was
+    /// required here" is the weakest diagnosis the parser has — a block is an
+    /// alternative almost everywhere:
+    ///
+    /// * any *other* named class describes the construct better and wins;
+    /// * on its own it counts only when the block was the *primary* expectation
+    ///   at this position, i.e. the first alternative. `say 1 ]` fails with a
+    ///   hundred alternatives of which "block" is merely one, and rakudo calls
+    ///   that `X::Syntax::Confused`, not `X::Syntax::Missing`.
     pub fn typed_convention_message(&self) -> Option<&str> {
-        self.messages.iter().find_map(|m| {
-            crate::value::RuntimeError::split_typed_message_convention(m).map(|_| m.as_str())
-        })
+        fn typed(m: &str) -> Option<&str> {
+            crate::value::RuntimeError::split_typed_message_convention(m).map(|_| m)
+        }
+        self.messages
+            .iter()
+            .filter(|m| m.as_str() != MISSING_BLOCK)
+            .find_map(|m| typed(m))
+            .or_else(|| {
+                self.messages
+                    .first()
+                    .filter(|m| m.as_str() == MISSING_BLOCK)
+                    .map(|m| m.as_str())
+            })
     }
 
     /// Get the formatted message string (used by tests).

@@ -19,13 +19,6 @@ pub(crate) fn block(input: &str) -> PResult<'_, Vec<Stmt>> {
     result
 }
 
-/// The diagnosis rakudo gives whenever a block was required and not found —
-/// `X::Syntax::Missing` with `what => 'block'`, rendered "Missing block". It
-/// covers the opening brace (`if 1; 2`, `sub foo-($x) {}`) and the closing one
-/// (`{my $x = 2;`) alike. Spelled in the `"X::Type: text"` convention so the
-/// class survives to `$!` (`news/2026-08/parse-error-keeps-its-exception-class.md`).
-pub(crate) const MISSING_BLOCK: &str = "X::Syntax::Missing: Missing block";
-
 pub(crate) fn block_inner(input: &str) -> PResult<'_, Vec<Stmt>> {
     let (input, stmts) = stmt_list_with_mode(input, false, true)?;
     let (input, _) = ws(input)?;
@@ -408,6 +401,11 @@ pub(crate) fn stmt_list_with_mode(
                 // longer string and leave the failure classed
                 // `X::Syntax::Confused`.
                 if e.typed_convention_message().is_some() {
+                    // The wrapper below is also what supplied the failure
+                    // position; keep it so `parse_program` can still report a
+                    // line and column (and the CLI its `------>` snippet).
+                    let mut e = e;
+                    e.remaining_len.get_or_insert(r.len());
                     return Err(e);
                 }
                 let consumed = input.len() - r.len();

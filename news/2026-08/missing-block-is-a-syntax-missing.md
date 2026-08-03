@@ -30,14 +30,9 @@ to its next gap (`my $x =` wants `X::Syntax::Malformed`).
 `@arr [0]` fails before any block alternative is reached, and rakudo's
 "Missing block" there comes from a different rule.
 
-Two things had to give way for it:
+Three things had to give way for it, all of them found by roast rather than
+predicted:
 
-- **`X::Syntax::Missing` ranks last among classified diagnoses.** "A block was
-  required here" is the weakest thing the parser can say — a block is an
-  alternative almost everywhere — so any other named class describes the
-  construct better. Without the ranking, `sub twigil:<@>() { }` reported
-  `X::Syntax::Missing` instead of the `X::Syntax::Extension::Category` a sibling
-  alternative had diagnosed.
 - **mutsu's native `throws-like` recognised a parse failure by the words "parse
   error" in its message.** A failure the parser diagnoses precisely says only
   what is wrong ("Missing block"), so that substring test stopped firing and
@@ -45,5 +40,20 @@ Two things had to give way for it:
   the leniency that lets any parse failure match an `X::Syntax` type when no
   structured exception is attached. It now reads the structured parse `code`
   instead, the way its own `X::Comp` branch already did.
+- **"Missing block" counts as a diagnosis only when the block was the *primary*
+  expectation** — the first alternative at that position. It is the weakest
+  thing the parser can say, since a block is an alternative almost everywhere:
+  `say 1 ]` fails with a hundred alternatives of which "block" is merely one,
+  and rakudo calls that `X::Syntax::Confused`. Any *other* named class also
+  outranks it, so `sub twigil:<@>() { }` keeps the
+  `X::Syntax::Extension::Category` a sibling alternative diagnosed.
+- **The failure position had to be carried through.** The statement-list loop
+  supplies it when it wraps a failed statement's error; propagating a classified
+  error instead skipped the wrapper, so `parse_program` had no line or column to
+  report and the CLI lost its `------>` snippet. The propagation now fills the
+  position in.
+
+The rendered message drops the class prefix, so a `===SORRY!===` reads
+`Missing block` exactly as rakudo's does; `$!.^name` is where the class shows up.
 
 Pin: `t/missing-block-exception.t` (passes verbatim under `raku`).
