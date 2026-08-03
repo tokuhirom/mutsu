@@ -1145,6 +1145,7 @@ pub struct ArrayData {
     /// the legacy collection API and is refreshed by the accessor chokepoint.
     native_storage: Option<crate::gc::Gc<BufData>>,
     native_dirty: bool,
+    native_snapshot: Option<Vec<u8>>,
     /// Element value-type constraint (e.g. `Int` for `my Int @a`), if any.
     pub value_type: Option<String>,
     /// Key-type constraint — unused for arrays, present so the shared

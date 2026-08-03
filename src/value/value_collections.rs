@@ -153,6 +153,7 @@ impl ArrayData {
             items,
             native_storage: None,
             native_dirty: false,
+            native_snapshot: None,
             value_type: None,
             key_type: None,
             declared_type: None,
@@ -196,6 +197,7 @@ impl ArrayData {
                 crate::value::value_buf::make_native_array_storage(elem_type, &self.items)
         {
             self.native_storage = Some(node);
+            self.native_snapshot = self.native_storage.as_ref().map(|n| n.bytes.clone());
         }
     }
 
@@ -216,6 +218,7 @@ impl ArrayData {
     pub(crate) fn clear_native_storage(&mut self) {
         self.native_storage = None;
         self.native_dirty = false;
+        self.native_snapshot = None;
     }
 
     pub(crate) fn native_repr_body_address(&self) -> Option<usize> {
@@ -240,21 +243,31 @@ impl ArrayData {
         let Some(node) = &self.native_storage else {
             return;
         };
-        let decoded = if self.native_dirty {
-            let bytes = crate::value::value_buf::encode_storage(node, &self.items);
-            unsafe {
-                let data = crate::value::gc_contents_mut(node);
-                data.bytes.clear();
-                data.bytes.extend_from_slice(&bytes);
-            }
-            self.items.clone()
+        let current_bytes = node.bytes.clone();
+        if !self.native_dirty && self.native_snapshot.as_ref() == Some(&current_bytes) {
+            return;
+        }
+        let (bytes, decoded) = if self.native_dirty {
+            (
+                crate::value::value_buf::encode_storage(node, &self.items),
+                self.items.clone(),
+            )
         } else {
-            crate::value::value_buf::decode_storage(node)
+            (
+                current_bytes.clone(),
+                crate::value::value_buf::decode_storage(node),
+            )
         };
+        unsafe {
+            let data = crate::gc::gc_contents_mut(node);
+            data.bytes.clear();
+            data.bytes.extend_from_slice(&bytes);
+        }
         unsafe {
             let this = self as *const Self as *mut Self;
             std::ptr::addr_of_mut!((*this).items).write(decoded);
             std::ptr::addr_of_mut!((*this).native_dirty).write(false);
+            std::ptr::addr_of_mut!((*this).native_snapshot).write(Some(bytes));
         }
     }
 
