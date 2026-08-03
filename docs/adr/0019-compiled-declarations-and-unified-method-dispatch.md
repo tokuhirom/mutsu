@@ -144,3 +144,9 @@ Stage 1 is in progress. `RegisterSub` now indexes a typed `CompiledSubDeclPlan` 
 the plan, and the VM no longer pattern-matches `Stmt::SubDecl`. The plan still carries
 `legacy_body` for the existing routine-registry adapter. Replacing that field with the compiled
 routine reference is the next declaration slice.
+
+The dispatch layer now has a canonical `BuiltinMethodEntry` keyed by owner type and method name,
+including native arity bits. Built-in introspection derives its name list from those entries. The
+catalog is still populated through the transitional native probes and slow-path declarations;
+replacing those inputs with static native handler IDs, then admitting user candidates into the same
+entry type, remains open.

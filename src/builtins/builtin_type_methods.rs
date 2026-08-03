@@ -540,21 +540,30 @@ pub(crate) fn builtin_sample_value(type_name: &str) -> Option<Value> {
 /// with `.^can`. It does NOT cover slow-path methods (those needing `&mut self`,
 /// e.g. block-taking `map`/`grep`/`sort`); those remain in the declared lists.
 pub(crate) fn native_responds_to(value: &Value, method_name: &str) -> bool {
+    native_method_arities(value, method_name) != 0
+}
+
+fn native_method_arities(value: &Value, method_name: &str) -> u8 {
     let sym = Symbol::intern(method_name);
-    if crate::builtins::native_method_0arg(value, sym).is_some() {
-        return true;
-    }
+    let mut arities = u8::from(crate::builtins::native_method_0arg(value, sym).is_some());
     // A few 1/2-arg native methods inspect the argument type before recognizing
     // the call (e.g. `index`/`indices` want a Str), so a single dummy can miss
     // them. Try a small spread of representative arguments — recognition just
     // needs ONE arity/arg shape to return `Some`.
     let dummies = [Value::NIL, Value::int(0), Value::str_from("")];
-    dummies
+    if dummies
         .iter()
         .any(|a| crate::builtins::native_method_1arg(value, sym, a).is_some())
-        || dummies
-            .iter()
-            .any(|a| crate::builtins::native_method_2arg(value, sym, a, a).is_some())
+    {
+        arities |= 1 << 1;
+    }
+    if dummies
+        .iter()
+        .any(|a| crate::builtins::native_method_2arg(value, sym, a, a).is_some())
+    {
+        arities |= 1 << 2;
+    }
+    arities
 }
 
 /// Generous master set of built-in method NAMES (excluding the universal
@@ -730,9 +739,31 @@ pub(crate) const METHOD_UNIVERSE: &[&str] = &[
 /// For concrete types with a sample value the set is *derived* by probing the
 /// real native dispatch (`METHOD_UNIVERSE` ∩ what the sample responds to); for
 /// abstract/sample-less types it falls back to the declared list.
-pub(crate) fn introspected_type_method_names(type_name: &str) -> Vec<&'static str> {
+/// One canonical built-in type×method entry. User candidates will use the same shape once
+/// ADR-0019's registry migration lands; for now `native_arities` distinguishes a native handler
+/// from a slow-path entry whose implementation still lives in `runtime/methods_*`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct BuiltinMethodEntry {
+    pub(crate) owner: &'static str,
+    pub(crate) name: &'static str,
+    /// Bit N means that the native dispatch recognizes N positional arguments.
+    /// Zero denotes a registered slow-path/abstract method.
+    pub(crate) native_arities: u8,
+}
+
+/// The canonical built-in method entries for one owner type. Both dispatch admission and
+/// introspection are migrated to consume this type×method catalog; during the transition the
+/// catalog is populated from the native recognizers plus the remaining slow-path declarations.
+pub(crate) fn builtin_method_entries(type_name: &str) -> Vec<BuiltinMethodEntry> {
     let Some(sample) = builtin_sample_value(type_name) else {
-        return builtin_type_method_names(type_name);
+        return builtin_type_method_names(type_name)
+            .into_iter()
+            .map(|name| BuiltinMethodEntry {
+                owner: canonical_builtin_owner(type_name),
+                name,
+                native_arities: 0,
+            })
+            .collect();
     };
     let mut names: Vec<&'static str> = METHOD_UNIVERSE
         .iter()
@@ -748,6 +779,44 @@ pub(crate) fn introspected_type_method_names(type_name: &str) -> Vec<&'static st
         }
     }
     names
+        .into_iter()
+        .map(|name| BuiltinMethodEntry {
+            owner: canonical_builtin_owner(type_name),
+            name,
+            native_arities: native_method_arities(&sample, name),
+        })
+        .collect()
+}
+
+fn canonical_builtin_owner(type_name: &str) -> &'static str {
+    match type_name {
+        "Str" => "Str",
+        "Int" => "Int",
+        "Num" => "Num",
+        "Rat" | "FatRat" => "Rat",
+        "Complex" => "Complex",
+        "List" => "List",
+        "Array" => "Array",
+        "Hash" => "Hash",
+        "Bool" => "Bool",
+        "Range" => "Range",
+        "Sub" | "Method" | "Block" | "Routine" | "Code" => "Code",
+        "Signature" => "Signature",
+        "IO::Path" => "IO::Path",
+        "IO::Handle" => "IO::Handle",
+        "Cool" => "Cool",
+        "Any" => "Any",
+        "Mu" => "Mu",
+        name if crate::runtime::utils::is_buf_or_blob_class(name) => "Blob",
+        _ => "",
+    }
+}
+
+pub(crate) fn introspected_type_method_names(type_name: &str) -> Vec<&'static str> {
+    builtin_method_entries(type_name)
+        .into_iter()
+        .map(|entry| entry.name)
+        .collect()
 }
 
 /// Introspectable instance attributes for built-in types, as
@@ -902,6 +971,25 @@ mod tests {
             !str_methods.contains(&"no-such-method-xyz"),
             "Str.^methods must not list a phantom method"
         );
+    }
+
+    #[test]
+    fn method_catalog_is_keyed_by_owner_and_name() {
+        let entries = builtin_method_entries("Str");
+        let mut keys = std::collections::HashSet::new();
+        for entry in entries {
+            assert_eq!(entry.owner, "Str");
+            assert!(
+                keys.insert((entry.owner, entry.name)),
+                "duplicate catalog entry for Str×{}",
+                entry.name
+            );
+        }
+        let chars = builtin_method_entries("Str")
+            .into_iter()
+            .find(|entry| entry.name == "chars")
+            .expect("Str×chars entry");
+        assert_ne!(chars.native_arities & 1, 0);
     }
 
     #[test]
