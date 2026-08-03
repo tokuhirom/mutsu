@@ -1191,6 +1191,12 @@ pub struct Interpreter {
     /// The emitter parameter name that goes with `pending_supply_block_body`, so
     /// the re-compiled chunk also carries `CompiledCode::supply_emitter_sym`.
     pending_supply_emitter_sym: Option<Symbol>,
+    /// The compiler-vouched never-written captures of the supply lambda whose
+    /// body `eval_block_value` is about to re-compile. Only the *original*
+    /// compile saw the creating frame, so the carrier chunk cannot derive
+    /// `authoritative_free_vars` itself — it has no enclosing frame to vouch.
+    /// Travels with `pending_supply_block_body`.
+    pending_supply_authoritative_free_vars: Vec<Symbol>,
     /// Names the block `eval_block_value_inner` most recently FINISHED running
     /// declared with its own `my` (excluding those it also uses as free
     /// variables). Written just before that function returns, so after a call

@@ -654,9 +654,18 @@ impl Interpreter {
             if self.pending_supply_emitter_sym.is_some() {
                 self.pending_supply_block_body = true;
             }
+            // Only the original compile saw the creating frame, so the vouched
+            // capture set has to be handed over rather than recomputed.
+            self.pending_supply_authoritative_free_vars = data
+                .compiled_code
+                .as_ref()
+                .filter(|cc| cc.is_supply_block_body)
+                .map(|cc| cc.authoritative_free_vars.clone())
+                .unwrap_or_default();
             let body_result = self.eval_block_value(&data.body);
             self.pending_supply_block_body = false;
             self.pending_supply_emitter_sym = None;
+            self.pending_supply_authoritative_free_vars = Vec::new();
             // The `my` names the body just declared, published by
             // `eval_block_value_inner`. Taken immediately, before anything below
             // can run another block and overwrite it. This is how a body with no

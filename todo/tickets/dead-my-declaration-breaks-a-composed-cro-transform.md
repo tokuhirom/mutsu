@@ -21,56 +21,45 @@ bugs behind it have been fixed:
 - A supply block's generated emitter is now owned by the `whenever` closures it
   creates, so two live instances of one parse site no longer feed each other
   (`news/2026-08/supply-block-reinstantiated.md`, pinned by
-  `t/supply-block-reinstantiated.t`). This removed the infinite
-  `[lc] target=...` loop.
+  `t/supply-block-reinstantiated.t`).
+- A supply block's compiler-vouched captures are owned too, so the inner route
+  set's callback stops reading the outer's `$requests`
+  (`news/2026-08/supply-block-captured-lexical.md`, pinned by
+  `t/supply-block-captured-lexical.t`).
 
-## The remaining bug
+## The remaining bug: `RouteHandler.invoke` never emits its response
 
-`Cro::HTTP::Router::RouteSet.transformer` is
+Routing is now entirely correct. `tmp/bm3.p6` (`route { before-matched
+LowerCase; delegate <*> => $application }`) reaches the delegated route set's
+own handler, matching raku step for step — and then stops:
+
+```
+[DBG-T] whenever fired, self=RouteSet|1169 requests=Supply|2499   <- inner, correct
+[DBG] routing-outcome for /index.shtml = (0, \("index.shtml"))
+[DBG] handler 0 = Cro::HTTP::Router::RouteSet::RouteHandler args=\("index.shtml")
+                                       <- raku prints `handler emitted Cro::HTTP::Response` here
+```
+
+So the next thing to dig into is `RouteHandler.invoke`
+(`lib/Cro/HTTP/Router.rakumod`, around line 205-264), specifically the
+`@!before-matched`-taken branch:
 
 ```raku
-method transformer(Supply:D $requests) {
-    supply {
-        whenever $requests -> $request { ... @!handlers ... }
-    }
+my $current = supply emit $request;
+$current = self!append-middleware($current, @!before-matched, %connection-state);
+my $response = supply whenever $current -> $req {
+    whenever self!invoke-internal($req, $args) { emit $_; }
 }
+return self!append-middleware($response, @!after-matched, %connection-state);
 ```
 
-A `delegate` puts **two live instances** of this one parse site in the pipeline:
-the outer route set (which owns the `DelegateHandler`) and the delegated inner
-route set. Instrumenting the body shows the second dispatch running with the
-*inner* invocant but the *outer* `$requests`:
-
-```
-[DBG-T] body entered,   self=RouteSet|1169 requests=Supply|2499   <- inner, correct
-  [lc] got /index.SHTML
-[DBG-T] whenever fired, self=RouteSet|1169 requests=Supply|2103   <- outer's $requests
-```
-
-`self` is right because `resolution_call_sub.rs` force-installs a closure's
-captured `self` (it is lexical in Raku). `$requests` is wrong because it is an
-ordinary free variable of the supply block — a parameter of the enclosing
-`transformer` frame, which has already returned — and the `merge_all`
-caller-priority merge in `resolution_call_sub.rs` lets the *calling* frame's
-same-named binding win for anything that is not in `authoritative_free_vars` /
-`authoritative_captures`.
-
-`exec_whenever_scope_op` (`src/vm/vm_scope_ops.rs`) already builds an
-`owned_lexicals` list for exactly this reason, but it covers only the supply
-body's `my` declarations plus (now) its emitter. A supply block body is a scope
-its caller never re-enters and whose `whenever` callbacks are dispatched later
-from arbitrary frames and threads, so **its free variables should be owned too**
-— that is the shape of the fix to try first:
-
-```rust
-owned.extend(code.free_var_syms.iter().copied());
-```
-
-Captures that genuinely must stay live are `ContainerRef` cells, and those are
-force-installed ahead of the authoritative check (`resolution_call_sub.rs:411`),
-so owning free vars by name should not freeze a shared cell. This needs a real
-`make test` + roast run: it widens the authoritative set for every supply block
-in the codebase.
+The `whenever` nested inside a `whenever` body — registered while the drive loop
+is already running, so it goes onto `pending_react_subscriptions` rather than a
+registration frame (`runtime/subtest.rs`, `run_whenever_with_value`) — is the
+prime suspect, together with `!invoke-internal`'s `start { … }` block. Note the
+handler that *does* work (`include`, and `delegate` with no middleware) takes
+the `else` branch, `return self!invoke-internal($request, $args)`, which has no
+nested `whenever` at all — that asymmetry is the lead.
 
 ## Reproducers
 
