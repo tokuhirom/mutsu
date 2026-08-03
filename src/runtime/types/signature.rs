@@ -650,6 +650,32 @@ pub(in crate::runtime) fn bind_named_rename_sub_signature(
     Ok(())
 }
 
+/// Bind one destructured sub-parameter into the environment.
+///
+/// A sub-signature parameter is a **fresh per-invocation binding**, exactly like
+/// a `my` declaration, so — while threads are live — it has to mask the
+/// name-keyed `shared_vars` lane the same way `my` does
+/// (`vm_var_assign_set_local.rs`). Without the mask, a `@`/`%` sub-parameter
+/// captured by a spawned block is read out of that lane, which is seeded once
+/// (`seed_if_absent`) and therefore frozen at the *first* spawn's value:
+///
+/// ```raku
+/// await map -> [$a, @K] { start { "$a:{@K[0]}" } }, (1, (100,101)), (2, (200,201))
+/// # was 1:100,2:100 — the second worker read the first iteration's @K
+/// ```
+///
+/// `$` sub-parameters were already correct: the closure machinery owns them per
+/// binding and keeps them off that lane entirely. `&` names are routines and
+/// keep the lane; so do twigil'd forms, which share a name by design.
+fn bind_sub_param_name(interpreter: &mut Interpreter, name: &str, value: Value) {
+    if interpreter.shared_vars_active && Interpreter::is_plain_lexical_name(name) {
+        interpreter
+            .sub_signature_bound_aggregates
+            .insert(name.to_string());
+    }
+    interpreter.env.insert(name.to_string(), value);
+}
+
 pub(in crate::runtime) fn bind_sub_signature_from_value(
     interpreter: &mut Interpreter,
     sub_params: &[ParamDef],
@@ -686,9 +712,7 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
                 let mut named = named_values_from_unpack_target(value);
                 named.retain(|k, _| !consumed_named_keys.contains(k));
                 if !sub_pd.name.is_empty() {
-                    interpreter
-                        .env
-                        .insert(sub_pd.name.clone(), Value::hash(named));
+                    bind_sub_param_name(interpreter, &sub_pd.name, Value::hash(named));
                 }
             } else if sub_pd.name.starts_with('@')
                 || sub_pd.name.starts_with('$')
@@ -700,9 +724,7 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
                 nested_positional_idx = positional.len();
                 let remaining_value = Value::array(remaining);
                 if !sub_pd.name.is_empty() {
-                    interpreter
-                        .env
-                        .insert(sub_pd.name.clone(), remaining_value.clone());
+                    bind_sub_param_name(interpreter, &sub_pd.name, remaining_value.clone());
                 }
                 // A slurpy param may itself destructure the list it collects,
                 // e.g. `*@ ($a, $b, $y, *@)`. Bind those inner params against the
@@ -756,9 +778,7 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
             // don't leak into recursive calls.
             if !sub_pd.name.is_empty() {
                 let default_val = Interpreter::missing_optional_param_value(sub_pd);
-                interpreter
-                    .env
-                    .insert(sub_pd.name.clone(), default_val.clone());
+                bind_sub_param_name(interpreter, &sub_pd.name, default_val.clone());
                 // An unsupplied `:outer(:$inner)` alias must still declare the
                 // inner names the body actually reads.
                 if sub_pd.named
@@ -766,9 +786,7 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
                 {
                     for apd in alias_params.iter().filter(|a| a.named && !a.slurpy) {
                         if !apd.name.is_empty() {
-                            interpreter
-                                .env
-                                .insert(apd.name.clone(), default_val.clone());
+                            bind_sub_param_name(interpreter, &apd.name, default_val.clone());
                         }
                     }
                 }
@@ -867,9 +885,7 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
         }
         let bind_alias_name = !(sub_pd.named && sub_pd.sub_signature.is_some());
         if !sub_pd.name.is_empty() && bind_alias_name {
-            interpreter
-                .env
-                .insert(sub_pd.name.clone(), candidate.clone());
+            bind_sub_param_name(interpreter, &sub_pd.name, candidate.clone());
         }
         if let Some(nested) = &sub_pd.sub_signature {
             // A named sub-param's parens are either a RENAME/alias target
