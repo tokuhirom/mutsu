@@ -4360,6 +4360,10 @@ impl Interpreter {
                 self.sync_source_line(code, *ip);
                 self.exec_once_expr_op(code, *body_end, ip, compiled_fns)?;
             }
+            OpCode::BeginOnceExpr { body_end, site_id } => {
+                self.sync_source_line(code, *ip);
+                self.exec_begin_once_expr_op(code, *body_end, *site_id, ip, compiled_fns)?;
+            }
             OpCode::DoGivenExpr { body_end } => {
                 self.sync_source_line(code, *ip);
                 self.exec_do_given_expr_op(code, *body_end, ip, compiled_fns)?;
