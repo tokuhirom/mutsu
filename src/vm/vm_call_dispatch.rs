@@ -124,7 +124,7 @@ impl Interpreter {
     /// across calls. Shared by `compile_and_call_function_def` and the non-trivial
     /// proto-body runner (ledger §D, multi-dispatch VM-ization), so both go through
     /// the same compile/cache path.
-    pub(super) fn otf_compile_function_def(
+    pub(crate) fn otf_compile_function_def(
         &mut self,
         def: &crate::ast::FunctionDef,
     ) -> Arc<CompiledFunction> {

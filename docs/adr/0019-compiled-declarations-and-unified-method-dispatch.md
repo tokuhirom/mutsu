@@ -189,9 +189,17 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
     `compile_block_raw` compiles a *block* whose arguments the caller already bound, while
     `def.compiled` binds its own from `param_local_slots`. Subdivide:
     - [ ] **C6d-1 — the ordinary-routine tail** (`calls.rs:call_function_def`,
-      `calls.rs:exec_call`): 192 hits over ~37 names, dominated by `where`-constrained multi
-      candidates re-dispatching through `nextsame`. Decide the block-chunk-vs-routine-convention
-      shape here, where the argument-binding conflict lives.
+      `calls.rs:exec_call`): 192 hits over ~37 names. The shape is settled and is neither
+      candidate above: these are *callers* reaching the interpreter entry `call_function_def`
+      where a compiled entry already exists, so each one is rewired rather than re-compiled. The
+      multi-deferral caller (`builtins_dispatch_next`, 102 of the 144
+      `call_function_def` hits) landed first — see
+      `news/2026-08/multi-deferral-runs-the-compiled-candidate.md`, which also records why the
+      general `compile_and_call_function_def` entry cannot be used here (it re-pushes the
+      multi-dispatch frame the chain owns, and the chain then defers to the same candidate
+      forever). Remaining callers: `builtins_operators_fallback` (user operators),
+      `builtins_operators_infix` (reduce), `builtins_operators_coerce`, `accessors_state`,
+      `main_args` (`MAIN`).
     - [ ] **C6d-2 — grammar token/rule bodies** (`dispatch.rs:eval_token_def`,
       `regex_token_resolve.rs`): 956 of the 1148 hits, but those `FunctionDef`s carry a regex
       body, so scope this against ADR-0009's execution model rather than the OTF gate.
