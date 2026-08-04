@@ -748,6 +748,14 @@ same mechanism after `Instant`/`Duration` — **when a file emits every assertio
 but numbers only some of them, look for a type relation that diverted one
 `Test.rakumod` candidate group to the native provider.**
 
+`S32-num/complex.t` is closed
+(`news/2026-08/unicode-infix-alias-resolves-by-name.md`): six Unicode infix
+aliases (`≅ ⩵ ⩶ ≠ ≤ ≥`) parsed inline but did not resolve when reached by
+*name*, and `cmp-ok` reaches its string operator by name
+(`&CALLER::LEXICAL::("infix:<$op>")`). **An operator that works inline is not
+evidence that `&infix:<op>` works** — the parser and the by-name dispatch are
+separate tables, and only the parser had the aliases.
+
 `roast/S12-methods/qualified.t` is worth a second look too: its Malformed
 assertion passes now and the file moved on to `Cannot dispatch to method me on
 Parent because it is not inherited or done by Bar` in its inheritance subtest.

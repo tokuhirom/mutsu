@@ -67,7 +67,11 @@ impl Interpreter {
                 let result = Self::cmp_ok_junction_thread(&left, &right, &op);
                 result.truthy()
             }
-            ValueView::Str(op) => match op.as_str() {
+            // A Unicode infix alias names the same operator as its ASCII
+            // spelling (`≤` is `<=`), so accept either here — the real
+            // `Test.rakumod` resolves the string through the operator's routine
+            // and never sees the difference.
+            ValueView::Str(op) => match Self::normalize_unicode_infix(op.as_str()) {
                 "~~" => self.smart_match(&left, &right),
                 "!~~" => !self.smart_match(&left, &right),
                 "eq" => left.to_string_value() == right.to_string_value(),
