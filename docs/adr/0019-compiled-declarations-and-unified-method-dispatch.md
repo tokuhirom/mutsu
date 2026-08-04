@@ -110,7 +110,8 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 17/51 slices merged. Next slice: C6b (C6a landed; C6 is subdivided below).**
+**Current progress: 17/51 slices merged. Next slice: C6c (C6a and C6b landed; C6 is subdivided
+below).**
 
 The migration is complete only when every required box below is checked and the completion gates
 at the end pass. The order within a phase is intentional. A later phase may start when its stated
@@ -165,13 +166,17 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
   separable groups, each its own PR; the box is checked only when the plan field is gone:
   - [x] **C6a — identity hashes.** Replace per-read `function_body_fingerprint(&def.…)` with a
     memoized `FunctionDef::body_fingerprint()`, retiring the `func_def_fp_cache` side cache.
-  - [ ] **C6b — body analysis.** Precompute `is_stub` / `needs_interpreter` / `declares_state` /
-    `collect_routine_body_local_names` / rw-target extraction in the compiler, as C4 did for
-    signature metadata.
+  - [x] **C6b — OTF-gate body predicates.** Memoize `needs_interpreter` /
+    `module_otf_needs_interpreter` / `declares_state` as `RoutineBodyFacts` on the def, behind the
+    single reader `Interpreter::routine_body_facts`, and read the existing `is_stub` field on the
+    redeclaration path. (`collect_routine_body_local_names` and rw-target extraction return AST
+    data rather than facts; they move with C6c/C6d.)
   - [ ] **C6c — `Value::make_sub` from a def.** Carry `def.compiled` into the resulting `SubData`
     so a code object built from a registry routine is bytecode-backed.
   - [ ] **C6d — interpreter execution sites.** Route `eval_block_value(&def.body)` /
-    `run_block(&def.body)` through `def.compiled`.
+    `run_block(&def.body)` through `def.compiled`. **Not a small slice:** these carriers are
+    reached precisely *because* an OTF gate rejected the routine, so eliminating them means
+    widening OTF coverage to every routine, not rewiring a call. Scope it as its own program.
   - [ ] **C6e — redeclaration comparison and the proto rewrite**, then drop the plan field.
 - [ ] **C7 — Remove the sub-registration AST adapter.** Delete dead sub-shaped walker branches and
   prove the routine registry never compiles a migrated declaration on demand.
