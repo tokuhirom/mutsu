@@ -11,6 +11,12 @@ plan 19;
 # Found in Digest::RIPEMD, whose output stage rotates the five hash words with
 # `map { $_[[^5].rotate(++$)] }` — so the second and later `rmd160(...)` calls
 # in one process returned a correct-but-rotated digest.
+#
+# The per-routine-call mechanism this file was written for has since been
+# replaced: a bare `$` is now an implicit `state` declaration of its block, so
+# the unit of reset is the block CLONE, which is finer than a routine call.
+# See `t/state-var-per-block-clone.t` for the general rule; every case here is
+# unchanged raku behaviour and still holds.
 
 # --- resets: the `$` is in a block inside a routine ------------------------
 {

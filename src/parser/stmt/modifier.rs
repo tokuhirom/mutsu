@@ -122,6 +122,7 @@ fn try_split_decl_modifier(stmt: &Stmt, effective_cond: &Expr) -> Option<Stmt> {
         }],
         else_branch: Vec::new(),
         binding_var: None,
+        is_statement_modifier: true,
     };
     Some(Stmt::SyntheticBlock(vec![decl, init]))
 }
@@ -425,6 +426,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 then_branch: vec![then_stmt],
                 else_branch: Vec::new(),
                 binding_var: None,
+                is_statement_modifier: true,
             },
         )));
     }
@@ -458,6 +460,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 then_branch: vec![then_stmt],
                 else_branch: Vec::new(),
                 binding_var: None,
+                is_statement_modifier: true,
             },
         )));
     }
@@ -710,6 +713,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 then_branch: vec![stmt_for_branch.clone()],
                 else_branch: Vec::new(),
                 binding_var: None,
+                is_statement_modifier: true,
             };
             let given_stmt = Stmt::Given {
                 topic: cond,
@@ -734,6 +738,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 then_branch: vec![stmt_for_branch],
                 else_branch: Vec::new(),
                 binding_var: None,
+                is_statement_modifier: true,
             }],
             is_statement_modifier: true,
         };
@@ -787,6 +792,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 then_branch: vec![modified_stmt],
                 else_branch: Vec::new(),
                 binding_var: None,
+                is_statement_modifier: true,
             };
             let given_stmt = Stmt::Given {
                 topic: cond,
@@ -805,6 +811,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 then_branch: vec![modified_stmt],
                 else_branch: Vec::new(),
                 binding_var: None,
+                is_statement_modifier: true,
             }],
             is_statement_modifier: true,
         };

@@ -161,7 +161,7 @@ impl Compiler {
     /// Returns true if the expression contains a state variable declaration
     /// (recursively). Used to decide whether `StateVarInitGuard` can safely
     /// skip evaluation of a state variable's RHS initializer.
-    fn expr_has_state_decl(expr: &Expr) -> bool {
+    pub(super) fn expr_has_state_decl(expr: &Expr) -> bool {
         match expr {
             Expr::DoStmt(stmt) => {
                 if let Stmt::VarDecl { is_state: true, .. } = stmt.as_ref() {
@@ -489,6 +489,7 @@ impl Compiler {
             })],
             else_branch: Vec::new(),
             binding_var: None,
+            is_statement_modifier: false,
         };
 
         Some(vec![decl, for_stmt, writeback])
@@ -586,6 +587,15 @@ impl Compiler {
                 // synthesized if/while/loop body is not. `synthetic_block_body`
                 // is set by those compile sites; consume it here.
                 let is_bare = !std::mem::take(&mut self.synthetic_block_body);
+                // A genuine source block is re-cloned every time its enclosing
+                // block runs, so its own `state` restarts per execution — see
+                // `OpCode::ResetStateLocals`. A SYNTHETIC body is excluded: a
+                // loop body is the block the loop statement clones ONCE (its
+                // iterations share the state), and an `if` branch already got
+                // its reset at the branch site.
+                let state_reset = is_bare
+                    .then(|| self.emit_nested_block_state_reset(stmts))
+                    .flatten();
                 if Self::has_catch_or_control(stmts) {
                     self.next_try_is_bare_block = is_bare;
                     self.compile_implicit_try(stmts);
@@ -712,6 +722,7 @@ impl Compiler {
                         || !crate::runtime::Interpreter::is_builtin_type(n)
                 });
                 self.pop_dynamic_scope_lexical(saved_dynamic_scope);
+                self.patch_nested_block_state_reset(state_reset);
                 if let Some(idx) = succeed_barrier_idx {
                     self.code.patch_succeed_barrier_body_end(idx);
                 }
@@ -1680,6 +1691,7 @@ impl Compiler {
                 then_branch,
                 else_branch,
                 binding_var,
+                is_statement_modifier,
             } => {
                 // Check for heredoc scope violations in then/else branches
                 if let Some(err) = self.check_heredoc_scope_errors(then_branch) {
@@ -1727,7 +1739,7 @@ impl Compiler {
                         (else_branch, then_branch)
                     };
                     if Self::branch_is_droppable(dead) {
-                        self.compile_resolved_branch(live);
+                        self.compile_resolved_branch(live, *is_statement_modifier);
                         return;
                     }
                 }
@@ -1768,6 +1780,11 @@ impl Compiler {
                     // Bind the scalar placeholder to the (unflattened) condition value.
                     self.emit_set_named_var(ph);
                 }
+                // The branch is a block literal the enclosing block re-clones on
+                // every execution, so its own `state` restarts each time — see
+                // `OpCode::ResetStateLocals`.
+                let then_state_reset =
+                    self.emit_branch_state_reset(then_branch, *is_statement_modifier);
                 if Self::has_block_enter_leave_phasers(then_branch) {
                     // A branch with ENTER/LEAVE/KEEP/UNDO phasers is a real
                     // block scope: its LEAVE must fire when the branch exits
@@ -1781,6 +1798,7 @@ impl Compiler {
                 } else {
                     self.compile_body_with_implicit_try(then_branch);
                 }
+                self.patch_nested_block_state_reset(then_state_reset);
                 if else_branch.is_empty() {
                     self.code.patch_jump(jump_else);
                     if needs_cond_value {
@@ -1794,6 +1812,8 @@ impl Compiler {
                     if needs_cond_value {
                         self.code.emit(OpCode::Pop);
                     }
+                    let else_state_reset =
+                        self.emit_branch_state_reset(else_branch, *is_statement_modifier);
                     if else_branch.len() == 1 && matches!(else_branch[0], Stmt::If { .. }) {
                         self.compile_stmt(&else_branch[0]);
                     } else if Self::has_block_enter_leave_phasers(else_branch) {
@@ -1806,6 +1826,7 @@ impl Compiler {
                     } else {
                         self.compile_body_with_implicit_try(else_branch);
                     }
+                    self.patch_nested_block_state_reset(else_state_reset);
                     self.code.patch_jump(jump_end);
                 }
                 if pointy_topic_scope {
@@ -3722,8 +3743,15 @@ impl Compiler {
                 then_branch,
                 else_branch,
                 binding_var,
+                is_statement_modifier,
             } => {
-                self.compile_if_value(cond, then_branch, else_branch, binding_var);
+                self.compile_if_value(
+                    cond,
+                    then_branch,
+                    else_branch,
+                    binding_var,
+                    *is_statement_modifier,
+                );
             }
             // A statement `given` nets exactly one stack value (see
             // `exec_given_op`), which IS the block value here.

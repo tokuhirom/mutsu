@@ -1,6 +1,52 @@
 use super::*;
 
 impl Compiler {
+    /// Whether `stmts` declares a `state` variable at its OWN statement level.
+    ///
+    /// Deliberately shallow: a `state` inside a nested loop, `if` branch or bare
+    /// block belongs to that construct's clone and is reset at ITS entry (see
+    /// `OpCode::ResetStateLocals` / `reset_state_locals_in_range`), so descending
+    /// would only make this block emit a redundant reset. Drives whether an
+    /// inline nested block needs a `ResetStateLocals` at all, so the common
+    /// state-free `if` keeps its current bytecode.
+    pub(super) fn stmts_declare_state(stmts: &[Stmt]) -> bool {
+        stmts.iter().any(|s| match s {
+            Stmt::VarDecl { is_state, expr, .. } => *is_state || Self::expr_has_state_decl(expr),
+            Stmt::Expr(expr) => Self::expr_has_state_decl(expr),
+            _ => false,
+        })
+    }
+
+    /// Emit a [`OpCode::ResetStateLocals`] for an inline nested block body that
+    /// declares `state` at its own level, returning the index to patch once the
+    /// body is compiled. `None` (nothing emitted) otherwise.
+    pub(super) fn emit_nested_block_state_reset(&mut self, stmts: &[Stmt]) -> Option<usize> {
+        Self::stmts_declare_state(stmts)
+            .then(|| self.code.emit(OpCode::ResetStateLocals { body_end: 0 }))
+    }
+
+    /// [`Self::emit_nested_block_state_reset`] for an `if`/`unless` branch: a
+    /// postfix statement MODIFIER introduces no block, so the statement it gates
+    /// belongs to the enclosing block and its `state` must not restart
+    /// (`sub f { state $n = 0 if 1; ++$n }` counts across calls).
+    pub(super) fn emit_branch_state_reset(
+        &mut self,
+        stmts: &[Stmt],
+        is_statement_modifier: bool,
+    ) -> Option<usize> {
+        (!is_statement_modifier)
+            .then(|| self.emit_nested_block_state_reset(stmts))
+            .flatten()
+    }
+
+    /// Patch the [`OpCode::ResetStateLocals`] emitted by
+    /// [`Self::emit_nested_block_state_reset`] to end at the current position.
+    pub(super) fn patch_nested_block_state_reset(&mut self, idx: Option<usize>) {
+        if let Some(idx) = idx {
+            self.code.patch_reset_state_locals_end(idx);
+        }
+    }
+
     /// Check if a statement list contains `let` or `temp` statements (not inside sub/lambda bodies).
     pub(super) fn has_let_deep(stmts: &[Stmt]) -> bool {
         for s in stmts {

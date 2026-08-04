@@ -349,6 +349,7 @@ fn walk_stmt(stmt: &Stmt, scan: &mut Scan) {
             then_branch,
             else_branch,
             binding_var,
+            ..
         } => {
             walk_expr(cond, scan);
             if let Some(v) = binding_var {

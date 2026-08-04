@@ -317,12 +317,13 @@ pub(crate) fn block_or_hash_expr(input: &str) -> PResult<'_, Expr> {
     // Otherwise parse as a block (anonymous sub)
     crate::parser::stmt::simple::push_scope();
     let result = (|| -> PResult<'_, Expr> {
-        let (r, stmts) = crate::parser::stmt::stmt_list_pub(r)?;
+        let (r, mut stmts) = crate::parser::stmt::stmt_list_pub(r)?;
         let (r, _) = ws_inner(r);
         if !r.starts_with('}') {
             return Err(PError::expected("'}'"));
         }
         let r = &r[1..];
+        crate::parser::stmt::simple::prepend_anon_state_decls(&mut stmts);
         Ok((r, make_anon_sub(stmts)))
     })();
     crate::parser::stmt::simple::pop_scope();
@@ -341,9 +342,10 @@ pub(crate) fn parse_block_body_routine(input: &str) -> PResult<'_, Vec<crate::as
     crate::parser::stmt::simple::push_scope();
     crate::parser::stmt::simple::mark_current_scope_routine_body();
     let result = (|| -> PResult<'_, Vec<crate::ast::Stmt>> {
-        let (r, stmts) = crate::parser::stmt::stmt_list_pub(r)?;
+        let (r, mut stmts) = crate::parser::stmt::stmt_list_pub(r)?;
         let (r, _) = ws_inner(r);
         let (r, _) = parse_char(r, '}')?;
+        crate::parser::stmt::simple::prepend_anon_state_decls(&mut stmts);
         Ok((r, stmts))
     })();
     crate::parser::stmt::simple::pop_scope();
@@ -378,9 +380,10 @@ pub(crate) fn parse_block_body(input: &str) -> PResult<'_, Vec<crate::ast::Stmt>
     }
     crate::parser::stmt::simple::push_scope();
     let result = (|| -> PResult<'_, Vec<crate::ast::Stmt>> {
-        let (r, stmts) = crate::parser::stmt::stmt_list_pub(r)?;
+        let (r, mut stmts) = crate::parser::stmt::stmt_list_pub(r)?;
         let (r, _) = ws_inner(r);
         let (r, _) = parse_char(r, '}')?;
+        crate::parser::stmt::simple::prepend_anon_state_decls(&mut stmts);
         Ok((r, stmts))
     })();
     crate::parser::stmt::simple::pop_scope();
@@ -424,9 +427,10 @@ fn parse_block_body_with_sigilless<'a>(
     crate::parser::stmt::simple::push_scope();
     register_sigilless_params(param_defs);
     let result = (|| -> PResult<'_, Vec<crate::ast::Stmt>> {
-        let (r, stmts) = crate::parser::stmt::stmt_list_pub(r)?;
+        let (r, mut stmts) = crate::parser::stmt::stmt_list_pub(r)?;
         let (r, _) = ws_inner(r);
         let (r, _) = parse_char(r, '}')?;
+        crate::parser::stmt::simple::prepend_anon_state_decls(&mut stmts);
         Ok((r, stmts))
     })();
     crate::parser::stmt::simple::pop_scope();

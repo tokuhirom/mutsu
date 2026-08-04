@@ -236,30 +236,13 @@ impl Interpreter {
         let end_phaser_count_before = self.end_phaser_count();
         let saved_stack_depth = self.call_frames.last().unwrap().saved_stack_depth;
         let saved_state_scope = self.state_scope_id;
-        // A NAMED sub's `state` scope is its REGISTRATION clone id (env
-        // `__mutsu_callable_id::Pkg::name`, refreshed on every RegisterSub
-        // execution) — the same id the cold named path uses — so a nested
-        // named sub re-initializes per enclosing call while a top-level sub's
-        // state persists, regardless of which dispatch path a call takes.
-        // Anonymous closures (and named subs with no registration record)
-        // keep the Sub value's identity. Only resolved when the body has
-        // state variables, to keep the common dispatch free of the env probe.
-        let reg_scope_id = if cc.state_locals.is_empty() {
-            None
+        // Only resolved when the body has state variables, to keep the common
+        // dispatch free of `sub_state_scope_id`'s env probe.
+        self.state_scope_id = Some(if cc.state_locals.is_empty() {
+            data.id
         } else {
-            let name = data.name.resolve();
-            if name.is_empty() {
-                None
-            } else {
-                let key = format!("__mutsu_callable_id::{}::{}", data.package.resolve(), name);
-                self.env()
-                    .get(&key)
-                    .and_then(|v| v.as_int())
-                    .filter(|i| *i != 0)
-                    .map(|i| i as u64)
-            }
-        };
-        self.state_scope_id = Some(reg_scope_id.unwrap_or(data.id));
+            self.sub_state_scope_id(data)
+        });
 
         loan_env!(self, inject_pending_callsite_line());
 

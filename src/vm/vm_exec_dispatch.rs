@@ -4309,6 +4309,10 @@ impl Interpreter {
                 self.sync_source_line(code, *ip);
                 self.exec_succeed_barrier_op(code, *body_end, ip, compiled_fns)?;
             }
+            OpCode::ResetStateLocals { body_end } => {
+                self.reset_state_locals_in_range(code, *ip + 1, *body_end as usize);
+                *ip += 1;
+            }
             OpCode::CheckPhaser {
                 is_pre,
                 condition_idx,

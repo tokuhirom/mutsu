@@ -147,6 +147,7 @@ impl Compiler {
         then_branch: &[Stmt],
         else_branch: &[Stmt],
         binding_var: &Option<String>,
+        is_statement_modifier: bool,
     ) {
         // A pointy `if EXPR -> $_ { }` binds a FRESH lexical `$_` (like `for ->
         // $_`), so its topic must NOT flow back to an enclosing `given $x`'s source
@@ -189,7 +190,11 @@ impl Compiler {
         } else if let Some(ph) = &cond_placeholder {
             self.emit_set_named_var(ph);
         }
+        // The branch is a block literal re-cloned per execution of the enclosing
+        // block, so its own `state` restarts — see `OpCode::ResetStateLocals`.
+        let then_state_reset = self.emit_branch_state_reset(then_branch, is_statement_modifier);
         self.compile_block_inline(then_branch);
+        self.patch_nested_block_state_reset(then_state_reset);
         let jump_end = self.code.emit(OpCode::Jump(0));
         self.code.patch_jump(jump_else);
         if needs_cond_value {
@@ -199,20 +204,27 @@ impl Compiler {
         if else_branch.is_empty() {
             let empty_idx = self.code.add_constant(Value::slip(vec![]));
             self.code.emit(OpCode::LoadConst(empty_idx));
-        } else if else_branch.len() == 1 {
-            if let Stmt::If {
+        } else if let [
+            Stmt::If {
                 cond: inner_cond,
                 then_branch: inner_then,
                 else_branch: inner_else,
                 binding_var: inner_binding,
-            } = &else_branch[0]
-            {
-                self.compile_do_if_expr_bound(inner_cond, inner_then, inner_else, inner_binding);
-            } else {
-                self.compile_block_inline(else_branch);
-            }
+                is_statement_modifier: inner_is_modifier,
+            },
+        ] = else_branch
+        {
+            self.compile_do_if_expr_bound(
+                inner_cond,
+                inner_then,
+                inner_else,
+                inner_binding,
+                *inner_is_modifier,
+            );
         } else {
+            let else_state_reset = self.emit_branch_state_reset(else_branch, is_statement_modifier);
             self.compile_block_inline(else_branch);
+            self.patch_nested_block_state_reset(else_state_reset);
         }
         self.code.patch_jump(jump_end);
         if pointy_topic_scope {

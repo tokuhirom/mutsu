@@ -136,6 +136,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             then_branch,
             else_branch,
             binding_var,
+            ..
         } => {
             // mutsu desugars `unless X` to `if !X`, so an `unless` renders as a
             // `Statement::If` whose condition is `ApplyPrefix(!)` — a documented
@@ -157,6 +158,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 then_branch,
                 else_branch,
                 binding_var,
+                ..
             }) = single_if_stmt(tail)
             {
                 if binding_var.is_some() {

@@ -152,6 +152,7 @@ fn lower_if(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 then_branch: ethen,
                 else_branch,
                 binding_var: None,
+                is_statement_modifier: false,
             }];
         }
     }
@@ -160,6 +161,7 @@ fn lower_if(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         then_branch,
         else_branch,
         binding_var: None,
+        is_statement_modifier: false,
     })
 }
 

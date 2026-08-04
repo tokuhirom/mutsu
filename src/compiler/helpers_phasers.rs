@@ -101,7 +101,9 @@ impl Compiler {
                 then_branch,
                 else_branch,
                 binding_var,
+                is_statement_modifier,
             } => Stmt::If {
+                is_statement_modifier: *is_statement_modifier,
                 cond: cond.clone(),
                 then_branch: Self::rewrite_next_targets_in_stmts(
                     then_branch,
@@ -429,6 +431,7 @@ impl Compiler {
                 then_branch,
                 else_branch: Vec::new(),
                 binding_var: None,
+                is_statement_modifier: false,
             });
         }
         // Declare temp variables for extracted ENTER phaser expressions
@@ -534,6 +537,7 @@ impl Compiler {
                     then_branch: keep_ph,
                     else_branch: undo_ph,
                     binding_var: None,
+                    is_statement_modifier: false,
                 });
             }
             // Preserve loop-body value for expression contexts that collect
@@ -563,6 +567,7 @@ impl Compiler {
                 then_branch: vec![given_stmt],
                 else_branch: Vec::new(),
                 binding_var: None,
+                is_statement_modifier: false,
             }]
         } else {
             vec![Stmt::If {
@@ -570,6 +575,7 @@ impl Compiler {
                 then_branch: last_ph,
                 else_branch: Vec::new(),
                 binding_var: None,
+                is_statement_modifier: false,
             }]
         };
 
@@ -667,7 +673,9 @@ impl Compiler {
                 then_branch,
                 else_branch,
                 binding_var,
+                is_statement_modifier,
             } => Stmt::If {
+                is_statement_modifier: *is_statement_modifier,
                 cond: Self::rewrite_enter_phaser_expr(cond, extracted, counter),
                 then_branch: Self::rewrite_enter_phaser_stmts(then_branch, extracted, counter),
                 else_branch: Self::rewrite_enter_phaser_stmts(else_branch, extracted, counter),

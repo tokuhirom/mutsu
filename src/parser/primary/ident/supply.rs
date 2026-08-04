@@ -142,7 +142,9 @@ fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
             then_branch,
             else_branch,
             binding_var,
+            is_statement_modifier,
         } => Stmt::If {
+            is_statement_modifier,
             cond,
             then_branch: rewrite_supply_body(then_branch, emitter_name),
             else_branch: rewrite_supply_body(else_branch, emitter_name),

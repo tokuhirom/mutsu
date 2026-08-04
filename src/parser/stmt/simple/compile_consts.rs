@@ -50,8 +50,92 @@ pub(crate) fn push_scope() {
         // beneath it — a `map { }` block inside a sub body is a per-call block,
         // not part of the routine's own (cloned-once) frame.
         inherited.is_routine_body = false;
+        // Pending anonymous-state declarations belong to the scope that minted
+        // them; a nested block starts with none of its own.
+        inherited.anon_states = Vec::new();
         s.borrow_mut().push(inherited);
     });
+}
+
+/// Record an anonymous state variable (`$`) as minted directly in the current
+/// scope, so `take_anon_state_decls` can turn it into an implicit `state`
+/// declaration when the enclosing block's statement list is complete.
+pub(crate) fn record_anon_state_name(name: &str) {
+    SCOPES.with(|s| {
+        if let Some(current) = s.borrow_mut().last_mut() {
+            current.anon_states.push(name.to_string());
+        }
+    });
+}
+
+/// How many anonymous-state names the current scope has pending, so a caller can
+/// tell which ones a nested parse added (see `current_scope_anon_state_names_from`).
+pub(crate) fn current_scope_anon_state_count() -> usize {
+    SCOPES.with(|s| s.borrow().last().map_or(0, |c| c.anon_states.len()))
+}
+
+/// The current scope's pending anonymous-state names from index `from` on.
+pub(crate) fn current_scope_anon_state_names_from(from: usize) -> Vec<String> {
+    SCOPES.with(|s| {
+        s.borrow()
+            .last()
+            .map(|c| c.anon_states.get(from..).unwrap_or_default().to_vec())
+            .unwrap_or_default()
+    })
+}
+
+/// Take the current scope's pending anonymous-state names and turn each into an
+/// implicit `state $__ANON_STATE_<id>__;` declaration.
+///
+/// In Raku a bare `$` IS a `state` variable of the block it appears in, so the
+/// cell belongs to that block's *clone*: re-entering the enclosing scope
+/// re-clones the block literal and the counter restarts (`for ^2 { say (map {
+/// ++$ }, ^3).join(",") }` prints `1,2,3` twice), while iterations of one
+/// execution share it (`for ^3 { print ++$ }` prints `1 2 3`). Declaring the
+/// minted name as a real `state` hands all of that to the existing state
+/// machinery — per-closure `scoped_state_key`, and `reset_state_locals_in_range`
+/// for inline loop bodies — instead of a parallel mechanism that has to
+/// re-derive clone identity from the routine stack.
+pub(crate) fn take_anon_state_decls() -> Vec<crate::ast::Stmt> {
+    let names = SCOPES.with(|s| {
+        s.borrow_mut()
+            .last_mut()
+            .map(|current| std::mem::take(&mut current.anon_states))
+            .unwrap_or_default()
+    });
+    names
+        .into_iter()
+        .map(|name| crate::ast::Stmt::VarDecl {
+            name,
+            expr: crate::ast::Expr::Literal(crate::value::Value::NIL),
+            type_constraint: None,
+            is_state: true,
+            is_our: false,
+            is_dynamic: false,
+            is_export: false,
+            export_tags: Vec::new(),
+            custom_traits: Vec::new(),
+            where_constraint: None,
+        })
+        .collect()
+}
+
+/// Prepend this scope's implicit anonymous-state `state` declarations to the
+/// block's statement list. Call immediately before the matching `pop_scope`.
+pub(crate) fn prepend_anon_state_decls(stmts: &mut Vec<crate::ast::Stmt>) {
+    let decls = take_anon_state_decls();
+    if !decls.is_empty() {
+        stmts.splice(0..0, decls);
+    }
+}
+
+/// [`prepend_anon_state_decls`] applied to a block parser's result, for the call
+/// sites that hold a `PResult<'_, Vec<Stmt>>` between `push_scope` and
+/// `pop_scope`. A failed parse drops the pending names with the popped scope.
+pub(crate) fn finish_block_anon_states<T, E>(result: &mut Result<(T, Vec<crate::ast::Stmt>), E>) {
+    if let Ok((_, stmts)) = result {
+        prepend_anon_state_decls(stmts);
+    }
 }
 
 /// Mark the current (innermost) scope as a routine body. Called by the
@@ -62,28 +146,6 @@ pub(crate) fn mark_current_scope_routine_body() {
             current.is_routine_body = true;
         }
     });
-}
-
-/// Whether an anonymous state variable (`$++` / `++$`) minted at the current
-/// parse position is PER-CALL: lexically inside a nested block that is itself
-/// lexically inside a routine. Such a `$` belongs to a block clone the routine
-/// re-makes on every call, so its counter restarts per call; a `$` directly in
-/// a routine body (cloned once, at registration) or anywhere at the mainline
-/// keeps counting. The classification is baked into the variable's NAME
-/// (`__ANON_STATE_PC_<id>__`), so every later compilation of the same AST —
-/// including runtime re-compiles of block bodies — agrees on it by
-/// construction (the key-stability hazard that sank the per-chunk attempt,
-/// PR #5885).
-pub(crate) fn anon_state_is_per_call() -> bool {
-    SCOPES.with(|s| {
-        let scopes = s.borrow();
-        for (blocks_skipped, scope) in scopes.iter().rev().enumerate() {
-            if scope.is_routine_body {
-                return blocks_skipped > 0;
-            }
-        }
-        false
-    })
 }
 
 /// Pop the current lexical scope (called when leaving a `{ }` block).

@@ -444,6 +444,28 @@ impl Interpreter {
         Ok(())
     }
 
+    /// The `state` scope a code object's body must run under.
+    ///
+    /// A NAMED sub's is its REGISTRATION clone id (env
+    /// `__mutsu_callable_id::Pkg::name`, refreshed on every `RegisterSub`
+    /// execution) — the same id the cold named path uses — so a nested named sub
+    /// re-initializes per enclosing call while a top-level sub's state persists,
+    /// regardless of which dispatch path a call takes. Anonymous closures (and
+    /// named subs with no registration record) keep the Sub value's identity,
+    /// which is minted afresh by each `MakeClosure` and so IS the clone.
+    pub(crate) fn sub_state_scope_id(&self, data: &crate::value::SubData) -> u64 {
+        let name = data.name.resolve();
+        if name.is_empty() {
+            return data.id;
+        }
+        let key = format!("__mutsu_callable_id::{}::{}", data.package.resolve(), name);
+        self.env()
+            .get(&key)
+            .and_then(|v| v.as_int())
+            .filter(|i| *i != 0)
+            .map_or(data.id, |i| i as u64)
+    }
+
     /// Resolve a state variable key, applying the current closure scope if set.
     pub(crate) fn scoped_state_key(&self, key: &str) -> String {
         if let Some(id) = self.state_scope_id {

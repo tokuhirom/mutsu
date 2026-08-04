@@ -852,6 +852,14 @@ pub(crate) enum Stmt {
         else_branch: Vec<Stmt>,
         /// Optional binding variable: `if EXPR -> $var { }`
         binding_var: Option<String>,
+        /// True when this `If` is the lowering of a postfix `if`/`unless`
+        /// statement modifier rather than a source `if BLOCK`. A modifier
+        /// introduces no block, so its "branch" is not a block literal the
+        /// enclosing scope re-clones — a `state` in it belongs to the enclosing
+        /// block and must NOT restart per execution
+        /// (`sub f { state $n = 0 if 1; ++$n }` counts 1, 2, 3 across calls).
+        /// Mirrors `Stmt::For` / `Stmt::Given`'s flag of the same name.
+        is_statement_modifier: bool,
     },
     While {
         cond: Expr,
@@ -1183,6 +1191,7 @@ pub(crate) fn collect_all_my_decl_names(
                 then_branch,
                 else_branch,
                 binding_var,
+                ..
             } => {
                 add_from_expr(cond, out);
                 if let Some(v) = binding_var {
@@ -2585,6 +2594,7 @@ mod env_only_decl_tests {
             then_branch: vec![Stmt::Next(None)],
             else_branch: vec![],
             binding_var: None,
+            is_statement_modifier: false,
         };
         // Wrapped in a gather-shaped Block([While { body: [...] }]).
         let body = vec![Stmt::Block(vec![Stmt::While {

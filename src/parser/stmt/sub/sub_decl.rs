@@ -381,7 +381,8 @@ pub(crate) fn sub_decl_body(
         super::super::simple::push_scope();
         super::super::simple::mark_current_scope_routine_body();
         register_sigilless_terms(&param_defs);
-        let result = block_inner(r);
+        let mut result = block_inner(r);
+        super::super::simple::finish_block_anon_states(&mut result);
         super::super::simple::pop_scope();
         result?
     } else {
