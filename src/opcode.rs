@@ -2474,6 +2474,22 @@ impl ConstKey {
 }
 
 impl CompiledCode {
+    pub(crate) fn remap_sub_decl_compiled_routine_keys(
+        &mut self,
+        remap: &rustc_hash::FxHashMap<Symbol, Symbol>,
+    ) {
+        for plan in &mut self.sub_decl_plans {
+            for key in &mut plan.compiled_routine_keys {
+                if let Some(remapped) = remap.get(key) {
+                    *key = *remapped;
+                }
+            }
+        }
+        for nested in &mut self.closure_compiled_codes {
+            Arc::make_mut(nested).remap_sub_decl_compiled_routine_keys(remap);
+        }
+    }
+
     fn mark_name_access_slots(&self, start: usize, end: usize, slots: &mut [bool]) {
         let end = end.min(self.ops.len());
         for op in &self.ops[start.min(end)..end] {
