@@ -29,9 +29,10 @@ is_run(
     'parse error after Cyrillic chars does not panic',
 );
 
-# Sanity: an ASCII parse error still reports SORRY.
+# Sanity: the same shape with ASCII-only source still reports SORRY, so the two
+# cases above are testing the encoding and not the diagnosis.
 is_run(
-    'my $x = 1 1;',
+    'my $x = "abc"" ;',
     {
         status => sub { 0 != $^a },
         err    => rx/'SORRY'/,

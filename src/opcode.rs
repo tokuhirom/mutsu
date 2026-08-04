@@ -1480,6 +1480,12 @@ pub(crate) enum OpCode {
         /// such a block is a callframe and contributes an anonymous backtrace
         /// frame while executing inside it.
         is_bare_block: bool,
+        /// True only for a genuine `try` block/expression, which *traps*: an
+        /// exception no handler matched is swallowed into `$!`. The same opcode
+        /// is also emitted as an implicit wrapper around any block or routine
+        /// body that merely contains a `CATCH`/`CONTROL` phaser; such a region
+        /// does not trap, so `{ die "x"; CONTROL { } }` must propagate.
+        traps: bool,
     },
 
     /// Push an anonymous block callframe onto the routine stack. Emitted around a

@@ -60,7 +60,7 @@ impl Compiler {
         }
         // If the do block contains CATCH/CONTROL, compile as try so exceptions are handled.
         if Self::has_catch_or_control(body) {
-            self.compile_try(body, &None);
+            self.compile_implicit_try(body);
             return;
         }
         // If the do block contains ENTER/LEAVE/KEEP/UNDO phasers, wrap in

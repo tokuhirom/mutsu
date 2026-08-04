@@ -96,7 +96,7 @@ impl Compiler {
         }
         // If the block contains CATCH/CONTROL, wrap in implicit try
         if Self::has_catch_or_control(stmts) {
-            self.compile_try(stmts, &None);
+            self.compile_implicit_try(stmts);
             self.pop_dynamic_scope_lexical(saved);
             return;
         }

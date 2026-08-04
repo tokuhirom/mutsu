@@ -51,7 +51,7 @@ impl Compiler {
         // If the block contains CATCH/CONTROL, wrap in implicit try so
         // exceptions are handled (any Raku block can act as a try block).
         if Self::has_catch_or_control(stmts) {
-            self.compile_try(stmts, &None);
+            self.compile_implicit_try(stmts);
             self.pop_dynamic_scope_lexical(saved);
             return;
         }
@@ -505,7 +505,7 @@ impl Compiler {
     fn compile_body_with_implicit_try_inner(&mut self, stmts: &[Stmt]) {
         let saved = self.push_dynamic_scope_lexical();
         if Self::has_catch_or_control(stmts) {
-            self.compile_try(stmts, &None);
+            self.compile_implicit_try(stmts);
             self.code.emit(OpCode::Pop);
         } else {
             for s in stmts {
@@ -524,8 +524,23 @@ impl Compiler {
         self.pop_dynamic_scope_lexical(saved);
     }
 
-    /// Compile Expr::Try { body, catch } to TryCatch opcode.
+    /// Compile a genuine `try` block/expression (Expr::Try { body, catch }) to a
+    /// TryCatch opcode. This region *traps*: an exception that no handler
+    /// matched is swallowed into `$!`.
     pub(super) fn compile_try(&mut self, body: &[Stmt], catch: &Option<Vec<Stmt>>) {
+        self.compile_try_region(body, catch, true);
+    }
+
+    /// Compile the implicit TryCatch wrapper the compiler puts around any block
+    /// or routine body that merely *contains* a `CATCH`/`CONTROL` phaser. The
+    /// phaser needs a region to observe, but the region is not a `try`, so an
+    /// exception no handler matched propagates out of it instead of being
+    /// swallowed (`{ die "x"; CONTROL { } }` dies).
+    pub(super) fn compile_implicit_try(&mut self, body: &[Stmt]) {
+        self.compile_try_region(body, &None, false);
+    }
+
+    fn compile_try_region(&mut self, body: &[Stmt], catch: &Option<Vec<Stmt>>, traps: bool) {
         let saved = self.push_dynamic_scope_lexical();
         // Detect duplicate CATCH/CONTROL phasers in the same block: Raku
         // requires at most one of each per block (X::Phaser::Multiple).
@@ -576,6 +591,7 @@ impl Compiler {
             explicit_catch: has_explicit_catch,
             resume_safe,
             is_bare_block,
+            traps,
         });
         // Compile main body (last Stmt::Expr/Call leaves value on stack)
         let mut main_leaves_value = false;
@@ -629,7 +645,7 @@ impl Compiler {
             // wrap it in an implicit try so exceptions thrown inside the
             // outer CATCH can be handled by the nested CATCH.
             if Self::has_catch_or_control(catch_body) {
-                self.compile_try(catch_body, &None);
+                self.compile_implicit_try(catch_body);
                 self.code.emit(OpCode::Pop);
             } else {
                 for stmt in catch_body {

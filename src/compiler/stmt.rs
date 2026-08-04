@@ -588,7 +588,7 @@ impl Compiler {
                 let is_bare = !std::mem::take(&mut self.synthetic_block_body);
                 if Self::has_catch_or_control(stmts) {
                     self.next_try_is_bare_block = is_bare;
-                    self.compile_try(stmts, &None);
+                    self.compile_implicit_try(stmts);
                     self.next_try_is_bare_block = false;
                     self.code.emit(OpCode::Pop);
                 } else if Self::has_block_enter_leave_phasers(stmts) {
@@ -2552,7 +2552,7 @@ impl Compiler {
                 let saved_scope =
                     (!*is_statement_modifier).then(|| self.push_dynamic_scope_lexical());
                 if Self::has_catch_or_control(body) {
-                    self.compile_try(body, &None);
+                    self.compile_implicit_try(body);
                     self.code.emit(OpCode::Pop);
                 } else {
                     for (i, s) in body.iter().enumerate() {
@@ -2610,7 +2610,7 @@ impl Compiler {
                 });
                 let saved_scope = self.push_dynamic_scope_lexical();
                 if Self::has_catch_or_control(body) {
-                    self.compile_try(body, &None);
+                    self.compile_implicit_try(body);
                     self.code.emit(OpCode::Pop);
                 } else {
                     for (i, s) in body.iter().enumerate() {
