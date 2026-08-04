@@ -143,6 +143,11 @@ static REGEX_CAP_MAKEMUT_SHARED: AtomicU64 = AtomicU64::new(0);
 // exploded-builder caller still passes bare text.
 static REGEX_MATCH_LEAF_SEARCHES: AtomicU64 = AtomicU64::new(0);
 static REGEX_MATCH_LEAF_SPANS: AtomicU64 = AtomicU64::new(0);
+// ADR-0016 P5 guard: every first `view()` of a lazy Match forces its
+// Instance-shaped attribute map. This makes accidental `view()`-based tag
+// probes visible in instrumented grammar/regex runs instead of silently
+// eroding the lazy representation.
+static REGEX_MATCH_MATERIALIZATIONS: AtomicU64 = AtomicU64::new(0);
 
 // Regex embedded-code parse cache (REGEX_CODE_PARSE_CACHE) effectiveness.
 static REGEX_CODE_PARSE_HITS: AtomicU64 = AtomicU64::new(0);
@@ -181,6 +186,14 @@ pub(crate) fn record_regex_match_leaf(searched: bool) {
         } else {
             REGEX_MATCH_LEAF_SPANS.fetch_add(1, Ordering::Relaxed);
         }
+    }
+}
+
+/// Record the first materialization of one lazy `Match` node.
+#[inline]
+pub(crate) fn record_regex_match_materialization() {
+    if enabled() {
+        REGEX_MATCH_MATERIALIZATIONS.fetch_add(1, Ordering::Relaxed);
     }
 }
 
@@ -493,8 +506,9 @@ pub(crate) fn dump() {
     let cap_makemut_shared = REGEX_CAP_MAKEMUT_SHARED.load(Ordering::Relaxed);
     let leaf_searches = REGEX_MATCH_LEAF_SEARCHES.load(Ordering::Relaxed);
     let leaf_spans = REGEX_MATCH_LEAF_SPANS.load(Ordering::Relaxed);
+    let match_materializations = REGEX_MATCH_MATERIALIZATIONS.load(Ordering::Relaxed);
     eprintln!(
-        "[mutsu vm-stats] regex-captures: cap_makemut={cap_makemut_total} shared_deep_copies={cap_makemut_shared} leaf_searches={leaf_searches} leaf_spans={leaf_spans}"
+        "[mutsu vm-stats] regex-captures: cap_makemut={cap_makemut_total} shared_deep_copies={cap_makemut_shared} leaf_searches={leaf_searches} leaf_spans={leaf_spans} match_materializations={match_materializations}"
     );
     let code_parse_hits = REGEX_CODE_PARSE_HITS.load(Ordering::Relaxed);
     let code_parse_misses = REGEX_CODE_PARSE_MISSES.load(Ordering::Relaxed);
