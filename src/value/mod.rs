@@ -850,6 +850,24 @@ pub struct SubData {
     pub(crate) is_bare_block: bool,
     /// Pre-compiled bytecode for this closure (if compiled).
     pub(crate) compiled_code: Option<Arc<CompiledCode>>,
+    /// The registry routine this code object *is*, when it was built from a
+    /// declared routine rather than from a closure-creation op — `&foo`, a
+    /// `.candidates` entry, a `nextsame` candidate, an operator fallback, a
+    /// `.wrap` target, a `Method` object.
+    ///
+    /// Such a Sub used to be executable only as the AST body copied into
+    /// [`Self::body`]: every dispatch either walked it or re-compiled it on the
+    /// fly. Carrying the routine's own `CompiledFunction` instead makes the code
+    /// object bytecode-backed, which is what lets the sub declaration plan stop
+    /// shipping an executable AST (ADR-0019 C6c).
+    ///
+    /// Kept SEPARATE from `compiled_code` because the two are invoked under
+    /// different calling conventions: `compiled_code` is closure bytecode bound
+    /// through `call_compiled_closure` (upvalues aligned with `upvalue_syms`),
+    /// while this is routine bytecode whose parameter binding is described by
+    /// `CompiledFunction::param_local_slots` / `named_call_plan`. Dispatch reads
+    /// this one only where it would otherwise have compiled `body`.
+    pub(crate) compiled_routine: Option<Arc<crate::opcode::CompiledFunction>>,
     /// `is DEPRECATED` message: None = not deprecated, Some(msg) = deprecated.
     pub(crate) deprecated_message: Option<String>,
     /// Source line number (1-based) where this block/sub was defined.

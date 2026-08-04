@@ -505,7 +505,7 @@ impl Interpreter {
                         ));
                     }
                 };
-            let sub_val = Value::make_sub(
+            let sub_val = Value::make_sub_for_routine(
                 def.package,
                 def.name,
                 def.params.clone(),
@@ -513,6 +513,7 @@ impl Interpreter {
                 def.body.clone(),
                 def.is_rw,
                 self.env.clone(),
+                def.compiled.clone(),
             );
             self.block_stack.push(sub_val);
             let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);

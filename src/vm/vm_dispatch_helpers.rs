@@ -400,6 +400,20 @@ impl Interpreter {
                 &empty_fns,
             );
         }
+        // A code object built from a registry routine carries that routine's own
+        // bytecode, so it runs compiled without re-compiling its AST body
+        // (ADR-0019 C6c). Mirrors `vm_call_on_value`.
+        if let Some(cf) = data.compiled_routine.clone() {
+            let data = data.clone();
+            return self.call_compiled_closure_with_topic(
+                &data,
+                &cf.code,
+                args,
+                explicit_topic,
+                capture_rw_topic,
+                &empty_fns,
+            );
+        }
         // Sub without compiled_code: compile on-the-fly (mirrors vm_call_on_value).
         let cc = {
             let mut compiler = crate::compiler::Compiler::new();
@@ -482,6 +496,19 @@ impl Interpreter {
             let empty_fns = CompiledFns::default();
             let fns = compiled_fns.unwrap_or(&empty_fns);
             return self.call_compiled_closure(&data, &cc, args, fns);
+        }
+
+        // A code object built from a registry routine (`&foo`, a `.candidates`
+        // entry, the `nextcallee` candidate) carries that routine's compiled body,
+        // so it dispatches as bytecode rather than re-compiling the AST body the
+        // declaration copied into it (ADR-0019 C6c).
+        if let ValueView::Sub(data) = target.view()
+            && let Some(cf) = data.compiled_routine.clone()
+        {
+            let data = data.clone();
+            let empty_fns = CompiledFns::default();
+            let fns = compiled_fns.unwrap_or(&empty_fns);
+            return self.call_compiled_closure(&data, &cf.code, args, fns);
         }
 
         // Sub without compiled_code: compile on-the-fly then dispatch via Interpreter

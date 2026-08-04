@@ -204,7 +204,7 @@ impl Interpreter {
         };
         self.alias_params_into_current_package(&def.param_defs);
         // Push Sub value to block_stack so callframe().code works for nested calls
-        let sub_val = Value::make_sub(
+        let sub_val = Value::make_sub_for_routine(
             def.package,
             def.name,
             def.params.clone(),
@@ -212,6 +212,7 @@ impl Interpreter {
             def.body.clone(),
             def.is_rw,
             self.env.clone(),
+            def.compiled.clone(),
         );
         self.block_stack.push(sub_val);
         let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);
@@ -414,7 +415,7 @@ impl Interpreter {
                             }
                         };
                     self.alias_params_into_current_package(&def.param_defs);
-                    let sub_val = Value::make_sub(
+                    let sub_val = Value::make_sub_for_routine(
                         def.package,
                         def.name,
                         def.params.clone(),
@@ -422,6 +423,7 @@ impl Interpreter {
                         def.body.clone(),
                         def.is_rw,
                         self.env.clone(),
+                        def.compiled.clone(),
                     );
                     self.block_stack.push(sub_val);
                     let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);

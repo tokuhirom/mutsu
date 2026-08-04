@@ -110,8 +110,8 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 17/51 slices merged. Next slice: C6c (C6a and C6b landed; C6 is subdivided
-below). C6c and C6d each need a design pass before coding — see their notes.**
+**Current progress: 17/51 slices merged. Next slice: C6d (C6a, C6b and C6c landed; C6 is
+subdivided below). C6d needs a design pass before coding — see its note.**
 
 The migration is complete only when every required box below is checked and the completion gates
 at the end pass. The order within a phase is intentional. A later phase may start when its stated
@@ -171,18 +171,22 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
     single reader `Interpreter::routine_body_facts`, and read the existing `is_stub` field on the
     redeclaration path. (`collect_routine_body_local_names` and rw-target extraction return AST
     data rather than facts; they move with C6c/C6d.)
-  - [ ] **C6c — `Value::make_sub` from a def.** Make a code object built from a registry routine
-    bytecode-backed. **Not a field copy:** `FunctionDef.compiled` is an `Arc<CompiledFunction>`
-    invoked by `compile_and_call_function_def` (routine convention: `param_local_slots`,
-    `named_call_plan`, `param_name_syms`), while `SubData.compiled_code` is an `Arc<CompiledCode>`
-    invoked by `call_compiled_closure` (closure convention: upvalues aligned to
-    `cc.upvalue_syms`, captured env). Handing the inner `code` over would run a routine body under
-    the closure calling convention. The slice is to let a Sub value carry *routine* identity and
-    dispatch through the routine path; design that first.
+  - [x] **C6c — `Value::make_sub` from a def.** A code object built from a registry routine now
+    carries that routine's bytecode in `SubData::compiled_routine` (filled from
+    `FunctionDef::compiled` by `Value::make_sub_for_routine`), and the two `Sub` dispatch paths
+    that used to compile `data.body` on the fly read it instead. It needed no
+    calling-convention change: both compile paths bake `param_local_slots` into the
+    `CompiledCode`, and an empty upvalue array falls back to by-name env reads — see
+    `news/2026-08/routine-code-objects-are-bytecode-backed.md`, which corrects the earlier
+    scoping note.
   - [ ] **C6d — interpreter execution sites.** Route `eval_block_value(&def.body)` /
     `run_block(&def.body)` through `def.compiled`. **Not a small slice:** these carriers are
     reached precisely *because* an OTF gate rejected the routine, so eliminating them means
     widening OTF coverage to every routine, not rewiring a call. Scope it as its own program.
+    Its sibling site is `call_sub_value`'s `eval_block_value(&data.body)`, which takes a *code
+    object's* body rather than a def's: after C6c that is the one path left that still executes a
+    routine code object's AST, reached when a `.wrap` chain routes dispatch through the
+    interpreter carrier. It needs the same widening, so it belongs here rather than in C6c.
   - [ ] **C6e — redeclaration comparison and the proto rewrite**, then drop the plan field.
 - [ ] **C7 — Remove the sub-registration AST adapter.** Delete dead sub-shaped walker branches and
   prove the routine registry never compiles a migrated declaration on demand.
@@ -341,6 +345,16 @@ landed: a routine's structural identity is now a memoized `FunctionDef::body_fin
 rather than a hash recomputed per read over a Debug rendering of the whole body AST. That
 removed eight direct body reads and let the `func_def_fp_cache` side cache — which existed only
 to hide that cost on the multi-redispatch path — be deleted outright.
+
+A code object built from a registry routine is no longer AST-only either. `SubData` carries a
+`compiled_routine: Option<Arc<CompiledFunction>>` naming the routine it *is*, filled from
+`FunctionDef::compiled` by `Value::make_sub_for_routine` at the sites that build a `Sub` from a
+def (`&foo`, `.candidates`, `.cando`, `nextcallee`, the operator fallback, the `block_stack`
+entry `callframe().code` reads). `vm_call_on_value` and the native map-block entry prefer that
+bytecode over compiling `data.body` on the fly, so no dispatch path executes an AST body for
+these code objects. The three near-identical `SubData` literals behind `make_sub`,
+`make_sub_with_id`, and `make_sub_owning` collapsed into one `new_code_object` core in the
+process.
 
 `RegisterClass` and `RegisterRole` now likewise index typed class/role declaration-plan pools for
 both source-order declarations and hoisted forward-reference shells. The VM no longer discovers

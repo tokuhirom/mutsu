@@ -224,6 +224,7 @@ fn sample_sub() -> Gc<SubData> {
         empty_sig: false,
         is_bare_block: false,
         compiled_code: None,
+        compiled_routine: None,
         deprecated_message: None,
         source_line: None,
         source_file: None,
