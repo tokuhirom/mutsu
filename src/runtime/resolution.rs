@@ -1,12 +1,26 @@
 use super::*;
 use crate::symbol::Symbol;
 
-/// Monotonic counter stamped onto each `token`/`rule` `FunctionDef` at
-/// registration time (`insert_token_def`) to record declaration order. Rakudo
-/// breaks an equal-length Longest-Token-Match tie between proto candidates by
-/// declaration order, so the resolver sorts sym-variant candidates by this
-/// value instead of alphabetically.
-static NEXT_TOKEN_DECL_ORDER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+/// Monotonic counter stamped onto every `FunctionDef` at registration time to
+/// record declaration order. Two consumers rely on it:
+///
+/// - Rakudo breaks an equal-length Longest-Token-Match tie between proto
+///   `token`/`rule` candidates by declaration order, so the resolver sorts
+///   sym-variant candidates by this value instead of alphabetically.
+/// - Rakudo breaks an equal-*narrowness* multi-dispatch tie by declaration
+///   order too (`multi f(:$a)` before `multi f(Str :$a)` wins `f(a => "x")`),
+///   so `sort_candidates_by_specificity` uses it as its final key.
+///
+/// The counter is global rather than per-`(package, name)`: only the relative
+/// order *within* one candidate set matters, and every candidate of a set is
+/// registered by the same top-to-bottom pass over its unit.
+static NEXT_DECL_ORDER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+/// Take the next declaration-order stamp. Called from every `FunctionDef`
+/// construction site in the registration paths.
+pub(crate) fn next_decl_order() -> u64 {
+    NEXT_DECL_ORDER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
 
 /// True when `rest` (the portion of a `token_defs` key AFTER the proto's
 /// fully-qualified name) begins a proto-regex variant adverb. Both the explicit
@@ -148,7 +162,7 @@ impl Interpreter {
         // top-to-bottom, so a monotonic counter captures declaration order,
         // which is Rakudo's tie-break for an equal-length LTM tie between
         // proto candidates (`token pp:sym<**>` before `token pp:sym<m>`).
-        def.decl_order = NEXT_TOKEN_DECL_ORDER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        def.decl_order = next_decl_order();
         let def = std::sync::Arc::new(def);
         if multi {
             self.registry_mut()
