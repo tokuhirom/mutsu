@@ -66,7 +66,11 @@ impl Interpreter {
         // X::Redeclaration. The VM force path never hits this because it dispatches
         // the body's subs out of the body's own `compiled_fns`.
         self.push_block_scope_depth();
+        // The body's `samewith` names the routine the gather was WRITTEN in —
+        // see `push_captured_samewith_context`.
+        let pushed_samewith = self.push_captured_samewith_context(&list.env);
         let run_res = self.run_block(&list.body);
+        self.pop_captured_samewith_context(pushed_samewith);
         self.pop_block_scope_depth();
         let items = self.gather_items.pop().unwrap_or_default();
         self.gather_take_limits.pop();
@@ -104,7 +108,10 @@ impl Interpreter {
         self.gather_items.push(Vec::new());
         self.gather_take_limits.push(Some(needed_len));
         self.gather_suspend_pending = false;
+        // See `push_captured_samewith_context`.
+        let pushed_samewith = self.push_captured_samewith_context(&list.env);
         let run_res = self.run_block(&list.body);
+        self.pop_captured_samewith_context(pushed_samewith);
         // Clear the deferred-suspension flag on exit — see the matching clear
         // in force_lazy_list_vm_n_inner.
         self.gather_suspend_pending = false;

@@ -69,41 +69,48 @@ letting `encode_elems` do the width masking; see
 `news/2026-08/buf-wide-element-assign-saturation.md`. `sha384`, `sha512` and the
 rest of `t/sha.t`'s SHA-1/SHA-2 subtests now pass.
 
-## 6. `Digest::SHA3` — `samewith` inside a lazy `gather`
+## 6. `Digest::SHA3` — down to `KeccakF1600`'s immutable value
 
-The named-only multi-dispatch half of this blocker is FIXED — see
-`news/2026-08/multi-named-narrowness-declaration-order.md`. Named parameters now
-contribute exactly one boolean narrowness step ("declares a named at all"), and
-equally-narrow candidates are resolved by declaration order, so `Keccak`'s
-`:$outputByteLen`-less call reaches the sibling candidate it is delegating to
-instead of recursing into itself.
+Both originally-reported halves are FIXED:
 
-What remains is the lazy `gather`. `Digest::SHA3`'s `Keccak` is a `proto` with
-five named parameters and two `multi`s; the `:$outputByteLen` candidate finishes
-with
+- the named-only multi dispatch (`Keccak`'s two candidates differ only in an
+  extra `:$outputByteLen`) —
+  `news/2026-08/multi-named-narrowness-declaration-order.md`;
+- `samewith` inside the lazy `gather` that `Keccak`'s wide candidate ends with —
+  `news/2026-08/samewith-inside-lazy-gather.md`. Its "Unexpected named argument
+  'delimitedSuffix' passed" face was the same bug: the dynamic dispatch stack
+  named `sha3_256` (the routine doing the forcing) instead of `Keccak`, so the
+  redispatch went to the wrong routine rather than failing.
 
-    gather for samewith $inputBytes, :$delimitedSuffix, :$rate, :$capacity { ... }
+`sha3_256("abc")` now runs all the way into the permutation and stops on an
+unrelated bug:
 
-Calling it directly dies with `samewith called outside of a dispatch context` —
-the enclosing routine's dispatch frame is gone by the time the lazy `gather`
-body runs. Reduced:
+    Cannot modify an immutable value
+      in sub KeccakF1600 ... in sub Keccak ... in sub sha3_256
 
-    proto K($x, :$a, :$len) {*}
-    multi K($x, :$a)        { gather { take $x; take $x + $a } }
-    multi K($x, :$a, :$len) { gather for samewith($x, :$a) { take $_ * $len } }
-    say K(3, a => 1, len => 10).list;
-    # raku:  (30 40)
-    # mutsu: an empty line
+`KeccakF1600` has two candidates, `multi KeccakF1600(@lanes)` and
+`multi KeccakF1600(blob8 $state)`, and the caller writes
+`$state .= &KeccakF1600`. That is the next thing to reduce.
 
-(mutsu prints an empty line — the `say` runs but the list is empty, and the
-`samewith` failure never surfaces — so there is a second problem in how the
-failing `gather` is sunk.)
+Two smaller residues found while fixing the above, neither on the `Digest`
+critical path:
 
-Going through `sha3_256` instead of calling `Keccak` directly currently fails
-earlier and differently ("Unexpected named argument 'delimitedSuffix' passed",
-reported against `multi sha3_256(Blob $input) { [~] Keccak $input, … }`); that
-may be the reduce metaop `[~]` swallowing the named arguments into its list
-rather than passing them to `Keccak`, and needs its own reduction.
+- A gather created inside a module routine and forced from the *consumer's*
+  top-level scope cannot resolve a module-private name:
+  `Digest::SHA3::Keccak(...)` called directly from a script dies with
+  `Unknown function: Keccak` when its `samewith` fires. Going through the
+  exported `sha3_256` works, because the force then happens with the module's
+  scope in view. The samewith context capture records only the routine NAME;
+  making it carry the declaring package needs the package-qualified proto
+  dispatch below to work first.
+- `T::K8::Keccak(...)` — a package-qualified call to a module's `proto` from
+  outside the module — reports `No matching candidates for proto sub:
+  T::K8::Keccak` even though the identical unqualified call inside the module
+  resolves. Independent of `samewith`; reproduced with a two-candidate proto
+  and no `gather` at all.
+- `say` swallows an exception raised while `.gist` forces a lazy `Seq`, which is
+  what made the original `samewith` failure print an empty line instead of an
+  error: `todo/tickets/say-swallows-an-exception-from-gist.md`.
 
 ## 5. `read-ubits` / `write-bits` on a wide buffer
 
