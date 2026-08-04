@@ -405,6 +405,16 @@ impl Interpreter {
         } else {
             value
         };
+        // A plain-lexical `@`/`%` parameter bound through this env-level path is
+        // a fresh per-invocation binding with no local slot behind it. Record
+        // the bound container so `clone_for_thread_for_block` keeps the binding
+        // off the name-keyed `shared_vars` lane, which is seeded once per name
+        // and would freeze a spawned block's view of it at the first spawn's
+        // value (`reduce -> $h, @words { $h + await start { [+] @words } }`).
+        if name.starts_with(['@', '%']) && Self::is_plain_lexical_name(name) {
+            self.param_bound_aggregates
+                .insert(name.to_string(), value.clone());
+        }
         self.env.insert(name.to_string(), value.clone());
         // Extract attribute name from twigil params: $!x -> "x", @!types -> "types", %!h -> "h"
         let attr_name = if let Some(a) = name.strip_prefix('!') {

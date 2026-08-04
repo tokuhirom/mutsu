@@ -64,27 +64,35 @@ impl Interpreter {
                 }
                 out.insert(bare.to_string());
             }
-            // An `@`/`%` free variable that a **destructuring sub-signature**
-            // bound is a fresh per-invocation binding, not the one shared object
-            // the name lane represents. Left on the lane it is seeded once and
-            // frozen at the first spawn's value, so
-            // `map -> [$a, @K] { start { @K[0] } }, ...` had every worker read
-            // the first iteration's `@K`.
+            // An `@`/`%` free variable that the env-level parameter binding path
+            // bound — a destructuring sub-signature (`-> [$a, @K]`) or a
+            // runtime-invoked callback's plain parameter (`reduce -> $h,
+            // @words`) — is a fresh per-invocation binding, not the one shared
+            // object the name lane represents. Left on the lane it is seeded
+            // once and frozen at the first spawn's value, so
+            // `map -> [$a, @K] { start { @K[0] } }, ...` and
+            // `reduce -> $h, @words { $h + await start { [+] @words } }, ...`
+            // had every worker read the first binding's value.
             //
-            // Two conditions narrow this to exactly that case. The name must be
-            // one a sub-signature has bound, and the free variable must resolve
-            // to NO parent slot: the sub-signature binder is the only parameter
-            // path that writes `env` without a local slot (every compiled
-            // binding path declines a `sub_signature`), so a plain `-> @K`
-            // parameter — which republishes into the lane from its slot on each
-            // call, and works today — keeps the lane. Together they also leave
-            // an unrelated outer aggregate that merely shares the name, and its
-            // `__mutsu_atomic_*` CAS copies, exactly where
+            // Two conditions narrow this to exactly that case. The free variable
+            // must resolve to NO parent slot (the env-level binder is the only
+            // parameter path that writes `env` without a local slot behind it),
+            // and the container `param_bound_aggregates` recorded for the name
+            // must be the SAME container the env currently holds — so an
+            // unrelated outer aggregate that merely shares the name (or a later
+            // `my` re-binding of it), and its `__mutsu_atomic_*` CAS copies,
+            // keep the lane exactly where
             // `docs/recursive-start-shared-vars.md` requires.
             for (i, sym) in cc.free_var_syms.iter().enumerate() {
                 let name = sym.resolve();
                 let slot_bound = cc.free_var_parent_slots.get(i).copied().flatten().is_some();
-                if !slot_bound && self.sub_signature_bound_aggregates.contains(name.as_str()) {
+                if !slot_bound
+                    && let Some(bound) = self.param_bound_aggregates.get(name.as_str())
+                    && self
+                        .env
+                        .get(&name)
+                        .is_some_and(|cur| Self::same_container_arc(cur, bound))
+                {
                     out.insert(name.to_string());
                 }
             }
@@ -181,10 +189,12 @@ impl Interpreter {
                 // overwrote its correct answer (PLAN.md §6).
                 // `@`/`%` aggregates keep this lane by default: their
                 // `__mutsu_atomic_*` CAS copies are keyed off these entries. The
-                // one exception is an aggregate bound by a destructuring
-                // sub-signature, which `block_captured_scalars` puts in this set
-                // *with* its sigil — a fresh per-invocation binding the lane
-                // cannot represent (it would freeze at the first spawn's value).
+                // one exception is an aggregate bound by the env-level parameter
+                // binding path (a destructuring sub-signature, or a
+                // runtime-invoked callback's plain parameter), which
+                // `block_captured_scalars` puts in this set *with* its sigil — a
+                // fresh per-invocation binding the lane cannot represent (it
+                // would freeze at the first spawn's value).
                 if !captured_scalars.is_empty()
                     && (!key.starts_with('@') && !key.starts_with('%')
                         || captured_scalars.contains(key.as_str()))
@@ -471,8 +481,8 @@ impl Interpreter {
             // The child starts no declaration of its own; its own `my`s populate
             // this as they run.
             thread_decl_in_flight: std::collections::HashSet::new(),
-            // The child re-binds its own destructured parameters if it runs any.
-            sub_signature_bound_aggregates: std::collections::HashSet::new(),
+            // The child re-binds its own env-bound parameters if it runs any.
+            param_bound_aggregates: std::collections::HashMap::new(),
             suppress_shared_publish: false,
             // A worker can instantiate a type registered on the parent, so the
             // set of method-written lexicals travels with the clone.
