@@ -305,7 +305,15 @@ impl Interpreter {
                 .clone()
                 .or_else(|| (!spec.silent).then(|| spec.lookup_name.clone()));
             own_key
-                .and_then(|k| store.caps().named.get(&k)?.nodes.last().cloned())
+                .and_then(|k| {
+                    store
+                        .caps()
+                        .named
+                        .get(&Symbol::intern(&k))?
+                        .nodes
+                        .last()
+                        .cloned()
+                })
                 .filter(|sc| sc.from == from && sc.to == to)
         } else {
             None

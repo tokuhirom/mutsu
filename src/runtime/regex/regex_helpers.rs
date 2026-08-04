@@ -1042,7 +1042,7 @@ pub(super) fn pos_slot_texts(slots: &[PosSlot], chars: &[char]) -> Vec<String> {
 /// `CodeBlockContext` snapshot carries. Silent-action marker keys never had
 /// text entries pre-P4 and are skipped.
 pub(super) fn named_slot_texts(
-    named: &HashMap<String, NamedSlot>,
+    named: &HashMap<crate::symbol::Symbol, NamedSlot>,
     chars: &[char],
 ) -> HashMap<String, Vec<String>> {
     named
@@ -1050,7 +1050,7 @@ pub(super) fn named_slot_texts(
         .filter(|(k, _)| !k.starts_with(SILENT_ACTION_MARKER_PREFIX))
         .map(|(k, slot)| {
             (
-                k.clone(),
+                k.resolve(),
                 slot.nodes
                     .iter()
                     .map(|n| span_chars_text(n.from, n.to, chars))

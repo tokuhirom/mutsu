@@ -171,11 +171,11 @@ impl MatchNode {
             }
             let vals: Vec<Value> = slot.nodes.iter().map(|sc| self.lazy_child(sc)).collect();
             if vals.len() == 1 && !slot.quantified {
-                sub_named.insert(key.clone(), vals[0].clone());
+                sub_named.insert(key.resolve(), vals[0].clone());
             } else {
                 // Quantified names (including zero-iteration ones) and
                 // multi-entry captures render as arrays.
-                sub_named.insert(key.clone(), Value::real_array(vals));
+                sub_named.insert(key.resolve(), Value::real_array(vals));
             }
         }
 
@@ -377,7 +377,7 @@ mod tests {
         caps.from = 0;
         caps.to = 2;
         caps.named.insert(
-            "x".to_string(),
+            Symbol::intern("x"),
             crate::runtime::NamedSlot {
                 nodes: vec![Arc::clone(&child)],
                 quantified: false,

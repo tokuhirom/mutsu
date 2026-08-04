@@ -9,6 +9,7 @@
 //! those siblings keep their access (the whole set is re-exported from
 //! `runtime` via `pub(crate) use self::regex_types::*`).
 
+use crate::symbol::Symbol;
 use crate::value::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -156,7 +157,9 @@ pub(crate) struct CapChildren {
     /// the quantified flag in one axis. Silent-action captures (`<.foo>`)
     /// live under `SILENT_ACTION_MARKER_PREFIX`-prefixed keys and are hidden
     /// from `.hash`.
-    pub(crate) named: HashMap<String, NamedSlot>,
+    /// Capture names stay interned throughout matching and backtracking; only
+    /// Match `.hash` materialization resolves them back to user-facing strings.
+    pub(crate) named: HashMap<Symbol, NamedSlot>,
     pub(crate) capture_alias_map: HashMap<String, String>,
     /// Positional captures as span-bearing slots (ADR-0016 P4). Unlike the
     /// pre-P4 parallel vectors, the span survives onto the stored node — the
@@ -247,8 +250,8 @@ impl RegexCaptures {
 #[derive(Clone, Default)]
 pub(crate) struct RegexCaptures {
     /// Named captures as span-bearing slots (ADR-0016 P4). Keyed by capture
-    /// name; silent-action captures use `SILENT_ACTION_MARKER_PREFIX` keys.
-    pub(crate) named: HashMap<String, NamedSlot>,
+    /// name; silent-action captures use interned `SILENT_ACTION_MARKER_PREFIX` keys.
+    pub(crate) named: HashMap<Symbol, NamedSlot>,
     /// Positional captures as span-bearing slots (ADR-0016 P4): span, nested
     /// subcaptures, quantified iteration lists, and the Nil marker in one axis.
     pub(crate) positional: Vec<PosSlot>,

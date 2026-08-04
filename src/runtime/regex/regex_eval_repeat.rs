@@ -570,7 +570,7 @@ impl Interpreter {
     /// accumulator and stored `CapNode`s (their child axes are the same types).
     fn reduce_child_axes(
         &mut self,
-        named: &mut HashMap<String, NamedSlot>,
+        named: &mut HashMap<Symbol, NamedSlot>,
         positional: &mut [PosSlot],
         target: Option<&MatchTarget>,
     ) {
@@ -586,7 +586,7 @@ impl Interpreter {
         let skip_untouched = self.grammar_rule_dynvar_decls.is_empty();
         // Children first so a parent block reading a child's `.made` sees it.
         for (key, slot) in named.iter_mut() {
-            let child_rule = Self::reduce_child_rule_name(key);
+            let child_rule = Self::reduce_child_rule_name(key.as_str());
             for sc in slot.nodes.iter_mut() {
                 if skip_untouched && !Self::subtree_has_code_blocks(sc) {
                     continue;

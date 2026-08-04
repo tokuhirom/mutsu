@@ -19,7 +19,7 @@ impl Value {
         from: i64,
         to: i64,
         positional: &[crate::runtime::PosSlot],
-        named: &HashMap<String, crate::runtime::NamedSlot>,
+        named: &HashMap<crate::symbol::Symbol, crate::runtime::NamedSlot>,
         target: crate::runtime::MatchTarget,
     ) -> Self {
         let has_children = !named.is_empty() || !positional.is_empty();
