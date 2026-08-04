@@ -141,7 +141,11 @@ impl Interpreter {
         // routine stack is still intact; outer frames see backtrace()
         // already set and skip. die/throw attach theirs at the throw site.
         if let Err(ref mut e) = result
-            && e.control.is_none()
+            // A control signal nothing can consume (`next` with no loop, `take`
+            // with no gather) is an error in all but its routing flag, so it
+            // gets the same backtrace an ordinary runtime error does — rakudo
+            // reports the frames for those too.
+            && (e.control.is_none() || e.is_illegal_control())
             && e.backtrace().is_none()
             && !e.code().is_some_and(|c| c.is_parse())
         {

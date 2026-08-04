@@ -259,8 +259,18 @@ impl Interpreter {
                 Ok(()) => {}
                 // CX::Warn carries its resume value in `return_value`; it is a
                 // control signal for the caller's loop / CONTROL handler, NOT
-                // an explicit return — don't let the next arm swallow it.
-                Err(e) if e.is_warn() => {
+                // an explicit return — don't let the next arm swallow it. The
+                // same is true of `take`/`emit`/`done`, which also carry the
+                // value they yield: without this a `take` in a sub with no
+                // enclosing `gather` returned quietly instead of raising
+                // "take without gather".
+                Err(e)
+                    if e.is_warn()
+                        || e.is_take()
+                        || e.is_emit()
+                        || e.is_done()
+                        || e.is_react_done() =>
+                {
                     loan_env!(self, restore_let_saves(let_mark));
                     result = Err(e);
                     break;

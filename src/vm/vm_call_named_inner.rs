@@ -327,6 +327,17 @@ impl Interpreter {
                     result = Err(e);
                     break;
                 }
+                // `take`/`emit`/`done` carry the value they yield in
+                // `return_value`, but they are control signals for an enclosing
+                // `gather`/`supply`/`react`, not an explicit return. Without
+                // this the arm below turned a `take` in a routine with no
+                // enclosing `gather` into a quiet `return 1`, instead of the
+                // "take without gather" `X::ControlFlow` rakudo raises.
+                Err(e) if e.is_take() || e.is_emit() || e.is_done() || e.is_react_done() => {
+                    loan_env!(self, restore_let_saves(let_mark));
+                    result = Err(e);
+                    break;
+                }
                 Err(e) if e.return_value.is_some() => {
                     // Non-local return: if the signal targets a specific callable,
                     // only catch it if this routine is the target.

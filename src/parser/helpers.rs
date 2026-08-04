@@ -44,9 +44,25 @@ fn ws_inner_with_bol(input: &str, bol: bool) -> PResult<'_, ()> {
                 at_line_start = false;
                 continue;
             }
-            // #` MUST be followed immediately by an opening bracket.
-            // If skip_embedded_comment returned None, it's an error.
+            // #` MUST be followed immediately by an opening bracket, and the
+            // bracket must close. `skip_embedded_comment` answers `None` for
+            // both, so tell them apart — an unterminated comment swallows the
+            // rest of the file, and the only useful thing to say about it is
+            // where it opened (rakudo names that line too).
             if r.starts_with("#`") {
+                if embedded_comment_opener(r).is_some() {
+                    // "opened on line N", not "at line N": the renderer strips
+                    // the latter as an internal location detail
+                    // (`error_render::strip_internal_location`).
+                    let at = match crate::parser::primary::source_line_at(r) {
+                        Some(line) => format!(" (opened on line {})", line),
+                        None => String::new(),
+                    };
+                    return Err(PError::fatal_at(
+                        format!("Couldn't find terminator for #` comment{}", at),
+                        r,
+                    ));
+                }
                 return Err(PError::expected("Opening bracket required for #` comment"));
             }
             let end = r.find('\n').unwrap_or(r.len());
@@ -392,6 +408,15 @@ fn parse_pod_directive_line(line: &str) -> Option<(&str, &str)> {
 
 /// Skip an embedded comment `#`<bracket>...<close>`.
 /// Returns the remaining input after the comment, or None if not an embedded comment.
+/// The opening bracket a `#`` ` comment uses, if it has one at all. Separates
+/// "no opening bracket" from "opening bracket that never closes" for the
+/// diagnostic in `ws_impl`.
+fn embedded_comment_opener(input: &str) -> Option<char> {
+    let after = input.strip_prefix("#`")?;
+    let open = after.chars().next()?;
+    matching_bracket(open).map(|_| open)
+}
+
 fn skip_embedded_comment(input: &str) -> Option<&str> {
     // Must start with #`
     let after_hash_backtick = input.strip_prefix("#`")?;
