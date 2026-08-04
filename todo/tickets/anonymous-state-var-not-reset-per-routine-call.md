@@ -68,15 +68,68 @@ alternates between two values across successive calls of one named sub when read
 consults the id at the call boundaries (`load_state_locals` /
 `sync_state_locals`), never inside the body.
 
-So `state_scope_id` is not a reliable mid-body lever. The remaining route is the
-structural one: give the anonymous form a real local slot and a `state_locals`
-entry at its innermost enclosing block, so it uses exactly the named-`state`
-machinery. That needs, at minimum: an `is_non_lexical_name` exclusion in
-`src/opcode.rs` (otherwise the name becomes a closure-capture candidate and a
-captured snapshot races the store), an initializer that yields `Any` rather than
-`Nil` (`roast/S03-operators/context.t:87`), and a decision about
+So `state_scope_id` is not a reliable mid-body lever. Two routes remain.
+
+### Route A — the structural one (give it a real `state_locals` slot)
+
+Give the anonymous form a real local slot and a `state_locals` entry at its
+innermost enclosing block, so it uses exactly the named-`state` machinery. That
+needs, at minimum: an `is_non_lexical_name` exclusion in `src/opcode.rs`
+(otherwise the name becomes a closure-capture candidate and a captured snapshot
+races the store), an initializer that yields `Any` rather than `Nil`
+(`roast/S03-operators/context.t:87`), and a decision about
 `src/vm/vm_call_eligibility.rs`, whose fast/light call paths are gated on
 `state_locals.is_empty()` — every sub containing a bare `$` would lose them.
+
+### Route B — classify at compile time, key by the enclosing routine call (2026-08-04)
+
+Not attempted yet, but every row of the table above checks out on paper, and the
+levers all already exist. The rule the table encodes is precisely:
+
+> the counter resets iff the `$` is **lexically inside a nested block** that is
+> **lexically inside a routine**, and then it resets once per *call of that
+> routine* (not per block iteration).
+
+So the classification is static, and only the bucket id is dynamic:
+
+1. **Compile time** — mark each `__ANON_STATE_n__` occurrence as *per-call* when
+   it is inside a nested block within a routine. Two existing signals cover the
+   two ways a block body reaches the compiler:
+   - a body compiled by its own child `Compiler` (`map`/`grep` blocks, pointy
+     blocks, `gather`): `!self.is_routine && self.lexically_in_routine` — both
+     fields already exist on `Compiler` and are already threaded down by
+     `compile_closure_body_with_routine_flag`;
+   - a body compiled INLINE into the enclosing chunk (`for`/`while`/`if`/`given`
+     bodies): `self.local_scopes.len() > 1`, since frame 0 is the routine/unit
+     top level and is never popped, and `push_dynamic_scope_lexical` runs at
+     every real block boundary. A `for` STATEMENT MODIFIER has no block and so
+     pushes no frame — which is exactly the `3,6` row.
+
+   Record the marked names on `CompiledCode` (e.g. a `per_call_anon_states` set)
+   rather than renaming the constant, so no opcode or emit site changes. If a
+   pre-pass over the AST is preferred to hooking the emit sites, the set can be
+   computed as `all_anon_state_names(body) − shallow_anon_state_names(body)`,
+   reusing the block-boundary descent `collect_ph_stmt_shallow` already
+   implements (each `__ANON_STATE_n__` is unique per source occurrence, so the
+   two sets cannot overlap).
+
+2. **Run time** — `anon_state_key` appends, for a marked name only, the
+   invocation id of the innermost enclosing **non-block** routine frame
+   (`RoutineFrame::is_block` already distinguishes them; there are only 13
+   construction sites, so adding an `invocation_id: u64` stamped from a
+   monotonic counter is mechanical). With no such frame — anything at the
+   mainline — the id is a constant, so every top-level row keeps persisting.
+
+   Walk through the table: `sub f() { map { ++$ }, 1,2,3 }` marks the `$`
+   per-call, the innermost non-block frame is `f`'s, so all three elements
+   share a bucket and the next call of `f` gets a new one → `1,2,3` twice.
+   `sub p1 { my $x = ++$; $x }` is not inside a nested block → unmarked →
+   persists. `my $blk = { ++$ }` is marked but has no routine frame → one
+   bucket → persists. `method m { $++ }` is not nested → persists.
+
+   The env-shadowing problem the rejected attempt hit applies here too: a marked
+   name must be resolved from the state store only, never from the global env
+   entry `GetGlobal`/`SetGlobal` leaves behind.
 
 ## Why it matters
 
