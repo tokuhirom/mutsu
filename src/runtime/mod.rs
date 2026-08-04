@@ -1447,21 +1447,28 @@ pub struct Interpreter {
     /// in-flight window closes that hole; the store is republished normally once
     /// the initializer's value lands. Empty for single-threaded programs.
     pub(crate) thread_decl_in_flight: std::collections::HashSet<String>,
-    /// `@`/`%` names that a **destructuring sub-signature** has bound
-    /// (`-> [$a, @K] { ... }`), with their sigils.
+    /// `@`/`%` names bound as **parameters through the env-level (runtime)
+    /// binding path** — a destructuring sub-signature (`-> [$a, @K] { ... }`)
+    /// or a runtime-invoked callback's plain parameter (`reduce -> $h, @words
+    /// { ... }`) — with their sigils, each mapped to the container that binding
+    /// stored in `env`.
     ///
     /// Such a name is a fresh per-invocation binding, never the one shared
     /// object the name-keyed `shared_vars` lane exists to represent. Left on that
     /// lane it is seeded once (`seed_if_absent`) and then frozen at the first
     /// spawn's value, so two `start` blocks created by two iterations of the same
-    /// destructuring block both read the same `@K`. `clone_for_thread_for_block`
-    /// consults this set — intersected with the spawned block's free variables,
-    /// so an unrelated outer aggregate that merely shares a name is unaffected —
-    /// to keep those names off the lane and mask them in the child instead.
+    /// block both read the same `@K`/`@words`. `clone_for_thread_for_block`
+    /// consults this map — intersected with the spawned block's free variables
+    /// AND checked for container identity against the current env value, so an
+    /// unrelated outer aggregate that merely shares a name (or a later `my`
+    /// re-binding of it) is unaffected — to keep those names off the lane and
+    /// mask them in the child instead.
     ///
-    /// Only populated while `shared_vars_active`; empty (zero-cost) for
-    /// single-threaded programs.
-    pub(crate) sub_signature_bound_aggregates: std::collections::HashSet<String>,
+    /// Populated unconditionally (not gated on `shared_vars_active`): the
+    /// *first* spawn in a process consults it before any thread exists, and a
+    /// gate would leave exactly that spawn's binding to be seeded — and frozen —
+    /// on the lane.
+    pub(crate) param_bound_aggregates: std::collections::HashMap<String, Value>,
     /// Set while an *incidental* locals -> env mirror is running: the I/O
     /// pre-sync (`sync_env_from_locals_declared`, run before Say/Put/Print/Note
     /// so a `$*OUT` override or a `.gist` sees fresh values) and the regex

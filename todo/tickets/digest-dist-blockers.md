@@ -54,17 +54,19 @@ The anonymous-state half is FIXED
 repeated calls with the same single-block input agree
 (`rmd160("abc")` twice → `8eb208f7…` twice).
 
-What remains is a SECOND, independent freeze that the rotate bug was masking:
-the `start` blocks in the compression loop capture the reduce callback's
-`@words` parameter frozen at its first binding — the known `@`/`%` shared-var
-lane limitation, `todo/tickets/shared-var-lane-freezes-a-reused-array-name.md`
-(minimal repro
-`reduce -> $h, @words { $h + await start { [+] @words } }, 0, (1,2), (3,4)`
-→ 6 instead of 10). Consequences: a multi-block message (>55 bytes) digests
-wrongly even on the first call, and any later call in one process returns the
-first call's digest regardless of input. Fixing that ticket is what takes
-`t/ripemd.t` to a full pass (its `'a' x 1_000_000` vector is slow in a debug
-build — use a release binary).
+The `@words` shared-var lane freeze the rotate bug was masking is FIXED too
+(`news/2026-08/shared-var-lane-param-rebind.md`): the compression loop's
+`start` blocks now see each reduce iteration's own `@words`, so the RFC-vector
+words come out right and repeated calls agree.
+
+What remains is the anonymous-state residue #5892's per-routine-call reset
+does not reach (`todo/tickets/anon-state-not-reset-per-block-clone.md`): the
+output stage's `map { $_[[^5].rotate(++$)] }` counter must reset per *clone*
+of the reduce callback, i.e. per compression block, not per `rmd160` call. A
+multi-block message (>55 bytes) therefore digests as the correct five words
+rotated by (blocks - 1) positions — `t/ripemd.t` vectors 1-5 pass, 6-7 fail
+with rotated output, and 8 (`'a' x 1_000_000`) needs a release binary to beat
+the timeout.
 
 ## 3. `sha512` / `sha384` return a wrong digest — FIXED
 

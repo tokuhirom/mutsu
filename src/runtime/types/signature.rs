@@ -679,10 +679,14 @@ pub(in crate::runtime) fn bind_named_rename_sub_signature(
 /// binding and keeps them off that lane entirely. `&` names are routines and
 /// keep the lane; so do twigil'd forms, which share a name by design.
 fn bind_sub_param_name(interpreter: &mut Interpreter, name: &str, value: Value) {
-    if interpreter.shared_vars_active && Interpreter::is_plain_lexical_name(name) {
+    // NOT gated on `shared_vars_active`: the FIRST spawn in a process consults
+    // `param_bound_aggregates` before any thread exists, and gating left exactly
+    // that spawn's binding to be seeded — and frozen — on the name lane
+    // (`todo/tickets/shared-var-lane-freezes-a-reused-array-name.md`).
+    if name.starts_with(['@', '%']) && Interpreter::is_plain_lexical_name(name) {
         interpreter
-            .sub_signature_bound_aggregates
-            .insert(name.to_string());
+            .param_bound_aggregates
+            .insert(name.to_string(), value.clone());
     }
     interpreter.env.insert(name.to_string(), value);
 }
