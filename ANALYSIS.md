@@ -6,12 +6,11 @@ This document is an **architecture and soundness review** of the mutsu codebase 
 First edition: 2026-06-03. Revision history through rev10 (2026-07-19) is in git; each
 rev's resolved findings are archived in the news files
 ([news/2026-07.md](news/2026-07.md) "ANALYSIS.md rev9/rev10 — resolved-item archive").
-**rev11: 2026-08-02 — re-verified against HEAD (`c65835e13`) after 1096 commits since
-rev10. Three things changed the architecture picture: ADR-0013 landed (the
-`gc_contents_mut` provenance UB is gone at the primitive), a bundled-module layer
-(`modules/`, 22 vendored dists) and a user-facing MOP (EXPORTHOW::DECLARE) became
-first-class subsystems, and ADR-0016 completed the regex capture/`Match` representation
-rework. §7 is re-prioritized accordingly, and §8 is a new ADR-ledger review.**
+**rev12: 2026-08-04 — re-verified against HEAD (`435de2d3e`), 302 commits after rev11.
+ADR-0013 is now closed with a required Miri gate and a call-site audit; ADR-0016's lazy
+`Match` invariant has an observable counter; and ADR-0019 has turned rev11's top design
+item into an explicit 51-slice migration, with 14 slices merged. §7 removes completed
+work and reorders only the current tasks by dependency and actionability.**
 
 Method:
 - subsystem-level close reading, re-verified per claim on the live tree
@@ -24,13 +23,13 @@ Method:
 mutsu is a Rust implementation of a minimal Raku-compatible interpreter. The roast
 whitelist stands at **1435 / 1464 (98.0%)**, up from rev10's 1433/1464 — and that near-flat
 number is the point: **roast has been mined out since rev10** (PLAN §4), so a year's worth
-of the project's velocity now shows up in places roast does not measure. The 1096 commits
-since rev10 went almost entirely into (a) the raku-differential compatibility sweep
+of the project's velocity now shows up in places roast does not measure. Work since rev10
+went almost entirely into (a) the raku-differential compatibility sweep
 (≈100 `news/2026-08/` entries, one general fix each), (b) the batteries campaign — real
 upstream modules vendored and run verbatim — and (c) two representation campaigns
 (ADR-0015 native-backed storage, ADR-0016 span-based captures).
 
-Overall assessment as of rev11:
+Overall assessment as of rev12:
 
 - **The execution stack is complete and, since rev10, no longer has a known
   provenance-UB hole.** Single bytecode VM; cycle-collecting GC default-on (ADR-0003);
@@ -38,35 +37,36 @@ Overall assessment as of rev11:
   **ADR-0013 landed**: the payload of every `Gc<T>` now lives in an `UnsafeCell` inside
   `GcBox` (`gc/gc_ptr.rs:166`), so the ~59 deliberate aliased container writes derive a
   `&mut` with valid interior-mutable provenance (`gc_ptr.rs:774`) instead of casting a
-  `*const`. What rev10 called the #2 roadmap item is mechanically fixed; what remains is
-  *verification* (no Miri gate exists) and the narrow cross-thread race deferred to
-  layer 3c (§2.1).
+  `*const`. The required Miri gate now covers the GC primitives and real VM call shapes,
+  and the 62-site aliasing audit found no live violation. ADR-0013 is closed; the narrow
+  cross-thread race remains explicitly deferred to frozen layer 3c (§2.1).
 - **Two subsystems that did not exist in rev10 are now load-bearing**: a **bundled-module
   layer** (`modules/`, 22 vendored upstream dists + `vendor/zef`, gated by a release-time
   upstream-test-suite run) and a **user-facing MOP** (`EXPORTHOW::DECLARE` declarator
   registry + HOW-driven class registration, `runtime/metamodel.rs`). Both are described in
   §1.8/§1.9 — and both push load onto the one subsystem that is still tree-walking
   (declaration registration, §1.1).
-- **The two representation campaigns are now landed, with small verification residues.**
+- **The two representation campaigns are landed, with only optional or deliberate residue.**
   ADR-0016 (span-based captures + lazy `Match`) landed all five phases in four days at the
-  end of July and corrected five real compatibility bugs on the way; it left behind one
-  unenforced invariant (a `view()` probe materializes a lazy `Match`). ADR-0015 P3b has now
-  landed (`array[T]` is native-backed behind the `ArrayData::items` chokepoint, with honest
+  end of July and corrected five real compatibility bugs on the way; its `view()`-forcing
+  invariant is now observable as `match_materializations` under `MUTSU_VM_STATS=1`.
+  ADR-0015 P3b has landed (`array[T]` is native-backed behind the `ArrayData::items`
+  chokepoint, with honest
   VMArray `.REPR`/`.WHERE` at the native boundary); only optional P3c remains (§1.10).
 - **Performance remains a surplus, not a problem.** At HEAD the bench CI ratio vs Rakudo is
   below 1.0 on every benchmark except `bench-ctor` (1.21), `bench-tak` (1.06) and
   interpreter-only `bench-fib` (0.98). Per PLAN's 2026-07-16 priority reset, perf is polish;
   this revision therefore ranks architectural items by **debt shape and dependency**, not by
   profile share.
-- **Hygiene trends keep worsening, and faster than rev10's slope**: files >500 lines
-  239→**300**, >1000 62→**80**, `runtime/mod.rs` 2470→**2495**, `unwrap/expect/panic!/
-  unreachable!` 1789→**1908**, `#[allow(` 170→**178**, `.clone()` 9056→**10192**. Three
-  consecutive revisions have flagged `runtime/mod.rs`; it has never been slimmed.
+- **Hygiene trends keep worsening**: files >500 lines 239→300→**302**, >1000
+  62→80→**83**, `runtime/mod.rs` 2470→2495→**2700**, `unwrap/expect/panic!/
+  unreachable!` 1789→1908→**1920**, and `.clone()` 9056→10192→**10283**. The
+  `#[allow(` count improved slightly, 178→**176**, but it does not change the overall slope.
 
 None of the remaining issues is of the "the basic design is broken" kind. The shape of the
-debt has changed, though: rev10's top item was *soundness* (raw-pointer writes), and that is
-now mechanically closed. rev11's top items are **half-finished migrations** (§1.10) and one
-**mechanism that many open correctness bugs share a root in** (§1.3 / §2.4).
+debt has changed, though: the soundness and representation campaigns are closed. The active
+center is now **ADR-0019's half-migrated declaration/dispatch architecture**, followed by the
+exception type model and two missing policy/concurrency decisions.
 
 Where to look first:
 - §1: what architectural work remains (§1.8-§1.10 are new)
@@ -80,23 +80,24 @@ Where to look first:
 
 ### 1.1 Remaining tree-walk — declaration registration and dispatch entries only
 
-User-code bodies (subs, methods, blocks) execute exclusively as bytecode. What still walks
-the AST (re-verified 2026-08-02):
+User-code bodies (subs, methods, blocks) execute exclusively as bytecode. ADR-0019 now owns
+the remaining migration (14/51 slices merged as of 2026-08-04):
 
 - **Declaration registration**: `register_class_decl`
-  (`runtime/registration_class_decl.rs:419`), `register_sub_decl`
-  (`runtime/registration_sub.rs:438`), `register_role_decl`
-  (`runtime/registration_role.rs:257`) run off `Register*` opcodes. Class system, MRO and
-  role composition are uncompiled — registration, not body execution.
+  (`runtime/registration_class_decl.rs`), `register_sub_decl`, and `register_role_decl`
+  consume temporary typed plans behind one `RegisterDecl` opcode. The plans have left the
+  generic statement pool, but still retain `legacy_body` adapters. Class system, MRO and role
+  composition remain uncompiled — registration, not body execution.
   **This is no longer a static amount of debt.** The MOP campaign (§1.9) hung the user HOW
   protocol off exactly this path: `declare_drive_how_protocol` drives `new_type` /
   `add_method` / `compose` against a user metaobject from inside AST-walking registration,
-  and `registration_class_decl.rs` has grown to 2882 lines. Every future MOP feature adds
+  and `registration_class_decl.rs` has grown to 2927 lines. Every future MOP feature adds
   to a tree-walk that has been flagged since rev5.
 - **Dispatch resolver entries**: multi/submethod and `samewith`/`nextsame` enter through
   `run_instance_method` (`runtime/class_dispatch.rs:52`, plus a `_celled` variant at `:90`);
   bodies are compiled. The sound multi-method resolution cache + `fast_method_cache` still
-  amortize the resolver, so what remains is entry-point consolidation (§3.3).
+  amortize the resolver. ADR-0019 Phase B has landed the canonical method-table write side
+  and generation invalidation; the TypeId-based unified read side remains Phase E (§3.3).
 - **Module-sub OTF compile gate** (`def_is_otf_compilable_module_single`,
   `vm/vm_call_func_ops.rs:1991`): unchanged since rev10. The residual exclusions are
   mechanism-level — `state`, sigilless `\x` params, `is encoded(...)`, `start` — each with a
@@ -220,7 +221,7 @@ Two structural observations:
    meaningful part of it. What remains unbuilt is the NQP/QAST/slang layer Test::Async needs,
    which is a *different* claim. PLAN §B2b should be re-scoped, not simply left deferred.
 
-### 1.10 Representation campaigns — one complete, one half-finished
+### 1.10 Representation campaigns — complete, with optional residue
 
 - **ADR-0016 (regex captures / `Match`) is complete.** All five phases landed between
   2026-07-28 and 2026-07-31: absolute positions, the `CapNode` / `RegexCaptures` split
@@ -228,12 +229,12 @@ Two structural observations:
   shared `MatchTarget` with span reads, the one-list-per-axis collapse, and a lazy
   `ValueRepr::Match(Gc<MatchNode>)`. Along the way it corrected five real compatibility bugs
   (the four subrule-boundary constructs and search-recovered offsets for repeated text).
-  Residue is deliberate and small: `String` capture-name keys, `CodeBlockContext`'s text
-  snapshot, and eager `Match` construction in the reduce/failed-replay paths.
+  Residue is deliberate and small: `CodeBlockContext`'s text snapshot and eager `Match`
+  construction in the reduce/failed-replay paths. Capture-name keys are interned `Symbol`s.
   **One standing constraint the whole codebase now inherits**: a `view()`-based
   "is it an X?" probe materializes a lazy `Match`, so variant probes on paths a `Match` can
-  reach must be tag probes. That is an invariant with no mechanical enforcement — a plausible
-  future regression, and worth a lint or a debug counter.
+  reach must be tag probes. `MUTSU_VM_STATS=1` now reports `match_materializations`, so an
+  accidental forcing path is observable in regex/grammar diagnostics rather than prose-only.
 - **ADR-0015 (native-backed container storage) is complete through P3b.** P0/P1/P2/P3a
   landed (CStruct bodies, native-backed `Buf`/`Blob`, native-backed `CArray[T]`), and P3b
   is now merged: all `ArrayData` element access goes through the accessor chokepoint and
@@ -242,16 +243,15 @@ Two structural observations:
   do the full CI test, GC-stress, JIT-stress, Miri, and WASM jobs. Only optional P3c
   (reference-element `CArray`) remains.
 
-A half-migrated representation is the most expensive shape of debt in this codebase: it
-doubles the surface every unrelated fix must satisfy and silently invites new code to pick
-the old model. That is now a statement about ADR-0015 alone — which is why §7 ranks P3b
-first among the representation items and does not schedule further regex work.
+Neither campaign is current roadmap work. ADR-0015 P3c is optional and should start only when
+a real NativeCall consumer needs reference-element `CArray`; ADR-0016's remaining eager paths
+are explicitly deferred, small-count compatibility carriers rather than a dual representation.
 
 ---
 
 ## 2. Correctness and soundness
 
-### 2.1 GC-era aliased writes — provenance UB fixed (ADR-0013); verification is the gap
+### 2.1 GC-era aliased writes — ADR-0013 closed and gated
 
 **Fixed since rev10.** `GcBox` now stores its payload as `value: UnsafeCell<T>`
 (`gc/gc_ptr.rs:166`), and `Gc::as_ptr` projects through it with `UnsafeCell::raw_get`
@@ -260,24 +260,16 @@ pointer that carries interior-mutable provenance while shared `&` reads are live
 Stacked/Tree-Borrows violation rev10 listed as roadmap item #2 is gone, at every call site
 at once and with no `Value`-representation churn (ADR-0013 §7).
 
-What is left, in order of tractability:
+The verification gap is closed. The required `miri` CI job runs both primitive GC/container
+tests and five interpreter-level soundness shapes; `src/gc/borrow_shapes.rs` pins the handle,
+raw-pointer, and shared-read orderings that callers actually use. The audit covered 62 sites:
+60 are ordinary in-process writes and the two NativeCall buffer paths are represented by a
+Miri-testable equivalent shape. The stale `value/aliased_mut.rs` warning and the last
+`arc_contents_mut` path are gone.
 
-- **No Miri gate.** ADR-0013 §4 phase 4 defines "done" as a clean `cargo miri test` over the
-  container/GC subset, first informational then blocking. There is **no `miri` job in
-  `.github/workflows/`**. The soundness claim above is therefore an argument, not a check —
-  and the argument is exactly the kind that a borrow-model change can silently invalidate.
-- **The call-site contract is still delegated to the caller.** 59 sites across 24 files
-  (rev10: ~53/21, rev9: ~53/21 — the count keeps drifting *up* as new mutation paths reuse
-  the primitive). Provenance is fixed for all of them, but "no other borrow of this value is
-  dereferenced for the lifetime of the returned borrow" is prose per site.
-- **The cross-thread race is deferred to layer 3c** (ADR-0013 §3, resolved open question 2).
-  Concurrent structural mutation must stay routed through the synchronized shared-store
-  lanes; nothing checks that it does.
-- **Stale documentation actively misleads.** `value/aliased_mut.rs`'s module header still
-  carries a "⚠️ Known unsoundness (tracked, not removed here)" section describing the
-  `Arc::as_ptr` provenance violation as live, and still points at Track B as the future fix
-  — both untrue since ADR-0013. That file's `arc_contents_mut` is dead code kept for audit.
-  A reader looking for the current soundness posture finds the wrong answer first.
+One limit remains **deferred by decision, not as an ADR-0013 task**: genuinely concurrent
+structural mutation of the same node must stay behind synchronized shared-store lanes. That is
+ADR-0001 layer 3c territory, frozen until a measured trigger; it does not keep ADR-0013 open.
 
 ### 2.2 `RuntimeError` as a control channel — cheap now, still cohabiting
 
@@ -346,17 +338,19 @@ duplicates `stmt.rs` logic for do/if/for/while/loop in expression position, incl
 `SubDecl` both registers an AST body (`RegisterSub`) and compiles the body
 (`compile_sub_body`). Collapses when §1.1's declaration registration is compiled.
 
-### 3.3 Method dispatch: many entry points, scattered name matching
+### 3.3 Method dispatch: canonical write side landed; read entries remain split
 
-Entry points remain unconsolidated: `call_method_with_values`
+ADR-0019 Phase B now gives built-in and user candidates one registry-owned `MethodEntry`
+write side and one generation invalidation boundary. Entry points remain unconsolidated:
+`call_method_with_values`
 (`runtime/methods_call_dispatch.rs:50`), `dispatch_method_by_name_{1,2,3}`
 (`runtime/methods_dispatch_match.rs:14` and siblings), `run_instance_method` /
 `run_instance_method_celled` (`runtime/class_dispatch.rs:52,90`), `native_method_{0,1,2}arg`
 (`builtins/`). Same-name string matches stay scattered — `"elems"` appears in **33 files**
 (rev10: 8+). `runtime/methods_call_dispatch.rs` is now 3875 lines.
 
-Consolidation into a single type×method dispatch table is what would also let §4-1's hand
-tables be derived, and what would give §1.9's user HOWs a single place to intercept.
+The remaining work is the TypeId/MRO resolver, routing every read entry through it, deriving
+§4-1's introspection, and deleting the compatibility mirrors and caches (ADR-0019 E/F).
 
 ---
 
@@ -383,10 +377,10 @@ No test-specific hardcoded outputs found (re-checked). Two derivation shortcuts 
   `todo/deep/deferred-seq-materialization-destroys-the-original.md`.
 - **Env**: COW `Arc<FxHashMap<Symbol,Value>>` with a scoped parent-overlay chain capped at
   `MAX_OVERLAY_DEPTH=16` (`env.rs:318`). The structural remainder is §1.3's blanket.
-- **`.clone()` ≈ 10192** (rev10: 9056): each is an 8-byte NaN-box copy plus a refcount for
+- **`.clone()` ≈ 10283** (rev11: 10192, rev10: 9056): each is an 8-byte NaN-box copy plus a refcount for
   container tags, so the unit cost is low, but the growth is a code-shape signal, not just a
   perf one.
-- **`unwrap`/`expect`/`panic!`/`unreachable!` ≈ 1908 (+119)** and **`#[allow(` 178 (+8)**.
+- **`unwrap`/`expect`/`panic!`/`unreachable!` ≈ 1920** and **`#[allow(` 176**.
   PLAN §8.3's "mutsu must never Rust-panic on any input" goal is in tension with a metric
   that has risen every revision.
 - Allocation-failure aborts on user-sized allocations remain guarded via `try_reserve`.
@@ -395,80 +389,81 @@ No test-specific hardcoded outputs found (re-checked). Two derivation shortcuts 
 
 ## 6. Repository hygiene
 
-- **500-line rule**: **80 files >1000 lines, 300 files >500** (rev10: 62 / 239; rev9:
-  57 / 210). Total `src/` is ~427k lines. Largest: `opcode.rs` 4823,
-  `vm/vm_exec_dispatch.rs` 4646, `runtime/methods_call_dispatch.rs` 3875,
-  `compiler/stmt.rs` 3775, `runtime/regex_parse_core.rs` 3698,
-  `vm/vm_var_assign_index_named.rs` 3542, `parser/expr/postfix/loop_.rs` 3260,
-  `runtime/registration_class_decl.rs` 2882. Giant dispatch matches remain intentional
-  exceptions; the other seven are not. `runtime/mod.rs` is **2495** lines (rev7 1932 → rev8
-  2118 → rev9 2309 → rev10 2470) — flagged for four consecutive revisions, never actioned.
+- **500-line rule**: **83 files >1000 lines, 302 files >500** (rev11: 80 / 300;
+  rev10: 62 / 239). Total `src/` is ~434k lines. Largest: `opcode.rs` 5349,
+  `vm/vm_exec_dispatch.rs` 4710, `runtime/methods_call_dispatch.rs` 3886,
+  `compiler/stmt.rs` 3848, `runtime/regex_parse_core.rs` 3698,
+  `vm/vm_var_assign_index_named.rs` 3570, `parser/expr/postfix/loop_.rs` 3297,
+  `runtime/registration_class_decl.rs` 2927. Giant dispatch matches remain intentional
+  exceptions; the other seven are not. `runtime/mod.rs` is **2700** lines (rev7 1932 → rev8
+  2118 → rev9 2309 → rev10 2470 → rev11 2495) — still growing after five reviews.
   The rule as written ("split immediately") is not being followed, so either the rule or the
   practice should change deliberately rather than by drift.
-- **Stale docs that assert the opposite of the code**: `value/aliased_mut.rs`'s unsoundness
-  header (§2.1), and the comment references to the retired `MUTSU_SHADOW_SLOTS` opt-in gate
-  (now the opt-out `MUTSU_NO_SHADOW_SLOTS`).
+- The stale `value/aliased_mut.rs` unsoundness header was corrected with ADR-0013's closure.
+  Comment references to the retired `MUTSU_SHADOW_SLOTS` opt-in gate remain cleanup targets.
 
 ---
 
 ## 7. Recommended roadmap (priority order)
 
-rev10's #1 (lexical-slot endgame) is still open; rev10's #2 (`gc_contents_mut` UB) is
-mechanically **done** and drops to a verification task. The ordering below is derived from
-debt shape and dependency, not from profile share — per PLAN's 2026-07-16 priority reset,
-performance is polish and is not used as a ranking criterion here.
+Completed campaigns are omitted rather than retained as numbered rows. The ordering below is
+derived from dependency, deferral cost, severity, and actionability — per PLAN's 2026-07-16
+priority reset, performance is polish and is not used as a ranking criterion here.
 
 The ranking rule, stated so it can be argued with:
 
-1. **First, mechanisms that many open bugs share a root in** — one campaign closes a
-   backlog, whereas N local fixes grow it *and* make the campaign harder, because each fix
-   adds a consumer of the mechanism being replaced.
-2. **Then finish half-migrated representations** — they double the surface every unrelated
-   fix must satisfy and silently recruit new code into the old model.
-3. **Then the subsystem whose deferral cost is rising**, i.e. where new feature work keeps
-   landing on uncompiled/unconsolidated code (declaration registration and dispatch, now
-   carrying the MOP).
-4. **Then close verification gaps on already-fixed soundness** — cheap, and the alternative
-   is an unverified argument that a refactor can silently invalidate.
-5. Long-tail cleanups last — but stop the *trend* items from compounding while doing 1-4.
+1. **Finish the active half-migration before opening another broad implementation front.**
+   ADR-0019 already has transitional plans, mirrors, caches, and adapters on `main`; every
+   unrelated declaration/MOP change now pays both sides.
+2. **Design prerequisites before data sweeps or concurrency implementation.** Exception roles
+   need a type-metadata decision; a worker pool needs an `await` decision; batteries policy
+   needs a durable adoption boundary.
+3. **Severity can override the queue only when the task is actionable.** A new crash artifact
+   makes the Proc::Async SIGSEGV P0; without one, blind local loops have already been measured
+   as unproductive.
+4. **Make hygiene a completion gate on the subsystem being replaced.** File splitting without
+   deleting a model is churn; deleting walkers, mirrors, and entry points through ADR-0019 is
+   structural progress.
+5. Feature breadth with no downstream consumer remains last.
 
 | # | Item | Kind | Why here |
 |---|------|------|----------|
-| 1 | **The env-writeback / lexical-slot fused campaign** (§1.3, §1.2, §2.4) | **completed** | ADR-0018 is Accepted; PR #5759 and its stacked implementation fixes are merged, with targeted normal/GC/JIT regressions and CI green. Future work is follow-up cleanup or optimization. |
-| 2 | **Complete ADR-0015 P3b** (`array[T]` behind the `ArrayData::items` accessor chokepoint) (§1.10) | **completed** | PR #5785 is merged with native-backed numeric `array[T]`, boundary-only payload materialization, and the accessor refactor. Follow-up work is optional P3c reference-element `CArray` support. |
-| 3 | **Declaration registration → bytecode, and dispatch-entry consolidation into one type×method table** (§1.1, §3.3; retires §4-1's hand tables) | design | Was a standing "medium" item; the MOP campaign (§1.9) turned it into a *growth surface* — the user HOW protocol now runs inside AST-walking registration (`registration_class_decl.rs` 2882 lines), and `"elems"`-style scattered name matching spread from 8 files to 33. Every further batteries/MOP feature pays interest here, so the cost of deferring is rising rather than flat. |
-| 4 | **Exception-class hierarchy registration** (124 core `X::` classes unregistered, `todo/deep/exception-class-hierarchy-is-mostly-unregistered.md`) | design | A registry/data-model job, not a pile of small fixes, and the prerequisite for PLAN §8.4 error/exception parity — the QA axis that replaced roast as the compatibility signal. |
-| 5 | **Close ADR-0013**: add the Miri job (informational → blocking), correct the stale unsoundness docs in `value/aliased_mut.rs`, then take the layer-3c cross-thread-race decision explicitly (§2.1) | soundness verification | The mechanism is fixed; the *check* that keeps it fixed does not exist. What shipped is an argument about borrow provenance, and that is exactly the kind of thing a later refactor invalidates with no observable failure. Cheap relative to that risk. |
-| 6 | **Concurrency substrate**: write the shared worker-pool Proposed ADR (still unwritten), then the `Proc::Async` stress segfault, Supply panic → QUIT, and WASM `start`/`Channel` degradation (§2.3) | robustness | 20 spawn sites × 256 MiB is a structural resource decision currently being made by default. Within this row the segfault outranks the rest — a crash is categorically worse than a wrong answer. |
-| 7 | **Guard the ADR-0016 invariant** (§1.10): a `view()`-based variant probe materializes a lazy `Match` | **completed** | `MUTSU_VM_STATS=1` now reports `match_materializations`, incremented exactly once when a lazy node first forces its Instance-shaped map. Tag/accessor-only paths remain observable as zero, so regressions no longer hide behind prose. |
-| 8 | **Statement/expression dual compilation** (§3.1) and the measurement-gated opcode remainder (§1.4) | design / perf | Genuine duplication, but bounded and stable — it is not growing the way #3 is. |
-| 9 | **RakuAST completion** (`todo/deep/rakuast-remaining.md`, ADR-0011 Phase 6) | feature | Demoted from rev10's #3: no roast file and no bundled battery consumes it, so it is the one large campaign with no downstream dependency. Pick node classes by user impact, as the ticket itself says. |
-| 10 | **Hygiene, treated as a trend not a chore**: `runtime/mod.rs` re-slim (2495, flagged 4 revisions running), the 300/80 file-size population, the `unwrap`/`clone` slopes, the stale-doc corrections (§5, §6) | hygiene | Every metric here has worsened monotonically for three revisions, which means the current practice is not the stated rule. The actionable form is to fix the trend on files that #1-#4 touch anyway, and to decide deliberately whether the 500-line rule still stands. |
+| 1 | **Continue ADR-0019: compiled declarations and unified method dispatch** (§1.1, §3.3, §4-1) | active design migration | 14/51 slices are merged. Typed plans and the canonical write-side table now coexist with `legacy_body`, class mirrors, multiple read resolvers, and hand introspection state. Stop after each phase gate if needed, but do not leave the repository indefinitely in this doubled state. |
+| 2 | **Exception role/type registration and error parity** (`todo/deep/exception-class-hierarchy-is-mostly-unregistered.md`) | correctness / type model | 124 core `X::` names cannot be constructed as types, and prefix-as-parent is semantically wrong because Rakudo expresses most membership through roles. Collect the role/MRO data now; align implementation with ADR-0019 E1's TypeId/MRO model rather than creating a second registry. |
+| 3 | **Write the batteries adoption-policy ADR, then follow the Cro/mzef compatibility frontier** (§1.8) | policy / product architecture | The project's main goal depends on the costly-to-reverse rule “vendor upstream verbatim; grow mutsu; no new native providers,” but the decision and exceptions live only in `BATTERIES.md`/`CLAUDE.md`. Preserve that boundary first; then let real downstream failures choose interpreter work. |
+| 4 | **Write the shared-worker-pool Proposed ADR** (`todo/deep/shared-worker-pool-adr.md`) | concurrency design | Thread-per-task at 19 sites reserves 256 MiB each. A bounded pool deadlocks nested blocking `await` without continuations, and idle workers must cooperate with GC stop-the-world. The next deliverable is the decision, not implementation. |
+| 5 | **Crash and panic-zero response lane** (§2.3, PLAN §6) | conditional P0 robustness | A fresh Proc::Async crash report preempts the roadmap immediately; the single historical CI SIGSEGV is otherwise evidence-starved and did not reproduce in 22 local runs. Supply panic propagation, deterministic hangs, and parser panic-zero work remain actionable correctness slices, not part of the worker-pool design. |
+| 6 | **Unify statement/expression compilation of control constructs** (§3.1) | design cleanup | The duplicated `do`/`if`/loop compilation is real but bounded and stable. Schedule it after the declaration/compiler migration stops moving adjacent structures. Opcode leftovers remain measurement-gated, not bundled into this task. |
+| 7 | **Pay hygiene debt through the work above** (§5, §6) | completion discipline | `runtime/mod.rs` reached 2700 lines and the >500/>1000 populations reached 302/83. ADR-0019 phase gates should delete walkers, mirrors, caches, and adapters; touched oversized files should be split when ownership boundaries become clear. A standalone line-moving campaign is not the priority. |
+| 8 | **RakuAST completion** (`todo/deep/rakuast-remaining.md`, ADR-0011 Phase 6) | demand-driven feature | No whitelisted roast file or bundled battery consumes the remaining forms or macros. Pick a slice only when a real downstream use case supplies acceptance tests. |
 
-Explicitly **not** ranked as architecture work in rev11: roast whitelist chasing (mined out,
-PLAN §4), and perf levers with no goal-item consumer (PLAN §5 header). Both remain available
-as opportunistic work when an item above happens to unblock them.
+Explicitly **not** ranked as current architecture work: completed ADR-0013/0015-P3b/0016/0018
+campaigns; optional ADR-0015 P3c; ADR-0016's deliberately deferred eager replay carriers;
+roast whitelist chasing; and perf levers with no goal-item consumer. They become candidates
+only when new evidence or a real downstream dependency changes that premise.
 
 ---
 
-## 8. ADR ledger review (new in rev11)
+## 8. ADR ledger review (new in rev11; refreshed in rev12)
 
-Reviewed all 17 ADRs against the tree. The decisions themselves hold up — no ADR was found
+Reviewed all 19 ADRs against the tree. The decisions themselves hold up — no ADR was found
 to be *wrong*. The systematic problem is that **an ADR's recorded status drifts from what
 shipped**, because implementation progress is reported in `news/` and PLAN.md but not folded
 back into the ADR that owns the decision. That defeats the ADR's stated purpose (preserving
 the judgment context) for anyone who reads the ADR first.
 
-Actions taken in this revision (each ADR updated in place with a progress/outcome record):
+The rev11 corrections remain valid; rev12 adds the closure/progress deltas below:
 
 | ADR | Drift found | Action |
 |---|---|---|
 | 0001 GC strategy & phasing | Status still listed §4.2 (trigger) and §4.3 (A' scope) as open; §4.2 was decided by ADR-0003, and layers 3a/3b/4 have all shipped. Its standing guidance "do not start Track B standalone; it is fused with GC" was superseded by ADR-0013 §7, which fixed the same sites at the primitive. | Added §7 "Outcome (2026-08-02)"; status line updated to point at it. |
 | 0007 trail matcher | Recorded its own implementation outcome, but its explicitly deferred "per-subrule ceremony" became ADR-0016 with no forward pointer. | Added the successor link and marked the P2-P3 phasing superseded. |
 | 0011 RakuAST | Status read "Phase 1 implemented (PR #4679); Phases 2-6 pending" while Phases 2-5 had substantially landed across ~37 slices. | Status corrected; pointer to `todo/deep/rakuast-remaining.md` as the live gap list. |
-| 0013 container interior mutability | Status was accurate about the *decision*, but §4's phasing did not record that the primitive change shipped, and the README index still listed it `Proposed`. The undone phase (Miri) was indistinguishable from the done ones. | Added §8 "Implementation status"; index corrected. |
+| 0013 container interior mutability | Rev11 correctly recorded the primitive but still listed verification and documentation as open. | Required Miri gate, VM reach, 62-site aliasing audit, Mixin migration, and documentation correction all landed on 2026-08-03; ADR closed. |
 | 0015 native-backed storage | The prior entry stopped at P3a and left the P3b completion unrecorded. | Recorded P3b (PR #5785) as landed, including the `ArrayData::items` chokepoint and native-boundary behavior; P3c remains optional. |
-| 0016 span-based captures | Status `Proposed` while **all five phases** had shipped to `main` — a fully-implemented ADR still labelled as a proposal, which is the most misleading drift found in this review (it invites a reader to re-litigate a decision that is already executed). | Promoted to `Accepted`; the phase state, the deliberate residue, and P5's standing `view()`-probe constraint summarized at the top. |
+| 0016 span-based captures | Status and all five phases remain accurate; the standing `view()` invariant was prose-only in rev11. | `match_materializations` now exposes each first lazy-node force under `MUTSU_VM_STATS=1`; capture-name keys are also interned. Deliberate replay/snapshot residue remains deferred. |
+| 0018 slot-addressed lexical capture | Added after rev11 to own the env-writeback/lexical-slot fused campaign. | Accepted and implemented; it replaces rev11's completed roadmap rows rather than remaining a current task. |
+| 0019 compiled declarations and unified dispatch | Added after rev11 to own §1.1/§3.3/§4-1 as one phased migration. | Proposed and active, 14/51 slices merged. Its execution checklist is now the source of truth for roadmap item 1. |
 | 0003, 0004, 0005, 0006, 0009, 0010, 0012, 0014, 0017 | Accurate; 0004 and 0009 already carry closing addenda. | No change. |
 | 0002 | Historical gate record; still accurate. | No change. |
 
@@ -476,7 +471,7 @@ Two **missing** ADRs are worth writing, and are listed here rather than drafted 
 
 1. **A shared worker pool** — PLAN §6 has specified its content in detail for over two weeks
    ("the central question is not pool sizing — it is what `await` does to a pooled worker"),
-   and the decision is being made by default in the meantime (20 spawn sites, 256 MiB each).
+   and the decision is being made by default in the meantime (19 spawn sites, 256 MiB each).
 2. **The batteries adoption policy** — "grow the interpreter until the real upstream module
    runs verbatim (rung 2); native provision (rung 3) is banned" is a load-bearing,
    costly-to-reverse decision recorded only in `BATTERIES.md` and CLAUDE.md as a user
@@ -485,13 +480,10 @@ Two **missing** ADRs are worth writing, and are listed here rather than drafted 
    to preserve. The companion measurement — "do not build an `nqp::` op layer" — belongs in
    the same record.
 
-A third, **the env-writeback campaign** (§7-3), needs a Proposed ADR *before* implementation
-starts, per the repository's own rule for high-blast-radius mechanism changes.
-
 ---
 
 *Based on static close reading plus live verification against HEAD.*
-*rev11 (2026-08-02): re-verified against `c65835e13` after 1096 commits; ADR-0013 recorded as
-landed, the bundled-module (§1.8) and MOP (§1.9) subsystems added, the representation
-campaigns (§1.10) and the env-writeback correctness cluster (§2.4) named, §7 re-prioritized
-around the latter, and §8 ADR-ledger review added.*
+*rev12 (2026-08-04): re-verified against `435de2d3e`; ADR-0013 closure, ADR-0016's
+materialization counter, ADR-0018 completion, and ADR-0019's 14/51 progress recorded;
+live hygiene metrics refreshed; §7 reduced to current work and reordered by dependency,
+severity, and actionability.*
