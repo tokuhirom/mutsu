@@ -112,6 +112,18 @@ impl Interpreter {
                                     if err.is_return() || err.return_value.is_some() {
                                         return Err(err);
                                     }
+                                    // `done`/`last` inside a whenever body ends
+                                    // the enclosing supply. Propagate the control
+                                    // signal unchanged so the supply machinery
+                                    // consumes it; falling through to the
+                                    // quit/failure path below strips the control
+                                    // flag and re-raises it as a thrown
+                                    // `X::ControlFlow`, which then surfaced on a
+                                    // channel reader thread as "done without
+                                    // supply or react" and killed the process.
+                                    if err.is_react_done() || err.is_last() {
+                                        return Err(err);
+                                    }
                                     // `next` inside a whenever body skips the rest
                                     // of the body for THIS value (Rakudo maps it to
                                     // a control exception the supply machinery
@@ -605,6 +617,18 @@ impl Interpreter {
                                     // the signal unchanged so that routine's call frame
                                     // consumes it — it is not a supply failure.
                                     if err.is_return() || err.return_value.is_some() {
+                                        return Err(err);
+                                    }
+                                    // `done`/`last` inside a whenever body ends
+                                    // the enclosing supply. Propagate the control
+                                    // signal unchanged so the supply machinery
+                                    // consumes it; falling through to the
+                                    // quit/failure path below strips the control
+                                    // flag and re-raises it as a thrown
+                                    // `X::ControlFlow`, which then surfaced on a
+                                    // channel reader thread as "done without
+                                    // supply or react" and killed the process.
+                                    if err.is_react_done() || err.is_last() {
                                         return Err(err);
                                     }
                                     // `next` inside a whenever body skips the rest
