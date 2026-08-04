@@ -11,7 +11,9 @@
   partial-parse replay still build eager `Match` objects for `$/` inside in-regex code blocks
   (small counts, unchanged semantics). **Standing consequence of P5**: a `view()`-based
   "is it an X?" probe is an anti-pattern anywhere a lazy `Match` can flow — use a tag probe,
-  or the value is materialized and the laziness is lost.
+  or the value is materialized and the laziness is lost. This invariant is guarded by the
+  `match_materializations` counter in `MUTSU_VM_STATS=1` output: accessor/tag-only workloads
+  keep it at zero, while every first forcing `view()` increments it.
 - **Context**: ADR-0001 Phase A (single-thread speed catch-up, before GC/JIT).
   Direct follow-on to ADR-0007, which removed the *accumulated-state* clone from the
   matcher and explicitly deferred the remaining "**per-subrule ceremony**" — captured-text

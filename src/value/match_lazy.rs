@@ -71,6 +71,7 @@ impl MatchNode {
     /// Force the Instance-shaped materialization (one level deep).
     pub(in crate::value) fn force_attrs(&self) -> &crate::gc::Gc<InstanceAttrs> {
         self.attrs.get_or_init(|| {
+            crate::vm::vm_stats::record_regex_match_materialization();
             crate::gc::Gc::new(InstanceAttrs::new(
                 match_class_symbol(),
                 self.materialize_map(),
