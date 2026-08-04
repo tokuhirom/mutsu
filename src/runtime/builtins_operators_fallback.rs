@@ -12,8 +12,7 @@ impl Interpreter {
             .strip_prefix("infix:<")
             .and_then(|s| s.strip_suffix('>'))
         {
-            let normalized = if op == "−" { "-" } else { op };
-            return self.call_infix_routine(normalized, args);
+            return self.call_infix_routine(Self::normalize_unicode_infix(op), args);
         }
         if let Some(op) = name
             .strip_prefix("prefix:<")

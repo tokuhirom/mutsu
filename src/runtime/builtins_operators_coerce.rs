@@ -131,8 +131,31 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn infix_token(op: &str) -> TokenKind {
+    /// The ASCII spelling of a Unicode infix alias. The parser accepts both
+    /// spellings of each of these, and rakudo resolves them to a single routine
+    /// — `&infix:<≅>.name` is `infix:<=~=>` — so a call that reaches an operator
+    /// by *name* has to agree. Without it `&infix:<≅>(1, 1)` and
+    /// `&CALLER::LEXICAL::("infix:<≅>")` (which is how `Test.rakumod`'s `cmp-ok`
+    /// turns its string operator into a callable) built an `Ident("≅")` binary
+    /// no compiler arm claimed, and died with "Two terms in a row".
+    pub(crate) fn normalize_unicode_infix(op: &str) -> &str {
         match op {
+            "\u{2A75}" => "==",
+            "\u{2A76}" => "===",
+            "\u{2260}" => "!=",
+            "\u{2264}" => "<=",
+            "\u{2265}" => ">=",
+            "\u{2245}" => "=~=",
+            "\u{2212}" => "-",
+            "\u{00D7}" => "*",
+            "\u{00F7}" => "/",
+            "\u{2218}" => "o",
+            other => other,
+        }
+    }
+
+    pub(super) fn infix_token(op: &str) -> TokenKind {
+        match Self::normalize_unicode_infix(op) {
             "+" => TokenKind::Plus,
             "-" => TokenKind::Minus,
             "*" | "×" => TokenKind::Star,

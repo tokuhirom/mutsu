@@ -1455,9 +1455,8 @@ impl Interpreter {
                     // `call_infix_routine` on the same `self`), with the same
                     // arg-sources + rw-proxy handling => byte-identical. §D state
                     // ownership: the operator handlers are native Rust on VM state.
-                    let normalized = if op == "\u{2212}" { "-" } else { op };
                     self.set_pending_call_arg_sources(arg_sources);
-                    let result = self.call_infix_routine(normalized, &args);
+                    let result = self.call_infix_routine(Self::normalize_unicode_infix(op), &args);
                     self.set_pending_call_arg_sources(None);
                     let result = result?;
                     loan_env!(self, maybe_fetch_rw_proxy(result, true))

@@ -89,8 +89,7 @@ impl Interpreter {
             .strip_prefix("infix:<")
             .and_then(|s| s.strip_suffix('>'))
         {
-            let normalized = if op == "\u{2212}" { "-" } else { op };
-            return self.call_infix_routine(normalized, &args);
+            return self.call_infix_routine(Self::normalize_unicode_infix(op), &args);
         }
         // File/FS builtin function (`slurp`/`open`/…): user subs were resolved above
         // (compiled_fns / OTF), so dispatch the builtin natively on the VM-owned
