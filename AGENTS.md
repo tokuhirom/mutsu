@@ -92,6 +92,12 @@ Existing interpreter fallbacks are technical debt. When you encounter one while 
   protection remains the merge gate, so the PR merges only after required checks and reviews pass.
 - Do not report PR publication as complete until both conditions are verified on GitHub:
   `isDraft == false` and auto-merge is enabled.
+- After publishing or updating a PR, monitor its required checks with
+  `gh pr checks <pr-number> --watch --fail-fast`. Prefer this foreground command over custom
+  polling loops or background watchers: it refreshes the check table, exits immediately after a
+  failure, and returns success only when all required checks have completed successfully. If a
+  check fails, inspect its logs, fix forward on the same branch, push, and run the watch command
+  again. This rule supersedes any background-only CI-watch guidance in `CLAUDE.md`.
 
 ## External Repository Policy
 - Do not create PRs or Issues against Raku org repositories (including `roast` and `raku-doc`) from this workspace.
