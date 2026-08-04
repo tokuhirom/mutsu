@@ -131,6 +131,60 @@ So the classification is static, and only the bucket id is dynamic:
    name must be resolved from the state store only, never from the global env
    entry `GetGlobal`/`SetGlobal` leaves behind.
 
+### Route B, prototyped and shelved (2026-08-04) — the marking must NOT be global
+
+Route B was built end to end and **got every row of the table above right**,
+including `3,6`, and made `rmd160("abc")` correct on the second call in a
+process. `prove t/` (2865 files) passed. It is shelved for one reason, and the
+fix for it is the one thing a next attempt must do differently.
+
+What was built (all of it works, and is worth rebuilding):
+
+- `CompiledCode::anon_state_nested_depth`, a compile-only cursor, plus a hook in
+  `CompiledCode::add_constant` — the single choke point every variable-name
+  constant passes through, and `__ANON_STATE_<id>__` is used for nothing else,
+  so no emit site had to change.
+- The cursor set two ways: at child-compiler construction when
+  `!is_routine && lexically_in_routine`, and in
+  `push_dynamic_scope_lexical`/`pop_dynamic_scope_lexical` for an inline body.
+- `Compiler::anon_state_enable_next`, armed by `Stmt::For`'s arm only when
+  `!is_statement_modifier`, so ONLY a body proven to be a block counts. This
+  opt-in polarity is required: `Stmt::If` and `Stmt::While` carry no
+  `is_statement_modifier` flag (adding one means touching ~90 `Stmt::If`
+  construction sites), so `$++ if C` — which must keep counting, and which
+  `roast/S32-list/rotor.t`'s hand-written `Iterator` depends on — cannot be told
+  from `if C { $++ }`. Marking conservatively leaves the unclassifiable shapes
+  exactly as they are today.
+- `RoutineFrame::invocation_id` + `Interpreter::anon_state_key` folding in the
+  innermost non-block frame's id, and `per_call_anon_state_read` prepended to
+  the five read chains, answering the site default on a store miss instead of
+  falling through to the stale env copy.
+
+**Why it was shelved.** The marked set was kept in a process-global registry,
+justified by "the parser mints one id per source occurrence". That is true, but
+**the same source is compiled more than once** — the routine-hoist pass,
+`record_type_body_captures`' capture analysis (which compiles a class body, and
+hence its method bodies, through `compile_closure_body` with `is_routine=false`),
+and then the real body — and those passes do not all reproduce the true lexical
+context. One pass classifying an id wrongly poisons it permanently, because the
+registry is sticky. Concretely: a `$++` in an `if` statement modifier inside a
+method inside a class inside a `subtest` block got marked per-call, so its guard
+counter reset on every call and `roast/S32-list/rotor.t` hung at test 17.
+
+Making a depth-0 sighting authoritative (an id seen once outside a block is
+plain) fixes that hang but breaks the `map { ++$ }` rows the other way — those
+ids are *also* seen at depth 0 by one of the passes. The two directions cannot
+both be satisfied by a global registry.
+
+**So the marking has to live on the `CompiledCode` that was compiled**, as the
+original Route B note said, and the runtime has to consult the *executing*
+chunk. That is the one open design question: `anon_state_key` is reached from 13
+call sites (`vm_exec_dispatch.rs`, `vm_var_assign_post_incdec.rs`,
+`vm_misc_coerce.rs`, `vm_var_assign_typed.rs`, `vm_misc_assign.rs`), none of
+which has `code` in hand today. Either thread `&CompiledCode` to them, or keep
+an Interpreter-side stack of the executing chunk's per-call set pushed and
+popped where chunks are entered.
+
 ## Why it matters
 
 Found as the last remaining wrong-digest cause in grondilu's `Digest::RIPEMD`
