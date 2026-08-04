@@ -39,6 +39,9 @@ DBIish	74-key-issues.rakutest
 DateTime::Parse	01-asctime.t
 DateTime::Parse	01-basic.t
 DateTime::Parse	01-nginx-accesslog-timestamps.t
+Digest	md5.t
+Digest	rfc4231.t
+Digest	sha.t
 Encode	01-basic.t
 Encode	02-latin2.t
 Encode	03-utf8.t
