@@ -836,17 +836,30 @@ the program; a sequence generator merges its capture over the live env, so the
 self-referential `my @primes = …, -> $p { … } … *` kept seeing the hoisted empty
 array on every deferred pull.
 
+`integration/99problems-41-to-50.t` was taken next and is **blocked, not
+fixable here**: its grammar action declares `my @vars`, which is the same name
+as `Test.rakumod`'s file-scope `my @vars`, and the two share one env key. That
+is exactly the case
+`todo/tickets/module-file-scope-array-and-hash-still-share-the-caller.md`
+predicted would be the one that matters; the measured instance is recorded
+there. Renaming the *test's* `@vars` makes the file pass, so nothing else is
+wrong with it.
+
 Two things this batch adds to the campaign's method:
 
 - **A file that only fails "because a module is loaded" may not be about
-  anything the module *does*.** `cmp-ok` is never called here. Look for
-  compile-time global flags, not just executed code.
+  anything the module *does*.** `cmp-ok` is never called in `advent2012-day14.t`
+  and `_push_vars` is never called in `99problems-41-to-50.t`; in both cases it
+  was enough that the routine exists. Look for compile-time global flags and
+  name collisions, not just executed code.
 - **Bisect the module by brace-balanced top-level chunks, not by line count.**
   Truncating `Test.rakumod` at a line number breaks parsing (or drops
   `_init_vars`, which file scope calls at line 41) long before it changes
   behaviour; every prefix cut gave a useless answer. Splitting into 248
-  chunks and always keeping chunks 0-47 plus the `_init_vars` chunk made the
-  bisect converge in six runs.
+  chunks and always keeping chunks 0-47 plus the `_init_vars` chunk made both
+  bisects converge in about six runs. Two directions are worth having: keep
+  `0-47, 220, a..b` when the file needs no `Test` routines, and drop `a..b` from
+  the full set when it does.
 
 ### Six files closed on 2026-08-04, and none of the causes was in `Test`
 

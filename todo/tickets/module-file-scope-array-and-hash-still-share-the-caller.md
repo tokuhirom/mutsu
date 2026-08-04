@@ -50,6 +50,42 @@ file-scope `my @a`/`my %h` **and** a consumer that declares the same name.
 `todo/tickets/vendor-real-test-module.md`; the other eight of its file-scope
 lexicals are scalars and are fixed.
 
+## A measured instance: `roast/integration/99problems-41-to-50.t` (2026-08-05)
+
+That predicted collision is real and it costs a whole roast file. Under
+`MUTSU_REAL_TEST=1` the file aborts after 1 of its 9 assertions with
+`unknown variable: A`, raised from the test's own grammar action:
+
+```raku
+method truth-table($expr, $actions) {
+    my @vars = @( $/.ast<vars> );          # <-- same name as Test.rakumod's
+    sub the-truth(@vals) {
+        our %*VAR = @vars Z=> @vals;       # built from the WRONG @vars
+        ...
+    }
+}
+```
+
+`%*VAR` therefore comes out empty and the `term:sym<var>` closure's
+`%*VAR{$id} // die "unknown variable: $id"` fires. Renaming the *test's*
+`@vars` to `@varz` makes the file pass, which is the confirmation — the file is
+otherwise unmodified and `raku` passes it as written.
+
+Bisecting `Test.rakumod` converges on `sub _push_vars` (`@vars.push: item [...]`),
+i.e. the declaration alone is not enough; it takes a routine that mutates the
+array by name. Two notes on doing that bisect, since the obvious method does not
+work:
+
+- **Do not truncate `Test.rakumod` at a line number.** File scope calls
+  `_init_vars()` at line 41 and that routine is declared at line 867, so every
+  prefix cut either fails to parse or dies on `Unknown function: _init_vars`
+  long before it changes behaviour.
+- Split the file into brace-balanced top-level chunks (248 of them) and always
+  keep chunks 0-47 plus the `_init_vars` chunk (220). Then a keep-range or
+  drop-range bisect converges in about six runs.
+
+So the file is blocked on this ticket, not on anything in `Test`.
+
 Pin when fixed: extend `t/module-file-scope-lexical.t` (and
 `t/lib/UnitFileLexical.rakumod`) with the array/hash cases that were written and
 then removed when the slice was scoped to scalars.
