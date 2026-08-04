@@ -111,7 +111,7 @@ unchecked even if its original PR merged. PRs are sequential branches from the t
 `main`; this is not a stacked-PR plan.
 
 **Current progress: 17/51 slices merged. Next slice: C6c (C6a and C6b landed; C6 is subdivided
-below).**
+below). C6c and C6d each need a design pass before coding — see their notes.**
 
 The migration is complete only when every required box below is checked and the completion gates
 at the end pass. The order within a phase is intentional. A later phase may start when its stated
@@ -171,8 +171,14 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
     single reader `Interpreter::routine_body_facts`, and read the existing `is_stub` field on the
     redeclaration path. (`collect_routine_body_local_names` and rw-target extraction return AST
     data rather than facts; they move with C6c/C6d.)
-  - [ ] **C6c — `Value::make_sub` from a def.** Carry `def.compiled` into the resulting `SubData`
-    so a code object built from a registry routine is bytecode-backed.
+  - [ ] **C6c — `Value::make_sub` from a def.** Make a code object built from a registry routine
+    bytecode-backed. **Not a field copy:** `FunctionDef.compiled` is an `Arc<CompiledFunction>`
+    invoked by `compile_and_call_function_def` (routine convention: `param_local_slots`,
+    `named_call_plan`, `param_name_syms`), while `SubData.compiled_code` is an `Arc<CompiledCode>`
+    invoked by `call_compiled_closure` (closure convention: upvalues aligned to
+    `cc.upvalue_syms`, captured env). Handing the inner `code` over would run a routine body under
+    the closure calling convention. The slice is to let a Sub value carry *routine* identity and
+    dispatch through the routine path; design that first.
   - [ ] **C6d — interpreter execution sites.** Route `eval_block_value(&def.body)` /
     `run_block(&def.body)` through `def.compiled`. **Not a small slice:** these carriers are
     reached precisely *because* an OTF gate rejected the routine, so eliminating them means
