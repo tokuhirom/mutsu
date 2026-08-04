@@ -774,6 +774,18 @@ native provider never takes such an argument as a Raku value, so any test file
 that hands a container to a `Test` routine is exercising the cell form for the
 first time.**
 
+`S06-operator-overloading/sub.t` was triaged and needs **three** independent
+fixes, so it stays open. It aborts after 24 of 29 assertions on
+`todo/deep/block-local-operator-leaks-into-later-parses.md` — a `sub infix:["@"]`
+declared inside a `lives-ok { … }` is still in the registry when a later `EVAL`
+string is *parsed*, so that string's `@ 5 @` reads as an infix with a missing
+operand. The two assertions it loses before that want specific parse-error
+classes (`X::Syntax::Extension::TooComplex`,
+`X::Syntax::Extension::Category`) where mutsu answers the generic "Missing
+block" —`todo/tickets/operator-extension-name-error-classes.md`. **A file that
+fails at three unrelated layers is worth triaging in full before starting on
+it**: fixing only the visible first failure buys nothing here.
+
 `roast/S12-methods/qualified.t` is worth a second look too: its Malformed
 assertion passes now and the file moved on to `Cannot dispatch to method me on
 Parent because it is not inherited or done by Bar` in its inheritance subtest.
