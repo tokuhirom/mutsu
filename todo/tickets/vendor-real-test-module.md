@@ -765,6 +765,15 @@ a routine/closure body is registered twice** (hoist pass, then in sequence), so
 any "have I seen this name before?" test in the compiler counts the hoist copy
 first.
 
+`S09-typed-arrays/native-num.t` is closed
+(`news/2026-08/native-array-slice-assign-reads-through-its-cell.md`): `nok @arr`
+passes the array to `ok`'s `Mu $cond`, which boxes the caller's binding into a
+`ContainerRef`, and the slice-assign path's raw `ValueView::Array` test then
+stopped matching — so `@arr[^3] = …` stringified its Range into one key. **The
+native provider never takes such an argument as a Raku value, so any test file
+that hands a container to a `Test` routine is exercising the cell form for the
+first time.**
+
 `roast/S12-methods/qualified.t` is worth a second look too: its Malformed
 assertion passes now and the file moved on to `Cannot dispatch to method me on
 Parent because it is not inherited or done by Bar` in its inheritance subtest.

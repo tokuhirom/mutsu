@@ -508,16 +508,23 @@ impl Interpreter {
         let vtc_native = loan_env!(self, var_type_constraint(&var_name))
             .as_deref()
             .is_some_and(crate::runtime::native_types::is_native_array_element_type);
-        let ct_native = index_target
-            .as_ref()
-            .cloned()
+        // Read through a container cell: passing `@b` to a *scalar* parameter
+        // boxes the caller's binding into a `ContainerRef` for writeback, and
+        // from then on `self.env().get("@b")` is the cell rather than the array.
+        // Everything user-visible derefs transparently (`@b.of` still answers
+        // `num`), so the array kept looking native from Raku while this raw
+        // `ValueView::Array` test stopped matching — and a `@b[^3] = …` Range
+        // subscript silently stringified into the single key "0 1 2".
+        let index_target_deref = index_target.as_ref().map(Value::deref_container);
+        let ct_native = index_target_deref
+            .clone()
             .and_then(|v| self.container_type_metadata(&v))
             .is_some_and(|info| {
                 crate::runtime::native_types::is_native_array_element_type(&info.value_type)
             });
         let array_var_is_native = !var_name.starts_with('%')
             && matches!(
-                index_target.as_ref().map(Value::view),
+                index_target_deref.as_ref().map(Value::view),
                 Some(ValueView::Array(..))
             )
             && (vtc_native || ct_native);
