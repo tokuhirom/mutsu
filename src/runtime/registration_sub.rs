@@ -933,6 +933,18 @@ impl Interpreter {
             // Invalidate name-keyed resolution caches.
             self.fn_resolve_gen += 1;
         }
+        // A `multi` that lexically shadows a same-named *single* takes the name
+        // over completely, exactly as the `!multi` case above does — otherwise
+        // the shadowed single stays registered and keeps answering the call,
+        // which is how a sibling block's `sub f` went on being called from a
+        // block whose own `multi f` had just been declared. Sibling candidates
+        // of this multi's own group are keyed with a `/` suffix and are left
+        // alone.
+        if multi && allow_lexical_shadow && !is_our_scoped && has_single && !has_proto {
+            let lexical_single = Symbol::intern(&format!("{}::{}", self.current_package(), name));
+            self.registry_mut().functions.remove(&lexical_single);
+            self.fn_resolve_gen += 1;
+        }
         if let Some(assoc) = associativity {
             self.operator_assoc.insert(name.to_string(), assoc.clone());
             self.operator_assoc.insert(

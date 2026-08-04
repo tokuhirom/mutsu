@@ -3041,7 +3041,23 @@ impl Compiler {
                     self.code.emit(OpCode::Die);
                     return;
                 }
-                let idx = self.code.add_sub_decl_plan(stmt);
+                // The hoist pass marks its copy of a body-local declaration
+                // `__lexical_hoist`; the in-sequence registration is the same
+                // declaration and has to say so too, or registering it a second
+                // time reports the *sibling* scope's routine of that name as a
+                // redeclaration.
+                let body_local =
+                    self.in_lexical_scope && !self.lexical_dup_routines.contains(&name.resolve());
+                let idx =
+                    if body_local && !custom_traits.iter().any(|(t, _)| t == "__lexical_hoist") {
+                        let mut marked = stmt.clone();
+                        if let Stmt::SubDecl { custom_traits, .. } = &mut marked {
+                            custom_traits.push(("__lexical_hoist".to_string(), None));
+                        }
+                        self.code.add_sub_decl_plan(&marked)
+                    } else {
+                        self.code.add_sub_decl_plan(stmt)
+                    };
                 self.code.emit(OpCode::RegisterDecl(idx));
                 if name_expr.is_some() {
                     // Runtime-resolved sub names cannot be keyed reliably in compiled_fns.

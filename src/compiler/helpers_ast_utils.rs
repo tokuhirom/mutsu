@@ -392,6 +392,31 @@ impl Compiler {
         }
     }
 
+    /// Mark this compiler as compiling a routine/closure BODY, and record which
+    /// routine names that body redeclares within itself. See
+    /// [`Compiler::lexical_dup_routines`].
+    pub(super) fn mark_lexical_body(&mut self, body: &[Stmt]) {
+        self.in_lexical_scope = true;
+        let mut all_multi: HashMap<String, bool> = HashMap::new();
+        for stmt in body {
+            if let Stmt::SubDecl { name, multi, .. } = stmt {
+                let name = name.resolve();
+                match all_multi.get(&name) {
+                    None => {
+                        all_multi.insert(name, *multi);
+                    }
+                    Some(prev_all_multi) => {
+                        // Several `multi`s of one name are one routine, not a
+                        // redeclaration; anything else in the mix conflicts.
+                        if !(*prev_all_multi && *multi) {
+                            self.lexical_dup_routines.insert(name);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     pub(super) fn hoist_sub_decls(&mut self, stmts: &[Stmt], lexical_hoist: bool) {
         self.seed_user_listop_shadows(stmts);
         for stmt in stmts {
