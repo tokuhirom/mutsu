@@ -197,6 +197,7 @@ impl Interpreter {
             return_type,
             associativity,
             signature_alternates,
+            compiled_routine_keys: _,
             legacy_body: body,
             multi,
             is_rw,

@@ -142,8 +142,10 @@ each instruction.
 Stage 1 is in progress. `RegisterSub` now indexes a typed `CompiledSubDeclPlan` pool rather than
 `CompiledCode::stmt_pool`; all normal, hoisted, nested-`our`, and top-level-method lowering sites use
 the plan, and the VM no longer pattern-matches `Stmt::SubDecl`. The plan still carries
-`legacy_body` for the existing routine-registry adapter. Replacing that field with the compiled
-routine reference is the next declaration slice.
+`legacy_body` for the existing routine-registry adapter. Source-order sub plans now also carry the
+stable keys of their primary and alternate compiled routines. The next adapter slice preserves
+that association across module import and installs `FunctionDef` candidates through those
+references before removing `legacy_body`.
 
 `RegisterClass` and `RegisterRole` now likewise index typed class/role declaration-plan pools for
 both source-order declarations and hoisted forward-reference shells. The VM no longer discovers

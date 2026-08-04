@@ -38,9 +38,16 @@ mod declaration_plan_tests {
     fn sub_declarations_leave_the_generic_statement_pool() {
         let (stmts, _) = crate::parse_dispatch::parse_source("sub f($x) { $x + 1 }; f(2)")
             .expect("source parses");
-        let (code, _) = Compiler::new().compile(&stmts);
+        let (code, compiled_fns) = Compiler::new().compile(&stmts);
 
         assert!(!code.sub_decl_plans.is_empty());
+        let plan = code
+            .sub_decl_plans
+            .iter()
+            .find(|plan| plan.name.as_str() == "f" && !plan.compiled_routine_keys.is_empty())
+            .expect("source-order f declaration plan");
+        assert_eq!(plan.compiled_routine_keys.len(), 1);
+        assert!(compiled_fns.contains_key(&plan.compiled_routine_keys[0]));
         assert!(
             code.stmt_pool
                 .iter()
