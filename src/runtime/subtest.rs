@@ -210,6 +210,21 @@ impl Interpreter {
         self.output_sink_mut().output = ctx.parent_output;
         self.halted = ctx.parent_halted;
         self.tap.end_subtest();
+        // A subtest whose body dies is reported as a failure, but the reason was
+        // dropped on the floor: all the reader saw was `1..0` and a bare
+        // `not ok`. Say what killed it, on stderr so TAP counting is untouched.
+        if let Err(ref err) = run_result {
+            let reason = match err.exception.as_deref() {
+                Some(exc) => self
+                    .exception_message_text(exc)
+                    .unwrap_or_else(|| err.message.clone()),
+                None => err.message.clone(),
+            };
+            let reason = reason.trim();
+            if !reason.is_empty() {
+                self.emit_stderr(&format!("{}# subtest died: {}\n", subtest_indent, reason));
+            }
+        }
         // Rakudo's subtest closes with its own count on `$failure_output`
         // (stderr), indented to its level, just as the top-level run does.
         if subtest_failed > 0 && !subtest_was_todo {
