@@ -56,8 +56,9 @@ repeated calls with the same single-block input agree
 
 What remains is a SECOND, independent freeze that the rotate bug was masking:
 the `start` blocks in the compression loop capture the reduce callback's
-`@words` parameter frozen at its first binding
-(`todo/tickets/reduce-start-block-array-param-frozen.md`, minimal repro
+`@words` parameter frozen at its first binding — the known `@`/`%` shared-var
+lane limitation, `todo/tickets/shared-var-lane-freezes-a-reused-array-name.md`
+(minimal repro
 `reduce -> $h, @words { $h + await start { [+] @words } }, 0, (1,2), (3,4)`
 → 6 instead of 10). Consequences: a multi-block message (>55 bytes) digests
 wrongly even on the first call, and any later call in one process returns the

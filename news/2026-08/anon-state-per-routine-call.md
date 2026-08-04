@@ -14,7 +14,10 @@ kept counting everywhere:
 This was the anonymous-state half of `Digest::RIPEMD`'s wrong second digest
 (`todo/tickets/digest-dist-blockers.md` blocker 2): its output stage rotates
 the five hash words with `map { $_[[^5].rotate(++$)] }`, so the second and
-later `rmd160(...)` calls in one process rotated by the wrong amount.
+later `rmd160(...)` calls in one process rotated by the wrong amount. (The
+other half — the compression loop's `start` blocks seeing a frozen `@words` —
+is the known shared-var-lane limitation,
+`todo/tickets/shared-var-lane-freezes-a-reused-array-name.md`.)
 
 ## The rule
 
