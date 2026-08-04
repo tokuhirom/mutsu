@@ -178,12 +178,62 @@ both be satisfied by a global registry.
 
 **So the marking has to live on the `CompiledCode` that was compiled**, as the
 original Route B note said, and the runtime has to consult the *executing*
-chunk. That is the one open design question: `anon_state_key` is reached from 13
-call sites (`vm_exec_dispatch.rs`, `vm_var_assign_post_incdec.rs`,
-`vm_misc_coerce.rs`, `vm_var_assign_typed.rs`, `vm_misc_assign.rs`), none of
-which has `code` in hand today. Either thread `&CompiledCode` to them, or keep
-an Interpreter-side stack of the executing chunk's per-call set pushed and
-popped where chunks are entered.
+chunk.
+
+### Route B v2, prototyped and shelved (2026-08-04) — per-chunk is not enough either
+
+Built and shelved as PR #5885. The threading concern above turned out to be a
+non-issue: **all 13 `anon_state_key` call sites already have
+`code: &CompiledCode` in scope** (the earlier note read the helper signatures,
+not the callers), so moving the set onto `CompiledCode::per_call_anon_states`
+and passing `code` down is mechanical. That version got every row of the table
+right, kept `roast/S32-list/rotor.t` green, and made `rmd160("abc")` correct on
+the second call in a process. The full `prove t/` (2869 files) passed.
+
+It regressed **`roast/S32-list/classify.t` test 39**:
+
+```raku
+<a b c>.classify({ ~($ ~= $_); })
+# raku / main: :{ a => [a], ab => [b], abc => [c] }
+# Route B v2:  :{ a => [a], b  => [b], c   => [c] }   -- the `$` reset per item
+```
+
+The cause is a **key-stability hazard**, and it is the thing to solve first:
+
+- Several runtime paths re-compile a block body from its AST
+  (`eval_map_over_items` and its grep/rw siblings, `exec_make_gather_op`,
+  `call_sub_value`), which loses the lexical position, so the cursor has to be
+  restated at each of those sites. Without that, `map { ++$ }` — the whole
+  reason this ticket exists — never resets.
+- But once it is restated, ONE `$` occurrence can be executed by TWO chunks that
+  classified it differently. Its write then lands on
+  `__anon_state::<name>#<bucket>` while its read looks up the plain
+  `__anon_state::<name>` (or the reverse), and the counter looks like it reset.
+  Under gdb the classify callback's own chunk reports an EMPTY
+  `per_call_anon_states` and bucket 0, yet the value still fails to carry — the
+  write went through a different, marked chunk.
+
+So the classification has to be attached to the `$` occurrence in a way that
+**every chunk that executes it agrees on**. Neither a global registry (poisoned
+by analysis passes, above) nor a per-chunk set (this attempt) provides that
+alone. Two shapes worth considering next:
+
+1. Carry the classification on the closure VALUE (`SubData`) / the gather's
+   `LazyList`, so a re-compile inherits it from the block being run rather than
+   re-deriving it. That also removes the per-site restatement entirely.
+2. Make the *key* independent of the classification — always
+   `__anon_state::<name>#<bucket>`, with `bucket` = 0 for a non-per-call
+   occurrence — so a disagreement about classification can no longer split one
+   variable across two keys. This is a small change and worth trying first; it
+   turns the hazard into "at worst the wrong bucket", not "two different
+   variables".
+
+A third, independent point the prototype settled: the inline-body marking must
+be **opt-in** (`Stmt::For`'s block form arming a one-shot flag), because
+`Stmt::If`/`Stmt::While` carry no `is_statement_modifier` flag — adding one is
+~90 `Stmt::If` construction sites away — so `$++ if C` (which must keep
+counting; `rotor.t`'s hand-written `Iterator` depends on it) cannot be told from
+`if C { $++ }`.
 
 ## Why it matters
 
