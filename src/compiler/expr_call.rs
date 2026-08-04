@@ -290,6 +290,7 @@ impl Compiler {
                         | Expr::HashVar(_)
                         | Expr::Whatever
                         | Expr::Index { .. }
+                        | Expr::MultiDimIndex { .. }
                 ) || matches!(t, Expr::DoStmt(s) if matches!(s.as_ref(), Stmt::VarDecl { .. }))
             })
         {
@@ -470,6 +471,31 @@ impl Compiler {
                         });
                         self.code.emit(OpCode::Pop);
                         offset += width;
+                    }
+                    // `($current, @lanes[$x;$y]) = @lanes[$x;$y], $rotated`
+                    // (Digest::SHA3's `KeccakF1600`): a multi-dimensional
+                    // subscript is a single-item target, like a single-index
+                    // `@a[i]` one. Without this arm the whole list assignment
+                    // failed the target gate above and fell through to the
+                    // runtime's "cannot assign through non-callable value".
+                    Expr::MultiDimIndex { target, dimensions } => {
+                        let src_name = if seen_slurpy {
+                            tmp_name.clone()
+                        } else {
+                            snap_name.clone()
+                        };
+                        let rhs_item = Expr::Index {
+                            target: Box::new(Expr::Var(src_name)),
+                            index: Box::new(Expr::Literal(Value::int(offset as i64))),
+                            is_positional: true,
+                        };
+                        self.compile_expr(&Expr::MultiDimIndexAssign {
+                            target: target.clone(),
+                            dimensions: dimensions.clone(),
+                            value: Box::new(rhs_item),
+                        });
+                        self.code.emit(OpCode::Pop);
+                        offset += 1;
                     }
                     _ => {
                         // Whatever (`*`) discard slot consumes one item.

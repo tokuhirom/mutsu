@@ -2514,13 +2514,22 @@ impl Compiler {
                     }
                     _ => None,
                 };
-                // A scalar placeholder in the body is the given/with block's
+                // A scalar placeholder in the body is the given/with BLOCK's
                 // parameter, bound to the topic (`with 2 { $^a == 3 ?? … }`
                 // sees 2). The topic value is on the stack here; keep a copy
                 // for the binding, mirroring the If arm's cond placeholder.
-                if let Some(ph) = crate::ast::collect_placeholders_shallow(body)
-                    .into_iter()
-                    .find(|n| n.starts_with('^'))
+                //
+                // A `given` STATEMENT MODIFIER introduces no block, so a
+                // placeholder in its body belongs to the enclosing routine and
+                // is already bound as one of its parameters (see the matching
+                // `is_statement_modifier` arm in `collect_ph_stmt_shallow`).
+                // Rebinding it to the topic here made
+                // `sub ROL64 { ($^a … $_ …) given $^n%64 }` read the topic for
+                // `$^a` instead of the first argument.
+                if !*is_statement_modifier
+                    && let Some(ph) = crate::ast::collect_placeholders_shallow(body)
+                        .into_iter()
+                        .find(|n| n.starts_with('^'))
                 {
                     self.code.emit(OpCode::Dup);
                     self.emit_set_named_var(&ph);
