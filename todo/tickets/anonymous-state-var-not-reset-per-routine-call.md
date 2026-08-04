@@ -221,12 +221,22 @@ alone. Two shapes worth considering next:
 1. Carry the classification on the closure VALUE (`SubData`) / the gather's
    `LazyList`, so a re-compile inherits it from the block being run rather than
    re-deriving it. That also removes the per-site restatement entirely.
-2. Make the *key* independent of the classification — always
-   `__anon_state::<name>#<bucket>`, with `bucket` = 0 for a non-per-call
-   occurrence — so a disagreement about classification can no longer split one
-   variable across two keys. This is a small change and worth trying first; it
-   turns the hazard into "at worst the wrong bucket", not "two different
-   variables".
+2. Decide the classification ONCE per source occurrence and put it somewhere
+   every compilation of that occurrence can see — the obvious carrier being the
+   name itself, since the runtime key is derived from it. Rewriting
+   `__ANON_STATE_<id>__` to a per-call spelling in the AST, once, at routine
+   registration, makes every re-compile of that body agree for free and removes
+   the per-site restatement. The cost is an AST walk: the set to rewrite is
+   `all_anon_state_names(body) − shallow_anon_state_names(body)`, and only the
+   shallow half exists today (`collect_ph_stmt_shallow`'s block-boundary
+   descent, which is reusable). Each `__ANON_STATE_<id>__` is unique per source
+   occurrence, so the two sets cannot overlap.
+
+   (An earlier version of this note suggested instead making the key
+   *unconditionally* carry a bucket — `#0` when not per-call — as a cheap
+   mitigation. **That does not work**: the two chunks would then produce
+   `…#<invocation>` and `…#0`, which is still two different keys for one
+   variable. Nothing short of making the chunks agree fixes the split.)
 
 A third, independent point the prototype settled: the inline-body marking must
 be **opt-in** (`Stmt::For`'s block form arming a one-shot flag), because
