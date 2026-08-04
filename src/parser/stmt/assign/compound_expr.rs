@@ -124,6 +124,49 @@ pub(crate) fn build_compound_assign_expr(
                 |lhs_expr| compound_assigned_value_expr(lhs_expr, op, rhs),
             ));
         }
+        // `@a[$x;$y] op= rhs` — the multi-dimensional twin of the `Expr::Index`
+        // arm above. Without it the LHS fell through to the `other` arm and
+        // compiled to an unconditional `__mutsu_assignment_ro`, so every
+        // `@lanes[$x;$y] +^= @D[$x]` died with "Cannot modify an immutable
+        // value" (Digest::SHA3's `KeccakF1600`) even though the plain
+        // `@a[$x;$y] = v` form has always worked.
+        Expr::MultiDimIndex { target, dimensions } => {
+            // Bind each dimension to a temp so a side-effecting subscript
+            // (`@a[$i++; f()] += 1`) is evaluated exactly once, shared by the
+            // read-back and the write — same reason as the single-index arm.
+            let mut body = Vec::with_capacity(dimensions.len() + 1);
+            let mut tmp_dims = Vec::with_capacity(dimensions.len());
+            for dim in dimensions {
+                let tmp = format!(
+                    "__mutsu_idx_{}",
+                    TMP_INDEX_COUNTER.fetch_add(1, Ordering::Relaxed)
+                );
+                body.push(Stmt::VarDecl {
+                    name: tmp.clone(),
+                    expr: dim,
+                    type_constraint: None,
+                    is_state: false,
+                    is_our: false,
+                    is_dynamic: false,
+                    is_export: false,
+                    export_tags: Vec::new(),
+                    custom_traits: Vec::new(),
+                    where_constraint: None,
+                });
+                tmp_dims.push(Expr::Var(tmp));
+            }
+            let read_back = Expr::MultiDimIndex {
+                target: target.clone(),
+                dimensions: tmp_dims.clone(),
+            };
+            let assigned_value = compound_assigned_value_expr(read_back, op, rhs);
+            body.push(Stmt::Expr(Expr::MultiDimIndexAssign {
+                target,
+                dimensions: tmp_dims,
+                value: Box::new(assigned_value),
+            }));
+            Expr::DoBlock { body, label: None }
+        }
         Expr::MethodCall {
             target,
             name,
