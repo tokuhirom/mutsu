@@ -833,11 +833,13 @@ impl Interpreter {
                             return;
                         }
                         for (i, &pos) in indices.iter().enumerate() {
-                            let v = vals.get(i).cloned().unwrap_or(Value::NIL);
-                            // No `& 0xff` here: encode_elems masks to the
+                            // Stored unconverted: encode_elems masks to the
                             // node's own element width (a Buf[uint64] element
-                            // must keep all 8 bytes).
-                            arr[pos] = Value::int(crate::runtime::to_int(&v));
+                            // must keep all 8 bytes), and its `elem_to_u64`
+                            // does the coercion. Pre-converting with `to_int`
+                            // would saturate a `uint64` element above
+                            // `i64::MAX` at `0x7FFF_FFFF_FFFF_FFFF`.
+                            arr[pos] = vals.get(i).cloned().unwrap_or(Value::NIL);
                         }
                     });
                     if let Some(e) = resize_err {
@@ -856,9 +858,11 @@ impl Interpreter {
                     self.stack.push(Value::array(assigned));
                     return Ok(());
                 } else if let Some(pos) = Self::index_to_usize(&idx) {
-                    // Full-width element value; encode_elems masks to the
-                    // node's element width (Buf[uint64] keeps all 8 bytes).
-                    let elem = Value::int(crate::runtime::to_int(&val));
+                    // Full-width element value, stored unconverted: encode_elems
+                    // masks to the node's element width (Buf[uint64] keeps all
+                    // 8 bytes) and coerces via `elem_to_u64`. Pre-converting
+                    // with `to_int` would saturate an element above `i64::MAX`.
+                    let elem = val.clone();
                     let mut resize_err = None;
                     crate::value::value_buf::with_buf_elems_mut(&attributes, |arr| {
                         if let Err(e) = Self::autoviv_resize(arr, pos + 1, Value::int(0)) {

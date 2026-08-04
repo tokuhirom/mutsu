@@ -7,11 +7,13 @@ interpreter bugs found while running it were fixed (see
 `news/2026-08/digest-dist-seven-fixes.md`), then four more that its roast
 fallout exposed (`news/2026-08/digest-dist-followup-four-fixes.md`), then four
 more behind MD5's wrong digest (`news/2026-08/digest-md5-four-fixes.md`).
-`Digest::MD5`, `Digest::SHA1` and `Digest::SHA2`'s `sha224`/`sha256` now produce
-correct digests, and the dist's `t/md5.t` passes in full. Blockers 1
-(`news/2026-08/for-modifier-placeholder-scope.md`) and 4
-(`news/2026-08/named-params-do-not-narrow.md`) are fixed; two remain, each an
-independent general bug.
+`Digest::MD5`, `Digest::SHA1` and all four `Digest::SHA2` digests now come out
+correct, and the dist's `t/md5.t` passes in full. Blockers 1
+(`news/2026-08/for-modifier-placeholder-scope.md`), 3
+(`news/2026-08/buf-wide-element-assign-saturation.md`) and 4
+(`news/2026-08/named-params-do-not-narrow.md`) are fixed. What remains is
+blocker 2's anonymous-`$`-state residue, the `Digest::SHA3` cluster (6), and the
+non-blocking wide-buffer bit accessors (5).
 
 Reproduce with the vendored-in-zef-store copy:
 
@@ -54,15 +56,54 @@ is an independent bug with its own minimal repro:
 take `t/ripemd.t` to a full pass (its `'a' x 1_000_000` vector is slow in a debug
 build — use a release binary).
 
-## 3. `sha512` / `sha384` return an empty digest
+## 3. `sha512` / `sha384` return a wrong digest — FIXED
 
-`sha512("abc")` returns eight zero bytes. The `√` FatRat operator and the
-`blob64` initial-hash constants are correct (verified against raku), so the fault
-is in the block pipeline: `blob64`, `state buf64 $w`, the `$H[]` zen slice, the
-`(8*$data).polymod(256 xx 15).reverse` length encoding, or `map * mod 2**64` over
-a Blob. `sha384` is `sha512` with a different initial hash, so it falls with it.
-(The wide-`Buf` and `polymod` fixes of 2026-08-04 did not move this one; the rest
-of `t/sha.t` — SHA-1, `sha224`, `sha256` — passes.)
+The symptom in the original report ("eight zero bytes") had already moved on by
+the time this was picked up: `sha512("abc")` returned a full 64 bytes, just the
+wrong ones. A per-round trace of the 80-round compression put the divergence at
+`t = 25`, where the message schedule word read back as `7FFFFFFFFFFFFFFF` — an
+`i64::MAX` saturation marker. `$w[$t] = ...` on a `state buf64 $w` ran the value
+through `to_int` before storing it, which saturates a `BigInt`, so every schedule
+word at or above 2**63 was clamped. Fixed by storing the element unconverted and
+letting `encode_elems` do the width masking; see
+`news/2026-08/buf-wide-element-assign-saturation.md`. `sha384`, `sha512` and the
+rest of `t/sha.t`'s SHA-1/SHA-2 subtests now pass.
+
+## 6. `Digest::SHA3` — `samewith` inside a lazy `gather`, and named-only multi dispatch
+
+With SHA-2 fixed, `t/sha.t`'s remaining failure is its SHA-3 subtest, which runs
+zero tests. `Digest::SHA3`'s `Keccak` is a `proto` with five named parameters and
+two `multi`s; the `:$outputByteLen` candidate finishes with
+
+    gather for samewith $inputBytes, :$delimitedSuffix, :$rate, :$capacity { ... }
+
+Calling it directly returns a `Seq` whose reification dies with `samewith called
+outside of a dispatch context` — the enclosing routine's dispatch frame is gone
+by the time the lazy `gather` body runs. Reduced:
+
+    proto f($x, :$n) {*}
+    multi f($x, :$n)  { "base($x)" }
+    multi f($x, :$n!) { gather for samewith($x) { take "$_ x$n" } }
+    say f(3, n => 2).list;   # mutsu: no output at all, exit 0
+
+(mutsu prints nothing — the `say` itself produces no line — so there is a second
+problem in how the failing `gather` is sunk.)
+
+A separate, probably-related dispatch bug shows up with the same signature shape
+when the extra named argument is *omitted*: an all-named candidate set picks the
+wider candidate instead of the exact one.
+
+    proto K($in, :$suffix, :$len, :$rate) {*}
+    multi K($in, :$suffix, :$rate)        { "two: $suffix $rate" }
+    multi K($in, :$suffix, :$len, :$rate) { "three: $suffix $len $rate" }
+    say K(1, suffix => 6, rate => 1152);
+    # raku:  two: 6 1152
+    # mutsu: three: 6  1152   (plus an uninitialized-value warning for $len)
+
+Note this does *not* reproduce once the parameters carry the `byte`/`UInt` types
+and `where` clauses the real `Keccak` proto uses — that variant dispatches
+correctly — so the narrowness comparison is sensitive to something beyond the
+name set. Both are general bugs, neither is a `Digest::SHA2` blocker.
 
 ## 5. `read-ubits` / `write-bits` on a wide buffer
 
