@@ -231,6 +231,51 @@ impl Interpreter {
         result
     }
 
+    /// `BEGIN <expr>` that stayed inside a routine (see `compile_expr_phaser`).
+    /// Same memo mechanism as `once`, but keyed by the compile-time site id
+    /// alone: a BEGIN is one value shared by every clone of the enclosing code,
+    /// not one per clone.
+    pub(super) fn exec_begin_once_expr_op(
+        &mut self,
+        code: &CompiledCode,
+        body_end: u32,
+        site_id: u64,
+        ip: &mut usize,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        let cache_key = format!("BEGIN#{site_id}");
+        let store = std::sync::Arc::clone(self.once_store());
+        match store.claim(&cache_key) {
+            crate::runtime::once_store::OnceClaim::Cached(value) => {
+                self.stack.push(value);
+                *ip = body_end as usize;
+                Ok(())
+            }
+            crate::runtime::once_store::OnceClaim::Claimed => {
+                let body_start = *ip + 1;
+                let end = body_end as usize;
+                let stack_base = self.stack.len();
+                match self.run_range(code, body_start, end, compiled_fns) {
+                    Ok(()) => {
+                        let value = if self.stack.len() > stack_base {
+                            self.stack.pop().unwrap_or(Value::NIL)
+                        } else {
+                            Value::NIL
+                        };
+                        store.fulfill(&cache_key, value.clone());
+                        self.stack.push(value);
+                        *ip = end;
+                        Ok(())
+                    }
+                    Err(e) => {
+                        store.abandon(&cache_key);
+                        Err(e)
+                    }
+                }
+            }
+        }
+    }
+
     pub(super) fn exec_once_expr_op(
         &mut self,
         code: &CompiledCode,

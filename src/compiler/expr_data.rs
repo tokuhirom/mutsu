@@ -300,21 +300,65 @@ impl Compiler {
         }
     }
 
-    /// Compile PhaserExpr (INIT/CHECK/END as rvalue).
+    /// Compile PhaserExpr (BEGIN/INIT/CHECK/END as rvalue).
     pub(super) fn compile_expr_phaser(&mut self, kind: &PhaserKind, body: &[Stmt]) {
-        if matches!(kind, crate::ast::PhaserKind::End) {
-            let end_stmt = Stmt::Phaser {
-                kind: crate::ast::PhaserKind::End,
-                body: body.to_vec(),
-            };
-            let idx = self.code.add_stmt(end_stmt);
-            let site_id =
-                super::STATE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed) as u64;
-            self.code.emit(OpCode::PhaserEnd { idx, site_id });
-            self.code.emit(OpCode::LoadNil);
-        } else {
-            self.compile_block_inline(body);
+        match kind {
+            crate::ast::PhaserKind::End => {
+                let end_stmt = Stmt::Phaser {
+                    kind: crate::ast::PhaserKind::End,
+                    body: body.to_vec(),
+                };
+                let idx = self.code.add_stmt(end_stmt);
+                let site_id =
+                    super::STATE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed) as u64;
+                self.code.emit(OpCode::PhaserEnd { idx, site_id });
+                self.code.emit(OpCode::LoadNil);
+            }
+            // A BEGIN reaching the compiler is one the phaser lifter left in
+            // place: the lifter hoists `BEGIN <expr>` to the unit's top level,
+            // but it only walks the mainline, so every BEGIN inside a module's
+            // routines arrives here. Compiled inline it would be re-evaluated on
+            // every execution — `Digest::SHA2`'s per-round constant table was
+            // rebuilt 64 times per compression block. Memoize it per site
+            // instead: BEGIN promises one evaluation, and computing it at first
+            // use (rather than hoisting it) keeps it after the declarations it
+            // reads, e.g. a module-level `constant`.
+            crate::ast::PhaserKind::Begin => {
+                let site_id = self.begin_site_id(body);
+                let idx = self.code.emit(OpCode::BeginOnceExpr {
+                    body_end: 0,
+                    site_id,
+                });
+                self.compile_block_inline(body);
+                self.code.patch_body_end(idx);
+            }
+            _ => self.compile_block_inline(body),
         }
+    }
+
+    /// The memo cell a `BEGIN <expr>` site claims at run time.
+    ///
+    /// It must be **stable across recompilations of the same source**: a block
+    /// handed to a builtin that runs it through the AST carrier
+    /// (`reduce`/`classify`/…) is recompiled on every call, so a counter handed
+    /// out at compile time would mint a fresh cell each time and the BEGIN would
+    /// run again. Hashing the source identity — declaring package, line, and the
+    /// body itself — gives the same id every recompile. Two textually identical
+    /// BEGINs on one line are told apart by an occurrence counter, so they keep
+    /// separate cells within a compilation.
+    fn begin_site_id(&mut self, body: &[Stmt]) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::hash::DefaultHasher::new();
+        self.current_package.hash(&mut hasher);
+        self.last_source_line.hash(&mut hasher);
+        crate::ast::function_body_fingerprint(&[], &[], body).hash(&mut hasher);
+        let base = hasher.finish();
+        let seq = self.begin_site_seq.entry(base).or_insert(0);
+        *seq += 1;
+        let mut hasher = std::hash::DefaultHasher::new();
+        base.hash(&mut hasher);
+        seq.hash(&mut hasher);
+        hasher.finish()
     }
 
     /// Compile `once { ... }` expression.

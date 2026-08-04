@@ -361,6 +361,11 @@ pub(crate) struct Compiler {
     /// Line of the `Stmt::SetLine` marker last seen (the line attached to the ops
     /// emitted since; also the definition line of a block/sub compiled here).
     last_source_line: Option<i64>,
+    /// How many `BEGIN <expr>` sites with the same (package, line, body) identity
+    /// this compilation has already emitted. Disambiguates two textually
+    /// identical BEGINs on one line so they keep separate memo cells; see
+    /// `begin_site_id`.
+    begin_site_seq: std::collections::HashMap<u64, u32>,
     /// Pending writebacks for Index expressions passed to function calls.
     /// After the call returns, if the `is rw` parameter was written to,
     /// we need to write the temp variable value back to the original hash/array slot.
@@ -471,6 +476,7 @@ impl Compiler {
             enclosing_local_names: std::collections::HashSet::new(),
             prebound_placeholder_params: std::collections::HashSet::new(),
             last_source_line: None,
+            begin_site_seq: std::collections::HashMap::new(),
             pending_index_rw_writebacks: Vec::new(),
             current_distribution: None,
             escaping_position: false,

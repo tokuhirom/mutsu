@@ -934,6 +934,16 @@ pub(crate) enum OpCode {
     OnceExpr {
         body_end: u32,
     },
+    /// A `BEGIN <expr>` whose value the phaser lifter could not hoist out of its
+    /// enclosing routine (module bodies are not lifted at all — see
+    /// `compile_expr_phaser`). The body still runs at most once: the result is
+    /// memoized in the `once` store under a compile-time site id, so unlike
+    /// `OnceExpr` the memo is shared by every clone of the enclosing code object,
+    /// which is what BEGIN means (one value, baked in at compile time).
+    BeginOnceExpr {
+        body_end: u32,
+        site_id: u64,
+    },
     DoGivenExpr {
         body_end: u32,
     },
@@ -4849,6 +4859,7 @@ impl CompiledCode {
             OpCode::PackageScope { body_end, .. } => *body_end = target,
             OpCode::DoBlockExpr { body_end, .. } => *body_end = target,
             OpCode::OnceExpr { body_end, .. } => *body_end = target,
+            OpCode::BeginOnceExpr { body_end, .. } => *body_end = target,
             OpCode::DoGivenExpr { body_end, .. } => *body_end = target,
             OpCode::SubtestScope { body_end, .. } => *body_end = target,
             OpCode::ReactScope { body_end, .. } => *body_end = target,
