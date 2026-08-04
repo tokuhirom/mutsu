@@ -114,7 +114,10 @@ impl HashData {
     pub fn typed_pair(&self, str_key: &str, value: Value) -> Value {
         let value = value.deref_container();
         match self.typed_key(str_key).into_repr() {
-            ValueRepr::Str(s) => Value::Pair((*s).clone(), Box::new(value)),
+            ValueRepr::Str(s) => Value::ValuePair(
+                Box::new(Value::from_repr(ValueRepr::Str(s))),
+                Box::new(value),
+            ),
             other => Value::ValuePair(Box::new(Value::from_repr(other)), Box::new(value)),
         }
     }

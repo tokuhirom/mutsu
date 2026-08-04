@@ -301,6 +301,17 @@ pub(in crate::runtime) fn named_values_from_unpack_target(
             out.insert("value".to_string(), val.clone());
             out
         }
+        // A `ValuePair` destructures exactly like a `Pair` — the two differ only
+        // in whether the *call site* meant the pair as a named argument, which is
+        // nothing to do with `Pair.Capture`. A hash entry (`%h.map(-> (:$k) {...})`)
+        // arrives as a ValuePair, so without this arm it bound nothing.
+        ValueView::ValuePair(key, val) => {
+            let mut out = std::collections::HashMap::new();
+            out.insert(key.to_string_value(), (*val).clone());
+            out.insert("key".to_string(), (*key).clone());
+            out.insert("value".to_string(), (*val).clone());
+            out
+        }
         // A list of Pairs (e.g. `(a => 1, b => 2)`) destructured by named
         // params `(:$a, :$b)` binds each pair's key to its value.
         ValueView::Array(data, _) => pairs_in_list_to_named(data.items()),

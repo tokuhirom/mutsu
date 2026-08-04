@@ -29,12 +29,26 @@ $c.m(Pair.new('a', 1));           # Cannot resolve caller m(C:D: :a(Int))
 my $p = a => 1;      $c.m($p);    # Cannot resolve caller m(C:D: :a(Int))
 my $q = :a(1);       $c.m($q);    # Cannot resolve caller m(C:D: :a(Int))
 my @l = [a => 1];    $c.m(@l[0]); # Cannot resolve caller m(C:D: :a(Int))
-my %h = a => 1;      $c.m(%h.pairs[0]); # Cannot resolve caller m(C:D: :a(Int))
 
 my $r = (a => 1);    $c.m($r);    # works — parenthesised, so PositionalPair
 ```
 
 `raku` prints `Pair` for every one of these. `tmp/hdr15.p6` is the matrix above.
+
+## What is already fixed
+
+The **hash-derived** half is done: entries read out of a Hash (`%h.pairs`,
+`%h.List`, `%h.antipairs`, `%h.invert`, iterating `%h`) are now built as
+positional pairs, so `$c.m(%h.pairs[0])` binds the `Pair` candidate — see
+`news/2026-08/hash-derived-pairs-are-positional-arguments.md` and
+`t/hash-pair-is-positional-argument.t`. What remains is every *other* way a Pair
+is minted: `Pair.new`, a fat-arrow or colonpair assigned to a variable, and a
+fat-arrow inside an array/list literal (`MakePair`).
+
+One deliberate exclusion from that slice: `quanthash_typed_pair` (Set/Bag/Mix
+entries) was left on the named flavour. Switching it made the vendored Cro
+suite's `http-middleware.rakutest` abort mid-file, so it needs its own
+investigation rather than being swept along.
 
 ## Why it matters
 
@@ -51,12 +65,11 @@ method !set-headers($request, @headers) {
 ```
 
 `when Pair` matches, then `append-header($_)` dispatches with `$_` read as a
-named argument and no candidate matches. So **every** `Cro::HTTP::Client`
-request that passes `headers => [...]` dies, which is what fails the vendored
-Cro suite's `http-middleware.rakutest` subtest 3 (its second half sends
-`Authorization: Bearer Polarer`) and blocks `router-auth`,
-`http-auth-basic*`, `http-session-*`. Minimal repro:
-`tmp/hdr2.p6` (mutsu: `X::Multi::NoMatch` on `append-header`; raku: 200).
+named argument and no candidate matches. `headers => %h` reaches `set-headers`
+through `%h.List` and so works now; `headers => [Authorization => '...']`
+reaches it through an array literal, whose elements `MakePair` still mints as
+named, and still dies. Minimal repro: `tmp/hdr2.p6` (the `list of pairs` line;
+mutsu: `X::Multi::NoMatch` on `append-header`, raku: 200).
 
 ## Why this is a deep ticket
 
