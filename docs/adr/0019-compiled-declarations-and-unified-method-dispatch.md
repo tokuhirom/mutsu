@@ -110,7 +110,7 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 13/51 slices merged. Next slice: C2.**
+**Current progress: 14/51 slices merged. Next slice: C3.**
 
 The migration is complete only when every required box below is checked and the completion gates
 at the end pass. The order within a phase is intentional. A later phase may start when its stated
@@ -150,7 +150,7 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
 
 - [x] **C1 — Bind source-order sub plans to compiled routines.** Record stable primary/alternate
   compiled-function keys while keeping hoisted shells keyless.
-- [ ] **C2 — Preserve plan-to-routine identity across module import.** Remap compiled routine keys
+- [x] **C2 — Preserve plan-to-routine identity across module import.** Remap compiled routine keys
   when a compunit is imported so nested/module declarations retain direct references.
 - [ ] **C3 — Install routine candidates from compiled references.** Add the temporary
   compiled-`FunctionDef` adapter and stop rediscovering compiled routines from name/signature keys.
@@ -291,9 +291,10 @@ Stage 1 is in progress. `RegisterSub` now indexes a typed `CompiledSubDeclPlan` 
 `CompiledCode::stmt_pool`; all normal, hoisted, nested-`our`, and top-level-method lowering sites use
 the plan, and the VM no longer pattern-matches `Stmt::SubDecl`. The plan still carries
 `legacy_body` for the existing routine-registry adapter. Source-order sub plans now also carry the
-stable keys of their primary and alternate compiled routines. The next adapter slice preserves
-that association across module import and installs `FunctionDef` candidates through those
-references before removing `legacy_body`.
+stable keys of their primary and alternate compiled routines. Child compilation-unit imports now
+retain their compiled-function tables and remap colliding keys together with every declaration-plan
+reference. The next adapter slice installs `FunctionDef` candidates through those references before
+removing `legacy_body`.
 
 `RegisterClass` and `RegisterRole` now likewise index typed class/role declaration-plan pools for
 both source-order declarations and hoisted forward-reference shells. The VM no longer discovers
