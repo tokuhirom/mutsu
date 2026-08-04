@@ -2162,14 +2162,6 @@ pub struct Interpreter {
     /// reused under a stale entry — it needs no invalidation and is bounded by
     /// the number of distinct method bodies in the program.
     pub(crate) method_body_fp_cache: rustc_hash::FxHashMap<usize, (Arc<Vec<Stmt>>, u64)>,
-    /// Same memoization as `method_body_fp_cache`, but for `Arc<FunctionDef>`
-    /// (the multi *function* redispatch path: `push_multi_dispatch_frame` runs
-    /// `function_body_fingerprint` over every candidate on every multi call to
-    /// pick/skip the winner). Keyed by the `Arc<FunctionDef>` pointer, which
-    /// uniquely identifies the def the fingerprint covers (clones share the Arc;
-    /// distinct defs have distinct Arcs). Holds a strong `Arc` clone so the
-    /// pointer can never free+reuse under a stale entry — no invalidation needed.
-    pub(crate) func_def_fp_cache: rustc_hash::FxHashMap<usize, (Arc<FunctionDef>, u64)>,
     /// Sound multi-*function* resolution cache — the function-dispatch analogue of
     /// `multi_resolve_cache`. For a multi sub whose dispatch is purely type+arity
     /// based (no `where` / literal / subset / `:D`/`:U` smiley / coercion

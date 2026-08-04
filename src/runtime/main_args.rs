@@ -238,8 +238,7 @@ impl Interpreter {
         for (key, def) in &self.registry().functions {
             let ks = key.resolve();
             if prefixes.iter().any(|prefix| ks.starts_with(prefix)) {
-                let fp =
-                    crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
+                let fp = def.body_fingerprint();
                 if seen_keys.insert(fp) {
                     candidates.push((**def).clone());
                 }

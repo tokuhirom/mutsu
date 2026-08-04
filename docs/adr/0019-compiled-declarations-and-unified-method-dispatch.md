@@ -110,7 +110,7 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 17/51 slices merged. Next slice: C6.**
+**Current progress: 17/51 slices merged. Next slice: C6b (C6a landed; C6 is subdivided below).**
 
 The migration is complete only when every required box below is checked and the completion gates
 at the end pass. The order within a phase is intentional. A later phase may start when its stated
@@ -161,6 +161,18 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
   expressions through re-entrant bytecode, including EVAL and NativeCall declaration cases.
 - [ ] **C6 — Remove `CompiledSubDeclPlan::legacy_body`.** Make ordinary, multi, `our`, hoisted,
   exported, operator, and top-level-method declarations register without an executable AST body.
+  The blocker is `FunctionDef.body`, which had 58 readers when C6 started. They fall into
+  separable groups, each its own PR; the box is checked only when the plan field is gone:
+  - [x] **C6a — identity hashes.** Replace per-read `function_body_fingerprint(&def.…)` with a
+    memoized `FunctionDef::body_fingerprint()`, retiring the `func_def_fp_cache` side cache.
+  - [ ] **C6b — body analysis.** Precompute `is_stub` / `needs_interpreter` / `declares_state` /
+    `collect_routine_body_local_names` / rw-target extraction in the compiler, as C4 did for
+    signature metadata.
+  - [ ] **C6c — `Value::make_sub` from a def.** Carry `def.compiled` into the resulting `SubData`
+    so a code object built from a registry routine is bytecode-backed.
+  - [ ] **C6d — interpreter execution sites.** Route `eval_block_value(&def.body)` /
+    `run_block(&def.body)` through `def.compiled`.
+  - [ ] **C6e — redeclaration comparison and the proto rewrite**, then drop the plan field.
 - [ ] **C7 — Remove the sub-registration AST adapter.** Delete dead sub-shaped walker branches and
   prove the routine registry never compiles a migrated declaration on demand.
 
@@ -310,8 +322,14 @@ child chunk stored in the plan, and registration runs it through the VM's re-ent
 entry (`run_decl_expr`). A constant argument is recorded as a `DeclTraitArg::Literal` and needs no
 chunk at all. The remaining `DeclTraitArg::Ast` variant is not a new fallback: it carries the
 declaration kinds whose registration still walks a source declaration — the prelude's
-forward-declaration pass and the class/role *method* walkers — and disappears with phase D. The
-next slice removes `CompiledSubDeclPlan::legacy_body`.
+forward-declaration pass and the class/role *method* walkers — and disappears with phase D.
+
+Removing `CompiledSubDeclPlan::legacy_body` turned out to be gated on
+`FunctionDef.body`, which had 58 readers, so C6 is subdivided above. The first of those has
+landed: a routine's structural identity is now a memoized `FunctionDef::body_fingerprint()`
+rather than a hash recomputed per read over a Debug rendering of the whole body AST. That
+removed eight direct body reads and let the `func_def_fp_cache` side cache — which existed only
+to hide that cost on the multi-redispatch path — be deleted outright.
 
 `RegisterClass` and `RegisterRole` now likewise index typed class/role declaration-plan pools for
 both source-order declarations and hoisted forward-reference shells. The VM no longer discovers

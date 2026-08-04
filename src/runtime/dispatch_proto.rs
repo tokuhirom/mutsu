@@ -21,8 +21,7 @@ impl Interpreter {
                 .map(|(k, def)| (k.resolve(), def.clone()))
                 .collect();
             for (key, def) in candidates {
-                let fp =
-                    crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
+                let fp = def.body_fingerprint();
                 if !seen_fps.contains(&fp) {
                     seen_fps.push(fp);
                     all.push((key, def));

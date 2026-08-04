@@ -431,8 +431,7 @@ impl Interpreter {
             // Use all multi candidates (not just matching ones) because callwith()
             // can re-dispatch with different arguments.
             let all_candidates = self.resolve_all_multi_candidates(name);
-            let def_fp =
-                crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
+            let def_fp = def.body_fingerprint();
             let remaining: Vec<std::sync::Arc<FunctionDef>> = all_candidates
                 .into_iter()
                 .filter(|c| {

@@ -51,9 +51,7 @@ impl Interpreter {
             self.fn_resolve_cache_gen = self.fn_resolve_gen;
         }
         let resolved_def = loan_env!(self, resolve_function_with_types(name, args));
-        let expected_fingerprint = resolved_def.as_ref().map(|def| {
-            crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body)
-        });
+        let expected_fingerprint = resolved_def.as_ref().map(|def| def.body_fingerprint());
         // If runtime resolution fails, avoid reusing stale compiled cache entries.
         // This can happen across repeated EVAL calls that redefine the same routine name.
         let expected_fingerprint = expected_fingerprint?;

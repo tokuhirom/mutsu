@@ -127,8 +127,7 @@ impl Interpreter {
                 || key_s.starts_with(&prefix_local)
                 || key_s.starts_with(&prefix_global)
             {
-                let fp =
-                    crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
+                let fp = def.body_fingerprint();
                 if seen.insert(fp) {
                     let mut env = self.env.clone();
                     // Store the multi index for doc comment lookup

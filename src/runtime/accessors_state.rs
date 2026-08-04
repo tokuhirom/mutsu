@@ -557,21 +557,6 @@ impl Interpreter {
         fp
     }
 
-    /// Structural fingerprint of a *function* def, memoized by its
-    /// `Arc<FunctionDef>` pointer (see `func_def_fp_cache`). Use this instead of
-    /// `function_body_fingerprint` on the multi-function redispatch hot path
-    /// (`push_multi_dispatch_frame`, which runs over every candidate per multi
-    /// call): the raw call Debug-traverses the whole body AST every time.
-    pub(crate) fn func_def_fingerprint(&mut self, def: &Arc<FunctionDef>) -> u64 {
-        let key = Arc::as_ptr(def) as usize;
-        if let Some((_, fp)) = self.func_def_fp_cache.get(&key) {
-            return *fp;
-        }
-        let fp = crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
-        self.func_def_fp_cache.insert(key, (def.clone(), fp));
-        fp
-    }
-
     /// Whether a multi *sub* `name` (in `pkg`) has a dispatch that is purely
     /// type+arity based — the function analogue of `multi_dispatch_type_cacheable`.
     /// False when any candidate is value-/identity-dependent (`where` / literal /
@@ -915,16 +900,14 @@ impl Interpreter {
         // capture below — the previous code resolved it twice per call.
         let saved_err = self.take_pending_dispatch_error();
         let current_def = self.resolve_function_multi_cached(name, args);
-        let current_fp = current_def
-            .as_ref()
-            .map(|def| self.func_def_fingerprint(def));
+        let current_fp = current_def.as_ref().map(|def| def.body_fingerprint());
         if let Some(err) = saved_err {
             self.set_pending_dispatch_error(err);
         }
         let remaining: Vec<std::sync::Arc<super::FunctionDef>> = all_candidates
             .into_iter()
             .filter(|c| {
-                let fp = self.func_def_fingerprint(c);
+                let fp = c.body_fingerprint();
                 Some(fp) != current_fp
             })
             .collect();

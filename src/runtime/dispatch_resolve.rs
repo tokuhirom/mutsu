@@ -599,8 +599,7 @@ impl Interpreter {
         slurpy_candidates.sort_by(|a, b| a.0.cmp(&b.0));
         for (_, def) in slurpy_candidates {
             if self.args_match_param_types(arg_values, &def.param_defs) {
-                let fp =
-                    crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
+                let fp = def.body_fingerprint();
                 if !all_matches.iter().any(|m: &FunctionDef| {
                     crate::ast::function_body_fingerprint(&m.params, &m.param_defs, &m.body) == fp
                 }) {
