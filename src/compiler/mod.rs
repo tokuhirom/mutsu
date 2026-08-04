@@ -65,6 +65,28 @@ mod declaration_plan_tests {
     }
 
     #[test]
+    fn nested_compilation_units_remap_colliding_routine_plan_keys() {
+        let source = r#"
+            sub outer-a() { multi sub inner(Int $x) { 1 }; &inner }
+            sub outer-b() { multi sub inner(Int $x) { 2 }; &inner }
+        "#;
+        let (stmts, _) = crate::parse_dispatch::parse_source(source).expect("source parses");
+        let (_code, compiled_fns) = Compiler::new().compile(&stmts);
+
+        let inner_plans: Vec<_> = compiled_fns
+            .values()
+            .flat_map(|function| function.code.sub_decl_plans.iter())
+            .filter(|plan| plan.name.as_str() == "inner" && !plan.compiled_routine_keys.is_empty())
+            .collect();
+        assert_eq!(inner_plans.len(), 2);
+        let first = inner_plans[0].compiled_routine_keys[0];
+        let second = inner_plans[1].compiled_routine_keys[0];
+        assert_ne!(first, second);
+        assert!(compiled_fns.contains_key(&first));
+        assert!(compiled_fns.contains_key(&second));
+    }
+
+    #[test]
     fn type_declarations_leave_the_generic_statement_pool() {
         let (stmts, _) = crate::parse_dispatch::parse_source(
             "role R { method r { 1 } }; class C does R { method c { 2 } }; C.new.c",

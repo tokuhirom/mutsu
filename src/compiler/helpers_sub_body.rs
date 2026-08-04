@@ -2,6 +2,40 @@ use super::*;
 use std::sync::atomic::Ordering;
 
 impl Compiler {
+    /// Import routines compiled by a child compilation unit and keep declaration
+    /// plans in that unit pointing at the imported keys. Multi candidates omit
+    /// their body fingerprint from the normal lookup key, so two nested units can
+    /// legitimately produce the same key for different routines.
+    fn import_compiled_functions(
+        &mut self,
+        code: &mut CompiledCode,
+        compiled_functions: CompiledFns,
+    ) {
+        let mut remap = rustc_hash::FxHashMap::default();
+        for (key, function) in compiled_functions {
+            let imported_key = if self.compiled_functions.contains_key(&key) {
+                let base = key.resolve();
+                let mut ordinal = 1usize;
+                loop {
+                    let candidate = Symbol::intern(&format!("{base}#import{ordinal}"));
+                    if !self.compiled_functions.contains_key(&candidate) {
+                        break candidate;
+                    }
+                    ordinal += 1;
+                }
+            } else {
+                key
+            };
+            if imported_key != key {
+                remap.insert(key, imported_key);
+            }
+            self.compiled_functions.insert(imported_key, function);
+        }
+        if !remap.is_empty() {
+            code.remap_sub_decl_compiled_routine_keys(&remap);
+        }
+    }
+
     /// Recursively allocate local variable slots for sub_signature parameters
     /// (array/hash unpacking in function signatures like `sub f([$a, *@b]) { ... }`).
     fn alloc_sub_signature_locals(compiler: &mut Compiler, sub_params: &[crate::ast::ParamDef]) {
@@ -418,6 +452,10 @@ impl Compiler {
         // call_compiled_closure catches CX::Return at the right boundary.
         sub_compiler.code.is_routine = true;
         sub_compiler.code.compute_needs_env_sync();
+        self.import_compiled_functions(
+            &mut sub_compiler.code,
+            std::mem::take(&mut sub_compiler.compiled_functions),
+        );
         let mut cf = CompiledFunction {
             code: sub_compiler.code,
             source_file: None,
@@ -1156,10 +1194,12 @@ impl Compiler {
                 }
             }
         }
-        // Transfer any compiled functions from the closure to the parent
-        for (k, v) in sub_compiler.compiled_functions {
-            self.compiled_functions.insert(k, v);
-        }
+        // Transfer any compiled functions from the closure to the parent while
+        // preserving the declaration-plan references into the imported table.
+        self.import_compiled_functions(
+            &mut sub_compiler.code,
+            std::mem::take(&mut sub_compiler.compiled_functions),
+        );
         sub_compiler.code.is_routine = is_routine;
         // Use the sub_compiler's source line if a SetLine was processed
         // within the body, otherwise fall back to the parent compiler's
