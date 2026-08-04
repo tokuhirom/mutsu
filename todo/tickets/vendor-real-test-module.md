@@ -824,6 +824,30 @@ Three things worth carrying forward:
   other users of that compile path recompile closure bodies where the live frame
   IS the routine.
 
+### `integration/advent2012-day14.t` (2026-08-05): the trigger was a routine that never ran
+
+Closed 6/6 —
+`news/2026-08/sequence-closure-env-does-not-shadow-a-live-lexical.md`. The file
+aborted with `X::Cannot::Empty` inside its own `is-prime-beta`, and the cause was
+that `Test.rakumod` *contains* `&CALLER::LEXICAL::(…)` in `cmp-ok`. Compiling
+that routine sets the process-global `REFLECTIVE_NAME_ACCESS_SEEN`, which makes
+`capture_closure_env` snapshot the **whole env by value** for every closure in
+the program; a sequence generator merges its capture over the live env, so the
+self-referential `my @primes = …, -> $p { … } … *` kept seeing the hoisted empty
+array on every deferred pull.
+
+Two things this batch adds to the campaign's method:
+
+- **A file that only fails "because a module is loaded" may not be about
+  anything the module *does*.** `cmp-ok` is never called here. Look for
+  compile-time global flags, not just executed code.
+- **Bisect the module by brace-balanced top-level chunks, not by line count.**
+  Truncating `Test.rakumod` at a line number breaks parsing (or drops
+  `_init_vars`, which file scope calls at line 41) long before it changes
+  behaviour; every prefix cut gave a useless answer. Splitting into 248
+  chunks and always keeping chunks 0-47 plus the `_init_vars` chunk made the
+  bisect converge in six runs.
+
 ### Six files closed on 2026-08-04, and none of the causes was in `Test`
 
 | file | assertions | cause | fix |
