@@ -2321,18 +2321,19 @@ pub(crate) struct CompiledCode {
     /// `(my $x = 1)`, compiled as `Expr::DoStmt(VarDecl)`).
     ///
     /// Such a declaration is env-only — it gets no local slot — so its store op
-    /// looks exactly like a write to an enclosing same-named lexical, and
-    /// `compute_free_vars` records it in `free_var_writes`. That is wrong on the
-    /// axis that matters here: the name is this code's OWN binding, so it must
-    /// not make an enclosing scope's same-named local "captured and mutated" and
-    /// earn it a shared `ContainerRef` cell. It did — an unrelated later
-    /// `my Pair $p` in the enclosing scope then found the cell instead of its own
-    /// fresh binding (roast S02-types/pair.t #181).
+    /// looks exactly like a write to an enclosing same-named lexical. That is
+    /// wrong on the axis that matters here: the name is this code's OWN binding,
+    /// so it must not make an enclosing scope's same-named local "captured and
+    /// mutated" and earn it a shared `ContainerRef` cell. It did — an unrelated
+    /// later `my Pair $p` in the enclosing scope then found the cell instead of
+    /// its own fresh binding (roast S02-types/pair.t #181). The enclosing scope's
+    /// `captured_mutated` / `needs_cell` loop skips these names.
     ///
-    /// Only the cell-promotion axis is corrected; the store itself still writes
-    /// by name, so the pre-existing scope leak (`raku` keeps the outer binding,
-    /// mutsu overwrites it) is unchanged — see
-    /// `todo/tickets/expression-position-my-has-no-scope.md`.
+    /// ONLY that axis is corrected. The name stays a free variable and the store
+    /// still writes through to the enclosing binding, which is both the
+    /// pre-existing scope leak (`raku` keeps the outer binding, mutsu overwrites
+    /// it — see `todo/tickets/expression-position-my-has-no-scope.md`) and what
+    /// roast S02-types/whatever.t #45 asserts, so it must not be "fixed" here.
     pub(crate) expr_declared_syms: rustc_hash::FxHashSet<Symbol>,
     /// Free variables this code (and its nested closures) reference from an
     /// enclosing scope: names used via GetGlobal-family ops that are not this
@@ -4234,6 +4235,17 @@ impl CompiledCode {
         for (i, nested) in self.closure_compiled_codes.iter().enumerate() {
             let escapes = self.closure_escapes.get(i).copied().unwrap_or(false);
             for sym in &nested.free_var_syms {
+                // A name that closure declares in EXPRESSION position is its own
+                // binding, however the env-only store spells it, so it must not
+                // earn OUR same-named local a shared cell — an unrelated later
+                // `my Pair $p` then found the cell instead of its own fresh
+                // binding (roast S02-types/pair.t #181). The name stays a free
+                // var: the store still writes through to us, which is the
+                // pre-existing scope leak roast S02-types/whatever.t #45 pins.
+                // See `expr_declared_syms`.
+                if nested.expr_declared_syms.contains(sym) {
+                    continue;
+                }
                 let is_own = sym.with_str(|s| own.contains(s));
                 if is_own && self_mutated.contains(sym) {
                     captured_mutated.insert(*sym);
@@ -4342,16 +4354,6 @@ impl CompiledCode {
         // back onto a same-named caller lexical. See `my_declared_enum_sym`.
         if !self.my_declared_enum_sym.is_empty() {
             free.retain(|sym| !self.my_declared_enum_sym.contains(sym));
-        }
-        // Same treatment for an expression-position `my` (`(my $p := ...)`),
-        // which likewise binds a name of this code's own without a local slot.
-        // Left in `free`, the enclosing scope reads its store as "my local `p`
-        // is captured and mutated by this closure" and promotes `p` to a shared
-        // cell — which an unrelated later `my Pair $p` then picked up
-        // (roast S02-types/pair.t #181). See `expr_declared_syms`.
-        if !self.expr_declared_syms.is_empty() {
-            free.retain(|sym| !self.expr_declared_syms.contains(sym));
-            free_writes.retain(|sym| !self.expr_declared_syms.contains(sym));
         }
         self.free_var_syms = free.into_iter().collect();
         self.outer_ref_names = outer_ref_names;

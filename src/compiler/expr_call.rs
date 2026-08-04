@@ -1405,16 +1405,15 @@ impl Compiler {
             } else {
                 let arity = args.len() as u32;
                 let arg_sources_idx = self.add_arg_sources_constant(args);
-                // A closure passed as a call argument escapes: the callee may
-                // store it (`register { $c++ }`), and the caller cannot tell.
+                // A closure LITERAL passed as a call argument escapes: the callee
+                // may store it (`register { $c++ }`), and the caller cannot tell.
                 // So the captured-and-mutated locals it names must become shared
-                // `ContainerRef` cells. See `method_escapes_closure_args` for why
-                // this is unconditional rather than the old `start`-only
-                // allowlist.
-                let escaping_args = true;
-                // `start` hands its block to a thread — a strictly narrower
-                // signal than `escaping_args`, see CompiledCode::thread_escaping.
-                let thread_escaping = name.resolve() == "start";
+                // `ContainerRef` cells. `start` additionally hands its block to a
+                // thread — a strictly narrower signal, see
+                // `CompiledCode::thread_escaping`. See `is_closure_literal_arg`
+                // for why only the literal, and not the whole argument list, is
+                // marked (this replaces the old `start`-only allowlist).
+                let is_start = name.resolve() == "start";
                 // Literal named args (`:key(val)` / `key => val` with a
                 // compile-time-known key) travel out-of-band: only the VALUE
                 // is compiled, and (position, key) goes into a NamedArgsSpec,
@@ -1424,6 +1423,18 @@ impl Compiler {
                 // in-band pair for `peek_callsite_line`.
                 let mut named_entries: Vec<crate::opcode::NamedArgEntry> = Vec::new();
                 for (i, arg) in args.iter().enumerate() {
+                    // `start` keeps marking EVERY argument escaping, exactly as
+                    // before; other calls mark only a closure literal.
+                    let value_expr = match arg {
+                        Expr::Binary {
+                            op: TokenKind::FatArrow,
+                            right,
+                            ..
+                        } => right.as_ref(),
+                        other => other,
+                    };
+                    let escaping_args = is_start || Self::is_closure_literal_arg(value_expr);
+                    let thread_escaping = is_start;
                     if let Expr::Binary {
                         op: TokenKind::FatArrow,
                         left,

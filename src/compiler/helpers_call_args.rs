@@ -119,15 +119,30 @@ impl Compiler {
     /// `t/closure-arg-shares-its-captured-container.t`), which is the shape a
     /// Cro `route { my $i; get -> { $i++ } }` counter has.
     ///
-    /// This used to be an allowlist (`then`/`tap`/`act`/`start`) with everything
-    /// else classified non-escaping as a boxing-cost guard (#2746). Measurement
-    /// (2026-08-04) showed the guard bought nothing: only locals that a child
-    /// closure both captures AND mutates are ever boxed, so the common
-    /// `map {...}` / `lives-ok {...}` argument is untouched, and the one shape
-    /// that does box (an accumulator mutated from a block argument) got *faster*
-    /// with a cell than with the by-name env writeback it replaces.
+    /// This used to be an allowlist (`then`/`tap`/`act`/`start`); everything else
+    /// was classified non-escaping as a boxing-cost guard (#2746).
     pub(super) fn method_escapes_closure_args(_name: &str) -> bool {
         true
+    }
+
+    /// Whether an argument is a **closure literal** written at the call site.
+    ///
+    /// Only such an argument is compiled in an escaping position. Marking the
+    /// whole argument list escaping instead costs 2.2x on
+    /// `sub foo () { $ = 42 }; for ^2000000 { $ = foo }`
+    /// (roast S04-declarations/state.t, which then times out under parallel
+    /// load): `escaping_position` is read at EVERY closure-creation op compiled
+    /// anywhere inside the argument expression, so a non-closure argument
+    /// silently promoted unrelated inner blocks. The escape claim is about the
+    /// literal the callee might store, and this is exactly that literal.
+    pub(super) fn is_closure_literal_arg(arg: &Expr) -> bool {
+        matches!(
+            arg,
+            Expr::Block(_)
+                | Expr::AnonSub { .. }
+                | Expr::AnonSubParams { .. }
+                | Expr::Lambda { .. }
+        )
     }
 
     /// Compile a method call argument. Named args (AssignExpr) are

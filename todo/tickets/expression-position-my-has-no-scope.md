@@ -44,3 +44,22 @@ analysis promoted the enclosing local to a shared `ContainerRef` cell, and an
 unrelated later `my Pair $p` in that scope found the cell instead of its own
 fresh binding (roast `S02-types/pair.t` #181). That fixes the cell-promotion
 axis only — the leak above is untouched.
+
+Note that the leak is currently load-bearing for roast `S02-types/whatever.t`
+#45:
+
+```raku
+{
+    my $x = 3;
+    {
+        is (* + (my $x = 5)).(8), 13;
+        is $x, 5, 'and it did not get promoted into its own scope';
+    }
+}
+```
+
+Raku scopes that `my $x` to the inner block, where the following `is` reads it.
+mutsu inlines the inner bare block into the enclosing frame, so the same
+assertion happens to hold *because* the declaration writes through. Any real fix
+has to give the inner block its own scope at the same time, or that test flips
+from passing-by-accident to failing.
