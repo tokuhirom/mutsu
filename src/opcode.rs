@@ -1488,6 +1488,24 @@ pub(crate) enum OpCode {
         traps: bool,
     },
 
+    /// Bracket `[ip+1..body_end)` with a routine-registry save/restore, so a
+    /// `sub` declared inside the range stops being callable when the range ends.
+    ///
+    /// A statement-level `{ ... }` gets this for free from `BlockScope`, but a
+    /// block compiled as a *callable* (a closure body) or *inline* (a
+    /// value-producing block) has no `BlockScope`, so its declarations used to
+    /// outlive it — and, because the EVAL parser's operator pre-seed is built by
+    /// walking the whole registry, a leaked `sub infix:<@>` also changed how a
+    /// later `EVAL` string *parsed*. Emitted only when the body actually
+    /// declares a routine, so the ordinary block call path is unchanged.
+    ///
+    /// The value the range leaves on the stack is untouched, and the restore
+    /// runs on the error path too, so `return`/`die` escaping the body still
+    /// unwinds the registry.
+    RoutineScope {
+        body_end: u32,
+    },
+
     /// Push an anonymous block callframe onto the routine stack. Emitted around a
     /// genuine bare block `{ ... }` that the compiler *inlines* (tail-position
     /// blocks have no `BlockScope`/`TryCatch` boundary to carry the
@@ -4758,6 +4776,14 @@ impl CompiledCode {
         match &mut self.ops[idx] {
             OpCode::LetBlock { body_end, .. } => *body_end = target,
             _ => panic!("patch_let_block_end on non-LetBlock opcode"),
+        }
+    }
+
+    pub(crate) fn patch_routine_scope_end(&mut self, idx: usize) {
+        let target = self.ops.len() as u32;
+        match &mut self.ops[idx] {
+            OpCode::RoutineScope { body_end } => *body_end = target,
+            _ => panic!("patch_routine_scope_end on non-RoutineScope opcode"),
         }
     }
 

@@ -174,6 +174,27 @@ impl Interpreter {
         }
     }
 
+    /// Run `[ip+1..body_end)` with the routine registry saved and restored, so a
+    /// `sub` declared inside stops being callable when the range ends. See
+    /// `OpCode::RoutineScope`.
+    pub(super) fn exec_routine_scope_op(
+        &mut self,
+        code: &CompiledCode,
+        body_end: u32,
+        ip: &mut usize,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        let end = body_end as usize;
+        let snapshot = self.snapshot_routine_registry();
+        let result = self.run_range(code, *ip + 1, end, compiled_fns);
+        // Restore on the error path too: a `return`/`die` escaping the body must
+        // still unwind the declarations it made.
+        self.restore_routine_registry(snapshot);
+        result?;
+        *ip = end;
+        Ok(())
+    }
+
     pub(super) fn exec_block_scope_op(
         &mut self,
         code: &CompiledCode,
