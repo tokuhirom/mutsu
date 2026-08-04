@@ -78,9 +78,9 @@ impl Interpreter {
                 .map(|n| make_capture_match(&captures.span_text(n.from, n.to), n.from, n.to))
                 .collect();
             if vals.len() == 1 && !v.quantified {
-                named.insert(k.clone(), vals[0].clone());
+                named.insert(k.resolve(), vals[0].clone());
             } else {
-                named.insert(k.clone(), Value::array(vals));
+                named.insert(k.resolve(), Value::array(vals));
             }
         }
         // Add hash captures from %<name>=(...) aliasing
@@ -450,7 +450,7 @@ impl Interpreter {
             if let (Some(Some(name)), Some((start, end))) = (names.get(idx), locs.get(idx)) {
                 text.get(start..end)?;
                 out.named
-                    .entry(name.to_string())
+                    .entry(Symbol::intern(name))
                     .or_default()
                     .merge(NamedSlot::leaf(to_char(start), to_char(end)));
             }
@@ -509,7 +509,7 @@ impl Interpreter {
                         continue;
                     }
                     item.named
-                        .entry(name.to_string())
+                        .entry(Symbol::intern(name))
                         .or_default()
                         .merge(NamedSlot::leaf(to_char(c_start), to_char(c_end)));
                 }

@@ -38,7 +38,7 @@ pub(super) enum Undo {
     /// Restore a named slot: remove the key if it was newly created, else
     /// truncate its nodes to `len` and restore the quantified flag.
     NamedTrunc {
-        key: String,
+        key: crate::symbol::Symbol,
         len: usize,
         present: bool,
         quantified: bool,
@@ -167,13 +167,13 @@ impl CapStore {
         self.trail.push(Undo::PosLen(self.caps.positional.len()));
     }
 
-    fn record_named_key(&mut self, key: &str) {
-        let (len, present, quantified) = match self.caps.named.get(key) {
+    fn record_named_key(&mut self, key: crate::symbol::Symbol) {
+        let (len, present, quantified) = match self.caps.named.get(&key) {
             Some(slot) => (slot.nodes.len(), true, slot.quantified),
             None => (0, false, false),
         };
         self.trail.push(Undo::NamedTrunc {
-            key: key.to_string(),
+            key,
             len,
             present,
             quantified,
@@ -200,7 +200,7 @@ impl CapStore {
     /// per-level metadata (from/to/match_from) are intentionally NOT merged.
     pub(super) fn merge_delta(&mut self, mut delta: RegexCaptures) {
         for (k, v) in delta.named.drain() {
-            self.record_named_key(&k);
+            self.record_named_key(k);
             let slot = self.caps.named.entry(k).or_default();
             slot.nodes.extend(v.nodes);
             slot.quantified |= v.quantified;
@@ -241,20 +241,17 @@ impl CapStore {
 
     /// Append one span-bearing entry under a capture name.
     pub(super) fn push_named_node(&mut self, key: &str, sub: Arc<CapNode>) {
+        let key = crate::symbol::Symbol::intern(key);
         self.record_named_key(key);
-        self.caps
-            .named
-            .entry(key.to_string())
-            .or_default()
-            .nodes
-            .push(sub);
+        self.caps.named.entry(key).or_default().nodes.push(sub);
     }
 
     /// Mark a name as quantified (renders as an Array even for 0/1 entries).
     pub(super) fn insert_named_quantified(&mut self, name: String) {
+        let name = crate::symbol::Symbol::intern(&name);
         let already = self.caps.named.get(&name).is_some_and(|s| s.quantified);
         if !already {
-            self.record_named_key(&name);
+            self.record_named_key(name);
             self.caps.named.entry(name).or_default().quantified = true;
         }
     }
@@ -350,12 +347,13 @@ fn split_off_clamped<T>(v: &mut Vec<T>, at: usize) -> Vec<T> {
 mod tests {
     use super::super::super::{NamedSlot, PosSlot, RegexCaptures};
     use super::CapStore;
+    use crate::symbol::Symbol;
 
     fn store_with_base() -> CapStore {
         let mut init = RegexCaptures::default();
         init.positional.push(PosSlot::span(0, 1));
         init.named
-            .entry("x".to_string())
+            .entry(Symbol::intern("x"))
             .or_default()
             .merge(NamedSlot::leaf(0, 1));
         CapStore::new(init)
@@ -371,8 +369,9 @@ mod tests {
             (0, 1)
         );
         assert_eq!(store.caps().named.len(), 1);
-        assert_eq!(store.caps().named["x"].nodes.len(), 1);
-        assert!(!store.caps().named["x"].quantified);
+        let x = Symbol::intern("x");
+        assert_eq!(store.caps().named[&x].nodes.len(), 1);
+        assert!(!store.caps().named[&x].quantified);
         assert!(store.caps().capture_start.is_none());
         assert!(store.caps().sym.is_none());
     }
@@ -385,24 +384,26 @@ mod tests {
         delta.positional.push(PosSlot::span(1, 2));
         delta
             .named
-            .entry("x".to_string())
+            .entry(Symbol::intern("x"))
             .or_default()
             .merge(NamedSlot::leaf(2, 3));
-        let y = delta.named.entry("y".to_string()).or_default();
+        let y = delta.named.entry(Symbol::intern("y")).or_default();
         y.merge(NamedSlot::leaf(3, 4));
         y.quantified = true;
         delta.capture_start = Some(3);
         delta.sym = Some("s".to_string());
         store.merge_delta(delta);
         assert_eq!(store.caps().positional.len(), 2);
-        assert_eq!(store.caps().named["x"].nodes.len(), 2);
-        assert_eq!(store.caps().named["y"].nodes.len(), 1);
-        assert!(store.caps().named["y"].quantified);
+        let x = Symbol::intern("x");
+        let y = Symbol::intern("y");
+        assert_eq!(store.caps().named[&x].nodes.len(), 2);
+        assert_eq!(store.caps().named[&y].nodes.len(), 1);
+        assert!(store.caps().named[&y].quantified);
         assert_eq!(store.caps().capture_start, Some(3));
         assert_eq!(store.caps().sym.as_deref(), Some("s"));
         store.rewind(m);
         assert_base(&store);
-        assert!(!store.caps().named.contains_key("y"));
+        assert!(!store.caps().named.contains_key(&y));
     }
 
     #[test]
@@ -465,9 +466,10 @@ mod tests {
         );
         store.insert_named_quantified("k".to_string());
         store.rewind(m2);
-        assert_eq!(store.caps().named["k"].nodes.len(), 1);
-        assert!(!store.caps().named["k"].quantified);
+        let k = Symbol::intern("k");
+        assert_eq!(store.caps().named[&k].nodes.len(), 1);
+        assert!(!store.caps().named[&k].quantified);
         store.rewind(m1);
-        assert!(!store.caps().named.contains_key("k"));
+        assert!(!store.caps().named.contains_key(&k));
     }
 }

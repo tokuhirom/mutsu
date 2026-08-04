@@ -742,7 +742,7 @@ impl Interpreter {
                 super::regex_helpers::record_reduced_subrule(&spec.lookup_name, &subcap);
                 new_caps
                     .named
-                    .entry(capture_name.to_string())
+                    .entry(Symbol::intern(capture_name))
                     .or_default()
                     .nodes
                     .push(subcap);
@@ -754,7 +754,7 @@ impl Interpreter {
                 if let Some(orig_subcap) = original_subcap {
                     new_caps
                         .named
-                        .entry(spec.lookup_name.clone())
+                        .entry(Symbol::intern(&spec.lookup_name))
                         .or_default()
                         .nodes
                         .push(std::sync::Arc::new(orig_subcap.into_cap_node()));
@@ -790,7 +790,12 @@ impl Interpreter {
                 );
                 let subcap = std::sync::Arc::new(subcap.into_cap_node());
                 super::regex_helpers::record_reduced_subrule(&spec.lookup_name, &subcap);
-                new_caps.named.entry(marker).or_default().nodes.push(subcap);
+                new_caps
+                    .named
+                    .entry(Symbol::intern(&marker))
+                    .or_default()
+                    .nodes
+                    .push(subcap);
             } else {
                 // Childless silent subrule (`<.ws>`, `<.CRLF>`, `<.sym>`, ...): no
                 // nested captures and (in practice) no action of interest, so keep

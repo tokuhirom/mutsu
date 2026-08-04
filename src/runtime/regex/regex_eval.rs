@@ -301,7 +301,7 @@ impl Interpreter {
             if k.starts_with(crate::runtime::SILENT_ACTION_MARKER_PREFIX) {
                 continue;
             }
-            if let Some(m) = made_named.get(k) {
+            if let Some(m) = made_named.get(k.as_str()) {
                 env.push((format!("<{}>", k), m.clone()));
                 continue;
             }
@@ -519,7 +519,7 @@ impl Interpreter {
             .unwrap_or_else(|| rule_name.clone());
         let Some(sub) = new_caps
             .named
-            .get(&cap_name)
+            .get(&Symbol::intern(&cap_name))
             .and_then(|slot| slot.nodes.last())
             .cloned()
         else {

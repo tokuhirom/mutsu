@@ -817,7 +817,9 @@ impl Interpreter {
                     for hash_name in captures.hash_captures.keys() {
                         // Don't overwrite existing named captures; an empty
                         // placeholder slot makes the builder create the key.
-                        named_with_hash.entry(hash_name.clone()).or_default();
+                        named_with_hash
+                            .entry(Symbol::intern(hash_name))
+                            .or_default();
                     }
                     let match_obj = Value::make_match_object_full(
                         captures.from as i64,

@@ -6,8 +6,7 @@
   (2026-07-31), P4 one-list-per-axis in two layers (2026-07-31), P5 lazy
   `ValueRepr::Match(Gc<MatchNode>)` (2026-07-31). Per-phase outcomes, measurements and the
   behaviour corrections are recorded inline in §Phasing. **Residue, deliberately deferred and
-  not blocking** — capture names are still `String` keys (interning to `Symbol` needs a
-  Symbol-keyed hash map on the Match render path); `CodeBlockContext` keeps a text snapshot,
+  not blocking** — `CodeBlockContext` keeps a text snapshot,
   materialized from spans at its single construction site; and the reduce walk / failed
   partial-parse replay still build eager `Match` objects for `$/` inside in-regex code blocks
   (small counts, unchanged semantics). **Standing consequence of P5**: a `view()`-based
@@ -340,9 +339,10 @@ comments).
   materialized from spans at its single construction site (same engine
   space, so semantics are unchanged); `hash_captures` (accumulator-only) and
   `positional_slots` (the pcre2 numbering axis) stay separate by design.
-- Capture names remain `String` keys — interning them to `Symbol`s needs a
-  Symbol-keyed hash map on the Match render path and is deferred as a
-  follow-up optimization, not part of the axis collapse.
+- Capture names remained `String` keys in the original P4 landing. The
+  follow-up `news/2026-08/regex-capture-names-are-interned.md` changed both
+  capture axes and the undo trail to `Symbol` keys; only Match rendering and
+  code-block snapshots resolve them back to strings.
 - Behavior changes, all corrective toward raku and consistent with what P3a
   did for the subcap axis: subcap-less capture leaves report real offsets,
   and `:m`/`:i`-fold capture texts read through consumers derive from the

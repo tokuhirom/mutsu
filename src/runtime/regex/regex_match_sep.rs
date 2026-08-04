@@ -81,7 +81,7 @@ impl Interpreter {
             let assemble = |trailing: Option<&RegexCaptures>, end: usize| {
                 let mut caps = RegexCaptures::default();
                 for n in names.iter() {
-                    caps.named.entry(n.clone()).or_default().quantified = true;
+                    caps.named.entry(Symbol::intern(n)).or_default().quantified = true;
                 }
                 Self::append_separated_captures(
                     &mut caps,
@@ -116,7 +116,7 @@ impl Interpreter {
         if min == 0 {
             let mut caps = RegexCaptures::default();
             for n in names.iter() {
-                caps.named.entry(n.clone()).or_default().quantified = true;
+                caps.named.entry(Symbol::intern(n)).or_default().quantified = true;
             }
             out.push((start, caps));
         }
@@ -226,7 +226,7 @@ impl Interpreter {
             // `match_separated_quantifier`).
             let mut caps = RegexCaptures::default();
             for n in Self::collect_quantified_names_for_token(token) {
-                caps.named.entry(n).or_default().quantified = true;
+                caps.named.entry(Symbol::intern(&n)).or_default().quantified = true;
             }
             return vec![(start, caps)];
         }
@@ -240,7 +240,7 @@ impl Interpreter {
         let names = Self::collect_quantified_names_for_token(token);
         let mut caps = RegexCaptures::default();
         for n in names.iter() {
-            caps.named.entry(n.clone()).or_default().quantified = true;
+            caps.named.entry(Symbol::intern(n)).or_default().quantified = true;
         }
         // Trailing separator for `%%`: Rakudo consumes it greedily, and
         // ratchet commits to that single choice.
@@ -444,7 +444,7 @@ impl Interpreter {
         // Named captures: merge every iteration's named captures (as arrays).
         for src in atom_caps.iter().chain(all_sep.iter().copied()) {
             for (k, v) in &src.named {
-                let slot = caps.named.entry(k.clone()).or_default();
+                let slot = caps.named.entry(*k).or_default();
                 slot.merge(v.clone());
                 slot.quantified = true;
             }

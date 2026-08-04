@@ -372,11 +372,7 @@ impl Interpreter {
                             .positional
                             .extend(inner_caps.positional.iter().cloned());
                         for (k, v) in &inner_caps.named {
-                            new_caps
-                                .named
-                                .entry(k.clone())
-                                .or_default()
-                                .merge(v.clone());
+                            new_caps.named.entry(*k).or_default().merge(v.clone());
                         }
                         return Some((end, new_caps));
                     }
@@ -433,7 +429,7 @@ impl Interpreter {
                 // alloc-free scheme as the positional Backref (ADR-0016 P4).
                 let node = current_caps
                     .named
-                    .get(name.as_str())
+                    .get(&Symbol::intern(name))
                     .and_then(|slot| slot.nodes.last());
                 if let Some(node) = node {
                     let (a, b) = (node.from.min(chars.len()), node.to.min(chars.len()));
@@ -663,7 +659,7 @@ impl Interpreter {
                 if !spec.silent {
                     new_caps
                         .named
-                        .entry(spec.lookup_name.to_string())
+                        .entry(Symbol::intern(&spec.lookup_name))
                         .or_default()
                         .nodes
                         .push(std::sync::Arc::new(CapNode {
@@ -710,7 +706,7 @@ impl Interpreter {
                 if let Some(capture_name) = capture_name {
                     new_caps
                         .named
-                        .entry(capture_name.to_string())
+                        .entry(Symbol::intern(capture_name))
                         .or_default()
                         .merge(NamedSlot::leaf(pos, end));
                     // For <foo=alpha>, also capture under the original name.
@@ -724,7 +720,7 @@ impl Interpreter {
                             .insert(capture_name.to_string(), spec.lookup_name.clone());
                         new_caps
                             .named
-                            .entry(spec.lookup_name.to_string())
+                            .entry(Symbol::intern(&spec.lookup_name))
                             .or_default()
                             .merge(NamedSlot::leaf(pos, end));
                     }
@@ -760,7 +756,7 @@ impl Interpreter {
                 if let Some(capture_name) = capture_name {
                     new_caps
                         .named
-                        .entry(capture_name.to_string())
+                        .entry(Symbol::intern(capture_name))
                         .or_default()
                         .merge(NamedSlot::leaf(pos, end));
                 }
@@ -828,7 +824,7 @@ impl Interpreter {
                     let capture_name = spec.capture_name.unwrap_or(literal);
                     new_caps
                         .named
-                        .entry(capture_name)
+                        .entry(Symbol::intern(&capture_name))
                         .or_default()
                         .merge(NamedSlot::leaf(pos, pos + name_chars.len()));
                     return Some((pos + name_chars.len(), new_caps));
