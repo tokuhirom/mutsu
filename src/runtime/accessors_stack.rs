@@ -48,6 +48,7 @@ impl Interpreter {
             is_method: false,
             is_block: false,
             def_file,
+            invocation_id: crate::runtime::next_invocation_id(),
         });
     }
 
@@ -68,6 +69,7 @@ impl Interpreter {
             is_method: true,
             is_block: false,
             def_file: None,
+            invocation_id: crate::runtime::next_invocation_id(),
         });
     }
 
@@ -92,6 +94,7 @@ impl Interpreter {
             is_method: false,
             is_block: true,
             def_file,
+            invocation_id: crate::runtime::next_invocation_id(),
         });
     }
 

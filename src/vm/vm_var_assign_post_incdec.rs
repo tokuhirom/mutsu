@@ -75,10 +75,15 @@ impl Interpreter {
         // Default to Nil (NOT Int(0) like `++`) so `my $w; $w ~= "z"` yields "z",
         // not "0z"; the binary op descalarizes/numifies/stringifies Nil itself.
         let raw_val = self
+            // A PER-CALL anonymous state (`$` inside a block inside a routine)
+            // is authoritative in the state store: its `env` entry is written by
+            // `SetGlobal` and outlives the block clone, so the env copy is
+            // always the previous call's. See `anon_state_key`.
+            .per_call_anon_state_read(name, Value::NIL)
             // A block lexical captured by an escaped `our` sub resolves through
             // its persisted shared cell FIRST, mirroring the read side — see
             // `escaping_our_write_cell`.
-            .escaping_our_write_cell(code, name)
+            .or_else(|| self.escaping_our_write_cell(code, name))
             // A package-scope free variable (`our $X` / `package { my $X }`)
             // reached by bare name from inside a named sub is not in the local
             // env; read it from the canonical package store so the fused RMW
@@ -234,7 +239,10 @@ impl Interpreter {
             return Ok(());
         }
         let raw_val = self
-            .escaping_our_write_cell(code, name)
+            // See the note in `exec_atomic_compound_var_op`: a per-call
+            // anonymous state reads from the store, never from the stale env.
+            .per_call_anon_state_read(name, Value::int(0))
+            .or_else(|| self.escaping_our_write_cell(code, name))
             .or_else(|| self.package_scope_lexical(name))
             .or_else(|| self.get_env_with_main_alias(name))
             .or_else(|| self.read_package_scope_var(name))
@@ -328,7 +336,10 @@ impl Interpreter {
             return Ok(());
         }
         let raw_val = self
-            .escaping_our_write_cell(code, name)
+            // See the note in `exec_atomic_compound_var_op`: a per-call
+            // anonymous state reads from the store, never from the stale env.
+            .per_call_anon_state_read(name, Value::int(0))
+            .or_else(|| self.escaping_our_write_cell(code, name))
             .or_else(|| self.package_scope_lexical(name))
             .or_else(|| self.get_env_with_main_alias(name))
             .or_else(|| self.read_package_scope_var(name))

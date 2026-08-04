@@ -84,6 +84,15 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         return Err(PError::expected("assignment expression"));
     }
     let (r, var) = var_name(input)?;
+    // A bare-`$` assignment target is an anonymous state variable; mint it a
+    // unique per-occurrence name, exactly as `assign_stmt` does — see the note
+    // there. (This path serves the parenthesized/expression form, e.g. the
+    // classify callback `{ ~($ ~= $_) }`.)
+    let var = if sigil == b'$' && var == "__ANON_STATE__" {
+        crate::parser::primary::var::mint_anon_state_name()
+    } else {
+        var
+    };
 
     // Handle subscripted lvalues: @a[1] = ..., %h{key} = ..., %h<key> = ...
     if r.starts_with('[') || r.starts_with('{') || r.starts_with('<') {

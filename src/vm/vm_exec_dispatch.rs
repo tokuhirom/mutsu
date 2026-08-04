@@ -303,6 +303,11 @@ impl Interpreter {
                     return Ok(());
                 }
                 let val = self
+                    // A PER-CALL anonymous state (`$` inside a block inside a
+                    // routine) is authoritative in the state store: its `env`
+                    // entry, written by `SetGlobal`, outlives the block clone
+                    // and is always the previous call's. See `anon_state_key`.
+                    .per_call_anon_state_read(name, Value::NIL)
                     // A package-block `my` lexical is stored in `package_lexicals`;
                     // it is the authoritative store for a bare free-variable read from
                     // inside that package's named subs, and must be read BEFORE `env`.
@@ -318,7 +323,7 @@ impl Interpreter {
                     // unrelated leaked value from a sibling block. Resolve such a
                     // capture through its persisted shared cell ONLY — see
                     // `escaping_our_read` — short-circuiting the env lookup.
-                    .escaping_our_read(name)
+                    .or_else(|| self.escaping_our_read(name))
                     .or_else(|| self.package_scope_lexical(name))
                     // NB: `get_env_with_main_alias` is also where a file-scope `my`
                     // of the running routine's own compunit resolves — `env` is not

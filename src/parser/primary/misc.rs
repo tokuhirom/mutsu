@@ -20,7 +20,9 @@ pub(super) use lambda::{arrow_lambda, capture_literal};
 pub(super) use reduction::reduction_op;
 
 pub(in crate::parser) use colonpair::{colonpair_expr, wrap_colonpair_sink_source};
-pub(in crate::parser) use lambda::{block_or_hash_expr, parse_block_body};
+pub(in crate::parser) use lambda::{
+    block_or_hash_expr, parse_block_body, parse_block_body_routine,
+};
 pub(in crate::parser) use reduction::reduction_call_style_expr;
 
 /// Simple whitespace consumer that doesn't use PResult (infallible).

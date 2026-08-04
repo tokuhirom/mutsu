@@ -194,6 +194,7 @@ impl Interpreter {
             is_method: false,
             is_block: false,
             def_file: None,
+            invocation_id: crate::runtime::next_invocation_id(),
         });
         self.proto_dispatch_stack
             .push((proto_name.to_string(), args.to_vec(), None));

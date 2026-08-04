@@ -25,7 +25,7 @@ use crate::parser::primary::ident::predicates::{
 };
 use crate::parser::primary::ident::supply::supply_method_call;
 use crate::parser::primary::misc::{
-    anon_class_expr, anon_grammar_expr, anon_role_expr, parse_block_body,
+    anon_class_expr, anon_grammar_expr, anon_role_expr, parse_block_body, parse_block_body_routine,
 };
 use crate::parser::stmt::keyword;
 use crate::symbol::Symbol;
@@ -664,13 +664,13 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         return Ok((r, params_body));
                     }
                     if r.starts_with('{') {
-                        let (r, body) = parse_block_body(r)?;
+                        let (r, body) = parse_block_body_routine(r)?;
                         return Ok((r, make_anon_sub(body)));
                     }
                 }
                 if after_method.starts_with('{') || after_method.trim_start().starts_with('{') {
                     let (r, _) = ws(after_method)?;
-                    let (r, body) = parse_block_body(r)?;
+                    let (r, body) = parse_block_body_routine(r)?;
                     return Ok((r, make_anon_sub(body)));
                 }
             }
@@ -679,7 +679,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 // `anon sub { }` — no return type
                 let (r_sub, _) = ws(after_sub)?;
                 if r_sub.starts_with('{') {
-                    let (r, body) = parse_block_body(r_sub)?;
+                    let (r, body) = parse_block_body_routine(r_sub)?;
                     return Ok((
                         r,
                         Expr::AnonSub {
@@ -726,7 +726,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 if let Some(after_sub) = keyword("sub", r_type) {
                     let (r_sub, _) = ws(after_sub)?;
                     if r_sub.starts_with('{') {
-                        let (r, body) = parse_block_body(r_sub)?;
+                        let (r, body) = parse_block_body_routine(r_sub)?;
                         return Ok((
                             r,
                             Expr::AnonSubParams {
@@ -766,7 +766,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         "sub" => {
             let (r, _) = ws(rest)?;
             if r.starts_with('{') {
-                let (r, body) = parse_block_body(r)?;
+                let (r, body) = parse_block_body_routine(r)?;
                 // `sub { }` is a routine boundary (unlike bare blocks)
                 return Ok((
                     r,
@@ -790,7 +790,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             }
             if r.starts_with("is ") || r.starts_with("returns ") || r.starts_with("of ") {
                 let (r, traits) = crate::parser::stmt::parse_sub_traits_pub(r)?;
-                let (r, body) = parse_block_body(r)?;
+                let (r, body) = parse_block_body_routine(r)?;
                 let mut expr = Expr::AnonSub {
                     body,
                     is_rw: traits.is_rw,
@@ -913,7 +913,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     return Ok((r, params_body));
                 }
             } else if r.starts_with('{') {
-                let (r, body) = parse_block_body(r)?;
+                let (r, body) = parse_block_body_routine(r)?;
                 return Ok((r, make_anon_method(body)));
             }
         }

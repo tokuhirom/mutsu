@@ -19,6 +19,20 @@ pub(crate) fn block(input: &str) -> PResult<'_, Vec<Stmt>> {
     result
 }
 
+/// Parse a routine body block: like [`block`], but marks the pushed scope as a
+/// routine body so an anonymous state variable (`$++`) minted directly in it is
+/// classified as persisting across calls, while one inside a nested block is
+/// per-call — see `simple::anon_state_is_per_call`.
+pub(crate) fn routine_block(input: &str) -> PResult<'_, Vec<Stmt>> {
+    let (input, _) =
+        parse_char(input, '{').map_err(|_| PError::expected_at(MISSING_BLOCK, input))?;
+    simple::push_scope();
+    simple::mark_current_scope_routine_body();
+    let result = block_inner(input);
+    simple::pop_scope();
+    result
+}
+
 pub(crate) fn block_inner(input: &str) -> PResult<'_, Vec<Stmt>> {
     let (input, stmts) = stmt_list_with_mode(input, false, true)?;
     let (input, _) = ws(input)?;
