@@ -126,6 +126,30 @@ impl Interpreter {
         Ok(value)
     }
 
+    /// Read-modify-write an atomic scalar that lives in a shared `ContainerRef`
+    /// cell, returning `(old, new)`.
+    ///
+    /// The cell IS the atomic primitive: its mutex serializes the RMW, and every
+    /// alias of the binding — a sibling closure, a spawned thread's clone — holds
+    /// the same cell, so no `shared_vars` side channel is involved. Crucially,
+    /// the cell also gives the atomic **binding identity**: the legacy lane is
+    /// keyed by the variable's bare NAME in a process-global store, so an
+    /// unrelated `my $i` anywhere else in the program reset the counter (see
+    /// `reset_atomic_var_key_decl`). A cell cannot collide.
+    fn atomic_cell_update(
+        cell: &crate::gc::Gc<std::sync::Mutex<Value>>,
+        f: impl FnOnce(Value) -> Result<Value, RuntimeError>,
+    ) -> Result<(Value, Value), RuntimeError> {
+        let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
+        let current = match guard.view() {
+            ValueView::Nil | ValueView::Package(_) => Value::int(0),
+            _ => guard.clone(),
+        };
+        let next = f(current.clone())?;
+        *guard = next.clone();
+        Ok((current, next))
+    }
+
     pub(super) fn atomic_value_key_for_name(&mut self, name: &str) -> String {
         self.mark_atomic_var_seen();
         let name_key = Self::atomic_shared_name_key(name);
@@ -193,6 +217,12 @@ impl Interpreter {
             let val = attrs.as_map().get(&key).cloned().unwrap_or(Value::NIL);
             return Ok(val);
         }
+        // A binding that already lives in a shared cell reads through it — see
+        // `atomic_cell_update`.
+        if let Some(cell) = self.atomic_scalar_cell(&name) {
+            let guard = cell.lock().unwrap_or_else(|e| e.into_inner());
+            return Ok(guard.clone());
+        }
         let value_key = self.atomic_value_key_for_name(&name);
         // ADR-0010: atomics are process-wide shared state -> the root lineage.
         let atomic_root = self.shared_vars.root_store();
@@ -216,6 +246,14 @@ impl Interpreter {
         if let Some((attrs, key)) = self.self_attr_cell_target(&name) {
             attrs.insert(key, value.clone());
             self.env.insert(name, value.clone());
+            return Ok(value);
+        }
+        // Store through the cell, never over it: `env` holds the `ContainerRef`
+        // itself, so writing the plain value under `name` would replace the
+        // binding's container and disconnect every other alias.
+        if let Some(cell) = self.atomic_scalar_cell(&name) {
+            let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
+            *guard = value.clone();
             return Ok(value);
         }
         let value_key = self.atomic_value_key_for_name(&name);
@@ -253,6 +291,12 @@ impl Interpreter {
                 crate::builtins::arith_add(base, delta.clone())
             })?;
             self.env.insert(name, next.clone());
+            return Ok(next);
+        }
+        if let Some(cell) = self.atomic_scalar_cell(&name) {
+            let (_, next) = Self::atomic_cell_update(&cell, |cur| {
+                crate::builtins::arith_add(cur, delta.clone())
+            })?;
             return Ok(next);
         }
         let value_key = self.atomic_value_key_for_name(&name);
@@ -295,6 +339,12 @@ impl Interpreter {
                 crate::builtins::arith_add(base, delta.clone())
             })?;
             self.env.insert(name, next);
+            return Ok(old);
+        }
+        if let Some(cell) = self.atomic_scalar_cell(&name) {
+            let (old, _) = Self::atomic_cell_update(&cell, |cur| {
+                crate::builtins::arith_add(cur, delta.clone())
+            })?;
             return Ok(old);
         }
         let value_key = self.atomic_value_key_for_name(&name);
@@ -345,6 +395,12 @@ impl Interpreter {
             let current = self.env.get(&name).cloned().unwrap_or(Value::int(0));
             let next = crate::builtins::arith_add(current.clone(), Value::int(delta))?;
             self.env.insert(name, next.clone());
+            return if return_old { Ok(current) } else { Ok(next) };
+        }
+        if let Some(cell) = self.atomic_scalar_cell(&name) {
+            let (current, next) = Self::atomic_cell_update(&cell, |cur| {
+                crate::builtins::arith_add(cur, Value::int(delta))
+            })?;
             return if return_old { Ok(current) } else { Ok(next) };
         }
         let value_key = self.atomic_value_key_for_name(&name);

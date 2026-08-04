@@ -2228,6 +2228,19 @@ pub(crate) struct CompiledCode {
     /// Consumed by the `compute_needs_env_sync` fold, which marks these slots
     /// env-synced so their mirror stays live for the by-name builtin.
     pub(crate) atomic_env_sync_locals: Vec<u32>,
+    /// Every variable NAME that reaches an atomic-op builtin as the target,
+    /// whether or not this code declares it — the free-variable analysis's view
+    /// of `atomic_env_sync_locals`.
+    ///
+    /// `⚛$x` / `$x⚛++` / `cas($x, …)` compile to a `__mutsu_*_var("x", …)`
+    /// CALL, so the op scan in `compute_free_vars` sees no name-write op and the
+    /// target never counted as mutated. A closure that only ever bumps a
+    /// captured `atomicint` therefore looked read-only, so `box_captured_lexicals`
+    /// gave it no shared cell and the counter fell back to the name-keyed atomic
+    /// lane — where an unrelated same-named lexical resets it. Folding these
+    /// names into `free_var_writes` / `self_mutated` is what earns the binding a
+    /// cell. Pin: `t/atomic-scalar-follows-its-binding.t`.
+    pub(crate) atomic_target_syms: rustc_hash::FxHashSet<Symbol>,
     /// Out-of-band named-argument specs for `CallFuncNamed` sites (indexed by
     /// the op's `spec_idx`): which of the call's stack values are named-arg
     /// VALUES and under which keys. Lets a literal `:key(val)` call site skip
@@ -2304,6 +2317,24 @@ pub(crate) struct CompiledCode {
     /// from `free_var_syms` instead, which is also what keeps them resolving to
     /// the block's own binding inside a `whenever` callback.
     pub(crate) my_declared_enum_sym: rustc_hash::FxHashSet<Symbol>,
+    /// Names this code declares in EXPRESSION position (`(my $p := ...)`,
+    /// `(my $x = 1)`, compiled as `Expr::DoStmt(VarDecl)`).
+    ///
+    /// Such a declaration is env-only — it gets no local slot — so its store op
+    /// looks exactly like a write to an enclosing same-named lexical. That is
+    /// wrong on the axis that matters here: the name is this code's OWN binding,
+    /// so it must not make an enclosing scope's same-named local "captured and
+    /// mutated" and earn it a shared `ContainerRef` cell. It did — an unrelated
+    /// later `my Pair $p` in the enclosing scope then found the cell instead of
+    /// its own fresh binding (roast S02-types/pair.t #181). The enclosing scope's
+    /// `captured_mutated` / `needs_cell` loop skips these names.
+    ///
+    /// ONLY that axis is corrected. The name stays a free variable and the store
+    /// still writes through to the enclosing binding, which is both the
+    /// pre-existing scope leak (`raku` keeps the outer binding, mutsu overwrites
+    /// it — see `todo/tickets/expression-position-my-has-no-scope.md`) and what
+    /// roast S02-types/whatever.t #45 asserts, so it must not be "fixed" here.
+    pub(crate) expr_declared_syms: rustc_hash::FxHashSet<Symbol>,
     /// Free variables this code (and its nested closures) reference from an
     /// enclosing scope: names used via GetGlobal-family ops that are not this
     /// code's own locals. For a closure body this is the set of captured
@@ -2806,6 +2837,7 @@ impl CompiledCode {
             lex_scopes: Vec::new(),
             closure_compiled_codes: Vec::new(),
             atomic_env_sync_locals: Vec::new(),
+            atomic_target_syms: rustc_hash::FxHashSet::default(),
             named_arg_specs: Vec::new(),
             closure_escapes: Vec::new(),
             is_routine: false,
@@ -2824,6 +2856,7 @@ impl CompiledCode {
             inherited_owned_lexicals: Vec::new(),
             my_declared_sym: rustc_hash::FxHashSet::default(),
             my_declared_enum_sym: rustc_hash::FxHashSet::default(),
+            expr_declared_syms: rustc_hash::FxHashSet::default(),
             free_var_syms: Vec::new(),
             free_var_parent_slots: Vec::new(),
             upvalue_parent_slots: Vec::new(),
@@ -4128,6 +4161,17 @@ impl CompiledCode {
                 _ => {}
             }
         }
+        // An atomic op's target is written through a `__mutsu_*_var("name", …)`
+        // call, which the op scan above cannot see as a write. Fold those names
+        // in explicitly (see `atomic_target_syms`).
+        for sym in &self.atomic_target_syms {
+            if sym.with_str(|s| own.contains(s)) {
+                self_mutated.insert(*sym);
+            } else {
+                free.insert(*sym);
+                free_writes.insert(*sym);
+            }
+        }
         // Regex literals interpolate lexical variables at match time (`/<$r>/`,
         // `/$x/`, `/<&rule>/`). Those reads happen inside the regex engine, not via
         // a name-const op, so the op scan above misses them. A closure that stores
@@ -4191,6 +4235,17 @@ impl CompiledCode {
         for (i, nested) in self.closure_compiled_codes.iter().enumerate() {
             let escapes = self.closure_escapes.get(i).copied().unwrap_or(false);
             for sym in &nested.free_var_syms {
+                // A name that closure declares in EXPRESSION position is its own
+                // binding, however the env-only store spells it, so it must not
+                // earn OUR same-named local a shared cell — an unrelated later
+                // `my Pair $p` then found the cell instead of its own fresh
+                // binding (roast S02-types/pair.t #181). The name stays a free
+                // var: the store still writes through to us, which is the
+                // pre-existing scope leak roast S02-types/whatever.t #45 pins.
+                // See `expr_declared_syms`.
+                if nested.expr_declared_syms.contains(sym) {
+                    continue;
+                }
                 let is_own = sym.with_str(|s| own.contains(s));
                 if is_own && self_mutated.contains(sym) {
                     captured_mutated.insert(*sym);

@@ -71,6 +71,25 @@ per_file_timeout() {
       # This test has a 1M-iteration hot loop (test 100) that takes ~8s on release builds.
       echo 60
       ;;
+    roast/S04-declarations/state.t)
+      # Test 42 is a 2,000,000-iteration anonymous-state loop
+      # (`sub foo () {$ = 42}; for ^2000000 { $ = foo }`). It dominates the
+      # file and is JIT-compiled, which makes its wall-clock unusually
+      # sensitive to BINARY LAYOUT: two builds of source that differs only in
+      # dead code measure 2.9s and 6.2s (verified 2026-08-04 by appending two
+      # unused functions to an unrelated module on main — the "regression"
+      # reproduced exactly). So an unlucky layout plus `prove -j4` contention
+      # times the file out on the default 30s budget with no real change in
+      # the interpreter. Give it headroom rather than chase the lottery.
+      echo 90
+      ;;
+    roast/S04-exception-handlers/catch.t)
+      # ~10s standalone on release (identical on main and on feature branches),
+      # so the default 30s budget leaves only a 3x margin — not enough under
+      # `prove -j4` on a 4-core runner, where it has timed out mid-file
+      # (exit 124, Failed: 0) on changes that do not touch exceptions at all.
+      echo 60
+      ;;
     roast/S04-exceptions/exceptions-alternatives.t)
       # Parses a ~180-char JSON error document with a JSON::Tiny grammar.
       # The regex engine has no implicit token ratchet yet, so the nested

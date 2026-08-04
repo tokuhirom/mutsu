@@ -149,7 +149,15 @@ impl Compiler {
             && args.len() == 2
             && matches!(&args[1], Expr::Var(n) if !n.contains("::"));
         for (i, arg) in args.iter().enumerate() {
-            self.with_thread_escape(thread_esc, |s| s.compile_method_arg_with_escape(arg, esc));
+            // Only the closure literal itself is escaping (see
+            // `is_closure_literal_arg`); the legacy `then`/`tap`/`act`/`start`
+            // names keep marking every argument, as they always did.
+            let arg_esc = esc
+                && (Self::is_closure_literal_arg(arg)
+                    || matches!(mname.as_str(), "then" | "tap" | "act" | "start"));
+            self.with_thread_escape(thread_esc, |s| {
+                s.compile_method_arg_with_escape(arg, arg_esc)
+            });
             if pair_value_capture
                 && i == 1
                 && let Expr::Var(n) = arg
@@ -533,7 +541,13 @@ impl Compiler {
         // `Thread.start` / `Promise.start` hand the block to a thread.
         let thread_esc = mname == "start";
         for arg in args {
-            self.with_thread_escape(thread_esc, |s| s.compile_method_arg_with_escape(arg, esc));
+            // See the sibling loop in `compile_expr_method_call`.
+            let arg_esc = esc
+                && (Self::is_closure_literal_arg(arg)
+                    || matches!(mname.as_str(), "then" | "tap" | "act" | "start"));
+            self.with_thread_escape(thread_esc, |s| {
+                s.compile_method_arg_with_escape(arg, arg_esc)
+            });
         }
         let name_idx = self.code.add_constant(Value::str(name.resolve()));
         let modifier_idx = modifier.map(|m| self.code.add_constant(Value::str(m.to_string())));

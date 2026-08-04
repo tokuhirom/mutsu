@@ -152,7 +152,12 @@ impl Compiler {
                 && let crate::value::ValueView::Str(vn) = lit.view()
             {
                 let vn = vn.as_ref().clone();
-                self.note_atomic_env_sync_target(&vn);
+                // `cas` is excluded from the free-var *write* fold: it already
+                // resolves a boxed target through `scalar_cell_target`, and its
+                // cross-thread behaviour rides on the name-keyed lane that the
+                // fold's cell promotion would take away
+                // (t/cross-thread-shared-var-writeback-coherence.t).
+                self.note_atomic_env_sync_target(&vn, n != "__mutsu_cas_var");
             }
         });
         // (state $x) = expr  /  (state @x) = expr  /  (state %x) = expr
@@ -588,7 +593,7 @@ impl Compiler {
             let call_name_idx = self
                 .code
                 .add_constant(Value::str_from("__mutsu_atomic_fetch_var"));
-            self.note_atomic_env_sync_target(var_name);
+            self.note_atomic_env_sync_target(var_name, true);
             let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
             self.code.emit(OpCode::LoadConst(arg_idx));
             self.code.emit(OpCode::CallFunc {
@@ -604,7 +609,7 @@ impl Compiler {
             let call_name_idx = self
                 .code
                 .add_constant(Value::str_from("__mutsu_atomic_store_var"));
-            self.note_atomic_env_sync_target(var_name);
+            self.note_atomic_env_sync_target(var_name, true);
             let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
             self.code.emit(OpCode::LoadConst(arg_idx));
             self.compile_expr(&args[1]);
@@ -621,7 +626,7 @@ impl Compiler {
             let call_name_idx = self
                 .code
                 .add_constant(Value::str_from("__mutsu_atomic_post_inc_var"));
-            self.note_atomic_env_sync_target(var_name);
+            self.note_atomic_env_sync_target(var_name, true);
             let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
             self.code.emit(OpCode::LoadConst(arg_idx));
             self.code.emit(OpCode::CallFunc {
@@ -637,7 +642,7 @@ impl Compiler {
             let call_name_idx = self
                 .code
                 .add_constant(Value::str_from("__mutsu_atomic_pre_inc_var"));
-            self.note_atomic_env_sync_target(var_name);
+            self.note_atomic_env_sync_target(var_name, true);
             let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
             self.code.emit(OpCode::LoadConst(arg_idx));
             self.code.emit(OpCode::CallFunc {
@@ -653,7 +658,7 @@ impl Compiler {
             let call_name_idx = self
                 .code
                 .add_constant(Value::str_from("__mutsu_atomic_post_dec_var"));
-            self.note_atomic_env_sync_target(var_name);
+            self.note_atomic_env_sync_target(var_name, true);
             let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
             self.code.emit(OpCode::LoadConst(arg_idx));
             self.code.emit(OpCode::CallFunc {
@@ -669,7 +674,7 @@ impl Compiler {
             let call_name_idx = self
                 .code
                 .add_constant(Value::str_from("__mutsu_atomic_pre_dec_var"));
-            self.note_atomic_env_sync_target(var_name);
+            self.note_atomic_env_sync_target(var_name, true);
             let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
             self.code.emit(OpCode::LoadConst(arg_idx));
             self.code.emit(OpCode::CallFunc {
@@ -685,7 +690,7 @@ impl Compiler {
             let call_name_idx = self
                 .code
                 .add_constant(Value::str_from("__mutsu_atomic_fetch_add_var"));
-            self.note_atomic_env_sync_target(var_name);
+            self.note_atomic_env_sync_target(var_name, true);
             let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
             self.code.emit(OpCode::LoadConst(arg_idx));
             self.compile_expr(&args[1]);
@@ -702,7 +707,7 @@ impl Compiler {
             let call_name_idx = self
                 .code
                 .add_constant(Value::str_from("__mutsu_atomic_add_var"));
-            self.note_atomic_env_sync_target(var_name);
+            self.note_atomic_env_sync_target(var_name, true);
             let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
             self.code.emit(OpCode::LoadConst(arg_idx));
             self.compile_expr(&args[1]);
@@ -732,7 +737,7 @@ impl Compiler {
                     let call_name_idx = self
                         .code
                         .add_constant(Value::str_from("__mutsu_atomic_add_var"));
-                    self.note_atomic_env_sync_target(&var_name);
+                    self.note_atomic_env_sync_target(&var_name, true);
                     let name_idx = self.code.add_constant(Value::str(var_name.clone()));
                     self.code.emit(OpCode::LoadConst(name_idx));
                     self.compile_expr(&delta);
@@ -755,7 +760,7 @@ impl Compiler {
                 self.code.emit(OpCode::Pop);
             }
             let call_name_idx = self.code.add_constant(Value::str_from("__mutsu_cas_var"));
-            self.note_atomic_env_sync_target(&var_name);
+            self.note_atomic_env_sync_target(&var_name, false);
             let name_idx = self.code.add_constant(Value::str(var_name.clone()));
             self.code.emit(OpCode::LoadConst(name_idx));
             for arg in &args[1..] {
@@ -1400,14 +1405,15 @@ impl Compiler {
             } else {
                 let arity = args.len() as u32;
                 let arg_sources_idx = self.add_arg_sources_constant(args);
-                // `start { ... }` spawns a thread: its block argument outlives
-                // the call frame, so captured-and-mutated locals must become
-                // shared `ContainerRef` cells (escape analysis). Compile its
-                // args in an escaping position.
-                let escaping_args = name.resolve() == "start";
-                // `start` hands its block to a thread — a strictly narrower
-                // signal than `escaping_args`, see CompiledCode::thread_escaping.
-                let thread_escaping = escaping_args;
+                // A closure LITERAL passed as a call argument escapes: the callee
+                // may store it (`register { $c++ }`), and the caller cannot tell.
+                // So the captured-and-mutated locals it names must become shared
+                // `ContainerRef` cells. `start` additionally hands its block to a
+                // thread — a strictly narrower signal, see
+                // `CompiledCode::thread_escaping`. See `is_closure_literal_arg`
+                // for why only the literal, and not the whole argument list, is
+                // marked (this replaces the old `start`-only allowlist).
+                let is_start = name.resolve() == "start";
                 // Literal named args (`:key(val)` / `key => val` with a
                 // compile-time-known key) travel out-of-band: only the VALUE
                 // is compiled, and (position, key) goes into a NamedArgsSpec,
@@ -1417,6 +1423,18 @@ impl Compiler {
                 // in-band pair for `peek_callsite_line`.
                 let mut named_entries: Vec<crate::opcode::NamedArgEntry> = Vec::new();
                 for (i, arg) in args.iter().enumerate() {
+                    // `start` keeps marking EVERY argument escaping, exactly as
+                    // before; other calls mark only a closure literal.
+                    let value_expr = match arg {
+                        Expr::Binary {
+                            op: TokenKind::FatArrow,
+                            right,
+                            ..
+                        } => right.as_ref(),
+                        other => other,
+                    };
+                    let escaping_args = is_start || Self::is_closure_literal_arg(value_expr);
+                    let thread_escaping = is_start;
                     if let Expr::Binary {
                         op: TokenKind::FatArrow,
                         left,

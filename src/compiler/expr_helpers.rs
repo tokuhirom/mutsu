@@ -67,7 +67,16 @@ impl Compiler {
     /// (an ancestor lexical / global / attribute is resolved differently). Needed
     /// because the (B) per-store env-write otherwise skips the mirror for a plain
     /// lexical, leaving the builtin to read the decl-seed placeholder.
-    pub(super) fn note_atomic_env_sync_target(&mut self, var_name: &str) {
+    pub(super) fn note_atomic_env_sync_target(&mut self, var_name: &str, counts_as_write: bool) {
+        // The name is recorded whether or not this code declares it: a closure
+        // that bumps a CAPTURED `atomicint` has no slot for it, and the free-var
+        // analysis needs the name to count the bump as a write (see
+        // `CompiledCode::atomic_target_syms`).
+        if counts_as_write {
+            self.code
+                .atomic_target_syms
+                .insert(crate::symbol::Symbol::intern(var_name));
+        }
         if let Some(&slot) = self.local_map.get(var_name)
             && !self.code.atomic_env_sync_locals.contains(&slot)
         {
