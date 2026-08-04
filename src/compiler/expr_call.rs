@@ -152,7 +152,12 @@ impl Compiler {
                 && let crate::value::ValueView::Str(vn) = lit.view()
             {
                 let vn = vn.as_ref().clone();
-                self.note_atomic_env_sync_target(&vn);
+                // `cas` is excluded from the free-var *write* fold: it already
+                // resolves a boxed target through `scalar_cell_target`, and its
+                // cross-thread behaviour rides on the name-keyed lane that the
+                // fold's cell promotion would take away
+                // (t/cross-thread-shared-var-writeback-coherence.t).
+                self.note_atomic_env_sync_target(&vn, n != "__mutsu_cas_var");
             }
         });
         // (state $x) = expr  /  (state @x) = expr  /  (state %x) = expr
@@ -588,7 +593,7 @@ impl Compiler {
             let call_name_idx = self
                 .code
                 .add_constant(Value::str_from("__mutsu_atomic_fetch_var"));
-            self.note_atomic_env_sync_target(var_name);
+            self.note_atomic_env_sync_target(var_name, true);
             let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
             self.code.emit(OpCode::LoadConst(arg_idx));
             self.code.emit(OpCode::CallFunc {
@@ -604,7 +609,7 @@ impl Compiler {
             let call_name_idx = self
                 .code
                 .add_constant(Value::str_from("__mutsu_atomic_store_var"));
-            self.note_atomic_env_sync_target(var_name);
+            self.note_atomic_env_sync_target(var_name, true);
             let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
             self.code.emit(OpCode::LoadConst(arg_idx));
             self.compile_expr(&args[1]);
@@ -621,7 +626,7 @@ impl Compiler {
             let call_name_idx = self
                 .code
                 .add_constant(Value::str_from("__mutsu_atomic_post_inc_var"));
-            self.note_atomic_env_sync_target(var_name);
+            self.note_atomic_env_sync_target(var_name, true);
             let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
             self.code.emit(OpCode::LoadConst(arg_idx));
             self.code.emit(OpCode::CallFunc {
@@ -637,7 +642,7 @@ impl Compiler {
             let call_name_idx = self
                 .code
                 .add_constant(Value::str_from("__mutsu_atomic_pre_inc_var"));
-            self.note_atomic_env_sync_target(var_name);
+            self.note_atomic_env_sync_target(var_name, true);
             let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
             self.code.emit(OpCode::LoadConst(arg_idx));
             self.code.emit(OpCode::CallFunc {
@@ -653,7 +658,7 @@ impl Compiler {
             let call_name_idx = self
                 .code
                 .add_constant(Value::str_from("__mutsu_atomic_post_dec_var"));
-            self.note_atomic_env_sync_target(var_name);
+            self.note_atomic_env_sync_target(var_name, true);
             let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
             self.code.emit(OpCode::LoadConst(arg_idx));
             self.code.emit(OpCode::CallFunc {
@@ -669,7 +674,7 @@ impl Compiler {
             let call_name_idx = self
                 .code
                 .add_constant(Value::str_from("__mutsu_atomic_pre_dec_var"));
-            self.note_atomic_env_sync_target(var_name);
+            self.note_atomic_env_sync_target(var_name, true);
             let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
             self.code.emit(OpCode::LoadConst(arg_idx));
             self.code.emit(OpCode::CallFunc {
@@ -685,7 +690,7 @@ impl Compiler {
             let call_name_idx = self
                 .code
                 .add_constant(Value::str_from("__mutsu_atomic_fetch_add_var"));
-            self.note_atomic_env_sync_target(var_name);
+            self.note_atomic_env_sync_target(var_name, true);
             let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
             self.code.emit(OpCode::LoadConst(arg_idx));
             self.compile_expr(&args[1]);
@@ -702,7 +707,7 @@ impl Compiler {
             let call_name_idx = self
                 .code
                 .add_constant(Value::str_from("__mutsu_atomic_add_var"));
-            self.note_atomic_env_sync_target(var_name);
+            self.note_atomic_env_sync_target(var_name, true);
             let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
             self.code.emit(OpCode::LoadConst(arg_idx));
             self.compile_expr(&args[1]);
@@ -732,7 +737,7 @@ impl Compiler {
                     let call_name_idx = self
                         .code
                         .add_constant(Value::str_from("__mutsu_atomic_add_var"));
-                    self.note_atomic_env_sync_target(&var_name);
+                    self.note_atomic_env_sync_target(&var_name, true);
                     let name_idx = self.code.add_constant(Value::str(var_name.clone()));
                     self.code.emit(OpCode::LoadConst(name_idx));
                     self.compile_expr(&delta);
@@ -755,7 +760,7 @@ impl Compiler {
                 self.code.emit(OpCode::Pop);
             }
             let call_name_idx = self.code.add_constant(Value::str_from("__mutsu_cas_var"));
-            self.note_atomic_env_sync_target(&var_name);
+            self.note_atomic_env_sync_target(&var_name, false);
             let name_idx = self.code.add_constant(Value::str(var_name.clone()));
             self.code.emit(OpCode::LoadConst(name_idx));
             for arg in &args[1..] {

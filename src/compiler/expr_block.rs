@@ -106,6 +106,12 @@ impl Compiler {
                 // Record this inline declaration (`(my $x = ...)`, `(state $a)`)
                 // for an enclosing scope-isolating do-block.
                 self.record_block_decl(name);
+                // ...and for the free-variable analysis, which would otherwise
+                // read the env-only store as a write to an enclosing same-named
+                // lexical. See `CompiledCode::expr_declared_syms`.
+                self.code
+                    .expr_declared_syms
+                    .insert(crate::symbol::Symbol::intern(name));
                 let is_dynamic = *ast_is_dynamic || self.var_is_dynamic(name);
                 // my $x = expr in expression context -> declare, assign, return value
                 if *is_state {
