@@ -243,6 +243,7 @@ pub(crate) fn build_compound_assign_expr(
                 then_branch,
                 else_branch,
                 binding_var,
+                ..
             } = *stmt
             else {
                 unreachable!("guarded by the match arm")
@@ -258,6 +259,7 @@ pub(crate) fn build_compound_assign_expr(
                 then_branch: vec![Stmt::Expr(inner_assign)],
                 else_branch,
                 binding_var,
+                is_statement_modifier: false,
             }))
         }
         // `(cond ?? A !! B) op= rhs`: the ternary is an lvalue selecting one

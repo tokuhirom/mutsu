@@ -64,12 +64,28 @@ pub(super) use pub_shims::{
 thread_local! {
     static STMT_MEMO_TLS: RefCell<HashMap<(usize, usize), MemoEntry<Stmt>>> = RefCell::new(HashMap::new());
     static STMT_MEMO_STATS_TLS: RefCell<MemoStats> = RefCell::new(MemoStats::default());
+    /// The anonymous-state names (`__ANON_STATE_<id>__`) each memoized statement
+    /// minted into its ENCLOSING block's scope, keyed exactly like `STMT_MEMO`.
+    ///
+    /// A memo hit replays a statement parsed under a different — often
+    /// discarded — lexical scope (`block_stmt` speculatively parses `{ … }` as a
+    /// hash first, then re-parses it as a block; the second parse is a pure memo
+    /// hit). The names were recorded in that first scope, so without replaying
+    /// them here the surviving block would emit no implicit `state` declaration
+    /// for its bare `$` — see `simple::take_anon_state_decls`.
+    static STMT_ANON_STATES_TLS: RefCell<HashMap<(usize, usize), Vec<String>>> =
+        RefCell::new(HashMap::new());
 }
 
 static STMT_MEMO: ParseMemo<Stmt> = ParseMemo::new(&STMT_MEMO_TLS, &STMT_MEMO_STATS_TLS);
 
+fn stmt_memo_key(input: &str) -> (usize, usize) {
+    (input.as_ptr() as usize, input.len())
+}
+
 pub(super) fn reset_statement_memo() {
     STMT_MEMO.reset();
+    STMT_ANON_STATES_TLS.with(|m| m.borrow_mut().clear());
 }
 
 pub(super) fn reset_user_subs() {
@@ -177,8 +193,18 @@ const STMT_PARSERS: &[StmtParser] = &[
 fn statement(input: &str) -> PResult<'_, Stmt> {
     let (input, _) = ws(input)?;
     if let Some(cached) = STMT_MEMO.get(input) {
+        // See `STMT_ANON_STATES_TLS`: the replayed statement's bare `$`s were
+        // recorded into the scope of the parse that filled the memo.
+        if let Some(names) =
+            STMT_ANON_STATES_TLS.with(|m| m.borrow().get(&stmt_memo_key(input)).cloned())
+        {
+            for name in &names {
+                simple::record_anon_state_name(name);
+            }
+        }
         return cached;
     }
+    let anon_states_before = simple::current_scope_anon_state_count();
     if (input.starts_with("qx") || input.starts_with("qqx"))
         && let Ok((rest, expr)) = crate::parser::primary::string::qx_string(input)
         // A postfix chain on the qx result (`qx`pwd`.chomp.IO`) must parse as
@@ -231,6 +257,10 @@ fn statement(input: &str) -> PResult<'_, Stmt> {
         }
     };
     STMT_MEMO.store(input, &result);
+    let minted = simple::current_scope_anon_state_names_from(anon_states_before);
+    if !minted.is_empty() {
+        STMT_ANON_STATES_TLS.with(|m| m.borrow_mut().insert(stmt_memo_key(input), minted));
+    }
     result
 }
 

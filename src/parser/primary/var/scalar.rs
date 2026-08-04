@@ -21,23 +21,18 @@ use super::perl5::detect_perl5_scalar_var;
 static ANON_STATE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Mint a fresh anonymous-state variable name (one per source occurrence of a
-/// bare `$`). A `$` inside a nested block within a routine belongs to a block
-/// clone the routine re-makes on every call, so its counter restarts per call
-/// (rakudo: `sub f() { map { ++$ }, 1,2,3 }` is 1,2,3 on EVERY call). The
-/// classification is decided HERE, once, and baked into the name
-/// (`__ANON_STATE_PC_<id>__`) so that every compilation of this occurrence —
-/// including runtime re-compiles of block bodies — agrees on it (see
-/// `anon_state_key` in the VM for the run-time half, and
-/// `anon_state_is_per_call` for the scope rule). Also used by the
-/// assignment-statement parser for a bare-`$` assignment target, which
+/// bare `$`) and record it in the current lexical scope, which turns it into an
+/// implicit `state` declaration at the top of the enclosing block — Raku's bare
+/// `$` IS a `state` variable of that block, so its cell belongs to the block's
+/// clone. See `simple::take_anon_state_decls` for why that (rather than a
+/// parallel per-call store) is how the reset semantics are obtained. Also used
+/// by the assignment-statement parser for a bare-`$` assignment target, which
 /// otherwise collapsed every occurrence onto one shared `__ANON_STATE__` name.
 pub(in crate::parser) fn mint_anon_state_name() -> String {
     let id = ANON_STATE_COUNTER.fetch_add(1, Ordering::Relaxed);
-    if crate::parser::stmt::simple::anon_state_is_per_call() {
-        format!("__ANON_STATE_PC_{id}__")
-    } else {
-        format!("__ANON_STATE_{id}__")
-    }
+    let name = format!("__ANON_STATE_{id}__");
+    crate::parser::stmt::simple::record_anon_state_name(&name);
+    name
 }
 
 /// Build a string concatenation expression: left ~ right

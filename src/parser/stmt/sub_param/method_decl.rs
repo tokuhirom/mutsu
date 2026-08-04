@@ -130,7 +130,8 @@ fn method_decl_body_with_my(
                 super::super::simple::register_user_term_symbol(&pd.name);
             }
         }
-        let result = super::super::block_inner(r);
+        let mut result = super::super::block_inner(r);
+        super::super::simple::finish_block_anon_states(&mut result);
         super::super::simple::pop_scope();
         result?
     } else {

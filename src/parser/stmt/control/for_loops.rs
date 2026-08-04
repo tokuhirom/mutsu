@@ -277,7 +277,8 @@ fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stm
         for name in &sigilless_param_names {
             super::super::simple::register_user_term_symbol(name);
         }
-        let result = block_inner(r);
+        let mut result = block_inner(r);
+        super::super::simple::finish_block_anon_states(&mut result);
         super::super::simple::pop_scope();
         result?
     } else {

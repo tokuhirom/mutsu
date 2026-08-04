@@ -612,8 +612,15 @@ impl Compiler {
                         then_branch,
                         else_branch,
                         binding_var,
+                        is_statement_modifier,
                     } => {
-                        sub_compiler.compile_if_value(cond, then_branch, else_branch, binding_var);
+                        sub_compiler.compile_if_value(
+                            cond,
+                            then_branch,
+                            else_branch,
+                            binding_var,
+                            *is_statement_modifier,
+                        );
                         continue;
                     }
                     Stmt::Block(stmts) | Stmt::SyntheticBlock(stmts) => {
@@ -1025,9 +1032,16 @@ impl Compiler {
                         then_branch,
                         else_branch,
                         binding_var,
+                        is_statement_modifier,
                     } = stmt
                 {
-                    sub_compiler.compile_if_value(cond, then_branch, else_branch, binding_var);
+                    sub_compiler.compile_if_value(
+                        cond,
+                        then_branch,
+                        else_branch,
+                        binding_var,
+                        *is_statement_modifier,
+                    );
                     continue;
                 }
                 if is_value && let Stmt::Block(stmts) | Stmt::SyntheticBlock(stmts) = stmt {
@@ -1145,12 +1159,14 @@ impl Compiler {
                             then_branch,
                             else_branch,
                             binding_var,
+                            is_statement_modifier,
                         } => {
                             sub_compiler.compile_if_value(
                                 cond,
                                 then_branch,
                                 else_branch,
                                 binding_var,
+                                *is_statement_modifier,
                             );
                             continue;
                         }

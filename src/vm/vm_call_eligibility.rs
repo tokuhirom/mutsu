@@ -27,6 +27,44 @@ impl Interpreter {
         }
     }
 
+    /// Install the `state` scope a named routine's body must run under, matching
+    /// `call_compiled_function_named_inner`: its REGISTRATION clone id, so a
+    /// nested named sub re-initializes per enclosing call while a top-level
+    /// one's state persists. Returns the previous scope for
+    /// [`Self::leave_routine_state_scope`].
+    ///
+    /// Free for a state-free body (the overwhelmingly common case) — the env
+    /// probe only runs when the routine actually has `state` variables, which is
+    /// what keeps this affordable on the fast call path.
+    pub(super) fn enter_routine_state_scope(
+        &mut self,
+        cf: &CompiledFunction,
+        fn_name: &str,
+    ) -> Option<Option<u64>> {
+        if cf.code.state_locals.is_empty() || fn_name.is_empty() {
+            return None;
+        }
+        let key = format!("__mutsu_callable_id::{}::{}", cf.package, fn_name);
+        let id = self
+            .env()
+            .get(&key)
+            .and_then(|v| v.as_int())
+            .filter(|i| *i != 0)
+            .map(|i| i as u64);
+        let saved = self.state_scope_id;
+        if id.is_some() {
+            self.state_scope_id = id;
+        }
+        Some(saved)
+    }
+
+    /// Restore the scope saved by [`Self::enter_routine_state_scope`].
+    pub(super) fn leave_routine_state_scope(&mut self, saved: Option<Option<u64>>) {
+        if let Some(prev) = saved {
+            self.state_scope_id = prev;
+        }
+    }
+
     /// Check if a compiled function is eligible for the fast call path.
     /// Returns true for simple functions that don't need the full call machinery.
     pub(super) fn is_fast_call_eligible(cf: &CompiledFunction, fn_name: &str) -> bool {
@@ -34,13 +72,13 @@ impl Interpreter {
             && cf.param_defs.is_empty()
             && cf.return_type.is_none()
             && !fn_name.is_empty()
-            // A `state` variable's store key is scoped by the routine's
-            // REGISTRATION clone id, which only the full named path resolves
-            // and installs as `state_scope_id` (a nested named sub must
-            // re-initialize per enclosing call). This path used raw keys,
-            // which diverged from the full path's scoped keys. Same rule as
-            // the light paths below.
-            && cf.code.state_locals.is_empty()
+            // NOTE: `state` variables are allowed here. A `state` store key is
+            // scoped by the routine's REGISTRATION clone id (a nested named sub
+            // must re-initialize per enclosing call), which this path now
+            // resolves and installs itself — see `enter_routine_state_scope`.
+            // Excluding them instead was affordable while only an explicit
+            // `state` reached it; a bare `$` is one too, so the exclusion
+            // demoted every routine containing a `$` to the full call path.
             // A `once` needs the clone-id setup only the full call path performs.
             && !cf.code.has_once
             // A body observing its caller frame (callframe / CALLER::) needs the

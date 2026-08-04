@@ -444,6 +444,62 @@ impl Interpreter {
         Ok(())
     }
 
+    /// The `state` scope a code object's body must run under.
+    ///
+    /// A NAMED sub's is its REGISTRATION clone id (env
+    /// `__mutsu_callable_id::Pkg::name`, refreshed on every `RegisterSub`
+    /// execution) — the same id the cold named path uses — so a nested named sub
+    /// re-initializes per enclosing call while a top-level sub's state persists,
+    /// regardless of which dispatch path a call takes. Anonymous closures (and
+    /// named subs with no registration record) keep the Sub value's identity,
+    /// which is minted afresh by each `MakeClosure` and so IS the clone.
+    pub(crate) fn sub_state_scope_id(&self, data: &crate::value::SubData) -> u64 {
+        let name = data.name.resolve();
+        if name.is_empty() {
+            return data.id;
+        }
+        let key = format!("__mutsu_callable_id::{}::{}", data.package.resolve(), name);
+        self.env()
+            .get(&key)
+            .and_then(|v| v.as_int())
+            .filter(|i| *i != 0)
+            .map_or(data.id, |i| i as u64)
+    }
+
+    /// Publish a just-written local to the state store when that slot holds a
+    /// `state` variable.
+    ///
+    /// A `state` variable is one CONTAINER shared by every invocation of its
+    /// clone, so a re-entrant call must observe a mutation the outer frame has
+    /// already made. The slot is per-frame and only syncs to the store at frame
+    /// exit, so without this write-through the inner frame's `load_state_locals`
+    /// read the value from *before* the outer frame ran — which made
+    /// `sub f { my @a = 1, (f() unless $++) }` (roast S02-types/array.t
+    /// "works fine when re-entrant") recurse until the stack overflowed.
+    ///
+    /// Free for the overwhelmingly common state-free `CompiledCode`: one
+    /// `is_empty` test. The scan is over `state_locals`, which holds a handful
+    /// of entries at most.
+    pub(crate) fn publish_state_local(&mut self, code: &CompiledCode, slot: u32) {
+        if code.state_locals.is_empty() {
+            return;
+        }
+        let slot = slot as usize;
+        let Some(key) = code
+            .state_locals
+            .iter()
+            .find(|(s, _)| *s == slot)
+            .map(|(_, k)| k.clone())
+        else {
+            return;
+        };
+        let Some(val) = self.locals.get(slot).cloned() else {
+            return;
+        };
+        let scoped = self.scoped_state_key(&key);
+        loan_env!(self, set_state_var(scoped, val));
+    }
+
     /// Resolve a state variable key, applying the current closure scope if set.
     pub(crate) fn scoped_state_key(&self, key: &str) -> String {
         if let Some(id) = self.state_scope_id {

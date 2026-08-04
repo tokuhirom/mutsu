@@ -48,10 +48,17 @@ impl Compiler {
                 then_branch,
                 else_branch,
                 binding_var,
+                is_statement_modifier,
             } if Self::do_if_branch_supported(then_branch)
                 && Self::do_if_branch_supported(else_branch) =>
             {
-                self.compile_do_if_expr_bound(cond, then_branch, else_branch, binding_var);
+                self.compile_do_if_expr_bound(
+                    cond,
+                    then_branch,
+                    else_branch,
+                    binding_var,
+                    *is_statement_modifier,
+                );
             }
             Stmt::Given { topic, body, .. } => {
                 self.compile_expr(topic);

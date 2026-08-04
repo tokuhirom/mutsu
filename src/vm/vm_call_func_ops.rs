@@ -704,7 +704,7 @@ impl Interpreter {
                         loan_env!(self, set_pending_callsite_line(cl));
                     }
                 }
-                let result = match self.call_compiled_function_fast(cf, compiled_fns) {
+                let result = match self.call_compiled_function_fast(cf, name_str, compiled_fns) {
                     Ok(v) => v,
                     Err(e) => {
                         // Slice F (exception-escape coherence): an exceptional exit

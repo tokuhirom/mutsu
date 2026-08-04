@@ -65,7 +65,14 @@ impl Compiler {
                         then_branch,
                         else_branch,
                         binding_var,
-                    } => self.compile_if_value(cond, then_branch, else_branch, binding_var),
+                        is_statement_modifier,
+                    } => self.compile_if_value(
+                        cond,
+                        then_branch,
+                        else_branch,
+                        binding_var,
+                        *is_statement_modifier,
+                    ),
                     Stmt::Block(inner) | Stmt::SyntheticBlock(inner) => {
                         self.compile_block_inline(inner)
                     }
@@ -225,6 +232,7 @@ impl Compiler {
         then_branch: &[Stmt],
         else_branch: &[Stmt],
         binding_var: &Option<String>,
+        is_statement_modifier: bool,
     ) {
         // Check for heredoc scope violations before compiling
         if let Some(err) = self.check_heredoc_scope_errors(then_branch) {
@@ -296,11 +304,15 @@ impl Compiler {
         // its LEAVE must fire when the branch exits, with the branch value
         // still delivered on the stack (OO::Monitors' method wrapper unlocks
         // its monitor lock in a LEAVE inside `if SELF.DEFINITE { ... }`).
+        // Value position changes nothing about the branch being a block literal
+        // re-cloned per execution — see `OpCode::ResetStateLocals`.
+        let then_state_reset = self.emit_branch_state_reset(then_branch, is_statement_modifier);
         if Self::has_block_enter_leave_phasers(then_branch) {
             self.compile_phaser_block_scope(then_branch, true);
         } else {
             self.compile_stmts_value(then_branch);
         }
+        self.patch_nested_block_state_reset(then_state_reset);
         let jump_end = self.code.emit(OpCode::Jump(0));
         self.code.patch_jump(jump_else);
         if needs_cond_value {
@@ -310,10 +322,14 @@ impl Compiler {
         if else_branch.is_empty() {
             let empty_idx = self.code.add_constant(Value::slip(vec![]));
             self.code.emit(OpCode::LoadConst(empty_idx));
-        } else if Self::has_block_enter_leave_phasers(else_branch) {
-            self.compile_phaser_block_scope(else_branch, true);
         } else {
-            self.compile_stmts_value(else_branch);
+            let else_state_reset = self.emit_branch_state_reset(else_branch, is_statement_modifier);
+            if Self::has_block_enter_leave_phasers(else_branch) {
+                self.compile_phaser_block_scope(else_branch, true);
+            } else {
+                self.compile_stmts_value(else_branch);
+            }
+            self.patch_nested_block_state_reset(else_state_reset);
         }
         self.code.patch_jump(jump_end);
         if pointy_topic_scope {
@@ -452,10 +468,19 @@ impl Compiler {
     /// condition evaluation and no jumps around it (ADR-0006 §2.2). Mirrors how
     /// the ordinary `Stmt::If` arm compiles the branch it jumps to, including the
     /// `elsif` chain (which arrives as a lone nested `If` in the else position).
-    pub(super) fn compile_resolved_branch(&mut self, stmts: &[Stmt]) {
+    pub(super) fn compile_resolved_branch(&mut self, stmts: &[Stmt], is_statement_modifier: bool) {
         if stmts.is_empty() {
             return;
         }
+        // Folding the condition away does not fold the BLOCK away: the branch is
+        // still a block literal the enclosing block re-clones on every run, so
+        // its `state` still restarts per execution (`if 1 { state $n; ++$n }`).
+        let state_reset = self.emit_branch_state_reset(stmts, is_statement_modifier);
+        self.compile_resolved_branch_body(stmts);
+        self.patch_nested_block_state_reset(state_reset);
+    }
+
+    fn compile_resolved_branch_body(&mut self, stmts: &[Stmt]) {
         if stmts.len() == 1 && matches!(stmts[0], Stmt::If { .. }) {
             self.compile_stmt(&stmts[0]);
         } else if Self::body_mutates_topic(stmts) {

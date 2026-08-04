@@ -55,9 +55,10 @@ pub(super) use io_stmts::{note_stmt, print_stmt, put_stmt, say_stmt};
 
 // `pub(in crate::parser)` re-exports.
 pub(in crate::parser) use compile_consts::{
-    anon_state_is_per_call, is_test_assertion_callable, lookup_compile_time_constant,
-    mark_current_scope_routine_body, pop_scope, push_scope, register_compile_time_constant,
-    suppress_worries, worries_suppressed,
+    current_scope_anon_state_count, current_scope_anon_state_names_from, finish_block_anon_states,
+    is_test_assertion_callable, lookup_compile_time_constant, mark_current_scope_routine_body,
+    pop_scope, prepend_anon_state_decls, push_scope, record_anon_state_name,
+    register_compile_time_constant, suppress_worries, worries_suppressed,
 };
 pub(in crate::parser) use control_stmts::is_known_call;
 pub(in crate::parser) use lib_paths::try_add_parse_time_lib_path;
@@ -126,6 +127,13 @@ struct LexicalScope {
     /// `mark_current_scope_routine_body`. Drives the mint-time classification
     /// of anonymous state variables — see `anon_state_is_per_call`.
     is_routine_body: bool,
+    /// Names of the anonymous state variables (`$++` / `++$`) minted DIRECTLY in
+    /// this scope. When the block finishes parsing, each becomes an implicit
+    /// `state` declaration at the top of its statement list — Raku's bare `$` is
+    /// a `state` variable of its enclosing block, so this gives it the real
+    /// `state` machinery's per-clone identity. NOT inherited by nested scopes
+    /// (reset in `push_scope`). See `record_anon_state_name`.
+    anon_states: Vec<String>,
 }
 
 #[derive(Clone)]

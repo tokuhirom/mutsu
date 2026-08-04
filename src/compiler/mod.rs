@@ -1490,6 +1490,7 @@ impl Compiler {
                     then_branch: vec![Stmt::Die(msg)],
                     else_branch: Vec::new(),
                     binding_var: None,
+                    is_statement_modifier: false,
                 });
             }
         }
@@ -1889,8 +1890,15 @@ impl Compiler {
                             then_branch,
                             else_branch,
                             binding_var,
+                            is_statement_modifier,
                         } => {
-                            self.compile_if_value(cond, then_branch, else_branch, binding_var);
+                            self.compile_if_value(
+                                cond,
+                                then_branch,
+                                else_branch,
+                                binding_var,
+                                *is_statement_modifier,
+                            );
                             self.code.emit(OpCode::SetTopic);
                             continue;
                         }

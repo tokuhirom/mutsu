@@ -14,8 +14,9 @@ Blockers 1 (`news/2026-08/for-modifier-placeholder-scope.md`), 3
 (`news/2026-08/named-params-do-not-narrow.md`) and 6
 (`news/2026-08/multi-named-narrowness-declaration-order.md`,
 `news/2026-08/samewith-inside-lazy-gather.md`,
-`news/2026-08/digest-sha3-runs.md`) are fixed. What remains is blocker 2's
-anonymous-`$`-state residue and the non-blocking wide-buffer bit accessors (5).
+`news/2026-08/digest-sha3-runs.md`) are fixed, and so is blocker 2
+(`news/2026-08/state-vars-belong-to-the-block-clone.md`). What remains is the
+non-blocking wide-buffer bit accessors (5).
 
 Reproduce with the vendored-in-zef-store copy:
 
@@ -31,7 +32,7 @@ addressing, `Xxx` per-element thunking, `polymod` precision, and `.roll` on a
 `Str` range — all fixed in `news/2026-08/digest-md5-four-fixes.md`. `t/md5.t`
 passes in full.
 
-## 2. `rmd160` is correct once per process — MOSTLY FIXED
+## 2. `rmd160` is correct once per process — FIXED
 
 The original symptom — a `WhateverCode` reaching an `@`-sigil parameter — was a
 chain of six general bugs, all reduced and fixed:
@@ -48,25 +49,23 @@ chain of six general bugs, all reduced and fixed:
   slipping the buffer instead of its elements (so the digest render numified the
   whole Blob to 0 and emitted four zero bytes).
 
-The anonymous-state half is FIXED
-(`news/2026-08/anon-state-per-routine-call.md`): the output stage's
-`map { $_[[^5].rotate(++$)] }` counter now resets per `rmd160` call, so
-repeated calls with the same single-block input agree
-(`rmd160("abc")` twice → `8eb208f7…` twice).
+The anonymous-state half took two rounds. `news/2026-08/anon-state-per-routine-call.md`
+reset the output stage's `map { $_[[^5].rotate(++$)] }` counter per `rmd160`
+call, which made repeated single-block calls agree; but the counter must reset
+per *clone* of the `reduce` callback — i.e. per compression block, not per call
+— so a multi-block message (>55 bytes) still digested as the correct five words
+rotated by (blocks - 1) positions. `news/2026-08/state-vars-belong-to-the-block-clone.md`
+replaced the whole parallel mechanism: a bare `$` is now an implicit `state`
+declaration of its block, so it inherits the real per-clone machinery. The
+dist's `t/ripemd.t` passes in full (8/8 RFC vectors) on a release build.
 
 The `@words` shared-var lane freeze the rotate bug was masking is FIXED too
 (`news/2026-08/shared-var-lane-param-rebind.md`): the compression loop's
 `start` blocks now see each reduce iteration's own `@words`, so the RFC-vector
 words come out right and repeated calls agree.
 
-What remains is the anonymous-state residue #5892's per-routine-call reset
-does not reach (`todo/tickets/anon-state-not-reset-per-block-clone.md`): the
-output stage's `map { $_[[^5].rotate(++$)] }` counter must reset per *clone*
-of the reduce callback, i.e. per compression block, not per `rmd160` call. A
-multi-block message (>55 bytes) therefore digests as the correct five words
-rotated by (blocks - 1) positions — `t/ripemd.t` vectors 1-5 pass, 6-7 fail
-with rotated output, and 8 (`'a' x 1_000_000`) needs a release binary to beat
-the timeout.
+The dist's `t/ripemd.t` needs a release binary to beat the debug build's
+timeout.
 
 ## 3. `sha512` / `sha384` return a wrong digest — FIXED
 

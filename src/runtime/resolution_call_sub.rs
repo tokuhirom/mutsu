@@ -669,7 +669,17 @@ impl Interpreter {
             // Hand the set down to the carrier chunk (see
             // `CompiledCode::inherited_owned_lexicals`).
             self.pending_whenever_inherited_owned = data.authoritative_captures.clone();
+            // Run the body under this code object's own `state` scope, exactly as
+            // the compiled closure dispatch does. Without it the carrier path
+            // (`classify`/`categorize` and every other builtin that calls its
+            // callback through here) left the scope at the CALLER's, so a `state`
+            // — including the implicit one behind a bare `$` — was shared by
+            // every clone of the block instead of restarting with each. Handed
+            // across `run_nested`'s register reset via `pending_nested_state_scope`,
+            // which is what actually installs it (see `with_nested_registers`).
+            self.pending_nested_state_scope = Some(self.sub_state_scope_id(&data));
             let body_result = self.eval_block_value(&data.body);
+            self.pending_nested_state_scope = None;
             self.pending_supply_block_body = false;
             self.pending_supply_emitter_sym = None;
             self.pending_supply_authoritative_free_vars = Vec::new();

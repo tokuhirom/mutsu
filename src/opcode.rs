@@ -878,6 +878,22 @@ pub(crate) enum OpCode {
     SucceedBarrier {
         body_end: u32,
     },
+    /// Drop the `state` variables initialized in `ip+1 .. body_end` from the
+    /// state store, so their declarations re-run their initializers.
+    ///
+    /// Raku clones a block every time its ENCLOSING block runs, and a `state`
+    /// cell belongs to the clone — so a `state` inside an `if` branch or a bare
+    /// nested block restarts on each execution of that construct
+    /// (`sub f { if 1 { state $n; say ++$n } }` says `1` on every call). A real
+    /// closure gets this from its per-clone `state_scope_id`, and a loop body
+    /// from `reset_state_locals_in_range` at loop-statement entry (iterations of
+    /// ONE execution share the clone); an inline-compiled `if` branch or bare
+    /// block has neither, hence this op at its entry. Emitted only when the body
+    /// declares a `state` at its own level — a nested loop/if/block inside it
+    /// resets through its own entry.
+    ResetStateLocals {
+        body_end: u32,
+    },
     /// Check the top-of-stack value; if falsy, throw X::Phaser::PrePost.
     /// `is_pre` distinguishes PRE (true) from POST (false). `condition_idx` is
     /// the constant index of the condition's source text (e.g. `0`), used for
@@ -4749,6 +4765,14 @@ impl CompiledCode {
         match &mut self.ops[idx] {
             OpCode::SucceedBarrier { body_end } => *body_end = target,
             _ => panic!("patch_succeed_barrier_body_end on non-SucceedBarrier opcode"),
+        }
+    }
+
+    pub(crate) fn patch_reset_state_locals_end(&mut self, idx: usize) {
+        let target = self.ops.len() as u32;
+        match &mut self.ops[idx] {
+            OpCode::ResetStateLocals { body_end } => *body_end = target,
+            _ => panic!("patch_reset_state_locals_end on non-ResetStateLocals opcode"),
         }
     }
 

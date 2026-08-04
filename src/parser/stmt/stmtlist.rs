@@ -14,7 +14,8 @@ pub(crate) fn block(input: &str) -> PResult<'_, Vec<Stmt>> {
     let (input, _) =
         parse_char(input, '{').map_err(|_| PError::expected_at(MISSING_BLOCK, input))?;
     simple::push_scope();
-    let result = block_inner(input);
+    let mut result = block_inner(input);
+    simple::finish_block_anon_states(&mut result);
     simple::pop_scope();
     result
 }
@@ -28,7 +29,8 @@ pub(crate) fn routine_block(input: &str) -> PResult<'_, Vec<Stmt>> {
         parse_char(input, '{').map_err(|_| PError::expected_at(MISSING_BLOCK, input))?;
     simple::push_scope();
     simple::mark_current_scope_routine_body();
-    let result = block_inner(input);
+    let mut result = block_inner(input);
+    simple::finish_block_anon_states(&mut result);
     simple::pop_scope();
     result
 }

@@ -574,6 +574,15 @@ impl Interpreter {
         // the stale entry value) and the mutation is visible to every alias. This
         // removes the attributive-param case from the exit-time reconcile.
         self.mirror_attributive_params_to_cell(cc, method_def);
+        // A method body's `state` is keyed by the method itself — its
+        // `state_locals` keys already carry the owning package and method name —
+        // NOT by whatever closure the CALLER happened to be running in. Clearing
+        // the ambient scope makes the body's `StateVarInit` (which resolves
+        // through `scoped_state_key`) agree with the raw-key load/sync below;
+        // without it, a class declared inside any block had every method call
+        // init under `key#c<caller>` and sync under `key`, so `method m { state
+        // $n; $n++ }` restarted on every call. Restored after the sync.
+        let saved_state_scope = self.state_scope_id.take();
         // Load persisted state variable values
         for (slot, key) in &cc.state_locals {
             if let Some(val) = self.get_state_var(key) {
@@ -705,6 +714,7 @@ impl Interpreter {
                 .unwrap_or_else(|| self.locals[*slot].clone());
             loan_env!(self, set_state_var(key.clone(), val));
         }
+        self.state_scope_id = saved_state_scope;
 
         // `Some` only when a `:=`-bound attribute was recovered beyond the raw
         // cell contents (`reconcile_attrs`); the common exit stays `None` = the
@@ -1379,6 +1389,9 @@ impl Interpreter {
             }
         }
 
+        // See the sibling path: a method body's `state` is keyed by the method,
+        // not by the caller's closure scope. Restored after the sync.
+        let saved_state_scope = self.state_scope_id.take();
         // Load persisted state variable values
         for (slot, key) in &cc.state_locals {
             if let Some(val) = self.get_state_var(key) {
@@ -1523,6 +1536,7 @@ impl Interpreter {
             let val = self.locals[*slot].clone();
             loan_env!(self, set_state_var(key.clone(), val));
         }
+        self.state_scope_id = saved_state_scope;
 
         if !can_skip_merge {
             // Non-can_skip_merge: AssignExpr may have written attribute values to
