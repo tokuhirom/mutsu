@@ -585,6 +585,14 @@ fn is_implicit_topic_call(bytes: &[u8], at: usize) -> bool {
     }
 }
 
+/// Whether a `$^a`/`@^a`/`%^a` placeholder at the *immediate* level of this
+/// body forces it to be a block rather than a hash composer.
+///
+/// A placeholder belongs to the innermost block that encloses it, so one inside
+/// a nested block is that block's parameter and says nothing about this one:
+/// rakudo makes `{ status => sub { 0 != $^a } }` a `Hash` and `{ a => $^x }` a
+/// `Block`. The scan is therefore gated on `depth == 1`, exactly like the
+/// sibling `body_references_topic` above.
 fn body_has_placeholder_vars(input: &str) -> bool {
     let mut depth = 1u32;
     let mut chars = input.chars().peekable();
@@ -597,7 +605,7 @@ fn body_has_placeholder_vars(input: &str) -> bool {
                     break;
                 }
             }
-            '$' | '@' | '%' => {
+            '$' | '@' | '%' if depth == 1 => {
                 if let Some(&'^') = chars.peek() {
                     chars.next(); // consume '^'
                     if let Some(&next) = chars.peek()

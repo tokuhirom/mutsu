@@ -3727,6 +3727,7 @@ impl Interpreter {
                 explicit_catch,
                 resume_safe,
                 is_bare_block,
+                traps,
             } => {
                 self.sync_source_line(code, *ip);
                 self.exec_try_catch_op(
@@ -3737,6 +3738,7 @@ impl Interpreter {
                     *explicit_catch,
                     *resume_safe,
                     *is_bare_block,
+                    *traps,
                     ip,
                     compiled_fns,
                 )?;

@@ -12,6 +12,7 @@ impl Interpreter {
         explicit_catch: bool,
         resume_safe: bool,
         is_bare_block: bool,
+        traps: bool,
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
@@ -43,6 +44,7 @@ impl Interpreter {
             body_end,
             explicit_catch,
             resume_safe,
+            traps,
             ip,
             compiled_fns,
         );
@@ -68,6 +70,7 @@ impl Interpreter {
         body_end: u32,
         explicit_catch: bool,
         resume_safe: bool,
+        traps: bool,
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
@@ -231,6 +234,13 @@ impl Interpreter {
                 let saved_topic = self.env().get("_").cloned();
                 let saved_when = self.when_matched();
                 let mut pending_err = e;
+                // A CONTROL block always *runs*, but it only **handles** the
+                // signal when a `when`/`default` inside it matched — the same
+                // rule the CATCH arm applies via `when_matched()`. A block that
+                // matched nothing leaves the signal live, so
+                // `next; CONTROL { }` still reports "next without loop
+                // construct" the way rakudo does.
+                let mut handled = true;
                 loop {
                     if let Some(signal_topic) = Self::control_signal_topic_value(&pending_err) {
                         self.env_mut().insert("_".to_string(), signal_topic);
@@ -238,7 +248,10 @@ impl Interpreter {
                     loan_env!(self, set_when_matched(false));
                     let control_result = self.run_range(code, control_begin, end, compiled_fns);
                     let next_resume = match control_result {
-                        Ok(()) => None,
+                        Ok(()) => {
+                            handled = self.when_matched();
+                            None
+                        }
                         Err(ref ce) if ce.is_succeed() => None,
                         // Re-throwing a CX::Warn from CONTROL acts like the
                         // default warn handler: print to stderr and resume.
@@ -339,6 +352,28 @@ impl Interpreter {
                 } else {
                     self.env_mut().remove("_");
                 }
+                if !handled {
+                    // The CONTROL block declined: the signal continues exactly
+                    // as if this block had no CONTROL at all. An *illegal*
+                    // loop-control signal has nothing further up to consume it,
+                    // so it goes to this region's CATCH handler, which is where
+                    // Raku's catchable `X::ControlFlow` comes from.
+                    if pending_err.is_illegal_control() {
+                        return self.dispatch_to_catch_handler(
+                            code,
+                            pending_err,
+                            catch_begin,
+                            control_begin,
+                            end,
+                            explicit_catch,
+                            traps,
+                            saved_depth,
+                            ip,
+                            compiled_fns,
+                        );
+                    }
+                    return Err(pending_err);
+                }
                 *ip = end;
                 Ok(())
             }
@@ -349,103 +384,139 @@ impl Interpreter {
                 // recorded each restored name precisely (`restore_let_value`); drain
                 // it so this frame's slots refresh.
                 self.apply_pending_rw_writeback(code);
-                if catch_begin >= control_begin {
-                    return Err(e);
-                }
-                self.stack.truncate(saved_depth);
-                // Build a Backtrace object from the string for legacy errors
-                // that only have a string backtrace.
-                let err_val = e.exception_value_with_backtrace(
-                    e.backtrace().map(Self::backtrace_value_from_string),
-                );
-                let saved_topic = self.env().get("_").cloned();
-                // Per Raku semantics `$!` is only *updated* to the exception when it
-                // propagates out of the `try` unhandled (swallowed by the implicit
-                // trap). A CATCH that handles the exception (a matching
-                // `when`/`default`, or `.resume`) leaves `$!` at whatever it held
-                // before the `try`. Remember that prior value so the handled paths
-                // below can restore it.
-                let prior_bang = self.env().get("!").cloned();
-                // The CATCH block gets its own `$!`, which starts out `Nil`: inside
-                // the handler the exception is the *topic* (`$_`), and the enclosing
-                // scope's `$!` has not been written yet. It is only updated below,
-                // once the handler is done and the exception turns out to be
-                // unhandled (an implicit `try` trap swallows it into `$!`).
-                self.env_mut().insert("!".to_string(), Value::NIL);
-                self.env_mut().insert("_".to_string(), err_val.clone());
-                let saved_when = self.when_matched();
-                loan_env!(self, set_when_matched(false));
-                let catch_stack_base = self.stack.len();
-                let when_handled =
-                    match self.run_range(code, catch_begin, control_begin, compiled_fns) {
-                        Ok(()) => self.when_matched(),
-                        // succeed from `when` inside CATCH means exception was handled
-                        Err(catch_err) if catch_err.is_succeed() => {
-                            // Truncate values left by default body, then push Nil
-                            // (Raku: try { die; CATCH { default { "caught" } } } returns Nil)
-                            self.stack.truncate(catch_stack_base);
-                            self.stack.push(Value::NIL);
-                            true
-                        }
-                        // .resume called inside CATCH: resume execution after the die
-                        Err(catch_err) if catch_err.is_resume() => {
-                            self.stack.truncate(catch_stack_base);
-                            loan_env!(self, set_when_matched(saved_when));
-                            if let Some(v) = saved_topic {
-                                self.env_mut().insert("_".to_string(), v);
-                            } else {
-                                self.env_mut().remove("_");
-                            }
-                            // A resumed exception is handled: restore `$!` to its
-                            // pre-`try` value so the resumed body and the code after
-                            // the `try` see the prior `$!`, not the handled exception.
-                            self.env_mut()
-                                .insert("!".to_string(), prior_bang.unwrap_or(Value::NIL));
-                            // Resume from the instruction after die
-                            if let Some(resume_point) = self.take_resume_ip_for(code) {
-                                // Run from the resume point to the end of the try body
-                                match self.run_range(code, resume_point, catch_begin, compiled_fns)
-                                {
-                                    Ok(()) => {}
-                                    Err(resume_err) => return Err(resume_err),
-                                }
-                            }
-                            *ip = end;
-                            return Ok(());
-                        }
-                        Err(catch_err) => return Err(catch_err),
-                    };
-                // Propagate when_handled upward so an enclosing CATCH region
-                // can detect that this nested CATCH (e.g., a CATCH inside a
-                // CATCH) handled the exception.
-                self.set_when_matched(saved_when || when_handled);
+                self.dispatch_to_catch_handler(
+                    code,
+                    e,
+                    catch_begin,
+                    control_begin,
+                    end,
+                    explicit_catch,
+                    traps,
+                    saved_depth,
+                    ip,
+                    compiled_fns,
+                )
+            }
+        }
+    }
+
+    /// Route an exception to this region's `CATCH` handler (the bytecode range
+    /// `catch_begin..control_begin`) and decide what happens to it afterwards:
+    /// handled by a matching `when`/`default`, re-thrown, or swallowed into `$!`.
+    ///
+    /// Reached both from the ordinary exception path and from a `CONTROL` block
+    /// that *declined* an illegal control signal (`next` with no enclosing loop),
+    /// which Raku turns into a catchable `X::ControlFlow` here.
+    #[allow(clippy::too_many_arguments)]
+    fn dispatch_to_catch_handler(
+        &mut self,
+        code: &CompiledCode,
+        e: RuntimeError,
+        catch_begin: usize,
+        control_begin: usize,
+        end: usize,
+        explicit_catch: bool,
+        traps: bool,
+        saved_depth: usize,
+        ip: &mut usize,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        if catch_begin >= control_begin {
+            return Err(e);
+        }
+        self.stack.truncate(saved_depth);
+        // Build a Backtrace object from the string for legacy errors
+        // that only have a string backtrace.
+        let err_val =
+            e.exception_value_with_backtrace(e.backtrace().map(Self::backtrace_value_from_string));
+        let saved_topic = self.env().get("_").cloned();
+        // Per Raku semantics `$!` is only *updated* to the exception when it
+        // propagates out of the `try` unhandled (swallowed by the implicit
+        // trap). A CATCH that handles the exception (a matching
+        // `when`/`default`, or `.resume`) leaves `$!` at whatever it held
+        // before the `try`. Remember that prior value so the handled paths
+        // below can restore it.
+        let prior_bang = self.env().get("!").cloned();
+        // The CATCH block gets its own `$!`, which starts out `Nil`: inside
+        // the handler the exception is the *topic* (`$_`), and the enclosing
+        // scope's `$!` has not been written yet. It is only updated below,
+        // once the handler is done and the exception turns out to be
+        // unhandled (an implicit `try` trap swallows it into `$!`).
+        self.env_mut().insert("!".to_string(), Value::NIL);
+        self.env_mut().insert("_".to_string(), err_val.clone());
+        let saved_when = self.when_matched();
+        loan_env!(self, set_when_matched(false));
+        let catch_stack_base = self.stack.len();
+        let when_handled = match self.run_range(code, catch_begin, control_begin, compiled_fns) {
+            Ok(()) => self.when_matched(),
+            // succeed from `when` inside CATCH means exception was handled
+            Err(catch_err) if catch_err.is_succeed() => {
+                // Truncate values left by default body, then push Nil
+                // (Raku: try { die; CATCH { default { "caught" } } } returns Nil)
+                self.stack.truncate(catch_stack_base);
+                self.stack.push(Value::NIL);
+                true
+            }
+            // .resume called inside CATCH: resume execution after the die
+            Err(catch_err) if catch_err.is_resume() => {
+                self.stack.truncate(catch_stack_base);
+                loan_env!(self, set_when_matched(saved_when));
                 if let Some(v) = saved_topic {
                     self.env_mut().insert("_".to_string(), v);
                 } else {
                     self.env_mut().remove("_");
                 }
-                // A handled exception (a matching `when`/`default`) leaves `$!` at
-                // its pre-`try` value. When nothing matched, `$!` keeps the
-                // exception: an explicit CATCH re-throws (below), and an implicit
-                // `try` trap swallows it with the exception left in `$!`.
-                if when_handled {
-                    self.env_mut()
-                        .insert("!".to_string(), prior_bang.unwrap_or(Value::NIL));
-                } else {
-                    // Nothing matched: the exception is still live, so publish it in
-                    // the enclosing `$!` now that the handler (which saw `Nil`) is
-                    // done. An explicit CATCH re-throws just below; an implicit
-                    // `try` trap swallows it with the exception left in `$!`.
-                    self.env_mut().insert("!".to_string(), err_val);
-                }
-                // If there's an explicit CATCH block but no `when`/`default`
-                // matched, re-throw the exception (Raku semantics).
-                if explicit_catch && !when_handled {
-                    return Err(e);
+                // A resumed exception is handled: restore `$!` to its
+                // pre-`try` value so the resumed body and the code after
+                // the `try` see the prior `$!`, not the handled exception.
+                self.env_mut()
+                    .insert("!".to_string(), prior_bang.unwrap_or(Value::NIL));
+                // Resume from the instruction after die
+                if let Some(resume_point) = self.take_resume_ip_for(code) {
+                    // Run from the resume point to the end of the try body
+                    match self.run_range(code, resume_point, catch_begin, compiled_fns) {
+                        Ok(()) => {}
+                        Err(resume_err) => return Err(resume_err),
+                    }
                 }
                 *ip = end;
-                Ok(())
+                return Ok(());
             }
+            Err(catch_err) => return Err(catch_err),
+        };
+        // Propagate when_handled upward so an enclosing CATCH region
+        // can detect that this nested CATCH (e.g., a CATCH inside a
+        // CATCH) handled the exception.
+        self.set_when_matched(saved_when || when_handled);
+        if let Some(v) = saved_topic {
+            self.env_mut().insert("_".to_string(), v);
+        } else {
+            self.env_mut().remove("_");
         }
+        // A handled exception (a matching `when`/`default`) leaves `$!` at
+        // its pre-`try` value. When nothing matched, `$!` keeps the
+        // exception: an explicit CATCH re-throws (below), and an implicit
+        // `try` trap swallows it with the exception left in `$!`.
+        if when_handled {
+            self.env_mut()
+                .insert("!".to_string(), prior_bang.unwrap_or(Value::NIL));
+        } else {
+            // Nothing matched: the exception is still live, so publish it in
+            // the enclosing `$!` now that the handler (which saw `Nil`) is
+            // done. An explicit CATCH re-throws just below; an implicit
+            // `try` trap swallows it with the exception left in `$!`.
+            self.env_mut().insert("!".to_string(), err_val);
+        }
+        // Nothing matched, so the exception is still live. Only a
+        // genuine `try` without a CATCH swallows it into `$!`: an
+        // explicit CATCH re-throws what it did not handle, and an
+        // implicit wrapper around a block that merely *contains* a
+        // CATCH/CONTROL phaser is not a trap at all, so
+        // `{ die "x"; CONTROL { } }` must propagate.
+        if !when_handled && (explicit_catch || !traps) {
+            return Err(e);
+        }
+        *ip = end;
+        Ok(())
     }
 }
