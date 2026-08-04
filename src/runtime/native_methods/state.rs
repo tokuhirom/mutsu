@@ -127,6 +127,17 @@ pub(crate) fn take_supply_channel(supply_id: u64) -> Option<super::supply_channe
     }
 }
 
+/// Peek whether a receiver is still available for this supply id, without
+/// consuming it. A `whenever` on such a source is driven by a channel reader
+/// thread and stays live until the channel signals `Done`, so the enclosing
+/// supply block must count it as a source that keeps the supply open.
+pub(crate) fn has_supply_channel(supply_id: u64) -> bool {
+    supply_channel_map()
+        .lock()
+        .map(|map| map.contains_key(&supply_id))
+        .unwrap_or(false)
+}
+
 /// Public access to the supply channel map for signal registration
 pub(in crate::runtime) fn supply_channel_map_pub() -> &'static SupplyChannelMap {
     supply_channel_map()

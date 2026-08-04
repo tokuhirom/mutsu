@@ -20,7 +20,9 @@ mod system;
 // `crate::runtime::native_methods::X` paths continue to work.
 
 // Re-export pub(crate) items accessed from outside `runtime` module
-pub(crate) use state::{SupplyEvent, split_supply_chunks_into_lines, take_supply_channel};
+pub(crate) use state::{
+    SupplyEvent, has_supply_channel, split_supply_chunks_into_lines, take_supply_channel,
+};
 pub(crate) use state_lock::{acquire_lock, current_thread_id, lock_runtime_by_id, release_lock};
 
 // Re-export items accessed from sibling `runtime` modules. A handful are also
