@@ -432,14 +432,20 @@ impl Interpreter {
     ) {
         use std::io::Write;
         loop {
-            let (value, end_cb) = match rx.recv() {
-                Ok(SupplyEvent::Emit(value)) => (value, None),
+            // `is_done_marker` selects `invoke_done_callback` over a plain call:
+            // the tap's `done =>` slot may hold a done-group marker or a
+            // `__SupplyDoneChain` (a `whenever`'s LAST phasers bundled with the
+            // enclosing supply's group marker), which only that dispatcher
+            // understands. It falls through to a plain call for an ordinary
+            // callable, so the other callers are unaffected.
+            let (value, end_cb, is_done_marker) = match rx.recv() {
+                Ok(SupplyEvent::Emit(value)) => (value, None, false),
                 Ok(SupplyEvent::Done) => match done_cb {
-                    Some(ref cb) => (Value::NIL, Some((cb.clone(), Vec::new()))),
+                    Some(ref cb) => (Value::NIL, Some((cb.clone(), Vec::new())), true),
                     None => break,
                 },
                 Ok(SupplyEvent::Quit(reason)) => match quit_cb {
-                    Some(ref cb) => (Value::NIL, Some((cb.clone(), vec![reason]))),
+                    Some(ref cb) => (Value::NIL, Some((cb.clone(), vec![reason])), false),
                     None => break,
                 },
                 Err(_) => break,
@@ -447,8 +453,11 @@ impl Interpreter {
             let is_end = end_cb.is_some();
             Self::sleep_for_supply_delay(delay_seconds);
             let result = match end_cb {
-                Some((end, args)) => interp.call_sub_value(end, args, true),
-                None => interp.call_sub_value(cb.clone(), vec![value], true),
+                Some((end, _)) if is_done_marker => interp.invoke_done_callback(end),
+                Some((end, args)) => interp.call_sub_value(end, args, true).map(|_| ()),
+                None => interp
+                    .call_sub_value(cb.clone(), vec![value], true)
+                    .map(|_| ()),
             };
             // Flush stdout (check both the per-interpreter buffer and the
             // shared thread output buffer used by thread clones).

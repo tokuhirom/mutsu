@@ -319,12 +319,19 @@ impl Interpreter {
 
                     // Pre-count whenever subscriptions that participate in the
                     // done group: supplier-backed sources (marker registered on
-                    // the supplier's done) and chained on-demand sources (marker
-                    // passed as the inner tap's done). Without counting the
-                    // latter, a supply whose only whenever wraps another
-                    // on-demand supply looked finite and fired a spurious
-                    // `done` at tap time (Cro::Connector.establish tore down
-                    // its pipeline before any message flowed).
+                    // the supplier's done), chained on-demand sources (marker
+                    // passed as the inner tap's done), and channel-backed live
+                    // sources (marker fired by the channel reader thread when the
+                    // channel signals Done). Without counting the second, a supply
+                    // whose only whenever wraps another on-demand supply looked
+                    // finite and fired a spurious `done` at tap time
+                    // (Cro::Connector.establish tore down its pipeline before any
+                    // message flowed). Without counting the third, every supply
+                    // block sitting on a socket's incoming byte supply did the
+                    // same — which fired the LAST phasers of a whole Cro response
+                    // pipeline at tap time (Cro::HTTP::Middleware::Conditional's
+                    // `LAST $connection-state.early-responses.done` closed the
+                    // early-response Supplier before the first request arrived).
                     let whenever_supplier_count = emitted
                         .iter()
                         .filter(|item| {
@@ -338,7 +345,17 @@ impl Interpreter {
                                 && class_name == "Supply"
                                 && (attributes.contains_key("supplier_id")
                                     || (attributes.contains_key("on_demand_callback")
-                                        && !attributes.contains_key("supply_id")))
+                                        && !attributes.contains_key("supply_id"))
+                                    || attributes
+                                        .as_map()
+                                        .get("supply_id")
+                                        .and_then(|v| match v.view() {
+                                            ValueView::Int(i) => Some(i as u64),
+                                            _ => None,
+                                        })
+                                        .is_some_and(
+                                            crate::runtime::native_methods::has_supply_channel,
+                                        ))
                             {
                                 true
                             } else {
@@ -549,6 +566,23 @@ impl Interpreter {
                                 if let Some(lid) = inner_attrs.as_map().get("listener-id") {
                                     tap_handle_attrs.insert("listener-id".to_string(), lid.clone());
                                 }
+                                // This source keeps the enclosing supply open
+                                // until the channel signals Done (it is counted in
+                                // `whenever_supplier_count`), so hand the reader
+                                // thread this whenever's LAST phasers plus the
+                                // done-group marker: when the channel closes they
+                                // fire, exactly as the supplier-backed and chained
+                                // on-demand sources do.
+                                let mut done_chain: Vec<Value> =
+                                    Self::value_array_items(&arr[2]).unwrap_or_default();
+                                if let Some(ref marker) = done_group_marker {
+                                    done_chain.push(marker.clone());
+                                }
+                                let chain_done_cb = match done_chain.len() {
+                                    0 => None,
+                                    1 => done_chain.pop(),
+                                    _ => Some(Self::make_supply_done_chain(done_chain)),
+                                };
                                 let mut driver = self.clone_for_thread();
                                 let body_cb = body_cb.clone();
                                 crate::runtime::builtins_system::spawn_user_thread(move || {
@@ -557,7 +591,7 @@ impl Interpreter {
                                         &rx,
                                         &body_cb,
                                         0.0,
-                                        None,
+                                        chain_done_cb,
                                         None,
                                     );
                                 });
