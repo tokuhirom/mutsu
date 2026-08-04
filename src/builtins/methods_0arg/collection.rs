@@ -99,9 +99,7 @@ fn positional_antipairs(values: &[Value]) -> Vec<Value> {
 }
 
 fn make_inverted_pair(key: Value, value: Value) -> Value {
-    if let ValueView::Str(s) = key.view() {
-        return Value::pair((**s).clone(), value);
-    }
+    // Positional flavour regardless of key type — see `quanthash_typed_pair`.
     Value::value_pair(key, value)
 }
 
@@ -638,7 +636,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     } else {
                         items
                             .iter()
-                            .map(|(k, v)| Value::pair(k.clone(), v.deref_container()))
+                            .map(|(k, v)| {
+                                Value::value_pair(Value::str(k.clone()), v.deref_container())
+                            })
                             .collect()
                     };
                     Some(Ok(Value::seq(pairs)))
@@ -741,12 +741,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         .map(|(k, v)| {
                             let orig_key = crate::runtime::utils::hash_typed_key(target, k);
                             // Decontainerize element cells (see t/bind-hash-value-pairs.t).
-                            let dv = v.deref_container();
-                            if let ValueView::Str(s) = dv.view() {
-                                Value::pair(s.to_string(), orig_key)
-                            } else {
-                                Value::value_pair(dv, orig_key)
-                            }
+                            Value::value_pair(v.deref_container(), orig_key)
                         })
                         .collect();
                     Some(Ok(Value::seq(pairs)))
