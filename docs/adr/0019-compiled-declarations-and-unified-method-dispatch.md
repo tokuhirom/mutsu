@@ -110,8 +110,8 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 17/51 slices merged. Next slice: C6d (C6a, C6b and C6c landed; C6 is
-subdivided below). C6d needs a design pass before coding — see its note.**
+**Current progress: 17/51 slices merged. Next slice: C6d-1 (C6a, C6b and C6c landed; C6 and C6d
+are both subdivided below, C6d from a measurement of where its sites are actually reached).**
 
 The migration is complete only when every required box below is checked and the completion gates
 at the end pass. The order within a phase is intentional. A later phase may start when its stated
@@ -180,13 +180,28 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
     `news/2026-08/routine-code-objects-are-bytecode-backed.md`, which corrects the earlier
     scoping note.
   - [ ] **C6d — interpreter execution sites.** Route `eval_block_value(&def.body)` /
-    `run_block(&def.body)` through `def.compiled`. **Not a small slice:** these carriers are
-    reached precisely *because* an OTF gate rejected the routine, so eliminating them means
-    widening OTF coverage to every routine, not rewiring a call. Scope it as its own program.
-    Its sibling site is `call_sub_value`'s `eval_block_value(&data.body)`, which takes a *code
-    object's* body rather than a def's: after C6c that is the one path left that still executes a
-    routine code object's AST, reached when a `.wrap` chain routes dispatch through the
-    interpreter carrier. It needs the same widening, so it belongs here rather than in C6c.
+    `run_block(&def.body)` through `def.compiled`. Surveyed by instrumenting all six sites and
+    running the whole `t/` suite once (1148 hits — see
+    `todo/deep/c6d-interpreter-body-sites-are-mostly-token-bodies.md`), which corrects the
+    earlier "widen OTF coverage to every routine" framing: a routine whose body declares a class
+    never reaches these sites, and the sites do not tree-walk — `run_block` recompiles the body
+    per call, so what C6d removes is a repeated compile. The mismatch to solve is that
+    `compile_block_raw` compiles a *block* whose arguments the caller already bound, while
+    `def.compiled` binds its own from `param_local_slots`. Subdivide:
+    - [ ] **C6d-1 — the ordinary-routine tail** (`calls.rs:call_function_def`,
+      `calls.rs:exec_call`): 192 hits over ~37 names, dominated by `where`-constrained multi
+      candidates re-dispatching through `nextsame`. Decide the block-chunk-vs-routine-convention
+      shape here, where the argument-binding conflict lives.
+    - [ ] **C6d-2 — grammar token/rule bodies** (`dispatch.rs:eval_token_def`,
+      `regex_token_resolve.rs`): 956 of the 1148 hits, but those `FunctionDef`s carry a regex
+      body, so scope this against ADR-0009's execution model rather than the OTF gate.
+    - [ ] **C6d-3 — the two sites dead across the whole suite**
+      (`dispatch_proto_call.rs:call_proto_dispatch`, `types/roles.rs:run_role_submethod`); the
+      latter's `def` is a `MethodDef`, so move it to Phase D.
+    - [ ] **C6d-4 — `call_sub_value`'s `eval_block_value(&data.body)`**, which takes a *code
+      object's* body rather than a def's: after C6c that is the one path left that still
+      executes a routine code object's AST, reached when a `.wrap` chain routes dispatch through
+      the interpreter carrier.
   - [ ] **C6e — redeclaration comparison and the proto rewrite**, then drop the plan field.
 - [ ] **C7 — Remove the sub-registration AST adapter.** Delete dead sub-shaped walker branches and
   prove the routine registry never compiles a migrated declaration on demand.
