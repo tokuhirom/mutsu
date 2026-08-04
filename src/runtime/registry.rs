@@ -724,6 +724,36 @@ impl Registry {
     /// parametric suffix is stripped (`R[Int]` -> `R`). Push order is load-bearing
     /// — the caller consumes this LIFO via `.pop()` and relies on first-match-wins,
     /// so this method MUST NOT dedup or sort (dedup happens during the walk).
+    /// The roles a *built-in* role itself composes. `role_parents` only records
+    /// what user code declared, so without this a `class F does Real` knew
+    /// nothing of `Real does Numeric` and `F ~~ Numeric` answered False —
+    /// which sent every `is-approx(Numeric, Numeric, ...)` in `Test.rakumod`
+    /// past its own candidates and into the native provider's separate counter
+    /// (`roast/S32-num/real-bridge.t`).
+    pub(crate) fn builtin_role_parents(role_name: &str) -> &'static [&'static str] {
+        match role_name {
+            "Real" => &["Numeric"],
+            "Setty" | "Baggy" => &["QuantHash", "Associative"],
+            "Mixy" => &["Baggy"],
+            _ => &[],
+        }
+    }
+
+    /// Every role the named role composes, declared or built-in.
+    pub(crate) fn role_parents_of(&self, role_name: &str) -> Vec<String> {
+        let mut parents: Vec<String> = self
+            .role_parents
+            .get(role_name)
+            .cloned()
+            .unwrap_or_default();
+        for builtin in Self::builtin_role_parents(role_name) {
+            if !parents.iter().any(|p| p == builtin) {
+                parents.push((*builtin).to_string());
+            }
+        }
+        parents
+    }
+
     pub(crate) fn composed_roles_seed(&self, mro: &[Symbol]) -> Vec<String> {
         let mut seed = Vec::new();
         for cn in mro {
