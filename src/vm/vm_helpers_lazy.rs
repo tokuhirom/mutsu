@@ -188,7 +188,12 @@ impl Interpreter {
         // The body runs under its OWN readonly context, not the consumer
         // frame's (see take_readonly_state).
         let saved_readonly = self.take_readonly_state();
+        // A `samewith` in the body means the routine the gather was WRITTEN in,
+        // not whichever routine is forcing it now — re-push the context the
+        // gather captured at creation.
+        let pushed_samewith = self.push_captured_samewith_context(&list.env);
         let r = self.force_lazy_list_vm_inner(list);
+        self.pop_captured_samewith_context(pushed_samewith);
         self.restore_readonly_state(saved_readonly);
         self.reconcile_caller_after_lazy_force(caller_code);
         // An array-context lazy list IS the array's element store: a Nil the
@@ -439,7 +444,10 @@ impl Interpreter {
         // The body runs under its OWN readonly context, not the consumer
         // frame's (see take_readonly_state).
         let saved_readonly = self.take_readonly_state();
+        // See `force_lazy_list_vm`: the body's `samewith` is lexical.
+        let pushed_samewith = self.push_captured_samewith_context(&list.env);
         let r = self.force_lazy_list_vm_n_inner(list, needed);
+        self.pop_captured_samewith_context(pushed_samewith);
         self.restore_readonly_state(saved_readonly);
         self.reconcile_caller_after_lazy_force(caller_code);
         // See force_lazy_list_vm: array-context elements store Any, not Nil.

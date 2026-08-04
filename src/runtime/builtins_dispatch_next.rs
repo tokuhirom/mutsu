@@ -100,6 +100,9 @@ impl Interpreter {
     /// Re-dispatch to the same multi/method from the top with new arguments.
     pub(super) fn builtin_samewith(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         // Use the samewith context stack to find the enclosing multi sub/method.
+        // A lazy `gather` body re-pushes the context it captured at creation for
+        // the duration of its force (see `push_captured_samewith_context`), so
+        // this stack is correct there too.
         if let Some((name, invocant)) = self.samewith_context_stack.last().cloned() {
             if let Some(inv) = invocant {
                 // Method dispatch: re-call the method on the same invocant
@@ -112,6 +115,62 @@ impl Interpreter {
         Err(RuntimeError::new(
             "samewith called outside of a dispatch context",
         ))
+    }
+
+    /// Env key holding the routine name a lazy `gather` was created inside, so
+    /// `samewith` still resolves once the gather body is forced. By then the
+    /// declaring routine's dynamic `samewith_context_stack` frame is gone — and
+    /// worse, the frame on top belongs to whichever routine happened to force
+    /// the gather, so consulting the dynamic stack silently redispatched the
+    /// WRONG routine rather than failing.
+    ///
+    /// `samewith` is *lexical* in Rakudo — it re-dispatches `&?ROUTINE` — so
+    /// capturing it with the gather's env snapshot is the right shape, not a
+    /// workaround: the body keeps referring to the routine it was written in.
+    pub(crate) const SAMEWITH_LEXICAL_NAME_KEY: &str = "__mutsu_samewith_lexical_name";
+    /// Companion of [`Self::SAMEWITH_LEXICAL_NAME_KEY`] holding the invocant for
+    /// a method (absent for a plain sub).
+    pub(crate) const SAMEWITH_LEXICAL_INVOCANT_KEY: &str = "__mutsu_samewith_lexical_invocant";
+
+    /// Record the innermost dynamic samewith context into `env` so a closure
+    /// captured from it (today: a lazy `gather` body) can still redispatch.
+    pub(crate) fn capture_samewith_context_into(&self, env: &mut crate::env::Env) {
+        let Some((name, invocant)) = self.samewith_context_stack.last() else {
+            return;
+        };
+        env.insert(
+            Self::SAMEWITH_LEXICAL_NAME_KEY.to_string(),
+            Value::str(name.clone()),
+        );
+        if let Some(inv) = invocant {
+            env.insert(Self::SAMEWITH_LEXICAL_INVOCANT_KEY.to_string(), inv.clone());
+        }
+    }
+
+    /// Re-push the samewith context `env` captured (see
+    /// [`Self::capture_samewith_context_into`]) for the duration of a lazy
+    /// `gather` body's execution, so `samewith` written in that body resolves
+    /// to the routine the body was written in. Returns whether a frame was
+    /// pushed; the caller must then `pop_captured_samewith_context`.
+    ///
+    /// Pushing (rather than consulting the env at the `samewith` call) keeps
+    /// ordinary stack semantics: a routine *called from* the body pushes its
+    /// own frame on top and its `samewith` still means itself.
+    pub(crate) fn push_captured_samewith_context(&mut self, env: &crate::env::Env) -> bool {
+        let Some(name) = env.get(Self::SAMEWITH_LEXICAL_NAME_KEY) else {
+            return false;
+        };
+        let name = name.to_string_value();
+        let invocant = env.get(Self::SAMEWITH_LEXICAL_INVOCANT_KEY).cloned();
+        self.samewith_context_stack.push((name, invocant));
+        true
+    }
+
+    /// Undo a [`Self::push_captured_samewith_context`] that returned `true`.
+    pub(crate) fn pop_captured_samewith_context(&mut self, pushed: bool) {
+        if pushed {
+            self.samewith_context_stack.pop();
+        }
     }
 
     /// When a user method on a subclass of a builtin metamodel class

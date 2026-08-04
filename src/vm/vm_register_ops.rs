@@ -81,6 +81,12 @@ impl Interpreter {
             self.box_captured_lexicals(code, &analysis_cc);
             let mut env = self.env().clone();
             env.insert("__mutsu_lazylist_from_gather".to_string(), Value::TRUE);
+            // A `samewith` in the body redispatches the routine the gather was
+            // WRITTEN in, but the body runs after that routine has returned and
+            // its dynamic dispatch frame has been popped. Capture the context
+            // with the env snapshot so it survives (Digest::SHA3's `Keccak`
+            // ends in `gather for samewith $inputBytes, ...`).
+            self.capture_samewith_context_into(&mut env);
             // A forward aggregate free var with no baked parent slot is the
             // self-reference in a binding initializer (`my @a := gather {
             // ... @a ... }`). Tag it before the LazyList is built; GetArrayVar
