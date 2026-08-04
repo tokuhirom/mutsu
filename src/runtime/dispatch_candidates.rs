@@ -552,6 +552,23 @@ impl Interpreter {
 
     /// Return how many MRO levels separate `constraint` from the actual type
     /// of `value`.  0 means exact match; larger means less specific.
+    /// The short spelling of a sized Buf/Blob type name. `.^name` renders these
+    /// parameterized (`Buf[uint8]`); Raku source spells them `buf8`/`blob8`.
+    /// Anything else is returned unchanged.
+    fn canonical_buf_type_name(name: &str) -> &str {
+        match name {
+            "Buf[uint8]" => "buf8",
+            "Buf[uint16]" => "buf16",
+            "Buf[uint32]" => "buf32",
+            "Buf[uint64]" => "buf64",
+            "Blob[uint8]" => "blob8",
+            "Blob[uint16]" => "blob16",
+            "Blob[uint32]" => "blob32",
+            "Blob[uint64]" => "blob64",
+            other => other,
+        }
+    }
+
     fn type_hierarchy_distance(&self, constraint: &str, value: &Value) -> usize {
         let value_type = super::value_type_name(value);
         // Strip :D/:U smiley
@@ -627,25 +644,75 @@ impl Interpreter {
             }
         }
         // Buf/Blob family. `Buf` extends `Blob`; the `utfN` encodings and the
-        // sized `blobN`/`bufN` types do the `Blob`/`Buf` roles. The value's own
-        // type is distance 0 and was handled above, so these lists start at the
-        // first ancestor and the index is offset by one. Without them a
-        // `Blob:D` candidate scored the 500 "unknown type" distance for a
-        // `"x".encode` argument and lost the tie-break to whichever candidate
-        // happened to be declared first.
-        let buf_ancestors: &[&str] = match value_type {
+        // sized `blobN`/`bufN` types do the `Blob`/`Buf` roles, and a `bufN`
+        // also does its same-width `blobN` (`buf8 ~~ blob8` is True). The
+        // value's own type is distance 0, so these lists start at the first
+        // ancestor and the index is offset by one. Without them a `Blob:D`
+        // candidate scored the 500 "unknown type" distance for a `"x".encode`
+        // argument and lost the tie-break to whichever candidate happened to be
+        // declared first.
+        //
+        // Both spellings have to be recognized: `.^name` renders a sized buffer
+        // parameterized (`Buf[uint8]`) while the source spells it `buf8`, so
+        // matching only the short form made EVERY sized buffer fall through to
+        // the 500 fallback — `multi f(blob8 $s)` then lost to `multi f(@a)` for
+        // a `buf8` argument (Digest::SHA3's `KeccakF1600`, which never ran its
+        // permutation as a result).
+        // A sized buffer is an `Instance` whose class is `Buf[uint8]`, and
+        // `value_type_name` answers the generic "Any" for every instance — so
+        // the family table below never matched one. Use the instance's class
+        // name (the MRO/role checks above have already failed for it: `Buf` is
+        // not a registered user class).
+        let instance_class = match value.view() {
+            ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+            _ => None,
+        };
+        let vt = Self::canonical_buf_type_name(instance_class.as_deref().unwrap_or(value_type));
+        let cbase = Self::canonical_buf_type_name(base);
+        let buf_ancestors: &[&str] = match vt {
             "Buf" => &["Blob", "Positional", "Stringy", "Any", "Mu"],
-            "buf8" | "buf16" | "buf32" | "buf64" => {
-                &["Buf", "Blob", "Positional", "Stringy", "Any", "Mu"]
-            }
+            "Blob" => &["Positional", "Stringy", "Any", "Mu"],
+            "buf8" => &["Buf", "blob8", "Blob", "Positional", "Stringy", "Any", "Mu"],
+            "buf16" => &[
+                "Buf",
+                "blob16",
+                "Blob",
+                "Positional",
+                "Stringy",
+                "Any",
+                "Mu",
+            ],
+            "buf32" => &[
+                "Buf",
+                "blob32",
+                "Blob",
+                "Positional",
+                "Stringy",
+                "Any",
+                "Mu",
+            ],
+            "buf64" => &[
+                "Buf",
+                "blob64",
+                "Blob",
+                "Positional",
+                "Stringy",
+                "Any",
+                "Mu",
+            ],
             "utf8" | "utf16" | "utf32" | "blob8" | "blob16" | "blob32" | "blob64" => {
                 &["Blob", "Positional", "Stringy", "Any", "Mu"]
             }
             _ => &[],
         };
         if !buf_ancestors.is_empty() {
+            // `buf8` vs `Buf[uint8]` are the same type spelled two ways; the
+            // literal-equality check above only catches the matching spelling.
+            if cbase == vt {
+                return 0;
+            }
             for (i, &ancestor) in buf_ancestors.iter().enumerate() {
-                if ancestor == base {
+                if ancestor == cbase {
                     return i + 1;
                 }
             }

@@ -816,6 +816,23 @@ impl Interpreter {
                     return Err(RuntimeError::assignment_ro(Some("Blob")));
                 }
                 let attributes = attributes.clone();
+                // A finite Range subscript is a slice, exactly like a comma
+                // list: expand it to the index list the slice arm consumes.
+                // Without this `$buf[$i ..^ $i + 8] = @bytes` (Digest::SHA3's
+                // `store64` write-back) reached the scalar arm, failed
+                // `index_to_usize`, and reported "Index out of range" — while
+                // the equivalent `$buf[@idx]` worked.
+                let idx = match idx.view() {
+                    ValueView::Range(_, b)
+                    | ValueView::RangeExcl(_, b)
+                    | ValueView::RangeExclStart(_, b)
+                    | ValueView::RangeExclBoth(_, b)
+                        if b != i64::MAX =>
+                    {
+                        Value::array(crate::runtime::utils::value_to_list(&idx))
+                    }
+                    _ => idx.clone(),
+                };
                 if let ValueView::Array(keys, ..) = idx.view() {
                     let vals = self.assignment_rhs_values(&val)?;
                     let indices = keys

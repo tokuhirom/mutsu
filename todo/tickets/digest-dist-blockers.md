@@ -7,13 +7,15 @@ interpreter bugs found while running it were fixed (see
 `news/2026-08/digest-dist-seven-fixes.md`), then four more that its roast
 fallout exposed (`news/2026-08/digest-dist-followup-four-fixes.md`), then four
 more behind MD5's wrong digest (`news/2026-08/digest-md5-four-fixes.md`).
-`Digest::MD5`, `Digest::SHA1` and all four `Digest::SHA2` digests now come out
-correct, and the dist's `t/md5.t` passes in full. Blockers 1
-(`news/2026-08/for-modifier-placeholder-scope.md`), 3
-(`news/2026-08/buf-wide-element-assign-saturation.md`) and 4
-(`news/2026-08/named-params-do-not-narrow.md`) are fixed. What remains is
-blocker 2's anonymous-`$`-state residue, the `Digest::SHA3` cluster (6), and the
-non-blocking wide-buffer bit accessors (5).
+`Digest::MD5`, `Digest::SHA1`, all four `Digest::SHA2` digests and
+`Digest::SHA3` now come out correct, and the dist's `t/md5.t` passes in full.
+Blockers 1 (`news/2026-08/for-modifier-placeholder-scope.md`), 3
+(`news/2026-08/buf-wide-element-assign-saturation.md`), 4
+(`news/2026-08/named-params-do-not-narrow.md`) and 6
+(`news/2026-08/multi-named-narrowness-declaration-order.md`,
+`news/2026-08/samewith-inside-lazy-gather.md`,
+`news/2026-08/digest-sha3-runs.md`) are fixed. What remains is blocker 2's
+anonymous-`$`-state residue and the non-blocking wide-buffer bit accessors (5).
 
 Reproduce with the vendored-in-zef-store copy:
 
@@ -69,9 +71,9 @@ letting `encode_elems` do the width masking; see
 `news/2026-08/buf-wide-element-assign-saturation.md`. `sha384`, `sha512` and the
 rest of `t/sha.t`'s SHA-1/SHA-2 subtests now pass.
 
-## 6. `Digest::SHA3` — down to `KeccakF1600`'s immutable value
+## 6. `Digest::SHA3` — FIXED
 
-Both originally-reported halves are FIXED:
+`sha3_256("abc")` returns `3a985da7…31532`, matching rakudo. Six general fixes:
 
 - the named-only multi dispatch (`Keccak`'s two candidates differ only in an
   extra `:$outputByteLen`) —
@@ -80,20 +82,26 @@ Both originally-reported halves are FIXED:
   `news/2026-08/samewith-inside-lazy-gather.md`. Its "Unexpected named argument
   'delimitedSuffix' passed" face was the same bug: the dynamic dispatch stack
   named `sha3_256` (the routine doing the forcing) instead of `Keccak`, so the
-  redispatch went to the wrong routine rather than failing.
+  redispatch went to the wrong routine rather than failing;
+- `@a[$x;$y] += 1` compiling to an unconditional `X::Assignment::RO` —
+  `news/2026-08/multidim-subscript-compound-assign.md`;
+- a `given` statement modifier stealing the modified statement's placeholders, a
+  multi-dimensional subscript not being a list-assignment target, a sized buffer
+  (`Buf[uint8]`) being invisible to the multi-dispatch type-distance table, and a
+  Range subscript not being a slice on a `Buf` — `news/2026-08/digest-sha3-runs.md`.
 
-`sha3_256("abc")` now runs all the way into the permutation and stops on an
-unrelated bug:
-
-    Cannot modify an immutable value
-      in sub KeccakF1600 ... in sub Keccak ... in sub sha3_256
-
-`KeccakF1600` has two candidates, `multi KeccakF1600(@lanes)` and
-`multi KeccakF1600(blob8 $state)`, and the caller writes
-`$state .= &KeccakF1600`. That is the next thing to reduce.
-
-Two smaller residues found while fixing the above, neither on the `Digest`
+Three smaller residues found while fixing the above, none on the `Digest`
 critical path:
+
+- A `with` statement modifier still hides its statement's placeholders:
+  `sub w1 { "a=$^a topic=$_" with $^n }; w1(3, 4)` is `a=3 topic=4` in rakudo but
+  `a=True topic=3` in mutsu. `with` desugars to
+  `Given { is_statement_modifier, body: [DoStmt(If { cond: $_.defined, … })] }`,
+  and the synthetic `If` is opaque to both the placeholder collector and the
+  compiler's placeholder binding (which binds `$^a` to the condition value,
+  hence `True`). The `given` form is fixed; making the synthetic `If`
+  transparent needs a marker on it, since a genuine nested `if` block inside the
+  modified statement must stay a scope.
 
 - A gather created inside a module routine and forced from the *consumer's*
   top-level scope cannot resolve a module-private name:

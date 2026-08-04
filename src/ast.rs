@@ -2102,12 +2102,28 @@ fn collect_ph_stmt_shallow(stmt: &Stmt, out: &mut Vec<String>) {
                 collect_ph_stmt_shallow(s, out);
             }
         }
-        Stmt::Given { topic, .. } => {
+        Stmt::Given {
+            topic,
+            body,
+            is_statement_modifier,
+        } => {
             // The topic is evaluated in THIS block's scope, but the given/with
-            // body is its OWN `{}` block scope: a placeholder inside it is the
-            // given-block's parameter, bound to the topic (`with 2 { $^a }` is
-            // 2, not the enclosing block's argument) — mirrors the If arm.
+            // BLOCK body is its OWN `{}` block scope: a placeholder inside it is
+            // the given-block's parameter, bound to the topic (`with 2 { $^a }`
+            // is 2, not the enclosing block's argument) — mirrors the If arm.
+            //
+            // A `given` STATEMENT MODIFIER has no block, so its body runs in the
+            // enclosing scope and its placeholders are the enclosing routine's
+            // parameters — exactly the For arm's modifier rule. Digest::SHA3's
+            // `sub ROL64 { ($^a +> (64 - $_) +| $a +< $_) % (1 +< 64) given $^n%64 }`
+            // otherwise came out with the single parameter `$^n`, so `$^a` read
+            // the topic instead of the first argument.
             collect_ph_expr_shallow(topic, out);
+            if *is_statement_modifier {
+                for s in body {
+                    collect_ph_stmt_shallow(s, out);
+                }
+            }
         }
         Stmt::When { cond, body } => {
             collect_ph_expr_shallow(cond, out);
