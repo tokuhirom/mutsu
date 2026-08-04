@@ -251,11 +251,11 @@ impl Interpreter {
     /// caller that owns no `CompiledFns` table of its own — a user-defined
     /// operator, a reduce or hyper step over one, or `MAIN`.
     ///
-    /// This is the replacement for the interpreter entry `call_function_def`,
-    /// whose body run was `run_block(&def.body)`: not a tree walk, but a fresh
-    /// compile of the routine's AST on *every* call (ADR-0019 C6d-1). It runs the
-    /// bytecode the declaration plan already attached to the routine, falling back
-    /// to one memoized on-the-fly compile when the plan attached none.
+    /// This replaced the interpreter entry `call_function_def`, whose body run was
+    /// `run_block(&def.body)`: not a tree walk, but a fresh compile of the
+    /// routine's AST on *every* call (ADR-0019 C6d-1). It runs the bytecode the
+    /// declaration plan already attached to the routine, falling back to one
+    /// memoized on-the-fly compile when the plan attached none.
     ///
     /// Deliberately NOT `compile_and_call_function_def`, for a weaker version of
     /// the reason the multi-deferral caller avoids it: that entry pushes a samewith
@@ -273,12 +273,6 @@ impl Interpreter {
         // `as_str`, not `resolve`: the latter allocates a `String` per call.
         let pkg = def.package.as_str();
         let name = def.name.as_str();
-        // The one shape whose `state` cell an on-the-fly compile would fragment: a
-        // state-bearing candidate of a signature-alternates name. See
-        // `Interpreter::call_function_def`, which exists for this case alone.
-        if self.multi_candidate_state_forces_interpreter(name, def) {
-            return loan_env!(self, call_function_def(def, &args));
-        }
         let empty_fns = CompiledFns::default();
         let cf = match &def.compiled {
             Some(compiled) => Arc::clone(compiled),

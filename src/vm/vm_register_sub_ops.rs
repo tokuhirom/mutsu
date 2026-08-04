@@ -220,6 +220,22 @@ impl Interpreter {
                 name.resolve()
             };
             self.check_param_custom_traits(param_defs)?;
+            // The plan compiled one routine body per declared signature: the
+            // primary first, then each `signature_alternates` entry in
+            // declaration order. Registration installs the candidates in that
+            // same order, so the body a candidate gets is decided positionally
+            // here and handed to registration — a multi candidate is keyed in
+            // the registry by `/arity:types` (with a `__m{N}` tiebreak), which
+            // cannot identify which declared signature it came from. A body
+            // that failed to compile drops the whole list, so a short list means
+            // "no plan bytecode" rather than a shifted one.
+            let plan_compiled = |slot: usize| -> Option<&CompiledFunction> {
+                if compiled_routine_keys.len() != 1 + signature_alternates.len() {
+                    return None;
+                }
+                compiled_fns.get(&compiled_routine_keys[slot])
+            };
+            let primary_compiled = plan_compiled(0);
             // Compile-time declaration fingerprint for this site (absent for a
             // runtime-resolved `name_expr` sub), enabling the idempotent
             // re-registration fast path inside `register_sub_decl_fp`.
@@ -239,41 +255,9 @@ impl Interpreter {
                     custom_traits,
                     *site_fp,
                     routine_metadata,
+                    primary_compiled,
                 )
             })?;
-            for key in compiled_routine_keys {
-                let Some(compiled) = compiled_fns.get(key) else {
-                    continue;
-                };
-                let registry_key = if *multi {
-                    *key
-                } else {
-                    let resolved = key.resolve();
-                    Symbol::intern(
-                        resolved
-                            .rsplit_once('/')
-                            .map_or(&resolved, |(base, _)| base),
-                    )
-                };
-                if let Some(def) = self.registry_mut().functions.get_mut(&registry_key) {
-                    let def = std::sync::Arc::make_mut(def);
-                    if *multi {
-                        continue;
-                    }
-                    let mut adapted = compiled.clone();
-                    adapted.params.clone_from(&def.params);
-                    adapted.param_defs.clone_from(&def.param_defs);
-                    adapted.return_type.clone_from(&def.return_type);
-                    adapted.empty_sig = def.empty_sig;
-                    adapted.is_rw = def.is_rw;
-                    adapted.is_raw = def.is_raw;
-                    adapted.source_file.clone_from(&def.source_file);
-                    adapted.precompute_param_local_slots();
-                    adapted.precompute_named_call_plan();
-                    adapted.precompute_param_name_syms();
-                    def.compiled = Some(std::sync::Arc::new(adapted));
-                }
-            }
             // An idempotent re-registration of an already-installed identical sub
             // leaves the registry untouched, so none of the install bookkeeping
             // below (cache invalidation, `&`-param shadow tracking, export, native
@@ -331,19 +315,11 @@ impl Interpreter {
                         self.record_exported_sub_value(pkg, resolved_name.clone(), val);
                     }
                 }
-                if !signature_alternates.is_empty() {
-                    // Remember that this name was declared with signature alternates,
-                    // whose `state` cell is shared across all alternates. A resolved
-                    // per-candidate `FunctionDef` carries no alternate marker, so the
-                    // OTF-dispatch gate consults this set to keep state-bearing
-                    // candidates of such a name on the interpreter (which honors the
-                    // shared cell). See `multi_candidate_state_forces_interpreter`.
-                    self.multi_alternate_signature_names
-                        .insert(Symbol::intern(&resolved_name));
-                }
-                for (alt_params, alt_param_defs) in signature_alternates {
+                for (slot, (alt_params, alt_param_defs)) in signature_alternates.iter().enumerate()
+                {
+                    let alt_compiled = plan_compiled(slot + 1);
                     self.loan_env_for(|i| {
-                        i.register_sub_decl(
+                        i.register_sub_alternate_decl(
                             &resolved_name,
                             alt_params,
                             alt_param_defs,
@@ -356,6 +332,7 @@ impl Interpreter {
                             *is_test_assertion,
                             *supersede,
                             custom_traits,
+                            alt_compiled,
                         )
                     })?;
                 }

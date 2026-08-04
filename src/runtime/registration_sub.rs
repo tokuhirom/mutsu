@@ -502,6 +502,48 @@ impl Interpreter {
         )
     }
 
+    /// `register_sub_decl` for one *signature alternate* of a declaration whose
+    /// plan compiled a body per alternate. The alternates of a name share one
+    /// routine (and therefore one `state` cell, scoped by the compiler's shared
+    /// `state_group`), so each alternate must be installed carrying the bytecode
+    /// the compiler produced *for that signature* — a body recompiled on demand
+    /// would key on the per-alternate signature and split the shared cell.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn register_sub_alternate_decl(
+        &mut self,
+        name: &str,
+        params: &[String],
+        param_defs: &[ParamDef],
+        return_type: Option<&String>,
+        associativity: Option<&String>,
+        body: &[Stmt],
+        multi: bool,
+        is_rw: bool,
+        is_raw: bool,
+        is_test_assertion: bool,
+        supersede: bool,
+        custom_traits: &crate::opcode::DeclTraits,
+        compiled: Option<&crate::opcode::CompiledFunction>,
+    ) -> Result<SubRegisterOutcome, RuntimeError> {
+        self.register_sub_decl_with_metadata(
+            name,
+            params,
+            param_defs,
+            return_type,
+            associativity,
+            body,
+            multi,
+            is_rw,
+            is_raw,
+            is_test_assertion,
+            supersede,
+            custom_traits,
+            None,
+            None,
+            compiled,
+        )
+    }
+
     /// Whether registering a sub named `name` would raise `X::Redeclaration`
     /// because a conflicting `&name` (e.g. an earlier `my &name`) is already
     /// bound in the lexical env. Mirrors the env-`&name` check in
@@ -573,6 +615,7 @@ impl Interpreter {
             custom_traits,
             site_fingerprint,
             None,
+            None,
         )
     }
 
@@ -593,6 +636,7 @@ impl Interpreter {
         custom_traits: &crate::opcode::DeclTraits,
         site_fingerprint: Option<u64>,
         metadata: &crate::opcode::CompiledRoutineMetadata,
+        compiled: Option<&crate::opcode::CompiledFunction>,
     ) -> Result<SubRegisterOutcome, RuntimeError> {
         self.register_sub_decl_with_metadata(
             name,
@@ -609,7 +653,32 @@ impl Interpreter {
             custom_traits,
             site_fingerprint,
             Some(metadata),
+            compiled,
         )
+    }
+
+    /// Adapt a plan-compiled routine body to the `FunctionDef` it is being
+    /// installed as. The compiler emits one `CompiledFunction` per declared
+    /// signature, but registration derives the authoritative signature
+    /// (normalized `param_defs`, auto `@_`/`%_`, empty-signature and rw/raw
+    /// flags), so the installed bytecode takes its signature-derived data from
+    /// the def and re-precomputes everything keyed on it.
+    fn adapt_compiled_to_def(
+        compiled: &crate::opcode::CompiledFunction,
+        def: &FunctionDef,
+    ) -> std::sync::Arc<crate::opcode::CompiledFunction> {
+        let mut adapted = compiled.clone();
+        adapted.params.clone_from(&def.params);
+        adapted.param_defs.clone_from(&def.param_defs);
+        adapted.return_type.clone_from(&def.return_type);
+        adapted.empty_sig = def.empty_sig;
+        adapted.is_rw = def.is_rw;
+        adapted.is_raw = def.is_raw;
+        adapted.source_file.clone_from(&def.source_file);
+        adapted.precompute_param_local_slots();
+        adapted.precompute_named_call_plan();
+        adapted.precompute_param_name_syms();
+        std::sync::Arc::new(adapted)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -629,6 +698,7 @@ impl Interpreter {
         custom_traits: &crate::opcode::DeclTraits,
         site_fingerprint: Option<u64>,
         metadata: Option<&crate::opcode::CompiledRoutineMetadata>,
+        compiled: Option<&crate::opcode::CompiledFunction>,
     ) -> Result<SubRegisterOutcome, RuntimeError> {
         if name.starts_with("infix:<") {
             self.user_declared_infix_ops.insert(name.to_string());
@@ -677,6 +747,7 @@ impl Interpreter {
                     custom_traits,
                     site_fingerprint,
                     metadata,
+                    compiled,
                 );
                 self.set_current_package(saved);
                 return outcome;
@@ -867,7 +938,7 @@ impl Interpreter {
                 return Err(RuntimeError::typed("X::Declaration::Scope::Multi", attrs));
             }
         }
-        let new_def = FunctionDef {
+        let mut new_def = FunctionDef {
             package: Symbol::intern(&self.current_package()),
             name: Symbol::intern(name),
             params: params.to_vec(),
@@ -891,6 +962,9 @@ impl Interpreter {
             body_fp_cache: std::sync::OnceLock::new(),
             body_facts_cache: std::sync::OnceLock::new(),
         };
+        if let Some(compiled) = compiled {
+            new_def.compiled = Some(Self::adapt_compiled_to_def(compiled, &new_def));
+        }
         let single_key = format!("{}::{}", self.current_package(), name);
         let multi_prefix = format!("{}::{}/", self.current_package(), name);
         let single_key_sym = Symbol::intern(&single_key);
@@ -944,6 +1018,20 @@ impl Interpreter {
                 && format!("{:?}", existing.param_defs) == format!("{:?}", new_def.param_defs)
                 && body_debug_without_setline(&existing.body)
                     == body_debug_without_setline(&new_def.body);
+            // The identical declaration already installed here may have been
+            // installed *without* a compiled body (a forward-declaration or
+            // prelude pass registers from a source declaration and carries no
+            // plan). Hand it this plan's bytecode instead of leaving the routine
+            // to compile its body on demand at the first call.
+            if same
+                && new_def.compiled.is_some()
+                && existing.compiled.is_none()
+                && let Some(slot) = self.registry_mut().functions.get_mut(&single_key_sym)
+            {
+                std::sync::Arc::make_mut(slot)
+                    .compiled
+                    .clone_from(&new_def.compiled);
+            }
             if same && !has_user_custom_traits {
                 let callable_key =
                     format!("__mutsu_callable_id::{}::{}", self.current_package(), name);

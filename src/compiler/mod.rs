@@ -73,17 +73,21 @@ mod declaration_plan_tests {
         let (stmts, _) = crate::parse_dispatch::parse_source(source).expect("source parses");
         let (_code, compiled_fns) = Compiler::new().compile(&stmts);
 
-        let inner_plans: Vec<_> = compiled_fns
+        let inner_keys: Vec<_> = compiled_fns
             .values()
             .flat_map(|function| function.code.sub_decl_plans.iter())
             .filter(|plan| plan.name.as_str() == "inner" && !plan.compiled_routine_keys.is_empty())
+            .map(|plan| plan.compiled_routine_keys[0])
             .collect();
-        assert_eq!(inner_plans.len(), 2);
-        let first = inner_plans[0].compiled_routine_keys[0];
-        let second = inner_plans[1].compiled_routine_keys[0];
-        assert_ne!(first, second);
-        assert!(compiled_fns.contains_key(&first));
-        assert!(compiled_fns.contains_key(&second));
+        // Each `inner` is registered from two plans — the hoist pass's and the
+        // source-order one — and both carry the same compiled routine, so the
+        // two declarations account for four key-bearing plans.
+        assert_eq!(inner_keys.len(), 4);
+        let distinct: std::collections::HashSet<_> = inner_keys.iter().copied().collect();
+        assert_eq!(distinct.len(), 2);
+        for key in &distinct {
+            assert!(compiled_fns.contains_key(key));
+        }
     }
 
     #[test]
@@ -194,6 +198,19 @@ pub(crate) struct Compiler {
     /// once from the body's own statements, so it does not depend on how many
     /// times a declaration is compiled (the hoist pass compiles each twice).
     lexical_dup_routines: HashSet<String>,
+    /// Declaration plans emitted by the hoist pass, as
+    /// `(routine name, site fingerprint, decl plan index)`.
+    ///
+    /// A sub declaration is registered twice: once from the hoist pass at the
+    /// top of its block, and once in source order. Only the source-order site
+    /// compiles the body, so only it can record `compiled_routine_keys` — which
+    /// leaves the hoisted registration installing a routine with no bytecode.
+    /// For a single sub the later install simply replaces it, but a `multi`
+    /// candidate is *appended* to its name's candidate set, so the bytecode-less
+    /// hoisted candidate survives and answers calls. The source-order site
+    /// therefore back-fills its keys into the matching hoisted plan (same name
+    /// and same `sub_registration_fingerprint`, i.e. the same declaration).
+    hoisted_sub_plans: Vec<(crate::symbol::Symbol, u64, u32)>,
     /// Track type constraints for local variables (for compile-time literal checks).
     local_types: HashMap<String, String>,
     compiled_functions: CompiledFns,
@@ -443,6 +460,7 @@ impl Compiler {
             unit_root_scope: 0,
             in_lexical_scope: false,
             lexical_dup_routines: HashSet::new(),
+            hoisted_sub_plans: Vec::new(),
             local_types: HashMap::new(),
             compiled_functions: CompiledFns::default(),
             current_package: "GLOBAL".to_string(),

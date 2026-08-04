@@ -424,13 +424,19 @@ impl Compiler {
         }
 
         let fingerprint = crate::ast::function_body_fingerprint(params, param_defs, body);
+        // Include arity and fingerprint in key to avoid collisions between
+        // same-named subs with different bodies in different scopes.
+        let fingerprinted_key = format!(
+            "{}::{}/{}#{:x}",
+            self.current_package, name, arity, fingerprint
+        );
         let key = if multi {
             let type_sig: Vec<String> = param_defs
                 .iter()
                 .filter(|pd| !pd.named && (!pd.slurpy || pd.name == "_capture"))
                 .map(|pd| pd.type_constraint.clone().unwrap_or_default())
                 .collect();
-            format!(
+            let by_signature = format!(
                 "{}::{}{}",
                 self.current_package,
                 name,
@@ -439,14 +445,23 @@ impl Compiler {
                 } else {
                     format!("/{}", arity)
                 }
-            )
+            );
+            // A multi candidate is keyed by its positional signature, which does
+            // not separate candidates that differ only in their *named*
+            // parameters (`multi f(:x($))` and `multi f(:y($))` are both
+            // `Pkg::f/0`). The second body would silently replace the first, and
+            // registration — which hands each candidate the routine its plan
+            // names — would then install one candidate's bytecode under the
+            // other. Fall back to the fingerprinted key, which the dispatch-side
+            // probe in `vm_call_resolve` already tries next.
+            match crate::symbol::Symbol::lookup(&by_signature)
+                .and_then(|sym| self.compiled_functions.get(&sym))
+            {
+                Some(taken) if taken.fingerprint != fingerprint => fingerprinted_key,
+                _ => by_signature,
+            }
         } else {
-            // Include arity and fingerprint in key to avoid collisions between
-            // same-named subs with different bodies in different scopes
-            format!(
-                "{}::{}/{}#{:x}",
-                self.current_package, name, arity, fingerprint
-            )
+            fingerprinted_key
         };
 
         // Named subs are always routines — mark the compiled code so
