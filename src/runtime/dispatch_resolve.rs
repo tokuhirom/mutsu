@@ -79,7 +79,14 @@ impl Interpreter {
         candidates.sort_by(|a, b| {
             let a_rank = self.candidate_specificity_rank(&a.1);
             let b_rank = self.candidate_specificity_rank(&b.1);
-            b_rank.cmp(&a_rank).then(a.0.cmp(&b.0))
+            // Equal narrowness: Rakudo picks the candidate declared first, so
+            // the registration stamp decides. The registry key string is only
+            // the last resort (defs built outside a registration path share
+            // stamp 0), and keeps the order deterministic.
+            b_rank
+                .cmp(&a_rank)
+                .then(a.1.decl_order.cmp(&b.1.decl_order))
+                .then(a.0.cmp(&b.0))
         });
     }
 

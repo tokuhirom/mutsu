@@ -101,10 +101,12 @@ impl Interpreter {
         }
 
         // Sort matches by specificity rank (primary, DESC), type hierarchy
-        // distance (secondary, ASC), then required named count (tertiary, DESC)
-        // so that subset types win over plain types, more specific types
-        // (e.g. Str:D) beat less specific ones (e.g. Any), and among
-        // equally-specific candidates, those with required named params win.
+        // distance (secondary, ASC), whether the candidate declares any named
+        // parameter at all (DESC), then fewer optional positionals, then
+        // required named count (DESC), then declaration order — so that subset
+        // types win over plain types, more specific types (e.g. Str:D) beat
+        // less specific ones (e.g. Any), and among equally-specific candidates,
+        // those with required named params win.
         {
             let mut ranked: Vec<(usize, _)> = matches
                 .iter()
@@ -112,20 +114,26 @@ impl Interpreter {
                 .map(|(i, def)| {
                     let rank = self.candidate_specificity_rank_for_args(def, args);
                     let dist = self.candidate_type_distance(args, def);
+                    let has_named = usize::from(Self::candidate_declares_named(def));
                     let opt = Self::candidate_optional_positional_count(def);
                     let req_named = Self::candidate_required_named_count(def);
-                    (i, (rank, dist, opt, req_named))
+                    (i, (rank, dist, has_named, opt, req_named, def.decl_order))
                 })
                 .collect();
             ranked.sort_by(|a, b| {
-                // Higher rank first, then lower distance, then fewer optional
-                // positionals (a required param is narrower than an optional
-                // one), then higher required named.
+                // Higher rank first, then lower distance, then a candidate that
+                // declares nameds over one that declares none, then fewer
+                // optional positionals (a required param is narrower than an
+                // optional one), then higher required named, and finally — for
+                // candidates that are tied on all of that — the one declared
+                // first, which is what Rakudo runs.
                 b.1.0
                     .cmp(&a.1.0)
                     .then(a.1.1.cmp(&b.1.1))
-                    .then(a.1.2.cmp(&b.1.2))
-                    .then(b.1.3.cmp(&a.1.3))
+                    .then(b.1.2.cmp(&a.1.2))
+                    .then(a.1.3.cmp(&b.1.3))
+                    .then(b.1.4.cmp(&a.1.4))
+                    .then(a.1.5.cmp(&b.1.5))
             });
             let sorted_matches: Vec<Arc<FunctionDef>> =
                 ranked.iter().map(|(i, _)| matches[*i].clone()).collect();
@@ -135,6 +143,7 @@ impl Interpreter {
         let best_rank = self.candidate_specificity_rank_for_args(&matches[0], args);
         let best_shape = self.candidate_dispatch_shape(&matches[0]);
         let best_distance = self.candidate_type_distance(args, &matches[0]);
+        let best_has_named = Self::candidate_declares_named(&matches[0]);
         let best_opt = Self::candidate_optional_positional_count(&matches[0]);
         let best_req_named = Self::candidate_required_named_count(&matches[0]);
         let tied: Vec<Arc<FunctionDef>> = matches
@@ -142,6 +151,7 @@ impl Interpreter {
             .filter(|def| {
                 self.candidate_specificity_rank_for_args(def, args) == best_rank
                     && self.candidate_type_distance(args, def) == best_distance
+                    && Self::candidate_declares_named(def) == best_has_named
                     && Self::candidate_optional_positional_count(def) == best_opt
                     && Self::candidate_required_named_count(def) == best_req_named
             })
@@ -207,7 +217,7 @@ impl Interpreter {
     pub(super) fn candidate_specificity_rank(
         &self,
         def: &FunctionDef,
-    ) -> (usize, usize, usize, usize, usize, usize, usize) {
+    ) -> (usize, usize, usize, usize, usize, usize) {
         self.candidate_specificity_rank_for_args(def, &[])
     }
 
@@ -220,7 +230,7 @@ impl Interpreter {
         &self,
         def: &FunctionDef,
         args: &[Value],
-    ) -> (usize, usize, usize, usize, usize, usize, usize) {
+    ) -> (usize, usize, usize, usize, usize, usize) {
         let all_params = Self::dispatch_visible_params(def);
         // Type narrowness is computed from the POSITIONAL parameters only.
         // A named parameter's type decides whether the candidate is
@@ -272,10 +282,6 @@ impl Interpreter {
             })
             .count();
         let subsig_count = params.iter().filter(|p| p.sub_signature.is_some()).count();
-        // How MANY nameds a candidate declares is still a tie-break (a
-        // signature that accepts more of the call's nameds is the better fit);
-        // only their *types* are excluded above.
-        let named_count = all_params.iter().filter(|p| p.named).count();
         let trait_count = params
             .iter()
             .filter(|p| {
@@ -290,7 +296,6 @@ impl Interpreter {
             subset_type_count,
             typed_param_count,
             subsig_count,
-            named_count,
             trait_count,
         )
     }
@@ -354,6 +359,28 @@ impl Interpreter {
         out
     }
 
+    /// Whether the candidate declares at least one *explicit* named parameter
+    /// (a slurpy `*%rest` does not count — it accepts nameds without declaring
+    /// any).
+    ///
+    /// Rakudo treats this as a boolean narrowness step, not a count: a
+    /// candidate that declares nameds is narrower than one that declares none
+    /// (`multi b(:$x)` beats `multi b()` for `b()`, in either declaration
+    /// order), but between two candidates that both declare nameds, *how many*
+    /// they declare is irrelevant and declaration order decides
+    /// (`multi K($i, :$a, :$b)` vs `multi K($i, :$a, :$b, :$c)` for
+    /// `K(1, :a, :b)`). Both verified against rakudo via `&f.cando`.
+    ///
+    /// It ranks BELOW positional type narrowness and type distance — rakudo
+    /// picks `multi q(Int $a)` over `multi q(Cool $a, :$x)` for `q(1)` — and
+    /// ABOVE the optional-positional count, so `multi r($a?, :$x)` beats
+    /// `multi r($a)` for `r(1)`.
+    fn candidate_declares_named(def: &FunctionDef) -> bool {
+        Self::dispatch_visible_params(def)
+            .iter()
+            .any(|p| p.named && !p.slurpy && !p.double_slurpy)
+    }
+
     /// Count required named parameters — used as a tertiary tiebreaker
     /// AFTER rank and type distance, so it only matters when type constraints
     /// are equally specific.
@@ -393,14 +420,19 @@ impl Interpreter {
         let params: Vec<&ParamDef> = Self::dispatch_visible_params(def);
         let mut pos_idx = 0usize;
         for pd in params.iter() {
+            // A named parameter does not contribute to narrowness (see
+            // `candidate_specificity_rank_for_args`), so it must not move the
+            // distance either — neither its type (`multi p(Int :$a)` would
+            // otherwise outrank `multi p(Any :$a)` on the secondary key) nor
+            // its mere presence (an untyped named used to add the flat 1000
+            // below, so `multi K($in, :$a, :$b)` lost to `multi K($in, :$a)`
+            // purely for declaring one named more — rakudo picks whichever of
+            // the two is declared first). Nameds also never consume a
+            // positional slot, so skipping them leaves `pos_idx` correct.
+            if pd.named {
+                continue;
+            }
             if let Some(constraint) = &pd.type_constraint {
-                // A named parameter's type does not contribute to narrowness
-                // (see `candidate_specificity_rank_for_args`), so it must not
-                // move the distance either — otherwise `multi p(Int :$a)` would
-                // still outrank `multi p(Any :$a)` on the secondary key.
-                if pd.named {
-                    continue;
-                }
                 if pos_idx < args.len() {
                     // Skip Pair args when looking for positional args
                     while pos_idx < args.len()
@@ -455,8 +487,7 @@ impl Interpreter {
                 // candidate for a Positional/Associative argument
                 // (JSON::Unmarshal's `_unmarshal($json, @x)` vs `($json, Mu)`
                 // dispatching a `Positional[Dog]` attribute type).
-                if !pd.named && !pd.slurpy && (pd.name.starts_with('@') || pd.name.starts_with('%'))
-                {
+                if !pd.slurpy && (pd.name.starts_with('@') || pd.name.starts_with('%')) {
                     while pos_idx < args.len()
                         && matches!(args[pos_idx].view(), ValueView::Pair(..))
                     {
@@ -483,7 +514,7 @@ impl Interpreter {
                 // flat 1000, so `($j, @x)` can out-narrow `(Any:D $j, Mu)` on
                 // the SECOND param (JSON::Unmarshal's `_unmarshal($json, @x)`
                 // vs its `(Any:D $json, Mu)` fallback).
-                if !pd.named && !pd.slurpy && !pd.name.starts_with('&') {
+                if !pd.slurpy && !pd.name.starts_with('&') {
                     while pos_idx < args.len()
                         && matches!(args[pos_idx].view(), ValueView::Pair(..))
                     {
@@ -501,9 +532,7 @@ impl Interpreter {
                     }
                 }
                 total += 1000;
-                if !pd.named {
-                    pos_idx += 1;
-                }
+                pos_idx += 1;
             }
         }
         total

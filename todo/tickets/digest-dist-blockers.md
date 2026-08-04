@@ -69,41 +69,41 @@ letting `encode_elems` do the width masking; see
 `news/2026-08/buf-wide-element-assign-saturation.md`. `sha384`, `sha512` and the
 rest of `t/sha.t`'s SHA-1/SHA-2 subtests now pass.
 
-## 6. `Digest::SHA3` — `samewith` inside a lazy `gather`, and named-only multi dispatch
+## 6. `Digest::SHA3` — `samewith` inside a lazy `gather`
 
-With SHA-2 fixed, `t/sha.t`'s remaining failure is its SHA-3 subtest, which runs
-zero tests. `Digest::SHA3`'s `Keccak` is a `proto` with five named parameters and
-two `multi`s; the `:$outputByteLen` candidate finishes with
+The named-only multi-dispatch half of this blocker is FIXED — see
+`news/2026-08/multi-named-narrowness-declaration-order.md`. Named parameters now
+contribute exactly one boolean narrowness step ("declares a named at all"), and
+equally-narrow candidates are resolved by declaration order, so `Keccak`'s
+`:$outputByteLen`-less call reaches the sibling candidate it is delegating to
+instead of recursing into itself.
+
+What remains is the lazy `gather`. `Digest::SHA3`'s `Keccak` is a `proto` with
+five named parameters and two `multi`s; the `:$outputByteLen` candidate finishes
+with
 
     gather for samewith $inputBytes, :$delimitedSuffix, :$rate, :$capacity { ... }
 
-Calling it directly returns a `Seq` whose reification dies with `samewith called
-outside of a dispatch context` — the enclosing routine's dispatch frame is gone
-by the time the lazy `gather` body runs. Reduced:
+Calling it directly dies with `samewith called outside of a dispatch context` —
+the enclosing routine's dispatch frame is gone by the time the lazy `gather`
+body runs. Reduced:
 
-    proto f($x, :$n) {*}
-    multi f($x, :$n)  { "base($x)" }
-    multi f($x, :$n!) { gather for samewith($x) { take "$_ x$n" } }
-    say f(3, n => 2).list;   # mutsu: no output at all, exit 0
+    proto K($x, :$a, :$len) {*}
+    multi K($x, :$a)        { gather { take $x; take $x + $a } }
+    multi K($x, :$a, :$len) { gather for samewith($x, :$a) { take $_ * $len } }
+    say K(3, a => 1, len => 10).list;
+    # raku:  (30 40)
+    # mutsu: an empty line
 
-(mutsu prints nothing — the `say` itself produces no line — so there is a second
-problem in how the failing `gather` is sunk.)
+(mutsu prints an empty line — the `say` runs but the list is empty, and the
+`samewith` failure never surfaces — so there is a second problem in how the
+failing `gather` is sunk.)
 
-A separate, probably-related dispatch bug shows up with the same signature shape
-when the extra named argument is *omitted*: an all-named candidate set picks the
-wider candidate instead of the exact one.
-
-    proto K($in, :$suffix, :$len, :$rate) {*}
-    multi K($in, :$suffix, :$rate)        { "two: $suffix $rate" }
-    multi K($in, :$suffix, :$len, :$rate) { "three: $suffix $len $rate" }
-    say K(1, suffix => 6, rate => 1152);
-    # raku:  two: 6 1152
-    # mutsu: three: 6  1152   (plus an uninitialized-value warning for $len)
-
-Note this does *not* reproduce once the parameters carry the `byte`/`UInt` types
-and `where` clauses the real `Keccak` proto uses — that variant dispatches
-correctly — so the narrowness comparison is sensitive to something beyond the
-name set. Both are general bugs, neither is a `Digest::SHA2` blocker.
+Going through `sha3_256` instead of calling `Keccak` directly currently fails
+earlier and differently ("Unexpected named argument 'delimitedSuffix' passed",
+reported against `multi sha3_256(Blob $input) { [~] Keccak $input, … }`); that
+may be the reduce metaop `[~]` swallowing the named arguments into its list
+rather than passing them to `Keccak`, and needs its own reduction.
 
 ## 5. `read-ubits` / `write-bits` on a wide buffer
 
@@ -122,8 +122,8 @@ left out of that fix.
 
 Fixed by excluding named parameters from narrowness; see
 `news/2026-08/named-params-do-not-narrow.md`. `hmac(key => "Jefe", …)` now
-produces the RFC 2202 vector. The residual declaration-order tie-break is
-`todo/tickets/multi-tie-break-declaration-order.md`.
+produces the RFC 2202 vector. The residual declaration-order tie-break is fixed
+too — `news/2026-08/multi-named-narrowness-declaration-order.md`.
 
 <details><summary>original report</summary>
 
