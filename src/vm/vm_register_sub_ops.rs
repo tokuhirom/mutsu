@@ -209,6 +209,7 @@ impl Interpreter {
             supersede,
             custom_traits,
             fingerprint: site_fp,
+            routine_metadata,
         }) = code.sub_decl_plans.get(idx as usize)
         {
             let resolved_name = if let Some(expr) = name_expr {
@@ -222,7 +223,7 @@ impl Interpreter {
             // runtime-resolved `name_expr` sub), enabling the idempotent
             // re-registration fast path inside `register_sub_decl_fp`.
             let outcome = self.loan_env_for(|i| {
-                i.register_sub_decl_fp(
+                i.register_compiled_sub_decl(
                     &resolved_name,
                     params,
                     param_defs,
@@ -236,6 +237,7 @@ impl Interpreter {
                     *supersede,
                     custom_traits,
                     *site_fp,
+                    routine_metadata,
                 )
             })?;
             for key in compiled_routine_keys {
@@ -254,18 +256,7 @@ impl Interpreter {
                 };
                 if let Some(def) = self.registry_mut().functions.get_mut(&registry_key) {
                     let def = std::sync::Arc::make_mut(def);
-                    // C4 moves compiler-derived signature metadata into the plan.
-                    // Until then, only candidates whose binding shape needs no
-                    // registration-time normalization can safely use this adapter.
-                    if *multi
-                        || def.param_defs.iter().any(|param| {
-                            param.named
-                                || param.default.is_some()
-                                || param.where_constraint.is_some()
-                                || param.sub_signature.is_some()
-                                || param.outer_sub_signature.is_some()
-                        })
-                    {
+                    if *multi {
                         continue;
                     }
                     let mut adapted = compiled.clone();
