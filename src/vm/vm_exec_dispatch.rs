@@ -4261,6 +4261,10 @@ impl Interpreter {
             }
 
             // -- Block scope --
+            OpCode::RoutineScope { body_end } => {
+                self.exec_routine_scope_op(code, *body_end, ip, compiled_fns)?;
+            }
+
             OpCode::BlockScope {
                 pre_end,
                 enter_end,

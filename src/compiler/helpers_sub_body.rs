@@ -873,6 +873,17 @@ impl Compiler {
         // Bake the positional-param → slot map now, while `local_map` still holds
         // exactly the parameter slots (before the body can shadow them). §1.5.
         sub_compiler.record_param_local_slots(params, param_defs);
+        // A `sub` declared in a *block* is lexical to it. A statement-level block
+        // gets that from `BlockScope`; a block compiled as a callable has no such
+        // boundary, so bracket the body with a routine-registry save/restore.
+        // Emitted before the hoist below, whose `RegisterDecl` ops must fall
+        // inside the range. Routine bodies keep their declarations (a named sub
+        // registers into its enclosing package).
+        let routine_scope_idx = if !is_routine && Self::stmts_declare_routines(body) {
+            Some(sub_compiler.code.emit(OpCode::RoutineScope { body_end: 0 }))
+        } else {
+            None
+        };
         // Hoist sub declarations within the closure body
         sub_compiler.mark_lexical_body(body);
         sub_compiler.hoist_sub_decls(body, true);
@@ -1195,6 +1206,9 @@ impl Compiler {
                     sub_compiler.code.emit(OpCode::Pop);
                 }
             }
+        }
+        if let Some(idx) = routine_scope_idx {
+            sub_compiler.code.patch_routine_scope_end(idx);
         }
         // Transfer any compiled functions from the closure to the parent while
         // preserving the declaration-plan references into the imported table.
