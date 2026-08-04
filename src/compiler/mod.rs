@@ -244,6 +244,17 @@ pub(crate) struct Compiler {
     /// Used to decide whether `return` in a non-routine block should perform
     /// a non-local return (via CX::Return) or throw X::ControlFlow::Return.
     pub(crate) lexically_in_routine: bool,
+    /// Armed by a statement arm that is about to compile a body it KNOWS is a
+    /// block (`for LIST { ... }` — not its statement-modifier form), so the
+    /// next `push_dynamic_scope_lexical` counts as entering a block for
+    /// anonymous-state purposes. Consumed by that push, and cleared at the top
+    /// of every `compile_stmt` so it can never leak to an unrelated block.
+    ///
+    /// Opt-in rather than opt-out on purpose: `Stmt::If` and `Stmt::While`
+    /// carry no `is_statement_modifier` flag, so `$++ if C` (which must keep
+    /// counting) cannot be told from `if C { $++ }` (which must reset). Leaving
+    /// the shapes we cannot classify unmarked keeps them exactly as they were.
+    pub(crate) anon_state_enable_next: bool,
     /// Whether the enclosing routine is a `method` (or submethod). A method
     /// always carries an implicit `*%_` / `*@_` slurpy, so the legacy argument
     /// variables `%_` / `@_` are valid lexicals throughout its body — including
@@ -452,6 +463,7 @@ impl Compiler {
             callframe_block_depth: 0,
             is_routine: false,
             lexically_in_routine: false,
+            anon_state_enable_next: false,
             lexically_in_method: false,
             bind_vardecl: false,
             whenever_bind_target: false,
@@ -948,6 +960,13 @@ impl Compiler {
     ///
     /// This is the lexical-axis twin of [`Interpreter::push_eval_caller_frames`],
     /// which already models the same layout on the caller axis for `CALLER::`.
+    /// Mutable access to the chunk being built, for the few runtime call sites
+    /// that re-compile a body and must restate a compile-time cursor the fresh
+    /// compilation cannot infer (see `resolution_map_grep`).
+    pub(crate) fn code_mut(&mut self) -> &mut CompiledCode {
+        &mut self.code
+    }
+
     pub(crate) fn mark_as_eval_unit(&mut self) {
         self.push_local_scope();
         // The EVAL'd unit's declarations now land in this freshly-pushed frame,

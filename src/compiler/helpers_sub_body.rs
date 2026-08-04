@@ -804,6 +804,14 @@ impl Compiler {
         // already is, or the parent itself is a routine.
         sub_compiler.lexically_in_routine =
             is_routine || self.is_routine || self.lexically_in_routine;
+        // A NON-routine body (a `map`/`grep`/pointy block, a `gather`) that is
+        // lexically inside a routine is one of that routine's per-call clones,
+        // so a bare `$` written in it resets on every call. A routine body is
+        // cloned once, at registration, so its own `$` persists — hence the
+        // `!is_routine` guard. See `CompiledCode::per_call_anon_states`.
+        if !is_routine && sub_compiler.lexically_in_routine {
+            sub_compiler.code.anon_state_nested_depth = 1;
+        }
         // `%_` / `@_` from an enclosing method stay visible inside nested
         // closures (e.g. a `do {}` block inside a `.protect: { ... }` block),
         // so carry the method context down. A nested *named sub* is not a method

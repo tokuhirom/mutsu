@@ -140,6 +140,7 @@ impl Interpreter {
             is_method: false,
             is_block: false,
             def_file: None,
+            invocation_id: crate::runtime::next_invocation_id(),
         });
         let result = self.run_block(&def.body);
         self.routine_stack.pop();

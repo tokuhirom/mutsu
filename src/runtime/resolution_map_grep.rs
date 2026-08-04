@@ -338,6 +338,14 @@ impl Interpreter {
             // a routine is currently on the dynamic call stack.
             let mut compiler = crate::compiler::Compiler::new();
             compiler.lexically_in_routine = !self.routine_stack.is_empty();
+            // This body IS a block, and it is being re-compiled fresh here, so
+            // the lexical position that classifies its anonymous state (`++$`)
+            // is lost unless it is restated. Mark it: a `$` in a map/grep block
+            // belongs to that block's clone, which the enclosing routine
+            // re-makes on every call. With no routine on the stack the runtime
+            // key falls back to a single bucket, so a mainline `map { ++$ }`
+            // keeps counting. See `CompiledCode::per_call_anon_states`.
+            compiler.code_mut().anon_state_nested_depth = 1;
             // The map value is taken from the block's tail-expression result (or
             // the topic `$_` if none was left on the stack). A bare tail
             // `Stmt::Call` carrying named/slip args (how an imported sub call like
@@ -616,6 +624,9 @@ impl Interpreter {
         // expression lands on the stack as the predicate value).
         let mut compiler = crate::compiler::Compiler::new();
         compiler.lexically_in_routine = !self.routine_stack.is_empty();
+        // See the note in `eval_map_over_items`: a re-compiled block body must
+        // restate its anonymous-state classification.
+        compiler.code_mut().anon_state_nested_depth = 1;
         let normalized_body = normalize_tail_stmt_for_value(&data.body);
         let (code, compiled_fns) = compiler.compile(&normalized_body);
 

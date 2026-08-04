@@ -23,6 +23,9 @@ pub(super) struct LexicalScopeSnapshot {
     constant_values: std::collections::HashMap<String, Value>,
     my_vars_current_scope: std::collections::HashSet<String>,
     class_names_current_scope: std::collections::HashSet<String>,
+    /// Whether this scope's entry counted as entering an anonymous-state block
+    /// (see `Compiler::anon_state_enable_next`), so its exit undoes it.
+    anon_state_marked: bool,
 }
 
 impl Compiler {
@@ -34,6 +37,13 @@ impl Compiler {
         // Enter a fresh local-slot scope frame (§1.4 groundwork; inert today —
         // `declare_local` still shares the outer slot for a nested `my $x`).
         self.push_local_scope();
+        // Only a body the statement arm has PROVEN to be a block counts — see
+        // `Compiler::anon_state_enable_next`.
+        let anon_state_marked = std::mem::take(&mut self.anon_state_enable_next)
+            && (self.is_routine || self.lexically_in_routine);
+        if anon_state_marked {
+            self.code.anon_state_nested_depth += 1;
+        }
         // `std::mem::take` resets the current-scope constant set: the entered
         // block starts with no constants of its own, so an inner `constant X`
         // may legitimately shadow an outer one without being a redeclaration.
@@ -54,12 +64,16 @@ impl Compiler {
             // Likewise a same-named class inside an inner block shadows rather
             // than redeclares the outer one.
             class_names_current_scope: std::mem::take(&mut self.class_names_current_scope),
+            anon_state_marked,
         }
     }
 
     pub(super) fn pop_dynamic_scope_lexical(&mut self, saved: LexicalScopeSnapshot) {
         // Drop the exiting block's local-slot scope frame (§1.4 groundwork).
         self.pop_local_scope();
+        if saved.anon_state_marked {
+            self.code.anon_state_nested_depth = self.code.anon_state_nested_depth.saturating_sub(1);
+        }
         self.dynamic_scope_all = saved.dynamic_scope_all;
         self.dynamic_scope_names = saved.dynamic_scope_names;
         self.user_listop_shadows = saved.user_listop_shadows;

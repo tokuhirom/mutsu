@@ -876,7 +876,7 @@ impl Interpreter {
             self.env_mut()
                 .insert("__mutsu_rw_map_topic__".to_string(), new_val.clone());
         }
-        self.sync_anon_state_value(name, &new_val);
+        self.sync_anon_state_value(code, name, &new_val);
         // §1.5: mirror into the compile-time-baked slot when present (scope-correct
         // even once a name occupies several slots); fall back to the by-name
         // resolution for a non-local / no-baked-slot target.

@@ -110,7 +110,10 @@ impl Interpreter {
             // so its value is preserved as the block's result; otherwise it compiles
             // as a value-discarding statement and the map result wrongly falls back
             // to the topic `$_` (see `eval_map_over_items`).
-            let compiler = crate::compiler::Compiler::new();
+            let mut compiler = crate::compiler::Compiler::new();
+            // See `eval_map_over_items`: a re-compiled block body must restate
+            // its anonymous-state classification.
+            compiler.code_mut().anon_state_nested_depth = 1;
             let normalized_body =
                 super::resolution_map_grep::normalize_tail_stmt_for_value(&data.body);
             let (code, compiled_fns) = compiler.compile(&normalized_body);
@@ -346,6 +349,9 @@ impl Interpreter {
             // a routine is currently on the dynamic call stack.
             let mut compiler = crate::compiler::Compiler::new();
             compiler.lexically_in_routine = !self.routine_stack.is_empty();
+            // See `eval_map_over_items`: a re-compiled block body must restate
+            // its anonymous-state classification.
+            compiler.code_mut().anon_state_nested_depth = 1;
             let normalized_body =
                 super::resolution_map_grep::normalize_tail_stmt_for_value(&data.body);
             let (code, compiled_fns) = compiler.compile(&normalized_body);

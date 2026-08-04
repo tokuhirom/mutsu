@@ -249,7 +249,7 @@ mod vm_var_index_ops;
 mod vm_var_index_tracking;
 mod vm_var_multidim_helpers;
 mod vm_var_multidim_ops;
-mod vm_var_ops;
+pub(crate) mod vm_var_ops;
 mod vm_var_trait_ops;
 
 fn cmp_values(left: &Value, right: &Value) -> std::cmp::Ordering {

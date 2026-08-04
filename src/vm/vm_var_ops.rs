@@ -4,6 +4,15 @@ use crate::symbol::Symbol;
 const SELF_HASH_REF_SENTINEL: &str = "__mutsu_self_hash_ref";
 const SELF_ARRAY_REF_SENTINEL: &str = "__mutsu_self_array_ref";
 
+/// The numeric id of an `__ANON_STATE_<id>__` name (the parser mints one per
+/// source occurrence). `None` for any other name.
+pub(crate) fn anon_state_id(name: &str) -> Option<u32> {
+    name.strip_prefix("__ANON_STATE_")?
+        .strip_suffix("__")?
+        .parse()
+        .ok()
+}
+
 impl Interpreter {
     pub(super) fn range_end_is_unbounded(end: i64) -> bool {
         end == i64::MAX
@@ -407,12 +416,35 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn anon_state_key(name: &str) -> Option<String> {
-        if name.starts_with("__ANON_STATE_") {
-            Some(format!("__anon_state::{name}"))
+    /// The state-store key for an anonymous state variable (`$++` / `++$`).
+    ///
+    /// An occurrence the compiler classified as per-call (see
+    /// `CompiledCode::per_call_anon_states`) gets the innermost enclosing
+    /// NON-BLOCK routine frame's invocation id folded into the key, so it
+    /// starts fresh on every call of that routine. At the mainline there is no
+    /// such frame and the id is a constant, so a top-level `$` keeps counting.
+    pub(super) fn anon_state_key(&self, code: &CompiledCode, name: &str) -> Option<String> {
+        let id = anon_state_id(name)?;
+        if code.per_call_anon_states.contains(&id) {
+            Some(format!(
+                "__anon_state::{name}#{}",
+                self.enclosing_routine_invocation_id()
+            ))
         } else {
-            None
+            Some(format!("__anon_state::{name}"))
         }
+    }
+
+    /// Invocation id of the innermost enclosing routine frame that is NOT a
+    /// block/closure — the routine whose per-call block clones own a per-call
+    /// anonymous state. 0 when the mainline is the innermost scope.
+    fn enclosing_routine_invocation_id(&self) -> u64 {
+        self.routine_stack()
+            .iter()
+            .rev()
+            .find(|f| !f.is_block)
+            .map(|f| f.invocation_id)
+            .unwrap_or(0)
     }
 
     /// Convert a Failure's exception Value into a RuntimeError.
@@ -448,13 +480,34 @@ impl Interpreter {
         Ok(())
     }
 
-    pub(super) fn anon_state_value(&self, name: &str) -> Option<Value> {
-        let key = Self::anon_state_key(name)?;
+    pub(super) fn anon_state_value(&self, code: &CompiledCode, name: &str) -> Option<Value> {
+        let key = self.anon_state_key(code, name)?;
         self.get_state_var(&key).cloned()
     }
 
-    pub(super) fn sync_anon_state_value(&mut self, name: &str, value: &Value) {
-        if let Some(key) = Self::anon_state_key(name) {
+    /// The value of a per-call anonymous state, which the state store owns
+    /// OUTRIGHT: its `env` entry is written by `SetGlobal` and outlives the
+    /// block clone, so on the first use in a new call the store legitimately
+    /// misses while env still holds the previous call's value. Answering
+    /// `default` on a miss is therefore part of the contract — falling through
+    /// to the normal lookup chain would resurrect the stale count.
+    ///
+    /// `None` for every other name, so a caller chains this in FRONT of its
+    /// usual lookup and leaves that lookup untouched.
+    pub(super) fn per_call_anon_state_read(
+        &self,
+        code: &CompiledCode,
+        name: &str,
+        default: Value,
+    ) -> Option<Value> {
+        let id = anon_state_id(name)?;
+        code.per_call_anon_states
+            .contains(&id)
+            .then(|| self.anon_state_value(code, name).unwrap_or(default))
+    }
+
+    pub(super) fn sync_anon_state_value(&mut self, code: &CompiledCode, name: &str, value: &Value) {
+        if let Some(key) = self.anon_state_key(code, name) {
             loan_env!(self, set_state_var(key, value.clone()));
         }
     }

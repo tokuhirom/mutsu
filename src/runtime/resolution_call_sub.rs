@@ -559,6 +559,7 @@ impl Interpreter {
                 is_method: false,
                 is_block: true,
                 def_file: None,
+                invocation_id: crate::runtime::next_invocation_id(),
             });
             self.block_stack.push(block_sub);
             let return_spec = data

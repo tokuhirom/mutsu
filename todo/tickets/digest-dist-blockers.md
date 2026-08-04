@@ -7,15 +7,17 @@ interpreter bugs found while running it were fixed (see
 `news/2026-08/digest-dist-seven-fixes.md`), then four more that its roast
 fallout exposed (`news/2026-08/digest-dist-followup-four-fixes.md`), then four
 more behind MD5's wrong digest (`news/2026-08/digest-md5-four-fixes.md`).
-`Digest::MD5`, `Digest::SHA1`, all four `Digest::SHA2` digests and
-`Digest::SHA3` now come out correct, and the dist's `t/md5.t` passes in full.
-Blockers 1 (`news/2026-08/for-modifier-placeholder-scope.md`), 3
+Every digest the dist provides — `Digest::MD5`, `Digest::SHA1`, all four
+`Digest::SHA2` digests, `Digest::SHA3` and `Digest::RIPEMD` — now comes out
+correct, and the dist's `t/md5.t`, `t/sha.t` and `t/rfc4231.t` pass in full.
+Blockers 1 (`news/2026-08/for-modifier-placeholder-scope.md`), 2
+(`news/2026-08/anon-state-per-routine-call.md`), 3
 (`news/2026-08/buf-wide-element-assign-saturation.md`), 4
 (`news/2026-08/named-params-do-not-narrow.md`) and 6
 (`news/2026-08/multi-named-narrowness-declaration-order.md`,
 `news/2026-08/samewith-inside-lazy-gather.md`,
-`news/2026-08/digest-sha3-runs.md`) are fixed. What remains is blocker 2's
-anonymous-`$`-state residue and the non-blocking wide-buffer bit accessors (5).
+`news/2026-08/digest-sha3-runs.md`) are all fixed. All that remains is the
+non-blocking wide-buffer bit accessors (5).
 
 Reproduce with the vendored-in-zef-store copy:
 
@@ -31,7 +33,7 @@ addressing, `Xxx` per-element thunking, `polymod` precision, and `.roll` on a
 `Str` range — all fixed in `news/2026-08/digest-md5-four-fixes.md`. `t/md5.t`
 passes in full.
 
-## 2. `rmd160` is correct once per process — MOSTLY FIXED
+## 2. `rmd160` is correct once per process — FIXED
 
 The original symptom — a `WhateverCode` reaching an `@`-sigil parameter — was a
 chain of six general bugs, all reduced and fixed:
@@ -48,15 +50,18 @@ chain of six general bugs, all reduced and fixed:
   slipping the buffer instead of its elements (so the digest render numified the
   whole Blob to 0 and emitted four zero bytes).
 
-`rmd160` now returns the correct digest for every RFC vector — but only for the
-**first** call in a process. Its output stage rotates the five hash words with
-`map { $_[[^5].rotate(++$)] }`, and mutsu never resets an anonymous `$` state
-variable when its enclosing routine is re-entered, so later calls in the same
-process rotate by the wrong amount and return a correct-but-rotated digest. That
-is an independent bug with its own minimal repro:
-`todo/tickets/anonymous-state-var-not-reset-per-routine-call.md`. Fixing it should
-take `t/ripemd.t` to a full pass (its `'a' x 1_000_000` vector is slow in a debug
-build — use a release binary).
+`rmd160` returned the correct digest for every RFC vector, but only for the
+**first** call in a process: its output stage rotates the five hash words with
+`map { $_[[^5].rotate(++$)] }`, and mutsu never reset an anonymous `$` state
+variable when its enclosing routine was re-entered, so later calls rotated by
+the wrong amount and returned a correct-but-*rotated* digest. Fixed in
+`news/2026-08/anon-state-per-routine-call.md` — a bare `$` inside a block inside
+a routine is classified per-call at compile time (recorded on the `CompiledCode`
+that runs) and keyed by the enclosing routine's invocation at run time.
+`rmd160("abc")` is correct on the second call in a process.
+
+(`t/ripemd.t`'s `'a' x 1_000_000` vector is very slow in a debug build — use a
+release binary to run the dist's own test file.)
 
 ## 3. `sha512` / `sha384` return a wrong digest — FIXED
 

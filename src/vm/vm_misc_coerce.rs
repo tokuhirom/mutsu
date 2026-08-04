@@ -355,11 +355,14 @@ impl Interpreter {
             return Ok(());
         }
         let val = self
-            .escaping_our_write_cell(code, name)
+            // A per-call anonymous state reads from the state store, never
+            // from the stale env copy — see `anon_state_key`.
+            .per_call_anon_state_read(code, name, Value::int(0))
+            .or_else(|| self.escaping_our_write_cell(code, name))
             .or_else(|| self.package_scope_lexical(name))
             .or_else(|| self.get_env_with_main_alias(name))
             .or_else(|| self.read_package_scope_var(name))
-            .or_else(|| self.anon_state_value(name))
+            .or_else(|| self.anon_state_value(code, name))
             .unwrap_or(Value::int(0));
         // ContainerRef (box-on-capture / `:=`): mutate the shared cell in place so
         // closures over this lexical observe the change and the smart string/Int
@@ -379,7 +382,7 @@ impl Interpreter {
         let new_val = self.increment_value_smart(&val)?;
         self.check_incdec_type_constraint(name, &new_val)?;
         self.set_env_with_main_alias(name, new_val.clone());
-        self.sync_anon_state_value(name, &new_val);
+        self.sync_anon_state_value(code, name, &new_val);
         // §1.5: mirror into the compile-time-baked slot when present (scope-correct
         // under shadow slots); by-name fallback for a non-local target.
         match slot {
@@ -476,7 +479,7 @@ impl Interpreter {
             .or_else(|| self.package_scope_lexical(name))
             .or_else(|| self.get_env_with_main_alias(name))
             .or_else(|| self.read_package_scope_var(name))
-            .or_else(|| self.anon_state_value(name))
+            .or_else(|| self.anon_state_value(code, name))
             .unwrap_or(Value::int(0));
         // ContainerRef (box-on-capture / `:=`): mutate the shared cell in place so
         // closures over this lexical observe the change and the smart string/Int
@@ -496,7 +499,7 @@ impl Interpreter {
         let new_val = self.decrement_value_smart(&val)?;
         self.check_incdec_type_constraint(name, &new_val)?;
         self.set_env_with_main_alias(name, new_val.clone());
-        self.sync_anon_state_value(name, &new_val);
+        self.sync_anon_state_value(code, name, &new_val);
         // §1.5: mirror into the compile-time-baked slot when present (scope-correct
         // under shadow slots); by-name fallback for a non-local target.
         match slot {

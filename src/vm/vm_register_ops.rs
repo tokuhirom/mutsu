@@ -117,7 +117,11 @@ impl Interpreter {
             // `Stmt::Block` (whose `BlockScope` restores the routine registry) when there
             // is one. Without it two sibling `gather { sub foo {...} }` blocks collided
             // with X::Redeclaration, and the first block's `foo` stayed callable outside.
-            let compiler = Compiler::new();
+            let mut compiler = Compiler::new();
+            // A `gather` body is a block, re-compiled fresh here, so its
+            // anonymous-state classification has to be restated — see
+            // `CompiledCode::per_call_anon_states`.
+            compiler.code_mut().anon_state_nested_depth = 1;
             let scoped_body: Vec<Stmt>;
             let compile_target: &[Stmt] = if Compiler::stmts_declare_routines(body) {
                 scoped_body = vec![Stmt::Block(body.clone())];

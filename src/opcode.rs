@@ -1930,6 +1930,23 @@ pub(crate) struct CompiledCode {
     /// Compile-time cursor: the source line attached to every op emitted from
     /// now on (set by the `Stmt::SetLine` marker). Not used at runtime.
     emit_line: u32,
+    /// Compile-time cursor: >0 while the compiler is emitting inside a nested
+    /// block that is lexically within a routine. Not used at runtime; it only
+    /// drives `per_call_anon_states` below.
+    pub(crate) anon_state_nested_depth: u32,
+    /// Ids of the `__ANON_STATE_<id>__` occurrences IN THIS CHUNK that live
+    /// inside a nested block within a routine. A bare `$` belongs to its
+    /// enclosing block's clone: a routine's body is cloned once (at
+    /// registration) so a `$` written directly in it persists across calls,
+    /// while the blocks inside are re-cloned per call so a `$` in one restarts.
+    ///
+    /// Recorded per chunk, NOT in a global registry keyed by id: the same
+    /// source is compiled several times (the routine-hoist pass,
+    /// `record_type_body_captures`' capture analysis, then the real body) and
+    /// those passes do not all reproduce the true lexical context. Keeping the
+    /// classification with the chunk means only the chunk that actually runs
+    /// decides. See `Interpreter::anon_state_key`.
+    pub(crate) per_call_anon_states: rustc_hash::FxHashSet<u32>,
     pub(crate) constants: Vec<Value>,
     /// Reverse index over `constants` for pool dedup (ADR-0006 §2.4): the same
     /// literal or name string emitted at N sites shares one slot instead of
@@ -2589,6 +2606,8 @@ impl CompiledCode {
             emit_line: 0,
             constants: Vec::new(),
             const_index: rustc_hash::FxHashMap::default(),
+            anon_state_nested_depth: 0,
+            per_call_anon_states: rustc_hash::FxHashSet::default(),
             stmt_pool: Vec::new(),
             sub_decl_plans: Vec::new(),
             class_decl_plans: Vec::new(),
@@ -4740,6 +4759,17 @@ impl CompiledCode {
     /// Values with an observable identity (containers, Instances, Regex, ...)
     /// get no key and always take a fresh slot.
     pub(crate) fn add_constant(&mut self, value: Value) -> u32 {
+        // Classify an anonymous state variable by the lexical position it is
+        // emitted from (see `per_call_anon_states`). This is the single choke
+        // point every variable-name constant passes through, and the
+        // `__ANON_STATE_<id>__` spelling is used for nothing else, so no emit
+        // site has to know about it.
+        if self.anon_state_nested_depth > 0
+            && let crate::value::ValueView::Str(s) = value.view()
+            && let Some(id) = crate::vm::vm_var_ops::anon_state_id(&s)
+        {
+            self.per_call_anon_states.insert(id);
+        }
         let Some(key) = ConstKey::of(&value) else {
             let idx = self.constants.len() as u32;
             self.constants.push(value);

@@ -513,6 +513,13 @@ impl Compiler {
     }
 
     pub(super) fn compile_stmt(&mut self, stmt: &Stmt) {
+        // `anon_state_enable_next` is armed by an arm below for the ONE lexical
+        // scope its block body is about to push. If that path turns out not to
+        // push one, the flag must not survive to be consumed by an unrelated
+        // block later in the unit. Clearing on entry bounds it to the statement
+        // that armed it; the body's push happens before any inner statement is
+        // compiled, so it still sees the flag.
+        self.anon_state_enable_next = false;
         match stmt {
             Stmt::Expr(expr) => {
                 self.compile_condition_expr(expr);
@@ -1855,10 +1862,17 @@ impl Compiler {
                 mode,
                 rw_block,
                 explicit_zero_params,
-                // Only the placeholder collectors in `ast.rs` care whether this
-                // loop came from the statement-modifier form; codegen is identical.
-                is_statement_modifier: _,
+                is_statement_modifier,
             } => {
+                // A `for LIST { ... }` BLOCK body is re-cloned on every call of
+                // the enclosing routine, so a bare `$` in it restarts. The
+                // statement-modifier form introduces no block, so its `$` is
+                // the routine's own and keeps counting (`sub k() { $r = ++$ for
+                // ^3 }` is 3 then 6). Codegen is otherwise identical, so this
+                // is the only place the two forms differ here.
+                if !*is_statement_modifier {
+                    self.anon_state_enable_next = true;
+                }
                 // `for @a[*] { ... }` — a whole-array Whatever slice iterates the
                 // same elements as `for @a`, including aliasing for write-back
                 // (`$_ = 9 for @a[*]` mutates @a). Normalize it to the plain array
