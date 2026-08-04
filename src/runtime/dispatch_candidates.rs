@@ -89,7 +89,7 @@ impl Interpreter {
                 self.args_match_param_types(args, &def.param_defs)
             };
             if type_ok {
-                let fingerprint = self.func_def_fingerprint(&def);
+                let fingerprint = def.body_fingerprint();
                 if !seen.insert(fingerprint) {
                     continue;
                 }

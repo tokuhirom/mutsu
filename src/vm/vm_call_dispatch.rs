@@ -129,8 +129,7 @@ impl Interpreter {
         def: &crate::ast::FunctionDef,
     ) -> Arc<CompiledFunction> {
         let pkg = def.package.resolve();
-        let fingerprint =
-            crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
+        let fingerprint = def.body_fingerprint();
         let cache_key = {
             let mut hasher = std::hash::DefaultHasher::new();
             std::hash::Hash::hash(&fingerprint, &mut hasher);

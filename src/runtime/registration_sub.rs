@@ -888,6 +888,7 @@ impl Interpreter {
             source_file: self.current_source_file(),
             decl_order: crate::runtime::resolution::next_decl_order(),
             compiled: None,
+            body_fp_cache: std::sync::OnceLock::new(),
         };
         let single_key = format!("{}::{}", self.current_package(), name);
         let multi_prefix = format!("{}::{}/", self.current_package(), name);
@@ -1316,6 +1317,7 @@ impl Interpreter {
             source_file: self.current_source_file(),
             decl_order: crate::runtime::resolution::next_decl_order(),
             compiled: None,
+            body_fp_cache: std::sync::OnceLock::new(),
         };
         self.insert_token_def(name, def, multi);
     }
@@ -1387,6 +1389,7 @@ impl Interpreter {
                 source_file: self.current_source_file(),
                 decl_order: crate::runtime::resolution::next_decl_order(),
                 compiled: None,
+                body_fp_cache: std::sync::OnceLock::new(),
             }),
         );
         Ok(())
@@ -1495,6 +1498,7 @@ impl Interpreter {
             source_file: self.current_source_file(),
             decl_order: crate::runtime::resolution::next_decl_order(),
             compiled: None,
+            body_fp_cache: std::sync::OnceLock::new(),
         };
         let single_key = format!("GLOBAL::{}", name);
         let single_key_sym = Symbol::intern(&single_key);
@@ -1641,6 +1645,7 @@ impl Interpreter {
                 source_file: self.current_source_file(),
                 decl_order: crate::runtime::resolution::next_decl_order(),
                 compiled: None,
+                body_fp_cache: std::sync::OnceLock::new(),
             }),
         );
         Ok(())

@@ -1643,6 +1643,9 @@ impl Interpreter {
         let rewritten = crate::runtime::Interpreter::rewrite_proto_dispatch_stmts(&proto.body);
         let mut proto_def = proto.clone();
         proto_def.body = rewritten;
+        // The clone carried the ORIGINAL body's memoized identity; the rewrite
+        // gave this def a different body, so drop it.
+        proto_def.invalidate_body_fingerprint();
         if !Self::def_is_otf_compilable(&proto_def)
             || self.multi_candidate_state_forces_interpreter(name, &proto_def)
         {
@@ -2014,7 +2017,7 @@ impl Interpreter {
         {
             return None;
         }
-        let fp = crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
+        let fp = def.body_fingerprint();
         self.imported_compiled_fns.get(&fp).cloned()
     }
 

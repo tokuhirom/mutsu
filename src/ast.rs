@@ -205,6 +205,34 @@ pub(crate) struct FunctionDef {
     /// candidate. Temporary ADR-0019 adapter; skipped by the AST/precomp format.
     #[serde(skip)]
     pub(crate) compiled: Option<std::sync::Arc<crate::opcode::CompiledFunction>>,
+    /// Memoized [`Self::body_fingerprint`]. Derived state, so it is neither
+    /// serialized nor part of the declaration; a deserialized or cloned def
+    /// simply recomputes it on first use.
+    #[serde(skip)]
+    pub(crate) body_fp_cache: std::sync::OnceLock<u64>,
+}
+
+impl FunctionDef {
+    /// Structural identity of this routine: the fingerprint of its signature and
+    /// body. Multi-candidate identity, `state`-variable scoping, wrap chains,
+    /// `MAIN` candidate dedup, and redeclaration checks all key on it.
+    ///
+    /// Computed once per def and cached inline. The underlying hash Debug-renders
+    /// the whole body AST, which profiled as a large share of multi/method
+    /// redispatch; two side caches (`func_def_fp_cache`, keyed on the def's `Arc`
+    /// pointer) existed only to avoid that, and this field replaces them with
+    /// state that cannot go stale or miss.
+    pub(crate) fn body_fingerprint(&self) -> u64 {
+        *self
+            .body_fp_cache
+            .get_or_init(|| function_body_fingerprint(&self.params, &self.param_defs, &self.body))
+    }
+
+    /// Drop the memoized fingerprint after the body has been rewritten in place
+    /// (the `proto` dispatch rewrite is the only such mutation).
+    pub(crate) fn invalidate_body_fingerprint(&mut self) {
+        self.body_fp_cache = std::sync::OnceLock::new();
+    }
 }
 
 /// A `fmt::Write` sink that streams formatted bytes straight into a `Hasher`,

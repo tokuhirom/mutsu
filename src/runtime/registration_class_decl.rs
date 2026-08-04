@@ -220,6 +220,7 @@ impl Interpreter {
             source_file: self.current_source_file(),
             decl_order: crate::runtime::resolution::next_decl_order(),
             compiled: None,
+            body_fp_cache: std::sync::OnceLock::new(),
         };
         // Register as a typed multi candidate under the class package, mirroring
         // the `multi sub` registration keys so `import` copies it and operator
@@ -2295,6 +2296,7 @@ impl Interpreter {
                             source_file: self.current_source_file(),
                             decl_order: crate::runtime::resolution::next_decl_order(),
                             compiled: None,
+                            body_fp_cache: std::sync::OnceLock::new(),
                         };
                         self.registry_mut().functions.insert(
                             Symbol::intern(&qualified_name),
@@ -2377,6 +2379,7 @@ impl Interpreter {
                             source_file: self.current_source_file(),
                             decl_order: crate::runtime::resolution::next_decl_order(),
                             compiled: None,
+                            body_fp_cache: std::sync::OnceLock::new(),
                         };
                         // Register under the short name (lexical scope)
                         self.registry_mut().functions.insert(
@@ -2577,6 +2580,7 @@ impl Interpreter {
                         source_file: self.current_source_file(),
                         decl_order: crate::runtime::resolution::next_decl_order(),
                         compiled: None,
+                        body_fp_cache: std::sync::OnceLock::new(),
                     };
                     self.registry_mut()
                         .proto_methods
