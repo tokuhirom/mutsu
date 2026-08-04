@@ -417,6 +417,20 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 Some(Ok(target.clone()))
             }
             ValueView::LazyList(_) => None, // fall through to runtime to force
+            // `.List` on a Hash is its pairs, exactly like `.list`/`.Array`
+            // (`%h.List` is `(:a(1),)`, not `({:a(1)},)`). Without this arm the
+            // Hash fell through to the scalar catch-all and became a one-element
+            // list holding the whole Hash — which is how `Cro::HTTP::Client`'s
+            // `self!set-headers($request, $value.List)` saw a Hash where a Pair
+            // was required and rejected every `headers => %h`.
+            ValueView::Hash(map) => Some(Ok(Value::array(
+                map.iter()
+                    .map(|(k, v)| map.typed_pair(k, v.clone()))
+                    .collect::<Vec<_>>(),
+            ))),
+            ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => Some(Ok(Value::array(
+                crate::runtime::utils::value_to_list(target),
+            ))),
             _ => Some(Ok(Value::array(vec![target.clone()]))),
         },
         // `.Seq` on an explicitly `.lazy`-marked list likewise keeps it lazy
