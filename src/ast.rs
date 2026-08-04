@@ -197,6 +197,10 @@ pub(crate) struct FunctionDef {
     /// `multi f(Str :$a)`). 0 only for defs built outside a registration path.
     #[serde(default)]
     pub(crate) decl_order: u64,
+    /// Bytecode body selected by the declaration plan that installed this
+    /// candidate. Temporary ADR-0019 adapter; skipped by the AST/precomp format.
+    #[serde(skip)]
+    pub(crate) compiled: Option<std::sync::Arc<crate::opcode::CompiledFunction>>,
 }
 
 /// A `fmt::Write` sink that streams formatted bytes straight into a `Hasher`,

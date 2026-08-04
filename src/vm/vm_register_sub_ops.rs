@@ -188,6 +188,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         idx: u32,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         if let Some(crate::opcode::CompiledSubDeclPlan {
             name,
@@ -197,7 +198,7 @@ impl Interpreter {
             return_type,
             associativity,
             signature_alternates,
-            compiled_routine_keys: _,
+            compiled_routine_keys,
             legacy_body: body,
             multi,
             is_rw,
@@ -237,6 +238,50 @@ impl Interpreter {
                     *site_fp,
                 )
             })?;
+            for key in compiled_routine_keys {
+                let Some(compiled) = compiled_fns.get(key) else {
+                    continue;
+                };
+                let registry_key = if *multi {
+                    *key
+                } else {
+                    let resolved = key.resolve();
+                    Symbol::intern(
+                        resolved
+                            .rsplit_once('/')
+                            .map_or(&resolved, |(base, _)| base),
+                    )
+                };
+                if let Some(def) = self.registry_mut().functions.get_mut(&registry_key) {
+                    let def = std::sync::Arc::make_mut(def);
+                    // C4 moves compiler-derived signature metadata into the plan.
+                    // Until then, only candidates whose binding shape needs no
+                    // registration-time normalization can safely use this adapter.
+                    if *multi
+                        || def.param_defs.iter().any(|param| {
+                            param.named
+                                || param.default.is_some()
+                                || param.where_constraint.is_some()
+                                || param.sub_signature.is_some()
+                                || param.outer_sub_signature.is_some()
+                        })
+                    {
+                        continue;
+                    }
+                    let mut adapted = compiled.clone();
+                    adapted.params.clone_from(&def.params);
+                    adapted.param_defs.clone_from(&def.param_defs);
+                    adapted.return_type.clone_from(&def.return_type);
+                    adapted.empty_sig = def.empty_sig;
+                    adapted.is_rw = def.is_rw;
+                    adapted.is_raw = def.is_raw;
+                    adapted.source_file.clone_from(&def.source_file);
+                    adapted.precompute_param_local_slots();
+                    adapted.precompute_named_call_plan();
+                    adapted.precompute_param_name_syms();
+                    def.compiled = Some(std::sync::Arc::new(adapted));
+                }
+            }
             // An idempotent re-registration of an already-installed identical sub
             // leaves the registry untouched, so none of the install bookkeeping
             // below (cache invalidation, `&`-param shadow tracking, export, native

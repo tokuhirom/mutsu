@@ -8,10 +8,11 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         idx: u32,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         match code.decl_plans.get(idx as usize).copied() {
             Some(crate::opcode::CompiledDeclPlanRef::Sub(plan_idx)) => {
-                self.exec_register_sub_op(code, plan_idx)
+                self.exec_register_sub_op(code, plan_idx, compiled_fns)
             }
             Some(crate::opcode::CompiledDeclPlanRef::Class(plan_idx)) => {
                 self.note_type_body_written_lexicals(code);

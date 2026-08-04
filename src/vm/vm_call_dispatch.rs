@@ -205,14 +205,17 @@ impl Interpreter {
         let name = def.name.resolve();
         let pkg = def.package.resolve();
 
-        let cf = self.otf_compile_function_def(def);
+        let (cf, compiled_from_plan) = match &def.compiled {
+            Some(compiled) => (Arc::clone(compiled), true),
+            None => (self.otf_compile_function_def(def), false),
+        };
 
         // Cache by name for fast lookup in exec_call_func_op — but never for a
         // multi name. The name-keyed cache is type-blind, so caching one multi
         // candidate under the bare name would make a later call with different
         // argument types wrongly reuse it. Multi candidates are still cached by
         // body fingerprint in `otf_compile_cache` above (safe, per-candidate).
-        if !self.has_multi_candidates_cached(&name) {
+        if !compiled_from_plan && !self.has_multi_candidates_cached(&name) {
             let name_sym = Symbol::intern(&name);
             // Keyed to the *callsite* package, not `def.package`: the cache
             // answers "what does this bare name mean here", and a module's

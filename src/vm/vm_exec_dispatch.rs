@@ -4395,7 +4395,7 @@ impl Interpreter {
             }
             OpCode::RegisterDecl(idx) => {
                 self.sync_source_line(code, *ip);
-                self.exec_register_decl_op(code, *idx)?;
+                self.exec_register_decl_op(code, *idx, compiled_fns)?;
                 *ip += 1;
             }
             OpCode::RegisterToken(idx) => {
