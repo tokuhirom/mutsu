@@ -103,6 +103,154 @@ role conflict rules, multi dispatch, wraps, and re-entrant `EVAL`. Intermediate 
 to adapt a compiled plan into an existing registry operation, but must not introduce a new AST
 fallback.
 
+## Execution plan and progress
+
+This checklist is the operational source of truth for the migration. **One checkbox is one PR.** A
+box is checked only after that PR has merged to `main` with required CI green. Reverted work is
+unchecked even if its original PR merged. PRs are sequential branches from the then-current
+`main`; this is not a stacked-PR plan.
+
+**Current progress: 13/51 slices merged. Next slice: C2.**
+
+The migration is complete only when every required box below is checked and the completion gates
+at the end pass. The order within a phase is intentional. A later phase may start when its stated
+dependency is complete, but cleanup slices stay last so each intermediate `main` remains usable.
+
+### Phase A — typed declaration entry (complete)
+
+- [x] **A1 — Define the architecture and migration invariants.** Add this ADR and identify the
+  declaration, dispatch, cache, introspection, and cleanup boundaries.
+- [x] **A2 — Lower sub declarations into typed plans.** Move `SubDecl` registration operands out of
+  the generic statement pool while retaining the routine-registry adapter.
+- [x] **A3 — Lower class and role declarations into typed plans.** Cover source-order declarations
+  and hoisted forward-reference shells.
+- [x] **A4 — Consolidate declaration opcodes.** Replace the three declaration entry opcodes with
+  `RegisterDecl(CompiledDeclPlanRef)` without growing `OpCode`.
+
+### Phase B — canonical method-table write side (complete)
+
+- [x] **B1 — Introduce canonical built-in type×method entries.** Give static catalog rows an owner,
+  method symbol, and stable introspection order.
+- [x] **B2 — Move built-in entries into `Registry`.** Seed the `(owner, method)` table without
+  probing or invoking handlers during interpreter initialization.
+- [x] **B3 — Add ordered user candidates to `MethodEntry`.** Make built-in and user candidates share
+  one row without changing dispatch reads yet.
+- [x] **B4 — Publish every user-method mutation.** Synchronize class registration, rollback,
+  augmentation, role composition, MOP `add_method`, and EVAL restoration into the table.
+- [x] **B5 — Add method-generation invalidation.** Advance one generation for table/type mutation
+  and invalidate resolver/fast/multi/constructor/private caches from the read boundary.
+- [x] **B6 — Move user-method presence and overload reads to `MethodEntry`.** Retain the class mirror
+  only as a transitional write/compilation adapter.
+- [x] **B7 — Remove the uncompiled class-mirror read fallback.** Compile mutation results before
+  publication and make dispatch reads table-only.
+- [x] **B8 — Close dynamic-owner writeback gaps.** Publish role pun and runtime mixin types, remove
+  withdrawn pun entries, and transfer method entries to every nested test/EVAL VM.
+
+### Phase C — sub declaration plans become bytecode-native
+
+- [x] **C1 — Bind source-order sub plans to compiled routines.** Record stable primary/alternate
+  compiled-function keys while keeping hoisted shells keyless.
+- [ ] **C2 — Preserve plan-to-routine identity across module import.** Remap compiled routine keys
+  when a compunit is imported so nested/module declarations retain direct references.
+- [ ] **C3 — Install routine candidates from compiled references.** Add the temporary
+  compiled-`FunctionDef` adapter and stop rediscovering compiled routines from name/signature keys.
+- [ ] **C4 — Precompute AST-derived routine metadata in the compiler.** Move auto-signature use,
+  empty-signature, return-shape validation, stub/proto identity, and redeclaration fingerprint data
+  required by registration into `CompiledSubDeclPlan`/`CompiledFunction`.
+- [ ] **C5 — Move sub custom-trait and computed-name evaluation to child chunks.** Execute those
+  expressions through re-entrant bytecode, including EVAL and NativeCall declaration cases.
+- [ ] **C6 — Remove `CompiledSubDeclPlan::legacy_body`.** Make ordinary, multi, `our`, hoisted,
+  exported, operator, and top-level-method declarations register without an executable AST body.
+- [ ] **C7 — Remove the sub-registration AST adapter.** Delete dead sub-shaped walker branches and
+  prove the routine registry never compiles a migrated declaration on demand.
+
+### Phase D — class and role plans become bytecode-native
+
+- [ ] **D1 — Encode class structural operations.** Put package open/reopen, parent edges, repr,
+  visibility, lexical/package aliases, and source-order metadata in immutable plan operations.
+- [ ] **D2 — Encode attributes and generated accessors.** Compile defaults/constraints as child
+  chunks and publish generated methods through the canonical table.
+- [ ] **D3 — Encode class methods and submethods as compiled candidates.** Install ordinary, multi,
+  proto, private, rw, wrap, BUILD, and TWEAK metadata without walking `Stmt::MethodDecl`.
+- [ ] **D4 — Compile class declaration-time expressions.** Cover computed names, traits, parent
+  expressions, aliases, and deferred class bodies through re-entrant bytecode chunks.
+- [ ] **D5 — Drive user HOW operations from plan ops.** Execute `new_type`, `add_method`, trait
+  interception, and `compose` without entering `register_class_decl`'s AST walker.
+- [ ] **D6 — Remove `CompiledClassDeclPlan::legacy_body`.** Preserve augmentation, rollback,
+  redeclaration errors, language revisions, nested types, and EVAL behavior.
+- [ ] **D7 — Encode role structure and composition.** Put role parameters, attributes, methods,
+  parent roles, conflicts, hides, and pun metadata into immutable plan operations.
+- [ ] **D8 — Compile role declaration-time bodies and traits.** Run parameterized-role and composed
+  ancestor bodies as bytecode child chunks with correct once-per-composition behavior.
+- [ ] **D9 — Remove `CompiledRoleDeclPlan::legacy_body`.** Preserve role puns, runtime mixins,
+  conflicts, BUILD/TWEAK, custom HOWs, and EVAL.
+- [ ] **D10 — Delete class/role AST registration walkers.** Keep only VM plan execution plus
+  metadata helpers that do not inspect executable AST declarations.
+
+### Phase E — one dispatch resolver and native handler table
+
+Phase E depends on B and may proceed alongside C/D only where it does not touch their adapters.
+The receiver-identity slice comes first because the reverted handler-ID attempt showed that
+`value_type_name()` is not a dispatch owner: type objects appeared as `Package`, user Array
+subclasses as `Any`, and representation aliases such as `Map` need explicit handling.
+
+- [ ] **E1 — Introduce stable `TypeId` and receiver-owner resolution.** Resolve concrete values,
+  type objects, user classes, builtin subclasses, role mixins, and representation aliases to an
+  ordered TypeId MRO without initialization probes or per-call string scans.
+- [ ] **E2 — Give every native entry an exact handler ID.** Generate static type×method handler rows
+  for pure arity handlers and stateful/special handlers; pin type-object, subclass, Map/Seq,
+  Failure, and Rat-style cases that broke the reverted attempt.
+- [ ] **E3 — Add the generation-keyed resolved-call cache.** Key by receiver TypeId, method symbol,
+  call shape, and method generation; cache the ordered candidate sequence, not a second resolver.
+- [ ] **E4 — Resolve native and user candidates in one MRO walk.** Preserve user shadowing,
+  visibility, invocant definedness, arity/signature ordering, and native fallback in one result.
+- [ ] **E5 — Route ordinary VM method calls through the resolver.** Cover zero/n-arg and named-call
+  opcodes while retaining mutation/writeback semantics at the caller boundary.
+- [ ] **E6 — Route mutation-aware and container calls through the resolver.** Cover celled,
+  lvalue/rw, Proxy, index/attribute writeback, and mutable aggregate entry points.
+- [ ] **E7 — Route metaobject, qualified, and re-entrant calls through the resolver.** Cover HOW,
+  `.^lookup`/`.^can`, qualified/private dispatch, EVAL carriers, and method objects.
+- [ ] **E8 — Model multi/proto/submethod ordering in the candidate sequence.** Remove parallel
+  multi and submethod resolver entry points without changing tie-breaking or role conflicts.
+- [ ] **E9 — Add resolver cursors for `samewith`/`nextsame`/`callsame`/`nextwith`.** Continue within
+  the resolved sequence instead of re-entering name-based resolution.
+- [ ] **E10 — Move wrap/unwrap mutation into canonical entries.** Bump the generation and remove
+  wrap-specific cache-clearing paths.
+- [ ] **E11 — Retire arity-specific lookup entry points.** Keep native arity functions only as
+  handler implementations selected by `MethodEntry`.
+
+### Phase F — derive introspection and remove compatibility state
+
+- [ ] **F1 — Build `Method` objects from canonical entries.** Store ownership, visibility,
+  signature, multi/submethod, wrap, and native metadata needed by introspection.
+- [ ] **F2 — Derive `.^methods`, `.^can`, and method MRO views from the resolver/table.** Use the
+  same TypeId MRO and visibility rules as calls.
+- [ ] **F3 — Delete `METHOD_UNIVERSE`, per-type method-name lists, and runtime probing.** This is the
+  explicit retirement of ANALYSIS §4-1's hand tables; retain only the generated native entry
+  catalog that dispatch itself consumes.
+- [ ] **F4 — Remove `ClassDef::methods` as a dispatch/registration mirror.** Leave type structure
+  metadata beside the canonical method table and update snapshots/rollback to copy one source.
+- [ ] **F5 — Remove superseded method caches and manual invalidation.** Keep only the
+  generation-keyed resolved-call cache plus unrelated constructor/data caches.
+- [ ] **F6 — Delete compatibility call carriers and dead resolver modules.** Remove
+  `run_instance_method` variants and name/arity lookup facades once no caller remains.
+- [ ] **F7 — Delete obsolete declaration payloads and generic statement-pool entries.** Remove old
+  `Register*` compatibility code and assert that migrated sub/class/role declarations retain no
+  executable source AST.
+
+### Completion gates
+
+- [ ] **G1 — Full compatibility gate.** `make test`, `make roast`, GC stress, JIT stress, WASM, and
+  bundled-library suites pass with no new quarantine.
+- [ ] **G2 — Architectural guard tests.** Tests fail if a migrated declaration enters
+  `stmt_pool`, retains `legacy_body`, dispatch bypasses `MethodEntry`, or introspection reads a hand
+  name table.
+- [ ] **G3 — Performance gate.** Benchmarks show no regression from initialization probing,
+  per-call owner scans, registry locking, or repeated string interning; cache-hit dispatch remains
+  generation-checked O(1).
+- [ ] **G4 — Close the ADR and ANALYSIS items.** Mark ADR-0019 Accepted/Implemented and update
+  ANALYSIS §1.1, §3.3, and §4-1 only after G1–G3 and all required slices above are complete.
+
 ## Rejected alternatives
 
 ### Keep declaration ASTs but rename the registration functions
@@ -132,8 +280,8 @@ each instruction.
 - Declaration registration becomes inspectable bytecode data and executable child chunks, with no
   executable AST retained for migrated declarations.
 - Native and user methods gain one lookup, cache, MOP interception, and introspection surface.
-- The migration touches broad compatibility-sensitive behavior; stacked PRs keep each ordered layer
-  independently testable.
+- The migration touches broad compatibility-sensitive behavior; sequential one-slice PRs from
+  current `main` keep each ordered layer independently testable without stacked PRs.
 - Native handlers may remain split across source modules for maintainability. Their *registration*
   and lookup entry is singular even when their implementation is not.
 
@@ -168,9 +316,9 @@ routing dispatch reads through the shared entry remain open.
 `MethodEntry` now carries both an optional built-in descriptor and ordered user candidates, so a
 user override and its built-in fallback share one `(owner, method)` row. Class declaration,
 rollback, augmentation, role composition, MOP `add_method`, partial registration, and `EVAL`
-restoration synchronize user candidates into the table. Dispatch still reads the compatibility
-`ClassDef::methods` mirror until compiled-candidate replacement and generation invalidation move
-with it in the next stage.
+restoration synchronize user candidates into the table. User-method presence and overload
+dispatch now read `MethodEntry`; `ClassDef::methods` remains only as the transitional
+registration/on-demand-compilation write mirror.
 
 Every built-in seed and user-candidate synchronization advances the registry's monotonic method
 generation. Resolver and fast-dispatch entry points compare it with the interpreter's observed
