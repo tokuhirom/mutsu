@@ -2448,6 +2448,30 @@ mod tests {
     }
 
     #[test]
+    fn compiled_sub_candidate_carries_normalized_signature_metadata() {
+        let mut interp = Interpreter::new();
+        let output = interp
+            .run("sub normalized(:$value = 42) { $value }; say normalized();")
+            .unwrap();
+        assert_eq!(output, "42\n");
+        let key = Symbol::intern("GLOBAL::normalized");
+        let registry = interp.registry();
+        let def = registry
+            .functions
+            .get(&key)
+            .expect("registered function candidate");
+        let compiled = def
+            .compiled
+            .as_ref()
+            .expect("normalized candidate uses its compiled body");
+        assert_eq!(
+            format!("{:?}", compiled.param_defs),
+            format!("{:?}", def.param_defs)
+        );
+        assert_eq!(compiled.empty_sig, def.empty_sig);
+    }
+
+    #[test]
     fn variables_and_concat() {
         let mut interp = Interpreter::new();
         let output = interp

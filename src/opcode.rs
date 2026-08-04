@@ -1875,6 +1875,78 @@ pub(crate) struct CompiledSubDeclPlan {
     pub(crate) supersede: bool,
     pub(crate) custom_traits: Vec<(String, Option<Expr>)>,
     pub(crate) fingerprint: Option<u64>,
+    /// Registration metadata derived once while lowering the declaration.
+    /// Keeping it beside the plan prevents the registry adapter from walking
+    /// `legacy_body` merely to reconstruct signature and identity facts.
+    pub(crate) routine_metadata: CompiledRoutineMetadata,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct CompiledRoutineMetadata {
+    pub(crate) effective_param_defs: Vec<ParamDef>,
+    pub(crate) empty_sig: bool,
+    pub(crate) has_non_nil_return: bool,
+    pub(crate) is_stub: bool,
+    pub(crate) has_param_return_redeclaration: bool,
+}
+
+fn implicit_legacy_param(name: &str) -> ParamDef {
+    ParamDef {
+        name: name.to_string(),
+        default: None,
+        multi_invocant: true,
+        required: false,
+        named: false,
+        slurpy: true,
+        double_slurpy: false,
+        onearg: false,
+        sigilless: false,
+        type_constraint: None,
+        literal_value: None,
+        sub_signature: None,
+        where_constraint: None,
+        traits: Vec::new(),
+        optional_marker: false,
+        outer_sub_signature: None,
+        code_signature: None,
+        is_invocant: false,
+        shape_constraints: None,
+        block_param: false,
+    }
+}
+
+fn is_stub_routine_body(body: &[Stmt]) -> bool {
+    let mut semantic = body.iter().filter(|stmt| !matches!(stmt, Stmt::SetLine(_)));
+    matches!(
+        (semantic.next(), semantic.next()),
+        (
+            Some(Stmt::Expr(Expr::Call { name, .. })),
+            None
+        ) if name == "__mutsu_stub_die" || name == "__mutsu_stub_warn"
+    )
+}
+
+fn body_contains_non_nil_return(stmts: &[Stmt]) -> bool {
+    stmts.iter().any(|stmt| match stmt {
+        Stmt::Return(expr) => !matches!(expr, Expr::Literal(value) if value.is_nil()),
+        Stmt::If {
+            then_branch,
+            else_branch,
+            ..
+        } => body_contains_non_nil_return(then_branch) || body_contains_non_nil_return(else_branch),
+        Stmt::While { body, .. }
+        | Stmt::React { body }
+        | Stmt::SyntheticBlock(body)
+        | Stmt::Block(body)
+        | Stmt::Subtest { body, .. }
+        | Stmt::For { body, .. } => body_contains_non_nil_return(body),
+        Stmt::Loop { init, body, .. } => {
+            init.as_deref()
+                .is_some_and(|stmt| body_contains_non_nil_return(std::slice::from_ref(stmt)))
+                || body_contains_non_nil_return(body)
+        }
+        _ => false,
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -4805,6 +4877,37 @@ impl CompiledCode {
                 *is_raw,
             )
         });
+        let (uses_positional, uses_named) = if params.is_empty() && param_defs.is_empty() {
+            let body_shape = format!("{body:?}");
+            (
+                body_shape.contains("ArrayVar(\"_\")"),
+                body_shape.contains("HashVar(\"_\")"),
+            )
+        } else {
+            (false, false)
+        };
+        let mut effective_param_defs = param_defs.clone();
+        if effective_param_defs.is_empty() && params.is_empty() {
+            if uses_positional {
+                effective_param_defs.push(implicit_legacy_param("@_"));
+            }
+            if uses_named {
+                effective_param_defs.push(implicit_legacy_param("%_"));
+            }
+        }
+        let routine_metadata = CompiledRoutineMetadata {
+            empty_sig: params.is_empty() && effective_param_defs.is_empty(),
+            effective_param_defs,
+            has_non_nil_return: body_contains_non_nil_return(body),
+            is_stub: is_stub_routine_body(body),
+            has_param_return_redeclaration: param_defs.iter().any(|pd| {
+                pd.type_constraint.is_some()
+                    && pd
+                        .code_signature
+                        .as_ref()
+                        .is_some_and(|(_, ret)| ret.is_some())
+            }),
+        };
         let plan_idx = self.sub_decl_plans.len() as u32;
         self.sub_decl_plans.push(CompiledSubDeclPlan {
             name: *name,
@@ -4825,6 +4928,7 @@ impl CompiledCode {
             supersede: *supersede,
             custom_traits: custom_traits.clone(),
             fingerprint,
+            routine_metadata,
         });
         let idx = self.decl_plans.len() as u32;
         self.decl_plans.push(CompiledDeclPlanRef::Sub(plan_idx));

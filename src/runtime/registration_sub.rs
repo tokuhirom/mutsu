@@ -558,6 +558,78 @@ impl Interpreter {
         custom_traits: &[(String, Option<crate::ast::Expr>)],
         site_fingerprint: Option<u64>,
     ) -> Result<SubRegisterOutcome, RuntimeError> {
+        self.register_sub_decl_with_metadata(
+            name,
+            params,
+            param_defs,
+            return_type,
+            associativity,
+            body,
+            multi,
+            is_rw,
+            is_raw,
+            is_test_assertion,
+            supersede,
+            custom_traits,
+            site_fingerprint,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn register_compiled_sub_decl(
+        &mut self,
+        name: &str,
+        params: &[String],
+        param_defs: &[ParamDef],
+        return_type: Option<&String>,
+        associativity: Option<&String>,
+        body: &[Stmt],
+        multi: bool,
+        is_rw: bool,
+        is_raw: bool,
+        is_test_assertion: bool,
+        supersede: bool,
+        custom_traits: &[(String, Option<crate::ast::Expr>)],
+        site_fingerprint: Option<u64>,
+        metadata: &crate::opcode::CompiledRoutineMetadata,
+    ) -> Result<SubRegisterOutcome, RuntimeError> {
+        self.register_sub_decl_with_metadata(
+            name,
+            params,
+            param_defs,
+            return_type,
+            associativity,
+            body,
+            multi,
+            is_rw,
+            is_raw,
+            is_test_assertion,
+            supersede,
+            custom_traits,
+            site_fingerprint,
+            Some(metadata),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn register_sub_decl_with_metadata(
+        &mut self,
+        name: &str,
+        params: &[String],
+        param_defs: &[ParamDef],
+        return_type: Option<&String>,
+        associativity: Option<&String>,
+        body: &[Stmt],
+        multi: bool,
+        is_rw: bool,
+        is_raw: bool,
+        is_test_assertion: bool,
+        supersede: bool,
+        custom_traits: &[(String, Option<crate::ast::Expr>)],
+        site_fingerprint: Option<u64>,
+        metadata: Option<&crate::opcode::CompiledRoutineMetadata>,
+    ) -> Result<SubRegisterOutcome, RuntimeError> {
         if name.starts_with("infix:<") {
             self.user_declared_infix_ops.insert(name.to_string());
             crate::vm::vm_jit::note_user_infix_decl();
@@ -590,7 +662,7 @@ impl Interpreter {
             if self.current_package() != "GLOBAL" {
                 let saved = self.current_package();
                 self.set_current_package("GLOBAL".to_string());
-                let outcome = self.register_sub_decl_fp(
+                let outcome = self.register_sub_decl_with_metadata(
                     name,
                     params,
                     param_defs,
@@ -604,6 +676,7 @@ impl Interpreter {
                     supersede,
                     custom_traits,
                     site_fingerprint,
+                    metadata,
                 );
                 self.set_current_package(saved);
                 return outcome;
@@ -685,15 +758,27 @@ impl Interpreter {
                 return Ok(SubRegisterOutcome::Installed);
             }
         }
-        Self::validate_callable_param_return_redeclaration(param_defs)?;
+        if metadata.is_some_and(|metadata| metadata.has_param_return_redeclaration) {
+            return Err(RuntimeError::new(
+                "X::Redeclaration: only one way of specifying sub-signature return type allowed",
+            ));
+        }
+        if metadata.is_none() {
+            Self::validate_callable_param_return_redeclaration(param_defs)?;
+        }
         if let Some(spec) = return_type
             && self.is_definite_return_spec(spec)
-            && Self::body_contains_non_nil_return(body)
+            && metadata.map_or_else(
+                || Self::body_contains_non_nil_return(body),
+                |metadata| metadata.has_non_nil_return,
+            )
         {
             return Err(Self::malformed_return_value_compile_error(spec));
         }
         // Auto-detect @_ / %_ usage for subs without explicit signatures
-        let (effective_param_defs, empty_sig) = if param_defs.is_empty() && params.is_empty() {
+        let (effective_param_defs, empty_sig) = if let Some(metadata) = metadata {
+            (metadata.effective_param_defs.clone(), metadata.empty_sig)
+        } else if param_defs.is_empty() && params.is_empty() {
             let (use_positional, use_named) = Self::auto_signature_uses(body);
             let mut defs = Vec::new();
             if use_positional {
@@ -793,6 +878,10 @@ impl Interpreter {
             is_raw,
             is_method: false,
             empty_sig,
+            is_stub: metadata.map_or_else(
+                || Self::is_stub_routine_body(body),
+                |metadata| metadata.is_stub,
+            ),
             return_type: return_type.cloned(),
             is_default: custom_traits.iter().any(|(t, _)| t == "default"),
             deprecated_message,
@@ -886,7 +975,7 @@ impl Interpreter {
             .registry()
             .functions
             .get(&single_key_sym)
-            .is_some_and(|existing| Self::is_stub_routine_body(&existing.body));
+            .is_some_and(|existing| existing.is_stub);
         // These REGISTRY checks need the EVAL shadow exemption too, and the
         // `&name` snapshot cannot supply it: the two records of a declaration
         // do not always agree about what exists. A `my sub` declared inside a
@@ -1221,6 +1310,7 @@ impl Interpreter {
             is_raw: false,
             is_method: false,
             empty_sig: false,
+            is_stub: Self::is_stub_routine_body(body),
             return_type: None,
             is_default: false,
             deprecated_message: None,
@@ -1291,6 +1381,7 @@ impl Interpreter {
                 is_raw: false,
                 is_method: false,
                 empty_sig: proto_empty_sig,
+                is_stub: Self::is_stub_routine_body(body),
                 return_type: None,
                 is_default: false,
                 deprecated_message: None,
@@ -1398,6 +1489,7 @@ impl Interpreter {
             is_raw,
             is_method: false,
             empty_sig,
+            is_stub: Self::is_stub_routine_body(body),
             return_type: return_type.cloned(),
             is_default: false,
             deprecated_message: None,
@@ -1543,6 +1635,7 @@ impl Interpreter {
                 is_raw: false,
                 is_method: false,
                 empty_sig: proto_empty_sig,
+                is_stub: Self::is_stub_routine_body(body),
                 return_type: None,
                 is_default: false,
                 deprecated_message: None,

@@ -175,6 +175,10 @@ pub(crate) struct FunctionDef {
     pub(crate) is_method: bool,
     /// When true, this sub has an explicit empty signature `()` and should reject any arguments.
     pub(crate) empty_sig: bool,
+    /// Whether the declaration body is a yada stub (`...`, `!!!`, or `???`).
+    /// Compiled declaration plans provide this without a registration-time AST scan.
+    #[serde(default)]
+    pub(crate) is_stub: bool,
     /// Return type annotation (e.g., "Str", "Str(Numeric:D)", "Foo:D()")
     pub(crate) return_type: Option<String>,
     /// `is default` trait — this candidate is preferred when multi dispatch ties.
