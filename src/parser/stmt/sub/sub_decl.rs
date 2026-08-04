@@ -139,6 +139,12 @@ pub(crate) fn sub_decl_body(
         ) {
             return Err(err);
         }
+        // A `:[…]`/`:<…>` colon pair still sitting in `rest` means the name meant
+        // to declare an operator and the parser could not read it; say what is
+        // wrong with it rather than backtracking to "Missing block".
+        if let Some(err) = super::sub_name::operator_name_extension_error(&name, rest) {
+            return Err(err);
+        }
         // Validate circumfix/postcircumfix operator part count
         validate_categorical_parts(&name)?;
         // Register user-declared sub so it can be called without parens later
