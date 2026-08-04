@@ -108,28 +108,26 @@ impl Compiler {
         false
     }
 
-    /// Methods that STORE their closure argument for later invocation on
-    /// another thread rather than calling it immediately. A closure passed to
-    /// `Promise.then` runs on the thread pool when the promise is kept, so it
-    /// genuinely escapes the call frame — the locals it captures-and-mutates must
-    /// be promoted to shared `ContainerRef` cells (the same escape rule that
-    /// `start {...}` uses). Without this a lexical the parent thread reassigns
-    /// after registering the continuation is invisible to the continuation body,
-    /// which reads a stale clone-time snapshot.
+    /// A closure passed as a **method argument** escapes the creating frame.
     ///
-    /// `tap`/`act` escape too: a supply tap callback is stored and later driven
-    /// by whatever thread emits into the supply (e.g. the socket-listener worker
-    /// — roast S32-io/socket-recv-vs-read.t test 11). Boxing their accumulators
-    /// became safe once the Proc::Async tap path was unified to a single
-    /// delivery (the await-time `replay_proc_taps`; the tap-time live-channel
-    /// loop used to fire the same collected output a second time, which a
-    /// by-value snapshot silently swallowed but a shared cell keeps —
-    /// S17-procasync/basic.t test 37).
-    /// `.start` spawns a thread (`Thread.start`, `Promise.start`), so its block
-    /// outlives the calling frame exactly like the `start { ... }` statement
-    /// prefix handled in `expr_call.rs`.
-    pub(super) fn method_escapes_closure_args(name: &str) -> bool {
-        matches!(name, "then" | "tap" | "act" | "start")
+    /// The callee decides whether the closure is invoked immediately or stored,
+    /// and the caller cannot know which — `$reg.register({ $c++ })` keeps it
+    /// alive long after the call returns. Raku closes over *containers*, so any
+    /// captured-and-mutated local a stored closure names must be a shared
+    /// `ContainerRef` cell; snapshotting it by value makes two closures over the
+    /// same `my $c` disagree about its value (see
+    /// `t/closure-arg-shares-its-captured-container.t`), which is the shape a
+    /// Cro `route { my $i; get -> { $i++ } }` counter has.
+    ///
+    /// This used to be an allowlist (`then`/`tap`/`act`/`start`) with everything
+    /// else classified non-escaping as a boxing-cost guard (#2746). Measurement
+    /// (2026-08-04) showed the guard bought nothing: only locals that a child
+    /// closure both captures AND mutates are ever boxed, so the common
+    /// `map {...}` / `lives-ok {...}` argument is untouched, and the one shape
+    /// that does box (an accumulator mutated from a block argument) got *faster*
+    /// with a cell than with the by-name env writeback it replaces.
+    pub(super) fn method_escapes_closure_args(_name: &str) -> bool {
+        true
     }
 
     /// Compile a method call argument. Named args (AssignExpr) are
