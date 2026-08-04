@@ -17,17 +17,34 @@ subtest {
 }, 'probe';
 ```
 
-`raku` builds the route. mutsu dies. All three of these work:
+`raku` builds the route. mutsu dies.
+
+## The exact rule
+
+`tmp/st6q.p6` runs three route blocks inside one subtest and gets:
+
+| route body                          | result |
+|-------------------------------------|--------|
+| `get -> {…}` then `note "…"`        | **dies** (`Expected IO::Handle`) |
+| `note "…"` then `get -> {…}`        | builds |
+| `get -> {…}` then `get -> 'y' {…}`  | **dies** |
+
+So the trigger is **`get` in a non-final statement position** of a route block
+that runs inside a `subtest`. It is not `include` (any second statement will
+do), not the number of statements as such, and not any particular route verb —
+`note` first and `get` last is fine. These also all work:
 
 - the same `route` block at file scope, in a bare block, in a sub, or in a
   `Callable` invoked by hand (`tmp/st6i.p6`);
 - a `route` block inside a subtest with a **single** statement
-  (`route { get -> { … } }`);
-- a `route` block inside a subtest whose first statement is not `get`
-  (`route { include $inner; get -> { … } }` builds fine — `tmp/st6k.p6`).
+  (`route { get -> { … } }`), where `get` is also the final statement;
+- `route { note …; note …; get -> {…} }` inside a subtest (`tmp/st6p.p6`),
+  which also shows that `&get` and `&content` *are* visible in the block's env
+  (`(try &get).defined` is `True` there).
 
-So the trigger is "two or more statements, inside a subtest", not `include` and
-not any particular route verb.
+The final-statement/non-final split is the tell: a non-final statement is
+compiled in sink context and reaches the **`ExecCall`** opcode, while the final
+one goes through `CallFunc` — and only the `ExecCall` path misresolves.
 
 ## What the debugger shows
 
@@ -64,12 +81,16 @@ Two synthetic attempts are **green** on mutsu, so do not chase a smaller repro b
 guessing:
 
 - `tmp/imp1.p6` + `tmp/implib/ImpTest.rakumod` — an exported `runner(&body)` and
-  an exported `marker()` called by bareword from a one- and a two-statement block
-  inside a subtest.
-- `tmp/imp2.p6` + `tmp/implib/ImpTest2.rakumod` — the same with the exported sub
-  named `get`, so it collides with the builtin.
+  an exported `marker()` called by bareword in non-final position inside a
+  subtest.
+- `tmp/imp2.p6` + `tmp/implib/ImpTest2.rakumod` — the same with the exported
+  multi named `get`, so it collides with the builtin.
 
-Grow `tmp/st6n.p6` (the minimal Cro repro above) down instead.
+Both are green, so the builtin-name collision and the non-final position are
+*necessary but not sufficient*; something about how `route` invokes its block
+(`Cro::HTTP::Router`'s `route` runs it under a `$*CRO-ROUTE-SET` dynamic scope,
+and the subtest body itself is compiled at run time) is also in play. Grow
+`tmp/st6q.p6` down instead of guessing at a smaller synthetic.
 
 ## Blast radius
 
