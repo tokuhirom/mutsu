@@ -1142,6 +1142,26 @@ impl Interpreter {
             {
                 return true;
             }
+            // A composed *built-in* role brings its own parents (`Real does
+            // Numeric`), and neither the parent nor the constraint naming it is
+            // a user-declared role, so the registry walk below — gated on
+            // `resolved_constraint` — never reaches them.
+            {
+                let mut stack: Vec<String> = mro.iter().map(|s| s.resolve()).collect();
+                stack.extend(self.registry().composed_roles_seed(&mro));
+                let mut seen = HashSet::new();
+                while let Some(role_name) = stack.pop() {
+                    if !seen.insert(role_name.clone()) {
+                        continue;
+                    }
+                    for rp in Registry::builtin_role_parents(&role_name) {
+                        if Self::type_matches(effective_constraint, rp) {
+                            return true;
+                        }
+                        stack.push((*rp).to_string());
+                    }
+                }
+            }
             // Check transitive role composition through class_composed_roles and role_parents
             if resolved_constraint.is_some() {
                 // Seed from the registry (composed roles over the MRO); the divergent
@@ -1181,6 +1201,13 @@ impl Interpreter {
                                 role_stack.push(rp_base.to_string());
                             }
                         }
+                    }
+                    // A built-in role's own parents are not in the registry, and
+                    // `resolve_role_key` cannot find them either, so push them
+                    // unconditionally — `Real does Numeric` is as true for a
+                    // user class as a declared composition would be.
+                    for rp in Registry::builtin_role_parents(&role_name) {
+                        role_stack.push((*rp).to_string());
                     }
                 }
             }
@@ -1248,10 +1275,8 @@ impl Interpreter {
                             }
                         }
                     }
-                    if let Some(rparents) = self.registry().role_parents.get(&parent) {
-                        for rp in rparents {
-                            stack.push(rp.clone());
-                        }
+                    for rp in self.registry().role_parents_of(&parent) {
+                        stack.push(rp);
                     }
                 }
             }
@@ -1326,11 +1351,9 @@ impl Interpreter {
                     if Self::type_matches(constraint, &role_name) {
                         return true;
                     }
-                    if let Some(rparents) = self.registry().role_parents.get(&role_name) {
-                        for rp in rparents {
-                            let rp_base = rp.split_once('[').map(|(b, _)| b).unwrap_or(rp.as_str());
-                            role_stack.push(rp_base.to_string());
-                        }
+                    for rp in self.registry().role_parents_of(&role_name) {
+                        let rp_base = rp.split_once('[').map(|(b, _)| b).unwrap_or(rp.as_str());
+                        role_stack.push(rp_base.to_string());
                     }
                 }
             }

@@ -740,6 +740,14 @@ native provider's separate counter. **A "plan mismatch plus a blank
 description" is worth checking against the argument's own type before looking at
 `Test` at all.**
 
+`S32-num/real-bridge.t` is closed
+(`news/2026-08/builtin-role-composes-its-own-roles.md`): a `class Fixed2 does
+Real` was not `Numeric`, because `role_parents` only records *user*
+compositions and `Real does Numeric` is a built-in one. Third instance of the
+same mechanism after `Instant`/`Duration` — **when a file emits every assertion
+but numbers only some of them, look for a type relation that diverted one
+`Test.rakumod` candidate group to the native provider.**
+
 `roast/S12-methods/qualified.t` is worth a second look too: its Malformed
 assertion passes now and the file moved on to `Cannot dispatch to method me on
 Parent because it is not inherited or done by Bar` in its inheritance subtest.
