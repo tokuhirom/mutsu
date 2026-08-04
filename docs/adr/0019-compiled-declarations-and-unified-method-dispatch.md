@@ -110,8 +110,9 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 17/51 slices merged. Next slice: C6d-1 (C6a, C6b and C6c landed; C6 and C6d
-are both subdivided below, C6d from a measurement of where its sites are actually reached).**
+**Current progress: 17/51 slices merged. Next slice: attach plan-compiled bytecode to multi
+candidates — the blocker that keeps C6d-1 open (C6a, C6b and C6c landed; C6 and C6d are both
+subdivided below, C6d from a measurement of where its sites are actually reached).**
 
 The migration is complete only when every required box below is checked and the completion gates
 at the end pass. The order within a phase is intentional. A later phase may start when its stated
@@ -197,9 +198,24 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
       `news/2026-08/multi-deferral-runs-the-compiled-candidate.md`, which also records why the
       general `compile_and_call_function_def` entry cannot be used here (it re-pushes the
       multi-dispatch frame the chain owns, and the chain then defers to the same candidate
-      forever). Remaining callers: `builtins_operators_fallback` (user operators),
-      `builtins_operators_infix` (reduce), `builtins_operators_coerce`, `accessors_state`,
-      `main_args` (`MAIN`).
+      forever). Every remaining caller then followed — `builtins_operators_fallback` (user
+      operators), `builtins_operators_infix` (reduce), `builtins_operators_coerce` (hyper),
+      `accessors_state`, `main_args` (`MAIN`) — through one shared
+      `call_routine_def` entry, measured at -13.7% instructions / -22% wall on a reduce over a
+      user multi operator (`news/2026-08/user-operators-run-their-compiled-body.md`, which also
+      records that the *debug* build's instruction count inverts that ranking and must not be
+      used to judge a dispatch-path change). Two things keep the box open:
+      - `call_function_def` still answers one gated shape,
+        `multi_candidate_state_forces_interpreter`: a `state`-bearing candidate of a
+        signature-alternates name (`multi f(A $x) | (B $x) { state $c }`) is one routine with
+        one `state` cell. The compiler already threads a shared `state_group` into every
+        alternate's compiled body, but `vm_register_sub_ops` attaches plan-compiled bytecode
+        only to non-multi candidates (`if *multi { continue; }`), so a multi candidate arrives
+        with `compiled: None` and an on-the-fly compile per alternate fragments the cell
+        (`t/multi-signature-alternates.t`). **Attaching each compiled routine key to its multi
+        candidate retires the gate, the entry, and this half of the box.**
+      - `calls.rs:exec_call` (48 hits) still holds an inlined copy of `call_function_def`'s
+        body, including its own `run_block(&def.body)`.
     - [ ] **C6d-2 — grammar token/rule bodies** (`dispatch.rs:eval_token_def`,
       `regex_token_resolve.rs`): 956 of the 1148 hits, but those `FunctionDef`s carry a regex
       body, so scope this against ADR-0009's execution model rather than the OTF gate.
@@ -378,6 +394,16 @@ bytecode over compiling `data.body` on the fly, so no dispatch path executes an 
 these code objects. The three near-identical `SubData` literals behind `make_sub`,
 `make_sub_with_id`, and `make_sub_owning` collapsed into one `new_code_object` core in the
 process.
+
+Every caller of the interpreter routine entry `call_function_def` now invokes the routine's
+bytecode through one shared `call_routine_def`: the multi-deferral chain first, then the user
+`prefix:`/`postfix:` operators, the reduce and hyper steps over a user `infix:`, `reduce` given
+the operator as a routine value, and the selected `MAIN` candidate. What that removes is a
+per-call *compile* of the routine's AST body, not a tree walk. `call_function_def` itself
+survives only for `multi_candidate_state_forces_interpreter`, and its remaining blocker is
+narrow and named: multi candidates never receive plan-compiled bytecode, so a
+signature-alternates candidate cannot reach dispatch with the shared `state_group`-scoped body
+the compiler already produced for it.
 
 `RegisterClass` and `RegisterRole` now likewise index typed class/role declaration-plan pools for
 both source-order declarations and hoisted forward-reference shells. The VM no longer discovers

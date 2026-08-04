@@ -128,17 +128,22 @@ impl Interpreter {
         &mut self,
         def: &crate::ast::FunctionDef,
     ) -> Arc<CompiledFunction> {
-        let pkg = def.package.resolve();
         let fingerprint = def.body_fingerprint();
-        let cache_key = {
-            let mut hasher = std::hash::DefaultHasher::new();
-            std::hash::Hash::hash(&fingerprint, &mut hasher);
-            std::hash::Hash::hash(&pkg, &mut hasher);
-            std::hash::Hasher::finish(&hasher)
-        };
+        // The key discriminates (body, defining package), and both halves are
+        // already integers: the fingerprint is memoized on the def, and the
+        // package is an interned `Symbol`, so its id identifies its string
+        // exactly. Mixing them is a couple of ALU ops.
+        //
+        // It used to SipHash the fingerprint plus a freshly allocated package
+        // `String`. That is per *call* for a caller with no plan-attached
+        // bytecode — a user `infix:` operator in a reduce recompiled nothing but
+        // still paid the hash on every step, which profiled as 2.6% of a
+        // `[mm] 1 .. 200` run (ADR-0019 C6d-1).
+        let cache_key = fingerprint ^ (def.package.id() as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
         if let Some(cached) = self.otf_compile_cache.get(&cache_key) {
             return cached.clone();
         }
+        let pkg = def.package.resolve();
         let cc = {
             let mut compiler = crate::compiler::Compiler::new();
             if !pkg.is_empty() && pkg != "GLOBAL" {
@@ -240,6 +245,46 @@ impl Interpreter {
         }
 
         result
+    }
+
+    /// Call an *already resolved* routine definition as bytecode, from a runtime
+    /// caller that owns no `CompiledFns` table of its own — a user-defined
+    /// operator, a reduce or hyper step over one, or `MAIN`.
+    ///
+    /// This is the replacement for the interpreter entry `call_function_def`,
+    /// whose body run was `run_block(&def.body)`: not a tree walk, but a fresh
+    /// compile of the routine's AST on *every* call (ADR-0019 C6d-1). It runs the
+    /// bytecode the declaration plan already attached to the routine, falling back
+    /// to one memoized on-the-fly compile when the plan attached none.
+    ///
+    /// Deliberately NOT `compile_and_call_function_def`, for a weaker version of
+    /// the reason the multi-deferral caller avoids it: that entry pushes a samewith
+    /// context and a fresh *multi-dispatch frame*, and building a candidate list per
+    /// call is pure overhead here, because the caller has already resolved the
+    /// candidate it wants. A/B'd on a reduce over a two-candidate user `infix:`, it
+    /// cost measurably more than `call_compiled_function_named` — the entry just
+    /// below that setup, which also matches the semantics of the interpreter entry
+    /// this replaces exactly (`call_function_def` pushed neither stack).
+    pub(crate) fn call_routine_def(
+        &mut self,
+        def: &crate::ast::FunctionDef,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        // `as_str`, not `resolve`: the latter allocates a `String` per call.
+        let pkg = def.package.as_str();
+        let name = def.name.as_str();
+        // The one shape whose `state` cell an on-the-fly compile would fragment: a
+        // state-bearing candidate of a signature-alternates name. See
+        // `Interpreter::call_function_def`, which exists for this case alone.
+        if self.multi_candidate_state_forces_interpreter(name, def) {
+            return loan_env!(self, call_function_def(def, &args));
+        }
+        let empty_fns = CompiledFns::default();
+        let cf = match &def.compiled {
+            Some(compiled) => Arc::clone(compiled),
+            None => self.otf_compile_function_def(def),
+        };
+        self.call_compiled_function_named(&cf, args, &empty_fns, pkg, name)
     }
 
     /// Check if a function name is handled by the interpreter's Rust code

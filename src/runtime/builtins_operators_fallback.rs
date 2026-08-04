@@ -19,7 +19,7 @@ impl Interpreter {
             .and_then(|s| s.strip_suffix('>'))
         {
             if let Some(def) = self.resolve_function_with_alias(name, args) {
-                return self.call_function_def(&def, args);
+                return self.call_routine_def(&def, args.to_vec());
             }
             if let Some(err) = self.take_pending_dispatch_error() {
                 return Err(err);
@@ -132,7 +132,7 @@ impl Interpreter {
             .and_then(|s| s.strip_suffix('>'))
         {
             if let Some(def) = self.resolve_function_with_alias(name, args) {
-                return self.call_function_def(&def, args);
+                return self.call_routine_def(&def, args.to_vec());
             }
             if let Some(err) = self.take_pending_dispatch_error() {
                 return Err(err);

@@ -250,7 +250,7 @@ impl Interpreter {
             let pair_result = if let Some(v) =
                 self.resolve_function_with_types(&infix_name, &[l.clone(), r.clone()])
             {
-                self.call_function_def(&v, &[l, r])?
+                self.call_routine_def(&v, vec![l, r])?
             } else if inner == "=~=" || inner == "\u{2245}" {
                 // `=~=` needs $*TOLERANCE (self), so the static reduction table
                 // cannot host it (its `op=` catch-all would also mis-strip it).

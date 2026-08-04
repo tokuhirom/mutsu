@@ -88,6 +88,31 @@ advanced — the chain then defers to the same candidate forever and the stack o
 It uses the entry below that setup, `call_compiled_function_named`. Landed; see
 `news/2026-08/multi-deferral-runs-the-compiled-candidate.md`.
 
+## Update 2: the remaining callers landed, and re-measuring shrank the site
+
+All five remaining callers now go through one `call_routine_def`
+(`news/2026-08/user-operators-run-their-compiled-body.md`). Re-running the probe on the
+whole `t/` suite *after* the deferral slice found only **13** hits left at
+`calls.rs:call_function_def`, not the ~42 the arithmetic above implies: 8 `MAIN`, 3
+`postfix:<!>`, 2 `infix:<op>`. The `Test::Util`-style helper names in the table above
+(`is_run`, `group-of`, `tap-ok`, `assert-eq`) do **not** reach this site; they belong to
+`exec_call`'s 48.
+
+`compile_and_call_function_def` turned out to be the wrong entry for these callers too,
+for a weaker reason than the deferral chain's: they have already resolved their
+candidate, so its per-call multi-dispatch frame is pure overhead. It A/B'd measurably
+worse than `call_compiled_function_named`.
+
+Two blockers keep C6d-1 open, both narrow:
+
+1. **Multi candidates never get plan-attached bytecode** — `vm_register_sub_ops` has
+   `if *multi { continue; }` where it would attach a compiled routine key to a candidate
+   `FunctionDef`. That is why `multi_candidate_state_forces_interpreter` has to exist and
+   why `call_function_def` survives. Own ticket:
+   `todo/tickets/attach-plan-bytecode-to-multi-candidates.md`.
+2. **`calls.rs:exec_call`** still carries an inlined copy of `call_function_def`'s whole
+   body, `run_block(&def.body)` included.
+
 ## Suggested subdivision
 
 Mirroring how C6 was subdivided:
