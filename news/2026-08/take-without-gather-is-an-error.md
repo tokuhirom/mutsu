@@ -7,11 +7,16 @@ mention-me;
 
 mutsu exited 0 and printed nothing. rakudo dies with `take without gather` and
 names the routine. The cause is the value the signal carries: `take` is raised
-as a control signal whose `return_value` holds the taken value, and the two
-routine-call boundaries (`vm_call_light.rs`, `vm_call_named_inner.rs`) treat any
-error carrying a `return_value` as an explicit `return`. `CX::Warn` had already
-been carved out of that rule for the same reason; `take`, `emit` and `done`
-needed the same carve-out. A `take` inside a `gather` is unaffected — it never
+as a control signal whose `return_value` holds the taken value, and every
+routine-call boundary treats an error carrying a `return_value` as an explicit
+`return`. `CX::Warn` had already been carved out of that rule for the same
+reason; `take`, `emit` and `done` needed the same carve-out, expressed once as
+`RuntimeError::is_yield_signal` and applied at all seven boundaries — the plain,
+typed and fast compiled-call paths, the named path, closures, and the two
+method-dispatch exits. Doing only the first two was not enough and failed in a
+way worth remembering: the *second* call to a routine is dispatched by
+`call_compiled_function_fast`, so a repro that calls the routine once looked
+fixed while the test file that called it three times did not. A `take` inside a `gather` is unaffected — it never
 becomes an error at all, because both raise sites check the gather depth first.
 
 Three smaller things travelled with it, all on the same escaping-signal path:
@@ -35,4 +40,8 @@ for #` comment" — the bracket was there, it just never closed. It now says
 "at line N" on purpose: `error_render::strip_internal_location` removes that
 phrase as an internal detail.
 
-Pin: `t/take-without-gather.t` (all ten assertions verified against `raku`).
+Pin: `t/take-without-gather.t` (all ten assertions verified against `raku`). Its
+backtrace assertion deliberately uses a routine it has not called before —
+mutsu loses the `in sub` frame on a *repeated* call, for `die` as much as for
+`take`, which is filed as
+`todo/tickets/repeat-call-loses-backtrace-frame.md`.

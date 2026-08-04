@@ -450,6 +450,15 @@ impl RuntimeError {
     /// [`Self::control_flow_illegal`]). `try` must **not** pass this one
     /// through: there is nothing further up that would consume it, so passing
     /// it on makes it uncatchable.
+    /// A control signal that carries the value it *yields* rather than a value
+    /// it returns. `take`/`emit`/`done` all put that value in `return_value`,
+    /// and every routine-call boundary tests `return_value.is_some()` to spot a
+    /// non-local `return` — so without this predicate a `take` in a routine
+    /// with no enclosing `gather` was silently turned into `return 1`.
+    pub(crate) fn is_yield_signal(&self) -> bool {
+        self.is_take() || self.is_emit() || self.is_done() || self.is_react_done()
+    }
+
     pub(crate) fn is_illegal_control(&self) -> bool {
         self.exception.is_some()
             && matches!(
