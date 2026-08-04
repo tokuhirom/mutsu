@@ -33,6 +33,51 @@ impl Interpreter {
         err
     }
 
+    /// Merge a sequence generator/predicate closure's captured env over the LIVE
+    /// env before running its body.
+    ///
+    /// The merge (rather than a replace) is what lets the body see the enclosing
+    /// scope, but it means every captured name *shadows* the caller's current
+    /// binding. That is right for names the closure genuinely closes over and
+    /// wrong for the bulk names a *reflective* program's whole-env snapshot drags
+    /// along ([`Interpreter::capture_closure_env`] falls back to `clone_env()`
+    /// once any chunk in the process uses `EVAL`/`CALLER::`/symbolic deref — and
+    /// merely `use`-ing a module that contains one, such as the real
+    /// `Test.rakumod`'s `cmp-ok`, is enough).
+    ///
+    /// The bulk names are stale by construction here: a self-referential sequence
+    /// (`my @primes = 2, 3, 5, -> $p { … &is-prime-beta … } … *`) creates its
+    /// generator while `@primes` is still the hoisted empty array, so re-imposing
+    /// the snapshot on every later pull hides the assigned list from any routine
+    /// the body calls. Install a *plain user lexical* that the closure does not
+    /// close over only when the live env has no binding of its own — exactly the
+    /// classification [`crate::env::is_plain_user_lexical`] exists for.
+    fn install_sequence_closure_env(
+        &mut self,
+        data: &crate::value::SubData,
+        env: &crate::env::Env,
+    ) {
+        let genuine: Option<std::collections::HashSet<Symbol>> =
+            data.compiled_code.as_ref().map(|cc| {
+                cc.free_var_syms
+                    .iter()
+                    .chain(data.owned_captures.iter())
+                    .chain(data.authoritative_captures.iter())
+                    .copied()
+                    .collect()
+            });
+        for (k, v) in env.iter() {
+            if let Some(genuine) = &genuine
+                && !genuine.contains(k)
+                && k.with_str(crate::env::is_plain_user_lexical)
+                && self.env.contains_key_sym(*k)
+            {
+                continue;
+            }
+            self.env.insert_sym(*k, v.clone());
+        }
+    }
+
     fn collect_sequence_args_fixed(
         result: &[Value],
         arity: usize,
@@ -219,10 +264,8 @@ impl Interpreter {
                         .unwrap_or_default();
                     // Use the mutable closure env so side-effects persist across
                     // iterations (e.g. `my $i = 0; { ++$i } ... *`).
-                    if let Some(env) = closure_env.as_ref() {
-                        for (k, v) in env.iter() {
-                            self.env.insert_sym(*k, v.clone());
-                        }
+                    if let Some(env) = closure_env.clone() {
+                        self.install_sequence_closure_env(&data, &env);
                     }
 
                     // Bind parameters
@@ -853,9 +896,8 @@ impl Interpreter {
 
                 for (i, _) in seeds.iter().enumerate() {
                     let saved = self.env.clone();
-                    for (k, v) in &data.env {
-                        self.env.insert_sym(*k, v.clone());
-                    }
+                    let captured = data.env.clone();
+                    self.install_sequence_closure_env(&data, &captured);
 
                     // Collect the appropriate number of previous values up to position i+1
                     let args: Vec<Value> = if i + 1 < arity {
