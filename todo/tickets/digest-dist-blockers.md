@@ -1,5 +1,12 @@
 # Remaining blockers for the `Digest` distribution
 
+**Status (2026-08-05): the dist is BUNDLED** — `modules/Digest/`,
+`docs/batteries/digest.md`, `news/2026-08/digest-battery-bundled.md`. Every
+blocker below is fixed; what is left in this file is the non-blocking residue
+list (5, plus the three smaller findings under 6), kept open because they are
+real gaps. The one remaining *bundle* gap is throughput, not correctness:
+`todo/tickets/digest-ripemd-start-per-block-overhead.md`.
+
 grondilu's `Digest` dist (`libdigest-raku`, Artistic-2.0) provides `Digest::MD5`,
 `Digest::SHA1`, `Digest::SHA2`, `Digest::SHA3`, `Digest::RIPEMD` and `HMAC`, and
 is the dependency of `Digest::HMAC:ver<1.0.7>:auth<zef:jjmerelo>`. Seven general

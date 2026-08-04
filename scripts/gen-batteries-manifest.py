@@ -127,6 +127,14 @@ SIDECAR = {
         "slot": "HTTP/2 header compression (HPACK)",
         "record": "docs/batteries/http-hpack.md",
     },
+    "Digest": {
+        "slot": "Message digests (MD5 / SHA / RIPEMD / HMAC)",
+        "record": "docs/batteries/digest.md",
+    },
+    "OO::Monitors": {
+        "slot": "Monitors (`monitor` declarator)",
+        "record": "docs/batteries/oo-monitors.md",
+    },
 }
 
 

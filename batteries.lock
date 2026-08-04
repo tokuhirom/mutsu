@@ -45,3 +45,4 @@ IO::Path::ChildSecure	modules/IO-Path-ChildSecure/lib	https://github.com/raku-co
 Base64	modules/Base64/lib	https://github.com/ugexe/Raku-Base64.git	681a50faebcea1aaa5856051ef4a6e2267fcd6d8	t/*.rakutest	-
 HTTP::HPACK	modules/HTTP-HPACK/lib	https://github.com/jnthn/p6-http-hpack.git	c52e0065e7d14836223d8a8d984d124a4f38ba8a	t/*.rakutest	-
 OO::Monitors	modules/OO-Monitors/lib	https://github.com/jnthn/oo-monitors.git	5f3af495443771b70d3c626d5cecb9ba7f9f3272	t/*.rakutest	-
+Digest	modules/Digest/lib	https://github.com/grondilu/libdigest-raku.git	2870e6581dab36cf895c1d31898cde925c8763f1	t/*.t	-
