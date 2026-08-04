@@ -1,7 +1,7 @@
 use super::*;
 
 impl Interpreter {
-    pub(super) fn call_compiled_function_named(
+    pub(crate) fn call_compiled_function_named(
         &mut self,
         cf: &CompiledFunction,
         args: Vec<Value>,

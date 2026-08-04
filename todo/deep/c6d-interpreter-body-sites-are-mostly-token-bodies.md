@@ -71,6 +71,23 @@ have. The two candidate shapes are: compile the body as a block once and memoize
 chunk on the def beside `compiled`, or lift these sites to call the routine convention
 and delete their own argument binding.
 
+## Update: C6d-1's shape turned out to be neither candidate
+
+Following the `call_function_def` callers showed the ordinary-routine tail is not a
+convention problem at all. `compile_and_call_function_def` — the VM's routine entry —
+already exists and most callers use it; the tail is the handful of callers that still
+reach the *interpreter* entry `call_function_def`:
+`builtins_dispatch_next` (multi deferral), `builtins_operators_fallback` (user
+operators), `builtins_operators_infix` (reduce), `builtins_operators_coerce`,
+`accessors_state`, `main_args` (`MAIN`). Each is rewired, not redesigned.
+
+The one non-obvious constraint, found by trying the naive rewire: the multi-deferral
+caller must **not** use `compile_and_call_function_def`, because that entry pushes a
+fresh multi-dispatch frame for the name and a deferral chain owns the frame it just
+advanced — the chain then defers to the same candidate forever and the stack overflows.
+It uses the entry below that setup, `call_compiled_function_named`. Landed; see
+`news/2026-08/multi-deferral-runs-the-compiled-candidate.md`.
+
 ## Suggested subdivision
 
 Mirroring how C6 was subdivided:

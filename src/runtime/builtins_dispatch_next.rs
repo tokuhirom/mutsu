@@ -736,7 +736,31 @@ impl Interpreter {
             if have_rw_source {
                 self.set_pending_call_arg_sources(Some(rw_sources));
             }
-            let result = self.call_function_def(&next_def, &call_args);
+            // Run the next candidate as bytecode — the body the declaration plan
+            // compiled, or one on-the-fly compile memoized per candidate — instead
+            // of recompiling `next_def.body` on every deferral (ADR-0019 C6d-1).
+            //
+            // Deliberately NOT `compile_and_call_function_def`: that entry pushes a
+            // fresh multi-dispatch frame for the name, and this deferral chain
+            // *owns* the frame it just advanced above. Re-pushing it restarts the
+            // chain at the first candidate, so the next `nextsame` defers to the
+            // same candidate forever (stack overflow in
+            // `t/multi-where-otf-dispatch.t`). It also must not push a samewith
+            // context, matching the interpreter entry this replaces.
+            let empty_fns = crate::opcode::CompiledFns::default();
+            let cf = match &next_def.compiled {
+                Some(compiled) => std::sync::Arc::clone(compiled),
+                None => self.otf_compile_function_def(&next_def),
+            };
+            let next_pkg = next_def.package.resolve();
+            let next_name = next_def.name.resolve();
+            let result = self.call_compiled_function_named(
+                &cf,
+                call_args.clone(),
+                &empty_fns,
+                &next_pkg,
+                &next_name,
+            );
             if have_rw_source {
                 self.set_pending_call_arg_sources(None);
             }
