@@ -490,8 +490,19 @@ impl Interpreter {
             if interp.halted {
                 std::process::exit(interp.exit_code as i32);
             }
-            // If the callback threw an unhandled exception, terminate
+            // If the callback threw an unhandled exception, terminate — but a
+            // `done`/`last` is a control signal the supply machinery owns, not a
+            // failure. It reaches here whenever the body (or the tap's `done =>`
+            // chain, which carries the enclosing supply's LAST phasers and its
+            // done-group marker) completes the supply from this reader thread.
+            // Treating it as an unhandled exception killed the whole process
+            // mid-file. Every other supply drive loop absorbs it the same way —
+            // see the `is_react_done() || is_last()` arms in
+            // `native_supply_mut_methods` and `vm_react_subscriptions`.
             if let Err(err) = result {
+                if err.is_react_done() || err.is_last() {
+                    break;
+                }
                 eprintln!(
                     "Unhandled exception in code scheduled on thread\n{}",
                     err.message
