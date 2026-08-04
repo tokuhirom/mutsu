@@ -340,7 +340,7 @@ impl Compiler {
                     t.starts_with("__") || t == "default" || t.starts_with("DEPRECATED")
                 });
             }
-            let idx = self.code.add_sub_decl_plan(&hoisted);
+            let idx = self.add_sub_decl_plan(&hoisted);
             self.code.emit(OpCode::RegisterDecl(idx));
         }
     }
@@ -449,7 +449,7 @@ impl Compiler {
                         t.starts_with("__") || t == "default" || t.starts_with("DEPRECATED")
                     });
                 }
-                let idx = self.code.add_sub_decl_plan(&hoisted);
+                let idx = self.add_sub_decl_plan(&hoisted);
                 self.code.emit(OpCode::RegisterDecl(idx));
             }
         }
@@ -647,7 +647,7 @@ impl Compiler {
                         });
                         custom_traits.push(("__hoisted".to_string(), None));
                     }
-                    let idx = self.code.add_class_decl_plan(&shell);
+                    let idx = self.add_class_decl_plan(&shell);
                     self.code.emit(OpCode::RegisterDecl(idx));
                 }
                 Stmt::RoleDecl { .. } => {
@@ -658,7 +658,7 @@ impl Compiler {
                         });
                         custom_traits.push(("__hoisted".to_string(), None));
                     }
-                    let idx = self.code.add_role_decl_plan(&shell);
+                    let idx = self.add_role_decl_plan(&shell);
                     self.code.emit(OpCode::RegisterDecl(idx));
                 }
                 _ => {}

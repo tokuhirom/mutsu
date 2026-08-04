@@ -2110,12 +2110,15 @@ impl Interpreter {
                     // how a whole C API is usually bound (`DBDish::mysql::Native`
                     // declares every one of its ~40 entry points this way).
                     if method_custom_traits.iter().any(|(t, _)| t == "native") {
+                        // Class/role method declarations still register from the
+                        // source declaration (ADR-0019 phase D), so their trait
+                        // arguments arrive as expressions.
                         self.register_native_call_method(
                             name,
                             &resolved_method_name,
                             param_defs,
                             return_type.as_ref(),
-                            method_custom_traits,
+                            &crate::opcode::decl_traits_from_ast(method_custom_traits),
                         )?;
                     }
                     // Apply custom trait_mod:<is> for each non-builtin trait on methods

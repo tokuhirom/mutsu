@@ -483,7 +483,7 @@ impl Interpreter {
         is_raw: bool,
         is_test_assertion: bool,
         supersede: bool,
-        custom_traits: &[(String, Option<crate::ast::Expr>)],
+        custom_traits: &crate::opcode::DeclTraits,
     ) -> Result<SubRegisterOutcome, RuntimeError> {
         self.register_sub_decl_fp(
             name,
@@ -555,7 +555,7 @@ impl Interpreter {
         is_raw: bool,
         is_test_assertion: bool,
         supersede: bool,
-        custom_traits: &[(String, Option<crate::ast::Expr>)],
+        custom_traits: &crate::opcode::DeclTraits,
         site_fingerprint: Option<u64>,
     ) -> Result<SubRegisterOutcome, RuntimeError> {
         self.register_sub_decl_with_metadata(
@@ -590,7 +590,7 @@ impl Interpreter {
         is_raw: bool,
         is_test_assertion: bool,
         supersede: bool,
-        custom_traits: &[(String, Option<crate::ast::Expr>)],
+        custom_traits: &crate::opcode::DeclTraits,
         site_fingerprint: Option<u64>,
         metadata: &crate::opcode::CompiledRoutineMetadata,
     ) -> Result<SubRegisterOutcome, RuntimeError> {
@@ -626,7 +626,7 @@ impl Interpreter {
         is_raw: bool,
         is_test_assertion: bool,
         supersede: bool,
-        custom_traits: &[(String, Option<crate::ast::Expr>)],
+        custom_traits: &crate::opcode::DeclTraits,
         site_fingerprint: Option<u64>,
         metadata: Option<&crate::opcode::CompiledRoutineMetadata>,
     ) -> Result<SubRegisterOutcome, RuntimeError> {
@@ -1217,10 +1217,9 @@ impl Interpreter {
                     self.env.clone(),
                 );
                 // Evaluate the trait argument expression if present
-                let trait_arg_val = if let Some(arg_expr) = trait_arg {
-                    Some(self.eval_block_value(&[crate::ast::Stmt::Expr(arg_expr.clone())])?)
-                } else {
-                    None
+                let trait_arg_val = match trait_arg {
+                    Some(arg) => Some(self.eval_decl_trait_arg(arg)?),
+                    None => None,
                 };
                 // Try positional dispatch first: if the trait name is a known type/role,
                 // pass the type object as a positional argument.

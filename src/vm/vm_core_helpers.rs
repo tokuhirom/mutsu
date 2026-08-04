@@ -133,6 +133,40 @@ impl Interpreter {
         self.loan_env_for(|i| i.eval_block_value(body))
     }
 
+    /// Run a declaration-time expression chunk (ADR-0019 C5).
+    ///
+    /// The chunk was lowered by the compiler, so this is the `vm_eval_block_value`
+    /// fast path with the on-demand compile removed: the same re-entrant bytecode
+    /// entry and the same scope bookkeeping, minus rebuilding the bytecode at
+    /// every registration.
+    pub(crate) fn run_decl_expr(
+        &mut self,
+        chunk: &crate::opcode::CompiledDeclExpr,
+    ) -> Result<Value, RuntimeError> {
+        let let_mark = self.let_saves_len();
+        self.push_block_scope_depth();
+        let result = self.run_nested(&chunk.code, &chunk.fns);
+        self.pop_block_scope_depth();
+        self.restore_let_saves(let_mark);
+        self.run_pending_instance_destroys()?;
+        result.map(|v| v.unwrap_or(Value::NIL))
+    }
+
+    /// Evaluate a declaration trait's argument, whichever form it carries.
+    pub(crate) fn eval_decl_trait_arg(
+        &mut self,
+        arg: &crate::opcode::DeclTraitArg,
+    ) -> Result<Value, RuntimeError> {
+        match arg {
+            crate::opcode::DeclTraitArg::Literal(value) => Ok(value.clone()),
+            crate::opcode::DeclTraitArg::Compiled(chunk) => self.run_decl_expr(chunk),
+            crate::opcode::DeclTraitArg::Ast(expr) => {
+                let body = [Stmt::Expr((**expr).clone())];
+                self.vm_eval_block_value(&body)
+            }
+        }
+    }
+
     #[inline]
     pub(crate) fn vm_use_module_with_tags(
         &mut self,

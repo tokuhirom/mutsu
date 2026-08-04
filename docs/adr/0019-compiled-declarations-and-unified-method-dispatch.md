@@ -110,7 +110,7 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 16/51 slices merged. Next slice: C5.**
+**Current progress: 17/51 slices merged. Next slice: C6.**
 
 The migration is complete only when every required box below is checked and the completion gates
 at the end pass. The order within a phase is intentional. A later phase may start when its stated
@@ -157,7 +157,7 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
 - [x] **C4 — Precompute AST-derived routine metadata in the compiler.** Move auto-signature use,
   empty-signature, return-shape validation, stub/proto identity, and redeclaration fingerprint data
   required by registration into `CompiledSubDeclPlan`/`CompiledFunction`.
-- [ ] **C5 — Move sub custom-trait and computed-name evaluation to child chunks.** Execute those
+- [x] **C5 — Move sub custom-trait and computed-name evaluation to child chunks.** Execute those
   expressions through re-entrant bytecode, including EVAL and NativeCall declaration cases.
 - [ ] **C6 — Remove `CompiledSubDeclPlan::legacy_body`.** Make ordinary, multi, `our`, hoisted,
   exported, operator, and top-level-method declarations register without an executable AST body.
@@ -173,7 +173,9 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
 - [ ] **D3 — Encode class methods and submethods as compiled candidates.** Install ordinary, multi,
   proto, private, rw, wrap, BUILD, and TWEAK metadata without walking `Stmt::MethodDecl`.
 - [ ] **D4 — Compile class declaration-time expressions.** Cover computed names, traits, parent
-  expressions, aliases, and deferred class bodies through re-entrant bytecode chunks.
+  expressions, aliases, and deferred class bodies through re-entrant bytecode chunks. (Computed
+  names and custom-trait arguments already landed with C5; parents, aliases, and deferred bodies
+  remain.)
 - [ ] **D5 — Drive user HOW operations from plan ops.** Execute `new_type`, `add_method`, trait
   interception, and `compose` without entering `register_class_decl`'s AST walker.
 - [ ] **D6 — Remove `CompiledClassDeclPlan::legacy_body`.** Preserve augmentation, rollback,
@@ -181,7 +183,8 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
 - [ ] **D7 — Encode role structure and composition.** Put role parameters, attributes, methods,
   parent roles, conflicts, hides, and pun metadata into immutable plan operations.
 - [ ] **D8 — Compile role declaration-time bodies and traits.** Run parameterized-role and composed
-  ancestor bodies as bytecode child chunks with correct once-per-composition behavior.
+  ancestor bodies as bytecode child chunks with correct once-per-composition behavior. (Custom-trait
+  arguments already landed with C5; the bodies remain.)
 - [ ] **D9 — Remove `CompiledRoleDeclPlan::legacy_body`.** Preserve role puns, runtime mixins,
   conflicts, BUILD/TWEAK, custom HOWs, and EVAL.
 - [ ] **D10 — Delete class/role AST registration walkers.** Keep only VM plan execution plus
@@ -298,14 +301,24 @@ reference. Registration now attaches the plan-selected compiled bodies to its te
 rediscovering them by name and signature. Registration metadata for implicit `@_`/`%_`, empty
 signatures, return-shape validation, stub identity, and redeclaration identity is now derived once
 while lowering `CompiledSubDeclPlan`; normalized named/default signatures can therefore retain
-their compiled bodies without a registration-time AST scan. The next slice compiles sub custom
-traits and computed names as declaration child chunks before removing `legacy_body`.
+their compiled bodies without a registration-time AST scan.
+
+A declaration's own expressions — a computed name (`sub ::($name)`) and each custom trait's
+argument (`is native(LIB)`, `is symbol('sym')`) — are no longer `Expr`s handed to the runtime and
+compiled on demand at every registration. The compiler lowers each one to a `CompiledDeclExpr`
+child chunk stored in the plan, and registration runs it through the VM's re-entrant bytecode
+entry (`run_decl_expr`). A constant argument is recorded as a `DeclTraitArg::Literal` and needs no
+chunk at all. The remaining `DeclTraitArg::Ast` variant is not a new fallback: it carries the
+declaration kinds whose registration still walks a source declaration — the prelude's
+forward-declaration pass and the class/role *method* walkers — and disappears with phase D. The
+next slice removes `CompiledSubDeclPlan::legacy_body`.
 
 `RegisterClass` and `RegisterRole` now likewise index typed class/role declaration-plan pools for
 both source-order declarations and hoisted forward-reference shells. The VM no longer discovers
-these declaration kinds by inspecting the generic statement pool. Their `legacy_body` adapters
-remain until structural registration and declaration-time expressions become plan operations and
-compiled child chunks.
+these declaration kinds by inspecting the generic statement pool, and their computed names and
+custom-trait arguments run as compiled child chunks alongside the sub ones. Their `legacy_body`
+adapters remain until structural registration and the remaining declaration-time expressions
+(parents, aliases, deferred bodies) become plan operations and compiled child chunks.
 
 The three declaration entry opcodes have been consolidated into `RegisterDecl`, whose compact
 operand selects a tagged `CompiledDeclPlanRef`. Sub/class/role plans retain their typed cold-data
