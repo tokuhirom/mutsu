@@ -8,7 +8,83 @@ pub(crate) fn parse_sub_name(input: &str) -> PResult<'_, String> {
     if let Some(err) = null_operator_error(&name) {
         return Err(err);
     }
+    if let Some(err) = operator_name_extension_error(&name, rest) {
+        return Err(err);
+    }
     Ok((rest, name))
+}
+
+/// Diagnose an operator-declaration name that `parse_sub_name_inner` could not
+/// read, instead of letting it backtrack and report the missing block its
+/// failure left behind.
+///
+/// `rest` is what the name parser did *not* consume. When a `:[…]` or `:<…>`
+/// colon pair is still sitting there, the name was meant to declare an operator
+/// and something about it is wrong:
+///
+/// | source | class |
+/// | --- | --- |
+/// | `sub infix:[/./]`, `sub meow:[bar]` | `X::Syntax::Extension::TooComplex` |
+/// | `sub meow:<bar>`, `sub meow:«bar»` | `X::Syntax::Extension::Category` |
+///
+/// The colon-pair check comes first because rakudo orders them that way:
+/// `meow:[bar]` is TooComplex, not Category, even though `meow` is not a
+/// category either.
+///
+/// Legal spellings must keep parsing: `sub meow:foo<bar>` is an extended name
+/// (the adverb loop consumes it, so `rest` no longer starts with a colon pair),
+/// and `sub infix:["@"]` / `constant sym = "@"; sub infix:[sym]` are consumed by
+/// `parse_bracket_op_name`.
+pub(crate) fn operator_name_extension_error(name: &str, rest: &str) -> Option<PError> {
+    if let Some(after) = rest.strip_prefix(":[") {
+        // `parse_bracket_op_name` already declined this bracket (otherwise it
+        // would have been consumed), so whatever is inside cannot spell a name.
+        let end = super::op_name::find_closing_bracket(after)?;
+        let value = after[..end].trim();
+        let message = format!("Colon pair value '{value}' too complex to use in name");
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), Value::str(message.clone()));
+        let ex = Value::make_instance(Symbol::intern("X::Syntax::Extension::TooComplex"), attrs);
+        return Some(PError::fatal_with_exception(message, Box::new(ex)));
+    }
+    if !rest.starts_with(":<") && !rest.starts_with(":\u{ab}") {
+        return None;
+    }
+    // A known category leaves nothing here — `parse_sub_name_inner` consumes the
+    // symbol — so reaching this point means the category itself is unknown.
+    // `trait_auxiliary` is deliberately in mutsu's accepted set even though
+    // rakudo rejects it; see `is_operator_category`.
+    if is_operator_category(name) {
+        return None;
+    }
+    let message = format!("Cannot add tokens of category '{name}'");
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(message.clone()));
+    attrs.insert("category".to_string(), Value::str(name.to_string()));
+    let ex = Value::make_instance(Symbol::intern("X::Syntax::Extension::Category"), attrs);
+    Some(PError::fatal_with_exception(message, Box::new(ex)))
+}
+
+/// The categories `<name>:<sym>` may declare an operator for.
+///
+/// rakudo accepts `infix`, `prefix`, `postfix`, `term`, `circumfix`,
+/// `postcircumfix` and `trait_mod` and raises `X::Syntax::Extension::Category`
+/// for everything else — including `trait_auxiliary`, which it cannot compile at
+/// all (`raku roast/S12-traits/basic.t` dies on its `trait_auxiliary:<is>`).
+/// mutsu accepts that spelling, and three currently-passing test files depend on
+/// it, so it stays in this set.
+pub(crate) fn is_operator_category(name: &str) -> bool {
+    matches!(
+        name,
+        "infix"
+            | "prefix"
+            | "postfix"
+            | "term"
+            | "circumfix"
+            | "postcircumfix"
+            | "trait_mod"
+            | "trait_auxiliary"
+    )
 }
 
 /// Detect an operator declaration with an empty (whitespace-only) operator
@@ -180,17 +256,7 @@ pub(crate) fn parse_sub_name_inner(input: &str) -> PResult<'_, String> {
         (rest, name)
     };
     // Check for operator category names followed by :<...>
-    let is_op_category = matches!(
-        base.as_str(),
-        "infix"
-            | "prefix"
-            | "postfix"
-            | "term"
-            | "circumfix"
-            | "postcircumfix"
-            | "trait_mod"
-            | "trait_auxiliary"
-    );
+    let is_op_category = is_operator_category(&base);
     if is_op_category && rest.starts_with(":<") {
         // Check for :<<...>> (French-quotes / double-angle-bracket) delimiter
         // In Raku, <<>> is an alternate quoting form; the content is the operator symbol.

@@ -774,17 +774,22 @@ native provider never takes such an argument as a Raku value, so any test file
 that hands a container to a `Test` routine is exercising the cell form for the
 first time.**
 
-`S06-operator-overloading/sub.t` was triaged and needs **three** independent
-fixes, so it stays open. It aborts after 24 of 29 assertions on
-`todo/deep/block-local-operator-leaks-into-later-parses.md` — a `sub infix:["@"]`
-declared inside a `lives-ok { … }` is still in the registry when a later `EVAL`
-string is *parsed*, so that string's `@ 5 @` reads as an infix with a missing
-operand. The two assertions it loses before that want specific parse-error
-classes (`X::Syntax::Extension::TooComplex`,
-`X::Syntax::Extension::Category`) where mutsu answers the generic "Missing
-block" —`todo/tickets/operator-extension-name-error-classes.md`. **A file that
+`S06-operator-overloading/sub.t` is **closed — 29/29 under the real module**, and
+it took exactly the three independent fixes its triage predicted. **A file that
 fails at three unrelated layers is worth triaging in full before starting on
-it**: fixing only the visible first failure buys nothing here.
+it**: fixing only the visible first failure would have bought nothing here.
+
+| layer | fix |
+| --- | --- |
+| a `sub infix:["@"]` declared inside a `lives-ok { … }` was still in the registry when a later `EVAL` string was *parsed*, so that string's `@ 5 @` read as an infix with a missing operand (aborted the file after 24 of 29) | `news/2026-08/block-local-routine-scope.md` |
+| the two assertions lost before that wanted `X::Syntax::Extension::TooComplex` / `X::Syntax::Extension::Category` where mutsu answered the generic "Missing block" | `news/2026-08/operator-extension-name-error-classes.md` |
+
+The second fix also produced a measurement rule worth repeating: **a
+`throws-like` with a type argument is not a pin.** The first draft of its pin
+used `throws-like 'sub infix:[/./] …', X::Syntax::Extension::TooComplex` and
+passed 12/12 *without* the fix, because mutsu's native `throws-like` does not
+check that argument. Reading `.^name` off the caught exception instead, the same
+pin fails 8/14 without the fix.
 
 `roast/S12-methods/qualified.t` is worth a second look too: its Malformed
 assertion passes now and the file moved on to `Cannot dispatch to method me on
