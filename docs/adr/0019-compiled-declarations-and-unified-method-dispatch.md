@@ -110,7 +110,7 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 14/51 slices merged. Next slice: C3.**
+**Current progress: 15/51 slices merged. Next slice: C4.**
 
 The migration is complete only when every required box below is checked and the completion gates
 at the end pass. The order within a phase is intentional. A later phase may start when its stated
@@ -152,7 +152,7 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
   compiled-function keys while keeping hoisted shells keyless.
 - [x] **C2 — Preserve plan-to-routine identity across module import.** Remap compiled routine keys
   when a compunit is imported so nested/module declarations retain direct references.
-- [ ] **C3 — Install routine candidates from compiled references.** Add the temporary
+- [x] **C3 — Install routine candidates from compiled references.** Add the temporary
   compiled-`FunctionDef` adapter and stop rediscovering compiled routines from name/signature keys.
 - [ ] **C4 — Precompute AST-derived routine metadata in the compiler.** Move auto-signature use,
   empty-signature, return-shape validation, stub/proto identity, and redeclaration fingerprint data
@@ -293,8 +293,10 @@ the plan, and the VM no longer pattern-matches `Stmt::SubDecl`. The plan still c
 `legacy_body` for the existing routine-registry adapter. Source-order sub plans now also carry the
 stable keys of their primary and alternate compiled routines. Child compilation-unit imports now
 retain their compiled-function tables and remap colliding keys together with every declaration-plan
-reference. The next adapter slice installs `FunctionDef` candidates through those references before
-removing `legacy_body`.
+reference. Registration now attaches the plan-selected compiled bodies to its temporary
+`FunctionDef` candidates, and the common call helper uses those bodies directly instead of
+rediscovering them by name and signature. The next slice moves the remaining AST-derived routine
+metadata into `CompiledSubDeclPlan` and `CompiledFunction` before removing `legacy_body`.
 
 `RegisterClass` and `RegisterRole` now likewise index typed class/role declaration-plan pools for
 both source-order declarations and hoisted forward-reference shells. The VM no longer discovers
