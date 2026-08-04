@@ -8,7 +8,7 @@ use crate::symbol::Symbol;
 use crate::value::Value;
 
 use super::super::add_parse_warning;
-use super::{block, block_inner, ident, keyword, parse_raku_ident};
+use super::{block_inner, ident, keyword, parse_raku_ident, routine_block};
 
 mod op_name;
 mod param_list;

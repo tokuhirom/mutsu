@@ -46,8 +46,8 @@ use idents::{ident, qualified_ident, starts_unit_class_role_grammar, var_name};
 pub(super) use idents::{keyword, parse_raku_ident};
 
 // Re-export the block/statement-list parsers moved to `stmtlist`.
-use stmtlist::block;
 pub(in crate::parser) use stmtlist::stmt_list_pub;
+use stmtlist::{block, routine_block};
 pub(super) use stmtlist::{block_inner, stmt_list_partial};
 
 // Re-export the thin public-accessor shims moved to `pub_shims`, all at their

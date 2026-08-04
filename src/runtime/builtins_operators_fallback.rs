@@ -526,6 +526,7 @@ impl Interpreter {
                 is_method: false,
                 is_block: false,
                 def_file: None,
+                invocation_id: crate::runtime::next_invocation_id(),
             });
             // Set __mutsu_callable_id so blocks defined inside this routine
             // capture the correct target for non-local return.

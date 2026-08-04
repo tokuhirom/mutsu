@@ -329,6 +329,27 @@ pub(crate) fn block_or_hash_expr(input: &str) -> PResult<'_, Expr> {
     result
 }
 
+/// Like [`parse_block_body`], but marks the pushed scope as a ROUTINE body.
+/// Used for anonymous `sub`/`method` bodies: unlike a bare block (whose
+/// literal is re-evaluated — hence re-cloned — by the enclosing routine on
+/// every call), an anonymous routine is a callable whose own frame is a
+/// routine frame at run time, so an anonymous state variable (`$++`) written
+/// directly in it must not be classified per-call — see
+/// `simple::anon_state_is_per_call`.
+pub(crate) fn parse_block_body_routine(input: &str) -> PResult<'_, Vec<crate::ast::Stmt>> {
+    let (r, _) = parse_char(input, '{')?;
+    crate::parser::stmt::simple::push_scope();
+    crate::parser::stmt::simple::mark_current_scope_routine_body();
+    let result = (|| -> PResult<'_, Vec<crate::ast::Stmt>> {
+        let (r, stmts) = crate::parser::stmt::stmt_list_pub(r)?;
+        let (r, _) = ws_inner(r);
+        let (r, _) = parse_char(r, '}')?;
+        Ok((r, stmts))
+    })();
+    crate::parser::stmt::simple::pop_scope();
+    result
+}
+
 pub(crate) fn parse_block_body(input: &str) -> PResult<'_, Vec<crate::ast::Stmt>> {
     let (r, _) = parse_char(input, '{')?;
     // Reject {YOU_ARE_HERE} outside of a setting (X::Syntax::Reserved)

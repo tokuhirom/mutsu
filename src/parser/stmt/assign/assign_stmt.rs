@@ -48,6 +48,29 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     };
 
     let (rest, var) = var_name(input)?;
+    // A bare-`$` assignment target is an anonymous state variable. `var_name`
+    // returns the collapsed `__ANON_STATE__` spelling (it also parses
+    // declarations and signature params, which must keep it), but each SOURCE
+    // occurrence is its own state in Raku — `$ ~= "z"` in one sub and `$ += 5`
+    // in another must not share a cell. Mint the same unique per-occurrence
+    // name the expression parser gives `$++`, which also carries the per-call
+    // classification (see `mint_anon_state_name`).
+    //
+    // ONLY when the `$` itself is the assignment target, though: when a `.` /
+    // subscript follows, the collapsed name is load-bearing — `$.tracker ~=
+    // 'A'` parses as bare-`$` + method-compound-assign, and the VM resolves
+    // the exact name `__ANON_STATE__` to `self` (the `$.foo` invocant
+    // carrier); `$<x>` likewise keeps its historical target.
+    let var = if sigil == b'$'
+        && var == "__ANON_STATE__"
+        && !matches!(
+            rest.trim_start().as_bytes().first(),
+            Some(b'.') | Some(b'[') | Some(b'{') | Some(b'<')
+        ) {
+        crate::parser::primary::var::mint_anon_state_name()
+    } else {
+        var
+    };
     let name = format!("{}{}", prefix, var);
     let (rest, _) = ws(rest)?;
     let var_expr = if sigil == b'@' {

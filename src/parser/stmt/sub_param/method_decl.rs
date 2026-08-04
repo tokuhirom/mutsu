@@ -124,6 +124,7 @@ fn method_decl_body_with_my(
         // a builtin/keyword of the same name (e.g. `method m(\times) { times }`).
         let (r, _) = parse_char(rest, '{')?;
         super::super::simple::push_scope();
+        super::super::simple::mark_current_scope_routine_body();
         for pd in &param_defs {
             if pd.sigilless {
                 super::super::simple::register_user_term_symbol(&pd.name);
@@ -133,7 +134,7 @@ fn method_decl_body_with_my(
         super::super::simple::pop_scope();
         result?
     } else {
-        super::super::block(rest)?
+        super::super::routine_block(rest)?
     };
     // When no explicit signature is given, collect placeholder variables
     // (@_, $^a, $^b, etc.) from the body as implicit parameters.

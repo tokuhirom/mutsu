@@ -48,14 +48,22 @@ chain of six general bugs, all reduced and fixed:
   slipping the buffer instead of its elements (so the digest render numified the
   whole Blob to 0 and emitted four zero bytes).
 
-`rmd160` now returns the correct digest for every RFC vector — but only for the
-**first** call in a process. Its output stage rotates the five hash words with
-`map { $_[[^5].rotate(++$)] }`, and mutsu never resets an anonymous `$` state
-variable when its enclosing routine is re-entered, so later calls in the same
-process rotate by the wrong amount and return a correct-but-rotated digest. That
-is an independent bug with its own minimal repro:
-`todo/tickets/anonymous-state-var-not-reset-per-routine-call.md`. Fixing it should
-take `t/ripemd.t` to a full pass (its `'a' x 1_000_000` vector is slow in a debug
+The anonymous-state half is FIXED
+(`news/2026-08/anon-state-per-routine-call.md`): the output stage's
+`map { $_[[^5].rotate(++$)] }` counter now resets per `rmd160` call, so
+repeated calls with the same single-block input agree
+(`rmd160("abc")` twice → `8eb208f7…` twice).
+
+What remains is a SECOND, independent freeze that the rotate bug was masking:
+the `start` blocks in the compression loop capture the reduce callback's
+`@words` parameter frozen at its first binding — the known `@`/`%` shared-var
+lane limitation, `todo/tickets/shared-var-lane-freezes-a-reused-array-name.md`
+(minimal repro
+`reduce -> $h, @words { $h + await start { [+] @words } }, 0, (1,2), (3,4)`
+→ 6 instead of 10). Consequences: a multi-block message (>55 bytes) digests
+wrongly even on the first call, and any later call in one process returns the
+first call's digest regardless of input. Fixing that ticket is what takes
+`t/ripemd.t` to a full pass (its `'a' x 1_000_000` vector is slow in a debug
 build — use a release binary).
 
 ## 3. `sha512` / `sha384` return a wrong digest — FIXED

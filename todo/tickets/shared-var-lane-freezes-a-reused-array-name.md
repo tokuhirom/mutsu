@@ -46,3 +46,30 @@ still-running worker reads the newer value.
 ## Minimal repro
 
 The two-line program above. Reproduces deterministically; no timing involved.
+
+## Same lane, one callback re-invoked: `reduce` + `start` (2026-08-04)
+
+The re-seeding does not need two distinct blocks — one callback re-BOUND per
+`reduce` iteration freezes the same way, because the lane is seeded once per
+name and every later spawn prefers the seed:
+
+```raku
+say reduce -> $h, @words { $h + await start { [+] @words } }, 0, (1,2), (3,4);
+# raku:  10   (3 from (1,2), then 7 from (3,4))
+# mutsu:  6   (3 + 3 — the second iteration's start saw the FIRST @words)
+```
+
+Correct in every neighbouring shape (no `start`; `map` instead of `reduce`; a
+direct block called twice; a `$`-sigil param), which is what makes it look like
+a separate bug — it is not.
+
+**This is now the whole remaining wrongness in `Digest::RIPEMD`**
+(`todo/tickets/digest-dist-blockers.md` blocker 2, after the anonymous-state
+fix `news/2026-08/anon-state-per-routine-call.md`): the compression loop is
+exactly this shape (`reduce -> blob32 $h, @words { … |await map -> [...] {
+start { … @words[…] … } } … }`), so a multi-block message (>55 bytes) digests
+wrongly even on the FIRST call (`rmd160("abcdbcde…nopq")` → `8e0c0aa0…`
+instead of `12a053384a9c…`), and any call after the first in one process
+returns the first call's digest regardless of input. Fixing this ticket is
+what takes the dist's `t/ripemd.t` to a full pass (its `'a' x 1_000_000`
+vector is slow in a debug build — use a release binary).

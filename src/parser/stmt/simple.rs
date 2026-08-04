@@ -55,8 +55,9 @@ pub(super) use io_stmts::{note_stmt, print_stmt, put_stmt, say_stmt};
 
 // `pub(in crate::parser)` re-exports.
 pub(in crate::parser) use compile_consts::{
-    is_test_assertion_callable, lookup_compile_time_constant, pop_scope, push_scope,
-    register_compile_time_constant, suppress_worries, worries_suppressed,
+    anon_state_is_per_call, is_test_assertion_callable, lookup_compile_time_constant,
+    mark_current_scope_routine_body, pop_scope, push_scope, register_compile_time_constant,
+    suppress_worries, worries_suppressed,
 };
 pub(in crate::parser) use control_stmts::is_known_call;
 pub(in crate::parser) use lib_paths::try_add_parse_time_lib_path;
@@ -118,6 +119,13 @@ struct LexicalScope {
     /// warnings (e.g. the empty-`<>` colonpair warning) are suppressed in this
     /// scope and any nested scopes (inherited via `push_scope`).
     worries_suppressed: bool,
+    /// Whether this scope is the body of a NAMED routine declaration
+    /// (`sub`/`method`/`submethod`, incl. `multi`/`proto`, and the anonymous
+    /// `sub (...) {...}` / `method {...}` forms — which clone like routines).
+    /// NOT inherited by nested scopes (reset in `push_scope`); set by
+    /// `mark_current_scope_routine_body`. Drives the mint-time classification
+    /// of anonymous state variables — see `anon_state_is_per_call`.
+    is_routine_body: bool,
 }
 
 #[derive(Clone)]

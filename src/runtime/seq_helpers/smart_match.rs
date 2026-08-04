@@ -338,6 +338,7 @@ impl Interpreter {
                         is_method: false,
                         is_block: false,
                         def_file: None,
+                        invocation_id: crate::runtime::next_invocation_id(),
                     });
                     if let Some(mut captures) = self.regex_match_with_captures(&pat, &text) {
                         // Set positional captures before executing code blocks

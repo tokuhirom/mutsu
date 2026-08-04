@@ -373,12 +373,13 @@ pub(crate) fn sub_decl_body(
     let (rest, body) = if any_sigilless(&param_defs) {
         let (r, _) = parse_char(rest, '{')?;
         super::super::simple::push_scope();
+        super::super::simple::mark_current_scope_routine_body();
         register_sigilless_terms(&param_defs);
         let result = block_inner(r);
         super::super::simple::pop_scope();
         result?
     } else {
-        match block(rest) {
+        match routine_block(rest) {
             Ok(ok) => ok,
             Err(_) if name.starts_with("trait_auxiliary:<") => consume_raw_sub_body(rest)?,
             Err(err) => return Err(err),

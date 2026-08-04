@@ -805,6 +805,17 @@ pub(crate) struct RoutineFrame {
     /// displays each frame at its defining file (module subs report the
     /// module path, integration/error-reporting.t test 15).
     pub def_file: Option<String>,
+    /// Monotonic id of THIS invocation. Distinguishes one call of a routine
+    /// from the next, which is what a per-call anonymous state (`$++` inside a
+    /// block inside a routine) keys on — see `Interpreter::anon_state_key`.
+    pub invocation_id: u64,
+}
+
+static NEXT_INVOCATION_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+/// Take the next routine-invocation id (see `RoutineFrame::invocation_id`).
+pub(crate) fn next_invocation_id() -> u64 {
+    NEXT_INVOCATION_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
 /// CompUnit::Repository::Installation runtime state. Boxed inside `Interpreter`

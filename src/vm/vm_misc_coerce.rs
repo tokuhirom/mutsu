@@ -355,7 +355,10 @@ impl Interpreter {
             return Ok(());
         }
         let val = self
-            .escaping_our_write_cell(code, name)
+            // A per-call anonymous state reads from the state store, never
+            // from the stale env copy — see `anon_state_key`.
+            .per_call_anon_state_read(name, Value::int(0))
+            .or_else(|| self.escaping_our_write_cell(code, name))
             .or_else(|| self.package_scope_lexical(name))
             .or_else(|| self.get_env_with_main_alias(name))
             .or_else(|| self.read_package_scope_var(name))
@@ -472,7 +475,10 @@ impl Interpreter {
             return Ok(());
         }
         let val = self
-            .escaping_our_write_cell(code, name)
+            // See the increment twin above: a per-call anonymous state reads
+            // from the state store, never from the stale env copy.
+            .per_call_anon_state_read(name, Value::int(0))
+            .or_else(|| self.escaping_our_write_cell(code, name))
             .or_else(|| self.package_scope_lexical(name))
             .or_else(|| self.get_env_with_main_alias(name))
             .or_else(|| self.read_package_scope_var(name))

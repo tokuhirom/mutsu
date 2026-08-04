@@ -1,7 +1,7 @@
 use crate::ast::Expr;
 use crate::parser::helpers::ws;
 use crate::parser::parse_result::{PResult, parse_char};
-use crate::parser::primary::misc::parse_block_body;
+use crate::parser::primary::misc::parse_block_body_routine;
 
 pub(crate) fn invocant_param_def() -> crate::ast::ParamDef {
     crate::ast::ParamDef {
@@ -60,7 +60,7 @@ pub(crate) fn parse_anon_sub_rest(
     let (r, _) = parse_char(r, ')')?;
     let (r, _) = ws(r)?;
     let (r, traits) = crate::parser::stmt::parse_sub_traits_pub(r)?;
-    let (r, body) = parse_block_body(r)?;
+    let (r, body) = parse_block_body_routine(r)?;
     Ok((
         r,
         Expr::AnonSubParams {

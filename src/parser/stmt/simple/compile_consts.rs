@@ -45,9 +45,45 @@ pub(crate) fn is_test_assertion_callable(name: &str) -> bool {
 /// Push a new lexical scope (called when entering a `{ }` block).
 pub(crate) fn push_scope() {
     SCOPES.with(|s| {
-        let inherited = s.borrow().last().cloned().unwrap_or_default();
+        let mut inherited = s.borrow().last().cloned().unwrap_or_default();
+        // Routine-body-ness is a property of ONE scope, not of everything
+        // beneath it — a `map { }` block inside a sub body is a per-call block,
+        // not part of the routine's own (cloned-once) frame.
+        inherited.is_routine_body = false;
         s.borrow_mut().push(inherited);
     });
+}
+
+/// Mark the current (innermost) scope as a routine body. Called by the
+/// routine-declaration parsers right after they push the body's scope.
+pub(crate) fn mark_current_scope_routine_body() {
+    SCOPES.with(|s| {
+        if let Some(current) = s.borrow_mut().last_mut() {
+            current.is_routine_body = true;
+        }
+    });
+}
+
+/// Whether an anonymous state variable (`$++` / `++$`) minted at the current
+/// parse position is PER-CALL: lexically inside a nested block that is itself
+/// lexically inside a routine. Such a `$` belongs to a block clone the routine
+/// re-makes on every call, so its counter restarts per call; a `$` directly in
+/// a routine body (cloned once, at registration) or anywhere at the mainline
+/// keeps counting. The classification is baked into the variable's NAME
+/// (`__ANON_STATE_PC_<id>__`), so every later compilation of the same AST —
+/// including runtime re-compiles of block bodies — agrees on it by
+/// construction (the key-stability hazard that sank the per-chunk attempt,
+/// PR #5885).
+pub(crate) fn anon_state_is_per_call() -> bool {
+    SCOPES.with(|s| {
+        let scopes = s.borrow();
+        for (blocks_skipped, scope) in scopes.iter().rev().enumerate() {
+            if scope.is_routine_body {
+                return blocks_skipped > 0;
+            }
+        }
+        false
+    })
 }
 
 /// Pop the current lexical scope (called when leaving a `{ }` block).
