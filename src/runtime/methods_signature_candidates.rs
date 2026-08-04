@@ -118,9 +118,9 @@ impl Interpreter {
         let prefix_local = format!("{package}::{name}/");
         let prefix_global = format!("GLOBAL::{name}/");
         let mut seen = std::collections::HashSet::new();
-        let mut out = Vec::new();
-        let mut multi_idx = 0usize;
-        for (key, def) in &self.registry().functions {
+        let mut defs = Vec::new();
+        let registry = self.registry();
+        for (key, def) in &registry.functions {
             let key_s = key.resolve();
             if key_s == exact_local
                 || key_s == exact_global
@@ -129,26 +129,37 @@ impl Interpreter {
             {
                 let fp = def.body_fingerprint();
                 if seen.insert(fp) {
-                    let mut env = self.env.clone();
-                    // Store the multi index for doc comment lookup
-                    env.insert(
-                        "__mutsu_multi_index".to_string(),
-                        Value::int(multi_idx as i64),
-                    );
-                    out.push(Value::make_sub(
-                        def.package,
-                        def.name,
-                        def.params.clone(),
-                        def.param_defs.clone(),
-                        def.body.clone(),
-                        def.is_rw,
-                        env,
-                    ));
-                    multi_idx += 1;
+                    defs.push(def);
                 }
             }
         }
-        out
+        // NOTE: this order is not Rakudo's. The candidates live in a hash keyed by
+        // mangled name, so the scan above visits them in bucket order, and sorting
+        // by `decl_order` does not fix it either — a `multi` is registered twice
+        // (hoist pass, then source order) and the second pass can stamp the two
+        // candidates in the opposite order. See
+        // todo/tickets/multi-candidates-declaration-order.md.
+        defs.into_iter()
+            .enumerate()
+            .map(|(multi_idx, def)| {
+                let mut env = self.env.clone();
+                // Store the multi index for doc comment lookup
+                env.insert(
+                    "__mutsu_multi_index".to_string(),
+                    Value::int(multi_idx as i64),
+                );
+                Value::make_sub_for_routine(
+                    def.package,
+                    def.name,
+                    def.params.clone(),
+                    def.param_defs.clone(),
+                    def.body.clone(),
+                    def.is_rw,
+                    env,
+                    def.compiled.clone(),
+                )
+            })
+            .collect()
     }
 
     pub(super) fn sub_signature_value(&self, data: &crate::value::SubData) -> Value {

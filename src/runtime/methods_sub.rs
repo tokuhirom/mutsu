@@ -69,6 +69,7 @@ impl Interpreter {
                 empty_sig: false,
                 is_bare_block: false,
                 compiled_code: None,
+                compiled_routine: None,
                 deprecated_message: None,
                 source_line: None,
                 source_file: None,
@@ -103,7 +104,8 @@ impl Interpreter {
                 .resolve_all_matching_candidates(name, &call_args)
                 .into_iter()
                 .map(|def| {
-                    Value::make_sub(
+                    let compiled_routine = def.compiled.clone();
+                    Value::make_sub_for_routine(
                         def.package,
                         def.name,
                         def.params,
@@ -111,6 +113,7 @@ impl Interpreter {
                         def.body,
                         def.is_rw,
                         self.env.clone(),
+                        compiled_routine,
                     )
                 })
                 .collect();

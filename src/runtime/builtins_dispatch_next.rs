@@ -875,7 +875,7 @@ impl Interpreter {
         let stack_len = self.multi_dispatch_stack.len();
         self.multi_dispatch_stack[stack_len - 1] = (_name, remaining, orig_args, rw_params);
         // Return as a callable Sub value
-        Ok(Value::make_sub(
+        Ok(Value::make_sub_for_routine(
             next_def.package,
             next_def.name,
             next_def.params.clone(),
@@ -883,6 +883,7 @@ impl Interpreter {
             next_def.body.clone(),
             next_def.is_rw,
             self.env.clone(),
+            next_def.compiled.clone(),
         ))
     }
 }

@@ -2470,6 +2470,43 @@ mod tests {
         assert_eq!(compiled.empty_sig, def.empty_sig);
     }
 
+    /// ADR-0019 C6c: a code object built from a registry routine must carry that
+    /// routine's compiled body, so dispatching it never compiles the AST body the
+    /// declaration copied into the `Sub`.
+    #[test]
+    fn code_object_from_a_routine_carries_the_routines_compiled_body() {
+        let mut interp = Interpreter::new();
+        let output = interp
+            .run("sub code-object-twice($n) { $n * 2 }; say &code-object-twice(21);")
+            .unwrap();
+        assert_eq!(output, "42\n");
+        let def = {
+            let registry = interp.registry();
+            let def = registry
+                .functions
+                .get(&Symbol::intern("GLOBAL::code-object-twice"))
+                .expect("registered function candidate");
+            (**def).clone()
+        };
+        let routine = def
+            .compiled
+            .as_ref()
+            .expect("the declaration plan attached a compiled body")
+            .clone();
+        let sub_val = interp.sub_value_from_function_def(def);
+        let crate::value::ValueView::Sub(data) = sub_val.view() else {
+            panic!("&code-object-twice resolves to a Sub");
+        };
+        let carried = data
+            .compiled_routine
+            .as_ref()
+            .expect("the code object carries the routine's compiled body");
+        assert!(
+            Arc::ptr_eq(carried, &routine),
+            "the code object shares the routine's CompiledFunction rather than a re-compile"
+        );
+    }
+
     #[test]
     fn variables_and_concat() {
         let mut interp = Interpreter::new();
@@ -2706,6 +2743,7 @@ mod tests {
             empty_sig: false,
             is_bare_block: false,
             compiled_code: Some(Arc::new(compiled)),
+            compiled_routine: None,
             deprecated_message: None,
             source_line: None,
             source_file: None,

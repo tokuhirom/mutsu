@@ -160,7 +160,11 @@ impl Interpreter {
             );
         }
         let empty_sig = def.empty_sig;
-        let mut sub_val = Value::make_sub(
+        // The routine's own bytecode rides along, so calling this code object runs
+        // compiled code instead of re-compiling the AST body copied below
+        // (ADR-0019 C6c).
+        let compiled_routine = def.compiled.clone();
+        let mut sub_val = Value::make_sub_for_routine(
             def.package,
             def.name,
             def.params,
@@ -168,6 +172,7 @@ impl Interpreter {
             def.body,
             def.is_rw,
             captured_env,
+            compiled_routine,
         );
         // Preserve empty_sig from the FunctionDef so that arity checks
         // (e.g. sort rejecting 0-arity callables) work correctly.
@@ -343,7 +348,7 @@ impl Interpreter {
             let mut candidate_subs = Vec::new();
             for cand in &candidates {
                 let captured_env = self.env.clone();
-                let sub_val = Value::make_sub(
+                let sub_val = Value::make_sub_for_routine(
                     cand.package,
                     cand.name,
                     cand.params.clone(),
@@ -351,6 +356,7 @@ impl Interpreter {
                     cand.body.clone(),
                     cand.is_rw,
                     captured_env,
+                    cand.compiled.clone(),
                 );
                 candidate_subs.push(sub_val);
             }

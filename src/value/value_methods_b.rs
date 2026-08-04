@@ -315,8 +315,11 @@ impl Value {
         })
     }
 
-    /// Create a new Sub value wrapping the given SubData in an Arc.
-    pub(crate) fn make_sub(
+    /// Fresh code-object data: the declaration-derived fields from the caller,
+    /// every closure-creation field (`upvalues`, capture sets, `compiled_code`)
+    /// left empty. The `make_sub*` constructors below each vary one or two fields
+    /// on top of this; they used to repeat the whole literal.
+    fn new_code_object(
         package: Symbol,
         name: Symbol,
         params: Vec<String>,
@@ -324,8 +327,8 @@ impl Value {
         body: Vec<Stmt>,
         is_rw: bool,
         env: Env,
-    ) -> Self {
-        Value::Sub(crate::gc::Gc::new(SubData {
+    ) -> SubData {
+        SubData {
             package,
             name,
             params,
@@ -340,13 +343,53 @@ impl Value {
             empty_sig: false,
             is_bare_block: false,
             compiled_code: None,
+            compiled_routine: None,
             deprecated_message: None,
             source_line: None,
             source_file: None,
             owned_captures: Vec::new(),
             authoritative_captures: Vec::new(),
             upvalues: Vec::new(),
-        }))
+        }
+    }
+
+    /// Create a new Sub value wrapping the given SubData in an Arc.
+    pub(crate) fn make_sub(
+        package: Symbol,
+        name: Symbol,
+        params: Vec<String>,
+        param_defs: Vec<ParamDef>,
+        body: Vec<Stmt>,
+        is_rw: bool,
+        env: Env,
+    ) -> Self {
+        Value::Sub(crate::gc::Gc::new(Self::new_code_object(
+            package, name, params, param_defs, body, is_rw, env,
+        )))
+    }
+
+    /// Create a code object for a *declared routine*: [`Self::make_sub`] plus the
+    /// routine's own compiled body, so calling it dispatches as bytecode instead
+    /// of re-compiling the AST body every time (see
+    /// [`SubData::compiled_routine`], ADR-0019 C6c).
+    ///
+    /// `compiled_routine` is `None` for a routine the declaration plan could not
+    /// attach a compiled function to (a synthesized def, or one installed through
+    /// EVAL/the MOP); such a code object keeps the old AST behavior.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn make_sub_for_routine(
+        package: Symbol,
+        name: Symbol,
+        params: Vec<String>,
+        param_defs: Vec<ParamDef>,
+        body: Vec<Stmt>,
+        is_rw: bool,
+        env: Env,
+        compiled_routine: Option<Arc<crate::opcode::CompiledFunction>>,
+    ) -> Self {
+        let mut data = Self::new_code_object(package, name, params, param_defs, body, is_rw, env);
+        data.compiled_routine = compiled_routine;
+        Value::Sub(crate::gc::Gc::new(data))
     }
 
     /// Create a new Sub value with an explicit id.
@@ -361,28 +404,9 @@ impl Value {
         env: Env,
         id: u64,
     ) -> Self {
-        Value::Sub(crate::gc::Gc::new(SubData {
-            package,
-            name,
-            params,
-            param_defs,
-            body,
-            is_rw,
-            is_raw: false,
-            env,
-            assumed_positional: Vec::new(),
-            assumed_named: HashMap::new(),
-            id,
-            empty_sig: false,
-            is_bare_block: false,
-            compiled_code: None,
-            deprecated_message: None,
-            source_line: None,
-            source_file: None,
-            owned_captures: Vec::new(),
-            authoritative_captures: Vec::new(),
-            upvalues: Vec::new(),
-        }))
+        let mut data = Self::new_code_object(package, name, params, param_defs, body, is_rw, env);
+        data.id = id;
+        Value::Sub(crate::gc::Gc::new(data))
     }
 
     /// Create a new Sub value that lexically OWNS the given captured names.
@@ -404,28 +428,9 @@ impl Value {
         env: Env,
         authoritative_captures: Vec<Symbol>,
     ) -> Self {
-        Value::Sub(crate::gc::Gc::new(SubData {
-            package,
-            name,
-            params,
-            param_defs,
-            body,
-            is_rw,
-            is_raw: false,
-            env,
-            assumed_positional: Vec::new(),
-            assumed_named: HashMap::new(),
-            id: next_instance_id(),
-            empty_sig: false,
-            is_bare_block: false,
-            compiled_code: None,
-            deprecated_message: None,
-            source_line: None,
-            source_file: None,
-            owned_captures: Vec::new(),
-            authoritative_captures,
-            upvalues: Vec::new(),
-        }))
+        let mut data = Self::new_code_object(package, name, params, param_defs, body, is_rw, env);
+        data.authoritative_captures = authoritative_captures;
+        Value::Sub(crate::gc::Gc::new(data))
     }
 
     /// Build a Sub value from an already-populated `SubData` (e.g. a modified

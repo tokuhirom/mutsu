@@ -428,6 +428,7 @@ impl Interpreter {
             empty_sig: data.empty_sig,
             is_bare_block: data.is_bare_block,
             compiled_code: data.compiled_code.clone(),
+            compiled_routine: data.compiled_routine.clone(),
             deprecated_message: data.deprecated_message.clone(),
             source_line: data.source_line,
             source_file: data.source_file.clone(),
