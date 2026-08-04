@@ -122,13 +122,30 @@ impl Interpreter {
             let value = native_result?;
             self.sink_discarded_call_value(&value)?;
         } else {
+            // A user-defined (or imported) sub shadows a same-named builtin. The
+            // `CallFunc` path has always honoured that (`dispatch_func_call_inner`'s
+            // `user_function_matches_call` branch); `ExecCall` did not, and
+            // `exec_call_values` tries `call_function` FIRST — which answers with
+            // the builtin and only falls back to user dispatch when the name is
+            // not a builtin at all. So a shadowed name reached the builtin here.
+            //
+            // `Cro::HTTP::Router` exports `get`, and mutsu has a builtin `get`
+            // (read a line from a handle): a `route` block whose `get -> {...}` sat
+            // in *non-final* (sink) position compiled to `ExecCall` and died with
+            // "Expected IO::Handle", while the same call in final position went
+            // through `CallFunc` and worked.
+            let shadows_builtin = loan_env!(self, user_function_matches_call(&name, &args));
             self.set_pending_call_arg_sources(arg_sources);
             // Carrier may write the caller env by name (e.g. EVAL'd lexicals).
             // Slice B logs those writes (`begin_carrier`) and reconciles them into
             // the caller's slots on return (`writeback_carrier_writes`), so the
             // reverse sync is precise. See docs/vm-single-store.md.
             let carrier_saved = self.begin_carrier();
-            let exec_result = loan_env!(self, exec_call_values(&name, args));
+            let exec_result = if shadows_builtin {
+                loan_env!(self, exec_call(&name, args))
+            } else {
+                loan_env!(self, exec_call_values(&name, args))
+            };
             self.set_pending_call_arg_sources(None);
             let written = self.end_carrier(carrier_saved);
             let value = exec_result?;
