@@ -21,24 +21,30 @@ blob32.new: [Z+] map {$_[[^5].rotate(++$)]}, $h, |await
 A 1 MB message is 15625 blocks, so the run spawns ~31k `start` tasks, each
 doing an 80-round reduce. That is ~33ms per block; raku manages ~3ms.
 
-Two costs are worth separating before optimizing:
+Two candidate costs were measured (release build, 2026-08-05):
 
-1. **Per-`start` overhead** — task spawn, env capture, `await`. 31k spawns is a
-   lot even for a fast runtime; raku pays it too, so this is a ratio question,
-   not a structural one.
-2. **The `shared_vars_active` latch.** The first `start` in a process turns on
-   the name-keyed shared-variable lane *permanently* (`runtime_thread.rs`), and
-   from then on ordinary lexical reads/writes take different, slower paths in
-   the VM. So the per-round interpreter work inside each `start` may itself be
-   running in the degraded mode. Measuring a plain (non-`start`) loop before and
-   after a single `start` would separate the two — if the post-`start` loop is
-   itself much slower, this is the bigger lever, and it would speed up *every*
-   threaded program, not just this one.
+1. **Per-`start` overhead is the confirmed lever — ~17x raku.**
 
-That latch has already produced one silent correctness bug — the native-array
-push path skipped element typing while it was on
-(`news/2026-08/native-array-push-after-a-start.md`) — so understanding what else
-changes behind it has value beyond this benchmark.
+   ```raku
+   for ^2000 { await map -> $k { start { $k * 2 } }, 1, 2 }
+   # mutsu 5.53s   raku 0.332s
+   ```
+
+   That is the exact shape `rmd160` runs per block. At 15625 blocks it is ~43s
+   of pure spawn/await overhead in mutsu against ~2.6s in raku — a large slice
+   of the gap, though not all of it, so there is per-round interpreter cost on
+   top.
+
+2. **The `shared_vars_active` latch is NOT the problem.** The first `start` in a
+   process turns on the name-keyed shared-variable lane permanently
+   (`runtime_thread.rs`), which looked like it might degrade every later
+   lexical access. Measured: a 200k-iteration scalar+array-push loop runs
+   0.576s before a `start` and 0.402s after it. No degradation — do not spend
+   time here.
+
+   (That latch is still worth understanding: it produced one silent correctness
+   bug, the native-array push path skipping element typing while it was on —
+   `news/2026-08/native-array-push-after-a-start.md`.)
 
 ## Repro
 
