@@ -110,7 +110,7 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 15/51 slices merged. Next slice: C4.**
+**Current progress: 16/51 slices merged. Next slice: C5.**
 
 The migration is complete only when every required box below is checked and the completion gates
 at the end pass. The order within a phase is intentional. A later phase may start when its stated
@@ -154,7 +154,7 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
   when a compunit is imported so nested/module declarations retain direct references.
 - [x] **C3 — Install routine candidates from compiled references.** Add the temporary
   compiled-`FunctionDef` adapter and stop rediscovering compiled routines from name/signature keys.
-- [ ] **C4 — Precompute AST-derived routine metadata in the compiler.** Move auto-signature use,
+- [x] **C4 — Precompute AST-derived routine metadata in the compiler.** Move auto-signature use,
   empty-signature, return-shape validation, stub/proto identity, and redeclaration fingerprint data
   required by registration into `CompiledSubDeclPlan`/`CompiledFunction`.
 - [ ] **C5 — Move sub custom-trait and computed-name evaluation to child chunks.** Execute those
@@ -295,8 +295,11 @@ stable keys of their primary and alternate compiled routines. Child compilation-
 retain their compiled-function tables and remap colliding keys together with every declaration-plan
 reference. Registration now attaches the plan-selected compiled bodies to its temporary
 `FunctionDef` candidates, and the common call helper uses those bodies directly instead of
-rediscovering them by name and signature. The next slice moves the remaining AST-derived routine
-metadata into `CompiledSubDeclPlan` and `CompiledFunction` before removing `legacy_body`.
+rediscovering them by name and signature. Registration metadata for implicit `@_`/`%_`, empty
+signatures, return-shape validation, stub identity, and redeclaration identity is now derived once
+while lowering `CompiledSubDeclPlan`; normalized named/default signatures can therefore retain
+their compiled bodies without a registration-time AST scan. The next slice compiles sub custom
+traits and computed names as declaration child chunks before removing `legacy_body`.
 
 `RegisterClass` and `RegisterRole` now likewise index typed class/role declaration-plan pools for
 both source-order declarations and hoisted forward-reference shells. The VM no longer discovers
