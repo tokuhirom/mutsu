@@ -521,7 +521,7 @@ impl Interpreter {
             .insert("*USAGE".to_string(), Value::str(usage_text));
         self.mark_readonly("$*USAGE");
         self.mark_readonly("*USAGE");
-        match self.call_function_def(candidate, &args) {
+        match self.call_routine_def(candidate, args) {
             Ok(_) => Ok(()),
             Err(e) if e.return_value.is_some() => Ok(()),
             Err(e) if e.message.is_empty() => Ok(()),

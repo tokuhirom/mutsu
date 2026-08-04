@@ -159,8 +159,22 @@ impl Interpreter {
         }
     }
 
-    /// Call a specific FunctionDef directly, bypassing the built-in function dispatch.
-    /// Used for user-defined operator overrides.
+    /// Run a resolved routine's AST body through a fresh per-call compile.
+    ///
+    /// **This is not the routine entry point.** Every caller that used to reach it
+    /// now calls `call_routine_def`, which runs the routine's bytecode
+    /// (ADR-0019 C6d-1). It survives for exactly one gated case:
+    /// `multi_candidate_state_forces_interpreter` — a `state`-bearing candidate of
+    /// a name declared with signature *alternates*
+    /// (`multi f(A $x) | (B $x) { state $c }`). Those alternates are ONE routine
+    /// with ONE `state` cell, shared via a compile-time `state_group`, but
+    /// `vm_register_sub_ops` attaches plan-compiled bytecode only to non-multi
+    /// candidates, so each alternate would otherwise be compiled on the fly under
+    /// its own signature and get its own cell (`t/multi-signature-alternates.t`).
+    ///
+    /// TODO: compile to bytecode. Attaching each compiled routine key to its multi
+    /// candidate lets the alternates share the plan's `state_group`-scoped body,
+    /// which retires both the gate and this function.
     pub(crate) fn call_function_def(
         &mut self,
         def: &FunctionDef,

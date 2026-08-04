@@ -399,7 +399,7 @@ impl Interpreter {
             let infix_name = format!("infix:<{}>", op);
             if let Some(def) = self.resolve_function_with_types(&infix_name, &pair_args) {
                 crate::trace::trace_log!("call", "call_infix_routine dispatch def: {}", infix_name);
-                acc = self.call_function_def(&def, &pair_args)?;
+                acc = self.call_routine_def(&def, pair_args)?;
                 continue;
             }
             if let Some(callable) = self.env.get(&format!("&{}", infix_name)).cloned()
@@ -464,7 +464,7 @@ impl Interpreter {
                         "call_infix_routine fallback dispatch def: {}",
                         expr_infix_name
                     );
-                    acc = self.call_function_def(&def, &expr_args)?;
+                    acc = self.call_routine_def(&def, expr_args)?;
                     continue;
                 }
                 if let Some(callable) = self.env.get(&format!("&{}", expr_infix_name)).cloned()

@@ -59,7 +59,7 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         if let Some(def) = self.resolve_function_with_alias(full_name, &args) {
-            return self.call_function_def(&def, &args);
+            return self.call_routine_def(&def, args);
         }
         if let Some(err) = self.take_pending_dispatch_error() {
             return Err(err);
@@ -73,7 +73,7 @@ impl Interpreter {
         if let Some(pos) = full_name.rfind("::") {
             let short_name = &full_name[pos + 2..];
             if let Some(def) = self.resolve_function_with_alias(short_name, &args) {
-                return self.call_function_def(&def, &args);
+                return self.call_routine_def(&def, args);
             }
             let env_short = format!("&{}", short_name);
             if let Some(callable) = self.env.get(&env_short).cloned() {
