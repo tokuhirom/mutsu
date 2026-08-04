@@ -218,6 +218,7 @@ impl Interpreter {
             deprecated_message: None,
             source_file: self.current_source_file(),
             decl_order: crate::runtime::resolution::next_decl_order(),
+            compiled: None,
         };
         // Register as a typed multi candidate under the class package, mirroring
         // the `multi sub` registration keys so `import` copies it and operator
@@ -2288,6 +2289,7 @@ impl Interpreter {
                             deprecated_message: None,
                             source_file: self.current_source_file(),
                             decl_order: crate::runtime::resolution::next_decl_order(),
+                            compiled: None,
                         };
                         self.registry_mut().functions.insert(
                             Symbol::intern(&qualified_name),
@@ -2368,6 +2370,7 @@ impl Interpreter {
                             deprecated_message: None,
                             source_file: self.current_source_file(),
                             decl_order: crate::runtime::resolution::next_decl_order(),
+                            compiled: None,
                         };
                         // Register under the short name (lexical scope)
                         self.registry_mut().functions.insert(
@@ -2566,6 +2569,7 @@ impl Interpreter {
                         deprecated_message: None,
                         source_file: self.current_source_file(),
                         decl_order: crate::runtime::resolution::next_decl_order(),
+                        compiled: None,
                     };
                     self.registry_mut()
                         .proto_methods

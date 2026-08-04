@@ -798,6 +798,7 @@ impl Interpreter {
             deprecated_message,
             source_file: self.current_source_file(),
             decl_order: crate::runtime::resolution::next_decl_order(),
+            compiled: None,
         };
         let single_key = format!("{}::{}", self.current_package(), name);
         let multi_prefix = format!("{}::{}/", self.current_package(), name);
@@ -1225,6 +1226,7 @@ impl Interpreter {
             deprecated_message: None,
             source_file: self.current_source_file(),
             decl_order: crate::runtime::resolution::next_decl_order(),
+            compiled: None,
         };
         self.insert_token_def(name, def, multi);
     }
@@ -1294,6 +1296,7 @@ impl Interpreter {
                 deprecated_message: None,
                 source_file: self.current_source_file(),
                 decl_order: crate::runtime::resolution::next_decl_order(),
+                compiled: None,
             }),
         );
         Ok(())
@@ -1400,6 +1403,7 @@ impl Interpreter {
             deprecated_message: None,
             source_file: self.current_source_file(),
             decl_order: crate::runtime::resolution::next_decl_order(),
+            compiled: None,
         };
         let single_key = format!("GLOBAL::{}", name);
         let single_key_sym = Symbol::intern(&single_key);
@@ -1544,6 +1548,7 @@ impl Interpreter {
                 deprecated_message: None,
                 source_file: self.current_source_file(),
                 decl_order: crate::runtime::resolution::next_decl_order(),
+                compiled: None,
             }),
         );
         Ok(())

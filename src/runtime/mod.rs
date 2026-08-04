@@ -2421,6 +2421,22 @@ mod tests {
     }
 
     #[test]
+    fn sub_declaration_installs_its_compiled_candidate() {
+        let mut interp = Interpreter::new();
+        let output = interp
+            .run("sub compiled-adapter() { 42 }; say compiled-adapter();")
+            .unwrap();
+        assert_eq!(output, "42\n");
+        let key = Symbol::intern("GLOBAL::compiled-adapter");
+        let registry = interp.registry();
+        let def = registry
+            .functions
+            .get(&key)
+            .expect("registered function candidate");
+        assert!(def.compiled.is_some());
+    }
+
+    #[test]
     fn variables_and_concat() {
         let mut interp = Interpreter::new();
         let output = interp
