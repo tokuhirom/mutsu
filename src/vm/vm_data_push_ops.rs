@@ -67,6 +67,14 @@ impl Interpreter {
         if self.shared_vars_active {
             let val = self.stack.pop().unwrap_or(Value::NIL);
             let val = self.push_nil_to_elem_default(target_name, val);
+            // The declared element type governs this push exactly as it does the
+            // single-threaded one below. `shared_vars_active` latches on for the
+            // rest of the process at the first `start`, so without this a
+            // `my uint32 @W` stopped truncating to 32 bits once ANY thread had
+            // been spawned anywhere — and `Digest::SHA1`, whose message schedule
+            // relies on that truncation, then produced a silently wrong digest.
+            self.check_push_element_type(target_name, &val)?;
+            let val = self.wrap_native_int_push_value(target_name, val);
             let target = self.env().get(target_name).cloned().unwrap_or(Value::NIL);
             // Track B/Track C: a `state @a` under an active thread context is a
             // shared `ContainerRef` cell. Push INTO the cell under its lock
@@ -186,6 +194,18 @@ impl Interpreter {
             return Ok(());
         }
 
+        // The declared element type governs the push whatever SHAPE the target
+        // has. It is checked and applied here, above the target dispatch, because
+        // a plain lexical does not stay a plain `Array` for a program's whole
+        // life: once any `start` runs, `shared_vars_active` wraps lexicals in a
+        // `ContainerRef` cell, which took the `!is_simple_array` branch below and
+        // skipped both. `my uint32 @W` therefore stopped truncating to 32 bits
+        // after the first thread spawned anywhere in the process — and since
+        // `Digest::SHA1`'s message schedule relies on that truncation, a `sha1`
+        // call after any `start` silently produced a WRONG digest.
+        self.check_push_element_type(target_name, &val)?;
+        let val = self.wrap_native_int_push_value(target_name, val);
+
         // TODO: compile to bytecode — non-simple-target push, blocked-by:
         // first-class container identity Phase 2 (closure-captured ContainerRef
         // arrays). See ledger §1.
@@ -239,42 +259,6 @@ impl Interpreter {
             return Ok(());
         }
 
-        // Check type constraint on the array variable.
-        // For Slip values, check each element individually.
-        if let Some(type_name) = self
-            .var_type_constraint_fast(target_name)
-            .map(|s| s.to_string())
-        {
-            // Owned clone of the Slip backing (a view guard's borrow cannot
-            // outlive the match), so the item refs stay valid for the loop.
-            let slip_items: Option<std::sync::Arc<Vec<Value>>> = match val.view() {
-                ValueView::Slip(items) => Some(items.clone()),
-                _ => None,
-            };
-            let items_to_check: Vec<&Value> = match &slip_items {
-                Some(items) => items.iter().collect(),
-                None => vec![&val],
-            };
-            for item in items_to_check {
-                if !self.type_matches_value(&type_name, item) {
-                    // A rejected element push reports "for an element of @a"
-                    // (matching rakudo and the interpreter's other array-mutator
-                    // paths), not the scalar "in assignment to @a" wording.
-                    return Err(crate::runtime::utils::type_check_element_typed_error(
-                        target_name,
-                        &type_name,
-                        item,
-                    ));
-                }
-            }
-        }
-
-        // A push onto a native integer array stores through the native slot, so
-        // the value wraps to the element width exactly as an assignment does
-        // (`my uint32 @W; @W.push(6535351809)` stores 2240384513). Without this,
-        // `@W` held out-of-range values and Digest::SHA1's message schedule
-        // (whose rotate relies on uint32 truncation) computed the wrong digest.
-        let val = self.wrap_native_int_push_value(target_name, val);
         let mut val_slot = Some(val);
         // Container identity (§3): append through the shared backing node —
         // no COW, no local-slot zeroing dance — so every by-value holder of
@@ -314,6 +298,44 @@ impl Interpreter {
         // into its local slot just above, so the caller's slot is coherent — a
         // pull would be redundant. (The interpreter-fallback push branches above,
         // for shared/shaped/non-simple-array targets, keep their conservative mark.)
+        Ok(())
+    }
+
+    /// Type-check a pushed value (or every element of a pushed `Slip`) against
+    /// the declared element type of `target_name`. A no-op for an untyped array.
+    fn check_push_element_type(
+        &mut self,
+        target_name: &str,
+        val: &Value,
+    ) -> Result<(), RuntimeError> {
+        let Some(type_name) = self
+            .var_type_constraint_fast(target_name)
+            .map(|s| s.to_string())
+        else {
+            return Ok(());
+        };
+        // Owned clone of the Slip backing (a view guard's borrow cannot
+        // outlive the match), so the item refs stay valid for the loop.
+        let slip_items: Option<std::sync::Arc<Vec<Value>>> = match val.view() {
+            ValueView::Slip(items) => Some(items.clone()),
+            _ => None,
+        };
+        let items_to_check: Vec<&Value> = match &slip_items {
+            Some(items) => items.iter().collect(),
+            None => vec![val],
+        };
+        for item in items_to_check {
+            if !self.type_matches_value(&type_name, item) {
+                // A rejected element push reports "for an element of @a"
+                // (matching rakudo and the interpreter's other array-mutator
+                // paths), not the scalar "in assignment to @a" wording.
+                return Err(crate::runtime::utils::type_check_element_typed_error(
+                    target_name,
+                    &type_name,
+                    item,
+                ));
+            }
+        }
         Ok(())
     }
 
