@@ -13,6 +13,7 @@ impl Interpreter {
     pub(super) fn call_compiled_function_fast(
         &mut self,
         cf: &CompiledFunction,
+        fn_name: &str,
         compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
         // GC safepoint (§9.2a `call`): this fast path skips push_call_frame,
@@ -106,9 +107,14 @@ impl Interpreter {
                 }
             }
         }
+        // Run the body under the routine's own `state` scope so this path's
+        // load/sync and the body's `StateVarInit` agree on ONE key shape with
+        // the full named path — see `enter_routine_state_scope`.
+        let saved_state_scope = self.enter_routine_state_scope(cf, fn_name);
         // Load persisted state variable values
         for (slot, key) in &cf.code.state_locals {
-            if let Some(val) = self.get_state_var(key) {
+            let scoped_key = self.scoped_state_key(key);
+            if let Some(val) = self.get_state_var(&scoped_key) {
                 self.locals[*slot] = val.clone();
             }
         }
@@ -202,8 +208,10 @@ impl Interpreter {
                 .get(local_name)
                 .cloned()
                 .unwrap_or_else(|| self.locals[*slot].clone());
-            loan_env!(self, set_state_var(key.clone(), val));
+            let scoped_key = self.scoped_state_key(key);
+            loan_env!(self, set_state_var(scoped_key, val));
         }
+        self.leave_routine_state_scope(saved_state_scope);
 
         // Flush any dirty locals to env before restoring, so that captured
         // outer variable modifications (e.g. $a++ where $a is from outer scope)

@@ -73,6 +73,37 @@ hands the callee's scope across `run_nested`'s register reset via
 did. The named-vs-anonymous scope-id rule is factored into
 `Interpreter::sub_state_scope_id` and shared with the compiled closure dispatch.
 
+## Three more `state` bugs the conversion exposed
+
+Making the bare `$` a real `state` variable put it on the `state` machinery's
+existing weak spots, all of which were already wrong for an explicit `state`:
+
+- **A method's `state` was keyed by the CALLER's closure scope.** Both compiled
+  method paths loaded and synced with the raw store key while the body's
+  `StateVarInit` resolved through `scoped_state_key`, so whenever a method ran
+  with any ambient scope installed the two disagreed. A class declared inside any
+  block therefore restarted `method m { state $n; ++$n }` on every call. A method
+  body's `state` is now run with the ambient scope cleared — its keys already
+  carry the owning package and method name.
+
+- **A `state` was invisible to a re-entrant call.** A `state` is one container
+  shared by every invocation of its clone, but the value lives in a per-frame
+  slot that only reaches the store at frame exit, so a recursive call loaded the
+  value from before the outer frame ran. `sub f { my @a = 1, (f() unless $++) }`
+  (roast `S02-types/array.t` "works fine when re-entrant") recursed until the
+  stack overflowed. Writes to a `state` slot now publish straight to the store
+  (`publish_state_local`), which costs one `is_empty` test for a state-free body.
+
+- **A routine with a `state` was barred from the fast call path.** The exclusion
+  existed because that path used raw keys where the full named path used scoped
+  ones; it was affordable while only an explicit `state` reached it, but a bare
+  `$` is one too, so every routine containing a `$` was demoted to the full call
+  path — a 2× slowdown that pushed `roast/S04-declarations/state.t` (a
+  2,000,000-iteration `$ = foo` loop) from 8.3s to 17.4s and over its CI budget.
+  The fast path now resolves and installs the routine's registration clone id
+  itself (`enter_routine_state_scope`) and uses scoped keys, so state-bearing
+  routines stay on it: 8.4s, back at parity.
+
 ## Result
 
 `Digest::RIPEMD`'s last wrongness is gone: the output stage's

@@ -466,6 +466,40 @@ impl Interpreter {
             .map_or(data.id, |i| i as u64)
     }
 
+    /// Publish a just-written local to the state store when that slot holds a
+    /// `state` variable.
+    ///
+    /// A `state` variable is one CONTAINER shared by every invocation of its
+    /// clone, so a re-entrant call must observe a mutation the outer frame has
+    /// already made. The slot is per-frame and only syncs to the store at frame
+    /// exit, so without this write-through the inner frame's `load_state_locals`
+    /// read the value from *before* the outer frame ran — which made
+    /// `sub f { my @a = 1, (f() unless $++) }` (roast S02-types/array.t
+    /// "works fine when re-entrant") recurse until the stack overflowed.
+    ///
+    /// Free for the overwhelmingly common state-free `CompiledCode`: one
+    /// `is_empty` test. The scan is over `state_locals`, which holds a handful
+    /// of entries at most.
+    pub(crate) fn publish_state_local(&mut self, code: &CompiledCode, slot: u32) {
+        if code.state_locals.is_empty() {
+            return;
+        }
+        let slot = slot as usize;
+        let Some(key) = code
+            .state_locals
+            .iter()
+            .find(|(s, _)| *s == slot)
+            .map(|(_, k)| k.clone())
+        else {
+            return;
+        };
+        let Some(val) = self.locals.get(slot).cloned() else {
+            return;
+        };
+        let scoped = self.scoped_state_key(&key);
+        loan_env!(self, set_state_var(scoped, val));
+    }
+
     /// Resolve a state variable key, applying the current closure scope if set.
     pub(crate) fn scoped_state_key(&self, key: &str) -> String {
         if let Some(id) = self.state_scope_id {

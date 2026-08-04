@@ -1,6 +1,6 @@
 use Test;
 
-plan 22;
+plan 26;
 
 # Raku clones a block every time its ENCLOSING block runs, and a `state` cell —
 # named, or the implicit one behind a bare `$` — belongs to the CLONE. So a
@@ -98,4 +98,35 @@ plan 22;
     sub smu() { state $n = 0 unless 0; $n++; $n }
     is (smu(), smu()).join(','), "1,2",
         '...and so does one gated by a postfix unless';
+}
+
+# --- a `state` is ONE container, shared by every invocation of the clone -----
+{
+    # A re-entrant call must see a mutation the outer frame already made: the
+    # per-frame slot only syncs to the store at frame exit, so without a
+    # write-through this recursed until the stack overflowed.
+    my @r1;
+    sub re1() { my @a = 1, (re1() unless $++); @r1.push(@a.elems); 42 }
+    re1();
+    is @r1.join('|'), "1|2", 'an anonymous state is visible to a re-entrant call';
+
+    my @r2;
+    sub re2() { state $n; my @a = 1, (re2() unless $n++); @r2.push(@a.elems); 42 }
+    re2();
+    is @r2.join('|'), "1|2", '...and so is a named one';
+}
+
+# --- a method's state is keyed by the method, not by the caller's closure ----
+{
+    my $b = {
+        my $o = class MC { method m { state $n; ++$n } }.new;
+        ($o.m, $o.m, $o.m).join(',');
+    };
+    is $b(), "1,2,3", 'a method state persists when the class is declared in a block';
+
+    my $c = {
+        my $o = class :: { method m { ++$ } }.new;
+        ($o.m, $o.m, $o.m).join(',');
+    };
+    is $c(), "1,2,3", '...and so does an anonymous one';
 }

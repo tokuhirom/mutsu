@@ -3450,10 +3450,16 @@ impl Interpreter {
             // -- Postfix operators --
             OpCode::PostIncrement(name_idx, slot) => {
                 self.exec_post_increment_op(code, *name_idx, *slot)?;
+                if let Some(slot) = slot {
+                    self.publish_state_local(code, *slot);
+                }
                 *ip += 1;
             }
             OpCode::PostDecrement(name_idx, slot) => {
                 self.exec_post_decrement_op(code, *name_idx, *slot)?;
+                if let Some(slot) = slot {
+                    self.publish_state_local(code, *slot);
+                }
                 *ip += 1;
             }
             OpCode::PostIncrementIndex(name_idx, slot) => {
@@ -3572,10 +3578,16 @@ impl Interpreter {
             // -- Prefix increment/decrement --
             OpCode::PreIncrement(name_idx, slot) => {
                 self.exec_pre_increment_op(code, *name_idx, *slot)?;
+                if let Some(slot) = slot {
+                    self.publish_state_local(code, *slot);
+                }
                 *ip += 1;
             }
             OpCode::PreDecrement(name_idx, slot) => {
                 self.exec_pre_decrement_op(code, *name_idx, *slot)?;
+                if let Some(slot) = slot {
+                    self.publish_state_local(code, *slot);
+                }
                 *ip += 1;
             }
             OpCode::PreIncrementIndex(name_idx, slot) => {
@@ -4521,6 +4533,7 @@ impl Interpreter {
             }
             OpCode::SetLocal(idx) => {
                 self.exec_set_local_op(code, *idx)?;
+                self.publish_state_local(code, *idx);
                 *ip += 1;
             }
             OpCode::SetLocalDecl {
@@ -4534,6 +4547,7 @@ impl Interpreter {
                 self.explicit_initializer_context = *explicit_init;
                 self.vardecl_context = true;
                 self.exec_set_local_op(code, *slot)?;
+                self.publish_state_local(code, *slot);
                 *ip += 1;
             }
             OpCode::SetVarDynamic { name_idx, dynamic } => {
@@ -4622,6 +4636,7 @@ impl Interpreter {
             }
             OpCode::AssignExprLocal(idx) => {
                 self.exec_assign_expr_local_op(code, *idx)?;
+                self.publish_state_local(code, *idx);
                 *ip += 1;
             }
             OpCode::AssignReadOnly => {
