@@ -68,9 +68,11 @@ is_run 'my $x = 1 1;', { status => sub { 0 != $^a }, err => rx/'SORRY'/ }, '...'
 
 — the exact shape above, so `is_run` had been receiving a `Block` where it wanted
 a matcher `Hash`, matching its no-matcher candidate and checking nothing. With
-the composer fixed the assertion runs, and mutsu fails it: **mutsu does not
-diagnose two terms in a row**, so `my $x = 1 1;` parses, evaluates the first term
-and warns about the second in sink context. That gap is recorded in
+the composer fixed the assertion runs, and mutsu fails it: it diagnoses "Two
+terms in a row" for a bare expression statement (`1 1;`) but **not after a `my`
+initializer or in a listop argument**, so `my $x = 1 1;` parses, evaluates the
+first term and re-reads the second as a new statement, warning about it in sink
+context and exiting 0. That gap is recorded in
 `todo/tickets/two-terms-in-a-row-is-not-a-parse-error.md`; the pin was re-pointed
 at `my $x = "abc"" ;`, the ASCII counterpart of the two multi-byte cases it sits
 beside, which is what that file is actually about.

@@ -1,22 +1,25 @@
-# Two terms in a row is not a parse error
+# "Two terms in a row" is only diagnosed for a bare expression statement
 
-rakudo rejects two adjacent terms with no operator between them; mutsu accepts
-the construct and silently evaluates only one of them.
+mutsu has the diagnosis, but only where a *statement* is a pure value expression:
 
 ```
-$ raku  -e 'my $x = 1 1;'
-===SORRY!=== Error while compiling -e
-Two terms in a row
-at -e:1
-
-$ mutsu -e 'my $x = 1 1;'
+$ mutsu -e '1 1;'          # correct
+Confused. Two terms in a row
+$ mutsu -e 'my $x = 1 1;'  # wrong -- rakudo says "Two terms in a row"
+Useless use of constant integer 1 in sink context (line 1)
+$ mutsu -e 'say 1 1;'      # wrong, same
 Useless use of constant integer 1 in sink context (line 1)
 ```
 
-The same holds for `my $x = "a" "b";` and `say 1 1;` — mutsu parses the first
-term, then treats the rest as a separate statement and warns about it in sink
-context, exiting 0. rakudo's `X::Syntax::Confused` with the message
-"Two terms in a row" is what roast tests for.
+The check lives in `src/parser/stmt/simple_expr_stmt/core.rs:216` and is gated on
+`is_pure_value_expr(&expr)` — the whole statement being a literal. A `my`
+initializer and a listop argument never reach it: the initializer parser stops at
+the first complete term and the leftover `1` is re-read as a *new statement*,
+which then evaluates and warns in sink context, exiting 0. So the failure is not
+a missing diagnosis but a missing **term-boundary check at the other two sites**.
+
+(`my $x = (1 1);` is caught, as `X::Syntax::Malformed`, because the paren
+parser does reach a boundary check.)
 
 ## How it surfaced
 
@@ -36,14 +39,16 @@ test.
 
 ## Why it is not a one-liner
 
-mutsu's statement parser recovers from a term it cannot continue by ending the
-statement there, which is what makes the second term parse as a new statement.
-Turning that recovery into a diagnosis means deciding, at every place a term
-completes, whether what follows may legitimately start a new statement —
-a statement separator, `}`, end of input, a statement modifier (`if`, `for`,
-`unless`, `while`, `given`, `when`), a block, a pointy — versus another term.
-Getting that list wrong rejects valid programs, so it needs the full
-`make roast` as the review rather than a targeted patch.
+The existing check's guard list is what makes it safe, and it is long: the
+continuation must not be empty, `;`, `}`, `)`, `]`, `,`, a statement-modifier
+keyword (`if`, `for`, `unless`, `while`, `given`, `when`), and it must
+`starts_with_unambiguous_term`. Reusing it at the initializer and listop sites
+means deciding, at each, which of those exits are legitimate there — a listop
+argument list has its own comma and adverb continuations, and an initializer can
+be followed by a `where` clause or a trait. Getting the list wrong rejects valid
+programs rather than merely missing an error, so this wants the full `make roast`
+as the review.
 
-Affected file: `src/parser/stmt/` (statement-boundary decision) and the term
-parsers under `src/parser/primary/`.
+Affected files: `src/parser/stmt/simple_expr_stmt/core.rs` (the existing check and
+its `starts_with_unambiguous_term` helper, worth extracting), the `my`
+initializer parser under `src/parser/stmt/decl/`, and the listop argument parser.
