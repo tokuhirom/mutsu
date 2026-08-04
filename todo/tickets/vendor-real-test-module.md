@@ -731,6 +731,15 @@ since an abort costs a whole file:
 `S29-context/die.t`, `S32-io/io-path.t`, `S32-num/{complex,real-bridge}.t`,
 `S32-temporal/DateTime.t`.
 
+`S24-testing/11-plan-skip-all-subtests.t` is closed
+(`news/2026-08/whatever-code-value-keeps-a-hash-composer.md`): `{:err(/Sub/),
+:status(*.so)}` composed a *Block*, because the brace disambiguator read the
+`.so` of `*.so` as an implicit-topic call. `Test::Util`'s `is_run` then matched
+its no-test-name candidate, which lost the description and answered through the
+native provider's separate counter. **A "plan mismatch plus a blank
+description" is worth checking against the argument's own type before looking at
+`Test` at all.**
+
 `roast/S12-methods/qualified.t` is worth a second look too: its Malformed
 assertion passes now and the file moved on to `Cannot dispatch to method me on
 Parent because it is not inherited or done by Bar` in its inheritance subtest.

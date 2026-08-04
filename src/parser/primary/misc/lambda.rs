@@ -523,6 +523,26 @@ fn is_implicit_topic_call(bytes: &[u8], at: usize) -> bool {
         // `$!.message` is a term even though it ends in punctuation; a bare `!`
         // is prefix negation (`{ a => !.defined }` is a block).
         b'!' => !matches!(p.checked_sub(2).map(|q| bytes[q]), Some(b'$')),
+        // `*.abs` / `**.abs` curries the Whatever, which *is* the invocant, so
+        // `{ :s(*.abs) }` stays a hash. Infix multiplication is spelled the same
+        // way from here (`{ a => 2 * .elems }` is a block), so decide on what
+        // precedes the star: a term there makes it an infix and the call a
+        // topic call.
+        b'*' => {
+            let mut q = p - 1;
+            while q > 0 && bytes[q - 1] == b'*' {
+                q -= 1;
+            }
+            while q > 0 && bytes[q - 1].is_ascii_whitespace() {
+                q -= 1;
+            }
+            match q.checked_sub(1).map(|s| bytes[s]) {
+                None => false,
+                Some(b')' | b']' | b'}' | b'\'' | b'"') => true,
+                Some(b'>') => !matches!(q.checked_sub(2).map(|s| bytes[s]), Some(b'=')),
+                Some(c) => c.is_ascii_alphanumeric() || c == b'_',
+            }
+        }
         // A `/` right before the dot closes a term far more often than it
         // divides by one: it ends `$/`, a quoting construct (`q:to/EOF/.trim`,
         // `q/x/.uc`) or a regex literal (`/rx/.gist`). Infix division, on the
