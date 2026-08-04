@@ -756,6 +756,15 @@ aliases (`≅ ⩵ ⩶ ≠ ≤ ≥`) parsed inline but did not resolve when reach
 evidence that `&infix:<op>` works** — the parser and the by-name dispatch are
 separate tables, and only the parser had the aliases.
 
+`S12-subset/subtypes.t` is closed
+(`news/2026-08/sibling-scope-routine-shadow.md`): a `sub f` in one subtest block
+made a `multi f` in the *next* one an `X::Redeclaration`, because mutsu keys the
+routine registry by package and the lexical-shadow exemption was gated on a
+scope depth that only an *inlined* bare block sets. **A declaration compiled in
+a routine/closure body is registered twice** (hoist pass, then in sequence), so
+any "have I seen this name before?" test in the compiler counts the hoist copy
+first.
+
 `roast/S12-methods/qualified.t` is worth a second look too: its Malformed
 assertion passes now and the file moved on to `Cannot dispatch to method me on
 Parent because it is not inherited or done by Bar` in its inheritance subtest.

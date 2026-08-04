@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::ast::{AssignOp, CallArg, Expr, PhaserKind, Stmt, make_anon_sub};
@@ -179,6 +179,20 @@ pub(crate) struct Compiler {
     /// `OUTER::` from its mainline lands on nothing, which also means its true
     /// mainline is one frame in — so `UNIT::` must stop there, not at the wrapper.
     unit_root_scope: usize,
+    /// True when this compiler is compiling a routine or closure BODY rather
+    /// than a compilation unit's mainline. A `sub`/`multi` declared there is
+    /// lexical to that body, so it may shadow a same-named routine belonging to
+    /// a different scope — mutsu's routine registry is keyed by package alone,
+    /// and without this marker a `sub f` in one sub body made a `multi f` in a
+    /// *sibling* body an X::Redeclaration.
+    in_lexical_scope: bool,
+    /// Routine names this body declares more than once in a way that conflicts
+    /// (not every declaration is `multi`). Those must NOT be marked lexical:
+    /// the conflict is inside this one scope, so it is a genuine
+    /// X::Redeclaration and the runtime check has to keep seeing it. Computed
+    /// once from the body's own statements, so it does not depend on how many
+    /// times a declaration is compiled (the hoist pass compiles each twice).
+    lexical_dup_routines: HashSet<String>,
     /// Track type constraints for local variables (for compile-time literal checks).
     local_types: HashMap<String, String>,
     compiled_functions: CompiledFns,
@@ -421,6 +435,8 @@ impl Compiler {
             local_scopes: vec![HashMap::new()],
             enclosing_scopes: Vec::new(),
             unit_root_scope: 0,
+            in_lexical_scope: false,
+            lexical_dup_routines: HashSet::new(),
             local_types: HashMap::new(),
             compiled_functions: CompiledFns::default(),
             current_package: "GLOBAL".to_string(),

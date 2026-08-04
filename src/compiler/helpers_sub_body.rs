@@ -261,6 +261,7 @@ impl Compiler {
         // exactly the parameter slots (before the body can shadow them). §1.5.
         sub_compiler.record_param_local_slots(params, param_defs);
         // Hoist sub declarations within the sub body
+        sub_compiler.mark_lexical_body(body);
         sub_compiler.hoist_sub_decls(body, true);
         // Seed the body chunk's ip -> line table with the sub's definition line so
         // its prologue ops (before the body's first statement marker) already
@@ -873,6 +874,7 @@ impl Compiler {
         // exactly the parameter slots (before the body can shadow them). §1.5.
         sub_compiler.record_param_local_slots(params, param_defs);
         // Hoist sub declarations within the closure body
+        sub_compiler.mark_lexical_body(body);
         sub_compiler.hoist_sub_decls(body, true);
         // If body contains CATCH/CONTROL, wrap in implicit try. compile_try
         // leaves the body's final-expression value on the stack, which is the
