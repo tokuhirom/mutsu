@@ -1872,10 +1872,93 @@ pub(crate) struct EnvConsumerSlots {
     pub(crate) whenever: Vec<bool>,
 }
 
+/// A declaration-time expression lowered to its own bytecode chunk (ADR-0019 C5).
+///
+/// A computed routine name (`sub ::($name) {...}`) and a custom trait's argument
+/// (`is native(LIB)`, `is symbol('foo')`, `is nonesuch($x)`) are ordinary
+/// expressions that have to run when the declaration registers. They used to be
+/// handed to the runtime as an `Expr` and compiled on demand at every
+/// registration; the compiler now lowers them once, and registration runs the
+/// chunk through the VM's normal re-entrant bytecode entry.
+#[derive(Debug, Clone)]
+pub(crate) struct CompiledDeclExpr {
+    pub(crate) code: Arc<CompiledCode>,
+    pub(crate) fns: Arc<CompiledFns>,
+}
+
+/// The argument of a declaration trait.
+///
+/// `Literal` and `Compiled` are the ADR-0019 plan path: a constant argument
+/// (`is symbol('foo')`) is already a value and needs no chunk at all, everything
+/// else runs as bytecode. `Ast` remains for the declaration kinds whose
+/// registration still walks a source declaration (the prelude's
+/// forward-declaration pass and the class/role method walkers, migrated in
+/// phase D); it is the existing fallback narrowed to those callers, not a new one.
+#[derive(Debug, Clone)]
+pub(crate) enum DeclTraitArg {
+    Literal(Value),
+    Compiled(CompiledDeclExpr),
+    Ast(Box<Expr>),
+}
+
+impl DeclTraitArg {
+    /// The argument's value when it is a compile-time constant. Declaration
+    /// machinery that only needs a literal (the `EXPORTHOW::DECLARE` keyword)
+    /// reads it without running anything.
+    pub(crate) fn literal(&self) -> Option<&Value> {
+        match self {
+            DeclTraitArg::Literal(value) => Some(value),
+            DeclTraitArg::Ast(expr) => match &**expr {
+                Expr::Literal(value) => Some(value),
+                _ => None,
+            },
+            DeclTraitArg::Compiled(_) => None,
+        }
+    }
+}
+
+/// A declaration's custom traits as registration consumes them: the trait name
+/// plus its optional argument.
+pub(crate) type DeclTraits = [(String, Option<DeclTraitArg>)];
+
+/// Adapt AST-shaped custom traits for a registration path that has not been
+/// migrated to declaration plans yet.
+pub(crate) fn decl_traits_from_ast(
+    traits: &[(String, Option<Expr>)],
+) -> Vec<(String, Option<DeclTraitArg>)> {
+    traits
+        .iter()
+        .map(|(name, arg)| {
+            (
+                name.clone(),
+                arg.clone().map(|e| DeclTraitArg::Ast(Box::new(e))),
+            )
+        })
+        .collect()
+}
+
+/// Pair a declaration's trait names with the arguments the compiler lowered for
+/// them. `lowered` is index-aligned with `custom_traits`; a lowering site may
+/// append an argument-less marker trait (`__lexical_hoist`) after building the
+/// list, so a shorter list pads with `None` rather than misaligning.
+fn zip_decl_trait_args(
+    custom_traits: &[(String, Option<Expr>)],
+    lowered: Vec<Option<DeclTraitArg>>,
+) -> Vec<(String, Option<DeclTraitArg>)> {
+    debug_assert!(lowered.len() <= custom_traits.len());
+    custom_traits
+        .iter()
+        .map(|(name, _)| name.clone())
+        .zip(lowered.into_iter().chain(std::iter::repeat_with(|| None)))
+        .collect()
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct CompiledSubDeclPlan {
     pub(crate) name: Symbol,
-    pub(crate) name_expr: Option<Expr>,
+    /// The compiled chunk producing a runtime-resolved routine name, for
+    /// `sub ::($name) {...}`. `None` for the ordinary literal-name declaration.
+    pub(crate) name_chunk: Option<CompiledDeclExpr>,
     pub(crate) params: Vec<String>,
     pub(crate) param_defs: Vec<ParamDef>,
     pub(crate) return_type: Option<String>,
@@ -1897,7 +1980,7 @@ pub(crate) struct CompiledSubDeclPlan {
     pub(crate) export_tags: Vec<String>,
     pub(crate) is_test_assertion: bool,
     pub(crate) supersede: bool,
-    pub(crate) custom_traits: Vec<(String, Option<Expr>)>,
+    pub(crate) custom_traits: Vec<(String, Option<DeclTraitArg>)>,
     pub(crate) fingerprint: Option<u64>,
     /// Registration metadata derived once while lowering the declaration.
     /// Keeping it beside the plan prevents the registry adapter from walking
@@ -1976,7 +2059,9 @@ fn body_contains_non_nil_return(stmts: &[Stmt]) -> bool {
 #[derive(Debug, Clone)]
 pub(crate) struct CompiledClassDeclPlan {
     pub(crate) name: Symbol,
-    pub(crate) name_expr: Option<Expr>,
+    /// The compiled chunk producing a runtime-resolved type name
+    /// (`class ::($name) {...}`). `None` for the ordinary literal-name form.
+    pub(crate) name_chunk: Option<CompiledDeclExpr>,
     pub(crate) parents: Vec<String>,
     pub(crate) class_is_rw: bool,
     pub(crate) is_hidden: bool,
@@ -1988,7 +2073,7 @@ pub(crate) struct CompiledClassDeclPlan {
     /// move to compiled child chunks in the next ADR-0019 stage.
     pub(crate) legacy_body: Vec<Stmt>,
     pub(crate) language_version: String,
-    pub(crate) custom_traits: Vec<(String, Option<Expr>)>,
+    pub(crate) custom_traits: Vec<(String, Option<DeclTraitArg>)>,
     pub(crate) decl_id: u64,
 }
 
@@ -2003,7 +2088,7 @@ pub(crate) struct CompiledRoleDeclPlan {
     pub(crate) legacy_body: Vec<Stmt>,
     pub(crate) is_rw: bool,
     pub(crate) language_version: String,
-    pub(crate) custom_traits: Vec<(String, Option<Expr>)>,
+    pub(crate) custom_traits: Vec<(String, Option<DeclTraitArg>)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4875,7 +4960,16 @@ impl CompiledCode {
         idx
     }
 
-    pub(crate) fn add_sub_decl_plan(&mut self, stmt: &Stmt) -> u32 {
+    /// Record a sub declaration plan. `name_chunk` and `trait_arg_chunks` are the
+    /// compiled declaration-time expressions the compiler lowered for this site
+    /// (ADR-0019 C5); `trait_arg_chunks` is index-aligned with the declaration's
+    /// `custom_traits`.
+    pub(crate) fn add_sub_decl_plan(
+        &mut self,
+        stmt: &Stmt,
+        name_chunk: Option<CompiledDeclExpr>,
+        trait_args: Vec<Option<DeclTraitArg>>,
+    ) -> u32 {
         let Stmt::SubDecl {
             name,
             name_expr,
@@ -4940,10 +5034,12 @@ impl CompiledCode {
                         .is_some_and(|(_, ret)| ret.is_some())
             }),
         };
+        debug_assert_eq!(name_chunk.is_some(), name_expr.is_some());
+        let plan_traits = zip_decl_trait_args(custom_traits, trait_args);
         let plan_idx = self.sub_decl_plans.len() as u32;
         self.sub_decl_plans.push(CompiledSubDeclPlan {
             name: *name,
-            name_expr: name_expr.clone(),
+            name_chunk,
             params: params.clone(),
             param_defs: param_defs.clone(),
             return_type: return_type.clone(),
@@ -4958,7 +5054,7 @@ impl CompiledCode {
             export_tags: export_tags.clone(),
             is_test_assertion: *is_test_assertion,
             supersede: *supersede,
-            custom_traits: custom_traits.clone(),
+            custom_traits: plan_traits,
             fingerprint,
             routine_metadata,
         });
@@ -4975,7 +5071,12 @@ impl CompiledCode {
         self.sub_decl_plans[*plan_idx as usize].compiled_routine_keys = keys;
     }
 
-    pub(crate) fn add_class_decl_plan(&mut self, stmt: &Stmt) -> u32 {
+    pub(crate) fn add_class_decl_plan(
+        &mut self,
+        stmt: &Stmt,
+        name_chunk: Option<CompiledDeclExpr>,
+        trait_args: Vec<Option<DeclTraitArg>>,
+    ) -> u32 {
         let Stmt::ClassDecl {
             name,
             name_expr,
@@ -4995,10 +5096,12 @@ impl CompiledCode {
         else {
             panic!("add_class_decl_plan expects ClassDecl");
         };
+        debug_assert_eq!(name_chunk.is_some(), name_expr.is_some());
+        let plan_traits = zip_decl_trait_args(custom_traits, trait_args);
         let plan_idx = self.class_decl_plans.len() as u32;
         self.class_decl_plans.push(CompiledClassDeclPlan {
             name: *name,
-            name_expr: name_expr.clone(),
+            name_chunk,
             parents: parents.clone(),
             class_is_rw: *class_is_rw,
             is_hidden: *is_hidden,
@@ -5008,7 +5111,7 @@ impl CompiledCode {
             repr: repr.clone(),
             legacy_body: body.clone(),
             language_version: language_version.clone(),
-            custom_traits: custom_traits.clone(),
+            custom_traits: plan_traits,
             decl_id: *decl_id,
         });
         let idx = self.decl_plans.len() as u32;
@@ -5016,7 +5119,11 @@ impl CompiledCode {
         idx
     }
 
-    pub(crate) fn add_role_decl_plan(&mut self, stmt: &Stmt) -> u32 {
+    pub(crate) fn add_role_decl_plan(
+        &mut self,
+        stmt: &Stmt,
+        trait_args: Vec<Option<DeclTraitArg>>,
+    ) -> u32 {
         let Stmt::RoleDecl {
             name,
             type_params,
@@ -5041,7 +5148,7 @@ impl CompiledCode {
             legacy_body: body.clone(),
             is_rw: *is_rw,
             language_version: language_version.clone(),
-            custom_traits: custom_traits.clone(),
+            custom_traits: zip_decl_trait_args(custom_traits, trait_args),
         });
         let idx = self.decl_plans.len() as u32;
         self.decl_plans.push(CompiledDeclPlanRef::Role(plan_idx));

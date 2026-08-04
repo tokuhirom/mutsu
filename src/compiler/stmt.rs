@@ -3063,9 +3063,9 @@ impl Compiler {
                         if let Stmt::SubDecl { custom_traits, .. } = &mut marked {
                             custom_traits.push(("__lexical_hoist".to_string(), None));
                         }
-                        self.code.add_sub_decl_plan(&marked)
+                        self.add_sub_decl_plan(&marked)
                     } else {
-                        self.code.add_sub_decl_plan(stmt)
+                        self.add_sub_decl_plan(stmt)
                     };
                 self.code.emit(OpCode::RegisterDecl(idx));
                 if name_expr.is_some() {
@@ -3175,7 +3175,7 @@ impl Compiler {
                     supersede: false,
                     custom_traits: vec![("__mutsu_method_decl".to_string(), None)],
                 };
-                let idx = self.code.add_sub_decl_plan(&lowered);
+                let idx = self.add_sub_decl_plan(&lowered);
                 self.code.emit(OpCode::RegisterDecl(idx));
                 if name_expr.is_none() {
                     let mut method_params: Vec<String> = vec![
@@ -3489,7 +3489,7 @@ impl Compiler {
                 // registers it under the correct nested package
                 // (e.g. `class D` inside `unit module A::B` → `A::B::D`).
                 let stmt = self.qualify_decl_name(stmt);
-                let idx = self.code.add_class_decl_plan(&stmt);
+                let idx = self.add_class_decl_plan(&stmt);
                 self.code.emit(OpCode::RegisterDecl(idx));
             }
             Stmt::AugmentClass { .. } => {
@@ -3501,7 +3501,7 @@ impl Compiler {
                 // Same as RegisterClass above: a role method has no creation op.
                 self.record_type_body_captures(body);
                 let stmt = self.qualify_decl_name(stmt);
-                let idx = self.code.add_role_decl_plan(&stmt);
+                let idx = self.add_role_decl_plan(&stmt);
                 self.code.emit(OpCode::RegisterDecl(idx));
             }
             Stmt::SubsetDecl { .. } => {

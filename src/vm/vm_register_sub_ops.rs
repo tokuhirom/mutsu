@@ -192,7 +192,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         if let Some(crate::opcode::CompiledSubDeclPlan {
             name,
-            name_expr,
+            name_chunk,
             params,
             param_defs,
             return_type,
@@ -212,9 +212,8 @@ impl Interpreter {
             routine_metadata,
         }) = code.sub_decl_plans.get(idx as usize)
         {
-            let resolved_name = if let Some(expr) = name_expr {
-                self.vm_eval_block_value(&[Stmt::Expr(expr.clone())])?
-                    .to_string_value()
+            let resolved_name = if let Some(chunk) = name_chunk {
+                self.run_decl_expr(chunk)?.to_string_value()
             } else {
                 name.resolve()
             };
@@ -432,7 +431,7 @@ impl Interpreter {
                     .iter()
                     .any(|(t, _)| t == crate::runtime::PRELUDE_SUB_TRAIT)
                 && !*multi
-                && name_expr.is_none()
+                && name_chunk.is_none()
                 && !resolved_name.contains("::")
                 && !resolved_name.contains(':')
             {
@@ -475,7 +474,7 @@ impl Interpreter {
         name: &str,
         param_defs: &[crate::ast::ParamDef],
         return_type: Option<&String>,
-        custom_traits: &[(String, Option<crate::ast::Expr>)],
+        custom_traits: &crate::opcode::DeclTraits,
     ) -> Result<(), RuntimeError> {
         self.register_native_call_routine(name, None, param_defs, return_type, custom_traits)
     }
@@ -498,7 +497,7 @@ impl Interpreter {
         name: &str,
         param_defs: &[crate::ast::ParamDef],
         return_type: Option<&String>,
-        custom_traits: &[(String, Option<crate::ast::Expr>)],
+        custom_traits: &crate::opcode::DeclTraits,
     ) -> Result<(), RuntimeError> {
         self.register_native_call_routine(
             name,
@@ -520,7 +519,7 @@ impl Interpreter {
         invocant_class: Option<&str>,
         param_defs: &[crate::ast::ParamDef],
         return_type: Option<&String>,
-        custom_traits: &[(String, Option<crate::ast::Expr>)],
+        custom_traits: &crate::opcode::DeclTraits,
     ) -> Result<(), RuntimeError> {
         use crate::runtime::nativecall::{CType, NativeCallSpec, ParamSpec};
 
@@ -536,8 +535,8 @@ impl Interpreter {
             for (t, arg) in custom_traits {
                 if t == trait_name {
                     return Ok(match arg {
-                        Some(expr) => {
-                            let val = self.vm_eval_block_value(&[Stmt::Expr(expr.clone())])?;
+                        Some(arg) => {
+                            let val = self.eval_decl_trait_arg(arg)?;
                             let resolved = if matches!(val.view(), ValueView::Sub(..)) {
                                 self.vm_call_sub_value(val, Vec::new(), false)?
                             } else {

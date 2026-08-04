@@ -1,6 +1,5 @@
 //! Type-declaration registration ops: enum / class / augment / role / subset.
 use super::*;
-use crate::ast::Expr;
 use crate::symbol::Symbol;
 
 impl Interpreter {
@@ -117,7 +116,7 @@ impl Interpreter {
         self.dispatch_multi_candidate.clear();
         if let Some(crate::opcode::CompiledClassDeclPlan {
             name,
-            name_expr,
+            name_chunk,
             parents,
             class_is_rw,
             is_hidden,
@@ -131,9 +130,8 @@ impl Interpreter {
             decl_id,
         }) = code.class_decl_plans.get(idx as usize)
         {
-            let resolved_name = if let Some(expr) = name_expr {
-                self.vm_eval_block_value(&[Stmt::Expr(expr.clone())])?
-                    .to_string_value()
+            let resolved_name = if let Some(chunk) = name_chunk {
+                self.run_decl_expr(chunk)?.to_string_value()
             } else {
                 name.resolve()
             };
@@ -377,9 +375,11 @@ impl Interpreter {
             // (`new_type`, `add_method` per declared method), and queue the
             // user `compose` to run after the custom `is` traits (same
             // protocol as the EXPORTHOW `class` metaclass mapping below).
-            if let Some((_, Some(Expr::Literal(kw)))) = custom_traits
+            if let Some(kw) = custom_traits
                 .iter()
                 .find(|(t, _)| t == "__mutsu_declare_how")
+                .and_then(|(_, arg)| arg.as_ref())
+                .and_then(crate::opcode::DeclTraitArg::literal)
             {
                 let keyword = kw.to_string_value();
                 let how_type =
@@ -410,10 +410,9 @@ impl Interpreter {
                     if trait_name.starts_with("__") {
                         continue;
                     }
-                    let trait_value = if let Some(arg_expr) = trait_arg {
-                        self.vm_eval_block_value(&[Stmt::Expr(arg_expr.clone())])?
-                    } else {
-                        Value::TRUE
+                    let trait_value = match trait_arg {
+                        Some(arg) => self.eval_decl_trait_arg(arg)?,
+                        None => Value::TRUE,
                     };
                     let named_arg = Value::pair(trait_name.clone(), trait_value);
                     self.vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
@@ -663,10 +662,9 @@ impl Interpreter {
                     if trait_name.starts_with("__") {
                         continue;
                     }
-                    let trait_value = if let Some(arg_expr) = trait_arg {
-                        self.vm_eval_block_value(&[Stmt::Expr(arg_expr.clone())])?
-                    } else {
-                        Value::TRUE
+                    let trait_value = match trait_arg {
+                        Some(arg) => self.eval_decl_trait_arg(arg)?,
+                        None => Value::TRUE,
                     };
                     let named_arg = Value::pair(trait_name.clone(), trait_value);
                     self.vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
