@@ -1869,7 +1869,7 @@ impl Interpreter {
         // with a default value stays excluded here (the name-cache-pollution /
         // builtin-shadow hazard, PR #3546 — allowed at genuine multi sites via
         // `def_is_otf_compilable_multi_candidate`).
-        !Self::function_body_needs_interpreter(&def.body)
+        !Self::routine_body_facts(def).needs_interpreter
             && def.param_defs.iter().all(|pd| pd.default.is_none())
     }
 
@@ -1892,7 +1892,26 @@ impl Interpreter {
         // already picked this candidate by matching the callback's signature, so
         // the compiled binding only binds the callable (byte-identical). Defaults
         // are allowed because a multi site does not name-cache the candidate.
-        !Self::function_body_needs_interpreter(&def.body)
+        !Self::routine_body_facts(def).needs_interpreter
+    }
+
+    /// The OTF-compilation gates' body predicates for `def`, computed once and
+    /// memoized on the def itself (`FunctionDef::body_facts_cache`).
+    ///
+    /// Each predicate walks the whole body AST, and the gates are evaluated on
+    /// every slow-path call to the routine, so recomputing them per call was pure
+    /// repeat work over immutable data. This is also the single place that reads
+    /// `def.body` for these facts, so ADR-0019 C6 can later feed them from the
+    /// compiler by changing one function.
+    pub(super) fn routine_body_facts(
+        def: &crate::ast::FunctionDef,
+    ) -> crate::ast::RoutineBodyFacts {
+        *def.body_facts_cache
+            .get_or_init(|| crate::ast::RoutineBodyFacts {
+                needs_interpreter: Self::function_body_needs_interpreter(&def.body),
+                module_otf_needs_interpreter: Self::module_otf_body_needs_interpreter(&def.body),
+                declares_state: Self::function_body_declares_state(&def.body),
+            })
     }
 
     /// Check if a function body contains constructs that require
@@ -1995,7 +2014,7 @@ impl Interpreter {
                 .iter()
                 .all(|t| matches!(t.as_str(), "copy" | "rw" | "raw" | "readonly" | "required"));
             (is_capture || (!pd.sigilless && pd.sub_signature.is_none())) && traits_otf_safe
-        }) && !Self::module_otf_body_needs_interpreter(&def.body)
+        }) && !Self::routine_body_facts(def).module_otf_needs_interpreter
     }
 
     /// Return the shared captured body for a resolved module sub def IF routing it
@@ -2012,7 +2031,7 @@ impl Interpreter {
         def: &crate::ast::FunctionDef,
     ) -> Option<std::sync::Arc<CompiledFunction>> {
         if self.imported_compiled_fns.is_empty()
-            || !Self::function_body_declares_state(&def.body)
+            || !Self::routine_body_facts(def).declares_state
             || !Self::def_module_single_sig_body_ok_ignoring_state(def)
         {
             return None;
@@ -2077,7 +2096,7 @@ impl Interpreter {
         // module sub's shared `state` cell (the cross-thread shared captured body,
         // `imported_state_body_for_def`, is the path that admits `state`).
         Self::def_module_single_sig_body_ok_ignoring_state(def)
-            && !Self::function_body_declares_state(&def.body)
+            && !Self::routine_body_facts(def).declares_state
     }
 
     /// Recursively detect interpreter-coupled statements/expressions in a module
@@ -2195,7 +2214,7 @@ impl Interpreter {
         def: &crate::ast::FunctionDef,
     ) -> bool {
         !self.multi_alternate_signature_names.is_empty()
-            && Self::function_body_declares_state(&def.body)
+            && Self::routine_body_facts(def).declares_state
             && self
                 .multi_alternate_signature_names
                 .contains(&Symbol::intern(name))

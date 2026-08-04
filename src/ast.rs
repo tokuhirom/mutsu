@@ -210,6 +210,28 @@ pub(crate) struct FunctionDef {
     /// simply recomputes it on first use.
     #[serde(skip)]
     pub(crate) body_fp_cache: std::sync::OnceLock<u64>,
+    /// Memoized [`RoutineBodyFacts`], filled by
+    /// `Interpreter::routine_body_facts`. Derived state, like `body_fp_cache`.
+    #[serde(skip)]
+    pub(crate) body_facts_cache: std::sync::OnceLock<RoutineBodyFacts>,
+}
+
+/// Properties of a routine body that the on-the-fly compilation gates ask about.
+///
+/// Each is a pure predicate over the body AST, and each used to be recomputed by
+/// walking that AST at every gate evaluation. They are memoized together on the
+/// def ([`FunctionDef::body_facts_cache`]): the module-single gate asks for two of
+/// the three anyway, and one walk more on first touch is negligible next to the
+/// compile the gates decide whether to perform.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct RoutineBodyFacts {
+    /// The body contains a construct whose semantics the standalone-compiled
+    /// form would not preserve (a type declaration, a `start` block, ...).
+    pub(crate) needs_interpreter: bool,
+    /// The stricter variant of the above applied to module/dynamic single subs.
+    pub(crate) module_otf_needs_interpreter: bool,
+    /// The body declares a `state` variable somewhere.
+    pub(crate) declares_state: bool,
 }
 
 impl FunctionDef {

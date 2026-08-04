@@ -889,6 +889,7 @@ impl Interpreter {
             decl_order: crate::runtime::resolution::next_decl_order(),
             compiled: None,
             body_fp_cache: std::sync::OnceLock::new(),
+            body_facts_cache: std::sync::OnceLock::new(),
         };
         let single_key = format!("{}::{}", self.current_package(), name);
         let multi_prefix = format!("{}::{}/", self.current_package(), name);
@@ -1318,6 +1319,7 @@ impl Interpreter {
             decl_order: crate::runtime::resolution::next_decl_order(),
             compiled: None,
             body_fp_cache: std::sync::OnceLock::new(),
+            body_facts_cache: std::sync::OnceLock::new(),
         };
         self.insert_token_def(name, def, multi);
     }
@@ -1390,6 +1392,7 @@ impl Interpreter {
                 decl_order: crate::runtime::resolution::next_decl_order(),
                 compiled: None,
                 body_fp_cache: std::sync::OnceLock::new(),
+                body_facts_cache: std::sync::OnceLock::new(),
             }),
         );
         Ok(())
@@ -1499,6 +1502,7 @@ impl Interpreter {
             decl_order: crate::runtime::resolution::next_decl_order(),
             compiled: None,
             body_fp_cache: std::sync::OnceLock::new(),
+            body_facts_cache: std::sync::OnceLock::new(),
         };
         let single_key = format!("GLOBAL::{}", name);
         let single_key_sym = Symbol::intern(&single_key);
@@ -1537,7 +1541,9 @@ impl Interpreter {
             .registry()
             .functions
             .get(&single_key_sym)
-            .is_some_and(|existing| Self::is_stub_routine_body(&existing.body));
+            // `is_stub` is derived once at registration (ADR-0019 C4), so the
+            // installed def already answers this without re-walking its body.
+            .is_some_and(|existing| existing.is_stub);
         if multi {
             if has_single && !has_proto && !supersede {
                 return Err(RuntimeError::redeclaration_routine(name));
@@ -1646,6 +1652,7 @@ impl Interpreter {
                 decl_order: crate::runtime::resolution::next_decl_order(),
                 compiled: None,
                 body_fp_cache: std::sync::OnceLock::new(),
+                body_facts_cache: std::sync::OnceLock::new(),
             }),
         );
         Ok(())
