@@ -746,7 +746,7 @@ impl Interpreter {
                     result = Ok(());
                     break;
                 }
-                Err(mut e) if e.return_value.is_some() => {
+                Err(mut e) if e.return_value.is_some() && !e.is_yield_signal() => {
                     // Non-routine closures (bare blocks, pointy blocks) are NOT
                     // return boundaries.  `return` inside them propagates up to
                     // the lexically enclosing routine (sub/method).

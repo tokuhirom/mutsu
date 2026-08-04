@@ -185,6 +185,30 @@ pub(in crate::parser) fn source_span_at(eject: &str) -> Option<(String, String)>
     })
 }
 
+/// The 1-based line of the original source that `eject` points at, or `None`
+/// when it is outside the recorded source buffer. For diagnostics that have to
+/// name a line in their own message text rather than in error metadata (rakudo
+/// writes "(`{{` was at line 1)" for an unterminated embedded comment).
+pub(in crate::parser) fn source_line_at(eject: &str) -> Option<usize> {
+    ORIGINAL_SOURCE.with(|s| {
+        let (src_ptr, src_len) = *s.borrow();
+        if src_ptr == 0 {
+            return None;
+        }
+        let eject_ptr = eject.as_ptr() as usize;
+        if eject_ptr < src_ptr || eject_ptr > src_ptr + src_len {
+            return None;
+        }
+        let offset = eject_ptr - src_ptr;
+        // SAFETY: as in `source_span_at` — the pointer/length pair came from a
+        // live `&str` and `offset` is inside it.
+        let full = unsafe {
+            std::str::from_utf8_unchecked(std::slice::from_raw_parts(src_ptr as *const u8, src_len))
+        };
+        Some(full[..offset].matches('\n').count() + 1)
+    })
+}
+
 /// Check if the given parser input pointer is within the original source buffer
 /// or a registered leaked region.
 pub(in crate::parser) fn is_within_original_source(input: &str) -> bool {

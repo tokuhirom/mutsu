@@ -450,11 +450,28 @@ impl RuntimeError {
     /// [`Self::control_flow_illegal`]). `try` must **not** pass this one
     /// through: there is nothing further up that would consume it, so passing
     /// it on makes it uncatchable.
+    /// A control signal that carries the value it *yields* rather than a value
+    /// it returns. `take`/`emit`/`done` all put that value in `return_value`,
+    /// and every routine-call boundary tests `return_value.is_some()` to spot a
+    /// non-local `return` — so without this predicate a `take` in a routine
+    /// with no enclosing `gather` was silently turned into `return 1`.
+    pub(crate) fn is_yield_signal(&self) -> bool {
+        self.is_take() || self.is_emit() || self.is_done() || self.is_react_done()
+    }
+
     pub(crate) fn is_illegal_control(&self) -> bool {
         self.exception.is_some()
             && matches!(
                 self.control,
-                Some(Control::Next) | Some(Control::Last) | Some(Control::Redo)
+                Some(Control::Next)
+                    | Some(Control::Last)
+                    | Some(Control::Redo)
+                    // `take` only ever becomes an Err when there is no enclosing
+                    // `gather` to consume it (both raise sites test
+                    // `gather_items_len()` first), so it is in the same position:
+                    // nothing further up will take it, and rakudo's `try` catches
+                    // it (`try { take 1 }` leaves `$!` = "take without gather").
+                    | Some(Control::Take)
             )
     }
 
@@ -554,7 +571,11 @@ impl RuntimeError {
         );
         let xcf = Self::typed("X::ControlFlow", attrs);
         Self {
-            message: "CX::Take".to_string(),
+            // The human-readable text this signal shows if nothing consumes
+            // it. The `control` flag is what routes it to a CONTROL block, so
+            // naming the failure here costs nothing and stops an escaping
+            // signal reporting itself as "CX::Take".
+            message: "take without gather".to_string(),
             control: Some(Control::Take),
             return_value: Some(value),
             exception: xcf.exception,
@@ -580,7 +601,11 @@ impl RuntimeError {
         );
         let xcf = Self::typed("X::ControlFlow", attrs);
         Self {
-            message: "CX::Emit".to_string(),
+            // The human-readable text this signal shows if nothing consumes
+            // it. The `control` flag is what routes it to a CONTROL block, so
+            // naming the failure here costs nothing and stops an escaping
+            // signal reporting itself as "CX::Take".
+            message: "emit without supply or react".to_string(),
             control: Some(Control::Emit),
             return_value: Some(value),
             exception: xcf.exception,

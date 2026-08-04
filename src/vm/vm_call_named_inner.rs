@@ -327,7 +327,7 @@ impl Interpreter {
                     result = Err(e);
                     break;
                 }
-                Err(e) if e.return_value.is_some() => {
+                Err(e) if e.return_value.is_some() && !e.is_yield_signal() => {
                     // Non-local return: if the signal targets a specific callable,
                     // only catch it if this routine is the target.
                     if let Some(target_id) = e.return_target_callable_id()
