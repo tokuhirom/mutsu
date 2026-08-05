@@ -220,6 +220,34 @@ impl Interpreter {
                     && let Some(flag) = cancellation_state(id as u64)
                 {
                     flag.store(true, Ordering::Relaxed);
+                    // A timer-driven `:every` cue may have an iteration in
+                    // flight (dispatched before the flag was set). Wait for it
+                    // (bounded) so no callback side effect lands after
+                    // `.cancel` returns: an in-flight `cas $a` completing
+                    // after the caller re-declares a same-named lexical
+                    // resurrects the dead cue's count through the bare-name
+                    // atomic lane (roast S17-scheduler/every.t). Skip the wait
+                    // when the callback itself called `.cancel` (same thread —
+                    // waiting would deadlock until the timeout).
+                    if let Some(busy_state) = cancellation_busy(id as u64) {
+                        let self_cancel = busy_state
+                            .running_thread
+                            .lock()
+                            .ok()
+                            .is_some_and(|g| *g == Some(std::thread::current().id()));
+                        if !self_cancel {
+                            crate::gc::block_quiescent(|| {
+                                let deadline = std::time::Instant::now()
+                                    + std::time::Duration::from_millis(100);
+                                while busy_state.busy.load(Ordering::Acquire)
+                                    && std::time::Instant::now() < deadline
+                                {
+                                    std::thread::yield_now();
+                                }
+                            });
+                        }
+                        drop_cancellation_busy(id as u64);
+                    }
                 }
                 Ok(Value::NIL)
             }
@@ -300,6 +328,15 @@ impl Interpreter {
 
                 if is_current_thread {
                     self.scheduler_run_sync(params)?;
+                } else if params.every.is_some_and(|e| e != f64::INFINITY)
+                    && params.delay != f64::INFINITY
+                {
+                    // A finite (or -Inf, clamped) `:every` cue is a deadline-heap
+                    // timer entry that enqueues each iteration onto the worker
+                    // pool (ADR-0020 slice 2) — no dedicated sleep-loop thread.
+                    // `:every(Inf)` and an Inf `:in` delay keep the one-shot
+                    // path, which preserves their historical run-once handling.
+                    self.cue_every_timer(params, cancellation_id)?;
                 } else {
                     let mut thread_interp = self.clone_for_thread();
                     // Track the spawned task so `$*SCHEDULER.loads` reflects it
@@ -318,21 +355,11 @@ impl Interpreter {
                         params.delay = 0.0;
                     }
                     // One-shot cues run on the ADR-0020 worker pool (slice 1).
-                    // A `:every` cue keeps a dedicated thread for now — its
-                    // repeat loop occupies a worker for the cue's whole
-                    // lifetime, which is exactly the shape slice 2 moves onto
-                    // the deadline-heap timer.
-                    let pooled = params.every.is_none();
                     let run = move || {
-                        let body = move || {
+                        crate::runtime::worker_pool::submit(move || {
                             thread_interp.scheduler_run_async(params);
                             state_scheduler::scheduler_task_finished();
-                        };
-                        if pooled {
-                            crate::runtime::worker_pool::submit(body);
-                        } else {
-                            crate::runtime::builtins_system::spawn_user_thread(body);
-                        }
+                        });
                     };
                     if deferred {
                         interval_timer::register_once(
@@ -456,73 +483,151 @@ impl Interpreter {
         }
     }
 
-    /// Run the repeating loop for :every, used by both sync and async paths.
-    /// Returns Ok(()) for sync, errors propagated only in sync mode.
-    fn scheduler_run_every_loop(
+    /// Drive a finite `:every` cue from the shared deadline-heap timer
+    /// (ADR-0020 slice 2): each tick enqueues one callback run onto the worker
+    /// pool, skipping the tick while the previous run is still going. The cue
+    /// stops owning a thread — the retired implementation was a dedicated
+    /// worker sleeping through a repeat loop for the cue's whole lifetime.
+    fn cue_every_timer(
         &mut self,
-        p: &CueParams,
-        propagate_errors: bool,
+        params: CueParams,
+        cancellation_id: u64,
     ) -> Result<(), RuntimeError> {
-        let interval = p.every.unwrap_or(0.0);
-        let mut count = 0;
-        loop {
+        use std::sync::Arc;
+        use std::sync::atomic::AtomicBool;
+        let every = params.every.unwrap_or(0.0);
+        // Rakudo parity: the timer has a 1ms minimum resolution; sub-1ms (and
+        // zero/negative/-Inf) intervals are clamped with the same warning.
+        let interval = if every < 0.001 {
+            let shown_ms = if every.is_finite() {
+                every * 1000.0
+            } else {
+                0.0
+            };
+            self.raise_resumable_warning(
+                &format!("Minimum timer resolution is 1ms; using that instead of {shown_ms}ms"),
+                Value::NIL,
+            )?;
+            0.001
+        } else {
+            every
+        };
+        let delay = params.delay;
+        let cancel_flag = params.cancel_flag.clone();
+        // `:every` with both `:times` and `:stop` is rejected up front, so the
+        // dispatch count is exact even though a `:stop` probe consumes a tick.
+        // The retired loop ran once even for `:times(0)` (it checked the count
+        // AFTER the call) — `max(1)` preserves that.
+        let times = params.times.map(|t| t.max(1));
+        // Block-aware clone: the callback's own captured scalars go through
+        // per-binding closure cells, not the bare-name shared lane, matching
+        // the `start` spawn path.
+        let thread_interp = self.clone_for_thread_for_block(&params.callback);
+        // Track the cue so `$*SCHEDULER.loads` reflects it until it dies.
+        state_scheduler::scheduler_task_started();
+        let state = Arc::new(std::sync::Mutex::new((thread_interp, params)));
+        let busy = Arc::new(AtomicBool::new(false));
+        let running_thread = Arc::new(std::sync::Mutex::new(None));
+        // Register the in-flight state under the Cancellation id so `.cancel`
+        // can wait for a dispatched iteration to finish (see
+        // `native_cancellation`).
+        register_cancellation_busy(
+            cancellation_id,
+            Arc::new(CancellationBusy {
+                busy: busy.clone(),
+                running_thread: running_thread.clone(),
+            }),
+        );
+        let stopped = Arc::new(AtomicBool::new(false));
+        let mut dispatched: usize = 0;
+        interval_timer::register_entry(
+            interval_timer::clamp_delay_secs(delay),
+            Box::new(move || {
+                // Driver-thread rules: cheap checks and a pool enqueue only —
+                // `:stop` and the callback are user code and run in the task.
+                if stopped.load(Ordering::Relaxed)
+                    || cancel_flag
+                        .as_ref()
+                        .is_some_and(|flag| flag.load(Ordering::Relaxed))
+                    || times.is_some_and(|max| dispatched >= max)
+                {
+                    state_scheduler::scheduler_task_finished();
+                    return None;
+                }
+                // Skip the tick while the previous iteration still runs (the
+                // timer's fixed-rate reschedule then naturally falls back to
+                // "next period after now").
+                if !busy.swap(true, Ordering::AcqRel) {
+                    dispatched += 1;
+                    let state = state.clone();
+                    let busy = busy.clone();
+                    let stopped = stopped.clone();
+                    let running_thread = running_thread.clone();
+                    crate::runtime::worker_pool::submit(move || {
+                        if let Ok(mut g) = running_thread.lock() {
+                            *g = Some(std::thread::current().id());
+                        }
+                        if let Ok(mut guard) = state.lock() {
+                            let (interp, p) = &mut *guard;
+                            // Re-check cancellation at execution time: the
+                            // dispatch-to-execution window (pool queue + lock)
+                            // is far wider than the retired loop's
+                            // check-to-call gap, and `.cancel` only waits for
+                            // iterations it could see dispatched.
+                            let is_cancelled = || {
+                                p.cancel_flag
+                                    .as_ref()
+                                    .is_some_and(|flag| flag.load(Ordering::Relaxed))
+                            };
+                            if !is_cancelled() {
+                                if interp.scheduler_check_stop(&p.stop_cb) {
+                                    stopped.store(true, Ordering::Relaxed);
+                                } else if !is_cancelled() {
+                                    // Second check right before the call: the
+                                    // stop probe above does a full shared-var
+                                    // env sync, which is most of the window.
+                                    let _ =
+                                        interp.scheduler_call_with_catch(&p.callback, &p.catch_cb);
+                                }
+                            }
+                        }
+                        if let Ok(mut g) = running_thread.lock() {
+                            *g = None;
+                        }
+                        busy.store(false, Ordering::Release);
+                    });
+                }
+                Some(std::time::Duration::from_secs_f64(interval))
+            }),
+        );
+        Ok(())
+    }
+
+    /// Synchronous scheduler execution (CurrentThreadScheduler). `:every` is
+    /// rejected up front on a CurrentThreadScheduler, so there is no repeat
+    /// handling here.
+    fn scheduler_run_sync(&mut self, p: CueParams) -> Result<(), RuntimeError> {
+        if !Self::scheduler_sleep(p.delay) {
+            return Ok(());
+        }
+        let count = p.times.unwrap_or(1);
+        for _ in 0..count {
             if Self::scheduler_is_cancelled(&p.cancel_flag) {
                 break;
             }
-            if self.scheduler_check_stop(&p.stop_cb) {
-                break;
-            }
-            if propagate_errors {
-                self.scheduler_call_with_catch(&p.callback, &p.catch_cb)?;
-            } else {
-                let _ = self.scheduler_call_with_catch(&p.callback, &p.catch_cb);
-            }
-            count += 1;
-            if p.times.is_some_and(|max| count >= max) {
-                break;
-            }
-            if interval == f64::INFINITY {
-                break;
-            } else if interval > 0.0 && interval.is_finite() {
-                // Quiescent — see `scheduler_sleep`.
-                crate::gc::block_quiescent(|| {
-                    crate::runtime::thread_compat::sleep(std::time::Duration::from_secs_f64(
-                        interval,
-                    ))
-                });
-            }
+            self.scheduler_call_with_catch(&p.callback, &p.catch_cb)?;
         }
         Ok(())
     }
 
-    /// Synchronous scheduler execution (CurrentThreadScheduler)
-    fn scheduler_run_sync(&mut self, p: CueParams) -> Result<(), RuntimeError> {
-        if !Self::scheduler_sleep(p.delay) {
-            // Inf delay: for :every(Inf), run once then stop
-            if p.every.is_some() {
-                self.scheduler_call_with_catch(&p.callback, &p.catch_cb)?;
-            }
-            return Ok(());
-        }
-
-        if p.every.is_some() {
-            self.scheduler_run_every_loop(&p, true)?;
-        } else {
-            let count = p.times.unwrap_or(1);
-            for _ in 0..count {
-                if Self::scheduler_is_cancelled(&p.cancel_flag) {
-                    break;
-                }
-                self.scheduler_call_with_catch(&p.callback, &p.catch_cb)?;
-            }
-        }
-        Ok(())
-    }
-
-    /// Async scheduler execution (ThreadPoolScheduler) - runs in spawned thread
+    /// Async scheduler execution (ThreadPoolScheduler) — runs in a pooled
+    /// worker task. Finite `:every` never reaches this (it is timer-driven,
+    /// `cue_every_timer`); an `:every(Inf)` cue or an Inf `:in` delay lands
+    /// here and runs once, preserving the retired repeat loop's break-after-
+    /// one-run on an infinite interval.
     fn scheduler_run_async(&mut self, p: CueParams) {
         if !Self::scheduler_sleep(p.delay) {
-            // Inf delay: for :every(Inf), run once then stop
+            // Inf delay: for :every, run once then stop
             if p.every.is_some() {
                 let _ = self.scheduler_call_with_catch(&p.callback, &p.catch_cb);
             }
@@ -530,7 +635,11 @@ impl Interpreter {
         }
 
         if p.every.is_some() {
-            let _ = self.scheduler_run_every_loop(&p, false);
+            if !Self::scheduler_is_cancelled(&p.cancel_flag)
+                && !self.scheduler_check_stop(&p.stop_cb)
+            {
+                let _ = self.scheduler_call_with_catch(&p.callback, &p.catch_cb);
+            }
         } else {
             let count = p.times.unwrap_or(1);
             for _ in 0..count {
