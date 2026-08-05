@@ -59,10 +59,13 @@ Three independent measurements, all on the ripemd shape:
    do-nothing lexicals to the spawning scope takes the same 4000-start loop from ~1.5 s to
    ~2.7 s (**+80%**): `clone_for_thread` flattens and iterates the whole parent env, seeds
    the ADR-0010 lineage store, and clones the env map, per task.
-3. **The flat cycle profile agrees** (`perf` on the `profiling` build): malloc/free ~30%,
-   SipHash + `hash_one` + hashbrown insert/clone ~20–25%, `clone_for_thread_excluding` the
-   top direct mutsu symbol (5.3% self on the P-cores), kernel thread-creation symbols
-   negligible.
+3. **The `perf` profile agrees** (`profiling` build, dwarf call graphs). Flat: malloc/free
+   ~30%, SipHash + `hash_one` + hashbrown insert/clone ~20–25%, `clone_for_thread_excluding`
+   the top direct mutsu symbol. Children mode: the `pthread_create`/`clone3` subtree is
+   ~10–14% — matching the Rust bench — while the per-*task* work dominates:
+   `clone_for_thread_excluding` ~15%, `Registry::clone` ~14%, `drop_in_place<Interpreter>`
+   ~14%, `drop_thread_local_gc_state` ~19%, `init_io_environment` ~10% (all of which a
+   pooled worker still pays per task).
 
 The load-bearing consequence: **a pool removes the thread-create + stack-reserve + GC
 register/exit churn, but `clone_for_thread` is a per-*task* contract and stays** (a pooled
