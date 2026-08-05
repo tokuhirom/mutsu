@@ -101,11 +101,16 @@ Upstream has 4 test files; 3 are whitelisted and run on every release:
 | `t/rfc4231.t` | the RFC 4231 HMAC-SHA-2 test vectors | **PASS** (5.9s) |
 | `t/ripemd.t` | RIPEMD-160, incl. the 1,000,000-byte `'a' x 1e6` vector | not whitelisted — **correct but slow** |
 
-`t/ripemd.t` produces the right digest for all 9 vectors; it takes ~513s
-against raku's ~46s, over the gate's 120s per-file budget. The cost is
-structural, not a wrong answer: `rmd160` runs the two halves of each
-compression round in `start` blocks, so a 1 MB message spawns ~31k tasks and
-the gap is mutsu's per-`start` overhead. Tracked in
+`t/ripemd.t` produces the right digest for all 9 vectors; it took ~513s
+against raku's ~46s when first measured, over the gate's 120s per-file
+budget. The cost is structural, not a wrong answer: `rmd160` runs the two
+halves of each compression round in `start` blocks, so a 1 MB message
+spawns ~31k tasks. Successive campaigns (worker pool ADR-0020, per-task
+clone slimming, closure-setup allocations #5941, reduce compiled-first
+dispatch #5942) brought it to **~119s local (2026-08-05)** — right at the
+budget line, but the gate is a hard `timeout 120`, so it stays
+un-whitelisted until one more lever gives real margin on slower CI
+runners. Tracked in
 `todo/tickets/digest-ripemd-start-per-block-overhead.md`.
 
 ## Provenance and update procedure

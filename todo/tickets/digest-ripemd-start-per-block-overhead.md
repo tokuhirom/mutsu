@@ -1,5 +1,37 @@
 # `Digest::RIPEMD` is 11x raku — a `start` per compression block
 
+> **Status update 4 (2026-08-05, closure-setup + reduce compiled-first —
+> gate 28s → 12s, `t/ripemd.t` 295s → 119s):** two levers executed.
+> Slice 1 (#5941) landed the top closure-call setup allocations from the
+> update-3 inventory: `&?BLOCK`/block_stack now reuse the caller's
+> `Gc<SubData>` (the signature takes `&Gc<SubData>`), the
+> `"self"`/`"&?BLOCK"`/`"__mutsu_callable_id"`/`"!"`/`"_"` env inserts
+> are symbol-keyed, and `sanitize_call_args_owned` passes the caller's
+> args `Vec` through untouched when no callsite marker is present.
+> Closure-call microbench 4.30s → 3.7s; gate ~flat (29.6 → 28.3) — the
+> setup malloc was real but not dominant. The dominant cost turned out
+> to be one level up: **`reduce` dispatched every step through
+> `call_sub_value`, whose body execution is the `eval_block_value` AST
+> carrier — a full recompile of the 80-round reduce lambda (including
+> its `BEGIN`-array's five anon subs) per step, per task** (gdb:
+> `compile_routine_closure_body` fired 300+ times in a 2k run; perf put
+> ~10% of the run in the compiler + its malloc traffic). #5942 makes
+> `reduce_items` compiled-first: a Sub with `compiled_code` /
+> `compiled_routine` dispatches through `vm_call_on_value` (now
+> `pub(crate)`); AST-only Subs keep the carrier. Gate: **28s → 12.0s**;
+> full upstream `t/ripemd.t`: **295s → 119s** (9/9). Still NOT
+> whitelisted: the battery gate is a hard `timeout 120` per file and
+> 119s local leaves no margin for slower CI runners — one more ~20%
+> lever is needed. The post-#5942 flat profile (release, 20k input) has
+> no single dominant item left: `nanbox::gc_op` (refcount) 4.7%,
+> thread-local symbol caches ~5.5%, `memcmp` 3.9%,
+> `call_compiled_closure_with_topic` 3.1%, malloc+free ~12%,
+> `Symbol::intern` 2.5%. Remaining inventory levers still apply — the
+> `cc.has_calls` exit-path writeback scan (ADR-0018 narrowing), the
+> `GetGlobal` env reads — and `produce` / the `resolution_map_grep` map
+> carrier still recompile per call/per map invocation and could get the
+> same compiled-first treatment.
+
 > **Status update 3 (2026-08-05, Blob AT-POS lever executed — gate FLAT
 > again; fast path is a real win elsewhere):** the `Index`/`AT-POS` lever
 > from update 2 landed (#5939): a dedicated `(Instance, Int)` arm in
