@@ -164,9 +164,11 @@ bench CI, never a local run.
 
 ## 5. Concurrency and structural refactoring
 
-- [ ] **Write a Proposed ADR for a shared worker pool** — mutsu spawns a thread per task at all 19
-      `spawn_user_thread` sites; the design fork is what `await` does to a pooled worker:
-      [todo/deep/shared-worker-pool-adr.md](todo/deep/shared-worker-pool-adr.md).
+- [ ] **Implement the shared worker pool per [ADR-0020](docs/adr/0020-shared-worker-pool.md)**
+      (Proposed 2026-08-05) — elastic pool, blocking `await`; slices in the ADR §6. The pool alone
+      recovers only ~10% of per-`start` cost, so whitelisting Digest's `t/ripemd.t` also needs the
+      per-task `clone_for_thread` slimming tracked in
+      [todo/tickets/digest-ripemd-start-per-block-overhead.md](todo/tickets/digest-ripemd-start-per-block-overhead.md).
 - [ ] **Remove the full locals clone/restore in `BlockScope`** — the final move of the lexical-scope
       slot campaign and the perf core: [docs/lexical-scope-slot-campaign.md](docs/lexical-scope-slot-campaign.md).
       A load-bearing refactor entangled with `$OUTER::`, GC roots, and env resync; suited to a
