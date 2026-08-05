@@ -54,70 +54,70 @@ impl Interpreter {
             String,
             String,
         );
-        let mut handles: Vec<crate::runtime::thread_compat::JoinHandle<ThreadResult>> =
+        let mut handles: Vec<crate::runtime::worker_pool::TaskHandle<ThreadResult>> =
             Vec::with_capacity(num_batches);
         for batch in batches {
             let thread_interp = self.clone_for_thread();
             let block_clone = block.clone();
             let is_map_flag = is_map;
-            // Large user-code stack: hyper/race batch threads run user VM code,
-            // which overflows the default thread stack on deep nesting.
-            handles.push(crate::runtime::builtins_system::spawn_user_thread(
-                move || {
-                    // CP-3 collapse: the cloned per-thread Interpreter *is* the Interpreter.
-                    let mut vm = thread_interp;
-                    let mut results = Vec::with_capacity(batch.len());
-                    let mut error: Option<RuntimeError> = None;
-                    for item in &batch {
-                        if error.is_some() {
-                            break;
-                        }
-                        // Route the per-item user-code call through the same
-                        // panic->X::AdHoc boundary that `start{}`/Promise workers use
-                        // (`guard_worker_panic`). Without it, a Rust panic raised by
-                        // user code in this batch thread only surfaces as a generic
-                        // "Thread panicked in hyper/race" at `join()` and leaks the raw
-                        // Rust panic message to stderr; the guard converts it into a
-                        // catchable X::AdHoc and suppresses the default backtrace dump,
-                        // making worker panic handling uniform across all spawn sites.
-                        let call_result = crate::vm::guard_worker_panic(|| {
-                            vm.vm_call_on_value(block_clone.clone(), vec![item.clone()], None)
-                        });
-                        match call_result {
-                            Ok(val) => {
-                                if is_map_flag {
-                                    // A callback returning a finite lazy `.map`/
-                                    // `.grep` pipe must reify here — the wrapped
-                                    // HyperSeq's downstream `.flat`/`for` use static
-                                    // readers that cannot force a nested pipe.
-                                    match vm.reify_finite_pipe_value(val) {
-                                        Ok(val) => {
-                                            if let ValueView::Slip(s) = val.view() {
-                                                results.extend(s.iter().cloned());
-                                            } else {
-                                                results.push(val);
-                                            }
+            // Pooled (ADR-0020 slice 3). Inter-batch synchronization (e.g.
+            // Promises between items) still works: the submit-side starvation
+            // check gives every batch its own worker, same concurrency as
+            // thread-per-batch. Workers keep the large user-code stack.
+            handles.push(crate::runtime::worker_pool::submit_joinable(move || {
+                // CP-3 collapse: the cloned per-thread Interpreter *is* the Interpreter.
+                let mut vm = thread_interp;
+                let mut results = Vec::with_capacity(batch.len());
+                let mut error: Option<RuntimeError> = None;
+                for item in &batch {
+                    if error.is_some() {
+                        break;
+                    }
+                    // Route the per-item user-code call through the same
+                    // panic->X::AdHoc boundary that `start{}`/Promise workers use
+                    // (`guard_worker_panic`). Without it, a Rust panic raised by
+                    // user code in this batch thread only surfaces as a generic
+                    // "Thread panicked in hyper/race" at `join()` and leaks the raw
+                    // Rust panic message to stderr; the guard converts it into a
+                    // catchable X::AdHoc and suppresses the default backtrace dump,
+                    // making worker panic handling uniform across all spawn sites.
+                    let call_result = crate::vm::guard_worker_panic(|| {
+                        vm.vm_call_on_value(block_clone.clone(), vec![item.clone()], None)
+                    });
+                    match call_result {
+                        Ok(val) => {
+                            if is_map_flag {
+                                // A callback returning a finite lazy `.map`/
+                                // `.grep` pipe must reify here — the wrapped
+                                // HyperSeq's downstream `.flat`/`for` use static
+                                // readers that cannot force a nested pipe.
+                                match vm.reify_finite_pipe_value(val) {
+                                    Ok(val) => {
+                                        if let ValueView::Slip(s) = val.view() {
+                                            results.extend(s.iter().cloned());
+                                        } else {
+                                            results.push(val);
                                         }
-                                        Err(e) => error = Some(e),
                                     }
-                                } else if val.truthy() {
-                                    results.push(item.clone());
+                                    Err(e) => error = Some(e),
                                 }
+                            } else if val.truthy() {
+                                results.push(item.clone());
                             }
-                            Err(e) => {
-                                error = Some(e);
-                            }
+                        }
+                        Err(e) => {
+                            error = Some(e);
                         }
                     }
-                    let output = vm.take_output();
-                    let stderr = vm.take_stderr_output();
-                    let final_result = match error {
-                        Some(e) => Err(e),
-                        None => Ok(results),
-                    };
-                    (vm, final_result, output, stderr)
-                },
-            ));
+                }
+                let output = vm.take_output();
+                let stderr = vm.take_stderr_output();
+                let final_result = match error {
+                    Some(e) => Err(e),
+                    None => Ok(results),
+                };
+                (vm, final_result, output, stderr)
+            }));
         }
         let mut all_results = Vec::with_capacity(items.len());
         let mut first_error: Option<RuntimeError> = None;

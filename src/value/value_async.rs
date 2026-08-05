@@ -193,7 +193,10 @@ impl SharedPromise {
         if waiters.is_empty() {
             return;
         }
-        crate::runtime::builtins_system::spawn_user_thread(move || {
+        // Pooled (ADR-0020 slice 3): fires on every promise resolution that
+        // has queued waiters. Ordering is preserved — all of this promise's
+        // waiters run in registration order inside the single pooled task.
+        crate::runtime::worker_pool::submit(move || {
             for waiter in waiters {
                 waiter(
                     status.clone(),

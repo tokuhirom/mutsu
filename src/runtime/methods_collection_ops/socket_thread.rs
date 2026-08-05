@@ -396,6 +396,8 @@ impl Interpreter {
         // default ~2-8 MiB thread stack overflows on deep VM nesting (e.g. an
         // async server whose react loop constructs objects whose BUILD re-enters
         // the VM -- HTTP::Server::Tiny). See `USER_THREAD_STACK_SIZE`.
+        // Deliberately NOT pooled (ADR-0020 §3.6): a `Thread.start` thread has
+        // user-visible identity (`$*THREAD.id`) stable for its whole lifetime.
         let handle = crate::runtime::builtins_system::spawn_user_thread(move || {
             // Set the mutsu thread ID for $*THREAD.id consistency
             super::set_current_mutsu_thread_id(mutsu_tid);

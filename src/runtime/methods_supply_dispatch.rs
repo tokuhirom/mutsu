@@ -198,8 +198,10 @@ impl Interpreter {
 
         // Buffers and emits `Value`s (Gc nodes): registered GC mutator; the
         // poll loop parks at a GC park point each round so a stop-the-world
-        // can proceed while it idles.
-        crate::runtime::builtins_system::spawn_user_thread(move || {
+        // can proceed while it idles. Pooled (ADR-0020 slice 3): the pump
+        // borrows a worker for the supply's lifetime and returns it on done —
+        // warm reuse when supplies are created/torn down repeatedly.
+        crate::runtime::worker_pool::submit(move || {
             let n = sources.len();
             let mut buffers: Vec<std::collections::VecDeque<Value>> =
                 vec![std::collections::VecDeque::new(); n];

@@ -77,8 +77,9 @@ impl Interpreter {
                 let mut thread_interp = self.clone_for_thread();
                 // Runs a full interpreter (VM safepoints park it during
                 // execution): registered GC mutator; the control wait and the
-                // worker joins are quiescent safe regions.
-                crate::runtime::builtins_system::spawn_user_thread(move || {
+                // worker joins are quiescent safe regions. Pooled (ADR-0020
+                // slice 3): one-shot coordinator, may block — the pool grows.
+                crate::runtime::worker_pool::submit(move || {
                     let current_limit = wait_for_control_limit(ctrl_id);
                     let effective_limit = if current_limit > 0 {
                         current_limit
@@ -104,43 +105,37 @@ impl Interpreter {
                         let next_idx = Arc::clone(&next_idx);
                         let emit_lock = Arc::clone(&emit_lock);
                         let emitted_count = Arc::clone(&emitted_count);
-                        handles.push(crate::runtime::builtins_system::spawn_user_thread(
-                            move || {
-                                loop {
-                                    let idx =
-                                        next_idx.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                                    if idx >= vals.len() {
-                                        break;
-                                    }
-                                    if let Ok(result) = winterp.call_sub_value(
-                                        blk.clone(),
-                                        vec![vals[idx].clone()],
-                                        false,
-                                    ) {
-                                        let promise = SharedPromise::new_kept(result);
-                                        let pval = Value::promise(promise);
-                                        let _guard = emit_lock.lock().unwrap();
-                                        supplier_emit(out_supplier_id, pval.clone());
-                                        let actions =
-                                            supplier_emit_callbacks(out_supplier_id, &pval);
-                                        for action in actions {
-                                            if let SupplierEmitAction::Call(tap, emitted, delay) =
-                                                action
-                                            {
-                                                Self::sleep_for_supply_delay(delay);
-                                                let _ = winterp.call_sub_value(
-                                                    tap,
-                                                    vec![emitted],
-                                                    true,
-                                                );
-                                            }
-                                        }
-                                        emitted_count
-                                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                                    }
+                        handles.push(crate::runtime::worker_pool::submit_joinable(move || {
+                            loop {
+                                let idx =
+                                    next_idx.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                if idx >= vals.len() {
+                                    break;
                                 }
-                            },
-                        ));
+                                if let Ok(result) = winterp.call_sub_value(
+                                    blk.clone(),
+                                    vec![vals[idx].clone()],
+                                    false,
+                                ) {
+                                    let promise = SharedPromise::new_kept(result);
+                                    let pval = Value::promise(promise);
+                                    let _guard = emit_lock.lock().unwrap();
+                                    supplier_emit(out_supplier_id, pval.clone());
+                                    let actions = supplier_emit_callbacks(out_supplier_id, &pval);
+                                    for action in actions {
+                                        if let SupplierEmitAction::Call(tap, emitted, delay) =
+                                            action
+                                        {
+                                            Self::sleep_for_supply_delay(delay);
+                                            let _ =
+                                                winterp.call_sub_value(tap, vec![emitted], true);
+                                        }
+                                    }
+                                    emitted_count
+                                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                }
+                            }
+                        }));
                     }
                     for handle in handles {
                         let _ = crate::gc::block_quiescent(|| handle.join());
@@ -205,8 +200,8 @@ impl Interpreter {
             let secs = seconds;
             let mut thread_interp = self.clone_for_thread();
             // Registered GC mutator (runs a full interpreter); the control
-            // wait is a quiescent safe region.
-            crate::runtime::builtins_system::spawn_user_thread(move || {
+            // wait is a quiescent safe region. Pooled (ADR-0020 slice 3).
+            crate::runtime::worker_pool::submit(move || {
                 let current_limit = wait_for_control_limit(ctrl_id);
                 let effective_limit = if current_limit > 0 {
                     current_limit as usize
@@ -369,9 +364,10 @@ impl Interpreter {
             }
         }
 
-        // Spawn a thread to run the block asynchronously
+        // Run the block asynchronously. Pooled (ADR-0020 slice 3): fires per
+        // emitted value — the hottest supply spawner, warm reuse pays here.
         let mut thread_interp = self.clone_for_thread();
-        crate::runtime::builtins_system::spawn_user_thread(move || {
+        crate::runtime::worker_pool::submit(move || {
             let result_val = thread_interp
                 .call_sub_value(callable, vec![value], true)
                 .unwrap_or(Value::NIL);
