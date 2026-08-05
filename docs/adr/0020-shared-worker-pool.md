@@ -195,5 +195,10 @@ Concretely:
 - [x] Slice 1: pool behind `spawn_user_thread`; `start` / one-shot `cue` pooled; probes re-run
       (release A/B, 2026-08-05: ripemd shape 1.94s → 1.73s (−11%), 500 × trivial `start {}`
       0.190s → 0.172s (−9%), nested-500 unchanged — matching §5's 10–15% expectation).
-- [ ] Slice 2: `cue(:every)` → timer entry + pool enqueue; retire `scheduler_run_every_loop`.
+- [x] Slice 2: `cue(:every)` → timer entry + pool enqueue; retire `scheduler_run_every_loop`
+      (2026-08-05: 50 idle `cue(:every(60))` went from 52 threads / 16.7 GB VmSize to
+      4 threads / 761 MB. Adds Rakudo's 1ms minimum-resolution clamp + warning, and a
+      bounded `.cancel` wait for the in-flight iteration — the pool's wider
+      dispatch-to-execution window otherwise let a dead cue's last `cas` resurrect a
+      successor cue's same-named lexical through the bare-name atomic lane).
 - [ ] Slice 3: supply emitters / socket pumps / hyper-race, case by case.

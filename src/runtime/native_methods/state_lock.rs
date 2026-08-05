@@ -54,6 +54,45 @@ pub(super) fn cancellation_state(id: u64) -> Option<Arc<AtomicBool>> {
         .and_then(|map| map.get(&id).cloned())
 }
 
+/// A timer-driven `:every` cue's in-flight state, registered under its
+/// Cancellation id: `busy` is true from tick dispatch to iteration completion,
+/// `running_thread` names the worker actually executing the callback. Lets
+/// `.cancel` wait (bounded) for the in-flight iteration so no callback side
+/// effect lands after `.cancel` returns — see `cue_every_timer` and
+/// `native_cancellation`.
+pub(super) struct CancellationBusy {
+    pub(super) busy: Arc<AtomicBool>,
+    pub(super) running_thread: Arc<std::sync::Mutex<Option<std::thread::ThreadId>>>,
+}
+
+type CancellationBusyMap = std::sync::Mutex<HashMap<u64, Arc<CancellationBusy>>>;
+
+fn cancellation_busy_map() -> &'static CancellationBusyMap {
+    static MAP: OnceLock<CancellationBusyMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+pub(super) fn register_cancellation_busy(id: u64, state: Arc<CancellationBusy>) {
+    if id > 0
+        && let Ok(mut map) = cancellation_busy_map().lock()
+    {
+        map.insert(id, state);
+    }
+}
+
+pub(super) fn cancellation_busy(id: u64) -> Option<Arc<CancellationBusy>> {
+    cancellation_busy_map()
+        .lock()
+        .ok()
+        .and_then(|map| map.get(&id).cloned())
+}
+
+pub(super) fn drop_cancellation_busy(id: u64) {
+    if let Ok(mut map) = cancellation_busy_map().lock() {
+        map.remove(&id);
+    }
+}
+
 pub(crate) fn lock_runtime_by_id(id: u64) -> Option<Arc<LockRuntime>> {
     lock_state_map()
         .read()

@@ -25,7 +25,7 @@ use std::time::Duration;
 
 /// Returns `Some(period)` to be rescheduled `period` after this deadline
 /// (fixed-rate, with catch-up skipping), or `None` to be dropped.
-type TimerAction = Box<dyn FnMut() -> Option<Duration> + Send>;
+pub(crate) type TimerAction = Box<dyn FnMut() -> Option<Duration> + Send>;
 
 struct TimerEntry {
     /// Deadline in `thread_compat::mono_now()` seconds.
@@ -160,7 +160,11 @@ pub(crate) fn wasm_fire_next_timer() -> bool {
     true
 }
 
-fn register_entry(delay: Duration, action: TimerAction) {
+/// Register a raw timer entry: `action` runs on the driver thread `delay`
+/// from now, then again every `Some(period)` it returns. Driver-thread rules
+/// apply (cheap actions only, never user VM code — enqueue to the worker pool
+/// instead).
+pub(crate) fn register_entry(delay: Duration, action: TimerAction) {
     let (heap, cvar) = timer_state();
     let mut guard = heap.lock().unwrap();
     guard.push(TimerEntry {
