@@ -50,7 +50,12 @@ path and is not an exception.
 `RegisterSub`/`RegisterClass`/`RegisterRole` remain temporarily while their individual plans are
 migrated, then are removed together with declaration-shaped entries in `stmt_pool`. Enum and subset
 registration can adopt the same representation later; they do not block retiring the three
-tree-walking paths named in ANALYSIS §1.1.
+tree-walking paths named in ANALYSIS §1.1. Three more declaration opcodes are outside the three
+named paths but inside this decision's end state: `RegisterProtoSub` and `RegisterProtoToken`
+still index `stmt_pool` and are migrated by slice C8, while `RegisterToken` carries a *regex*
+body whose execution model is ADR-0009's — it is waived here the same way enum/subset are and
+adopts a typed plan together with the grammar-token work scoped in C6d-2 and Phase D's token
+note.
 
 ### 2. One registry owns every type×method entry
 
@@ -110,10 +115,14 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 17/51 slices merged. Next slice: fold `calls.rs:exec_call`'s inlined copy of
+**Current progress: 17/53 slices merged. Next slice: fold `calls.rs:exec_call`'s inlined copy of
 the retired `call_function_def` into the compiled entry — the last thing keeping C6d-1 open
 (C6a, C6b and C6c landed; C6 and C6d are both subdivided below, C6d from a measurement of where
 its sites are actually reached).**
+
+The count tallies top-level boxes only; sub-boxes (C6a–C6e, C6d-1..4, E1a/E1b) are that box's
+PRs, and a subdivided box is checked when its last sub-box merges. A box that turns out to need
+subdivision follows C6's precedent: measure first, then split in place.
 
 The migration is complete only when every required box below is checked and the completion gates
 at the end pass. The order within a phase is intentional. A later phase may start when its stated
@@ -165,7 +174,12 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
 - [ ] **C6 — Remove `CompiledSubDeclPlan::legacy_body`.** Make ordinary, multi, `our`, hoisted,
   exported, operator, and top-level-method declarations register without an executable AST body.
   The blocker is `FunctionDef.body`, which had 58 readers when C6 started. They fall into
-  separable groups, each its own PR; the box is checked only when the plan field is gone:
+  separable groups, each its own PR. The gate is scoped to what the plan field actually feeds: a
+  token/rule `FunctionDef` never comes from `CompiledSubDeclPlan` (top level is `RegisterToken`
+  → `stmt_pool`; a grammar body's tokens come from the Phase-D class walker), so the box is
+  checked when **no sub-plan-derived def or code object retains or reads an AST body** —
+  `FunctionDef.body` becomes optional, is empty for plan-derived defs, and survives for
+  token/rule defs until the field itself is deleted with C6d-2/F7:
   - [x] **C6a — identity hashes.** Replace per-read `function_body_fingerprint(&def.…)` with a
     memoized `FunctionDef::body_fingerprint()`, retiring the `func_def_fp_cache` side cache.
   - [x] **C6b — OTF-gate body predicates.** Memoize `needs_interpreter` /
@@ -213,7 +227,10 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
         `call_function_def`'s body, including its own `run_block(&def.body)`.
     - [ ] **C6d-2 — grammar token/rule bodies** (`dispatch.rs:eval_token_def`,
       `regex_token_resolve.rs`): 956 of the 1148 hits, but those `FunctionDef`s carry a regex
-      body, so scope this against ADR-0009's execution model rather than the OTF gate.
+      body, so scope this against ADR-0009's execution model rather than the OTF gate. **This
+      sub-box does not gate C6**: token defs are never built from `CompiledSubDeclPlan`, so it
+      gates only the later deletion of the `FunctionDef.body` field itself (with F7). It stays
+      listed here so the field's last reader class is not forgotten.
     - [ ] **C6d-3 — the two sites dead across the whole suite**
       (`dispatch_proto_call.rs:call_proto_dispatch`, `types/roles.rs:run_role_submethod`); the
       latter's `def` is a `MethodDef`, so move it to Phase D.
@@ -221,18 +238,45 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
       object's* body rather than a def's: after C6c that is the one path left that still
       executes a routine code object's AST, reached when a `.wrap` chain routes dispatch through
       the interpreter carrier.
-  - [ ] **C6e — redeclaration comparison and the proto rewrite**, then drop the plan field.
+  - [ ] **C6e — redeclaration comparison and eager body facts, then drop the plan field.**
+    Replace the two `body_debug_without_setline(&def.body)` comparisons (`registration_sub.rs`)
+    with the plan's C4 redeclaration fingerprint, and fill `RoutineBodyFacts` eagerly at plan
+    lowering — the C6b cache is lazy and still reads `def.body` on a miss, which a body-less def
+    cannot serve. The proto `{*}` rewrite moved to C8: a proto def is built from `stmt_pool` by
+    `RegisterProtoSub`, not from the sub plan, so it does not gate this field.
 - [ ] **C7 — Remove the sub-registration AST adapter.** Delete dead sub-shaped walker branches and
   prove the routine registry never compiles a migrated declaration on demand.
+- [ ] **C8 — Proto declarations register from typed plans.** Migrate `RegisterProtoSub` and
+  `RegisterProtoToken` off `stmt_pool`, and compile the `{*}` dispatch instead of rewriting the
+  proto's AST body per call (`rewrite_proto_dispatch_stmts` plus the `proto_def.body = rewritten`
+  reassignment in `vm_call_func_ops.rs`). Independent of C6/C7; the slice exists because
+  Decision §1's "only general declaration-registration opcode" end state is unreachable while
+  these two opcodes still index the statement pool.
 
 ### Phase D — class and role plans become bytecode-native
 
+Two facts about the current walkers shape this phase. First, `register_class_decl` is a single
+~2,500-line function (`registration_class_decl.rs`) whose concerns share about eight mutable
+locals, and `register_role_decl` (~920 lines, `registration_role.rs`) has the same shape — the
+D1–D6 cut lines run *through* those function bodies, not between functions, so D0 exists to make
+the later slices independently landable. Second, the class walker also registers grammar
+`token`/`rule` declarations, whose bodies are regexes: like C6d-2 they are scoped against
+ADR-0009, so D6, D9, and D10 exclude the token/rule arms until that work lands — deleting the
+walkers wholesale is not possible before then.
+
+- [ ] **D0 — Split the class/role walkers into named phases with no behavior change.** Extract
+  `register_class_decl`'s sections (rollback snapshot, parent validation, role composition,
+  punning, attribute pre-scan, body walk, custom-HOW install) and `register_role_decl`'s three
+  passes into functions with explicit inputs, so D1–D9 replace one function at a time.
 - [ ] **D1 — Encode class structural operations.** Put package open/reopen, parent edges, repr,
   visibility, lexical/package aliases, and source-order metadata in immutable plan operations.
 - [ ] **D2 — Encode attributes and generated accessors.** Compile defaults/constraints as child
   chunks and publish generated methods through the canonical table.
 - [ ] **D3 — Encode class methods and submethods as compiled candidates.** Install ordinary, multi,
-  proto, private, rw, wrap, BUILD, and TWEAK metadata without walking `Stmt::MethodDecl`.
+  proto, private, rw, wrap, BUILD, and TWEAK metadata without walking `Stmt::MethodDecl`. That
+  walk exists in three places, not one — the class walker (~508 lines), the role walker
+  (~263 lines), and augmentation (`registration_class_augment.rs`) — plus a fourth reader in
+  `registration.rs`; expect this box to subdivide per walker (class/role/augment).
 - [ ] **D4 — Compile class declaration-time expressions.** Cover computed names, traits, parent
   expressions, aliases, and deferred class bodies through re-entrant bytecode chunks. (Computed
   names and custom-trait arguments already landed with C5; parents, aliases, and deferred bodies
@@ -240,16 +284,20 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
 - [ ] **D5 — Drive user HOW operations from plan ops.** Execute `new_type`, `add_method`, trait
   interception, and `compose` without entering `register_class_decl`'s AST walker.
 - [ ] **D6 — Remove `CompiledClassDeclPlan::legacy_body`.** Preserve augmentation, rollback,
-  redeclaration errors, language revisions, nested types, and EVAL behavior.
+  redeclaration errors, language revisions, nested types, and EVAL behavior. Excludes the
+  token/rule arms (see the phase preamble). Start with the C6d-style instrumentation survey —
+  C6's one box became nine PRs, and this field has the same shape.
 - [ ] **D7 — Encode role structure and composition.** Put role parameters, attributes, methods,
   parent roles, conflicts, hides, and pun metadata into immutable plan operations.
 - [ ] **D8 — Compile role declaration-time bodies and traits.** Run parameterized-role and composed
   ancestor bodies as bytecode child chunks with correct once-per-composition behavior. (Custom-trait
   arguments already landed with C5; the bodies remain.)
 - [ ] **D9 — Remove `CompiledRoleDeclPlan::legacy_body`.** Preserve role puns, runtime mixins,
-  conflicts, BUILD/TWEAK, custom HOWs, and EVAL.
+  conflicts, BUILD/TWEAK, custom HOWs, and EVAL. Same rule as D6: survey first, token/rule arms
+  excluded.
 - [ ] **D10 — Delete class/role AST registration walkers.** Keep only VM plan execution plus
-  metadata helpers that do not inspect executable AST declarations.
+  metadata helpers that do not inspect executable AST declarations. The token/rule arms of the
+  body walk stay until their ADR-0009-scoped slice lands; D10 deletes everything else.
 
 ### Phase E — one dispatch resolver and native handler table
 
@@ -258,9 +306,27 @@ The receiver-identity slice comes first because the reverted handler-ID attempt 
 `value_type_name()` is not a dispatch owner: type objects appeared as `Package`, user Array
 subclasses as `Any`, and representation aliases such as `Map` need explicit handling.
 
+The resolver must cover every entry, and the inventory is larger than the opcode list: six
+opcodes (`CallMethod`, `CallMethodMut`, `CallMethodDynamic`, `CallMethodDynamicMut`,
+`HyperMethodCall`, `HyperMethodCallDynamic`), the non-opcode entries
+(`vm_call_method_with_values`/`vm_call_method_mut_with_values`, the `vm_run_instance_method`
+carrier, the two JIT shims, and the three `vm_call_helpers` fallback/temp-target entries), and
+the `ArrayPush` fast-path opcode that currently bypasses method dispatch entirely. E5–E7 divide
+that inventory; each also rewrites a function larger than any slice merged so far
+(`exec_call_method_op` ~1.3k lines, `exec_call_method_mut_op` ~1.7k, the interpreter's
+`call_method_with_values` ~3.8k), so expect them to subdivide from a measurement, as C6 did.
+
 - [ ] **E1 — Introduce stable `TypeId` and receiver-owner resolution.** Resolve concrete values,
   type objects, user classes, builtin subclasses, role mixins, and representation aliases to an
-  ordered TypeId MRO without initialization probes or per-call string scans.
+  ordered TypeId MRO without initialization probes or per-call string scans. The owner decision
+  lives at ~20 sites in 7 files today — including 14 per-MOP-entry fallbacks in
+  `methods_classhow_dispatch.rs` and the alias logic baked into `value_type_name` itself — so
+  this lands in two steps:
+  - [ ] **E1a — shadow mode.** Compute the TypeId-based owner beside the string-based one and
+    compare under a `MUTSU_VM_STATS`-gated counter; land with zero behavior change and drive the
+    mismatch count to zero on `make test` plus targeted roast.
+  - [ ] **E1b — switch.** Make the TypeId owner authoritative and delete the per-site string
+    scans; the MOP fallback sites may follow as their own PR if the diff warrants it.
 - [ ] **E2 — Give every native entry an exact handler ID.** Generate static type×method handler rows
   for pure arity handlers and stateful/special handlers; pin type-object, subclass, Map/Seq,
   Failure, and Rat-style cases that broke the reverted attempt.
@@ -289,15 +355,27 @@ subclasses as `Any`, and representation aliases such as `Map` need explicit hand
   signature, multi/submethod, wrap, and native metadata needed by introspection.
 - [ ] **F2 — Derive `.^methods`, `.^can`, and method MRO views from the resolver/table.** Use the
   same TypeId MRO and visibility rules as calls.
-- [ ] **F3 — Delete `METHOD_UNIVERSE`, per-type method-name lists, and runtime probing.** This is the
+- [ ] **F3 — Delete the per-type method-name lists and the test-only `METHOD_UNIVERSE`.** B1/B2
+  already removed `METHOD_UNIVERSE` and runtime probing from the runtime path (both are
+  `#[cfg(test)]`-only now); the live work is the fourteen per-type `&[&str]` name slices
+  (~350 slots in `builtin_type_methods.rs`) that still feed `builtin_method_entries`. This is the
   explicit retirement of ANALYSIS §4-1's hand tables; retain only the generated native entry
   catalog that dispatch itself consumes.
 - [ ] **F4 — Remove `ClassDef::methods` as a dispatch/registration mirror.** Leave type structure
   metadata beside the canonical method table and update snapshots/rollback to copy one source.
 - [ ] **F5 — Remove superseded method caches and manual invalidation.** Keep only the
-  generation-keyed resolved-call cache plus unrelated constructor/data caches.
-- [ ] **F6 — Delete compatibility call carriers and dead resolver modules.** Remove
-  `run_instance_method` variants and name/arity lookup facades once no caller remains.
+  generation-keyed resolved-call cache plus data caches that type mutation cannot invalidate.
+  The inventory this box retires: ~72 manual clear sites across 12 files (the 32 in
+  `vm_module_ops.rs` are four copies of one block and are a trivial first PR), the `String`-keyed
+  `private_zeroarg_method_cache` with nine hand-clear sites of its own, and the *second*
+  generation scheme `fn_resolve_cache_gen` that drives block-scope-exit clears in
+  `accessors_misc.rs`. `native_ctor_plan_cache` is not "unrelated": it is cleared in lockstep
+  with `fast_method_cache` at every one of those sites and must adopt the same generation.
+- [ ] **F6 — Delete compatibility call carriers and dead resolver modules.** Remove the
+  `run_instance_method` family — three live functions plus two resolved-path helpers in
+  `class_dispatch.rs` and the `vm_run_instance_method` carrier, ~700 lines with ~40 references —
+  and the name/arity lookup facades once no caller remains. Also delete the eight stale doc
+  comments that reference the already-removed `run_instance_method_resolved`.
 - [ ] **F7 — Delete obsolete declaration payloads and generic statement-pool entries.** Remove old
   `Register*` compatibility code and assert that migrated sub/class/role declarations retain no
   executable source AST.
