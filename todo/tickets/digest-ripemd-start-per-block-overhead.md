@@ -1,5 +1,17 @@
 # `Digest::RIPEMD` is 11x raku — a `start` per compression block
 
+> **Status update (2026-08-05, end of the clone-slimming campaign):** the
+> spawn-overhead lever is DONE — slices 0-5A of
+> `docs/per-task-clone-slimming.md` merged (#5928/#5929/#5930/#5931/#5932/
+> #5933; slice 5 step B retired by measurement, see the plan doc), and
+> slice 6 (#5934) is on auto-merge. The spawn-shape bench below went 5.53s → **0.19s**
+> (now below raku's 0.33s), and `t/ripemd.t` went ~513s → **295.3s** (9/9
+> pass) — still over the 120s budget. The remaining gap is per-round
+> interpreter cost with a measured single cause: the compression loop never
+> enters the JIT (`jit: compiles=0`, every chunk bails on `BitShiftLeft`).
+> **Next lever: `todo/tickets/jit-bitwise-tier-a-coverage.md`** — do not
+> look for further spawn-side wins here.
+
 > **Implementation plan:** `docs/per-task-clone-slimming.md` (2026-08-05) —
 > slice-by-slice design with measured baselines. The ADR-0020 worker pool
 > landed first (all slices merged 2026-08-05); the remaining lever is the
