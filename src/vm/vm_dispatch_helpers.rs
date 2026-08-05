@@ -508,6 +508,11 @@ impl Interpreter {
             let data = data.clone();
             let empty_fns = CompiledFns::default();
             let fns = compiled_fns.unwrap_or(&empty_fns);
+            // A value call is never compile-time-diagnosable: keep a binding
+            // failure's runtime X::TypeCheck::Binding identity instead of
+            // reclassifying it as X::TypeCheck::Argument (raku throws Binding
+            // for `my &t = &typed; t("nope")`). One-shot; consumed at entry.
+            self.suppress_binding_error_enhance = true;
             return self.call_compiled_closure(&data, &cf.code, args, fns);
         }
 

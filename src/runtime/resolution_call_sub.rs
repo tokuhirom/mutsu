@@ -364,6 +364,40 @@ impl Interpreter {
             if data.empty_sig && !call_args.is_empty() {
                 return Err(Self::reject_args_for_empty_sig(&call_args));
             }
+            // A code object built from a registry routine carries that routine's
+            // compiled body (ADR-0019 C6c); run it as bytecode instead of
+            // executing the AST copy the declaration left in `data.body`
+            // (ADR-0019 C6d-4). This is the same fork `vm_call_on_value` takes
+            // for the non-wrap dispatch of these code objects — the leg that
+            // lands here is the wrap chain's direct-run of the original sub
+            // (and the other carriers that call a routine value through the
+            // interpreter entry). Blocks and closures keep the carrier below:
+            // they carry `compiled_code`, never `compiled_routine`.
+            //
+            // Gated off for a routine with a scalar `is rw`/`is raw` parameter:
+            // mutsu's rw writeback is a value copy-back, not a shared container,
+            // and a wrap chain's rw relay currently survives only through the
+            // interpreter carrier's same-name blanket merge (see
+            // todo/tickets/rw-writeback-through-wrap-chain-needs-shared-cells.md
+            // — the different-name relay is already broken on every path). Until
+            // rw binding is cell-based, keep those routines on the carrier.
+            if data.compiled_routine.is_some()
+                && !data.param_defs.iter().any(|pd| {
+                    pd.traits.iter().any(|t| t == "rw" || t == "raw")
+                        && !pd.name.starts_with('@')
+                        && !pd.name.starts_with('%')
+                        && !pd.name.starts_with('&')
+                })
+                && let Some(cf) = data.compiled_routine.clone()
+            {
+                let empty_fns = CompiledFns::default();
+                // Carrier parity: a binding failure here must surface raw
+                // (X::TypeCheck::Binding), not reclassified as a compile-time
+                // X::TypeCheck::Argument. One-shot; consumed at the callee's
+                // entry — see suppress_binding_error_enhance.
+                self.suppress_binding_error_enhance = true;
+                return self.call_compiled_closure(&data, &cf.code, call_args, &empty_fns);
+            }
             let saved_env = self.env.clone();
             let saved_readonly = self.enter_readonly_frame();
             if let Some(line) = self.test_pending_callsite_line {
