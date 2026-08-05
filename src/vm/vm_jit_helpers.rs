@@ -170,6 +170,12 @@ fallible_noarg_shims! {
     concat => exec_concat_op,
     str_eq => exec_str_eq_op,
     str_ne => exec_str_ne_op,
+    bit_and => exec_bit_and_op,
+    bit_or => exec_bit_or_op,
+    bit_xor => exec_bit_xor_op,
+    bit_shift_left => exec_bit_shift_left_op,
+    bit_shift_right => exec_bit_shift_right_op,
+    int_bit_neg => exec_int_bit_neg_op,
 }
 
 /// Generic single-opcode step for straight-line opcodes without a dedicated

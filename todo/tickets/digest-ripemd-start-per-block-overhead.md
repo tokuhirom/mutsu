@@ -1,16 +1,41 @@
 # `Digest::RIPEMD` is 11x raku — a `start` per compression block
 
-> **Status update (2026-08-05, end of the clone-slimming campaign):** the
+> **Status update 2 (2026-08-05, JIT bitwise lever executed — gate FLAT):**
+> the Tier A bitwise coverage landed together with four deeper fixes it
+> surfaced (per-task registry COW clones from `class_mro`, per-task OTF
+> recompiles resetting JIT state, no JIT entry on the closure dispatch path,
+> a per-call test-assertion full resolve) — see
+> `news/2026-08/jit-bitwise-tier-a-coverage.md`. The hot chunks now compile
+> (`bailouts=0`, `compiles` = one per distinct body process-wide), and
+> `t/ripemd.t` is **unchanged**: 295.3s → 299.0s local (9/9 pass; JIT on/off
+> A/B at `rmd160("a" x 20_000)` is flat ~6.0s both). The "JIT unlocks the
+> loop" hypothesis is refuted: Tier A subroutine threading removes only
+> dispatch overhead, and the per-round cost lives inside the opcode helpers.
+> The measured flat profile (release `--profile profiling`) says the next
+> levers are:
+>
+> - **~20% malloc/free**: per-round closure-call setup in
+>   `call_compiled_closure_with_topic` — scoped env overlay creation, the
+>   captured-env merge loop, args Vec — paid 80× per block × 31k tasks. A
+>   leaf-closure fast path (no overlay when the body provably touches only
+>   locals) or Tier B-style inlined param binding is the shape of the fix.
+> - **`Index`/`AT-POS` dispatch**: each `@words[...]`/`$A[...]` element read
+>   routes through `try_user_io_handle_method`, which probes
+>   `class_mro("Blob[uint32]")` per access (now read-only, but still a
+>   resolve + Arc build per op). A Blob-positional fast path in
+>   `exec_index_op_with_positional` would bypass method dispatch entirely.
+> - **`GetGlobal` env reads** (97k per 2k-input repro): the captured free
+>   vars (`@words`, `@K`, `$r`, `$s`, `&f`) are env-resolved per opcode.
+>
+> Spawn-side work stays closed (status update 1 below).
+
+> **Status update 1 (2026-08-05, end of the clone-slimming campaign):** the
 > spawn-overhead lever is DONE — slices 0-5A of
 > `docs/per-task-clone-slimming.md` merged (#5928/#5929/#5930/#5931/#5932/
 > #5933; slice 5 step B retired by measurement, see the plan doc), and
 > slice 6 (#5934) is on auto-merge. The spawn-shape bench below went 5.53s → **0.19s**
 > (now below raku's 0.33s), and `t/ripemd.t` went ~513s → **295.3s** (9/9
-> pass) — still over the 120s budget. The remaining gap is per-round
-> interpreter cost with a measured single cause: the compression loop never
-> enters the JIT (`jit: compiles=0`, every chunk bails on `BitShiftLeft`).
-> **Next lever: `todo/tickets/jit-bitwise-tier-a-coverage.md`** — do not
-> look for further spawn-side wins here.
+> pass) — still over the 120s budget.
 
 > **Implementation plan:** `docs/per-task-clone-slimming.md` (2026-08-05) —
 > slice-by-slice design with measured baselines. The ADR-0020 worker pool

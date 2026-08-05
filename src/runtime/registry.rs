@@ -499,60 +499,65 @@ impl Registry {
         Ok(result)
     }
 
+    /// Hardcoded MRO for built-in types that are not user-defined classes.
+    fn builtin_mro_table(class_name: &str) -> Option<&'static [&'static str]> {
+        match class_name {
+            "Match" => Some(&["Match", "Capture", "Cool", "Any", "Mu"]),
+            "Capture" => Some(&["Capture", "Any", "Mu"]),
+            "IO::Spec" => Some(&["IO::Spec", "Any", "Mu"]),
+            "IO::Spec::Unix" => Some(&["IO::Spec::Unix", "IO::Spec", "Any", "Mu"]),
+            // Win32/Cygwin/QNX specialize the Unix spec (Raku MRO).
+            "IO::Spec::Win32" => {
+                Some(&["IO::Spec::Win32", "IO::Spec::Unix", "IO::Spec", "Any", "Mu"])
+            }
+            "IO::Spec::Cygwin" => Some(&[
+                "IO::Spec::Cygwin",
+                "IO::Spec::Unix",
+                "IO::Spec",
+                "Any",
+                "Mu",
+            ]),
+            "IO::Spec::QNX" => Some(&["IO::Spec::QNX", "IO::Spec::Unix", "IO::Spec", "Any", "Mu"]),
+            "Distribution::Path" => Some(&["Distribution::Path", "Distribution", "Any", "Mu"]),
+            "Distribution::Hash" => Some(&["Distribution::Hash", "Distribution", "Any", "Mu"]),
+            "Distribution::Installation" => {
+                Some(&["Distribution::Installation", "Distribution", "Any", "Mu"])
+            }
+            "CompUnit::DependencySpecification" => {
+                Some(&["CompUnit::DependencySpecification", "Any", "Mu"])
+            }
+            "CompUnit::Repository::FileSystem" => Some(&[
+                "CompUnit::Repository::FileSystem",
+                "CompUnit::Repository",
+                "Any",
+                "Mu",
+            ]),
+            "CompUnit::Repository::Installation" => Some(&[
+                "CompUnit::Repository::Installation",
+                "CompUnit::Repository::Installable",
+                "CompUnit::Repository::Locally",
+                "CompUnit::Repository",
+                "Any",
+                "Mu",
+            ]),
+            _ => None,
+        }
+    }
+
     /// Resolve the MRO for `class_name`, returning the cached `ClassDef::mro`
     /// when present, the hardcoded hierarchy for built-in types that are not
     /// user-defined classes, and otherwise computing + caching via
     /// [`Registry::compute_class_mro`]. Single write guard for the whole op.
     pub(crate) fn class_mro(&mut self, class_name: &str) -> std::sync::Arc<[Symbol]> {
-        // Built-in type hierarchies for types that are not user-defined classes
-        if !self.classes.contains_key(class_name) {
-            let builtin_mro: Option<&[&str]> = match class_name {
-                "Match" => Some(&["Match", "Capture", "Cool", "Any", "Mu"]),
-                "Capture" => Some(&["Capture", "Any", "Mu"]),
-                "IO::Spec" => Some(&["IO::Spec", "Any", "Mu"]),
-                "IO::Spec::Unix" => Some(&["IO::Spec::Unix", "IO::Spec", "Any", "Mu"]),
-                // Win32/Cygwin/QNX specialize the Unix spec (Raku MRO).
-                "IO::Spec::Win32" => {
-                    Some(&["IO::Spec::Win32", "IO::Spec::Unix", "IO::Spec", "Any", "Mu"])
-                }
-                "IO::Spec::Cygwin" => Some(&[
-                    "IO::Spec::Cygwin",
-                    "IO::Spec::Unix",
-                    "IO::Spec",
-                    "Any",
-                    "Mu",
-                ]),
-                "IO::Spec::QNX" => {
-                    Some(&["IO::Spec::QNX", "IO::Spec::Unix", "IO::Spec", "Any", "Mu"])
-                }
-                "Distribution::Path" => Some(&["Distribution::Path", "Distribution", "Any", "Mu"]),
-                "Distribution::Hash" => Some(&["Distribution::Hash", "Distribution", "Any", "Mu"]),
-                "Distribution::Installation" => {
-                    Some(&["Distribution::Installation", "Distribution", "Any", "Mu"])
-                }
-                "CompUnit::DependencySpecification" => {
-                    Some(&["CompUnit::DependencySpecification", "Any", "Mu"])
-                }
-                "CompUnit::Repository::FileSystem" => Some(&[
-                    "CompUnit::Repository::FileSystem",
-                    "CompUnit::Repository",
-                    "Any",
-                    "Mu",
-                ]),
-                "CompUnit::Repository::Installation" => Some(&[
-                    "CompUnit::Repository::Installation",
-                    "CompUnit::Repository::Installable",
-                    "CompUnit::Repository::Locally",
-                    "CompUnit::Repository",
-                    "Any",
-                    "Mu",
-                ]),
-                _ => None,
-            };
-            if let Some(mro) = builtin_mro {
-                return mro.iter().map(|s| Symbol::intern(s)).collect();
-            }
+        if let Some(mro) = self.class_mro_readonly(class_name) {
+            return mro;
         }
+        // A parametrized name (`Blob[uint32]`) whose BASE class MRO is not yet
+        // cached: the readonly twin declined (its recursion only reads), so
+        // compute-and-cache the base through this write side, then prepend.
+        // Falling through to `compute_class_mro(class_name)` instead would treat
+        // the unregistered parametrized name as parentless and yield a wrong
+        // single-element MRO.
         if !self.classes.contains_key(class_name)
             && let Some((base, _)) = class_name.split_once('[')
             && class_name.ends_with(']')
@@ -561,11 +566,6 @@ impl Registry {
             let mut mro = vec![Symbol::intern(class_name)];
             mro.extend(self.class_mro(base).iter().copied());
             return mro.into();
-        }
-        if let Some(class_def) = self.classes.get(class_name)
-            && !class_def.mro.is_empty()
-        {
-            return class_def.mro.clone();
         }
         let mut stack = Vec::new();
         match self.compute_class_mro(class_name, &mut stack) {
@@ -578,6 +578,41 @@ impl Registry {
             }
             Err(_) => [Symbol::intern(class_name)].into(),
         }
+    }
+
+    /// Read-only twin of [`Registry::class_mro`]: resolves every MRO shape that
+    /// needs no cache write — the builtin table, parametrized names
+    /// (`Blob[uint32]`), an already-cached `ClassDef::mro` — and returns `None`
+    /// exactly when the write side would compute AND cache (a registered class
+    /// whose `mro` is still empty). Callers holding only a read guard use this
+    /// first so the hot dispatch path does not take `registry_mut()` (whose
+    /// first mutable deref pays a full-registry COW clone after a spawn share).
+    pub(crate) fn class_mro_readonly(&self, class_name: &str) -> Option<std::sync::Arc<[Symbol]>> {
+        if !self.classes.contains_key(class_name) {
+            if let Some(mro) = Self::builtin_mro_table(class_name) {
+                return Some(mro.iter().map(|s| Symbol::intern(s)).collect());
+            }
+            if let Some((base, _)) = class_name.split_once('[')
+                && class_name.ends_with(']')
+                && self.classes.contains_key(base)
+            {
+                let mut mro = vec![Symbol::intern(class_name)];
+                mro.extend(self.class_mro_readonly(base)?.iter().copied());
+                return Some(mro.into());
+            }
+            // Not a registered class at all: the write side computes but has no
+            // `ClassDef` to cache into, so the result is identical read-only.
+            let mut stack = Vec::new();
+            return Some(match self.compute_class_mro(class_name, &mut stack) {
+                Ok(mro) => mro.iter().map(|s| Symbol::intern(s)).collect(),
+                Err(_) => [Symbol::intern(class_name)].into(),
+            });
+        }
+        let class_def = self.classes.get(class_name)?;
+        if !class_def.mro.is_empty() {
+            return Some(class_def.mro.clone());
+        }
+        None
     }
 
     /// Read-only MRO lookup: the cached `ClassDef::mro` when present, otherwise a

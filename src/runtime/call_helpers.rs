@@ -354,6 +354,13 @@ impl Interpreter {
     }
 
     pub(crate) fn routine_is_test_assertion_by_name(&mut self, name: &str, args: &[Value]) -> bool {
+        // Monotonic negative filter: unless some `is test-assertion` routine was
+        // ever registered under this bare name, skip the full name resolution
+        // (which clones an `Arc<FunctionDef>`'s AST per call — it profiled as
+        // the single hottest allocation source in a tight compiled-call loop).
+        if !crate::runtime::registration_sub::test_assertion_name_possible(name) {
+            return false;
+        }
         self.resolve_function_with_alias(name, args)
             .map(|def| def.is_test_assertion)
             .unwrap_or(false)

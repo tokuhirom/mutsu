@@ -179,12 +179,20 @@ impl Interpreter {
             .is_some_and(|caller| caller == owner_class)
     }
 
-    /// Resolve the MRO for `class_name`. Delegates to [`Registry::class_mro`],
-    /// which holds a single write guard for the whole compute-and-cache op.
+    /// Resolve the MRO for `class_name`. Tries the read-only resolution first
+    /// ([`Registry::class_mro_readonly`]) so the hot dispatch path holds only a
+    /// read guard — a write guard's first mutable deref after a spawn share
+    /// deep-clones the whole registry (COW), which also resets every
+    /// `CompiledFunction`'s JIT state (fresh `JitCodeState` per clone). Only a
+    /// registered class whose MRO is not yet cached falls through to the
+    /// compute-and-cache write side ([`Registry::class_mro`]).
     /// Returns the cached interned-symbol MRO — an `Arc` clone, no per-call
     /// `String` allocations (the old `Vec<String>` clone was a per-dispatch
     /// allocation hot spot).
     pub(crate) fn class_mro(&mut self, class_name: &str) -> std::sync::Arc<[Symbol]> {
+        if let Some(mro) = self.registry().class_mro_readonly(class_name) {
+            return mro;
+        }
         self.registry_mut().class_mro(class_name)
     }
 }
