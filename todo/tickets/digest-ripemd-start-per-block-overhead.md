@@ -1,5 +1,12 @@
 # `Digest::RIPEMD` is 11x raku — a `start` per compression block
 
+> **Implementation plan:** `docs/per-task-clone-slimming.md` (2026-08-05) —
+> slice-by-slice design with measured baselines. The ADR-0020 worker pool
+> landed first (all slices merged 2026-08-05); the remaining lever is the
+> per-task `clone_for_thread` payload, dominated by the `Registry` deep
+> clone + drop (perf: `_int_free` 25.7% + `drop_in_place<ClassDef>` on the
+> worker side).
+
 `rmd160` is correct on every RFC vector, but the bundled `Digest` battery's
 `t/ripemd.t` is the one upstream file that cannot be whitelisted: it takes
 ~513s against raku's ~46s, over the batteries gate's 120s per-file budget
