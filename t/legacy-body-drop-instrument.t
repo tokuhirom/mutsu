@@ -1,16 +1,12 @@
 use Test;
 
-# ADR-0019 C6e-3a: under the MUTSU_DROP_LEGACY_BODY=1 instrument, plan-derived
-# routines register with an EMPTY AST body and must behave identically through
-# their attached bytecode. These are the representative shapes the drop
-# simulation broke before C6e-3a hardened them (see
-# news/2026-08/legacy-body-drop-groundwork.md). Each runs in a subprocess with
-# the instrument enabled; CI does not set the variable, so without this pin
-# the drop-mode behavior would be entirely uncovered until C6e-3b flips it on.
+# ADR-0019 C6e-3b: a safe-class plan-derived routine registers with an EMPTY
+# AST body by default and must behave identically through its attached
+# bytecode. These are the representative shapes the C6e-3a drop simulation
+# broke before its hardening (see news/2026-08/legacy-body-drop-groundwork.md).
+# Each runs in a subprocess so the shapes exercise a fresh registration.
 
 plan 6;
-
-%*ENV<MUTSU_DROP_LEGACY_BODY> = "1";
 
 sub drop-run(Str $code) {
     my $p = run($*EXECUTABLE, "-e", $code, :out, :err);
