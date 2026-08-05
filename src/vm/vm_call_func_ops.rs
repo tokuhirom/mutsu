@@ -2016,20 +2016,22 @@ impl Interpreter {
     pub(crate) fn def_module_single_sig_body_ok_ignoring_state(
         def: &crate::ast::FunctionDef,
     ) -> bool {
+        // Parameter shapes no longer gate compilation. ADR-0019 C6e-2a made a
+        // sigilless *scalar* (`\x`) compiled-safe (the compiled return path
+        // flushes its final value through the `__mutsu_sigilless_alias::`
+        // chain before the caller-env merge — vm_call_named_inner — which
+        // covers the EVAL-boundary caller-alias writeback that used to require
+        // the interpreter arm; t/sigilless-params.t test 3). C6e-2b lifted the
+        // sub-signature (destructuring) exclusion too: binding runs through
+        // the shared `bind_function_args_values` on both arms, and the
+        // destructured elements bind read-only, so the historical exclusion
+        // reason (caller-alias writeback) never applied to them
+        // (t/subsig-param-compiled.t). Only NativeCall marshalling traits
+        // (`is encoded(...)`) still keep a def on the interpreter.
         def.param_defs.iter().all(|pd| {
-            let is_capture = pd.slurpy && pd.sigilless;
-            let traits_otf_safe = pd
-                .traits
+            pd.traits
                 .iter()
-                .all(|t| matches!(t.as_str(), "copy" | "rw" | "raw" | "readonly" | "required"));
-            // ADR-0019 C6e-2: a sigilless *scalar* (`\x`) is compiled-safe now
-            // that the compiled return path flushes its final value through the
-            // `__mutsu_sigilless_alias::` chain before the caller-env merge
-            // (vm_call_named_inner), which covers the EVAL-boundary caller-alias
-            // writeback that used to require the interpreter arm
-            // (t/sigilless-params.t test 3). A non-capture sub-signature
-            // (destructuring) parameter stays excluded.
-            (is_capture || pd.sub_signature.is_none()) && traits_otf_safe
+                .all(|t| matches!(t.as_str(), "copy" | "rw" | "raw" | "readonly" | "required"))
         }) && !Self::routine_body_facts(def).module_otf_needs_interpreter
     }
 
@@ -2101,11 +2103,12 @@ impl Interpreter {
         // made module-level lexical + private-sibling reads work under OTF;
         // the chmod-IntStr allomorph fix unblocked S32-io/chdir.t).
         // Signature/body gates (shared with the cross-thread shared-body path):
-        //   - a capture parameter (`|c`) binds read-only and is fine, and a
-        //     sigilless *scalar* (`\x`) is compiled-safe since ADR-0019 C6e-2
-        //     (the compiled return path flushes the alias chain before the
-        //     caller-env merge, covering the EVAL-boundary writeback); only a
-        //     non-capture sub-signature (destructuring) stays excluded;
+        //   - parameter shapes no longer exclude: captures (`|c`) bind
+        //     read-only, sigilless scalars (`\x`) are compiled-safe since
+        //     ADR-0019 C6e-2a (the compiled return path flushes the alias
+        //     chain before the caller-env merge, covering the EVAL-boundary
+        //     writeback), and sub-signature destructuring since C6e-2b (shared
+        //     binder, read-only elements);
         //   - standard binding-time traits (`is copy`/`is rw`/`is raw`/`is
         //     readonly`/`is required`) are OTF-safe (compiled binding honors them,
         //     rw/raw writeback carries the #4091 caller slot); only NativeCall

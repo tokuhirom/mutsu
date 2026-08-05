@@ -71,9 +71,15 @@ sigilless / 2,659 `start`-body / 14 sub-signature / 0 trait). The
   CALLED from a lazily-pulled gather body corrupted the suspension coroutine
   (`news/2026-08/gather-take-in-callee-eager.md`; residual do-for wrongness
   in `todo/tickets/do-for-over-lazy-gather-drops-first-value.md`).
-- **C6e-2b (open): non-capture sub-signature params** (15 hits total:
-  `group-of` in S05, `typed`). Needs the compiled binder to reproduce
-  destructuring; measure with a widened-gate A/B before implementing.
+- **C6e-2b (landed): non-capture sub-signature params** (15 hits total:
+  `group-of`, `typed`). The widened-gate A/B (full `t/` + all 37 group-of
+  roast files) showed zero real regressions: binding runs through the shared
+  `bind_function_args_values` on both arms and destructured elements bind
+  read-only, so the compiled binder already reproduced destructuring and the
+  slice reduced to removing the exclusion —
+  `news/2026-08/subsig-params-run-compiled.md`, pinned by
+  `t/subsig-param-compiled.t`. Parameter shapes no longer gate compilation;
+  the param predicate is down to NativeCall marshalling traits.
 - **C6e-2c (open): `start`-containing bodies.** The gate excludes ALL
   `start` bodies because a *recursive* sub whose start closure captures a
   param breaks under OTF (the recursive call re-binds the param name in the
