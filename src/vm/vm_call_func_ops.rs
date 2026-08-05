@@ -759,7 +759,7 @@ impl Interpreter {
             arg_sources
         };
         let args = self.normalize_call_args_for_target(&name, args);
-        let (args, callsite_line) = self.sanitize_call_args(&args);
+        let (args, callsite_line) = self.sanitize_call_args_owned(args);
         // Don't auto-FETCH Proxy args for control flow builtins that must preserve containers,
         // or when in lvalue assignment context (e.g. f() = 42 calls f with in_lvalue_assignment=true).
         let skip_proxy_fetch = matches!(
@@ -1030,7 +1030,7 @@ impl Interpreter {
         for arg in raw_args {
             Self::append_flattened_call_arg(&mut args, arg, false);
         }
-        let (args, callsite_line) = self.sanitize_call_args(&args);
+        let (args, callsite_line) = self.sanitize_call_args_owned(args);
         loan_env!(self, set_pending_callsite_line(callsite_line));
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
         let arg_sources = if arg_sources.as_ref().is_some_and(|s| s.len() != args.len()) {

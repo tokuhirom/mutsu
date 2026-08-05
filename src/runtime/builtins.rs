@@ -355,7 +355,7 @@ impl Interpreter {
         name: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        let (mut args, callsite_line) = self.sanitize_call_args(&args);
+        let (mut args, callsite_line) = self.sanitize_call_args_owned(args);
         self.test_pending_callsite_line = callsite_line;
         crate::trace::trace_log!("call", "call_function: {} ({} args)", name, args.len());
         match name {

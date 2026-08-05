@@ -167,7 +167,7 @@ impl Interpreter {
         name: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        let (args, callsite_line) = self.sanitize_call_args(&args);
+        let (args, callsite_line) = self.sanitize_call_args_owned(args);
         self.test_pending_callsite_line = callsite_line;
         // Delegate test functions to the unified test_functions.rs — unless a
         // user routine of that name is declared and can take these arguments.
