@@ -115,10 +115,10 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 17/53 slices merged. Next slice: fold `calls.rs:exec_call`'s inlined copy of
-the retired `call_function_def` into the compiled entry — the last thing keeping C6d-1 open
-(C6a, C6b and C6c landed; C6 and C6d are both subdivided below, C6d from a measurement of where
-its sites are actually reached).**
+**Current progress: 17/53 slices merged. Next slice: C6d-4 (`call_sub_value`'s
+`eval_block_value(&data.body)`), or C6d-3's Phase-C half — C6d-1 is complete (C6a, C6b and C6c
+landed; C6 and C6d are both subdivided below, C6d from a measurement of where its sites are
+actually reached).**
 
 The count tallies top-level boxes only; sub-boxes (C6a–C6e, C6d-1..4, E1a/E1b) are that box's
 PRs, and a subdivided box is checked when its last sub-box merges. A box that turns out to need
@@ -204,7 +204,7 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
     per call, so what C6d removes is a repeated compile. The mismatch to solve is that
     `compile_block_raw` compiles a *block* whose arguments the caller already bound, while
     `def.compiled` binds its own from `param_local_slots`. Subdivide:
-    - [ ] **C6d-1 — the ordinary-routine tail** (`calls.rs:call_function_def`,
+    - [x] **C6d-1 — the ordinary-routine tail** (`calls.rs:call_function_def`,
       `calls.rs:exec_call`): 192 hits over ~37 names. The shape is settled and is neither
       candidate above: these are *callers* reaching the interpreter entry `call_function_def`
       where a compiled entry already exists, so each one is rewired rather than re-compiled. The
@@ -222,9 +222,11 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
       used to judge a dispatch-path change). `Interpreter::call_function_def` is now gone: its
       last gated shape, `multi_candidate_state_forces_interpreter`, was retired by installing
       multi candidates from their plan-compiled routines (see the implementation status below).
-      One thing keeps the box open:
-      - `calls.rs:exec_call` (48 hits) still holds an inlined copy of the retired
-        `call_function_def`'s body, including its own `run_block(&def.body)`.
+      The final piece — `calls.rs:exec_call`'s inlined copy of the retired
+      `call_function_def`'s body (48 hits), including its own `run_block(&def.body)` — now
+      delegates to `call_routine_def`, so statement-position calls run the routine's
+      plan-attached bytecode through the same entry and writeback merge as expression-position
+      calls (`news/2026-08/statement-calls-run-the-compiled-body.md`).
     - [ ] **C6d-2 — grammar token/rule bodies** (`dispatch.rs:eval_token_def`,
       `regex_token_resolve.rs`): 956 of the 1148 hits, but those `FunctionDef`s carry a regex
       body, so scope this against ADR-0009's execution model rather than the OTF gate. **This
@@ -472,7 +474,9 @@ Every caller of the interpreter routine entry `call_function_def` now invokes th
 bytecode through one shared `call_routine_def`: the multi-deferral chain first, then the user
 `prefix:`/`postfix:` operators, the reduce and hyper steps over a user `infix:`, `reduce` given
 the operator as a routine value, and the selected `MAIN` candidate. What that removes is a
-per-call *compile* of the routine's AST body, not a tree walk. `call_function_def` itself has been deleted.
+per-call *compile* of the routine's AST body, not a tree walk. `call_function_def` itself has been
+deleted, and the inlined copy of its body that `exec_call` (the statement-position call entry)
+carried is gone with it: that site now delegates to `call_routine_def` too, which closed C6d-1.
 
 Its last gated shape was `multi_candidate_state_forces_interpreter`, which existed because a
 multi candidate never received plan-compiled bytecode. Registration no longer discovers the

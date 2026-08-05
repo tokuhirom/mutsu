@@ -2,11 +2,6 @@ use super::*;
 use crate::ast::FunctionDef;
 
 impl Interpreter {
-    /// Check if a function has the `is DEPRECATED` trait and record a deprecation event.
-    pub(crate) fn check_deprecation_for_def(&self, def: &FunctionDef) {
-        self.check_deprecation_for_def_with_line(def, None);
-    }
-
     /// Check if a function has the `is DEPRECATED` trait and record a deprecation event,
     /// using an explicit callsite line if provided.
     pub(crate) fn check_deprecation_for_def_with_line(
@@ -111,54 +106,6 @@ impl Interpreter {
         }
     }
 
-    /// When the routine's package is not GLOBAL, the compiler qualifies bare
-    /// variable references in its body as `$Package::name` (`compile_block_raw`
-    /// seeds the body compiler with the runtime package, and a body compiled on
-    /// its own has no parameter locals to shadow them). Mirror each bound
-    /// parameter under that qualified name so the body's reads find it.
-    ///
-    /// Must run *after* `bind_function_args_values`, and from every path that
-    /// invokes a routine body through `run_block` — `exec_call` lacked it, so an
-    /// `@`/`%` parameter of a routine in a non-GLOBAL package read as empty
-    /// there (`Test::Assuming`'s `is-primed-call` saw `@expect` as `[]`).
-    pub(crate) fn alias_params_into_current_package(&mut self, param_defs: &[ParamDef]) {
-        let cur_pkg = self.current_package().to_string();
-        if cur_pkg == "GLOBAL" {
-            return;
-        }
-        let qualified_aliases: Vec<(String, Value)> = param_defs
-            .iter()
-            .filter_map(|pd| {
-                let bare = pd
-                    .name
-                    .strip_prefix('$')
-                    .or_else(|| pd.name.strip_prefix('@'))
-                    .or_else(|| pd.name.strip_prefix('%'))
-                    .or_else(|| pd.name.strip_prefix('&'));
-                if let Some(bare) = bare {
-                    self.env.get(&pd.name).cloned().map(|v| {
-                        let sigil = &pd.name[..pd.name.len() - bare.len()];
-                        (format!("{}{}::{}", sigil, cur_pkg, bare), v)
-                    })
-                } else if !pd.name.is_empty()
-                    && !pd.name.starts_with('_')
-                    && !pd.name.starts_with('!')
-                    && !pd.name.contains("::")
-                {
-                    self.env
-                        .get(&pd.name)
-                        .cloned()
-                        .map(|v| (format!("{}::{}", cur_pkg, pd.name), v))
-                } else {
-                    None
-                }
-            })
-            .collect();
-        for (key, val) in qualified_aliases {
-            self.env.insert(key, val);
-        }
-    }
-
     /// Execute a statement-position call. Returns the call's value so a
     /// tail-position statement call (`ExecCallPairs { keep_value: true }`) can
     /// use it as the body result; plain statement sites ignore it.
@@ -239,110 +186,15 @@ impl Interpreter {
                     {
                         return result;
                     }
-                    self.check_deprecation_for_def(&def);
-                    if def.empty_sig && !args.is_empty() {
-                        return Err(Self::reject_args_for_empty_sig(&args));
-                    }
-                    let saved_env = self.env.clone();
-                    let saved_readonly = self.enter_readonly_frame();
-                    if let Some(line) = self.test_pending_callsite_line {
-                        self.cur_source_line = line;
-                    }
-                    self.push_caller_env();
-                    let saved_package = self.current_package().to_string();
-                    let def_package = def.package.resolve();
-                    if !def_package.is_empty() && def_package != "GLOBAL" {
-                        self.set_current_package(def_package);
-                    }
-                    let return_spec = self.routine_return_spec_by_name(&def.name.resolve());
-                    let rw_bindings =
-                        match self.bind_function_args_values(&def.param_defs, &def.params, &args) {
-                            Ok(bindings) => bindings,
-                            Err(e) => {
-                                self.set_current_package(saved_package);
-                                self.pop_caller_env();
-                                self.env = saved_env;
-                                self.exit_readonly_frame(saved_readonly);
-                                return Err(Self::enhance_binding_error(
-                                    e,
-                                    &def.name.resolve(),
-                                    &def.param_defs,
-                                    &args,
-                                ));
-                            }
-                        };
-                    self.alias_params_into_current_package(&def.param_defs);
-                    let sub_val = Value::make_sub_for_routine(
-                        def.package,
-                        def.name,
-                        def.params.clone(),
-                        def.param_defs.clone(),
-                        def.body.clone(),
-                        def.is_rw,
-                        self.env.clone(),
-                        def.compiled.clone(),
-                    );
-                    self.block_stack.push(sub_val);
-                    let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);
-                    self.routine_stack.push(RoutineFrame {
-                        package: def.package.resolve(),
-                        lexical_package: None,
-                        name: def.name.resolve(),
-                        line: None,
-                        file: None,
-                        is_method: false,
-                        is_block: false,
-                        def_file: def.source_file.clone(),
-                        invocation_id: crate::runtime::next_invocation_id(),
-                    });
-                    self.prepare_definite_return_slot(return_spec.as_deref());
-                    let result = self.run_block(&def.body);
-                    self.routine_stack.pop();
-                    self.block_stack.pop();
-                    self.pop_test_assertion_context(pushed_assertion);
-                    self.set_current_package(saved_package);
-                    let implicit_return = self.env.get("_").cloned().unwrap_or(Value::NIL);
-                    let mut restored_env = saved_env;
-                    self.pop_caller_env_with_writeback(&mut restored_env);
-                    let excluded_names = Self::routine_writeback_excluded_names(&def);
-                    for (k, v) in self.env.iter() {
-                        let k_str = k.resolve();
-                        let scalar_writeback = restored_env.contains_key_sym(*k)
-                            && !excluded_names.contains(&k_str)
-                            && !matches!(
-                                v.view(),
-                                ValueView::Array(..)
-                                    | ValueView::Hash(..)
-                                    | ValueView::Sub(..)
-                                    | ValueView::WeakSub(..)
-                                    | ValueView::Routine { .. }
-                            );
-                        if k != "_"
-                            && k != "@_"
-                            && k != "%_"
-                            // Per-frame non-local-return target marker (see above).
-                            && k != "__mutsu_callable_id"
-                            && ((restored_env.contains_key_sym(*k)
-                                && matches!(v.view(), ValueView::Array(..) | ValueView::Hash(..)))
-                                || scalar_writeback
-                                || k.starts_with("__mutsu_var_meta::"))
-                        {
-                            restored_env.insert_sym(*k, v.clone());
-                        }
-                    }
-                    self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
-                    self.merge_sigilless_alias_writes(&mut restored_env, &self.env);
-                    let effective_return_spec = return_spec
-                        .as_deref()
-                        .map(|spec| self.resolved_type_capture_name(spec));
-                    self.env = restored_env;
-                    self.exit_readonly_frame(saved_readonly);
-                    let call_result = match result {
-                        Ok(()) => Ok(implicit_return),
-                        Err(e) => Err(e),
-                    };
-                    return self
-                        .finalize_return_with_spec(call_result, effective_return_spec.as_deref());
+                    // The compiled entry replaces the retired
+                    // `call_function_def`'s inlined copy that lived here
+                    // (ADR-0019 C6d-1): it records deprecation from
+                    // `cf.deprecated_info`, enforces `empty_sig`, injects the
+                    // pending callsite line, binds parameters, and performs
+                    // the caller-env writeback merge — all of which this site
+                    // reimplemented by hand around a `run_block(&def.body)`
+                    // that recompiled the body per call.
+                    return self.call_routine_def(&def, args);
                 } else if let Some(err) = self.take_pending_dispatch_error() {
                     return Err(err);
                 } else if self.has_proto(name) {
