@@ -21,6 +21,12 @@ never an edit to a shared list.
 Splitting by directory lets you tally the backlog with no frontmatter and no
 script: `ls todo/tickets/ | wc -l` and `ls todo/deep/ | wc -l`.
 
+**Which one to pick up next: see [TRIAGE.md](TRIAGE.md)** — a dated,
+periodically-regenerated snapshot that ranks every open finding by goal axis
+(PLAN.md §), measured impact and implementation effort. It is a snapshot, not
+a ledger: resolving a ticket does *not* require editing it, so it conflicts
+with nothing; regenerate it wholesale when it drifts.
+
 ## Format
 
 Each file: an H1 title and a prose body (no frontmatter — same as `news/`)
