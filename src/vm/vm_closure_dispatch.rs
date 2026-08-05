@@ -92,7 +92,7 @@ impl Interpreter {
     }
 
     /// Call a compiled closure (a `Sub` value with compiled_code).
-    pub(super) fn call_compiled_closure(
+    pub(crate) fn call_compiled_closure(
         &mut self,
         data: &crate::gc::Gc<crate::value::SubData>,
         cc: &CompiledCode,
@@ -881,6 +881,46 @@ impl Interpreter {
                 {
                     let __v = self.locals[i].clone();
                     self.env_mut().insert(local_name.clone(), __v);
+                }
+            }
+        }
+
+        // A scalar `is rw`/`is raw` parameter is bound to a slot-only local in
+        // the body, so a `$x = ...` write never reaches env, and the
+        // `apply_rw_bindings_to_env` below (which reads the param's value from
+        // env to write it back to the caller's variable) would write the stale
+        // bind-time value. Flush the scalar rw-param slots into env now, while
+        // `self.locals` is still the callee's array — the same flush
+        // `call_compiled_function_named_inner` does for the by-name call path.
+        // `@`/`%` container params are excluded for the same reason as there:
+        // their in-place mutations go through env by name already.
+        if !rw_bindings.is_empty() {
+            for (param_name, _source) in &rw_bindings {
+                if param_name.starts_with(['@', '%', '&']) {
+                    continue;
+                }
+                if let Some(slot) = cc.locals.iter().position(|n| n == param_name) {
+                    let final_val = self.locals[slot].clone();
+                    // When the binder installed the param as a shared cell (an
+                    // rw alias of the caller's container — the mechanism that
+                    // lets a wrap chain's wrapper param, the callee param, and
+                    // the caller variable all observe one write), store the
+                    // body's final value THROUGH the cell rather than replacing
+                    // it: a plain insert would sever every other alias, which is
+                    // exactly how a callsame'd original's write went invisible
+                    // to its wrapper's same-source rw param.
+                    if let Some(ValueView::ContainerRef(cell)) =
+                        self.env().get(param_name).map(Value::view)
+                    {
+                        let cell = cell.clone();
+                        if !matches!(final_val.view(), ValueView::ContainerRef(ref incoming) if crate::gc::Gc::ptr_eq(&cell, incoming))
+                        {
+                            let updated = final_val.into_deref();
+                            Value::store_through_cell(&cell, &updated);
+                        }
+                    } else {
+                        self.env_mut().insert(param_name.clone(), final_val);
+                    }
                 }
             }
         }
