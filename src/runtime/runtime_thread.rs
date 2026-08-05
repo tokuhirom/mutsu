@@ -698,7 +698,7 @@ impl Interpreter {
         cloned.env.insert("!".to_string(), Value::NIL);
         cloned.env.insert("$/".to_string(), Value::NIL);
         cloned.env.insert("$!".to_string(), Value::NIL);
-        cloned.init_io_environment();
+        cloned.init_io_environment_for_thread_clone();
         cloned
     }
 
