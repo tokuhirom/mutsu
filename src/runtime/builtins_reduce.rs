@@ -270,7 +270,7 @@ impl Interpreter {
                     right_edge = start;
                     // `last` inside the reduce block stops and keeps the current
                     // accumulator; `next` skips this step, also keeping the accumulator.
-                    match self.call_sub_value(callable.clone(), call_args, true) {
+                    match self.reduce_call_step(&callable, call_args) {
                         Ok(v) => {
                             acc = if is_thunky {
                                 match Self::dethunk(self, v) {
@@ -297,10 +297,9 @@ impl Interpreter {
             OpAssoc::Chain => {
                 let mut result = true;
                 for i in 0..items.len() - 1 {
-                    let v = self.call_sub_value(
-                        callable.clone(),
+                    let v = self.reduce_call_step(
+                        &callable,
                         vec![items[i].clone(), items[i + 1].clone()],
-                        true,
                     )?;
                     if !v.truthy() {
                         result = false;
@@ -319,7 +318,7 @@ impl Interpreter {
                     idx += step;
                     // `last` inside the reduce block stops and keeps the current
                     // accumulator; `next` skips this step, also keeping the accumulator.
-                    match self.call_sub_value(callable.clone(), call_args, true) {
+                    match self.reduce_call_step(&callable, call_args) {
                         Ok(v) => {
                             acc = if is_thunky {
                                 match Self::dethunk(self, v) {
@@ -347,6 +346,27 @@ impl Interpreter {
 
         self.hash_autovivify = saved_autovivify;
         result
+    }
+
+    /// Call one reduce step. Compiled-first: a `Sub` carrying bytecode
+    /// dispatches through the VM closure path; the `call_sub_value` AST
+    /// carrier re-compiles `data.body` on every step (Digest::RIPEMD's
+    /// 80-round reduce lambda paid a full recompile — including its
+    /// `BEGIN`-array's five anon subs — per round, per task).
+    fn reduce_call_step(
+        &mut self,
+        callable: &Value,
+        call_args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let has_bytecode = matches!(
+            callable.view(),
+            ValueView::Sub(d) if d.compiled_code.is_some() || d.compiled_routine.is_some()
+        );
+        if has_bytecode {
+            self.vm_call_on_value(callable.clone(), call_args, None)
+        } else {
+            self.call_sub_value(callable.clone(), call_args, true)
+        }
     }
 
     fn is_thunky_reduce_op(callable: &Value) -> bool {
