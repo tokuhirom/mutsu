@@ -458,6 +458,54 @@ impl Interpreter {
                 }
             }
         }
+        // ADR-0019 C6e-2: flush a sigilless scalar param's (`\x`) final slot
+        // value through its `__mutsu_sigilless_alias::` chain into the callee
+        // env, so the caller-env merge below carries the write to the caller —
+        // including an interpreter-frame caller (an EVAL body), which the
+        // Slice F slot drain cannot repair (it writes compiled caller slots
+        // only; the merge dropped the write because the alias-target env entry
+        // was still the stale pre-call value at merge time). The interpreter
+        // arm gets the same effect from its alias-aware writeback merge
+        // (t/sigilless-params.t test 3 pins the EVAL case). The (target, value)
+        // pairs are also collected and re-applied to `restored_env` after the
+        // merge below: the merge skips callee-local names, which silently drops
+        // the writeback when the caller's variable has the same bare name as
+        // the parameter (`sub rts(\x) {...}; my $x = 1; rts($x)`).
+        let mut sigilless_writebacks: Vec<(String, Value)> = Vec::new();
+        if crate::env::closure_meta_keys_possible() {
+            for pd in &cf.param_defs {
+                if !pd.sigilless || pd.slurpy || pd.name.is_empty() {
+                    continue;
+                }
+                if let Some(slot) = cf.code.locals.iter().position(|n| n == &pd.name) {
+                    let final_val = self.locals[slot].clone();
+                    // Collect every alias-chain hop before propagating, so the
+                    // post-merge re-apply sees the same targets.
+                    let mut seen = std::collections::HashSet::new();
+                    let mut alias = self
+                        .env()
+                        .get(&crate::runtime::sigilless_alias_key(&pd.name))
+                        .and_then(|v| match v.view() {
+                            ValueView::Str(s) => Some(s.to_string()),
+                            _ => None,
+                        });
+                    while let Some(target) = alias {
+                        if !seen.insert(target.clone()) {
+                            break;
+                        }
+                        sigilless_writebacks.push((target.clone(), final_val.clone()));
+                        alias = self
+                            .env()
+                            .get(&crate::runtime::sigilless_alias_key(&target))
+                            .and_then(|v| match v.view() {
+                                ValueView::Str(s) => Some(s.to_string()),
+                                _ => None,
+                            });
+                    }
+                    self.propagate_sigilless_alias_chain(&cf.code, &pd.name, &final_val);
+                }
+            }
+        }
 
         self.set_current_package(saved_package);
         self.pop_routine();
@@ -609,6 +657,19 @@ impl Interpreter {
                     .copied()
                     .collect();
                 self.update_end_phaser_envs(end_phaser_count_before, &current, &dying);
+            }
+            // ADR-0019 C6e-2: re-apply the sigilless-alias writebacks collected
+            // before the merge. The merge's callee-local exclusion drops an
+            // alias target whose bare name matches the parameter name
+            // (`sub rts(\x) {...}; my $x = 1; rts($x)` — caller `$x` and param
+            // `x` share the env key "x"), so the final value is inserted
+            // unconditionally, mirroring the interpreter arm's alias-aware
+            // writeback merge.
+            for (target, val) in &sigilless_writebacks {
+                if target == "_" || target == "@_" || target == "%_" {
+                    continue;
+                }
+                restored_env.insert(target.clone(), val.clone());
             }
             *self.env_mut() = restored_env;
         }

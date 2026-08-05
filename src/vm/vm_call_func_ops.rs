@@ -2022,7 +2022,14 @@ impl Interpreter {
                 .traits
                 .iter()
                 .all(|t| matches!(t.as_str(), "copy" | "rw" | "raw" | "readonly" | "required"));
-            (is_capture || (!pd.sigilless && pd.sub_signature.is_none())) && traits_otf_safe
+            // ADR-0019 C6e-2: a sigilless *scalar* (`\x`) is compiled-safe now
+            // that the compiled return path flushes its final value through the
+            // `__mutsu_sigilless_alias::` chain before the caller-env merge
+            // (vm_call_named_inner), which covers the EVAL-boundary caller-alias
+            // writeback that used to require the interpreter arm
+            // (t/sigilless-params.t test 3). A non-capture sub-signature
+            // (destructuring) parameter stays excluded.
+            (is_capture || pd.sub_signature.is_none()) && traits_otf_safe
         }) && !Self::routine_body_facts(def).module_otf_needs_interpreter
     }
 
@@ -2094,9 +2101,11 @@ impl Interpreter {
         // made module-level lexical + private-sibling reads work under OTF;
         // the chmod-IntStr allomorph fix unblocked S32-io/chdir.t).
         // Signature/body gates (shared with the cross-thread shared-body path):
-        //   - a capture parameter (`|c`) binds read-only and is fine, but a
-        //     sigilless *scalar* (`\x`) / non-capture sub-signature stays excluded
-        //     (caller-alias writeback across an EVAL boundary — see the doc above);
+        //   - a capture parameter (`|c`) binds read-only and is fine, and a
+        //     sigilless *scalar* (`\x`) is compiled-safe since ADR-0019 C6e-2
+        //     (the compiled return path flushes the alias chain before the
+        //     caller-env merge, covering the EVAL-boundary writeback); only a
+        //     non-capture sub-signature (destructuring) stays excluded;
         //   - standard binding-time traits (`is copy`/`is rw`/`is raw`/`is
         //     readonly`/`is required`) are OTF-safe (compiled binding honors them,
         //     rw/raw writeback carries the #4091 caller slot); only NativeCall

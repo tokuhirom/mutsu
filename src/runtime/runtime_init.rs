@@ -2341,6 +2341,7 @@ impl Interpreter {
             gather_resume_body_ip: None,
             gather_suspend_pending: false,
             lazy_take_boundary_defer: false,
+            lazy_pull_entry_call_depth: None,
             rw_map_topic_capture: None,
         };
         interpreter.init_io_environment();

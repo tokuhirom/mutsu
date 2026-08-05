@@ -115,9 +115,13 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 18/53 slices merged (D0 landed). Next slice: C6e — C6d-1, C6d-3's Phase-C
-half, C6d-4, and C6d-5 have all landed, so C6d's only open sub-box is the ADR-0009-scoped
-C6d-2, which does not gate C6 (token defs never come from `CompiledSubDeclPlan`).**
+**Current progress: 18/53 slices merged (D0 landed). Current box: C6e, subdivided per the
+measure-then-split precedent — C6e-1 (redeclaration-identity hash + eager body facts, #5952)
+and C6e-2a (sigilless scalars run compiled) have landed; C6e-2b (sub-signature params),
+C6e-2c (`start` bodies), and C6e-3 (drop `legacy_body`) remain, tracked with measurements in
+`todo/deep/c6e-legacy-body-drop-blocked-by-gate-rejected-shapes.md`. C6d's only open sub-box
+is the ADR-0009-scoped C6d-2, which does not gate C6 (token defs never come from
+`CompiledSubDeclPlan`).**
 
 The count tallies top-level boxes only; sub-boxes (C6a–C6e, C6d-1..5, E1a/E1b) are that box's
 PRs, and a subdivided box is checked when its last sub-box merges. A box that turns out to need
@@ -271,7 +275,15 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
     with the plan's C4 redeclaration fingerprint, and fill `RoutineBodyFacts` eagerly at plan
     lowering — the C6b cache is lazy and still reads `def.body` on a miss, which a body-less def
     cannot serve. The proto `{*}` rewrite moved to C8: a proto def is built from `stmt_pool` by
-    `RegisterProtoSub`, not from the sub plan, so it does not gate this field.
+    `RegisterProtoSub`, not from the sub plan, so it does not gate this field. Subdivided
+    (measure-then-split): C6e-1 landed the identity hash + eager facts (#5952); C6e-2 kills the
+    gate-rejected interpreter shapes — C6e-2a (landed) runs sigilless scalars compiled
+    (`news/2026-08/sigilless-params-run-compiled.md`, which also surfaced and fixed the
+    take-in-callee lazy-gather suspension bug,
+    `news/2026-08/gather-take-in-callee-eager.md`), C6e-2b (sub-signature params) and
+    C6e-2c (`start` bodies) remain; C6e-3 then seeds fingerprints and drops `legacy_body`.
+    Measurements and per-shape notes:
+    `todo/deep/c6e-legacy-body-drop-blocked-by-gate-rejected-shapes.md`.
 - [ ] **C7 — Remove the sub-registration AST adapter.** Delete dead sub-shaped walker branches and
   prove the routine registry never compiles a migrated declaration on demand.
 - [ ] **C8 — Proto declarations register from typed plans.** Migrate `RegisterProtoSub` and

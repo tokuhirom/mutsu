@@ -2268,6 +2268,19 @@ pub struct Interpreter {
     /// and roast pins its side-effect timing (S04-statements/gather.t
     /// "gather is lazy"). Saved/restored on loop-op entry/exit.
     pub(crate) lazy_take_boundary_defer: bool,
+    /// Call-frame depth (`call_frames.len()`) at entry to the innermost active
+    /// lazy-gather pull (`force_lazy_list_vm_n_inner`), `None` outside one.
+    /// The pull driver can only snapshot/resume ITS OWN frame (ip, stack,
+    /// locals of the gather body's compiled code), so a take-limit hit inside
+    /// a NESTED routine call cannot suspend soundly: the signal would unwind
+    /// the callee frames and leave the saved ip pointing at the caller's
+    /// call op with its arguments already drained (resume then skips the call
+    /// or underflows the stack — `gather trip(5)` with `take` inside `trip`'s
+    /// `for` loop). `take_value` compares the live depth against this and
+    /// keeps collecting eagerly instead of suspending when the take is
+    /// deeper: the pull over-produces but stays correct. Saved/restored
+    /// around each pull, so nested pulls compare against their own entry.
+    pub(crate) lazy_pull_entry_call_depth: Option<usize>,
     pub(crate) rw_map_topic_capture: Option<Value>,
 }
 
