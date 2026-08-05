@@ -10,13 +10,36 @@
 //! (`vm_jit::try_enter`) received, valid and unaliased for the duration of
 //! the native call.
 //!
-//! TODO(J2): a Rust panic inside a shim aborts the process at the `extern
-//! "C"` boundary instead of being converted to X::AdHoc by the run-loop
-//! `catch_unwind`; decide between `extern "C-unwind"` + JIT unwind info or
-//! per-shim `catch_unwind` once Tier A coverage grows.
+//! Panic boundary: a Rust panic raised by interpreter machinery (index OOB,
+//! capacity overflow, ...) must not unwind through a shim's `extern "C"`
+//! frame — that is `panic_cannot_unwind`, an instant abort. Every shim that
+//! delegates to fallible interpreter machinery therefore runs its body under
+//! [`panic_boundary`], which parks the payload and returns
+//! `JIT_STATUS_PANIC`; the generated code returns any nonzero status straight
+//! up, and `vm_jit::try_enter*` resumes the unwind on the Rust side of the
+//! native frame, so the panic reaches the same run-loop / worker
+//! `catch_unwind` boundaries as interpreted execution (pinned by
+//! t/hyper-race-panic-boundary.t under MUTSU_JIT_THRESHOLD=2). Residual gap:
+//! the void shims (`load_const`, ...) and the 0/1-returning jump-condition
+//! shims below cannot signal a status, so a panic there still aborts — their
+//! bodies only touch infallible stack/clone machinery.
 
-use super::vm_jit::{JIT_STATUS_ERR, JIT_STATUS_HALT, JIT_STATUS_OK};
+use super::vm_jit::{JIT_STATUS_ERR, JIT_STATUS_HALT, JIT_STATUS_OK, JIT_STATUS_PANIC, park_panic};
 use super::*;
+
+/// Run a shim body under a catch-all panic boundary (see the module doc):
+/// a caught payload is parked for `vm_jit::try_enter*` to resume and
+/// `JIT_STATUS_PANIC` is returned in place of the body's status.
+#[inline]
+fn panic_boundary(f: impl FnOnce() -> u32) -> u32 {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+        Ok(status) => status,
+        Err(payload) => {
+            park_panic(payload);
+            JIT_STATUS_PANIC
+        }
+    }
+}
 
 /// `OpCode::LoadConst`
 pub(super) unsafe extern "C" fn load_const(
@@ -66,10 +89,10 @@ pub(super) unsafe extern "C" fn get_local(
     idx: u32,
 ) -> u32 {
     let (interp, code) = unsafe { (&mut *interp, &*code) };
-    match interp.exec_get_local_op(code, idx) {
+    panic_boundary(|| match interp.exec_get_local_op(code, idx) {
         Ok(()) => JIT_STATUS_OK,
         Err(e) => park_err(interp, e),
-    }
+    })
 }
 
 /// The METAOP_ASSIGN identity seed of `OpCode::MetaAssignIdentity` and of the
@@ -96,12 +119,14 @@ pub(super) unsafe extern "C" fn meta_assign_identity_fallible(
     identity: u32,
 ) -> u32 {
     let interp = unsafe { &mut *interp };
-    match interp
-        .exec_meta_assign_identity_op(crate::token_kind::MetaAssignIdentity::from_u32(identity))
-    {
-        Ok(()) => JIT_STATUS_OK,
-        Err(e) => park_err(interp, e),
-    }
+    panic_boundary(|| {
+        match interp
+            .exec_meta_assign_identity_op(crate::token_kind::MetaAssignIdentity::from_u32(identity))
+        {
+            Ok(()) => JIT_STATUS_OK,
+            Err(e) => park_err(interp, e),
+        }
+    })
 }
 
 /// `OpCode::SetLocal`
@@ -111,10 +136,10 @@ pub(super) unsafe extern "C" fn set_local(
     idx: u32,
 ) -> u32 {
     let (interp, code) = unsafe { (&mut *interp, &*code) };
-    match interp.exec_set_local_op(code, idx) {
+    panic_boundary(|| match interp.exec_set_local_op(code, idx) {
         Ok(()) => JIT_STATUS_OK,
         Err(e) => park_err(interp, e),
-    }
+    })
 }
 
 /// `OpCode::SetLocalDecl` — the fused `my $x = <expr>` store (ADR-0006 §2.3).
@@ -128,10 +153,10 @@ pub(super) unsafe extern "C" fn set_local_decl(
     let (interp, code) = unsafe { (&mut *interp, &*code) };
     interp.explicit_initializer_context = explicit_init != 0;
     interp.vardecl_context = true;
-    match interp.exec_set_local_op(code, idx) {
+    panic_boundary(|| match interp.exec_set_local_op(code, idx) {
         Ok(()) => JIT_STATUS_OK,
         Err(e) => park_err(interp, e),
-    }
+    })
 }
 
 /// Dedicated shims for the payload-free fallible opcodes (arith / compare /
@@ -143,10 +168,10 @@ macro_rules! fallible_noarg_shims {
         #[doc = concat!("Shim delegating to `", stringify!($method), "`.")]
         pub(super) unsafe extern "C" fn $shim(interp: *mut Interpreter) -> u32 {
             let interp = unsafe { &mut *interp };
-            match interp.$method() {
+            panic_boundary(|| match interp.$method() {
                 Ok(()) => JIT_STATUS_OK,
                 Err(e) => park_err(interp, e),
-            }
+            })
         }
     )+};
 }
@@ -195,24 +220,26 @@ pub(super) unsafe extern "C" fn step(
     fns: *const CompiledFns,
 ) -> u32 {
     let (interp, code, fns) = unsafe { (&mut *interp, &*code, &*fns) };
-    let mut ip = op_idx as usize;
-    let r = interp.exec_one(code, &mut ip, fns);
-    interp.current_code = code as *const CompiledCode as usize;
-    match r {
-        Ok(()) => {
-            debug_assert_eq!(
-                ip,
-                op_idx as usize + 1,
-                "non-straight-line opcode on the Tier A step whitelist"
-            );
-            if interp.is_halted() {
-                JIT_STATUS_HALT
-            } else {
-                JIT_STATUS_OK
+    panic_boundary(|| {
+        let mut ip = op_idx as usize;
+        let r = interp.exec_one(code, &mut ip, fns);
+        interp.current_code = code as *const CompiledCode as usize;
+        match r {
+            Ok(()) => {
+                debug_assert_eq!(
+                    ip,
+                    op_idx as usize + 1,
+                    "non-straight-line opcode on the Tier A step whitelist"
+                );
+                if interp.is_halted() {
+                    JIT_STATUS_HALT
+                } else {
+                    JIT_STATUS_OK
+                }
             }
+            Err(e) => park_err(interp, e),
         }
-        Err(e) => park_err(interp, e),
-    }
+    })
 }
 
 /// `OpCode::JumpIfFalse` condition: pops the tested value; returns 1 when the
@@ -260,22 +287,24 @@ pub(super) unsafe extern "C" fn jump_if_not_nil_cond(interp: *mut Interpreter) -
 /// arm's `Err(RuntimeError::return_signal(..))`.
 pub(super) unsafe extern "C" fn ret(interp: *mut Interpreter) -> u32 {
     let interp = unsafe { &mut *interp };
-    let val = interp.stack.pop().unwrap_or(Value::NIL);
-    if let Some(rebound) = interp.env().get("&return").cloned()
-        && matches!(
-            rebound.view(),
-            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
-        )
-    {
-        return match interp.vm_call_on_value(rebound, vec![val], None) {
-            Ok(result) => {
-                interp.stack.push(result);
-                JIT_STATUS_OK
-            }
-            Err(e) => park_err(interp, e),
-        };
-    }
-    park_err(interp, RuntimeError::return_signal(val))
+    panic_boundary(|| {
+        let val = interp.stack.pop().unwrap_or(Value::NIL);
+        if let Some(rebound) = interp.env().get("&return").cloned()
+            && matches!(
+                rebound.view(),
+                ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+            )
+        {
+            return match interp.vm_call_on_value(rebound, vec![val], None) {
+                Ok(result) => {
+                    interp.stack.push(result);
+                    JIT_STATUS_OK
+                }
+                Err(e) => park_err(interp, e),
+            };
+        }
+        park_err(interp, RuntimeError::return_signal(val))
+    })
 }
 
 /// `OpCode::CallMethod`. `op_idx` addresses the opcode in `code.ops` so the
@@ -298,35 +327,38 @@ pub(super) unsafe extern "C" fn call_method(
     else {
         unreachable!("jit call_method shim on a non-CallMethod opcode")
     };
-    // Native code runs no per-op line update, so the callee's frame/backtrace
-    // line must be pulled from the static ip -> line table at the call site.
-    interp.sync_source_line(code, op_idx as usize);
-    let r = interp.exec_call_method_op(
-        code,
-        *name_idx,
-        *arity,
-        *modifier_idx,
-        *quoted,
-        *arg_sources_idx,
-    );
-    interp.current_code = code as *const CompiledCode as usize;
-    match r {
-        Ok(()) => {
-            interp.apply_pending_rw_writeback(code);
-            interp.drain_pending_local_updates_after_call(code);
-            if interp.is_halted() {
-                JIT_STATUS_HALT
-            } else {
-                JIT_STATUS_OK
+    panic_boundary(|| {
+        // Native code runs no per-op line update, so the callee's frame/backtrace
+        // line must be pulled from the static ip -> line table at the call site.
+        interp.sync_source_line(code, op_idx as usize);
+        let r = interp.exec_call_method_op(
+            code,
+            *name_idx,
+            *arity,
+            *modifier_idx,
+            *quoted,
+            *arg_sources_idx,
+        );
+        interp.current_code = code as *const CompiledCode as usize;
+        match r {
+            Ok(()) => {
+                interp.apply_pending_rw_writeback(code);
+                interp.drain_pending_local_updates_after_call(code);
+                if interp.is_halted() {
+                    JIT_STATUS_HALT
+                } else {
+                    JIT_STATUS_OK
+                }
+            }
+            Err(e) => {
+                if !e.is_resume() && interp.resume_ip.is_none() {
+                    interp.resume_ip =
+                        Some((Interpreter::resume_code_fp(code), op_idx as usize + 1));
+                }
+                park_err(interp, e)
             }
         }
-        Err(e) => {
-            if !e.is_resume() && interp.resume_ip.is_none() {
-                interp.resume_ip = Some((Interpreter::resume_code_fp(code), op_idx as usize + 1));
-            }
-            park_err(interp, e)
-        }
-    }
+    })
 }
 
 /// `OpCode::CallMethodMut`. Mirrors the dispatch arm: attr-cell snapshot
@@ -349,66 +381,69 @@ pub(super) unsafe extern "C" fn call_method_mut(
     else {
         unreachable!("jit call_method_mut shim on a non-CallMethodMut opcode")
     };
-    interp.sync_source_line(code, op_idx as usize);
-    let pre = interp.attr_env_snapshot(code, *target_name_idx);
-    // The receiver's env binding before the call, so the writeback below can
-    // tell whether this method actually rebound it. Mirrors the interpreter's
-    // `CallMethodMut` arm (vm_exec_dispatch.rs): only push the receiver for a
-    // writeback when the call REBOUND `env[receiver]`. Without this guard the
-    // JIT path unconditionally pulls `env[receiver]` into the caller's slot,
-    // which is wrong when the callee env merely inherited a same-named binding
-    // from its caller (a self-recursive `$tree` reverting to the caller's node)
-    // and, under the (B) per-store env-write, when
-    // `env[receiver]` is a stale decl-seed while the live value lives only in
-    // the slot (a hot `$io .= succ` loop frozen by a stale `env[io]` pull).
-    let receiver_before: Option<Option<Value>> =
-        (!Interpreter::const_str(code, *target_name_idx).is_empty()).then(|| {
-            interp
-                .env()
-                .get_sym(code.const_sym(*target_name_idx))
-                .cloned()
-        });
-    let r = interp.exec_call_method_mut_op(
-        code,
-        *name_idx,
-        *arity,
-        *target_name_idx,
-        *modifier_idx,
-        *quoted,
-        *arg_sources_idx,
-    );
-    interp.current_code = code as *const CompiledCode as usize;
-    match r {
-        Ok(()) => {
-            if let Some(before) = receiver_before {
-                let after = interp.env().get_sym(code.const_sym(*target_name_idx));
-                let rebound = match (&before, after) {
-                    (Some(b), Some(a)) => !b.same_binding(a),
-                    (None, None) => false,
-                    _ => true,
-                };
-                if rebound {
-                    interp
-                        .pending_rw_writeback_sources
-                        .push(Interpreter::const_str(code, *target_name_idx).to_string());
+    panic_boundary(|| {
+        interp.sync_source_line(code, op_idx as usize);
+        let pre = interp.attr_env_snapshot(code, *target_name_idx);
+        // The receiver's env binding before the call, so the writeback below can
+        // tell whether this method actually rebound it. Mirrors the interpreter's
+        // `CallMethodMut` arm (vm_exec_dispatch.rs): only push the receiver for a
+        // writeback when the call REBOUND `env[receiver]`. Without this guard the
+        // JIT path unconditionally pulls `env[receiver]` into the caller's slot,
+        // which is wrong when the callee env merely inherited a same-named binding
+        // from its caller (a self-recursive `$tree` reverting to the caller's node)
+        // and, under the (B) per-store env-write, when
+        // `env[receiver]` is a stale decl-seed while the live value lives only in
+        // the slot (a hot `$io .= succ` loop frozen by a stale `env[io]` pull).
+        let receiver_before: Option<Option<Value>> =
+            (!Interpreter::const_str(code, *target_name_idx).is_empty()).then(|| {
+                interp
+                    .env()
+                    .get_sym(code.const_sym(*target_name_idx))
+                    .cloned()
+            });
+        let r = interp.exec_call_method_mut_op(
+            code,
+            *name_idx,
+            *arity,
+            *target_name_idx,
+            *modifier_idx,
+            *quoted,
+            *arg_sources_idx,
+        );
+        interp.current_code = code as *const CompiledCode as usize;
+        match r {
+            Ok(()) => {
+                if let Some(before) = receiver_before {
+                    let after = interp.env().get_sym(code.const_sym(*target_name_idx));
+                    let rebound = match (&before, after) {
+                        (Some(b), Some(a)) => !b.same_binding(a),
+                        (None, None) => false,
+                        _ => true,
+                    };
+                    if rebound {
+                        interp
+                            .pending_rw_writeback_sources
+                            .push(Interpreter::const_str(code, *target_name_idx).to_string());
+                    }
+                }
+                interp.apply_pending_rw_writeback(code);
+                interp.drain_pending_local_updates_after_call(code);
+                interp.mirror_attr_env_to_cell(code, *target_name_idx, pre);
+                if interp.is_halted() {
+                    JIT_STATUS_HALT
+                } else {
+                    JIT_STATUS_OK
                 }
             }
-            interp.apply_pending_rw_writeback(code);
-            interp.drain_pending_local_updates_after_call(code);
-            interp.mirror_attr_env_to_cell(code, *target_name_idx, pre);
-            if interp.is_halted() {
-                JIT_STATUS_HALT
-            } else {
-                JIT_STATUS_OK
+            Err(e) => {
+                if !e.is_resume() && interp.resume_ip.is_none() {
+                    interp.resume_ip =
+                        Some((Interpreter::resume_code_fp(code), op_idx as usize + 1));
+                }
+                park_err(interp, e)
             }
         }
-        Err(e) => {
-            if !e.is_resume() && interp.resume_ip.is_none() {
-                interp.resume_ip = Some((Interpreter::resume_code_fp(code), op_idx as usize + 1));
-            }
-            park_err(interp, e)
-        }
-    }
+    })
 }
 
 /// `OpCode::CallFunc`. `op_idx` addresses the opcode in `code.ops` so the
@@ -423,42 +458,45 @@ pub(super) unsafe extern "C" fn call_func(
     fns: *const CompiledFns,
 ) -> u32 {
     let (interp, code, fns) = unsafe { (&mut *interp, &*code, &*fns) };
-    interp.sync_source_line(code, op_idx as usize);
-    let r = match &code.ops[op_idx as usize] {
-        OpCode::CallFunc {
-            name_idx,
-            arity,
-            arg_sources_idx,
-        } => interp.exec_call_func_op(code, *name_idx, *arity, *arg_sources_idx, fns),
-        OpCode::CallFuncNamed {
-            name_idx,
-            arity,
-            spec_idx,
-            arg_sources_idx,
-        } => interp.exec_call_func_named_op(
-            code,
-            *name_idx,
-            *arity,
-            *spec_idx,
-            *arg_sources_idx,
-            fns,
-        ),
-        _ => unreachable!("jit call_func shim on a non-CallFunc opcode"),
-    };
-    interp.current_code = code as *const CompiledCode as usize;
-    match r {
-        Ok(()) => {
-            if interp.is_halted() {
-                JIT_STATUS_HALT
-            } else {
-                JIT_STATUS_OK
+    panic_boundary(|| {
+        interp.sync_source_line(code, op_idx as usize);
+        let r = match &code.ops[op_idx as usize] {
+            OpCode::CallFunc {
+                name_idx,
+                arity,
+                arg_sources_idx,
+            } => interp.exec_call_func_op(code, *name_idx, *arity, *arg_sources_idx, fns),
+            OpCode::CallFuncNamed {
+                name_idx,
+                arity,
+                spec_idx,
+                arg_sources_idx,
+            } => interp.exec_call_func_named_op(
+                code,
+                *name_idx,
+                *arity,
+                *spec_idx,
+                *arg_sources_idx,
+                fns,
+            ),
+            _ => unreachable!("jit call_func shim on a non-CallFunc opcode"),
+        };
+        interp.current_code = code as *const CompiledCode as usize;
+        match r {
+            Ok(()) => {
+                if interp.is_halted() {
+                    JIT_STATUS_HALT
+                } else {
+                    JIT_STATUS_OK
+                }
+            }
+            Err(e) => {
+                if !e.is_resume() && interp.resume_ip.is_none() {
+                    interp.resume_ip =
+                        Some((Interpreter::resume_code_fp(code), op_idx as usize + 1));
+                }
+                park_err(interp, e)
             }
         }
-        Err(e) => {
-            if !e.is_resume() && interp.resume_ip.is_none() {
-                interp.resume_ip = Some((Interpreter::resume_code_fp(code), op_idx as usize + 1));
-            }
-            park_err(interp, e)
-        }
-    }
+    })
 }
