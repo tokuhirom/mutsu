@@ -390,6 +390,20 @@ impl Interpreter {
     /// "Can access variable returned from a named closure ..." — the mainline
     /// `my $x` must stay untouched by a `my $x` inside an unrelated,
     /// previously-run test-assertion block).
+    /// Run a test-assertion callable's body. A body-less routine Sub
+    /// (plan-derived, ADR-0019 C6e-3 — e.g. `dies-ok &port-too-low`) carries
+    /// only bytecode, so it runs through the real call path; anything with an
+    /// AST body keeps the direct evaluation below.
+    pub(crate) fn eval_test_callable_body(
+        &mut self,
+        data: &crate::gc::Gc<crate::value::SubData>,
+    ) -> Result<Value, RuntimeError> {
+        if data.body.is_empty() && data.compiled_routine.is_some() {
+            return self.call_sub_value(Value::sub_value(data.clone()), Vec::new(), false);
+        }
+        self.eval_test_block_value(&data.body)
+    }
+
     pub(crate) fn eval_test_block_value(&mut self, body: &[Stmt]) -> Result<Value, RuntimeError> {
         let pre_lexicals: std::collections::HashSet<Symbol> = self
             .env
@@ -545,6 +559,19 @@ impl Interpreter {
             let (compiled, compiled_fns) = if let Some(ref cc) = data.compiled_code {
                 (
                     cc.clone(),
+                    std::sync::Arc::new(crate::opcode::CompiledFns::default()),
+                )
+            } else if data.body.is_empty()
+                && let Some(ref cf) = data.compiled_routine
+            {
+                // A body-less routine Sub (plan-derived, ADR-0019 C6e-3 — e.g.
+                // File::Temp's `$lock.protect(&clean-roster)`) has nothing to
+                // compile; run the routine's own bytecode. Like the compiled
+                // paths above, it executes in the CURRENT env — the semantics
+                // this fast path is defined by (a captured-env install would
+                // read the phaser-creation-time snapshot, not the live state).
+                (
+                    std::sync::Arc::new(cf.code.clone()),
                     std::sync::Arc::new(crate::opcode::CompiledFns::default()),
                 )
             } else {

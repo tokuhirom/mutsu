@@ -1910,13 +1910,18 @@ impl Interpreter {
     /// repeat work over immutable data. This is also the single place that reads
     /// `def.body` for these facts, so ADR-0019 C6 can later feed them from the
     /// compiler by changing one function.
-    pub(super) fn routine_body_facts(
+    pub(crate) fn routine_body_facts(
         def: &crate::ast::FunctionDef,
     ) -> crate::ast::RoutineBodyFacts {
         *def.body_facts_cache
             .get_or_init(|| crate::ast::RoutineBodyFacts {
                 needs_interpreter: Self::function_body_needs_interpreter(&def.body),
                 declares_state: Self::function_body_declares_state(&def.body),
+                registration_identity: crate::ast::registration_identity_fingerprint(
+                    &def.params,
+                    &def.param_defs,
+                    &def.body,
+                ),
             })
     }
 

@@ -92,6 +92,41 @@ sigilless / 2,659 `start`-body / 14 sub-signature / 0 trait). The
   to the NativeCall-trait check. Pinned by `t/start-body-param-compiled.t` —
   `news/2026-08/start-bodies-run-compiled.md`.
 
+## C6e-3 progress
+
+- **C6e-3a (landed): fingerprints survive the drop; body-less code paths
+  hardened.** The plan records `body_fingerprint` (structural, over params +
+  effective param defs + body) and `RoutineBodyFacts::registration_identity`
+  (line-insensitive) at lowering; registration seeds `body_fp_cache` /
+  `body_facts_cache` from them, with debug asserts pinning seed == lazy value
+  (validated over the whole `t/` suite). Every raw
+  `function_body_fingerprint(&def...)` recompute on def-shaped values now
+  reads the memoized cache instead (dispatch_proto_call, the fallback's
+  candidate filter, hidden-from-USAGE both sides). The forward-declaration
+  no-op check reads `metadata.body_is_empty`, not the AST. Sub values built
+  from installed defs carry the plan bytecode (`vm_call_named_inner`'s
+  sub-decl-as-last-statement, the `$r` trait_mod argument, the
+  `is_method_value_decl` `&name` value, the block-lexical escape hatch), and
+  the body-classifying fast paths route body-less routine Subs
+  (`data.body.is_empty() && data.compiled_routine.is_some()`) to the real
+  call path: map/grep/first batchers, sequence generators + Code endpoints,
+  `Lock.protect` (runs the routine's own bytecode in the current env —
+  File::Temp's END cleanup), the test-assertion callables (`dies-ok &f`),
+  and `.yada` (answers from `def.is_stub`).
+- **The `MUTSU_DROP_LEGACY_BODY=1` instrument** (vm_register_sub_ops)
+  simulates the drop at registration. With it, full `t/` (27,519), full
+  `make roast` (whitelist), and the battery testsuite gate all pass as of
+  C6e-3a. Def classes that KEEP their body under the drop (the C6e-3b
+  cut-line): a plan without resolvable bytecode for every signature
+  (class-walker method bodies' nested subs), scalar `is rw`/`is raw` params
+  (the interpreter-carrier rw relay —
+  `todo/tickets/rw-writeback-through-wrap-chain-needs-shared-cells.md`),
+  routine-level `is rw`/`is raw` and tail `return-rw` (the lvalue machinery
+  extracts the assign target from the AST), and NativeCall traits.
+- **C6e-3b (open):** make the safe-class empty body the default (move the
+  instrument's predicate to plan lowering), then slim/drop the field for the
+  remaining classes as their blockers land.
+
 Related: `todo/deep/c6d-interpreter-body-sites-are-mostly-token-bodies.md`
 (the site inventory), `news/2026-08/fallback-def-arm-runs-compiled-body.md`
 (the C6d-5 gate).

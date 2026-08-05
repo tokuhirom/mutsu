@@ -2065,13 +2065,24 @@ impl Interpreter {
                 // `__mutsu_stub_die`/`__mutsu_stub_warn` call. Handle it before the
                 // callable-compose fallback so it isn't turned into a method-chain.
                 if method == "yada" && args.is_empty() {
-                    let body = match target.view() {
-                        ValueView::Sub(data) => Some(data.body.clone()),
-                        ValueView::WeakSub(weak) => weak.upgrade().map(|d| d.body.clone()),
+                    let data = match target.view() {
+                        ValueView::Sub(data) => Some(data.clone()),
+                        ValueView::WeakSub(weak) => weak.upgrade(),
                         _ => None,
                     };
-                    if let Some(body) = body {
-                        return Ok(Value::truth(Self::sub_body_is_yada_stub(&body)));
+                    if let Some(data) = data {
+                        // A body-less routine Sub (plan-derived, ADR-0019
+                        // C6e-3) answers from its registered def's `is_stub`
+                        // fact; anything still carrying a body keeps the exact
+                        // AST judgment.
+                        if data.body.is_empty() && !data.name.is_empty() {
+                            let key = format!("{}::{}", data.package, data.name);
+                            if let Some(def) = self.registry().functions.get(&Symbol::intern(&key))
+                            {
+                                return Ok(Value::truth(def.is_stub));
+                            }
+                        }
+                        return Ok(Value::truth(Self::sub_body_is_yada_stub(&data.body)));
                     }
                 }
                 // Method calls on callables compose by applying the method to the

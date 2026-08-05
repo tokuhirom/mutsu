@@ -2027,6 +2027,17 @@ pub(crate) struct CompiledRoutineMetadata {
     /// which a body-less def will not be able to serve once `legacy_body` is
     /// dropped.
     pub(crate) body_facts: crate::ast::RoutineBodyFacts,
+    /// [`crate::ast::function_body_fingerprint`] over the declaration exactly
+    /// as the installed def will carry it (plan params, *effective* param
+    /// defs, body). Registration seeds `FunctionDef::body_fp_cache` from it,
+    /// so multi-candidate identity, `state` scoping and wrap chains keep the
+    /// original body's fingerprint once `legacy_body` is dropped (C6e-3).
+    pub(crate) body_fingerprint: u64,
+    /// Whether the *declared* body is empty. Registration treats an empty-body
+    /// same-signature re-registration as a forward-declaration no-op; that
+    /// judgment must come from the declaration, not from the (possibly
+    /// dropped) `legacy_body` payload (C6e-3).
+    pub(crate) body_is_empty: bool,
 }
 
 fn implicit_legacy_param(name: &str) -> ParamDef {
@@ -5119,7 +5130,6 @@ impl CompiledCode {
         }
         let routine_metadata = CompiledRoutineMetadata {
             empty_sig: params.is_empty() && effective_param_defs.is_empty(),
-            effective_param_defs,
             has_non_nil_return: body_contains_non_nil_return(body),
             is_stub: is_stub_routine_body(body),
             has_param_return_redeclaration: param_defs.iter().any(|pd| {
@@ -5134,7 +5144,21 @@ impl CompiledCode {
                     body,
                 ),
                 declares_state: crate::runtime::Interpreter::function_body_declares_state(body),
+                registration_identity: crate::ast::registration_identity_fingerprint(
+                    params,
+                    &effective_param_defs,
+                    body,
+                ),
             },
+            // Hash the declaration exactly as the installed def will carry it:
+            // plan params + *effective* param defs + body (see the field doc).
+            body_fingerprint: crate::ast::function_body_fingerprint(
+                params,
+                &effective_param_defs,
+                body,
+            ),
+            body_is_empty: body.is_empty(),
+            effective_param_defs,
         };
         debug_assert_eq!(name_chunk.is_some(), name_expr.is_some());
         let plan_traits = zip_decl_trait_args(custom_traits, trait_args);

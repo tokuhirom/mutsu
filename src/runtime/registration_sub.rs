@@ -123,31 +123,12 @@ fn is_outer_amp_name(code_var_key: &str) -> bool {
 }
 
 /// Line-insensitive identity of a routine declaration for redeclaration
-/// comparison: params, param_defs, and the body with top-level `SetLine`
-/// markers stripped, streamed into a hasher instead of rendered (the
-/// Debug-string compare this replaces built four full `String`s per check).
-/// Identical redeclarations that differ only in source line still compare
-/// equal, exactly as before. This is the single place the comparison reads
-/// `def.body`; ADR-0019 C6e-3 redirects it to the plan-recorded fingerprint
-/// once plan-derived defs stop carrying a body.
+/// comparison (see `crate::ast::registration_identity_fingerprint`). Read
+/// through the memoized `RoutineBodyFacts`: a plan-derived def carries the
+/// value computed at plan lowering (so it survives the `legacy_body` drop,
+/// ADR-0019 C6e-3), and any other def computes it lazily from its body.
 fn registration_identity(def: &FunctionDef) -> u64 {
-    use std::collections::hash_map::DefaultHasher;
-    use std::fmt::Write as _;
-    use std::hash::Hasher;
-    struct HashWrite<'a>(&'a mut DefaultHasher);
-    impl std::fmt::Write for HashWrite<'_> {
-        fn write_str(&mut self, s: &str) -> std::fmt::Result {
-            self.0.write(s.as_bytes());
-            Ok(())
-        }
-    }
-    let mut hasher = DefaultHasher::new();
-    let mut sink = HashWrite(&mut hasher);
-    let _ = write!(sink, "{:?}\x00{:?}\x00", def.params, def.param_defs);
-    for stmt in def.body.iter().filter(|s| !matches!(s, Stmt::SetLine(_))) {
-        let _ = write!(sink, "{stmt:?}\x00");
-    }
-    hasher.finish()
+    Interpreter::routine_body_facts(def).registration_identity
 }
 
 /// Increment a string by one character (Raku's string increment for enums).
@@ -1015,11 +996,19 @@ impl Interpreter {
             source_file: self.current_source_file(),
             decl_order: crate::runtime::resolution::next_decl_order(),
             compiled: None,
-            body_fp_cache: std::sync::OnceLock::new(),
-            // Seed the OTF-gate body facts eagerly from the plan (ADR-0019
-            // C6e): the lazy cache re-walks `def.body` on a miss, which a
+            // Seed the structural fingerprint eagerly from the plan (ADR-0019
+            // C6e-3): the lazy fill re-hashes `def.body` on a miss, which a
             // body-less plan-derived def will not be able to serve once
-            // `legacy_body` is dropped. A metadata-less caller (the prelude /
+            // `legacy_body` is dropped.
+            body_fp_cache: {
+                let cell = std::sync::OnceLock::new();
+                if let Some(metadata) = metadata {
+                    let _ = cell.set(metadata.body_fingerprint);
+                }
+                cell
+            },
+            // Seed the OTF-gate body facts eagerly from the plan (ADR-0019
+            // C6e): same reason as above. A metadata-less caller (the prelude /
             // forward-declaration walkers) keeps the lazy fill.
             body_facts_cache: {
                 let cell = std::sync::OnceLock::new();
@@ -1029,6 +1018,33 @@ impl Interpreter {
                 cell
             },
         };
+        // The seeded values must equal what the lazy fill would compute while
+        // the body is still attached — a divergence here would silently change
+        // multi-candidate identity or redeclaration comparison after the
+        // `legacy_body` drop, so pin it in debug builds (the whole `t/` suite
+        // runs on the debug binary in CI).
+        if let Some(metadata) = metadata
+            && !new_def.body.is_empty()
+        {
+            debug_assert_eq!(
+                metadata.body_fingerprint,
+                crate::ast::function_body_fingerprint(
+                    &new_def.params,
+                    &new_def.param_defs,
+                    &new_def.body
+                ),
+                "plan-seeded body_fingerprint diverges from the def for {name}"
+            );
+            debug_assert_eq!(
+                metadata.body_facts.registration_identity,
+                crate::ast::registration_identity_fingerprint(
+                    &new_def.params,
+                    &new_def.param_defs,
+                    &new_def.body
+                ),
+                "plan-seeded registration_identity diverges from the def for {name}"
+            );
+        }
         if let Some(compiled) = compiled {
             new_def.compiled = Some(Self::adapt_compiled_to_def(compiled, &new_def));
         }
@@ -1114,7 +1130,13 @@ impl Interpreter {
                     && existing.name == new_def.name
                     && existing.params == new_def.params
                     && format!("{:?}", existing.param_defs) == format!("{:?}", new_def.param_defs);
-                if body.is_empty() && same_signature {
+                // "Declared with no body" must be judged from the declaration
+                // (plan metadata), not from the `legacy_body` payload — a
+                // body-less plan-derived def re-registers with an empty AST
+                // body even when the declaration has a real one (C6e-3).
+                let decl_body_is_empty =
+                    metadata.map_or_else(|| body.is_empty(), |m| m.body_is_empty);
+                if decl_body_is_empty && same_signature {
                     let callable_key =
                         format!("__mutsu_callable_id::{}::{}", self.current_package(), name);
                     self.env.insert(
@@ -1167,6 +1189,14 @@ impl Interpreter {
             }
         }
         let def = new_def;
+        // Resolve the fingerprint through the def (seeded from the plan for
+        // plan-derived defs) BEFORE `def` is moved into the registry below;
+        // computed only for the rare trait that needs it, so ordinary installs
+        // never pay a body hash here.
+        let hidden_from_usage_fp = custom_traits
+            .iter()
+            .any(|(t, _)| t == "hidden-from-USAGE")
+            .then(|| def.body_fingerprint());
         if !multi && allow_lexical_shadow && !is_our_scoped {
             let lexical_single = format!("{}::{}", self.current_package(), name);
             let lexical_multi_prefix = format!("{}::{}/", self.current_package(), name);
@@ -1304,15 +1334,42 @@ impl Interpreter {
             Value::int(crate::value::next_instance_id() as i64),
         );
         if is_method_value_decl {
-            let sub_val = Value::make_sub(
-                Symbol::intern(&self.current_package()),
-                Symbol::intern(name),
-                params.to_vec(),
-                param_defs.to_vec(),
-                body.to_vec(),
-                is_rw,
-                self.env.clone(),
-            );
+            // Build from the def just installed so the value carries the
+            // plan's bytecode — a `my method foo {...}` used as a wrap
+            // wrapper must still run when its def is body-less (ADR-0019
+            // C6e-3). Falls back to the raw declaration shape on a lookup
+            // miss (e.g. a multi keyed under `name/arity`).
+            let installed = self
+                .registry()
+                .functions
+                .get(&Symbol::intern(&format!(
+                    "{}::{}",
+                    self.current_package(),
+                    name
+                )))
+                .cloned();
+            let sub_val = if let Some(def) = installed {
+                Value::make_sub_for_routine(
+                    def.package,
+                    def.name,
+                    def.params.clone(),
+                    def.param_defs.clone(),
+                    def.body.clone(),
+                    def.is_rw,
+                    self.env.clone(),
+                    def.compiled.clone(),
+                )
+            } else {
+                Value::make_sub(
+                    Symbol::intern(&self.current_package()),
+                    Symbol::intern(name),
+                    params.to_vec(),
+                    param_defs.to_vec(),
+                    body.to_vec(),
+                    is_rw,
+                    self.env.clone(),
+                )
+            };
             self.env.insert(format!("&{}", name), sub_val);
             self.env
                 .insert(format!("__mutsu_method_value::{}", name), Value::TRUE);
@@ -1334,9 +1391,11 @@ impl Interpreter {
             // but drops it from the generated usage message. Record its body
             // fingerprint (the same key `collect_main_candidates` dedupes on) so
             // usage generation can skip it; it is a known built-in trait, not an
-            // unknown-`is` error.
-            if custom_traits.iter().any(|(t, _)| t == "hidden-from-USAGE") {
-                let fp = crate::ast::function_body_fingerprint(params, param_defs, body);
+            // unknown-`is` error. Read through the def's memoized fingerprint so
+            // the recorded key matches the lookup side
+            // (`generate_usage_from_candidates`) even for a body-less
+            // plan-derived def (ADR-0019 C6e-3).
+            if let Some(fp) = hidden_from_usage_fp {
                 self.main_hidden_from_usage.insert(fp);
             }
             for (trait_name, trait_arg) in custom_traits.iter().filter(|(t, _)| {
@@ -1361,15 +1420,43 @@ impl Interpreter {
                     }
                     continue;
                 }
-                let sub_val = Value::make_sub(
-                    Symbol::intern(&self.current_package()),
-                    Symbol::intern(name),
-                    params.to_vec(),
-                    param_defs.to_vec(),
-                    body.to_vec(),
-                    is_rw,
-                    self.env.clone(),
-                );
+                // Build the `$r` Routine argument from the def just installed,
+                // so it carries the plan's bytecode: a trait_mod that wraps
+                // (`$r.wrap(...)`, the `is Cached` idiom) stores this value as
+                // the wrappee, and a body-less plan-derived routine (ADR-0019
+                // C6e-3) can only run through `compiled_routine`. A multi
+                // candidate (keyed under `name/arity`) keeps the plain build.
+                let installed_def = self
+                    .registry()
+                    .functions
+                    .get(&Symbol::intern(&format!(
+                        "{}::{}",
+                        self.current_package(),
+                        name
+                    )))
+                    .cloned();
+                let sub_val = if let Some(def) = installed_def {
+                    Value::make_sub_for_routine(
+                        def.package,
+                        def.name,
+                        def.params.clone(),
+                        def.param_defs.clone(),
+                        def.body.clone(),
+                        def.is_rw,
+                        self.env.clone(),
+                        def.compiled.clone(),
+                    )
+                } else {
+                    Value::make_sub(
+                        Symbol::intern(&self.current_package()),
+                        Symbol::intern(name),
+                        params.to_vec(),
+                        param_defs.to_vec(),
+                        body.to_vec(),
+                        is_rw,
+                        self.env.clone(),
+                    )
+                };
                 // Evaluate the trait argument expression if present
                 let trait_arg_val = match trait_arg {
                     Some(arg) => Some(self.eval_decl_trait_arg(arg)?),

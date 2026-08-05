@@ -35,7 +35,7 @@ impl Interpreter {
             // A routine callback must run through the real call path so a
             // `return` in its body ends THAT call with the returned value
             // (routine semantics) — see the same gate in `eval_map_over_items`.
-            let is_routine_callback = !data.is_bare_block
+            let is_routine_callback = (!data.is_bare_block
                 && data.compiled_code.as_ref().is_some_and(|cc| cc.is_routine)
                 && !matches!(
                     data.env.get("__mutsu_callable_type").map(Value::view),
@@ -47,7 +47,10 @@ impl Interpreter {
                 // stay on the fast path: the general call machinery binds a
                 // Pair element as a NAMED argument, leaving the placeholder
                 // positional unbound (t/map-native-pairs.t).
-                && crate::ast::collect_placeholders_shallow(&data.body).is_empty();
+                && crate::ast::collect_placeholders_shallow(&data.body).is_empty())
+                // A body-less routine Sub (plan-derived, ADR-0019 C6e-3) must
+                // take the real call path — see `eval_map_over_items`.
+                || (data.body.is_empty() && data.compiled_routine.is_some());
             if requires_full_binding
                 || is_routine_callback
                 || super::resolution_map_grep::sub_is_call_carrier(&data)
@@ -289,7 +292,11 @@ impl Interpreter {
             let needs_full_binding = data
                 .param_defs
                 .iter()
-                .any(|pd| pd.sub_signature.is_some() || pd.outer_sub_signature.is_some());
+                .any(|pd| pd.sub_signature.is_some() || pd.outer_sub_signature.is_some())
+                // A body-less routine Sub (plan-derived, ADR-0019 C6e-3)
+                // carries only bytecode — the compile-the-AST fast path below
+                // would evaluate an empty predicate; run the real call path.
+                || (data.body.is_empty() && data.compiled_routine.is_some());
             if needs_full_binding {
                 for item in &list_items {
                     let pred = self.call_sub_value(

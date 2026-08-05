@@ -565,12 +565,10 @@ impl Interpreter {
             .unwrap_or_else(|| "program".to_string());
         let mut lines = Vec::new();
         for candidate in candidates {
-            // Skip candidates declared `is hidden-from-USAGE`.
-            let fp = crate::ast::function_body_fingerprint(
-                &candidate.params,
-                &candidate.param_defs,
-                &candidate.body,
-            );
+            // Skip candidates declared `is hidden-from-USAGE`. The recorded key
+            // is the def's memoized fingerprint (see the registration side), so
+            // read it the same way rather than recomputing from the fields.
+            let fp = candidate.body_fingerprint();
             if self.main_hidden_from_usage.contains(&fp) {
                 continue;
             }
