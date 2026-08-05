@@ -1075,7 +1075,8 @@ impl Interpreter {
 
                         // Holds and emits `Value`s (Gc nodes): registered GC
                         // mutator; parks each poll round for stop-the-world.
-                        crate::runtime::builtins_system::spawn_user_thread(move || {
+                        // Pooled (ADR-0020 slice 3): supply-lifetime pump.
+                        crate::runtime::worker_pool::submit(move || {
                             let n = sources.len();
                             let mut latest: Vec<Option<Value>> = vec![None; n];
                             let mut done: Vec<bool> = vec![false; n];

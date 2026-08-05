@@ -242,7 +242,8 @@ impl Interpreter {
                     let delay = delay_seconds;
                     let done = done_cb.clone();
                     let quit = quit_cb.clone();
-                    crate::runtime::builtins_system::spawn_user_thread(move || {
+                    // Pooled (ADR-0020 slice 3): supply-lifetime act driver.
+                    crate::runtime::worker_pool::submit(move || {
                         Self::run_supply_act_loop(&mut thread_interp, &rx, &cb, delay, done, quit);
                     });
                     let tap_instance = Value::make_instance(Symbol::intern("Tap"), HashMap::new());
@@ -585,7 +586,9 @@ impl Interpreter {
                                 };
                                 let mut driver = self.clone_for_thread();
                                 let body_cb = body_cb.clone();
-                                crate::runtime::builtins_system::spawn_user_thread(move || {
+                                // Pooled (ADR-0020 slice 3): whenever-source
+                                // reader, lives until the channel closes.
+                                crate::runtime::worker_pool::submit(move || {
                                     Self::run_supply_act_loop(
                                         &mut driver,
                                         &rx,

@@ -248,7 +248,8 @@ impl Interpreter {
                     {
                         let handler_interp = thread_interp.clone_for_thread();
                         let ex_val = error_val;
-                        spawn_user_thread(move || {
+                        // Pooled (ADR-0020 slice 3): short one-shot callback.
+                        crate::runtime::worker_pool::submit(move || {
                             let mut handler_interp = handler_interp;
                             let _ = handler_interp.call_value(handler, vec![ex_val]);
                         });

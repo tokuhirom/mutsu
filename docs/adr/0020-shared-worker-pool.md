@@ -1,6 +1,8 @@
 # ADR-0020: Shared worker pool — elastic growth, blocking `await`
 
-- Status: **Proposed**
+- Status: **Accepted** (all implementation slices landed 2026-08-05; the companion
+  per-task clone slimming is out of scope here — see
+  `todo/tickets/digest-ripemd-start-per-block-overhead.md`)
 - Date: 2026-08-05
 - Context: extracted from PLAN.md §5 via `todo/deep/shared-worker-pool-adr.md` (2026-08-02);
   groundwork measured 2026-07-17 on main `159a30cb0` and re-measured 2026-08-05 on main
@@ -201,4 +203,17 @@ Concretely:
       bounded `.cancel` wait for the in-flight iteration — the pool's wider
       dispatch-to-execution window otherwise let a dead cue's last `cas` resurrect a
       successor cue's same-named lexical through the bare-name atomic lane).
-- [ ] Slice 3: supply emitters / socket pumps / hyper-race, case by case.
+- [x] Slice 3: supply emitters / socket pumps / hyper-race, case by case
+      (2026-08-05). Pooled: the two `Supply.throttle` coordinators and their
+      joined workers, the per-value `Supply.start` runner, promise-waiter
+      dispatch (`dispatch_waiters`), the uncaught-handler one-shot, the
+      zip / zip-latest pumps, both `run_supply_act_loop` drivers, the bare-tap
+      socket accept driver, and the hyper/race batch workers. Joined fan-outs
+      go through the new `worker_pool::submit_joinable` (native: pool + result
+      channel, a panicking task surfaces as a disconnected channel = `Err` on
+      join; wasm32: delegates to the cooperative `JoinHandle`, whose `join`
+      runs the queued task — the cfg fork lives in `worker_pool.rs` only).
+      Supply-lifetime pumps borrow a worker until done — same thread cost as
+      before while alive, warm reuse across create/tear-down churn
+      (Cro-style per-connection pipelines). `Thread.start` stays a dedicated
+      thread per §3.6.

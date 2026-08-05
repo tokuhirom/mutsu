@@ -503,7 +503,10 @@ impl Interpreter {
                 } else if !matches!(callback.view(), ValueView::Nil) {
                     let cb = callback.clone();
                     let mut driver = self.clone_for_thread();
-                    crate::runtime::builtins_system::spawn_user_thread(move || {
+                    // Pooled (ADR-0020 slice 3): per-listener accept driver —
+                    // warm reuse across short-lived listeners (Cro-style
+                    // per-connection churn).
+                    crate::runtime::worker_pool::submit(move || {
                         let Some(rx) = take_supply_channel(supply_id) else {
                             return;
                         };
