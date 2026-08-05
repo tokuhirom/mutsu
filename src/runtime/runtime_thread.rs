@@ -146,8 +146,20 @@ impl Interpreter {
         // its OWN store, which is why two hyper workers that each declare
         // `my $uri` no longer collide on one bare-name entry.
         let shared = Arc::clone(&self.shared_vars);
+        // Merged with the lineage-seeding walk below (was a separate `for value
+        // in self.env.values()` pass): both need one full traversal of the
+        // parent env per spawn, so collecting handle ids here — BEFORE any of
+        // the seeding loop's `continue`s — does both jobs in one pass. Every
+        // value must still be checked for a handle id even when the seeding
+        // side skips it (e.g. `$*CWD`/`self`/`__mutsu_*` are never handles, but
+        // an excluded captured scalar or an already-visible name legitimately
+        // could be).
+        let mut referenced_handle_ids = std::collections::HashSet::new();
         {
             for (key, val) in &self.env {
+                if let Some(id) = Self::handle_id_from_value(val) {
+                    referenced_handle_ids.insert(id);
+                }
                 // Skip internal variables and topic variables.
                 // Also skip $*CWD/*CWD — in Raku, dynamic variables like $*CWD
                 // are thread-local; mutations inside `start` blocks must not
@@ -264,12 +276,6 @@ impl Interpreter {
             captured_scalars.contains(n.trim_start_matches('$'))
                 || self.thread_decl_in_flight.contains(n)
         });
-        let mut referenced_handle_ids = std::collections::HashSet::new();
-        for value in self.env.values() {
-            if let Some(id) = Self::handle_id_from_value(value) {
-                referenced_handle_ids.insert(id);
-            }
-        }
         let mut cloned_handles = HashMap::new();
         let handles_guard = self.io_handles();
         for (id, handle) in &handles_guard.map {
