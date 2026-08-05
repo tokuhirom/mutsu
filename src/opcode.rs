@@ -5133,8 +5133,6 @@ impl CompiledCode {
                 needs_interpreter: crate::runtime::Interpreter::function_body_needs_interpreter(
                     body,
                 ),
-                module_otf_needs_interpreter:
-                    crate::runtime::Interpreter::module_otf_body_needs_interpreter(body),
                 declares_state: crate::runtime::Interpreter::function_body_declares_state(body),
             },
         };

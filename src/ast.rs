@@ -220,16 +220,14 @@ pub(crate) struct FunctionDef {
 ///
 /// Each is a pure predicate over the body AST, and each used to be recomputed by
 /// walking that AST at every gate evaluation. They are memoized together on the
-/// def ([`FunctionDef::body_facts_cache`]): the module-single gate asks for two of
-/// the three anyway, and one walk more on first touch is negligible next to the
+/// def ([`FunctionDef::body_facts_cache`]): one walk more on first touch is
+/// negligible next to the
 /// compile the gates decide whether to perform.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct RoutineBodyFacts {
     /// The body contains a construct whose semantics the standalone-compiled
     /// form would not preserve (a type declaration, a `start` block, ...).
     pub(crate) needs_interpreter: bool,
-    /// The stricter variant of the above applied to module/dynamic single subs.
-    pub(crate) module_otf_needs_interpreter: bool,
     /// The body declares a `state` variable somewhere.
     pub(crate) declares_state: bool,
 }
