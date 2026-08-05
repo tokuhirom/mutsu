@@ -116,9 +116,10 @@ unchecked even if its original PR merged. PRs are sequential branches from the t
 `main`; this is not a stacked-PR plan.
 
 **Current progress: 18/53 slices merged (D0 landed). Current box: C6e, subdivided per the
-measure-then-split precedent — C6e-1 (redeclaration-identity hash + eager body facts, #5952)
-and C6e-2a (sigilless scalars run compiled) have landed; C6e-2b (sub-signature params),
-C6e-2c (`start` bodies), and C6e-3 (drop `legacy_body`) remain, tracked with measurements in
+measure-then-split precedent — C6e-1 (redeclaration-identity hash + eager body facts, #5952),
+C6e-2a (sigilless scalars run compiled, #5953), and C6e-2b (sub-signature params run
+compiled) have landed; C6e-2c (`start` bodies) and C6e-3 (drop `legacy_body`) remain,
+tracked with measurements in
 `todo/deep/c6e-legacy-body-drop-blocked-by-gate-rejected-shapes.md`. C6d's only open sub-box
 is the ADR-0009-scoped C6d-2, which does not gate C6 (token defs never come from
 `CompiledSubDeclPlan`).**
@@ -277,11 +278,13 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
     cannot serve. The proto `{*}` rewrite moved to C8: a proto def is built from `stmt_pool` by
     `RegisterProtoSub`, not from the sub plan, so it does not gate this field. Subdivided
     (measure-then-split): C6e-1 landed the identity hash + eager facts (#5952); C6e-2 kills the
-    gate-rejected interpreter shapes — C6e-2a (landed) runs sigilless scalars compiled
+    gate-rejected interpreter shapes — C6e-2a (landed, #5953) runs sigilless scalars compiled
     (`news/2026-08/sigilless-params-run-compiled.md`, which also surfaced and fixed the
     take-in-callee lazy-gather suspension bug,
-    `news/2026-08/gather-take-in-callee-eager.md`), C6e-2b (sub-signature params) and
-    C6e-2c (`start` bodies) remain; C6e-3 then seeds fingerprints and drops `legacy_body`.
+    `news/2026-08/gather-take-in-callee-eager.md`), C6e-2b (landed) lifts the sub-signature
+    exclusion (`news/2026-08/subsig-params-run-compiled.md` — parameter shapes no longer gate
+    compilation at all), and C6e-2c (`start` bodies) remains; C6e-3 then seeds fingerprints
+    and drops `legacy_body`.
     Measurements and per-shape notes:
     `todo/deep/c6e-legacy-body-drop-blocked-by-gate-rejected-shapes.md`.
 - [ ] **C7 — Remove the sub-registration AST adapter.** Delete dead sub-shaped walker branches and
