@@ -1,6 +1,21 @@
 use super::*;
 use crate::symbol::Symbol;
 
+/// Process-global L2 behind the per-interpreter `otf_compile_cache`, keyed by
+/// the same `(body fingerprint ^ package)` key. See the L2 comment in
+/// [`Interpreter::otf_compile_function_def`] for why it exists (spawn-heavy
+/// loops re-OTF-compiling per task) and the `state` exclusion that keeps it
+/// semantics-preserving. Guarded by a plain `Mutex`: it is touched only on the
+/// per-interpreter cache's MISS path (once per body per interpreter), never per
+/// call.
+fn global_otf_cache() -> &'static std::sync::Mutex<rustc_hash::FxHashMap<u64, Arc<CompiledFunction>>>
+{
+    static CACHE: std::sync::OnceLock<
+        std::sync::Mutex<rustc_hash::FxHashMap<u64, Arc<CompiledFunction>>>,
+    > = std::sync::OnceLock::new();
+    CACHE.get_or_init(|| std::sync::Mutex::new(rustc_hash::FxHashMap::default()))
+}
+
 impl Interpreter {
     /// Record a deprecation event for a compiled function if it has deprecation info.
     pub(super) fn record_cf_deprecation(&self, cf: &CompiledFunction) {
@@ -143,6 +158,25 @@ impl Interpreter {
         if let Some(cached) = self.otf_compile_cache.get(&cache_key) {
             return cached.clone();
         }
+        // L2: process-global content-addressed cache. A spawned task starts with
+        // an EMPTY per-interpreter cache, so a spawn-heavy loop (Digest::RIPEMD's
+        // per-block `start`) re-OTF-compiled the same sub in every task — each
+        // recompile is a fresh `CompiledCode` identity, which resets the chunk's
+        // JIT hotness state (`JitCodeState` clones to default) and re-stamps
+        // `BEGIN` site memos, so the hot body re-paid the interpreter warmup AND
+        // a Cranelift compile per task while never accumulating heat. Body
+        // identity is only semantically observable through `state` cells (a
+        // per-thread body gives per-thread cells), so `state`-declaring defs
+        // stay per-interpreter and everything else shares one body process-wide
+        // — the same sharing `imported_compiled_fns` and plan-attached
+        // `def.compiled` bodies already do.
+        let shareable = !Self::routine_body_facts(def).declares_state;
+        if shareable && let Some(cached) = global_otf_cache().lock().unwrap().get(&cache_key) {
+            let cached = Arc::clone(cached);
+            self.otf_compile_cache
+                .insert(cache_key, Arc::clone(&cached));
+            return cached;
+        }
         let pkg = def.package.resolve();
         let cc = {
             let mut compiler = crate::compiler::Compiler::new();
@@ -188,6 +222,20 @@ impl Interpreter {
         cf.detect_inner_subs();
         cf.compute_declared_locals();
         let cf = Arc::new(cf);
+        // Publish through the global cache first and keep its winner: two tasks
+        // racing the same compile converge on ONE body identity, so later tasks
+        // (and the JIT hotness counters on that body) all share it.
+        let cf = if shareable {
+            Arc::clone(
+                global_otf_cache()
+                    .lock()
+                    .unwrap()
+                    .entry(cache_key)
+                    .or_insert(cf),
+            )
+        } else {
+            cf
+        };
         self.otf_compile_cache.insert(cache_key, Arc::clone(&cf));
         cf
     }

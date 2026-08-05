@@ -690,7 +690,22 @@ impl Interpreter {
         // with no explicit return) instead of leaking them into the caller.
         let mut handled_let_saves = false;
         while ip < cc.ops.len() {
-            match self.exec_one(cc, &mut ip, compiled_fns) {
+            // JIT entry (ADR-0004 J2): same hook as vm_call_named_inner.rs — at
+            // body start, run the whole body natively when the chunk is hot and
+            // Tier A-compilable; the native outcome threads through the same
+            // match arms below. Closure bodies (pointy blocks, reduce/map
+            // lambdas) are dispatched here rather than through the named-call
+            // paths, so without this hook a closure-shaped hot loop never
+            // entered the JIT at all.
+            let step = if ip == 0
+                && let Some(r) = crate::vm::vm_jit::try_enter(self, cc, compiled_fns)
+            {
+                ip = cc.ops.len();
+                r
+            } else {
+                self.exec_one(cc, &mut ip, compiled_fns)
+            };
+            match step {
                 Ok(()) => {}
                 Err(mut e) if e.is_leave => {
                     let routine_key = format!("{}::{}", data.package, data.name);

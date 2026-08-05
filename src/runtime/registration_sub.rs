@@ -9,6 +9,41 @@ use std::collections::HashSet;
 /// present, structurally identical declaration. The VM uses this to decide
 /// whether the resolution caches must be invalidated: an `Unchanged` outcome
 /// means the registry is exactly as it was, so the caches stay valid.
+/// Process-wide, monotonic count of `is test-assertion` routine registrations,
+/// paired with the set of their bare names below. Zero proves no test-assertion
+/// routine exists anywhere in the process, so the per-call
+/// `routine_is_test_assertion_by_name` check — which otherwise runs a FULL
+/// name resolution (an `Arc<FunctionDef>` walk plus a def clone) on every
+/// compiled named call just to read one bool — returns `false` for free. Same
+/// conservative monotonic contract as `vm_jit::USER_INFIX_DECLS`: never
+/// decremented, so a redeclared-as-plain name only costs speed (it falls back
+/// to the exact resolve the check always did), never correctness.
+static TEST_ASSERTION_DECLS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// The bare names ever registered with `is test-assertion` (see
+/// [`TEST_ASSERTION_DECLS`]). Insert-only.
+static TEST_ASSERTION_NAMES: std::sync::OnceLock<std::sync::RwLock<HashSet<String>>> =
+    std::sync::OnceLock::new();
+
+/// Record one `is test-assertion` routine registration.
+pub(crate) fn note_test_assertion_decl(name: &str) {
+    let names = TEST_ASSERTION_NAMES.get_or_init(|| std::sync::RwLock::new(HashSet::new()));
+    names.write().unwrap().insert(name.to_string());
+    TEST_ASSERTION_DECLS.fetch_add(1, std::sync::atomic::Ordering::Release);
+}
+
+/// Whether `name` might resolve to an `is test-assertion` routine. `false` is
+/// authoritative (no such routine was ever registered under this bare name);
+/// `true` means "run the real resolution to know".
+pub(crate) fn test_assertion_name_possible(name: &str) -> bool {
+    if TEST_ASSERTION_DECLS.load(std::sync::atomic::Ordering::Acquire) == 0 {
+        return false;
+    }
+    TEST_ASSERTION_NAMES
+        .get()
+        .is_some_and(|names| names.read().unwrap().contains(name))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SubRegisterOutcome {
     /// The declaration was (re-)derived and installed; resolution state changed.
@@ -938,6 +973,9 @@ impl Interpreter {
                 return Err(RuntimeError::typed("X::Declaration::Scope::Multi", attrs));
             }
         }
+        if is_test_assertion {
+            note_test_assertion_decl(name);
+        }
         let mut new_def = FunctionDef {
             package: Symbol::intern(&self.current_package()),
             name: Symbol::intern(name),
@@ -1571,6 +1609,9 @@ impl Interpreter {
         } else {
             (param_defs.to_vec(), false)
         };
+        if is_test_assertion {
+            note_test_assertion_decl(name);
+        }
         let def = FunctionDef {
             package: Symbol::intern("GLOBAL"),
             name: Symbol::intern(name),

@@ -30,6 +30,12 @@ pub(super) fn noarg_shim(op: &OpCode) -> Option<usize> {
         OpCode::Concat => helpers::concat,
         OpCode::StrEq => helpers::str_eq,
         OpCode::StrNe => helpers::str_ne,
+        OpCode::BitAnd => helpers::bit_and,
+        OpCode::BitOr => helpers::bit_or,
+        OpCode::BitXor => helpers::bit_xor,
+        OpCode::BitShiftLeft => helpers::bit_shift_left,
+        OpCode::BitShiftRight => helpers::bit_shift_right,
+        OpCode::IntBitNeg => helpers::int_bit_neg,
         OpCode::Return => helpers::ret,
         _ => return None,
     };
