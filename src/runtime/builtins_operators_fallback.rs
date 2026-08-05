@@ -451,6 +451,48 @@ impl Interpreter {
                 ));
             }
             self.samewith_context_stack.push((name.to_string(), None));
+            // ADR-0019 C6d-5: a compiled-eligible routine runs its plan-attached
+            // (or memoized OTF) bytecode through the shared compiled entry
+            // instead of the per-call `eval_block_value_with_pre_post` compile
+            // below. The gate is the same signature/body assessment the OTF
+            // dispatch uses (`def_module_single_sig_body_ok_ignoring_state`):
+            // a def it rejects — a sigilless-scalar param whose caller-alias
+            // writeback must cross an EVAL boundary, an interpreter-coupled
+            // body construct — keeps the interpreter arm, which is
+            // load-bearing semantics for those shapes, not a missed
+            // optimization (t/sigilless-params.t pins the EVAL case). `state`
+            // is fine here: `call_routine_def` runs one stable body identity
+            // (the plan's, or one memoized compile), so cells are not severed
+            // the way a per-call OTF recompile severs them. The compiled entry
+            // enforces empty_sig, merges where-constraint capture env, binds
+            // parameters (keeping this by-name call's enhanced binding error),
+            // performs the caller-env writeback merge, converts `fail`,
+            // propagates non-local returns targeting outer callables, and
+            // finalizes the return-type spec; only the multi/samewith frames
+            // (for callsame/nextsame) and the is-raw/rw Proxy tail stay here.
+            if Self::def_module_single_sig_body_ok_ignoring_state(&def) {
+                let fold_is_rw = !def.is_raw;
+                let result = self.call_routine_def(&def, args.to_vec());
+                self.samewith_context_stack.pop();
+                if pushed_dispatch {
+                    self.multi_dispatch_stack.pop();
+                }
+                return result.and_then(|v| {
+                    let v = if def.is_raw {
+                        // Mark Proxy as decontainerized so the VM's auto-FETCH
+                        // doesn't strip it (mirrors the interpreter arm's tail).
+                        if matches!(v.view(), ValueView::Proxy { .. }) {
+                            let (fetcher, storer, subclass, _) = v.into_proxy_parts().unwrap();
+                            Value::proxy_parts(fetcher, storer, subclass, true)
+                        } else {
+                            v
+                        }
+                    } else {
+                        v
+                    };
+                    self.maybe_fetch_rw_proxy(v, fold_is_rw)
+                });
+            }
             if def.empty_sig && !args.is_empty() {
                 self.samewith_context_stack.pop();
                 return Err(Self::reject_args_for_empty_sig(args));

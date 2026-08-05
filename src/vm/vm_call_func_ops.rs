@@ -2013,7 +2013,9 @@ impl Interpreter {
     /// which the per-call OTF path excludes (a per-thread recompile severs the
     /// shared `state` cell), but which the cross-thread shared captured body
     /// handles correctly.
-    fn def_module_single_sig_body_ok_ignoring_state(def: &crate::ast::FunctionDef) -> bool {
+    pub(crate) fn def_module_single_sig_body_ok_ignoring_state(
+        def: &crate::ast::FunctionDef,
+    ) -> bool {
         def.param_defs.iter().all(|pd| {
             let is_capture = pd.slurpy && pd.sigilless;
             let traits_otf_safe = pd
