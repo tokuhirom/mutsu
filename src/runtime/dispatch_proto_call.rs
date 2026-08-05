@@ -100,20 +100,6 @@ impl Interpreter {
             )));
             return Err(err);
         };
-        if def.empty_sig && !args.is_empty() {
-            return Err(Self::reject_args_for_empty_sig(&args));
-        }
-        let saved_env = self.env.clone();
-        let saved_readonly = self.enter_readonly_frame();
-        let rw_bindings = match self.bind_function_args_values(&def.param_defs, &def.params, &args)
-        {
-            Ok(bindings) => bindings,
-            Err(e) => {
-                self.env = saved_env;
-                self.exit_readonly_frame(saved_readonly);
-                return Err(e);
-            }
-        };
         // Set up multi dispatch stack so nextsame/nextwith can walk through
         // remaining candidates when called inside a proto-dispatched multi sub.
         // Get candidates in dispatch order (same sorting as resolve_function_with_types)
@@ -131,33 +117,19 @@ impl Interpreter {
             ));
         }
         self.samewith_context_stack.push((proto_name.clone(), None));
-        self.routine_stack.push(RoutineFrame {
-            package: def.package.resolve(),
-            lexical_package: None,
-            name: def.name.resolve(),
-            line: None,
-            file: None,
-            is_method: false,
-            is_block: false,
-            def_file: None,
-            invocation_id: crate::runtime::next_invocation_id(),
-        });
-        let result = self.run_block(&def.body);
-        self.routine_stack.pop();
+        // The compiled entry replaces the run_block(&def.body) body run that
+        // lived here (ADR-0019 C6d-3): it enforces empty_sig, binds parameters
+        // (including the rw writeback), pushes the routine frame, and performs
+        // the caller-env writeback merge. An explicit `return` comes back
+        // already unwrapped by finalize_return_with_spec, so a surviving
+        // Err-with-return_value is a non-local return targeting an outer
+        // callable and must propagate.
+        let result = self.call_routine_def(&def, args);
         self.samewith_context_stack.pop();
         if pushed_dispatch {
             self.multi_dispatch_stack.pop();
         }
-        let implicit_return = self.env.get("_").cloned().unwrap_or(Value::NIL);
-        let mut restored_env = saved_env.clone();
-        self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
-        self.restore_env_preserving_existing(&restored_env, &def.params);
-        self.exit_readonly_frame(saved_readonly);
-        match result {
-            Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
-            Err(e) => Err(e),
-            Ok(()) => Ok(implicit_return),
-        }
+        result
     }
 
     /// Collect remaining multi candidates after the current one, in dispatch order.
