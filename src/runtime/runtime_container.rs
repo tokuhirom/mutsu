@@ -190,10 +190,8 @@ impl Interpreter {
                 );
             }
             ValueView::Instance { id, .. } => {
-                self.instance_type_metadata
-                    .write()
-                    .unwrap()
-                    .insert(id, info);
+                let mut guard = self.instance_type_metadata.write().unwrap();
+                Arc::make_mut(&mut guard).insert(id, info);
             }
             ValueView::Mixin(inner, _) => self.register_container_type_metadata(inner, info),
             _ => {}

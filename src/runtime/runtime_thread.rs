@@ -521,12 +521,16 @@ impl Interpreter {
             sigilless_alias_seen: self.sigilless_alias_seen,
             var_defaults: self.var_defaults.clone(),
             var_hash_key_constraints: self.var_hash_key_constraints.clone(),
-            // Per-thread snapshot (not a shared-handle clone): deep-copy the map
-            // into a fresh `Arc` so the child thread's instance type metadata is
-            // independent of the parent's, mirroring `io_handles`/`current_package`.
-            instance_type_metadata: Arc::new(RwLock::new(
-                self.instance_type_metadata.read().unwrap().clone(),
-            )),
+            // Per-thread snapshot (not a shared-handle clone), but an O(1) share
+            // of the inner `Arc` (docs/per-task-clone-slimming.md slice 4): a
+            // fresh outer `Arc<RwLock<...>>` keeps the child thread's instance
+            // type metadata independent of the parent's (mirroring
+            // `io_handles`/`current_package`), while the deep clone itself is
+            // deferred until either side's first write (`Arc::make_mut` in
+            // `register_container_type_metadata`).
+            instance_type_metadata: Arc::new(RwLock::new(Arc::clone(
+                &self.instance_type_metadata.read().unwrap(),
+            ))),
             let_saves: Vec::new(),
             grammar_rule_dynvar_decls: HashMap::new(),
             supply_emit_buffer: Vec::new(),
