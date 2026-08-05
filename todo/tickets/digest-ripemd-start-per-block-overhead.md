@@ -1,5 +1,47 @@
 # `Digest::RIPEMD` is 11x raku — a `start` per compression block
 
+> **Status update 3 (2026-08-05, Blob AT-POS lever executed — gate FLAT
+> again; fast path is a real win elsewhere):** the `Index`/`AT-POS` lever
+> from update 2 landed (#5939): a dedicated `(Instance, Int)` arm in
+> `exec_index_op_with_positional` decodes one Buf/Blob element in place
+> via `value_buf::buf_elem_at`, bypassing the AT-POS dispatch chain (the
+> per-access parametrized `class_mro("Blob[uint32]")` resolve) and
+> `decode_elems`' whole-buffer `Vec<Value>` per read (O(N^2) for a loop).
+> A 1M-iteration blob32 element-read loop drops 12.0s -> 0.79s (~15x),
+> but the rmd160 gate is **flat** (~29.6s at 100k input, release): the
+> RIPEMD hot loop's subscripts are evidently not the dominant cost — the
+> per-round **closure-call setup malloc** (~20% of the flat profile) is
+> the next lever, then the `GetGlobal` env reads. Per-call allocation
+> inventory of `call_compiled_closure_with_topic`
+> (vm_closure_dispatch.rs:121, surveyed 2026-08-05), largest first:
+>
+> - **`Gc::new(SubData {...})` for `&?BLOCK`** (~:416) — clones params /
+>   env / captures / compiled_code per call, built even when the body
+>   never mentions `&?BLOCK`. Single largest item; make it lazy or gate
+>   on a compile-time "body mentions &?BLOCK" flag.
+> - **String-keyed `Env::insert`** of `"self"` / `"&?BLOCK"` /
+>   `"__mutsu_callable_id"` / `"!"` — a `String` alloc + `Symbol::intern`
+>   each, every call (:311/:439/:477/:564); use interned-symbol inserts.
+> - **Three `Symbol::resolve()` `String` allocs** per call for
+>   package/name (:461-475, :564, :667) — one just to test emptiness.
+> - `sanitize_call_args` rebuilds the args `Vec` the caller already owns
+>   (:130); `locals = vec![NIL; n]` (:602); `free_at_entry` snapshot
+>   clone of every free var (:642).
+> - Exit path when `cc.has_calls` (i.e. any non-leaf closure): four hash
+>   sets + a full-env writeback scan (:1071-:1170) — the ADR-0018
+>   narrowing target.
+> - `Env::scoped_child` itself is already allocation-free steady-state;
+>   the captured-env merge loop's first `cow_mut` write un-shares the
+>   overlay map per call (:268-308 + env.rs:593).
+>
+> Side find, fixed forward: jit-stress on #5937 caught the documented
+> TODO(J2) gap — a Rust panic inside a JIT shim aborted the process at
+> the `extern "C"` edge (deterministic SEGV on
+> t/hyper-race-panic-boundary.t once shared OTF bodies let worker
+> closures reach the compile threshold). Fixed in #5938: shims run under
+> a `panic_boundary` (`catch_unwind` -> parked payload ->
+> `JIT_STATUS_PANIC` -> `resume_unwind` in `try_enter*`).
+
 > **Status update 2 (2026-08-05, JIT bitwise lever executed — gate FLAT):**
 > the Tier A bitwise coverage landed together with four deeper fixes it
 > surfaced (per-task registry COW clones from `class_mro`, per-task OTF
