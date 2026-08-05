@@ -122,14 +122,32 @@ fn is_outer_amp_name(code_var_key: &str) -> bool {
     })
 }
 
-/// Format a function body for comparison, stripping SetLine annotations.
-/// Used to allow identical sub redeclarations that differ only in source line.
-fn body_debug_without_setline(body: &[Stmt]) -> String {
-    let filtered: Vec<_> = body
-        .iter()
-        .filter(|s| !matches!(s, Stmt::SetLine(_)))
-        .collect();
-    format!("{:?}", filtered)
+/// Line-insensitive identity of a routine declaration for redeclaration
+/// comparison: params, param_defs, and the body with top-level `SetLine`
+/// markers stripped, streamed into a hasher instead of rendered (the
+/// Debug-string compare this replaces built four full `String`s per check).
+/// Identical redeclarations that differ only in source line still compare
+/// equal, exactly as before. This is the single place the comparison reads
+/// `def.body`; ADR-0019 C6e-3 redirects it to the plan-recorded fingerprint
+/// once plan-derived defs stop carrying a body.
+fn registration_identity(def: &FunctionDef) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::fmt::Write as _;
+    use std::hash::Hasher;
+    struct HashWrite<'a>(&'a mut DefaultHasher);
+    impl std::fmt::Write for HashWrite<'_> {
+        fn write_str(&mut self, s: &str) -> std::fmt::Result {
+            self.0.write(s.as_bytes());
+            Ok(())
+        }
+    }
+    let mut hasher = DefaultHasher::new();
+    let mut sink = HashWrite(&mut hasher);
+    let _ = write!(sink, "{:?}\x00{:?}\x00", def.params, def.param_defs);
+    for stmt in def.body.iter().filter(|s| !matches!(s, Stmt::SetLine(_))) {
+        let _ = write!(sink, "{stmt:?}\x00");
+    }
+    hasher.finish()
 }
 
 /// Increment a string by one character (Raku's string increment for enums).
@@ -998,7 +1016,18 @@ impl Interpreter {
             decl_order: crate::runtime::resolution::next_decl_order(),
             compiled: None,
             body_fp_cache: std::sync::OnceLock::new(),
-            body_facts_cache: std::sync::OnceLock::new(),
+            // Seed the OTF-gate body facts eagerly from the plan (ADR-0019
+            // C6e): the lazy cache re-walks `def.body` on a miss, which a
+            // body-less plan-derived def will not be able to serve once
+            // `legacy_body` is dropped. A metadata-less caller (the prelude /
+            // forward-declaration walkers) keeps the lazy fill.
+            body_facts_cache: {
+                let cell = std::sync::OnceLock::new();
+                if let Some(metadata) = metadata {
+                    let _ = cell.set(metadata.body_facts);
+                }
+                cell
+            },
         };
         if let Some(compiled) = compiled {
             new_def.compiled = Some(Self::adapt_compiled_to_def(compiled, &new_def));
@@ -1051,11 +1080,8 @@ impl Interpreter {
         if let Some(existing) = existing {
             let same = existing.package == new_def.package
                 && existing.name == new_def.name
-                && existing.params == new_def.params
                 && existing.return_type == new_def.return_type
-                && format!("{:?}", existing.param_defs) == format!("{:?}", new_def.param_defs)
-                && body_debug_without_setline(&existing.body)
-                    == body_debug_without_setline(&new_def.body);
+                && registration_identity(&existing) == registration_identity(&new_def);
             // The identical declaration already installed here may have been
             // installed *without* a compiled body (a forward-declaration or
             // prelude pass registers from a source declaration and carries no
@@ -1651,10 +1677,7 @@ impl Interpreter {
         if let Some(existing) = self.registry().functions.get(&single_key_sym) {
             let same = existing.package == def.package
                 && existing.name == def.name
-                && existing.params == def.params
-                && format!("{:?}", existing.param_defs) == format!("{:?}", def.param_defs)
-                && body_debug_without_setline(&existing.body)
-                    == body_debug_without_setline(&def.body);
+                && registration_identity(existing) == registration_identity(&def);
             if same {
                 return Ok(());
             }
