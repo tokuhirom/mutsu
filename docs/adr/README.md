@@ -45,3 +45,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0017](0017-cli-option-errors-follow-rakudo.md) | A command-line *option* error follows rakudo — message, stream, and a zero exit status | Accepted |
 | [0018](0018-slot-addressed-lexical-capture-and-env-sync.md) | Slot-addressed lexical capture and env synchronization | Accepted |
 | [0019](0019-compiled-declarations-and-unified-method-dispatch.md) | Compile declarations and unify method dispatch entries | Proposed |
+| [0020](0020-shared-worker-pool.md) | Shared worker pool — elastic growth, blocking `await` | Proposed |
