@@ -1,0 +1,421 @@
+//! Named phases of `register_class_decl` (ADR-0019 D0): the `method` /
+//! `submethod` arm of the class-body walk. Pure mechanical extraction from
+//! `registration_class_decl.rs` — no behavior change.
+
+use super::registration_class::make_delegation_method;
+use super::registration_class_body::ClassBodyCx;
+use super::registration_class_body_method_forms::method_sub_form_params;
+use super::*;
+use crate::ast::{HandleSpec, ParamDef};
+use crate::symbol::Symbol;
+
+impl Interpreter {
+    /// The `method` arm of the class-body walk: validate the declaration,
+    /// build its `MethodDef`, install it in the method table, and register
+    /// its exported / native / `our` / `my` side forms.
+    pub(super) fn class_body_method_decl(
+        &mut self,
+        cx: &mut ClassBodyCx<'_>,
+        stmt: &Stmt,
+    ) -> Result<(), RuntimeError> {
+        let Stmt::MethodDecl {
+            name: method_name,
+            name_expr,
+            params: _,
+            param_defs,
+            body: method_body,
+            multi,
+            is_rw,
+            is_private,
+            is_our,
+            is_my,
+            is_submethod,
+            our_variable_form,
+            return_type,
+            is_default_candidate,
+            deprecated_message,
+            handles: method_handles,
+            custom_traits: method_custom_traits,
+            is_export: method_is_export,
+            export_tags: method_export_tags,
+        } = stmt
+        else {
+            unreachable!("class_body_method_decl called on a non-MethodDecl statement");
+        };
+        self.validate_private_access_in_stmts(cx.name, method_body)?;
+        Self::validate_attr_declared_in_class(&cx.attr_ctx(), method_body)?;
+        // In BUILD/TWEAK submethods, :$!attr parameters must refer
+        // to declared attributes; reject undeclared ones with
+        // X::Attribute::Undeclared.
+        {
+            let mn = method_name.resolve();
+            if mn == "BUILD" || mn == "TWEAK" {
+                for pd in param_defs {
+                    if pd.name.starts_with('!') && pd.name != "!" {
+                        let attr_name = &pd.name[1..]; // strip '!'
+                        if !cx.class_own_attrs.contains(attr_name) {
+                            let err = Self::undeclared_attr_error(&cx.attr_ctx(), attr_name, "!");
+                            self.set_current_package(cx.saved_package.clone());
+                            self.env = cx.saved_env.clone();
+                            return Err(err);
+                        }
+                    }
+                }
+            }
+        }
+        let resolved_method_name = if let Some(expr) = name_expr {
+            self.eval_block_value(&[Stmt::Expr(expr.clone())])?
+                .to_string_value()
+        } else {
+            method_name.resolve()
+        };
+        let mut effective_param_defs = Self::effective_method_param_defs(param_defs, cx.is_hidden);
+        // Resolve the ::?CLASS pseudo-type in parameter type
+        // constraints to the enclosing class (raku fixes ::?CLASS
+        // at compile time to the declaring class), mirroring the
+        // attribute-type resolution above. Without this, binding a
+        // non-invocant `::?CLASS:U \t` param type-checks against
+        // the literal string "::?CLASS:U" and always fails.
+        for pd in effective_param_defs.iter_mut() {
+            if let Some(tc) = &pd.type_constraint
+                && tc.contains("::?CLASS")
+            {
+                pd.type_constraint = Some(tc.replace("::?CLASS", cx.name));
+            }
+        }
+        // Auto-detect @_ usage in methods without explicit signatures
+        if param_defs.is_empty() {
+            let (use_positional, _) = Self::auto_signature_uses(method_body);
+            if use_positional && !effective_param_defs.iter().any(|pd| pd.name == "@_") {
+                // Insert @_ slurpy before the named %_ slurpy (if any)
+                let insert_pos = effective_param_defs
+                    .iter()
+                    .position(|pd| pd.name.starts_with('%') && pd.slurpy)
+                    .unwrap_or(effective_param_defs.len());
+                effective_param_defs.insert(
+                    insert_pos,
+                    ParamDef {
+                        name: "@_".to_string(),
+                        default: None,
+                        multi_invocant: true,
+                        required: false,
+                        named: false,
+                        slurpy: true,
+                        double_slurpy: false,
+                        onearg: false,
+                        sigilless: false,
+                        type_constraint: None,
+                        literal_value: None,
+                        sub_signature: None,
+                        where_constraint: None,
+                        traits: Vec::new(),
+                        optional_marker: false,
+                        outer_sub_signature: None,
+                        code_signature: None,
+                        is_invocant: false,
+                        shape_constraints: None,
+                        block_param: false,
+                    },
+                );
+            }
+        }
+        let effective_params: Vec<String> = effective_param_defs
+            .iter()
+            .map(|p| p.name.clone())
+            .collect();
+        let def = MethodDef {
+            lexical_package: cx.saved_package.clone(),
+            params: effective_params.clone(),
+            param_defs: effective_param_defs.clone(),
+            body: std::sync::Arc::new(method_body.clone()),
+            is_rw: *is_rw,
+            is_private: *is_private,
+            is_multi: *multi,
+            // Use is_submethod for the MethodDef is_my flag, which
+            // controls inheritance filtering (submethods not inherited).
+            // `my method` and `our method` are NOT added to the method
+            // table at all — they are only registered as functions.
+            is_my: *is_submethod,
+            role_origin: None,
+            original_role: None,
+            return_type: return_type.clone(),
+            compiled_code: None,
+            delegation: None,
+            is_default: *is_default_candidate,
+            deprecated_message: deprecated_message.clone(),
+            is_submethod: *is_submethod,
+            captured_env: None,
+        };
+        // `my method` and `our method` are NOT part of the class
+        // method table — they are only callable as functions.
+        // Submethods (is_submethod=true) DO go in the table even
+        // though they also have is_my=true from the parser.
+        // `my method` and `our method` are NOT part of the class
+        // method table — they are only callable as functions.
+        // Submethods (is_submethod=true) DO go in the table even
+        // though they also have is_my=true from the parser.
+        // The `our &name = method name(...)` variable form
+        // (our_variable_form=true) keeps the method in the table.
+        let is_lexical_only = *is_my && !*is_submethod;
+        let is_our_only = *is_our && !*our_variable_form;
+        if !is_lexical_only && !is_our_only {
+            if *multi {
+                cx.class_def
+                    .methods
+                    .entry(resolved_method_name.clone())
+                    .or_default()
+                    .push(def);
+            } else {
+                // Check for duplicate non-multi method definition.
+                // Only error if the existing method was defined in
+                // this class (not composed from a role) AND shares the
+                // same privacy: a private `method !foo` and a public
+                // `method foo` live in separate namespaces and do not
+                // collide (they are stored together but dispatch filters
+                // on `is_private`).
+                let new_is_private = def.is_private;
+                if let Some(existing) = cx.class_def.methods.get(&resolved_method_name) {
+                    let conflicts = existing
+                        .iter()
+                        .any(|m| m.role_origin.is_none() && m.is_private == new_is_private);
+                    if conflicts {
+                        return Err(RuntimeError::new(format!(
+                            "Package '{}' already has a method '{}' (did you mean to declare a multi method?)",
+                            cx.name, resolved_method_name
+                        )));
+                    }
+                }
+                // A non-multi method replaces prior same-privacy
+                // candidates but must preserve methods of the OTHER
+                // privacy stored under the same name.
+                let entry = cx
+                    .class_def
+                    .methods
+                    .entry(resolved_method_name.clone())
+                    .or_default();
+                entry.retain(|m| m.is_private != new_is_private);
+                entry.push(def);
+            }
+        }
+        // A method declared `is export` is recorded as an export of
+        // the enclosing class so that `import ClassName` succeeds
+        // (and exposes the method's sub-form name). This is mainly
+        // used by operator methods such as `method infix:<as> is
+        // export`, whose sub-form is importable.
+        if *method_is_export && !self.suppress_exports {
+            let tags = if method_export_tags.is_empty() {
+                vec!["DEFAULT".to_string()]
+            } else {
+                method_export_tags.clone()
+            };
+            if Self::is_operator_categorical_name(&resolved_method_name) {
+                // An operator method (`method prefix:<~> is export`,
+                // `method infix:<as> is export`, ...) is importable as
+                // a *sub* whose invocant becomes the first (typed)
+                // positional and whose body dispatches back to the
+                // method. `import ClassName` then makes `~$obj` /
+                // `$obj as $x` resolve to it.
+                self.register_exported_operator_method_sub(
+                    cx.name,
+                    &resolved_method_name,
+                    &effective_param_defs,
+                    tags,
+                );
+            } else {
+                self.register_exported_var(
+                    cx.name.to_string(),
+                    format!("&{}", resolved_method_name),
+                    tags,
+                );
+            }
+        }
+        // An `is native(...)` method routes calls through NativeCall
+        // instead of its `{ * }` body, exactly as an `is native` sub
+        // does — with the invocant as the first C argument. This is
+        // how a whole C API is usually bound (`DBDish::mysql::Native`
+        // declares every one of its ~40 entry points this way).
+        if method_custom_traits.iter().any(|(t, _)| t == "native") {
+            // Class/role method declarations still register from the
+            // source declaration (ADR-0019 phase D), so their trait
+            // arguments arrive as expressions.
+            self.register_native_call_method(
+                cx.name,
+                &resolved_method_name,
+                param_defs,
+                return_type.as_ref(),
+                &crate::opcode::decl_traits_from_ast(method_custom_traits),
+            )?;
+        }
+        // Apply custom trait_mod:<is> for each non-builtin trait on methods
+        if !method_custom_traits.is_empty() {
+            let has_trait_mod =
+                self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>");
+            if has_trait_mod {
+                for (trait_name, trait_arg) in method_custom_traits {
+                    let mut trait_env = self.env.clone();
+                    // Add method lookup markers so .wrap stores in
+                    // method_wrap_chains (keyed by class+method).
+                    trait_env.insert(
+                        "__mutsu_lookup_class".to_string(),
+                        Value::str(cx.name.to_string()),
+                    );
+                    trait_env.insert(
+                        "__mutsu_lookup_method".to_string(),
+                        Value::str(resolved_method_name.clone()),
+                    );
+                    trait_env.insert("__mutsu_lookup_candidate_idx".to_string(), Value::int(0));
+                    let sub_val = Value::make_sub(
+                        Symbol::intern(cx.name),
+                        Symbol::intern(&resolved_method_name),
+                        effective_params.clone(),
+                        effective_param_defs.clone(),
+                        method_body.to_vec(),
+                        *is_rw,
+                        trait_env,
+                    );
+                    let trait_arg_val = if let Some(arg_expr) = trait_arg {
+                        Some(self.eval_block_value(&[crate::ast::Stmt::Expr(arg_expr.clone())])?)
+                    } else {
+                        None
+                    };
+                    let type_obj = self.resolve_type_object(trait_name);
+                    let mut args = vec![sub_val];
+                    if let Some(type_val) = type_obj {
+                        args.push(type_val);
+                        if let Some(arg_val) = trait_arg_val {
+                            args.push(arg_val);
+                        }
+                        let _ = self.call_function("trait_mod:<is>", args);
+                    } else {
+                        let named_val = if let Some(arg_val) = trait_arg_val {
+                            Value::pair(trait_name.clone(), arg_val)
+                        } else {
+                            Value::pair(trait_name.clone(), Value::TRUE)
+                        };
+                        args.push(named_val);
+                        let _ = self.call_function("trait_mod:<is>", args);
+                    }
+                }
+            }
+        }
+        // `handles` on a method: synthesize forwarder methods that
+        // delegate to the return value of this method. E.g.
+        //   method Str() handles 'uc' { 'x' }
+        // registers a `uc` method that calls `self.Str.uc(|@_)`.
+        if !method_handles.is_empty() {
+            // Encode "method-based delegation" by prefixing the
+            // source method name with `&`; the delegation dispatch
+            // sites recognize this prefix and invoke the named
+            // method on self to obtain the delegate.
+            let source_attr_marker = format!("&{}", resolved_method_name);
+            for spec in method_handles {
+                match spec {
+                    HandleSpec::Name(target) => {
+                        cx.class_def
+                            .methods
+                            .entry(target.clone())
+                            .or_default()
+                            .push(make_delegation_method(&source_attr_marker, target));
+                    }
+                    HandleSpec::Rename { exposed, target } => {
+                        cx.class_def
+                            .methods
+                            .entry(exposed.clone())
+                            .or_default()
+                            .push(make_delegation_method(&source_attr_marker, target));
+                    }
+                    HandleSpec::Wildcard => {
+                        cx.class_def
+                            .wildcard_handles
+                            .push(source_attr_marker.clone());
+                    }
+                    HandleSpec::Regex(pattern) => {
+                        cx.class_def
+                            .wildcard_handles
+                            .push(format!("{}:regex:{}", source_attr_marker, pattern));
+                    }
+                    HandleSpec::Type(_) => {
+                        // Method-based delegation via a type name
+                        // is not yet supported; fall through.
+                    }
+                }
+            }
+        }
+        // `our method` also registers as a package-scoped sub
+        if *is_our {
+            let qualified_name = format!("{}::{}", cx.name, resolved_method_name);
+            let (our_params, our_param_defs) =
+                method_sub_form_params(&effective_params, &effective_param_defs);
+            let func_def = crate::ast::FunctionDef {
+                package: Symbol::intern(cx.name),
+                name: Symbol::intern(&resolved_method_name),
+                params: our_params,
+                param_defs: our_param_defs,
+                body: method_body.clone(),
+                is_test_assertion: false,
+                is_rw: *is_rw,
+                is_raw: false,
+                is_method: true,
+                empty_sig: false,
+                is_stub: Self::is_stub_routine_body(method_body),
+                return_type: None,
+                is_default: *is_default_candidate,
+                deprecated_message: None,
+                source_file: self.current_source_file(),
+                decl_order: crate::runtime::resolution::next_decl_order(),
+                compiled: None,
+                body_fp_cache: std::sync::OnceLock::new(),
+                body_facts_cache: std::sync::OnceLock::new(),
+            };
+            self.registry_mut().functions.insert(
+                Symbol::intern(&qualified_name),
+                std::sync::Arc::new(func_def),
+            );
+            // Invalidate name-keyed resolution caches.
+            self.fn_resolve_gen += 1;
+        }
+        // `my method` registers as a lexically-scoped function
+        // (callable as `name(invocant)` inside the class body)
+        if *is_my {
+            let (my_params, my_param_defs) =
+                method_sub_form_params(&effective_params, &effective_param_defs);
+            let func_def = crate::ast::FunctionDef {
+                package: Symbol::intern(cx.name),
+                name: Symbol::intern(&resolved_method_name),
+                params: my_params,
+                param_defs: my_param_defs,
+                body: method_body.clone(),
+                is_test_assertion: false,
+                is_rw: *is_rw,
+                is_raw: false,
+                is_method: true,
+                empty_sig: false,
+                is_stub: Self::is_stub_routine_body(method_body),
+                return_type: None,
+                is_default: *is_default_candidate,
+                deprecated_message: None,
+                source_file: self.current_source_file(),
+                decl_order: crate::runtime::resolution::next_decl_order(),
+                compiled: None,
+                body_fp_cache: std::sync::OnceLock::new(),
+                body_facts_cache: std::sync::OnceLock::new(),
+            };
+            // Register under the short name (lexical scope)
+            self.registry_mut().functions.insert(
+                Symbol::intern(&resolved_method_name),
+                std::sync::Arc::new(func_def.clone()),
+            );
+            // Also register under the qualified name for consistency
+            let qualified_name = format!("{}::{}", cx.name, resolved_method_name);
+            self.registry_mut().functions.insert(
+                Symbol::intern(&qualified_name),
+                std::sync::Arc::new(func_def),
+            );
+            // Invalidate name-keyed resolution caches.
+            self.fn_resolve_gen += 1;
+            // Mark as my-scoped so it doesn't appear in the package stash
+            self.mark_my_scoped_package_item(qualified_name);
+        }
+        Ok(())
+    }
+}
