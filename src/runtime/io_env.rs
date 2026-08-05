@@ -4,8 +4,10 @@ use crate::value::ValueView;
 use std::sync::OnceLock;
 
 impl Interpreter {
-    /// Rebuild the per-interpreter IO/dynamic-var environment. Called both from
-    /// `Interpreter::new()` and from every `clone_for_thread` spawn.
+    /// Rebuild the per-interpreter IO/dynamic-var environment. Called from
+    /// `Interpreter::new()`; every `clone_for_thread` spawn uses the
+    /// [`Self::init_io_environment_for_thread_clone`] variant, which inherits
+    /// already-present dynamic IO handle vars instead of clobbering them.
     ///
     /// `$*CWD` is deliberately rebuilt via a real `current_dir()` syscall on
     /// EVERY call, including thread-clone spawns, even though `cloned.env`
@@ -29,34 +31,74 @@ impl Interpreter {
     /// touches because their identity is process-constant, not reassigned by
     /// ordinary programs).
     pub(super) fn init_io_environment(&mut self) {
-        let stdout = self.create_handle(
-            IoHandleTarget::Stdout,
-            IoHandleMode::Write,
-            Some("STDOUT".to_string()),
-        );
-        self.env.insert("$*OUT".to_string(), stdout.clone());
-        self.env.insert("*OUT".to_string(), stdout);
-        let stderr = self.create_handle(
-            IoHandleTarget::Stderr,
-            IoHandleMode::Write,
-            Some("STDERR".to_string()),
-        );
-        self.env.insert("$*ERR".to_string(), stderr.clone());
-        self.env.insert("*ERR".to_string(), stderr);
-        let stdin = self.create_handle(
-            IoHandleTarget::Stdin,
-            IoHandleMode::Read,
-            Some("STDIN".to_string()),
-        );
-        self.env.insert("$*IN".to_string(), stdin.clone());
-        self.env.insert("*IN".to_string(), stdin);
-        let argfiles = self.create_handle(
-            IoHandleTarget::ArgFiles,
-            IoHandleMode::Read,
-            Some("$*ARGFILES".to_string()),
-        );
-        self.env.insert("$*ARGFILES".to_string(), argfiles.clone());
-        self.env.insert("*ARGFILES".to_string(), argfiles);
+        self.init_io_environment_impl(false)
+    }
+
+    /// [`Self::init_io_environment`] for a `clone_for_thread` spawn
+    /// (docs/per-task-clone-slimming.md slice 6): dynamic IO handle vars
+    /// (`$*OUT`/`$*ERR`/`$*IN`/`$*ARGFILES`) the cloned env already carries are
+    /// INHERITED instead of clobbered with fresh default handles — in Raku a
+    /// `start` block sees the spawning scope's `my $*OUT = ...` redirection
+    /// (pin: `t/start-inherits-dynamic-out.t`). The non-handle dynamic vars
+    /// below the handle block are still rebuilt exactly as before (see the
+    /// `$*CWD` comment above for why that rebuild must stay unconditional).
+    pub(super) fn init_io_environment_for_thread_clone(&mut self) {
+        self.init_io_environment_impl(true)
+    }
+
+    /// Whether the cloned env carries a usable inherited entry for the dynamic
+    /// IO var `name` (or its bare `alias`): a user object (the output-capture
+    /// redirection idiom), or a default handle whose id survived the referenced-
+    /// handle clone in `clone_for_thread_excluding`. A handle id that did NOT
+    /// survive (e.g. the parent closed it) reports unusable so the caller
+    /// rebuilds the default, preserving the pre-slice-6 behavior for that edge.
+    fn inherited_io_entry_usable(&self, name: &str, alias: &str) -> bool {
+        let Some(v) = self.env.get(name).or_else(|| self.env.get(alias)) else {
+            return false;
+        };
+        match Self::handle_id_from_value(v) {
+            Some(id) => self.io_handles().map.contains_key(&id),
+            None => !v.is_nil(),
+        }
+    }
+
+    fn init_io_environment_impl(&mut self, for_thread_clone: bool) {
+        if !(for_thread_clone && self.inherited_io_entry_usable("$*OUT", "*OUT")) {
+            let stdout = self.create_handle(
+                IoHandleTarget::Stdout,
+                IoHandleMode::Write,
+                Some("STDOUT".to_string()),
+            );
+            self.env.insert("$*OUT".to_string(), stdout.clone());
+            self.env.insert("*OUT".to_string(), stdout);
+        }
+        if !(for_thread_clone && self.inherited_io_entry_usable("$*ERR", "*ERR")) {
+            let stderr = self.create_handle(
+                IoHandleTarget::Stderr,
+                IoHandleMode::Write,
+                Some("STDERR".to_string()),
+            );
+            self.env.insert("$*ERR".to_string(), stderr.clone());
+            self.env.insert("*ERR".to_string(), stderr);
+        }
+        if !(for_thread_clone && self.inherited_io_entry_usable("$*IN", "*IN")) {
+            let stdin = self.create_handle(
+                IoHandleTarget::Stdin,
+                IoHandleMode::Read,
+                Some("STDIN".to_string()),
+            );
+            self.env.insert("$*IN".to_string(), stdin.clone());
+            self.env.insert("*IN".to_string(), stdin);
+        }
+        if !(for_thread_clone && self.inherited_io_entry_usable("$*ARGFILES", "*ARGFILES")) {
+            let argfiles = self.create_handle(
+                IoHandleTarget::ArgFiles,
+                IoHandleMode::Read,
+                Some("$*ARGFILES".to_string()),
+            );
+            self.env.insert("$*ARGFILES".to_string(), argfiles.clone());
+            self.env.insert("*ARGFILES".to_string(), argfiles);
+        }
         let spec = self.make_io_spec_instance();
         self.env.insert("$*SPEC".to_string(), spec.clone());
         self.env.insert("*SPEC".to_string(), spec);
