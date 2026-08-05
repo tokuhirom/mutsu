@@ -81,7 +81,7 @@ impl Interpreter {
             arg_sources
         };
         let args = self.normalize_call_args_for_target(&name, args);
-        let (args, callsite_line) = self.sanitize_call_args(&args);
+        let (args, callsite_line) = self.sanitize_call_args_owned(args);
         // Auto-FETCH Proxy args for statement-level calls (same as CallFunc)
         let args = if self.in_lvalue_assignment {
             args

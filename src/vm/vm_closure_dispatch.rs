@@ -94,7 +94,7 @@ impl Interpreter {
     /// Call a compiled closure (a `Sub` value with compiled_code).
     pub(super) fn call_compiled_closure(
         &mut self,
-        data: &crate::value::SubData,
+        data: &crate::gc::Gc<crate::value::SubData>,
         cc: &CompiledCode,
         args: Vec<Value>,
         compiled_fns: &CompiledFns,
@@ -120,14 +120,14 @@ impl Interpreter {
     /// signal-based writeback misses).
     pub(super) fn call_compiled_closure_with_topic(
         &mut self,
-        data: &crate::value::SubData,
+        data: &crate::gc::Gc<crate::value::SubData>,
         cc: &CompiledCode,
         args: Vec<Value>,
         explicit_topic: Option<Value>,
         capture_rw_topic: bool,
         compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
-        let (mut args, callsite_line) = self.sanitize_call_args(&args);
+        let (mut args, callsite_line) = self.sanitize_call_args_owned(args);
         if callsite_line.is_some() {
             loan_env!(self, set_pending_callsite_line(callsite_line));
         }
@@ -309,7 +309,8 @@ impl Interpreter {
         // tier-walking get and force-install (interpreter-path twin in
         // `call_sub_value`).
         if let Some(captured_self) = data.env.get("self").cloned() {
-            self.env_mut().insert("self".to_string(), captured_self);
+            self.env_mut()
+                .insert_sym(crate::symbol::Symbol::intern("self"), captured_self);
         }
         // A closure's free variables are lexically bound in its captured env, so an
         // *authoritative* capture must OVERWRITE whatever the caller env happens to
@@ -412,35 +413,15 @@ impl Interpreter {
         loan_env!(self, push_caller_env());
 
         // Push Sub value to block_stack for callframe().code
-        // Also set &?BLOCK as a weak self-reference (mirrors resolution.rs)
-        let block_arc = crate::gc::Gc::new(crate::value::SubData {
-            package: data.package,
-            name: data.name,
-            params: data.params.clone(),
-            param_defs: data.param_defs.clone(),
-            body: vec![],
-            is_rw: data.is_rw,
-            is_raw: data.is_raw,
-            env: data.env.clone(),
-            assumed_positional: data.assumed_positional.clone(),
-            assumed_named: data.assumed_named.clone(),
-            id: data.id,
-            empty_sig: data.empty_sig,
-            is_bare_block: data.is_bare_block,
-            compiled_code: data.compiled_code.clone(),
-            compiled_routine: data.compiled_routine.clone(),
-            deprecated_message: data.deprecated_message.clone(),
-            source_line: data.source_line,
-            source_file: data.source_file.clone(),
-            owned_captures: data.owned_captures.clone(),
-            authoritative_captures: data.authoritative_captures.clone(),
-            upvalues: data.upvalues.clone(),
-        });
-        self.env_mut().insert(
-            "&?BLOCK".to_string(),
-            Value::weak_sub(crate::gc::Gc::downgrade(&block_arc)),
+        // Also set &?BLOCK as a weak self-reference (mirrors resolution.rs).
+        // The caller's Gc is reused directly (refcount bump) — building a fresh
+        // SubData here cloned params/env/captures per call, the single largest
+        // allocation in closure-call setup.
+        self.env_mut().insert_sym(
+            crate::symbol::Symbol::intern("&?BLOCK"),
+            Value::weak_sub(crate::gc::Gc::downgrade(data)),
         );
-        self.push_block(Value::sub_value(block_arc));
+        self.push_block(Value::sub_value(data.clone()));
 
         // Push routine info for leave/return/when targeting.
         // For pointy blocks, we push a special marker name so that
@@ -474,8 +455,8 @@ impl Interpreter {
                 data.source_file.clone(),
             );
         }
-        self.env_mut().insert(
-            "__mutsu_callable_id".to_string(),
+        self.env_mut().insert_sym(
+            crate::symbol::Symbol::intern("__mutsu_callable_id"),
             Value::int(data.id as i64),
         );
 
@@ -523,12 +504,14 @@ impl Interpreter {
                 .iter()
                 .find(|v| !matches!(v.view(), ValueView::Pair(_, _)))
             {
-                self.env_mut().insert("_".to_string(), first.clone());
+                self.env_mut()
+                    .insert_sym(crate::symbol::Symbol::intern("_"), first.clone());
             }
         } else if data.params.is_empty() && args.is_empty() && data.name.is_empty() {
             let caller_topic = self.call_frames.last().unwrap().saved_env.get("_").cloned();
             if let Some(topic) = caller_topic {
-                self.env_mut().insert("_".to_string(), topic);
+                self.env_mut()
+                    .insert_sym(crate::symbol::Symbol::intern("_"), topic);
             }
         }
 
@@ -554,15 +537,16 @@ impl Interpreter {
             && !is_whatever_code
             && !data.param_defs.iter().any(|pd| pd.name == "_")
         {
-            self.env_mut().insert(
-                "_".to_string(),
+            self.env_mut().insert_sym(
+                crate::symbol::Symbol::intern("_"),
                 Value::package(crate::symbol::Symbol::intern("Any")),
             );
         }
 
         // Raku: $! is scoped per routine — fresh Nil on entry
-        if !data.name.resolve().is_empty() {
-            self.env_mut().insert("!".to_string(), Value::NIL);
+        if !data.name.is_empty() {
+            self.env_mut()
+                .insert_sym(crate::symbol::Symbol::intern("!"), Value::NIL);
         }
 
         // Explicit topic override (native `.map` over Pair-shaped elements). The
@@ -664,7 +648,7 @@ impl Interpreter {
         // when the Sub value is invoked from a foreign frame (mirrors
         // `enter_routine_package` on the named-call paths).
         let saved_pkg = {
-            let pkg = data.package.resolve();
+            let pkg = data.package.as_str();
             // `GLOBAL` counts: a block declared at file scope and *invoked from
             // a module* (`Test::Util`'s `group-of` calling the caller's block)
             // must still declare its classes in `GLOBAL`, not in the module's
@@ -672,9 +656,10 @@ impl Interpreter {
             // in place, so `group-of { … my class Foo {} … }` named the class
             // `Test::Util::Foo` and every message quoting it diverged from raku
             // (roast/integration/error-reporting.t).
-            if !pkg.is_empty() && !pkg.contains("::&") && pkg != self.current_package() {
+            if !pkg.is_empty() && !pkg.contains("::&") && data.package != self.current_package_sym()
+            {
                 let saved = self.current_package();
-                self.set_current_package(pkg);
+                self.set_current_package(pkg.to_string());
                 Some(saved)
             } else {
                 None

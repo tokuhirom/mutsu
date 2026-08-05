@@ -271,6 +271,16 @@ impl Interpreter {
         }
     }
 
+    /// Owned-`Vec` variant of [`Self::sanitize_call_args`]: when no callsite-line
+    /// marker is present (the common case) the caller's `Vec` is returned as-is,
+    /// skipping the per-arg clone and the rebuilt `Vec` allocation.
+    pub(crate) fn sanitize_call_args_owned(&self, args: Vec<Value>) -> (Vec<Value>, Option<i64>) {
+        if args.iter().any(Self::is_callsite_line_marker) {
+            return self.sanitize_call_args(&args);
+        }
+        (args, None)
+    }
+
     pub(crate) fn sanitize_call_args(&self, args: &[Value]) -> (Vec<Value>, Option<i64>) {
         let mut out = Vec::with_capacity(args.len());
         let mut callsite_line = None;
