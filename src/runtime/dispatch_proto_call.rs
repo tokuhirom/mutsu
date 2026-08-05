@@ -178,17 +178,16 @@ impl Interpreter {
         self.sort_candidates_by_specificity(&mut candidates);
         // Walk sorted candidates: find all matching ones, skip duplicates,
         // and return everything after the current candidate.
-        let current_fp = crate::ast::function_body_fingerprint(
-            &current_def.params,
-            &current_def.param_defs,
-            &current_def.body,
-        );
+        // Read fingerprints through the defs' memoized caches: a plan-derived
+        // def carries its original body's fingerprint even once `legacy_body`
+        // is dropped (ADR-0019 C6e-3); recomputing from the fields here would
+        // diverge from that and break the "skip up to current" scan.
+        let current_fp = current_def.body_fingerprint();
         let mut seen_fps = std::collections::HashSet::new();
         let mut found_current = false;
         let mut remaining = Vec::new();
         for (_key, cand) in &candidates {
-            let fp =
-                crate::ast::function_body_fingerprint(&cand.params, &cand.param_defs, &cand.body);
+            let fp = cand.body_fingerprint();
             if !seen_fps.insert(fp) {
                 continue; // duplicate
             }

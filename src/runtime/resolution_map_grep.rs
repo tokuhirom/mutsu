@@ -215,7 +215,7 @@ impl Interpreter {
             // X::ControlFlow::Return (99problems-21-to-30.t P23 `$compress`).
             // A WhateverCode is expression-shaped (it cannot contain `return`)
             // and needs the fast path's outer-topic handling for its `$_`.
-            let is_routine_callback = !data.is_bare_block
+            let is_routine_callback = (!data.is_bare_block
                 && data.compiled_code.as_ref().is_some_and(|cc| cc.is_routine)
                 && !matches!(
                     data.env.get("__mutsu_callable_type").map(Value::view),
@@ -227,7 +227,12 @@ impl Interpreter {
                 // stay on the fast path: the general call machinery binds a
                 // Pair element as a NAMED argument, leaving the placeholder
                 // positional unbound (t/map-native-pairs.t).
-                && crate::ast::collect_placeholders_shallow(&data.body).is_empty();
+                && crate::ast::collect_placeholders_shallow(&data.body).is_empty())
+                // A body-less routine Sub (plan-derived, ADR-0019 C6e-3)
+                // carries only bytecode; the AST fast path would classify its
+                // empty body as a passthrough, so it must take the real call
+                // path, which dispatches `compiled_routine`.
+                || (data.body.is_empty() && data.compiled_routine.is_some());
             if requires_full_binding || is_routine_callback {
                 // `map` batches the source by the block's `.count` (the number of
                 // positional parameters it will bind): a multi-positional block
@@ -604,6 +609,12 @@ impl Interpreter {
             return None;
         }
         if sub_is_call_carrier(&data) {
+            return None;
+        }
+        // A body-less routine Sub (plan-derived, ADR-0019 C6e-3) has nothing
+        // for the compile-once path to compile — generic path calls its
+        // bytecode.
+        if data.body.is_empty() && data.compiled_routine.is_some() {
             return None;
         }
         // A multi-param matcher block would take element tuples; `.first` has

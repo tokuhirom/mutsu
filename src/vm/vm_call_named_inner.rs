@@ -398,25 +398,44 @@ impl Interpreter {
             && let Some(crate::opcode::OpCode::RegisterDecl(idx)) = cf.code.ops.last()
             && let Some(crate::opcode::CompiledDeclPlanRef::Sub(plan_idx)) =
                 cf.code.decl_plans.get(*idx as usize)
-            && let Some(crate::opcode::CompiledSubDeclPlan {
-                name: sub_name,
-                params,
-                param_defs,
-                legacy_body: body,
-                is_rw,
-                ..
-            }) = cf.code.sub_decl_plans.get(*plan_idx as usize)
+            && let Some(plan) = cf.code.sub_decl_plans.get(*plan_idx as usize)
         {
-            ret_val = Value::make_sub(
-                Symbol::intern(&self.current_package()),
-                *sub_name,
-                params.clone(),
-                param_defs.clone(),
-                body.clone(),
-                *is_rw,
-                // Flatten: a Sub returned as a value is dispatched cross-scope.
-                self.clone_env(),
-            );
+            // Build the Sub from the routine the RegisterDecl just installed —
+            // it carries the plan's bytecode (`FunctionDef::compiled`), so the
+            // returned code object dispatches compiled instead of re-compiling
+            // the plan's AST body (ADR-0019 C6e-3, the C6c treatment). The
+            // registry key uses the plan's static name; a computed-name
+            // declaration (`sub ::($name)`) or a just-out-of-scope def keeps
+            // the plan-shape fallback.
+            let single_key = format!("{}::{}", self.current_package(), plan.name.resolve());
+            let registered = self
+                .registry()
+                .functions
+                .get(&Symbol::intern(&single_key))
+                .cloned();
+            ret_val = if let Some(def) = registered {
+                Value::make_sub_for_routine(
+                    def.package,
+                    def.name,
+                    def.params.clone(),
+                    def.param_defs.clone(),
+                    def.body.clone(),
+                    def.is_rw,
+                    // Flatten: a Sub returned as a value is dispatched cross-scope.
+                    self.clone_env(),
+                    def.compiled.clone(),
+                )
+            } else {
+                Value::make_sub(
+                    Symbol::intern(&self.current_package()),
+                    plan.name,
+                    plan.params.clone(),
+                    plan.param_defs.clone(),
+                    plan.legacy_body.clone(),
+                    plan.is_rw,
+                    self.clone_env(),
+                )
+            };
         }
 
         self.stack.truncate(saved_stack_depth);

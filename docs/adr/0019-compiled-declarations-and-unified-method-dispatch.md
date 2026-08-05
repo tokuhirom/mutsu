@@ -288,7 +288,14 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
     bodies run compiled and the `module_otf_needs_interpreter` predicate is deleted
     outright (`news/2026-08/start-bodies-run-compiled.md` — the historical
     recursive-start param clobber no longer reproduces because the compiled caller-env
-    merge excludes callee params); C6e-3 then seeds fingerprints and drops `legacy_body`.
+    merge excludes callee params); C6e-3 then seeds fingerprints and drops `legacy_body` —
+    subdivided: C6e-3a (landed) seeds plan fingerprints (structural + registration
+    identity), hardens every body-less code path, and validates the drop end-to-end
+    under a `MUTSU_DROP_LEGACY_BODY=1` instrument
+    (`news/2026-08/legacy-body-drop-groundwork.md`); C6e-3b makes the safe-class
+    empty body the default at plan lowering (the load-bearing classes — no
+    resolvable plan bytecode, rw/raw scalars' interpreter carrier, lvalue
+    routines, NativeCall — keep theirs).
     Measurements and per-shape notes:
     `todo/deep/c6e-legacy-body-drop-blocked-by-gate-rejected-shapes.md`.
 - [ ] **C7 — Remove the sub-registration AST adapter.** Delete dead sub-shaped walker branches and

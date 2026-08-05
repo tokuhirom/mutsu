@@ -243,9 +243,22 @@ impl Interpreter {
                         || pd.named
                         || pd.slurpy
                         || pd.double_slurpy
-                });
+                })
+                    // A body-less routine Sub (plan-derived, ADR-0019 C6e-3)
+                    // carries only bytecode; the manual bind + AST eval below
+                    // would evaluate an empty body, so run the real call path.
+                    || (data.body.is_empty() && data.compiled_routine.is_some());
                 if needs_full_binding {
-                    match self.call_sub_value(Value::sub_value(data.clone()), args, false) {
+                    // A genuinely zero-parameter routine generator (`&subrand
+                    // ... *`) reads its state from captured lexicals; the
+                    // history args exist only for the manual path's `@_`, and
+                    // the real binder would reject them (empty signature).
+                    let call_args = if data.params.is_empty() && data.param_defs.is_empty() {
+                        Vec::new()
+                    } else {
+                        args
+                    };
+                    match self.call_sub_value(Value::sub_value(data.clone()), call_args, false) {
                         Ok(v) => v,
                         Err(_e) if suppress_generator_error => return Ok(None),
                         Err(e) => return Err(e),
@@ -925,7 +938,17 @@ impl Interpreter {
                     self.env
                         .insert("@_".to_string(), Value::array(seeds[..=i].to_vec()));
 
-                    let predicate_result = match self.eval_block_value(&data.body) {
+                    // A body-less routine endpoint (plan-derived, ADR-0019
+                    // C6e-3) runs through the real call path (bytecode); the
+                    // AST eval would answer Nil for every element and the
+                    // sequence would never terminate.
+                    let predicate_eval = if data.body.is_empty() && data.compiled_routine.is_some()
+                    {
+                        self.call_sub_value(Value::sub_value(data.clone()), args.clone(), false)
+                    } else {
+                        self.eval_block_value(&data.body)
+                    };
+                    let predicate_result = match predicate_eval {
                         Ok(v) => v,
                         Err(e) if e.return_value.is_some() => e.return_value.unwrap(),
                         Err(e) => return Err(e),
@@ -1462,7 +1485,19 @@ impl Interpreter {
                                     self.env.insert("@_".to_string(), Value::array(all_vals));
                                 }
 
-                                let predicate_result = match self.eval_block_value(&data.body) {
+                                // Body-less routine endpoint: real call path
+                                // (see the eager endpoint scan above).
+                                let predicate_eval =
+                                    if data.body.is_empty() && data.compiled_routine.is_some() {
+                                        self.call_sub_value(
+                                            Value::sub_value(data.clone()),
+                                            args.clone(),
+                                            false,
+                                        )
+                                    } else {
+                                        self.eval_block_value(&data.body)
+                                    };
+                                let predicate_result = match predicate_eval {
                                     Ok(v) => v,
                                     Err(e) if e.return_value.is_some() => e.return_value.unwrap(),
                                     Err(e) => return Err(e),

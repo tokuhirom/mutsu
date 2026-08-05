@@ -434,10 +434,10 @@ impl Interpreter {
             let def_fp = def.body_fingerprint();
             let remaining: Vec<std::sync::Arc<FunctionDef>> = all_candidates
                 .into_iter()
-                .filter(|c| {
-                    crate::ast::function_body_fingerprint(&c.params, &c.param_defs, &c.body)
-                        != def_fp
-                })
+                // Compare through the memoized fingerprint (plan-seeded for
+                // body-less plan-derived defs, ADR-0019 C6e-3) so the current
+                // candidate is always recognized and excluded.
+                .filter(|c| c.body_fingerprint() != def_fp)
                 .collect();
             let pushed_dispatch = !remaining.is_empty();
             if pushed_dispatch {

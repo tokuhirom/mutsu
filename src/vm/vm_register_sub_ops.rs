@@ -220,6 +220,32 @@ impl Interpreter {
                 name.resolve()
             };
             self.check_param_custom_traits(param_defs)?;
+            // ADR-0019 C6e-3 validation instrument (default OFF, zero effect):
+            // `MUTSU_DROP_LEGACY_BODY=1` simulates the `legacy_body` drop —
+            // plan-derived defs register with an empty body so every reader
+            // that still needs the AST surfaces as a deterministic failure.
+            // C6e-3b flips the conditions below into the permanent behavior
+            // (at plan lowering); the def classes excluded here are the ones
+            // that still carry load-bearing AST bodies. Only when the plan
+            // carries bytecode for every declared signature — a def with
+            // neither body nor bytecode cannot run at all (e.g. a nested sub
+            // registered from a class-walker method body, whose plan has no
+            // compiled keys).
+            static DROP_LEGACY_BODY: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+            let drop_legacy_body =
+                *DROP_LEGACY_BODY.get_or_init(|| std::env::var("MUTSU_DROP_LEGACY_BODY").is_ok());
+            let plan_fully_compiled = compiled_routine_keys.len() == 1 + signature_alternates.len();
+            // A routine with a scalar `is rw`/`is raw` param stays on the
+            // interpreter carrier (resolution_call_sub keeps it off the
+            // compiled fork until rw binding is cell-based — see
+            // todo/tickets/rw-writeback-through-wrap-chain-needs-shared-cells.md),
+            // so it must keep its AST body.
+            let has_rw_scalar_param = param_defs.iter().any(|pd| {
+                pd.traits.iter().any(|t| t == "rw" || t == "raw")
+                    && !pd.name.starts_with('@')
+                    && !pd.name.starts_with('%')
+                    && !pd.name.starts_with('&')
+            });
             // The plan compiled one routine body per declared signature: the
             // primary first, then each `signature_alternates` entry in
             // declaration order. Registration installs the candidates in that
@@ -236,6 +262,28 @@ impl Interpreter {
                 compiled_fns.get(&compiled_routine_keys[slot])
             };
             let primary_compiled = plan_compiled(0);
+            let empty_body: Vec<Stmt> = Vec::new();
+            let body = if drop_legacy_body
+                && plan_fully_compiled
+                // The key must actually RESOLVE in this call site's fns table —
+                // a nested sub registered from a class-walker method body
+                // carries keys its executing table does not hold, and a def
+                // with neither body nor bytecode cannot run.
+                && primary_compiled.is_some()
+                && !has_rw_scalar_param
+                // An lvalue routine (`sub f() is rw/is raw { $var }`, or a
+                // tail `$x.return-rw`) keeps its body: the assignment
+                // machinery extracts the assign target from the AST
+                // (`rw_sub_target_expr` / `is_explicit_return_rw_target`).
+                && !*is_rw
+                && !*is_raw
+                && !Self::rw_sub_target_expr(body)
+                    .is_some_and(|e| Self::is_explicit_return_rw_target(&e))
+            {
+                &empty_body
+            } else {
+                body
+            };
             // Compile-time declaration fingerprint for this site (absent for a
             // runtime-resolved `name_expr` sub), enabling the idempotent
             // re-registration fast path inside `register_sub_decl_fp`.
@@ -414,15 +462,42 @@ impl Interpreter {
                 && !resolved_name.contains("::")
                 && !resolved_name.contains(':')
             {
-                let sub_val = Value::make_sub(
-                    Symbol::intern(&self.lexical_closure_package()),
-                    Symbol::intern(&resolved_name),
-                    params.clone(),
-                    param_defs.clone(),
-                    body.clone(),
-                    *is_rw,
-                    self.env().clone(),
-                );
+                // Carry the plan's bytecode so the stashed Sub still runs after
+                // the registry entry is gone, even when the def is body-less
+                // (plan-derived, ADR-0019 C6e-3). The installed def holds the
+                // signature-adapted compiled body; fall back to the raw plan
+                // shape when the lookup misses.
+                let installed = self
+                    .registry()
+                    .functions
+                    .get(&Symbol::intern(&format!(
+                        "{}::{}",
+                        self.current_package(),
+                        resolved_name
+                    )))
+                    .cloned();
+                let sub_val = if let Some(def) = installed {
+                    Value::make_sub_for_routine(
+                        Symbol::intern(&self.lexical_closure_package()),
+                        Symbol::intern(&resolved_name),
+                        def.params.clone(),
+                        def.param_defs.clone(),
+                        def.body.clone(),
+                        def.is_rw,
+                        self.env().clone(),
+                        def.compiled.clone(),
+                    )
+                } else {
+                    Value::make_sub(
+                        Symbol::intern(&self.lexical_closure_package()),
+                        Symbol::intern(&resolved_name),
+                        params.clone(),
+                        param_defs.clone(),
+                        body.clone(),
+                        *is_rw,
+                        self.env().clone(),
+                    )
+                };
                 // A RESERVED key, not the plain `&name`: while the block is
                 // still live the registry entry is authoritative (it is what
                 // carries `state` variables and wrap chains), and a plain

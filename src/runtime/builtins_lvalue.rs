@@ -142,7 +142,7 @@ impl Interpreter {
         }
     }
 
-    fn rw_sub_target_expr(body: &[Stmt]) -> Option<Expr> {
+    pub(crate) fn rw_sub_target_expr(body: &[Stmt]) -> Option<Expr> {
         for stmt in body.iter().rev() {
             match stmt {
                 Stmt::Expr(expr) | Stmt::Return(expr) => return Some(expr.clone()),
@@ -152,7 +152,7 @@ impl Interpreter {
         None
     }
 
-    fn is_explicit_return_rw_target(expr: &Expr) -> bool {
+    pub(crate) fn is_explicit_return_rw_target(expr: &Expr) -> bool {
         matches!(
             expr,
             Expr::Call { name, args }

@@ -230,6 +230,11 @@ pub(crate) struct RoutineBodyFacts {
     pub(crate) needs_interpreter: bool,
     /// The body declares a `state` variable somewhere.
     pub(crate) declares_state: bool,
+    /// Line-insensitive identity of the declaration (params, param_defs, body
+    /// with top-level `SetLine` markers stripped) — the redeclaration
+    /// comparison keys on it. Carried here so a plan-derived def keeps its
+    /// identity after `legacy_body` is dropped (ADR-0019 C6e-3).
+    pub(crate) registration_identity: u64,
 }
 
 impl FunctionDef {
@@ -280,6 +285,27 @@ pub(crate) fn function_body_fingerprint(
     let mut sink = HashWrite(&mut hasher);
     // Separators keep distinct fields from colliding when their renderings abut.
     let _ = write!(sink, "{params:?}\x00{param_defs:?}\x00{body:?}");
+    hasher.finish()
+}
+
+/// Line-insensitive identity of a routine declaration for redeclaration
+/// comparison: params, param_defs, and the body with top-level `SetLine`
+/// markers stripped, streamed into a hasher. Identical redeclarations that
+/// differ only in source line compare equal. Distinct from
+/// [`function_body_fingerprint`], which hashes `SetLine` markers too (it is a
+/// structural identity, not a redeclaration identity).
+pub(crate) fn registration_identity_fingerprint(
+    params: &[String],
+    param_defs: &[ParamDef],
+    body: &[Stmt],
+) -> u64 {
+    use std::fmt::Write as _;
+    let mut hasher = DefaultHasher::new();
+    let mut sink = HashWrite(&mut hasher);
+    let _ = write!(sink, "{params:?}\x00{param_defs:?}\x00");
+    for stmt in body.iter().filter(|s| !matches!(s, Stmt::SetLine(_))) {
+        let _ = write!(sink, "{stmt:?}\x00");
+    }
     hasher.finish()
 }
 
