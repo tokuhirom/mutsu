@@ -402,14 +402,15 @@ impl Interpreter {
             gather_items: Vec::new(),
             gather_take_limits: Vec::new(),
             block_scope_depth: self.block_scope_depth,
-            // Deep-clone the registry into a fresh Arc so the child thread gets an
-            // independent snapshot (matches prior per-field clone semantics: the
-            // child sees parent declarations but its own new ones don't leak back).
-            registry: Arc::new(RwLock::new(self.registry.read().unwrap().clone())),
-            // Fresh per-thread: the snapshot cache must not be shared across
-            // threads (each thread's `Interpreter` owns its own registry).
+            // O(1) share of the inner `Arc<Registry>` — a fresh outer lock so the
+            // child thread gets an independent snapshot (matches prior per-field
+            // clone semantics: the child sees parent declarations but its own new
+            // ones don't leak back), while the deep clone itself is deferred until
+            // either side's first registry write (`Arc::make_mut` in
+            // `RegistryWriteGuard::deref_mut`). In spawn-heavy loops where neither
+            // side writes the registry, the deep clone (and its drop) never happens.
+            registry: Arc::new(RwLock::new(Arc::clone(&self.registry.read().unwrap()))),
             registry_write_gen: std::sync::atomic::AtomicU64::new(0),
-            regex_registry_snapshot: Mutex::new(None),
             proto_dispatch_stack: Vec::new(),
             proto_method_skip: None,
             pending_dispatch_error: None,

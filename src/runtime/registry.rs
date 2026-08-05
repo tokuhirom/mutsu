@@ -30,6 +30,7 @@
 // `HashMap`/`HashSet` names are aliased so the ~40 field declarations below
 // stay textually unchanged.
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
+use std::sync::Arc;
 
 use crate::ast::FunctionDef;
 use crate::symbol::Symbol;
@@ -787,19 +788,70 @@ impl Registry {
 // instrumentation). The registry's guards are concrete type aliases over the
 // generic guards, identified by the `"registry"` lock name in panic messages.
 
-/// Read guard for the shared [`Registry`]; a [`ReentrantReadGuard`] keyed by the
-/// `"registry"` lock name. See [`crate::runtime::lock_reentry`].
+/// Read guard for the shared [`Registry`]. Wraps a [`ReentrantReadGuard`] over
+/// the copy-on-write `Arc<Registry>` (see the `registry` field doc on
+/// `Interpreter`) and derefs straight through to `Registry`, so the ~819
+/// existing call sites (`self.registry().foo`) are unaffected by the added
+/// `Arc` layer. See [`crate::runtime::lock_reentry`].
 ///
 /// [`ReentrantReadGuard`]: crate::runtime::lock_reentry::ReentrantReadGuard
-pub(crate) type RegistryReadGuard<'a> =
-    crate::runtime::lock_reentry::ReentrantReadGuard<'a, Registry>;
+pub(crate) struct RegistryReadGuard<'a> {
+    inner: crate::runtime::lock_reentry::ReentrantReadGuard<'a, Arc<Registry>>,
+}
 
-/// Write guard for the shared [`Registry`]; a [`ReentrantWriteGuard`] keyed by
-/// the `"registry"` lock name. See [`crate::runtime::lock_reentry`].
+impl<'a> RegistryReadGuard<'a> {
+    pub(crate) fn new(lock: &'a std::sync::RwLock<Arc<Registry>>, name: &'static str) -> Self {
+        Self {
+            inner: crate::runtime::lock_reentry::ReentrantReadGuard::new(lock, name),
+        }
+    }
+}
+
+impl std::ops::Deref for RegistryReadGuard<'_> {
+    type Target = Registry;
+    #[inline]
+    fn deref(&self) -> &Registry {
+        &self.inner
+    }
+}
+
+/// Write guard for the shared [`Registry`]. Wraps a [`ReentrantWriteGuard`] over
+/// the copy-on-write `Arc<Registry>`; the first mutable deref after a share
+/// pays the one deep clone via `Arc::make_mut` (recorded as
+/// `registry_cow_clones`), then behaves exactly like a plain `&mut Registry`.
+/// See [`crate::runtime::lock_reentry`].
 ///
 /// [`ReentrantWriteGuard`]: crate::runtime::lock_reentry::ReentrantWriteGuard
-pub(crate) type RegistryWriteGuard<'a> =
-    crate::runtime::lock_reentry::ReentrantWriteGuard<'a, Registry>;
+pub(crate) struct RegistryWriteGuard<'a> {
+    inner: crate::runtime::lock_reentry::ReentrantWriteGuard<'a, Arc<Registry>>,
+}
+
+impl<'a> RegistryWriteGuard<'a> {
+    pub(crate) fn new(lock: &'a std::sync::RwLock<Arc<Registry>>, name: &'static str) -> Self {
+        Self {
+            inner: crate::runtime::lock_reentry::ReentrantWriteGuard::new(lock, name),
+        }
+    }
+}
+
+impl std::ops::Deref for RegistryWriteGuard<'_> {
+    type Target = Registry;
+    #[inline]
+    fn deref(&self) -> &Registry {
+        &self.inner
+    }
+}
+
+impl std::ops::DerefMut for RegistryWriteGuard<'_> {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut Registry {
+        let arc: &mut Arc<Registry> = &mut self.inner;
+        if Arc::strong_count(arc) > 1 {
+            crate::vm::vm_stats::record_registry_cow_clone();
+        }
+        Arc::make_mut(arc)
+    }
+}
 
 #[cfg(test)]
 mod tests {

@@ -2100,10 +2100,9 @@ impl Interpreter {
                 for class_name in class_names {
                     registry.sync_user_method_entries(&class_name);
                 }
-                Arc::new(RwLock::new(registry))
+                Arc::new(RwLock::new(Arc::new(registry)))
             },
             registry_write_gen: std::sync::atomic::AtomicU64::new(0),
-            regex_registry_snapshot: Mutex::new(None),
             proto_dispatch_stack: Vec::new(),
             proto_method_skip: None,
             pending_dispatch_error: None,
