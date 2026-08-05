@@ -4,23 +4,31 @@ use crate::value::ValueView;
 use std::sync::OnceLock;
 
 impl Interpreter {
-    /// Top-level `init_io_environment`, for `Interpreter::new()`. Does the real
-    /// `current_dir()` syscall for `$*CWD` (see the `for_thread_clone` variant).
+    /// Rebuild the per-interpreter IO/dynamic-var environment. Called both from
+    /// `Interpreter::new()` and from every `clone_for_thread` spawn.
+    ///
+    /// `$*CWD` is deliberately rebuilt via a real `current_dir()` syscall on
+    /// EVERY call, including thread-clone spawns, even though `cloned.env`
+    /// already carries the parent's current `$*CWD` value verbatim (from the
+    /// struct-construction-time env clone in `clone_for_thread_excluding`) and
+    /// a skip-and-reuse optimization looks safe at first glance. It is NOT
+    /// safe: a `start` block that both READS and WRITES a dynamic var inside
+    /// itself (e.g. `start indir $dir, { $*CWD.basename; $*CWD = ...; }`) can
+    /// have that var boxed into a captured `ContainerRef` cell at
+    /// closure-creation time (`box_captured_lexicals`), snapshotting whatever
+    /// value is CURRENTLY in `env` at that point — and a later `indir`/dynamic
+    /// rebind that only does `self.env.insert(...)` does not reach a cell the
+    /// closure already captured. Before this rebuild ran unconditionally, that
+    /// snapshot was always a fresh `IO::Path` Instance (built moments earlier
+    /// by this very function); skipping the rebuild let the snapshot instead be
+    /// whatever non-Path value an outer `my $*CWD = ...` lexical override had
+    /// left in env, breaking `t/start-dynamic-var-indir.t`. Rebuilding
+    /// unconditionally keeps that pre-closure-creation snapshot correct. See
+    /// docs/per-task-clone-slimming.md slice 3 for the caching this function
+    /// does apply (the other dynamic vars, which no closure boxing issue
+    /// touches because their identity is process-constant, not reassigned by
+    /// ordinary programs).
     pub(super) fn init_io_environment(&mut self) {
-        self.init_io_environment_impl(false);
-    }
-
-    /// `init_io_environment` for a `clone_for_thread` spawn. `$*CWD`/`*CWD` are
-    /// already correct in `cloned.env` (copied verbatim from the parent's env at
-    /// struct-construction time, then diverging thread-locally per the exclusion
-    /// in `clone_for_thread_excluding`) — skip both the `current_dir()` syscall
-    /// and the overwrite, since it would just recompute the same syscall-derived
-    /// value the clone already carries from the parent.
-    pub(super) fn init_io_environment_for_thread_clone(&mut self) {
-        self.init_io_environment_impl(true);
-    }
-
-    fn init_io_environment_impl(&mut self, for_thread_clone: bool) {
         let stdout = self.create_handle(
             IoHandleTarget::Stdout,
             IoHandleMode::Write,
@@ -52,18 +60,16 @@ impl Interpreter {
         let spec = self.make_io_spec_instance();
         self.env.insert("$*SPEC".to_string(), spec.clone());
         self.env.insert("*SPEC".to_string(), spec);
-        if !for_thread_clone {
-            #[cfg(not(target_arch = "wasm32"))]
-            let cwd_str = env::current_dir()
-                .unwrap_or_else(|_| PathBuf::from("."))
-                .to_string_lossy()
-                .to_string();
-            #[cfg(target_arch = "wasm32")]
-            let cwd_str = "/".to_string();
-            let cwd_val = self.make_io_path_instance(&cwd_str);
-            self.env.insert("$*CWD".to_string(), cwd_val.clone());
-            self.env.insert("*CWD".to_string(), cwd_val);
-        }
+        #[cfg(not(target_arch = "wasm32"))]
+        let cwd_str = env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .to_string_lossy()
+            .to_string();
+        #[cfg(target_arch = "wasm32")]
+        let cwd_str = "/".to_string();
+        let cwd_val = self.make_io_path_instance(&cwd_str);
+        self.env.insert("$*CWD".to_string(), cwd_val.clone());
+        self.env.insert("*CWD".to_string(), cwd_val);
         let tmpdir_val = self.make_io_path_instance(Self::cached_tmpdir_string());
         self.env.insert("$*TMPDIR".to_string(), tmpdir_val.clone());
         self.env.insert("*TMPDIR".to_string(), tmpdir_val);
