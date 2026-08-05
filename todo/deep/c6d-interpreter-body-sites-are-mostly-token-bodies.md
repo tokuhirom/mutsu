@@ -103,15 +103,17 @@ for a weaker reason than the deferral chain's: they have already resolved their
 candidate, so its per-call multi-dispatch frame is pure overhead. It A/B'd measurably
 worse than `call_compiled_function_named`.
 
-Two blockers keep C6d-1 open, both narrow:
+One blocker keeps C6d-1 open:
 
-1. **Multi candidates never get plan-attached bytecode** — `vm_register_sub_ops` has
-   `if *multi { continue; }` where it would attach a compiled routine key to a candidate
-   `FunctionDef`. That is why `multi_candidate_state_forces_interpreter` has to exist and
-   why `call_function_def` survives. Own ticket:
-   `todo/tickets/attach-plan-bytecode-to-multi-candidates.md`.
-2. **`calls.rs:exec_call`** still carries an inlined copy of `call_function_def`'s whole
-   body, `run_block(&def.body)` included.
+- **`calls.rs:exec_call`** still carries an inlined copy of the (now deleted)
+  `call_function_def`'s whole body, `run_block(&def.body)` included.
+
+The other blocker is closed. Multi candidates used to arrive with `compiled: None`
+(`vm_register_sub_ops` had `if *multi { continue; }` where it attached a compiled routine
+key), which is why `multi_candidate_state_forces_interpreter` and `call_function_def` had
+to exist; registration now installs each candidate from the routine its plan names, and all
+three are deleted — see
+`news/2026-08/multi-candidates-run-their-plan-compiled-body.md`.
 
 ## Suggested subdivision
 

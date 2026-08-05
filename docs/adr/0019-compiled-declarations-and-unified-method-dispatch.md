@@ -110,9 +110,10 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 17/51 slices merged. Next slice: attach plan-compiled bytecode to multi
-candidates — the blocker that keeps C6d-1 open (C6a, C6b and C6c landed; C6 and C6d are both
-subdivided below, C6d from a measurement of where its sites are actually reached).**
+**Current progress: 17/51 slices merged. Next slice: fold `calls.rs:exec_call`'s inlined copy of
+the retired `call_function_def` into the compiled entry — the last thing keeping C6d-1 open
+(C6a, C6b and C6c landed; C6 and C6d are both subdivided below, C6d from a measurement of where
+its sites are actually reached).**
 
 The migration is complete only when every required box below is checked and the completion gates
 at the end pass. The order within a phase is intentional. A later phase may start when its stated
@@ -204,18 +205,12 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
       `call_routine_def` entry, measured at -13.7% instructions / -22% wall on a reduce over a
       user multi operator (`news/2026-08/user-operators-run-their-compiled-body.md`, which also
       records that the *debug* build's instruction count inverts that ranking and must not be
-      used to judge a dispatch-path change). Two things keep the box open:
-      - `call_function_def` still answers one gated shape,
-        `multi_candidate_state_forces_interpreter`: a `state`-bearing candidate of a
-        signature-alternates name (`multi f(A $x) | (B $x) { state $c }`) is one routine with
-        one `state` cell. The compiler already threads a shared `state_group` into every
-        alternate's compiled body, but `vm_register_sub_ops` attaches plan-compiled bytecode
-        only to non-multi candidates (`if *multi { continue; }`), so a multi candidate arrives
-        with `compiled: None` and an on-the-fly compile per alternate fragments the cell
-        (`t/multi-signature-alternates.t`). **Attaching each compiled routine key to its multi
-        candidate retires the gate, the entry, and this half of the box.**
-      - `calls.rs:exec_call` (48 hits) still holds an inlined copy of `call_function_def`'s
-        body, including its own `run_block(&def.body)`.
+      used to judge a dispatch-path change). `Interpreter::call_function_def` is now gone: its
+      last gated shape, `multi_candidate_state_forces_interpreter`, was retired by installing
+      multi candidates from their plan-compiled routines (see the implementation status below).
+      One thing keeps the box open:
+      - `calls.rs:exec_call` (48 hits) still holds an inlined copy of the retired
+        `call_function_def`'s body, including its own `run_block(&def.body)`.
     - [ ] **C6d-2 — grammar token/rule bodies** (`dispatch.rs:eval_token_def`,
       `regex_token_resolve.rs`): 956 of the 1148 hits, but those `FunctionDef`s carry a regex
       body, so scope this against ADR-0009's execution model rather than the OTF gate.
@@ -399,11 +394,31 @@ Every caller of the interpreter routine entry `call_function_def` now invokes th
 bytecode through one shared `call_routine_def`: the multi-deferral chain first, then the user
 `prefix:`/`postfix:` operators, the reduce and hyper steps over a user `infix:`, `reduce` given
 the operator as a routine value, and the selected `MAIN` candidate. What that removes is a
-per-call *compile* of the routine's AST body, not a tree walk. `call_function_def` itself
-survives only for `multi_candidate_state_forces_interpreter`, and its remaining blocker is
-narrow and named: multi candidates never receive plan-compiled bytecode, so a
-signature-alternates candidate cannot reach dispatch with the shared `state_group`-scoped body
-the compiler already produced for it.
+per-call *compile* of the routine's AST body, not a tree walk. `call_function_def` itself has been deleted.
+
+Its last gated shape was `multi_candidate_state_forces_interpreter`, which existed because a
+multi candidate never received plan-compiled bytecode. Registration no longer discovers the
+plan's compiled routines by re-deriving a registry key after the fact; the declaration hands
+each candidate the routine its plan names, positionally — `compiled_routine_keys[0]` is the
+primary signature and the rest follow `signature_alternates` in declaration order, which is the
+same order registration installs them in. A multi candidate cannot be identified by its registry
+key (candidates are keyed `/arity:types` with a `__m{N}` tiebreak), so the ownership is decided
+where it is known, at the declaration, and `FunctionDef::compiled` is filled before the
+candidate is inserted. The hoist pass, which registers each declaration a second time and whose
+plan never sees a compiled body, now receives the same keys — for a single sub the source-order
+install replaced the bytecode-less hoisted one, but a multi candidate is *appended*, so the
+hoisted candidate survived and answered calls with no bytecode.
+
+That exposed a latent collision: a multi's compiled routine was keyed by its positional
+signature alone, so `multi f(:x($))` and `multi f(:y($))` were both `Pkg::f/0` and the second
+body silently replaced the first. Dispatch tolerated it because `vm_call_resolve` re-checks the
+body fingerprint and falls back to an on-the-fly compile, but installing bytecode by plan key
+would have given one candidate the other's body. A colliding candidate now takes the
+fingerprinted key shape that probe already tries next. Distinct keys in turn let resolution hand
+the *named*-argument light-call path a per-candidate body for the first time, exposing that it
+lacked the multi guard its positional twin has always carried — its name-keyed cache reused the
+first call's candidate, and it pushes neither the multi-dispatch frame nor the samewith context
+`callsame` needs. Both halves are pinned by `t/multi-named-only-candidates.t`.
 
 `RegisterClass` and `RegisterRole` now likewise index typed class/role declaration-plan pools for
 both source-order declarations and hoisted forward-reference shells. The VM no longer discovers

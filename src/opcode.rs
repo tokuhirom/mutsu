@@ -5153,6 +5153,16 @@ impl CompiledCode {
         idx
     }
 
+    /// The declaration-site fingerprint recorded for a sub plan, absent when the
+    /// declaration's name is resolved at runtime (`sub ::($name)`).
+    pub(crate) fn sub_decl_plan_fingerprint(&self, decl_idx: u32) -> Option<u64> {
+        let Some(CompiledDeclPlanRef::Sub(plan_idx)) = self.decl_plans.get(decl_idx as usize)
+        else {
+            return None;
+        };
+        self.sub_decl_plans[*plan_idx as usize].fingerprint
+    }
+
     pub(crate) fn set_sub_decl_compiled_routine_keys(&mut self, decl_idx: u32, keys: Vec<Symbol>) {
         let Some(CompiledDeclPlanRef::Sub(plan_idx)) = self.decl_plans.get(decl_idx as usize)
         else {

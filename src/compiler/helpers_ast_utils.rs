@@ -451,6 +451,14 @@ impl Compiler {
                 }
                 let idx = self.add_sub_decl_plan(&hoisted);
                 self.code.emit(OpCode::RegisterDecl(idx));
+                // Remember the hoisted plan so the source-order compile of the
+                // same declaration can hand it the bytecode it compiles (see
+                // `Compiler::hoisted_sub_plans`).
+                if let Stmt::SubDecl { name, .. } = stmt
+                    && let Some(fp) = self.code.sub_decl_plan_fingerprint(idx)
+                {
+                    self.hoisted_sub_plans.push((*name, fp, idx));
+                }
             }
         }
     }

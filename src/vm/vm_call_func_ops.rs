@@ -1165,7 +1165,19 @@ impl Interpreter {
                 }
                 // Try light call path for simple functions in tight loops.
                 // This avoids the expensive env clone/restore cycle.
+                //
+                // Skipped for a multi, exactly as the positional-light path above
+                // is: the cache is keyed by NAME, so a second call with different
+                // named arguments would reuse the first call's candidate, and the
+                // light path pushes neither the multi-dispatch frame nor the
+                // samewith context a candidate's `nextsame` needs. Only the
+                // `multi f(:x($))` / `multi f(:y($))` shape reached this — a
+                // candidate set that shares one positional signature — and until
+                // those candidates got distinct compiled-routine keys, resolution
+                // could not hand this path a per-candidate body at all
+                // (roast/S06-multi/positional-vs-named.t).
                 if Self::is_light_call_eligible(cf, name)
+                    && !self.has_multi_candidates_cached(name)
                     && !Self::call_shares_container_into_scalar_param(cf, &args)
                     && !Self::call_shares_container_into_named_scalar_param(
                         cf,
@@ -1299,7 +1311,6 @@ impl Interpreter {
                         // single/builtin-shadow paths). See
                         // `def_is_otf_compilable_multi_candidate`.
                         && Self::def_is_otf_compilable_multi_candidate(&def)
-                        && !self.multi_candidate_state_forces_interpreter(name, &def)
                     {
                         let is_raw = def.is_raw;
                         let result =
@@ -1574,9 +1585,7 @@ impl Interpreter {
         // profile in `compile_and_call_function_def` regardless of defaults), so a
         // default param is safe to OTF here — see
         // `def_is_otf_compilable_multi_candidate`.
-        if !Self::def_is_otf_compilable_multi_candidate(&def)
-            || self.multi_candidate_state_forces_interpreter(name, &def)
-        {
+        if !Self::def_is_otf_compilable_multi_candidate(&def) {
             return None;
         }
         Some(def)
@@ -1637,18 +1646,17 @@ impl Interpreter {
         // (which embeds the compiled opcode position) is stable across calls, and the
         // proto's `/n`-suffixed package keeps it distinct from any candidate's own
         // `state`. The persisted state cell therefore survives call-to-call exactly
-        // as the interpreter's does. A proto with signature *alternates* + `state`
-        // stays on the interpreter (see `multi_candidate_state_forces_interpreter`):
-        // its shared-across-alternates cell would fragment per compiled body.
+        // as the interpreter's does. A proto declared with signature *alternates*
+        // shares one `state` cell across them; registration hands every alternate
+        // the plan's `state_group`-scoped bytecode, so that sharing survives here
+        // too (`t/multi-signature-alternates.t`).
         let rewritten = crate::runtime::Interpreter::rewrite_proto_dispatch_stmts(&proto.body);
         let mut proto_def = proto.clone();
         proto_def.body = rewritten;
         // The clone carried the ORIGINAL body's memoized identity; the rewrite
         // gave this def a different body, so drop it.
         proto_def.invalidate_body_fingerprint();
-        if !Self::def_is_otf_compilable(&proto_def)
-            || self.multi_candidate_state_forces_interpreter(name, &proto_def)
-        {
+        if !Self::def_is_otf_compilable(&proto_def) {
             return None;
         }
         // Compile the proto body and run it like a routine. `{*}` redispatch reads
@@ -1733,7 +1741,6 @@ impl Interpreter {
             // the non-default ones already are. Permit defaults (see
             // `def_is_otf_compilable_multi_candidate`).
             && Self::def_is_otf_compilable_multi_candidate(&def)
-            && !self.multi_candidate_state_forces_interpreter(&proto_name, &def)
         {
             // pending_call_arg_sources is still set (resolution only reads it);
             // `compile_and_call_function_def`'s bind consumes it for the rw chain.
@@ -2185,39 +2192,6 @@ impl Interpreter {
     /// nested blocks).
     pub(crate) fn function_body_declares_state(body: &[crate::ast::Stmt]) -> bool {
         body.iter().any(Self::stmt_declares_state)
-    }
-
-    /// Whether a resolved multi candidate's `state` usage forces it back onto the
-    /// interpreter instead of OTF-compiling it.
-    ///
-    /// A plain single-signature candidate with `state` is fine to OTF: the
-    /// per-candidate `otf_compile_cache` gives it a stable compiled body (so its
-    /// `state` key, which embeds the compiled opcode position, is stable across
-    /// calls), and the candidate's `/n`-suffixed package keeps distinct
-    /// candidates' `state` cells apart. This is strictly more correct than the
-    /// interpreter fallback, which shared one cell between two distinct
-    /// same-named candidates (`multi f(Int){state $c} multi f(Str){state $c}`).
-    ///
-    /// The one case that MUST stay on the interpreter is a candidate of a name
-    /// declared with signature *alternates* — `multi f(A $x) | (B $x) { state $c }`
-    /// is ONE routine whose `state` cell is shared across both alternates via a
-    /// compile-time state_group. The alternates register as separate candidates
-    /// with identical bodies, and the OTF cache keys on the body fingerprint
-    /// (which includes the per-alternate signature), so each alternate would get
-    /// its own compiled body and its own `state` cell, breaking the sharing the
-    /// interpreter honors (t/multi-signature-alternates.t). The resolved
-    /// per-candidate `FunctionDef` carries no alternate marker, so we consult the
-    /// `multi_alternate_signature_names` set recorded at registration.
-    pub(super) fn multi_candidate_state_forces_interpreter(
-        &self,
-        name: &str,
-        def: &crate::ast::FunctionDef,
-    ) -> bool {
-        !self.multi_alternate_signature_names.is_empty()
-            && Self::routine_body_facts(def).declares_state
-            && self
-                .multi_alternate_signature_names
-                .contains(&Symbol::intern(name))
     }
 
     fn stmt_declares_state(stmt: &crate::ast::Stmt) -> bool {

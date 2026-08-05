@@ -3161,6 +3161,22 @@ impl Compiler {
                         compiled_routine_keys.push(key);
                     }
                 }
+                // The hoist pass registered this same declaration from a plan of
+                // its own, which never sees the compiled bodies. Hand them over,
+                // so a `multi` candidate installed by the hoisted registration
+                // carries the plan's bytecode too.
+                if let Some(fp) = self.code.sub_decl_plan_fingerprint(idx)
+                    && let Some(pos) = self
+                        .hoisted_sub_plans
+                        .iter()
+                        .position(|(n, f, _)| *n == *name && *f == fp)
+                {
+                    let (_, _, hoisted_idx) = self.hoisted_sub_plans.remove(pos);
+                    self.code.set_sub_decl_compiled_routine_keys(
+                        hoisted_idx,
+                        compiled_routine_keys.clone(),
+                    );
+                }
                 self.code
                     .set_sub_decl_compiled_routine_keys(idx, compiled_routine_keys);
             }
