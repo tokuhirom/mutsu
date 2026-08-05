@@ -39,12 +39,13 @@ mod unix_impl {
                 libc::fcntl(fds[1], libc::F_SETFL, flags | libc::O_NONBLOCK);
             }
             // Start the reader thread. Registered as a GC mutator
-            // (`spawn_user_thread`): `dispatch_signal` clones registered
-            // `Value`s (potential Gc nodes); the blocking pipe read is a
+            // (`spawn_gc_helper_thread`): `dispatch_signal` clones registered
+            // `Value`s (potential Gc nodes) but never runs user VM code, so
+            // the default stack suffices; the blocking pipe read is a
             // quiescent safe region so the daemon never stalls a
             // stop-the-world.
             let read_fd = fds[0];
-            crate::runtime::builtins_system::spawn_user_thread(move || {
+            crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
                 signal_reader_thread(read_fd)
             });
             (fds[0], fds[1])
