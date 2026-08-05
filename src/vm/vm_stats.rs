@@ -197,6 +197,30 @@ pub(crate) fn record_regex_match_materialization() {
     }
 }
 
+// ADR-0020 worker pool: `POOL_TASKS` counts every task submitted to the
+// elastic pool; `POOL_SPAWNS` the subset that grew the pool (no idle worker
+// at submit time). `tasks - spawns` is therefore the warm-reuse count the
+// pool exists to maximize — on a short-task churn shape (ripemd) spawns
+// should flatline at ~pool-floor while tasks keeps counting.
+static POOL_TASKS: AtomicU64 = AtomicU64::new(0);
+static POOL_SPAWNS: AtomicU64 = AtomicU64::new(0);
+
+/// Record one task submitted to the ADR-0020 worker pool.
+#[inline]
+pub(crate) fn record_pool_task() {
+    if enabled() {
+        POOL_TASKS.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// Record one pool growth (a task found no idle worker and spawned one).
+#[inline]
+pub(crate) fn record_pool_spawn() {
+    if enabled() {
+        POOL_SPAWNS.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
 // JIT (ADR-0004 layer 4) counters: how many chunks compiled to native code,
 // how many body executions entered native code, and how many chunks bailed
 // out (contain a not-yet-supported opcode; see `jit_bailout_by_opcode` for
@@ -514,6 +538,12 @@ pub(crate) fn dump() {
     let code_parse_misses = REGEX_CODE_PARSE_MISSES.load(Ordering::Relaxed);
     eprintln!(
         "[mutsu vm-stats] regex-code-parse-cache: hits={code_parse_hits} misses={code_parse_misses}"
+    );
+    let pool_tasks = POOL_TASKS.load(Ordering::Relaxed);
+    let pool_spawns = POOL_SPAWNS.load(Ordering::Relaxed);
+    eprintln!(
+        "[mutsu vm-stats] worker-pool: tasks={pool_tasks} spawns={pool_spawns} warm_reuses={}",
+        pool_tasks.saturating_sub(pool_spawns)
     );
     let jit_compiles = JIT_COMPILES.load(Ordering::Relaxed);
     let jit_entries = JIT_ENTRIES.load(Ordering::Relaxed);
