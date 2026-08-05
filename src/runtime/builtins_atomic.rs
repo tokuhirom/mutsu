@@ -177,7 +177,7 @@ impl Interpreter {
 
     pub(super) fn atomic_current_value(
         &self,
-        shared: &std::collections::HashMap<String, Value>,
+        shared: &rustc_hash::FxHashMap<String, Value>,
         name: &str,
         value_key: &str,
     ) -> Value {

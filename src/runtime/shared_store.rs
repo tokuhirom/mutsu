@@ -15,8 +15,12 @@
 //! - **declare** — always this lineage's `own`, shadowing any ancestor entry.
 
 use crate::value::Value;
-use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
+
+// Lineage-store maps are String-keyed and hit on every spawn's seeding loop;
+// use FxHash instead of SipHash (variable names are program identifiers, not
+// attacker-controlled data, so HashDoS hardening buys nothing here).
+use rustc_hash::FxHashMap as HashMap;
 
 /// One lineage's slice of the cross-thread store, plus a link to the lineage
 /// that spawned it.
@@ -43,7 +47,7 @@ impl SharedStore {
     /// A root store — the main thread's lineage.
     pub(crate) fn root() -> Arc<Self> {
         Arc::new(Self {
-            own: RwLock::new(HashMap::new()),
+            own: RwLock::new(HashMap::default()),
             parent: None,
             root: None,
         })
@@ -54,7 +58,7 @@ impl SharedStore {
     /// visible and writable through the chain.
     pub(crate) fn child_of(parent: &Arc<Self>) -> Arc<Self> {
         Arc::new(Self {
-            own: RwLock::new(HashMap::new()),
+            own: RwLock::new(HashMap::default()),
             parent: Some(Arc::clone(parent)),
             root: Some(parent.root_ref()),
         })
