@@ -247,6 +247,17 @@ impl Interpreter {
             if let Some(Some(limit)) = self.gather_take_limits.last()
                 && items.len() >= *limit
             {
+                // A take inside a routine call NESTED under the lazy-pull
+                // driver cannot suspend soundly (the driver snapshots only its
+                // own frame; the signal would unwind the callee and corrupt
+                // the saved ip/stack — see `lazy_pull_entry_call_depth`). Keep
+                // collecting eagerly instead; over-production is correct.
+                if self
+                    .lazy_pull_entry_call_depth
+                    .is_some_and(|entry| self.call_frames.len() > entry)
+                {
+                    return Ok(());
+                }
                 if self.lazy_take_boundary_defer {
                     // Inside a condition-driven loop: defer the suspension to
                     // the loop's iteration boundary (`gather_suspend_pending`)

@@ -50,6 +50,37 @@ Dropping `CompiledSubDeclPlan::legacy_body` makes every plan-derived
 Suggested subdivision when resuming: C6e-2 = measure + kill the reader
 classes (1) and (3); C6e-3 = seed fingerprints and drop the field.
 
+## C6e-2 progress
+
+The residual-arm measurement ran 2026-08-05 (env-gated instrumentation on the
+else arm, full `t/` + roast whitelist): 168 hits across `t/` (63 sigilless /
+101 `start`-body / 1 sub-signature / 0 trait), 3,677 across roast (~990
+sigilless / 2,659 `start`-body / 14 sub-signature / 0 trait). The
+`start`-body volume is concentrated in a handful of recursive-start subs
+(`conc-fib`, `does-fail`, `fib`).
+
+- **C6e-2a (landed): sigilless scalars.** The gate accepts `\x` scalars;
+  the compiled return path flushes the final slot value through the
+  `__mutsu_sigilless_alias::` chain before the caller-env merge and
+  re-applies the (target, value) pairs unconditionally after it (the merge's
+  callee-local exclusion dropped the writeback when the caller variable's
+  bare name collided with the param name) —
+  `news/2026-08/sigilless-params-run-compiled.md`,
+  pinned by `t/sigilless-param-compiled-writeback.t`. The rerouting also
+  exposed (and fixed) a pre-existing general bug: a `take` inside a routine
+  CALLED from a lazily-pulled gather body corrupted the suspension coroutine
+  (`news/2026-08/gather-take-in-callee-eager.md`; residual do-for wrongness
+  in `todo/tickets/do-for-over-lazy-gather-drops-first-value.md`).
+- **C6e-2b (open): non-capture sub-signature params** (15 hits total:
+  `group-of` in S05, `typed`). Needs the compiled binder to reproduce
+  destructuring; measure with a widened-gate A/B before implementing.
+- **C6e-2c (open): `start`-containing bodies.** The gate excludes ALL
+  `start` bodies because a *recursive* sub whose start closure captures a
+  param breaks under OTF (the recursive call re-binds the param name in the
+  thread env the closure keeps reading — t/start-block-return-value.t
+  test 3). The fix is per-invocation isolation of captured params, not a
+  gate tweak; design against the closure-capture cell playbook.
+
 Related: `todo/deep/c6d-interpreter-body-sites-are-mostly-token-bodies.md`
 (the site inventory), `news/2026-08/fallback-def-arm-runs-compiled-body.md`
 (the C6d-5 gate).

@@ -151,6 +151,12 @@ impl Interpreter {
             0
         };
         self.push_gather_take_limit(Some(needed));
+        // Record this pull's call-frame depth so `take_value` can detect a
+        // take arriving from a NESTED routine call, where suspension is
+        // unsound (see the `lazy_pull_entry_call_depth` field doc).
+        let saved_pull_depth = self
+            .lazy_pull_entry_call_depth
+            .replace(self.call_frames.len());
 
         // Run the compiled code
         let run_fns = fns.as_ref();
@@ -197,6 +203,7 @@ impl Interpreter {
             body_finished = true;
         }
 
+        self.lazy_pull_entry_call_depth = saved_pull_depth;
         // The body may finish (or error) with the deferred-suspension flag
         // still set (straight-line takes, last iteration); it must not leak
         // into an unrelated later loop.
