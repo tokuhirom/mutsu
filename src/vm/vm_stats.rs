@@ -213,6 +213,26 @@ pub(crate) fn record_registry_cow_clone() {
     }
 }
 
+// Per-spawn lineage seeding (docs/per-task-clone-slimming.md slice 5 step A):
+// `SPAWN_SEED_KEYS` counts env entries walked by the `clone_for_thread`
+// seeding loop; `SPAWN_SEED_INSERTS` the subset that actually landed in the
+// shared store (`declare` or a `seed_if_absent` that inserted). On a
+// same-scope spawn loop, keys grows as env_size x spawns while inserts
+// saturates at ~env_size — the gap quantifies the redundant re-walk that the
+// (review-gated) step B generation skip would eliminate.
+static SPAWN_SEED_KEYS: AtomicU64 = AtomicU64::new(0);
+static SPAWN_SEED_INSERTS: AtomicU64 = AtomicU64::new(0);
+
+/// Record one spawn's lineage-seeding walk: `keys` env entries walked,
+/// `inserts` of them actually inserted into the shared store.
+#[inline]
+pub(crate) fn record_spawn_seeding(keys: u64, inserts: u64) {
+    if enabled() {
+        SPAWN_SEED_KEYS.fetch_add(keys, Ordering::Relaxed);
+        SPAWN_SEED_INSERTS.fetch_add(inserts, Ordering::Relaxed);
+    }
+}
+
 // ADR-0020 worker pool: `POOL_TASKS` counts every task submitted to the
 // elastic pool; `POOL_SPAWNS` the subset that grew the pool (no idle worker
 // at submit time). `tasks - spawns` is therefore the warm-reuse count the
@@ -557,6 +577,11 @@ pub(crate) fn dump() {
     );
     let registry_cow_clones = REGISTRY_COW_CLONES.load(Ordering::Relaxed);
     eprintln!("[mutsu vm-stats] registry-cow: clones={registry_cow_clones}");
+    let spawn_seed_keys = SPAWN_SEED_KEYS.load(Ordering::Relaxed);
+    let spawn_seed_inserts = SPAWN_SEED_INSERTS.load(Ordering::Relaxed);
+    eprintln!(
+        "[mutsu vm-stats] spawn-seeding: keys_walked={spawn_seed_keys} inserts={spawn_seed_inserts}"
+    );
     let pool_tasks = POOL_TASKS.load(Ordering::Relaxed);
     let pool_spawns = POOL_SPAWNS.load(Ordering::Relaxed);
     eprintln!(
