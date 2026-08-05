@@ -1250,6 +1250,33 @@ impl Interpreter {
                     None => Value::NIL,
                 }
             }
+            // `Buf`/`Blob` (and Raku-side `CArray`) element read: decode the one
+            // element in place instead of routing through AT-POS method dispatch
+            // — which re-resolves the parametrized MRO (`Blob[uint32]`) per
+            // access — and `decode_elems`, which decodes the WHOLE buffer into a
+            // fresh `Vec<Value>` per access (O(N) per read, O(N^2) for a loop).
+            // Same result as the dispatch_1arg AT-POS arm: in-range -> element,
+            // out-of-range (or storage-less) -> 0; a negative index falls out of
+            // AT-POS as Nil, which the generic arm below turns into the typed
+            // container default — reproduced here. Same name-is-authoritative
+            // trust as the `CArray[T]` native-handle arm above.
+            (
+                ValueView::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                },
+                ValueView::Int(i),
+            ) if crate::runtime::utils::is_native_elems_class(class_name.as_str())
+                && crate::value::value_buf::has_buf_elems(&attributes) =>
+            {
+                if i < 0 {
+                    self.typed_container_default(&target)
+                } else {
+                    crate::value::value_buf::buf_elem_at(&attributes, i as usize)
+                        .unwrap_or(Value::int(0))
+                }
+            }
             (ValueView::Instance { .. }, ValueView::Int(i)) => {
                 let fallback = target.clone();
                 let result = self

@@ -273,6 +273,26 @@ pub(crate) fn with_buf_elems<R>(attrs: &InstanceAttrs, f: impl FnOnce(&[Value]) 
     Some(f(&elems))
 }
 
+/// One element decoded in place — the O(1) subscript read (`$blob[$i]`).
+/// `None` when the instance carries no element storage or `idx` is out of
+/// range; the caller picks the out-of-range policy (Buf/Blob `AT-POS`
+/// yields 0). Exists so a hot `@words[$i]` loop does not pay
+/// [`decode_elems`]'s whole-buffer `Vec<Value>` per access.
+pub(crate) fn buf_elem_at(attrs: &InstanceAttrs, idx: usize) -> Option<Value> {
+    let map = attrs.as_map();
+    let node = node_in(&map)?;
+    let w = node.width as usize;
+    let start = idx.checked_mul(w)?;
+    let chunk = node.bytes.get(start..start.checked_add(w)?)?;
+    let mut raw = [0u8; 8];
+    raw[..w].copy_from_slice(chunk);
+    Some(decode_elem_bits(
+        u64::from_le_bytes(raw),
+        node.width,
+        node.kind,
+    ))
+}
+
 /// Whether this instance carries element storage at all. Distinguishes a real
 /// (possibly empty) buffer from a `Blob`/`Buf` **type object**, which has none.
 pub(crate) fn has_buf_elems(attrs: &InstanceAttrs) -> bool {
