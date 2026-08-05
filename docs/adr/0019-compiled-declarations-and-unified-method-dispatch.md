@@ -292,10 +292,11 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
     subdivided: C6e-3a (landed) seeds plan fingerprints (structural + registration
     identity), hardens every body-less code path, and validates the drop end-to-end
     under a `MUTSU_DROP_LEGACY_BODY=1` instrument
-    (`news/2026-08/legacy-body-drop-groundwork.md`); C6e-3b makes the safe-class
-    empty body the default at plan lowering (the load-bearing classes — no
-    resolvable plan bytecode, rw/raw scalars' interpreter carrier, lvalue
-    routines, NativeCall — keep theirs).
+    (`news/2026-08/legacy-body-drop-groundwork.md`); C6e-3b (landed) makes the
+    safe-class empty body the default at registration and retires the instrument
+    (`news/2026-08/safe-class-empty-body-default.md`); C6e-3c drops the field
+    itself once the load-bearing classes — no resolvable plan bytecode, rw/raw
+    scalars' interpreter carrier, lvalue routines, NativeCall — are unblocked.
     Measurements and per-shape notes:
     `todo/deep/c6e-legacy-body-drop-blocked-by-gate-rejected-shapes.md`.
 - [ ] **C7 — Remove the sub-registration AST adapter.** Delete dead sub-shaped walker branches and

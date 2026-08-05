@@ -220,20 +220,16 @@ impl Interpreter {
                 name.resolve()
             };
             self.check_param_custom_traits(param_defs)?;
-            // ADR-0019 C6e-3 validation instrument (default OFF, zero effect):
-            // `MUTSU_DROP_LEGACY_BODY=1` simulates the `legacy_body` drop —
-            // plan-derived defs register with an empty body so every reader
-            // that still needs the AST surfaces as a deterministic failure.
-            // C6e-3b flips the conditions below into the permanent behavior
-            // (at plan lowering); the def classes excluded here are the ones
-            // that still carry load-bearing AST bodies. Only when the plan
-            // carries bytecode for every declared signature — a def with
-            // neither body nor bytecode cannot run at all (e.g. a nested sub
-            // registered from a class-walker method body, whose plan has no
-            // compiled keys).
-            static DROP_LEGACY_BODY: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-            let drop_legacy_body =
-                *DROP_LEGACY_BODY.get_or_init(|| std::env::var("MUTSU_DROP_LEGACY_BODY").is_ok());
+            // ADR-0019 C6e-3b: a safe-class plan-derived def registers with an
+            // EMPTY body by default — its identity and dispatch run entirely
+            // from the plan-recorded fingerprints/facts and the attached
+            // bytecode (C6e-3a). The def classes excluded below still carry
+            // load-bearing AST bodies; they are the C6e-3c cut-line, tracked
+            // in todo/deep/c6e-legacy-body-drop-blocked-by-gate-rejected-shapes.md.
+            // Only when the plan carries bytecode for every declared signature
+            // — a def with neither body nor bytecode cannot run at all (e.g. a
+            // nested sub registered from a class-walker method body, whose
+            // keys do not resolve in this call site's fns table).
             let plan_fully_compiled = compiled_routine_keys.len() == 1 + signature_alternates.len();
             // A routine with a scalar `is rw`/`is raw` param stays on the
             // interpreter carrier (resolution_call_sub keeps it off the
@@ -263,8 +259,7 @@ impl Interpreter {
             };
             let primary_compiled = plan_compiled(0);
             let empty_body: Vec<Stmt> = Vec::new();
-            let body = if drop_legacy_body
-                && plan_fully_compiled
+            let body = if plan_fully_compiled
                 // The key must actually RESOLVE in this call site's fns table —
                 // a nested sub registered from a class-walker method body
                 // carries keys its executing table does not hold, and a def

@@ -113,19 +113,26 @@ sigilless / 2,659 `start`-body / 14 sub-signature / 0 trait). The
   `Lock.protect` (runs the routine's own bytecode in the current env —
   File::Temp's END cleanup), the test-assertion callables (`dies-ok &f`),
   and `.yada` (answers from `def.is_stub`).
-- **The `MUTSU_DROP_LEGACY_BODY=1` instrument** (vm_register_sub_ops)
-  simulates the drop at registration. With it, full `t/` (27,519), full
-  `make roast` (whitelist), and the battery testsuite gate all pass as of
-  C6e-3a. Def classes that KEEP their body under the drop (the C6e-3b
-  cut-line): a plan without resolvable bytecode for every signature
-  (class-walker method bodies' nested subs), scalar `is rw`/`is raw` params
-  (the interpreter-carrier rw relay —
+- **C6e-3b (landed): the safe-class empty body is the default.** The
+  C6e-3a `MUTSU_DROP_LEGACY_BODY=1` instrument's predicate is now the
+  unconditional registration behavior (the env var is gone): a plan-derived
+  def whose plan bytecode resolves for every declared signature registers
+  with an empty body. Validated as the instrument configuration in C6e-3a
+  (full `t/` 27,519, full `make roast`, battery gate — all green in both
+  modes) and re-validated after the flip. Def classes that KEEP their body
+  (the C6e-3c cut-line): a plan without resolvable bytecode for every
+  signature (class-walker method bodies' nested subs — the predicate checks
+  `plan_compiled(0).is_some()`, not just key count), scalar `is rw`/`is
+  raw` params (the interpreter-carrier rw relay —
   `todo/tickets/rw-writeback-through-wrap-chain-needs-shared-cells.md`),
   routine-level `is rw`/`is raw` and tail `return-rw` (the lvalue machinery
   extracts the assign target from the AST), and NativeCall traits.
-- **C6e-3b (open):** make the safe-class empty body the default (move the
-  instrument's predicate to plan lowering), then slim/drop the field for the
-  remaining classes as their blockers land.
+- **C6e-3c (open):** the field itself. `CompiledSubDeclPlan::legacy_body`
+  still carries the AST for the keep-classes above and for the registration
+  fallback; dropping it outright needs the rw shared-cell ticket, per-slot
+  metadata for signature alternates (they register metadata-less today),
+  and a NativeCall story. Registration-time body use for the safe class is
+  already zero.
 
 Related: `todo/deep/c6d-interpreter-body-sites-are-mostly-token-bodies.md`
 (the site inventory), `news/2026-08/fallback-def-arm-runs-compiled-body.md`
