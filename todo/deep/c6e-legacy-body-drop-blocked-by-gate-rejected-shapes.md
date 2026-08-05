@@ -27,17 +27,12 @@ Dropping `CompiledSubDeclPlan::legacy_body` makes every plan-derived
 
 1. **The C6d-5 gate-rejected shapes.** `call_function_fallback`'s interpreter
    arm survives (deliberately) for defs that fail
-   `def_module_single_sig_body_ok_ignoring_state` — a sigilless-scalar param
-   whose caller-alias writeback crosses an EVAL boundary
-   (`t/sigilless-params.t`), and the `module_otf_needs_interpreter` body
-   constructs (nested `when` control flow that must not escape the routine —
-   `is-deeply-junction` — among others). That arm executes
+   `def_module_single_sig_body_ok_ignoring_state`. After C6e-2a/2b/2c that is
+   ONLY a def with a NativeCall marshalling trait (`is encoded(...)`) — the
+   sigilless-scalar, sub-signature and `start`-body exclusions are all lifted
+   and the body no longer gates compilation at all. That arm executes
    `eval_block_value_with_pre_post(&def.body)`; with an empty body those defs
-   simply stop working. Killing this dependence means making the compiled
-   entry reproduce the sigilless-alias writeback
-   (`merge_sigilless_alias_writes`) and the interpreter-only control-flow
-   semantics — measure the residual arm hits first (instrument the else arm;
-   the C6d-5 survey counted 410 for the whole arm before the fold split it).
+   simply stop working.
 2. **`body_fingerprint` identity.** `FunctionDef::body_fingerprint()` and the
    multi-candidate registry keys hash the body; an empty body would collide
    every routine. The plan must hand its fingerprint down and seed
@@ -80,12 +75,22 @@ sigilless / 2,659 `start`-body / 14 sub-signature / 0 trait). The
   `news/2026-08/subsig-params-run-compiled.md`, pinned by
   `t/subsig-param-compiled.t`. Parameter shapes no longer gate compilation;
   the param predicate is down to NativeCall marshalling traits.
-- **C6e-2c (open): `start`-containing bodies.** The gate excludes ALL
+- **C6e-2c (landed): `start`-containing bodies.** The gate excluded ALL
   `start` bodies because a *recursive* sub whose start closure captures a
-  param breaks under OTF (the recursive call re-binds the param name in the
-  thread env the closure keeps reading — t/start-block-return-value.t
-  test 3). The fix is per-invocation isolation of captured params, not a
-  gate tweak; design against the closure-capture cell playbook.
+  param used to break under OTF (the recursive call re-bound the param name
+  in the thread env the closure keeps reading — t/start-block-return-value.t
+  test 3). The anticipated per-invocation-isolation work turned out to be
+  unnecessary: the compiled caller-env merge already excludes the callee's
+  own params (`routine_writeback_excluded_names`), so the clobber no longer
+  reproduces. Verified by A/B (env-gated widened gate): full `t/` (27,515
+  tests) plus all whitelisted S17/S07-hyperrace/integration roast files (218
+  files, 3,004 tests) — zero failures — and gdb confirmed the widened gate
+  really moves `conc-fib` off the interpreter arm. Since `start` was the
+  only leaf that returned true, the whole `module_otf_*_needs_interpreter`
+  predicate family and the `RoutineBodyFacts::module_otf_needs_interpreter`
+  field are deleted; `def_module_single_sig_body_ok_ignoring_state` is down
+  to the NativeCall-trait check. Pinned by `t/start-body-param-compiled.t` —
+  `news/2026-08/start-bodies-run-compiled.md`.
 
 Related: `todo/deep/c6d-interpreter-body-sites-are-mostly-token-bodies.md`
 (the site inventory), `news/2026-08/fallback-def-arm-runs-compiled-body.md`

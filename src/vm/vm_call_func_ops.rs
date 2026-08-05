@@ -1916,7 +1916,6 @@ impl Interpreter {
         *def.body_facts_cache
             .get_or_init(|| crate::ast::RoutineBodyFacts {
                 needs_interpreter: Self::function_body_needs_interpreter(&def.body),
-                module_otf_needs_interpreter: Self::module_otf_body_needs_interpreter(&def.body),
                 declares_state: Self::function_body_declares_state(&def.body),
             })
     }
@@ -1963,13 +1962,20 @@ impl Interpreter {
     ///   - a `state` variable shared across `start` threads (a routine's state
     ///     lives in a shared cell that a per-thread OTF recompile would sever —
     ///     t/concurrent-state-var; admitted via the cross-thread shared captured
-    ///     body, `imported_state_body_for_def`),
-    ///   - a `start` block: a recursive sub whose start closure captures a param
-    ///     gets its capture clobbered by the recursive call's param re-bind
-    ///     under OTF (t/start-block-return-value.t test 3 — see
-    ///     `module_otf_expr_needs_interpreter`),
-    ///   - a sigilless *scalar* (`\x`) param whose alias writeback to the caller
-    ///     must survive across an `EVAL` boundary (t/sigilless-params).
+    ///     body, `imported_state_body_for_def`).
+    ///
+    /// `start` bodies were excluded until ADR-0019 C6e-2c: a recursive sub whose
+    /// start closure captured a param used to get its capture clobbered by the
+    /// recursive call's param re-bind under OTF (t/start-block-return-value.t
+    /// test 3). The compiled caller-env merge now excludes the callee's own
+    /// params (`routine_writeback_excluded_names`), so each invocation's binding
+    /// stays isolated from the thread env the closure reads — verified by A/B
+    /// (full `t/` + all whitelisted S17/S07-hyperrace/integration roast files,
+    /// zero failures; pinned by t/start-body-param-compiled.t).
+    ///
+    /// A sigilless *scalar* (`\x`) param whose alias writeback crosses an `EVAL`
+    /// boundary was also historically excluded (t/sigilless-params) — compiled-
+    /// safe since C6e-2a.
     ///
     /// Formerly-excluded body constructs verified OTF-safe and now admitted
     /// (§3 fallback removal, 2026-07-11/12): nested sub/proto/token decls
@@ -2026,13 +2032,15 @@ impl Interpreter {
         // the shared `bind_function_args_values` on both arms, and the
         // destructured elements bind read-only, so the historical exclusion
         // reason (caller-alias writeback) never applied to them
-        // (t/subsig-param-compiled.t). Only NativeCall marshalling traits
+        // (t/subsig-param-compiled.t). C6e-2c lifted the last *body* exclusion
+        // (`start`-containing bodies — see the gate doc above), so the body no
+        // longer gates compilation at all. Only NativeCall marshalling traits
         // (`is encoded(...)`) still keep a def on the interpreter.
         def.param_defs.iter().all(|pd| {
             pd.traits
                 .iter()
                 .all(|t| matches!(t.as_str(), "copy" | "rw" | "raw" | "readonly" | "required"))
-        }) && !Self::routine_body_facts(def).module_otf_needs_interpreter
+        })
     }
 
     /// Return the shared captured body for a resolved module sub def IF routing it
@@ -2118,88 +2126,6 @@ impl Interpreter {
         // `imported_state_body_for_def`, is the path that admits `state`).
         Self::def_module_single_sig_body_ok_ignoring_state(def)
             && !Self::routine_body_facts(def).declares_state
-    }
-
-    /// Recursively detect interpreter-coupled statements/expressions in a module
-    /// sub body that block standalone OTF compilation (see
-    /// `def_is_otf_compilable_module_single`). Conservative: any unrecognized
-    /// nesting that could hide a risky construct keeps the sub on the
-    /// interpreter, so a missed case only costs a fallback, never correctness.
-    pub(crate) fn module_otf_body_needs_interpreter(body: &[crate::ast::Stmt]) -> bool {
-        body.iter().any(Self::module_otf_stmt_needs_interpreter)
-    }
-
-    fn module_otf_stmt_needs_interpreter(stmt: &crate::ast::Stmt) -> bool {
-        use crate::ast::Stmt;
-        match stmt {
-            // Nested sub/proto/token decls, `subtest`, `CATCH`/`CONTROL`
-            // handlers and phasers are OTF-safe (verified 2026-07-11 against
-            // raku, incl. Test::Util's `is-deeply-junction` nested `when`
-            // control flow and `throws-like-any`'s CATCH+subtest): the compiled
-            // body registers nested routines and runs handlers/phasers through
-            // the same VM ops the precompiled path uses. OTF even fixes a
-            // tree-walk bug where a body-level CATCH swallowed the normal
-            // path's return value. Nested class/role/grammar decls are also
-            // OTF-safe (verified 2026-07-12): RegisterClass/RegisterRole run
-            // identically under OTF — same-named `my` classes in different
-            // subs stay distinct via the parse-time `decl_id`, captured
-            // lexicals/params resolve per call, and inheritance/parameterized
-            // roles/grammar parsing all match raku. Pinned by
-            // t/module-sub-otf-interpreter-constructs.t.
-            Stmt::If {
-                then_branch,
-                else_branch,
-                ..
-            } => {
-                Self::module_otf_body_needs_interpreter(then_branch)
-                    || Self::module_otf_body_needs_interpreter(else_branch)
-            }
-            Stmt::While { body, .. }
-            | Stmt::For { body, .. }
-            | Stmt::Loop { body, .. }
-            | Stmt::Given { body, .. }
-            | Stmt::When { body, .. }
-            | Stmt::Whenever { body, .. }
-            | Stmt::React { body, .. } => Self::module_otf_body_needs_interpreter(body),
-            Stmt::Block(body) | Stmt::SyntheticBlock(body) | Stmt::Default(body) => {
-                Self::module_otf_body_needs_interpreter(body)
-            }
-            Stmt::Expr(e) => Self::module_otf_expr_needs_interpreter(e),
-            _ => false,
-        }
-    }
-
-    fn module_otf_expr_needs_interpreter(expr: &crate::ast::Expr) -> bool {
-        use crate::ast::Expr;
-        match expr {
-            Expr::DoStmt(stmt) => Self::module_otf_stmt_needs_interpreter(stmt),
-            Expr::Block(body) => Self::module_otf_body_needs_interpreter(body),
-            Expr::MethodCall { target, args, .. } => {
-                Self::module_otf_expr_needs_interpreter(target)
-                    || args.iter().any(Self::module_otf_expr_needs_interpreter)
-            }
-            Expr::Call { name, args } => {
-                let n = name.resolve();
-                // `start` stays excluded: a *recursive* sub whose start closure
-                // captures a param breaks under OTF — the recursive call
-                // re-binds the same param name in the thread env the closure
-                // keeps reading, so after `await` the captured `$n` is
-                // clobbered by the deepest call's binding
-                // (t/start-block-return-value.t test 3, fib(5)=3; the
-                // tree-walk path save/restores the env around the call).
-                // Non-recursive start captures do work OTF, but the gate is an
-                // AST predicate that cannot see recursion, so all `start`
-                // bodies stay on the interpreter. `once` IS OTF-safe within a
-                // thread — its site key is stable across calls because the
-                // fingerprint-keyed `otf_compile_cache` reuses one compiled
-                // body. (Cross-thread `once` dedup is a pre-existing gap in the
-                // thread-cloned `once_values` store, identical under tree-walk
-                // — recorded in PLAN §3.) `EVAL`/`EVALFILE` are OTF-safe since
-                // the #4435 CALLER-frame fix — see the module-single gate doc.
-                n == "start" || args.iter().any(Self::module_otf_expr_needs_interpreter)
-            }
-            _ => false,
-        }
     }
 
     /// True if the body declares a `state` variable anywhere (recursing through

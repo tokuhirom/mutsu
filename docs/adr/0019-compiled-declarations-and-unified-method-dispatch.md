@@ -117,9 +117,10 @@ unchecked even if its original PR merged. PRs are sequential branches from the t
 
 **Current progress: 18/53 slices merged (D0 landed). Current box: C6e, subdivided per the
 measure-then-split precedent — C6e-1 (redeclaration-identity hash + eager body facts, #5952),
-C6e-2a (sigilless scalars run compiled, #5953), and C6e-2b (sub-signature params run
-compiled) have landed; C6e-2c (`start` bodies) and C6e-3 (drop `legacy_body`) remain,
-tracked with measurements in
+C6e-2a (sigilless scalars run compiled, #5953), C6e-2b (sub-signature params run
+compiled, #5954), and C6e-2c (`start` bodies run compiled; body constructs no longer
+gate compilation) have landed; C6e-3 (drop `legacy_body`) remains, tracked with
+measurements in
 `todo/deep/c6e-legacy-body-drop-blocked-by-gate-rejected-shapes.md`. C6d's only open sub-box
 is the ADR-0009-scoped C6d-2, which does not gate C6 (token defs never come from
 `CompiledSubDeclPlan`).**
@@ -187,7 +188,7 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
   - [x] **C6a — identity hashes.** Replace per-read `function_body_fingerprint(&def.…)` with a
     memoized `FunctionDef::body_fingerprint()`, retiring the `func_def_fp_cache` side cache.
   - [x] **C6b — OTF-gate body predicates.** Memoize `needs_interpreter` /
-    `module_otf_needs_interpreter` / `declares_state` as `RoutineBodyFacts` on the def, behind the
+    `module_otf_needs_interpreter` (deleted in C6e-2c) / `declares_state` as `RoutineBodyFacts` on the def, behind the
     single reader `Interpreter::routine_body_facts`, and read the existing `is_stub` field on the
     redeclaration path. (`collect_routine_body_local_names` and rw-target extraction return AST
     data rather than facts; they move with C6c/C6d.)
@@ -283,8 +284,11 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
     take-in-callee lazy-gather suspension bug,
     `news/2026-08/gather-take-in-callee-eager.md`), C6e-2b (landed) lifts the sub-signature
     exclusion (`news/2026-08/subsig-params-run-compiled.md` — parameter shapes no longer gate
-    compilation at all), and C6e-2c (`start` bodies) remains; C6e-3 then seeds fingerprints
-    and drops `legacy_body`.
+    compilation at all), and C6e-2c (landed) lifts the last body exclusion — `start`
+    bodies run compiled and the `module_otf_needs_interpreter` predicate is deleted
+    outright (`news/2026-08/start-bodies-run-compiled.md` — the historical
+    recursive-start param clobber no longer reproduces because the compiled caller-env
+    merge excludes callee params); C6e-3 then seeds fingerprints and drops `legacy_body`.
     Measurements and per-shape notes:
     `todo/deep/c6e-legacy-body-drop-blocked-by-gate-rejected-shapes.md`.
 - [ ] **C7 — Remove the sub-registration AST adapter.** Delete dead sub-shaped walker branches and

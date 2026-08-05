@@ -454,13 +454,11 @@ impl Interpreter {
             // ADR-0019 C6d-5: a compiled-eligible routine runs its plan-attached
             // (or memoized OTF) bytecode through the shared compiled entry
             // instead of the per-call `eval_block_value_with_pre_post` compile
-            // below. The gate is the same signature/body assessment the OTF
+            // below. The gate is the same signature assessment the OTF
             // dispatch uses (`def_module_single_sig_body_ok_ignoring_state`):
-            // a def it rejects — a sigilless-scalar param whose caller-alias
-            // writeback must cross an EVAL boundary, an interpreter-coupled
-            // body construct — keeps the interpreter arm, which is
-            // load-bearing semantics for those shapes, not a missed
-            // optimization (t/sigilless-params.t pins the EVAL case). `state`
+            // since C6e-2c only NativeCall marshalling traits keep a def on
+            // the interpreter arm (sigilless scalars, sub-signatures and
+            // `start` bodies all run compiled — C6e-2a/2b/2c). `state`
             // is fine here: `call_routine_def` runs one stable body identity
             // (the plan's, or one memoized compile), so cells are not severed
             // the way a per-call OTF recompile severs them. The compiled entry
