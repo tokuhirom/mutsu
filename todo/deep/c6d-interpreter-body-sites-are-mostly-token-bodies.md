@@ -129,3 +129,28 @@ Mirroring how C6 was subdivided:
 - **C6d-3 — prove the two dead sites dead** (`call_proto_dispatch`,
   `run_role_submethod`), and move `run_role_submethod` to Phase D where its `MethodDef`
   belongs.
+
+## Update 3: C6d-1/3/4/5 landed; the six-site inventory was itself incomplete
+
+C6d-1 closed with `exec_call`'s fold (#5946). `call_proto_dispatch` was not left as a
+coverage argument: its proto-sub arm got the same `call_routine_def` fold plus its first
+pin, `t/proto-dispatch-interpreter-path.t` (#5947). The code-object path
+(`call_sub_value`) landed as C6d-4 (#5948), with an rw gate documented in
+`todo/tickets/rw-writeback-through-wrap-chain-needs-shared-cells.md`.
+
+The headline correction: **the six-site inventory missed two sites**, because the
+original grep matched `run_block(&def.body)` / `eval_block_value(&def.body)` but not the
+other execution forms. A fresh sweep for all `&def.body` / `&data.body` executors found:
+
+- `builtins_operators_fallback.rs:call_function_fallback`'s def arm
+  (`eval_block_value_with_pre_post(&def.body)`) — **410 hits** across `t/`, the largest
+  live ordinary-routine site of the whole campaign. Folded as C6d-5 (#5950), gated on
+  `def_module_single_sig_body_ok_ignoring_state`; the gate-rejected shapes (sigilless
+  scalar param + EVAL-boundary writeback, interpreter-coupled bodies) keep the
+  interpreter arm on purpose.
+- `methods_mut_proxy.rs:call_proxy_callback`'s `run_block(&data.body)` — 2 hits, both
+  anonymous blocks (`compiled_routine` never set), so it is block-family and out of C6d
+  scope.
+
+Remaining in this file's scope: C6d-2 (token/rule bodies, ADR-0009), and
+`run_role_submethod` (Phase D).

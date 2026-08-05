@@ -115,12 +115,11 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 17/53 slices merged. Next slice: C6d-4 (`call_sub_value`'s
-`eval_block_value(&data.body)`), or C6d-3's Phase-C half — C6d-1 is complete (C6a, C6b and C6c
-landed; C6 and C6d are both subdivided below, C6d from a measurement of where its sites are
-actually reached).**
+**Current progress: 18/53 slices merged (D0 landed). Next slice: C6e — C6d-1, C6d-3's Phase-C
+half, C6d-4, and C6d-5 have all landed, so C6d's only open sub-box is the ADR-0009-scoped
+C6d-2, which does not gate C6 (token defs never come from `CompiledSubDeclPlan`).**
 
-The count tallies top-level boxes only; sub-boxes (C6a–C6e, C6d-1..4, E1a/E1b) are that box's
+The count tallies top-level boxes only; sub-boxes (C6a–C6e, C6d-1..5, E1a/E1b) are that box's
 PRs, and a subdivided box is checked when its last sub-box merges. A box that turns out to need
 subdivision follows C6's precedent: measure first, then split in place.
 
@@ -203,7 +202,10 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
     never reaches these sites, and the sites do not tree-walk — `run_block` recompiles the body
     per call, so what C6d removes is a repeated compile. The mismatch to solve is that
     `compile_block_raw` compiles a *block* whose arguments the caller already bound, while
-    `def.compiled` binds its own from `param_local_slots`. Subdivide:
+    `def.compiled` binds its own from `param_local_slots`. (The six-site count itself turned
+    out to be incomplete: C6d-5 found a seventh live site and an eighth negligible one — the
+    grep to trust is for *all* `&def.body` / `&data.body` execution forms, not the two the
+    survey instrumented.) Subdivide:
     - [x] **C6d-1 — the ordinary-routine tail** (`calls.rs:call_function_def`,
       `calls.rs:exec_call`): 192 hits over ~37 names. The shape is settled and is neither
       candidate above: these are *callers* reaching the interpreter entry `call_function_def`
@@ -233,13 +235,37 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
       sub-box does not gate C6**: token defs are never built from `CompiledSubDeclPlan`, so it
       gates only the later deletion of the `FunctionDef.body` field itself (with F7). It stays
       listed here so the field's last reader class is not forgotten.
-    - [ ] **C6d-3 — the two sites dead across the whole suite**
+    - [x] **C6d-3 — the two sites dead across the whole suite**
       (`dispatch_proto_call.rs:call_proto_dispatch`, `types/roles.rs:run_role_submethod`); the
-      latter's `def` is a `MethodDef`, so move it to Phase D.
-    - [ ] **C6d-4 — `call_sub_value`'s `eval_block_value(&data.body)`**, which takes a *code
-      object's* body rather than a def's: after C6c that is the one path left that still
-      executes a routine code object's AST, reached when a `.wrap` chain routes dispatch through
-      the interpreter carrier.
+      latter's `def` is a `MethodDef`, so it is reassigned to Phase D. The former's proto-sub
+      arm now delegates the candidate run to `call_routine_def`, keeping only the
+      remaining-candidate/multi/samewith frames and the `X::Multi::NoMatch` construction, and
+      is pinned for the first time by `t/proto-dispatch-interpreter-path.t`
+      (`news/2026-08/proto-star-fallback-runs-compiled-candidate.md`). The `is rw` relay
+      through a non-trivial proto body is a pre-existing gap, unchanged by the rewire —
+      `todo/tickets/rw-writeback-through-nontrivial-proto-body-is-lost.md`.
+    - [x] **C6d-4 — `call_sub_value`'s `eval_block_value(&data.body)`**, which takes a *code
+      object's* body rather than a def's: after C6c that was the one path left that still
+      executed a routine code object's AST, reached when a `.wrap` chain routes dispatch through
+      the interpreter carrier (230 of the site's 9,574 fresh-survey hits; the rest are
+      blocks/closures, which carry `compiled_code` and keep the carrier). Now runs
+      `SubData::compiled_routine` via `call_compiled_closure`, gated off for scalar-rw/raw
+      routines until rw binding is cell-based
+      (`todo/tickets/rw-writeback-through-wrap-chain-needs-shared-cells.md` — the
+      different-name wrap relay is broken on every path, `main` included). Fixed two general
+      bugs along the way: the C6c value-dispatch path's missing rw-param slot flush, and both
+      compiled_routine forks reclassifying a value call's binding failure as a compile-flavored
+      `X::TypeCheck::Argument` (raku and roast S03-sequence/misc.t demand runtime
+      `X::TypeCheck::Binding`) — `news/2026-08/routine-code-object-carrier-runs-bytecode.md`.
+    - [x] **C6d-5 — `call_function_fallback`'s def arm**, a seventh `&def.body` execution site
+      the original six-site survey missed (an eighth, `call_proxy_callback`, gets 2
+      anonymous-block hits and is out of C6d scope): 410 hits across `t/`, dominated by
+      multi-candidate names, `def.compiled` attached in essentially every hit. Folded to
+      `call_routine_def` behind the same gate the OTF dispatch uses
+      (`def_module_single_sig_body_ok_ignoring_state`); a gate-rejected def keeps the
+      interpreter arm, which is load-bearing semantics for those shapes (the sigilless-scalar
+      EVAL-boundary writeback of `t/sigilless-params.t` is why the gate exists) —
+      `news/2026-08/fallback-def-arm-runs-compiled-body.md`.
   - [ ] **C6e — redeclaration comparison and eager body facts, then drop the plan field.**
     Replace the two `body_debug_without_setline(&def.body)` comparisons (`registration_sub.rs`)
     with the plan's C4 redeclaration fingerprint, and fill `RoutineBodyFacts` eagerly at plan
@@ -266,10 +292,15 @@ the later slices independently landable. Second, the class walker also registers
 ADR-0009, so D6, D9, and D10 exclude the token/rule arms until that work lands — deleting the
 walkers wholesale is not possible before then.
 
-- [ ] **D0 — Split the class/role walkers into named phases with no behavior change.** Extract
+- [x] **D0 — Split the class/role walkers into named phases with no behavior change.** Extract
   `register_class_decl`'s sections (rollback snapshot, parent validation, role composition,
   punning, attribute pre-scan, body walk, custom-HOW install) and `register_role_decl`'s three
-  passes into functions with explicit inputs, so D1–D9 replace one function at a time.
+  passes into functions with explicit inputs, so D1–D9 replace one function at a time. Landed
+  as fifteen files, hosts reduced to orchestrators (229/334 lines), with arm-level `continue`
+  semantics made explicit via `ClassBodyFlow::{RunTail,SkipTail}` —
+  `news/2026-08/class-role-walkers-split-into-phases.md`. Phase D also inherits
+  `types/roles.rs:run_role_submethod` from C6d-3 (a `MethodDef` body-execution site, dead
+  across the suite).
 - [ ] **D1 — Encode class structural operations.** Put package open/reopen, parent edges, repr,
   visibility, lexical/package aliases, and source-order metadata in immutable plan operations.
 - [ ] **D2 — Encode attributes and generated accessors.** Compile defaults/constraints as child
