@@ -93,7 +93,7 @@ impl Interpreter {
                     let start = right_edge - step;
                     let mut call_args = items[start..right_edge].to_vec();
                     call_args.push(acc.clone());
-                    match self.call_sub_value(callable.clone(), call_args, true) {
+                    match self.reduce_call_step(&callable, call_args) {
                         Ok(new_acc) => {
                             out.push(acc);
                             acc = new_acc;
@@ -114,7 +114,7 @@ impl Interpreter {
                 while idx + step <= items.len() {
                     let mut call_args = vec![acc.clone()];
                     call_args.extend(items[idx..idx + step].iter().cloned());
-                    match self.call_sub_value(callable.clone(), call_args, true) {
+                    match self.reduce_call_step(&callable, call_args) {
                         Ok(new_acc) => {
                             out.push(acc);
                             acc = new_acc;
@@ -348,7 +348,7 @@ impl Interpreter {
         result
     }
 
-    /// Call one reduce step. Compiled-first: a `Sub` carrying bytecode
+    /// Call one reduce/produce step. Compiled-first: a `Sub` carrying bytecode
     /// dispatches through the VM closure path; the `call_sub_value` AST
     /// carrier re-compiles `data.body` on every step (Digest::RIPEMD's
     /// 80-round reduce lambda paid a full recompile — including its
