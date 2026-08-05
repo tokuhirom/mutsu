@@ -2021,6 +2021,12 @@ pub(crate) struct CompiledRoutineMetadata {
     pub(crate) has_non_nil_return: bool,
     pub(crate) is_stub: bool,
     pub(crate) has_param_return_redeclaration: bool,
+    /// The OTF-gate body predicates, computed once at plan lowering (ADR-0019
+    /// C6e): registration seeds `FunctionDef::body_facts_cache` from this, so
+    /// a plan-derived def never has to re-walk its body on a lazy cache miss —
+    /// which a body-less def will not be able to serve once `legacy_body` is
+    /// dropped.
+    pub(crate) body_facts: crate::ast::RoutineBodyFacts,
 }
 
 fn implicit_legacy_param(name: &str) -> ParamDef {
@@ -5123,6 +5129,14 @@ impl CompiledCode {
                         .as_ref()
                         .is_some_and(|(_, ret)| ret.is_some())
             }),
+            body_facts: crate::ast::RoutineBodyFacts {
+                needs_interpreter: crate::runtime::Interpreter::function_body_needs_interpreter(
+                    body,
+                ),
+                module_otf_needs_interpreter:
+                    crate::runtime::Interpreter::module_otf_body_needs_interpreter(body),
+                declares_state: crate::runtime::Interpreter::function_body_declares_state(body),
+            },
         };
         debug_assert_eq!(name_chunk.is_some(), name_expr.is_some());
         let plan_traits = zip_decl_trait_args(custom_traits, trait_args);

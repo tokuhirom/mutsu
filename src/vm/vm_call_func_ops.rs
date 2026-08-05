@@ -1923,7 +1923,7 @@ impl Interpreter {
 
     /// Check if a function body contains constructs that require
     /// the full interpreter path (class/role declarations, start blocks).
-    fn function_body_needs_interpreter(body: &[crate::ast::Stmt]) -> bool {
+    pub(crate) fn function_body_needs_interpreter(body: &[crate::ast::Stmt]) -> bool {
         use crate::ast::Stmt;
         for stmt in body {
             match stmt {
@@ -2113,7 +2113,7 @@ impl Interpreter {
     /// `def_is_otf_compilable_module_single`). Conservative: any unrecognized
     /// nesting that could hide a risky construct keeps the sub on the
     /// interpreter, so a missed case only costs a fallback, never correctness.
-    fn module_otf_body_needs_interpreter(body: &[crate::ast::Stmt]) -> bool {
+    pub(crate) fn module_otf_body_needs_interpreter(body: &[crate::ast::Stmt]) -> bool {
         body.iter().any(Self::module_otf_stmt_needs_interpreter)
     }
 
