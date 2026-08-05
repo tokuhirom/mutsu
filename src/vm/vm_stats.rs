@@ -197,6 +197,22 @@ pub(crate) fn record_regex_match_materialization() {
     }
 }
 
+// Registry copy-on-write (docs/per-task-clone-slimming.md slice 1): counts
+// the deep clones `Arc::make_mut` actually performs in `RegistryWriteGuard`,
+// i.e. how often a registry write hit a still-shared `Arc<Registry>`. Should
+// stay near-zero on a spawn-heavy benchmark where neither side writes the
+// registry between spawns; a per-task count means some write path touches
+// `registry_mut()` every spawn (see the plan doc's "stop and ask" condition).
+static REGISTRY_COW_CLONES: AtomicU64 = AtomicU64::new(0);
+
+/// Record one `Arc::make_mut` deep clone of the copy-on-write registry.
+#[inline]
+pub(crate) fn record_registry_cow_clone() {
+    if enabled() {
+        REGISTRY_COW_CLONES.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
 // ADR-0020 worker pool: `POOL_TASKS` counts every task submitted to the
 // elastic pool; `POOL_SPAWNS` the subset that grew the pool (no idle worker
 // at submit time). `tasks - spawns` is therefore the warm-reuse count the
@@ -539,6 +555,8 @@ pub(crate) fn dump() {
     eprintln!(
         "[mutsu vm-stats] regex-code-parse-cache: hits={code_parse_hits} misses={code_parse_misses}"
     );
+    let registry_cow_clones = REGISTRY_COW_CLONES.load(Ordering::Relaxed);
+    eprintln!("[mutsu vm-stats] registry-cow: clones={registry_cow_clones}");
     let pool_tasks = POOL_TASKS.load(Ordering::Relaxed);
     let pool_spawns = POOL_SPAWNS.load(Ordering::Relaxed);
     eprintln!(
