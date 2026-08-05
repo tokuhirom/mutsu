@@ -16,10 +16,45 @@ use super::*;
 /// Status codes returned by JIT-compiled bodies and fallible opcode helpers.
 /// `ERR` means the `RuntimeError` (including the `&return` signal and `fail`)
 /// is parked in `Interpreter::jit_error`; `HALT` means `exit`-style halt with
-/// no error (the caller loop re-checks `is_halted()`).
+/// no error (the caller loop re-checks `is_halted()`); `PANIC` means a Rust
+/// panic raised by interpreter machinery inside a shim was caught at the
+/// shim's `extern "C"` edge (unwinding through it would abort the process)
+/// with its payload parked in [`PARKED_PANIC`] — the entry wrapper resumes
+/// the unwind on the Rust side of the native frame.
 pub(crate) const JIT_STATUS_OK: u32 = 0;
 pub(crate) const JIT_STATUS_ERR: u32 = 1;
 pub(crate) const JIT_STATUS_HALT: u32 = 2;
+#[cfg(feature = "jit")]
+pub(crate) const JIT_STATUS_PANIC: u32 = 3;
+
+#[cfg(feature = "jit")]
+thread_local! {
+    /// Panic payload parked by a shim's `panic_boundary` until the JIT entry
+    /// wrapper on the same thread resumes it. Thread-local (not an
+    /// `Interpreter` field) because the payload type is neither `Clone` nor
+    /// meaningful to carry across `clone_for_thread`; native calls are
+    /// synchronous on the parking thread, and a nested JIT entry re-raises
+    /// before any outer shim can park again, so one slot suffices.
+    static PARKED_PANIC: std::cell::RefCell<Option<Box<dyn std::any::Any + Send>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Park a caught panic payload for [`resume_parked_panic`] (shim side).
+#[cfg(feature = "jit")]
+pub(super) fn park_panic(payload: Box<dyn std::any::Any + Send>) {
+    PARKED_PANIC.with(|slot| *slot.borrow_mut() = Some(payload));
+}
+
+/// Resume the unwind a shim parked under [`JIT_STATUS_PANIC`]. Called on the
+/// Rust side of the native frame, so the panic propagates to the same
+/// run-loop / worker `catch_unwind` boundaries as interpreted execution.
+#[cfg(feature = "jit")]
+fn resume_parked_panic() -> ! {
+    let payload = PARKED_PANIC
+        .with(|slot| slot.borrow_mut().take())
+        .expect("JIT returned panic status without a parked payload");
+    std::panic::resume_unwind(payload)
+}
 
 /// `CompiledCode::jit.entry` sentinel: the chunk was scanned and rejected
 /// (contains an unsupported opcode); never retry. `0` means cold/counting;
@@ -170,6 +205,7 @@ pub(crate) fn try_enter(
                 .expect("JIT returned error status without a parked error");
             Some(Err(e))
         }
+        JIT_STATUS_PANIC => resume_parked_panic(),
         // OK (fell off the end; result on the stack) or HALT (the caller
         // loop re-checks `is_halted()` right after this step).
         _ => Some(Ok(())),
@@ -271,6 +307,7 @@ pub(crate) fn try_enter_range(
                 .expect("JIT returned error status without a parked error");
             Some(Err(e))
         }
+        JIT_STATUS_PANIC => resume_parked_panic(),
         _ => Some(Ok(())),
     }
 }
