@@ -1,9 +1,26 @@
 use super::*;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
+use std::sync::OnceLock;
 
 impl Interpreter {
+    /// Top-level `init_io_environment`, for `Interpreter::new()`. Does the real
+    /// `current_dir()` syscall for `$*CWD` (see the `for_thread_clone` variant).
     pub(super) fn init_io_environment(&mut self) {
+        self.init_io_environment_impl(false);
+    }
+
+    /// `init_io_environment` for a `clone_for_thread` spawn. `$*CWD`/`*CWD` are
+    /// already correct in `cloned.env` (copied verbatim from the parent's env at
+    /// struct-construction time, then diverging thread-locally per the exclusion
+    /// in `clone_for_thread_excluding`) — skip both the `current_dir()` syscall
+    /// and the overwrite, since it would just recompute the same syscall-derived
+    /// value the clone already carries from the parent.
+    pub(super) fn init_io_environment_for_thread_clone(&mut self) {
+        self.init_io_environment_impl(true);
+    }
+
+    fn init_io_environment_impl(&mut self, for_thread_clone: bool) {
         let stdout = self.create_handle(
             IoHandleTarget::Stdout,
             IoHandleMode::Write,
@@ -35,70 +52,161 @@ impl Interpreter {
         let spec = self.make_io_spec_instance();
         self.env.insert("$*SPEC".to_string(), spec.clone());
         self.env.insert("*SPEC".to_string(), spec);
-        #[cfg(not(target_arch = "wasm32"))]
-        let cwd_str = env::current_dir()
-            .unwrap_or_else(|_| PathBuf::from("."))
-            .to_string_lossy()
-            .to_string();
-        #[cfg(target_arch = "wasm32")]
-        let cwd_str = "/".to_string();
-        let cwd_val = self.make_io_path_instance(&cwd_str);
-        self.env.insert("$*CWD".to_string(), cwd_val.clone());
-        self.env.insert("*CWD".to_string(), cwd_val);
-        #[cfg(not(target_arch = "wasm32"))]
-        let tmpdir_str = env::temp_dir().to_string_lossy().to_string();
-        #[cfg(target_arch = "wasm32")]
-        let tmpdir_str = "/tmp".to_string();
-        let tmpdir_val = self.make_io_path_instance(&tmpdir_str);
+        if !for_thread_clone {
+            #[cfg(not(target_arch = "wasm32"))]
+            let cwd_str = env::current_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .to_string_lossy()
+                .to_string();
+            #[cfg(target_arch = "wasm32")]
+            let cwd_str = "/".to_string();
+            let cwd_val = self.make_io_path_instance(&cwd_str);
+            self.env.insert("$*CWD".to_string(), cwd_val.clone());
+            self.env.insert("*CWD".to_string(), cwd_val);
+        }
+        let tmpdir_val = self.make_io_path_instance(Self::cached_tmpdir_string());
         self.env.insert("$*TMPDIR".to_string(), tmpdir_val.clone());
         self.env.insert("*TMPDIR".to_string(), tmpdir_val);
-        #[cfg(not(target_arch = "wasm32"))]
-        let home_val = if let Ok(home) = env::var("HOME") {
-            self.make_io_path_instance(&home)
-        } else {
-            Value::NIL
+        let home_val = match Self::cached_home_string() {
+            Some(home) => self.make_io_path_instance(home),
+            None => Value::NIL,
         };
-        #[cfg(target_arch = "wasm32")]
-        let home_val = Value::NIL;
         self.env.insert("$*HOME".to_string(), home_val.clone());
         self.env.insert("*HOME".to_string(), home_val);
         // $*EXECUTABLE - path to the interpreter binary
-        #[cfg(not(target_arch = "wasm32"))]
-        let exe_path = Self::resolved_current_executable_path()
-            .to_string_lossy()
-            .to_string();
-        #[cfg(target_arch = "wasm32")]
-        let exe_path = "mutsu".to_string();
-        let exe_io = self.make_io_path_instance(&exe_path);
+        let exe_path = Self::cached_executable_path_string();
+        let exe_io = self.make_io_path_instance(exe_path);
         self.env.insert("$*EXECUTABLE".to_string(), exe_io.clone());
         self.env.insert("*EXECUTABLE".to_string(), exe_io);
         self.env.insert(
             "$*EXECUTABLE-NAME".to_string(),
             Value::str(
-                std::path::Path::new(&exe_path)
+                std::path::Path::new(exe_path)
                     .file_name()
                     .map(|f| f.to_string_lossy().to_string())
-                    .unwrap_or_else(|| exe_path.clone()),
+                    .unwrap_or_else(|| exe_path.to_string()),
             ),
         );
         let exec_name = self.env.get("$*EXECUTABLE-NAME").cloned().unwrap();
         self.env.insert("*EXECUTABLE-NAME".to_string(), exec_name);
-        let distro = Self::make_distro_instance();
+        let distro = Self::cached_distro_instance();
         self.env.insert("*DISTRO".to_string(), distro.clone());
         self.env.insert("?DISTRO".to_string(), distro);
-        let perl = Self::make_perl_instance();
+        let perl = Self::cached_perl_instance();
         self.env.insert("*PERL".to_string(), perl.clone());
         self.env.insert("?PERL".to_string(), perl);
-        let raku = Self::make_perl_instance();
+        let raku = Self::cached_raku_instance();
         self.env.insert("*RAKU".to_string(), raku.clone());
         self.env.insert("?RAKU".to_string(), raku);
-        let vm = Self::make_vm_instance();
+        let vm = Self::cached_vm_instance();
         self.env.insert("$*VM".to_string(), vm.clone());
         self.env.insert("*VM".to_string(), vm.clone());
         self.env.insert("?VM".to_string(), vm);
-        let kernel = Self::make_kernel_instance();
+        let kernel = Self::cached_kernel_instance();
         self.env.insert("*KERNEL".to_string(), kernel.clone());
         self.env.insert("?KERNEL".to_string(), kernel);
+    }
+
+    /// Process-constant `Distro` instance (docs/per-task-clone-slimming.md
+    /// slice 3): built once via `make_distro_instance` (which shells out to
+    /// `sw_vers` on macOS and reads `/etc/os-release` on Linux) and shared by
+    /// `Value` clone (a cheap handle copy, see `Value`'s internal `Arc`/`Gc`
+    /// reprs) into every `Interpreter::new()` / thread-clone env thereafter.
+    fn cached_distro_instance() -> Value {
+        static CACHE: OnceLock<Value> = OnceLock::new();
+        CACHE.get_or_init(Self::make_distro_instance).clone()
+    }
+
+    /// Process-constant `$*PERL` instance. Cached separately from
+    /// [`Self::cached_raku_instance`] even though both build from the same
+    /// `make_perl_instance()` body: `$*PERL` and `$*RAKU` are historically
+    /// distinct objects (`$*PERL !=== $*RAKU`), so they get their own cache
+    /// slot rather than aliasing one shared instance.
+    fn cached_perl_instance() -> Value {
+        static CACHE: OnceLock<Value> = OnceLock::new();
+        CACHE.get_or_init(Self::make_perl_instance).clone()
+    }
+
+    /// Process-constant `$*RAKU` instance (see [`Self::cached_perl_instance`]).
+    /// `update_raku_version_from_parser` mutates this in place via
+    /// `Value::write_back_sharing` (commits into the same shared attrs cell,
+    /// does not rebind to a new object), so a `use v6.x` version bump on the
+    /// top-level interpreter is visible to every later thread clone's copy of
+    /// this cached singleton too — matching the pre-existing
+    /// `IMMUTABLE_BASE_DYNAMICS` assumption that `$*RAKU`/`$*PERL` hold one
+    /// process-wide value.
+    fn cached_raku_instance() -> Value {
+        static CACHE: OnceLock<Value> = OnceLock::new();
+        CACHE.get_or_init(Self::make_perl_instance).clone()
+    }
+
+    /// Process-constant `$*VM` instance.
+    fn cached_vm_instance() -> Value {
+        static CACHE: OnceLock<Value> = OnceLock::new();
+        CACHE.get_or_init(Self::make_vm_instance).clone()
+    }
+
+    /// Process-constant `$*KERNEL` instance.
+    fn cached_kernel_instance() -> Value {
+        static CACHE: OnceLock<Value> = OnceLock::new();
+        CACHE.get_or_init(Self::make_kernel_instance).clone()
+    }
+
+    /// Process-constant interpreter-executable path string, computed once via
+    /// `resolved_current_executable_path()` (a `current_exe()` syscall). The
+    /// `IO::Path` `Value` itself is still built fresh per call
+    /// (`make_io_path_instance` embeds the CURRENT `$*SPEC`/`$*CWD`), only the
+    /// expensive path string is cached.
+    fn cached_executable_path_string() -> &'static str {
+        static CACHE: OnceLock<String> = OnceLock::new();
+        CACHE.get_or_init(|| {
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                Self::resolved_current_executable_path()
+                    .to_string_lossy()
+                    .to_string()
+            }
+            #[cfg(target_arch = "wasm32")]
+            {
+                "mutsu".to_string()
+            }
+        })
+    }
+
+    /// Process-constant temp-dir path string, computed once via
+    /// `env::temp_dir()`. See [`Self::cached_executable_path_string`] for why
+    /// only the string (not the `IO::Path` `Value`) is cached.
+    fn cached_tmpdir_string() -> &'static str {
+        static CACHE: OnceLock<String> = OnceLock::new();
+        CACHE.get_or_init(|| {
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                env::temp_dir().to_string_lossy().to_string()
+            }
+            #[cfg(target_arch = "wasm32")]
+            {
+                "/tmp".to_string()
+            }
+        })
+    }
+
+    /// Process-constant `$HOME` path string, computed once via `env::var`.
+    /// `None` when the process has no `HOME` (matches the prior per-call
+    /// behavior of falling back to `Value::NIL`).
+    fn cached_home_string() -> Option<&'static str> {
+        static CACHE: OnceLock<Option<String>> = OnceLock::new();
+        CACHE
+            .get_or_init(|| {
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    env::var("HOME").ok()
+                }
+                #[cfg(target_arch = "wasm32")]
+                {
+                    None
+                }
+            })
+            .as_deref()
     }
 
     pub(super) fn get_dynamic_handle(&self, name: &str) -> Option<Value> {
