@@ -156,7 +156,13 @@ impl Interpreter {
         // could be).
         let mut referenced_handle_ids = std::collections::HashSet::new();
         {
+            // Slice 5 step A instrumentation: how many env entries this walk
+            // visits vs. how many actually land in the store. Accumulated
+            // locally and recorded once per spawn (one atomic add per counter).
+            let mut seed_keys_walked: u64 = 0;
+            let mut seed_inserts: u64 = 0;
             for (key, val) in &self.env {
+                seed_keys_walked += 1;
                 if let Some(id) = Self::handle_id_from_value(val) {
                     referenced_handle_ids.insert(id);
                 }
@@ -228,10 +234,12 @@ impl Interpreter {
                     && !self.thread_decl_in_flight.contains(&key)
                 {
                     shared.declare(&key, val.clone());
-                } else {
-                    shared.seed_if_absent(&key, || val.clone());
+                    seed_inserts += 1;
+                } else if shared.seed_if_absent(&key, || val.clone()) {
+                    seed_inserts += 1;
                 }
             }
+            crate::vm::vm_stats::record_spawn_seeding(seed_keys_walked, seed_inserts);
             // Track C: migrate the parent's existing `state` variables into shared
             // cells (keyed by their normalized cross-compilation key) so a routine
             // whose `state` was already mutated before the first thread spawned

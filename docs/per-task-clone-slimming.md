@@ -344,6 +344,10 @@ and `spawn_seed_inserts` (entries actually inserted) to the seeding loop.
 Report on the bench: expected `keys` ≈ env_size × 4000, `inserts` ≈ env_size.
 Land the counters as their own tiny PR — they quantify the remaining headroom.
 
+> **Step A result (2026-08-05, PR #5933):** `keys_walked=120000` (30 env
+> entries × 4000 spawns), `inserts=23` — the walk is ~99.98% redundant
+> re-walk, exactly as predicted.
+
 **Step B (design sketch — REVIEW WITH THE USER / a capable model before
 implementing):** give `Env` a monotonically increasing `write_gen: u64`
 (bumped in `cow_mut`, `insert*`, `remove`); remember on the Interpreter the
@@ -356,6 +360,22 @@ becomes a *flaky* cross-thread bug, the worst outcome class in this codebase.
 That is why step B is gated on explicit review — do not implement it in the
 same PR as step A, and do not implement it at all without sign-off recorded in
 the PR description.
+
+> **Step B RETIRED by measurement (2026-08-05) — do not implement.** A
+> local-only measurement hack (skip the seed/`declare` calls while keeping the
+> walk, after the store is saturated) bounded the win at **zero**: debug
+> baseline 8.2s vs 8.16s hacked; release baseline 0.70–0.74s vs 0.71–0.73s
+> hacked (bench shape, 4000 tasks). After slice 0 made the per-key lookups
+> FxHashMap-cheap, 120k walked keys cost single-digit milliseconds total — the
+> walk is no longer a cost center, so the generation-skip machinery (an Env
+> write-gen, a store-removal counter, equality memos on
+> `captured_scalars`/`thread_redeclared_vars`/`thread_decl_in_flight`, a
+> memoized handle-id set) would add flake-risk surface for no measurable
+> return. The redundancy the step A counters show is real but free.
+> (Incidental finding from the measurement: over-approximating
+> `referenced_handle_ids` to "all handles in the table" made the bench 14×
+> slower — per-spawn handle cloning is very sensitive to the referenced-only
+> filter; keep it exact.)
 
 ### Slice 6 (correctness-led, separate discussion): inherit parent dynamic IO
 vars in thread clones

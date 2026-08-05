@@ -153,15 +153,18 @@ impl SharedStore {
     /// Seed a name only if neither this lineage nor an ancestor already has it.
     /// `clone_for_thread` migrates the parent env this way: an entry an earlier
     /// thread already updated must not be reset to the spawning env's copy.
-    pub(crate) fn seed_if_absent(&self, key: &str, value: impl FnOnce() -> Value) {
+    /// Returns whether an entry was actually inserted (the per-spawn seeding
+    /// counters distinguish walked-and-skipped from walked-and-inserted).
+    pub(crate) fn seed_if_absent(&self, key: &str, value: impl FnOnce() -> Value) -> bool {
         if self.contains_key(key) {
-            return;
+            return false;
         }
         self.scope_for(key)
             .own
             .write()
             .unwrap()
             .insert(key.to_string(), value());
+        true
     }
 
     /// Fetch `key` when it already holds a cell, else install `make()` in this
