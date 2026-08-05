@@ -440,7 +440,7 @@ impl Interpreter {
     /// - a WeakSub -> upgrade to Sub and recurse
     ///
     /// Falls back to interpreter for Mixin (CALL-ME from roles) and Instance (CALL-ME).
-    pub(super) fn vm_call_on_value(
+    pub(crate) fn vm_call_on_value(
         &mut self,
         target: Value,
         args: Vec<Value>,
