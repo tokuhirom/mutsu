@@ -1,6 +1,15 @@
 # Per-task `clone_for_thread` slimming — implementation plan
 
-- Status: **design ready, implementation open** (2026-08-05)
+- Status: **CAMPAIGN COMPLETE** (2026-08-05) — slices 0/1/2/3/4 merged
+  (#5928/#5929/#5930/#5931/#5932), slice 5 step A merged (#5933) with step B
+  retired by measurement (see the slice 5 section), slice 6 merged (#5934).
+  Final spawn-shape bench: **0.19s** median-of-5 release (baseline 1.66s,
+  raku 0.33s on the same machine) — the < ~1.0s exit criterion is exceeded.
+  `t/ripemd.t` improved ~513s → 295.3s but stays over the 120s budget; the
+  remaining gap is per-round interpreter cost with a measured single cause
+  (Tier A JIT bails on the bitwise opcodes), handed off to
+  `todo/tickets/jit-bitwise-tier-a-coverage.md`. Do not reopen spawn-side
+  work from this plan. News: `news/2026-08/per-task-clone-slimming-campaign.md`.
 - Owner ticket: `todo/tickets/digest-ripemd-start-per-block-overhead.md`
 - Context: [ADR-0020](adr/0020-shared-worker-pool.md) §1.3 identified the per-task
   `Interpreter` clone as the dominant per-`start` cost that the worker pool
@@ -400,6 +409,19 @@ treat it as its own investigation: write `t/start-inherits-dynamic-out.t` from
 the oracle above first, then make it pass without breaking
 `t/thread-*.t` / `t/subtest*.t` / `roast/S17-promise/start.t`. If output
 ordering breaks, stop and record findings in the ticket.
+
+> **DONE (2026-08-05, #5934).** `init_io_environment_for_thread_clone` keeps a
+> usable inherited entry (a user object, or a handle id that survived the
+> referenced-handle clone) and rebuilds only missing/dead ones; the
+> `Interpreter::new` path and the non-handle dynamic vars are unchanged. All
+> four oracle shapes now match raku; pin `t/start-inherits-dynamic-out.t`. No
+> TAP output-ordering breakage (thread/subtest/start/lock guards + S17 roast
+> all green). The feared ordering entanglement did not materialize because a
+> cloned Stdout-target handle routes through the child's own `OutputSink`
+> exactly like a fresh default handle. Unexpectedly this was also the largest
+> perf win of the campaign: dropping the four `create_handle` calls + eight
+> env inserts per task took the bench from 0.71s to **0.19s** (local release,
+> median of 5).
 
 ## 5. Per-PR protocol
 
