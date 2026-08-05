@@ -579,6 +579,7 @@ impl Interpreter {
             wrap_handle_counter: self.wrap_handle_counter,
             wrap_dispatch_stack: Vec::new(),
             wrap_skip_once: None,
+            suppress_binding_error_enhance: false,
             method_wrap_chains: self.method_wrap_chains.clone(),
             method_fallbacks: self.method_fallbacks.clone(),
             suppressed_names: self.suppressed_names.clone(),

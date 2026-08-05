@@ -127,6 +127,9 @@ impl Interpreter {
         capture_rw_topic: bool,
         compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
+        // One-shot: consumed here so a nested call inside the body does not
+        // inherit the carrier's raw-binding-error request.
+        let suppress_bind_enhance = std::mem::take(&mut self.suppress_binding_error_enhance);
         let (mut args, callsite_line) = self.sanitize_call_args_owned(args);
         if callsite_line.is_some() {
             loan_env!(self, set_pending_callsite_line(callsite_line));
@@ -483,6 +486,13 @@ impl Interpreter {
                 self.stack.truncate(saved_stack_depth);
                 let frame = self.pop_call_frame();
                 *self.env_mut() = frame.saved_env;
+                // A value call is never compile-time-diagnosable: when the
+                // interpreter carrier delegated here (C6d-4), return the raw
+                // binding error so it keeps its runtime X::TypeCheck::Binding
+                // identity, exactly as the carrier's own bind path did.
+                if suppress_bind_enhance {
+                    return Err(e);
+                }
                 return Err(Interpreter::enhance_binding_error(
                     e,
                     &data.name.resolve(),

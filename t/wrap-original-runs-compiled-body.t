@@ -9,7 +9,7 @@ use Test;
 # wrap-chain legs that reach that carrier. Expected values were taken from
 # raku first.
 
-plan 10;
+plan 11;
 
 # callsame runs the original through the carrier's direct-run leg.
 sub f($x) { $x * 2 }
@@ -53,5 +53,14 @@ my &via = &incr;
 my $w = 20;
 is via($w), 21, "code-object rw call computes";
 is $w, 21, "and its writeback reaches the caller";
+
+# A binding failure through the carrier's compiled fork must keep its runtime
+# X::TypeCheck::Binding identity (not be reclassified as a compile-flavored
+# X::TypeCheck::Argument) — this is what a sequence endpoint check relies on
+# (roast S03-sequence/misc.t).
+sub typed(Int $n) { $n + 1 }
+my &t = &typed;
+throws-like { t("nope") }, X::TypeCheck::Binding,
+    "binding failure through a code object stays X::TypeCheck::Binding";
 
 done-testing;

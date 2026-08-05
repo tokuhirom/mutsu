@@ -1774,6 +1774,15 @@ pub struct Interpreter {
     /// named call from inside the original body — re-enters the chain, the
     /// way Raku re-dispatches every fresh call of a wrapped sub.
     wrap_skip_once: Option<u64>,
+    /// When set, a binding failure inside `call_compiled_closure` is returned
+    /// raw instead of going through `enhance_binding_error`. The interpreter
+    /// value-call carrier (`call_sub_value`) sets this around its
+    /// compiled-routine fork (ADR-0019 C6d-4): a value call is never a
+    /// compile-time-diagnosable call, so reclassifying its binding failure as
+    /// a compile-flavored `X::TypeCheck::Argument` loses the runtime
+    /// `X::TypeCheck::Binding` identity a sequence endpoint check relies on
+    /// (roast S03-sequence/misc.t).
+    pub(crate) suppress_binding_error_enhance: bool,
     /// Method-level wrap chains: (class_name, method_name, candidate_index) ->
     /// stack of (handle_id, wrapper_sub).
     method_wrap_chains: HashMap<(String, String, usize), Vec<(u64, Value)>>,

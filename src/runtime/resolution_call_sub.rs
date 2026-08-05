@@ -391,6 +391,11 @@ impl Interpreter {
                 && let Some(cf) = data.compiled_routine.clone()
             {
                 let empty_fns = CompiledFns::default();
+                // Carrier parity: a binding failure here must surface raw
+                // (X::TypeCheck::Binding), not reclassified as a compile-time
+                // X::TypeCheck::Argument. One-shot; consumed at the callee's
+                // entry — see suppress_binding_error_enhance.
+                self.suppress_binding_error_enhance = true;
                 return self.call_compiled_closure(&data, &cf.code, call_args, &empty_fns);
             }
             let saved_env = self.env.clone();
