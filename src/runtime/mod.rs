@@ -1572,10 +1572,13 @@ pub struct Interpreter {
     /// `current_package` / `io_handles`) so the VM and Interpreter can reach it
     /// as peers and CP-3 can fold it by handle transfer rather than ownership
     /// reasoning. Like those handles it is a *per-thread snapshot*, not
-    /// live-shared: `clone_for_thread` deep-copies the map into a fresh `Arc`,
-    /// so the lock never contends across threads. Collapses to a plain VM field
-    /// once the Interpreter execution path is removed (PLAN.md ④/⑤).
-    instance_type_metadata: Arc<RwLock<HashMap<u64, ContainerTypeInfo>>>,
+    /// live-shared: `clone_for_thread` shares the inner `Arc` (O(1); see the
+    /// `registry` field's copy-on-write doc, docs/per-task-clone-slimming.md
+    /// slice 4) into a fresh outer `Arc<RwLock<...>>`, so the lock never
+    /// contends across threads and the first write on either side after a
+    /// share pays the one deep clone via `Arc::make_mut`. Collapses to a plain
+    /// VM field once the Interpreter execution path is removed (PLAN.md ④/⑤).
+    instance_type_metadata: Arc<RwLock<Arc<HashMap<u64, ContainerTypeInfo>>>>,
     /// `let`/`temp` save stack: (name, saved value, is_temp, compiler-baked slot).
     /// The baked slot (§1.4/§1.5) lets the scope-exit restore write `locals[slot]`
     /// directly instead of resolving the name to the OUTER slot via
@@ -2285,7 +2288,7 @@ type SubsetPredicateCompiled = Arc<(crate::opcode::CompiledCode, crate::opcode::
 /// reads). It touches no `env`, so neither caller needs an env loan.
 pub(crate) fn container_type_metadata_with(
     value: &Value,
-    instance_meta: &Arc<RwLock<HashMap<u64, ContainerTypeInfo>>>,
+    instance_meta: &Arc<RwLock<Arc<HashMap<u64, ContainerTypeInfo>>>>,
 ) -> Option<ContainerTypeInfo> {
     // Embedded-metadata readers for Set/Bag/Mix (mirrors `hashdata_type_info`).
     macro_rules! embedded_type_info {
