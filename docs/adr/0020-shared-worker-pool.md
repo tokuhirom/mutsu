@@ -191,7 +191,7 @@ Concretely:
 
 ## 6. Implementation status
 
-- [ ] Preliminary slice: reclassify the 5 no-user-code sites to `spawn_gc_helper_thread`.
+- [x] Preliminary slice: reclassify the 5 no-user-code sites to `spawn_gc_helper_thread`.
 - [ ] Slice 1: pool behind `spawn_user_thread`; `start` / one-shot `cue` pooled; probes re-run.
 - [ ] Slice 2: `cue(:every)` → timer entry + pool enqueue; retire `scheduler_run_every_loop`.
 - [ ] Slice 3: supply emitters / socket pumps / hyper-race, case by case.

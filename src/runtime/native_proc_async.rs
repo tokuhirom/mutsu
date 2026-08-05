@@ -322,8 +322,9 @@ impl Interpreter {
                         let stdin_arc = stdin_arc.clone();
                         // Receives `Value`s (Gc nodes) from the supply channel:
                         // must be a registered GC mutator, with the blocking
-                        // recv as a quiescent safe region.
-                        crate::runtime::builtins_system::spawn_user_thread(move || {
+                        // recv as a quiescent safe region. Runs no user VM
+                        // code, so the default stack suffices.
+                        crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
                             if let Some(rx) = take_supply_channel(source_supply_id) {
                                 while let Ok(event) = crate::gc::block_quiescent(|| rx.recv()) {
                                     match event {
@@ -391,15 +392,18 @@ impl Interpreter {
 
                 // Builds Proc `Value`s (Gc nodes) and resolves the promise:
                 // registered GC mutator; its child-wait / joins are quiescent.
-                crate::runtime::builtins_system::spawn_user_thread(move || {
+                // Runs no user VM code (`keep` dispatches waiters to a fresh
+                // user thread), so the default stack suffices.
+                crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
                     // Spawn stdout reader thread — streams raw chunks through channel
                     let stdout_handle = child_stdout.map(|stdout| {
                         let tx = stdout_channel;
                         let bin_mode = stdout_bin;
                         let sid = stdout_supply_id;
                         // Emits Buf `Value`s (Gc nodes): registered mutator,
-                        // pipe reads quiescent.
-                        crate::runtime::builtins_system::spawn_user_thread(move || {
+                        // pipe reads quiescent. No user VM code — default
+                        // stack.
+                        crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
                             use std::io::Read;
                             let mut stdout = stdout;
                             let mut collected = String::new();
@@ -454,8 +458,9 @@ impl Interpreter {
                         let tx = stderr_channel;
                         let bin_mode = stderr_bin;
                         let sid = stderr_supply_id;
-                        // Same as the stdout reader: registered + quiescent reads.
-                        crate::runtime::builtins_system::spawn_user_thread(move || {
+                        // Same as the stdout reader: registered + quiescent
+                        // reads, no user VM code — default stack.
+                        crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
                             use std::io::Read;
                             let mut stderr = stderr;
                             let mut collected = String::new();
