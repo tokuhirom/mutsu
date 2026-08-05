@@ -192,7 +192,10 @@ impl Interpreter {
         };
         let block = stripped.unwrap_or(block);
 
-        spawn_user_thread(move || {
+        // Pooled (ADR-0020 slice 1): `start` is the hottest spawner, and its
+        // body may block (`await`) — the elastic pool reuses a warm worker or
+        // grows instead of deadlocking.
+        crate::runtime::worker_pool::submit(move || {
             // CP-3 collapse: the thread's cloned Interpreter *is* the VM — run the
             // block on it directly instead of wrapping it in a sub-VM.
             let mut thread_interp = thread_interp;

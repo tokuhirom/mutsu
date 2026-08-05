@@ -317,14 +317,22 @@ impl Interpreter {
                     if deferred {
                         params.delay = 0.0;
                     }
-                    // Large user-code stack: the scheduled callback runs user VM
-                    // code, which overflows the default thread stack on deep
-                    // nesting. See `USER_THREAD_STACK_SIZE`.
+                    // One-shot cues run on the ADR-0020 worker pool (slice 1).
+                    // A `:every` cue keeps a dedicated thread for now — its
+                    // repeat loop occupies a worker for the cue's whole
+                    // lifetime, which is exactly the shape slice 2 moves onto
+                    // the deadline-heap timer.
+                    let pooled = params.every.is_none();
                     let run = move || {
-                        crate::runtime::builtins_system::spawn_user_thread(move || {
+                        let body = move || {
                             thread_interp.scheduler_run_async(params);
                             state_scheduler::scheduler_task_finished();
-                        });
+                        };
+                        if pooled {
+                            crate::runtime::worker_pool::submit(body);
+                        } else {
+                            crate::runtime::builtins_system::spawn_user_thread(body);
+                        }
                     };
                     if deferred {
                         interval_timer::register_once(

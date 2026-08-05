@@ -408,6 +408,8 @@ pub(crate) mod value_iterator;
 /// Cooperative scheduler standing in for OS threads in the browser.
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod wasm_sched;
+/// Elastic worker pool for short-lived user tasks (ADR-0020).
+pub(crate) mod worker_pool;
 pub(crate) use self::match_target::MatchTarget;
 pub(crate) use self::methods_subscript_protocol::refuse_map_removal;
 pub(crate) use self::output_sink::OutputSink;

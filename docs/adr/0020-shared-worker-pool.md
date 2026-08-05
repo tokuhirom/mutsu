@@ -192,6 +192,8 @@ Concretely:
 ## 6. Implementation status
 
 - [x] Preliminary slice: reclassify the 5 no-user-code sites to `spawn_gc_helper_thread`.
-- [ ] Slice 1: pool behind `spawn_user_thread`; `start` / one-shot `cue` pooled; probes re-run.
+- [x] Slice 1: pool behind `spawn_user_thread`; `start` / one-shot `cue` pooled; probes re-run
+      (release A/B, 2026-08-05: ripemd shape 1.94s → 1.73s (−11%), 500 × trivial `start {}`
+      0.190s → 0.172s (−9%), nested-500 unchanged — matching §5's 10–15% expectation).
 - [ ] Slice 2: `cue(:every)` → timer entry + pool enqueue; retire `scheduler_run_every_loop`.
 - [ ] Slice 3: supply emitters / socket pumps / hyper-race, case by case.
