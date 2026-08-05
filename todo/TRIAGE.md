@@ -165,9 +165,9 @@ them, so progress compounds.
 
 ## Housekeeping
 
-- [whenever-owned-lexical-outlives-the-react-block](tickets/whenever-owned-lexical-outlives-the-react-block.md)
-  is **Status: Resolved** (#5773/#5776) — per the lifecycle it should be
-  `git mv`'d to `news/2026-08/` and rewritten as an accomplishment.
+- `whenever-owned-lexical-outlives-the-react-block` was already resolved
+  (#5773/#5776) and has been moved to
+  [news/2026-08/whenever-owned-lexical-is-restored-after-the-callback.md](../news/2026-08/whenever-owned-lexical-is-restored-after-the-callback.md).
 - Container tickets that are queues, not single fixes:
   [dist-test-suite-failures-batch](tickets/dist-test-suite-failures-batch.md),
   [remaining-language-feature-gaps](tickets/remaining-language-feature-gaps.md),
