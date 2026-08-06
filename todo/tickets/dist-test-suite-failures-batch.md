@@ -72,6 +72,11 @@ unsupported — `subset Sm of Int where * < 10; Sm(5)` returns 5 in raku,
 `Unknown function: Sm` in mutsu. Different mechanism (coerce to the base type,
 then check the constraint).
 
+### ~~`P5seek` — test suite failure~~ — not reproducible on current main
+
+Fixed as a side effect of unrelated work; see
+`news/2026-08/p5seek-not-reproducible.md`.
+
 ### `RSV` — triaged, root-caused, needs a compiler design pass
 
 `lib/RSV.rakumod` declares `constant \EOV = blob8.new(255);` (and `\EOR`,
@@ -87,7 +92,7 @@ it needs a design pass rather than a quick patch:
 
 ## Un-triaged `test_die` / `test_fail`
 
-`P5seek`, `Date::YearDay`, `PSpec`, `Array::Rounded` (fail);
+`Date::YearDay`, `PSpec`, `Array::Rounded` (fail);
 `Math::Interval`, `Native::Overflow`, `App::SudokuHelper`, `P5tie`,
 `Mathematica::Serializer::Encoder`, `Hash::Restricted`, `Crypt::RC4`,
 `Random::Choice` (die).
