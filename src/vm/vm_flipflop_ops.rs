@@ -62,6 +62,7 @@ impl Interpreter {
                 && let Some(callable) = self.lexical_infix_override(code, &infix_name)
             {
                 let result = self.call_sub_value(callable, call_args, false)?;
+                self.apply_pending_rw_writeback(code);
                 self.stack.push(result);
                 return Ok(());
             }
@@ -120,6 +121,7 @@ impl Interpreter {
                 }
             }
         };
+        self.apply_pending_rw_writeback(code);
         self.stack.push(result);
         Ok(())
     }
