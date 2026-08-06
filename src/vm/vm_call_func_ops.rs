@@ -2004,8 +2004,14 @@ impl Interpreter {
     /// `is rw`/`is raw`/`is copy`/`is readonly`/`is required` params are NOW
     /// allowed (§2 multi-dispatch VM-ization): the compiled binding already
     /// honored them for builtin shadows, and the rw/raw caller writeback carries
-    /// a compile-time caller slot (#4091). Only `is encoded(...)` (NativeCall)
-    /// stays excluded.
+    /// a compile-time caller slot (#4091). `is encoded(...)` (NativeCall
+    /// marshalling) is allowed too (ADR-0019 C6e-3c): it is inert on both
+    /// dispatch arms — nothing reads the trait for marshalling, since actual
+    /// string encoding for a native call happens explicitly via `.encode(...)`
+    /// in the prelude (`nativecall_manage.rs`), and the shared compiled binder
+    /// (`bind_function_args_values`) only branches on `rw`/`raw`/`copy`/
+    /// `invocant`. A genuine `is native(...)` sub never reaches this gate at
+    /// all — `native_call_specs` is checked by name before body dispatch.
     ///
     /// Defaults ARE allowed (name-cache-safe: no same-named builtin to mis-bind,
     /// and a single candidate always resolves to this def). Bodies and
@@ -2038,13 +2044,16 @@ impl Interpreter {
         // destructured elements bind read-only, so the historical exclusion
         // reason (caller-alias writeback) never applied to them
         // (t/subsig-param-compiled.t). C6e-2c lifted the last *body* exclusion
-        // (`start`-containing bodies — see the gate doc above), so the body no
-        // longer gates compilation at all. Only NativeCall marshalling traits
-        // (`is encoded(...)`) still keep a def on the interpreter.
+        // (`start`-containing bodies — see the gate doc above). C6e-3c lifted
+        // the last param-trait exclusion (`is encoded(...)`, see the gate doc
+        // above), so no parameter shape or trait gates compilation anymore.
         def.param_defs.iter().all(|pd| {
-            pd.traits
-                .iter()
-                .all(|t| matches!(t.as_str(), "copy" | "rw" | "raw" | "readonly" | "required"))
+            pd.traits.iter().all(|t| {
+                matches!(
+                    t.as_str(),
+                    "copy" | "rw" | "raw" | "readonly" | "required" | "encoded"
+                )
+            })
         })
     }
 
@@ -2124,8 +2133,9 @@ impl Interpreter {
         //     binder, read-only elements);
         //   - standard binding-time traits (`is copy`/`is rw`/`is raw`/`is
         //     readonly`/`is required`) are OTF-safe (compiled binding honors them,
-        //     rw/raw writeback carries the #4091 caller slot); only NativeCall
-        //     marshalling (`is encoded('utf8')`) stays excluded.
+        //     rw/raw writeback carries the #4091 caller slot); NativeCall
+        //     marshalling (`is encoded('utf8')`) is OTF-safe too since C6e-3c
+        //     (the trait is inert on both dispatch arms).
         // Plus the `state` exclusion: a per-call OTF recompile would sever a
         // module sub's shared `state` cell (the cross-thread shared captured body,
         // `imported_state_body_for_def`, is the path that admits `state`).
