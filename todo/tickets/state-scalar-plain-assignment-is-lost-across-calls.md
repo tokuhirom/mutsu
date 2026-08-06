@@ -1,82 +1,60 @@
-# A `state` scalar written with `=` (not `++`) loses the write between calls
+# `state` in a block used as a loop body loses every write (residual)
 
-`state $n = 0; $n = $n + 1;` does not accumulate. Every call sees the
-initializer value again, so a `state` counter written with plain assignment is
-silently stuck at its first value:
+UPDATE 2026-08-06: the original headline symptom — a `state` scalar written
+with plain `=` in a routine losing the write between calls — is FIXED:
+`state` scalars now live in a `ContainerRef` cell exactly like `state`
+aggregates already did (`StateVarInit`'s scalar branch; the "box-on-capture
+will share them" assumption only covered captured scalars). Slot, env and
+the state store share one cell, so the write-through reaches every reader
+and the exit persist stores the same cell. Pinned by
+`t/state-scalar-plain-assignment.t` (plain `=`, `+=`, `~=`, implicit/
+explicit return, plain read after write, `++`, and the per-clone nested
+named sub semantics).
 
-```
-$ raku  -e 'sub f() { state $n = 0; $n = $n + 1; $n }; say f(); say f(); say f();'
-1
-2
-3
-$ mutsu -e 'sub f() { state $n = 0; $n = $n + 1; $n }; say f(); say f(); say f();'
-1
-1
-1
-```
+## Residual: type-constrained state scalars
 
-`$n += 1` behaves the same way. `++$n` and `$n++` are correct, and so is a
-`state` aggregate (`state @a; @a.push(1)`), which is why the existing coverage
-misses this: every `state` case in `t/` — `t/state-per-clone-named-subs.t`,
-`t/state-in-loop-body-accumulates.t`, `t/module-state-sub-shared-cell.t`,
-`t/anon-state-per-routine-call.t` — increments with `++`.
+A TYPE-CONSTRAINED state scalar (`state Int $n = 0; $n = $n + 1`) still
+loses the write (1,1 — raku: 1,2): it keeps the plain store, mirroring
+`box_captured_lexicals`' rule that a constrained scalar must flow through
+the assignment chokepoint so the constraint re-checks (and a
+`state buf32 $w` holding a Buf must not present as a cell to the
+element-assignment path — Digest's SHA2 `(state buf32 $w .= new)[$j] = …`,
+pinned by t/digest-battery.t). Fixing typed scalars needs either
+constraint-checking write-through on the cell, or the exit-persist rule
+rework the original ticket described. (The expression-position typed state
+decl also failed to register its constraint at all — fixed: the
+`(state buf32 $w …)` expr branch now emits `SetVarType` like the statement
+form.)
 
-Found while measuring ADR-0019 C6d-1, not caused by it: it reproduces on
-`main` and predates that work. The routine runs on the ordinary compiled path
-(`MUTSU_VM_STATS` reports 0 function fallbacks), so this is a compiled-path
-bug, not a fallback one. Notably the *interpreter* entry got it right: the
-same operator body invoked through `call_function_def` accumulated correctly
-(pinned now by `t/user-operator-compiled-body.t`'s `infix:<ss>` cases).
-
-## What distinguishes the working shapes
-
-The write reaches the state cell only when something *else* in the body reads
-the variable in a way that forces a cell-direct read afterwards. Assignment as
-an *expression* is also fine — only the statement form followed by a plain read
-loses it:
-
-| body | raku | mutsu |
-| --- | --- | --- |
-| `state $n = 0; $n = $n + 1; $n` | 1, 2 | 1, **1** |
-| `state $n = 0; $n += 1; $n` | 1, 2 | 1, **1** |
-| `state $n = 0; $n = $n + 1;` (implicit return of the assignment) | 1, 2 | 1, **1** |
-| `state $n = 0; $n = $n + 1; return $n` | 1, 2 | 1, **1** |
-| `state $n = 0; $n = $n + 1; my $r = $n; $r` | 1, 2 | 1, **1** |
-| `state $n = 0; $n = $n + 1; say "in:$n"; $n` | 1, 2 | 1, 2 |
-| `state $n = 0; my $x = ($n = $n + 1); $x` | 1, 2 | 1, 2 |
-| `state $n = 0; $n++; $n` | 1, 2 | 1, 2 |
-| `state $s = ""; $s ~= "x"; $s` | x, xx | x, **x** |
-
-So the assignment writes the routine's VM local slot, and only some reads
-flush the slot into the state cell — the interpolating read does, the trailing
-bare read does not. The `++` forms presumably mutate the cell in place. That
-matches the dual-store shape recorded in
-`memory/project-mustache-remaining-two-files.md` ("a slot is only filled by a
-cell-direct read").
-
-A bare block reached through a statement modifier is broken the same way even
-with the interpolating read, so the loop-body clone path shares the defect:
+## Residual: the block-as-loop-body form
 
 ```
 $ raku  -e '{ state $n = 0; $n = $n + 1; say $n; } for 1..3;'   # 1 2 3
 $ mutsu -e '{ state $n = 0; $n = $n + 1; say $n; } for 1..3;'   # 1 1 1
+$ mutsu -e '{ state $n = 0; $n++;        say $n; } for 1..3;'   # 1 1 1 (also wrong)
 ```
 
-## Why this is not a quick fix
+Two distinct causes, one fixed:
 
-The bug is in which side of the slot/cell dual store owns a `state` variable's
-value at each read and write, so the fix has to establish one rule for all
-four of: the assignment opcode's target, the plain read, the interpolating
-read, and routine exit. Picking the wrong one re-introduces the per-clone
-identity behavior that `t/state-per-clone-named-subs.t` and
-`t/concurrent-state-var.t` pin (a nested named sub must re-initialize its
-`state` per enclosing call, while a top-level sub must not), so it needs the
-same care as the ADR-0018 slot/env work rather than a local patch at the
-assignment site.
+1. **(fixed)** the statement-modifier form parses as `For { body: [Block(...)] }`
+   and the `Stmt::Block` arm emitted a per-execution `ResetStateLocals` INSIDE
+   the loop body — the state store was wiped every iteration. The loop compile
+   sites now set `Compiler::suppress_loop_block_state_reset` when the loop body
+   is a sole source block (`loop_body_is_sole_block`), because that block IS
+   the loop's body: cloned once per loop statement, its iterations share the
+   clone (the loop-entry `reset_state_locals_in_range` still restarts the
+   state when the loop STATEMENT re-executes).
+2. **(open)** even without the reset, the write inside the block never reaches
+   the state cell: gdb shows the per-iteration `StateVarInit` finds the stored
+   cell still holding the initializer. Operator-independent (`=` and `++`
+   both), so the block's scope machinery (BlockLocalScope env overlay) is
+   shadowing the cell — the assignment writes a block-scoped plain copy
+   instead of through the cell, and the block-exit scope restore discards it.
+   The inline statement form (`for 1..3 { state $n = 0; ... }`, no Block
+   wrapper) is correct, which isolates the defect to the Block-in-loop-body
+   scope path.
 
-## Where to look
-
-- `src/vm/vm_var_ops.rs`, `src/vm/vm_misc_scope.rs` — state-cell read/write ops.
-- `src/vm/vm_call_named_inner.rs`, `src/vm/vm_call_fast.rs` — the per-call
-  state-cell seeding and the routine-exit flush.
-- `src/vm/vm_closure_dispatch.rs` — the block-clone variant of the same.
+Where to look: `exec_block_local_scope_op` (vm_exec_dispatch /
+vm_misc_scope) — how a block-scoped env overlay treats a name whose outer
+binding is a `ContainerRef` state cell; the write should go through the
+cell, not insert a shadowing plain value.

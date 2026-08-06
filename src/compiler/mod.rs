@@ -370,6 +370,13 @@ pub(crate) struct Compiler {
     /// not a genuine source `{ ... }`). The `Stmt::Block` arm consumes it to
     /// decide whether the resulting scope is a backtrace-visible callframe.
     synthetic_block_body: bool,
+    /// Set true immediately before compiling a loop body that is a sole source
+    /// `{ ... }` block (the `{ ... } for @xs` statement-modifier form). The
+    /// `Stmt::Block` arm consumes it to skip the block's per-execution
+    /// `ResetStateLocals`: that block is the loop's body, cloned once per loop
+    /// statement, so its `state` persists across iterations — see
+    /// `loop_body_is_sole_block`.
+    suppress_loop_block_state_reset: bool,
     /// Set by the `Stmt::Block` arm just before calling `compile_try` for a
     /// genuine bare block that carries a `CATCH`/`CONTROL`. `compile_try`
     /// consumes it so the emitted `TryCatch` is marked as a bare-block
@@ -504,6 +511,7 @@ impl Compiler {
             suppress_pair_capture: false,
             suppress_list_var_alias: false,
             synthetic_block_body: false,
+            suppress_loop_block_state_reset: false,
             next_try_is_bare_block: false,
             fold_ctx: std::sync::Arc::new(const_fold::FoldCtx::enabled()),
             fold_root: true,

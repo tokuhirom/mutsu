@@ -25,6 +25,23 @@ impl Compiler {
             .then(|| self.code.emit(OpCode::ResetStateLocals { body_end: 0 }))
     }
 
+    /// Whether a loop body consists of exactly one source `{ ... }` block
+    /// (the statement-modifier form `{ ... } for @xs` parses that way, with
+    /// only `SetLine` markers beside it). That block IS the loop's body — the
+    /// loop statement clones it once and its iterations share the clone, so
+    /// its `state` must persist across iterations (raku: `{ state $n = 0;
+    /// $n = $n + 1; say $n } for 1..3` prints 1 2 3). The compile sites set
+    /// [`Compiler::suppress_loop_block_state_reset`] from this so the block's
+    /// per-execution `ResetStateLocals` is skipped; the loop-entry reset
+    /// already restarts the state when the loop STATEMENT re-executes.
+    pub(super) fn loop_body_is_sole_block(body: &[Stmt]) -> bool {
+        let mut semantic = body.iter().filter(|s| !matches!(s, Stmt::SetLine(_)));
+        matches!(
+            (semantic.next(), semantic.next()),
+            (Some(Stmt::Block(_)), None)
+        )
+    }
+
     /// [`Self::emit_nested_block_state_reset`] for an `if`/`unless` branch: a
     /// postfix statement MODIFIER introduces no block, so the statement it gates
     /// belongs to the enclosing block and its `state` must not restart

@@ -56,6 +56,18 @@ impl Interpreter {
         let scoped_key = self.scoped_state_key(base_key);
         let slot_idx = slot as usize;
         let name = &code.locals[slot_idx];
+        // A type-constrained state scalar keeps the plain store (same rule as
+        // `box_captured_lexicals`, vm_register_ops): every mutation must keep
+        // flowing through the assignment chokepoint so the constraint
+        // re-checks, and a `state buf32 $w` holding a Buf must not present as
+        // a cell to the element-assignment path (`$w[$j] = ...` — Digest's
+        // SHA2). `Mu` is universal, so it stays cell-eligible.
+        let type_constrained_scalar = !name.starts_with('@') && !name.starts_with('%') && {
+            let tc = self
+                .var_type_constraint(name)
+                .or_else(|| self.var_type_constraint(name.trim_start_matches('$')));
+            tc.is_some_and(|t| t != "Mu")
+        };
         // Track C: while a thread is running, a user `state` variable lives in a
         // shared `ContainerRef` cell (keyed in shared_vars) so concurrent calls
         // to the same routine across threads — `await (^3).map: { start f() }`
@@ -100,10 +112,13 @@ impl Interpreter {
             cell
         } else if let Some(stored) = self.get_state_var(&scoped_key) {
             let stored = stored.clone();
-            // Track B slice 3: upgrade a plain stored aggregate to a cell
-            // (a value written by a pre-cell `set_state_var` plain insert),
-            // so every reader from here on shares one container.
-            if (name.starts_with('@') || name.starts_with('%')) && !stored.is_container_ref() {
+            // Track B slice 3: upgrade a plain stored value to a cell (a value
+            // written by a pre-cell `set_state_var` plain insert), so every
+            // reader from here on shares one container. Scalars included: a
+            // `state $n` written with plain `=` used to write only the local
+            // slot while the exit persist read the stale env copy, so the
+            // counter never accumulated (t/state-scalar-plain-assignment.t).
+            if !stored.is_container_ref() && !type_constrained_scalar {
                 let cell = stored.into_container_ref();
                 self.set_state_var(scoped_key.clone(), cell.clone());
                 cell
@@ -131,13 +146,19 @@ impl Interpreter {
             // captures the CELL, so sibling closures from the same factory
             // share one live container exactly like raku (`mk()` twice used to
             // give 1,1,2 instead of 1,2,3: each closure env froze its own
-            // aggregate snapshot). Scalars keep the plain store: they are
-            // already shared via box-on-capture escape analysis, and celling
-            // them here would double-box.
-            let val = if name.starts_with('@') || name.starts_with('%') {
-                coerced.into_container_ref()
-            } else {
+            // aggregate snapshot). Scalars live in a cell too (2026-08-06):
+            // "box-on-capture will share them" only covers variables some
+            // closure captures — an uncaptured `state $n` written with plain
+            // `=` wrote only the local slot while the exit persist read the
+            // stale env copy, so the counter reset on every call
+            // (t/state-scalar-plain-assignment.t). The cell makes slot, env
+            // and the state store one storage location, the same soundness
+            // argument as the aggregate case. Type-constrained scalars keep
+            // the plain store — see `type_constrained_scalar` above.
+            let val = if type_constrained_scalar {
                 coerced
+            } else {
+                coerced.into_container_ref()
             };
             self.set_state_var(scoped_key.clone(), val.clone());
             val
