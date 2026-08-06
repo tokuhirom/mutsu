@@ -367,6 +367,30 @@ impl Interpreter {
                 .collect();
             let mut consumed_named: rustc_hash::FxHashSet<String> =
                 rustc_hash::FxHashSet::default();
+            // Used only for the "too few positionals" message below (Raku's
+            // wording, not this legacy binder's own). A "too many" check is
+            // deliberately NOT added here: a `^`-twigil placeholder sub whose
+            // body also references bare `@_`/`%_` legitimately accepts more
+            // positionals than its placeholders alone (leftovers flow into
+            // `@_`, see the unconditional insert below) -- e.g.
+            // `sub f { [@_[0], @^arr.elems] }` -- and nothing in `params`
+            // distinguishes that shape from one that should reject extras
+            // (todo/tickets/template-mojo-residual-failures.md discusses the
+            // one-sided fix that was tried and reverted here: it required
+            // reserving a synthetic `params` entry, which leaks into the
+            // ~80 other call sites that read a Sub's raw `params`, e.g.
+            // multi-dispatch candidate arity matching in
+            // `methods_signature_candidates.rs`).
+            let required_positional_count = params
+                .iter()
+                .filter(|p| {
+                    let named_key = p
+                        .strip_prefix(':')
+                        .or_else(|| p.strip_prefix("@:"))
+                        .or_else(|| p.strip_prefix("%:"));
+                    named_key.is_none()
+                })
+                .count();
             let mut positional_idx = 0usize;
             for param in params.iter() {
                 // Named placeholder: $:f, @:f, %:f -- match by Pair key
@@ -416,8 +440,9 @@ impl Interpreter {
                     || param.starts_with("&^")
                 {
                     return Err(RuntimeError::new(format!(
-                        "Missing required implicit placeholder parameter ${}",
-                        param
+                        "Too few positionals passed; expected {} arguments but got {}",
+                        required_positional_count,
+                        positional_args.len()
                     )));
                 }
             }

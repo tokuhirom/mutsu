@@ -543,6 +543,16 @@ impl Interpreter {
                 // `collect_nested_list_quantified_names`).
                 let mut zo_list_names = HashSet::new();
                 Self::collect_nested_list_quantified_names(&token.atom, &mut zo_list_names);
+                // A name assigned directly to *this* token (`$<x>=[...]?`,
+                // `$<x>=<[cd]>?`) always "runs" as a unit even when the `?`
+                // takes its zero branch, so it renders as an empty (zero-width)
+                // Match — unlike a name on a *capturing-group* atom
+                // (`$<x>=(...)?`), where Raku still yields Nil for zero reps
+                // (verified against `raku`: the CaptureGroup case differs from
+                // every other atom kind). `store_apply_named_capture` is a
+                // no-op when `token.named_capture` is unset, so this is safe
+                // to call unconditionally for non-CaptureGroup atoms.
+                let named_zero_capture = !matches!(token.atom, RegexAtom::CaptureGroup(_));
                 let mut candidates = self.regex_match_atom_all_with_capture_in_pkg(
                     &token.atom,
                     ctx.chars,
@@ -556,6 +566,9 @@ impl Interpreter {
                         // Atom didn't match — commit to "zero" (no match).
                         let m = store.mark();
                         store.reserve_nil(zo_stride);
+                        if named_zero_capture {
+                            Self::store_apply_named_capture(store, token, pos, pos, pos_base);
+                        }
                         for n in &zo_list_names {
                             store.insert_named_quantified(n.clone());
                         }
@@ -569,6 +582,9 @@ impl Interpreter {
                     // Frugal: prefer zero matches — try zero first.
                     let m = store.mark();
                     store.reserve_nil(zo_stride);
+                    if named_zero_capture {
+                        Self::store_apply_named_capture(store, token, pos, pos, pos_base);
+                    }
                     for n in &zo_list_names {
                         store.insert_named_quantified(n.clone());
                     }
@@ -593,6 +609,9 @@ impl Interpreter {
                     // Greedy: the zero candidate is tried last.
                     let m = store.mark();
                     store.reserve_nil(zo_stride);
+                    if named_zero_capture {
+                        Self::store_apply_named_capture(store, token, pos, pos, pos_base);
+                    }
                     for n in &zo_list_names {
                         store.insert_named_quantified(n.clone());
                     }
