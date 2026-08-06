@@ -38,8 +38,18 @@ method form is a red herring: `''.splice(0, 'Raku')` fails in **raku** too
 ("Routine does not have any candidates. Is only the proto defined?"), so this was
 equally broken before the listop-shadow gate landed
 (`news/2026-07/listop-rewrite-respects-user-routine-shadow.md`) — that gate only
-changed which error appears. Suspect the call path looks for an exported proto
-rather than assembling the exported multi candidates.
+changed which error appears.
+
+Root cause confirmed 2026-08-06: `splice` is not a real multi-sub/proto in
+mutsu at all — it's a special-cased "listop" compiled straight to native
+array/string mutation opcodes (`src/parser/primary/ident/listop.rs` and
+friends). The only accommodation for a user override,
+`Compiler::user_listop_shadows`, only scans the **current file**'s literal
+`SubDecl`/`ProtoDecl` statements and does an all-or-nothing handoff (never a
+merge) — so it neither sees an *imported* multi candidate nor preserves the
+core array-splice behavior when it does trigger locally. Full analysis and
+why this needs a design pass rather than a quick patch:
+[todo/deep/listops-are-not-real-multi-subs.md](../deep/listops-are-not-real-multi-subs.md).
 
 ### `String::Splice` — spurious octal worry for a bare word inside `<...>`
 
