@@ -748,17 +748,21 @@ impl Interpreter {
             // same candidate forever (stack overflow in
             // `t/multi-where-otf-dispatch.t`). It also must not push a samewith
             // context, matching the interpreter entry this replaces.
-            let empty_fns = crate::opcode::CompiledFns::default();
             let cf = match &next_def.compiled {
                 Some(compiled) => std::sync::Arc::clone(compiled),
                 None => self.otf_compile_function_def(&next_def),
             };
+            // Prefer the candidate's own nested-sub table over an empty one
+            // (ADR-0019 C6e-3c) — this deferral chain owns no `CompiledFns` of
+            // its own to offer.
+            let empty_fns = crate::opcode::CompiledFns::default();
+            let fns = cf.compiled_fns.as_deref().unwrap_or(&empty_fns);
             let next_pkg = next_def.package.resolve();
             let next_name = next_def.name.resolve();
             let result = self.call_compiled_function_named(
                 &cf,
                 call_args.clone(),
-                &empty_fns,
+                fns,
                 &next_pkg,
                 &next_name,
             );

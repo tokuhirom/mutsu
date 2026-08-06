@@ -65,7 +65,10 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         if let Some(cf) = self.find_compiled_function(compiled_fns, name, &args) {
             let pkg = self.current_package().to_string();
-            return self.call_compiled_function_named(cf, args, compiled_fns, &pkg, name);
+            // Prefer the routine's own nested-sub table over the caller's
+            // (ADR-0019 C6e-3c) — see `compile_and_call_function_def`.
+            let fns = cf.compiled_fns.as_deref().unwrap_or(compiled_fns);
+            return self.call_compiled_function_named(cf, args, fns, &pkg, name);
         }
         if let Some(native_result) =
             self.try_native_function(crate::symbol::Symbol::intern(name), &args)
@@ -178,7 +181,11 @@ impl Interpreter {
             return cached;
         }
         let pkg = def.package.resolve();
-        let cc = {
+        // `compiler` compiles ONLY `def`'s own body, so anything it accumulates
+        // in `compiled_functions` is exactly this routine's own nested-sub
+        // subtree — attach it below so a later detached-value call of this
+        // routine can resolve its nested `RegisterSub` keys (ADR-0019 C6e-3c).
+        let (cc, own_compiled_fns) = {
             let mut compiler = crate::compiler::Compiler::new();
             if !pkg.is_empty() && pkg != "GLOBAL" {
                 compiler.set_current_package(pkg.to_string());
@@ -186,7 +193,8 @@ impl Interpreter {
             // Resolve $?DISTRIBUTION from the function's defining package (or an
             // enclosing module's distribution for a nested package / role method).
             compiler.current_distribution = self.resolve_package_distribution(&pkg);
-            compiler.compile_routine_closure_body(&def.params, &def.param_defs, &def.body)
+            let cc = compiler.compile_routine_closure_body(&def.params, &def.param_defs, &def.body);
+            (cc, compiler.take_compiled_functions())
         };
         let deprecated_info = def.deprecated_message.as_ref().map(|msg| {
             let kind = if def.is_method { "Method" } else { "Sub" };
@@ -215,6 +223,8 @@ impl Interpreter {
             declared_locals: None,
             param_name_syms: Vec::new(),
             package: pkg.clone(),
+            compiled_fns: (!own_compiled_fns.is_empty())
+                .then(|| std::sync::Arc::new(own_compiled_fns)),
         };
         cf.precompute_param_local_slots();
         cf.precompute_named_call_plan();
@@ -285,7 +295,13 @@ impl Interpreter {
         self.push_samewith_context(&name, None);
         let pushed_dispatch = loan_env!(self, push_multi_dispatch_frame(&name, &args));
 
-        let result = self.call_compiled_function_named(&cf, args, compiled_fns, &pkg, &name);
+        // Prefer the routine's own nested-sub table over the caller's: a
+        // caller with no table of its own (e.g. `sub EXPORT` dispatch) must
+        // still resolve `cf`'s own nested `RegisterSub` keys (ADR-0019
+        // C6e-3c), and a plan-compiled/OTF-compiled `cf` always carries the
+        // table it was compiled alongside.
+        let fns = cf.compiled_fns.as_deref().unwrap_or(compiled_fns);
+        let result = self.call_compiled_function_named(&cf, args, fns, &pkg, &name);
 
         self.pop_samewith_context();
         if pushed_dispatch {
@@ -321,12 +337,15 @@ impl Interpreter {
         // `as_str`, not `resolve`: the latter allocates a `String` per call.
         let pkg = def.package.as_str();
         let name = def.name.as_str();
-        let empty_fns = CompiledFns::default();
         let cf = match &def.compiled {
             Some(compiled) => Arc::clone(compiled),
             None => self.otf_compile_function_def(def),
         };
-        self.call_compiled_function_named(&cf, args, &empty_fns, pkg, name)
+        // Prefer the routine's own nested-sub table (ADR-0019 C6e-3c) over an
+        // empty one: this caller owns no `CompiledFns` of its own to offer.
+        let empty_fns = CompiledFns::default();
+        let fns = cf.compiled_fns.as_deref().unwrap_or(&empty_fns);
+        self.call_compiled_function_named(&cf, args, fns, pkg, name)
     }
 
     /// Check if a function name is handled by the interpreter's Rust code

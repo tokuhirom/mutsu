@@ -264,6 +264,60 @@ sigilless / 2,659 `start`-body / 14 sub-signature / 0 trait). The
   correctly. Fixed to match; this was latent on `main` too (masked by
   `legacy_body`) and is a pure improvement independent of the field drop.
 
+- **`CompiledFunction::compiled_fns` carrier landed (2026-08-06), closing the
+  ~17-site audit.** `CompiledFunction` now carries its own
+  `compiled_fns: Option<Arc<CompiledFns>>` — the nested-sub subtree it was
+  compiled alongside, captured at both construction sites
+  (`helpers_sub_body.rs`'s named-sub compile, and
+  `vm_call_dispatch.rs::otf_compile_function_def`) via
+  `import_compiled_functions` now returning its post-remap import set
+  instead of discarding it. Every dispatch site that used to substitute
+  `CompiledFns::default()` for a `CompiledFunction`/`compiled_routine`
+  value it had in hand now prefers `cf.compiled_fns` first: the
+  `resolution_call_sub.rs:385` wrap-chain/value-call carrier named above
+  (the `is-eqv` case), `call_routine_def`, `compile_and_call_function_def`
+  (which also fixes its callers transitively —
+  `apply_module_export`/`sub EXPORT`, `vm_misc_coerce.rs`'s
+  `prefix:<~>` overload probe, `vm_arith_ops.rs`, `vm_set_arith_ops.rs`,
+  `vm_var_assign_post_incdec.rs`), `call_function_compiled_first`'s
+  `find_compiled_function` fast path, the multi-deferral chain in
+  `builtins_dispatch_next.rs`, and `resolution_eval.rs`'s
+  `Lock.protect`-block body-less-routine case. `find_compiled_function`
+  fast path, the multi-deferral chain in `builtins_dispatch_next.rs`, and
+  `resolution_eval.rs`'s `Lock.protect`-block body-less-routine case. The
+  remaining `CompiledFns::default()` sites are either (a) already-correct
+  pre-existing `MethodDef.compiled_fns` reads (the #5982 fix, a different
+  field on a different struct) or (b) a raw closure's `compiled_code`
+  (`SubData` carries no equivalent field — closures aren't in C6e-3c's
+  scope, since a plan-derived *def* never routes through `compiled_code`).
+  Full `t/` suite (27718 tests) and the eight previously-named regression
+  files pass with the carrier landed.
+- **Validation: forcing every plan-derived def to register body-less
+  (bypassing `primary_compiled.is_some()` entirely) now surfaces only ONE
+  file, not eight.** Re-ran the same experiment the earlier removal attempt
+  used (env-gated instrument in `vm_register_sub_ops.rs`, reverted before
+  commit) with the carrier fix in place: `t/module-sub-otf-interpreter-constructs.t`
+  tests 3-4 (`nested proto+multi dispatch`) are the only failures across the
+  full `t/` suite. Root-caused to a narrower case than C6e-3c: a `proto sub
+  inner($) {*}` nested inside an `our sub` that is (a) loaded from an
+  imported module and (b) forced body-less returns `Nil` instead of
+  dispatching — but the SAME proto+multi nesting at the top level (no
+  module import), and plain/multi-only nesting (no `proto`) inside an
+  imported module sub, both work correctly even forced. This isolates the
+  gap to `RegisterProtoSub` specifically, which — per ADR-0019 Decision §1
+  and the C8 slice description — still indexes `stmt_pool` rather than a
+  `CompiledSubDeclPlan`; it is explicitly out of C6e-3c's scope ("C8...
+  Independent of C6/C7; the slice exists because... unreachable while these
+  two opcodes still index the statement pool"). **C6e-3c's own blocker (the
+  ~17-site audit) is therefore resolved; the field drop is now blocked
+  only on this proto-in-OTF-module-sub gap, which is C8-adjacent and needs
+  its own root-cause investigation** (why forcing the OUTER `our sub`
+  body-less breaks a proto nested inside it, when the proto mechanism
+  itself is unchanged — likely something the outer sub's dropped AST body
+  was still incidentally providing to the `RegisterProtoSub` walker, e.g.
+  `stmt_pool` reachability or a `{*}`-rewrite precondition keyed off the
+  def still being tree-walk-eligible).
+
 Related: `todo/deep/c6d-interpreter-body-sites-are-mostly-token-bodies.md`
 (the site inventory), `news/2026-08/fallback-def-arm-runs-compiled-body.md`
 (the C6d-5 gate).

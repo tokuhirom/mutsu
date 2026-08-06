@@ -402,31 +402,40 @@ impl Interpreter {
         }
         // A code object built from a registry routine carries that routine's own
         // bytecode, so it runs compiled without re-compiling its AST body
-        // (ADR-0019 C6c). Mirrors `vm_call_on_value`.
+        // (ADR-0019 C6c). Mirrors `vm_call_on_value`. Prefer the routine's own
+        // nested-sub table over an empty one (ADR-0019 C6e-3c).
         if let Some(cf) = data.compiled_routine.clone() {
             let data = data.clone();
+            let fns = cf.compiled_fns.as_deref().unwrap_or(&empty_fns);
             return self.call_compiled_closure_with_topic(
                 &data,
                 &cf.code,
                 args,
                 explicit_topic,
                 capture_rw_topic,
-                &empty_fns,
+                fns,
             );
         }
         // Sub without compiled_code: compile on-the-fly (mirrors vm_call_on_value).
-        let cc = {
+        let (cc, own_compiled_fns) = {
             let mut compiler = crate::compiler::Compiler::new();
-            compiler.compile_routine_closure_body(&data.params, &data.param_defs, &data.body)
+            let cc =
+                compiler.compile_routine_closure_body(&data.params, &data.param_defs, &data.body);
+            (cc, compiler.take_compiled_functions())
         };
         let data = data.clone();
+        let fns = if own_compiled_fns.is_empty() {
+            &empty_fns
+        } else {
+            &own_compiled_fns
+        };
         self.call_compiled_closure_with_topic(
             &data,
             &cc,
             args,
             explicit_topic,
             capture_rw_topic,
-            &empty_fns,
+            fns,
         )
     }
 
@@ -507,7 +516,14 @@ impl Interpreter {
         {
             let data = data.clone();
             let empty_fns = CompiledFns::default();
-            let fns = compiled_fns.unwrap_or(&empty_fns);
+            // Prefer the routine's OWN nested-sub table over the caller's
+            // (a detached value call's caller context has no relation to
+            // this callee's nested `RegisterSub` keys — ADR-0019 C6e-3c).
+            let fns = cf
+                .compiled_fns
+                .as_deref()
+                .or(compiled_fns)
+                .unwrap_or(&empty_fns);
             // A value call is never compile-time-diagnosable: keep a binding
             // failure's runtime X::TypeCheck::Binding identity instead of
             // reclassifying it as X::TypeCheck::Argument (raku throws Binding
@@ -520,14 +536,23 @@ impl Interpreter {
         if let ValueView::Sub(data) = target.view()
             && !data.body.is_empty()
         {
-            let cc = {
+            let (cc, own_compiled_fns) = {
                 let mut compiler = crate::compiler::Compiler::new();
                 // Use routine closure body so `return` inside the sub works correctly
-                compiler.compile_routine_closure_body(&data.params, &data.param_defs, &data.body)
+                let cc = compiler.compile_routine_closure_body(
+                    &data.params,
+                    &data.param_defs,
+                    &data.body,
+                );
+                (cc, compiler.take_compiled_functions())
             };
             let data = data.clone();
             let empty_fns = CompiledFns::default();
-            let fns = compiled_fns.unwrap_or(&empty_fns);
+            let fns = if !own_compiled_fns.is_empty() {
+                &own_compiled_fns
+            } else {
+                compiled_fns.unwrap_or(&empty_fns)
+            };
             // A value call is never compile-time-diagnosable, same reasoning as
             // the `compiled_routine` branch above: a named sub (e.g. from EVAL)
             // dispatched through a value must keep a binding failure's runtime
