@@ -72,9 +72,22 @@ unsupported — `subset Sm of Int where * < 10; Sm(5)` returns 5 in raku,
 `Unknown function: Sm` in mutsu. Different mechanism (coerce to the base type,
 then check the constraint).
 
+### `RSV` — triaged, root-caused, needs a compiler design pass
+
+`lib/RSV.rakumod` declares `constant \EOV = blob8.new(255);` (and `\EOR`,
+`\NULL`) directly inside `module RSV { ... }` and reads them from `sub
+to-rsv`/`sub from-rsv` in the same block. mutsu resolves the bareword
+reference to the **string** `"EOR"` instead of the constant's value — a
+sigilless (`\NAME`) constant declared in a non-unit `module`/`package` block
+is invisible to a nested `sub` referencing it, though the identical shape
+inside a `class` body works. Full root-cause trace (compiler `BareWord`
+resolution / `inherit_enclosing_scopes` / `constant_vars_in_scope`) and why
+it needs a design pass rather than a quick patch:
+[todo/tickets/sigilless-constant-invisible-in-nested-sub-inside-module.md](sigilless-constant-invisible-in-nested-sub-inside-module.md).
+
 ## Un-triaged `test_die` / `test_fail`
 
-`RSV`, `P5seek`, `Date::YearDay`, `PSpec`, `Array::Rounded` (fail);
+`P5seek`, `Date::YearDay`, `PSpec`, `Array::Rounded` (fail);
 `Math::Interval`, `Native::Overflow`, `App::SudokuHelper`, `P5tie`,
 `Mathematica::Serializer::Encoder`, `Hash::Restricted`, `Crypt::RC4`,
 `Random::Choice` (die).
