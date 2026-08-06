@@ -1862,8 +1862,13 @@ impl Compiler {
                     self.synthetic_block_body = true;
                     self.compile_stmt(&Stmt::Block(loop_body.clone()));
                 } else {
-                    self.suppress_loop_block_state_reset =
-                        Self::loop_body_is_sole_block(&loop_body);
+                    // A sole `{ ... }` in a prefix `while`/`until` body is a
+                    // NESTED bare block that re-clones per iteration, so its
+                    // `state` restarts (raku: 1 1 1) — no ResetStateLocals
+                    // suppression here. The `{...} while COND` modifier form
+                    // never calls the block in raku at all, so there is no
+                    // persisting-modifier case to preserve (unlike `for`,
+                    // which gates on `is_statement_modifier`).
                     self.compile_body_with_implicit_try(&loop_body);
                 }
                 self.code.patch_loop_end(loop_idx);
@@ -2222,8 +2227,9 @@ impl Compiler {
                     self.code.emit(OpCode::LoadTrue);
                 }
                 self.code.patch_cstyle_cond_end(loop_idx);
-                // Compile body
-                self.suppress_loop_block_state_reset = Self::loop_body_is_sole_block(&loop_body);
+                // Compile body. A sole `{ ... }` here is a nested bare block
+                // (C-style `loop` has no statement-modifier form), so its
+                // `state` restarts per iteration — no reset suppression.
                 self.compile_body_with_implicit_try(&loop_body);
                 self.code.patch_cstyle_step_start(loop_idx);
                 // Compile step (if any)
@@ -2716,8 +2722,10 @@ impl Compiler {
                     body_end: 0,
                     label: label.clone(),
                 });
-                // Compile body
-                self.suppress_loop_block_state_reset = Self::loop_body_is_sole_block(&loop_body);
+                // Compile body. The parser inlines the `repeat { ... }` block's
+                // statements directly into `body`, so a sole `{ ... }` here is
+                // a NESTED bare block that re-clones per iteration — its
+                // `state` restarts (raku: 1 1 1), no reset suppression.
                 self.compile_body_with_implicit_try(&loop_body);
                 self.code.patch_repeat_cond_end(loop_idx);
                 // Compile condition (or push True if none)
