@@ -577,6 +577,43 @@ impl RuntimeError {
         Self::typed("X::TypeCheck::Binding::Parameter", attrs)
     }
 
+    /// Like `typecheck_binding_parameter`, but with raku's exact wording
+    /// ("expected T but got U (repr)", not "expected T, got U") and `.got`
+    /// carrying the actual offending value. Matches the hand-rolled format
+    /// used throughout `runtime/types/binding_signature.rs` for real routine
+    /// parameter binding; factored out here so a second call site (`for`-loop
+    /// parameter binding, which never goes through that binder) can share it.
+    pub(crate) fn typecheck_binding_parameter_with_repr(
+        param: &str,
+        expected: &str,
+        value: &Value,
+    ) -> Self {
+        let got_type = crate::runtime::utils::got_type_name(value);
+        let repr = crate::runtime::utils::value_short_repr(value);
+        // Unlike several sibling constructors in this file, the class name is
+        // NOT baked into this message: `Self::typed` copies it verbatim into
+        // both the top-level uncaught display AND the exception's own
+        // `.message`/`.Str`, and raku's own text for this exception has no
+        // "X::...: " prefix on either.
+        let msg = if repr.is_empty() {
+            format!(
+                "Type check failed in binding to parameter '{}'; expected {} but got {}",
+                param, expected, got_type
+            )
+        } else {
+            format!(
+                "Type check failed in binding to parameter '{}'; expected {} but got {} {}",
+                param, expected, got_type, repr
+            )
+        };
+        let mut attrs = HashMap::new();
+        attrs.insert("parameter".to_string(), Value::str(param.to_string()));
+        attrs.insert("expected".to_string(), expected_type_object(expected));
+        attrs.insert("got".to_string(), value.clone());
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        Self::typed("X::TypeCheck::Binding::Parameter", attrs)
+    }
+
     /// Like `typecheck_binding_parameter`, but `.got` carries the actual
     /// offending VALUE (so `got => SomeType` matchers can smartmatch its type)
     /// instead of just the type-name string.

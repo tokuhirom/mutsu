@@ -2117,6 +2117,13 @@ impl Compiler {
                                 .iter()
                                 .map(|p| p.strip_prefix('\\').unwrap_or(p).to_string())
                                 .collect(),
+                            param_type_constraint: param_def
+                                .as_ref()
+                                .as_ref()
+                                .and_then(|d| d.type_constraint.clone()),
+                            multi_param_type_constraints: (0..params.len())
+                                .map(|i| params_def.get(i).and_then(|d| d.type_constraint.clone()))
+                                .collect(),
                             loop_var_wraps_element: Self::for_iterable_wraps_pair(iterable),
                             values_mode: Self::for_iterable_is_values_alias(iterable),
                             single_array_source: Self::for_single_array_source(iterable),
