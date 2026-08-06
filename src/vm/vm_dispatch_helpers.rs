@@ -528,6 +528,12 @@ impl Interpreter {
             let data = data.clone();
             let empty_fns = CompiledFns::default();
             let fns = compiled_fns.unwrap_or(&empty_fns);
+            // A value call is never compile-time-diagnosable, same reasoning as
+            // the `compiled_routine` branch above: a named sub (e.g. from EVAL)
+            // dispatched through a value must keep a binding failure's runtime
+            // identity instead of the "will never work with declared signature"
+            // wrap, which is meant for statically-resolved bare calls.
+            self.suppress_binding_error_enhance = true;
             return self.call_compiled_closure(&data, &cc, args, fns);
         }
 
