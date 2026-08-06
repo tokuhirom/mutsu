@@ -213,9 +213,14 @@ impl Interpreter {
         let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
         match target.view() {
             ValueView::Array(items, kind) => {
+                // A descended-into sublist is itemized only when its parent is
+                // a List, not a real Array — the same rule deepmap applies:
+                // `(1, [2,3]).duckmap(-> Int $x {...})` -> `(10, $[20, 30])`
+                // but `[1, [2,3]].duckmap(...)` -> `[10, [20, 30]]`.
+                let child_itemize = !kind.is_real_array();
                 let mut result = Vec::new();
                 for item in items.iter() {
-                    match self.duckmap_element(block, item) {
+                    match self.duckmap_element(block, item, child_itemize) {
                         Ok(v) => result.push(v),
                         Err(e) if e.is_next() => continue,
                         Err(e) if e.is_last() => break,
@@ -231,19 +236,21 @@ impl Interpreter {
             ValueView::Seq(items) => {
                 let mut result = Vec::new();
                 for item in items.iter() {
-                    match self.duckmap_element(block, item) {
+                    match self.duckmap_element(block, item, true) {
                         Ok(v) => result.push(v),
                         Err(e) if e.is_next() => continue,
                         Err(e) if e.is_last() => break,
                         Err(e) => return Err(e),
                     }
                 }
-                Ok(Value::seq(result))
+                // duckmap on a Seq returns a List (rakudo:
+                // `(...).Seq.duckmap(...).WHAT` is `List`).
+                Ok(Value::array(result))
             }
             ValueView::Hash(map) => {
                 let mut result = std::collections::HashMap::new();
                 for (k, v) in map.iter() {
-                    match self.duckmap_element(block, v) {
+                    match self.duckmap_element(block, v, true) {
                         Ok(mapped) => {
                             result.insert(k.clone(), mapped);
                         }
@@ -255,7 +262,7 @@ impl Interpreter {
                 Ok(Value::hash_with_data(Value::hash_arc(result)))
             }
             // Single non-iterable value: try the block on it directly
-            _ => self.duckmap_element(block, target),
+            _ => self.duckmap_element(block, target, false),
         }
     }
 
@@ -517,13 +524,36 @@ impl Interpreter {
     }
 
     /// Apply duckmap to a single element: try the block, on failure descend.
-    fn duckmap_element(&mut self, block: &Value, value: &Value) -> Result<Value, RuntimeError> {
+    /// `itemize` is true when this element sits in a List/Seq/Hash parent —
+    /// rakudo itemizes what a descend returns there (`(1, (2, 3)).duckmap(->
+    /// Int $x { $x * 10 })` is `(10, $(20, 30))`), so the sublist is one
+    /// element of the result rather than something that can flatten. A real
+    /// Array parent does not itemize (same rule as deepmap).
+    fn duckmap_element(
+        &mut self,
+        block: &Value,
+        value: &Value,
+        itemize: bool,
+    ) -> Result<Value, RuntimeError> {
         // This construct handles `next`/`last`/`redo`, so a loop-control
         // statement raised anywhere in its dynamic extent has somewhere to go
         // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
         // would convert the signal into a thrown `X::ControlFlow` and silently
         // break this loop.
         let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
+        let list_kind = |itemize: bool| {
+            if itemize {
+                crate::value::ArrayKind::ItemList
+            } else {
+                crate::value::ArrayKind::List
+            }
+        };
+        let with_kind = |result: Vec<Value>, kind: crate::value::ArrayKind| {
+            Value::array_with_kind(
+                crate::gc::Gc::new(crate::value::ArrayData::new(result)),
+                kind,
+            )
+        };
         // Try to call the block with this value
         match self.call_sub_value(block.clone(), vec![value.clone()], false) {
             Ok(result) => Ok(result),
@@ -537,35 +567,48 @@ impl Interpreter {
                 if let Some(list) = range_as_list(value) {
                     let mut result = Vec::new();
                     for item in list.as_list_items().unwrap_or_default() {
-                        result.push(self.duckmap_element(block, item)?);
+                        result.push(self.duckmap_element(block, item, true)?);
                     }
-                    return Ok(Value::array(result));
+                    return Ok(with_kind(result, list_kind(itemize)));
                 }
                 match value.view() {
                     ValueView::Array(items, kind) => {
+                        let child_itemize = !kind.is_real_array();
                         let mut result = Vec::new();
                         for item in items.iter() {
-                            result.push(self.duckmap_element(block, item)?);
+                            result.push(self.duckmap_element(block, item, child_itemize)?);
                         }
-                        if kind.is_real_array() {
-                            Ok(Value::real_array(result))
+                        let arr_kind = if kind.is_real_array() {
+                            if itemize {
+                                crate::value::ArrayKind::ItemArray
+                            } else {
+                                crate::value::ArrayKind::Array
+                            }
                         } else {
-                            Ok(Value::array(result))
-                        }
+                            list_kind(itemize)
+                        };
+                        Ok(with_kind(result, arr_kind))
                     }
                     ValueView::Seq(items) => {
                         let mut result = Vec::new();
                         for item in items.iter() {
-                            result.push(self.duckmap_element(block, item)?);
+                            result.push(self.duckmap_element(block, item, true)?);
                         }
-                        Ok(Value::seq(result))
+                        // A Seq descend comes back as a List (rakudo itemizes
+                        // it into an itemized *List*, not a Seq).
+                        Ok(with_kind(result, list_kind(itemize)))
                     }
                     ValueView::Hash(map) => {
                         let mut result = std::collections::HashMap::new();
                         for (k, v) in map.iter() {
-                            result.insert(k.clone(), self.duckmap_element(block, v)?);
+                            result.insert(k.clone(), self.duckmap_element(block, v, true)?);
                         }
-                        Ok(Value::hash_with_data(Value::hash_arc(result)))
+                        let hash = Value::hash_with_data(Value::hash_arc(result));
+                        if itemize {
+                            Ok(Value::scalar(hash))
+                        } else {
+                            Ok(hash)
+                        }
                     }
                     // Not iterable — return unchanged
                     _ => Ok(value.clone()),

@@ -28,15 +28,11 @@ is %(a => 1, b => (2..3)).deepmap(* + 1).raku, '{:a(2), :b($(3, 4))}',
 # nodemap does not descend, so a nested Range reaches the block whole.
 is (1, (2..3)).nodemap(*.elems).raku, '(1, 2)', 'nodemap does not descend into a nested Range';
 
-# duckmap descends only when the block rejects the value. Compared against the
-# equivalent List rather than a literal: mutsu does not itemize a duckmap
-# descend at all (`(10, (20, 30))` where raku says `(10, $(20, 30))`), which is
-# pre-existing and the same for a List — see
-# todo/tickets/duckmap-does-not-itemize-a-nested-descend.md. What this asserts
-# is the invariant the fix establishes: a Range descends like its List.
-is (1, (2..3)).duckmap(-> Int $x { $x * 10 }).raku,
-   (1, (2, 3)).duckmap(-> Int $x { $x * 10 }).raku,
-   'duckmap descends into a nested Range exactly as into the equivalent List';
+# duckmap descends only when the block rejects the value, and itemizes what
+# the descend returns (raku literal, not just the List-equivalence the
+# pre-itemization version of this test asserted).
+is (1, (2..3)).duckmap(-> Int $x { $x * 10 }).raku, '(10, $(20, 30))',
+   'duckmap descends into a nested Range and itemizes the result';
 
 # The List forms are unchanged.
 is (1, 2, 3, 4).deepmap({ $_ * 2 }).raku, '(2, 4, 6, 8)', 'a List still deepmaps as before';
