@@ -134,13 +134,22 @@ sigilless / 2,659 `start`-body / 14 sub-signature / 0 trait). The
   predicate no longer checks `has_rw_scalar_param`
   (`news/2026-08/rw-param-routines-register-body-less.md`): rw-param
   routines register body-less like any safe-class def.
+- **Signature alternates register with per-slot metadata (2026-08-06):**
+  the plan now lowers a `CompiledRoutineMetadata` per `signature_alternates`
+  slot (`alternate_metadata`, index-aligned) and
+  `register_sub_alternate_decl` seeds the alternate def's
+  fingerprint/facts caches from it, exactly like the primary — so an
+  alternate candidate's identity no longer depends on a lazy walk over
+  the (possibly already empty) plan body
+  (`news/2026-08/sig-alternates-register-with-metadata.md`). The C6e-3a
+  debug asserts cover the per-slot values wherever a body is still
+  attached.
 - **C6e-3c (open):** the field itself. `CompiledSubDeclPlan::legacy_body`
   still carries the AST for the remaining keep-classes (unresolvable plan
   bytecode, routine-level lvalue forms, NativeCall traits) and for the
-  registration fallback; dropping it outright still needs per-slot
-  metadata for signature alternates (they register metadata-less today)
-  and a NativeCall story. Registration-time body use for the safe class
-  is already zero.
+  registration fallback; dropping it outright still needs a story for
+  those classes. Registration-time body use for the safe class is
+  already zero.
 
 Related: `todo/deep/c6d-interpreter-body-sites-are-mostly-token-bodies.md`
 (the site inventory), `news/2026-08/fallback-def-arm-runs-compiled-body.md`
