@@ -335,13 +335,30 @@ impl Compiler {
         let mut nested = Vec::new();
         collect(stmts, 0, &mut nested);
         for mut hoisted in nested {
-            if let Stmt::SubDecl { custom_traits, .. } = &mut hoisted {
-                custom_traits.retain(|(t, _)| {
-                    t.starts_with("__") || t == "default" || t.starts_with("DEPRECATED")
-                });
-            }
+            let name = match &mut hoisted {
+                Stmt::SubDecl {
+                    name,
+                    custom_traits,
+                    ..
+                } => {
+                    custom_traits.retain(|(t, _)| {
+                        t.starts_with("__") || t == "default" || t.starts_with("DEPRECATED")
+                    });
+                    *name
+                }
+                _ => unreachable!("collect() only pushes SubDecl statements"),
+            };
             let idx = self.add_sub_decl_plan(&hoisted);
             self.code.emit(OpCode::RegisterDecl(idx));
+            // Remember the hoisted plan so the source-order compile of the
+            // same declaration hands it the bytecode it compiles, exactly
+            // like `hoist_sub_decls` does (`Compiler::hoisted_sub_plans`) —
+            // without this, this plan's `compiled_routine_keys` stays empty
+            // forever (ADR-0019 C6e-3c: `CompiledSubDeclPlan` no longer has
+            // an AST body to fall back to when that happens).
+            if let Some(fp) = self.code.sub_decl_plan_fingerprint(idx) {
+                self.hoisted_sub_plans.push((name, fp, idx));
+            }
         }
     }
 
