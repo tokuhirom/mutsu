@@ -231,17 +231,6 @@ impl Interpreter {
             // nested sub registered from a class-walker method body, whose
             // keys do not resolve in this call site's fns table).
             let plan_fully_compiled = compiled_routine_keys.len() == 1 + signature_alternates.len();
-            // A routine with a scalar `is rw`/`is raw` param stays on the
-            // interpreter carrier (resolution_call_sub keeps it off the
-            // compiled fork until rw binding is cell-based — see
-            // todo/tickets/rw-writeback-through-wrap-chain-needs-shared-cells.md),
-            // so it must keep its AST body.
-            let has_rw_scalar_param = param_defs.iter().any(|pd| {
-                pd.traits.iter().any(|t| t == "rw" || t == "raw")
-                    && !pd.name.starts_with('@')
-                    && !pd.name.starts_with('%')
-                    && !pd.name.starts_with('&')
-            });
             // The plan compiled one routine body per declared signature: the
             // primary first, then each `signature_alternates` entry in
             // declaration order. Registration installs the candidates in that
@@ -265,7 +254,11 @@ impl Interpreter {
                 // carries keys its executing table does not hold, and a def
                 // with neither body nor bytecode cannot run.
                 && primary_compiled.is_some()
-                && !has_rw_scalar_param
+                // Scalar `is rw`/`is raw` PARAMS no longer keep the body: the
+                // binder aliases them through shared `ContainerRef` cells
+                // (news/2026-08/rw-params-bind-shared-cells.md), so their
+                // compiled bodies relay rw writes on every path. Only the
+                // routine-level lvalue forms below still need the AST.
                 // An lvalue routine (`sub f() is rw/is raw { $var }`, or a
                 // tail `$x.return-rw`) keeps its body: the assignment
                 // machinery extracts the assign target from the AST
