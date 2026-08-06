@@ -277,6 +277,20 @@ pub(crate) fn version_raku_repr(full: &str) -> String {
 /// immediately followed by another word char. A digit-leading key (`"1"`), a
 /// dotted key (`"1.5"`), or a key with a trailing/doubled `-`/`'` (`"x-"`,
 /// `"a--b"`) is NOT an identifier and renders as `"key" => value`.
+/// Render an object-hash pair KEY for `.raku`, applying Pair.raku's
+/// parenthesisation: a type-object key ((S) => 7 — bare `S => 7` would
+/// re-parse as the string key "S") and a Pair key ((:a(1)) => 2) wrap in
+/// parens; every other key is its plain `.raku`.
+pub(crate) fn object_hash_key_repr(typed: &Value) -> String {
+    match typed.view() {
+        ValueView::Package(_)
+        | ValueView::ParametricRole { .. }
+        | ValueView::Pair(..)
+        | ValueView::ValuePair(..) => format!("({})", raku_value(typed)),
+        _ => raku_value(typed),
+    }
+}
+
 pub(crate) fn is_adverbial_pair_key(s: &str) -> bool {
     let mut chars = s.chars().peekable();
     match chars.next() {
@@ -856,7 +870,7 @@ pub fn raku_value(v: &Value) -> String {
                         } else {
                             raku_hash_value(v)
                         };
-                        format!("{} => {}", raku_value(&typed), repr)
+                        format!("{} => {}", object_hash_key_repr(&typed), repr)
                     }
                 })
                 .collect();
