@@ -2117,6 +2117,14 @@ pub struct Interpreter {
     /// without invalidating the resolution caches. Entries are best-effort: a
     /// miss simply takes the full registration path.
     pub(crate) registered_fn_fingerprints: rustc_hash::FxHashMap<Symbol, u64>,
+    /// Declaration sites (fully-qualified name, compile-time site fingerprint)
+    /// that registered a yada-stub routine. A `RegisterSub` executes both
+    /// hoisted at block top and in place, so a stub's in-place re-arrival can
+    /// find its name already overwritten by the real definition (which the
+    /// stub forward-declared); membership here identifies that re-arrival as
+    /// an idempotent no-op, while a textually NEW stub after a definition (a
+    /// different site, different fingerprint) still raises X::Redeclaration.
+    pub(crate) registered_stub_decl_sites: rustc_hash::FxHashSet<(Symbol, u64)>,
     /// Derive-once cache: a declaration is parsed into a `FunctionDef` exactly
     /// once, then shared. Keyed by the routine's fully-qualified name
     /// (`package::name`), the value is `(declaration fingerprint, Arc<FunctionDef>)`.

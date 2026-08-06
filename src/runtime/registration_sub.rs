@@ -1115,6 +1115,17 @@ impl Interpreter {
                     .clone_from(&new_def.compiled);
             }
             if same && !has_user_custom_traits {
+                // A structurally identical stub at a DIFFERENT site (line) is
+                // recognized as `same` (registration_identity strips SetLine),
+                // so its own site fingerprint must still be remembered here —
+                // otherwise its in-place re-arrival after the real definition
+                // lands would look like a textually new stub and die (the
+                // double-stub-then-define shape).
+                if new_def.is_stub
+                    && let Some(fp) = site_fingerprint
+                {
+                    self.registered_stub_decl_sites.insert((single_key_sym, fp));
+                }
                 let callable_key =
                     format!("__mutsu_callable_id::{}::{}", self.current_package(), name);
                 self.env.insert(
@@ -1187,6 +1198,29 @@ impl Interpreter {
                 return Err(RuntimeError::redeclaration_routine(name));
             }
             if has_single && !existing_is_stub && !shadows_outer_eval_single {
+                // A stub declaration re-arriving from its own site: `RegisterSub`
+                // executes both hoisted and in place, so by the time the stub's
+                // in-place copy runs, the real definition it forward-declared may
+                // already have replaced it in the registry. That is the SAME
+                // declaration re-executing, not a textually new stub after the
+                // definition (a different site, hence a different fingerprint,
+                // which still errors like raku). Without this, `sub f {...};
+                // sub f {42}` died or survived depending on hoist order — see
+                // todo/tickets/stub-redeclaration-is-position-sensitive.md.
+                if new_def.is_stub
+                    && let Some(fp) = site_fingerprint
+                    && self
+                        .registered_stub_decl_sites
+                        .contains(&(single_key_sym, fp))
+                {
+                    let callable_key =
+                        format!("__mutsu_callable_id::{}::{}", self.current_package(), name);
+                    self.env.insert(
+                        callable_key,
+                        Value::int(crate::value::next_instance_id() as i64),
+                    );
+                    return Ok(SubRegisterOutcome::Unchanged);
+                }
                 return Err(RuntimeError::redeclaration_routine(name));
             }
         }
@@ -1294,6 +1328,15 @@ impl Interpreter {
             // enclosing call) is exactly the per-call cost this is meant to avoid.
             if let Some(fp) = site_fingerprint {
                 self.registered_fn_fingerprints.insert(fq_sym, fp);
+                // A stub site is remembered permanently (not just as the last
+                // fingerprint): the real definition it forward-declares will
+                // overwrite `registered_fn_fingerprints`, and the stub's own
+                // in-place re-execution must then be recognized as the same
+                // declaration re-arriving, not a new conflicting stub (see
+                // `registered_stub_decl_sites`).
+                if arc.is_stub {
+                    self.registered_stub_decl_sites.insert((fq_sym, fp));
+                }
                 // Cache the derived definition so a later re-install of this exact
                 // simple single sub reuses the `Arc` instead of re-deriving it (the
                 // derive-once fast path above). Only cache the shapes that fast path
