@@ -56,18 +56,25 @@ impl Interpreter {
         let scoped_key = self.scoped_state_key(base_key);
         let slot_idx = slot as usize;
         let name = &code.locals[slot_idx];
-        // A type-constrained state scalar keeps the plain store (same rule as
-        // `box_captured_lexicals`, vm_register_ops): every mutation must keep
-        // flowing through the assignment chokepoint so the constraint
-        // re-checks, and a `state buf32 $w` holding a Buf must not present as
-        // a cell to the element-assignment path (`$w[$j] = ...` — Digest's
-        // SHA2). `Mu` is universal, so it stays cell-eligible.
-        let type_constrained_scalar = !name.starts_with('@') && !name.starts_with('%') && {
-            let tc = self
-                .var_type_constraint(name)
-                .or_else(|| self.var_type_constraint(name.trim_start_matches('$')));
-            tc.is_some_and(|t| t != "Mu")
-        };
+        // A type-constrained state scalar lives in a cell too (like untyped
+        // scalars since #5959), with the constraint registered ON the cell so
+        // the `ContainerRef` write chokepoint re-checks it
+        // (`check_container_cell_constraint` — the same side table `my T $`
+        // anonymous typed scalars use). One carve-out remains: a NATIVE ARRAY
+        // type (`state buf32 $w`) holds a Buf whose element-assignment path
+        // (`$w[$j] = ...` — Digest's SHA2) must see the Buf, not a cell, so it
+        // keeps the plain store. `Mu` is universal — no constraint to check.
+        let scalar_type_constraint: Option<String> = (!name.starts_with('@')
+            && !name.starts_with('%'))
+        .then(|| {
+            self.var_type_constraint(name)
+                .or_else(|| self.var_type_constraint(name.trim_start_matches('$')))
+        })
+        .flatten()
+        .filter(|t| t != "Mu");
+        let type_constrained_scalar = scalar_type_constraint.as_deref().is_some_and(|t| {
+            t.starts_with("buf") || t.starts_with("blob") || t.starts_with("array[")
+        });
         // Track C: while a thread is running, a user `state` variable lives in a
         // shared `ContainerRef` cell (keyed in shared_vars) so concurrent calls
         // to the same routine across threads — `await (^3).map: { start f() }`
@@ -120,6 +127,11 @@ impl Interpreter {
             // counter never accumulated (t/state-scalar-plain-assignment.t).
             if !stored.is_container_ref() && !type_constrained_scalar {
                 let cell = stored.into_container_ref();
+                if let Some(tc) = &scalar_type_constraint
+                    && let ValueView::ContainerRef(arc) = cell.view()
+                {
+                    crate::value::register_container_constraint(&arc, tc);
+                }
                 self.set_state_var(scoped_key.clone(), cell.clone());
                 cell
             } else {
@@ -158,7 +170,15 @@ impl Interpreter {
             let val = if type_constrained_scalar {
                 coerced
             } else {
-                coerced.into_container_ref()
+                let cell = coerced.into_container_ref();
+                // A typed state scalar's constraint rides ON the cell, so the
+                // ContainerRef write chokepoint re-checks it on every `=`.
+                if let Some(tc) = &scalar_type_constraint
+                    && let ValueView::ContainerRef(arc) = cell.view()
+                {
+                    crate::value::register_container_constraint(&arc, tc);
+                }
+                cell
             };
             self.set_state_var(scoped_key.clone(), val.clone());
             val
