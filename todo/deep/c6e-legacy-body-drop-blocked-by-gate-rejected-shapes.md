@@ -211,16 +211,58 @@ sigilless / 2,659 `start`-body / 14 sub-signature / 0 trait). The
   exercised this branch, and all 27705 tests still passed; the instrument
   was removed before commit. No dedicated `.t` pin — none could be written
   for a branch with no known reachable trigger.
-- **C6e-3c (open):** the field itself. Both former keep-classes (NativeCall
-  marshalling traits, class-walker nested subs) and the registration
-  fallback reader above are now resolved/hardened, but `legacy_body` has
-  not been physically deleted from `CompiledSubDeclPlan` yet — that
-  requires re-auditing every remaining `.legacy_body` read (`grep -rn
-  legacy_body src/`) to confirm none is load-bearing, then removing the
-  field and updating the two struct-literal construction sites
-  (`vm_register_sub_ops.rs`, `vm_typedecl_ops.rs`) plus the compiler side
-  that populates it. Not attempted in this session — do the final grep
-  audit first before assuming the deletion is purely mechanical.
+- **C6e-3c (open, blocked on a new prerequisite found 2026-08-06):** the
+  field itself. A fresh `grep -rn legacy_body src/` audit confirmed
+  `CompiledClassDeclPlan`/`CompiledRoleDeclPlan` each have their own
+  unrelated `legacy_body` (a different ADR-0019 stage; only
+  `CompiledSubDeclPlan::legacy_body` is this ticket's target), and that
+  `CompiledSubDeclPlan::legacy_body` itself has exactly three real readers:
+  the two `body` bindings inside `vm_register_sub_ops.rs::exec_register_sub_op`
+  (passed to `register_compiled_sub_decl`/`register_sub_alternate_decl` and to
+  the block-lexical escape hatch) and `vm_call_named_inner.rs`'s
+  sub-decl-as-last-statement fallback. All three already ran an empty body
+  whenever `plan_fully_compiled && primary_compiled.is_some()` — the
+  C6e-3b/C6e-3c-established "safe class". Removing the field (tried and
+  **reverted** this session, see below) makes that condition's `false` branch
+  fall to a literally-empty body instead of `legacy_body` — the compiler-side
+  check for when `compile_sub_body_with_deprecation` can return `None`
+  confirmed the field is not needed for that path (the only `None` site,
+  a heredoc-scope-error, emits an immediate `Die` right after the plan's own
+  `RegisterDecl`, so the mis-compiled def can never actually be called).
+  **But the `false` branch is reachable for a second, much broader reason
+  that the removal attempt surfaced by running `make test` and hitting eight
+  real regressions** (`t/escaped-our-sub-*.t`, `t/our-sub-block-lexical-capture.t`,
+  `t/is-eqv.t`, `t/module-sub-otf-*.t`, `t/mustache-battery.t`,
+  `t/digest-battery.t`, `t/export-sub-infix-operator-closure.t`,
+  `t/indirect-declarator-names.t`): a plan can have `compiled_routine_keys`
+  fully populated (`plan_fully_compiled == true`) and yet the key still fails
+  to resolve in the *executing call's* `compiled_fns` table
+  (`primary_compiled.is_none()`), because that table is a **different, stale
+  one** substituted at the call site. This is the SAME defect class the
+  class-walker nested-subs keep-class above was fixed for (`MethodDef` got
+  its own `compiled_fns: Option<Arc<CompiledFns>>` in #5982), but it turns
+  out `call_compiled_method`'s 7 sites were not the only offenders — `grep
+  -rln 'CompiledFns::default()' src/` finds ~17 files, and at least
+  `resolution_call_sub.rs:385` (a "code object built from a registry
+  routine" carrier — reached e.g. when `is-eqv`'s `multi` dispatch calls
+  `_is-eqv`, which declares a nested `sub test-eqv`) demonstrably substitutes
+  an empty table for a routine that DOES have real nested-sub bytecode
+  compiled, just not reachable through that call's default-fns shortcut.
+  Neither `FunctionDef` nor `CompiledFunction` nor `SubData` carries a
+  reference to "this routine's own sibling functions table" the way
+  `MethodDef` now does — that is the missing piece. **C6e-3c cannot proceed
+  until each of those ~17 `CompiledFns::default()` call sites is audited and
+  given the routine's real table (or proven never to matter, the way the
+  NativeCall trait and registration-fallback keep-classes were), mirroring
+  the `MethodDef.compiled_fns` fix but generalized beyond methods.** That is
+  itself a multi-PR campaign, not a one-session slice. One narrow, genuinely
+  safe fix WAS extracted from this investigation and landed independently:
+  `hoist_nested_our_subs` (`compiler/helpers_ast_utils.rs`) never pushed its
+  hoisted plans into `Compiler::hoisted_sub_plans`, so an `our sub` nested in
+  a block never got its `compiled_routine_keys` handed over at all
+  (`keys_len=0` forever) — unlike `hoist_sub_decls`, which already does this
+  correctly. Fixed to match; this was latent on `main` too (masked by
+  `legacy_body`) and is a pure improvement independent of the field drop.
 
 Related: `todo/deep/c6d-interpreter-body-sites-are-mostly-token-bodies.md`
 (the site inventory), `news/2026-08/fallback-def-arm-runs-compiled-body.md`
