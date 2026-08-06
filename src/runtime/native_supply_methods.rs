@@ -96,6 +96,13 @@ impl Interpreter {
                     self.call_sub_value(cb, vec![], true)?;
                 }
             }
+            // `done` inside a `whenever` body ends the enclosing supply the
+            // same way an explicit `Supplier.done` does: tear down the
+            // `whenever`s' upstream subscriptions so the source stops
+            // reaching this (now-complete) block's body for later emits.
+            if let Some(upstream_taps) = attrs.get("upstream_taps") {
+                self.close_upstream_taps(upstream_taps)?;
+            }
             if let Some(down) = attrs.get("done_cb")
                 && Self::supply_has_active_callback(down)
             {
@@ -113,11 +120,15 @@ impl Interpreter {
     pub(super) fn make_on_demand_complete_marker(
         done_cb: Option<Value>,
         on_close: Vec<Value>,
+        upstream_taps: Vec<Value>,
     ) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("on_close".to_string(), Value::array(on_close));
         if let Some(cb) = done_cb {
             attrs.insert("done_cb".to_string(), cb);
+        }
+        if !upstream_taps.is_empty() {
+            attrs.insert("upstream_taps".to_string(), Value::array(upstream_taps));
         }
         Value::make_instance(Symbol::intern("__SupplyOnDemandComplete"), attrs)
     }

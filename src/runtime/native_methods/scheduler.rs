@@ -125,6 +125,45 @@ impl Interpreter {
         true
     }
 
+    /// Close every upstream subscription recorded in a `[[supplier_id,
+    /// tap_id], ...]` (mixed with nested Tap-handle entries) value, the same
+    /// list `Tap.close`/`.cancel` cascades through. Shared with a `whenever`
+    /// body's `done` completing its enclosing supply via the emitter, which
+    /// must tear the same upstream subscriptions down (see
+    /// `native_supply_methods::invoke_done_callback`'s `__SupplyOnDemandComplete`
+    /// arm) — otherwise the source keeps delivering to a body whose output
+    /// nobody can see.
+    pub(in crate::runtime) fn close_upstream_taps(
+        &mut self,
+        entries: &Value,
+    ) -> Result<(), RuntimeError> {
+        if let ValueView::Array(entries, ..) = entries.view() {
+            for entry in entries.iter().cloned().collect::<Vec<_>>() {
+                match entry.view() {
+                    ValueView::Array(pair, ..) if pair.len() == 2 => {
+                        if let (ValueView::Int(sid), ValueView::Int(tid)) =
+                            (pair[0].view(), pair[1].view())
+                        {
+                            close_supplier_tap(sid as u64, tid as u64);
+                        }
+                    }
+                    // A chained on-demand source's own Tap handle: recurse so
+                    // its `whenever`s close in turn.
+                    ValueView::Instance {
+                        class_name,
+                        attributes: inner,
+                        ..
+                    } if class_name == "Tap" => {
+                        let inner = inner.as_map().clone();
+                        self.native_tap(&inner, "close")?;
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub(in crate::runtime) fn native_tap(
         &mut self,
         attributes: &AttrMap,
@@ -153,31 +192,8 @@ impl Interpreter {
                 // values still reached the (closed) tap callback, so
                 // `Cro::Service.stop` left the old listener serving and a second
                 // server on the same port never got a request.
-                if let Some(ValueView::Array(entries, ..)) =
-                    attributes.get("upstream_taps").map(Value::view)
-                {
-                    for entry in entries.iter().cloned().collect::<Vec<_>>() {
-                        match entry.view() {
-                            ValueView::Array(pair, ..) if pair.len() == 2 => {
-                                if let (ValueView::Int(sid), ValueView::Int(tid)) =
-                                    (pair[0].view(), pair[1].view())
-                                {
-                                    close_supplier_tap(sid as u64, tid as u64);
-                                }
-                            }
-                            // A chained on-demand source's own Tap handle:
-                            // recurse so its `whenever`s close in turn.
-                            ValueView::Instance {
-                                class_name,
-                                attributes: inner,
-                                ..
-                            } if class_name == "Tap" => {
-                                let inner = inner.as_map().clone();
-                                self.native_tap(&inner, "close")?;
-                            }
-                            _ => {}
-                        }
-                    }
+                if let Some(entries) = attributes.get("upstream_taps") {
+                    self.close_upstream_taps(entries)?;
                 }
                 // Fire any CLOSE-phaser callbacks registered on this tap's
                 // supply emitter (run once — taking empties the list, so a
