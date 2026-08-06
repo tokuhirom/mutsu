@@ -1005,6 +1005,78 @@ impl Interpreter {
                             ));
                             rw_bindings.push((pd.name.clone(), source_name));
                         }
+                        // A named `is rw`/`is raw` scalar param aliases the
+                        // caller's variable through a shared `ContainerRef`
+                        // cell, exactly like the positional arm (raku requires
+                        // such a param to be non-optional, and rejects a
+                        // non-writable argument at bind time). The caller
+                        // source arrives as the "key=source" encoding in
+                        // `arg_sources`, or as a VarRef wrapper on the Pair's
+                        // value.
+                        let named_is_rw = pd.traits.iter().any(|t| t == "rw");
+                        let named_is_raw = pd.traits.iter().any(|t| t == "raw");
+                        let named_plain_scalar = pd.sub_signature.is_none()
+                            && pd.name != "_"
+                            && pd
+                                .name
+                                .as_bytes()
+                                .first()
+                                .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_');
+                        if (named_is_rw || named_is_raw) && named_plain_scalar {
+                            let source_name = arg_sources
+                                .as_ref()
+                                .and_then(|names| names.get(arg_idx))
+                                .and_then(|n| n.as_ref())
+                                .and_then(|encoded| {
+                                    encoded.split_once('=').map(|(_, s)| s.to_string())
+                                })
+                                .or_else(|| {
+                                    varref_from_value(raw_arg)
+                                        .map(|(name, _)| name)
+                                        .or_else(|| varref_from_value(val).map(|(name, _)| name))
+                                })
+                                .filter(|s| {
+                                    s.as_bytes()
+                                        .first()
+                                        .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
+                                });
+                            if let Some(src) = source_name {
+                                rw_bindings.push((pd.name.clone(), src.clone()));
+                                let existing = self
+                                    .env
+                                    .get(&src)
+                                    .filter(|v| matches!(v.view(), ValueView::ContainerRef(_)))
+                                    .cloned();
+                                bound_value = match existing {
+                                    Some(cell) => cell,
+                                    None => {
+                                        let cell = if matches!(
+                                            bound_value.view(),
+                                            ValueView::ContainerRef(_)
+                                        ) {
+                                            bound_value
+                                        } else {
+                                            Value::container_ref(crate::gc::Gc::new(
+                                                std::sync::Mutex::new(bound_value),
+                                            ))
+                                        };
+                                        self.env.insert(src, cell.clone());
+                                        cell
+                                    }
+                                };
+                            } else if matches!(bound_value.view(), ValueView::ContainerRef(_)) {
+                                // A bare cell IS a writable lvalue (mirrors the
+                                // positional arm's deepmap/hyper case).
+                            } else if named_is_rw {
+                                return Err(RuntimeError::new(format!(
+                                    "X::Parameter::RW: '{}' expects a writable variable argument",
+                                    pd.name
+                                )));
+                            }
+                            // is raw with a non-lvalue: binds readonly (the
+                            // trait pass below keeps raw params writable, which
+                            // matches the positional arm's behavior for now).
+                        }
                         // A rename param `:min(:$minutes)` names a caller key
                         // only; its OWN name (`min`) is NOT a body variable
                         // (raku: `min` in the body resolves to the outer
