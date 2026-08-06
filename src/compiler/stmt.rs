@@ -2262,6 +2262,35 @@ impl Compiler {
                 }
 
                 let name_str = name.resolve();
+
+                // A `my &f` (or `&f`/`:&f` Callable parameter) binding visible
+                // here SHADOWS a same-named builtin/registered sub for a
+                // statement-position bare call too — the same shadowing
+                // `compile_expr_call_inner` already applies at expression
+                // position (`self.amp_binding_in_active_scope`). Without this,
+                // the `ExecCall` opcode below dispatches purely by name at
+                // runtime, with no notion of a local Callable binding, so a
+                // mid-body (non-final) statement call could reach a builtin or
+                // control-flow implementation of the same name instead of the
+                // lexical — e.g. `emit()`/`done()` followed by more statements,
+                // with a lexical `&emit`/`&done` in scope, hit the real
+                // supply/react control-flow builtins. Route it through the
+                // expression-call path instead, which already resolves the
+                // CodeVar. See
+                // todo/tickets/code-lexical-does-not-shadow-a-builtin.md.
+                if self.amp_binding_in_active_scope(&name_str) {
+                    let call_expr = Expr::Call {
+                        name: *name,
+                        args: Self::call_args_to_expr_args(args),
+                    };
+                    self.compile_expr(&call_expr);
+                    // Sink context: a bare call statement sinks its value (see
+                    // the identical `SinkPop(false)` below for the normalized
+                    // mutating-call path).
+                    self.code.emit(OpCode::SinkPop(false));
+                    return;
+                }
+
                 let rewritten_args = Self::rewrite_stmt_call_args(&name_str, args);
                 let positional_only = rewritten_args
                     .iter()

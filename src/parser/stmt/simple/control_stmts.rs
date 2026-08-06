@@ -499,7 +499,13 @@ pub(crate) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
             return Ok((rest, Stmt::Succeed));
         }
     }
-    if name == "done" {
+    // A lexical `&done` (a `my &done`, or a `&done`/`:&done` Callable param —
+    // see the `any_callable_param` registration in sub_decl.rs) shadows the
+    // `done` control-flow keyword, just like any other declared name shadows
+    // a builtin. Only take the react/supply-completion reading when no such
+    // declaration is in scope. See
+    // todo/tickets/code-lexical-does-not-shadow-a-builtin.md.
+    if name == "done" && !is_user_declared_sub("done") {
         // `done()` is the explicit call form (it takes no payload). Consume the
         // empty argument list so a trailing statement modifier applies to the
         // whole `done`, not to a stray `()` term: `done() if $_ == 3` must parse

@@ -376,11 +376,38 @@ pub(crate) fn sub_decl_body(
             }
         }
     }
-    let (rest, body) = if any_sigilless(&param_defs) {
+    // A `&name` Callable param (positional or named, `&emit`/`:&done`) shadows
+    // a same-named builtin/control-flow keyword for a bare call *anywhere in
+    // the body, including nested closures* — e.g. Test::Tap::tap-ok declares
+    // `:&emit, :&done` and its tap callback calls `emit() if &emit; ... done()
+    // if &done`. Register the plain names as user subs (like the sigilless
+    // case above) so `is_user_declared_sub` sees them and callers that
+    // hardcode `done`/`emit`/listop names to special syntax can defer to the
+    // declaration. See todo/tickets/code-lexical-does-not-shadow-a-builtin.md.
+    fn any_callable_param(params: &[crate::ast::ParamDef]) -> bool {
+        params.iter().any(|p| {
+            p.name.starts_with('&') || p.sub_signature.as_deref().is_some_and(any_callable_param)
+        })
+    }
+    fn register_callable_param_terms(params: &[crate::ast::ParamDef]) {
+        for pd in params {
+            if let Some(callable_name) = pd.name.strip_prefix('&')
+                && !callable_name.is_empty()
+                && !callable_name.contains(':')
+            {
+                super::super::simple::register_user_sub(callable_name);
+            }
+            if let Some(sub) = &pd.sub_signature {
+                register_callable_param_terms(sub);
+            }
+        }
+    }
+    let (rest, body) = if any_sigilless(&param_defs) || any_callable_param(&param_defs) {
         let (r, _) = parse_char(rest, '{')?;
         super::super::simple::push_scope();
         super::super::simple::mark_current_scope_routine_body();
         register_sigilless_terms(&param_defs);
+        register_callable_param_terms(&param_defs);
         let mut result = block_inner(r);
         super::super::simple::finish_block_anon_states(&mut result);
         super::super::simple::pop_scope();
