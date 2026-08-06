@@ -9,7 +9,7 @@ use Test;
 # path; the plain cases pin the VM path around it. Expected values were taken
 # from raku first.
 
-plan 13;
+plan 14;
 
 # state-declaring candidate under a non-trivial proto: state must persist
 # across calls (one cell, not one per re-compile).
@@ -39,15 +39,14 @@ proto sub retc(|) { {*} }
 multi sub retc(Int $x) { class R3 { }; return "ret:$x"; }
 is retc(7), "ret:7", "explicit return from a deferred candidate";
 
-# rw param through a class-declaring candidate: the call's own value is
-# correct. The writeback to the caller's container through a non-trivial
-# proto body is a known pre-existing gap
-# (todo/tickets/rw-writeback-through-nontrivial-proto-body-is-lost.md).
+# rw param through a class-declaring candidate: the candidate's rw param
+# aliases the proto's, which aliases the caller's container (shared-cell rw
+# binding), so the write chains all the way back.
 proto sub bump($x is rw) { {*} }
 multi sub bump($x is rw) { class B2 { }; $x = $x + 1; $x }
 my $v = 10;
 is bump($v), 11, "rw candidate computes through the fallback";
-# is $v, 11, "rw writeback chains through the proto"; # enable with the ticket
+is $v, 11, "rw writeback chains through the proto";
 
 # callsame walks proto-dispatched candidates in order.
 proto sub walk(|) {*}
