@@ -1,81 +1,61 @@
-# `X::Syntax::DuplicatedPrefix` still excludes `??`, and `S03-operators/misc.t` is still open
-
-`news/2026-08/metaop-doubled-infix-base.md` landed the diagnosis for `^^` and
-`~~` in term position. Three shapes are deliberately left out, and together they
-are exactly what keeps `roast/S03-operators/misc.t` failing under the real
-`Test` module (tests 35 and 36 are its only real losses; 38 is a `# TODO`).
-
-## 1. `??` in term position — blocked on `Z??`
+# Bare `??` in term position should raise `X::Syntax::DuplicatedPrefix`
 
 rakudo diagnoses a doubled `?` the same way it does `^^`/`~~`:
 
 ```
-my $x = ??1     X::Syntax::DuplicatedPrefix   prefixes=??
+$ raku -e 'say ??1'
+Expected a term, but found either infix ?? or redundant prefix ?
+  (to suppress this message, please use a space like ? ?)
 ```
+(`X::Syntax::DuplicatedPrefix`, `prefixes => "??"`). mutsu currently gives a
+different message via a different path: `my $x = ??1` raises
+`X::Syntax::Malformed: Malformed initializer`, and `say ??1` raises
+`X::Syntax::Confused`. No roast file currently pins this exact string — it is a
+pure mutsu-vs-raku divergence found by doc-diff-style comparison, not a
+whitelist blocker.
 
-mutsu says `X::Syntax::Confused`. Adding `?` to `duplicated_prefix_run`
-(`src/parser/expr/postfix/loop_.rs`) makes that case right and immediately makes
-another wrong:
+## The naive fix breaks a whitelisted roast file — do not repeat this
 
-```
-1 Z?? 2 !! 3    raku: X::Syntax::CannotMeta    with `?` in the set: X::Syntax::DuplicatedPrefix
-```
+Adding `?` to `duplicated_prefix_run` (`src/parser/expr/postfix/loop_.rs`) with
+the obvious guard — only a run of *exactly* two counts, since `???` is the
+warn-flavoured yada stub and a real term — makes `say ??1` correct
+(`X::Syntax::DuplicatedPrefix`) and does not regress `t/routine-yada.t`,
+`t/hyper-postfix-dotted-wordy.t`, `t/parser-batch3.t`,
+`t/stub-and-supersede.t`, `roast/S03-operators/misc.t`,
+`roast/S03-operators/precedence.t`, or `roast/S02-types/WHICH.t`.
 
-which is `roast/S03-operators/ternary.t` test 28. `??` is not a metaop base (it
-must not be — rakudo refuses to meta the ternary), so `parse_meta_op` falls
-through to the *bare* `Z` case and the `??` reaches `prefix_expr` looking exactly
-like term position. **Fix order: teach `parse_meta_op` to recognise an attempted
-meta over `??` and raise `X::Syntax::CannotMeta` there, then add `?` to the
-run set.** This is the same shape as the `Z^^` problem that
-`news/2026-08/metaop-doubled-infix-base.md` solved, except that the answer is a
-typed error rather than a valid base.
+It DOES regress `roast/S03-operators/ternary.t` test 28 (`Z??`/`X??` must raise
+`X::Syntax::CannotMeta`, not `X::Syntax::DuplicatedPrefix`) — but only for the
+`Z`/`X` meta-prefixes; `R??`/`S??` keep passing. This was confirmed empirically
+(2026-08-06): before the `?` change, `EVAL "1 Z?? 2 !! 3"` from a plain script
+raises `X::Syntax::Confused` directly, yet the SAME string run through
+`Test.rakumod`'s real `throws-like` (which calls `EVAL $code, context =>
+$caller-context`, not a bare top-level `EVAL`) reports `X::Syntax::CannotMeta`.
+The mechanism is `Test.rakumod`'s own fallback: its `CATCH` block checks
+`$ex ~~ X::Comp::Group` and searches `.panic`/`.sorrows` for a match when the
+top-level exception type doesn't match directly — so mutsu is apparently
+already collecting a `CannotMeta` diagnosis as one of several candidate
+"sorrows" while parsing `Z??`/`X??`, even though the *primary* reported error is
+something else. Adding the naive `?` duplicated-prefix check makes
+`DuplicatedPrefix` win in `prefix_expr` before whatever currently produces that
+`CannotMeta` sorrow gets a chance to run, so the group no longer contains a
+`CannotMeta` candidate and `throws-like`'s fallback search fails.
 
-Two wrinkles for whoever does it:
+**Fix order, per the shape of `news/2026-08/metaop-doubled-infix-base.md`'s
+`^^` fix:** find where the `Z??`/`X??` `CannotMeta` sorrow currently gets
+generated (it is NOT one of the hardcoded `"X::Syntax::CannotMeta: Cannot do .
+because..."` strings in `src/parser/expr/precedence/comparison.rs` /
+`list_infix_loop.rs` — those are all for the `.` metaop, not `??`) before
+touching `duplicated_prefix_run`. Confirm with a script that reproduces
+`Test.rakumod`'s exact call shape (`EVAL $code, context => $ctx`, not a bare
+`EVAL` in a fresh `try`) — a plain top-level `EVAL` does not exhibit the
+CannotMeta sorrow at all, so it is not equivalent for testing this. Once `Z??`
+and `X??` raise `CannotMeta` directly (not just as a buried sorrow), the `?`
+addition to `duplicated_prefix_run` is safe to land alongside it. Verify with
+the full `roast/S03-operators/ternary.t` and `misc.t`, not just `make test`.
 
-* `???` is the warn-flavoured yada stub, a **real term**, so only a run of
-  *exactly two* `?` counts. Getting this wrong breaks `t/routine-yada.t` and
-  every `Test::Tap`-using file, because the module body contains `???`. (`????`
-  and `???1` are `X::Syntax::Confused` in rakudo, which mutsu already gets by
-  falling through.)
-* rakudo reports only the **first two** characters in `prefixes`: `^^^1` is
-  `prefixes => "^^"`, not `"^^^"`. The landed helper already does this.
-
-## 2. `1%^^1` — `%^^1` is lexed as a placeholder hash variable
-
-`roast/S03-operators/misc.t` test 35 is
-`throws-like "1%^^1", X::Syntax::DuplicatedPrefix, prefixes => "^^"`, written
-without spaces. mutsu never reaches the `^^`: the `^` twigil in
-`src/parser/primary/var/sigil_vars.rs` accepts *any* following text, so `%^^1`
-(and `%^1`) parse as a variable. The visible consequence is a wrong answer, not
-just a wrong error:
-
-```
-say 1%^1     raku: 0     (that is `1 % ^1`, i.e. 1 % (0..^1))
-            mutsu: Variable '%^1' is not declared
-```
-
-Requiring the twigil's name to start an identifier (`c.is_alphabetic() || c ==
-'_'`) was tried on 2026-08-03 and **reverted**: it does stop the variable read,
-but `%` still does not become an infix afterwards, so `1%^1` degrades into two
-statements (`Useless use of constant integer 1 in sink context`). The real
-problem is the infix-vs-term decision immediately after `%`, so the twigil guard
-has to land together with that. Do not re-apply the guard on its own.
-
-## 3. `555 ~~!~~ 666` — `!~~` is taken as the negated-smartmatch infix
-
-Test 36 is `throws-like "555 ~~!~~ 666", X::Syntax::DuplicatedPrefix,
-prefixes => "~~"`. rakudo parses `~~` as the infix, then the term `!~~ 666` as
-prefix `!` over the doubled `~~`. mutsu's infix scanner takes `!~~`
-(`ComparisonOp::SmartNotMatch`, `parse_negated_meta_comparison_op` in
-`src/parser/expr/precedence/chain_cmp.rs`) at the point where rakudo is already
-past the first `~~`, so nothing ever reaches term position as `~~`.
-
-## Why these are grouped
-
-All three are the same class of bug: **a diagnosis cannot be added at the point
-where the offending text appears, because something upstream has already claimed
-it**. The landed metaop fix is the worked example — the check was written,
-reverted when `make roast` caught it, the upstream scanner was corrected, and
-only then was the check restored. Follow that order here too, and run a full
-local `make roast` before pushing: `make test` alone passed with the broken
-version.
+Affected: `src/parser/expr/postfix/loop_.rs`
+(`duplicated_prefix_run`/`prefix_expr`), and whatever currently produces the
+`Z??`/`X??` `CannotMeta` sorrow (not yet located — likely somewhere in
+`src/parser/expr/precedence_meta_ops/` or the multi-error/sorrows collection
+in `src/parser/mod.rs`).
