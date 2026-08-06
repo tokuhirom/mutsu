@@ -4,24 +4,59 @@ use super::rat::to_big_rat_parts;
 use crate::symbol::Symbol;
 use crate::value::{Value, ValueView, make_big_rat_arith};
 
+/// A Date-shaped instance always carries `year`/`month`/`day`/`days` (see
+/// `make_date_with_formatter`); DateTime carries `year`/`month`/`day` too but
+/// never `days` (it stores `epoch` instead), so checking for `days` already
+/// distinguishes the two. Duck-typed on attributes rather than on the literal
+/// class name `"Date"` so a `class Foo is Date` subclass instance (e.g. from
+/// a `Date::YearDay`-style module that calls `self.Date::new(...)` from its
+/// own constructor) is recognized as a Date arithmetic operand too, matching
+/// Rakudo.
+fn is_date_like(value: &Value) -> bool {
+    matches!(value.view(), ValueView::Instance { attributes, .. }
+        if attributes.contains_key("days") && attributes.contains_key("year"))
+}
+
 /// Check if a value is a Date, Instant, or Duration instance (temporal operand for arithmetic).
 pub(crate) fn is_temporal_operand(value: &Value) -> bool {
-    matches!(value.view(), ValueView::Instance { class_name, .. }
-        if class_name == "Date" || class_name == "Instant" || class_name == "Duration")
+    is_date_like(value)
+        || matches!(value.view(), ValueView::Instance { class_name, .. }
+            if class_name == "Instant" || class_name == "Duration")
 }
 
 pub(crate) fn instance_days(value: &Value) -> Option<i64> {
     match value.view() {
-        ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } if class_name == "Date" => match attributes.as_map().get("days").map(Value::view) {
-            Some(ValueView::Int(days)) => Some(days),
-            _ => None,
-        },
+        ValueView::Instance { attributes, .. } if is_date_like(value) => {
+            match attributes.as_map().get("days").map(Value::view) {
+                Some(ValueView::Int(days)) => Some(days),
+                _ => None,
+            }
+        }
         _ => None,
     }
+}
+
+/// Build a new Date-shaped instance for an arithmetic result: clones
+/// `original`'s full attribute set (preserving any custom subclass
+/// attributes, e.g. a `Date::YearDay`-style formatter) and overwrites
+/// `year`/`month`/`day`/`days` with the recomputed date, keeping `original`'s
+/// own class name. Mirrors Rakudo's `Date::infix:<+>`/`infix:<->`, which are
+/// `self.clone(:days(...))` — a clone, not a fresh plain `Date`.
+pub(crate) fn rebuild_date_like(original: &Value, new_days: i64) -> Value {
+    let class_name = match original.view() {
+        ValueView::Instance { class_name, .. } => class_name,
+        _ => Symbol::intern("Date"),
+    };
+    let (y, m, d) = crate::builtins::methods_0arg::temporal::epoch_days_to_civil(new_days);
+    let mut attrs = match original.view() {
+        ValueView::Instance { attributes, .. } => attributes.to_map(),
+        _ => crate::value::AttrMap::new(),
+    };
+    attrs.insert("year", Value::int(y));
+    attrs.insert("month", Value::int(m));
+    attrs.insert("day", Value::int(d));
+    attrs.insert("days", Value::int(new_days));
+    Value::make_instance(class_name, attrs)
 }
 
 pub(crate) fn instance_instant_value(value: &Value) -> Option<f64> {

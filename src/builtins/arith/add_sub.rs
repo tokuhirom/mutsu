@@ -7,7 +7,7 @@ use super::rat::{
 };
 use super::temporal::{
     instance_datetime_parts, instance_days, instance_duration_value, instance_instant_raw,
-    instance_instant_value, make_duration, value_sub,
+    instance_instant_value, make_duration, rebuild_date_like, value_sub,
 };
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView, make_big_fat_rat, make_big_rat_arith};
@@ -44,18 +44,12 @@ pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError
     if let Some(days) = instance_days(&left)
         && let ValueView::Int(delta) = right.view()
     {
-        use crate::builtins::methods_0arg::temporal;
-        let new_days = days + delta;
-        let (y, m, d) = temporal::epoch_days_to_civil(new_days);
-        return Ok(temporal::make_date(y, m, d));
+        return Ok(rebuild_date_like(&left, days + delta));
     }
     if let Some(days) = instance_days(&right)
         && let ValueView::Int(delta) = left.view()
     {
-        use crate::builtins::methods_0arg::temporal;
-        let new_days = days + delta;
-        let (y, m, d) = temporal::epoch_days_to_civil(new_days);
-        return Ok(temporal::make_date(y, m, d));
+        return Ok(rebuild_date_like(&right, days + delta));
     }
     // Instant + Instant is illegal
     if instance_instant_value(&left).is_some() && instance_instant_value(&right).is_some() {
@@ -266,10 +260,7 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
     if let Some(days) = instance_days(&left)
         && let ValueView::Int(delta) = right.view()
     {
-        use crate::builtins::methods_0arg::temporal;
-        let new_days = days - delta;
-        let (y, m, d) = temporal::epoch_days_to_civil(new_days);
-        return temporal::make_date(y, m, d);
+        return rebuild_date_like(&left, days - delta);
     }
     // Mixin-wrapped Range - Real: perform Range arithmetic and re-wrap
     if let Some(result) = mixin_range_arith_val(left.clone(), right.clone(), arith_sub) {
