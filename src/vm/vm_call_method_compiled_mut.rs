@@ -303,6 +303,7 @@ impl Interpreter {
                         );
                         let invocant = Some(target);
                         let empty_fns = CompiledFns::default();
+                        let fns_ref = method_def.compiled_fns.as_deref().unwrap_or(&empty_fns);
                         let method_result = self.call_compiled_method(
                             cn,
                             &owner_class,
@@ -312,7 +313,7 @@ impl Interpreter {
                             &attributes,
                             args,
                             invocant,
-                            &empty_fns,
+                            fns_ref,
                         );
                         if pushed_dispatch {
                             self.pop_method_dispatch();
@@ -422,6 +423,7 @@ impl Interpreter {
                 );
                 let invocant = Some(target);
                 let empty_fns = CompiledFns::default();
+                let fns_ref = method_def.compiled_fns.as_deref().unwrap_or(&empty_fns);
                 let method_result = self.call_compiled_method(
                     cn,
                     owner_class.as_str(),
@@ -431,7 +433,7 @@ impl Interpreter {
                     &attributes,
                     args,
                     invocant,
-                    &empty_fns,
+                    fns_ref,
                 );
                 if pushed_dispatch {
                     self.pop_method_dispatch();

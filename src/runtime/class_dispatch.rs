@@ -523,6 +523,7 @@ impl Interpreter {
         }
         let cc = method_def.compiled_code.clone().unwrap();
         let empty_fns = crate::opcode::CompiledFns::default();
+        let fns_ref = method_def.compiled_fns.as_deref().unwrap_or(&empty_fns);
         let saved_pending = std::mem::take(&mut self.pending_rw_writeback_sources);
         let call_result = self.call_compiled_method(
             receiver_class_name,
@@ -533,7 +534,7 @@ impl Interpreter {
             attributes,
             args,
             invocant,
-            &empty_fns,
+            fns_ref,
         );
         // MERGE the saved sibling writes (e.g. a sibling BUILD's captured-outer
         // write queued for the outer `.new` caller to drain, #3620) with the

@@ -271,6 +271,10 @@ impl Interpreter {
         // through the live cell, and the slow path materializes its own map.
         let attrs_empty = attrs_cell.as_ref().is_none_or(|c| c.as_map().is_empty());
         let empty_fns = CompiledFns::default();
+        // A `sub` declared inside this method's body compiles into
+        // `method_def.compiled_fns`; without it, the nested routine's compiled
+        // key can never resolve at call time (ADR-0019 C6e-3c).
+        let fns_ref = method_def.compiled_fns.as_deref().unwrap_or(&empty_fns);
         let method_result = if let Some(csm) = can_skip_merge {
             // Fast path: move target directly as base (avoid extra clone).
             let invocant_for_dispatch = if attrs_empty {
@@ -290,7 +294,7 @@ impl Interpreter {
                 cc,
                 args,
                 target,
-                &empty_fns,
+                fns_ref,
                 csm,
             );
             if pushed_dispatch {
@@ -319,7 +323,7 @@ impl Interpreter {
                 &attributes,
                 args,
                 invocant,
-                &empty_fns,
+                fns_ref,
             );
             if pushed_dispatch {
                 self.pop_method_dispatch();

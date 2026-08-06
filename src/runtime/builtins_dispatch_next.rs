@@ -546,6 +546,7 @@ impl Interpreter {
                 .map(|(n, _)| n.clone())
                 .unwrap_or_default();
             let empty_fns = crate::opcode::CompiledFns::default();
+            let fns_ref = method_def.compiled_fns.as_deref().unwrap_or(&empty_fns);
             let dispatch_result = match invocant.view() {
                 ValueView::Instance {
                     class_name,
@@ -562,7 +563,7 @@ impl Interpreter {
                             &attributes.to_map(),
                             call_args,
                             Some(invocant.clone()),
-                            &empty_fns,
+                            fns_ref,
                         )
                         .map(|(result, reconciled)| {
                             // Commit only an adjusted (`:=`-recovered) snapshot, exactly
@@ -615,7 +616,7 @@ impl Interpreter {
                             &AttrMap::new(),
                             call_args,
                             Some(invocant.clone()),
-                            &empty_fns,
+                            fns_ref,
                         )
                         .map(|(result, _)| (result, None))
                     } else {

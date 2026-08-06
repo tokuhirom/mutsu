@@ -150,12 +150,31 @@ sigilless / 2,659 `start`-body / 14 sub-signature / 0 trait). The
   prefers it over the body walk (body-less code objects delegate to the
   named path) — so routine-level `is rw`/`is raw`/tail-`return-rw` routines
   register body-less (`news/2026-08/lvalue-tail-from-plan-metadata.md`).
+- **Class-walker nested-subs keep-class LIFTED (2026-08-06):** the
+  "unresolvable plan bytecode" case was a registration-time gap, not a
+  compiler gap — the nested sub's `CompiledSubDeclPlan` already carried a
+  resolvable `CompiledFunction`, but every `call_compiled_method` call site
+  (7 of them, across `class_dispatch.rs`, `builtins_dispatch_next.rs`, and
+  four `vm/vm_call_method_compiled_*.rs` files) substituted a hardcoded
+  `CompiledFns::default()` for the executing method body's functions table,
+  so the `RegisterSub` opcode's `compiled_fns.get(&compiled_routine_keys[0])`
+  lookup always missed. Fixed by giving `MethodDef` its own
+  `compiled_fns: Option<Arc<CompiledFns>>` (populated in
+  `compile_method_def_in_place_with_dist` from the throwaway per-method
+  `Compiler`'s `compiled_functions`, which was previously dropped after only
+  `compiled_code` was kept) and threading `method_def.compiled_fns` through
+  all 7 call sites instead of the hardcoded empty table. A `sub` nested
+  inside a method/submethod/role-composed-method/multi-candidate body now
+  registers body-less like any safe-class def. Pinned by
+  `t/nested-sub-in-method-compiled.t`. Surfaced (and left open, out of
+  scope) a separate pre-existing bug: such a nested sub leaks into the
+  enclosing global scope —
+  `todo/tickets/nested-sub-in-method-leaks-to-global-scope.md`.
 - **C6e-3c (open):** the field itself. `CompiledSubDeclPlan::legacy_body`
-  still carries the AST for the remaining keep-classes (unresolvable plan
-  bytecode — class-walker nested subs — and NativeCall marshalling traits,
-  measured non-vendorable) and for the registration fallback; dropping it
-  outright still needs a story for those two. Registration-time body use
-  for the safe class is already zero.
+  still carries the AST for the one remaining keep-class — NativeCall
+  marshalling traits, measured non-vendorable — and for the registration
+  fallback; dropping it outright still needs a story for that case.
+  Registration-time body use for the safe class is already zero.
 
 Related: `todo/deep/c6d-interpreter-body-sites-are-mostly-token-bodies.md`
 (the site inventory), `news/2026-08/fallback-def-arm-runs-compiled-body.md`
