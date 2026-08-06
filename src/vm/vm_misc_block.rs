@@ -73,67 +73,45 @@ impl Interpreter {
         } else {
             None
         };
-        // Only catch loop control signals (last/next/redo) when the do block
-        // has an explicit label that matches. Unlabeled do blocks should let
-        // these signals propagate to the enclosing loop construct.
-        let has_label = label.is_some();
-        // ...and only a LABELLED block counts as a loop-control handler for the
-        // purpose of deciding whether a `next` has anywhere to go
-        // (`runtime/loop_handler_depth.rs`). An unlabelled `do {}` must leave
-        // the depth alone, or `try { { next } }` would look handled and go on
-        // raising an uncatchable signal instead of `X::ControlFlow`.
-        let _loop_handler =
-            has_label.then(crate::runtime::loop_handler_depth::LoopHandlerGuard::new);
-        let result = loop {
-            match self.run_range(code, body_start, end, compiled_fns) {
-                Ok(()) => break Ok(()),
-                Err(e) if e.is_redo() && has_label && Self::label_matches(&e.label, &label) => {
-                    self.stack.truncate(stack_base);
-                    continue;
-                }
-                Err(e) if e.is_next() && has_label && Self::label_matches(&e.label, &label) => {
-                    self.stack.truncate(stack_base);
-                    self.stack
-                        .push(Value::slip_arc(std::sync::Arc::new(vec![])));
-                    break Ok(());
-                }
-                Err(e)
-                    if e.is_leave
-                        && e.leave_callable_id().is_none()
-                        && e.leave_routine().is_none()
-                        && Self::label_matches(&e.label, &label) =>
-                {
-                    self.stack.truncate(stack_base);
-                    self.stack.push(
-                        e.return_value
-                            .unwrap_or(Value::slip_arc(std::sync::Arc::new(vec![]))),
-                    );
-                    break Ok(());
-                }
-                Err(e) if e.is_last() && has_label && Self::label_matches(&e.label, &label) => {
-                    self.stack.truncate(stack_base);
-                    self.stack.push(
-                        e.return_value
-                            .unwrap_or(Value::slip_arc(std::sync::Arc::new(vec![]))),
-                    );
-                    break Ok(());
-                }
-                // A `when`/`default` succeed exits its innermost enclosing
-                // block — this one. `do { when Int { "i" } }` yields the matched
-                // body's value and execution continues after the `do`; raku does
-                // NOT let the succeed travel on to an outer `given`/`with`
-                // (DBIish's execute loses its whole bind-setup `given` when the
-                // preceding `do { when ... }` escapes it). The `when_matched`
-                // flag is reset too — an enclosing `given` breaks its body on it
-                // after every op, which would skip the rest of the given.
-                Err(e) if e.is_succeed() => {
-                    self.stack.truncate(stack_base);
-                    self.stack.push(e.return_value.unwrap_or(Value::NIL));
-                    loan_env!(self, set_when_matched(saved_when_matched));
-                    break Ok(());
-                }
-                Err(e) => break Err(e),
+        // A bare block — labelled or not — is not a loop construct in rakudo:
+        // `last`/`next`/`redo` (even `last LAB` naming this block's own label)
+        // must NOT be caught here, and entering this block must not raise
+        // `loop_handler_depth` either, or `LAB: { next }` would look handled
+        // and silently leave the block instead of raising
+        // `X::ControlFlow` ("labeled next without loop construct")
+        // (`todo/tickets/labelled-bare-block-is-not-a-loop-construct.md`).
+        // Only `leave` (a block-exit statement, not a loop-control one) is
+        // caught by an enclosing block regardless of label.
+        let result = match self.run_range(code, body_start, end, compiled_fns) {
+            Ok(()) => Ok(()),
+            Err(e)
+                if e.is_leave
+                    && e.leave_callable_id().is_none()
+                    && e.leave_routine().is_none()
+                    && Self::label_matches(&e.label, &label) =>
+            {
+                self.stack.truncate(stack_base);
+                self.stack.push(
+                    e.return_value
+                        .unwrap_or(Value::slip_arc(std::sync::Arc::new(vec![]))),
+                );
+                Ok(())
             }
+            // A `when`/`default` succeed exits its innermost enclosing
+            // block — this one. `do { when Int { "i" } }` yields the matched
+            // body's value and execution continues after the `do`; raku does
+            // NOT let the succeed travel on to an outer `given`/`with`
+            // (DBIish's execute loses its whole bind-setup `given` when the
+            // preceding `do { when ... }` escapes it). The `when_matched`
+            // flag is reset too — an enclosing `given` breaks its body on it
+            // after every op, which would skip the rest of the given.
+            Err(e) if e.is_succeed() => {
+                self.stack.truncate(stack_base);
+                self.stack.push(e.return_value.unwrap_or(Value::NIL));
+                loan_env!(self, set_when_matched(saved_when_matched));
+                Ok(())
+            }
+            Err(e) => Err(e),
         };
         self.pop_enum_scope();
         self.pop_once_scope();

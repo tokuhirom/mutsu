@@ -3320,9 +3320,14 @@ impl Interpreter {
             // answers it. See `runtime/loop_handler_depth.rs`.
             OpCode::Last(label) => {
                 if !crate::runtime::loop_handler_depth::loop_handler_in_scope() {
+                    let illegal = if label.is_some() {
+                        "labeled last"
+                    } else {
+                        "last"
+                    };
                     return Err(RuntimeError::control_flow_illegal(
                         crate::value::Control::Last,
-                        "last",
+                        illegal,
                         "loop construct",
                     ));
                 }
@@ -3332,9 +3337,14 @@ impl Interpreter {
             }
             OpCode::Next(label) => {
                 if !crate::runtime::loop_handler_depth::loop_handler_in_scope() {
+                    let illegal = if label.is_some() {
+                        "labeled next"
+                    } else {
+                        "next"
+                    };
                     return Err(RuntimeError::control_flow_illegal(
                         crate::value::Control::Next,
-                        "next",
+                        illegal,
                         "loop construct",
                     ));
                 }
@@ -3344,9 +3354,14 @@ impl Interpreter {
             }
             OpCode::Redo(label) => {
                 if !crate::runtime::loop_handler_depth::loop_handler_in_scope() {
+                    let illegal = if label.is_some() {
+                        "labeled redo"
+                    } else {
+                        "redo"
+                    };
                     return Err(RuntimeError::control_flow_illegal(
                         crate::value::Control::Redo,
-                        "redo",
+                        illegal,
                         "loop construct",
                     ));
                 }
