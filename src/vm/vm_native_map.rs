@@ -131,14 +131,27 @@ impl Interpreter {
             return None;
         }
 
-        // rw binding: a `$_`-mutating block writes back to the source element
-        // (`@a.map({ $_++ })` mutates `@a`). That needs a concrete `@`-array
-        // variable to write to (the mut method opcode gives us `target_name`),
-        // single element per call, and non-pair elements (writing a mutated pair
-        // back is out of scope). Without a writeback target a topic mutation
-        // cannot be reproduced by the clone-based loop, so defer to the
-        // interpreter.
-        let writeback_name = if mutates_topic {
+        // An explicit `is rw`/`is raw` scalar block param (`-> $x is rw { $x++
+        // }`) also needs a writeback: Raku passes each array element's
+        // container to the block, so mutating the param mutates the source
+        // element, same as a `$_`-mutating block below. `requires_full_binding`
+        // above already proved this is the only param (not named/slurpy/
+        // sigilless/optional/defaulted/typed/…), so no further shape check is
+        // needed here.
+        let rw_param = (arity == 1)
+            .then(|| data.param_defs.first())
+            .flatten()
+            .filter(|pd| pd.traits.iter().any(|t| t == "rw" || t == "raw"));
+
+        // rw binding: a `$_`-mutating block, or an explicit rw/raw param,
+        // writes back to the source element (`@a.map({ $_++ })` /
+        // `@a.map(-> $x is rw { $x++ })` mutate `@a`). That needs a concrete
+        // `@`-array variable to write to (the mut method opcode gives us
+        // `target_name`), single element per call, and non-pair elements
+        // (writing a mutated pair back is out of scope). Without a writeback
+        // target the mutation cannot be reproduced by the clone-based loop,
+        // so defer to the interpreter.
+        let writeback_name = if mutates_topic || rw_param.is_some() {
             match target_name {
                 Some(name) if name.starts_with('@') && arity == 1 && !has_pairs => {
                     Some(name.to_string())
@@ -161,35 +174,57 @@ impl Interpreter {
         let mut i = 0usize;
         while i < items.len() {
             let chunk: Vec<Value> = items[i..i + arity].to_vec();
-            // For a Pair element (arity == 1) the general call machinery would
-            // bind it as a named arg and skip `$_`; force it as the topic.
-            let explicit_topic = if has_pairs
-                && matches!(
-                    chunk[0].view(),
-                    ValueView::Pair(..) | ValueView::ValuePair(..)
+            let value = if rw_param.is_some() {
+                // Same transient-`ContainerRef`-cell pattern as
+                // `deepmap_leaf_call`: Raku passes the block a *container* for
+                // the element, so an `is rw`/`is raw` param can write through
+                // it. The existing binder already treats a bare `ContainerRef`
+                // argument as a writable lvalue (see
+                // `bind_function_args_values`), so no other plumbing is needed.
+                let cell = crate::gc::Gc::new(std::sync::Mutex::new(chunk[0].clone()));
+                let res = match self.call_sub_value(
+                    block.clone(),
+                    vec![Value::container_ref(cell.clone())],
+                    false,
                 ) {
-                Some(chunk[0].clone())
+                    Ok(v) => v,
+                    Err(e) => return Some(Err(e)),
+                };
+                source_after[i] = cell.lock().unwrap().clone();
+                res.deref_container()
             } else {
-                None
-            };
-            let call = if explicit_topic.is_some() || writeback_name.is_some() {
-                if writeback_name.is_some() {
-                    self.rw_map_topic_capture = None;
+                // For a Pair element (arity == 1) the general call machinery
+                // would bind it as a named arg and skip `$_`; force it as the
+                // topic.
+                let explicit_topic = if has_pairs
+                    && matches!(
+                        chunk[0].view(),
+                        ValueView::Pair(..) | ValueView::ValuePair(..)
+                    ) {
+                    Some(chunk[0].clone())
+                } else {
+                    None
+                };
+                let call = if explicit_topic.is_some() || writeback_name.is_some() {
+                    if writeback_name.is_some() {
+                        self.rw_map_topic_capture = None;
+                    }
+                    self.vm_call_map_block(&block, chunk, explicit_topic, writeback_name.is_some())
+                } else {
+                    self.vm_call_on_value(block.clone(), chunk, None)
+                };
+                let v = match call {
+                    Ok(v) => v,
+                    Err(e) => return Some(Err(e)),
+                };
+                // Capture the block's final `$_` back into the source element.
+                if writeback_name.is_some()
+                    && let Some(mutated) = self.rw_map_topic_capture.take()
+                {
+                    source_after[i] = mutated;
                 }
-                self.vm_call_map_block(&block, chunk, explicit_topic, writeback_name.is_some())
-            } else {
-                self.vm_call_on_value(block.clone(), chunk, None)
+                v
             };
-            let value = match call {
-                Ok(v) => v,
-                Err(e) => return Some(Err(e)),
-            };
-            // Capture the block's final `$_` back into the source element.
-            if writeback_name.is_some()
-                && let Some(mutated) = self.rw_map_topic_capture.take()
-            {
-                source_after[i] = mutated;
-            }
             if let ValueView::Slip(elems) = value.view() {
                 result.extend(elems.iter().cloned());
             } else {
