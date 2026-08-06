@@ -252,6 +252,21 @@ impl Interpreter {
                 _ => None,
             })
             .collect();
+        // A `state` declaration inside this block is NOT a block-local `my`:
+        // its storage (the state store's shared cell) outlives the block, and
+        // an enclosing loop's `sync_state_locals_in_range` persists the
+        // slot/env value back through that cell after the block exits.
+        // Treating it as a fresh block-local Nil'd the slot on exit, so the
+        // sync wrote Nil THROUGH the shared cell and every iteration of
+        // `{ state $n = 0; $n = $n + 1 } for 1..3` restarted from Nil
+        // (1 1 1 instead of 1 2 3). Exclude state slots from the exit resets.
+        let state_slots: rustc_hash::FxHashSet<usize> = code.ops[pre_start..end]
+            .iter()
+            .filter_map(|op| match op {
+                OpCode::StateVarInit(slot, _) => Some(*slot as usize),
+                _ => None,
+            })
+            .collect();
         let routine_snapshot = self.snapshot_routine_registry();
         let saved_env = self.env().clone();
         // Under shadow slots (default) the block exit uses a targeted Nil-reset of
@@ -511,7 +526,7 @@ impl Interpreter {
                     || code
                         .local_sym(idx)
                         .is_some_and(|s| block_declared.contains(&s));
-                if non_propagating {
+                if non_propagating && !state_slots.contains(&idx) {
                     self.locals[idx] = saved.get(idx).cloned().unwrap_or(Value::NIL);
                 }
             }
@@ -535,7 +550,7 @@ impl Interpreter {
                     .local_sym(idx)
                     .is_some_and(|s| block_declared.contains(&s));
                 let non_propagating = name == "_" || name.starts_with('*') || is_block_declared;
-                if non_propagating {
+                if non_propagating && !state_slots.contains(&idx) {
                     if is_block_declared {
                         if owned_slots.contains(&idx) {
                             self.locals[idx] = Value::NIL;

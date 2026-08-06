@@ -1882,9 +1882,7 @@ impl Compiler {
                 mode,
                 rw_block,
                 explicit_zero_params,
-                // Only the placeholder collectors in `ast.rs` care whether this
-                // loop came from the statement-modifier form; codegen is identical.
-                is_statement_modifier: _,
+                is_statement_modifier,
             } => {
                 // `for @a[*] { ... }` — a whole-array Whatever slice iterates the
                 // same elements as `for @a`, including aliasing for write-back
@@ -2162,7 +2160,14 @@ impl Compiler {
                 // `callframe`/`caller` inside sees the enclosing routine one
                 // level further up (see `callframe_block_depth`).
                 self.callframe_block_depth += 1;
-                self.suppress_loop_block_state_reset = Self::loop_body_is_sole_block(&loop_body);
+                // Only the statement-MODIFIER form's sole block is the loop's
+                // own body (cloned once per statement, state persists). A sole
+                // block inside a prefix `for` body (`for ^3 { { state ... } }`)
+                // is a NESTED bare block that re-clones per iteration, so its
+                // per-execution ResetStateLocals must stay (raku prints 1 1 1
+                // there — t/state-var-per-block-clone.t test 5).
+                self.suppress_loop_block_state_reset =
+                    *is_statement_modifier && Self::loop_body_is_sole_block(&loop_body);
                 self.compile_body_with_implicit_try(&loop_body);
                 self.callframe_block_depth -= 1;
                 for n in &newly_registered {
