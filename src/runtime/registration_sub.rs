@@ -543,6 +543,7 @@ impl Interpreter {
     /// the compiler produced *for that signature* — a body recompiled on demand
     /// would key on the per-alternate signature and split the shared cell.
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn register_sub_alternate_decl(
         &mut self,
         name: &str,
@@ -557,6 +558,7 @@ impl Interpreter {
         is_test_assertion: bool,
         supersede: bool,
         custom_traits: &crate::opcode::DeclTraits,
+        metadata: Option<&crate::opcode::CompiledRoutineMetadata>,
         compiled: Option<&crate::opcode::CompiledFunction>,
     ) -> Result<SubRegisterOutcome, RuntimeError> {
         self.register_sub_decl_with_metadata(
@@ -573,7 +575,7 @@ impl Interpreter {
             supersede,
             custom_traits,
             None,
-            None,
+            metadata,
             compiled,
         )
     }

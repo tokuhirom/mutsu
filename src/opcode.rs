@@ -1990,6 +1990,12 @@ pub(crate) struct CompiledSubDeclPlan {
     pub(crate) return_type: Option<String>,
     pub(crate) associativity: Option<String>,
     pub(crate) signature_alternates: Vec<(Vec<String>, Vec<ParamDef>)>,
+    /// Registration metadata for each `signature_alternates` slot (index-
+    /// aligned), computed at plan lowering like `routine_metadata` is for the
+    /// primary signature. Alternates used to register metadata-less, which
+    /// left their fingerprint/facts caches to a lazy walk over `legacy_body`
+    /// — a walk a body-less plan cannot serve (ADR-0019 C6e-3c).
+    pub(crate) alternate_metadata: Vec<CompiledRoutineMetadata>,
     /// Stable keys of the bytecode routines compiled for the primary signature
     /// and its alternates. The compiler keeps this association explicit; the
     /// next adapter slice preserves it while importing modules and installs
@@ -2038,6 +2044,66 @@ pub(crate) struct CompiledRoutineMetadata {
     /// judgment must come from the declaration, not from the (possibly
     /// dropped) `legacy_body` payload (C6e-3).
     pub(crate) body_is_empty: bool,
+}
+
+/// Registration metadata for one declared signature of a sub declaration,
+/// computed at plan lowering (ADR-0019 C6e). Called once for the primary
+/// signature and once per `signature_alternates` slot — the body is shared,
+/// but the signature-derived fields (effective param defs, fingerprints,
+/// identity) differ per slot.
+fn compiled_routine_metadata(
+    params: &[String],
+    param_defs: &[ParamDef],
+    body: &[Stmt],
+) -> CompiledRoutineMetadata {
+    let (uses_positional, uses_named) = if params.is_empty() && param_defs.is_empty() {
+        let body_shape = format!("{body:?}");
+        (
+            body_shape.contains("ArrayVar(\"_\")"),
+            body_shape.contains("HashVar(\"_\")"),
+        )
+    } else {
+        (false, false)
+    };
+    let mut effective_param_defs = param_defs.to_vec();
+    if effective_param_defs.is_empty() && params.is_empty() {
+        if uses_positional {
+            effective_param_defs.push(implicit_legacy_param("@_"));
+        }
+        if uses_named {
+            effective_param_defs.push(implicit_legacy_param("%_"));
+        }
+    }
+    CompiledRoutineMetadata {
+        empty_sig: params.is_empty() && effective_param_defs.is_empty(),
+        has_non_nil_return: body_contains_non_nil_return(body),
+        is_stub: is_stub_routine_body(body),
+        has_param_return_redeclaration: param_defs.iter().any(|pd| {
+            pd.type_constraint.is_some()
+                && pd
+                    .code_signature
+                    .as_ref()
+                    .is_some_and(|(_, ret)| ret.is_some())
+        }),
+        body_facts: crate::ast::RoutineBodyFacts {
+            needs_interpreter: crate::runtime::Interpreter::function_body_needs_interpreter(body),
+            declares_state: crate::runtime::Interpreter::function_body_declares_state(body),
+            registration_identity: crate::ast::registration_identity_fingerprint(
+                params,
+                &effective_param_defs,
+                body,
+            ),
+        },
+        // Hash the declaration exactly as the installed def will carry it:
+        // plan params + *effective* param defs + body (see the field doc).
+        body_fingerprint: crate::ast::function_body_fingerprint(
+            params,
+            &effective_param_defs,
+            body,
+        ),
+        body_is_empty: body.is_empty(),
+        effective_param_defs,
+    }
 }
 
 fn implicit_legacy_param(name: &str) -> ParamDef {
@@ -5110,56 +5176,13 @@ impl CompiledCode {
                 *is_raw,
             )
         });
-        let (uses_positional, uses_named) = if params.is_empty() && param_defs.is_empty() {
-            let body_shape = format!("{body:?}");
-            (
-                body_shape.contains("ArrayVar(\"_\")"),
-                body_shape.contains("HashVar(\"_\")"),
-            )
-        } else {
-            (false, false)
-        };
-        let mut effective_param_defs = param_defs.clone();
-        if effective_param_defs.is_empty() && params.is_empty() {
-            if uses_positional {
-                effective_param_defs.push(implicit_legacy_param("@_"));
-            }
-            if uses_named {
-                effective_param_defs.push(implicit_legacy_param("%_"));
-            }
-        }
-        let routine_metadata = CompiledRoutineMetadata {
-            empty_sig: params.is_empty() && effective_param_defs.is_empty(),
-            has_non_nil_return: body_contains_non_nil_return(body),
-            is_stub: is_stub_routine_body(body),
-            has_param_return_redeclaration: param_defs.iter().any(|pd| {
-                pd.type_constraint.is_some()
-                    && pd
-                        .code_signature
-                        .as_ref()
-                        .is_some_and(|(_, ret)| ret.is_some())
-            }),
-            body_facts: crate::ast::RoutineBodyFacts {
-                needs_interpreter: crate::runtime::Interpreter::function_body_needs_interpreter(
-                    body,
-                ),
-                declares_state: crate::runtime::Interpreter::function_body_declares_state(body),
-                registration_identity: crate::ast::registration_identity_fingerprint(
-                    params,
-                    &effective_param_defs,
-                    body,
-                ),
-            },
-            // Hash the declaration exactly as the installed def will carry it:
-            // plan params + *effective* param defs + body (see the field doc).
-            body_fingerprint: crate::ast::function_body_fingerprint(
-                params,
-                &effective_param_defs,
-                body,
-            ),
-            body_is_empty: body.is_empty(),
-            effective_param_defs,
-        };
+        let routine_metadata = compiled_routine_metadata(params, param_defs, body);
+        let alternate_metadata = signature_alternates
+            .iter()
+            .map(|(alt_params, alt_param_defs)| {
+                compiled_routine_metadata(alt_params, alt_param_defs, body)
+            })
+            .collect();
         debug_assert_eq!(name_chunk.is_some(), name_expr.is_some());
         let plan_traits = zip_decl_trait_args(custom_traits, trait_args);
         let plan_idx = self.sub_decl_plans.len() as u32;
@@ -5171,6 +5194,7 @@ impl CompiledCode {
             return_type: return_type.clone(),
             associativity: associativity.clone(),
             signature_alternates: signature_alternates.clone(),
+            alternate_metadata,
             compiled_routine_keys: Vec::new(),
             legacy_body: body.clone(),
             multi: *multi,

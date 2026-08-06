@@ -200,6 +200,7 @@ impl Interpreter {
             return_type,
             associativity,
             signature_alternates,
+            alternate_metadata,
             compiled_routine_keys,
             legacy_body: body,
             multi,
@@ -354,6 +355,10 @@ impl Interpreter {
                 for (slot, (alt_params, alt_param_defs)) in signature_alternates.iter().enumerate()
                 {
                     let alt_compiled = plan_compiled(slot + 1);
+                    // Per-slot plan metadata (ADR-0019 C6e-3c): the alternate's
+                    // own fingerprint/facts, so its caches never need a lazy
+                    // walk over the (possibly empty) plan body.
+                    let alt_metadata = alternate_metadata.get(slot);
                     self.loan_env_for(|i| {
                         i.register_sub_alternate_decl(
                             &resolved_name,
@@ -368,6 +373,7 @@ impl Interpreter {
                             *is_test_assertion,
                             *supersede,
                             custom_traits,
+                            alt_metadata,
                             alt_compiled,
                         )
                     })?;
