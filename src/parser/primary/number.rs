@@ -304,6 +304,19 @@ pub(super) fn parse_int_radix(clean: &str, radix: u32) -> Expr {
 
 /// Parse an integer literal (including underscore separators).
 pub(super) fn integer(input: &str) -> PResult<'_, Expr> {
+    integer_impl(input, true)
+}
+
+/// Like `integer`, but never emits the "Leading 0 does not indicate octal"
+/// warning. Used when parsing a `<...>` quote-word: `<021>` becomes an
+/// allomorphic IntStr whose Int value ignores the leading zero (decimal 21),
+/// but the word is a string literal, not numeric-literal syntax, so the
+/// octal-typo warning must not fire.
+pub(super) fn integer_no_warn(input: &str) -> PResult<'_, Expr> {
+    integer_impl(input, false)
+}
+
+fn integer_impl(input: &str, warn: bool) -> PResult<'_, Expr> {
     check_multi_underscore(input)?;
     // Hex: 0x...
     if let Some(result) = parse_prefixed_radix(input, "0x", "0X", 16, |c| {
@@ -330,7 +343,7 @@ pub(super) fn integer(input: &str) -> PResult<'_, Expr> {
     {
         return Err(PError::expected("integer (not decimal)"));
     }
-    if input.starts_with('0') && clean.len() > 1 {
+    if warn && input.starts_with('0') && clean.len() > 1 {
         let literal = &input[..input.len() - rest.len()];
         let suggested_digits = clean.trim_start_matches('0');
         let suggested = format!(

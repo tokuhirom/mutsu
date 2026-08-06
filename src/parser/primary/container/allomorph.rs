@@ -94,7 +94,7 @@ fn angle_word_value_impl(word: &str, fraction_allomorphic: bool) -> Value {
         make_allomorphic_value(val, word)
     };
     if let Ok((rest, crate::ast::Expr::Literal(val))) =
-        crate::parser::primary::number::integer(num_word)
+        crate::parser::primary::number::integer_no_warn(num_word)
         && rest.is_empty()
     {
         return apply(val);

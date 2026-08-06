@@ -41,17 +41,9 @@ equally broken before the listop-shadow gate landed
 changed which error appears. Suspect the call path looks for an exported proto
 rather than assembling the exported multi candidates.
 
-### `String::Splice` — spurious octal worry for a bare word inside `<...>`
+### ~~`String::Splice` — spurious octal worry for a bare word inside `<...>`~~ — FIXED
 
-```raku
-my @ans = <0 10 021 1320 02431>;
-# mutsu: Potential difficulties: Leading 0 does not indicate octal in Raku; use 0o21 ... (found 021)
-# raku:  (no warning)
-```
-
-Inside a word-quote list these are **strings**, not numeric literals, so the
-leading-zero worry must not fire. Independent of the item above; cosmetic but
-noisy (four warnings on one line).
+Fixed: `news/2026-08/angle-word-leading-zero-no-octal-warning.md`.
 
 ### `Text::Sorensen` — `.value` on Any
 
