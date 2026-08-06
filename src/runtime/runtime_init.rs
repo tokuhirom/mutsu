@@ -2314,6 +2314,7 @@ impl Interpreter {
             amp_param_shadowed_names: std::collections::HashSet::new(),
             empty_sig_proto_names: std::collections::HashSet::new(),
             registered_fn_fingerprints: Default::default(),
+            registered_stub_decl_sites: Default::default(),
             prepared_fn_defs: HashMap::new(),
             method_resolve_cache: rustc_hash::FxHashMap::default(),
             method_cache_generation: 0,

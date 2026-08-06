@@ -672,6 +672,11 @@ impl Interpreter {
             amp_param_shadowed_names: std::collections::HashSet::new(),
             empty_sig_proto_names: std::collections::HashSet::new(),
             registered_fn_fingerprints: Default::default(),
+            // Stub-site knowledge is declaration-shape knowledge, not run
+            // state: carry it into the thread so a routine registered on the
+            // parent (stub hoisted, then defined) does not re-raise
+            // X::Redeclaration when the thread re-executes the block.
+            registered_stub_decl_sites: self.registered_stub_decl_sites.clone(),
             prepared_fn_defs: HashMap::new(),
             method_resolve_cache: rustc_hash::FxHashMap::default(),
             method_cache_generation: 0,
