@@ -81,7 +81,7 @@ impl Interpreter {
                 .collect(),
             ValueView::Slip(items) => items.to_vec(),
             // Positional-ish instances (WalkList candidates, Backtrace frames,
-            // captured __array_items) share the utils implementation.
+            // Array-subclass backing storage) share the utils implementation.
             ValueView::Instance { .. } => crate::runtime::utils::value_to_list(val),
             // Nil is a single scalar item in list context (e.g. `for Nil { }`
             // does one iteration); it is not an empty list.
