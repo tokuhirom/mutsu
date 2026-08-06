@@ -68,6 +68,19 @@ impl Interpreter {
         // `for $lazy -> $a, $b, $c` consumes `arity` elements per iteration and binds
         // them as one chunk, exactly as the eager path does.
         let arity = spec.arity.max(1) as usize;
+        // Collecting form (`my @a = do for $lazy { ... }`): mirror the eager
+        // path's protocol — each iteration's body value is popped off the
+        // stack into `collected`, and the loop pushes one array at the end.
+        // Without this, every iteration's value piled up on the VM stack and
+        // whatever consumed the loop's result saw only the top one
+        // (t/do-for-lazy-gather-collect.t; the historical symptom was "the
+        // first iteration's value is dropped").
+        let stack_base = if spec.collect {
+            Some(self.stack.len())
+        } else {
+            None
+        };
+        let mut collected = if spec.collect { Some(Vec::new()) } else { None };
         let mut idx: usize = start_idx;
         // Nested-resume entry: when the slot holds a state for a loop nested
         // INSIDE this body (its loop_ip lies in the body range), the resumed
@@ -122,6 +135,14 @@ impl Interpreter {
                 }
                 match body_res {
                     Ok(()) => {
+                        if let Some(ref mut coll) = collected {
+                            let base = stack_base.unwrap();
+                            if self.stack.len() > base {
+                                Self::collect_loop_value(coll, self.stack.pop().unwrap());
+                            }
+                            // Drain any extra values pushed during this iteration.
+                            self.stack.truncate(base);
+                        }
                         break 'body_redo;
                     }
                     Err(e) if e.is_succeed() => {
@@ -145,6 +166,16 @@ impl Interpreter {
                             && e.leave_routine().is_none()
                             && Self::label_matches(&e.label, &spec.label) =>
                     {
+                        // `LABEL.leave($v)`: the leave value joins the
+                        // collection (mirrors the eager path).
+                        if let Some(v) = e.return_value {
+                            if let Some(ref mut coll) = collected {
+                                Self::collect_loop_value(coll, v.clone());
+                            } else {
+                                self.set_loop_topic(topic_local, v.clone());
+                                self.stack.push(v);
+                            }
+                        }
                         break 'for_loop;
                     }
                     Err(e) if e.is_last() && Self::label_matches(&e.label, &spec.label) => {
@@ -232,6 +263,9 @@ impl Interpreter {
         }
         self.topic_source_var = saved_topic_source;
         self.restore_loop_topic(saved_topic, saved_topic_local);
+        if let Some(coll) = collected {
+            self.stack.push(Value::array(coll));
+        }
         Ok(())
     }
 
