@@ -1,4 +1,5 @@
 use crate::ast::{Expr, Stmt, make_anon_sub};
+use crate::parser::stmt::simple::is_user_declared_sub;
 use crate::symbol::Symbol;
 use crate::value::Value;
 
@@ -74,6 +75,7 @@ fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
         Stmt::Expr(expr) => {
             if let Expr::Call { name, args } = &expr
                 && name.resolve().as_str() == "emit"
+                && !is_user_declared_sub("emit")
             {
                 return Stmt::Expr(Expr::MethodCall {
                     target: Box::new(Expr::Var(emitter_name.to_string())),
@@ -91,6 +93,7 @@ fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
                 && matches!(target.as_ref(), Expr::Var(n) if n == "_")
                 && name.resolve().as_str() == "emit"
                 && args.is_empty()
+                && !is_user_declared_sub("emit")
             {
                 return Stmt::Expr(Expr::MethodCall {
                     target: Box::new(Expr::Var(emitter_name.to_string())),
@@ -106,7 +109,9 @@ fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
             // pipeline is a neighbouring stage's emitter.
             Stmt::Expr(super::supply_emit_expr::rewrite_expr(expr, emitter_name))
         }
-        Stmt::Call { name, args } if name.resolve().as_str() == "emit" => {
+        Stmt::Call { name, args }
+            if name.resolve().as_str() == "emit" && !is_user_declared_sub("emit") =>
+        {
             // Statement-form `emit ARGS;` becomes `$emitter.emit(ARGS)`.
             let positional_args: Vec<Expr> = args
                 .into_iter()

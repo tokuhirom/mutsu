@@ -15,7 +15,7 @@ impl Interpreter {
     /// identity (its stored `SubData.name` does not match `name`) — either
     /// because it's an anonymous block passed as `&foo`, or because it's a
     /// different sub with the same parameter name.
-    pub(super) fn env_callable_is_lexical_override(val: &Value, name: &str) -> bool {
+    pub(crate) fn env_callable_is_lexical_override(val: &Value, name: &str) -> bool {
         if let ValueView::Sub(sub) = val.view() {
             let stored = sub.name.resolve();
             // Anonymous block or mismatched name => lexical override.

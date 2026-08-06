@@ -20,6 +20,7 @@
 //! pre-existing dynamic-emitter behaviour, never a miscompile.
 
 use crate::ast::{Expr, Stmt};
+use crate::parser::stmt::simple::is_user_declared_sub;
 use crate::symbol::Symbol;
 
 use super::supply::rewrite_supply_body;
@@ -52,7 +53,9 @@ fn rewrite_stmts(body: Vec<Stmt>, emitter: &str) -> Vec<Stmt> {
 
 pub(crate) fn rewrite_expr(expr: Expr, emitter: &str) -> Expr {
     match expr {
-        Expr::Call { name, args } if name.resolve().as_str() == "emit" => {
+        Expr::Call { name, args }
+            if name.resolve().as_str() == "emit" && !is_user_declared_sub("emit") =>
+        {
             emitter_call(emitter, rewrite_all(args, emitter))
         }
         Expr::Call { name, args } => Expr::Call {

@@ -858,6 +858,23 @@ impl Interpreter {
             }
             "emit" => {
                 let value = args.first().cloned().unwrap_or(Value::NIL);
+                // A lexical `&emit` in scope shadows the control-flow builtin,
+                // same as any other declared name shadows a builtin (see
+                // todo/tickets/code-lexical-does-not-shadow-a-builtin.md). The
+                // compile-time `amp_binding_in_active_scope` check normally
+                // routes a shadowed bare `emit(...)` straight to the binding
+                // without ever reaching this fallback — except a `supply { … }`
+                // on-demand body is re-compiled from its AST on every
+                // invocation (`call_sub_value` -> `eval_block_value`), which
+                // starts a fresh compiler with no enclosing lexical-scope
+                // metadata, so that compile-time check is blind here. Fall
+                // back to a runtime env lookup: `&emit` lives in `env` under
+                // its `&`-prefixed key regardless of how the call compiled.
+                if let Some(callable) = self.env.get("&emit").cloned()
+                    && Self::env_callable_is_lexical_override(&callable, "emit")
+                {
+                    return self.call_sub_value(callable, vec![value], false);
+                }
                 // `emit` is caught by the innermost *dynamically* enclosing
                 // supply, not the lexically enclosing one: a sub declared
                 // outside a supply block still emits into it when called from
