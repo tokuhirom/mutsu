@@ -115,55 +115,37 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
         return Ok((r, stmt));
     }
 
-    // Label before `do` block: `A: do { ... }`
+    // Label before `do` block: `A: do { ... }`, and label before bare block:
+    // `A: { ... }`. Neither is a loop construct in rakudo — `last`/`next`/
+    // `redo A` inside either must raise `X::ControlFlow` ("labeled ... without
+    // loop construct"), not iterate or silently exit — so both lower to a
+    // labelled `Expr::DoBlock` (the same node plain expression-position
+    // `do { ... }` uses), not a loop, which already has exactly that
+    // not-a-loop-but-`leave`-targetable behaviour
+    // (`vm/vm_misc_block.rs::exec_do_block_expr_op`).
+    // Used to lower to a dummy `Stmt::For` carrying `Nil`, which made both
+    // forms wrongly behave as a one-iteration loop
+    // (`todo/tickets/labelled-bare-block-is-not-a-loop-construct.md`).
     if keyword("do", rest).is_some() {
-        // Parse the rest as a statement and wrap with label
-        // TODO: Represent labeled `do { ... }` with a dedicated AST node instead of
-        // lowering it to a dummy `Stmt::For` carrying `Nil`.
         let r = keyword("do", rest).unwrap();
         let (r, _) = ws(r)?;
         let (r, body) = block(r)?;
         return Ok((
             r,
-            Stmt::For {
-                iterable: Expr::ArrayLiteral(vec![Expr::Literal(crate::value::Value::NIL)]),
-                param: None,
-                param_def: Box::new(None),
-                params: Vec::new(),
-                params_def: Vec::new(),
+            Stmt::Expr(Expr::DoBlock {
                 body,
                 label: Some(label),
-                mode: crate::ast::ForMode::Normal,
-                rw_block: false,
-                explicit_zero_params: false,
-                // A labeled `do {}` / bare `{}` lowered to a dummy loop: the
-                // body is a real block, so it owns its placeholders.
-                is_statement_modifier: false,
-            },
+            }),
         ));
     }
-    // Label before bare block: `A: { ... }`
-    // TODO: Represent labeled bare blocks directly instead of lowering to
-    // a dummy `Stmt::For` carrying `Nil`.
     if rest.starts_with('{') {
         let (r, body) = block(rest)?;
         return Ok((
             r,
-            Stmt::For {
-                iterable: Expr::ArrayLiteral(vec![Expr::Literal(crate::value::Value::NIL)]),
-                param: None,
-                param_def: Box::new(None),
-                params: Vec::new(),
-                params_def: Vec::new(),
+            Stmt::Expr(Expr::DoBlock {
                 body,
                 label: Some(label),
-                mode: crate::ast::ForMode::Normal,
-                rw_block: false,
-                explicit_zero_params: false,
-                // A labeled `do {}` / bare `{}` lowered to a dummy loop: the
-                // body is a real block, so it owns its placeholders.
-                is_statement_modifier: false,
-            },
+            }),
         ));
     }
 

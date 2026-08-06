@@ -11,7 +11,7 @@
 # thrown exception.
 use Test;
 
-plan 20;
+plan 24;
 
 # --- no construct to act on: a real, catchable exception ------------------
 # Written out rather than looped: rakudo's own `throws-like` nests its subtests
@@ -29,6 +29,24 @@ throws-like 'my $i; { $i++; redo; $i--; }', X::ControlFlow,
     try { { $i++; next; $i--; } };
     is $!.message, 'next without loop construct', 'the message names the construct';
     is $i, 1, 'the statements after next did not run';
+}
+# A labelled bare block / labelled `do` block is a block, not a loop
+# construct — `last`/`next`/`redo` naming its own label must raise
+# X::ControlFlow ("labeled ... without loop construct"), not iterate once and
+# exit the block as if it were a one-iteration loop.
+{
+    my $n = 0;
+    try { LAB: { $n++; last LAB; $n += 100 } };
+    is $!.message, 'labeled last without loop construct',
+        'last naming a labelled bare block is X::ControlFlow';
+    is $n, 1, 'the statements after last did not run';
+}
+{
+    my $n = 0;
+    try { A: do { $n++; last A; $n += 100 } };
+    is $!.message, 'labeled last without loop construct',
+        'last naming a labelled do block is X::ControlFlow';
+    is $n, 1, 'the statements after last did not run';
 }
 # A CONTROL block still sees it — it is a control exception, just a catchable one.
 {
