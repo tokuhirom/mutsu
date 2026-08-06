@@ -220,6 +220,15 @@ pub(crate) struct ForLoopSpec {
     /// Names of multi-param bindings (for `-> $a, \b, $c` loops).
     /// Used to temporarily clear sigilless readonly flags before binding.
     pub(crate) multi_param_names: Vec<String>,
+    /// Declared type constraint of the single named loop parameter
+    /// (`for @a -> Int $x { ... }`), if any. `None` for an untyped param, a
+    /// multi-param loop, or no named param at all. Checked once per
+    /// iteration against the bound item, raising `X::TypeCheck::Binding::Parameter`
+    /// on mismatch (`todo/tickets/for-loop-multi-param-types-unenforced.md`).
+    pub(crate) param_type_constraint: Option<String>,
+    /// Declared type constraints for a multi-param loop (`-> Str $k, Int $v`),
+    /// parallel to `multi_param_names`. `None` per-entry for an untyped param.
+    pub(crate) multi_param_type_constraints: Vec<Option<String>>,
     /// When true, the iterable is a `.pairs`/`.antipairs` transform: the
     /// loop variable is a `Pair` that *wraps* the source element, not the
     /// element itself. The plain (topic/named) per-element source writeback

@@ -47,6 +47,18 @@ impl Interpreter {
         self.env_mut().insert("_".to_string(), val);
     }
 
+    /// The `'$name'`-quoted form a loop parameter's bare env-key name
+    /// (sigil-stripped for scalars, sigil-kept for `@`/`%`/`&`) appears as in
+    /// a `X::TypeCheck::Binding::Parameter` message, matching how routine
+    /// parameter binding errors display a parameter name elsewhere.
+    fn for_param_display_name(name: &str) -> String {
+        if name.starts_with(['@', '%', '&']) {
+            name.to_string()
+        } else {
+            format!("${}", name)
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_for_loop_body(
         &mut self,
@@ -310,6 +322,43 @@ impl Interpreter {
             } else {
                 item
             };
+            // Enforce declared loop-parameter types at BIND time, not via the
+            // bind-prefix `Stmt::Assign`'s plain, untyped `SetLocal` (which
+            // would check nothing at all for a multi-param loop, and would
+            // raise an "assignment" error with the wrong exception class for
+            // a single-param one). Raku raises
+            // `X::TypeCheck::Binding::Parameter` here, so build that directly
+            // from the per-iteration `item` before it's ever bound.
+            // (todo/tickets/for-loop-multi-param-types-unenforced.md)
+            if let Some(ref name) = param_name {
+                if let Some(tc) = spec.param_type_constraint.as_deref()
+                    && !self.type_matches_value(tc, &item)
+                {
+                    let display = Self::for_param_display_name(name);
+                    return Err(RuntimeError::typecheck_binding_parameter_with_repr(
+                        &display, tc, &item,
+                    ));
+                }
+            } else if !spec.multi_param_type_constraints.is_empty()
+                && let ValueView::Array(chunk, ..) = item.view()
+            {
+                for (i, tc) in spec.multi_param_type_constraints.iter().enumerate() {
+                    let Some(tc) = tc else { continue };
+                    let Some(v) = chunk.items().get(i) else {
+                        continue;
+                    };
+                    if !self.type_matches_value(tc, v) {
+                        let display = spec
+                            .multi_param_names
+                            .get(i)
+                            .map(|n| Self::for_param_display_name(n))
+                            .unwrap_or_default();
+                        return Err(RuntimeError::typecheck_binding_parameter_with_repr(
+                            &display, tc, v,
+                        ));
+                    }
+                }
+            }
             // `topic_source_var` drives the whole-topic writeback for a scalar
             // source (`for $x { $_[1] = ... }` writes the mutated `$_` back to
             // `$x`). For a `.values` loop over a mutable QuantHash the topic is a
