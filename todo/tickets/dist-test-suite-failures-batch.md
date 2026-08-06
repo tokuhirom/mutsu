@@ -85,6 +85,22 @@ Date `+`/`-` arithmetic only recognized the literal class name `"Date"`, so a
 subclass instance was never treated as date-like. Both fixed generally; see
 `news/2026-08/date-subclass-qualified-new-and-arithmetic.md`.
 
+### `PSpec` — triaged; one bug fixed, one gap needs a parser design pass
+
+`lib/PSpec.rakumod` exports two custom word-form infix operators,
+`infix:<times>` and `infix:<xxx>`, that each take a closure operand:
+`20 times { $value++ }` and `{ $value--; } xxx 25`. Two independent bugs:
+
+- A closure passed as an argument to a custom infix operator (the `times`
+  case) did not write its mutation of an outer lexical back to the caller —
+  fixed generally in `src/vm/vm_flipflop_ops.rs`
+  (`news/2026-08/user-infix-closure-arg-writeback.md`).
+- A leading `{ ... }` before ANY infix operator (custom or not) is never
+  recognized as that operator's LHS operand — the `xxx` case, where the
+  block is a bare block STATEMENT in mutsu's parse, not a term. This is a
+  genuine grammar-ambiguity lookahead feature needing a design pass:
+  [todo/deep/bare-block-as-infix-operand-not-recognized.md](../deep/bare-block-as-infix-operand-not-recognized.md).
+
 ### `RSV` — triaged, root-caused, needs a compiler design pass
 
 `lib/RSV.rakumod` declares `constant \EOV = blob8.new(255);` (and `\EOR`,
@@ -100,7 +116,7 @@ it needs a design pass rather than a quick patch:
 
 ## Un-triaged `test_die` / `test_fail`
 
-`PSpec`, `Array::Rounded` (fail);
+`Array::Rounded` (fail);
 `Math::Interval`, `Native::Overflow`, `App::SudokuHelper`, `P5tie`,
 `Mathematica::Serializer::Encoder`, `Hash::Restricted`, `Crypt::RC4`,
 `Random::Choice` (die).
