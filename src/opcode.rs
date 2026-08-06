@@ -2823,6 +2823,26 @@ impl ConstKey {
 }
 
 impl CompiledCode {
+    /// True when this body declares a routine (`sub`/`subset`) directly in its
+    /// own scope (not inside a nested `BlockScope`, which restores the
+    /// registry itself) — such a routine is lexical to this body and must be
+    /// unregistered when the body returns unless it escapes via the return
+    /// value. Shared by `CompiledFunction::detect_inner_subs` (the sub/closure
+    /// call paths) and method dispatch (`vm_method_dispatch.rs`), which has no
+    /// `CompiledFunction` wrapper of its own to cache this on.
+    pub(crate) fn declares_inner_routines(&self) -> bool {
+        self.ops.iter().any(|op| match op {
+            OpCode::RegisterDecl(idx) => {
+                matches!(
+                    self.decl_plans.get(*idx as usize),
+                    Some(CompiledDeclPlanRef::Sub(_))
+                )
+            }
+            OpCode::RegisterSubset(..) => true,
+            _ => false,
+        })
+    }
+
     pub(crate) fn remap_sub_decl_compiled_routine_keys(
         &mut self,
         remap: &rustc_hash::FxHashMap<Symbol, Symbol>,
@@ -5671,14 +5691,7 @@ impl CompiledFunction {
         // A routine declared directly in this body (not inside a nested
         // BlockScope, which restores the registry itself) is lexical to the
         // body and must be unregistered on return unless it escapes.
-        self.declares_inner_routines = self.code.ops.iter().any(|op| match op {
-            OpCode::RegisterDecl(idx) => matches!(
-                self.code.decl_plans.get(*idx as usize),
-                Some(CompiledDeclPlanRef::Sub(_))
-            ),
-            OpCode::RegisterSubset(..) => true,
-            _ => false,
-        });
+        self.declares_inner_routines = self.code.declares_inner_routines();
     }
 
     /// Compute the set of variable names declared locally in this function

@@ -601,6 +601,14 @@ impl Interpreter {
 
         // Execute bytecode
         let let_mark = self.let_saves_len();
+        // A `sub` declared directly in this method's body is lexical to it --
+        // see the matching `routine_snapshot` comment in
+        // `call_compiled_method_fast`.
+        let routine_snapshot = if cc.declares_inner_routines() {
+            Some(self.snapshot_routine_registry())
+        } else {
+            None
+        };
         // A method body is its own topicalizer for a bare `when`/`default`: a
         // matching `when` sets the global `when_matched` flag, which must not
         // leak to an enclosing `given`/`with` body (see vm_call_light.rs for the
@@ -878,6 +886,16 @@ impl Interpreter {
                 Err(e) => Err(e),
             }
         };
+
+        // Restore the routine registry (removing this body's lexical routines)
+        // unless an inner routine escaped via the return value -- see
+        // `routine_snapshot` above.
+        if let Some(snapshot) = routine_snapshot {
+            match &final_result {
+                Ok(v) if Self::return_value_escapes_routine(v) => {}
+                _ => self.restore_routine_registry(snapshot),
+            }
+        }
 
         // Adjust return value if it's the same instance (update attributes).
         // Only commit the reconcile snapshot when it was adjusted beyond the
@@ -1434,6 +1452,16 @@ impl Interpreter {
 
         // Execute bytecode (same as slow path)
         let let_mark = self.let_saves_len();
+        // A `sub` declared directly in this method's body is lexical to it
+        // (mirrors `call_compiled_function_fast`'s `routine_snapshot` for the
+        // ordinary sub/closure call paths -- method dispatch had no equivalent,
+        // so such a sub stayed registered and callable after the method
+        // returned; see todo/tickets/nested-sub-in-method-leaks-to-global-scope.md).
+        let routine_snapshot = if cc.declares_inner_routines() {
+            Some(self.snapshot_routine_registry())
+        } else {
+            None
+        };
         // A method body is its own topicalizer for a bare `when`/`default`; its
         // `when_matched` must not leak to an enclosing given/with (see the slow
         // path above / vm_call_light.rs for the full rationale).
@@ -1659,6 +1687,16 @@ impl Interpreter {
                 Err(e) => Err(e),
             }
         };
+
+        // Restore the routine registry (removing this body's lexical routines)
+        // unless an inner routine escaped via the return value -- see
+        // `routine_snapshot` above.
+        if let Some(snapshot) = routine_snapshot {
+            match &final_result {
+                Ok(v) if Self::return_value_escapes_routine(v) => {}
+                _ => self.restore_routine_registry(snapshot),
+            }
+        }
 
         // Only commit the reconcile snapshot when `:=` recovery adjusted it
         // beyond the cell contents (see `call_compiled_method` exit).

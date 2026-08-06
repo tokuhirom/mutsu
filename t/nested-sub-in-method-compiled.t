@@ -10,7 +10,7 @@ use Test;
 # pins the behavior now that the method dispatch runs the compiled body with
 # a real functions table.
 
-plan 8;
+plan 9;
 
 class Basic {
     method double($x) {
@@ -68,7 +68,7 @@ class Scoped {
     }
 }
 is Scoped.new.secret-holder(), 42, 'nested sub is callable inside its method';
-# Whether a method-nested sub leaks into the enclosing (global) scope is a
-# separate, pre-existing bug (reproduces on main independent of this fix) —
-# see todo/tickets/nested-sub-in-method-leaks-to-global-scope.md — so it is
-# not asserted here.
+# A method-nested sub must not leak into the enclosing (global) scope —
+# see news/2026-08/nested-sub-in-method-does-not-leak.md.
+my $leaked = try { secret() };
+nok $leaked.defined, 'nested sub inside a method does not leak out of the method';
