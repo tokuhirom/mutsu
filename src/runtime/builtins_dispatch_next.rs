@@ -252,6 +252,63 @@ impl Interpreter {
         }
     }
 
+    /// When a user `is Array` subclass overrides a Positional protocol method
+    /// (`AT-POS`/`ASSIGN-POS`/`BIND-POS`/`DELETE-POS`/`elems`/`push`/...) and
+    /// calls `nextsame`/`nextwith` (or `callsame`/`callwith`), the NATIVE array
+    /// behavior on the instance's backing `__mutsu_array_storage` is the final
+    /// base candidate — `Array` is not a user-registered class with real
+    /// `MethodDef`s, so the regular MRO chain never reaches it (mirrors
+    /// `native_mu_base_next_candidate`). Without this, e.g. `Array::Rounded`'s
+    /// `method AT-POS($index) { nextwith $index.round }` silently returned Nil.
+    fn native_array_storage_next_candidate(
+        &mut self,
+        override_args: Option<&[Value]>,
+    ) -> Option<Result<Value, RuntimeError>> {
+        let method_name = self.samewith_context_stack.last().map(|(n, _)| n.clone())?;
+        // A single (non-multi, non-wrapped) compiled method pushes no
+        // `method_dispatch_stack` frame, so the invocant/args must come from
+        // the samewith context and `self` rather than a dispatch frame (mirrors
+        // `native_mu_base_next_candidate`'s `self.env.get("self")` fallback).
+        let invocant = self
+            .method_dispatch_stack
+            .last()
+            .map(|f| f.invocant.clone())
+            .or_else(|| {
+                self.samewith_context_stack
+                    .last()
+                    .and_then(|(_, i)| i.clone())
+            })
+            .or_else(|| self.env.get("self").cloned())?;
+        let args: Vec<Value> = match override_args {
+            Some(a) => a.to_vec(),
+            None => self
+                .method_dispatch_stack
+                .last()
+                .map(|f| f.args.clone())
+                .unwrap_or_default(),
+        };
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = invocant.view()
+        else {
+            return None;
+        };
+        if !attributes.contains_key("__mutsu_array_storage")
+            || !self
+                .mro_readonly(&class_name.resolve())
+                .iter()
+                .any(|n| n == "Array")
+        {
+            return None;
+        }
+        let method_sym = Symbol::intern(&method_name);
+        attributes.with_attr_mut("__mutsu_array_storage", |storage| {
+            self.try_native_method(storage, method_sym, &args)
+        })?
+    }
+
     /// When a user-overridden grammar `parse`/`subparse`/`parsefile` calls
     /// `nextsame`/`nextwith` (or `callsame`/`callwith`) and the user MRO is
     /// exhausted, the NATIVE grammar parse is the final base candidate. It is not
@@ -443,15 +500,20 @@ impl Interpreter {
             let (receiver_class, invocant, mut call_args, owner_class, mut method_def, rw_params) = {
                 let frame = &mut self.method_dispatch_stack[frame_idx];
                 let Some((owner_class, method_def)) = frame.remaining.first().cloned() else {
-                    // User MRO exhausted: a grammar `parse`/`subparse` override or a
-                    // metamodel-HOW dispatch falls through to the native
-                    // implementation as the last candidate before giving up.
+                    // User MRO exhausted: a grammar `parse`/`subparse` override, an
+                    // `is Array` subclass's Positional override, or a metamodel-HOW
+                    // dispatch falls through to the native implementation as the
+                    // last candidate before giving up.
                     let result = if let Some(res) =
                         self.native_grammar_parse_next_candidate(override_args.as_deref())
                     {
                         res?
                     } else if let Some(res) =
                         self.native_mu_base_next_candidate(override_args.as_deref())
+                    {
+                        res?
+                    } else if let Some(res) =
+                        self.native_array_storage_next_candidate(override_args.as_deref())
                     {
                         res?
                     } else {
@@ -840,6 +902,22 @@ impl Interpreter {
                 }
                 return Ok(result);
             }
+        }
+        // A single (non-multi, non-wrapped) compiled method pushes no
+        // `method_dispatch_stack` frame at all, so an `is Array` subclass's
+        // Positional override (`method AT-POS($i) { nextwith $i.round }`)
+        // reaches here directly rather than the exhausted-MRO branch above.
+        // The native array behavior on the backing `__mutsu_array_storage` is
+        // still the correct base candidate.
+        if let Some(res) = self.native_array_storage_next_candidate(override_args.as_deref()) {
+            let result = res?;
+            if tail_call {
+                return Err(RuntimeError {
+                    return_value: Some(result),
+                    ..RuntimeError::new("")
+                });
+            }
+            return Ok(result);
         }
         // If we're inside a method but there's simply no next candidate in the MRO,
         // return Nil (this is the Raku behavior for callsame/callwith at the end of

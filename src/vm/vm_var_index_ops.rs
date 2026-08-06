@@ -1295,6 +1295,34 @@ impl Interpreter {
                     result
                 }
             }
+            // A non-integer numeric subscript (`@a[1.5]`) on an instance: Raku
+            // truncates a fractional Positional subscript to Int at the
+            // subscript site regardless of receiver (confirmed against raku:
+            // `$obj.AT-POS(1.5)` sees 1.5, but `$obj[1.5]` calls AT-POS with
+            // 1 already truncated) — mirror the plain-`Array` truncating arms
+            // above instead of forwarding the fractional value.
+            (
+                ValueView::Instance { .. },
+                ValueView::Num(_) | ValueView::Rat(..) | ValueView::FatRat(..),
+            ) => {
+                let i = crate::runtime::to_int(&index);
+                let fallback = target.clone();
+                let result = self
+                    .try_compiled_method_or_interpret(target.clone(), "AT-POS", vec![Value::int(i)])
+                    .or_else(|_| {
+                        self.try_compiled_method_or_interpret(
+                            fallback,
+                            "AT-KEY",
+                            vec![Value::int(i)],
+                        )
+                    })
+                    .unwrap_or(Value::NIL);
+                if result.is_nil() {
+                    self.typed_container_default(&target)
+                } else {
+                    result
+                }
+            }
             // Whatever slice on a tied Associative instance (`%h is Foo; %h{*}`):
             // enumerate the class's own keys (via its `keys` method) and read each
             // through AT-KEY, mirroring the plain-Hash `(Hash, Whatever)` arm above.

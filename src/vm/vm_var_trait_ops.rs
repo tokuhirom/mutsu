@@ -432,6 +432,44 @@ impl Interpreter {
             }
         }
 
+        // `my @a is CustomClass` where CustomClass subclasses `Array` (e.g.
+        // `class Array::Rounded is Array {...}`) or composes `Positional`:
+        // back the variable with a blessed instance, so indexing overrides
+        // (AT-POS/ASSIGN-POS/DELETE-POS/...) and other methods dispatch to
+        // the class's own methods, mirroring the `%`-sigil tied-hash block
+        // below. Raku ties an `@` variable to ANY class named by `is` — the
+        // `@` sigil supplies the positional semantics.
+        if name.starts_with('@')
+            && (self.registry().classes.contains_key(&trait_name)
+                || self.registry().roles.contains_key(&trait_name))
+            && (self.class_mro(&trait_name).iter().any(|n| n == "Array")
+                || self.class_does_role(&trait_name, "Positional")
+                || self.has_user_method_including_role(&trait_name, "AT-POS"))
+        {
+            if has_arg {
+                self.stack.pop();
+            }
+            let name_str = name.to_string();
+            // Gather any initializer values (`my @a is Foo = <a b c d e>`
+            // assigns the initializer before this trait op runs) as a flat
+            // positional list, matching `Foo.new(|@values)`.
+            let init_source = self
+                .read_local_slot_or_name(code, slot, &name_str)
+                .or_else(|| self.get_env_with_main_alias(&name_str));
+            let init_values: Vec<Value> = match init_source.as_ref().map(Value::view) {
+                Some(ValueView::Array(a, _)) if !a.is_empty() => a.iter().cloned().collect(),
+                Some(ValueView::Seq(s) | ValueView::Slip(s)) if !s.is_empty() => {
+                    s.iter().cloned().collect()
+                }
+                _ => Vec::new(),
+            };
+            let type_obj = Value::package(crate::symbol::Symbol::intern(&trait_name));
+            let instance = self.try_compiled_method_or_interpret(type_obj, "new", init_values)?;
+            self.write_local_slot_or_name(code, eff_slot, &name_str, instance.clone());
+            self.set_env_with_main_alias(&name_str, instance);
+            return Ok(());
+        }
+
         // `my %h is CustomClass` where CustomClass composes `Associative` (e.g.
         // `does Hash::Agnostic`): back the variable with a blessed instance, so
         // subscripting (AT-KEY/ASSIGN-KEY/DELETE-KEY), iteration and coercion

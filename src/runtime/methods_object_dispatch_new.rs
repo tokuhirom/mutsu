@@ -1852,12 +1852,12 @@ impl Interpreter {
                         .map_or(0, crate::runtime::to_int)
                 };
                 if class_mro.iter().any(|name| name == "Array")
-                    && !attrs.contains_key("__array_items")
+                    && !attrs.contains_key("__mutsu_array_storage")
                     && !positional_ctor_args.is_empty()
                 {
                     attrs.insert(
-                        "__array_items".to_string(),
-                        Value::array(positional_ctor_args),
+                        "__mutsu_array_storage".to_string(),
+                        Value::real_array(positional_ctor_args),
                     );
                 }
                 if class_mro.iter().any(|name| name == "Int")

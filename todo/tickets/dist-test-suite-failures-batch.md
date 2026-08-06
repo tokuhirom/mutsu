@@ -101,6 +101,17 @@ subclass instance was never treated as date-like. Both fixed generally; see
   genuine grammar-ambiguity lookahead feature needing a design pass:
   [todo/deep/bare-block-as-infix-operand-not-recognized.md](../deep/bare-block-as-infix-operand-not-recognized.md).
 
+### `Array::Rounded` — triaged, 4 general bugs fixed, 2 remain (needs a design pass)
+
+Four separate, general bugs in how an `is Array` subclass interacts with construction, `nextwith`,
+and fractional subscripts were found and fixed:
+`news/2026-08/array-subclass-nextwith-and-num-subscript.md`. The dist's own test suite still fails
+16/35 — its actual rounding mechanism is exported `multi sub postcircumfix:<[ ]>` candidates (an
+operator overload on the subscript syntax, not the `AT-POS` method it also declares), which mutsu
+never dispatches for `@obj[...]`; a `my @a is Rounded = ...` cross-module constant-alias `is` trait
+gap also remains. Both documented, not fixed:
+[todo/deep/user-postcircumfix-index-not-dispatched-for-instances.md](../deep/user-postcircumfix-index-not-dispatched-for-instances.md).
+
 ### `RSV` — triaged, root-caused, needs a compiler design pass
 
 `lib/RSV.rakumod` declares `constant \EOV = blob8.new(255);` (and `\EOR`,
@@ -116,7 +127,6 @@ it needs a design pass rather than a quick patch:
 
 ## Un-triaged `test_die` / `test_fail`
 
-`Array::Rounded` (fail);
 `Math::Interval`, `Native::Overflow`, `App::SudokuHelper`, `P5tie`,
 `Mathematica::Serializer::Encoder`, `Hash::Restricted`, `Crypt::RC4`,
 `Random::Choice` (die).

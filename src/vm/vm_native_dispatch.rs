@@ -18,7 +18,7 @@ impl Interpreter {
     /// settle path: print-and-resume when no CONTROL handler is active, run a
     /// resume-safe handler inline, and otherwise fall back to the same
     /// unwinding signal as before.
-    pub(super) fn try_native_method(
+    pub(crate) fn try_native_method(
         &mut self,
         target: &Value,
         method_sym: crate::symbol::Symbol,
