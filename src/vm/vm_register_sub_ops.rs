@@ -689,7 +689,21 @@ impl Interpreter {
                 });
                 continue;
             }
-            let ct = match CType::from_type_name(tc) {
+            // A parameterized `Buf[T]`/`Blob[T]` marshals as `CType::Buf`
+            // regardless of its element type `T` -- it's passed as a raw
+            // address+length, per `CType::from_type_name`'s own doc comment
+            // ("the bracketed forms are handled by the caller stripping to
+            // the stem"). Without this, the bracketed name falls through to
+            // the CStruct-by-shape heuristic below (starts uppercase) and
+            // marshals as a `void*` looked up via `pointer_address` -- which
+            // a `Buf` instance has no `address` attribute for, so NULL is
+            // passed to C silently (e.g. `strlen(Buf[uint8] $s)` segfaults
+            // on the native side instead of reading the buffer).
+            let buf_stem = tc
+                .split_once('[')
+                .map(|(stem, _)| stem)
+                .filter(|stem| *stem == "Buf" || *stem == "Blob");
+            let ct = match CType::from_type_name(buf_stem.unwrap_or(tc)) {
                 Some(ct) => ct,
                 // A user-declared `is repr('CStruct')` class (an opaque native
                 // handle, e.g. `SSL_CTX`) is passed by pointer. Recognize it by

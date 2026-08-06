@@ -2803,6 +2803,22 @@ impl Interpreter {
                     // Container identity (§3): write through a shared node.
                     let arr = crate::value::gc_data_mut(outer_arr);
                     Self::autoviv_resize(arr, inner_i + 1, native_fill.clone())?;
+                    // A Buf/Blob-shaped Instance in the slot (`@a[0]` holding a
+                    // `Buf[uint64]`) carries its element storage in a shared
+                    // attribute cell, not as a raw Array/Hash payload, so the
+                    // `needs_viv` probe below would not recognize it as an
+                    // existing container and clobber it with a fresh Array —
+                    // silently destroying the buffer (`@a[0][1] = v` turned
+                    // `@a[0]` from `Buf[uint64]` into a plain `Array`). Write
+                    // through its element storage directly instead, mirroring
+                    // the single-level `$buf[i] = v` arm above.
+                    if Self::write_buf_element_if_buf_instance(
+                        &arr[inner_i],
+                        &outer_key,
+                        val.clone(),
+                    )? {
+                        return Ok(true);
+                    }
                     // Autovivify the slot if it's not already a container. A
                     // `:=`-bound element is a shared `ContainerRef` cell holding a
                     // container — descend through it (below) instead of clobbering it.
@@ -2903,6 +2919,50 @@ impl Interpreter {
         Ok(())
     }
 
+    /// If `target` is a Buf/Blob-shaped Instance, write `val` at `pos` through
+    /// its shared element-storage attribute cell and return `true`. `false`
+    /// (no write attempted) for anything else, or for a non-numeric `pos`.
+    /// Used by both nested-index-assign arms (array-outer and the
+    /// `:=`-cell-descending helper below) so a Buf sitting behind a second
+    /// subscript (`@a[0][1] = v`, `%h<k>[1] = v`, or a bound cell to either)
+    /// is written into rather than silently no-op'd or clobbered by the
+    /// generic Array/Hash fallback, which doesn't recognize an Instance as an
+    /// existing container.
+    fn write_buf_element_if_buf_instance(
+        target: &Value,
+        pos: &str,
+        val: Value,
+    ) -> Result<bool, RuntimeError> {
+        let ValueView::Instance {
+            attributes,
+            class_name,
+            ..
+        } = target.view()
+        else {
+            return Ok(false);
+        };
+        if !crate::runtime::utils::is_native_elems_class(&class_name.resolve())
+            || !crate::value::value_buf::has_buf_elems(&attributes)
+        {
+            return Ok(false);
+        }
+        let Ok(pos) = pos.parse::<usize>() else {
+            return Ok(true);
+        };
+        let mut resize_err = None;
+        crate::value::value_buf::with_buf_elems_mut(&attributes, |buf_arr| {
+            if let Err(e) = Self::autoviv_resize(buf_arr, pos + 1, Value::int(0)) {
+                resize_err = Some(e);
+                return;
+            }
+            buf_arr[pos] = val;
+        });
+        match resize_err {
+            Some(e) => Err(e),
+            None => Ok(true),
+        }
+    }
+
     /// Assign `val` into `target[outer_key]`, descending through any chain of
     /// `:=`-bound container cells (`ContainerRef`). Used by the 2-level nested
     /// assign so that a write to a container-valued bound element
@@ -2917,6 +2977,12 @@ impl Interpreter {
             let cell = cell.clone();
             let mut guard = cell.lock().unwrap();
             Self::assign_into_nested_container(&mut guard, outer_key, val)?;
+        } else if Self::write_buf_element_if_buf_instance(target, outer_key, val.clone())? {
+            // A Buf/Blob's element storage lives in a shared attribute cell,
+            // not a raw Array/Hash payload -- write through it directly
+            // (mirrors the array-outer nested-assign arm) instead of falling
+            // through to `with_array_mut`/`with_hash_mut`, which return
+            // `None` for an Instance and silently no-op the write.
         } else if let Some(r) = target.with_array_mut(|arr, _| -> Result<(), RuntimeError> {
             if let Ok(i) = outer_key.parse::<usize>() {
                 // Autovivified gaps fill with the `Any` type object (matching
