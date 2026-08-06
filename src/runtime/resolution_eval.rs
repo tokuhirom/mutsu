@@ -570,9 +570,13 @@ impl Interpreter {
                 // paths above, it executes in the CURRENT env — the semantics
                 // this fast path is defined by (a captured-env install would
                 // read the phaser-creation-time snapshot, not the live state).
+                // Its own nested-sub table (if any) travels with it rather
+                // than substituting an empty one (ADR-0019 C6e-3c).
                 (
                     std::sync::Arc::new(cf.code.clone()),
-                    std::sync::Arc::new(crate::opcode::CompiledFns::default()),
+                    cf.compiled_fns.clone().unwrap_or_else(|| {
+                        std::sync::Arc::new(crate::opcode::CompiledFns::default())
+                    }),
                 )
             } else {
                 let compiler = crate::compiler::Compiler::new();

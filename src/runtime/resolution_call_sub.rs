@@ -382,13 +382,18 @@ impl Interpreter {
             if data.compiled_routine.is_some()
                 && let Some(cf) = data.compiled_routine.clone()
             {
+                // Prefer the routine's own nested-sub table over an empty one
+                // (ADR-0019 C6e-3c): e.g. `_is-eqv`'s multi dispatch calling
+                // `test-eqv`, a `sub` nested in its own body, needs this to
+                // resolve `test-eqv`'s compiled routine key.
                 let empty_fns = CompiledFns::default();
+                let fns = cf.compiled_fns.as_deref().unwrap_or(&empty_fns);
                 // Carrier parity: a binding failure here must surface raw
                 // (X::TypeCheck::Binding), not reclassified as a compile-time
                 // X::TypeCheck::Argument. One-shot; consumed at the callee's
                 // entry — see suppress_binding_error_enhance.
                 self.suppress_binding_error_enhance = true;
-                return self.call_compiled_closure(&data, &cf.code, call_args, &empty_fns);
+                return self.call_compiled_closure(&data, &cf.code, call_args, fns);
             }
             let saved_env = self.env.clone();
             let saved_readonly = self.enter_readonly_frame();

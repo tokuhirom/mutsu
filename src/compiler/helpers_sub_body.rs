@@ -21,12 +21,18 @@ impl Compiler {
     /// plans in that unit pointing at the imported keys. Multi candidates omit
     /// their body fingerprint from the normal lookup key, so two nested units can
     /// legitimately produce the same key for different routines.
+    ///
+    /// Returns the imported entries under their final (post-remap) keys, so a
+    /// caller building the `CompiledFunction` that owns this child unit can
+    /// attach them as that routine's own [`CompiledFunction::compiled_fns`]
+    /// (ADR-0019 C6e-3c) without re-deriving which keys were renamed.
     fn import_compiled_functions(
         &mut self,
         code: &mut CompiledCode,
         compiled_functions: CompiledFns,
-    ) {
+    ) -> CompiledFns {
         let mut remap = rustc_hash::FxHashMap::default();
+        let mut imported = CompiledFns::default();
         for (key, function) in compiled_functions {
             let imported_key = if self.compiled_functions.contains_key(&key) {
                 let base = key.resolve();
@@ -44,11 +50,14 @@ impl Compiler {
             if imported_key != key {
                 remap.insert(key, imported_key);
             }
-            self.compiled_functions.insert(imported_key, function);
+            self.compiled_functions
+                .insert(imported_key, function.clone());
+            imported.insert(imported_key, function);
         }
         if !remap.is_empty() {
             code.remap_sub_decl_compiled_routine_keys(&remap);
         }
+        imported
     }
 
     /// Recursively allocate local variable slots for sub_signature parameters
@@ -483,7 +492,7 @@ impl Compiler {
         // call_compiled_closure catches CX::Return at the right boundary.
         sub_compiler.code.is_routine = true;
         sub_compiler.code.compute_needs_env_sync();
-        self.import_compiled_functions(
+        let own_compiled_fns = self.import_compiled_functions(
             &mut sub_compiler.code,
             std::mem::take(&mut sub_compiler.compiled_functions),
         );
@@ -511,6 +520,8 @@ impl Compiler {
             // The declaring package, matching the package component of this
             // function's `compiled_fns` key (built from `self.current_package`).
             package: self.current_package.clone(),
+            compiled_fns: (!own_compiled_fns.is_empty())
+                .then(|| std::sync::Arc::new(own_compiled_fns)),
         };
         cf.precompute_param_local_slots();
         cf.precompute_named_call_plan();
@@ -1258,7 +1269,11 @@ impl Compiler {
         }
         // Transfer any compiled functions from the closure to the parent while
         // preserving the declaration-plan references into the imported table.
-        self.import_compiled_functions(
+        // The caller reads them back via `compiled_functions_ref()` /
+        // `take_compiled_functions()` when it needs this routine's own
+        // nested-sub table (ADR-0019 C6e-3c), so the returned snapshot itself
+        // is not needed here.
+        let _ = self.import_compiled_functions(
             &mut sub_compiler.code,
             std::mem::take(&mut sub_compiler.compiled_functions),
         );

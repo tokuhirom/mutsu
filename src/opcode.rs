@@ -5520,6 +5520,25 @@ pub(crate) struct CompiledFunction {
     /// sites pass the *caller's* package, which is wrong for a by-name call into
     /// another package; this authoritative field fixes all of them at once.
     pub(crate) package: String,
+    /// Compiled functions this routine's body directly or transitively
+    /// declares as nested `sub`s, keyed exactly as they were installed into
+    /// the enclosing compile pass's functions table (post name-collision
+    /// remap). `None` when the body declares no nested sub.
+    ///
+    /// A dispatch site that invokes this routine as a detached `Sub` VALUE —
+    /// a map/grep block, an operator fallback, a `.wrap` target, `MAIN`, a
+    /// reduce/hyper step — is not necessarily still inside the `CompiledFns`
+    /// table this routine was originally compiled alongside, so it cannot
+    /// resolve a nested `RegisterSub`'s `compiled_routine_keys` from its own
+    /// calling context. Without this field such sites substituted
+    /// `CompiledFns::default()`, which made a nested sub's declaration plan
+    /// fail to resolve its own bytecode and fall back to registering with an
+    /// executable AST body — the blocker recorded in
+    /// `todo/deep/c6e-legacy-body-drop-blocked-by-gate-rejected-shapes.md`
+    /// (ADR-0019 C6e-3c). Every such site should prefer this table over an
+    /// empty one before falling back to whatever `CompiledFns` the caller
+    /// happens to have in scope.
+    pub(crate) compiled_fns: Option<std::sync::Arc<CompiledFns>>,
 }
 
 impl CompiledFunction {
