@@ -53,11 +53,10 @@ Inside a word-quote list these are **strings**, not numeric literals, so the
 leading-zero worry must not fire. Independent of the item above; cosmetic but
 noisy (four warnings on one line).
 
-### `Text::Sorensen` — `.value` on Any
+### ~~`Text::Sorensen` — `.value` on Any~~ — not reproducible on current main
 
-Reaches subtest 4 of 21, then dies with
-`No such method 'value' for invocant of type 'Any'` at `t/01-basic.t:15`. Whatever
-the code expects to be a `Pair` there is `Any` in mutsu. Needs reduction.
+Fixed as a side effect of unrelated work; see
+`news/2026-08/text-sorensen-value-on-any-not-reproducible.md`.
 
 ### ~~`Locale::Dates` — `Unknown function: Dates`~~ — FIXED
 
