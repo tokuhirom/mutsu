@@ -170,11 +170,34 @@ sigilless / 2,659 `start`-body / 14 sub-signature / 0 trait). The
   scope) a separate pre-existing bug: such a nested sub leaks into the
   enclosing global scope —
   `todo/tickets/nested-sub-in-method-leaks-to-global-scope.md`.
+- **NativeCall marshalling trait keep-class LIFTED (2026-08-06):** the
+  `is encoded(...)` param-trait exclusion in
+  `def_module_single_sig_body_ok_ignoring_state` (the OTF/module-single gate
+  and the C6d-5 interpreter-fallback arm share this one predicate) was
+  measured to have zero live readers — actual string encoding for a native
+  call happens explicitly via `.encode(...)` in the prelude
+  (`nativecall_manage.rs`), not through this trait, and the shared compiled
+  binder (`bind_function_args_values`) only branches on
+  `rw`/`raw`/`copy`/`invocant`. A genuine `is native(...)` sub never reaches
+  this gate at all — `native_call_specs` is checked by name before body
+  dispatch. Widened the gate's `matches!` to accept `encoded` alongside the
+  existing binding-time traits. Note: this predicate does NOT gate
+  *registration* (whether a def's body is emptied) — that decision
+  (`vm_register_sub_ops.rs`) already only checks whether the plan's compiled
+  routine key resolves, independent of param traits — so this fix is purely
+  about execution *routing* (letting such defs run their already-compiled
+  bytecode instead of tree-walking a body that C6e-3b already empties by
+  default when eligible). Pinned by `t/encoded-param-compiled.t`
+  (`t/nativecall-module-compat.t` already covered parse/marshal
+  correctness).
 - **C6e-3c (open):** the field itself. `CompiledSubDeclPlan::legacy_body`
-  still carries the AST for the one remaining keep-class — NativeCall
-  marshalling traits, measured non-vendorable — and for the registration
-  fallback; dropping it outright still needs a story for that case.
-  Registration-time body use for the safe class is already zero.
+  now has no known live keep-class reader for the *safe* def shape, but it
+  still carries the AST for the registration fallback:
+  `vm_call_named_inner.rs`'s sub-decl-as-last-statement case falls back to
+  `plan.legacy_body.clone()` when a plan-derived def isn't found in the
+  registry (a computed-name/out-of-scope case) — that structural reader
+  needs its own C6c-style treatment (build from the plan's compiled routine
+  instead) before the field can be deleted outright.
 
 Related: `todo/deep/c6d-interpreter-body-sites-are-mostly-token-bodies.md`
 (the site inventory), `news/2026-08/fallback-def-arm-runs-compiled-body.md`

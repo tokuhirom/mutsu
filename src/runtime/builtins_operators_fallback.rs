@@ -456,9 +456,10 @@ impl Interpreter {
             // instead of the per-call `eval_block_value_with_pre_post` compile
             // below. The gate is the same signature assessment the OTF
             // dispatch uses (`def_module_single_sig_body_ok_ignoring_state`):
-            // since C6e-2c only NativeCall marshalling traits keep a def on
-            // the interpreter arm (sigilless scalars, sub-signatures and
-            // `start` bodies all run compiled — C6e-2a/2b/2c). `state`
+            // since C6e-3c no parameter shape or trait keeps a def on the
+            // interpreter arm anymore (sigilless scalars, sub-signatures,
+            // `start` bodies, and NativeCall marshalling traits all run
+            // compiled — C6e-2a/2b/2c/3c). `state`
             // is fine here: `call_routine_def` runs one stable body identity
             // (the plan's, or one memoized compile), so cells are not severed
             // the way a per-call OTF recompile severs them. The compiled entry
