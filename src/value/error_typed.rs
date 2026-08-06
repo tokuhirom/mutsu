@@ -614,6 +614,27 @@ impl RuntimeError {
         Self::typed("X::TypeCheck::Binding::Parameter", attrs)
     }
 
+    /// X::TypeCheck::Binding::Parameter for a literal-value parameter
+    /// (`sub f("a") {}`, `-> 'about' {}`) whose argument does not equal the
+    /// literal. Raku reports `.expected`/`.got` as the literal/actual VALUES
+    /// themselves (not a type), the parameter name as `<anon>` (a literal
+    /// parameter is always positional and unnamed), and renders both sides
+    /// via `.raku` (`expected "b" but got "z"`, `expected 0 but got 1`).
+    pub(crate) fn typecheck_binding_parameter_literal(expected: &Value, got: &Value) -> Self {
+        let expected_repr = crate::builtins::methods_0arg::raku_repr::raku_value(expected);
+        let got_repr = crate::builtins::methods_0arg::raku_repr::raku_value(got);
+        let msg = format!(
+            "Constraint type check failed in binding to parameter '<anon>'; expected {} but got {}",
+            expected_repr, got_repr
+        );
+        let mut attrs = HashMap::new();
+        attrs.insert("parameter".to_string(), Value::str("<anon>".to_string()));
+        attrs.insert("expected".to_string(), expected.clone());
+        attrs.insert("got".to_string(), got.clone());
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        Self::typed("X::TypeCheck::Binding::Parameter", attrs)
+    }
+
     /// Like `typecheck_binding_parameter`, but `.got` carries the actual
     /// offending VALUE (so `got => SomeType` matchers can smartmatch its type)
     /// instead of just the type-name string.

@@ -1773,6 +1773,23 @@ impl Interpreter {
                             value = Value::hash(map);
                         }
                     }
+                    // A literal-value parameter (`sub f("a") {}`, `-> 'about' {}`)
+                    // constrains the argument to equal that literal exactly, not
+                    // merely share its type -- the type_constraint check above
+                    // (inferred from the literal's own type when none is written)
+                    // only got us this far. Multi-dispatch candidate selection
+                    // already filters non-matching literal candidates before a
+                    // winning candidate reaches this binder (see
+                    // `args_matching.rs`), so this only fires for a genuinely
+                    // unmatched literal: a direct (non-multi) call or a pointy
+                    // block/closure, both of which reach here with no prior check.
+                    if let Some(lit) = &pd.literal_value
+                        && &value != lit
+                    {
+                        return Err(RuntimeError::typecheck_binding_parameter_literal(
+                            lit, &value,
+                        ));
+                    }
                     // Wrap native integer values for sub parameter binding (overflow wrapping)
                     if let Some(constraint) = &pd.type_constraint {
                         value = wrap_native_int_for_binding(constraint, value)?;
