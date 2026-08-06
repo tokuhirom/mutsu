@@ -1201,6 +1201,9 @@ impl Interpreter {
                 if positional_idx < args.len() {
                     let is_rw = pd.traits.iter().any(|t| t == "rw");
                     let is_raw = pd.traits.iter().any(|t| t == "raw");
+                    // Caller source name a scalar `is rw`/`is raw` param should
+                    // alias through a shared cell (set below when eligible).
+                    let mut rw_shared_cell_key: Option<String> = None;
                     if is_rw || is_raw {
                         let source_name = arg_sources
                             .as_ref()
@@ -1212,6 +1215,33 @@ impl Interpreter {
                             });
                         if let Some(source_name) = source_name {
                             rw_bindings.push((pd.name.clone(), source_name.clone()));
+                            // A plain scalar param aliasing a plain scalar caller
+                            // variable binds through a shared `ContainerRef` cell
+                            // (installed after type checks, below): the caller's
+                            // variable, this param, and any rw param the value is
+                            // relayed to (a wrap chain's callsame, a proto's `{*}`
+                            // redispatch) then observe one container, as Raku
+                            // specifies. Element-indexed sources (`f(@a[0])`)
+                            // keep the exit copy-back: their storage is an array
+                            // slot, not an env entry a cell can replace.
+                            let param_is_plain_scalar = pd.name != "_"
+                                && pd
+                                    .name
+                                    .as_bytes()
+                                    .first()
+                                    .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_');
+                            let source_is_plain_scalar = source_name
+                                .as_bytes()
+                                .first()
+                                .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_');
+                            let source_is_indexed = matches!(
+                                indexed_varref_from_value(&args[positional_idx]),
+                                Some((_, _, Some(_)))
+                            );
+                            if param_is_plain_scalar && source_is_plain_scalar && !source_is_indexed
+                            {
+                                rw_shared_cell_key = Some(source_name.clone());
+                            }
                             // Set up a sigilless alias so that subsequent `:=`
                             // bindings (e.g. `$a := $arg`) can transitively
                             // resolve through the `is rw` parameter to the
@@ -1891,6 +1921,41 @@ impl Interpreter {
                                 std::sync::Mutex::new(value),
                             ));
                             rw_bindings.push((pd.name.clone(), source_name.clone()));
+                        }
+                        // rw shared-cell binding: a scalar `is rw`/`is raw`
+                        // parameter aliases the CALLER's container, so bind it to
+                        // a shared `ContainerRef` cell rather than a value copy.
+                        // Reuse the caller's live cell when its variable already
+                        // holds one (an outer rw param's alias, a boxed captured
+                        // lexical); otherwise box the (type-checked, coerced)
+                        // value and install the cell under the caller's source
+                        // name so the exit writeback and the call-site slot
+                        // resync hand the caller the SAME cell. Body writes go
+                        // through the cell, so every alias — wrapper param,
+                        // callsame'd original's param, caller variable — observes
+                        // one write (the wrap-chain relay no longer depends on
+                        // same-name env-merge coincidence).
+                        if let Some(cell_key) = rw_shared_cell_key.take() {
+                            let existing = self
+                                .env
+                                .get(&cell_key)
+                                .filter(|v| matches!(v.view(), ValueView::ContainerRef(_)))
+                                .cloned();
+                            value = match existing {
+                                Some(cell) => cell,
+                                None => {
+                                    let cell = if matches!(value.view(), ValueView::ContainerRef(_))
+                                    {
+                                        value
+                                    } else {
+                                        Value::container_ref(crate::gc::Gc::new(
+                                            std::sync::Mutex::new(value),
+                                        ))
+                                    };
+                                    self.env.insert(cell_key, cell.clone());
+                                    cell
+                                }
+                            };
                         }
                         self.bind_param_value(&pd.name, value);
                         self.bind_param_type_constraint(&pd.name, bound_type_constraint.clone());

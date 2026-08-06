@@ -374,20 +374,12 @@ impl Interpreter {
             // interpreter entry). Blocks and closures keep the carrier below:
             // they carry `compiled_code`, never `compiled_routine`.
             //
-            // Gated off for a routine with a scalar `is rw`/`is raw` parameter:
-            // mutsu's rw writeback is a value copy-back, not a shared container,
-            // and a wrap chain's rw relay currently survives only through the
-            // interpreter carrier's same-name blanket merge (see
-            // todo/tickets/rw-writeback-through-wrap-chain-needs-shared-cells.md
-            // — the different-name relay is already broken on every path). Until
-            // rw binding is cell-based, keep those routines on the carrier.
+            // Scalar `is rw`/`is raw` routines run compiled too: the binder
+            // aliases such a param to a shared `ContainerRef` cell chained to
+            // the caller's variable, so the wrap-chain relay no longer depends
+            // on the carrier's same-name env merge (the gate that used to sit
+            // here; see news/2026-08/rw-params-bind-shared-cells.md).
             if data.compiled_routine.is_some()
-                && !data.param_defs.iter().any(|pd| {
-                    pd.traits.iter().any(|t| t == "rw" || t == "raw")
-                        && !pd.name.starts_with('@')
-                        && !pd.name.starts_with('%')
-                        && !pd.name.starts_with('&')
-                })
                 && let Some(cf) = data.compiled_routine.clone()
             {
                 let empty_fns = CompiledFns::default();
@@ -924,6 +916,20 @@ impl Interpreter {
                     {
                         captured_outer_writes.push(k.resolve().to_string());
                         merged.insert_sym(*k, v.clone());
+                    } else if merged.contains_key_sym(*k)
+                        && matches!(v.view(), ValueView::ContainerRef(_))
+                        && body_entry_env.get_sym(*k) != Some(v)
+                    {
+                        // A shared `ContainerRef` cell installed under a caller
+                        // variable's name DURING this call — an rw param's alias
+                        // boxing performed by a nested call (a method-wrap
+                        // wrapper's callsame reaching an `is rw` original), or a
+                        // box-on-capture of the caller's lexical. The cell IS the
+                        // variable's live container now; dropping it here would
+                        // sever the alias and leave the caller's plain value
+                        // stale (the wrap chain's last hop).
+                        captured_outer_writes.push(k.resolve().to_string());
+                        merged.insert_sym(*k, v.clone());
                     }
                 }
             }
@@ -934,6 +940,16 @@ impl Interpreter {
             self.merge_sigilless_alias_writes(&mut merged, &self.env);
             // Apply rw bindings after merge so they take precedence
             self.apply_rw_bindings_to_env(&rw_bindings, &mut merged);
+            // Record the rw sources so the VM call site that entered this
+            // carrier (a wrap-chain dispatch, a code-object call) refreshes the
+            // caller's local slot from env (`apply_pending_rw_writeback`).
+            // Without this, a cell-bound rw writeback lands in env only and a
+            // compiled caller keeps reading its stale slot value — the wrap
+            // chain's final hop back to the caller's variable was lost.
+            if !rw_bindings.is_empty() {
+                self.pending_rw_writeback_sources
+                    .extend(rw_bindings.iter().map(|(_, source)| source.clone()));
+            }
             // Restore map rw topic tracker if it was set during block execution
             if let Some(topic_val) = rw_map_topic {
                 merged.insert("__mutsu_rw_map_topic__".to_string(), topic_val);
