@@ -7,7 +7,7 @@ use Test;
 # fresh lexical scope, captures the right outer values, and the inner sub stays
 # lexically scoped.
 
-plan 12;
+plan 13;
 
 # Captured outer value is per-call, not frozen at first registration.
 sub outer($n) {
@@ -63,3 +63,15 @@ my $add10 = make-adder(10);
 my $add100 = make-adder(100);
 is $add10(5), 15, 'closure from first registration keeps its scope';
 is $add100(5), 105, 'closure from later registration has its own scope';
+
+# A nested sub called only inside a lazy `gather` escapes via the returned
+# Seq, not via being the return value itself: `gather r()` returns the Seq
+# immediately, before `r` has actually run — the call happens later, whenever
+# the caller iterates it. The registry-restore-on-return machinery must treat
+# a returned Seq/LazyList as a possible escape of any routine declared in the
+# same body, or the later iteration dies with "Unknown function".
+sub gather-outer() {
+    sub r() { take 7 }
+    gather r();
+}
+is gather-outer().List, (7,), 'a nested sub called from a lazy gather stays callable when iterated later';
