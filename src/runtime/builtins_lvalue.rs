@@ -300,6 +300,25 @@ impl Interpreter {
                 self.pending_rw_writeback_sources.push(name.clone());
                 Ok(value)
             }
+            Expr::Index {
+                target: base,
+                index,
+                is_positional,
+            } => {
+                // An element tail (`sub elem() is rw { @a[1] }`; `elem() = 99`)
+                // assigns through the ordinary index-assignment path — the same
+                // bytecode `@a[1] = v` compiles to — evaluated in the caller's
+                // env like the Var arm, so element-type checks and autoviv all
+                // apply. The runtime value rides in as an `Expr::Literal`.
+                let assign = Expr::IndexAssign {
+                    target: base.clone(),
+                    index: index.clone(),
+                    value: Box::new(Expr::Literal(value.clone())),
+                    is_positional: *is_positional,
+                };
+                self.eval_block_value(&[Stmt::Expr(assign)])?;
+                Ok(value)
+            }
             Expr::Call { name, args } => {
                 let mut eval_args = Vec::with_capacity(args.len());
                 for arg in args {

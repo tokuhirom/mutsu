@@ -7,7 +7,7 @@ use Test;
 # safe-class def (ADR-0019 C6e-3c lvalue keep-class). Expected values
 # verified against raku.
 
-plan 4;
+plan 8;
 
 my $var = 1;
 sub f() is rw { $var }
@@ -30,8 +30,26 @@ my $err = False;
 try { plain() = 1; } // ($err = True);
 ok $!.defined || $err, "assigning a non-rw routine still dies";
 
-# NOTE: an ELEMENT tail (`sub elem() is rw { @a[1] }; elem() = 99`) is a
-# pre-existing gap (X::Assignment::RO on v0.20.0 too) — see
-# todo/tickets/lvalue-sub-element-tail-not-assignable.md.
+# An ELEMENT tail assigns through the ordinary index-assignment path,
+# evaluated in the caller's env (was X::Assignment::RO through v0.20.0).
+my @a = 1, 2, 3;
+sub elem() is rw { @a[1] }
+elem() = 99;
+is @a.join(','), '1,99,3', "an array-element tail is assignable";
+
+my %h = a => 1;
+sub hel() is rw { %h<a> }
+hel() = 5;
+is %h<a>, 5, "a hash-element tail is assignable";
+
+sub hnew() is rw { %h<b> }
+hnew() = 7;
+is %h<b>, 7, "a hash-element tail assign autovivifies a missing key";
+
+my Int @typed = 1, 2;
+sub tel() is rw { @typed[0] }
+my $terr = False;
+try { tel() = "nope"; } // ($terr = True);
+ok $!.defined || $terr, "an element tail still enforces the element type";
 
 done-testing;
