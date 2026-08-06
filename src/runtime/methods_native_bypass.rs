@@ -248,6 +248,31 @@ impl Interpreter {
         false
     }
 
+    /// Render an object-hash pair KEY for `.raku`, applying Pair.raku's
+    /// parenthesisation (mirrors `object_hash_key_repr`), but dispatching the
+    /// key's own `.raku` through the real interpreter instead of the
+    /// allocation-free `raku_value` fast path. `raku_value` cannot call a
+    /// user-defined `method raku`, nor render an instance in its `T.new(...)`
+    /// constructor form (both need `&mut self` dispatch) — it falls back to a
+    /// generic stringification, which for a plain instance key rendered
+    /// `U.new` as `U()`. The stored VALUE already dispatches this way
+    /// (`call_method_with_values(v, "raku", ...)`); the key must match.
+    fn object_hash_key_raku(&mut self, typed: &Value) -> String {
+        let inner = self
+            .call_method_with_values(typed.clone(), "raku", vec![])
+            .map(|r| r.to_string_value())
+            .unwrap_or_else(|_| crate::builtins::methods_0arg::raku_repr::raku_value(typed));
+        match typed.view() {
+            ValueView::Package(_)
+            | ValueView::ParametricRole { .. }
+            | ValueView::Pair(..)
+            | ValueView::ValuePair(..) => {
+                format!("({})", inner)
+            }
+            _ => inner,
+        }
+    }
+
     /// Dispatch .raku/.perl on constrained Hash.
     pub(super) fn dispatch_constrained_hash_raku(
         &mut self,
@@ -293,11 +318,7 @@ impl Interpreter {
                         {
                             format!(":{}({})", *s, repr)
                         }
-                        _ => format!(
-                            "{} => {}",
-                            crate::builtins::methods_0arg::raku_repr::object_hash_key_repr(&typed),
-                            repr
-                        ),
+                        _ => format!("{} => {}", self.object_hash_key_raku(&typed), repr),
                     }
                 })
                 .collect();
@@ -310,14 +331,12 @@ impl Interpreter {
             .iter()
             .map(|k| {
                 let v = &map[*k];
-                let mut value_repr = || {
-                    if v.is_nil() {
-                        "Any".to_string()
-                    } else {
-                        self.call_method_with_values(v.clone(), "raku", vec![])
-                            .map(|r| r.to_string_value())
-                            .unwrap_or_else(|_| format!("{:?}", v))
-                    }
+                let value_repr = if v.is_nil() {
+                    "Any".to_string()
+                } else {
+                    self.call_method_with_values(v.clone(), "raku", vec![])
+                        .map(|r| r.to_string_value())
+                        .unwrap_or_else(|_| format!("{:?}", v))
                 };
                 // Object hashes store `.WHICH` string keys; serialize the original
                 // typed key (`1`, not `Int|1`; `a`, not `Str|a`). Raku renders each
@@ -330,13 +349,9 @@ impl Interpreter {
                     ValueView::Str(s)
                         if crate::builtins::methods_0arg::raku_repr::is_adverbial_pair_key(&s) =>
                     {
-                        format!(":{}({})", *s, value_repr())
+                        format!(":{}({})", *s, value_repr)
                     }
-                    _ => format!(
-                        "{} => {}",
-                        crate::builtins::methods_0arg::raku_repr::object_hash_key_repr(&typed),
-                        value_repr()
-                    ),
+                    _ => format!("{} => {}", self.object_hash_key_raku(&typed), value_repr),
                 }
             })
             .collect();
