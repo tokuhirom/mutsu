@@ -66,24 +66,48 @@ impl Interpreter {
                 } else {
                     1
                 };
+                // An explicit `is rw`/`is raw` scalar block param (`-> Int $x
+                // is rw { $x++ }`) rw-aliases the source element's container,
+                // same as a `$_`-mutating block via `topic_key` below -- but a
+                // NAMED param never mirrors into `topic_key` (that mirror only
+                // ever tracks `$_`/`_` writes), so it needs its own writable
+                // cell, the same transient-`ContainerRef` pattern
+                // `deepmap_leaf_call` uses. Only a single, non-assumed param
+                // qualifies -- a multi-arity block has no one element to alias.
+                let rw_param = (arity == 1)
+                    .then(|| data.param_defs.get(data.assumed_positional.len()))
+                    .flatten()
+                    .filter(|pd| pd.traits.iter().any(|t| t == "rw" || t == "raw"));
                 let mut i = 0usize;
                 while i < list_items.len() {
                     if arity > 1 && i + arity > list_items.len() {
                         return Err(RuntimeError::new("Not enough elements for map block arity"));
                     }
-                    let chunk: Vec<Value> = if arity == 1 {
-                        vec![list_items[i].clone()]
+                    let value = if rw_param.is_some() {
+                        let cell = crate::gc::Gc::new(std::sync::Mutex::new(list_items[i].clone()));
+                        let res = self.call_sub_value(
+                            Value::sub_value(data.clone()),
+                            vec![Value::container_ref(cell.clone())],
+                            false,
+                        )?;
+                        list_items[i] = cell.lock().unwrap().clone();
+                        res.deref_container()
                     } else {
-                        list_items[i..i + arity].to_vec()
+                        let chunk: Vec<Value> = if arity == 1 {
+                            vec![list_items[i].clone()]
+                        } else {
+                            list_items[i..i + arity].to_vec()
+                        };
+                        self.env.remove(topic_key);
+                        let v =
+                            self.call_sub_value(Value::sub_value(data.clone()), chunk, false)?;
+                        if arity == 1
+                            && let Some(mutated) = self.env.get(topic_key).cloned()
+                        {
+                            list_items[i] = mutated;
+                        }
+                        v
                     };
-                    self.env.remove(topic_key);
-                    let value =
-                        self.call_sub_value(Value::sub_value(data.clone()), chunk, false)?;
-                    if arity == 1
-                        && let Some(mutated) = self.env.get(topic_key).cloned()
-                    {
-                        list_items[i] = mutated;
-                    }
                     let value = self.reify_finite_pipe_value(value)?;
                     if let ValueView::Slip(elems) = value.view() {
                         result.extend(elems.iter().cloned());
@@ -105,6 +129,13 @@ impl Interpreter {
             } else {
                 1
             };
+            // See the rw_param comment on the call_sub_value branch above --
+            // same shape check, for the untyped/unconstrained param that took
+            // this env-insert fast path instead.
+            let rw_param = (arity == 1)
+                .then(|| data.param_defs.get(data.assumed_positional.len()))
+                .flatten()
+                .filter(|pd| pd.traits.iter().any(|t| t == "rw" || t == "raw"));
             let mut result = Vec::new();
 
             // Compile once, reuse VM for every iteration (same as eval_map_over_items).
@@ -183,6 +214,11 @@ impl Interpreter {
                         return Err(RuntimeError::new("Not enough elements for map block arity"));
                     }
                     vm.frame_authoritative = block_authoritative.clone();
+                    // Set when `rw_param` is active: the transient cell this
+                    // iteration's param is bound to, read back after the call
+                    // instead of `topic_key` (which never mirrors a NAMED
+                    // param write, only `$_`/`_`).
+                    let mut rw_cell: Option<crate::gc::Gc<std::sync::Mutex<Value>>> = None;
                     {
                         let assumed_count = data.assumed_positional.len();
                         for (idx, val) in data.assumed_positional.iter().enumerate() {
@@ -195,7 +231,15 @@ impl Interpreter {
                         if arity == 1 {
                             let item = list_items[i].clone();
                             if let Some(p) = data.params.get(assumed_count) {
-                                vm.env_mut().insert(p.clone(), item.clone());
+                                if rw_param.is_some() {
+                                    let cell =
+                                        crate::gc::Gc::new(std::sync::Mutex::new(item.clone()));
+                                    vm.env_mut()
+                                        .insert(p.clone(), Value::container_ref(cell.clone()));
+                                    rw_cell = Some(cell);
+                                } else {
+                                    vm.env_mut().insert(p.clone(), item.clone());
+                                }
                             }
                             vm.env_mut().insert(underscore.clone(), item.clone());
                             vm.env_mut().insert(dollar_topic.clone(), item);
@@ -211,6 +255,16 @@ impl Interpreter {
                                 .insert(dollar_topic.clone(), list_items[i].clone());
                         }
                     }
+                    let writeback = |list_items: &mut [Value], vm: &Interpreter| {
+                        if arity != 1 {
+                            return;
+                        }
+                        if let Some(cell) = &rw_cell {
+                            list_items[i] = cell.lock().unwrap().clone();
+                        } else if let Some(mutated) = vm.env().get(topic_key).cloned() {
+                            list_items[i] = mutated;
+                        }
+                    };
                     match vm.run_reuse(&code, &compiled_fns) {
                         Ok(()) => {
                             let val = vm
@@ -218,12 +272,7 @@ impl Interpreter {
                                 .cloned()
                                 .or_else(|| vm.env().get("_").cloned())
                                 .unwrap_or(Value::NIL);
-                            // Write back topic mutation if it happened
-                            if arity == 1
-                                && let Some(mutated) = vm.env().get(topic_key).cloned()
-                            {
-                                list_items[i] = mutated;
-                            }
+                            writeback(list_items, vm);
                             let val = vm.reify_finite_pipe_value(val)?;
                             if let ValueView::Slip(elems) = val.view() {
                                 result.extend(elems.iter().cloned());
@@ -232,18 +281,10 @@ impl Interpreter {
                             }
                         }
                         Err(e) if e.is_next() => {
-                            if arity == 1
-                                && let Some(mutated) = vm.env().get(topic_key).cloned()
-                            {
-                                list_items[i] = mutated;
-                            }
+                            writeback(list_items, vm);
                         }
                         Err(e) if e.is_last() => {
-                            if arity == 1
-                                && let Some(mutated) = vm.env().get(topic_key).cloned()
-                            {
-                                list_items[i] = mutated;
-                            }
+                            writeback(list_items, vm);
                             break;
                         }
                         Err(e) => {
