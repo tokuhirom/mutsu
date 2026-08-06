@@ -238,6 +238,7 @@ impl Interpreter {
                         original_role: None,
                         return_type: return_type.clone(),
                         compiled_code: None,
+                        compiled_fns: None,
                         delegation: None,
                         is_default: *is_default_candidate,
                         deprecated_message: None,

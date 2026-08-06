@@ -946,6 +946,7 @@ mod tests {
             original_role: None,
             return_type: None,
             compiled_code: None,
+            compiled_fns: None,
             delegation: None,
             is_default: false,
             deprecated_message: None,

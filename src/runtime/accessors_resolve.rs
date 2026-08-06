@@ -51,6 +51,12 @@ impl Interpreter {
         cc.compute_may_capture_outer_vars();
         cc.compute_needs_env_sync();
         def.compiled_code = Some(std::sync::Arc::new(cc));
+        // Carry forward any CompiledFunction produced while compiling the body
+        // (e.g. a `sub` declared inside the method) so dispatch can resolve its
+        // routine key at call time instead of seeing an empty functions table.
+        if !compiler.compiled_functions_ref().is_empty() {
+            def.compiled_fns = Some(std::sync::Arc::new(compiler.take_compiled_functions()));
+        }
     }
 
     fn compile_methods_for_map(

@@ -107,6 +107,12 @@ pub(crate) struct MethodDef {
     pub(crate) original_role: Option<String>,
     pub(crate) return_type: Option<String>,
     pub(crate) compiled_code: Option<std::sync::Arc<crate::opcode::CompiledCode>>,
+    /// Compiled functions produced while compiling this method's body — e.g. a
+    /// `sub` declared inside the method. Without this, a nested sub's compiled
+    /// routine key resolves against an empty table at call time and every
+    /// dispatch site substitutes `CompiledFns::default()`, so the plan-derived
+    /// def can never register body-less (ADR-0019 C6e-3c).
+    pub(crate) compiled_fns: Option<std::sync::Arc<crate::opcode::CompiledFns>>,
     /// Delegation info: (attribute_var_name, target_method_name).
     /// When set, the method forwards the call (with all args) to the named method
     /// on the object stored in the given attribute.

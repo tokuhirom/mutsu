@@ -2,6 +2,21 @@ use super::*;
 use std::sync::atomic::Ordering;
 
 impl Compiler {
+    /// Borrow the functions compiled so far (routines declared within the body
+    /// just compiled, e.g. a `sub` nested inside a method). Used by a one-shot
+    /// standalone compile (method-body compilation) that needs to know whether
+    /// any were produced before deciding to carry them forward.
+    pub(crate) fn compiled_functions_ref(&self) -> &CompiledFns {
+        &self.compiled_functions
+    }
+
+    /// Take ownership of the functions compiled so far, leaving the compiler's
+    /// table empty. Used by a one-shot standalone compile (method-body
+    /// compilation) that has no `compile()` call to return them through.
+    pub(crate) fn take_compiled_functions(&mut self) -> CompiledFns {
+        std::mem::take(&mut self.compiled_functions)
+    }
+
     /// Import routines compiled by a child compilation unit and keep declaration
     /// plans in that unit pointing at the imported keys. Multi candidates omit
     /// their body fingerprint from the normal lookup key, so two nested units can
