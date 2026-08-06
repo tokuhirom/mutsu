@@ -75,6 +75,28 @@ fn make_out_of_range_error(what: &str, got: String, range: &str) -> RuntimeError
     ))
 }
 
+/// X::OutOfRange for a `second` value in `[60, 61)` that is not a legal leap
+/// second (wrong time-of-day or not a UTC leap-second insertion day). Raku's
+/// own `X::OutOfRange` for this specific rejection carries a `.comment`
+/// explaining why -- absent on the plain month/day/hour/minute/second-range
+/// rejections above -- along with the usual `.what`/`.got`/`.range`.
+fn make_leap_second_out_of_range_error(second: f64) -> RuntimeError {
+    let msg = format!(
+        "Second out of range. Is: {}, should be in 0..59.999999... (or leap second on a valid UTC insertion day)",
+        second
+    );
+    let mut attrs = HashMap::new();
+    attrs.insert("what".to_string(), Value::str("Second".to_string()));
+    attrs.insert("got".to_string(), Value::num(second));
+    attrs.insert("range".to_string(), Value::str("0..^60".to_string()));
+    attrs.insert(
+        "comment".to_string(),
+        Value::str("a leap second can occur only at 23:59".to_string()),
+    );
+    attrs.insert("message".to_string(), Value::str(msg));
+    RuntimeError::typed("X::OutOfRange", attrs)
+}
+
 fn is_valid_utc_leap_second_day(year: i64, month: i64, day: i64) -> bool {
     // LEAP_SECONDS includes a base offset entry at 1972-01-01 (not a leap second day),
     // so skip it and map thresholds to the preceding UTC date.
@@ -137,11 +159,7 @@ pub fn validate_datetime(
         || utc_minute != 59
         || !is_valid_utc_leap_second_day(utc_year, utc_month, utc_day)
     {
-        return Err(make_out_of_range_error(
-            "Second",
-            second.to_string(),
-            "0..59.999999... (or leap second on a valid UTC insertion day)",
-        ));
+        return Err(make_leap_second_out_of_range_error(second));
     }
     Ok(())
 }
