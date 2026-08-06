@@ -2,6 +2,7 @@ use super::methods_signature_errors::{
     make_method_not_found_error, make_private_permission_error, make_private_unqualified_error,
 };
 use super::*;
+use crate::symbol::Symbol;
 
 impl Interpreter {
     /// Handle private method calls on non-Instance, non-Package values.
@@ -453,6 +454,40 @@ impl Interpreter {
             return Some(self.dispatch_classhow_method(actual_method, args));
         }
 
+        // A qualified constructor call to a builtin ancestor with no user
+        // `new` of its own, made on an EXISTING instance (`self.Date::new(...)`
+        // from inside a Date subclass's own method, as opposed to mid-`new`
+        // on the type object — see the identical case in
+        // `dispatch_qualified_non_instance_method` for why unqualified
+        // fallback is wrong here): build the ancestor via its own native
+        // constructor logic, then bless the result as the RECEIVER's type.
+        if actual_method == "new" && qualifier != inst_cn_str {
+            let built = self.dispatch_new(Value::package(Symbol::intern(qualifier)), args.clone());
+            match built {
+                Ok(built_val) => {
+                    if let ValueView::Instance {
+                        attributes: built_attrs,
+                        id,
+                        ..
+                    } = built_val.view()
+                    {
+                        let target_sym = Symbol::intern(&inst_cn_str);
+                        return Some(Ok(Value::instance_parts(
+                            target_sym,
+                            crate::gc::Gc::new(crate::value::InstanceAttrs::new(
+                                target_sym,
+                                built_attrs.to_map(),
+                                id,
+                                true,
+                            )),
+                            id,
+                        )));
+                    }
+                }
+                Err(e) => return Some(Err(e)),
+            }
+        }
+
         // Last resort: the qualifier is a NATIVE builtin ancestor (verified in the
         // MRO above) whose method is Rust-implemented rather than a user method —
         // e.g. `self.IO::Path::slurp` from a class that `is IO::Path`. Dispatch it
@@ -818,6 +853,42 @@ impl Interpreter {
                     Some(target.clone()),
                 );
                 return Some(res.map(|(result, _updated)| result));
+            }
+            // A qualified constructor call to a builtin ancestor with no user
+            // `new` of its own (e.g. `self.Date::new(...)` from inside a
+            // `class Foo is Date { multi method new(...) {...} }`): build the
+            // ancestor via its own native constructor logic, then bless the
+            // result as the ORIGINAL invocant's type. This mirrors Rakudo,
+            // where `Date.new`'s implementation does `self.bless(...)` and
+            // `self` is dynamically the subclass, so the result comes back as
+            // `Foo`, not `Date`. Falling back to unqualified dispatch (below)
+            // would instead re-enter the caller's own overriding `new` —
+            // exactly the `Mu::new` recursion hazard noted above, just for an
+            // ancestor other than `Mu`.
+            if actual_method == "new" && qualifier != pkg_name {
+                let built =
+                    self.dispatch_new(Value::package(Symbol::intern(qualifier)), args.clone());
+                match built {
+                    Ok(built_val) => {
+                        if let ValueView::Instance { attributes, id, .. } = built_val.view() {
+                            let target_sym = Symbol::intern(&pkg_name);
+                            return Some(Ok(Value::instance_parts(
+                                target_sym,
+                                crate::gc::Gc::new(crate::value::InstanceAttrs::new(
+                                    target_sym,
+                                    attributes.to_map(),
+                                    id,
+                                    true,
+                                )),
+                                id,
+                            )));
+                        }
+                        // Not an instance (e.g. the ancestor constructs some
+                        // other kind of value) — no rebless target, fall
+                        // through to the generic handling below.
+                    }
+                    Err(e) => return Some(Err(e)),
+                }
             }
             // No user method in the qualifier class (e.g. a builtin like
             // `Int::abs`): fall back to ordinary unqualified dispatch.

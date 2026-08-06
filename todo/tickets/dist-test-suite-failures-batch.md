@@ -77,6 +77,14 @@ then check the constraint).
 Fixed as a side effect of unrelated work; see
 `news/2026-08/p5seek-not-reproducible.md`.
 
+### ~~`Date::YearDay` — qualified constructor call + Date arithmetic~~ — FIXED
+
+`self.Date::new(...)` (a qualified constructor call to a builtin ancestor)
+fell back to unqualified dispatch and re-entered the caller's own `new`, and
+Date `+`/`-` arithmetic only recognized the literal class name `"Date"`, so a
+subclass instance was never treated as date-like. Both fixed generally; see
+`news/2026-08/date-subclass-qualified-new-and-arithmetic.md`.
+
 ### `RSV` — triaged, root-caused, needs a compiler design pass
 
 `lib/RSV.rakumod` declares `constant \EOV = blob8.new(255);` (and `\EOR`,
@@ -92,7 +100,7 @@ it needs a design pass rather than a quick patch:
 
 ## Un-triaged `test_die` / `test_fail`
 
-`Date::YearDay`, `PSpec`, `Array::Rounded` (fail);
+`PSpec`, `Array::Rounded` (fail);
 `Math::Interval`, `Native::Overflow`, `App::SudokuHelper`, `P5tie`,
 `Mathematica::Serializer::Encoder`, `Hash::Restricted`, `Crypt::RC4`,
 `Random::Choice` (die).
