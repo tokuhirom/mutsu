@@ -26,15 +26,11 @@ topic-mutation writeback right next to it. The general binder already treats
 a bare `ContainerRef` argument as a writable lvalue, so no other plumbing was
 needed; this only had to happen at the call site.
 
-## Residual gap
-
 `try_native_array_map` still defers to the interpreter's own map
 orchestration for any block body containing loop control (`next`/`last`),
 `return`, `take`/`emit`, or a phaser (its `classify_body` scanner is
-conservative about anything that could escape the loop). That interpreter
-path was never taught the same rw-param promotion, so a deferred body with
-`next`/`last` still silently drops the writeback instead of mutating the
-source. Tracked in
-`todo/tickets/map-rw-param-interpreter-fallback-still-silent.md`.
+conservative about anything that could escape the loop) — that path needed
+the same promotion separately; see
+`news/2026-08/map-rw-param-interpreter-fallback-fixed.md`.
 
 Pinned by `t/map-native-rw-param.t`.

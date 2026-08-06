@@ -7,8 +7,15 @@ use Test;
 # source name and no ContainerRef cell, so the binder's rw check
 # (X::Parameter::RW) rejected the block outright.
 # (todo/tickets/map-rw-topic-param-rejected.md)
+#
+# A typed/constrained param (`-> Int $x is rw { }`) and a body containing
+# `next`/`last` both defer past the VM-native fast path to the interpreter's
+# own map orchestration (src/runtime/resolution_map_grep_rw.rs), which needed
+# the same ContainerRef-cell promotion separately -- it silently dropped the
+# writeback instead of raising or mutating correctly.
+# (todo/tickets/map-rw-param-interpreter-fallback-still-silent.md)
 
-plan 9;
+plan 14;
 
 # --- explicit rw param mutates the source, in place ---
 {
@@ -59,4 +66,27 @@ plan 9;
     my @a = 1, 2, 3, 4;
     my @r = @a.map(-> $x, $y { $x + $y });
     is-deeply @r.List, (3, 7), 'a multi-arity block still chunks normally';
+}
+
+# --- a typed rw param defers past the VM-native fast path but still writes back ---
+{
+    my @a = 1, 2, 3;
+    @a.map(-> Int $x is rw { $x++ });
+    is-deeply @a.List, (2, 3, 4), 'a typed is rw param still mutates the source array';
+}
+
+# --- next inside an rw-param block skips only its own mutation ---
+{
+    my @a = 1, 2, 3, 4, 5;
+    my @r = @a.map(-> $x is rw { next if $x %% 2; $x++; $x });
+    is-deeply @a.List, (2, 2, 4, 4, 6), 'next inside an rw-param block skips its own mutation';
+    is-deeply @r.List, (2, 4, 6), 'and the return value omits the skipped iterations';
+}
+
+# --- last inside an rw-param block stops the loop but keeps prior writebacks ---
+{
+    my @a = 1, 2, 3, 4, 5;
+    my @r = @a.map(-> $x is rw { last if $x == 4; $x++; $x });
+    is-deeply @a.List, (2, 3, 4, 4, 5), 'last inside an rw-param block stops after its own mutation';
+    is-deeply @r.List, (2, 3, 4), 'and the return value stops at the same point';
 }
