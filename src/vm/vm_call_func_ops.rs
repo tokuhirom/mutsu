@@ -2100,7 +2100,14 @@ impl Interpreter {
         name: &str,
     ) -> Result<Value, RuntimeError> {
         let saved_scope = self.state_scope_id.take();
-        let result = self.call_compiled_function_named(shared, args, compiled_fns, pkg, name);
+        // Prefer the routine's own nested-sub table over the caller's
+        // (ADR-0019 C6e-3c, mirrors `compile_and_call_function_def`): a
+        // module sub with a nested declaration (e.g. a `proto ... {*}`
+        // synthesizes a `state` var, routing it through this shared-body
+        // path even with no user-written `state`) must resolve its own
+        // `RegisterDecl` keys, not the caller's unrelated table.
+        let fns = shared.compiled_fns.as_deref().unwrap_or(compiled_fns);
+        let result = self.call_compiled_function_named(shared, args, fns, pkg, name);
         self.state_scope_id = saved_scope;
         result
     }

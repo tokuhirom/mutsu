@@ -298,25 +298,47 @@ sigilless / 2,659 `start`-body / 14 sub-signature / 0 trait). The
   used (env-gated instrument in `vm_register_sub_ops.rs`, reverted before
   commit) with the carrier fix in place: `t/module-sub-otf-interpreter-constructs.t`
   tests 3-4 (`nested proto+multi dispatch`) are the only failures across the
-  full `t/` suite. Root-caused to a narrower case than C6e-3c: a `proto sub
-  inner($) {*}` nested inside an `our sub` that is (a) loaded from an
-  imported module and (b) forced body-less returns `Nil` instead of
-  dispatching — but the SAME proto+multi nesting at the top level (no
-  module import), and plain/multi-only nesting (no `proto`) inside an
-  imported module sub, both work correctly even forced. This isolates the
-  gap to `RegisterProtoSub` specifically, which — per ADR-0019 Decision §1
-  and the C8 slice description — still indexes `stmt_pool` rather than a
-  `CompiledSubDeclPlan`; it is explicitly out of C6e-3c's scope ("C8...
-  Independent of C6/C7; the slice exists because... unreachable while these
-  two opcodes still index the statement pool"). **C6e-3c's own blocker (the
-  ~17-site audit) is therefore resolved; the field drop is now blocked
-  only on this proto-in-OTF-module-sub gap, which is C8-adjacent and needs
-  its own root-cause investigation** (why forcing the OUTER `our sub`
-  body-less breaks a proto nested inside it, when the proto mechanism
-  itself is unchanged — likely something the outer sub's dropped AST body
-  was still incidentally providing to the `RegisterProtoSub` walker, e.g.
-  `stmt_pool` reachability or a `{*}`-rewrite precondition keyed off the
-  def still being tree-walk-eligible).
+  full `t/` suite. First root-caused (wrongly) to a narrower case scoped to
+  `RegisterProtoSub`/C8; **that guess was superseded the same session** —
+  see below for the actual mechanism and fix.
+- **RESOLVED (2026-08-06): the gap was a fourth `CompiledFns::default()`-shaped
+  site the ~17-site audit missed, not a `RegisterProtoSub`/C8 gap.** The
+  parser synthesizes a hidden `state $__ANON_STATE_0__` declaration ahead of
+  every bodyless `proto sub NAME(...) {*}` (backing its dispatch-identity
+  machinery), so `oc-proto`'s body — `proto sub inner($) {*}; multi sub
+  inner(Int $v) {...}; multi sub inner(Str $v) {...}; inner($x)` — genuinely
+  `declares_state`, and `def_module_single_sig_body_ok_ignoring_state`'s
+  caller routes the call through the "cross-thread shared captured body"
+  path (`imported_state_body_for_def` / `call_shared_state_body`,
+  `vm_call_func_ops.rs`) even though the routine has no *user-written*
+  `state`. That path predates the C6e-3c carrier fix and was never updated
+  to prefer the routine's own nested-sub table: `call_shared_state_body`
+  passed the *caller's* `compiled_fns` straight through to
+  `call_compiled_function_named` instead of `shared.compiled_fns`. For a
+  top-level (non-imported) `our sub` with the same proto+multi shape this is
+  harmless (the caller's own table already contains everything, since
+  nothing crossed a compilation-unit boundary); the module-import case is
+  where the caller's table and the routine's own table diverge, which is
+  why only the imported-module shape reproduced — the earlier "isolates the
+  gap to `RegisterProtoSub`" conclusion was a correlation (the `state` var
+  only exists because of the `proto`), not the actual mechanism, and does
+  not implicate `RegisterProtoSub`/`stmt_pool`/C8 at all. Confirmed via the
+  same env-gated `MUTSU_FORCE_BODYLESS` instrument (reverted before commit):
+  before the fix, forced execution returns `Nil` for both `oc-proto(5)` and
+  `oc-proto("x")`; after adding `let fns =
+  shared.compiled_fns.as_deref().unwrap_or(compiled_fns);` in
+  `call_shared_state_body`, both the minimal repro and the full
+  `t/module-sub-otf-interpreter-constructs.t` (40/40, forced) pass. **This
+  also means the bug is real and general TODAY on `main`, independent of
+  C6e-3c's timeline** — any imported module sub reaching the shared-state
+  path (real `state`, or a nested bodyless `proto {*}`'s synthetic one) that
+  also declares a nested sub whose own registration would otherwise resolve
+  body-less silently loses that optimization and keeps interpreting the
+  nested body instead (currently unobservable behaviorally, since the AST
+  fallback is still correct — just uncompiled). **C6e-3c's field-drop
+  blocker is now fully resolved**; the next step is auditing whether C6e-3c
+  can proceed straight to closing out (dropping `legacy_body` for real) or
+  needs one more full-suite A/B pass first.
 
 Related: `todo/deep/c6d-interpreter-body-sites-are-mostly-token-bodies.md`
 (the site inventory), `news/2026-08/fallback-def-arm-runs-compiled-body.md`
