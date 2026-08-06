@@ -446,7 +446,15 @@ impl Interpreter {
         }
 
         if let Some(def) = self.resolve_function_with_alias(name, &call_args) {
-            if let Some(target_expr) = Self::rw_sub_target_expr(&def.body) {
+            // Prefer the plan-recorded lvalue tail (a body-less plan-derived
+            // def has no AST body to extract it from — ADR-0019 C6e-3c);
+            // fall back to the body walk for metadata-less defs.
+            let tail = def
+                .rw_tail_expr
+                .as_deref()
+                .cloned()
+                .or_else(|| Self::rw_sub_target_expr(&def.body));
+            if let Some(target_expr) = tail {
                 let allow_target_assign =
                     def.is_rw || Self::is_explicit_return_rw_target(&target_expr);
                 if allow_target_assign {
@@ -496,6 +504,18 @@ impl Interpreter {
             }
             ValueView::Sub(data) => {
                 let data = data.clone();
+                // A body-less routine code object (ADR-0019 C6e-3b registers
+                // safe-class defs with an empty AST body) carries no tail to
+                // extract; its installed def does (`rw_tail_expr`). Delegate
+                // to the named path, which reads the def.
+                if data.body.is_empty() && data.compiled_routine.is_some() && !data.name.is_empty()
+                {
+                    return self.assign_named_sub_lvalue_with_values(
+                        &data.name.resolve(),
+                        call_args,
+                        value,
+                    );
+                }
                 if let Some(target_expr) = Self::rw_sub_target_expr(&data.body) {
                     let allow_target_assign =
                         data.is_rw || Self::is_explicit_return_rw_target(&target_expr);

@@ -255,19 +255,13 @@ impl Interpreter {
                 // carries keys its executing table does not hold, and a def
                 // with neither body nor bytecode cannot run.
                 && primary_compiled.is_some()
-                // Scalar `is rw`/`is raw` PARAMS no longer keep the body: the
-                // binder aliases them through shared `ContainerRef` cells
-                // (news/2026-08/rw-params-bind-shared-cells.md), so their
-                // compiled bodies relay rw writes on every path. Only the
-                // routine-level lvalue forms below still need the AST.
-                // An lvalue routine (`sub f() is rw/is raw { $var }`, or a
-                // tail `$x.return-rw`) keeps its body: the assignment
-                // machinery extracts the assign target from the AST
-                // (`rw_sub_target_expr` / `is_explicit_return_rw_target`).
-                && !*is_rw
-                && !*is_raw
-                && !Self::rw_sub_target_expr(body)
-                    .is_some_and(|e| Self::is_explicit_return_rw_target(&e))
+            // Scalar `is rw`/`is raw` PARAMS don't keep the body (the binder
+            // aliases them through shared `ContainerRef` cells,
+            // news/2026-08/rw-params-bind-shared-cells.md), and neither do
+            // routine-level lvalue forms anymore: the plan records the
+            // assign-target tail (`CompiledRoutineMetadata::rw_tail_expr`)
+            // and the assign machinery reads it off the installed def, so
+            // `rw_sub_target_expr` no longer needs the AST body.
             {
                 &empty_body
             } else {
