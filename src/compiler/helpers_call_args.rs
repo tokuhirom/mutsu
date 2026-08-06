@@ -145,8 +145,7 @@ impl Compiler {
         )
     }
 
-    /// Compile a method call argument. Named args (AssignExpr) are
-    /// compiled as Pair values so they survive VM execution.
+    /// Compile a method call argument.
     pub(super) fn compile_method_arg(&mut self, arg: &Expr) {
         self.compile_method_arg_with_escape(arg, false);
     }
@@ -160,29 +159,20 @@ impl Compiler {
         // (the #2746 guard). `tap`/`act` override this with `escaping = true`.
         self.with_escape(escaping, |s| {
             s.with_suppress_pair_capture(true, |s| {
-                if let Expr::AssignExpr { name, expr, .. } = arg {
-                    // `foo(arg = 1)` in method-call argument position is treated as a
-                    // named argument only for sigilless identifiers. Sigiled targets
-                    // (`$x = ...`, `@x = ...`, `%x = ...`) are real assignment exprs.
-                    if name.starts_with('$')
-                        || name.starts_with('@')
-                        || name.starts_with('%')
-                        || name.starts_with('&')
-                    {
-                        s.compile_expr(arg);
-                        if Self::needs_decont(arg) {
-                            s.code.emit(OpCode::Decont);
-                        }
-                    } else {
-                        s.compile_expr(&Expr::Literal(Value::str(name.clone())));
-                        s.compile_expr(expr);
-                        s.code.emit(OpCode::MakePair);
-                    }
-                } else {
-                    s.compile_expr(arg);
-                    if Self::needs_decont(arg) {
-                        s.code.emit(OpCode::Decont);
-                    }
+                // An `AssignExpr` in argument position is always a real
+                // assignment, evaluating to the assigned value
+                // (`@r.push($x += 5)` pushes the assigned value, not a Pair).
+                // This used to special-case a sigilless `name` as a named-arg
+                // sugar (`foo(arg = 1)` -> `:arg(1)`), but raku itself rejects
+                // a bareword assignment target as a parse error, and
+                // `AssignExpr.name` never carries the `$` sigil for a genuine
+                // scalar target (only `@`/`%` targets get one prepended) -- so
+                // that check could never actually distinguish the two shapes
+                // and instead misfired on every real `$x = ...`/`$x += ...`
+                // argument. See todo/tickets/compound-assign-as-call-argument-yields-pair.md.
+                s.compile_expr(arg);
+                if Self::needs_decont(arg) {
+                    s.code.emit(OpCode::Decont);
                 }
             })
         });
