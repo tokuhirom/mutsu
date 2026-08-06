@@ -592,8 +592,12 @@ impl Compiler {
                 // `OpCode::ResetStateLocals`. A SYNTHETIC body is excluded: a
                 // loop body is the block the loop statement clones ONCE (its
                 // iterations share the state), and an `if` branch already got
-                // its reset at the branch site.
-                let state_reset = is_bare
+                // its reset at the branch site. A sole-block loop body
+                // (`{ ... } for @xs`) is likewise the loop's own body — the
+                // loop compile sites set `suppress_loop_block_state_reset` so
+                // its `state` persists across iterations.
+                let suppress_loop_reset = std::mem::take(&mut self.suppress_loop_block_state_reset);
+                let state_reset = (is_bare && !suppress_loop_reset)
                     .then(|| self.emit_nested_block_state_reset(stmts))
                     .flatten();
                 if Self::has_catch_or_control(stmts) {
@@ -1858,6 +1862,8 @@ impl Compiler {
                     self.synthetic_block_body = true;
                     self.compile_stmt(&Stmt::Block(loop_body.clone()));
                 } else {
+                    self.suppress_loop_block_state_reset =
+                        Self::loop_body_is_sole_block(&loop_body);
                     self.compile_body_with_implicit_try(&loop_body);
                 }
                 self.code.patch_loop_end(loop_idx);
@@ -2156,6 +2162,7 @@ impl Compiler {
                 // `callframe`/`caller` inside sees the enclosing routine one
                 // level further up (see `callframe_block_depth`).
                 self.callframe_block_depth += 1;
+                self.suppress_loop_block_state_reset = Self::loop_body_is_sole_block(&loop_body);
                 self.compile_body_with_implicit_try(&loop_body);
                 self.callframe_block_depth -= 1;
                 for n in &newly_registered {
@@ -2211,6 +2218,7 @@ impl Compiler {
                 }
                 self.code.patch_cstyle_cond_end(loop_idx);
                 // Compile body
+                self.suppress_loop_block_state_reset = Self::loop_body_is_sole_block(&loop_body);
                 self.compile_body_with_implicit_try(&loop_body);
                 self.code.patch_cstyle_step_start(loop_idx);
                 // Compile step (if any)
@@ -2675,6 +2683,7 @@ impl Compiler {
                     label: label.clone(),
                 });
                 // Compile body
+                self.suppress_loop_block_state_reset = Self::loop_body_is_sole_block(&loop_body);
                 self.compile_body_with_implicit_try(&loop_body);
                 self.code.patch_repeat_cond_end(loop_idx);
                 // Compile condition (or push True if none)

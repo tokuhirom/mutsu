@@ -233,6 +233,10 @@ impl Compiler {
     }
 
     fn compile_collected_loop_body(&mut self, body: &[Stmt]) {
+        // `do { ... } for @xs`: the sole block IS the loop body, cloned once
+        // per loop statement — its `state` persists across iterations (see
+        // `loop_body_is_sole_block`).
+        self.suppress_loop_block_state_reset = Self::loop_body_is_sole_block(body);
         self.compile_stmts_value(body);
     }
 

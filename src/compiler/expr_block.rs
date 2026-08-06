@@ -115,6 +115,16 @@ impl Compiler {
                 let is_dynamic = *ast_is_dynamic || self.var_is_dynamic(name);
                 // my $x = expr in expression context -> declare, assign, return value
                 if *is_state {
+                    // Register the declared type constraint BEFORE the init,
+                    // exactly as the statement-position decl does: assignments
+                    // must re-check it, and `StateVarInit` reads it to keep a
+                    // constrained scalar out of the ContainerRef cell
+                    // (`(state buf32 $w .= new)[$j] = ...` — Digest's SHA2).
+                    if let Some(tc) = type_constraint {
+                        let name_idx = self.code.add_constant(Value::str(name.clone()));
+                        let tc_idx = self.code.add_constant(Value::str(tc.clone()));
+                        self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
+                    }
                     self.compile_expr(expr);
                     let slot = self.alloc_local(name);
                     let ip = self.code.ops.len();
