@@ -295,7 +295,7 @@ impl Interpreter {
                         }
                         _ => format!(
                             "{} => {}",
-                            crate::builtins::methods_0arg::raku_value(&typed),
+                            crate::builtins::methods_0arg::raku_repr::object_hash_key_repr(&typed),
                             repr
                         ),
                     }
@@ -334,7 +334,7 @@ impl Interpreter {
                     }
                     _ => format!(
                         "{} => {}",
-                        crate::builtins::methods_0arg::raku_value(&typed),
+                        crate::builtins::methods_0arg::raku_repr::object_hash_key_repr(&typed),
                         value_repr()
                     ),
                 }
