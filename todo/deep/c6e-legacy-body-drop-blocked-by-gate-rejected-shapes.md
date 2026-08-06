@@ -190,14 +190,37 @@ sigilless / 2,659 `start`-body / 14 sub-signature / 0 trait). The
   default when eligible). Pinned by `t/encoded-param-compiled.t`
   (`t/nativecall-module-compat.t` already covered parse/marshal
   correctness).
-- **C6e-3c (open):** the field itself. `CompiledSubDeclPlan::legacy_body`
-  now has no known live keep-class reader for the *safe* def shape, but it
-  still carries the AST for the registration fallback:
-  `vm_call_named_inner.rs`'s sub-decl-as-last-statement case falls back to
-  `plan.legacy_body.clone()` when a plan-derived def isn't found in the
-  registry (a computed-name/out-of-scope case) — that structural reader
-  needs its own C6c-style treatment (build from the plan's compiled routine
-  instead) before the field can be deleted outright.
+- **Registration fallback given the C6c treatment (2026-08-06):**
+  `vm_call_named_inner.rs`'s sub-decl-as-last-statement case (a `sub` as the
+  final statement of a block returns a Sub value) fell back to
+  `plan.legacy_body.clone()` whenever the def wasn't found in the registry
+  under the plan's static name (a computed-name `sub ::($name)` declaration
+  or a just-out-of-scope def). Measurement: zero hits across the full `t/`
+  suite (27700+ tests) even before this fix — the branch was already
+  essentially unreachable through ordinary syntax (real Rakudo does not
+  even accept a runtime-computed sub name: `SORRY! Name ::($name) is not
+  compile-time known, and can not serve as a sub declaration`), and no
+  realistic repro reaching it could be constructed. Fixed it anyway,
+  defensively: it now tries the plan's own `compiled_routine_keys[0]`
+  against the executing call's `compiled_fns` table first (the same
+  `plan_compiled(0)` pattern `vm_register_sub_ops.rs`'s `RegisterSub`
+  handler uses) and only falls back to `plan.legacy_body.clone()` if that
+  key does not resolve either. Validated via the same env-gated-widen A/B
+  the project uses when a direct repro isn't practical: an env var forced
+  the registry lookup to `None` so every declaration in the full `t/` suite
+  exercised this branch, and all 27705 tests still passed; the instrument
+  was removed before commit. No dedicated `.t` pin — none could be written
+  for a branch with no known reachable trigger.
+- **C6e-3c (open):** the field itself. Both former keep-classes (NativeCall
+  marshalling traits, class-walker nested subs) and the registration
+  fallback reader above are now resolved/hardened, but `legacy_body` has
+  not been physically deleted from `CompiledSubDeclPlan` yet — that
+  requires re-auditing every remaining `.legacy_body` read (`grep -rn
+  legacy_body src/`) to confirm none is load-bearing, then removing the
+  field and updating the two struct-literal construction sites
+  (`vm_register_sub_ops.rs`, `vm_typedecl_ops.rs`) plus the compiler side
+  that populates it. Not attempted in this session — do the final grep
+  audit first before assuming the deletion is purely mechanical.
 
 Related: `todo/deep/c6d-interpreter-body-sites-are-mostly-token-bodies.md`
 (the site inventory), `news/2026-08/fallback-def-arm-runs-compiled-body.md`

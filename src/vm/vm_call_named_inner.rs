@@ -405,8 +405,9 @@ impl Interpreter {
             // returned code object dispatches compiled instead of re-compiling
             // the plan's AST body (ADR-0019 C6e-3, the C6c treatment). The
             // registry key uses the plan's static name; a computed-name
-            // declaration (`sub ::($name)`) or a just-out-of-scope def keeps
-            // the plan-shape fallback.
+            // declaration (`sub ::($name)`) or a just-out-of-scope def falls
+            // back to the plan's own compiled routine (below), and only to
+            // its AST body if that too is unresolved.
             let single_key = format!("{}::{}", self.current_package(), plan.name.resolve());
             let registered = self
                 .registry()
@@ -426,15 +427,38 @@ impl Interpreter {
                     def.compiled.clone(),
                 )
             } else {
-                Value::make_sub(
-                    Symbol::intern(&self.current_package()),
-                    plan.name,
-                    plan.params.clone(),
-                    plan.param_defs.clone(),
-                    plan.legacy_body.clone(),
-                    plan.is_rw,
-                    self.clone_env(),
-                )
+                // The plan's own compiled routine (same key this call's
+                // RegisterSub just tried to install under) still counts as
+                // "compiled" even when the registry lookup above missed —
+                // build the Sub from it instead of the AST body, mirroring
+                // the C6c/C6e-3a treatment applied everywhere else a Sub
+                // value is constructed from a plan (ADR-0019 C6e-3c).
+                let plan_fully_compiled =
+                    plan.compiled_routine_keys.len() == 1 + plan.signature_alternates.len();
+                let primary_compiled = plan_fully_compiled
+                    .then(|| compiled_fns.get(&plan.compiled_routine_keys[0]))
+                    .flatten();
+                match primary_compiled {
+                    Some(compiled) => Value::make_sub_for_routine(
+                        Symbol::intern(&self.current_package()),
+                        plan.name,
+                        plan.params.clone(),
+                        plan.param_defs.clone(),
+                        Vec::new(),
+                        plan.is_rw,
+                        self.clone_env(),
+                        Some(std::sync::Arc::new(compiled.clone())),
+                    ),
+                    None => Value::make_sub(
+                        Symbol::intern(&self.current_package()),
+                        plan.name,
+                        plan.params.clone(),
+                        plan.param_defs.clone(),
+                        plan.legacy_body.clone(),
+                        plan.is_rw,
+                        self.clone_env(),
+                    ),
+                }
             };
         }
 
