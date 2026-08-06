@@ -2044,6 +2044,14 @@ pub(crate) struct CompiledRoutineMetadata {
     /// judgment must come from the declaration, not from the (possibly
     /// dropped) `legacy_body` payload (C6e-3).
     pub(crate) body_is_empty: bool,
+    /// The lvalue-assignment target of a routine-level `is rw`/`is raw`
+    /// routine (or one whose tail is an explicit `return-rw`): the last
+    /// expression statement of the declared body, which the assignment
+    /// machinery (`assign_named_sub_lvalue_with_values`) evaluates as the
+    /// target of `f() = v`. Recorded at plan lowering so the assign path no
+    /// longer needs the AST body — the lvalue keep-class of the C6e-3c
+    /// `legacy_body` drop. `None` for ordinary routines.
+    pub(crate) rw_tail_expr: Option<std::sync::Arc<Expr>>,
 }
 
 /// Registration metadata for one declared signature of a sub declaration,
@@ -2055,7 +2063,17 @@ fn compiled_routine_metadata(
     params: &[String],
     param_defs: &[ParamDef],
     body: &[Stmt],
+    is_rw: bool,
+    is_raw: bool,
 ) -> CompiledRoutineMetadata {
+    // The lvalue-assignment tail (see the field doc): recorded for an
+    // `is rw`/`is raw` routine, or for any routine whose last expression is
+    // an explicit `return-rw $var` (assignable without the routine trait).
+    let rw_tail_expr = crate::runtime::Interpreter::rw_sub_target_expr(body)
+        .filter(|tail| {
+            is_rw || is_raw || crate::runtime::Interpreter::is_explicit_return_rw_target(tail)
+        })
+        .map(std::sync::Arc::new);
     let (uses_positional, uses_named) = if params.is_empty() && param_defs.is_empty() {
         let body_shape = format!("{body:?}");
         (
@@ -2103,6 +2121,7 @@ fn compiled_routine_metadata(
         ),
         body_is_empty: body.is_empty(),
         effective_param_defs,
+        rw_tail_expr,
     }
 }
 
@@ -5176,11 +5195,11 @@ impl CompiledCode {
                 *is_raw,
             )
         });
-        let routine_metadata = compiled_routine_metadata(params, param_defs, body);
+        let routine_metadata = compiled_routine_metadata(params, param_defs, body, *is_rw, *is_raw);
         let alternate_metadata = signature_alternates
             .iter()
             .map(|(alt_params, alt_param_defs)| {
-                compiled_routine_metadata(alt_params, alt_param_defs, body)
+                compiled_routine_metadata(alt_params, alt_param_defs, body, *is_rw, *is_raw)
             })
             .collect();
         debug_assert_eq!(name_chunk.is_some(), name_expr.is_some());

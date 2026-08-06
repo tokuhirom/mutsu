@@ -1019,6 +1019,10 @@ impl Interpreter {
                 }
                 cell
             },
+            // Seed the lvalue tail from the plan; a metadata-less caller keeps
+            // None and the assign path falls back to extracting it from the
+            // (real, non-plan) body.
+            rw_tail_expr: metadata.and_then(|m| m.rw_tail_expr.clone()),
         };
         // The seeded values must equal what the lazy fill would compute while
         // the body is still attached — a divergence here would silently change
@@ -1604,6 +1608,7 @@ impl Interpreter {
             compiled: None,
             body_fp_cache: std::sync::OnceLock::new(),
             body_facts_cache: std::sync::OnceLock::new(),
+            rw_tail_expr: None,
         };
         self.insert_token_def(name, def, multi);
     }
@@ -1677,6 +1682,7 @@ impl Interpreter {
                 compiled: None,
                 body_fp_cache: std::sync::OnceLock::new(),
                 body_facts_cache: std::sync::OnceLock::new(),
+                rw_tail_expr: None,
             }),
         );
         Ok(())
@@ -1790,6 +1796,7 @@ impl Interpreter {
             compiled: None,
             body_fp_cache: std::sync::OnceLock::new(),
             body_facts_cache: std::sync::OnceLock::new(),
+            rw_tail_expr: None,
         };
         let single_key = format!("GLOBAL::{}", name);
         let single_key_sym = Symbol::intern(&single_key);
@@ -1937,6 +1944,7 @@ impl Interpreter {
                 compiled: None,
                 body_fp_cache: std::sync::OnceLock::new(),
                 body_facts_cache: std::sync::OnceLock::new(),
+                rw_tail_expr: None,
             }),
         );
         Ok(())

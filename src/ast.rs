@@ -214,6 +214,14 @@ pub(crate) struct FunctionDef {
     /// `Interpreter::routine_body_facts`. Derived state, like `body_fp_cache`.
     #[serde(skip)]
     pub(crate) body_facts_cache: std::sync::OnceLock<RoutineBodyFacts>,
+    /// The lvalue-assignment target of a routine-level `is rw`/`is raw`
+    /// routine (or an explicit tail `return-rw $var`), seeded from the plan's
+    /// `CompiledRoutineMetadata::rw_tail_expr` at registration. The assign
+    /// machinery (`assign_named_sub_lvalue_with_values`) prefers this over
+    /// re-extracting the tail from `body`, which a body-less plan-derived
+    /// def cannot serve (ADR-0019 C6e-3c lvalue keep-class).
+    #[serde(skip)]
+    pub(crate) rw_tail_expr: Option<std::sync::Arc<Expr>>,
 }
 
 /// Properties of a routine body that the on-the-fly compilation gates ask about.

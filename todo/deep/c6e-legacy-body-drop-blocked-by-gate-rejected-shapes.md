@@ -144,12 +144,18 @@ sigilless / 2,659 `start`-body / 14 sub-signature / 0 trait). The
   (`news/2026-08/sig-alternates-register-with-metadata.md`). The C6e-3a
   debug asserts cover the per-slot values wherever a body is still
   attached.
+- **Lvalue keep-class LIFTED (2026-08-06):** the plan records the
+  assign-target tail at lowering (`CompiledRoutineMetadata::rw_tail_expr`),
+  registration seeds `FunctionDef::rw_tail_expr`, and the assign machinery
+  prefers it over the body walk (body-less code objects delegate to the
+  named path) — so routine-level `is rw`/`is raw`/tail-`return-rw` routines
+  register body-less (`news/2026-08/lvalue-tail-from-plan-metadata.md`).
 - **C6e-3c (open):** the field itself. `CompiledSubDeclPlan::legacy_body`
   still carries the AST for the remaining keep-classes (unresolvable plan
-  bytecode, routine-level lvalue forms, NativeCall traits) and for the
-  registration fallback; dropping it outright still needs a story for
-  those classes. Registration-time body use for the safe class is
-  already zero.
+  bytecode — class-walker nested subs — and NativeCall marshalling traits,
+  measured non-vendorable) and for the registration fallback; dropping it
+  outright still needs a story for those two. Registration-time body use
+  for the safe class is already zero.
 
 Related: `todo/deep/c6d-interpreter-body-sites-are-mostly-token-bodies.md`
 (the site inventory), `news/2026-08/fallback-def-arm-runs-compiled-body.md`
