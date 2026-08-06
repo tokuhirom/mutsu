@@ -26,10 +26,10 @@ sub guarded(:&cb) { my $n = 0; $n = cb() if &cb; $n }
 is guarded(:cb({ 7 })), 7, 'the `if &cb` guard sees a passed Callable';
 is guarded(), 0, 'the `if &cb` guard skips an unpassed Callable';
 
-# Several `&` named parameters coexist, and mix with other sigils. (The names
-# avoid `emit`/`done`, which roast's `Test::Tap` uses: a lexical `&emit` does
-# not yet shadow the builtin of that name -- an unrelated, pre-existing gap,
-# see todo/tickets/code-lexical-does-not-shadow-a-builtin.md.)
+# Several `&` named parameters coexist, and mix with other sigils. (`&emit`
+# and `&done` -- the pair roast's `Test::Tap` actually uses -- now shadow
+# their same-named builtins too; that's pinned separately in
+# t/lexical-shadows-builtin-call.t.)
 sub several($x, :&pre, :&post, :$live = False, :@extra) {
     my @out = $x, $live, @extra.elems;
     @out.push(pre()) if &pre;

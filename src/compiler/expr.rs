@@ -159,12 +159,16 @@ impl Compiler {
                 let name_idx = self.code.add_constant(Value::str(var_name));
                 self.code.emit(OpCode::GetHashVar(name_idx));
             }
-            Expr::BareWord(name) if name == "done" => {
+            Expr::BareWord(name) if name == "done" && !self.amp_binding_in_active_scope("done") => {
                 // `done` as a bare term in expression position (e.g. the `!!`
                 // branch of `$cond ?? die !! done`) is the supply/react
                 // completion control flow, not an ordinary bareword. Emit
                 // ReactDone so it signals instead of evaluating to a no-op string
                 // (which left `whenever ... { ... !! done }` never completing).
+                //
+                // But a lexical `&done` in scope (a `my &done`, or a
+                // `&done`/`:&done` Callable param) shadows it — see
+                // todo/tickets/code-lexical-does-not-shadow-a-builtin.md.
                 self.code.emit(OpCode::ReactDone);
             }
             Expr::BareWord(name) => {
