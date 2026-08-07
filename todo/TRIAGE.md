@@ -1,4 +1,4 @@
-# TRIAGE — prioritized snapshot of todo/ (2026-08-05)
+# TRIAGE — prioritized snapshot of todo/ (2026-08-07)
 
 A ranked index of every open finding under `todo/tickets/` and `todo/deep/`,
 so a session can pick the next ticket without re-reading all of them.
@@ -9,8 +9,10 @@ conflicts `todo/` exists to avoid. A stale row is fine; the per-ticket files
 stay the source of truth. Regenerate the whole file when it has drifted too
 far (re-survey every ticket, re-score, rewrite).
 
-Surveyed 2026-08-05: **85 files** (23 `deep/`, 62 `tickets/`), one of which is
-already resolved (see Housekeeping).
+Surveyed 2026-08-07: **77 files** (26 `deep/`, 51 `tickets/`). Previous
+survey (2026-08-05, 85 files) has seen heavy churn since: roughly 20 tickets
+resolved and moved to `news/`, several new ones filed from the ADR-0019 C6e
+(legacy-body removal) and for-loop-shadow campaigns.
 
 ## How the ranking works
 
@@ -53,101 +55,98 @@ them, so progress compounds.
 
 | Ticket | Axis | Effort | Why here |
 |---|---|---|---|
-| [package-short-name-alias-is-global](tickets/package-short-name-alias-is-global.md) | batteries §1 | XL | The live blocker for Cro's Response/RequestParser (`http-response-parser` 129/154, `http-request-parser` 93/108). Wants a design pass first — that pass is the deliverable. |
-| [schedule-on-whenever-env-loss](tickets/schedule-on-whenever-env-loss.md) | batteries §1 | M | Same Cro parser files: ~25 failures + duplicate-run TAP via `.schedule-on` losing the supply block's lexicals. |
-| [async-listener-not-freed-when-relistening-in-a-loop](tickets/async-listener-not-freed-when-relistening-in-a-loop.md) | batteries §1 | L | Empty bodies from round 3 of re-binding a port; blocks the Cro middleware/session/auth suite family. |
-| [cro-middleware-await-body-text-dies-coercing-any-into-promise](tickets/cro-middleware-await-body-text-dies-coercing-any-into-promise.md) | batteries §1 | M | The single remaining failure in `http-middleware.rakutest`; deterministic and isolated. |
-| [for-multi-param-shadow-clobbers-outer-lexical](tickets/for-multi-param-shadow-clobbers-outer-lexical.md) | correctness §6 | M | Multi-param `for` clobbers same-named outer lexicals and leaks cross-frame — hit by Cro's own `for @c.kv -> $i, $comp`, and easy to hit in any ordinary code. |
-| [done-in-a-whenever-body-does-not-stop-later-emits](tickets/done-in-a-whenever-body-does-not-stop-later-emits.md) ⚡ | concurrency §5 | S | Side effects keep firing after `done`; the missing half is already specified (close `upstream_taps`). |
+| [async-listener-not-freed-when-relistening-in-a-loop](tickets/async-listener-not-freed-when-relistening-in-a-loop.md) | batteries §1 | L | Third+ round of re-binding a port to a Cro server gets empty bodies; blocks the whole multi-server auth/session/log-file suite family. |
+| [cro-middleware-await-body-text-dies-coercing-any-into-promise](tickets/cro-middleware-await-body-text-dies-coercing-any-into-promise.md) | batteries §1 | M | Last remaining, deterministic, isolated failure in `http-middleware.rakutest`. |
 | [pair-namedness-is-a-value-property-not-a-call-site-property](deep/pair-namedness-is-a-value-property-not-a-call-site-property.md) | correctness §6 | XL | Breaks real Cro client usage (`headers => [...]` dies where raku returns 200). 32 consumer sites; first deliverable is the ADR choosing call-site-mask vs value-default. |
+| [for-multi-param-array-hash-shadow-clobbers-outer-container](tickets/for-multi-param-array-hash-shadow-clobbers-outer-container.md) | correctness §6 | M | The `@`/`%`-sigil sibling of the fixed scalar shadow-clobber bug (same Cro `for @c.kv -> $i, $comp` family) — silent in-place corruption of an outer container. |
 
 ### Campaign: vendor the real `Test` module (PLAN §1, batteries policy)
 
 | Ticket | Axis | Effort | Why here |
 |---|---|---|---|
-| [vendor-real-test-module](tickets/vendor-real-test-module.md) | Test-vendor §1 | XL | The campaign header: 113 roast files still regress under `MUTSU_REAL_TEST=1` (down from 343). Read this before any row below. |
-| [interpreter-call-path-in-hot-loops](deep/interpreter-call-path-in-hot-loops.md) | perf §4 | L | The one perf axis where mutsu loses to raku, and the real blocker for the flip: real-`Test` inflates heavy roast files past the 30 s budget (`state.t` 67× deficit). Attack row B (file-scope sub call), not the declaration site. |
-| [use-fatal-leaks-out-of-a-sub-or-do-block](tickets/use-fatal-leaks-out-of-a-sub-or-do-block.md) | Test-vendor §1 | M | Open systemic cause #3 of the campaign: the pragma escapes `throws-like { use fatal; … }` and poisons the next assertion. |
-| [use-inside-a-block-leaks-to-the-enclosing-scope](tickets/use-inside-a-block-leaks-to-the-enclosing-scope.md) | Test-vendor §1 | M | Remaining env half defeats selective imports (`S32-list/skip.t` aborts under the real module). |
+| [vendor-real-test-module](tickets/vendor-real-test-module.md) | Test-vendor §1 | XL | The campaign header: regression count driven from 343 down to a handful of remaining files. Read this before any row below. |
+| [interpreter-call-path-in-hot-loops](deep/interpreter-call-path-in-hot-loops.md) | perf §4 | L | The one perf axis where mutsu loses to raku, and the real blocker for the flip: real-`Test` inflates heavy roast files past the 30s budget (`state.t` 67× deficit traced here). Attack row B (file-scope sub call) next. |
+| [use-fatal-leaks-out-of-a-sub-or-do-block](tickets/use-fatal-leaks-out-of-a-sub-or-do-block.md) | Test-vendor §1 | M | `use fatal` leaks out of `sub`/`do{}`/closures and poisons the next assertion under real Test. |
+| [use-inside-a-block-leaks-to-the-enclosing-scope](tickets/use-inside-a-block-leaks-to-the-enclosing-scope.md) | Test-vendor §1 | M | Remaining env half of import scoping; defeats selective imports in real-Test roast files. |
 | [cache-on-a-lazy-seq-must-not-answer-seq](deep/cache-on-a-lazy-seq-must-not-answer-seq.md) | soundness | M | Crash-class: real `is-deeply(Seq,Seq)` recurses to a stack-overflow abort because `.cache` still answers `Seq`. |
 | [deferred-seq-materialization-destroys-the-original](deep/deferred-seq-materialization-destroys-the-original.md) | correctness §6 | M | Even `.defined` guts a deferred Seq; breaks any `is $fh.lines, <A B C>` under the real module. |
-| [miri-gate-for-adr-0013](tickets/miri-gate-for-adr-0013.md) ⚡ | soundness | S | PLAN §2 names it; the startup blocker is gone, so it is now a small CI job + one stale header rewrite. |
+
+### Soundness: blocks the legacy_body-removal architecture goal (ADR-0019 C6e)
+
+| Ticket | Axis | Effort | Why here |
+|---|---|---|---|
+| [compiled-fns-default-breaks-nested-subs-outside-methods](deep/compiled-fns-default-breaks-nested-subs-outside-methods.md) | soundness | L | ~17 call sites pass an empty `CompiledFns::default()` instead of the real table — nested-sub declarations silently no-op once the `legacy_body` tree-walk fallback is dropped. Confirmed live reproducer; explicitly "do NOT re-attempt dropping legacy_body before this lands." |
 
 ### Standalone quick wins (ordinary-code wrong answers, S effort)
 
 | Ticket | Axis | Effort | Why here |
 |---|---|---|---|
-| [compound-assign-as-call-argument-yields-pair](tickets/compound-assign-as-call-argument-yields-pair.md) ⚡ | correctness §6 | S | `@r.push($x += 5)` pushes the Pair `x => 5` — silent wrong data in ordinary code; localized to one argument-evaluation arm. |
-| [code-lexical-does-not-shadow-a-builtin](tickets/code-lexical-does-not-shadow-a-builtin.md) ⚡ | correctness §6 | S | A lexical `&emit` loses to the control-flow builtin, which hijacks the enclosing routine; the governing rule already exists for qualified calls. |
+| [metaop-over-range-base-is-unsupported](tickets/metaop-over-range-base-is-unsupported.md) ⚡ | correctness §6 | S | `Z..`/`X..` parse fine but the metaop runtime handler has no Range entry — ordinary Raku silently unusable. |
+| [named-capture-absent-from-current-match-leaks-stale-value](tickets/named-capture-absent-from-current-match-leaks-stale-value.md) | correctness §6 | S-M | `$<name>` absent from the *current* match leaks a stale value from an earlier match instead of Nil — silent wrong data for any `.defined`-branching code. |
+| [retire-native-test-util-overrides](tickets/retire-native-test-util-overrides.md) ⚡ | Test-vendor §1 | S | Mechanical: add missing `use Test::Util` to `t/` callers, then delete the dead native handlers. |
 
 ## P2 — next
 
 | Ticket | Axis | Effort | Why here |
 |---|---|---|---|
-| [yamlish-grammar-layer](tickets/yamlish-grammar-layer.md) | batteries §1 | L | The YAML battery candidate fails in its own grammar; reduce `basic.rakutest` (0/7) first, Template::Mojo-style. |
-| [template-engines-blocked-on-mutsu](deep/template-engines-blocked-on-mutsu.md) | batteries §1 | L | Mustache (the chosen slot) is fixed; Template6 0/12 is the named next row of the cluster. |
-| [template-mojo-residual-failures](tickets/template-mojo-residual-failures.md) ⚡ | batteries §1 | S | Two narrow, already-localized bugs; 3 assertions across 2 files from parity. |
-| [nativehelpers-blob-moarvm-guts](deep/nativehelpers-blob-moarvm-guts.md) | batteries §1 | L | Gates the database battery slot (DBIish/DB::SQLite via NativeLibs). Design settled (ADR-0015); remaining is P3b/P3c execution + the Buf half. |
+| [yamlish-grammar-layer](tickets/yamlish-grammar-layer.md) | batteries §1 | L | YAML battery candidate fails deep in its own grammar; 5 upstream test files with partial pass rates. |
+| [template-engines-blocked-on-mutsu](deep/template-engines-blocked-on-mutsu.md) | batteries §1 | L | Cluster survey; Mustache (chosen slot) now 11/13, Jinja2 load-blocker fixed. Template6 is the next natural pick. |
+| [template-mojo-residual-failures](tickets/template-mojo-residual-failures.md) ⚡ | batteries §1 | S | Nearly resolved; the one open item is really a pointer to the sigspace ticket below. |
+| [rule-sigspace-does-not-consume-trailing-whitespace](tickets/rule-sigspace-does-not-consume-trailing-whitespace.md) | correctness §6 | S-M | `rule`/`:sigspace` doesn't insert the implicit `<.ws>` after the last atom — blocks Template::Mojo's `03-capture.rakutest` layer 2. |
+| [nativehelpers-blob-moarvm-guts](deep/nativehelpers-blob-moarvm-guts.md) | batteries §1 | L | Gates the database battery slot (DBIish/DB::SQLite). Design settled (ADR-0015 Accepted); P3b/P3c execution remains. |
 | [cold-supply-whenever-source-replayed-not-tapped](deep/cold-supply-whenever-source-replayed-not-tapped.md) | batteries §1 | L | Last known blocker for the Test::Scheduler dist (T-037): a cold supply must be tapped, not replayed. |
-| [forward-captured-code-var-snapshot](tickets/forward-captured-code-var-snapshot.md) | batteries §1 | M | Last blocker for a full CBOR::Simple round-trip (`cbor-decode` on any input). |
-| [dist-test-suite-failures-batch](tickets/dist-test-suite-failures-batch.md) | batteries §1 | XL | A triage *queue* (~17 root causes), not one fix — pull individual rows out of it, raku-baseline first. |
-| [promise-spawn-segv-under-load](deep/promise-spawn-segv-under-load.md) | soundness | L | Reproducible SEGV (guard-page stack overflow on `Promise.start` threads, ~6-8 % under contention); fix direction is a uniform spawned-thread stack budget. |
-| [cas-on-scalar-attribute-loses-updates](tickets/cas-on-scalar-attribute-loses-updates.md) | soundness | M | CAS retry loops lose ~25 % of updates in debug builds, masked by whitelisted roast files passing in release. |
-| [say-swallows-an-exception-from-gist](tickets/say-swallows-an-exception-from-gist.md) | soundness | M | `say` eats a genuine user exception from `.gist` (program exits 0 instead of dying). Blast radius = everywhere; wants its own PR + full roast. |
-| [typed-buf-native-interop-holes](tickets/typed-buf-native-interop-holes.md) ⚡ | correctness §6 | S | Four narrow one-liners, two of them silent-corruption class (wrong-shape buffer, NULL to C). |
+| [forward-captured-code-var-snapshot](tickets/forward-captured-code-var-snapshot.md) | batteries §1 | M | Last blocker for a full CBOR::Simple `cbor-decode` round-trip. |
+| [dist-test-suite-failures-batch](tickets/dist-test-suite-failures-batch.md) | batteries §1 | XL | A triage *queue* — several root causes already pulled out into their own deep/ tickets below; remainder: Math::Interval, Native::Overflow, App::SudokuHelper, P5tie, Mathematica::Serializer::Encoder, Hash::Restricted, Crypt::RC4, Random::Choice. |
+| [listops-are-not-real-multi-subs](deep/listops-are-not-real-multi-subs.md) | correctness §6 | XL | `splice`/`push`/etc. are special-cased opcodes, not real multi-subs — a user/module `multi` for these names is unreachable. Blocks String::Splice entirely. |
+| [sigilless-constant-invisible-in-nested-sub-inside-module](tickets/sigilless-constant-invisible-in-nested-sub-inside-module.md) | correctness §6 | L | `constant \NAME` inside non-unit `module`/`package` invisible to a nested `sub`; blocks all 16 subtests of the RSV dist. Root cause fully traced, needs a design choice. |
+| [bare-block-as-infix-operand-not-recognized](deep/bare-block-as-infix-operand-not-recognized.md) | correctness §6 | L | A leading `{ ... }` before an infix never looks ahead to see if it should be a term — blocks PSpec dist's `xxx` custom-operator idiom. |
+| [user-postcircumfix-index-not-dispatched-for-instances](deep/user-postcircumfix-index-not-dispatched-for-instances.md) | correctness §6 | XL | A user `multi sub postcircumfix:<[ ]>` is never consulted for `@obj[...]` — real, general, spec'd operator-overload gap; blocks Array::Rounded (16/35 failing). |
+| [promise-spawn-segv-under-load](deep/promise-spawn-segv-under-load.md) | soundness | L | Reproducible SEGV (guard-page stack overflow on `Promise.start` threads, ~6-8% under contention); fix direction is a uniform spawned-thread stack budget. |
 | [supply-lines-drops-channel-backed-supplies](tickets/supply-lines-drops-channel-backed-supplies.md) | concurrency §5 | M | `.lines` on a real-socket Supply silently emits nothing — the most natural socket idiom. |
 | [head-on-a-channel-backed-supply-drops-every-value](tickets/head-on-a-channel-backed-supply-drops-every-value.md) | concurrency §5 | M | Same family: every combinator through `make_supply_from_values` drops channel-backed sources; `.head` is the repro. |
 | [procasync-stdout-is-not-incremental](tickets/procasync-stdout-is-not-incremental.md) | concurrency §5 | M | Output only arrives at child exit → parent/child handshakes deadlock; the streaming-reader shape already exists for sockets. |
-| [supply-block-lexical-leaks-through-thread-lane](tickets/supply-block-lexical-leaks-through-thread-lane.md) | concurrency §5 | M | Residual writeback path clobbers the caller's same-named lexical; the needed info (`authoritative_captures`) already exists. |
-| [supply-block-scalar-lexical-invisible-to-last-phaser](tickets/supply-block-scalar-lexical-invisible-to-last-phaser.md) | concurrency §5 | M | `LAST` reads a stale `my $sum` — breaks the fold-and-emit idiom; remaining half of #5704, same machinery as the row above. |
-| [shared-worker-pool-adr](deep/shared-worker-pool-adr.md) | concurrency §5 | XL | PLAN §5 explicitly asks for this Proposed ADR (thread-per-task → pool; the `await` fork is the core question). The ADR itself is the session-sized deliverable. |
-| [module-file-scope-array-and-hash-still-share-the-caller](tickets/module-file-scope-array-and-hash-still-share-the-caller.md) | Test-vendor §1 | L | The last identified `@`/`%` blocker of the vendor campaign; costs a whole roast integration file. Cheapest after the chokepoint work. |
+| [supply-block-lexical-leaks-through-thread-lane](tickets/supply-block-lexical-leaks-through-thread-lane.md) | concurrency §5 | M | Residual cross-thread half of a mostly-fixed lexical-privacy bug; the needed info (`authoritative_captures`) already exists. |
+| [supply-block-scalar-lexical-invisible-to-last-phaser](tickets/supply-block-scalar-lexical-invisible-to-last-phaser.md) | concurrency §5 | M | `LAST` reads a stale accumulator written from `whenever` — breaks the fold-and-emit idiom; same writeback-drain machinery as the row above. |
+| [module-file-scope-array-and-hash-still-share-the-caller](tickets/module-file-scope-array-and-hash-still-share-the-caller.md) | Test-vendor §1 | L | Sibling of a fixed scalar bug: a module's file-scope `@`/`%` still shares the caller's env key. Costs a whole roast integration file. |
 | [local-tests-rely-on-a-lenient-native-is](tickets/local-tests-rely-on-a-lenient-native-is.md) | Test-vendor §1 | M | Six remaining `t/` files in the "raku fails it too" bucket, each an independent triage. |
-| [callframe-line-and-file-come-from-different-frames](tickets/callframe-line-and-file-come-from-different-frames.md) | errors §5 | M | Failure locations under the real `Test` point into `Test.rakumod` (line 666 in a 106-line file). |
+| [callframe-line-and-file-come-from-different-frames](tickets/callframe-line-and-file-come-from-different-frames.md) | errors §5 | M | Failure locations under the real `Test` point into unrelated frames — affects `throws-like` reporting in at least 4 sweep files. |
 | [eval-context-frame-owns-the-return-target](deep/eval-context-frame-owns-the-return-target.md) | Test-vendor §1 | M | Real `throws-like '<code with return>'` reports "did not die"; three coordinated changes, all specified. |
-| [sinking-a-try-blocks-discarded-value-escapes-the-try](tickets/sinking-a-try-blocks-discarded-value-escapes-the-try.md) | Test-vendor §1 | L | Costs 10 assertions in a roast integration file; two independent wrongs, sink-rule research needed first. |
-| [exception-class-hierarchy-is-mostly-unregistered](deep/exception-class-hierarchy-is-mostly-unregistered.md) | correctness §6 | XL | 124 unregistered `X::` classes; mutsu's own compiler emits one of them. Needs the role-vs-prefix parentage design first — the naive rule is wrong more often than right. |
+| [sinking-a-try-blocks-discarded-value-escapes-the-try](tickets/sinking-a-try-blocks-discarded-value-escapes-the-try.md) | Test-vendor §1 | L | Aborts `roast/integration/advent2009-day20.t` after 11/21 assertions under real Test; two independent wrongs. |
+| [exception-class-hierarchy-is-mostly-unregistered](deep/exception-class-hierarchy-is-mostly-unregistered.md) | correctness §6 | XL | 124 unregistered `X::` classes; mutsu's own compiler emits one of them. Needs the role-vs-prefix parentage design first. |
 | [expression-position-my-has-no-scope](tickets/expression-position-my-has-no-scope.md) | correctness §6 | L | Expression-position `my` has no scope at all (silent lexical leak); one roast test currently passes *because* of the bug. |
-| [for-loop-multi-param-types-unenforced](tickets/for-loop-multi-param-types-unenforced.md) ⚡ | correctness §6 | S | Fix shape fully specified in the ticket; pairs naturally with the P1 shadow-clobber sibling. |
-| [retire-native-test-util-overrides](tickets/retire-native-test-util-overrides.md) ⚡ | Test-vendor §1 | S | Mechanical: add missing `use Test::Util` to `t/` callers, then delete the dead native handlers. |
+| [multi-candidates-declaration-order](tickets/multi-candidates-declaration-order.md) | correctness §6 | M | `&foo.candidates` order is hash-bucket-dependent, not declaration order — can dispatch the wrong candidate. Reader-side sort is trivial but may be cheaper after ADR-0019 phase C/D. |
+| [parameter-objects-have-no-stable-identity](tickets/parameter-objects-have-no-stable-identity.md) | correctness §6 | M | `Signature.params` builds a fresh `Parameter` every access; the Cro-blocking case already shipped via a narrower replay mechanism, this is the honest cached-Parameter version. |
 
 ## P3 — later
 
 | Ticket | Axis | Effort | Why here |
 |---|---|---|---|
 | [wasm-start-and-channel-trap](deep/wasm-start-and-channel-trap.md) | batteries §1 | M | Two tutorial-site lessons; small mechanism but the synchronous-`start` semantics need thought. |
-| [http-server-tiny-async-serving-remainder](tickets/http-server-tiny-async-serving-remainder.md) | batteries §1 | L | Humming-Bird is no longer the web target; the general bugs it names are tracked in the whenever/supply family above. |
-| [digest-dist-blockers](tickets/digest-dist-blockers.md) | batteries §1 | M | Dist already bundled; residue is several independent narrow bugs (with-modifier placeholders, qualified proto, `&`-param vs builtin). |
-| [nativecall-surface-gaps](tickets/nativecall-surface-gaps.md) ⚡ | batteries §1 | S | Only the `NativeCall::Types::` prefix naming remains here; bigger items live in ADR-0015. |
-| [nativecall-pointer-short-name](tickets/nativecall-pointer-short-name.md) | batteries §1 | M | Cosmetic `.^name`; must be one deliberate slice with the row above. |
+| [http-server-tiny-async-serving-remainder](tickets/http-server-tiny-async-serving-remainder.md) | concurrency §5 | L | Humming-Bird is no longer the web target; the general whenever/control-flow bugs it names are tracked in the concurrency family above. |
+| [digest-dist-blockers](tickets/digest-dist-blockers.md) | batteries §1 | M | Dist already bundled and ~90% of this file is struck-through "FIXED"; residue is wide-buffer bit accessors and a `with`-modifier placeholder gap. Candidate to trim/archive (see Housekeeping). |
+| [nativecall-surface-gaps](tickets/nativecall-surface-gaps.md) ⚡ | batteries §1 | S | Only the `NativeCall::Types::` prefix naming remains open; duplicate of the row below. |
+| [nativecall-pointer-short-name](tickets/nativecall-pointer-short-name.md) | batteries §1 | M | Cosmetic `.^name`; must be one deliberate slice with the row above (candidate merge — see Housekeeping). |
 | [procasync-stress-segv](deep/procasync-stress-segv.md) | soundness | L | Real memory unsafety but ~1-in-dozens CI-only, no local repro; *monitor* — the crash reporter now uploads artifacts, wait for the next occurrence. |
-| [state-write-through-is-skipped-in-a-jit-compiled-range](tickets/state-write-through-is-skipped-in-a-jit-compiled-range.md) | soundness | M | Latent residue with no deterministic repro; the `state_vars` rekey half is worth doing on its own merits. |
+| [state-write-through-is-skipped-in-a-jit-compiled-range](tickets/state-write-through-is-skipped-in-a-jit-compiled-range.md) | soundness | M | No deterministic repro today; the `state_vars` rekey half is worth doing on its own merits. |
 | [closure-capture-shadowed-by-colliding-callee-parameter](deep/closure-capture-shadowed-by-colliding-callee-parameter.md) | correctness §6 | L | Real trap (three ingredients needed) but two narrow fixes already regressed — belongs to the env-layering cluster, do not poke at it narrowly. |
 | [stored-regex-loses-its-defining-scope-lexicals](tickets/stored-regex-loses-its-defining-scope-lexicals.md) | correctness §6 | L | Two hard divergences, nothing measured blocked today. |
 | [code-var-mention-remakes-the-sub](tickets/code-var-mention-remakes-the-sub.md) | correctness §6 | L | `&f.WHICH` unstable; entangled with `wrap_chains` identity — decide where the canonical Sub lives first. |
-| [literal-parameters-are-not-enforced-at-bind](tickets/literal-parameters-are-not-enforced-at-bind.md) | correctness §6 | M | Wrong behaviour but no measured blocker; fix should cover the whole bind-time-constraint family. |
-| [multi-candidates-declaration-order](tickets/multi-candidates-declaration-order.md) | correctness §6 | M | Reader-side sort is trivial but trustworthy `decl_order` may be cheaper after ADR-0019 phase C/D. |
-| [parameter-objects-have-no-stable-identity](tickets/parameter-objects-have-no-stable-identity.md) | correctness §6 | M | The Cro-blocking case already shipped via replay; this is the honest cached-Parameter version. |
-| [duckmap-does-not-itemize-a-nested-descend](tickets/duckmap-does-not-itemize-a-nested-descend.md) ⚡ | correctness §6 | S | `deepmap` already has the fix (`itemize_result`); nothing blocked. |
-| [metaop-over-range-base-is-unsupported](tickets/metaop-over-range-base-is-unsupported.md) ⚡ | correctness §6 | S | `Z..` is ordinary Raku and silently unusable; parse is already right. |
-| [labelled-bare-block-is-not-a-loop-construct](tickets/labelled-bare-block-is-not-a-loop-construct.md) ⚡ | correctness §6 | S | mutsu is lenient where rakudo errors; check `t/` reliance in the same commit. |
-| [compile-errors-that-name-no-exception-class](tickets/compile-errors-that-name-no-exception-class.md) ⚡ | errors §5 | S | 6 of 7 rows now pass; what is left is an attribute pass on `X::Temporal::OutOfRange`. |
-| [two-terms-in-a-row-is-not-a-parse-error](tickets/two-terms-in-a-row-is-not-a-parse-error.md) | errors §5 | M | Missing diagnostic; per-site guard-list re-decisions, and a wrong guard *rejects valid programs* — full roast as review. |
-| [bare-precedes-placeholder-nested-block](tickets/bare-precedes-placeholder-nested-block.md) | errors §5 | M | False-negative diagnostics only; re-express on the existing placeholder collectors. |
+| [duplicated-prefix-question-mark](tickets/duplicated-prefix-question-mark.md) | roast §3 | M | Single roast test divergence; needs the `Z??`/`X??` CannotMeta sorrow to become the primary diagnosis first. |
 | [repeat-call-loses-backtrace-frame](tickets/repeat-call-loses-backtrace-frame.md) | errors §5 | L | Second call loses its frame; wants `RoutineFrame` symbol-interning first (hot path). |
-| [module-parse-warning-reported-twice](tickets/module-parse-warning-reported-twice.md) | errors §5 | M | Cosmetic duplicate warning with wrong attribution. |
+| [module-parse-warning-reported-twice](tickets/module-parse-warning-reported-twice.md) | errors §5 | M | Cosmetic duplicate warning with wrong attribution; fix needs new origin-tracking plumbing. |
+| [bare-precedes-placeholder-nested-block](tickets/bare-precedes-placeholder-nested-block.md) | errors §5 | M | False-negative diagnostic only, no miscompile; re-express on the existing placeholder collectors. |
+| [two-terms-in-a-row-is-not-a-parse-error](tickets/two-terms-in-a-row-is-not-a-parse-error.md) | errors §5 | M | Missing diagnostic; per-site guard-list re-decisions, and a wrong guard *rejects valid programs* — full roast as review. |
 | [test-assertion-trait-is-not-introspectable](deep/test-assertion-trait-is-not-introspectable.md) | Test-vendor §1 | L | Only costs wrong line numbers in failure output; three coupled mechanisms (trait resolution ordering, `.^mixin`, backtrace walk). |
-| [object-hash-raku-does-not-parenthesise-keys](tickets/object-hash-raku-does-not-parenthesise-keys.md) ⚡ | correctness §6 | S | Cosmetic `.raku` output; ticket itself says low priority. |
-| [bare-package-symbolic-deref-and-stash-routines](tickets/bare-package-symbolic-deref-and-stash-routines.md) | roast §3 | M | `pseudo-6e.t` only; item 1 needs a semantics decision first. |
-| [duplicated-prefix-question-mark](tickets/duplicated-prefix-question-mark.md) | roast §3 | M | `S03-operators/misc.t` tests 35/36; three upstream-scanner corrections, one already tried and reverted. |
 | [our-var-and-its-package-name-are-two-slots](tickets/our-var-and-its-package-name-are-two-slots.md) | roast §3 | L | One roast test; the sound fix is a shared cell (container-representation family) — near-Icebox, listed here because the repro is tiny. |
 | [remaining-language-feature-gaps](tickets/remaining-language-feature-gaps.md) | correctness §6 | mixed | A container: multi-line feeds (S) and `exits-ok` (S) are pickable; the typed-exception rows need scope analysis (L each). |
+| [bare-package-symbolic-deref-and-stash-routines](tickets/bare-package-symbolic-deref-and-stash-routines.md) | roast §3 | M | `pseudo-6e.t` only; needs a semantics decision (SymbolicDeref vs stash-index) first. |
+| [typed-buf-native-interop-holes](tickets/typed-buf-native-interop-holes.md) ⚡ | correctness §6 | S | Items 2-4 already fixed; item 1 doesn't currently reproduce — low-value residue, candidate to close (see Housekeeping). |
 | [magic-vars-should-be-built-lazily](tickets/magic-vars-should-be-built-lazily.md) | perf §4 | M | Startup metric polish; slice 1 done, profile before designing slice 2. |
-| [bench-ctor-construction-parity](tickets/bench-ctor-construction-parity.md) | perf §4 | L | The only bench where mutsu is slower (1.17-1.35×); remaining slices lean on Slice F / ADR-0016. |
-| [digest-ripemd-start-per-block-overhead](tickets/digest-ripemd-start-per-block-overhead.md) | perf §4 | L | One un-whitelistable battery test file; the real lever is per-`start` cost → follows the worker-pool ADR. |
-| [yaml-parse-throughput](tickets/yaml-parse-throughput.md) | perf §4 | XL | Correct but ~5× raku; next round is structural (ADR-0016 P2/P5), not another call site. |
+| [bench-ctor-construction-parity](tickets/bench-ctor-construction-parity.md) | perf §4 | L | The only bench where mutsu is slower (1.17-1.35×); remaining slices lean on the closure-env-capture-cost Icebox item. |
+| [digest-ripemd-start-per-block-overhead](tickets/digest-ripemd-start-per-block-overhead.md) | perf §4 | L | `t/ripemd.t` 295s→119s after major perf work but still exceeds the 120s CI gate margin; profile is now flat, needs one more diminishing-return lever. |
+| [yaml-parse-throughput](tickets/yaml-parse-throughput.md) | perf §4 | XL | Correct (81/81) but ~5× raku; next round is structural (ADR-0016 P2/P5), not another call site. |
 | [adr0016-p5-match-consumer-inventory](deep/adr0016-p5-match-consumer-inventory.md) | perf §4 | L | The 72-site inventory that gates lazy `Match` (feeds the row above). |
-| [c6d-interpreter-body-sites-are-mostly-token-bodies](deep/c6d-interpreter-body-sites-are-mostly-token-bodies.md) | perf §4 | L | A scoping correction for ADR-0019 C6d; 83 % of sites belong to the grammar execution model, not OTF. |
+| [c6d-interpreter-body-sites-are-mostly-token-bodies](deep/c6d-interpreter-body-sites-are-mostly-token-bodies.md) | perf §4 | L | Nearly complete: most sub-items landed; remaining scope is grammar token/rule bodies (belongs to ADR-0009/Phase D). |
 
 ## Icebox — blocked on a design campaign or an explicit decision
 
@@ -159,18 +158,36 @@ them, so progress compounds.
 | [inline-start-blocks-clobber-a-later-declared-variable](tickets/inline-start-blocks-clobber-a-later-declared-variable.md) | correctness §6 | Cell-based capture work (write back only what the thread mutated); no call-site special case allowed. |
 | [otf-compilation-gate-leftovers](tickets/otf-compilation-gate-leftovers.md) | perf §4 | Per-call capture cells / caller-slot mechanism; "just remove the gate" frontier is exhausted. |
 | [closure-env-capture-cost](deep/closure-env-capture-cost.md) | perf §4 | Two-tier capture + epoch design; belongs with the Slice F env work. Cheap shapes are ruled out as unsound. |
+| [cue-loop-lexical-shared-lane-residue](tickets/cue-loop-lexical-shared-lane-residue.md) | concurrency §5 | ADR-0010/Track-B-adjacent per-binding cell mechanism; a loop-redeclared lexical mutated inside a `.cue` callback retains the previous iteration's value. |
 | [bundle-json-tiny-instead-of-emulating](tickets/bundle-json-tiny-instead-of-emulating.md) | batteries §1 | A deliberate decision: real JSON::Tiny is >1000× slower on zef's metadata path; JSON::Fast needs 42 `nqp::` ops. Ask the user before moving. |
 | [rakuast-remaining](deep/rakuast-remaining.md) | correctness §6 | Multi-campaign backlog (ADR-0011); pick slices by user impact, not cadence. |
 | [nativecall-cannot-be-vendored](deep/nativecall-cannot-be-vendored.md) | record | Not actionable — a measurement record with explicit reopen conditions. Keep. |
 
 ## Housekeeping
 
-- `whenever-owned-lexical-outlives-the-react-block` was already resolved
-  (#5773/#5776) and has been moved to
-  [news/2026-08/whenever-owned-lexical-is-restored-after-the-callback.md](../news/2026-08/whenever-owned-lexical-is-restored-after-the-callback.md).
+- Resolved and moved to `news/` since the 2026-08-05 survey (partial list):
+  `package-short-name-alias-is-global` (PR #6019, importer-scoped aliasing),
+  `schedule-on-whenever-env-loss`, `done-in-a-whenever-body-does-not-stop-later-emits`,
+  `for-multi-param-shadow-clobbers-outer-lexical` (scalar half — array/hash
+  sibling survives as `for-multi-param-array-hash-shadow-clobbers-outer-container`),
+  `shared-worker-pool-adr` (ADR-0020 complete), `miri-gate-for-adr-0013`,
+  `compound-assign-as-call-argument-yields-pair`, `code-lexical-does-not-shadow-a-builtin`,
+  `say-swallows-an-exception-from-gist`, `for-loop-multi-param-types-unenforced`,
+  `literal-parameters-are-not-enforced-at-bind`, `duckmap-does-not-itemize-a-nested-descend`,
+  `labelled-bare-block-is-not-a-loop-construct`, `compile-errors-that-name-no-exception-class`,
+  `object-hash-raku-does-not-parenthesise-keys`, `cas-on-scalar-attribute-loses-updates`.
 - Container tickets that are queues, not single fixes:
   [dist-test-suite-failures-batch](tickets/dist-test-suite-failures-batch.md),
   [remaining-language-feature-gaps](tickets/remaining-language-feature-gaps.md),
   [digest-dist-blockers](tickets/digest-dist-blockers.md). Pull one row out,
   fix it as its own PR, and note it in the container file only if the row list
   changes.
+- Near-resolved residue files worth a trim/close pass in a future session
+  (not done here — this is an index regen, not a cleanup pass):
+  `digest-dist-blockers.md` (~90% struck-through FIXED sections),
+  `typed-buf-native-interop-holes.md` (item 1 no longer reproduces),
+  `template-mojo-residual-failures.md` (only open item duplicates
+  `rule-sigspace-does-not-consume-trailing-whitespace.md`),
+  `c6d-interpreter-body-sites-are-mostly-token-bodies.md` (only C6d-2 and a
+  Phase-D handoff remain), `nativecall-surface-gaps.md` /
+  `nativecall-pointer-short-name.md` (same open item, tracked twice).
