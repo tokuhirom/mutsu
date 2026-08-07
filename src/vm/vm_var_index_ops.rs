@@ -1323,6 +1323,42 @@ impl Interpreter {
                     result
                 }
             }
+            // Whatever slice on an `is Array` / `is List` subclass instance
+            // (`class MA is Array {}; $m[*]`, `Cro::HTTP::MultiValue is List`).
+            // Its elements live in the backing `__mutsu_array_storage`, and `*`
+            // stands for every index, so expand it against `.elems` and read each
+            // one through the storage delegation — the `:exists` adverb path
+            // already does exactly this (`instance_exists_pos_result`), which is
+            // why `$m[*]:exists` answered while the plain read fell through to
+            // Nil.
+            //
+            // Deliberately NOT extended to every `does Positional` instance: raku
+            // answers `Own.new(...)[*]` with a one-element list holding the object
+            // itself unless it supplies more than `AT-POS`/`elems`, so a blanket
+            // arm would diverge (verified against raku).
+            (ValueView::Instance { attributes, .. }, ValueView::Whatever)
+                if is_positional && attributes.contains_key("__mutsu_array_storage") =>
+            {
+                let elems = self
+                    .try_compiled_method_or_interpret(target.clone(), "elems", vec![])
+                    .unwrap_or(Value::int(0));
+                let len = crate::runtime::to_int(&elems).max(0);
+                let mut out = Vec::with_capacity(len as usize);
+                for i in 0..len {
+                    out.push(
+                        self.try_compiled_method_or_interpret(
+                            target.clone(),
+                            "AT-POS",
+                            vec![Value::int(i)],
+                        )
+                        .unwrap_or(Value::NIL),
+                    );
+                }
+                Value::array_with_kind(
+                    crate::gc::Gc::new(crate::value::ArrayData::new(out)),
+                    crate::value::ArrayKind::List,
+                )
+            }
             // Whatever slice on a tied Associative instance (`%h is Foo; %h{*}`):
             // enumerate the class's own keys (via its `keys` method) and read each
             // through AT-KEY, mirroring the plain-Hash `(Hash, Whatever)` arm above.
