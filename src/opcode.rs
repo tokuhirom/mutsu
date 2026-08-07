@@ -378,6 +378,91 @@ impl CompiledAttrDecl {
     }
 }
 
+/// A typed mirror of `Stmt::MethodDecl` (ADR-0019 D3-2), built once by
+/// [`CompiledMethodDecl::from_stmt`] instead of being re-destructured with a
+/// 19-field pattern at each of the class-body, role-body, and augment
+/// `method`/`submethod`-registration sites (`ANALYSIS §1.1`'s drift between
+/// those three walkers is exactly what independently-drifted destructuring
+/// produces — see the D3 scoping note above). `params: Vec<String>` is
+/// dropped: every existing site already ignores it (the parameter names are
+/// recomputed from `param_defs`), so mirroring it here would carry a field no
+/// consumer reads. `name_expr` is kept only for its `is_some()` check — the
+/// resolved runtime name itself comes from the D3-1 `method_name_chunks`
+/// cursor, not from re-evaluating this field.
+#[derive(Debug, Clone)]
+pub(crate) struct CompiledMethodDecl {
+    pub(crate) name: Symbol,
+    pub(crate) name_expr: Option<Expr>,
+    pub(crate) param_defs: Vec<ParamDef>,
+    pub(crate) body: Vec<Stmt>,
+    pub(crate) multi: bool,
+    pub(crate) is_rw: bool,
+    pub(crate) is_private: bool,
+    pub(crate) is_our: bool,
+    pub(crate) is_my: bool,
+    pub(crate) is_submethod: bool,
+    pub(crate) our_variable_form: bool,
+    pub(crate) return_type: Option<String>,
+    pub(crate) is_default_candidate: bool,
+    pub(crate) deprecated_message: Option<String>,
+    pub(crate) handles: Vec<crate::ast::HandleSpec>,
+    pub(crate) custom_traits: Vec<(String, Option<Expr>)>,
+    pub(crate) is_export: bool,
+    pub(crate) export_tags: Vec<String>,
+}
+
+impl CompiledMethodDecl {
+    /// Build a typed descriptor from a `Stmt::MethodDecl`. Panics on any
+    /// other statement kind — every call site already matched on
+    /// `Stmt::MethodDecl` before reaching here.
+    pub(crate) fn from_stmt(stmt: &Stmt) -> CompiledMethodDecl {
+        let Stmt::MethodDecl {
+            name,
+            name_expr,
+            params: _,
+            param_defs,
+            body,
+            multi,
+            is_rw,
+            is_private,
+            is_our,
+            is_my,
+            is_submethod,
+            our_variable_form,
+            return_type,
+            is_default_candidate,
+            deprecated_message,
+            handles,
+            custom_traits,
+            is_export,
+            export_tags,
+        } = stmt
+        else {
+            unreachable!("CompiledMethodDecl::from_stmt called on a non-MethodDecl statement");
+        };
+        CompiledMethodDecl {
+            name: *name,
+            name_expr: name_expr.clone(),
+            param_defs: param_defs.clone(),
+            body: body.clone(),
+            multi: *multi,
+            is_rw: *is_rw,
+            is_private: *is_private,
+            is_our: *is_our,
+            is_my: *is_my,
+            is_submethod: *is_submethod,
+            our_variable_form: *our_variable_form,
+            return_type: return_type.clone(),
+            is_default_candidate: *is_default_candidate,
+            deprecated_message: deprecated_message.clone(),
+            handles: handles.clone(),
+            custom_traits: custom_traits.clone(),
+            is_export: *is_export,
+            export_tags: export_tags.clone(),
+        }
+    }
+}
+
 /// Payload of `OpCode::RuntimeHasDecl`. A `has $.x` that reaches the VM (rather
 /// than being collected declaratively by `register_class_decl`) only arises from
 /// mainline / EVAL'd source — e.g. `class Foo { BEGIN EVAL q[has $.x] }`. At

@@ -615,6 +615,20 @@ walkers wholesale is not possible before then.
   gating gap and privacy-aware duplicate detection in particular) as part of the unification, the
   way D2b's `CompiledAttrDecl::from_stmt` fixed its four independently-drifted callers by
   construction.
+  **D3-2 landed 2026-08-07** (class walker only): `CompiledMethodDecl` now exists (`src/opcode.rs`)
+  as a typed mirror of `Stmt::MethodDecl`'s 19 fields (mirroring `CompiledAttrDecl`'s own shape and
+  doc comment for D2b), built once by `CompiledMethodDecl::from_stmt`. `class_body_method_decl`
+  builds one `decl` at its top and reads every field off it instead of the original 19-binding
+  `let Stmt::MethodDecl { .. } = stmt` destructure — a pure mechanical conversion, no behavior
+  change (confirmed via the full `t/` suite plus every whitelisted `S12-methods`/`S14-roles`/
+  `S12-attributes`/`S12-class`/`S12-construction` roast file, all green). `params: Vec<String>` is
+  deliberately dropped from the struct: all three walkers already ignore it (`params: _` at the
+  class/role sites, uncaptured by augment's `..`), so mirroring it would carry a field with no
+  reader. `role_body_method_decl` and `augment_class`'s `MethodDecl` arm are NOT yet migrated
+  (D3-3/D3-4) — this slice does not yet fix the still-open drift documented above (the
+  `augment_class` `is_lexical_only` gap and privacy-aware duplicate detection in particular); that
+  requires the other two walkers to also build from `CompiledMethodDecl::from_stmt` so the drift
+  becomes visible and fixable at one shared construction site, matching D2b's own precedent.
 - [ ] **D4 — Compile class declaration-time expressions.** Cover computed names, traits, parent
   expressions, aliases, and deferred class bodies through re-entrant bytecode chunks. (Computed
   names and custom-trait arguments already landed with C5; parents, aliases, and deferred bodies
