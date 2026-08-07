@@ -689,6 +689,16 @@ impl Compiler {
                         sub_compiler.compile_block_inline(ph_body);
                         continue;
                     }
+                    // `BEGIN` runs at compile time but is still an ordinary
+                    // value-producing statement, so in tail position it is the
+                    // routine's implicit return.
+                    Stmt::Phaser {
+                        kind: crate::ast::PhaserKind::Begin,
+                        body: ph_body,
+                    } => {
+                        sub_compiler.compile_check_phaser_value(ph_body);
+                        continue;
+                    }
                     Stmt::Assign { name, .. } => {
                         sub_compiler.compile_stmt(stmt);
                         // Assignment as last statement returns the assigned value

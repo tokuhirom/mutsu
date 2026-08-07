@@ -32,6 +32,34 @@ impl Compiler {
         }
     }
 
+    /// Like [`Self::compile_check_phaser`], but leaves the phaser body's value on
+    /// the stack.
+    ///
+    /// A `BEGIN` in value-final position is the block's value in Raku, and Cro
+    /// leans on it for a default: `Cro::HTTP::Body::MultiPartFormData::Part`
+    /// answers `content-type` with
+    /// `else { BEGIN Cro::MediaType.new(type => 'text', subtype-name => 'plain') }`.
+    /// Compiled through the sink-context path that fallback yielded `Nil`, so a
+    /// multipart part with no `Content-Type` header had no content type at all.
+    ///
+    /// Like the rvalue form, the body is memoized per site rather than run at
+    /// true compile time (see `Compiler::compile_phaser_expr`), so it evaluates
+    /// once at first use instead of once during parsing.
+    pub(super) fn compile_check_phaser_value(&mut self, body: &[Stmt]) {
+        // Compiled exactly like the rvalue form (`Expr::PhaserExpr`), so a
+        // statement-position `BEGIN` and an expression-position one share both
+        // the value and the run-once contract: `BeginOnceExpr` memoizes the
+        // body per site, otherwise a `BEGIN` in a routine tail would re-run on
+        // every call.
+        let site_id = self.begin_site_id(body);
+        let idx = self.code.emit(OpCode::BeginOnceExpr {
+            body_end: 0,
+            site_id,
+        });
+        self.compile_block_inline(body);
+        self.code.patch_body_end(idx);
+    }
+
     pub(super) fn has_block_enter_leave_phasers(stmts: &[Stmt]) -> bool {
         stmts.iter().any(|s| {
             matches!(

@@ -346,7 +346,7 @@ impl Compiler {
     /// body itself — gives the same id every recompile. Two textually identical
     /// BEGINs on one line are told apart by an occurrence counter, so they keep
     /// separate cells within a compilation.
-    fn begin_site_id(&mut self, body: &[Stmt]) -> u64 {
+    pub(super) fn begin_site_id(&mut self, body: &[Stmt]) -> u64 {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::hash::DefaultHasher::new();
         self.current_package.hash(&mut hasher);

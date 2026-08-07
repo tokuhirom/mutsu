@@ -125,6 +125,15 @@ impl Compiler {
                     Stmt::Call { name, args } => {
                         self.compile_tail_stmt_call_value(*name, args);
                     }
+                    // `BEGIN` runs at compile time but is still an ordinary
+                    // value-producing statement: in value-final position the
+                    // block's value is the phaser body's.
+                    Stmt::Phaser {
+                        kind: crate::ast::PhaserKind::Begin,
+                        body,
+                    } => {
+                        self.compile_check_phaser_value(body);
+                    }
                     _ => {
                         self.compile_stmt(stmt);
                         self.emit_nil_value();
