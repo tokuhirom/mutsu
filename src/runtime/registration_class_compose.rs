@@ -189,16 +189,16 @@ impl Interpreter {
         // onto the consuming class as a class-level attribute, so the accessor
         // works on the class type object (`C.x`), matching raku. The default
         // expr is evaluated now (role param bindings, if any, are in scope).
-        let role_class_level: Vec<(String, Option<crate::ast::Expr>)> = self
+        let role_class_level: Vec<(String, Option<crate::opcode::DeclTraitArg>)> = self
             .registry()
             .role_class_level_attrs
             .iter()
             .filter(|((r, _), _)| r == base_role_name)
-            .map(|((_, attr), expr)| (attr.clone(), expr.clone()))
+            .map(|((_, attr), arg)| (attr.clone(), arg.clone()))
             .collect();
         for (attr, default) in role_class_level {
-            let value = if let Some(expr) = default {
-                self.eval_block_value(&[Stmt::Expr(expr)])?
+            let value = if let Some(arg) = default {
+                self.eval_decl_trait_arg(&arg)?
             } else {
                 Value::NIL
             };
@@ -207,18 +207,18 @@ impl Interpreter {
         // Carry each composed-role attribute's deferred `is default(...)`
         // expression onto the consuming class so it can be evaluated at
         // construction with this class's type-param bindings in scope.
-        let role_default_exprs: Vec<(String, crate::ast::Expr)> = self
+        let role_default_exprs: Vec<(String, crate::opcode::DeclTraitArg)> = self
             .registry()
             .role_attribute_default_exprs
             .iter()
             .filter(|((r, _), _)| r == base_role_name)
-            .map(|((_, attr), expr)| (attr.clone(), expr.clone()))
+            .map(|((_, attr), arg)| (attr.clone(), arg.clone()))
             .collect();
-        for (attr, expr) in role_default_exprs {
+        for (attr, arg) in role_default_exprs {
             self.registry_mut()
                 .class_attribute_default_exprs
                 .entry((cx.name.to_string(), attr))
-                .or_insert(expr);
+                .or_insert(arg);
         }
         // Carry each composed-role attribute's `is Type` container trait
         // (`has @.a is Array[TV]`, `has @.a is G::A`) onto the consuming

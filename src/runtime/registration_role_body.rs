@@ -27,7 +27,9 @@ impl Interpreter {
         if decl.is_my || decl.is_our {
             self.registry_mut().role_class_level_attrs.insert(
                 (cx.name.to_string(), attr_name_str.clone()),
-                decl.default.clone(),
+                decl.default
+                    .clone()
+                    .map(|e| crate::opcode::DeclTraitArg::Ast(Box::new(e))),
             );
             return Ok(());
         }
@@ -66,7 +68,7 @@ impl Interpreter {
         if let Some(def_arg) = &decl.is_default {
             self.registry_mut().role_attribute_default_exprs.insert(
                 (cx.name.to_string(), attr_name_str.clone()),
-                def_arg.as_expr(),
+                def_arg.clone(),
             );
         }
         // Check if this attribute already exists from a composed role
