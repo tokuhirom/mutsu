@@ -7,6 +7,7 @@ use super::registration_class_body::ClassBodyCx;
 use super::registration_class_body_method_forms::method_sub_form_params;
 use super::*;
 use crate::ast::{HandleSpec, ParamDef};
+use crate::opcode::CompiledMethodDecl;
 use crate::symbol::Symbol;
 
 impl Interpreter {
@@ -18,39 +19,20 @@ impl Interpreter {
         cx: &mut ClassBodyCx<'_>,
         stmt: &Stmt,
     ) -> Result<(), RuntimeError> {
-        let Stmt::MethodDecl {
-            name: method_name,
-            name_expr,
-            params: _,
-            param_defs,
-            body: method_body,
-            multi,
-            is_rw,
-            is_private,
-            is_our,
-            is_my,
-            is_submethod,
-            our_variable_form,
-            return_type,
-            is_default_candidate,
-            deprecated_message,
-            handles: method_handles,
-            custom_traits: method_custom_traits,
-            is_export: method_is_export,
-            export_tags: method_export_tags,
-        } = stmt
-        else {
-            unreachable!("class_body_method_decl called on a non-MethodDecl statement");
-        };
-        self.validate_private_access_in_stmts(cx.name, method_body)?;
-        Self::validate_attr_declared_in_class(&cx.attr_ctx(), method_body)?;
+        // ADR-0019 D3-2: a typed mirror of the `Stmt::MethodDecl` fields
+        // (see `CompiledMethodDecl`), shared with the eventual role-body and
+        // augment `method` arms instead of each independently re-destructuring
+        // the 19-field AST variant.
+        let decl = CompiledMethodDecl::from_stmt(stmt);
+        self.validate_private_access_in_stmts(cx.name, &decl.body)?;
+        Self::validate_attr_declared_in_class(&cx.attr_ctx(), &decl.body)?;
         // In BUILD/TWEAK submethods, :$!attr parameters must refer
         // to declared attributes; reject undeclared ones with
         // X::Attribute::Undeclared.
         {
-            let mn = method_name.resolve();
+            let mn = decl.name.resolve();
             if mn == "BUILD" || mn == "TWEAK" {
-                for pd in param_defs {
+                for pd in &decl.param_defs {
                     if pd.name.starts_with('!') && pd.name != "!" {
                         let attr_name = &pd.name[1..]; // strip '!'
                         if !cx.class_own_attrs.contains(attr_name) {
@@ -70,7 +52,7 @@ impl Interpreter {
         // `Compiler::compile_method_name_chunks`).
         let chunk_idx = cx.method_name_chunk_idx;
         cx.method_name_chunk_idx += 1;
-        let resolved_method_name = if name_expr.is_some() {
+        let resolved_method_name = if decl.name_expr.is_some() {
             let chunk = cx
                 .method_name_chunks
                 .get(chunk_idx)
@@ -78,9 +60,10 @@ impl Interpreter {
                 .expect("method_name_chunks misaligned with class body walk");
             self.run_decl_expr(chunk)?.to_string_value()
         } else {
-            method_name.resolve()
+            decl.name.resolve()
         };
-        let mut effective_param_defs = Self::effective_method_param_defs(param_defs, cx.is_hidden);
+        let mut effective_param_defs =
+            Self::effective_method_param_defs(&decl.param_defs, cx.is_hidden);
         // Resolve the ::?CLASS pseudo-type in parameter type
         // constraints to the enclosing class (raku fixes ::?CLASS
         // at compile time to the declaring class), mirroring the
@@ -95,8 +78,8 @@ impl Interpreter {
             }
         }
         // Auto-detect @_ usage in methods without explicit signatures
-        if param_defs.is_empty() {
-            let (use_positional, _) = Self::auto_signature_uses(method_body);
+        if decl.param_defs.is_empty() {
+            let (use_positional, _) = Self::auto_signature_uses(&decl.body);
             if use_positional && !effective_param_defs.iter().any(|pd| pd.name == "@_") {
                 // Insert @_ slurpy before the named %_ slurpy (if any)
                 let insert_pos = effective_param_defs
@@ -138,24 +121,24 @@ impl Interpreter {
             lexical_package: cx.saved_package.clone(),
             params: effective_params.clone(),
             param_defs: effective_param_defs.clone(),
-            body: std::sync::Arc::new(method_body.clone()),
-            is_rw: *is_rw,
-            is_private: *is_private,
-            is_multi: *multi,
+            body: std::sync::Arc::new(decl.body.clone()),
+            is_rw: decl.is_rw,
+            is_private: decl.is_private,
+            is_multi: decl.multi,
             // Use is_submethod for the MethodDef is_my flag, which
             // controls inheritance filtering (submethods not inherited).
             // `my method` and `our method` are NOT added to the method
             // table at all — they are only registered as functions.
-            is_my: *is_submethod,
+            is_my: decl.is_submethod,
             role_origin: None,
             original_role: None,
-            return_type: return_type.clone(),
+            return_type: decl.return_type.clone(),
             compiled_code: None,
             compiled_fns: None,
             delegation: None,
-            is_default: *is_default_candidate,
-            deprecated_message: deprecated_message.clone(),
-            is_submethod: *is_submethod,
+            is_default: decl.is_default_candidate,
+            deprecated_message: decl.deprecated_message.clone(),
+            is_submethod: decl.is_submethod,
             captured_env: None,
         };
         // `my method` and `our method` are NOT part of the class
@@ -168,10 +151,10 @@ impl Interpreter {
         // though they also have is_my=true from the parser.
         // The `our &name = method name(...)` variable form
         // (our_variable_form=true) keeps the method in the table.
-        let is_lexical_only = *is_my && !*is_submethod;
-        let is_our_only = *is_our && !*our_variable_form;
+        let is_lexical_only = decl.is_my && !decl.is_submethod;
+        let is_our_only = decl.is_our && !decl.our_variable_form;
         if !is_lexical_only && !is_our_only {
-            if *multi {
+            if decl.multi {
                 cx.class_def
                     .methods
                     .entry(resolved_method_name.clone())
@@ -214,11 +197,11 @@ impl Interpreter {
         // (and exposes the method's sub-form name). This is mainly
         // used by operator methods such as `method infix:<as> is
         // export`, whose sub-form is importable.
-        if *method_is_export && !self.suppress_exports {
-            let tags = if method_export_tags.is_empty() {
+        if decl.is_export && !self.suppress_exports {
+            let tags = if decl.export_tags.is_empty() {
                 vec!["DEFAULT".to_string()]
             } else {
-                method_export_tags.clone()
+                decl.export_tags.clone()
             };
             if Self::is_operator_categorical_name(&resolved_method_name) {
                 // An operator method (`method prefix:<~> is export`,
@@ -246,24 +229,24 @@ impl Interpreter {
         // does — with the invocant as the first C argument. This is
         // how a whole C API is usually bound (`DBDish::mysql::Native`
         // declares every one of its ~40 entry points this way).
-        if method_custom_traits.iter().any(|(t, _)| t == "native") {
+        if decl.custom_traits.iter().any(|(t, _)| t == "native") {
             // Class/role method declarations still register from the
             // source declaration (ADR-0019 phase D), so their trait
             // arguments arrive as expressions.
             self.register_native_call_method(
                 cx.name,
                 &resolved_method_name,
-                param_defs,
-                return_type.as_ref(),
-                &crate::opcode::decl_traits_from_ast(method_custom_traits),
+                &decl.param_defs,
+                decl.return_type.as_ref(),
+                &crate::opcode::decl_traits_from_ast(&decl.custom_traits),
             )?;
         }
         // Apply custom trait_mod:<is> for each non-builtin trait on methods
-        if !method_custom_traits.is_empty() {
+        if !decl.custom_traits.is_empty() {
             let has_trait_mod =
                 self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>");
             if has_trait_mod {
-                for (trait_name, trait_arg) in method_custom_traits {
+                for (trait_name, trait_arg) in &decl.custom_traits {
                     let mut trait_env = self.env.clone();
                     // Add method lookup markers so .wrap stores in
                     // method_wrap_chains (keyed by class+method).
@@ -281,8 +264,8 @@ impl Interpreter {
                         Symbol::intern(&resolved_method_name),
                         effective_params.clone(),
                         effective_param_defs.clone(),
-                        method_body.to_vec(),
-                        *is_rw,
+                        decl.body.clone(),
+                        decl.is_rw,
                         trait_env,
                     );
                     let trait_arg_val = if let Some(arg_expr) = trait_arg {
@@ -314,13 +297,13 @@ impl Interpreter {
         // delegate to the return value of this method. E.g.
         //   method Str() handles 'uc' { 'x' }
         // registers a `uc` method that calls `self.Str.uc(|@_)`.
-        if !method_handles.is_empty() {
+        if !decl.handles.is_empty() {
             // Encode "method-based delegation" by prefixing the
             // source method name with `&`; the delegation dispatch
             // sites recognize this prefix and invoke the named
             // method on self to obtain the delegate.
             let source_attr_marker = format!("&{}", resolved_method_name);
-            for spec in method_handles {
+            for spec in &decl.handles {
                 match spec {
                     HandleSpec::Name(target) => {
                         cx.class_def
@@ -354,7 +337,7 @@ impl Interpreter {
             }
         }
         // `our method` also registers as a package-scoped sub
-        if *is_our {
+        if decl.is_our {
             let qualified_name = format!("{}::{}", cx.name, resolved_method_name);
             let (our_params, our_param_defs) =
                 method_sub_form_params(&effective_params, &effective_param_defs);
@@ -363,15 +346,15 @@ impl Interpreter {
                 name: Symbol::intern(&resolved_method_name),
                 params: our_params,
                 param_defs: our_param_defs,
-                body: method_body.clone(),
+                body: decl.body.clone(),
                 is_test_assertion: false,
-                is_rw: *is_rw,
+                is_rw: decl.is_rw,
                 is_raw: false,
                 is_method: true,
                 empty_sig: false,
-                is_stub: Self::is_stub_routine_body(method_body),
+                is_stub: Self::is_stub_routine_body(&decl.body),
                 return_type: None,
-                is_default: *is_default_candidate,
+                is_default: decl.is_default_candidate,
                 deprecated_message: None,
                 source_file: self.current_source_file(),
                 decl_order: crate::runtime::resolution::next_decl_order(),
@@ -389,7 +372,7 @@ impl Interpreter {
         }
         // `my method` registers as a lexically-scoped function
         // (callable as `name(invocant)` inside the class body)
-        if *is_my {
+        if decl.is_my {
             let (my_params, my_param_defs) =
                 method_sub_form_params(&effective_params, &effective_param_defs);
             let func_def = crate::ast::FunctionDef {
@@ -397,15 +380,15 @@ impl Interpreter {
                 name: Symbol::intern(&resolved_method_name),
                 params: my_params,
                 param_defs: my_param_defs,
-                body: method_body.clone(),
+                body: decl.body.clone(),
                 is_test_assertion: false,
-                is_rw: *is_rw,
+                is_rw: decl.is_rw,
                 is_raw: false,
                 is_method: true,
                 empty_sig: false,
-                is_stub: Self::is_stub_routine_body(method_body),
+                is_stub: Self::is_stub_routine_body(&decl.body),
                 return_type: None,
-                is_default: *is_default_candidate,
+                is_default: decl.is_default_candidate,
                 deprecated_message: None,
                 source_file: self.current_source_file(),
                 decl_order: crate::runtime::resolution::next_decl_order(),
