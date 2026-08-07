@@ -81,7 +81,7 @@ impl Interpreter {
             _ => return deref,
         };
         if !target_name.is_empty() {
-            self.env.insert(target_name.to_string(), new_pair);
+            self.env.insert_through(target_name.to_string(), new_pair);
         }
         deref
     }
@@ -229,7 +229,7 @@ impl Interpreter {
                 });
                 new_hash = self.tag_container_metadata(new_hash, meta);
                 if let Some(var_name) = target_var {
-                    self.env.insert(var_name.to_string(), new_hash);
+                    self.env.insert_through(var_name.to_string(), new_hash);
                 }
                 return Ok(value);
             }
@@ -259,7 +259,7 @@ impl Interpreter {
                         kind,
                     );
                     if let Some(var_name) = target_var {
-                        self.env.insert(var_name.to_string(), replacement);
+                        self.env.insert_through(var_name.to_string(), replacement);
                     }
                 }
             }
@@ -279,7 +279,7 @@ impl Interpreter {
                 kind,
             );
             if let Some(var_name) = target_var {
-                self.env.insert(var_name.to_string(), replacement);
+                self.env.insert_through(var_name.to_string(), replacement);
             }
             return Ok(value);
         }
@@ -406,7 +406,7 @@ impl Interpreter {
             let tid = inst_id;
             attributes.commit_attrs(new_attrs);
             if let Some(var_name) = target_var {
-                self.env.insert(
+                self.env.insert_through(
                     var_name.to_string(),
                     Value::instance_sharing_cell(&attributes, class_name, tid),
                 );
@@ -690,7 +690,7 @@ impl Interpreter {
                                 }
                                 _ => continue,
                             };
-                            self.env.insert_sym(*var_name, new_pair);
+                            self.env.insert_through_sym(*var_name, new_pair);
                         }
                         return Ok(value);
                     } else if let Some(var_name) = target_var {
@@ -701,7 +701,7 @@ impl Interpreter {
                             }
                             _ => unreachable!(),
                         };
-                        self.env.insert(var_name.to_string(), new_pair);
+                        self.env.insert_through(var_name.to_string(), new_pair);
                         return Ok(value);
                     }
                 }
@@ -776,7 +776,7 @@ impl Interpreter {
             let cn = class_name;
             attributes.commit_attrs(updated);
             if let Some(var_name) = target_var {
-                self.env.insert(
+                self.env.insert_through(
                     var_name.to_string(),
                     Value::instance_sharing_cell(&attributes, cn, target_id),
                 );
@@ -839,7 +839,7 @@ impl Interpreter {
                         assigned_value.clone(),
                     );
                     if let Some(var_name) = target_var {
-                        self.env.insert(
+                        self.env.insert_through(
                             var_name.to_string(),
                             Value::write_back_sharing(&attributes, cn, updated, target_id),
                         );
@@ -914,7 +914,7 @@ impl Interpreter {
                         assigned_value.clone(),
                     );
                     if let Some(var_name) = target_var {
-                        self.env.insert(
+                        self.env.insert_through(
                             var_name.to_string(),
                             Value::write_back_sharing(&attributes, cn, updated, target_id),
                         );
@@ -1016,7 +1016,8 @@ impl Interpreter {
                     let new_mixin =
                         Value::mixin_parts(inner.clone(), crate::gc::Gc::new(updated_mixins));
                     if let Some(var_name) = target_var {
-                        self.env.insert(var_name.to_string(), new_mixin.clone());
+                        self.env
+                            .insert_through(var_name.to_string(), new_mixin.clone());
                     }
                     // Inside a trait_mod the rebuilt Mixin must also refresh the
                     // writeback capture (same convention as DoesVar): the value
@@ -1040,7 +1041,8 @@ impl Interpreter {
                 let new_mixin =
                     Value::mixin_parts(inner.clone(), crate::gc::Gc::new(updated_mixins));
                 if let Some(var_name) = target_var {
-                    self.env.insert(var_name.to_string(), new_mixin.clone());
+                    self.env
+                        .insert_through(var_name.to_string(), new_mixin.clone());
                 }
                 // See the role-attribute branch above: refresh the trait_mod
                 // writeback capture so the assignment survives past the trait.
@@ -1247,7 +1249,7 @@ impl Interpreter {
                 // instance is reachable through other aliases.
                 attributes.commit_attrs(updated);
                 if let Some(var_name) = target_var {
-                    self.env.insert(
+                    self.env.insert_through(
                         var_name.to_string(),
                         Value::instance_sharing_cell(&attributes, class_name, target_id),
                     );
@@ -1273,7 +1275,7 @@ impl Interpreter {
                     Ok((result, updated_attrs)) => {
                         attributes.commit_attrs(updated_attrs);
                         if let Some(var_name) = target_var {
-                            self.env.insert(
+                            self.env.insert_through(
                                 var_name.to_string(),
                                 Value::instance_sharing_cell(&attributes, class_name, target_id),
                             );
@@ -1328,7 +1330,7 @@ impl Interpreter {
                     _ => "$",
                 };
                 let temp_var = format!("{}__mutsu_delegation_tmp__", sigil);
-                self.env.insert(temp_var.clone(), delegate.clone());
+                self.env.insert_through(temp_var.clone(), delegate.clone());
                 let result = self.assign_method_lvalue_with_values(
                     Some(&temp_var),
                     delegate,
@@ -1342,7 +1344,7 @@ impl Interpreter {
                 let mut updated = attributes.to_map();
                 updated.insert(attr_key.to_string(), updated_delegate);
                 if let Some(var_name) = target_var {
-                    self.env.insert(
+                    self.env.insert_through(
                         var_name.to_string(),
                         Value::write_back_sharing(&attributes, class_name, updated, target_id),
                     );
@@ -1402,7 +1404,7 @@ impl Interpreter {
             }
             updated.insert(attr_name, assigned_value.clone());
             if let Some(var_name) = target_var {
-                self.env.insert(
+                self.env.insert_through(
                     var_name.to_string(),
                     Value::write_back_sharing(&attributes, class_name, updated, target_id),
                 );
@@ -1473,7 +1475,7 @@ impl Interpreter {
             if delegate != Value::NIL {
                 // Temporarily bind the delegate to an env variable for update tracking
                 let temp_var = "__mutsu_delegation_tmp__".to_string();
-                self.env.insert(temp_var.clone(), delegate.clone());
+                self.env.insert_through(temp_var.clone(), delegate.clone());
                 // Forward the assignment to the delegate
                 let result = self.assign_method_lvalue_with_values(
                     Some(&temp_var),
@@ -1490,7 +1492,7 @@ impl Interpreter {
                 let mut updated = attributes.to_map();
                 updated.insert(attr_key.to_string(), updated_delegate);
                 if let Some(var_name) = target_var {
-                    self.env.insert(
+                    self.env.insert_through(
                         var_name.to_string(),
                         Value::write_back_sharing(&attributes, class_name, updated, target_id),
                     );
