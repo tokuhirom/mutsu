@@ -2351,6 +2351,17 @@ pub(crate) struct CompiledCode {
     pub(crate) lex_scopes: Vec<Arc<crate::compiler::lex_scope::LexScopeChain>>,
     /// Pre-compiled closure bodies embedded in this code chunk.
     pub(crate) closure_compiled_codes: Vec<Arc<CompiledCode>>,
+    /// Compiled functions this closure/block body directly declares as nested
+    /// `sub`s, keyed exactly as they were installed into the enclosing compile
+    /// pass's functions table (post name-collision remap). `None` when the
+    /// body declares no nested sub. Mirrors
+    /// [`CompiledFunction::compiled_fns`] for the same reason: a `SubData`
+    /// built from this code and invoked as a detached `Sub` VALUE from a
+    /// foreign `CompiledFns` context cannot resolve a nested `RegisterSub`'s
+    /// `compiled_routine_keys` from the caller's table alone (ADR-0019
+    /// C6e-3c; see
+    /// `todo/deep/c6e-legacy-body-drop-blocked-by-gate-rejected-shapes.md`).
+    pub(crate) compiled_fns: Option<Arc<CompiledFns>>,
     /// Own local slots that reach an atomic-op builtin (`⚛$x`, `$x ⚛= v`,
     /// `cas($x, …)`) as the target VARIABLE. These builtins are compiled to a
     /// `__mutsu_*_var(name_str, …)` call and resolve the target by NAME from env
@@ -2988,6 +2999,7 @@ impl CompiledCode {
             param_local_slots: Vec::new(),
             lex_scopes: Vec::new(),
             closure_compiled_codes: Vec::new(),
+            compiled_fns: None,
             atomic_env_sync_locals: Vec::new(),
             atomic_target_syms: rustc_hash::FxHashSet::default(),
             named_arg_specs: Vec::new(),

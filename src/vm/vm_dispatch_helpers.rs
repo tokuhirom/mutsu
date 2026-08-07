@@ -390,6 +390,12 @@ impl Interpreter {
         let empty_fns = CompiledFns::default();
         if let Some(cc) = &data.compiled_code {
             let cc = cc.clone();
+            // Prefer this closure's own nested-sub table over an empty one, the
+            // same way the `compiled_routine` branch below does (ADR-0019
+            // C6e-3c) — otherwise a nested `sub` declared inside this block
+            // cannot resolve its own `RegisterSub` bytecode when the block is
+            // invoked from a foreign `compiled_fns` context.
+            let fns = data.compiled_fns.as_deref().unwrap_or(&empty_fns);
             let data = data.clone();
             return self.call_compiled_closure_with_topic(
                 &data,
@@ -397,7 +403,7 @@ impl Interpreter {
                 args,
                 explicit_topic,
                 capture_rw_topic,
-                &empty_fns,
+                fns,
             );
         }
         // A code object built from a registry routine carries that routine's own
@@ -501,9 +507,20 @@ impl Interpreter {
             && let Some(ref cc) = data.compiled_code
         {
             let cc = cc.clone();
-            let data = data.clone();
             let empty_fns = CompiledFns::default();
-            let fns = compiled_fns.unwrap_or(&empty_fns);
+            // Prefer this closure's own nested-sub table over the caller's
+            // ambient one (ADR-0019 C6e-3c) — mirrors the `compiled_routine`
+            // branch below. A nested `sub` declared inside this block can
+            // otherwise fail to resolve its own `RegisterSub` bytecode when
+            // the block is invoked from a foreign `compiled_fns` context
+            // (e.g. a captured block called from a different compilation
+            // unit's compiled code).
+            let fns = data
+                .compiled_fns
+                .as_deref()
+                .or(compiled_fns)
+                .unwrap_or(&empty_fns);
+            let data = data.clone();
             return self.call_compiled_closure(&data, &cc, args, fns);
         }
 

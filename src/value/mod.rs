@@ -850,6 +850,17 @@ pub struct SubData {
     pub(crate) is_bare_block: bool,
     /// Pre-compiled bytecode for this closure (if compiled).
     pub(crate) compiled_code: Option<Arc<CompiledCode>>,
+    /// Compiled functions this closure/block body directly declares as nested
+    /// `sub`s, copied from `compiled_code.compiled_fns` at construction time.
+    /// A dispatch site invoking this Sub's `compiled_code` should prefer this
+    /// table over whatever `CompiledFns` the CALLER's frame happens to have in
+    /// scope, the same way a routine `Sub` prefers `compiled_routine`'s own
+    /// `compiled_fns` — otherwise a nested `sub` declared inside a captured
+    /// block invoked from a foreign compilation unit (e.g. an imported
+    /// module's own compiled code calling a `&block`-typed parameter) cannot
+    /// resolve its own `RegisterSub` bytecode (ADR-0019 C6e-3c; see
+    /// `todo/deep/c6e-legacy-body-drop-blocked-by-gate-rejected-shapes.md`).
+    pub(crate) compiled_fns: Option<Arc<crate::opcode::CompiledFns>>,
     /// The registry routine this code object *is*, when it was built from a
     /// declared routine rather than from a closure-creation op — `&foo`, a
     /// `.candidates` entry, a `nextsame` candidate, an operator fallback, a

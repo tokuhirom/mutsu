@@ -104,6 +104,9 @@ impl Interpreter {
                 .and_then(|cc| cc.source_line)
                 .map(|l| l as u32)
                 .or_else(|| self.current_source_line());
+            let compiled_fns = compiled_code
+                .as_ref()
+                .and_then(|cc| cc.compiled_fns.clone());
             let val = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
                 package: Symbol::intern(&self.lexical_closure_package()),
                 name: Symbol::intern(""),
@@ -125,6 +128,7 @@ impl Interpreter {
                 authoritative_captures,
                 upvalues,
                 compiled_code,
+                compiled_fns,
                 compiled_routine: None,
                 deprecated_message: None,
                 source_line: cc_source_line,
@@ -155,6 +159,9 @@ impl Interpreter {
                 .and_then(|cc| cc.source_line)
                 .map(|l| l as u32)
                 .or_else(|| self.current_source_line());
+            let compiled_fns = compiled_code
+                .as_ref()
+                .and_then(|cc| cc.compiled_fns.clone());
             let val = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
                 package: Symbol::intern(&self.lexical_closure_package()),
                 name: Symbol::intern(""),
@@ -174,6 +181,7 @@ impl Interpreter {
                 authoritative_captures,
                 upvalues,
                 compiled_code,
+                compiled_fns,
                 compiled_routine: None,
                 deprecated_message: None,
                 source_line: cc_source_line,
