@@ -300,7 +300,12 @@ pub(crate) struct CompiledAttrDecl {
     pub(crate) is_alias: bool,
     pub(crate) is_our: bool,
     pub(crate) is_my: bool,
-    pub(crate) is_default: Option<crate::ast::Expr>,
+    /// The `is default(...)` trait argument (ADR-0019 D2c). `Ast` unless a
+    /// caller with compiler access at plan-lowering time (currently
+    /// `class_body_has_decl`, via `CompiledClassDeclPlan::is_default_chunks`)
+    /// supplied a precompiled `Literal`/`Compiled` replacement — see
+    /// [`Self::from_stmt`].
+    pub(crate) is_default: Option<DeclTraitArg>,
     pub(crate) is_type: Option<String>,
     pub(crate) deprecated_message: Option<String>,
     pub(crate) is_built: Option<bool>,
@@ -311,7 +316,18 @@ impl CompiledAttrDecl {
     /// Build a typed descriptor from a `Stmt::HasDecl`. Panics on any other
     /// statement kind — every call site already matched on `Stmt::HasDecl`
     /// before reaching here.
-    pub(crate) fn from_stmt(stmt: &Stmt) -> CompiledAttrDecl {
+    ///
+    /// `is_default_chunk` is a precompiled replacement for the `is
+    /// default(...)` trait argument, looked up by the caller (by attribute
+    /// name) from a `CompiledClassDeclPlan`/`CompiledRoleDeclPlan` built at
+    /// compile time. Pass `None` when no such plan is available (registration
+    /// paths that still walk a raw AST body, e.g. role bodies and `augment
+    /// class`) — the raw expression is kept as `DeclTraitArg::Ast`, the same
+    /// fallback used elsewhere for not-yet-migrated declaration kinds.
+    pub(crate) fn from_stmt(
+        stmt: &Stmt,
+        is_default_chunk: Option<&DeclTraitArg>,
+    ) -> CompiledAttrDecl {
         let Stmt::HasDecl {
             name,
             is_public,
@@ -351,7 +367,9 @@ impl CompiledAttrDecl {
             is_alias: *is_alias,
             is_our: *is_our,
             is_my: *is_my,
-            is_default: is_default.clone(),
+            is_default: is_default_chunk
+                .cloned()
+                .or_else(|| is_default.clone().map(|e| DeclTraitArg::Ast(Box::new(e)))),
             is_type: is_type.clone(),
             deprecated_message: deprecated_message.clone(),
             is_built: *is_built,
@@ -2033,6 +2051,21 @@ impl DeclTraitArg {
             DeclTraitArg::Compiled(_) => None,
         }
     }
+
+    /// Reconstruct an `Expr` from the argument. An escape valve for the few
+    /// remaining consumers that store an `Expr` rather than evaluating it
+    /// immediately (the role attribute-default registry tables, ADR-0019
+    /// D2c-3) — never called on a `Compiled` chunk, since nothing on those
+    /// still-AST-walking paths produces one.
+    pub(crate) fn as_expr(&self) -> Expr {
+        match self {
+            DeclTraitArg::Literal(value) => Expr::Literal(value.clone()),
+            DeclTraitArg::Ast(expr) => (**expr).clone(),
+            DeclTraitArg::Compiled(_) => {
+                unreachable!("DeclTraitArg::as_expr called on a Compiled chunk")
+            }
+        }
+    }
 }
 
 /// A declaration's custom traits as registration consumes them: the trait name
@@ -2391,6 +2424,12 @@ pub(crate) struct CompiledClassDeclPlan {
     /// `run_class_body` re-scanning the (flattened, nested-sub-surfaced)
     /// body on every registration.
     pub(crate) own_attribute_names: Vec<Symbol>,
+    /// Precompiled `is default(...)` trait argument for each own attribute
+    /// that declares one (ADR-0019 D2c), keyed by attribute name rather than
+    /// position — `class_body_has_decl` looks a chunk up by the `Stmt::HasDecl`
+    /// it is currently visiting instead of relying on the registration-time
+    /// walk visiting attributes in the same order this was built in.
+    pub(crate) is_default_chunks: Vec<(Symbol, DeclTraitArg)>,
 }
 
 #[derive(Debug, Clone)]
@@ -5586,6 +5625,7 @@ impl CompiledCode {
         stmt: &Stmt,
         name_chunk: Option<CompiledDeclExpr>,
         trait_args: Vec<Option<DeclTraitArg>>,
+        is_default_chunks: Vec<(Symbol, DeclTraitArg)>,
     ) -> u32 {
         let Stmt::ClassDecl {
             name,
@@ -5635,6 +5675,7 @@ impl CompiledCode {
             is_stub,
             trusts,
             own_attribute_names,
+            is_default_chunks,
         });
         let idx = self.decl_plans.len() as u32;
         self.decl_plans.push(CompiledDeclPlanRef::Class(plan_idx));

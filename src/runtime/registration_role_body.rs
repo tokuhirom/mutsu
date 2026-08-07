@@ -16,7 +16,7 @@ impl Interpreter {
         cx: &mut RoleDeclCx<'_>,
         stmt: &Stmt,
     ) -> Result<(), RuntimeError> {
-        let decl = crate::opcode::CompiledAttrDecl::from_stmt(stmt);
+        let decl = crate::opcode::CompiledAttrDecl::from_stmt(stmt, None);
         let attr_name_str = decl.name.clone();
         // A class-level (`my $.x` / `our $.x`) role attribute is NOT a
         // per-instance attribute: it becomes a class-level attribute on the
@@ -63,10 +63,10 @@ impl Interpreter {
         // until composition. Stash the expression keyed by (role, attr);
         // it is copied to the consuming class and evaluated at instance
         // construction (with type params bound).
-        if let Some(def_expr) = &decl.is_default {
+        if let Some(def_arg) = &decl.is_default {
             self.registry_mut().role_attribute_default_exprs.insert(
                 (cx.name.to_string(), attr_name_str.clone()),
-                def_expr.clone(),
+                def_arg.as_expr(),
             );
         }
         // Check if this attribute already exists from a composed role

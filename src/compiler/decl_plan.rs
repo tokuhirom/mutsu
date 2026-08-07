@@ -79,6 +79,7 @@ impl Compiler {
         let Stmt::ClassDecl {
             name_expr,
             custom_traits,
+            body,
             ..
         } = stmt
         else {
@@ -86,7 +87,67 @@ impl Compiler {
         };
         let name_chunk = name_expr.as_ref().map(|e| self.compile_decl_expr(e));
         let trait_args = self.compile_decl_trait_args(custom_traits);
-        self.code.add_class_decl_plan(stmt, name_chunk, trait_args)
+        let is_default_chunks = self.compile_attr_is_default_chunks(body);
+        self.code
+            .add_class_decl_plan(stmt, name_chunk, trait_args, is_default_chunks)
+    }
+
+    /// Precompile the `is default(...)` trait argument of each of a class
+    /// body's own attributes into a child chunk (ADR-0019 D2c), keyed by
+    /// attribute name so `class_body_has_decl` can look one up without
+    /// depending on its registration-time walk visiting attributes in
+    /// exactly this order. Mirrors `class_body_has_decl`'s eligibility
+    /// (`our`/`my` class-level attributes never reach the `is_default` arm —
+    /// see `run_class_body`'s early `SkipTail` return) and
+    /// `collect_nested_class_has_decls`'s traversal (SyntheticBlock-flattened
+    /// top level plus `has` nested directly inside a body `sub`, recursively).
+    fn compile_attr_is_default_chunks(
+        &self,
+        body: &[Stmt],
+    ) -> Vec<(Symbol, crate::opcode::DeclTraitArg)> {
+        let mut out = Vec::new();
+        self.collect_attr_is_default_chunks(body, &mut out);
+        out
+    }
+
+    fn collect_attr_is_default_chunks(
+        &self,
+        body: &[Stmt],
+        out: &mut Vec<(Symbol, crate::opcode::DeclTraitArg)>,
+    ) {
+        for stmt in body {
+            match stmt {
+                Stmt::SyntheticBlock(inner) => self.collect_attr_is_default_chunks(inner, out),
+                Stmt::HasDecl {
+                    name,
+                    is_our,
+                    is_my,
+                    is_default: Some(expr),
+                    ..
+                } if !*is_our && !*is_my => {
+                    out.push((*name, self.compile_decl_trait_arg(expr)));
+                }
+                Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } | Stmt::HasDecl { .. } => {}
+                Stmt::SubDecl { body: inner, .. } => {
+                    for s in inner {
+                        if let Stmt::HasDecl {
+                            name,
+                            is_our,
+                            is_my,
+                            is_default: Some(expr),
+                            ..
+                        } = s
+                            && !*is_our
+                            && !*is_my
+                        {
+                            out.push((*name, self.compile_decl_trait_arg(expr)));
+                        }
+                    }
+                    self.collect_attr_is_default_chunks(inner, out);
+                }
+                _ => {}
+            }
+        }
     }
 
     /// [`Self::add_sub_decl_plan`] for a role declaration. A role's name is

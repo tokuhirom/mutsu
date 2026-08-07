@@ -105,12 +105,38 @@ no changes. This unblocks migrating `role_attribute_default_exprs`/
 
 ## Recommended split for whoever picks this up
 
-- **D2c-1**: extend `add_class_decl_plan`/`add_role_decl_plan` to compile
+- **D2c-1** (`is_default` slice landed 2026-08-07, `default`/`where_constraint`
+  still open): extend `add_class_decl_plan`/`add_role_decl_plan` to compile
   per-attribute `default`/`where_constraint`/`is_default` chunks alongside
   `own_attribute_names`, thread through the plans, change `CompiledAttrDecl`'s
   three fields to a `Literal(Value) | Compiled(CompiledDeclExpr)` shape
   (name it after `DeclTraitArg`'s pattern, or reuse `DeclTraitArg` itself —
   worth deciding during implementation), update its 4 call sites.
+  **What actually landed**: only `is_default`, reusing `DeclTraitArg` as-is
+  (its existing `Ast` variant absorbed the "not yet migrated" callers for
+  free — no new fallback needed). `Compiler::add_class_decl_plan` now builds
+  `CompiledClassDeclPlan::is_default_chunks: Vec<(Symbol, DeclTraitArg)>`,
+  **keyed by attribute name** rather than position — this sidesteps the
+  position-alignment risk called out above entirely (`class_body_has_decl`
+  looks up its current `Stmt::HasDecl`'s name in the vec instead of relying
+  on registration-time traversal order matching compile-time traversal
+  order). The reason it stopped at `is_default` rather than all three
+  fields: `default`/`where_constraint` are *stored* into
+  `ClassAttributeDef` for later (construction-time) evaluation, so switching
+  their type requires `ClassAttributeDef` to change in the same PR — that's
+  D2c-2's work, described below unchanged. `is_default` is different: it is
+  read-and-discarded once at registration time (`class_body_has_decl`
+  evaluates it immediately via the new `eval_decl_trait_arg`, matching what
+  `eval_block_value(&[Stmt::Expr(...)])` did before, just without the
+  on-demand compile now that the common non-literal case is precompiled).
+  Only 2 of the 4 `from_stmt` call sites ever read `.is_default`
+  (`class_body_has_decl`, `role_body_has_decl`); the mainline/EVAL
+  `has`-outside-class error path and `augment class` never did, so they
+  needed no behavior change beyond passing `None` for the new
+  `is_default_chunk` parameter. `role_body_has_decl` still stashes a raw
+  `Expr` into `role_attribute_default_exprs` (D2c-3 territory) via a new
+  `DeclTraitArg::as_expr()` escape valve. See
+  `news/2026-08/d2c1-is-default-attribute-chunk.md`.
 - **D2c-2**: change `ClassAttributeDef.default`/`where_constraint`
   (`src/runtime/mod.rs`) to match — it's copied straight from
   `CompiledAttrDecl` at registration, so this is a cheap follow-on once

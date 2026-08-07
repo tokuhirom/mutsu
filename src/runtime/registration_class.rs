@@ -200,6 +200,12 @@ pub(crate) struct ClassDeclModifiers<'a> {
     /// of `run_class_body` re-scanning the body for `Stmt::HasDecl` at
     /// registration time.
     pub(crate) own_attribute_names: &'a [Symbol],
+    /// Precompiled `is default(...)` trait-argument chunks for this class
+    /// body's own attributes (ADR-0019 D2c), keyed by attribute name, threaded
+    /// down to `class_body_has_decl` via `ClassBodyCx`. Empty for
+    /// registration paths with no compiled plan available (role bodies,
+    /// `augment class`) — those keep evaluating the raw AST expression.
+    pub(crate) attr_is_default_chunks: &'a [(Symbol, crate::opcode::DeclTraitArg)],
 }
 
 pub(super) fn parse_role_type_args(input: &str) -> Vec<String> {
