@@ -544,6 +544,62 @@ walkers wholesale is not possible before then.
   walk exists in three places, not one — the class walker (~508 lines), the role walker
   (~263 lines), and augmentation (`registration_class_augment.rs`) — plus a fourth reader in
   `registration.rs`; expect this box to subdivide per walker (class/role/augment).
+  **Scoping pass done 2026-08-07 (no code beyond the drift fix below).** No `CompiledMethodDecl`
+  type exists yet — D3 would invent one from scratch, the way D2b invented `CompiledAttrDecl`. The
+  three walkers are `Interpreter::class_body_method_decl`
+  (`registration_class_body_method.rs`, ~408 lines, plus a ~209-line param-forms helper file —
+  together the ADR's "~508 lines"), `Interpreter::role_body_method_decl`
+  (`registration_role_method.rs`, ~274 lines), and `Interpreter::augment_class`'s `MethodDecl` arm
+  (`registration_class_augment.rs`, ~105 lines inline). Each hand-builds a `MethodDef`
+  (`decl_types.rs`) from its own `let Stmt::MethodDecl { .. } = stmt` destructure — no shared
+  constructor. Confirmed drift between the three (the same class of independently-diverged
+  destructuring D2b fixed for `Stmt::HasDecl`):
+  - `MethodDef.is_my`'s semantics: the class walker deliberately stores `*is_submethod`, not the
+    raw parser `is_my` flag, because `my method`/`our method` are filtered out of `class_def.methods`
+    before insertion (`is_lexical_only`/`is_our_only` gating) — so by construction every stored
+    `MethodDef` only needs `is_my` to mean "is this a submethod" for inheritance filtering. The role
+    walker matches this convention. `augment_class` stores the **raw** `*is_my` instead, with no
+    equivalent lexical-only gating (it inserts every method unconditionally) — a real inconsistency,
+    but hard to demonstrate as user-visible: most read sites OR `is_my` with `is_submethod`
+    (`methods_walk.rs`, `class_dispatch.rs`, `ctor_phase_plan.rs`), which masks it; the two sites
+    that read `is_my` alone (`resolve_user_method_or_accessor`'s per-MRO-level filter, reached only
+    from `methods_mut_method_lvalue.rs`/`methods_instance_ops.rs`'s narrow rw/lvalue accessor-race
+    path) could theoretically be affected but no observable repro was found (`.can()` and a direct
+    call on an `augment`-declared submethod both correctly rejected inheritance in manual testing) —
+    left unfixed pending a real repro rather than guessing at a fix for unconfirmed behavior.
+  - `deprecated_message` was dropped (hard-coded `None`) by both the role and augment walkers,
+    unlike the class walker. **Fixed 2026-08-07** (`news/2026-08/role-augment-method-deprecated-message-dropped.md`)
+    — confirmed against `raku` as a real, user-visible gap (a role-composed or `augment`-declared
+    method's `is DEPRECATED(...)` silently produced no deprecation report at all).
+  - BUILD/TWEAK `:$!attr`-undeclared-attribute validation, `custom_traits` (native/`trait_mod:<is>`
+    dispatch, including `.wrap`-installing traits), and `is_export`/`export_tags` handling all exist
+    only at the class walker — absent from both the role walker and `augment_class`.
+  - `handles` forwarder synthesis exists at the class and role walkers but not `augment_class`.
+  - The class walker's `is_lexical_only`/`is_our_only` gating (excluding `my method`/`our method`
+    from `class_def.methods`) has no `augment_class` equivalent — every method is inserted there
+    regardless of `is_my`/`is_our`.
+  - Duplicate-method detection is privacy-aware at the class and role walkers (compares
+    `is_private`) but not at `augment_class` (`all_from_role` only).
+  A fourth reader, `registration.rs`'s `validate_private_access_in_stmt`, only recurses into a
+  method's `body` for private-call permission checks — it does not build a `MethodDef` and is
+  unaffected by the drift above.
+  Complications for a compiled plan: `SyntheticBlock` flattening is single-level and consistent
+  across all three walkers (not drift). Methods declared inside a nested `sub`
+  (`class C { sub f { method inner {...} } }`) have **no** nested-collector equivalent to
+  `collect_nested_class_has_decls`/`compile_attr_is_default_chunks`'s attribute handling — such a
+  method is simply invisible to registration today, an existing gap a compiled plan must either
+  preserve explicitly or fix, not silently change. `name_expr` (computed method names) is evaluated
+  identically at all three sites via `eval_block_value` with no compiled-chunk equivalent yet
+  (unlike `SubDecl`/`ClassDecl`, which already get a `name_chunk` via `compile_decl_expr`).
+  **Recommended first slice (D3-1):** precompile `name_expr` into a `name_chunk` the same way
+  `add_sub_decl_plan`/`add_class_decl_plan` already do, since it is read-and-discarded immediately
+  (never stored on `MethodDef`) and is the most literally-duplicated-verbatim logic across all
+  three sites — a clean, low-risk demonstration slice that doesn't touch `MethodDef`'s shape.
+  D3-2/D3-3/D3-4 (one per walker, per the ADR's own expectation) should then unify onto a shared
+  `CompiledMethodDecl::from_stmt` and fix the drift found above (the `augment_class` `is_lexical_only`
+  gating gap and privacy-aware duplicate detection in particular) as part of the unification, the
+  way D2b's `CompiledAttrDecl::from_stmt` fixed its four independently-drifted callers by
+  construction.
 - [ ] **D4 — Compile class declaration-time expressions.** Cover computed names, traits, parent
   expressions, aliases, and deferred class bodies through re-entrant bytecode chunks. (Computed
   names and custom-trait arguments already landed with C5; parents, aliases, and deferred bodies
