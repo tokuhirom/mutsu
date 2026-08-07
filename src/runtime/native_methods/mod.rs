@@ -64,13 +64,14 @@ pub(in crate::runtime) use state_supplier::{
     register_supplier_unique_tap, register_supplier_whenever_quit_callback,
     register_supplier_words_tap, register_supplier_zip_latest_tap, register_supplier_zip_tap,
     register_zip_latest_state, register_zip_state, set_supplier_serialize_group,
-    supplier_done_count, supplier_emit_callbacks, supplier_produce_update_acc,
+    supplier_done_call_count, supplier_emit_callbacks, supplier_produce_update_acc,
     supplier_serialize_group, supplier_tap_count, supplier_unique_get_seen,
     supplier_unique_mark_seen, take_supplier_close_callbacks, take_supplier_done_callbacks,
     take_supplier_quit_callbacks, take_supplier_reduce_results,
-    take_supplier_whenever_quit_callbacks, update_classify_state, whenever_done_group_decrement,
-    whenever_done_group_increment, zip_buffer_value, zip_latest_buffer_value,
-    zip_latest_source_done, zip_latest_state_info, zip_source_done, zip_state_info,
+    take_supplier_whenever_quit_callbacks, thread_supplier_done_count, update_classify_state,
+    whenever_done_group_decrement, whenever_done_group_increment, zip_buffer_value,
+    zip_latest_buffer_value, zip_latest_source_done, zip_latest_state_info, zip_source_done,
+    zip_state_info,
 };
 pub(in crate::runtime) use state_supplier_merge::{
     get_supplier_merge_state_ids, merge_source_done, register_merge_source, register_merge_state,

@@ -56,13 +56,25 @@ impl Interpreter {
             a
         });
         self.supply_emit_buffer.push(Vec::new());
-        let done_before = supplier_done_count();
+        // "Did the body complete *this* supply?" must be asked of this emitter,
+        // not of the process. With an id, count `done`s on the emitter itself;
+        // without one (`done` cannot reach a supplier), fall back to this
+        // thread's total — the body runs synchronously here, so a `done` on
+        // another thread's pipeline is never this body's.
+        let done_before = match emitter_supplier_id {
+            Some(sid) => supplier_done_call_count(sid),
+            None => thread_supplier_done_count(),
+        };
         // A bare `emit` reached from a *sub* called by the body is not rewritten
         // to `$emitter.emit(...)`, so it needs the emitter dynamically.
         self.active_supply_emitters.push(emitter.clone());
         let result = self.call_sub_value(on_demand_cb, vec![emitter], false);
         self.active_supply_emitters.pop();
-        let body_ran_done = supplier_done_count() > done_before;
+        let done_after = match emitter_supplier_id {
+            Some(sid) => supplier_done_call_count(sid),
+            None => thread_supplier_done_count(),
+        };
+        let body_ran_done = done_after > done_before;
         let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
         (result, emitted, body_ran_done)
     }

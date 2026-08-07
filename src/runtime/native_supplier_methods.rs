@@ -368,8 +368,10 @@ impl Interpreter {
                 // Bumped so the on-demand tap handler can tell (by comparing
                 // the count before/after running the block body) that the body
                 // itself called `done` — the supplier's own done state is reset
-                // below, so it can't be read back later.
-                bump_supplier_done_count();
+                // below, so it can't be read back later. Keyed by supplier id so
+                // a concurrent pipeline's `done` cannot be mistaken for this
+                // emitter's.
+                bump_supplier_done_count(supplier_id_from_attrs(attributes));
                 if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
                     supplier_done(supplier_id);
                     close_supplier_channel_taps(supplier_id, None);
@@ -863,7 +865,7 @@ impl Interpreter {
                 Ok((Value::NIL, attrs))
             }
             "done" => {
-                bump_supplier_done_count();
+                bump_supplier_done_count(supplier_id_from_attrs(&attrs));
                 let preserving = attrs.contains_key("preserving");
                 attrs.insert("done".to_string(), Value::TRUE);
                 if let Some(supplier_id) = supplier_id_from_attrs(&attrs) {
