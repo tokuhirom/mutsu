@@ -10,13 +10,20 @@ Died because of the exception:
   in sub body-text ...
 ```
 
-`.data` is `Cro::TCP::Message.data`, read in `Cro::HTTP::ResponseParser`'s
-`whenever $in -> Cro::TCP::Message $packet`. A raw `Buf` reaching that
-subscription means the body bytes the parser emits into its **own**
-`$raw-body-byte-stream` Supplier are being delivered back to the parser's
-upstream `whenever $in` — supply cross-talk, not a chunked-decoding bug as such.
-(The `Cro::TCP::Message` type constraint on the parameter is also not enforced,
-which is why it surfaces as a missing method rather than a binding failure.)
+**Root-caused**: see
+`todo/deep/nested-sub-emit-leaks-into-the-outer-supply.md`. A bare `emit` inside
+a `sub` declared in a `supply { }` body is not rewritten to `$emitter.emit(...)`
+and resolves dynamically to `active_supply_emitters.last()`, which is the
+*outer* supply when the inner supply's `whenever` fires inside the outer body.
+`Cro::HTTP::RawBodyParser::Chunked` emits from exactly such a nested
+`sub parse-chunks()`, and `Cro::HTTP::ResponseParser` creates and feeds it from
+inside its own `whenever $in` body — so the decoded `Buf` is emitted out of the
+ResponseParser's supply instead of the body supply. `.data` is
+`Cro::TCP::Message.data`, read by the ResponseParser itself. The
+`ContentLength` parser emits inline rather than from a nested sub, which is why
+`Content-Length` bodies work and chunked ones do not. (The `Cro::TCP::Message`
+type constraint on the parameter is also not enforced, which is why it surfaces
+as a missing method rather than a binding failure.)
 
 The mutsu **server** side is fine: `curl` reads a chunked response from a mutsu
 Cro server correctly, body and all.
@@ -83,53 +90,14 @@ $raw-body-byte-stream.emit($header-decoder.consume-exactly-bytes($count));
 all from *inside* its own `whenever $in` body — a supply created and fed from
 within another supply's callback, with a `preserve` in between.
 
-The `ContentLength` parser has the same outer shape and works, so the difference
-is either the nested `sub` or the fact that `Chunked` needs more than one
-upstream packet.
+The `ContentLength` parser has the same outer shape and works; the difference is
+the nested `sub` (see the root-cause ticket above).
 
-## Smaller divergence found while narrowing (may or may not be the same bug)
+## Narrowing
 
-This two-level shape already diverges without any Cro:
-
-```raku
-sub chunk-parser(Supply $raw) {
-    supply {
-        my $buffer = Buf.new;
-        whenever $raw -> $blob { $buffer.append($blob); drain(); }
-        sub drain() {
-            while $buffer.elems >= 2 { emit $buffer.subbuf(0, 2); $buffer .= subbuf(2) }
-        }
-    }
-}
-class Msg { has $.data; }
-sub transformer(Supply $in) {
-    supply {
-        my ($raw, $body-out);
-        whenever $in -> Msg $packet {
-            if !$raw.defined {
-                $raw = Supplier.new;
-                $body-out = chunk-parser($raw.Supply);
-                emit $body-out;
-            }
-            $raw.emit($packet.data);
-        }
-    }
-}
-my $wire = Supplier.new;
-my @bodies;
-transformer($wire.Supply).tap(-> $b { @bodies.push($b) });
-$wire.emit(Msg.new(data => Buf.new(0x61, 0x62)));
-$wire.emit(Msg.new(data => Buf.new(0x63, 0x64)));
-my @got;
-@bodies[0].tap(-> $v { @got.push($v.decode('ascii')) });
-$wire.emit(Msg.new(data => Buf.new(0x65, 0x66)));
-say @got.raku;      # raku: ["ef"]   mutsu: []
-```
-
-The single-level version (a `supply` whose `whenever` calls a `sub` declared
-after it) is clean in both, so the nesting is what breaks it: an inner supply
-created inside an outer supply's `whenever` body loses the values later pushed
-into its source.
+The step-by-step narrowing from this failure down to the nested-`sub` emit leak
+— including the four-variant table that isolates the trigger — lives in
+`todo/deep/nested-sub-emit-leaks-into-the-outer-supply.md`.
 
 ## Note
 
