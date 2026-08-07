@@ -175,6 +175,7 @@ impl Interpreter {
                     is_submethod,
                     return_type,
                     is_default_candidate,
+                    deprecated_message,
                     ..
                 } => {
                     let resolved_method_name = if let Some(expr) = name_expr {
@@ -241,7 +242,7 @@ impl Interpreter {
                         compiled_fns: None,
                         delegation: None,
                         is_default: *is_default_candidate,
-                        deprecated_message: None,
+                        deprecated_message: deprecated_message.clone(),
                         is_submethod: *is_submethod,
                         captured_env: None,
                     };

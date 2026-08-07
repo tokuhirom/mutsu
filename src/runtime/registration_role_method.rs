@@ -30,7 +30,7 @@ impl Interpreter {
             our_variable_form: _,
             return_type,
             is_default_candidate,
-            deprecated_message: _,
+            deprecated_message,
             handles: method_handles,
             custom_traits: _,
             is_export: _,
@@ -218,7 +218,7 @@ impl Interpreter {
             compiled_fns: None,
             delegation: None,
             is_default: *is_default_candidate,
-            deprecated_message: None,
+            deprecated_message: deprecated_message.clone(),
             is_submethod: *is_submethod,
             captured_env: None,
         };
