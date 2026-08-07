@@ -27,6 +27,13 @@ pub(super) struct ClassBodyCx<'a> {
     /// attributes (ADR-0019 D2c), keyed by attribute name; see
     /// `class_body_has_decl`.
     pub(super) is_default_chunks: &'a [(Symbol, crate::opcode::DeclTraitArg)],
+    /// Precompiled runtime-resolved-name chunk for each top-level `method`/
+    /// `submethod` declaration in the body (ADR-0019 D3-1), read by position
+    /// via `method_name_chunk_idx`; see `class_body_method_decl`.
+    pub(super) method_name_chunks: &'a [Option<crate::opcode::CompiledDeclExpr>],
+    /// Cursor into `method_name_chunks`, advanced by one on every method
+    /// statement `class_body_method_decl` processes.
+    pub(super) method_name_chunk_idx: usize,
 }
 
 impl ClassBodyCx<'_> {
@@ -85,6 +92,7 @@ impl Interpreter {
         class_lang_rev: &str,
         own_attribute_names: &[Symbol],
         is_default_chunks: &[(Symbol, crate::opcode::DeclTraitArg)],
+        method_name_chunks: &[Option<crate::opcode::CompiledDeclExpr>],
     ) -> Result<ClassDef, RuntimeError> {
         let saved_package = self.current_package();
         let saved_env = self.env.clone();
@@ -127,6 +135,8 @@ impl Interpreter {
             class_def,
             class_own_attrs,
             is_default_chunks,
+            method_name_chunks,
+            method_name_chunk_idx: 0,
         };
         let saved_functions_keys: HashSet<String> = self
             .registry()

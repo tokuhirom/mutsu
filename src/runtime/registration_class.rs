@@ -206,6 +206,12 @@ pub(crate) struct ClassDeclModifiers<'a> {
     /// registration paths with no compiled plan available (role bodies,
     /// `augment class`) — those keep evaluating the raw AST expression.
     pub(crate) attr_is_default_chunks: &'a [(Symbol, crate::opcode::DeclTraitArg)],
+    /// Precompiled runtime-resolved-name chunk for each top-level `method`/
+    /// `submethod` declaration in the body (ADR-0019 D3-1), read by position
+    /// in `class_body_method_decl` via `ClassBodyCx`. Empty for registration
+    /// paths with no compiled plan available (`augment class`, and the
+    /// role-pun/mixin synthesis paths that call this with an empty body).
+    pub(crate) method_name_chunks: &'a [Option<crate::opcode::CompiledDeclExpr>],
 }
 
 pub(super) fn parse_role_type_args(input: &str) -> Vec<String> {

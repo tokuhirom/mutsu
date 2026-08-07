@@ -22,6 +22,13 @@ pub(super) struct RoleDeclCx<'a> {
     pub(super) body_used_modules: HashSet<String>,
     /// Types declared inside the role body itself (pre-scan pass).
     pub(super) body_declared_types: HashSet<String>,
+    /// Precompiled runtime-resolved-name chunk for each top-level `method`/
+    /// `submethod` declaration in the body (ADR-0019 D3-1), read by position
+    /// via `method_name_chunk_idx`; see `role_body_method_decl`.
+    pub(super) method_name_chunks: &'a [Option<crate::opcode::CompiledDeclExpr>],
+    /// Cursor into `method_name_chunks`, advanced by one on every method
+    /// statement `role_body_method_decl` processes.
+    pub(super) method_name_chunk_idx: usize,
 }
 
 impl RoleDeclCx<'_> {

@@ -743,6 +743,7 @@ impl Interpreter {
             trusts: &[],
             own_attribute_names: &[],
             attr_is_default_chunks: &[],
+            method_name_chunks: &[],
         };
         self.register_class_decl(&pun_name, &parents, modifiers, &[])?;
         self.store_language_revision_from_version(&pun_name, &language_version);
