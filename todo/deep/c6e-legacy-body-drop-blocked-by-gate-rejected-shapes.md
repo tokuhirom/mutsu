@@ -343,3 +343,105 @@ sigilless / 2,659 `start`-body / 14 sub-signature / 0 trait). The
 Related: `todo/deep/c6d-interpreter-body-sites-are-mostly-token-bodies.md`
 (the site inventory), `news/2026-08/fallback-def-arm-runs-compiled-body.md`
 (the C6d-5 gate).
+
+## C6e-3c re-audit (2026-08-07): the field-drop A/B found two more real keep-classes
+
+The "field-drop blocker is now fully resolved" conclusion above was measured
+with an env-gated instrument that only forced the *outer* `plan_fully_compiled`
+check (`compiled_routine_keys.len() == 1 + signature_alternates.len()`), not
+the *whole* body-selection predicate. Re-running the same experiment but
+forcing the literal end state of deleting the field — i.e. `body` is
+unconditionally empty regardless of `plan_fully_compiled`/`primary_compiled`
+(`vm_register_sub_ops.rs::exec_register_sub_op`) — surfaces two more failures
+across the full `t/` suite (27,755 tests) and full `make roast`
+(218,774 tests, whitelist only). This is the correct experiment for "what
+happens if `legacy_body` is deleted", since after deletion there is no
+fallback left to select between; both classes below currently have
+`primary_compiled.is_none()` at registration time, so the real gate — not the
+narrower one from the prior audit — is what's keeping them alive.
+
+**Class 1 — runtime-resolved sub/method names (`sub ::($n) {...}`) — FIXED
+this session.** `src/compiler/stmt.rs`'s `Stmt::SubDecl` arm had an explicit
+early return: `if name_expr.is_some() { return; }` (comment: "Runtime-resolved
+sub names cannot be keyed reliably in compiled_fns"), skipping bytecode
+compilation entirely for a computed-name declaration, so
+`compiled_routine_keys` stayed empty and `plan_fully_compiled` was `false` by
+construction — not a registration-time table mismatch, but the compiler
+simply never producing bytecode for this shape. Investigation showed the
+premise was wrong: the compiled-routine lookup key
+(`format!("{pkg}::{name}/{arity}#{fingerprint}")`) is a purely internal
+symbol, unrelated to the runtime-resolved name the routine eventually
+registers under (`resolved_name`, computed separately via `name_chunk` at
+`RegisterDecl` time) — so it "keys reliably" just fine even when `name` is
+only the parser's placeholder text (the bareword/literal written inside
+`::(...)`, e.g. `"sname"` for `sub ::(sname) {...}`, or the literal
+`__INDIRECT_DECL_NAME__` for a non-literal/non-bareword expression). Deleting
+the early return and letting the body compile like any other sub fixed
+`t/indirect-declarator-names.t` test 2 (`sub ::(name) declares a callable
+sub`) under the forced instrument, with zero regressions across the full `t/`
+suite in both normal and forced modes. Only the `Stmt::SubDecl` arm was
+touched; the `Stmt::MethodDecl` arm (~line 3291, a different, likely
+rarely-hit code path lowering a package-level `method` decl into the same
+plan shape) has an analogous `if name_expr.is_none() { ... compile ... }`
+gate that was NOT touched — nothing in `t/` or the roast whitelist exercised
+it under the forced instrument, so it is unaudited, not confirmed-safe.
+
+**Class 2 — a plan-derived def declared inside a bare block/closure, invoked
+through a call path whose executing `compiled_fns` table isn't the def's own
+— NOT fixed, root cause identified.** Repro: `roast/S12-subset/subtypes.t`
+(`sub pos-match { $wanted = $^got; True }` declared inside a block passed as
+`&tests` to `Test::Util`'s `group-of`, which itself calls `tests()` from
+*within its own compiled code* — `group-of` is `is export is test-assertion`,
+compiled as part of the `Test::Util` module's own compilation unit). Even
+WITHOUT forcing, instrumented logging showed `primary_compiled.is_none()` at
+this def's `RegisterSub` execution (`plan_fully_compiled=true,
+compiled_routine_keys.len()=1`, but the key does not resolve in the
+`compiled_fns` table passed to this opcode) — meaning `pos-match` is *already*
+running via the interpreted `legacy_body` fallback today, on `main`, without
+any instrument. The field-drop A/B just makes that latent gap load-bearing.
+
+Hypothesis (not yet confirmed by instrumentation, since this needs tracing
+through the block/closure call path rather than the registration op): a bare
+block `{ ... }` (as opposed to a named routine/method) is compiled inline —
+`compile_sub_body_with_deprecation`'s freshly-inserted `CompiledFunction` for
+a *nested* `sub` like `pos-match` lands in the *enclosing* compiler's
+`compiled_functions` table (ultimately the top-level test file's pooled
+`compiled_fns`), not in any table the block's own `SubData` carries. The
+prior C6e-3c campaign gave `CompiledFunction` and `MethodDef` their own
+`compiled_fns: Option<Arc<CompiledFns>>` carrier (the #5982 fix, later
+generalized to ~17 more `call_compiled_method`-shaped sites, then to
+`call_shared_state_body`) specifically so a *routine's* nested subs resolve
+correctly when called through a foreign compiled_fns context (e.g. an
+imported module). `SubData` (raw closures/blocks, as opposed to
+`CompiledFunction`) was explicitly scoped OUT of that carrier work — see the
+"C6e-3c progress" section above: "a raw closure's `compiled_code` (`SubData`
+carries no equivalent field — closures aren't in C6e-3c's scope, since a
+plan-derived *def* never routes through `compiled_code`)". This repro shows
+that scoping decision was too narrow: even though `pos-match` itself IS a
+plan-derived def (not a closure), its `RegisterSub` opcode executes as part
+of the *block's* bytecode, so it inherits whatever `compiled_fns` table the
+block's own execution context was given — and when the block is invoked
+through `group-of` (cross-compilation-unit call), that table is apparently
+not the one `pos-match`'s `CompiledFunction` was actually inserted into.
+
+Fixing this needs tracing the call path that invokes a `&tests`-style
+captured block value from within a *different* module's compiled code (likely
+`call_sub_value` / whatever closure-invocation path `group-of`'s `tests()` bare
+call resolves to) and checking what `compiled_fns` argument reaches the
+block's own bytecode execution loop — the same "which table gets threaded
+through" question C6e-3c already solved three times for `CompiledFunction`
+call sites (`MethodDef.compiled_fns`, the ~17-site carrier audit,
+`call_shared_state_body`), but for `SubData`/block execution instead. This is
+a `SubData`-needs-its-own-compiled_fns-carrier feature, structurally similar
+in shape to the earlier fixes but touching different call sites (block/closure
+invocation, not routine/method invocation) — a fresh, scoped investigation,
+not a copy-paste of the earlier fix.
+
+**Conclusion: `CompiledSubDeclPlan::legacy_body` is NOT droppable yet.**
+Class 1 is fixed (2026-08-07). Class 2 is real and load-bearing today (not
+just under the forced instrument) — `pos-match` already runs interpreted on
+`main`. The next session resuming this thread should re-run the full-suite
+forced-instrument A/B (`vm_register_sub_ops.rs::exec_register_sub_op`, OR the
+literal body-selection predicate, not just the outer `plan_fully_compiled`
+check) after fixing Class 2, to check whether any further classes remain
+before the field can actually be deleted.

@@ -297,7 +297,19 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
     (`news/2026-08/safe-class-empty-body-default.md`); C6e-3c drops the field
     itself once the load-bearing classes — no resolvable plan bytecode, rw/raw
     scalars' interpreter carrier, lvalue routines, NativeCall — are unblocked.
-    Measurements and per-shape notes:
+    A 2026-08-07 re-audit (forcing the literal end state — body always empty,
+    not just the `plan_fully_compiled` half of the predicate — across the full
+    `t/` suite and full `make roast`) found the field is still NOT droppable:
+    runtime-resolved sub/method names (`sub ::($n) {...}`) were never
+    OTF-compiled at all (fixed the same day — the compiled-routine lookup key
+    is an internal symbol independent of the eventual runtime name, so it
+    compiles safely), and a plan-derived def declared inside a bare
+    block/closure invoked through a foreign compiled_fns context (e.g. a
+    module's own exported sub calling a captured block argument) loses its
+    compiled routine the same way `MethodDef`/`CompiledFunction` did before
+    their own carrier fixes — but `SubData` (blocks/closures) was explicitly
+    scoped out of that carrier work and still has no equivalent. Measurements
+    and per-shape notes, including this re-audit:
     `todo/deep/c6e-legacy-body-drop-blocked-by-gate-rejected-shapes.md`.
 - [ ] **C7 — Remove the sub-registration AST adapter.** Delete dead sub-shaped walker branches and
   prove the routine registry never compiles a migrated declaration on demand.
