@@ -115,9 +115,12 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 20/53 slices merged (C6 and C7 complete, 2026-08-07). Current box: C8 —
-migrate proto declarations off `stmt_pool`. C7 removed the last sub-shaped AST-registration
-adapter: `preregister_top_level_subs` now installs a forward-declared sub through
+**Current progress: 21/53 slices merged (C6, C7, and C8 complete, 2026-08-07). Phase C is now
+fully checked; the next open box is D1 (class structural operations, Phase D). C8 migrated
+`RegisterProtoSub`/`RegisterProtoToken` onto `RegisterDecl` and made a non-trivial proto body
+compile its `{*}`-rewritten dispatch once, at declaration time, instead of on every call; see
+`news/2026-08/c8-proto-declarations-compiled-plans.md`. C7 removed the last sub-shaped
+AST-registration adapter: `preregister_top_level_subs` now installs a forward-declared sub through
 `register_compiled_sub_decl` with an eagerly OTF-compiled routine instead of leaving `compiled`
 unset for the first call to fill in; see
 `news/2026-08/c7-forward-declaration-preregistration-compiles-eagerly.md`. C6's last sub-box,
@@ -324,12 +327,20 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
   `register_compiled_sub_decl` with an eagerly OTF-compiled routine, which let three functions with
   no other caller — `register_sub_decl`, `register_sub_decl_fp`, `register_sub_decl_as_global` — be
   deleted outright. `news/2026-08/c7-forward-declaration-preregistration-compiles-eagerly.md`.
-- [ ] **C8 — Proto declarations register from typed plans.** Migrate `RegisterProtoSub` and
-  `RegisterProtoToken` off `stmt_pool`, and compile the `{*}` dispatch instead of rewriting the
-  proto's AST body per call (`rewrite_proto_dispatch_stmts` plus the `proto_def.body = rewritten`
-  reassignment in `vm_call_func_ops.rs`). Independent of C6/C7; the slice exists because
-  Decision §1's "only general declaration-registration opcode" end state is unreachable while
-  these two opcodes still index the statement pool.
+- [x] **C8 — Proto declarations register from typed plans.** Migrated `RegisterProtoSub` and
+  `RegisterProtoToken` off `stmt_pool` onto `RegisterDecl` with two new `CompiledDeclPlanRef`
+  variants: `Proto(u32)` indexing a `CompiledProtoDeclPlan` pool, and `ProtoToken(Symbol)` carrying
+  its name inline (a `proto token`/`proto rule` LTM marker has no signature, body, or trait to
+  lower). A non-trivial proto body's `{*}` is rewritten to `__PROTO_DISPATCH__()` and compiled once
+  at declaration time (through the same `compile_sub_body` ordinary subs use); the VM's
+  `vm_try_run_nontrivial_proto_body` now runs that bytecode directly instead of rewriting and
+  OTF-compiling the AST on every call, keeping the old rewrite-and-OTF-compile path only as a
+  defensive fallback for a hand-built `FunctionDef` that never went through plan registration.
+  `CompiledProtoDeclPlan` still carries `legacy_body: Vec<Stmt>` — following
+  `CompiledRoleDeclPlan`'s own precedent — because the pure-interpreter operator-fallback path
+  (`call_proto_function`) and the triviality check
+  (`vm_resolve_trivial_proto_candidate`) still need the raw body; dropping it is a later box.
+  `news/2026-08/c8-proto-declarations-compiled-plans.md`.
 
 ### Phase D — class and role plans become bytecode-native
 

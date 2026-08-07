@@ -43,6 +43,13 @@ impl Interpreter {
                     Err(error) => Err(error),
                 }
             }
+            Some(crate::opcode::CompiledDeclPlanRef::Proto(plan_idx)) => {
+                self.exec_register_proto_sub_op(code, plan_idx, compiled_fns)
+            }
+            Some(crate::opcode::CompiledDeclPlanRef::ProtoToken(name)) => {
+                self.register_proto_token_decl(&name.resolve());
+                Ok(())
+            }
             None => Err(RuntimeError::new("RegisterDecl plan index out of bounds")),
         }
     }

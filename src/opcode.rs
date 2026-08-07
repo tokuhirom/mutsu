@@ -1586,8 +1586,6 @@ pub(crate) enum OpCode {
     ReturnFromNonRoutine(bool),
     RegisterDecl(u32),
     RegisterToken(u32),
-    RegisterProtoSub(u32),
-    RegisterProtoToken(u32),
     RegisterEnum(u32),
     AugmentClass(u32),
     RegisterSubset(u32),
@@ -2235,11 +2233,47 @@ pub(crate) struct CompiledRoleDeclPlan {
     pub(crate) custom_traits: Vec<(String, Option<DeclTraitArg>)>,
 }
 
+/// A package-level `proto sub`/`proto rule`/`proto token` declaration lowered
+/// at compile time (ADR-0019 C8). The `{*}` placeholder in a non-trivial body
+/// is rewritten to a `__PROTO_DISPATCH__()` call and compiled once, here,
+/// instead of being rewritten and OTF-compiled on every call.
+#[derive(Debug, Clone)]
+pub(crate) struct CompiledProtoDeclPlan {
+    pub(crate) name: Symbol,
+    pub(crate) params: Vec<String>,
+    pub(crate) param_defs: Vec<ParamDef>,
+    pub(crate) is_export: bool,
+    pub(crate) custom_traits: Vec<String>,
+    /// True for `proto method`/`proto submethod`: such a proto never
+    /// registers at the package level (its `{*}` dispatches over the type's
+    /// method table, Phase D territory), so `compiled_routine_key` is always
+    /// `None` for it.
+    pub(crate) is_method: bool,
+    pub(crate) is_our: bool,
+    /// Compatibility payload, mirroring `CompiledRoleDeclPlan::legacy_body`:
+    /// a registered `FunctionDef` still needs the raw (un-rewritten) body for
+    /// the pure-interpreter fallback (`call_proto_function`, reached from the
+    /// user-operator dispatch fallback) and for judging triviality
+    /// (`vm_resolve_trivial_proto_candidate`). Dropping it is a later box,
+    /// not this one.
+    pub(crate) legacy_body: Vec<Stmt>,
+    /// Stable key of the bytecode compiled for the `{*}`-rewritten body.
+    /// `None` for a trivial proto (an empty body, or a body that is just a
+    /// bare `{*}`), which dispatches implicitly and has no candidate body of
+    /// its own to compile, and for a method proto (`is_method`).
+    pub(crate) compiled_routine_key: Option<Symbol>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CompiledDeclPlanRef {
     Sub(u32),
     Class(u32),
     Role(u32),
+    Proto(u32),
+    /// A `proto token`/`proto rule` LTM marker (`Stmt::ProtoToken`), which
+    /// carries only a name — no signature, body, or traits — so the name is
+    /// stored inline rather than indexing a pool of its own.
+    ProtoToken(Symbol),
 }
 
 #[derive(Debug, Clone)]
@@ -2267,6 +2301,7 @@ pub(crate) struct CompiledCode {
     pub(crate) sub_decl_plans: Vec<CompiledSubDeclPlan>,
     pub(crate) class_decl_plans: Vec<CompiledClassDeclPlan>,
     pub(crate) role_decl_plans: Vec<CompiledRoleDeclPlan>,
+    pub(crate) proto_decl_plans: Vec<CompiledProtoDeclPlan>,
     /// The single declaration-registration operand pool. `RegisterDecl(i)` selects one tagged
     /// typed plan here; declaration-specific metadata stays out of the hot opcode enum.
     pub(crate) decl_plans: Vec<CompiledDeclPlanRef>,
@@ -2872,6 +2907,13 @@ impl CompiledCode {
                 }
             }
         }
+        for plan in &mut self.proto_decl_plans {
+            if let Some(key) = &mut plan.compiled_routine_key
+                && let Some(remapped) = remap.get(key)
+            {
+                *key = *remapped;
+            }
+        }
         for nested in &mut self.closure_compiled_codes {
             Arc::make_mut(nested).remap_sub_decl_compiled_routine_keys(remap);
         }
@@ -2980,6 +3022,7 @@ impl CompiledCode {
             sub_decl_plans: Vec::new(),
             class_decl_plans: Vec::new(),
             role_decl_plans: Vec::new(),
+            proto_decl_plans: Vec::new(),
             decl_plans: Vec::new(),
             locals: Vec::new(),
             locals_sym: Vec::new(),
@@ -5277,6 +5320,63 @@ impl CompiledCode {
         let idx = self.decl_plans.len() as u32;
         self.decl_plans.push(CompiledDeclPlanRef::Sub(plan_idx));
         idx
+    }
+
+    /// Record a `proto sub`/`proto method` declaration plan (ADR-0019 C8).
+    /// `compiled_routine_key` starts `None`; the caller compiles the
+    /// `{*}`-rewritten body separately (mirroring `add_sub_decl_plan` +
+    /// `set_sub_decl_compiled_routine_keys`) and attaches it with
+    /// [`Self::set_proto_decl_compiled_routine_key`].
+    pub(crate) fn add_proto_decl_plan(&mut self, stmt: &Stmt) -> u32 {
+        let Stmt::ProtoDecl {
+            name,
+            params,
+            param_defs,
+            body,
+            is_export,
+            custom_traits,
+            is_method,
+            is_our,
+        } = stmt
+        else {
+            panic!("add_proto_decl_plan expects ProtoDecl");
+        };
+        let plan_idx = self.proto_decl_plans.len() as u32;
+        self.proto_decl_plans.push(CompiledProtoDeclPlan {
+            name: *name,
+            params: params.clone(),
+            param_defs: param_defs.clone(),
+            is_export: *is_export,
+            custom_traits: custom_traits.clone(),
+            is_method: *is_method,
+            is_our: *is_our,
+            legacy_body: body.clone(),
+            compiled_routine_key: None,
+        });
+        let idx = self.decl_plans.len() as u32;
+        self.decl_plans.push(CompiledDeclPlanRef::Proto(plan_idx));
+        idx
+    }
+
+    /// Record a `proto token`/`proto rule` LTM marker (ADR-0019 C8). Unlike
+    /// `add_proto_decl_plan`, there is no signature, body, or trait to lower —
+    /// `Stmt::ProtoToken` carries only a name.
+    pub(crate) fn add_proto_token_decl_plan(&mut self, name: Symbol) -> u32 {
+        let idx = self.decl_plans.len() as u32;
+        self.decl_plans.push(CompiledDeclPlanRef::ProtoToken(name));
+        idx
+    }
+
+    pub(crate) fn set_proto_decl_compiled_routine_key(
+        &mut self,
+        decl_idx: u32,
+        key: Option<Symbol>,
+    ) {
+        let Some(CompiledDeclPlanRef::Proto(plan_idx)) = self.decl_plans.get(decl_idx as usize)
+        else {
+            panic!("declaration plan is not a proto");
+        };
+        self.proto_decl_plans[*plan_idx as usize].compiled_routine_key = key;
     }
 
     /// The declaration-site fingerprint recorded for a sub plan, absent when the

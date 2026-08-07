@@ -1638,35 +1638,47 @@ impl Interpreter {
         if !proto.param_defs.is_empty() && !self.method_args_match(&args, &proto.param_defs) {
             return None;
         }
-        // Rewrite `{*}` -> `__PROTO_DISPATCH__()` and require the resulting body +
-        // the proto's own signature to be OTF-compilable. `state` in the proto body
-        // (the caching-proto pattern `proto cached($a) { state %cache; ... {*} }`) is
-        // NOT excluded for a single-signature proto: `otf_compile_function_def`
-        // caches the compiled proto body by fingerprint+package, so its `state` key
-        // (which embeds the compiled opcode position) is stable across calls, and the
-        // proto's `/n`-suffixed package keeps it distinct from any candidate's own
-        // `state`. The persisted state cell therefore survives call-to-call exactly
-        // as the interpreter's does. A proto declared with signature *alternates*
-        // shares one `state` cell across them; registration hands every alternate
-        // the plan's `state_group`-scoped bytecode, so that sharing survives here
-        // too (`t/multi-signature-alternates.t`).
-        let rewritten = crate::runtime::Interpreter::rewrite_proto_dispatch_stmts(&proto.body);
-        let mut proto_def = proto.clone();
-        proto_def.body = rewritten;
-        // The clone carried the ORIGINAL body's memoized identity; the rewrite
-        // gave this def a different body, so drop it.
-        proto_def.invalidate_body_fingerprint();
-        if !Self::def_is_otf_compilable(&proto_def) {
-            return None;
-        }
-        // Compile the proto body and run it like a routine. `{*}` redispatch reads
-        // the args from `proto_dispatch_stack` (the ORIGINAL proto args, matching
-        // the interpreter's `call_proto_function`), so push that before the body
-        // runs and pop after. No multi-dispatch frame is pushed for the proto body
-        // itself — it is the dispatcher, not a candidate; the candidate's own
-        // `nextsame` frame is set up by the proto-dispatch handler when `{*}` runs.
-        let cf = self.otf_compile_function_def(&proto_def);
-        let pkg = proto_def.package.resolve();
+        // ADR-0019 C8: a plan-derived proto already carries the bytecode for
+        // its `{*}`-rewritten body, compiled once at declaration time — run
+        // it directly instead of rewriting and OTF-compiling the AST on
+        // every call. `state` in the proto body (the caching-proto pattern
+        // `proto cached($a) { state %cache; ... {*} }`) is safe here: the
+        // compiled routine is one fixed bytecode object shared by every call
+        // (not re-derived per call), so its `state` cell's identity — keyed
+        // by compiled opcode position — is as stable as any ordinary
+        // routine's. A proto declared with signature *alternates* shares one
+        // `state` cell across them the same way an ordinary multi does
+        // (`t/multi-signature-alternates.t`).
+        let (cf, pkg) = if let Some(compiled) = proto.compiled.clone() {
+            (compiled, proto.package.resolve())
+        } else {
+            // Fallback for a proto with no plan-compiled body — defensive; every
+            // non-trivial package proto sub is plan-derived once C8 is complete,
+            // but this keeps the OTF-compile path available for any def built
+            // outside declaration-plan registration (e.g. a hand-built
+            // `FunctionDef`). Rewrite `{*}` -> `__PROTO_DISPATCH__()` and
+            // require the resulting body + the proto's own signature to be
+            // OTF-compilable.
+            let rewritten = crate::runtime::Interpreter::rewrite_proto_dispatch_stmts(&proto.body);
+            let mut proto_def = proto.clone();
+            proto_def.body = rewritten;
+            // The clone carried the ORIGINAL body's memoized identity; the rewrite
+            // gave this def a different body, so drop it.
+            proto_def.invalidate_body_fingerprint();
+            if !Self::def_is_otf_compilable(&proto_def) {
+                return None;
+            }
+            let cf = self.otf_compile_function_def(&proto_def);
+            let pkg = proto_def.package.resolve();
+            (cf, pkg)
+        };
+        // `{*}` redispatch reads the args from `proto_dispatch_stack` (the
+        // ORIGINAL proto args, matching the interpreter's
+        // `call_proto_function`), so push that before the body runs and pop
+        // after. No multi-dispatch frame is pushed for the proto body itself
+        // — it is the dispatcher, not a candidate; the candidate's own
+        // `nextsame` frame is set up by the proto-dispatch handler when `{*}`
+        // runs.
         self.push_proto_dispatch_frame(name.to_string(), args.clone());
         // Prefer the proto body's own nested-sub table over the caller's
         // (ADR-0019 C6e-3c, mirrors `call_shared_state_body`): a proto body

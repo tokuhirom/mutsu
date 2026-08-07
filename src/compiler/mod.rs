@@ -121,6 +121,60 @@ mod declaration_plan_tests {
                 )
         )));
     }
+
+    /// ADR-0019 C8: a non-trivial proto body compiles its `{*}`-rewritten
+    /// dispatch once, at declaration time, instead of leaving the VM to
+    /// rewrite and OTF-compile the AST on every call.
+    #[test]
+    fn nontrivial_proto_declarations_compile_their_dispatch_body() {
+        let (stmts, _) = crate::parse_dispatch::parse_source(
+            "proto sub f($x) { say 'before'; {*} }; multi sub f(Int $x) { $x }; f(1)",
+        )
+        .expect("source parses");
+        let (code, compiled_fns) = Compiler::new().compile(&stmts);
+
+        assert!(!code.proto_decl_plans.is_empty());
+        let plan = code
+            .proto_decl_plans
+            .iter()
+            .find(|plan| plan.name.as_str() == "f")
+            .expect("proto f declaration plan");
+        let key = plan
+            .compiled_routine_key
+            .expect("non-trivial proto body must compile a routine");
+        assert!(compiled_fns.contains_key(&key));
+        assert!(
+            code.stmt_pool
+                .iter()
+                .all(|stmt| !matches!(stmt, crate::ast::Stmt::ProtoDecl { .. })),
+            "compiled proto declarations must not remain executable generic statements"
+        );
+        assert!(code.ops.iter().any(|op| matches!(
+            op,
+            crate::opcode::OpCode::RegisterDecl(idx)
+                if matches!(
+                    code.decl_plans.get(*idx as usize),
+                    Some(crate::opcode::CompiledDeclPlanRef::Proto(_))
+                )
+        )));
+    }
+
+    /// A trivial proto (`{*}` only) dispatches implicitly and has no
+    /// candidate body of its own to compile.
+    #[test]
+    fn trivial_proto_declarations_compile_no_dispatch_body() {
+        let (stmts, _) =
+            crate::parse_dispatch::parse_source("proto sub g($x) {*}; multi sub g(Int $x) { $x }")
+                .expect("source parses");
+        let (code, _) = Compiler::new().compile(&stmts);
+
+        let plan = code
+            .proto_decl_plans
+            .iter()
+            .find(|plan| plan.name.as_str() == "g")
+            .expect("proto g declaration plan");
+        assert!(plan.compiled_routine_key.is_none());
+    }
 }
 mod const_fold;
 mod decl_plan;
