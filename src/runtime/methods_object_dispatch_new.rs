@@ -1820,8 +1820,9 @@ impl Interpreter {
                 // convert user-provided values to shaped arrays preserving shape.
                 for attr in &class_attrs_info {
                     let (attr_name, default) = (&attr.name, &attr.default);
+                    let default_ast = default.as_ref().map(|arg| arg.as_expr());
                     if attr.sigil == '@'
-                        && let Some(dims) = Self::extract_shape_from_default(default.as_ref())
+                        && let Some(dims) = Self::extract_shape_from_default(default_ast.as_ref())
                         && let Some(val) = attrs.get(attr_name)
                         && !matches!(val.view(), ValueView::Array(_, ArrayKind::Shaped))
                     {
@@ -1926,11 +1927,11 @@ impl Interpreter {
                     let val = if let Some(build_override) = build_override {
                         let val = self.call_sub_value(build_override, Vec::new(), false)?;
                         Self::coerce_attr_value_by_sigil(val, sigil)
-                    } else if let Some(expr) = default {
+                    } else if let Some(arg) = default {
                         // Fast path: simple literal defaults (e.g. from native types
                         // like `has uint32 $.a` which generate `default: Int(0)`)
                         // don't need env manipulation or self-binding.
-                        if let Expr::Literal(ref lit_val) = expr {
+                        if let Some(lit_val) = arg.literal() {
                             Self::coerce_attr_value_by_sigil(lit_val.clone(), sigil)
                         } else {
                             // Before BUILD the evaluation context is a snapshot
@@ -1939,7 +1940,7 @@ impl Interpreter {
                             let val = self.eval_attr_default_expr(
                                 class_key,
                                 *class_name,
-                                &expr,
+                                &arg,
                                 &temp_self,
                                 &attrs,
                             )?;
@@ -2143,14 +2144,15 @@ impl Interpreter {
                             continue;
                         }
                         // Evaluate the default expression for this class's attribute
-                        let val = if let Some(Expr::Literal(ref lit_val)) = default {
+                        let val = if let Some(lit_val) = default.as_ref().and_then(|a| a.literal())
+                        {
                             // Fast path: simple literal defaults
                             Self::coerce_attr_value_by_sigil(lit_val.clone(), sigil)
-                        } else if let Some(expr) = default {
+                        } else if let Some(arg) = default {
                             let temp_self = Value::make_instance(*class_name, attrs.clone());
                             let old_self = self.env.get("self").cloned();
                             self.env.insert("self".to_string(), temp_self);
-                            let result = self.eval_block_value(&[Stmt::Expr(expr)]);
+                            let result = self.eval_decl_trait_arg(&arg);
                             if let Some(old) = old_self {
                                 self.env.insert("self".to_string(), old);
                             } else {

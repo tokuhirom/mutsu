@@ -444,6 +444,34 @@ walkers wholesale is not possible before then.
     scope) via a new `DeclTraitArg::as_expr()` escape valve, since no compiled plan exists
     for that path yet. Remaining: `default`/`where_constraint` type-swap plus the ~15 eval
     sites (D2c-2), and the three role registry tables (D2c-3).
+    **D2c-2 landed 2026-08-07**: `ClassAttributeDef.default`/`.where_constraint`
+    (`src/runtime/mod.rs`) are now `Option<DeclTraitArg>` instead of `Option<Expr>`, and
+    every one of the ~15 eval sites the research pass found (`attr_build_defaults.rs`,
+    `methods_object_default_ctor.rs`, `methods_object_dispatch_new.rs` ×2,
+    `methods_object_attr_constraints.rs` (`check_attribute_where_constraint`,
+    `construct_proxy_subclass`), `methods_dispatch_new.rs`'s `dispatch_bless`,
+    `types/roles.rs`'s mixin path, `types/role_mixin_class.rs::seed_mixin_role_attributes`,
+    `methods_classhow_attribute.rs`'s `.^attributes` introspection, and
+    `registration_class_augment.rs`'s CUnion raw-bytes constructor) now dispatches through
+    `Interpreter::eval_decl_trait_arg`/`.literal()` instead of its own ad hoc
+    `Expr::Literal` pattern match plus a bespoke `eval_block_value(&[Stmt::Expr(...)])`
+    call. `DeferredAttrDefault.default` (`attr_build_defaults.rs`) and
+    `eval_attr_default_expr` moved in lockstep since a deferred default is a straight
+    move of the same field. Deliberately scoped down from the ADR text's aspiration,
+    per the research pass's own risk note: this is a **pure mechanism unification, not
+    a behavior change or a chunk-precompilation** — every site still constructs its
+    `DeclTraitArg` as `Literal`/`Ast` (never `Compiled`), so `CompiledAttrDecl.default`/
+    `.where_constraint` stay `Option<Expr>` and the near-duplicated env-setup blocks
+    (shapes A/B/C in the research doc) were intentionally left un-collapsed rather than
+    risk silently dropping one shape's binding (`methods_object_default_ctor.rs`'s
+    shape-B gate on `has_class_scoped_subs` in particular still needs the raku-behavior
+    verification the research pass flagged before it can be safely merged into shape A).
+    Verified via the full `t/` suite plus every roast `S12-attributes`/`S14-roles`
+    whitelisted file, all green with no output changes. Remaining for a later slice:
+    precompiling `default`/`where_constraint` chunks the way `is_default_chunks` already
+    does (the actual "child chunk" perf win — today's `Ast` variant still recompiles the
+    default expression's bytecode on every construction, same as before this slice), and
+    D2c-3 (the three role registry tables).
   - [ ] **D2d — Publish generated accessors through the canonical table.** Give `MethodEntry` an
     accessor arm populated from `ClassDef::attributes` in `sync_user_method_entries`, so
     `has_public_accessor`/`resolve_user_method_or_accessor` (`class_introspection.rs`) and the

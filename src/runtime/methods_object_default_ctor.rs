@@ -183,24 +183,26 @@ impl Interpreter {
             if attrs.contains_key(attr_sym) {
                 continue;
             }
-            match default_expr {
+            let default_literal = default_expr.as_ref().and_then(|arg| arg.literal());
+            match default_literal {
                 // Raku: assigning `Nil` resets a container to its declared
                 // type's default, so `has Str $.n = Nil` holds `Str` — exactly
                 // what the no-initializer form holds — not `Nil`.
-                Some(Expr::Literal(lit_val)) if lit_val.is_nil() => {
+                Some(lit_val) if lit_val.is_nil() => {
                     let seeded =
                         self.seed_attr_value(cn_resolved, attr_name, *sigil, type_constraints);
                     attrs.insert(attr_sym, seeded);
                 }
                 // Fast path: a literal default needs no evaluation or binding.
                 // The interpreter stores it without a type check, so we do too.
-                Some(Expr::Literal(lit_val)) => {
+                Some(lit_val) => {
                     attrs.insert(
                         attr_sym,
                         Self::coerce_attr_value_by_sigil(lit_val.clone(), *sigil),
                     );
                 }
-                Some(expr) => {
+                None if default_expr.is_some() => {
+                    let arg = default_expr.as_ref().unwrap();
                     // Bind `self` and the already-set attributes, switch to the
                     // class package for class-scoped sub lookups, evaluate, then
                     // restore everything — per the interpreter's per-default setup.
@@ -236,7 +238,7 @@ impl Interpreter {
                     // even though no method-class / package context is active here.
                     let saved_constructing = self.constructing_class.take();
                     self.constructing_class = Some(cn_resolved.to_string());
-                    let result = self.eval_block_value(&[crate::ast::Stmt::Expr(expr.clone())]);
+                    let result = self.eval_decl_trait_arg(arg);
                     self.constructing_class = saved_constructing;
                     self.set_current_package(saved_package);
                     for (key, old_val) in saved_attr_env {

@@ -239,18 +239,20 @@ impl Interpreter {
             "required".to_string(),
             Self::required_meta_value(is_required),
         );
-        if let Some(default_expr) = default {
+        if let Some(default_arg) = default {
             meta.insert("__mutsu_has_build".to_string(), Value::TRUE);
-            if let crate::ast::Expr::Literal(v) = default_expr {
+            if let Some(v) = default_arg.literal() {
                 meta.insert("build".to_string(), v.clone());
             } else {
-                // Wrap the default expression in a Sub closure so .build returns Code
+                // Wrap the default expression in a Sub closure so .build returns Code.
+                // `.as_expr()` never panics here: no caller precompiles a `Compiled`
+                // chunk into `ClassAttributeDef.default` yet (ADR-0019 D2c-2).
                 let sub_data = crate::value::SubData {
                     package: Symbol::intern("GLOBAL"),
                     name: Symbol::intern("<attribute-build>"),
                     params: Vec::new(),
                     param_defs: Vec::new(),
-                    body: vec![crate::ast::Stmt::Expr(default_expr.clone())],
+                    body: vec![crate::ast::Stmt::Expr(default_arg.as_expr())],
                     is_rw: false,
                     is_raw: false,
                     env: self.env().clone(),

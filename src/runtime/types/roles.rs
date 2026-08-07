@@ -462,8 +462,8 @@ impl Interpreter {
                 let sigil = &attr.sigil;
                 let value = if let Some(arg) = role_args.get(idx) {
                     arg.clone()
-                } else if let Some(default_expr) = default_expr {
-                    self.eval_block_value(&[Stmt::Expr(default_expr.clone())])?
+                } else if let Some(default_arg) = default_expr {
+                    self.eval_decl_trait_arg(default_arg)?
                 } else {
                     // Default value based on sigil: @ -> [], % -> {}, $ -> Nil
                     match sigil {

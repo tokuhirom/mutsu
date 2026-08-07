@@ -269,7 +269,7 @@ impl Interpreter {
                     continue;
                 }
                 let value = match default_expr {
-                    Some(expr) => self.eval_block_value(&[Stmt::Expr(expr.clone())])?,
+                    Some(arg) => self.eval_decl_trait_arg(arg)?,
                     None => match sigil {
                         '@' => Value::real_array(Vec::new()),
                         '%' => Value::hash_with_data(Value::hash_arc(HashMap::new())),
