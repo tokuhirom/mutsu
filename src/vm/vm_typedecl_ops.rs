@@ -348,6 +348,17 @@ impl Interpreter {
             // `Path` inside `unit class URI`'s own methods and attribute
             // defaults: `push_method_class`/`eval_attr_default_expr` already
             // anchor the lookup to the owning class unconditionally.
+            // `my class` keeps the OLD env-based alias instead: it is
+            // lexically scoped to its own declaring block, and the env write
+            // is what `register_lexical_class`'s scope-exit restoration
+            // (below) resets between re-executions of the enclosing block —
+            // `package_type_aliases` has no such per-scope lifetime, so two
+            // sibling subs each declaring `my class Shape` in the same module
+            // would have the second call's alias silently lost to the first
+            // (`entry().or_insert_with()` never overwrites), leaving the
+            // second sub's `Shape.new` resolving to the first sub's class
+            // (`t/module-sub-otf-interpreter-constructs.t` "same-named nested
+            // class (b)").
             if qualified_name.contains("::") && !parent_is_class {
                 let (parent, short) = qualified_name
                     .rsplit_once("::")
@@ -356,11 +367,17 @@ impl Interpreter {
                 // Do not shadow built-in types (e.g. `my class X::Roast::Channel`
                 // must not make the bare name `Channel` resolve to the user class).
                 if !short.is_empty() && short != qualified_name && !Self::is_builtin_type(&short) {
-                    self.package_type_aliases
-                        .entry(parent)
-                        .or_default()
-                        .entry(short)
-                        .or_insert_with(|| storage_name.clone());
+                    if *is_lexical {
+                        self.env_mut().entry_or_insert_with(short, || {
+                            Value::package(Symbol::intern(&storage_name))
+                        });
+                    } else {
+                        self.package_type_aliases
+                            .entry(parent)
+                            .or_default()
+                            .entry(short)
+                            .or_insert_with(|| storage_name.clone());
+                    }
                 }
             }
             // When `my class` is used, register the class name as lexically scoped
