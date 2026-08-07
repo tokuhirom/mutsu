@@ -638,6 +638,21 @@ walkers wholesale is not possible before then.
   than `_`-ignored destructure bindings. `augment_class`'s `MethodDecl` arm (D3-4) is the last of the
   three; only once it also builds from `CompiledMethodDecl::from_stmt` does the drift between all
   three become fixable at one shared site.
+  **D3-4 landed 2026-08-08** (augment walker, the last of the three): `augment_class`'s `MethodDecl`
+  arm also builds a `decl` and reads every field off it. `name_expr` is still evaluated from the raw
+  AST here (`self.eval_block_value(&[Stmt::Expr(expr.clone())])`), unlike the class/role walkers'
+  D3-1 chunk-cursor lookup — `augment class` has no compiled declaration plan at all
+  (`Stmt::AugmentClass` still indexes `stmt_pool`), so there is no `method_name_chunks` to read from.
+  This slice preserves, rather than fixes, every drift point the D3 scoping pass found:
+  `MethodDef.is_my` is still set from the raw `is_my` flag here (the class/role walkers use
+  `is_submethod`), duplicate-method detection is still not privacy-aware
+  (`all_from_role` only, no `is_private` comparison), and `is_lexical_only`/`is_our_only` gating,
+  `handles` forwarders, custom-trait/`is_export` handling, and BUILD/TWEAK `:$!attr` validation
+  remain absent from this walker — now visible as unused `CompiledMethodDecl` fields at this call
+  site rather than as absent destructure bindings, which is what makes the drift fixable at all: with
+  all three walkers sharing one typed constructor, D3-5 can compare and reconcile the still-open
+  fields directly instead of re-deriving each walker's field set from its own AST match arm the way
+  the original 2026-08-07 scoping pass had to.
 - [ ] **D4 — Compile class declaration-time expressions.** Cover computed names, traits, parent
   expressions, aliases, and deferred class bodies through re-entrant bytecode chunks. (Computed
   names and custom-trait arguments already landed with C5; parents, aliases, and deferred bodies

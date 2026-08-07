@@ -163,32 +163,26 @@ impl Interpreter {
             .collect();
         for stmt in flattened_body {
             match stmt {
-                Stmt::MethodDecl {
-                    name: method_name,
-                    name_expr,
-                    param_defs,
-                    body: method_body,
-                    multi,
-                    is_rw,
-                    is_private,
-                    is_my,
-                    is_submethod,
-                    return_type,
-                    is_default_candidate,
-                    deprecated_message,
-                    ..
-                } => {
-                    let resolved_method_name = if let Some(expr) = name_expr {
+                Stmt::MethodDecl { .. } => {
+                    // ADR-0019 D3-4: shared typed mirror of `Stmt::MethodDecl`
+                    // (see `CompiledMethodDecl`, D3-2/D3-3). Unlike the class
+                    // and role walkers, `augment_class` has no compiled
+                    // declaration plan (`Stmt::AugmentClass` still indexes
+                    // `stmt_pool`), so a computed `name_expr` is still
+                    // evaluated from the raw AST here rather than through a
+                    // precompiled `method_name_chunks` cursor.
+                    let decl = crate::opcode::CompiledMethodDecl::from_stmt(stmt);
+                    let resolved_method_name = if let Some(expr) = &decl.name_expr {
                         self.eval_block_value(&[Stmt::Expr(expr.clone())])?
                             .to_string_value()
                     } else {
-                        method_name.resolve()
+                        decl.name.resolve()
                     };
                     let mut effective_param_defs =
-                        Self::effective_method_param_defs(param_defs, false);
+                        Self::effective_method_param_defs(&decl.param_defs, false);
                     // Auto-detect @_ usage in methods without explicit signatures
-                    if param_defs.is_empty() {
-                        let (use_positional, _) = Self::auto_signature_uses(method_body);
+                    if decl.param_defs.is_empty() {
+                        let (use_positional, _) = Self::auto_signature_uses(&decl.body);
                         if use_positional && !effective_param_defs.iter().any(|pd| pd.name == "@_")
                         {
                             let insert_pos = effective_param_defs
@@ -230,24 +224,29 @@ impl Interpreter {
                         lexical_package: self.current_package(),
                         params: effective_params,
                         param_defs: effective_param_defs,
-                        body: std::sync::Arc::new(method_body.clone()),
-                        is_rw: *is_rw,
-                        is_private: *is_private,
-                        is_multi: *multi,
-                        is_my: *is_my,
+                        body: std::sync::Arc::new(decl.body.clone()),
+                        is_rw: decl.is_rw,
+                        is_private: decl.is_private,
+                        is_multi: decl.multi,
+                        // Unlike the class/role walkers (which store
+                        // `is_submethod` here for inheritance filtering),
+                        // this stores the raw `is_my` flag — a pre-existing
+                        // drift documented in the ADR-0019 D3 scoping pass,
+                        // not fixed by this slice.
+                        is_my: decl.is_my,
                         role_origin: None,
                         original_role: None,
-                        return_type: return_type.clone(),
+                        return_type: decl.return_type.clone(),
                         compiled_code: None,
                         compiled_fns: None,
                         delegation: None,
-                        is_default: *is_default_candidate,
-                        deprecated_message: deprecated_message.clone(),
-                        is_submethod: *is_submethod,
+                        is_default: decl.is_default_candidate,
+                        deprecated_message: decl.deprecated_message.clone(),
+                        is_submethod: decl.is_submethod,
                         captured_env: None,
                     };
                     if let Some(class_def) = self.registry_mut().classes.get_mut(name) {
-                        if *multi {
+                        if decl.multi {
                             class_def
                                 .methods
                                 .entry(resolved_method_name)
