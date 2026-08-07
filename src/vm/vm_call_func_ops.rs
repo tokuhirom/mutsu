@@ -1668,7 +1668,12 @@ impl Interpreter {
         let cf = self.otf_compile_function_def(&proto_def);
         let pkg = proto_def.package.resolve();
         self.push_proto_dispatch_frame(name.to_string(), args.clone());
-        let result = self.call_compiled_function_named(&cf, args, compiled_fns, &pkg, name);
+        // Prefer the proto body's own nested-sub table over the caller's
+        // (ADR-0019 C6e-3c, mirrors `call_shared_state_body`): a proto body
+        // that declares its own nested sub/multi/proto must resolve its own
+        // `RegisterDecl` keys, not the caller's unrelated table.
+        let fns = cf.compiled_fns.as_deref().unwrap_or(compiled_fns);
+        let result = self.call_compiled_function_named(&cf, args, fns, &pkg, name);
         self.pop_proto_dispatch_frame();
         Some(result)
     }
