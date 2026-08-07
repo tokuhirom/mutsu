@@ -751,6 +751,7 @@ impl Interpreter {
                         let complete_marker = Self::make_on_demand_complete_marker(
                             done_cb.clone(),
                             std::mem::take(&mut whenever_on_close),
+                            upstream_taps.clone(),
                         );
                         if body_done {
                             self.invoke_done_callback(complete_marker)?;
