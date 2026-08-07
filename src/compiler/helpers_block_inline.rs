@@ -54,6 +54,18 @@ impl Compiler {
                 }
                 true
             }
+            // `BEGIN` runs at compile time but is still an ordinary
+            // value-producing statement, so at the tail of a `given`/`when`
+            // block it is that block's value. Cro's
+            // `with … { } else { BEGIN Cro::MediaType.new(…) }` default reaches
+            // here, since `with` lowers to an `if` whose branches are `given`s.
+            Stmt::Phaser {
+                kind: crate::ast::PhaserKind::Begin,
+                body,
+            } => {
+                self.compile_check_phaser_value(body);
+                true
+            }
             // `$x = expr` / `$x := expr` at the tail of a `given`/`when` block is
             // the block's value (`given 3 { $y = 5 }` yields 5), mirroring the
             // block-final assignment handling in `compile_block_inline`. Without
