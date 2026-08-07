@@ -832,12 +832,21 @@ impl Interpreter {
             // built-in targets with native-only constructors land in
             // (`class_has_method` sees user methods only), e.g.
             // Cro::MessageWithBody.body-blob's `Promise(supply { ... })`.
-            if args.len() == 1
-                && let Ok(res) = self.call_method_with_values(args[0].clone(), name, vec![])
-            {
-                return Ok(res);
+            if args.len() == 1 {
+                match self.call_method_with_values(args[0].clone(), name, vec![]) {
+                    Ok(res) => return Ok(res),
+                    // Only fall through to "impossible coercion" when the value
+                    // genuinely has no `.<Target>` method. An error *raised by*
+                    // that method is a real failure and must propagate:
+                    // swallowing it reported a nonsense "Impossible coercion
+                    // from 'Any'" and hid the true cause (a Cro response body
+                    // supply died with "No such method 'data'", and all the user
+                    // saw was a bogus coercion error).
+                    Err(err) if err.is_method_not_found_for(name) => {}
+                    Err(err) => return Err(err),
+                }
             }
-            let source_type = crate::runtime::value_type_name(&args[0]).to_string();
+            let source_type = crate::runtime::types::diagnostic_type_name(&args[0]);
             let msg = format!(
                 "Impossible coercion from '{}' into '{}': no acceptable coercion method found",
                 source_type, name
@@ -896,7 +905,7 @@ impl Interpreter {
                 if self.in_does_rhs {
                     return Ok(Value::pair(name.to_string(), Value::array(args.to_vec())));
                 }
-                let source_type = crate::runtime::value_type_name(&args[0]).to_string();
+                let source_type = crate::runtime::types::diagnostic_type_name(&args[0]);
                 let msg = format!(
                     "Impossible coercion from '{}' into '{}': no acceptable coercion method found",
                     source_type, name
