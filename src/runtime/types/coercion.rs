@@ -31,10 +31,22 @@ pub(crate) fn is_coercion_constraint(constraint: &str) -> bool {
     bytes.last() == Some(&b')') && bytes.contains(&b'(') && !bytes.contains(&b'[')
 }
 
+/// The type name to report for `value` in a diagnostic. `value_type_name`
+/// returns a `&'static str`, so it answers a flat "Any" for every instance and
+/// type object; a message that names the user's actual class is far more
+/// useful ("Impossible coercion from 'Supply'", not "... from 'Any'").
+pub(crate) fn diagnostic_type_name(value: &Value) -> String {
+    match value.view() {
+        ValueView::Instance { class_name, .. } => class_name.resolve().to_string(),
+        ValueView::Package(name) => name.resolve().to_string(),
+        _ => crate::runtime::value_type_name(value).to_string(),
+    }
+}
+
 pub(crate) fn coerce_impossible_error(target: &str, got: &Value) -> RuntimeError {
     let msg = format!(
         "Impossible coercion from '{}' into '{}': no acceptable coercion method found",
-        crate::runtime::value_type_name(got),
+        diagnostic_type_name(got),
         target
     );
     let mut attrs = std::collections::HashMap::new();

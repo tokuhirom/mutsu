@@ -13,7 +13,9 @@ mod type_matching_static;
 mod type_registry;
 
 // Re-export public items from submodules
-pub(crate) use coercion::{coerce_impossible_error, is_coercion_constraint, parse_coercion_type};
+pub(crate) use coercion::{
+    coerce_impossible_error, diagnostic_type_name, is_coercion_constraint, parse_coercion_type,
+};
 pub(in crate::runtime) use signature::{
     bind_named_rename_sub_signature, bind_sub_signature_from_value,
     collect_nested_named_alias_keys, encode_slurpy_rw_param, indexed_varref_from_value,

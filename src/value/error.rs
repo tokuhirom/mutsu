@@ -341,6 +341,28 @@ impl RuntimeError {
             || self.message.contains("No such private method '")
     }
 
+    /// Check if this error is "the invocant has no method `name`" — as opposed
+    /// to some *other* method being missing deeper inside the call. A caller
+    /// that probes for an optional method must distinguish the two: treating
+    /// any `X::Method::NotFound` as "the probe missed" swallows a genuine
+    /// failure raised by the method it did find.
+    pub(crate) fn is_method_not_found_for(&self, name: &str) -> bool {
+        if !self.is_method_not_found() {
+            return false;
+        }
+        if let Some(ref ex) = self.exception
+            && let ValueView::Instance { attributes, .. } = ex.view()
+            && let Some(m) = attributes.as_map().get("method")
+        {
+            return m.to_string_value() == name;
+        }
+        self.message
+            .contains(&format!("No such method '{name}' for"))
+            || self
+                .message
+                .contains(&format!("No such private method '{name}' for"))
+    }
+
     /// Check if this error represents a multi-dispatch no-match
     /// (`X::Multi::NoMatch`). Used by constructor/accessor dispatch to decide
     /// whether to fall back to a default candidate (e.g. `Mu.new`).
