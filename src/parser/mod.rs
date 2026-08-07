@@ -6,6 +6,7 @@ mod parse_result;
 mod primary;
 mod sink_warn;
 mod stmt;
+pub(crate) mod stmt_ending_brace;
 mod whenever_scope;
 use std::sync::OnceLock;
 

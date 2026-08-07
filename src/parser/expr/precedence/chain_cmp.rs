@@ -111,6 +111,12 @@ pub(crate) fn wrap_smartmatch_rhs(right: Expr) -> Expr {
 
 /// Extract a comparison operator from the start of the input, returning the op and its length.
 pub(in crate::parser::expr) fn parse_comparison_op(r: &str) -> Option<(ComparisonOp, usize)> {
+    // A block's `}` at end of the previous line terminated the statement, so
+    // whatever sits here begins a new one -- `before`/`after`/`eq`/... at this
+    // position is a term, not an infix (see `parser::stmt_ending_brace`).
+    if crate::parser::stmt_ending_brace::infix_barred_by_stmt_ending_brace(r) {
+        return None;
+    }
     // Unicode comparison operators
     if r.starts_with('\u{2A75}') {
         // ⩵ (U+2A75) — numeric equality (alias for ==)
