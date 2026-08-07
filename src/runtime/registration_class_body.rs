@@ -70,6 +70,7 @@ impl Interpreter {
     /// (flattened) body statement through the per-statement arms, then fire
     /// LEAVE phasers, persist class-body statics, and restore the enclosing
     /// package/lexical scope. Returns the final `ClassDef`.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn run_class_body(
         &mut self,
         name: &str,
@@ -78,6 +79,7 @@ impl Interpreter {
         is_hidden: bool,
         class_is_rw: bool,
         class_lang_rev: &str,
+        own_attribute_names: &[Symbol],
     ) -> Result<ClassDef, RuntimeError> {
         let saved_package = self.current_package();
         let saved_env = self.env.clone();
@@ -99,27 +101,17 @@ impl Interpreter {
         // registers the attribute (the nested sub itself is still processed
         // normally; its body's `has` is a compile-time declaration).
         Self::collect_nested_class_has_decls(body, &mut flattened_body);
-        // Pre-scan: collect attribute names declared directly in this class body.
-        // Combined with role-composed attributes already in class_def.attributes,
-        // this gives the full set of attributes valid for $!attr access.
+        // The set of attributes valid for $!attr access: names declared
+        // directly in this class body (precomputed by the compiler at plan
+        // lowering, ADR-0019 D2a — `own_attribute_names` already covers the
+        // flattened top level plus any `has` nested inside a body `sub`)
+        // combined with role-composed attributes already in class_def.attributes.
         let mut class_own_attrs: HashSet<String> = class_def
             .attributes
             .iter()
             .map(|(n, ..)| n.clone())
             .collect();
-        for stmt in &flattened_body {
-            if let Stmt::HasDecl {
-                name: attr_name,
-                is_our,
-                is_my,
-                ..
-            } = stmt
-                && !*is_our
-                && !*is_my
-            {
-                class_own_attrs.insert(attr_name.resolve());
-            }
-        }
+        class_own_attrs.extend(own_attribute_names.iter().map(|s| s.resolve()));
         let mut cx = ClassBodyCx {
             name,
             is_hidden,

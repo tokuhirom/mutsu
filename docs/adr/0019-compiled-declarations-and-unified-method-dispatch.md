@@ -116,10 +116,14 @@ unchecked even if its original PR merged. PRs are sequential branches from the t
 `main`; this is not a stacked-PR plan.
 
 **Current progress: 22/53 slices merged (C6, C7, C8, and D1 complete, 2026-08-07). Phase C is
-fully checked; the next open box is D2 (attributes and generated accessors). D1 found most class
-structural data already typed-plan-driven from Phase A3/A4; the two remaining body-scanning reads
-(stub detection, `Stmt::TrustsDecl`) are now precomputed at plan lowering as
-`CompiledClassDeclPlan::is_stub`/`trusts`; see `news/2026-08/d1-class-structural-plan-fields.md`.
+fully checked; the next open box is D2 (attributes and generated accessors), now subdivided
+D2a-D2d — D2a landed 2026-08-07. D1 found most class structural data already typed-plan-driven
+from Phase A3/A4; the two remaining body-scanning reads (stub detection, `Stmt::TrustsDecl`) are
+now precomputed at plan lowering as `CompiledClassDeclPlan::is_stub`/`trusts`; see
+`news/2026-08/d1-class-structural-plan-fields.md`. D2, unlike D1, found attribute data with no
+existing typed-plan coverage at all; D2a took the same "precompute a re-derived body scan" pattern
+for the two pure pre-scan facts (class own-attribute names, role own-attribute
+names/used-modules/declared-types) — see `news/2026-08/d2a-attribute-prescan-plan-fields.md`.
 C8 migrated `RegisterProtoSub`/`RegisterProtoToken` onto `RegisterDecl` and made a non-trivial
 proto body compile its `{*}`-rewritten dispatch once, at declaration time, instead of on every
 call; see `news/2026-08/c8-proto-declarations-compiled-plans.md`. C7 removed the last sub-shaped
@@ -373,7 +377,40 @@ walkers wholesale is not possible before then.
   are precomputed at plan lowering as `CompiledClassDeclPlan::is_stub`/`trusts`, threaded through
   `ClassDeclModifiers`. `news/2026-08/d1-class-structural-plan-fields.md`.
 - [ ] **D2 — Encode attributes and generated accessors.** Compile defaults/constraints as child
-  chunks and publish generated methods through the canonical table.
+  chunks and publish generated methods through the canonical table. Unlike D1, a pre-PR survey
+  found attributes have **no** existing typed-plan coverage: `CompiledClassDeclPlan`/
+  `CompiledRoleDeclPlan` carried zero attribute fields, registration walked `Stmt::HasDecl` at
+  four independent sites, generated accessors were resolved by a special-cased runtime lookup
+  (`class_introspection.rs`) rather than `MethodEntry` rows, and defaults were evaluated by raw
+  `eval_block_value` at six sites — `CompiledDeclExpr` was not involved anywhere. So, following
+  C6/D0's measure-then-split precedent, the box is subdivided:
+  - [x] **D2a — Precompute body pre-scan facts.** The two runtime pre-scans that re-derive pure
+    syntactic facts from the body on every registration — `run_class_body`'s directly-declared
+    attribute-name set (used for `$!attr` validation, combining flattened top-level `has` with
+    `has` nested inside a body `sub`) and `walk_role_body`'s combined attribute-name /
+    `use`d-module / body-declared-type scan — move to the compiler as
+    `CompiledClassDeclPlan::own_attribute_names` and
+    `CompiledRoleDeclPlan::{own_attribute_names,body_used_modules,body_declared_types}`, threaded
+    through `ClassDeclModifiers` and `register_role_decl` respectively. Registration still walks
+    `legacy_body` for the actual `has`-arm dispatch (typing full attribute descriptors is D2b) —
+    no behavior change, no new fallback. `news/2026-08/d2a-attribute-prescan-plan-fields.md`.
+  - [ ] **D2b — Type full attribute descriptors.** Replace the `ClassAttributeDef` 7-tuple with a
+    named struct and a compiler-lowered `CompiledAttrDecl` (mirroring `RuntimeHasDeclSpec`, which
+    already covers the mainline/EVAL `has`-outside-class case) covering the full `Stmt::HasDecl`
+    surface; make `class_body_has_decl`/`role_body_has_decl`/the augment arm consume it instead of
+    re-destructuring the AST, and subsume `RuntimeHasDeclSpec`.
+  - [ ] **D2c — Compile defaults/constraints as child chunks.** Replace attribute
+    `default`/`is_default`/`where_constraint` `Expr`s (including the `Expr`-valued role
+    registry tables `role_attribute_default_exprs`/`role_class_level_attrs`/
+    `class_attribute_default_exprs`) with `CompiledDeclExpr` run through `run_decl_expr`,
+    collapsing the three near-duplicated env-setup blocks in `attr_build_defaults.rs`,
+    `methods_object_default_ctor.rs`, and `methods_object_dispatch_new.rs`.
+  - [ ] **D2d — Publish generated accessors through the canonical table.** Give `MethodEntry` an
+    accessor arm populated from `ClassDef::attributes` in `sync_user_method_entries`, so
+    `has_public_accessor`/`resolve_user_method_or_accessor` (`class_introspection.rs`) and the
+    `.^methods`/`.^can`/`.^attributes` synthesis sites become table probes riding the existing
+    generation-bump invalidation instead of MRO×attribute-vector scans. Independently landable
+    (does not depend on D2b/D2c — `ClassDef::attributes` is already populated by registration).
 - [ ] **D3 — Encode class methods and submethods as compiled candidates.** Install ordinary, multi,
   proto, private, rw, wrap, BUILD, and TWEAK metadata without walking `Stmt::MethodDecl`. That
   walk exists in three places, not one — the class walker (~508 lines), the role walker

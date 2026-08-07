@@ -64,6 +64,7 @@ impl Interpreter {
             language_version: &language_version,
             is_stub: false,
             trusts: &[],
+            own_attribute_names: &[],
         };
         self.register_class_decl(&name, &parents, modifiers, &[])?;
         self.compose_mixin_role_submethods(&name, &fresh);

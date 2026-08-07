@@ -176,9 +176,10 @@ impl Interpreter {
         prev_parents
     }
 
-    /// Walk the (flattened) role body: pre-scan declared attributes, used
-    /// modules and body-declared types, then dispatch each statement through
-    /// the per-statement arms.
+    /// Walk the (flattened) role body, dispatching each statement through the
+    /// per-statement arms. Declared attributes, used modules, and
+    /// body-declared types are precomputed by the compiler (ADR-0019 D2a)
+    /// and already populate `cx` by the time this runs.
     pub(super) fn walk_role_body(
         &mut self,
         body: &[Stmt],
@@ -191,39 +192,21 @@ impl Interpreter {
                 other => vec![other],
             })
             .collect();
-        // Pre-scan: collect attribute names declared in this role body, and the
-        // names of modules `use`d / `need`ed inside the body. A `unit role X; use
-        // A::B::C; method m(A::B::C:D $p) {...}` imports the type at BEGIN time, but
-        // this registration validates method param types before the body's `use`
-        // has loaded the module, so a qualified imported type looks unresolvable.
-        // Remember the used-module names so the param check can accept a qualified
-        // type that a body import supplies (the real resolution happens at the call
-        // site regardless).
-        //
-        // Types declared inside the role body itself (`my enum`, `my subset`,
-        // `my class`, ...) are not yet in the registry while the role's method
-        // signatures are validated, so collect their names to accept them as
-        // parameter/attribute constraints. The real registration happens when the
-        // role body runs.
-        for stmt in &flattened_body {
-            match stmt {
-                Stmt::HasDecl {
-                    name: attr_name, ..
-                } => {
-                    cx.role_own_attrs.insert(attr_name.resolve());
-                }
-                Stmt::Use { module, .. } | Stmt::Need { module } | Stmt::Import { module, .. } => {
-                    cx.body_used_modules.insert(module.clone());
-                }
-                Stmt::EnumDecl { name, .. }
-                | Stmt::SubsetDecl { name, .. }
-                | Stmt::ClassDecl { name, .. }
-                | Stmt::RoleDecl { name, .. } => {
-                    cx.body_declared_types.insert(name.resolve());
-                }
-                _ => {}
-            }
-        }
+        // Attribute names, `use`d/`need`ed module names, and body-declared
+        // types are precomputed by the compiler at plan lowering (ADR-0019
+        // D2a) and already populate `cx.role_own_attrs`/`body_used_modules`/
+        // `body_declared_types` — see `register_role_decl`. A `unit role X;
+        // use A::B::C; method m(A::B::C:D $p) {...}` imports the type at
+        // BEGIN time, but this registration validates method param types
+        // before the body's `use` has loaded the module, so a qualified
+        // imported type looks unresolvable; the precomputed used-module
+        // names let the param check accept a qualified type that a body
+        // import supplies (the real resolution happens at the call site
+        // regardless). Types declared inside the role body itself (`my
+        // enum`, `my subset`, `my class`, ...) are not yet in the registry
+        // while the role's method signatures are validated, so the
+        // precomputed names are accepted as parameter/attribute constraints;
+        // the real registration happens when the role body runs below.
         for stmt in flattened_body {
             match stmt {
                 Stmt::HasDecl { .. } => {

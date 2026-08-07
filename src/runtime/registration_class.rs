@@ -195,6 +195,11 @@ pub(crate) struct ClassDeclModifiers<'a> {
     /// `publish_class_shell` scanning the body for `Stmt::TrustsDecl` at
     /// registration time.
     pub(crate) trusts: &'a [Symbol],
+    /// Attribute names the class declares directly in its own body,
+    /// precomputed by the compiler at plan lowering (ADR-0019 D2a) instead
+    /// of `run_class_body` re-scanning the body for `Stmt::HasDecl` at
+    /// registration time.
+    pub(crate) own_attribute_names: &'a [Symbol],
 }
 
 pub(super) fn parse_role_type_args(input: &str) -> Vec<String> {

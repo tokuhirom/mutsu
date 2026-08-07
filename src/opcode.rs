@@ -2175,6 +2175,93 @@ fn is_stub_routine_body(body: &[Stmt]) -> bool {
     )
 }
 
+/// Recursively surface `has`-attribute names nested inside a `sub` within a
+/// class body (`class C { sub f { has $.x } }`), mirroring
+/// `Interpreter::collect_nested_class_has_decls` (ADR-0019 D2a). Descends
+/// into `sub` bodies but not into a nested `class`/`role`, which owns its
+/// own attribute scope. `our`/`my` (class-level) attributes are excluded, as
+/// they are not part of per-instance `$!attr` validation.
+fn collect_nested_has_decl_names(stmts: &[Stmt], out: &mut Vec<Symbol>) {
+    for s in stmts {
+        match s {
+            Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } | Stmt::HasDecl { .. } => {}
+            Stmt::SubDecl { body, .. } => {
+                for inner in body {
+                    if let Stmt::HasDecl {
+                        name,
+                        is_our,
+                        is_my,
+                        ..
+                    } = inner
+                        && !*is_our
+                        && !*is_my
+                    {
+                        out.push(*name);
+                    }
+                }
+                collect_nested_has_decl_names(body, out);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// The set of attribute names a class declares directly in its own body
+/// (ADR-0019 D2a), matching `run_class_body`'s pre-scan: top-level `has`
+/// declarations (after flattening `has ($a, $b)` list-form
+/// `SyntheticBlock`s) plus any `has` nested inside a `sub` in the body.
+/// Precomputed once at plan lowering instead of re-walked on every
+/// registration.
+fn class_own_attribute_names(body: &[Stmt]) -> Vec<Symbol> {
+    let mut names: Vec<Symbol> = body
+        .iter()
+        .flat_map(|s| match s {
+            Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
+            other => vec![other],
+        })
+        .filter_map(|stmt| match stmt {
+            Stmt::HasDecl {
+                name,
+                is_our,
+                is_my,
+                ..
+            } if !*is_our && !*is_my => Some(*name),
+            _ => None,
+        })
+        .collect();
+    collect_nested_has_decl_names(body, &mut names);
+    names
+}
+
+/// Pre-scan facts for a role body (ADR-0019 D2a), mirroring the combined
+/// loop in `Interpreter::walk_role_body`: attribute names the role declares,
+/// module names it `use`s/`need`s/`import`s, and types it declares in its
+/// own body. All three are pure syntactic facts, precomputed once at plan
+/// lowering instead of re-walked on every registration.
+fn role_body_prescan(body: &[Stmt]) -> (Vec<Symbol>, Vec<String>, Vec<String>) {
+    let mut own_attribute_names = Vec::new();
+    let mut used_modules = Vec::new();
+    let mut declared_types = Vec::new();
+    let flattened = body.iter().flat_map(|s| match s {
+        Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
+        other => vec![other],
+    });
+    for stmt in flattened {
+        match stmt {
+            Stmt::HasDecl { name, .. } => own_attribute_names.push(*name),
+            Stmt::Use { module, .. } | Stmt::Need { module } | Stmt::Import { module, .. } => {
+                used_modules.push(module.clone());
+            }
+            Stmt::EnumDecl { name, .. }
+            | Stmt::SubsetDecl { name, .. }
+            | Stmt::ClassDecl { name, .. }
+            | Stmt::RoleDecl { name, .. } => declared_types.push(name.resolve()),
+            _ => {}
+        }
+    }
+    (own_attribute_names, used_modules, declared_types)
+}
+
 fn body_contains_non_nil_return(stmts: &[Stmt]) -> bool {
     stmts.iter().any(|stmt| match stmt {
         Stmt::Return(expr) => !matches!(expr, Expr::Literal(value) if value.is_nil()),
@@ -2225,6 +2312,11 @@ pub(crate) struct CompiledClassDeclPlan {
     /// precomputed at plan lowering (ADR-0019 D1) instead of scanning
     /// `legacy_body` for `Stmt::TrustsDecl` at registration time.
     pub(crate) trusts: Vec<Symbol>,
+    /// Attribute names this class declares directly in its own body
+    /// (ADR-0019 D2a), precomputed at plan lowering instead of
+    /// `run_class_body` re-scanning the (flattened, nested-sub-surfaced)
+    /// body on every registration.
+    pub(crate) own_attribute_names: Vec<Symbol>,
 }
 
 #[derive(Debug, Clone)]
@@ -2239,6 +2331,16 @@ pub(crate) struct CompiledRoleDeclPlan {
     pub(crate) is_rw: bool,
     pub(crate) language_version: String,
     pub(crate) custom_traits: Vec<(String, Option<DeclTraitArg>)>,
+    /// Attribute names this role declares in its own body (ADR-0019 D2a),
+    /// precomputed at plan lowering instead of `walk_role_body`'s pre-scan
+    /// pass re-deriving it on every registration.
+    pub(crate) own_attribute_names: Vec<Symbol>,
+    /// Module names the body `use`s/`need`s/`import`s (ADR-0019 D2a),
+    /// precomputed alongside `own_attribute_names`.
+    pub(crate) body_used_modules: Vec<String>,
+    /// Types the body declares itself (`my enum`, `my class`, ...)
+    /// (ADR-0019 D2a), precomputed alongside `own_attribute_names`.
+    pub(crate) body_declared_types: Vec<String>,
 }
 
 /// A package-level `proto sub`/`proto rule`/`proto token` declaration lowered
@@ -5440,6 +5542,7 @@ impl CompiledCode {
                 _ => None,
             })
             .collect();
+        let own_attribute_names = class_own_attribute_names(body);
         let plan_idx = self.class_decl_plans.len() as u32;
         self.class_decl_plans.push(CompiledClassDeclPlan {
             name: *name,
@@ -5457,6 +5560,7 @@ impl CompiledCode {
             decl_id: *decl_id,
             is_stub,
             trusts,
+            own_attribute_names,
         });
         let idx = self.decl_plans.len() as u32;
         self.decl_plans.push(CompiledDeclPlanRef::Class(plan_idx));
@@ -5482,6 +5586,7 @@ impl CompiledCode {
         else {
             panic!("add_role_decl_plan expects RoleDecl");
         };
+        let (own_attribute_names, body_used_modules, body_declared_types) = role_body_prescan(body);
         let plan_idx = self.role_decl_plans.len() as u32;
         self.role_decl_plans.push(CompiledRoleDeclPlan {
             name: *name,
@@ -5493,6 +5598,9 @@ impl CompiledCode {
             is_rw: *is_rw,
             language_version: language_version.clone(),
             custom_traits: zip_decl_trait_args(custom_traits, trait_args),
+            own_attribute_names,
+            body_used_modules,
+            body_declared_types,
         });
         let idx = self.decl_plans.len() as u32;
         self.decl_plans.push(CompiledDeclPlanRef::Role(plan_idx));

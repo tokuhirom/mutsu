@@ -206,6 +206,60 @@ mod declaration_plan_tests {
         assert!(plan_stub.is_stub);
         assert!(plan_stub.trusts.is_empty());
     }
+
+    /// ADR-0019 D2a: a class declaration's own attribute names — including
+    /// ones nested inside a body `sub`, and excluding class-level `our`/`my`
+    /// attributes — are precomputed at plan lowering, so `run_class_body`
+    /// never re-walks the body to derive them.
+    #[test]
+    fn class_declarations_precompute_own_attribute_names() {
+        let (stmts, _) = crate::parse_dispatch::parse_source(
+            "class A { has $.x; has $!y; our $.z; sub f { has $.w } }",
+        )
+        .expect("source parses");
+        let (code, _) = Compiler::new().compile(&stmts);
+
+        let plan_a = code
+            .class_decl_plans
+            .iter()
+            .find(|plan| plan.name.as_str() == "A")
+            .expect("class A declaration plan");
+        let mut names: Vec<_> = plan_a
+            .own_attribute_names
+            .iter()
+            .map(|s| s.as_str())
+            .collect();
+        names.sort_unstable();
+        assert_eq!(names, vec!["w", "x", "y"]);
+    }
+
+    /// ADR-0019 D2a: a role declaration's own attribute names, `use`d module
+    /// names, and body-declared type names are precomputed at plan lowering,
+    /// so `walk_role_body`'s pre-scan pass never re-derives them.
+    #[test]
+    fn role_declarations_precompute_body_prescan() {
+        let (stmts, _) = crate::parse_dispatch::parse_source(
+            "role R { use JSON::Fast; has $.x; my class Inner { } }",
+        )
+        .expect("source parses");
+        let (code, _) = Compiler::new().compile(&stmts);
+
+        let plan_r = code
+            .role_decl_plans
+            .iter()
+            .find(|plan| plan.name.as_str() == "R")
+            .expect("role R declaration plan");
+        assert_eq!(
+            plan_r
+                .own_attribute_names
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>(),
+            vec!["x"]
+        );
+        assert_eq!(plan_r.body_used_modules, vec!["JSON::Fast".to_string()]);
+        assert_eq!(plan_r.body_declared_types, vec!["Inner".to_string()]);
+    }
 }
 mod const_fold;
 mod decl_plan;
