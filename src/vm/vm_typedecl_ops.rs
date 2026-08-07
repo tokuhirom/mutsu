@@ -333,28 +333,63 @@ impl Interpreter {
             // When a class is declared with an already-qualified name
             // (e.g. the compiler pre-qualified `class C1` inside
             // `unit module M` to `M::C1`), also register the short name
-            // `C1` in the env so that subsequent code inside the same
-            // module can refer to it bare. Skip this when the parent
-            // package is a class (where suppress_name semantics apply).
-            // TODO: this alias is global, but it belongs to the *declaring*
-            // package's scope. A file-scope `class Cro::Hdr { }` makes bare `Hdr`
-            // resolve to it, where raku reports `Hdr` as an undeclared name, and
-            // that shadows a later same-short-name declaration in an inner scope
-            // (see todo/tickets/package-short-name-alias-is-global.md). Gating it
-            // on `current_package` being the declaring package is NOT enough:
-            // `class URI::Path` is declared at file scope in its own module and
-            // `unit class URI`'s methods legitimately name it bare.
+            // `C1` so that subsequent code declared in (or dispatched
+            // through) the same package can refer to it bare. Skip this
+            // when the parent package is a class (where suppress_name
+            // semantics apply).
+            // Package-scoped, not global: a file-scope `class Cro::Hdr { }`
+            // makes bare `Hdr` resolve only from within package `Cro`
+            // (`current_package`/`method_class_stack` walking the package
+            // chain via `package_type_alias`), matching raku's "Undeclared
+            // name" outside it and never shadowing an unrelated same-short-name
+            // declaration in another scope (see
+            // todo/tickets/package-short-name-alias-is-global.md).
+            // `class URI::Path` declared at file scope still resolves bare
+            // `Path` inside `unit class URI`'s own methods and attribute
+            // defaults: `push_method_class`/`eval_attr_default_expr` already
+            // anchor the lookup to the owning class unconditionally.
+            // `my class` keeps the OLD env-based alias instead: it is
+            // lexically scoped to its own declaring block, and the env write
+            // is what `register_lexical_class`'s scope-exit restoration
+            // (below) resets between re-executions of the enclosing block —
+            // `package_type_aliases` has no such per-scope lifetime, so two
+            // sibling subs each declaring `my class Shape` in the same module
+            // would have the second call's alias silently lost to the first
+            // (`entry().or_insert_with()` never overwrites), leaving the
+            // second sub's `Shape.new` resolving to the first sub's class
+            // (`t/module-sub-otf-interpreter-constructs.t` "same-named nested
+            // class (b)").
+            //
+            // This alone only covers code running *inside* the declaring
+            // package's own ancestor chain (including its own methods, since
+            // method dispatch anchors `current_package` to the class's own
+            // qualified name). A *different* package that `use`s this one and
+            // references the bare name from a sibling package (a common
+            // NativeCall idiom — `unit module Foo::Native; class Handle
+            // is repr('CPointer') {}`, then `unit class Foo::Driver; use
+            // Foo::Native; method f() { Handle.new }`) is handled separately,
+            // by `load_module_inner`/`import_module` copying this same alias
+            // into the *importer's* own package_type_aliases entry at `use`
+            // time (see `package_type_aliases` doc comment).
             if qualified_name.contains("::") && !parent_is_class {
-                let short = qualified_name
+                let (parent, short) = qualified_name
                     .rsplit_once("::")
-                    .map(|(_, s)| s.to_string())
-                    .unwrap_or_else(|| qualified_name.clone());
+                    .map(|(p, s)| (p.to_string(), s.to_string()))
+                    .unwrap_or_else(|| (String::new(), qualified_name.clone()));
                 // Do not shadow built-in types (e.g. `my class X::Roast::Channel`
                 // must not make the bare name `Channel` resolve to the user class).
                 if !short.is_empty() && short != qualified_name && !Self::is_builtin_type(&short) {
-                    self.env_mut().entry_or_insert_with(short, || {
-                        Value::package(Symbol::intern(&storage_name))
-                    });
+                    if *is_lexical {
+                        self.env_mut().entry_or_insert_with(short, || {
+                            Value::package(Symbol::intern(&storage_name))
+                        });
+                    } else {
+                        self.package_type_aliases
+                            .entry(parent)
+                            .or_default()
+                            .entry(short)
+                            .or_insert_with(|| storage_name.clone());
+                    }
                 }
             }
             // When `my class` is used, register the class name as lexically scoped
@@ -620,21 +655,24 @@ impl Interpreter {
             // When a role is declared with an already-qualified name
             // (e.g. the compiler pre-qualified `role R1` inside
             // `unit module GH2613` to `GH2613::R1`), also register the
-            // short name `R1` in the env so subsequent code in the same
-            // module can refer to it bare.
+            // short name `R1`, package-scoped to the declaring package
+            // rather than global (mirrors the class path above — see
+            // todo/tickets/package-short-name-alias-is-global.md).
             if qualified_name.contains("::") && qualified_name == name_str {
-                let short = qualified_name
+                let (parent, short) = qualified_name
                     .rsplit_once("::")
-                    .map(|(_, s)| s.to_string())
-                    .unwrap_or_else(|| qualified_name.clone());
+                    .map(|(p, s)| (p.to_string(), s.to_string()))
+                    .unwrap_or_else(|| (String::new(), qualified_name.clone()));
                 // Do not shadow built-in types (e.g. `role Cro::HTTP::Middleware::Pair`
                 // must not make the bare name `Pair` resolve to the user role, which
                 // would break every `when Pair` in the process). Mirrors the same
                 // guard on the class path above.
                 if !short.is_empty() && short != qualified_name && !Self::is_builtin_type(&short) {
-                    self.env_mut().entry_or_insert_with(short, || {
-                        Value::package(Symbol::intern(&qualified_name))
-                    });
+                    self.package_type_aliases
+                        .entry(parent)
+                        .or_default()
+                        .entry(short)
+                        .or_insert_with(|| qualified_name.clone());
                 }
             }
             // A role's non-declaration body statements are NOT run here. Rakudo
