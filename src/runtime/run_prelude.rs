@@ -287,6 +287,50 @@ impl Interpreter {
         escaped
     }
 
+    /// Eagerly compile a forward-declared top-level sub's full body so
+    /// `preregister_top_level_subs` can install it with bytecode already
+    /// attached, instead of leaving `compiled` unset and letting the first
+    /// call between the forward stub and the real declaration compile it on
+    /// demand (ADR-0019 C7 — the routine registry must not compile a
+    /// migrated declaration lazily). This runs before the mainline is
+    /// compiled, so it reuses the same on-the-fly compiler `otf_compile_function_def`
+    /// already falls back to for a body-less def, just eagerly rather than
+    /// at first call; the throwaway `FunctionDef` below only carries the
+    /// fields that compile step reads.
+    fn compile_forward_declared_sub(
+        &mut self,
+        name: Symbol,
+        params: &[String],
+        param_defs: &[ParamDef],
+        body: &[Stmt],
+        is_rw: bool,
+        is_raw: bool,
+    ) -> std::sync::Arc<crate::opcode::CompiledFunction> {
+        let tmp_def = crate::ast::FunctionDef {
+            package: Symbol::intern(&self.current_package()),
+            name,
+            params: params.to_vec(),
+            param_defs: param_defs.to_vec(),
+            body: body.to_vec(),
+            is_test_assertion: false,
+            is_rw,
+            is_raw,
+            is_method: false,
+            empty_sig: params.is_empty() && param_defs.is_empty(),
+            is_stub: false,
+            return_type: None,
+            is_default: false,
+            deprecated_message: None,
+            source_file: self.current_source_file(),
+            decl_order: 0,
+            compiled: None,
+            body_fp_cache: std::sync::OnceLock::new(),
+            body_facts_cache: std::sync::OnceLock::new(),
+            rw_tail_expr: None,
+        };
+        self.otf_compile_function_def(&tmp_def)
+    }
+
     /// Register top-level, non-empty sub bodies before execution so calls that appear
     /// earlier in source can resolve to later definitions.
     pub(crate) fn preregister_top_level_subs(
@@ -336,34 +380,50 @@ impl Interpreter {
                     continue;
                 }
                 let name_str = name.resolve();
-                self.register_sub_decl(
+                let metadata = crate::opcode::compiled_routine_metadata(
+                    params, param_defs, body, *is_rw, *is_raw,
+                );
+                let compiled = self
+                    .compile_forward_declared_sub(*name, params, param_defs, body, *is_rw, *is_raw);
+                self.register_compiled_sub_decl(
                     &name_str,
                     params,
                     param_defs,
                     return_type.as_ref(),
                     associativity.as_ref(),
-                    body,
+                    &[],
                     *multi,
                     *is_rw,
                     *is_raw,
                     *is_test_assertion,
                     *supersede,
                     &[],
+                    None,
+                    &metadata,
+                    Some(&compiled),
                 )?;
                 if *is_export {
-                    self.register_sub_decl_as_global(
+                    let saved_pkg = self.current_package();
+                    self.set_current_package("GLOBAL".to_string());
+                    let global_result = self.register_compiled_sub_decl(
                         &name_str,
                         params,
                         param_defs,
                         return_type.as_ref(),
                         associativity.as_ref(),
-                        body,
+                        &[],
                         *multi,
                         *is_rw,
                         *is_raw,
                         *is_test_assertion,
                         *supersede,
-                    )?;
+                        &[],
+                        None,
+                        &metadata,
+                        Some(&compiled),
+                    );
+                    self.set_current_package(saved_pkg);
+                    global_result?;
                 }
             }
         }
@@ -539,5 +599,36 @@ impl Interpreter {
             }
         }
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// ADR-0019 C7: `preregister_top_level_subs` must install the early
+    /// full-body candidate with bytecode already attached, not leave
+    /// `compiled` unset for the first call between the forward stub and the
+    /// real declaration to compile on demand.
+    #[test]
+    fn forward_declared_sub_installs_with_compiled_bytecode() {
+        let mut interp = Interpreter::new();
+        let (stmts, _) =
+            crate::parse_dispatch::parse_source("sub add($a, $b); sub add($a, $b) { $a + $b }")
+                .expect("parse");
+        interp
+            .preregister_top_level_subs(&stmts)
+            .expect("preregister");
+        let key = Symbol::intern(&format!("{}::add", interp.current_package()));
+        let registry = interp.registry();
+        let def = registry
+            .functions
+            .get(&key)
+            .expect("add should be registered");
+        assert!(
+            def.compiled.is_some(),
+            "preregistration must attach compiled bytecode instead of leaving \
+             the first call to compile the body on demand"
+        );
     }
 }

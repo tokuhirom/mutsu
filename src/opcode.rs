@@ -2075,7 +2075,7 @@ pub(crate) struct CompiledRoutineMetadata {
 /// signature and once per `signature_alternates` slot — the body is shared,
 /// but the signature-derived fields (effective param defs, fingerprints,
 /// identity) differ per slot.
-fn compiled_routine_metadata(
+pub(crate) fn compiled_routine_metadata(
     params: &[String],
     param_defs: &[ParamDef],
     body: &[Stmt],

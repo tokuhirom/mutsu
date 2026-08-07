@@ -115,9 +115,13 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 19/53 slices merged (C6 complete, 2026-08-07). Current box: C7 — remove
-the sub-registration AST adapter. C6's last sub-box, C6e-3c, dropped
-`CompiledSubDeclPlan::legacy_body` for real once every keep-class was closed; see
+**Current progress: 20/53 slices merged (C6 and C7 complete, 2026-08-07). Current box: C8 —
+migrate proto declarations off `stmt_pool`. C7 removed the last sub-shaped AST-registration
+adapter: `preregister_top_level_subs` now installs a forward-declared sub through
+`register_compiled_sub_decl` with an eagerly OTF-compiled routine instead of leaving `compiled`
+unset for the first call to fill in; see
+`news/2026-08/c7-forward-declaration-preregistration-compiles-eagerly.md`. C6's last sub-box,
+C6e-3c, dropped `CompiledSubDeclPlan::legacy_body` for real once every keep-class was closed; see
 `news/2026-08/legacy-body-field-dropped.md`. C6d's only open sub-box remains the
 ADR-0009-scoped C6d-2, which does not gate C6 (token defs never come from
 `CompiledSubDeclPlan`) — it stays open only for the later `FunctionDef.body` field deletion
@@ -312,8 +316,14 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
     `make roast` whitelist (both green), and the field was then deleted for
     real — `make test`/`make roast` pass with it gone.
     `news/2026-08/legacy-body-field-dropped.md`.
-- [ ] **C7 — Remove the sub-registration AST adapter.** Delete dead sub-shaped walker branches and
-  prove the routine registry never compiles a migrated declaration on demand.
+- [x] **C7 — Remove the sub-registration AST adapter.** Delete dead sub-shaped walker branches and
+  prove the routine registry never compiles a migrated declaration on demand. The one live adapter
+  was `preregister_top_level_subs` (the forward-declaration pass), which built its temporary
+  `FunctionDef` from the raw AST body pre-compile and left `compiled: None`, so the first call
+  between a forward stub and its real body compiled on demand. It now installs through
+  `register_compiled_sub_decl` with an eagerly OTF-compiled routine, which let three functions with
+  no other caller — `register_sub_decl`, `register_sub_decl_fp`, `register_sub_decl_as_global` — be
+  deleted outright. `news/2026-08/c7-forward-declaration-preregistration-compiles-eagerly.md`.
 - [ ] **C8 — Proto declarations register from typed plans.** Migrate `RegisterProtoSub` and
   `RegisterProtoToken` off `stmt_pool`, and compile the `{*}` dispatch instead of rewriting the
   proto's AST body per call (`rewrite_proto_dispatch_stmts` plus the `proto_def.body = rewritten`
