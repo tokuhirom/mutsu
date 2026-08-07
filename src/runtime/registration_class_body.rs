@@ -23,6 +23,10 @@ pub(super) struct ClassBodyCx<'a> {
     /// role-composed attributes: the full set of attributes valid for
     /// `$!attr` access.
     pub(super) class_own_attrs: HashSet<String>,
+    /// Precompiled `is default(...)` chunks for this class body's own
+    /// attributes (ADR-0019 D2c), keyed by attribute name; see
+    /// `class_body_has_decl`.
+    pub(super) is_default_chunks: &'a [(Symbol, crate::opcode::DeclTraitArg)],
 }
 
 impl ClassBodyCx<'_> {
@@ -80,6 +84,7 @@ impl Interpreter {
         class_is_rw: bool,
         class_lang_rev: &str,
         own_attribute_names: &[Symbol],
+        is_default_chunks: &[(Symbol, crate::opcode::DeclTraitArg)],
     ) -> Result<ClassDef, RuntimeError> {
         let saved_package = self.current_package();
         let saved_env = self.env.clone();
@@ -121,6 +126,7 @@ impl Interpreter {
             saved_env,
             class_def,
             class_own_attrs,
+            is_default_chunks,
         };
         let saved_functions_keys: HashSet<String> = self
             .registry()

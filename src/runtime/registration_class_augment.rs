@@ -271,7 +271,7 @@ impl Interpreter {
                     }
                 }
                 Stmt::HasDecl { .. } => {
-                    let decl = crate::opcode::CompiledAttrDecl::from_stmt(stmt);
+                    let decl = crate::opcode::CompiledAttrDecl::from_stmt(stmt, None);
                     let attr_name_str = decl.name.clone();
                     let attr_var_name = if decl.is_public {
                         format!(".{}", attr_name_str)
@@ -738,6 +738,7 @@ impl Interpreter {
             is_stub: false,
             trusts: &[],
             own_attribute_names: &[],
+            attr_is_default_chunks: &[],
         };
         self.register_class_decl(&pun_name, &parents, modifiers, &[])?;
         self.store_language_revision_from_version(&pun_name, &language_version);

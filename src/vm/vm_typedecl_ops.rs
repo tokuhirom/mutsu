@@ -138,6 +138,7 @@ impl Interpreter {
             is_stub,
             trusts,
             own_attribute_names,
+            is_default_chunks,
         }) = code.class_decl_plans.get(idx as usize)
         {
             let resolved_name = if let Some(chunk) = name_chunk {
@@ -250,6 +251,7 @@ impl Interpreter {
                         is_stub: *is_stub,
                         trusts,
                         own_attribute_names,
+                        attr_is_default_chunks: is_default_chunks,
                     },
                     body,
                 )

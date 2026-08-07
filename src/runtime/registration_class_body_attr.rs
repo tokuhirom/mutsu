@@ -113,7 +113,20 @@ impl Interpreter {
         cx: &mut ClassBodyCx<'_>,
         stmt: &Stmt,
     ) -> Result<ClassBodyFlow, RuntimeError> {
-        let decl = crate::opcode::CompiledAttrDecl::from_stmt(stmt);
+        // Look up this attribute's precompiled `is default(...)` chunk (ADR-0019
+        // D2c) by name before building `decl` — `Stmt::HasDecl::name` is cheap to
+        // read directly, and a name-keyed lookup does not depend on this walk
+        // visiting attributes in the same order `compile_attr_is_default_chunks`
+        // built the plan's chunk list in.
+        let is_default_chunk = match stmt {
+            Stmt::HasDecl { name, .. } => cx
+                .is_default_chunks
+                .iter()
+                .find(|(n, _)| n == name)
+                .map(|(_, chunk)| chunk),
+            _ => None,
+        };
+        let decl = crate::opcode::CompiledAttrDecl::from_stmt(stmt, is_default_chunk);
         let attr_name_str = decl.name.clone();
 
         // An initializer that can never satisfy the constraint is a
@@ -214,8 +227,8 @@ impl Interpreter {
         // .VAR.default and Nil-restore behavior.
         // When only `default` is set (from `is default(X)` without `= value`),
         // also store it as the is_default trait value.
-        if let Some(is_default_expr) = &decl.is_default {
-            if let Ok(val) = self.eval_block_value(&[Stmt::Expr(is_default_expr.clone())]) {
+        if let Some(is_default_arg) = &decl.is_default {
+            if let Ok(val) = self.eval_decl_trait_arg(is_default_arg) {
                 // Type-check the default value against the attribute's type
                 // constraint. For an object hash (`%.a{KeyType}`) the
                 // constraint is `ValueType{KeyType}`; the `is default`

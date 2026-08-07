@@ -2847,7 +2847,7 @@ impl Compiler {
                 // and `sigil` is always `$`/`@`/`%` (the parser never produces
                 // `.`/`!`), so `CompiledAttrDecl::from_stmt`'s fields match
                 // this arm's historical `bare`/`sigil_ch` derivation exactly.
-                let decl = crate::opcode::CompiledAttrDecl::from_stmt(stmt);
+                let decl = crate::opcode::CompiledAttrDecl::from_stmt(stmt, None);
                 let twigil = if decl.is_public { "." } else { "!" };
                 let full_name = format!("{}{}{}", decl.sigil, twigil, decl.name);
                 let mut attrs = std::collections::HashMap::new();

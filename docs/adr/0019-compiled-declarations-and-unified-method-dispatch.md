@@ -419,7 +419,31 @@ walkers wholesale is not possible before then.
     registry tables `role_attribute_default_exprs`/`role_class_level_attrs`/
     `class_attribute_default_exprs`) with `CompiledDeclExpr` run through `run_decl_expr`,
     collapsing the three near-duplicated env-setup blocks in `attr_build_defaults.rs`,
-    `methods_object_default_ctor.rs`, and `methods_object_dispatch_new.rs`.
+    `methods_object_default_ctor.rs`, and `methods_object_dispatch_new.rs`. A 2026-08-07
+    research pass (`todo/deep/adr0019-d2c-attribute-default-chunks.md`) found the real
+    footprint substantially larger than this paragraph implies — ≥15 eval sites across 5
+    env-setup shapes, not 3 — and recommended a D2c-1/2/3 split.
+    **D2c-1 partly landed 2026-08-07 (`is_default` only)**: `CompiledAttrDecl::is_default`
+    is now a `DeclTraitArg` (`Literal`/`Compiled`/`Ast`, reusing the existing enum rather
+    than inventing a parallel one) instead of a raw `Expr`. `Compiler::add_class_decl_plan`
+    precompiles each own attribute's `is default(...)` argument into a name-keyed
+    `Vec<(Symbol, DeclTraitArg)>` (`CompiledClassDeclPlan::is_default_chunks`), threaded
+    through `ClassDeclModifiers`/`run_class_body`/`ClassBodyCx` to `class_body_has_decl`,
+    which looks its attribute's chunk up **by name** rather than by registration-walk
+    position — sidestepping the position-alignment risk the research pass flagged, at the
+    cost of a linear per-attribute scan (fine at typical attribute counts). `default` and
+    `where_constraint` are NOT migrated (still `Option<Expr>`, still feed
+    `ClassAttributeDef`, itself unchanged) — `is_default` was chosen first because it is the
+    only one of the three that is read-and-discarded at registration time rather than
+    stored for later (construction-time) evaluation, so it did not require also migrating
+    `ClassAttributeDef` and the ~15 downstream eval sites in the same PR. Only 2 of the 4
+    `CompiledAttrDecl::from_stmt` call sites read `is_default` at all
+    (`class_body_has_decl`, `role_body_has_decl`); the other two (the mainline/EVAL
+    `has`-outside-class error path, `augment class`) never did. `role_body_has_decl` keeps
+    stashing a raw `Expr` into the `role_attribute_default_exprs` registry table (D2c-3
+    scope) via a new `DeclTraitArg::as_expr()` escape valve, since no compiled plan exists
+    for that path yet. Remaining: `default`/`where_constraint` type-swap plus the ~15 eval
+    sites (D2c-2), and the three role registry tables (D2c-3).
   - [ ] **D2d — Publish generated accessors through the canonical table.** Give `MethodEntry` an
     accessor arm populated from `ClassDef::attributes` in `sync_user_method_entries`, so
     `has_public_accessor`/`resolve_user_method_or_accessor` (`class_introspection.rs`) and the
