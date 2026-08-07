@@ -108,10 +108,7 @@ impl Interpreter {
             // `scoped_key` alone differs between `start f()` and a direct `f()`).
             // Normalize away the `/<n>` candidate suffix and the trailing
             // `@<ip>` position so both paths share one cell.
-            let shared_key = format!(
-                "__mutsu_shared_state::{}",
-                crate::runtime::Interpreter::normalize_state_key(&scoped_key)
-            );
+            let shared_key = Self::shared_state_cell_key(&scoped_key);
             let cell = self.get_or_init_shared_state_cell(&shared_key, initial);
             // Keep the local store pointing at the cell too, so the exit-time
             // writeback and any non-cell reader observe the same Arc.

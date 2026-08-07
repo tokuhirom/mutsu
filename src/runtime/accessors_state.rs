@@ -291,8 +291,25 @@ impl Interpreter {
     /// each execution of the statement is a fresh clone of its body block
     /// (Raku clones a block each time its enclosing block runs), so `state`
     /// declarations inside the body re-initialize.
+    ///
+    /// The cross-thread cell (`get_or_init_shared_state_cell`) must go too.
+    /// Once any thread has been spawned, `StateVarInit` resolves the variable
+    /// through that cell and ignores the local store entirely, so dropping only
+    /// the local entry left the reset a silent no-op: a loop-body `state` kept
+    /// counting up across later executions of its enclosing statement — Cro's
+    /// `Cro.compose` recursed on a `state $split` that never restarted at 1 and
+    /// blew the stack once a `Cro::Service.start` had run.
     pub(crate) fn remove_state_var(&mut self, key: &str) {
         self.state_vars.remove(key);
+        self.shared_vars.remove(&Self::shared_state_cell_key(key));
+    }
+
+    /// The `shared_vars` key under which `key`'s cross-thread `state` cell lives.
+    pub(crate) fn shared_state_cell_key(scoped_key: &str) -> String {
+        format!(
+            "__mutsu_shared_state::{}",
+            crate::runtime::Interpreter::normalize_state_key(scoped_key)
+        )
     }
 
     pub(crate) fn set_state_var(&mut self, key: String, value: Value) {
