@@ -16,41 +16,18 @@ impl Interpreter {
         cx: &mut RoleDeclCx<'_>,
         stmt: &Stmt,
     ) -> Result<(), RuntimeError> {
-        let Stmt::HasDecl {
-            name: attr_name,
-            is_public,
-            default,
-            handles,
-            is_rw,
-            is_readonly,
-            type_constraint,
-            type_smiley,
-            is_required,
-            sigil,
-            where_constraint,
-            is_alias: _,
-            is_our,
-            is_my,
-            is_default,
-            is_type,
-            deprecated_message: _,
-            is_built: _,
-            unknown_traits: _,
-        } = stmt
-        else {
-            unreachable!("role_body_has_decl called on a non-HasDecl statement");
-        };
-        let attr_name_str = attr_name.resolve();
+        let decl = crate::opcode::CompiledAttrDecl::from_stmt(stmt);
+        let attr_name_str = decl.name.clone();
         // A class-level (`my $.x` / `our $.x`) role attribute is NOT a
         // per-instance attribute: it becomes a class-level attribute on the
         // consuming class (accessor on the type object, `C.x`) — exactly
         // like `class C { my $.x }`. Record its default expr keyed by
         // (role, attr) and skip the per-instance attribute registration, so
         // no per-instance accessor shadows the class-level fallback.
-        if *is_my || *is_our {
+        if decl.is_my || decl.is_our {
             self.registry_mut().role_class_level_attrs.insert(
                 (cx.name.to_string(), attr_name_str.clone()),
-                default.clone(),
+                decl.default.clone(),
             );
             return Ok(());
         }
@@ -60,7 +37,7 @@ impl Interpreter {
         // Carry an `is Type` container trait (`has @.a is G::A`) so it
         // can be transferred to the consuming class at composition and
         // its element type enforced.
-        if let Some(it) = is_type {
+        if let Some(it) = &decl.is_type {
             self.registry_mut()
                 .role_attribute_is_types
                 .insert((cx.name.to_string(), attr_name_str.clone()), it.clone());
@@ -71,12 +48,12 @@ impl Interpreter {
         // no class of its own to hold `attribute_types`. `::?CLASS`
         // stays unresolved here — it names the *consuming* class, so
         // it is substituted at composition.
-        if let Some(tc) = type_constraint {
+        if let Some(tc) = &decl.type_constraint {
             self.registry_mut()
                 .role_attribute_types
                 .insert((cx.name.to_string(), attr_name_str.clone()), tc.clone());
         }
-        if let Some(ts) = type_smiley {
+        if let Some(ts) = &decl.type_smiley {
             self.registry_mut()
                 .role_attribute_smileys
                 .insert((cx.name.to_string(), attr_name_str.clone()), ts.clone());
@@ -86,7 +63,7 @@ impl Interpreter {
         // until composition. Stash the expression keyed by (role, attr);
         // it is copied to the consuming class and evaluated at instance
         // construction (with type params bound).
-        if let Some(def_expr) = is_default {
+        if let Some(def_expr) = &decl.is_default {
             self.registry_mut().role_attribute_default_exprs.insert(
                 (cx.name.to_string(), attr_name_str.clone()),
                 def_expr.clone(),
@@ -125,22 +102,23 @@ impl Interpreter {
         }
         // Apply role-level `is rw`: same logic as class_is_rw
         // `is readonly` on individual attributes overrides `is rw` on the role
-        let effective_is_rw = !*is_readonly && (*is_rw || (cx.role_is_rw && *is_public));
+        let effective_is_rw =
+            !decl.is_readonly && (decl.is_rw || (cx.role_is_rw && decl.is_public));
         cx.role_def.attributes.push(ClassAttributeDef {
             name: attr_name_str.clone(),
-            is_public: *is_public,
-            default: default.clone(),
+            is_public: decl.is_public,
+            default: decl.default.clone(),
             is_rw: effective_is_rw,
-            is_required: is_required.clone(),
-            sigil: *sigil,
-            where_constraint: where_constraint.as_ref().map(|wc| wc.as_ref().clone()),
+            is_required: decl.is_required.clone(),
+            sigil: decl.sigil,
+            where_constraint: decl.where_constraint.clone(),
         });
-        let attr_var_name = if *is_public {
+        let attr_var_name = if decl.is_public {
             format!(".{}", attr_name_str)
         } else {
             format!("!{}", attr_name_str)
         };
-        self.apply_handle_specs_to_role(handles, &attr_var_name, &mut cx.role_def);
+        self.apply_handle_specs_to_role(&decl.handles, &attr_var_name, &mut cx.role_def);
         Ok(())
     }
 

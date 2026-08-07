@@ -270,51 +270,31 @@ impl Interpreter {
                         }
                     }
                 }
-                Stmt::HasDecl {
-                    name: attr_name,
-                    is_public,
-                    default,
-                    is_rw,
-                    is_readonly: _,
-                    type_constraint,
-                    type_smiley: _,
-                    is_required,
-                    sigil,
-                    handles,
-                    where_constraint,
-                    is_alias,
-                    is_our: _,
-                    is_my: _,
-                    is_default: _,
-                    is_type: _,
-                    deprecated_message: _,
-                    is_built: _,
-                    unknown_traits: _,
-                } => {
-                    let attr_name_str = attr_name.resolve();
-                    let attr_var_name = if *is_public {
+                Stmt::HasDecl { .. } => {
+                    let decl = crate::opcode::CompiledAttrDecl::from_stmt(stmt);
+                    let attr_name_str = decl.name.clone();
+                    let attr_var_name = if decl.is_public {
                         format!(".{}", attr_name_str)
                     } else {
                         format!("!{}", attr_name_str)
                     };
                     // Resolve handles before taking mutable borrow on class_def
-                    let resolved = self.resolve_handle_specs_to_names(handles, &attr_var_name);
+                    let resolved =
+                        self.resolve_handle_specs_to_names(&decl.handles, &attr_var_name);
                     if let Some(class_def) = self.registry_mut().classes.get_mut(name) {
                         class_def.attributes.push(ClassAttributeDef {
                             name: attr_name_str.clone(),
-                            is_public: *is_public,
-                            default: default.clone(),
-                            is_rw: *is_rw,
-                            is_required: is_required.clone(),
-                            sigil: *sigil,
-                            where_constraint: where_constraint
-                                .as_ref()
-                                .map(|wc| wc.as_ref().clone()),
+                            is_public: decl.is_public,
+                            default: decl.default.clone(),
+                            is_rw: decl.is_rw,
+                            is_required: decl.is_required.clone(),
+                            sigil: decl.sigil,
+                            where_constraint: decl.where_constraint.clone(),
                         });
-                        if *is_alias {
+                        if decl.is_alias {
                             class_def.alias_attributes.insert(attr_name_str.clone());
                         }
-                        if let Some(tc) = type_constraint {
+                        if let Some(tc) = &decl.type_constraint {
                             class_def
                                 .attribute_types
                                 .insert(attr_name_str.clone(), tc.clone());
