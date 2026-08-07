@@ -577,6 +577,28 @@ impl RuntimeError {
         Self::typed("X::TypeCheck::Binding::Parameter", attrs)
     }
 
+    /// Replace this binding error's `.parameter` with the real `Parameter`
+    /// object raku exposes there.
+    ///
+    /// The plain constructors above store the parameter *name*, which is enough
+    /// for the message but not for introspection: raku's
+    /// `X::TypeCheck::Binding::Parameter.parameter` is a `Parameter`, and code
+    /// that recovers from a binding failure asks it things — `Cro::HTTP::Router`
+    /// answers 400 vs 401 vs 404 from `$param.named` and `$param.type`, and
+    /// matches the parameter against the mixin type its `is auth` trait
+    /// composed, which only a materialized `Parameter` carries.
+    pub(crate) fn with_parameter_object(self, pd: &crate::ast::ParamDef) -> Self {
+        if let Some(ValueView::Instance { attributes, .. }) =
+            self.exception.as_deref().map(Value::view)
+        {
+            attributes.insert(
+                "parameter",
+                crate::value::signature::make_parameter_value_from_param_def(pd),
+            );
+        }
+        self
+    }
+
     /// Like `typecheck_binding_parameter`, but with raku's exact wording
     /// ("expected T but got U (repr)", not "expected T, got U") and `.got`
     /// carrying the actual offending value. Matches the hand-rolled format
