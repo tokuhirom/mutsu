@@ -212,6 +212,32 @@ impl Interpreter {
                     self.package_stash_hidden.remove(module);
                 }
             }
+            // A re-`use` of an already-loaded module skips `load_module_inner`
+            // entirely (nothing new to register), so the importer-scoped
+            // class/role short-name aliasing that runs there on first load
+            // (see `run_modules.rs`, `new_types`) never fires for a second
+            // importer. Do the same copy here instead, from the aliases
+            // already recorded against the module's own name (populated by
+            // both that first-load pass and by `exec_register_class_op`'s own
+            // declaration-time write) into this importer's own entry — e.g.
+            // `DBDish::Pg::ErrorHandling`'s `use DBDish::Pg::Native;` loads
+            // it first (importer "GLOBAL"), and `DBDish::Pg`'s own `use
+            // DBDish::Pg::Native;` later must independently see `PGconn`
+            // bare too, even though the module itself is already loaded.
+            if let Some(module_aliases) = self.package_type_aliases.get(module).cloned() {
+                let importer_package = self
+                    .unit_module_loading_stack
+                    .last()
+                    .cloned()
+                    .unwrap_or_else(|| self.current_package());
+                let entry = self
+                    .package_type_aliases
+                    .entry(importer_package)
+                    .or_default();
+                for (short, qualified) in module_aliases {
+                    entry.entry(short).or_insert(qualified);
+                }
+            }
             return match self.import_module(module, tags) {
                 Ok(()) => Ok(()),
                 Err(err) if err.message.starts_with("No exports found for module:") => Ok(()),

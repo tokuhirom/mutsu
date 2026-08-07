@@ -498,13 +498,24 @@ impl Interpreter {
     /// is currently loading so exports can be mirrored under the module name.
     pub(crate) fn detect_unit_package_name(stmts: &[crate::ast::Stmt]) -> Option<String> {
         for s in stmts {
-            if let crate::ast::Stmt::Package {
-                name,
-                is_unit: true,
-                ..
-            } = s
-            {
-                return Some(name.resolve().to_string());
+            match s {
+                crate::ast::Stmt::Package {
+                    name,
+                    is_unit: true,
+                    ..
+                } => return Some(name.resolve().to_string()),
+                // `unit class Foo;` (file-scoped body) has its own `is_unit`
+                // flag on `ClassDecl`, distinct from `Stmt::Package` — DBIish's
+                // driver classes (`unit class DBDish::Pg ... does
+                // DBDish::Driver;`) are exactly this shape, and missing it here
+                // left `unit_module_loading_stack` empty for a `use` reached
+                // from inside such a class's own top-level body.
+                crate::ast::Stmt::ClassDecl {
+                    name,
+                    is_unit: true,
+                    ..
+                } => return Some(name.resolve().to_string()),
+                _ => {}
             }
         }
         None
@@ -621,6 +632,29 @@ impl Interpreter {
     }
 
     fn load_module_inner(&mut self, module: &str) -> Result<(), RuntimeError> {
+        // Whoever's `use`/`need` triggered this load, so newly-declared
+        // classes/roles can also be made resolvable bare from the
+        // *importer's* own scope (see `new_types` below), not just from the
+        // declaring module's own package chain.
+        //
+        // NOT `current_package()`: a file-top-level `use` runs before its
+        // own `unit class`/`unit module` body registration sets
+        // `current_package` to that unit's name (`run_class_body` only does
+        // that once the class is being *registered*, and `use` is hoisted
+        // ahead of that) — so `current_package()` here is always whatever
+        // the *outer* enclosing load left it as (typically "GLOBAL"), not
+        // the file that's actually doing the importing.
+        // `unit_module_loading_stack` is exactly the right signal instead:
+        // it holds the `unit module`/`unit class`/`unit package` name of
+        // whichever load is currently in progress, pushed right before that
+        // load's own body runs (below) — so a *nested* `use` reached from
+        // inside that body sees its own unit name on top, precisely because
+        // it has not been popped yet.
+        let importer_package = self
+            .unit_module_loading_stack
+            .last()
+            .cloned()
+            .unwrap_or_else(|| self.current_package());
         // Snapshot the `use` args (set by `exec_use_module_op`) before running
         // the module body: a transitive `use` inside the body would otherwise
         // overwrite the field. Handed to the module's `sub EXPORT`, if any.
@@ -822,6 +856,54 @@ impl Interpreter {
             // install the symbols it returns into the caller's scope.
             self.apply_module_export(export_args.unwrap_or_default())?;
         }
+        // Every class/role this load just registered, regardless of whether the
+        // module carries distribution metadata or picked up any scope names of
+        // its own -- computed unconditionally so the importer-scoped aliasing
+        // below always runs for a plain bundled module too.
+        let new_types: Vec<String> = self
+            .registry()
+            .classes
+            .keys()
+            .filter(|k| !before_class_names.contains(*k))
+            .chain(
+                self.registry()
+                    .roles
+                    .keys()
+                    .filter(|k| !before_role_names.contains(*k)),
+            )
+            .cloned()
+            .collect();
+        // Make each newly-declared class/role's bare short name resolvable from
+        // the IMPORTER's own package/class too, not just from the declaring
+        // module's own package-ancestor chain. An ordinary `use Foo::Native;`
+        // from an unrelated sibling package must see `Foo::Native`'s exported
+        // classes bare -- this is the common NativeCall shape
+        // `DBDish::Pg::Native` declaring `class PGconn`, `use`d and referenced
+        // bare from sibling class `DBDish::Pg`'s own methods. Ancestor-chain
+        // walking from `DBDish::Pg` can never reach a sibling package, so this
+        // is a separate write keyed by the *importer*, not the declaring
+        // package (see `todo/tickets/package-short-name-alias-is-global.md`,
+        // "Attempt #1" for the regression this fixes).
+        if !new_types.is_empty() {
+            let aliases: Vec<(String, String)> = new_types
+                .iter()
+                .filter_map(|qualified| {
+                    qualified
+                        .rsplit_once("::")
+                        .map(|(_, short)| (short.to_string(), qualified.clone()))
+                })
+                .filter(|(short, qualified)| short != qualified && !Self::is_builtin_type(short))
+                .collect();
+            if !aliases.is_empty() {
+                let entry = self
+                    .package_type_aliases
+                    .entry(importer_package.clone())
+                    .or_default();
+                for (short, qualified) in aliases {
+                    entry.entry(short).or_insert(qualified);
+                }
+            }
+        }
         // Record the module's distribution for every class/role it just declared,
         // so an OTF compile of one of their methods resolves `$?DISTRIBUTION`, and
         // its own file-scope bare names (imported type aliases, `constant`s)
@@ -829,19 +911,7 @@ impl Interpreter {
         // resolve them once the frame that ran the `require` is gone (see
         // `package_type_aliases` / `module_scope_lexicals`).
         if module_dist.is_some() || !module_scope_names.is_empty() {
-            let mut owners: Vec<String> = self
-                .registry()
-                .classes
-                .keys()
-                .filter(|k| !before_class_names.contains(*k))
-                .chain(
-                    self.registry()
-                        .roles
-                        .keys()
-                        .filter(|k| !before_role_names.contains(*k)),
-                )
-                .cloned()
-                .collect();
+            let mut owners: Vec<String> = new_types.clone();
             if let Some(dist) = &module_dist {
                 for name in &owners {
                     self.package_distributions
