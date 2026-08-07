@@ -25,9 +25,12 @@ impl Interpreter {
         let type_constraints = &*plan.type_constraints;
 
         let attr_idx_of =
-            |name: &str| -> Option<usize> { class_attrs.iter().position(|(n, ..)| n == name) };
-        let sigil_of =
-            |name: &str| -> char { attr_idx_of(name).map(|i| class_attrs[i].5).unwrap_or('$') };
+            |name: &str| -> Option<usize> { class_attrs.iter().position(|a| a.name == name) };
+        let sigil_of = |name: &str| -> char {
+            attr_idx_of(name)
+                .map(|i| class_attrs[i].sigil)
+                .unwrap_or('$')
+        };
 
         // A custom BUILD replaces the default named-argument → attribute binding
         // for the attributes of the MRO layer that declares it: a provided
@@ -116,8 +119,9 @@ impl Interpreter {
         // `is_rw`, which must NOT gate construction (an unprovided `is rw`
         // attribute just gets its normal default, so it stays native).
         if !has_build {
-            for (attr_name, _, _, _is_rw, is_required, _, _) in class_attrs.iter() {
-                if let Some(reason) = is_required
+            for attr in class_attrs.iter() {
+                let attr_name = &attr.name;
+                if let Some(reason) = &attr.is_required
                     && !attrs.contains_key(attr_name)
                 {
                     let attr_full_name = format!("$!{}", attr_name);
@@ -141,8 +145,8 @@ impl Interpreter {
         // the interpreter's construction — fall through whether or not it was
         // provided (a shaped attribute must stay shaped even when assigned).
         // Only the empty-default `@`/`%` case (handled below) is native.
-        for (_attr_name, _, default_expr, _, _, sigil, _) in class_attrs.iter() {
-            if matches!(sigil, '@' | '%') && default_expr.is_some() {
+        for attr in class_attrs.iter() {
+            if matches!(attr.sigil, '@' | '%') && attr.default.is_some() {
                 return None;
             }
         }
@@ -152,11 +156,10 @@ impl Interpreter {
         // interpreter's constructor, so hand any such class over to it rather
         // than filling the defaults eagerly here.
         if has_build
-            && class_attrs.iter().zip(plan.attr_syms.iter()).any(
-                |((_, _, default_expr, _, _, _, _), &sym)| {
-                    default_expr.is_some() && !attrs.contains_key(sym)
-                },
-            )
+            && class_attrs
+                .iter()
+                .zip(plan.attr_syms.iter())
+                .any(|(attr, &sym)| attr.default.is_some() && !attrs.contains_key(sym))
         {
             return None;
         }
@@ -173,9 +176,10 @@ impl Interpreter {
         // that fast path made a 20k-iteration native-attr loop time out.
         let mut eval_error: Option<RuntimeError> = None;
         let mut typed_default_mismatch = false;
-        for ((attr_name, _is_public, default_expr, _, _, sigil, _), &attr_sym) in
-            class_attrs.iter().zip(plan.attr_syms.iter())
-        {
+        for (attr, &attr_sym) in class_attrs.iter().zip(plan.attr_syms.iter()) {
+            let attr_name = &attr.name;
+            let default_expr = &attr.default;
+            let sigil = &attr.sigil;
             if attrs.contains_key(attr_sym) {
                 continue;
             }
@@ -323,10 +327,9 @@ impl Interpreter {
         // `coerce_value_for_constraint` is the exact path the interpreter uses, so
         // the result is identical; the gate already excluded user-class targets,
         // so only built-in coercion logic runs here.
-        for ((attr_name, _, _, _, _, sigil, _), &attr_sym) in
-            class_attrs.iter().zip(plan.attr_syms.iter())
-        {
-            if *sigil != '$' {
+        for (attr, &attr_sym) in class_attrs.iter().zip(plan.attr_syms.iter()) {
+            let attr_name = &attr.name;
+            if attr.sigil != '$' {
                 continue;
             }
             if let Some(tc) = type_constraints.get(attr_name)
@@ -349,10 +352,9 @@ impl Interpreter {
         // container flattens it (just like `my @a = |@x` yields an `Array`, not a
         // `Slip`), so materialize it into a plain mutable `Array` here. Without
         // this the attribute keeps a `Slip` whose `.^name` is `Slip`.
-        for ((attr_name, _, _, _, _, sigil, _), &attr_sym) in
-            class_attrs.iter().zip(plan.attr_syms.iter())
-        {
-            if *sigil != '@' {
+        for (attr, &attr_sym) in class_attrs.iter().zip(plan.attr_syms.iter()) {
+            let attr_name = &attr.name;
+            if attr.sigil != '@' {
                 continue;
             }
             if let Some(ValueView::Slip(items) | ValueView::Seq(items)) =
@@ -365,9 +367,9 @@ impl Interpreter {
                 attrs.insert(attr_sym, flattened);
             }
         }
-        for ((attr_name, _, _, _, _, sigil, _), &attr_sym) in
-            class_attrs.iter().zip(plan.attr_syms.iter())
-        {
+        for (attr, &attr_sym) in class_attrs.iter().zip(plan.attr_syms.iter()) {
+            let attr_name = &attr.name;
+            let sigil = attr.sigil;
             if !matches!(sigil, '@' | '%') {
                 continue;
             }
@@ -375,7 +377,7 @@ impl Interpreter {
                 continue;
             };
             if let Some(val) = attrs.get(attr_name).cloned() {
-                match self.finalize_typed_container_attr(attr_name, *sigil, &elem_type, val) {
+                match self.finalize_typed_container_attr(attr_name, sigil, &elem_type, val) {
                     // Hashes embed the element type in `HashData`, so store the
                     // tagged value back into the attrs that move into the instance.
                     Ok(tagged) => {
@@ -401,7 +403,7 @@ impl Interpreter {
         // provided/defaulted value that fails its `where` is rejected here, and a
         // later BUILD/TWEAK that would "fix" it never runs. `class_attrs` is the
         // same `ClassAttributeDef` slice the interpreter uses.
-        let has_where = class_attrs.iter().any(|(.., where_c)| where_c.is_some());
+        let has_where = class_attrs.iter().any(|a| a.where_constraint.is_some());
         if has_where
             && let Err(e) =
                 self.enforce_attribute_where_constraints(cn_resolved, class_attrs, &attrs)
@@ -454,8 +456,9 @@ impl Interpreter {
             // exactly where the full constructor does its post-BUILD required
             // check. A still-unset attribute (`None` or `Nil`) raises
             // `X::Attribute::Required` with the same message and reason.
-            for (attr_name, _, _, _, is_required, _, _) in class_attrs.iter() {
-                if let Some(reason) = is_required {
+            for attr in class_attrs.iter() {
+                let attr_name = &attr.name;
+                if let Some(reason) = &attr.is_required {
                     // The pre-BUILD seed for an unset untyped attribute is
                     // the Any type object (not Nil), so treat it as unset too.
                     let is_set = !matches!(

@@ -950,15 +950,15 @@ impl Interpreter {
                     let sigil = attr_name_raw.chars().next().unwrap_or('$');
                     // Add the attribute to the class definition
                     if let Some(class_def) = self.registry_mut().classes.get_mut(&class_name) {
-                        class_def.attributes.push((
-                            bare_name.clone(),
-                            has_accessor, // is_public
-                            None,         // default_expr
-                            is_rw,        // is_rw
-                            None,         // is_required
-                            sigil,        // sigil
-                            None,         // where_constraint
-                        ));
+                        class_def.attributes.push(ClassAttributeDef {
+                            name: bare_name.clone(),
+                            is_public: has_accessor,
+                            default: None,
+                            is_rw,
+                            is_required: None,
+                            sigil,
+                            where_constraint: None,
+                        });
                         if let Some(tc) = type_constraint {
                             class_def.attribute_types.insert(bare_name, tc);
                         }

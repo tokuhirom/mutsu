@@ -61,7 +61,7 @@ impl Interpreter {
                 }
                 if let Some(cd) = self.registry().classes.get(cn) {
                     for attr in &cd.attributes {
-                        if seen_names.insert(attr.0.clone()) {
+                        if seen_names.insert(attr.name.clone()) {
                             result.push(self.make_attribute_object(attr, cn));
                         }
                     }
@@ -156,7 +156,12 @@ impl Interpreter {
     }
 
     fn make_attribute_object(&self, attr: &super::ClassAttributeDef, owner: &str) -> Value {
-        let (ref attr_name, is_public, ref default, is_rw, ref is_required, sigil, _) = *attr;
+        let attr_name = &attr.name;
+        let is_public = attr.is_public;
+        let default = &attr.default;
+        let is_rw = attr.is_rw;
+        let is_required = &attr.is_required;
+        let sigil = attr.sigil;
         // A custom trait_mod:<is> was applied to this attribute at class
         // registration: serve the SAME meta-object it mutated (role mixins,
         // values like JSON::Name's `$.json-name`), topped up below with the

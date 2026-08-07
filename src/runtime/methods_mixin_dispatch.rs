@@ -90,7 +90,7 @@ impl Interpreter {
                             self.registry().roles.get(role_name).is_some_and(|role| {
                                 role.attributes
                                     .iter()
-                                    .any(|(name, is_pub, ..)| name == method && *is_pub)
+                                    .any(|a| a.name == method && a.is_public)
                             })
                         });
                 if is_public {

@@ -82,7 +82,7 @@ impl Interpreter {
         let mro = self.class_mro(class_name);
         for cn in mro.iter() {
             if let Some(cd) = self.registry().classes.get(cn.as_str())
-                && cd.attributes.iter().any(|a| a.0 == attr)
+                && cd.attributes.iter().any(|a| a.name == attr)
             {
                 return Some(cn.resolve());
             }

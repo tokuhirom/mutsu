@@ -440,15 +440,20 @@ pub(crate) use methods_raku_dispatch::container_needs_raku_dispatch;
 
 use self::unicode::{check_unicode_property, check_unicode_property_with_args};
 
-pub(crate) type ClassAttributeDef = (
-    String,
-    bool,
-    Option<Expr>,
-    bool,
-    Option<Option<String>>,
-    char,
-    Option<Expr>,
-);
+/// One class/role attribute declaration.
+///
+/// Field order matches the historical tuple layout:
+/// `(attr_name, is_public, default, is_rw, is_required, sigil, where_constraint)`.
+#[derive(Debug, Clone)]
+pub(crate) struct ClassAttributeDef {
+    pub(crate) name: String,
+    pub(crate) is_public: bool,
+    pub(crate) default: Option<Expr>,
+    pub(crate) is_rw: bool,
+    pub(crate) is_required: Option<Option<String>>,
+    pub(crate) sigil: char,
+    pub(crate) where_constraint: Option<Expr>,
+}
 
 /// The set of read-only variable names (`readonly_vars`), and the type of a
 /// snapshot taken by `save_readonly_vars`.

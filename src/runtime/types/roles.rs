@@ -437,11 +437,8 @@ impl Interpreter {
                 .get(role_name)
                 .is_some_and(|params| !params.is_empty());
             if !role_args.is_empty() && !has_type_params {
-                let public_attr_count = role
-                    .attributes
-                    .iter()
-                    .filter(|(_, is_public, ..)| *is_public)
-                    .count();
+                let public_attr_count =
+                    role.attributes.iter().filter(|attr| attr.is_public).count();
                 if public_attr_count != 1 {
                     return Err(RuntimeError::role_initialization(role_name));
                 }
@@ -459,9 +456,10 @@ impl Interpreter {
             } else {
                 None
             };
-            for (idx, (attr_name, _is_public, default_expr, _, _, sigil, _)) in
-                role.attributes.iter().enumerate()
-            {
+            for (idx, attr) in role.attributes.iter().enumerate() {
+                let attr_name = &attr.name;
+                let default_expr = &attr.default;
+                let sigil = &attr.sigil;
                 let value = if let Some(arg) = role_args.get(idx) {
                     arg.clone()
                 } else if let Some(default_expr) = default_expr {
@@ -536,7 +534,7 @@ impl Interpreter {
         let attr_names: Vec<String> = role
             .attributes
             .iter()
-            .map(|(name, ..)| name.clone())
+            .map(|attr| attr.name.clone())
             .collect();
         if let ValueView::Mixin(_, mixins) = target.view() {
             for attr_name in &attr_names {

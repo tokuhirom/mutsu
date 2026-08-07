@@ -2429,9 +2429,7 @@ impl Interpreter {
                 } else {
                     class_attrs
                         .iter()
-                        .any(|(attr_name, is_public, _, is_rw, ..)| {
-                            *is_public && attr_name == method && *is_rw
-                        })
+                        .any(|a| a.is_public && a.name == method && a.is_rw)
                 };
                 if is_public_rw_accessor {
                     // User-defined rw method takes priority over simple accessor
@@ -2467,9 +2465,7 @@ impl Interpreter {
                     let is_public_accessor = if class_attrs.is_empty() {
                         false
                     } else {
-                        class_attrs
-                            .iter()
-                            .any(|(attr_name, is_public, ..)| *is_public && attr_name == method)
+                        class_attrs.iter().any(|a| a.is_public && a.name == method)
                     };
                     if is_public_accessor {
                         let current = attributes

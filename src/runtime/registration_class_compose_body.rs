@@ -339,7 +339,7 @@ impl Interpreter {
                         Vec::new()
                     };
                     for attr in &parent_role.attributes {
-                        if !cx.class_def.attributes.iter().any(|(n, ..)| n == &attr.0) {
+                        if !cx.class_def.attributes.iter().any(|a| a.name == attr.name) {
                             cx.class_def.attributes.push(attr.clone());
                         }
                     }

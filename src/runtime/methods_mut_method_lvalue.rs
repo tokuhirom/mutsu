@@ -42,11 +42,9 @@ impl Interpreter {
         {
             let base = role_name.split('[').next().unwrap_or(role_name);
             for candidate in [role_name, base] {
-                for (attr_name, is_public, _default, is_rw, _is_required, sigil, ..) in
-                    self.collect_role_attributes_for_class(candidate)
-                {
-                    if attr_name == method && is_public {
-                        if is_rw || sigil == '@' || sigil == '%' {
+                for attr in self.collect_role_attributes_for_class(candidate) {
+                    if attr.name == method && attr.is_public {
+                        if attr.is_rw || attr.sigil == '@' || attr.sigil == '%' {
                             return true;
                         }
                         found_attr = true;
@@ -869,10 +867,9 @@ impl Interpreter {
                 // No explicit method found — try auto-accessor for public `is rw` attributes
                 let class_attrs = self.collect_class_attributes(qualifier);
                 let mut found_rw = false;
-                for (attr_name, is_public, _default, is_rw, _is_required, sigil, ..) in &class_attrs
-                {
-                    if attr_name == actual_method && *is_public {
-                        if !is_rw && *sigil != '@' && *sigil != '%' {
+                for attr in &class_attrs {
+                    if attr.name == actual_method && attr.is_public {
+                        if !attr.is_rw && attr.sigil != '@' && attr.sigil != '%' {
                             return Err(RuntimeError::new(format!(
                                 "X::Assignment::RO: method '{}' is not rw",
                                 actual_method
@@ -996,9 +993,9 @@ impl Interpreter {
             // Check if the role attribute is public and rw before allowing assignment
             let cn = class_name.resolve();
             let role_attrs = self.collect_role_attributes_for_class(&cn);
-            for (attr_name, is_public, _default, is_rw, _, sigil, _) in &role_attrs {
-                if attr_name == method && *is_public {
-                    if !is_rw && *sigil != '@' && *sigil != '%' {
+            for attr in &role_attrs {
+                if attr.name == method && attr.is_public {
+                    if !attr.is_rw && attr.sigil != '@' && attr.sigil != '%' {
                         return Err(RuntimeError::new(format!(
                             "X::Assignment::RO: method '{}' is not rw",
                             method
@@ -1087,18 +1084,18 @@ impl Interpreter {
             let class_attrs = self.collect_class_attributes(&class_name.resolve());
             let mut found_public_rw = false;
             let mut attr_sigil = '$';
-            for (attr_name, is_public, _default, is_rw, _is_required, sigil, ..) in &class_attrs {
-                if attr_name == method && *is_public {
+            for attr in &class_attrs {
+                if attr.name == method && attr.is_public {
                     // @ and % attributes are containers whose elements are always writable
                     // through indexing, even without `is rw`.
-                    if !is_rw && *sigil != '@' && *sigil != '%' {
+                    if !attr.is_rw && attr.sigil != '@' && attr.sigil != '%' {
                         return Err(RuntimeError::new(format!(
                             "X::Assignment::RO: method '{}' is not rw",
                             method
                         )));
                     }
                     found_public_rw = true;
-                    attr_sigil = *sigil;
+                    attr_sigil = attr.sigil;
                     break;
                 }
             }

@@ -261,13 +261,13 @@ impl Interpreter {
             if let Some(class_def) = self.registry().classes.get(cn.as_str())
                 // Within one class a later same-name declaration overrides an
                 // earlier one (collect_class_attributes' remove-then-push).
-                && let Some((_, is_public, ..)) = class_def
+                && let Some(attr) = class_def
                     .attributes
                     .iter()
                     .rev()
-                    .find(|(n, ..)| n == method_name)
+                    .find(|a| a.name == method_name)
             {
-                return *is_public;
+                return attr.is_public;
             }
         }
         false
@@ -311,7 +311,7 @@ impl Interpreter {
                     let attr = class_def
                         .attributes
                         .iter()
-                        .any(|(n, is_public, ..)| *is_public && n == method_name);
+                        .any(|a| a.is_public && a.name == method_name);
                     // A built-in class (e.g. Proc) may register a public attribute
                     // for `.raku`/introspection while a native method of the same
                     // name is the real getter (its computed fallbacks differ from
@@ -329,7 +329,7 @@ impl Interpreter {
                     let attr = role_def
                         .attributes
                         .iter()
-                        .any(|(n, is_public, ..)| *is_public && n == method_name);
+                        .any(|a| a.is_public && a.name == method_name);
                     (local, false, attr, false)
                 } else {
                     (false, false, false, false)
@@ -366,9 +366,7 @@ impl Interpreter {
         let attrs = self.collect_class_attributes(class_name);
         let is_rw = attrs
             .iter()
-            .any(|(attr_name, is_public, _default, is_rw, ..)| {
-                *is_public && *is_rw && attr_name == method_name
-            });
+            .any(|attr| attr.is_public && attr.is_rw && attr.name == method_name);
         if !is_rw {
             return None;
         }
@@ -387,9 +385,9 @@ impl Interpreter {
             if let Some(&built) = class_def.attribute_built.get(attr_name) {
                 return built;
             }
-            for (name, is_public, ..) in &class_def.attributes {
-                if name == attr_name {
-                    return *is_public;
+            for attr in &class_def.attributes {
+                if attr.name == attr_name {
+                    return attr.is_public;
                 }
             }
         }
@@ -406,9 +404,9 @@ impl Interpreter {
                 if let Some(&built) = parent_def.attribute_built.get(attr_name) {
                     return built;
                 }
-                for (name, is_public, ..) in &parent_def.attributes {
-                    if name == attr_name {
-                        return *is_public;
+                for attr in &parent_def.attributes {
+                    if attr.name == attr_name {
+                        return attr.is_public;
                     }
                 }
             }
@@ -521,7 +519,7 @@ impl Interpreter {
             self.registry()
                 .classes
                 .get(cn.as_str())
-                .is_some_and(|cd| cd.attributes.iter().any(|(n, ..)| n == bare))
+                .is_some_and(|cd| cd.attributes.iter().any(|a| a.name == bare))
         })
     }
 
@@ -531,7 +529,7 @@ impl Interpreter {
         for cn in mro.iter().rev() {
             if let Some(class_def) = self.registry().classes.get(cn.as_str()) {
                 for attr in &class_def.attributes {
-                    if let Some(pos) = attrs.iter().position(|(n, ..)| n == &attr.0) {
+                    if let Some(pos) = attrs.iter().position(|a| a.name == attr.name) {
                         attrs.remove(pos);
                     }
                     attrs.push(attr.clone());
@@ -558,7 +556,7 @@ impl Interpreter {
         for cn in mro.iter() {
             if let Some(class_def) = self.registry().classes.get(cn.as_str()) {
                 for attr in &class_def.attributes {
-                    *attr_counts.entry(attr.0.clone()).or_insert(0) += 1;
+                    *attr_counts.entry(attr.name.clone()).or_insert(0) += 1;
                 }
             }
         }
@@ -566,7 +564,7 @@ impl Interpreter {
         for cn in mro.iter() {
             if let Some(class_def) = self.registry().classes.get(cn.as_str()) {
                 for attr in &class_def.attributes {
-                    if attr_counts.get(&attr.0).copied().unwrap_or(0) > 1 {
+                    if attr_counts.get(&attr.name).copied().unwrap_or(0) > 1 {
                         result.push((cn.resolve(), attr.clone()));
                     }
                 }
@@ -594,7 +592,7 @@ impl Interpreter {
                     visited.push(parent_role_name.clone());
                     if let Some(parent_role) = self.registry().roles.get(&parent_role_name) {
                         for attr in &parent_role.attributes {
-                            if !attrs.iter().any(|a| a.0 == attr.0) {
+                            if !attrs.iter().any(|a| a.name == attr.name) {
                                 attrs.push(attr.clone());
                             }
                         }

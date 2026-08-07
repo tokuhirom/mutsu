@@ -350,12 +350,12 @@ impl crate::runtime::Interpreter {
         let attrs = self.collect_class_attributes(&registered);
         let fields: Vec<(String, String)> = attrs
             .iter()
-            .map(|(name, ..)| {
+            .map(|attr| {
                 let ty = self
-                    .get_attr_type_constraint(&registered, name)
+                    .get_attr_type_constraint(&registered, &attr.name)
                     .unwrap_or_default();
                 (
-                    name.clone(),
+                    attr.name.clone(),
                     self.resolve_field_type_alias(&ty, &registered),
                 )
             })

@@ -244,7 +244,7 @@ impl Interpreter {
         }
         self.collect_class_attributes(class_name)
             .iter()
-            .any(|(attr_name, is_public, ..)| *is_public && attr_name == method_name)
+            .any(|a| a.is_public && a.name == method_name)
     }
 
     pub(super) fn resolve_class_stub_requirements(

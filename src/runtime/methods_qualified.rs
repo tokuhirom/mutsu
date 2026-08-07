@@ -210,8 +210,8 @@ impl Interpreter {
         // Read: look up the attribute in the qualifier class's attribute definitions
         if args.is_empty() {
             let class_attrs = self.collect_class_attributes(qualifier);
-            for (attr_name, is_public, ..) in &class_attrs {
-                if *is_public && attr_name == actual_method {
+            for attr in &class_attrs {
+                if attr.is_public && attr.name == actual_method {
                     return Some(Ok(attributes
                         .as_map()
                         .get(actual_method)

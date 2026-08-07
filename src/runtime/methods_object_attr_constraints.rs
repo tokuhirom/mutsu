@@ -128,9 +128,10 @@ impl Interpreter {
         attrs: &AttrMap,
     ) -> Result<(), RuntimeError> {
         let type_constraints = self.collect_attribute_type_constraints(class_name);
-        for (attr_name, _is_public, _default, _is_rw, _is_required, sigil, where_constraint) in
-            class_attrs_info
-        {
+        for attr in class_attrs_info {
+            let attr_name = &attr.name;
+            let sigil = &attr.sigil;
+            let where_constraint = &attr.where_constraint;
             if let Some(constraint) = type_constraints.get(attr_name)
                 && (constraint.starts_with(char::is_uppercase) || constraint.starts_with("::"))
                 && let Some(value) = attrs.get(attr_name)
@@ -255,9 +256,9 @@ impl Interpreter {
                         .entry(attr_name.clone())
                         .or_insert_with(|| smiley.clone());
                 }
-                for (attr_name, _, _, _, is_required, _, _) in &class_def.attributes {
-                    if is_required.is_some() {
-                        required_attrs.insert(attr_name.clone());
+                for attr in &class_def.attributes {
+                    if attr.is_required.is_some() {
+                        required_attrs.insert(attr.name.clone());
                     }
                 }
             }
@@ -342,9 +343,10 @@ impl Interpreter {
 
         // Initialize subclass attributes with defaults
         let class_attrs_info = self.collect_class_attributes(class_name);
-        for (attr_name, _is_public, default_expr, _is_rw, _is_required, sigil, _) in
-            &class_attrs_info
-        {
+        for attr in &class_attrs_info {
+            let attr_name = &attr.name;
+            let default_expr = &attr.default;
+            let sigil = &attr.sigil;
             if !extra_attrs.contains_key(attr_name) {
                 let default_val = if let Some(expr) = default_expr {
                     let result = self.eval_block_value(&[crate::ast::Stmt::Expr(expr.clone())])?;

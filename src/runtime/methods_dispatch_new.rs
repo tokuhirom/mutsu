@@ -355,9 +355,10 @@ impl Interpreter {
         let mut attributes = AttrMap::new();
         let mut deferred_defaults: Vec<super::attr_build_defaults::DeferredAttrDefault> =
             Vec::new();
-        for ((attr_name, _is_public, default, _is_rw, _, sigil, _), &attr_sym) in
-            plan.class_attrs.iter().zip(plan.attr_syms.iter())
-        {
+        for (attr, &attr_sym) in plan.class_attrs.iter().zip(plan.attr_syms.iter()) {
+            let attr_name = &attr.name;
+            let default = &attr.default;
+            let sigil = &attr.sigil;
             // A `@`/`%` attribute with no declared default that a bless named
             // argument provides would get an empty container here only for the
             // override loop below to immediately replace it — skip the throwaway
@@ -450,7 +451,7 @@ impl Interpreter {
                 match plan
                     .class_attrs
                     .iter()
-                    .position(|(n, ..)| n.as_str() == &**key)
+                    .position(|a| a.name.as_str() == &**key)
                 {
                     Some(i) => {
                         // Sigil-coerce like `dispatch_new` does: a `%`-attribute
@@ -458,7 +459,7 @@ impl Interpreter {
                         // `@`-attribute provided as a List becomes an Array
                         // (META6's `multi method new(*%items) { self.bless(|%items) }`
                         // passes `provides => ("Test::META" => "lib/...",)`).
-                        let sigil = plan.class_attrs[i].5;
+                        let sigil = plan.class_attrs[i].sigil;
                         attributes.insert(
                             plan.attr_syms[i],
                             Self::coerce_attr_value_by_sigil(value.clone(), sigil),
@@ -748,9 +749,8 @@ impl Interpreter {
     fn create_default_attr_slots(&mut self, class_name: &str) -> AttrMap {
         let mut attributes = AttrMap::new();
         if self.registry().classes.contains_key(class_name) {
-            for (attr_name, _is_public, _default, _is_rw, _, _, _) in
-                self.collect_class_attributes(class_name)
-            {
+            for attr in self.collect_class_attributes(class_name) {
+                let attr_name = attr.name;
                 let type_constraint = self.get_attr_type_constraint(class_name, &attr_name);
                 let val = match type_constraint.as_deref() {
                     Some(

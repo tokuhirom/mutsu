@@ -260,7 +260,10 @@ impl Interpreter {
                 }
                 saved
             });
-            for (attr_name, _is_public, default_expr, _, _, sigil, _) in &role.attributes {
+            for attr in &role.attributes {
+                let attr_name = &attr.name;
+                let default_expr = &attr.default;
+                let sigil = &attr.sigil;
                 if attributes.contains_key(attr_name.as_str()) {
                     continue;
                 }

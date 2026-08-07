@@ -398,7 +398,15 @@ impl Interpreter {
             // type-object / value default: `in`/`out`/`err` => IO::Pipe,
             // os-error => Str, signal => Any, exitcode/pid => Nil, command => [].
             let proc_attr = |name: &str, sigil: char, default: Option<Expr>| -> ClassAttributeDef {
-                (name.to_string(), true, default, false, None, sigil, None)
+                ClassAttributeDef {
+                    name: name.to_string(),
+                    is_public: true,
+                    default,
+                    is_rw: false,
+                    is_required: None,
+                    sigil,
+                    where_constraint: None,
+                }
             };
             let nil_default = || Some(Expr::Literal(Value::NIL));
             let mut attribute_types = HashMap::new();
