@@ -212,7 +212,9 @@ impl Interpreter {
     ) -> QuitOutcome {
         let saved_when = self.when_matched();
         self.set_when_matched(false);
-        let done_before = supplier_done_count();
+        // Per-thread, not per-process: the phaser body runs synchronously here,
+        // so only a `done` raised on this thread can be its doing.
+        let done_before = thread_supplier_done_count();
         let result = self.call_sub_value(quit_cb, vec![reason], true);
         let matched = self.when_matched();
         self.set_when_matched(saved_when);
@@ -220,7 +222,7 @@ impl Interpreter {
         // was already completed via the emitter — don't let the caller fire the
         // downstream done a second time. The `done` rewrite returns from the
         // phaser sub normally, so this is the reliable signal.
-        if supplier_done_count() > done_before {
+        if thread_supplier_done_count() > done_before {
             return QuitOutcome::HandledViaDone;
         }
         match result {

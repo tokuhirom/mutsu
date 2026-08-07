@@ -333,14 +333,50 @@ pub(in crate::runtime) fn clear_supplier_serialize_group(trigger_supplier_id: u6
 /// Monotonic count of `Supplier.done` invocations. Used to detect whether a
 /// QUIT phaser called `done` (which completes the supply via the emitter):
 /// snapshot before running the phaser, compare after.
-static SUPPLIER_DONE_CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// Per-supplier `done` call counts, plus a per-thread total for the callers
+/// that have no supplier id to key on.
+///
+/// A single process-global counter is *not* enough: `run_on_demand_body` uses
+/// this to decide whether the block body it just ran completed **its own**
+/// emitter, and a global count also ticks for a `done` on an unrelated supplier
+/// on another thread. With a Cro server and client in one process that happens
+/// constantly, and the false positive made the freshly-tapped pipeline
+/// immediately close its own upstream taps, silently dropping the request.
+static SUPPLIER_DONE_CALLS_BY_ID: OnceLock<std::sync::Mutex<HashMap<u64, u64>>> = OnceLock::new();
 
-pub(in crate::runtime) fn bump_supplier_done_count() {
-    SUPPLIER_DONE_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+fn supplier_done_calls_map() -> &'static std::sync::Mutex<HashMap<u64, u64>> {
+    SUPPLIER_DONE_CALLS_BY_ID.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
-pub(in crate::runtime) fn supplier_done_count() -> u64 {
-    SUPPLIER_DONE_CALLS.load(std::sync::atomic::Ordering::Relaxed)
+thread_local! {
+    /// `done` calls made on *this* thread. The bodies and phasers that consult
+    /// the counter run synchronously on the calling thread, so a thread-local
+    /// total is immune to a concurrent pipeline's `done` while still catching a
+    /// `done` on an emitter whose id the caller does not know.
+    static THREAD_DONE_CALLS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+pub(in crate::runtime) fn bump_supplier_done_count(supplier_id: Option<u64>) {
+    THREAD_DONE_CALLS.with(|c| c.set(c.get() + 1));
+    if let Some(sid) = supplier_id
+        && let Ok(mut map) = supplier_done_calls_map().lock()
+    {
+        *map.entry(sid).or_insert(0) += 1;
+    }
+}
+
+/// `done` calls made on this thread so far.
+pub(in crate::runtime) fn thread_supplier_done_count() -> u64 {
+    THREAD_DONE_CALLS.with(|c| c.get())
+}
+
+/// `done` calls made on the given supplier so far (from any thread).
+pub(in crate::runtime) fn supplier_done_call_count(supplier_id: u64) -> u64 {
+    supplier_done_calls_map()
+        .lock()
+        .ok()
+        .and_then(|map| map.get(&supplier_id).copied())
+        .unwrap_or(0)
 }
 
 fn next_tap_id() -> u64 {
