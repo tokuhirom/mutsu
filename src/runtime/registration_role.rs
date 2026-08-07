@@ -261,6 +261,7 @@ impl Interpreter {
         )))
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn register_role_decl(
         &mut self,
         name: &str,
@@ -269,6 +270,9 @@ impl Interpreter {
         body: &[Stmt],
         role_is_rw: bool,
         language_version: &str,
+        own_attribute_names: &[Symbol],
+        body_used_modules: &[String],
+        body_declared_types: &[String],
     ) -> Result<(), RuntimeError> {
         self.clear_private_zeroarg_method_cache();
 
@@ -316,9 +320,9 @@ impl Interpreter {
             role_is_rw,
             is_parametric: !type_params.is_empty(),
             role_def,
-            role_own_attrs: HashSet::new(),
-            body_used_modules: HashSet::new(),
-            body_declared_types: HashSet::new(),
+            role_own_attrs: own_attribute_names.iter().map(|s| s.resolve()).collect(),
+            body_used_modules: body_used_modules.iter().cloned().collect(),
+            body_declared_types: body_declared_types.iter().cloned().collect(),
         };
         self.walk_role_body(body, &mut cx)?;
         self.finish_role_registration(

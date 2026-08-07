@@ -137,6 +137,7 @@ impl Interpreter {
             decl_id,
             is_stub,
             trusts,
+            own_attribute_names,
         }) = code.class_decl_plans.get(idx as usize)
         {
             let resolved_name = if let Some(chunk) = name_chunk {
@@ -248,6 +249,7 @@ impl Interpreter {
                         language_version,
                         is_stub: *is_stub,
                         trusts,
+                        own_attribute_names,
                     },
                     body,
                 )
@@ -595,6 +597,9 @@ impl Interpreter {
             is_rw,
             language_version,
             custom_traits,
+            own_attribute_names,
+            body_used_modules,
+            body_declared_types,
         }) = code.role_decl_plans.get(idx as usize)
         {
             let name_str = name.resolve();
@@ -621,6 +626,9 @@ impl Interpreter {
                     body,
                     *is_rw,
                     language_version,
+                    own_attribute_names,
+                    body_used_modules,
+                    body_declared_types,
                 )
             )?;
             // Link `is Parent` references on this role to the lexical class visible

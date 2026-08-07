@@ -752,6 +752,7 @@ impl Interpreter {
             language_version: &language_version,
             is_stub: false,
             trusts: &[],
+            own_attribute_names: &[],
         };
         self.register_class_decl(&pun_name, &parents, modifiers, &[])?;
         self.store_language_revision_from_version(&pun_name, &language_version);

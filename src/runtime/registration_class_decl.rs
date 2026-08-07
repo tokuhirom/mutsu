@@ -125,6 +125,7 @@ impl Interpreter {
             language_version: class_language_version,
             is_stub: is_stub_body,
             trusts,
+            own_attribute_names,
         } = modifiers;
         let class_lang_rev = language_revision_letter(class_language_version);
         // Normalize parent names: strip leading `::` (indirect name lookup syntax).
@@ -221,6 +222,7 @@ impl Interpreter {
             is_hidden,
             class_is_rw,
             &class_lang_rev,
+            own_attribute_names,
         )?;
         self.finalize_class_registration(name, parents, class_def, &snapshot)?;
         self.install_class_exporthow(name, parents)?;
