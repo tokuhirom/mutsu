@@ -1482,7 +1482,10 @@ impl Interpreter {
                     let cn = class_name.resolve();
                     if !self.has_user_method(&cn, method)
                         && attributes.contains_key("__mutsu_array_storage")
-                        && self.mro_readonly(&cn).iter().any(|n| n == "Array")
+                        && self
+                            .mro_readonly(&cn)
+                            .iter()
+                            .any(|n| Self::is_positional_base(n))
                     {
                         let storage = attributes
                             .as_map()

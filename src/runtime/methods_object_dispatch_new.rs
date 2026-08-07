@@ -1790,9 +1790,9 @@ impl Interpreter {
                     if self.class_does_baggy_or_setty(&cn) {
                         return self.construct_baggy_instance(&cn, &args);
                     }
-                    let accepts_positional = class_mro
-                        .iter()
-                        .any(|n| n == "Array" || n == "Int" || n == "Num" || n == "Hash");
+                    let accepts_positional = class_mro.iter().any(|n| {
+                        *n == "Array" || *n == "List" || n == "Int" || n == "Num" || n == "Hash"
+                    });
                     if !accepts_positional {
                         return Err(constructor_positional_error(&class_name.resolve()));
                     }
@@ -1848,14 +1848,13 @@ impl Interpreter {
                         .first()
                         .map_or(0, crate::runtime::to_int)
                 };
-                if class_mro.iter().any(|name| name == "Array")
+                if class_mro.iter().any(|n| *n == "Array" || *n == "List")
                     && !attrs.contains_key("__mutsu_array_storage")
                     && !positional_ctor_args.is_empty()
                 {
-                    attrs.insert(
-                        "__mutsu_array_storage".to_string(),
-                        Value::real_array(positional_ctor_args),
-                    );
+                    let storage =
+                        self.positional_base_storage(class_key, positional_ctor_args.clone());
+                    attrs.insert("__mutsu_array_storage".to_string(), storage);
                 }
                 if class_mro.iter().any(|name| name == "Int")
                     && !attrs.contains_key("__mutsu_int_value")
@@ -2209,14 +2208,15 @@ impl Interpreter {
                         attrs.insert(qualified_key, val);
                     }
                 }
-                // If the class inherits from Array, add backing array storage
-                if self.class_mro(class_key).iter().any(|n| n == "Array")
+                // If the class inherits from Array or List, add backing storage
+                if self
+                    .class_mro(class_key)
+                    .iter()
+                    .any(|n| *n == "Array" || *n == "List")
                     && !attrs.contains_key("__mutsu_array_storage")
                 {
-                    attrs.insert(
-                        "__mutsu_array_storage".to_string(),
-                        Value::real_array(Vec::new()),
-                    );
+                    let storage = self.positional_base_storage(class_key, Vec::new());
+                    attrs.insert("__mutsu_array_storage".to_string(), storage);
                 }
                 // Tag typed `@`/`%` attributes (`has Int @.nums`) with
                 // element-type metadata and type-check their elements (the

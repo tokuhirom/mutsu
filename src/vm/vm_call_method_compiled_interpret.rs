@@ -334,7 +334,10 @@ impl Interpreter {
             if !self.has_user_method(class, method)
                 && let ValueView::Instance { attributes, .. } = target.view()
                 && attributes.contains_key("__mutsu_array_storage")
-                && self.mro_readonly(class).iter().any(|n| n == "Array")
+                && self
+                    .mro_readonly(class)
+                    .iter()
+                    .any(|n| Self::is_positional_base(n))
             {
                 let storage = attributes
                     .as_map()

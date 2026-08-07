@@ -2003,7 +2003,10 @@ impl Interpreter {
                     if is_array_method
                         && !self.has_user_method(&cn, &method)
                         && attributes.contains_key("__mutsu_array_storage")
-                        && self.mro_readonly(&cn).iter().any(|n| n == "Array")
+                        && self
+                            .mro_readonly(&cn)
+                            .iter()
+                            .any(|n| Self::is_positional_base(n))
                     {
                         let mut storage = attributes
                             .as_map()
