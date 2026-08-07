@@ -899,98 +899,84 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         idx: u32,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
-        let stmt = &code.stmt_pool[idx as usize];
-        if let Stmt::ProtoDecl {
+        let crate::opcode::CompiledProtoDeclPlan {
             name,
             params,
             param_defs,
-            body,
             is_export,
             custom_traits,
             is_method,
             is_our,
-            ..
-        } = stmt
-        {
-            let name_str = name.resolve();
-            // A `proto method`/`proto submethod` (`is_method`) is a *method*-level
-            // proto: its `{*}` dispatches over the type's multi-method candidates
-            // via the class method table, not the package-level proto-sub table.
-            // Registering it as a package proto sub is not only unnecessary but
-            // breaks role composition: the role body's `RegisterProtoSub` runs once
-            // when the role is declared and again when a class does the role, so the
-            // second registration hits the already-present `GLOBAL::<name>` proto and
-            // wrongly raises `X::Redeclaration` (lizmat's `Enumify` proto+multi
-            // pattern, SBOM::CycloneDX). Skip the package-level registration for
-            // method protos; the method-table path already handles them.
-            if !*is_method {
-                self.register_proto_decl(&name_str, params, param_defs, body, *is_our)?;
+            legacy_body: body,
+            compiled_routine_key,
+        } = &code.proto_decl_plans[idx as usize];
+        let name_str = name.resolve();
+        // The plan-compiled bytecode for the `{*}`-rewritten body (ADR-0019
+        // C8), `None` for a trivial proto or a method proto — see
+        // `CompiledProtoDeclPlan::compiled_routine_key`.
+        let compiled = compiled_routine_key.and_then(|key| compiled_fns.get(&key));
+        // A `proto method`/`proto submethod` (`is_method`) is a *method*-level
+        // proto: its `{*}` dispatches over the type's multi-method candidates
+        // via the class method table, not the package-level proto-sub table.
+        // Registering it as a package proto sub is not only unnecessary but
+        // breaks role composition: the role body's `RegisterDecl` runs once
+        // when the role is declared and again when a class does the role, so the
+        // second registration hits the already-present `GLOBAL::<name>` proto and
+        // wrongly raises `X::Redeclaration` (lizmat's `Enumify` proto+multi
+        // pattern, SBOM::CycloneDX). Skip the package-level registration for
+        // method protos; the method-table path already handles them.
+        if !*is_method {
+            self.register_proto_decl(&name_str, params, param_defs, body, *is_our, compiled)?;
+        }
+        if *is_export {
+            self.register_proto_decl_as_global(&name_str, params, param_defs, body, compiled)?;
+            // Record the export so consumers/MAIN-dispatch see the whole multi
+            // family. A `proto … is export` exports its candidates too (raku),
+            // e.g. zef's `proto MAIN(|) is export` over `multi sub MAIN(…)`.
+            if !self.suppress_exports {
+                let pkg = self.current_package().to_string();
+                self.register_exported_sub(pkg, name_str.clone(), Vec::new());
             }
-            if *is_export {
-                self.register_proto_decl_as_global(&name_str, params, param_defs, body)?;
-                // Record the export so consumers/MAIN-dispatch see the whole multi
-                // family. A `proto … is export` exports its candidates too (raku),
-                // e.g. zef's `proto MAIN(|) is export` over `multi sub MAIN(…)`.
-                if !self.suppress_exports {
-                    let pkg = self.current_package().to_string();
-                    self.register_exported_sub(pkg, name_str.clone(), Vec::new());
+        }
+        // Apply custom trait_mod:<is> for each non-builtin trait (only if defined)
+        if !custom_traits.is_empty() {
+            let has_trait_mod =
+                self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>");
+            for trait_name in custom_traits.iter().filter(|t| {
+                !t.starts_with("__")
+                    && *t != "default"
+                    && !t.starts_with("DEPRECATED")
+                    && *t != "deep"
+            }) {
+                if !has_trait_mod {
+                    return Err(RuntimeError::new(format!(
+                        "Can't use unknown trait 'is' -> '{}' in sub declaration.",
+                        trait_name
+                    )));
+                }
+                let sub_val = Value::make_sub(
+                    Symbol::intern(&self.current_package()),
+                    Symbol::intern(&name_str),
+                    params.clone(),
+                    param_defs.clone(),
+                    body.clone(),
+                    false,
+                    self.clone_env(),
+                );
+                let named_arg = Value::pair(trait_name.clone(), Value::TRUE);
+                let result = loan_env!(
+                    self,
+                    call_function("trait_mod:<is>", vec![sub_val, named_arg])
+                )?;
+                // If the trait_mod returned a modified sub (e.g. with CALL-ME mixed in),
+                // store it in the env so function dispatch can find it.
+                if matches!(result.view(), ValueView::Mixin(..)) {
+                    self.env_mut().insert(format!("&{}", name), result);
                 }
             }
-            // Apply custom trait_mod:<is> for each non-builtin trait (only if defined)
-            if !custom_traits.is_empty() {
-                let has_trait_mod =
-                    self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>");
-                for trait_name in custom_traits.iter().filter(|t| {
-                    !t.starts_with("__")
-                        && *t != "default"
-                        && !t.starts_with("DEPRECATED")
-                        && *t != "deep"
-                }) {
-                    if !has_trait_mod {
-                        return Err(RuntimeError::new(format!(
-                            "Can't use unknown trait 'is' -> '{}' in sub declaration.",
-                            trait_name
-                        )));
-                    }
-                    let sub_val = Value::make_sub(
-                        Symbol::intern(&self.current_package()),
-                        Symbol::intern(&name_str),
-                        params.clone(),
-                        param_defs.clone(),
-                        body.clone(),
-                        false,
-                        self.clone_env(),
-                    );
-                    let named_arg = Value::pair(trait_name.clone(), Value::TRUE);
-                    let result = loan_env!(
-                        self,
-                        call_function("trait_mod:<is>", vec![sub_val, named_arg])
-                    )?;
-                    // If the trait_mod returned a modified sub (e.g. with CALL-ME mixed in),
-                    // store it in the env so function dispatch can find it.
-                    if matches!(result.view(), ValueView::Mixin(..)) {
-                        self.env_mut().insert(format!("&{}", name), result);
-                    }
-                }
-            }
-            Ok(())
-        } else {
-            Err(RuntimeError::new("RegisterProtoSub expects ProtoDecl"))
         }
-    }
-
-    pub(super) fn exec_register_proto_token_op(
-        &mut self,
-        code: &CompiledCode,
-        idx: u32,
-    ) -> Result<(), RuntimeError> {
-        let stmt = &code.stmt_pool[idx as usize];
-        if let Stmt::ProtoToken { name } = stmt {
-            self.register_proto_token_decl(&name.resolve());
-            Ok(())
-        } else {
-            Err(RuntimeError::new("RegisterProtoToken expects ProtoToken"))
-        }
+        Ok(())
     }
 }

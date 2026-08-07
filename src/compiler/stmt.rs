@@ -3325,16 +3325,45 @@ impl Compiler {
                 params,
                 param_defs,
                 body,
+                is_method,
                 ..
             } => {
-                let _ = (params.len(), param_defs.len(), body.len());
                 self.note_operator_decl(&name.resolve());
-                let idx = self.code.add_stmt(stmt.clone());
-                self.code.emit(OpCode::RegisterProtoSub(idx));
+                let idx = self.code.add_proto_decl_plan(stmt);
+                // A trivial proto body (empty, or a bare `{*}`) dispatches
+                // implicitly and has no candidate body of its own to compile
+                // (mirrors `vm_resolve_trivial_proto_candidate`'s gate). A
+                // `proto method`/`proto submethod` never installs at the
+                // package level (Phase D territory) and compiles no body here
+                // either — see `CompiledProtoDeclPlan::is_method`.
+                let significant: Vec<&Stmt> = body
+                    .iter()
+                    .filter(|s| !matches!(s, Stmt::SetLine(_)))
+                    .collect();
+                let trivial = significant.is_empty()
+                    || (significant.len() == 1
+                        && matches!(significant[0], Stmt::Expr(Expr::Whatever)));
+                if !*is_method && !trivial {
+                    let rewritten = crate::runtime::Interpreter::rewrite_proto_dispatch_stmts(body);
+                    let compiled_routine_key = self.compile_sub_body(
+                        &name.resolve(),
+                        params,
+                        param_defs,
+                        None,
+                        &rewritten,
+                        false,
+                        None,
+                        false,
+                        false,
+                    );
+                    self.code
+                        .set_proto_decl_compiled_routine_key(idx, compiled_routine_key);
+                }
+                self.code.emit(OpCode::RegisterDecl(idx));
             }
-            Stmt::ProtoToken { .. } => {
-                let idx = self.code.add_stmt(stmt.clone());
-                self.code.emit(OpCode::RegisterProtoToken(idx));
+            Stmt::ProtoToken { name } => {
+                let idx = self.code.add_proto_token_decl_plan(*name);
+                self.code.emit(OpCode::RegisterDecl(idx));
             }
             Stmt::Use { module, arg, .. } if module == "lib" && arg.is_some() => {
                 if let Some(expr) = arg {

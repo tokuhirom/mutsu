@@ -1540,6 +1540,7 @@ impl Interpreter {
         self.insert_token_def(name, def, multi);
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn register_proto_decl(
         &mut self,
         name: &str,
@@ -1547,6 +1548,7 @@ impl Interpreter {
         param_defs: &[ParamDef],
         body: &[Stmt],
         is_our: bool,
+        compiled: Option<&crate::opcode::CompiledFunction>,
     ) -> Result<(), RuntimeError> {
         let key = format!("{}::{}", self.current_package(), name);
         // `our proto sub f(|) {*}` makes the whole multi a package symbol. Its
@@ -1606,7 +1608,7 @@ impl Interpreter {
                 deprecated_message: None,
                 source_file: self.current_source_file(),
                 decl_order: crate::runtime::resolution::next_decl_order(),
-                compiled: None,
+                compiled: compiled.cloned().map(std::sync::Arc::new),
                 body_fp_cache: std::sync::OnceLock::new(),
                 body_facts_cache: std::sync::OnceLock::new(),
                 rw_tail_expr: None,
@@ -1622,6 +1624,7 @@ impl Interpreter {
         params: &[String],
         param_defs: &[ParamDef],
         body: &[Stmt],
+        compiled: Option<&crate::opcode::CompiledFunction>,
     ) -> Result<(), RuntimeError> {
         let key = format!("GLOBAL::{}", name);
         if self
@@ -1668,7 +1671,7 @@ impl Interpreter {
                 deprecated_message: None,
                 source_file: self.current_source_file(),
                 decl_order: crate::runtime::resolution::next_decl_order(),
-                compiled: None,
+                compiled: compiled.cloned().map(std::sync::Arc::new),
                 body_fp_cache: std::sync::OnceLock::new(),
                 body_facts_cache: std::sync::OnceLock::new(),
                 rw_tail_expr: None,

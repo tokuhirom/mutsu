@@ -4453,16 +4453,6 @@ impl Interpreter {
                 self.exec_register_token_op(code, *idx)?;
                 *ip += 1;
             }
-            OpCode::RegisterProtoSub(idx) => {
-                self.sync_source_line(code, *ip);
-                self.exec_register_proto_sub_op(code, *idx)?;
-                *ip += 1;
-            }
-            OpCode::RegisterProtoToken(idx) => {
-                self.sync_source_line(code, *ip);
-                self.exec_register_proto_token_op(code, *idx)?;
-                *ip += 1;
-            }
             OpCode::UseModule {
                 name_idx,
                 tags_idx,
