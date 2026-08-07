@@ -472,6 +472,29 @@ walkers wholesale is not possible before then.
     does (the actual "child chunk" perf win — today's `Ast` variant still recompiles the
     default expression's bytecode on every construction, same as before this slice), and
     D2c-3 (the three role registry tables).
+    **D2c-3 landed 2026-08-07**: the three `Expr`-valued role registry tables —
+    `role_attribute_default_exprs`, `role_class_level_attrs`, `class_attribute_default_exprs`
+    (`registry.rs`) — are now `DeclTraitArg`-valued, matching `ClassAttributeDef`. The write
+    side (`registration_role_body.rs`) simplified rather than grew: `role_attribute_default_exprs`
+    used to convert `decl.is_default` (already a `DeclTraitArg` since D2c-1) back to a raw
+    `Expr` via the `DeclTraitArg::as_expr()` escape valve just to store it — it now stores
+    `def_arg.clone()` directly, retiring that escape valve's only caller outside `Ast`-only
+    paths. `role_class_level_attrs` still wraps `decl.default` (a `CompiledAttrDecl` field,
+    still `Option<Expr>` — unaffected by D2b/D2c-2's scope) in `DeclTraitArg::Ast`, the same
+    pattern D2c-2 used at its own `ClassAttributeDef` construction sites.
+    `registration_class_compose.rs` (the role→class copy at composition) and all four eval
+    sites the migration touched (`runtime_var_meta.rs`'s `class_attribute_default_with_role_fallback`
+    and `apply_container_attribute_defaults`, `methods_call_dispatch.rs`'s role
+    type-object class-level-attribute read) now call `eval_decl_trait_arg` instead of
+    `eval_block_value(&[Stmt::Expr(...)])`. `methods_call_dispatch.rs`'s site is a fourth eval
+    site the D2c research pass's original enumeration missed — found only because grepping
+    the registry table names surfaces every reader regardless of eval mechanism, unlike a
+    field-by-field code search. Same verification as D2c-2 (full `t/`, `S12-attributes`/
+    `S14-roles` roast whitelist), all green. With D2c-1 through D2c-3 landed, no
+    `ClassAttributeDef`/role-registry attribute-default or `where`-constraint path in the
+    interpreter still evaluates through a raw `Expr` + `eval_block_value` call; the only
+    remaining piece of the parent D2c box is the actual bytecode precompilation (the
+    `Compiled` variant is still unused for `default`/`where_constraint`/the role tables).
   - [ ] **D2d — Publish generated accessors through the canonical table.** Give `MethodEntry` an
     accessor arm populated from `ClassDef::attributes` in `sync_user_method_entries`, so
     `has_public_accessor`/`resolve_user_method_or_accessor` (`class_introspection.rs`) and the

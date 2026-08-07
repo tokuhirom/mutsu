@@ -2700,7 +2700,7 @@ impl Interpreter {
                 };
                 if let Some(default) = class_level_default {
                     return match default {
-                        Some(expr) => self.eval_block_value(&[Stmt::Expr(expr)]),
+                        Some(arg) => self.eval_decl_trait_arg(&arg),
                         None => Ok(Value::NIL),
                     };
                 }

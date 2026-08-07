@@ -344,12 +344,12 @@ impl Interpreter {
     ) -> Option<Value> {
         self.class_attribute_default(class_name, attr_name)
             .or_else(|| {
-                let expr = self
+                let arg = self
                     .registry()
                     .class_attribute_default_exprs
                     .get(&(class_name.to_string(), attr_name.to_string()))
                     .cloned()?;
-                self.eval_block_value(&[crate::ast::Stmt::Expr(expr)]).ok()
+                self.eval_decl_trait_arg(&arg).ok()
             })
     }
 
@@ -425,12 +425,12 @@ impl Interpreter {
             let def = self
                 .class_attribute_default(class_name, attr_name.as_str())
                 .or_else(|| {
-                    let expr = self
+                    let arg = self
                         .registry()
                         .class_attribute_default_exprs
                         .get(&(class_name.to_string(), attr_name.resolve()))
                         .cloned()?;
-                    self.eval_block_value(&[crate::ast::Stmt::Expr(expr)]).ok()
+                    self.eval_decl_trait_arg(&arg).ok()
                 });
             if let Some(def) = def
                 && let Some(val) = attributes.remove(attr_name)

@@ -163,16 +163,18 @@ pub(crate) struct Registry {
     /// value cannot be evaluated until the role is composed and its type params
     /// are bound: (role-base, attr) -> expr. Evaluated at instance construction
     /// (with role param bindings in scope) to tag `@`/`%` containers.
-    pub(crate) role_attribute_default_exprs: HashMap<(String, String), crate::ast::Expr>,
+    pub(crate) role_attribute_default_exprs: HashMap<(String, String), crate::opcode::DeclTraitArg>,
     /// Class-level (`my $.x` / `our $.x`) role attributes: (role-base, attr) ->
     /// optional default expr. These generate an accessor on the *type object*
     /// (not per-instance), so at composition they are copied into the consuming
     /// class's `class_level_attrs` rather than its per-instance attributes.
-    pub(crate) role_class_level_attrs: HashMap<(String, String), Option<crate::ast::Expr>>,
+    pub(crate) role_class_level_attrs:
+        HashMap<(String, String), Option<crate::opcode::DeclTraitArg>>,
     /// Per-attribute deferred `is default(...)` expression carried from a composed
     /// parametric role onto a consuming class: (class, attr) -> expr. Evaluated at
     /// construction with the class's role type-param bindings in scope.
-    pub(crate) class_attribute_default_exprs: HashMap<(String, String), crate::ast::Expr>,
+    pub(crate) class_attribute_default_exprs:
+        HashMap<(String, String), crate::opcode::DeclTraitArg>,
     /// Per-attribute declared type: (class, attr) -> type name.
     pub(crate) class_attribute_is_types: HashMap<(String, String), String>,
     /// Per-attribute `is Type` container trait declared on a *role* attribute:
