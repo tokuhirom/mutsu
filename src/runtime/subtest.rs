@@ -358,7 +358,16 @@ impl Interpreter {
         };
 
         let (main_body, last_bodies, quit_bodies) = Self::split_whenever_body_phasers(body);
-        let callback = Value::make_sub_owning(
+        // The `supply` block this `whenever` is written in — its body is what is
+        // running right now, so this is unambiguous. Stamped onto every callback
+        // below so dispatch can re-establish it as the innermost active emitter
+        // (see `WHENEVER_EMITTER_ENV_KEY`).
+        let own_emitter = self.active_supply_emitters.last().cloned();
+        let stamp = |cb: Value| match own_emitter {
+            Some(ref e) => Self::sub_with_env_key(&cb, Self::WHENEVER_EMITTER_ENV_KEY, e.clone()),
+            None => cb,
+        };
+        let callback = stamp(Value::make_sub_owning(
             Symbol::intern(&self.current_package()),
             Symbol::intern(""),
             param.iter().cloned().collect(),
@@ -367,11 +376,11 @@ impl Interpreter {
             false,
             self.env.clone(),
             owned_lexicals.to_vec(),
-        );
+        ));
         let last_callbacks: Vec<Value> = last_bodies
             .into_iter()
             .map(|body| {
-                Value::make_sub_owning(
+                stamp(Value::make_sub_owning(
                     Symbol::intern(&self.current_package()),
                     Symbol::intern(""),
                     Vec::new(),
@@ -380,13 +389,13 @@ impl Interpreter {
                     false,
                     self.env.clone(),
                     owned_lexicals.to_vec(),
-                )
+                ))
             })
             .collect();
         let quit_callbacks: Vec<Value> = quit_bodies
             .into_iter()
             .map(|body| {
-                Value::make_sub_owning(
+                stamp(Value::make_sub_owning(
                     Symbol::intern(&self.current_package()),
                     Symbol::intern(""),
                     vec!["_".to_string()],
@@ -395,7 +404,7 @@ impl Interpreter {
                     false,
                     self.env.clone(),
                     owned_lexicals.to_vec(),
-                )
+                ))
             })
             .collect();
 
