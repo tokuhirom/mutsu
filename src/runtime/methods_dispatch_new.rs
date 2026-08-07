@@ -484,14 +484,19 @@ impl Interpreter {
         // storage (which `Array` methods on the instance delegate to). Only
         // touch the storage when there are positional args, so a plain
         // named-args `bless` keeps the empty storage seeded by `dispatch_new`.
-        if self.class_mro(cn_resolved).iter().any(|n| n == "Array") {
+        if self
+            .class_mro(cn_resolved)
+            .iter()
+            .any(|n| *n == "Array" || *n == "List")
+        {
             let elems: Vec<Value> = args
                 .iter()
                 .filter(|a| !a.is_string_pair_value())
                 .cloned()
                 .collect();
             if !elems.is_empty() || !attributes.contains_key("__mutsu_array_storage") {
-                attributes.insert("__mutsu_array_storage", Value::real_array(elems));
+                let storage = self.positional_base_storage(cn_resolved, elems);
+                attributes.insert("__mutsu_array_storage", storage);
             }
         }
         // Embed `is default(...)` element defaults into `@`/`%` containers.

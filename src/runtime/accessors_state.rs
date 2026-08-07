@@ -368,6 +368,31 @@ impl Interpreter {
     /// its captured-outer lexicals from the live caller env (which every sibling
     /// callback in the same react block writes back to) instead of restoring a
     /// stale per-instance snapshot that would clobber a sibling's update.
+    /// True for the two builtin bases whose subclasses keep their elements in
+    /// the instance's `__mutsu_array_storage` and delegate positional methods
+    /// to it: `Array` and `List`.
+    ///
+    /// `class C is List { }` needs the same treatment as `class C is Array { }`
+    /// — `List.new` takes its elements positionally and the instance answers
+    /// `.elems`/`.join`/`.list`/`AT-POS` from them. Cro's
+    /// `Cro::HTTP::MultiValue is List does Stringy` is built exactly that way,
+    /// so without this a query string or form body with a repeated key could
+    /// not be represented at all.
+    pub(crate) fn is_positional_base(name: &str) -> bool {
+        name == "Array" || name == "List"
+    }
+
+    /// The backing store a fresh `is Array`/`is List` subclass instance gets.
+    /// A `List` subclass must be backed by an immutable `List`, not an `Array`,
+    /// so `.push` on one still raises `X::Immutable` as raku does.
+    pub(crate) fn positional_base_storage(&mut self, class_key: &str, items: Vec<Value>) -> Value {
+        if self.class_mro(class_key).iter().any(|n| n == "Array") {
+            Value::real_array(items)
+        } else {
+            Value::array(items)
+        }
+    }
+
     pub(crate) fn clear_closure_captured_state_for(&mut self, id: u64) {
         self.closure_captured_state
             .retain(|(entry_id, _), _| *entry_id != id);
