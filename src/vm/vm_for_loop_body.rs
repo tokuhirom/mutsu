@@ -220,15 +220,39 @@ impl Interpreter {
             };
         // Save multi-param values and readonly state so they can be restored
         // after the loop (inner loops must not clobber outer scope bindings).
-        let saved_multi_params: Vec<(String, Option<Value>, bool, Option<Value>)> = spec
+        // Also snapshot each name's compile-time-baked local slot (§1.5,
+        // `ForLoopSpec::multi_param_locals`) directly — `build_for_bind_stmts`
+        // binds a multi-param via plain `Stmt::Assign`, not a `my`-style
+        // declaration, so it never gets a fresh shadow slot: it overwrites
+        // whatever slot the name already occupied. That outer local is not
+        // necessarily mirrored into `env` (single-store default), so relying
+        // on the `env` snapshot alone silently drops the local-slot restore
+        // whenever the outer binding is a pure local
+        // (`todo/tickets/for-multi-param-shadow-clobbers-outer-lexical.md`).
+        // (name, saved env value, was readonly, saved sigilless-readonly flag, saved (slot, value))
+        type SavedMultiParam = (
+            String,
+            Option<Value>,
+            bool,
+            Option<Value>,
+            Option<(usize, Value)>,
+        );
+        let saved_multi_params: Vec<SavedMultiParam> = spec
             .multi_param_names
             .iter()
-            .map(|name| {
+            .enumerate()
+            .map(|(i, name)| {
                 let val = self.env().get(name).cloned();
                 let was_readonly = self.is_readonly(name);
                 let sigilless_key = format!("__mutsu_sigilless_readonly::{}", name);
                 let sigilless_ro = self.env().get(&sigilless_key).cloned();
-                (name.clone(), val, was_readonly, sigilless_ro)
+                let saved_local = spec
+                    .multi_param_locals
+                    .get(i)
+                    .copied()
+                    .flatten()
+                    .map(|slot| (slot as usize, self.locals[slot as usize].clone()));
+                (name.clone(), val, was_readonly, sigilless_ro, saved_local)
             })
             .collect();
         // A multi-parameter loop (`-> $k, $v`) binds its parameters with plain
@@ -804,28 +828,40 @@ impl Interpreter {
             self.unmark_readonly(name);
         }
         // Restore saved multi-param values and readonly state
-        for (name, saved_val, was_readonly, sigilless_ro) in saved_multi_params {
-            if let Some(v) = saved_val {
-                // Slice F (env<->locals coherence): a *sigilless* multi-param loop
-                // variable (`-> \value`) shares its bare name — and therefore its
-                // local slot — with an enclosing binding of the same name (an
-                // outer `\value` re-bound by an inner `for (...) -> $string,
-                // \value`). Restoring only the env binding leaves the local slot
-                // clobbered with the last iteration value, so a later read of the
-                // outer name (with the reverse env->locals pull disabled) sees
-                // stale data. Write the restored value through to the local slot
-                // too. Restricted to sigilless names: a sigil'd param (`$a`/`@a`/
-                // `%a`) keeps its own slot and may hold a live rw/element alias the
-                // env-only restore must not overwrite — those cases were already
-                // coherent without the write-through.
-                if !name.starts_with(['$', '@', '%', '&'])
-                    && let Some(slot) = self.find_local_slot(code, &name)
-                {
-                    self.locals[slot] = v.clone();
+        for (name, saved_val, was_readonly, sigilless_ro, saved_local) in saved_multi_params {
+            match saved_val {
+                Some(v) => {
+                    self.env_mut().insert(name.clone(), v);
                 }
-                self.env_mut().insert(name.clone(), v);
-            } else {
-                self.env_mut().remove(&name);
+                None => {
+                    self.env_mut().remove(&name);
+                }
+            }
+            // env<->locals coherence (§1.5): a multi-param loop variable
+            // (scalar or sigilless `\value`) shares its bare name — and
+            // therefore its local slot — with an enclosing binding of the
+            // same name whenever one exists (`build_for_bind_stmts` binds via
+            // plain `Stmt::Assign`, which reuses the existing slot rather than
+            // declaring a fresh one). Restoring only the `env` entry leaves
+            // that local slot clobbered with the last iteration's value, so a
+            // later read of the outer name (with the reverse env->locals pull
+            // disabled) sees stale data — write the pre-loop LOCAL value
+            // (captured directly, not derived from the possibly-absent `env`
+            // snapshot) straight back into the slot.
+            // `@`/`%`/`&`-sigil params are excluded: unlike a plain scalar
+            // lexical (a bare value in its slot, replaced wholesale on every
+            // `SetLocal`), an Array/Hash/Sub variable is a container whose
+            // CONTENTS get mutated in place through the same identity —
+            // reusing the shadowed outer slot means the loop body's per-
+            // iteration bind mutates the very container this snapshot
+            // aliases, so `saved_local`'s cloned `Value` (same Arc, already
+            // mutated) would not actually restore the outer contents. Fixing
+            // that needs a deep-copy/rebind strategy, tracked separately —
+            // see `todo/tickets/for-multi-param-shadow-clobbers-outer-lexical.md`.
+            if !name.starts_with(['@', '%', '&'])
+                && let Some((slot, v)) = saved_local
+            {
+                self.locals[slot] = v;
             }
             if was_readonly {
                 self.mark_readonly(&name);
