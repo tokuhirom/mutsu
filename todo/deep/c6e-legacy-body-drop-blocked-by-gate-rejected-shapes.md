@@ -388,7 +388,7 @@ it under the forced instrument, so it is unaudited, not confirmed-safe.
 
 **Class 2 — a plan-derived def declared inside a bare block/closure, invoked
 through a call path whose executing `compiled_fns` table isn't the def's own
-— NOT fixed, root cause identified.** Repro: `roast/S12-subset/subtypes.t`
+— FIXED (2026-08-07).** Repro: `roast/S12-subset/subtypes.t`
 (`sub pos-match { $wanted = $^got; True }` declared inside a block passed as
 `&tests` to `Test::Util`'s `group-of`, which itself calls `tests()` from
 *within its own compiled code* — `group-of` is `is export is test-assertion`,
@@ -437,11 +437,38 @@ in shape to the earlier fixes but touching different call sites (block/closure
 invocation, not routine/method invocation) — a fresh, scoped investigation,
 not a copy-paste of the earlier fix.
 
-**Conclusion: `CompiledSubDeclPlan::legacy_body` is NOT droppable yet.**
-Class 1 is fixed (2026-08-07). Class 2 is real and load-bearing today (not
-just under the forced instrument) — `pos-match` already runs interpreted on
-`main`. The next session resuming this thread should re-run the full-suite
-forced-instrument A/B (`vm_register_sub_ops.rs::exec_register_sub_op`, OR the
-literal body-selection predicate, not just the outer `plan_fully_compiled`
-check) after fixing Class 2, to check whether any further classes remain
-before the field can actually be deleted.
+**Class 2 fix (2026-08-07):** `CompiledCode` gained the same
+`compiled_fns: Option<Arc<CompiledFns>>` carrier `CompiledFunction`/`MethodDef`
+already had, populated at the end of `compile_closure_body_with_routine_flag`
+(`helpers_sub_body.rs`) from the closure's own `import_compiled_functions`
+return value — previously discarded with `let _ = ...`. `SubData` copies it
+from `compiled_code.compiled_fns` at all four closure-construction opcode
+sites (`exec_make_anon_sub_op`, `exec_make_anon_sub_params_op`,
+`exec_make_lambda_op`, `exec_make_block_closure_op`) and at the `&?BLOCK`
+self-ref rebuild in `resolution_call_sub.rs`. The two dispatch fast paths that
+invoke a `Sub`'s `compiled_code` now prefer it: `vm_call_on_value`
+(`data.compiled_fns.as_deref().or(compiled_fns)`, `vm_dispatch_helpers.rs`)
+and `vm_call_map_block`, which previously passed a hardcoded `&empty_fns`
+UNCONDITIONALLY for the `compiled_code` branch — a real, always-live bug
+(not just latent under a forced instrument): a nested named `sub` inside any
+`.map`/`.grep` block never resolved its own compiled bytecode and always fell
+back to the AST `legacy_body`, on `main`, today, independent of C6e-3c's
+timeline. Both fast paths are now fixed. Validated: full `t/` suite (27,755
+tests) plus the 37 whitelisted roast files using `Test::Util`'s `group-of`
+(3,788 tests) both green under a temporary `MUTSU_FORCE_BODYLESS=1` instrument
+that unconditionally empties every plan-derived body (reverted before commit);
+pinned by `t/subdata-nested-sub-compiled-fns.t` (cross-module block +
+`.map`/`.grep` block nested-sub cases), landed independently of the
+field-drop timeline since the `vm_call_map_block` half is a real
+current-default-config fix.
+
+**Conclusion: `CompiledSubDeclPlan::legacy_body` is NOT confirmed droppable
+yet, but both known classes are now fixed.** Class 1 and Class 2 are both
+fixed (2026-08-07). The next session resuming this thread should re-run the
+full-suite forced-instrument A/B (`vm_register_sub_ops.rs::exec_register_sub_op`,
+forcing the literal body-selection predicate, not just the outer
+`plan_fully_compiled` check) plus a full `make roast` under the same forced
+instrument, to check whether any further classes remain before the field can
+actually be deleted. This session validated `t/` plus a 37-file roast sample
+(the `group-of` set) under the forced instrument, not the full roast
+whitelist.

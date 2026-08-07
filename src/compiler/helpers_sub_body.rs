@@ -1269,14 +1269,21 @@ impl Compiler {
         }
         // Transfer any compiled functions from the closure to the parent while
         // preserving the declaration-plan references into the imported table.
-        // The caller reads them back via `compiled_functions_ref()` /
-        // `take_compiled_functions()` when it needs this routine's own
-        // nested-sub table (ADR-0019 C6e-3c), so the returned snapshot itself
-        // is not needed here.
-        let _ = self.import_compiled_functions(
+        // The imported (post-remap) snapshot is this closure's own nested-sub
+        // table — attach it to the closure body itself
+        // (`CompiledCode::compiled_fns`) so a `SubData` built from this code at
+        // runtime can resolve its nested subs' `RegisterSub` opcodes even when
+        // invoked through a foreign `CompiledFns` context (e.g. a captured
+        // block called from a different compilation unit's compiled code, the
+        // gap identified in
+        // `todo/deep/c6e-legacy-body-drop-blocked-by-gate-rejected-shapes.md`,
+        // ADR-0019 C6e-3c).
+        let own_compiled_fns = self.import_compiled_functions(
             &mut sub_compiler.code,
             std::mem::take(&mut sub_compiler.compiled_functions),
         );
+        sub_compiler.code.compiled_fns =
+            (!own_compiled_fns.is_empty()).then(|| std::sync::Arc::new(own_compiled_fns));
         sub_compiler.code.is_routine = is_routine;
         // Use the sub_compiler's source line if a SetLine was processed
         // within the body, otherwise fall back to the parent compiler's

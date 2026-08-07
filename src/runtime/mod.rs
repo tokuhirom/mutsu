@@ -2781,6 +2781,7 @@ mod tests {
             empty_sig: false,
             is_bare_block: false,
             compiled_code: Some(Arc::new(compiled)),
+            compiled_fns: None,
             compiled_routine: None,
             deprecated_message: None,
             source_line: None,
