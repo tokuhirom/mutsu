@@ -20,6 +20,7 @@ pub(crate) mod seq_coerce;
 pub(crate) mod sha1;
 pub(crate) mod split;
 pub(crate) mod str_increment;
+pub(crate) mod string_pos;
 pub(crate) mod substr;
 pub(crate) mod transliterate;
 pub(crate) mod unicode;

@@ -13,6 +13,7 @@
 //! — stays in the interpreter's `dispatch_substr`. This helper returns `None`
 //! for all of those so the caller defers, exactly as the four copies did.
 
+use crate::builtins::string_pos::grapheme_units;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// Pure `substr` slice for a non-negative integer `start` and optional
@@ -36,7 +37,7 @@ pub(crate) fn native_substr_slice(
         None => None,
     };
 
-    let chars: Vec<char> = text.chars().collect();
+    let chars = grapheme_units(text);
     if start > chars.len() {
         return None; // out-of-range: the interpreter returns a Failure
     }
@@ -44,9 +45,9 @@ pub(crate) fn native_substr_slice(
     let slice: String = match len {
         Some(l) => {
             let end = (start + l).min(chars.len());
-            chars[start..end].iter().collect()
+            chars[start..end].concat()
         }
-        None => chars[start..].iter().collect(),
+        None => chars[start..].concat(),
     };
     Some(Ok(Value::str(slice)))
 }

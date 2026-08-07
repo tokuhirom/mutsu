@@ -1,4 +1,5 @@
 use super::*;
+use crate::builtins::string_pos::{grapheme_len, grapheme_offset, grapheme_units};
 use crate::symbol::Symbol;
 
 impl Interpreter {
@@ -52,7 +53,7 @@ impl Interpreter {
             0
         };
         let text = target.to_string_value();
-        let len = text.chars().count() as i64;
+        let len = grapheme_len(&text) as i64;
         if start < 0 {
             return Ok(RuntimeError::out_of_range_failure(
                 "start",
@@ -63,7 +64,7 @@ impl Interpreter {
         if start > len {
             return Ok(Value::NIL);
         }
-        let hay: String = text.chars().skip(start as usize).collect();
+        let hay: String = grapheme_units(&text)[(start as usize).min(len as usize)..].concat();
         let mut best: Option<usize> = None;
         for needle in &needles {
             let pos = if ignore_case && ignore_mark {
@@ -73,7 +74,7 @@ impl Interpreter {
             } else if ignore_mark {
                 self.index_ignoremark(&hay, needle)
             } else {
-                hay.find(needle.as_str()).map(|p| hay[..p].chars().count())
+                hay.find(needle.as_str()).map(|p| grapheme_offset(&hay, p))
             };
             if let Some(char_pos) = pos {
                 best = Some(match best {
@@ -131,7 +132,7 @@ impl Interpreter {
             0
         };
         let text = target.to_string_value();
-        let len = text.chars().count() as i64;
+        let len = grapheme_len(&text) as i64;
         if start < 0 {
             return Ok(RuntimeError::out_of_range_failure(
                 "start",
@@ -139,17 +140,17 @@ impl Interpreter {
                 &format!("0..{}", len),
             ));
         }
-        let text_chars: Vec<char> = text.chars().collect();
+        let text_chars = grapheme_units(&text);
         let mut results: Vec<Value> = Vec::new();
         if needle.is_empty() {
             for i in (start as usize)..=text_chars.len() {
                 results.push(Value::int(i as i64));
             }
         } else {
-            let needle_len = needle.chars().count();
+            let needle_len = grapheme_len(&needle);
             let mut pos = start as usize;
             while pos <= text_chars.len() {
-                let hay: String = text_chars[pos..].iter().collect();
+                let hay: String = text_chars[pos..].concat();
                 let found = if ignore_case && ignore_mark {
                     self.index_ignorecase_ignoremark(&hay, &needle)
                 } else if ignore_case {
@@ -157,7 +158,7 @@ impl Interpreter {
                 } else if ignore_mark {
                     self.index_ignoremark(&hay, &needle)
                 } else {
-                    hay.find(needle.as_str()).map(|p| hay[..p].chars().count())
+                    hay.find(needle.as_str()).map(|p| grapheme_offset(&hay, p))
                 };
                 match found {
                     Some(char_pos) => {
@@ -209,7 +210,7 @@ impl Interpreter {
                 ]
             };
         let text = target.to_string_value();
-        let char_len = text.chars().count() as i64;
+        let char_len = grapheme_len(&text) as i64;
         // Optional position argument (maximum char index to consider)
         let max_pos = if let Some(pos_val) = positional.get(1) {
             // Check for negative values first (returns Failure, not exception)
@@ -274,8 +275,8 @@ impl Interpreter {
         for needle in &needles {
             // Search the entire string with rfind
             let pos = {
-                let chars: Vec<char> = text.chars().collect();
-                let n_chars: Vec<char> = needle.chars().collect();
+                let chars = grapheme_units(&text);
+                let n_chars = grapheme_units(needle);
                 if n_chars.is_empty() {
                     match max_pos {
                         Some(p) => Some(p),
@@ -317,7 +318,7 @@ impl Interpreter {
         let needle_lower = needle.to_lowercase();
         hay_lower
             .find(&needle_lower)
-            .map(|byte_pos| hay_lower[..byte_pos].chars().count())
+            .map(|byte_pos| grapheme_offset(&hay_lower, byte_pos))
     }
 
     pub(super) fn index_ignoremark(&self, hay: &str, needle: &str) -> Option<usize> {
@@ -325,7 +326,7 @@ impl Interpreter {
         let needle_stripped = self.strip_marks(needle);
         hay_stripped
             .find(&needle_stripped)
-            .map(|byte_pos| hay_stripped[..byte_pos].chars().count())
+            .map(|byte_pos| grapheme_offset(&hay_stripped, byte_pos))
     }
 
     pub(super) fn index_ignorecase_ignoremark(&self, hay: &str, needle: &str) -> Option<usize> {
@@ -333,7 +334,7 @@ impl Interpreter {
         let needle_stripped = self.strip_marks(needle).to_lowercase();
         hay_stripped
             .find(&needle_stripped)
-            .map(|byte_pos| hay_stripped[..byte_pos].chars().count())
+            .map(|byte_pos| grapheme_offset(&hay_stripped, byte_pos))
     }
 
     pub(super) fn strip_marks(&self, s: &str) -> String {

@@ -459,7 +459,7 @@ pub(crate) fn native_method_1arg(
             let needle = arg.to_string_value();
             match s.find(&needle) {
                 Some(pos) => {
-                    let char_pos = s[..pos].chars().count();
+                    let char_pos = crate::builtins::string_pos::grapheme_offset(&s, pos);
                     Some(Ok(Value::int(char_pos as i64)))
                 }
                 None => Some(Ok(Value::NIL)),
@@ -1018,7 +1018,7 @@ pub(crate) fn native_method_1arg(
             let needle = arg.to_string_value();
             match s.rfind(&needle) {
                 Some(pos) => {
-                    let char_pos = s[..pos].chars().count();
+                    let char_pos = crate::builtins::string_pos::grapheme_offset(&s, pos);
                     Some(Ok(Value::int(char_pos as i64)))
                 }
                 None => Some(Ok(Value::NIL)),
