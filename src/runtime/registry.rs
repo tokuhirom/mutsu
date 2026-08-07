@@ -377,6 +377,39 @@ impl Registry {
             .and_then(|entry| entry.accessor)
     }
 
+    /// Per-level (`has_local_method`, `has_role_method`) presence used by
+    /// `resolve_user_method_or_accessor` (ADR-0019 D2d): whether `class_name`
+    /// directly declares a visible (non-private, not `is my`-shadowed-from-an-
+    /// ancestor) candidate for `method_name`, split by whether it originated
+    /// in a composed role. A table probe against `method_entries` instead of
+    /// `class_def.methods.get(...)` plus a `Vec<MethodDef>` clone — same data,
+    /// no allocation, since only the two booleans are needed here.
+    pub(crate) fn user_method_local_role_presence(
+        &self,
+        class_name: &str,
+        method_name: &str,
+        is_ancestor: bool,
+    ) -> (bool, bool) {
+        let Some(entry) = self.method_entries.get(&MethodEntryKey {
+            owner: Symbol::intern(class_name),
+            name: Symbol::intern(method_name),
+        }) else {
+            return (false, false);
+        };
+        let (mut local, mut role) = (false, false);
+        for d in &entry.user_candidates {
+            if d.is_private || (d.is_my && is_ancestor) {
+                continue;
+            }
+            if d.role_origin.is_none() {
+                local = true;
+            } else {
+                role = true;
+            }
+        }
+        (local, role)
+    }
+
     pub(crate) fn replace_method_entries_from(&mut self, source: &Self) {
         self.method_entries = source.method_entries.clone();
         self.bump_method_generation();

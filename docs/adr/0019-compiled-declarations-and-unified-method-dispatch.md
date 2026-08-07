@@ -505,12 +505,21 @@ walkers wholesale is not possible before then.
     in `sync_user_method_entries` alongside the existing `user_candidates` loop (same generation
     bump, no new invalidation hook needed — Phase B's scheme was built write-path-agnostic).
     `has_public_accessor` now probes it (`Registry::accessor_is_public`) per MRO level instead of
-    scanning each class's `attributes` vector. `resolve_user_method_or_accessor` and the
-    `.^methods`/`.^can`/`.^attributes` synthesis sites (`methods_classhow_method_obj.rs`,
-    `methods_classhow_attribute.rs`) are unmigrated — they carry more interacting logic (role
-    attributes, method/accessor shadow ordering, full `Attribute` meta-object construction for
-    `.^attributes`) that a first slice deliberately left alone rather than risk in one pass. See
-    `news/2026-08/d2d-accessor-method-entry.md`.
+    scanning each class's `attributes` vector. See `news/2026-08/d2d-accessor-method-entry.md`.
+    **Second slice landed 2026-08-07**: `resolve_user_method_or_accessor`'s per-MRO-level
+    `class_def.methods.get(...)` scan (with its own inline `is_private`/`is_my`/`role_origin`
+    filtering, duplicating `sync_user_method_entries`' write-side logic) and
+    `class_def.attributes.iter().any(...)` scan are now table probes too:
+    `Registry::user_method_local_role_presence` (new — returns the two booleans directly instead
+    of cloning `Vec<MethodDef>` the way `user_method_overloads` does, since this sits on the
+    method/accessor dispatch race) and the already-existing `accessor_is_public`. Only the
+    `registry.classes.get(cn)` branch moved; the `registry.roles.get(cn)` branch (a punned role
+    used directly as a parent class) is untouched — general roles are not guaranteed to have a
+    synced `method_entries` row the way a class always does, so migrating it needs its own
+    verification pass. `native_methods.contains(...)` also stays as-is (a separate `HashSet`, out
+    of D2d's scope). Remaining in D2d: the `.^methods`/`.^can`/`.^attributes` synthesis sites
+    (`methods_classhow_method_obj.rs`, `methods_classhow_attribute.rs`) — full `Attribute`
+    meta-object construction, not a simple presence probe.
 - [ ] **D3 — Encode class methods and submethods as compiled candidates.** Install ordinary, multi,
   proto, private, rw, wrap, BUILD, and TWEAK metadata without walking `Stmt::MethodDecl`. That
   walk exists in three places, not one — the class walker (~508 lines), the role walker

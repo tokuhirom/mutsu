@@ -288,23 +288,12 @@ impl Interpreter {
             let (has_local_method, has_role_method, has_attr, has_native) = {
                 let registry = self.registry();
                 if let Some(class_def) = registry.classes.get(cn.as_str()) {
-                    let (mut local, mut role) = (false, false);
-                    if let Some(defs) = class_def.methods.get(method_name) {
-                        for d in defs {
-                            if d.is_private || (d.is_my && is_ancestor) {
-                                continue;
-                            }
-                            if d.role_origin.is_none() {
-                                local = true;
-                            } else {
-                                role = true;
-                            }
-                        }
-                    }
-                    let attr = class_def
-                        .attributes
-                        .iter()
-                        .any(|a| a.is_public && a.name == method_name);
+                    let (local, role) = registry.user_method_local_role_presence(
+                        cn.as_str(),
+                        method_name,
+                        is_ancestor,
+                    );
+                    let attr = registry.accessor_is_public(cn.as_str(), method_name) == Some(true);
                     // A built-in class (e.g. Proc) may register a public attribute
                     // for `.raku`/introspection while a native method of the same
                     // name is the real getter (its computed fallbacks differ from
