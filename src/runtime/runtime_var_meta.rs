@@ -323,6 +323,36 @@ impl Interpreter {
             .cloned()
     }
 
+    /// [`Self::class_attribute_default`], falling back to evaluating a
+    /// role-composed attribute's deferred `is default(...)` expression.
+    ///
+    /// A *directly declared* class attribute's `is default(...)` is
+    /// evaluated once at registration and cached in `class_attribute_defaults`
+    /// (a `Value` table). A *role-composed* attribute's `is default(...)` may
+    /// reference the role's type parameters (`is default(T)`), so it cannot
+    /// be evaluated until composition — it is copied onto the consuming class
+    /// as a raw expression in `class_attribute_default_exprs` instead (see
+    /// `registration_class_compose.rs`). Reading only the `Value` table (as
+    /// `class_attribute_default` does) silently treats a role-composed
+    /// attribute as if it declared no default at all — this is the fallback
+    /// that `apply_container_attribute_defaults` already applies for
+    /// `@`/`%` element defaults; scalar restore-on-Nil callers need the same.
+    pub(crate) fn class_attribute_default_with_role_fallback(
+        &mut self,
+        class_name: &str,
+        attr_name: &str,
+    ) -> Option<Value> {
+        self.class_attribute_default(class_name, attr_name)
+            .or_else(|| {
+                let expr = self
+                    .registry()
+                    .class_attribute_default_exprs
+                    .get(&(class_name.to_string(), attr_name.to_string()))
+                    .cloned()?;
+                self.eval_block_value(&[crate::ast::Stmt::Expr(expr)]).ok()
+            })
+    }
+
     /// Get the `is DEPRECATED` message for a class attribute accessor.
     pub(crate) fn class_attribute_deprecated(
         &self,
