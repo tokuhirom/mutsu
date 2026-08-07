@@ -210,7 +210,6 @@ impl Interpreter {
             signature_alternates,
             alternate_metadata,
             compiled_routine_keys,
-            legacy_body: body,
             multi,
             is_rw,
             is_raw,
@@ -229,25 +228,23 @@ impl Interpreter {
                 name.resolve()
             };
             self.check_param_custom_traits(param_defs)?;
-            // ADR-0019 C6e-3b: a safe-class plan-derived def registers with an
-            // EMPTY body by default — its identity and dispatch run entirely
-            // from the plan-recorded fingerprints/facts and the attached
-            // bytecode (C6e-3a). The def classes excluded below still carry
-            // load-bearing AST bodies; they are the C6e-3c cut-line, tracked
-            // in todo/deep/c6e-legacy-body-drop-blocked-by-gate-rejected-shapes.md.
-            // Only when the plan carries bytecode for every declared signature
-            // — a def with neither body nor bytecode cannot run at all (e.g. a
-            // nested sub registered from a class-walker method body, whose
-            // keys do not resolve in this call site's fns table).
-            let plan_fully_compiled = compiled_routine_keys.len() == 1 + signature_alternates.len();
+            // ADR-0019 C6e-3c: a plan-derived def always registers with an
+            // EMPTY body — its identity and dispatch run entirely from the
+            // plan-recorded fingerprints/facts (C6e-3a) and the attached
+            // bytecode. `CompiledSubDeclPlan` no longer carries an AST body
+            // at all (the former `legacy_body` field, dropped once every
+            // keep-class from
+            // `todo/deep/c6e-legacy-body-drop-blocked-by-gate-rejected-shapes.md`
+            // was lifted — scalar/routine rw/raw, signature alternates,
+            // class-walker nested subs, NativeCall traits, the registration
+            // fallback, and finally blocks/closures' own nested-sub table).
             // The plan compiled one routine body per declared signature: the
             // primary first, then each `signature_alternates` entry in
             // declaration order. Registration installs the candidates in that
-            // same order, so the body a candidate gets is decided positionally
-            // here and handed to registration — a multi candidate is keyed in
-            // the registry by `/arity:types` (with a `__m{N}` tiebreak), which
-            // cannot identify which declared signature it came from. A body
-            // that failed to compile drops the whole list, so a short list means
+            // same order — a multi candidate is keyed in the registry by
+            // `/arity:types` (with a `__m{N}` tiebreak), which cannot
+            // identify which declared signature it came from. A body that
+            // failed to compile drops the whole list, so a short list means
             // "no plan bytecode" rather than a shifted one.
             let plan_compiled = |slot: usize| -> Option<&CompiledFunction> {
                 if compiled_routine_keys.len() != 1 + signature_alternates.len() {
@@ -256,25 +253,7 @@ impl Interpreter {
                 compiled_fns.get(&compiled_routine_keys[slot])
             };
             let primary_compiled = plan_compiled(0);
-            let empty_body: Vec<Stmt> = Vec::new();
-            let body = if plan_fully_compiled
-                // The key must actually RESOLVE in this call site's fns table —
-                // a nested sub registered from a class-walker method body
-                // carries keys its executing table does not hold, and a def
-                // with neither body nor bytecode cannot run.
-                && primary_compiled.is_some()
-            // Scalar `is rw`/`is raw` PARAMS don't keep the body (the binder
-            // aliases them through shared `ContainerRef` cells,
-            // news/2026-08/rw-params-bind-shared-cells.md), and neither do
-            // routine-level lvalue forms anymore: the plan records the
-            // assign-target tail (`CompiledRoutineMetadata::rw_tail_expr`)
-            // and the assign machinery reads it off the installed def, so
-            // `rw_sub_target_expr` no longer needs the AST body.
-            {
-                &empty_body
-            } else {
-                body
-            };
+            let body: &[Stmt] = &[];
             // Compile-time declaration fingerprint for this site (absent for a
             // runtime-resolved `name_expr` sub), enabling the idempotent
             // re-registration fast path inside `register_sub_decl_fp`.
@@ -489,7 +468,7 @@ impl Interpreter {
                         Symbol::intern(&resolved_name),
                         params.clone(),
                         param_defs.clone(),
-                        body.clone(),
+                        body.to_vec(),
                         *is_rw,
                         self.env().clone(),
                     )

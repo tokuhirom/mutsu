@@ -449,12 +449,19 @@ impl Interpreter {
                         self.clone_env(),
                         Some(std::sync::Arc::new(compiled.clone())),
                     ),
+                    // Neither the registry lookup above nor the plan's own
+                    // compiled routine resolved: build a body-less Sub (the
+                    // plan no longer carries an AST body, ADR-0019 C6e-3c).
+                    // Unreachable through ordinary syntax (see the
+                    // `name_chunk.is_some()` guard above this match's
+                    // caller and the historical zero-hit measurement in
+                    // `todo/deep/c6e-legacy-body-drop-blocked-by-gate-rejected-shapes.md`).
                     None => Value::make_sub(
                         Symbol::intern(&self.current_package()),
                         plan.name,
                         plan.params.clone(),
                         plan.param_defs.clone(),
-                        plan.legacy_body.clone(),
+                        Vec::new(),
                         plan.is_rw,
                         self.clone_env(),
                     ),
