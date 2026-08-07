@@ -2430,6 +2430,13 @@ pub(crate) struct CompiledClassDeclPlan {
     /// it is currently visiting instead of relying on the registration-time
     /// walk visiting attributes in the same order this was built in.
     pub(crate) is_default_chunks: Vec<(Symbol, DeclTraitArg)>,
+    /// Precompiled runtime-resolved-name chunk for each top-level `method`/
+    /// `submethod` declaration in the body (ADR-0019 D3-1), one entry per
+    /// method in the order `run_class_body`'s `SyntheticBlock`-flattened walk
+    /// encounters them (`None` for a method with no computed name). Read by
+    /// position, not by name: an indirect `method ::($name) {...}` name has
+    /// no guaranteed-unique fallback name to key on the way attributes do.
+    pub(crate) method_name_chunks: Vec<Option<CompiledDeclExpr>>,
 }
 
 #[derive(Debug, Clone)]
@@ -2454,6 +2461,10 @@ pub(crate) struct CompiledRoleDeclPlan {
     /// Types the body declares itself (`my enum`, `my class`, ...)
     /// (ADR-0019 D2a), precomputed alongside `own_attribute_names`.
     pub(crate) body_declared_types: Vec<String>,
+    /// Precompiled runtime-resolved-name chunk for each top-level `method`/
+    /// `submethod` declaration in the body (ADR-0019 D3-1). See
+    /// `CompiledClassDeclPlan::method_name_chunks`.
+    pub(crate) method_name_chunks: Vec<Option<CompiledDeclExpr>>,
 }
 
 /// A package-level `proto sub`/`proto rule`/`proto token` declaration lowered
@@ -5626,6 +5637,7 @@ impl CompiledCode {
         name_chunk: Option<CompiledDeclExpr>,
         trait_args: Vec<Option<DeclTraitArg>>,
         is_default_chunks: Vec<(Symbol, DeclTraitArg)>,
+        method_name_chunks: Vec<Option<CompiledDeclExpr>>,
     ) -> u32 {
         let Stmt::ClassDecl {
             name,
@@ -5676,6 +5688,7 @@ impl CompiledCode {
             trusts,
             own_attribute_names,
             is_default_chunks,
+            method_name_chunks,
         });
         let idx = self.decl_plans.len() as u32;
         self.decl_plans.push(CompiledDeclPlanRef::Class(plan_idx));
@@ -5686,6 +5699,7 @@ impl CompiledCode {
         &mut self,
         stmt: &Stmt,
         trait_args: Vec<Option<DeclTraitArg>>,
+        method_name_chunks: Vec<Option<CompiledDeclExpr>>,
     ) -> u32 {
         let Stmt::RoleDecl {
             name,
@@ -5716,6 +5730,7 @@ impl CompiledCode {
             own_attribute_names,
             body_used_modules,
             body_declared_types,
+            method_name_chunks,
         });
         let idx = self.decl_plans.len() as u32;
         self.decl_plans.push(CompiledDeclPlanRef::Role(plan_idx));

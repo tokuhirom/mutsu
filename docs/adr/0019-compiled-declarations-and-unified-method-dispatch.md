@@ -595,6 +595,21 @@ walkers wholesale is not possible before then.
   `add_sub_decl_plan`/`add_class_decl_plan` already do, since it is read-and-discarded immediately
   (never stored on `MethodDef`) and is the most literally-duplicated-verbatim logic across all
   three sites — a clean, low-risk demonstration slice that doesn't touch `MethodDef`'s shape.
+  **D3-1 landed 2026-08-07** for the two walkers with an existing declaration plan:
+  `CompiledClassDeclPlan`/`CompiledRoleDeclPlan` gained a `method_name_chunks:
+  Vec<Option<CompiledDeclExpr>>`, one entry per top-level `method`/`submethod` statement
+  precompiled by `Compiler::compile_method_name_chunks` (mirroring the exact `SyntheticBlock`
+  flattening `run_class_body`/`walk_role_body` already perform), and `class_body_method_decl`/
+  `role_body_method_decl` read the chunk at that statement's position via a cursor threaded through
+  `ClassBodyCx`/`RoleDeclCx` instead of recompiling `name_expr` from a cloned AST node on every
+  registration. Position, not name, is the key: unlike D2c-1's attribute `is_default` chunks (keyed
+  by the attribute's own unique name), a method's fallback `name: Symbol` is not reliable to key on
+  — an indirect declaration with a non-literal expression falls back to a shared placeholder, and
+  ordinary `multi` methods legitimately share a literal name. `augment_class`'s `MethodDecl` arm was
+  left unmigrated: `augment class` has no declaration plan at all yet (`Stmt::AugmentClass` still
+  indexes `stmt_pool` via the legacy `AugmentClass(u32)` opcode, outside the ADR-0019 plan system
+  entirely), so giving it a chunk means building that machinery from scratch — separate, larger
+  scope than this slice. `news/2026-08/d3-1-method-name-chunks.md`.
   D3-2/D3-3/D3-4 (one per walker, per the ADR's own expectation) should then unify onto a shared
   `CompiledMethodDecl::from_stmt` and fix the drift found above (the `augment_class` `is_lexical_only`
   gating gap and privacy-aware duplicate detection in particular) as part of the unification, the

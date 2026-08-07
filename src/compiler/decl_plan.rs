@@ -45,6 +45,35 @@ impl Compiler {
         }
     }
 
+    /// Precompile the runtime-resolved-name chunk of each top-level `method`/
+    /// `submethod` declaration in a class or role body (ADR-0019 D3-1), one
+    /// entry per method encountered after `SyntheticBlock` flattening —
+    /// mirroring `run_class_body`/`walk_role_body`'s own flattening exactly,
+    /// so registration can read a chunk by position instead of recompiling
+    /// `name_expr` from raw AST on every registration. A method's fallback
+    /// `name: Symbol` is not a reliable key here (unlike an attribute's
+    /// unique name): an indirect declaration with a non-literal expression
+    /// falls back to a shared placeholder, and ordinary multi methods
+    /// legitimately share a literal name — position is the only key both
+    /// sides can agree on.
+    fn compile_method_name_chunks(
+        &self,
+        body: &[Stmt],
+    ) -> Vec<Option<crate::opcode::CompiledDeclExpr>> {
+        body.iter()
+            .flat_map(|s| match s {
+                Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
+                other => vec![other],
+            })
+            .filter_map(|stmt| match stmt {
+                Stmt::MethodDecl { name_expr, .. } => {
+                    Some(name_expr.as_ref().map(|e| self.compile_decl_expr(e)))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
     /// Lower a declaration's custom-trait arguments, index-aligned with its
     /// `custom_traits` list.
     fn compile_decl_trait_args(
@@ -88,8 +117,14 @@ impl Compiler {
         let name_chunk = name_expr.as_ref().map(|e| self.compile_decl_expr(e));
         let trait_args = self.compile_decl_trait_args(custom_traits);
         let is_default_chunks = self.compile_attr_is_default_chunks(body);
-        self.code
-            .add_class_decl_plan(stmt, name_chunk, trait_args, is_default_chunks)
+        let method_name_chunks = self.compile_method_name_chunks(body);
+        self.code.add_class_decl_plan(
+            stmt,
+            name_chunk,
+            trait_args,
+            is_default_chunks,
+            method_name_chunks,
+        )
     }
 
     /// Precompile the `is default(...)` trait argument of each of a class
@@ -153,10 +188,17 @@ impl Compiler {
     /// [`Self::add_sub_decl_plan`] for a role declaration. A role's name is
     /// always compile-time known, so only its trait arguments are lowered.
     pub(crate) fn add_role_decl_plan(&mut self, stmt: &Stmt) -> u32 {
-        let Stmt::RoleDecl { custom_traits, .. } = stmt else {
+        let Stmt::RoleDecl {
+            custom_traits,
+            body,
+            ..
+        } = stmt
+        else {
             panic!("add_role_decl_plan expects RoleDecl");
         };
         let trait_args = self.compile_decl_trait_args(custom_traits);
-        self.code.add_role_decl_plan(stmt, trait_args)
+        let method_name_chunks = self.compile_method_name_chunks(body);
+        self.code
+            .add_role_decl_plan(stmt, trait_args, method_name_chunks)
     }
 }

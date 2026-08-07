@@ -273,6 +273,7 @@ impl Interpreter {
         own_attribute_names: &[Symbol],
         body_used_modules: &[String],
         body_declared_types: &[String],
+        method_name_chunks: &[Option<crate::opcode::CompiledDeclExpr>],
     ) -> Result<(), RuntimeError> {
         self.clear_private_zeroarg_method_cache();
 
@@ -323,6 +324,8 @@ impl Interpreter {
             role_own_attrs: own_attribute_names.iter().map(|s| s.resolve()).collect(),
             body_used_modules: body_used_modules.iter().cloned().collect(),
             body_declared_types: body_declared_types.iter().cloned().collect(),
+            method_name_chunks,
+            method_name_chunk_idx: 0,
         };
         self.walk_role_body(body, &mut cx)?;
         self.finish_role_registration(

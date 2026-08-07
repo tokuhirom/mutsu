@@ -185,9 +185,18 @@ impl Interpreter {
                 "Unimplemented multi method from role",
             ));
         }
-        let resolved_method_name = if let Some(expr) = name_expr {
-            self.eval_block_value(&[Stmt::Expr(expr.clone())])?
-                .to_string_value()
+        // ADR-0019 D3-1: see `class_body_method_decl`'s identical comment —
+        // the compiler and this walk flatten `SyntheticBlock` identically, so
+        // the chunk at this cursor position matches this statement.
+        let chunk_idx = cx.method_name_chunk_idx;
+        cx.method_name_chunk_idx += 1;
+        let resolved_method_name = if name_expr.is_some() {
+            let chunk = cx
+                .method_name_chunks
+                .get(chunk_idx)
+                .and_then(|c| c.as_ref())
+                .expect("method_name_chunks misaligned with role body walk");
+            self.run_decl_expr(chunk)?.to_string_value()
         } else {
             method_name.resolve()
         };

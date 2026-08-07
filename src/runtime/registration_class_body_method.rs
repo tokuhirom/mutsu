@@ -63,9 +63,20 @@ impl Interpreter {
                 }
             }
         }
-        let resolved_method_name = if let Some(expr) = name_expr {
-            self.eval_block_value(&[Stmt::Expr(expr.clone())])?
-                .to_string_value()
+        // ADR-0019 D3-1: the chunk at this cursor position was compiled from
+        // this exact statement's `name_expr` at plan-lowering time — the
+        // compiler and this walk both flatten `SyntheticBlock` the same way,
+        // so position, not name, is the shared key (see
+        // `Compiler::compile_method_name_chunks`).
+        let chunk_idx = cx.method_name_chunk_idx;
+        cx.method_name_chunk_idx += 1;
+        let resolved_method_name = if name_expr.is_some() {
+            let chunk = cx
+                .method_name_chunks
+                .get(chunk_idx)
+                .and_then(|c| c.as_ref())
+                .expect("method_name_chunks misaligned with class body walk");
+            self.run_decl_expr(chunk)?.to_string_value()
         } else {
             method_name.resolve()
         };
