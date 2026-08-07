@@ -825,7 +825,8 @@ impl Interpreter {
                     // When Nil is assigned to an attribute with `is default(...)`,
                     // restore the default value instead of setting Nil.
                     if assigned_value.is_nil()
-                        && let Some(def) = self.class_attribute_default(qualifier, &attr_name)
+                        && let Some(def) =
+                            self.class_attribute_default_with_role_fallback(qualifier, &attr_name)
                     {
                         assigned_value = def;
                     }
@@ -899,7 +900,8 @@ impl Interpreter {
                     // When Nil is assigned to an attribute with `is default(...)`,
                     // restore the default value instead of setting Nil.
                     if assigned_value.is_nil()
-                        && let Some(def) = self.class_attribute_default(qualifier, actual_method)
+                        && let Some(def) = self
+                            .class_attribute_default_with_role_fallback(qualifier, actual_method)
                     {
                         assigned_value = def;
                     }
@@ -1107,7 +1109,7 @@ impl Interpreter {
                 // because Nil will be replaced by the default value.
                 let nil_has_default = value.is_nil()
                     && self
-                        .class_attribute_default(&class_name.resolve(), method)
+                        .class_attribute_default_with_role_fallback(&class_name.resolve(), method)
                         .is_some();
                 // Nil assigned to a typed attribute restores the type object default
                 let nil_restores_type = value.is_nil() && !nil_has_default;
@@ -1198,7 +1200,8 @@ impl Interpreter {
                 // When Nil is assigned to an attribute with `is default(...)`,
                 // restore the default value instead of setting Nil.
                 if assigned_value.is_nil()
-                    && let Some(def) = self.class_attribute_default(&class_name.resolve(), method)
+                    && let Some(def) = self
+                        .class_attribute_default_with_role_fallback(&class_name.resolve(), method)
                 {
                     assigned_value = def;
                 }
@@ -1392,7 +1395,8 @@ impl Interpreter {
             // When Nil is assigned to an attribute with `is default(...)`,
             // restore the default value instead of setting Nil.
             if assigned_value.is_nil()
-                && let Some(def) = self.class_attribute_default(&class_name.resolve(), &attr_name)
+                && let Some(def) = self
+                    .class_attribute_default_with_role_fallback(&class_name.resolve(), &attr_name)
             {
                 assigned_value = def;
             }

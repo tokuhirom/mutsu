@@ -120,7 +120,7 @@ impl Interpreter {
             } else {
                 // Check class_attribute_default for instance attributes
                 let class_default = if let ValueView::Instance { class_name, .. } = target.view() {
-                    self.class_attribute_default(&class_name.resolve(), &method)
+                    self.class_attribute_default_with_role_fallback(&class_name.resolve(), &method)
                 } else {
                     None
                 };
@@ -324,7 +324,7 @@ impl Interpreter {
         // `is default(...)`, else the attribute's declared default, else Nil.
         let absent_default = self.container_default(&current).or_else(|| {
             if let ValueView::Instance { class_name, .. } = target.view() {
-                self.class_attribute_default(&class_name.resolve(), &method)
+                self.class_attribute_default_with_role_fallback(&class_name.resolve(), &method)
             } else {
                 None
             }

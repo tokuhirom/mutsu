@@ -511,7 +511,8 @@ impl Interpreter {
         // program declaring ANY attribute default: the common no-default case
         // otherwise paid 2 lookups (each allocating a (String, String) key)
         // per attribute on every method call.
-        let any_attr_defaults = !self.registry().class_attribute_defaults.is_empty();
+        let any_attr_defaults = !self.registry().class_attribute_defaults.is_empty()
+            || !self.registry().class_attribute_default_exprs.is_empty();
         if any_attr_defaults {
             for attr_name in attributes.keys() {
                 let attr_name = attr_name.as_str();
@@ -520,8 +521,13 @@ impl Interpreter {
                 }
                 // Check both the owner class and the receiver class for defaults
                 let default_val = self
-                    .class_attribute_default(owner_class, attr_name)
-                    .or_else(|| self.class_attribute_default(receiver_class_name, attr_name));
+                    .class_attribute_default_with_role_fallback(owner_class, attr_name)
+                    .or_else(|| {
+                        self.class_attribute_default_with_role_fallback(
+                            receiver_class_name,
+                            attr_name,
+                        )
+                    });
                 if let Some(def) = default_val {
                     // Register for $!attr and $.attr variable names
                     self.set_var_default(&format!("!{}", attr_name), def.clone());
@@ -1419,7 +1425,8 @@ impl Interpreter {
 
         // Register `is default(...)` values for attribute variables. Gated on
         // the program declaring ANY attribute default (see the slow path).
-        let any_attr_defaults = !self.registry().class_attribute_defaults.is_empty();
+        let any_attr_defaults = !self.registry().class_attribute_defaults.is_empty()
+            || !self.registry().class_attribute_default_exprs.is_empty();
         if any_attr_defaults && let Some(cell) = &attrs_cell {
             let attr_names: Vec<&'static str> = cell
                 .as_map()
@@ -1429,8 +1436,13 @@ impl Interpreter {
                 .collect();
             for attr_name in &attr_names {
                 let default_val = self
-                    .class_attribute_default(owner_class, attr_name)
-                    .or_else(|| self.class_attribute_default(receiver_class_name, attr_name));
+                    .class_attribute_default_with_role_fallback(owner_class, attr_name)
+                    .or_else(|| {
+                        self.class_attribute_default_with_role_fallback(
+                            receiver_class_name,
+                            attr_name,
+                        )
+                    });
                 if let Some(def) = default_val {
                     self.set_var_default(&format!("!{}", attr_name), def.clone());
                     self.set_var_default(&format!(".{}", attr_name), def.clone());
