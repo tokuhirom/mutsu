@@ -115,9 +115,12 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 22/53 slices merged (C6, C7, C8, and D1 complete, 2026-08-07). Phase C is
-fully checked; the next open box is D2 (attributes and generated accessors), now subdivided
-D2a-D2d — D2a landed 2026-08-07. D1 found most class structural data already typed-plan-driven
+**Current progress: 28/53 slices merged (C6, C7, C8, D1, and D2d complete; D2a and D2c-1/2/3 also
+landed, 2026-08-07). Phase C is fully checked; the open box is D2 (attributes and generated
+accessors), subdivided D2a-D2d — D2a, D2c-1/2/3, and D2d are done; D2b (typed attribute
+descriptors) and the "compile `default`/`where_constraint` as actual bytecode chunks" remainder of
+D2c are the only pieces still open, followed by D3 (class methods/submethods as compiled
+candidates). D1 found most class structural data already typed-plan-driven
 from Phase A3/A4; the two remaining body-scanning reads (stub detection, `Stmt::TrustsDecl`) are
 now precomputed at plan lowering as `CompiledClassDeclPlan::is_stub`/`trusts`; see
 `news/2026-08/d1-class-structural-plan-fields.md`. D2, unlike D1, found attribute data with no
@@ -495,7 +498,7 @@ walkers wholesale is not possible before then.
     interpreter still evaluates through a raw `Expr` + `eval_block_value` call; the only
     remaining piece of the parent D2c box is the actual bytecode precompilation (the
     `Compiled` variant is still unused for `default`/`where_constraint`/the role tables).
-  - [ ] **D2d — Publish generated accessors through the canonical table.** Give `MethodEntry` an
+  - [x] **D2d — Publish generated accessors through the canonical table.** Give `MethodEntry` an
     accessor arm populated from `ClassDef::attributes` in `sync_user_method_entries`, so
     `has_public_accessor`/`resolve_user_method_or_accessor` (`class_introspection.rs`) and the
     `.^methods`/`.^can`/`.^attributes` synthesis sites become table probes riding the existing
@@ -517,9 +520,25 @@ walkers wholesale is not possible before then.
     used directly as a parent class) is untouched — general roles are not guaranteed to have a
     synced `method_entries` row the way a class always does, so migrating it needs its own
     verification pass. `native_methods.contains(...)` also stays as-is (a separate `HashSet`, out
-    of D2d's scope). Remaining in D2d: the `.^methods`/`.^can`/`.^attributes` synthesis sites
-    (`methods_classhow_method_obj.rs`, `methods_classhow_attribute.rs`) — full `Attribute`
-    meta-object construction, not a simple presence probe.
+    of D2d's scope).
+    **Closed as-is 2026-08-07, `.^methods`/`.^can`/`.^attributes` synthesis deliberately left
+    unmigrated**: those sites (`methods_classhow_method_obj.rs`'s `collect_class_methods`/
+    `class_method_table`/`collect_can_methods`, `methods_classhow_attribute.rs`'s
+    `collect_attribute_objects`) don't fit the table-probe shape the earlier two migrations used.
+    Both migrated call sites were **single-key point lookups** (`(owner, method_name)`) racing on
+    a per-dispatch-call hot path, where `MethodEntry`'s `(owner, name)` keying is a direct win. The
+    remaining sites instead **enumerate every method/attribute a class declares** to build full
+    `Method`/`Attribute` meta-objects (params, body, signature, custom trait state) for
+    introspection (`.^methods`, `.^can`, `.^attributes` — not hot dispatch paths). `method_entries`
+    has no owner-keyed enumeration index (`builtin_method_names` already pays an O(all methods in
+    the program) full-map scan for the same reason, for the builtin side), so migrating would mean
+    either adding one, or reading `class_def.methods`/`class_def.attributes` for enumeration while
+    only using `method_entries` for name lookups — a split that adds indirection without removing
+    any actual duplication: unlike D2b's four independently-drifted `Stmt::HasDecl` destructuring
+    sites, `ClassDef::methods`/`ClassDef::attributes` and `MethodEntry.user_candidates`/`.accessor`
+    are already a single source of truth kept in lockstep by `sync_user_method_entries` — reading
+    one over the other here is a lateral move, not a mechanism unification, so it does not meet the
+    ADR's own "gain" bar (see CLAUDE.md's "What gain and risk actually mean"). D2d is done.
 - [ ] **D3 — Encode class methods and submethods as compiled candidates.** Install ordinary, multi,
   proto, private, rw, wrap, BUILD, and TWEAK metadata without walking `Stmt::MethodDecl`. That
   walk exists in three places, not one — the class walker (~508 lines), the role walker
