@@ -138,6 +138,19 @@ impl Interpreter {
     /// time (inside the body) can join the group and keep the supply open.
     pub(super) const WHENEVER_DONE_GROUP_ENV_KEY: &'static str = "__mutsu_whenever_done_group";
 
+    /// Env key naming the emitter of the `supply` block a callback was written
+    /// in, so [`Interpreter::call_supply_tap`] can make that emitter the
+    /// innermost dynamically active one while the callback runs.
+    ///
+    /// The captured env alone cannot answer this. A callback captures the whole
+    /// live env, so when an inner `supply` block's body runs *inside* an outer
+    /// supply's `whenever` body, the inner block's callbacks capture both
+    /// blocks' `__mutsu_supply_emitter_N` bindings — and picking one by scanning
+    /// for the prefix is a `HashMap`-order lottery. Recorded here at callback
+    /// creation time, where `active_supply_emitters.last()` is unambiguously the
+    /// enclosing block.
+    pub(crate) const WHENEVER_EMITTER_ENV_KEY: &'static str = "__mutsu_whenever_emitter";
+
     /// Return a copy of `sub` whose captured env additionally binds `key` to
     /// `val` (CoW — the original sub and its env are untouched). Non-Sub values
     /// pass through unchanged.

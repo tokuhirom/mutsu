@@ -8,31 +8,57 @@ use crate::value::AttrMap;
 impl Interpreter {
     /// Call a `whenever`/tap callback with the callback's own supply emitter
     /// made dynamically visible, so a bare `emit` inside a *sub* the callback
-    /// calls reaches the right supply. The emitter is the
-    /// `__mutsu_supply_emitter_<id>` lexical the parser binds as the on-demand
-    /// body's parameter; a callback written inside a `supply` block captures it,
-    /// while an unrelated tap callback does not and pushes nothing.
+    /// calls reaches the right supply.
+    ///
+    /// A `whenever` callback carries its block's emitter explicitly, stamped on
+    /// at creation time under [`Self::WHENEVER_EMITTER_ENV_KEY`]. Any other
+    /// callback falls back to the `__mutsu_supply_emitter_<id>` lexical the
+    /// parser binds as the on-demand body's parameter: a callback written inside
+    /// a `supply` block captures it, an unrelated tap callback does not and
+    /// pushes nothing. The fallback is only a guess when a callback captured
+    /// more than one — the stamp is the authoritative answer.
     pub(crate) fn call_supply_tap(
         &mut self,
         tap: Value,
         args: Vec<Value>,
         propagate_return: bool,
     ) -> Result<Value, RuntimeError> {
-        let emitter = tap.as_sub().and_then(|data| {
-            data.env
-                .keys()
-                .find(|k| k.with_str(|s| s.starts_with("__mutsu_supply_emitter_")))
-                .and_then(|k| data.env.get_sym(*k).cloned())
-        });
-        let pushed = emitter.is_some();
-        if let Some(e) = emitter {
-            self.active_supply_emitters.push(e);
+        // `(emitter, is_stamped)`: only a stamped emitter is authoritative.
+        let (emitter, stamped) = tap
+            .as_sub()
+            .map(|data| match data.env.get(Self::WHENEVER_EMITTER_ENV_KEY) {
+                Some(own) => (Some(own.clone()), true),
+                None => (
+                    data.env
+                        .keys()
+                        .find(|k| k.with_str(|s| s.starts_with("__mutsu_supply_emitter_")))
+                        .and_then(|k| data.env.get_sym(*k).cloned()),
+                    false,
+                ),
+            })
+            .unwrap_or((None, false));
+        if let Some(ref e) = emitter {
+            self.active_supply_emitters.push(e.clone());
         }
         let res = self.call_sub_value(tap, args, propagate_return);
-        if pushed {
+        if emitter.is_some() {
             self.active_supply_emitters.pop();
         }
-        res
+        // A bare `done` written inside a *sub* the body called is not rewritten
+        // to `$emitter.done()` by the parser, so it unwinds to here as a raw
+        // react-done signal. Rakudo's `done` unwinds to the enclosing `supply`
+        // block and completes *that* supply, so consume it here instead of
+        // letting it escape into whoever emitted the value — an outer supply's
+        // `whenever` body, which it would wrongly terminate. Only a stamped
+        // `whenever` callback (one written in a `supply` block) claims it; a
+        // react block's `done` still travels to the react loop.
+        match (res, stamped, emitter) {
+            (Err(err), true, Some(e)) if err.is_react_done() => {
+                self.call_method_with_values(e, "done", vec![])?;
+                Ok(Value::NIL)
+            }
+            (res, ..) => res,
+        }
     }
 
     /// Phase A of the on-demand supply runtime, shared by `tap`/`act`, the react
