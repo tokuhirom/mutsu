@@ -6,6 +6,7 @@ use super::registration_class::make_delegation_method;
 use super::registration_role_decl::RoleDeclCx;
 use super::*;
 use crate::ast::HandleSpec;
+use crate::opcode::CompiledMethodDecl;
 
 impl Interpreter {
     /// The `method` arm of the role-body walk: validate the declaration and
@@ -15,34 +16,17 @@ impl Interpreter {
         cx: &mut RoleDeclCx<'_>,
         stmt: &Stmt,
     ) -> Result<(), RuntimeError> {
-        let Stmt::MethodDecl {
-            name: method_name,
-            name_expr,
-            params: _,
-            param_defs,
-            body: method_body,
-            multi,
-            is_rw,
-            is_private,
-            is_our: _,
-            is_my,
-            is_submethod,
-            our_variable_form: _,
-            return_type,
-            is_default_candidate,
-            deprecated_message,
-            handles: method_handles,
-            custom_traits: _,
-            is_export: _,
-            export_tags: _,
-        } = stmt
-        else {
-            unreachable!("role_body_method_decl called on a non-MethodDecl statement");
-        };
+        // ADR-0019 D3-3: shared typed mirror of `Stmt::MethodDecl` (see
+        // `CompiledMethodDecl`, D3-2). This walk does not read
+        // `is_our`/`our_variable_form`/`custom_traits`/`is_export`/
+        // `export_tags` — a role method is never `our`-registered as a
+        // package sub and custom traits/exports on a role method are not
+        // handled here, matching the walk's original ignored bindings.
+        let decl = CompiledMethodDecl::from_stmt(stmt);
         let name = cx.name;
         // Validate that $!attr references in the method body are declared
         // in this role (same check as for class methods).
-        Self::validate_attr_declared_in_class(&cx.attr_ctx(), method_body)?;
+        Self::validate_attr_declared_in_class(&cx.attr_ctx(), &decl.body)?;
         // Validate that type constraints in method parameters are resolvable.
         // Undeclared types like A::C should throw X::Parameter::InvalidType.
         // A role nested in an enclosing package (e.g. `unit class A`)
@@ -80,7 +64,7 @@ impl Interpreter {
                 }
             }
         }
-        for pd in param_defs {
+        for pd in &decl.param_defs {
             if let Some(tc) = pd.type_constraint.as_deref() {
                 // Skip type captures (::T), invocant markers, and role type params
                 if tc.starts_with("::")
@@ -158,7 +142,8 @@ impl Interpreter {
         // must be implemented by the composing class.
         // Non-stub multi methods with ::?CLASS are fine.
         let body_is_stub = {
-            let filtered: Vec<_> = method_body
+            let filtered: Vec<_> = decl
+                .body
                 .iter()
                 .filter(|s| !matches!(s, Stmt::SetLine(_)))
                 .collect();
@@ -170,13 +155,14 @@ impl Interpreter {
                             || name == "__mutsu_stub_warn"
                 )
         };
-        if *multi
+        if decl.multi
             && body_is_stub
-            && (param_defs.iter().any(|pd| {
+            && (decl.param_defs.iter().any(|pd| {
                 pd.type_constraint
                     .as_deref()
                     .is_some_and(|tc| tc.contains("?CLASS"))
-            }) || return_type
+            }) || decl
+                .return_type
                 .as_deref()
                 .is_some_and(|rt| rt.contains("?CLASS")))
         {
@@ -190,7 +176,7 @@ impl Interpreter {
         // the chunk at this cursor position matches this statement.
         let chunk_idx = cx.method_name_chunk_idx;
         cx.method_name_chunk_idx += 1;
-        let resolved_method_name = if name_expr.is_some() {
+        let resolved_method_name = if decl.name_expr.is_some() {
             let chunk = cx
                 .method_name_chunks
                 .get(chunk_idx)
@@ -198,7 +184,7 @@ impl Interpreter {
                 .expect("method_name_chunks misaligned with role body walk");
             self.run_decl_expr(chunk)?.to_string_value()
         } else {
-            method_name.resolve()
+            decl.name.resolve()
         };
         // A method always carries an implicit `*%_` slurpy so callers
         // can pass (or forward) named arguments the signature does not
@@ -206,7 +192,7 @@ impl Interpreter {
         // at registration; role methods must too, so a role-composed
         // method absorbs stray named args the same way a class-declared
         // one does.
-        let effective_param_defs = Self::effective_method_param_defs(param_defs, false);
+        let effective_param_defs = Self::effective_method_param_defs(&decl.param_defs, false);
         let effective_params: Vec<String> = effective_param_defs
             .iter()
             .map(|p| p.name.clone())
@@ -215,28 +201,28 @@ impl Interpreter {
             lexical_package: self.current_package(),
             params: effective_params,
             param_defs: effective_param_defs,
-            body: std::sync::Arc::new(method_body.clone()),
-            is_rw: *is_rw,
-            is_private: *is_private,
-            is_multi: *multi,
-            is_my: *is_submethod,
+            body: std::sync::Arc::new(decl.body.clone()),
+            is_rw: decl.is_rw,
+            is_private: decl.is_private,
+            is_multi: decl.multi,
+            is_my: decl.is_submethod,
             role_origin: None,
             original_role: None,
-            return_type: return_type.clone(),
+            return_type: decl.return_type.clone(),
             compiled_code: None,
             compiled_fns: None,
             delegation: None,
-            is_default: *is_default_candidate,
-            deprecated_message: deprecated_message.clone(),
-            is_submethod: *is_submethod,
+            is_default: decl.is_default_candidate,
+            deprecated_message: decl.deprecated_message.clone(),
+            is_submethod: decl.is_submethod,
             captured_env: None,
         };
         // `my method` in roles are role-private, skip method table.
         // Submethods (is_submethod) DO get composed even though
         // is_my is true.
-        let is_role_private = *is_my && !*is_submethod;
+        let is_role_private = decl.is_my && !decl.is_submethod;
         if !is_role_private {
-            if *multi {
+            if decl.multi {
                 cx.role_def
                     .methods
                     .entry(resolved_method_name.clone())
@@ -259,9 +245,9 @@ impl Interpreter {
             }
         }
         // `handles` on a role method: synthesize forwarder methods.
-        if !is_role_private && !method_handles.is_empty() {
+        if !is_role_private && !decl.handles.is_empty() {
             let source_attr_marker = format!("&{}", resolved_method_name);
-            for spec in method_handles {
+            for spec in &decl.handles {
                 match spec {
                     HandleSpec::Name(target) => {
                         cx.role_def

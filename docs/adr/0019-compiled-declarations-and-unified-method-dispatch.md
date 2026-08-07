@@ -629,6 +629,15 @@ walkers wholesale is not possible before then.
   `augment_class` `is_lexical_only` gap and privacy-aware duplicate detection in particular); that
   requires the other two walkers to also build from `CompiledMethodDecl::from_stmt` so the drift
   becomes visible and fixable at one shared construction site, matching D2b's own precedent.
+  **D3-3 landed 2026-08-07** (role walker): `role_body_method_decl` now also builds one `decl =
+  CompiledMethodDecl::from_stmt(stmt)` and reads every field off it, the same conversion D3-2 did
+  for the class walker. Same verification (`t/` suite, same 90-file roast set). This walk never read
+  `is_our`/`our_variable_form`/`custom_traits`/`is_export`/`export_tags` before (a role method is
+  never `our`-registered as a package sub, and custom traits/exports on a role method go unhandled
+  here) — that omission is unchanged, now expressed as unread `CompiledMethodDecl` fields rather
+  than `_`-ignored destructure bindings. `augment_class`'s `MethodDecl` arm (D3-4) is the last of the
+  three; only once it also builds from `CompiledMethodDecl::from_stmt` does the drift between all
+  three become fixable at one shared site.
 - [ ] **D4 — Compile class declaration-time expressions.** Cover computed names, traits, parent
   expressions, aliases, and deferred class bodies through re-entrant bytecode chunks. (Computed
   names and custom-trait arguments already landed with C5; parents, aliases, and deferred bodies
