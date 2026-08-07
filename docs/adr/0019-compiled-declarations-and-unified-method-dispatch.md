@@ -398,7 +398,22 @@ walkers wholesale is not possible before then.
     named struct and a compiler-lowered `CompiledAttrDecl` (mirroring `RuntimeHasDeclSpec`, which
     already covers the mainline/EVAL `has`-outside-class case) covering the full `Stmt::HasDecl`
     surface; make `class_body_has_decl`/`role_body_has_decl`/the augment arm consume it instead of
-    re-destructuring the AST, and subsume `RuntimeHasDeclSpec`.
+    re-destructuring the AST, and subsume `RuntimeHasDeclSpec`. **Partly landed 2026-08-07**:
+    `CompiledAttrDecl` now exists (`src/opcode.rs`) as a typed mirror of `Stmt::HasDecl`'s full
+    18-field surface, built once by `CompiledAttrDecl::from_stmt`; `class_body_has_decl`,
+    `role_body_has_decl`, and the `augment class` `has` arm all consume it instead of each
+    independently re-destructuring `Stmt::HasDecl` with a different subset of `_`-ignored fields,
+    and `RuntimeHasDeclSpec` now wraps `{ decl: CompiledAttrDecl, error: Value }` instead of
+    duplicating ten of the same fields — subsuming it as asked. What remains: descriptor
+    construction is still runtime-side (`from_stmt` runs once per encountered `Stmt::HasDecl`
+    while `class_body_has_decl`/`role_body_has_decl` walk `legacy_body`/`flattened_body` at
+    registration time), not compiler-lowered into a `Vec<CompiledAttrDecl>` on
+    `CompiledClassDeclPlan`/`CompiledRoleDeclPlan` the way D2a's `own_attribute_names` is. That
+    step needs position-correlating the precomputed vec with the registration-time statement walk
+    (nested-sub-declared attributes and `SyntheticBlock` flattening make the traversal order
+    non-trivial to match) and is naturally forced by D6/D9 dropping `legacy_body` outright, since
+    nothing will be left to walk on demand at that point. See
+    `news/2026-08/d2b-compiled-attr-decl.md`.
   - [ ] **D2c — Compile defaults/constraints as child chunks.** Replace attribute
     `default`/`is_default`/`where_constraint` `Expr`s (including the `Expr`-valued role
     registry tables `role_attribute_default_exprs`/`role_class_level_attrs`/

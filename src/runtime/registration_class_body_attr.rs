@@ -19,7 +19,8 @@ impl Interpreter {
         class_name: &str,
         spec: &crate::opcode::RuntimeHasDeclSpec,
     ) -> Result<(), RuntimeError> {
-        let attr_name = &spec.attr_name;
+        let decl = &spec.decl;
+        let attr_name = &decl.name;
         let Some(mut class_def) = self.registry().classes.get(class_name).cloned() else {
             return Ok(());
         };
@@ -29,33 +30,33 @@ impl Interpreter {
         }
         self.validate_static_attribute_default(
             attr_name,
-            spec.sigil,
-            spec.default.as_ref(),
-            spec.type_constraint.as_deref(),
-            spec.type_smiley.as_deref(),
+            decl.sigil,
+            decl.default.as_ref(),
+            decl.type_constraint.as_deref(),
+            decl.type_smiley.as_deref(),
         )?;
-        let effective_is_rw = !spec.is_readonly && spec.is_rw;
+        let effective_is_rw = !decl.is_readonly && decl.is_rw;
         class_def.attributes.push(ClassAttributeDef {
             name: attr_name.clone(),
-            is_public: spec.is_public,
-            default: spec.default.clone(),
+            is_public: decl.is_public,
+            default: decl.default.clone(),
             is_rw: effective_is_rw,
-            is_required: spec.is_required.clone(),
-            sigil: spec.sigil,
+            is_required: decl.is_required.clone(),
+            sigil: decl.sigil,
             where_constraint: None,
         });
-        if let Some(tc) = &spec.type_constraint {
+        if let Some(tc) = &decl.type_constraint {
             let resolved_tc = tc.replace("::?CLASS", class_name);
             class_def
                 .attribute_types
                 .insert(attr_name.clone(), resolved_tc);
         }
-        if let Some(ts) = &spec.type_smiley {
+        if let Some(ts) = &decl.type_smiley {
             class_def
                 .attribute_smileys
                 .insert(attr_name.clone(), ts.clone());
         }
-        if let Some(built) = spec.is_built {
+        if let Some(built) = decl.is_built {
             class_def.attribute_built.insert(attr_name.clone(), built);
         }
         self.registry_mut()
@@ -112,40 +113,17 @@ impl Interpreter {
         cx: &mut ClassBodyCx<'_>,
         stmt: &Stmt,
     ) -> Result<ClassBodyFlow, RuntimeError> {
-        let Stmt::HasDecl {
-            name: attr_name,
-            is_public,
-            default,
-            handles,
-            is_rw,
-            is_readonly,
-            type_constraint,
-            type_smiley,
-            is_required,
-            sigil,
-            where_constraint,
-            is_alias,
-            is_our,
-            is_my,
-            is_default,
-            is_type,
-            deprecated_message,
-            is_built,
-            unknown_traits,
-        } = stmt
-        else {
-            unreachable!("class_body_has_decl called on a non-HasDecl statement");
-        };
-        let attr_name_str = attr_name.resolve();
+        let decl = crate::opcode::CompiledAttrDecl::from_stmt(stmt);
+        let attr_name_str = decl.name.clone();
 
         // An initializer that can never satisfy the constraint is a
         // declaration-time error in rakudo, before anything is built.
         if let Err(err) = self.validate_static_attribute_default(
             &attr_name_str,
-            *sigil,
-            default.as_ref(),
-            type_constraint.as_deref(),
-            type_smiley.as_deref(),
+            decl.sigil,
+            decl.default.as_ref(),
+            decl.type_constraint.as_deref(),
+            decl.type_smiley.as_deref(),
         ) {
             self.set_current_package(cx.saved_package.clone());
             self.env = cx.saved_env.clone();
@@ -157,14 +135,14 @@ impl Interpreter {
         // to it with an Attribute introspection object; otherwise raise
         // X::Comp::Trait::Unknown. Kept in a separate method so its
         // locals don't inflate this already-large function's frame.
-        if !unknown_traits.is_empty() {
+        if !decl.unknown_traits.is_empty() {
             if let Err(err) = self.apply_attribute_traits(
-                unknown_traits,
+                &decl.unknown_traits,
                 &attr_name_str,
-                *sigil,
-                *is_public,
+                decl.sigil,
+                decl.is_public,
                 cx.name,
-                type_constraint.as_deref(),
+                decl.type_constraint.as_deref(),
             ) {
                 self.set_current_package(cx.saved_package.clone());
                 self.env = cx.saved_env.clone();
@@ -192,9 +170,9 @@ impl Interpreter {
         }
 
         // Handle class-level attributes (our $.x / my $.x)
-        if *is_our || *is_my {
+        if decl.is_our || decl.is_my {
             // Evaluate the default value if present
-            let initial_value = if let Some(expr) = default {
+            let initial_value = if let Some(expr) = &decl.default {
                 self.eval_block_value(&[Stmt::Expr(expr.clone())])?
             } else {
                 Value::NIL
@@ -220,29 +198,30 @@ impl Interpreter {
                 attr_name_str, cx.name,
             )));
         }
-        let effective_is_rw = !*is_readonly && (*is_rw || (cx.class_is_rw && *is_public));
+        let effective_is_rw =
+            !decl.is_readonly && (decl.is_rw || (cx.class_is_rw && decl.is_public));
         cx.class_def.attributes.push(ClassAttributeDef {
             name: attr_name_str.clone(),
-            is_public: *is_public,
-            default: default.clone(),
+            is_public: decl.is_public,
+            default: decl.default.clone(),
             is_rw: effective_is_rw,
-            is_required: is_required.clone(),
-            sigil: *sigil,
-            where_constraint: where_constraint.as_ref().map(|wc| wc.as_ref().clone()),
+            is_required: decl.is_required.clone(),
+            sigil: decl.sigil,
+            where_constraint: decl.where_constraint.clone(),
         });
         // Store `is default(...)` trait value for this attribute.
         // When is_default is set, the evaluated value is stored for
         // .VAR.default and Nil-restore behavior.
         // When only `default` is set (from `is default(X)` without `= value`),
         // also store it as the is_default trait value.
-        if let Some(is_default_expr) = is_default {
+        if let Some(is_default_expr) = &decl.is_default {
             if let Ok(val) = self.eval_block_value(&[Stmt::Expr(is_default_expr.clone())]) {
                 // Type-check the default value against the attribute's type
                 // constraint. For an object hash (`%.a{KeyType}`) the
                 // constraint is `ValueType{KeyType}`; the `is default`
                 // value is an *element* default, so check it against the
                 // value type only.
-                if let Some(tc) = type_constraint {
+                if let Some(tc) = &decl.type_constraint {
                     let tc = tc
                         .split_once('{')
                         .map(|(value_tc, _)| value_tc)
@@ -294,48 +273,48 @@ impl Interpreter {
                     .class_attribute_defaults
                     .insert((cx.name.to_string(), attr_name_str.clone()), val);
             }
-        } else if default.is_some() {
+        } else if decl.default.is_some() {
             // No explicit `is default(X)`, but there IS a `default` expr.
             // This means either `has $.a = expr` or `has $.a is default(expr)` without `= value`.
             // We can't distinguish here, so we DON'T set class_attribute_defaults
             // (it would be wrong for `has $.a = 42` — Nil should give (Any), not 42).
         }
-        if *is_alias {
+        if decl.is_alias {
             cx.class_def.alias_attributes.insert(attr_name_str.clone());
         }
-        if let Some(tc) = type_constraint {
+        if let Some(tc) = &decl.type_constraint {
             // Resolve ::?CLASS to the current class name
             let resolved_tc = tc.replace("::?CLASS", cx.name);
             cx.class_def
                 .attribute_types
                 .insert(attr_name_str.clone(), resolved_tc);
         }
-        if let Some(ts) = type_smiley {
+        if let Some(ts) = &decl.type_smiley {
             cx.class_def
                 .attribute_smileys
                 .insert(attr_name_str.clone(), ts.clone());
         }
-        if let Some(built) = is_built {
+        if let Some(built) = decl.is_built {
             cx.class_def
                 .attribute_built
-                .insert(attr_name_str.clone(), *built);
+                .insert(attr_name_str.clone(), built);
         }
-        if let Some(it) = is_type {
+        if let Some(it) = &decl.is_type {
             self.registry_mut()
                 .class_attribute_is_types
                 .insert((cx.name.to_string(), attr_name_str.clone()), it.clone());
         }
-        if let Some(dm) = deprecated_message {
+        if let Some(dm) = &decl.deprecated_message {
             self.registry_mut()
                 .class_attribute_deprecated
                 .insert((cx.name.to_string(), attr_name_str.clone()), dm.clone());
         }
-        let attr_var_name = if *is_public {
+        let attr_var_name = if decl.is_public {
             format!(".{}", attr_name_str)
         } else {
             format!("!{}", attr_name_str)
         };
-        self.apply_handle_specs(handles, &attr_var_name, &mut cx.class_def);
+        self.apply_handle_specs(&decl.handles, &attr_var_name, &mut cx.class_def);
         Ok(ClassBodyFlow::RunTail)
     }
 }

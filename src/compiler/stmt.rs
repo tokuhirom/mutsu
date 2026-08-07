@@ -2772,21 +2772,7 @@ impl Compiler {
             // CATCH/CONTROL are extracted by compile_try/compile_body_with_implicit_try
             Stmt::Catch(_) | Stmt::Control(_) => {}
             // HasDecl outside class context.
-            Stmt::HasDecl {
-                name,
-                sigil,
-                is_public,
-                is_our,
-                is_my,
-                is_rw,
-                is_readonly,
-                is_required,
-                is_built,
-                type_constraint,
-                type_smiley,
-                default,
-                ..
-            } => {
+            Stmt::HasDecl { is_our, is_my, .. } => {
                 // `our $.x` / `my $.x` in the mainline is not a fatal error in
                 // Raku; it merely warns that generating an accessor method here
                 // is useless (there is no package to attach it to). Only the
@@ -2802,15 +2788,13 @@ impl Compiler {
                     self.code.emit(OpCode::Pop);
                     return;
                 }
-                let twigil = if *is_public { "." } else { "!" };
-                let bare = name.resolve();
-                let bare = bare.trim_start_matches(['.', '!']);
-                let sigil_ch = if *sigil == '!' || *sigil == '.' {
-                    '$'
-                } else {
-                    *sigil
-                };
-                let full_name = format!("{}{}{}", sigil_ch, twigil, bare);
+                // `Stmt::HasDecl::name` is already the bare (twigil-free) name
+                // and `sigil` is always `$`/`@`/`%` (the parser never produces
+                // `.`/`!`), so `CompiledAttrDecl::from_stmt`'s fields match
+                // this arm's historical `bare`/`sigil_ch` derivation exactly.
+                let decl = crate::opcode::CompiledAttrDecl::from_stmt(stmt);
+                let twigil = if decl.is_public { "." } else { "!" };
+                let full_name = format!("{}{}{}", decl.sigil, twigil, decl.name);
                 let mut attrs = std::collections::HashMap::new();
                 let err = if let Some(pkg_kind) = self.current_package_kind {
                     // Inside a `module`/`package` body: a package cannot hold
@@ -2840,19 +2824,7 @@ impl Compiler {
                 // runtime op that, when a class is currently being defined
                 // (`class Foo { BEGIN EVAL q[has $.x] }`), registers the
                 // attribute onto that class; otherwise it throws the error above.
-                let spec = crate::opcode::RuntimeHasDeclSpec {
-                    attr_name: bare.to_string(),
-                    is_public: *is_public,
-                    sigil: sigil_ch,
-                    is_rw: *is_rw,
-                    is_readonly: *is_readonly,
-                    is_required: is_required.clone(),
-                    is_built: *is_built,
-                    type_constraint: type_constraint.clone(),
-                    type_smiley: type_smiley.clone(),
-                    default: default.clone(),
-                    error: err,
-                };
+                let spec = crate::opcode::RuntimeHasDeclSpec { decl, error: err };
                 self.code.emit(OpCode::RuntimeHasDecl(Box::new(spec)));
             }
             // DoesDecl/TrustsDecl outside class context are no-ops

@@ -277,6 +277,89 @@ pub(crate) struct ForLoopSpec {
     pub(crate) body_declares_routines: bool,
 }
 
+/// A typed mirror of `Stmt::HasDecl` (ADR-0019 D2b), built once by
+/// [`CompiledAttrDecl::from_stmt`] instead of being re-destructured with an
+/// 18-field pattern at each of the class-body, role-body, augment, and
+/// mainline/EVAL `has`-registration sites. `name` is the resolved (twigil-free)
+/// attribute name and `where_constraint`/`is_default` are unboxed, matching
+/// what every consumer actually reads; everything else mirrors the AST field
+/// for field.
+#[derive(Debug, Clone)]
+pub(crate) struct CompiledAttrDecl {
+    pub(crate) name: String,
+    pub(crate) is_public: bool,
+    pub(crate) default: Option<crate::ast::Expr>,
+    pub(crate) handles: Vec<crate::ast::HandleSpec>,
+    pub(crate) is_rw: bool,
+    pub(crate) is_readonly: bool,
+    pub(crate) type_constraint: Option<String>,
+    pub(crate) type_smiley: Option<String>,
+    pub(crate) is_required: Option<Option<String>>,
+    pub(crate) sigil: char,
+    pub(crate) where_constraint: Option<crate::ast::Expr>,
+    pub(crate) is_alias: bool,
+    pub(crate) is_our: bool,
+    pub(crate) is_my: bool,
+    pub(crate) is_default: Option<crate::ast::Expr>,
+    pub(crate) is_type: Option<String>,
+    pub(crate) deprecated_message: Option<String>,
+    pub(crate) is_built: Option<bool>,
+    pub(crate) unknown_traits: Vec<(String, String, Option<crate::ast::Expr>)>,
+}
+
+impl CompiledAttrDecl {
+    /// Build a typed descriptor from a `Stmt::HasDecl`. Panics on any other
+    /// statement kind — every call site already matched on `Stmt::HasDecl`
+    /// before reaching here.
+    pub(crate) fn from_stmt(stmt: &Stmt) -> CompiledAttrDecl {
+        let Stmt::HasDecl {
+            name,
+            is_public,
+            default,
+            handles,
+            is_rw,
+            is_readonly,
+            type_constraint,
+            type_smiley,
+            is_required,
+            sigil,
+            where_constraint,
+            is_alias,
+            is_our,
+            is_my,
+            is_default,
+            is_type,
+            deprecated_message,
+            is_built,
+            unknown_traits,
+        } = stmt
+        else {
+            unreachable!("CompiledAttrDecl::from_stmt called on a non-HasDecl statement");
+        };
+        CompiledAttrDecl {
+            name: name.resolve(),
+            is_public: *is_public,
+            default: default.clone(),
+            handles: handles.clone(),
+            is_rw: *is_rw,
+            is_readonly: *is_readonly,
+            type_constraint: type_constraint.clone(),
+            type_smiley: type_smiley.clone(),
+            is_required: is_required.clone(),
+            sigil: *sigil,
+            where_constraint: where_constraint.as_deref().cloned(),
+            is_alias: *is_alias,
+            is_our: *is_our,
+            is_my: *is_my,
+            is_default: is_default.clone(),
+            is_type: is_type.clone(),
+            deprecated_message: deprecated_message.clone(),
+            is_built: *is_built,
+            unknown_traits: unknown_traits.clone(),
+        }
+    }
+}
+
 /// Payload of `OpCode::RuntimeHasDecl`. A `has $.x` that reaches the VM (rather
 /// than being collected declaratively by `register_class_decl`) only arises from
 /// mainline / EVAL'd source — e.g. `class Foo { BEGIN EVAL q[has $.x] }`. At
@@ -286,16 +369,7 @@ pub(crate) struct ForLoopSpec {
 /// or `X::Attribute::Package`). Boxed to keep `size_of::<OpCode>()` small.
 #[derive(Debug, Clone)]
 pub(crate) struct RuntimeHasDeclSpec {
-    pub(crate) attr_name: String,
-    pub(crate) is_public: bool,
-    pub(crate) sigil: char,
-    pub(crate) is_rw: bool,
-    pub(crate) is_readonly: bool,
-    pub(crate) is_required: Option<Option<String>>,
-    pub(crate) is_built: Option<bool>,
-    pub(crate) type_constraint: Option<String>,
-    pub(crate) type_smiley: Option<String>,
-    pub(crate) default: Option<crate::ast::Expr>,
+    pub(crate) decl: CompiledAttrDecl,
     /// The `X::Attribute::*` error to throw when this `has` runs outside a
     /// class-definition context.
     pub(crate) error: Value,
