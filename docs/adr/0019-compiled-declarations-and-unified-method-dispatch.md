@@ -115,15 +115,13 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 18/53 slices merged (D0 landed). Current box: C6e, subdivided per the
-measure-then-split precedent — C6e-1 (redeclaration-identity hash + eager body facts, #5952),
-C6e-2a (sigilless scalars run compiled, #5953), C6e-2b (sub-signature params run
-compiled, #5954), and C6e-2c (`start` bodies run compiled; body constructs no longer
-gate compilation) have landed; C6e-3 (drop `legacy_body`) remains, tracked with
-measurements in
-`todo/deep/c6e-legacy-body-drop-blocked-by-gate-rejected-shapes.md`. C6d's only open sub-box
-is the ADR-0009-scoped C6d-2, which does not gate C6 (token defs never come from
-`CompiledSubDeclPlan`).**
+**Current progress: 19/53 slices merged (C6 complete, 2026-08-07). Current box: C7 — remove
+the sub-registration AST adapter. C6's last sub-box, C6e-3c, dropped
+`CompiledSubDeclPlan::legacy_body` for real once every keep-class was closed; see
+`news/2026-08/legacy-body-field-dropped.md`. C6d's only open sub-box remains the
+ADR-0009-scoped C6d-2, which does not gate C6 (token defs never come from
+`CompiledSubDeclPlan`) — it stays open only for the later `FunctionDef.body` field deletion
+(F7).**
 
 The count tallies top-level boxes only; sub-boxes (C6a–C6e, C6d-1..5, E1a/E1b) are that box's
 PRs, and a subdivided box is checked when its last sub-box merges. A box that turns out to need
@@ -176,7 +174,7 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
   required by registration into `CompiledSubDeclPlan`/`CompiledFunction`.
 - [x] **C5 — Move sub custom-trait and computed-name evaluation to child chunks.** Execute those
   expressions through re-entrant bytecode, including EVAL and NativeCall declaration cases.
-- [ ] **C6 — Remove `CompiledSubDeclPlan::legacy_body`.** Make ordinary, multi, `our`, hoisted,
+- [x] **C6 — Remove `CompiledSubDeclPlan::legacy_body`.** Make ordinary, multi, `our`, hoisted,
   exported, operator, and top-level-method declarations register without an executable AST body.
   The blocker is `FunctionDef.body`, which had 58 readers when C6 started. They fall into
   separable groups, each its own PR. The gate is scoped to what the plan field actually feeds: a
@@ -200,7 +198,7 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
     `CompiledCode`, and an empty upvalue array falls back to by-name env reads — see
     `news/2026-08/routine-code-objects-are-bytecode-backed.md`, which corrects the earlier
     scoping note.
-  - [ ] **C6d — interpreter execution sites.** Route `eval_block_value(&def.body)` /
+  - [x] **C6d — interpreter execution sites.** Route `eval_block_value(&def.body)` /
     `run_block(&def.body)` through `def.compiled`. Surveyed by instrumenting all six sites and
     running the whole `t/` suite once (1148 hits — see
     `todo/deep/c6d-interpreter-body-sites-are-mostly-token-bodies.md`), which corrects the
@@ -272,7 +270,7 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
       interpreter arm, which is load-bearing semantics for those shapes (the sigilless-scalar
       EVAL-boundary writeback of `t/sigilless-params.t` is why the gate exists) —
       `news/2026-08/fallback-def-arm-runs-compiled-body.md`.
-  - [ ] **C6e — redeclaration comparison and eager body facts, then drop the plan field.**
+  - [x] **C6e — redeclaration comparison and eager body facts, then drop the plan field.**
     Replace the two `body_debug_without_setline(&def.body)` comparisons (`registration_sub.rs`)
     with the plan's C4 redeclaration fingerprint, and fill `RoutineBodyFacts` eagerly at plan
     lowering — the C6b cache is lazy and still reads `def.body` on a miss, which a body-less def
@@ -294,23 +292,26 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
     under a `MUTSU_DROP_LEGACY_BODY=1` instrument
     (`news/2026-08/legacy-body-drop-groundwork.md`); C6e-3b (landed) makes the
     safe-class empty body the default at registration and retires the instrument
-    (`news/2026-08/safe-class-empty-body-default.md`); C6e-3c drops the field
-    itself once the load-bearing classes — no resolvable plan bytecode, rw/raw
-    scalars' interpreter carrier, lvalue routines, NativeCall — are unblocked.
-    A 2026-08-07 re-audit (forcing the literal end state — body always empty,
-    not just the `plan_fully_compiled` half of the predicate — across the full
-    `t/` suite and full `make roast`) found the field is still NOT droppable:
-    runtime-resolved sub/method names (`sub ::($n) {...}`) were never
-    OTF-compiled at all (fixed the same day — the compiled-routine lookup key
-    is an internal symbol independent of the eventual runtime name, so it
-    compiles safely), and a plan-derived def declared inside a bare
-    block/closure invoked through a foreign compiled_fns context (e.g. a
-    module's own exported sub calling a captured block argument) loses its
-    compiled routine the same way `MethodDef`/`CompiledFunction` did before
-    their own carrier fixes — but `SubData` (blocks/closures) was explicitly
-    scoped out of that carrier work and still has no equivalent. Measurements
-    and per-shape notes, including this re-audit:
-    `todo/deep/c6e-legacy-body-drop-blocked-by-gate-rejected-shapes.md`.
+    (`news/2026-08/safe-class-empty-body-default.md`); C6e-3c dropped the field
+    itself (2026-08-07) once the load-bearing classes were unblocked: no
+    resolvable plan bytecode (class-walker method-nested subs, fixed by giving
+    `MethodDef` its own `compiled_fns` carrier), rw/raw scalars' interpreter
+    carrier (shared `ContainerRef` cells), lvalue routines (plan-recorded
+    assign-target tail), NativeCall marshalling traits (measured zero live
+    readers), runtime-resolved sub/method names (`sub ::($n) {...}`, which
+    turned out to just need the early-return compiler skip removed — the
+    compiled-routine lookup key is an internal symbol independent of the
+    runtime-resolved name), and finally `SubData` (bare blocks/closures)
+    gaining the same `compiled_fns` carrier `CompiledFunction`/`MethodDef`
+    already had, so a `sub` nested inside a block invoked from a foreign
+    compilation unit's compiled code (the `Test::Util` `group-of` shape)
+    resolves its own bytecode instead of silently falling back to the
+    interpreter. With every keep-class closed, a `MUTSU_FORCE_BODYLESS`
+    instrument that unconditionally emptied every plan-derived body was
+    validated against the full `t/` suite (27,755 tests) and the entire
+    `make roast` whitelist (both green), and the field was then deleted for
+    real — `make test`/`make roast` pass with it gone.
+    `news/2026-08/legacy-body-field-dropped.md`.
 - [ ] **C7 — Remove the sub-registration AST adapter.** Delete dead sub-shaped walker branches and
   prove the routine registry never compiles a migrated declaration on demand.
 - [ ] **C8 — Proto declarations register from typed plans.** Migrate `RegisterProtoSub` and
@@ -503,8 +504,9 @@ each instruction.
 
 Stage 1 is in progress. `RegisterSub` now indexes a typed `CompiledSubDeclPlan` pool rather than
 `CompiledCode::stmt_pool`; all normal, hoisted, nested-`our`, and top-level-method lowering sites use
-the plan, and the VM no longer pattern-matches `Stmt::SubDecl`. The plan still carries
-`legacy_body` for the existing routine-registry adapter. Source-order sub plans now also carry the
+the plan, and the VM no longer pattern-matches `Stmt::SubDecl`. The plan no longer carries an
+AST body at all — `legacy_body` was removed in C6e-3c (2026-08-07); see
+`news/2026-08/legacy-body-field-dropped.md`. Source-order sub plans now also carry the
 stable keys of their primary and alternate compiled routines. Child compilation-unit imports now
 retain their compiled-function tables and remap colliding keys together with every declaration-plan
 reference. Registration now attaches the plan-selected compiled bodies to its temporary

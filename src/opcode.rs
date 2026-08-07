@@ -2021,10 +2021,6 @@ pub(crate) struct CompiledSubDeclPlan {
     /// next adapter slice preserves it while importing modules and installs
     /// through these keys directly.
     pub(crate) compiled_routine_keys: Vec<Symbol>,
-    /// Compatibility payload for the routine registry. Method bodies already execute from
-    /// `CompiledFunction`; this AST is removed when the registry adapter is retired in ADR-0019
-    /// stage 1.
-    pub(crate) legacy_body: Vec<Stmt>,
     pub(crate) multi: bool,
     pub(crate) is_rw: bool,
     pub(crate) is_raw: bool,
@@ -5267,7 +5263,6 @@ impl CompiledCode {
             signature_alternates: signature_alternates.clone(),
             alternate_metadata,
             compiled_routine_keys: Vec::new(),
-            legacy_body: body.clone(),
             multi: *multi,
             is_rw: *is_rw,
             is_raw: *is_raw,
