@@ -158,17 +158,72 @@ impl Compiler {
         )
     }
 
-    /// Returns true if the expression contains a state variable declaration
-    /// (recursively). Used to decide whether `StateVarInitGuard` can safely
-    /// skip evaluation of a state variable's RHS initializer.
+    /// Returns true if the expression contains a state variable declaration at
+    /// its OWN block level. Used to decide whether `StateVarInitGuard` can
+    /// safely skip evaluation of a state variable's RHS initializer, and
+    /// whether an inline nested block needs a `ResetStateLocals`.
+    ///
+    /// The walk descends through operator/call/subscript shapes but stops at
+    /// anything that introduces a block of its own (`Block`, `Lambda`,
+    /// `AnonSub`, `Gather`, ...): a `state` in there belongs to *that* clone
+    /// and is reset at its entry, so descending would only make this block emit
+    /// a redundant reset.
+    ///
+    /// Descending at all matters because a `state` declaration is usually not
+    /// the whole expression: `++state $n` parses as a `Unary` around the decl,
+    /// so a shallow test missed it and an `if` branch holding one never emitted
+    /// its reset — `sub f { if 1 { ++state $n } }` counted 1, 2, 3 across calls
+    /// where raku restarts at 1 each time.
     pub(super) fn expr_has_state_decl(expr: &Expr) -> bool {
+        let any = |es: &[Expr]| es.iter().any(Self::expr_has_state_decl);
         match expr {
-            Expr::DoStmt(stmt) => {
-                if let Stmt::VarDecl { is_state: true, .. } = stmt.as_ref() {
-                    return true;
-                }
-                false
+            Expr::DoStmt(stmt) => match stmt.as_ref() {
+                Stmt::VarDecl { is_state: true, .. } => true,
+                Stmt::VarDecl { expr, .. } | Stmt::Expr(expr) => Self::expr_has_state_decl(expr),
+                _ => false,
+            },
+            Expr::Grouped(e)
+            | Expr::Unary { expr: e, .. }
+            | Expr::PostfixOp { expr: e, .. }
+            | Expr::AssignExpr { expr: e, .. }
+            | Expr::Itemize(e)
+            | Expr::DeitemizeForBind(e)
+            | Expr::Eager(e)
+            | Expr::PositionalPair(e)
+            | Expr::ZenSlice(e) => Self::expr_has_state_decl(e),
+            Expr::Binary { left, right, .. } => {
+                Self::expr_has_state_decl(left) || Self::expr_has_state_decl(right)
             }
+            Expr::Ternary {
+                cond,
+                then_expr,
+                else_expr,
+            } => {
+                Self::expr_has_state_decl(cond)
+                    || Self::expr_has_state_decl(then_expr)
+                    || Self::expr_has_state_decl(else_expr)
+            }
+            Expr::Index { target, index, .. } => {
+                Self::expr_has_state_decl(target) || Self::expr_has_state_decl(index)
+            }
+            Expr::IndexAssign {
+                target,
+                index,
+                value,
+                ..
+            } => {
+                Self::expr_has_state_decl(target)
+                    || Self::expr_has_state_decl(index)
+                    || Self::expr_has_state_decl(value)
+            }
+            Expr::MethodCall { target, args, .. } | Expr::CallOn { target, args } => {
+                Self::expr_has_state_decl(target) || any(args)
+            }
+            Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => any(args),
+            Expr::ArrayLiteral(es)
+            | Expr::BracketArray(es, _)
+            | Expr::CaptureLiteral(es)
+            | Expr::StringInterpolation(es) => any(es),
             _ => false,
         }
     }
