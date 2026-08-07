@@ -1742,7 +1742,8 @@ impl Interpreter {
                                         got,
                                         crate::runtime::utils::gist_value(&value)
                                     )),
-                                ));
+                                )
+                                .with_parameter_object(pd));
                             }
                             return Err(RuntimeError::typecheck_binding_parameter(
                                 &display_name,
@@ -1752,7 +1753,8 @@ impl Interpreter {
                                     "{}: Type check failed for {}: expected {}, got {}",
                                     type_error_kind, display_name, resolved_constraint, got
                                 )),
-                            ));
+                            )
+                            .with_parameter_object(pd));
                         } else {
                             value = self
                                 .try_coerce_value_for_constraint(&resolved_constraint, value)
