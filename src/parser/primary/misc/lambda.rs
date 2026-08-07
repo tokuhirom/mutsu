@@ -323,6 +323,10 @@ pub(crate) fn block_or_hash_expr(input: &str) -> PResult<'_, Expr> {
             return Err(PError::expected("'}'"));
         }
         let r = &r[1..];
+        // In Raku a block's `}` at end of line terminates the statement, so an
+        // infix word on the next line (`g { 1 }` NL `before { 2 }`) starts a
+        // new statement instead of taking this block as its left operand.
+        crate::parser::stmt_ending_brace::mark_stmt_ending_brace(r);
         crate::parser::stmt::simple::prepend_anon_state_decls(&mut stmts);
         Ok((r, make_anon_sub(stmts)))
     })();
