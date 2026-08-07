@@ -115,11 +115,14 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 21/53 slices merged (C6, C7, and C8 complete, 2026-08-07). Phase C is now
-fully checked; the next open box is D1 (class structural operations, Phase D). C8 migrated
-`RegisterProtoSub`/`RegisterProtoToken` onto `RegisterDecl` and made a non-trivial proto body
-compile its `{*}`-rewritten dispatch once, at declaration time, instead of on every call; see
-`news/2026-08/c8-proto-declarations-compiled-plans.md`. C7 removed the last sub-shaped
+**Current progress: 22/53 slices merged (C6, C7, C8, and D1 complete, 2026-08-07). Phase C is
+fully checked; the next open box is D2 (attributes and generated accessors). D1 found most class
+structural data already typed-plan-driven from Phase A3/A4; the two remaining body-scanning reads
+(stub detection, `Stmt::TrustsDecl`) are now precomputed at plan lowering as
+`CompiledClassDeclPlan::is_stub`/`trusts`; see `news/2026-08/d1-class-structural-plan-fields.md`.
+C8 migrated `RegisterProtoSub`/`RegisterProtoToken` onto `RegisterDecl` and made a non-trivial
+proto body compile its `{*}`-rewritten dispatch once, at declaration time, instead of on every
+call; see `news/2026-08/c8-proto-declarations-compiled-plans.md`. C7 removed the last sub-shaped
 AST-registration adapter: `preregister_top_level_subs` now installs a forward-declared sub through
 `register_compiled_sub_decl` with an eagerly OTF-compiled routine instead of leaving `compiled`
 unset for the first call to fill in; see
@@ -362,8 +365,13 @@ walkers wholesale is not possible before then.
   `news/2026-08/class-role-walkers-split-into-phases.md`. Phase D also inherits
   `types/roles.rs:run_role_submethod` from C6d-3 (a `MethodDef` body-execution site, dead
   across the suite).
-- [ ] **D1 — Encode class structural operations.** Put package open/reopen, parent edges, repr,
-  visibility, lexical/package aliases, and source-order metadata in immutable plan operations.
+- [x] **D1 — Encode class structural operations.** Package open/reopen, parent edges, repr,
+  visibility, and lexical/package aliases were already typed-plan-driven from Phase A3/A4
+  (`exec_register_class_op` reads them straight off `CompiledClassDeclPlan`). The two remaining
+  body-scanning reads — yada-stub detection (duplicated across `check_class_role_redeclaration` and
+  the now-deleted `class_body_is_stub`) and the `Stmt::TrustsDecl` scan in `publish_class_shell` —
+  are precomputed at plan lowering as `CompiledClassDeclPlan::is_stub`/`trusts`, threaded through
+  `ClassDeclModifiers`. `news/2026-08/d1-class-structural-plan-fields.md`.
 - [ ] **D2 — Encode attributes and generated accessors.** Compile defaults/constraints as child
   chunks and publish generated methods through the canonical table.
 - [ ] **D3 — Encode class methods and submethods as compiled candidates.** Install ordinary, multi,

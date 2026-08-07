@@ -75,38 +75,19 @@ impl Interpreter {
     /// Detect X::Redeclaration when a class redefines a role in the same scope.
     /// Only check user-declared roles (not pre-registered builtins like Iterator).
     /// Lexical classes (`my class`) are allowed to shadow outer role names.
+    /// `is_stub` is precomputed by the compiler at plan lowering (ADR-0019 D1,
+    /// `crate::opcode::is_stub_routine_body`) — a non-stub class body redefining
+    /// a role name is always a genuine redeclaration.
     pub(super) fn check_class_role_redeclaration(
         &self,
         name: &str,
         is_lexical: bool,
-        body: &[Stmt],
+        is_stub: bool,
     ) -> Result<(), RuntimeError> {
-        if !is_lexical && self.registry().user_declared_roles.contains(name) {
-            // Only report redeclaration for non-stub class bodies
-            let body_non_stub: Vec<_> = body
-                .iter()
-                .filter(|s| !matches!(s, Stmt::SetLine(_)))
-                .collect();
-            let class_is_stub = body_non_stub.len() == 1
-                && matches!(body_non_stub[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
-                    if *fn_name == "__mutsu_stub_die" || *fn_name == "__mutsu_stub_warn");
-            if !class_is_stub {
-                return Err(RuntimeError::redeclaration("symbol", name));
-            }
+        if !is_lexical && !is_stub && self.registry().user_declared_roles.contains(name) {
+            return Err(RuntimeError::redeclaration("symbol", name));
         }
         Ok(())
-    }
-
-    /// Detect stub body: `class Foo { ... }` — body is a stub operator call
-    /// Filter SetLine annotations which don't affect the stub nature.
-    pub(super) fn class_body_is_stub(body: &[Stmt]) -> bool {
-        let body_no_setline: Vec<_> = body
-            .iter()
-            .filter(|s| !matches!(s, Stmt::SetLine(_)))
-            .collect();
-        body_no_setline.len() == 1
-            && matches!(body_no_setline[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
-                if *fn_name == "__mutsu_stub_die" || *fn_name == "__mutsu_stub_warn")
     }
 
     /// Validate that all parent classes exist.
@@ -377,23 +358,18 @@ impl Interpreter {
     pub(super) fn publish_class_shell(
         &mut self,
         name: &str,
-        body: &[Stmt],
+        trusts: &[Symbol],
         class_def: &ClassDef,
         hidden_parents: &[String],
         does_parents: &[String],
         is_stub_body: bool,
     ) -> Result<bool, RuntimeError> {
-        for stmt in body {
-            if let Stmt::TrustsDecl {
-                name: trusted_class,
-            } = stmt
-            {
-                self.registry_mut()
-                    .class_trusts
-                    .entry(name.to_string())
-                    .or_default()
-                    .insert(trusted_class.resolve());
-            }
+        for trusted_class in trusts {
+            self.registry_mut()
+                .class_trusts
+                .entry(name.to_string())
+                .or_default()
+                .insert(trusted_class.resolve());
         }
         // Make the class visible while its body executes so introspection calls
         // like `A.^add_method(...)` inside the declaration can resolve `A`.

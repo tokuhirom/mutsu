@@ -135,6 +135,8 @@ impl Interpreter {
             language_version,
             custom_traits,
             decl_id,
+            is_stub,
+            trusts,
         }) = code.class_decl_plans.get(idx as usize)
         {
             let resolved_name = if let Some(chunk) = name_chunk {
@@ -244,6 +246,8 @@ impl Interpreter {
                         hidden_parents: &mapped_hidden_parents,
                         does_parents,
                         language_version,
+                        is_stub: *is_stub,
+                        trusts,
                     },
                     body,
                 )

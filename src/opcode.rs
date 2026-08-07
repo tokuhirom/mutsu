@@ -2217,6 +2217,14 @@ pub(crate) struct CompiledClassDeclPlan {
     pub(crate) language_version: String,
     pub(crate) custom_traits: Vec<(String, Option<DeclTraitArg>)>,
     pub(crate) decl_id: u64,
+    /// Whether the declared body is a yada stub (ADR-0019 D1). Precomputed at
+    /// plan lowering so registration never re-walks `legacy_body` to judge
+    /// this — mirrors `CompiledRoutineMetadata::is_stub` for subs.
+    pub(crate) is_stub: bool,
+    /// `trusts SomeClass` declarations at the top level of the body,
+    /// precomputed at plan lowering (ADR-0019 D1) instead of scanning
+    /// `legacy_body` for `Stmt::TrustsDecl` at registration time.
+    pub(crate) trusts: Vec<Symbol>,
 }
 
 #[derive(Debug, Clone)]
@@ -5424,6 +5432,14 @@ impl CompiledCode {
         };
         debug_assert_eq!(name_chunk.is_some(), name_expr.is_some());
         let plan_traits = zip_decl_trait_args(custom_traits, trait_args);
+        let is_stub = is_stub_routine_body(body);
+        let trusts = body
+            .iter()
+            .filter_map(|s| match s {
+                Stmt::TrustsDecl { name } => Some(*name),
+                _ => None,
+            })
+            .collect();
         let plan_idx = self.class_decl_plans.len() as u32;
         self.class_decl_plans.push(CompiledClassDeclPlan {
             name: *name,
@@ -5439,6 +5455,8 @@ impl CompiledCode {
             language_version: language_version.clone(),
             custom_traits: plan_traits,
             decl_id: *decl_id,
+            is_stub,
+            trusts,
         });
         let idx = self.decl_plans.len() as u32;
         self.decl_plans.push(CompiledDeclPlanRef::Class(plan_idx));
