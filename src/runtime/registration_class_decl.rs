@@ -123,6 +123,8 @@ impl Interpreter {
             hidden_parents,
             does_parents,
             language_version: class_language_version,
+            is_stub: is_stub_body,
+            trusts,
         } = modifiers;
         let class_lang_rev = language_revision_letter(class_language_version);
         // Normalize parent names: strip leading `::` (indirect name lookup syntax).
@@ -149,9 +151,7 @@ impl Interpreter {
             .class_attribute_is_types
             .retain(|(cn, _), _| cn != name);
 
-        self.check_class_role_redeclaration(name, is_lexical, body)?;
-
-        let is_stub_body = Self::class_body_is_stub(body);
+        self.check_class_role_redeclaration(name, is_lexical, is_stub_body)?;
 
         // If this is a stub registration but the class already exists and is
         // NOT a stub (i.e., it was already filled in by a hoisted real
@@ -206,7 +206,7 @@ impl Interpreter {
         );
         if self.publish_class_shell(
             name,
-            body,
+            trusts,
             &class_def,
             hidden_parents,
             does_parents,

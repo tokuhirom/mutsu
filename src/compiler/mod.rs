@@ -175,6 +175,37 @@ mod declaration_plan_tests {
             .expect("proto g declaration plan");
         assert!(plan.compiled_routine_key.is_none());
     }
+
+    /// ADR-0019 D1: a class declaration's stub-ness and `trusts` targets are
+    /// precomputed at plan lowering, so registration never re-walks the body
+    /// to judge them (`check_class_role_redeclaration`, `publish_class_shell`).
+    #[test]
+    fn class_declarations_precompute_stub_and_trusts() {
+        let (stmts, _) = crate::parse_dispatch::parse_source(
+            "class A { trusts B; has $.x }; class B { }; class Stub { ... }",
+        )
+        .expect("source parses");
+        let (code, _) = Compiler::new().compile(&stmts);
+
+        let plan_a = code
+            .class_decl_plans
+            .iter()
+            .find(|plan| plan.name.as_str() == "A")
+            .expect("class A declaration plan");
+        assert!(!plan_a.is_stub);
+        assert_eq!(
+            plan_a.trusts.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+            vec!["B"]
+        );
+
+        let plan_stub = code
+            .class_decl_plans
+            .iter()
+            .find(|plan| plan.name.as_str() == "Stub")
+            .expect("class Stub declaration plan");
+        assert!(plan_stub.is_stub);
+        assert!(plan_stub.trusts.is_empty());
+    }
 }
 mod const_fold;
 mod decl_plan;

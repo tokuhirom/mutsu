@@ -186,6 +186,15 @@ pub(crate) struct ClassDeclModifiers<'a> {
     /// Language version of the class being declared (e.g. "6.c", "6.d", "6.e").
     /// Used to determine whether submethods from composed roles should be included.
     pub(crate) language_version: &'a str,
+    /// Whether the declared body is a yada stub (`...`, `!!!`, or `???`).
+    /// Precomputed by the compiler at plan lowering (ADR-0019 D1), so
+    /// registration never re-walks the body to judge this.
+    pub(crate) is_stub: bool,
+    /// `trusts SomeClass` declarations at the top level of the body,
+    /// precomputed by the compiler at plan lowering (ADR-0019 D1) instead of
+    /// `publish_class_shell` scanning the body for `Stmt::TrustsDecl` at
+    /// registration time.
+    pub(crate) trusts: &'a [Symbol],
 }
 
 pub(super) fn parse_role_type_args(input: &str) -> Vec<String> {
