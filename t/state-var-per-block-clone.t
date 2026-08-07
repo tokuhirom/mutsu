@@ -1,6 +1,6 @@
 use Test;
 
-plan 26;
+plan 30;
 
 # Raku clones a block every time its ENCLOSING block runs, and a `state` cell —
 # named, or the implicit one behind a bare `$` — belongs to the CLONE. So a
@@ -129,4 +129,21 @@ plan 26;
         ($o.m, $o.m, $o.m).join(',');
     };
     is $c(), "1,2,3", '...and so does an anonymous one';
+}
+
+# --- the per-clone restart survives a thread having run ---------------------
+{
+    # Once any thread has been spawned, `StateVarInit` resolves a `state`
+    # through a shared cross-thread cell and stops consulting the local store,
+    # so dropping only the local entry left the loop-statement reset a silent
+    # no-op: the loop body kept counting up on every later execution of the
+    # statement. Cro's `Cro.compose` recursed on a `state $split` that never
+    # restarted at 1 and blew the stack once a `Cro::Service.start` had run.
+    class TC {
+        method m(*@in) { my @r; for @in { @r.push(++state $s) }; @r.join(',') }
+    }
+    is TC.m(1, 2, 3), "1,2,3", 'a loop-body state in a method starts at 1';
+    is TC.m(1, 2, 3), "1,2,3", '...and restarts on the next call';
+    is (await start { TC.m(1, 2, 3) }), "1,2,3", '...and on a worker thread';
+    is TC.m(1, 2, 3), "1,2,3", '...and still restarts back on the main thread';
 }
