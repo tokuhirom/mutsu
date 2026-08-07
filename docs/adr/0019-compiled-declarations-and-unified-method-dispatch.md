@@ -426,6 +426,16 @@ walkers wholesale is not possible before then.
     `.^methods`/`.^can`/`.^attributes` synthesis sites become table probes riding the existing
     generation-bump invalidation instead of MRO×attribute-vector scans. Independently landable
     (does not depend on D2b/D2c — `ClassDef::attributes` is already populated by registration).
+    **Partly landed 2026-08-07**: `MethodEntry` gained an `accessor: Option<bool>` arm, populated
+    in `sync_user_method_entries` alongside the existing `user_candidates` loop (same generation
+    bump, no new invalidation hook needed — Phase B's scheme was built write-path-agnostic).
+    `has_public_accessor` now probes it (`Registry::accessor_is_public`) per MRO level instead of
+    scanning each class's `attributes` vector. `resolve_user_method_or_accessor` and the
+    `.^methods`/`.^can`/`.^attributes` synthesis sites (`methods_classhow_method_obj.rs`,
+    `methods_classhow_attribute.rs`) are unmigrated — they carry more interacting logic (role
+    attributes, method/accessor shadow ordering, full `Attribute` meta-object construction for
+    `.^attributes`) that a first slice deliberately left alone rather than risk in one pass. See
+    `news/2026-08/d2d-accessor-method-entry.md`.
 - [ ] **D3 — Encode class methods and submethods as compiled candidates.** Install ordinary, multi,
   proto, private, rw, wrap, BUILD, and TWEAK metadata without walking `Stmt::MethodDecl`. That
   walk exists in three places, not one — the class walker (~508 lines), the role walker

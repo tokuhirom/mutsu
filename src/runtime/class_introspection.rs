@@ -253,21 +253,14 @@ impl Interpreter {
     /// The most-derived declaration of an attribute name decides its
     /// visibility (mirroring `collect_class_attributes`' override-by-name
     /// merge), so walk the MRO derived-first and stop at the first class
-    /// declaring the name instead of cloning the whole merged attribute list
-    /// per query — this sits on the per-call method-dispatch path.
+    /// declaring the name — a `MethodEntry` table probe per level (ADR-0019
+    /// D2d) instead of a linear scan of that class's attribute vector, since
+    /// this sits on the per-call method-dispatch path.
     pub(crate) fn has_public_accessor(&mut self, class_name: &str, method_name: &str) -> bool {
         let mro = self.class_mro(class_name);
         for cn in mro.iter() {
-            if let Some(class_def) = self.registry().classes.get(cn.as_str())
-                // Within one class a later same-name declaration overrides an
-                // earlier one (collect_class_attributes' remove-then-push).
-                && let Some(attr) = class_def
-                    .attributes
-                    .iter()
-                    .rev()
-                    .find(|a| a.name == method_name)
-            {
-                return attr.is_public;
+            if let Some(is_public) = self.registry().accessor_is_public(cn.as_str(), method_name) {
+                return is_public;
             }
         }
         false

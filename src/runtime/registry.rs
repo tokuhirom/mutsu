@@ -51,6 +51,14 @@ pub(crate) struct MethodEntryKey {
 pub(crate) struct MethodEntry {
     pub(crate) builtin: Option<crate::builtins::builtin_type_methods::BuiltinMethodEntry>,
     pub(crate) user_candidates: Vec<MethodDef>,
+    /// Visibility of the auto-generated accessor for a `has $.x`/`has $!x`
+    /// attribute this class declares directly, keyed by attribute name under
+    /// the same `(owner, name)` row as a same-named method would occupy
+    /// (ADR-0019 D2d). `Some(is_public)`, not a nested `Option` around a
+    /// descriptor: callers only ever need the visibility bit, not the full
+    /// `ClassAttributeDef` (that stays in `ClassDef::attributes`, the source
+    /// this is synced from).
+    pub(crate) accessor: Option<bool>,
 }
 
 /// Program declaration registry. See module docs.
@@ -303,17 +311,16 @@ impl Registry {
         self.method_entries.retain(|key, entry| {
             if key.owner == owner {
                 entry.user_candidates.clear();
+                entry.accessor = None;
             }
-            entry.builtin.is_some() || !entry.user_candidates.is_empty()
+            entry.builtin.is_some() || !entry.user_candidates.is_empty() || entry.accessor.is_some()
         });
-        let Some(methods) = self
-            .classes
-            .get(class_name)
-            .map(|class| class.methods.clone())
-        else {
+        let Some(class_def) = self.classes.get(class_name) else {
             self.bump_method_generation();
             return;
         };
+        let methods = class_def.methods.clone();
+        let attributes = class_def.attributes.clone();
         for (name, candidates) in methods {
             self.method_entries
                 .entry(MethodEntryKey {
@@ -322,6 +329,20 @@ impl Registry {
                 })
                 .or_default()
                 .user_candidates = candidates;
+        }
+        // A later same-name declaration within the class overrides an earlier
+        // one (mirrors `collect_class_attributes`'/`has_public_accessor`'s
+        // former remove-then-push / rev().find() semantics): iterating in
+        // declaration order and letting each write clobber the last gives the
+        // same "most recent wins" result.
+        for attr in &attributes {
+            self.method_entries
+                .entry(MethodEntryKey {
+                    owner,
+                    name: Symbol::intern(&attr.name),
+                })
+                .or_default()
+                .accessor = Some(attr.is_public);
         }
         self.bump_method_generation();
     }
@@ -338,6 +359,20 @@ impl Registry {
             })
             .filter(|entry| !entry.user_candidates.is_empty())
             .map(|entry| entry.user_candidates.clone())
+    }
+
+    /// Visibility of the auto-generated accessor `method_name` declares
+    /// directly on `class_name`, if any (ADR-0019 D2d). `None` means this
+    /// class does not declare an attribute of that name at all — distinct
+    /// from `Some(false)` (a private attribute, which still occupies the
+    /// name and must not fall through to an ancestor's same-named accessor).
+    pub(crate) fn accessor_is_public(&self, class_name: &str, method_name: &str) -> Option<bool> {
+        self.method_entries
+            .get(&MethodEntryKey {
+                owner: Symbol::intern(class_name),
+                name: Symbol::intern(method_name),
+            })
+            .and_then(|entry| entry.accessor)
     }
 
     pub(crate) fn replace_method_entries_from(&mut self, source: &Self) {
