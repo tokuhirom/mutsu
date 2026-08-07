@@ -11,9 +11,9 @@ impl Interpreter {
     ) {
         if let Some(class_def) = self.registry().classes.get(class_name) {
             // First add accessor methods for public attributes (in order)
-            for (attr_name, is_public, ..) in &class_def.attributes {
-                if *is_public && !class_def.methods.contains_key(attr_name) {
-                    result.push(self.make_native_method_object(attr_name));
+            for attr in &class_def.attributes {
+                if attr.is_public && !class_def.methods.contains_key(&attr.name) {
+                    result.push(self.make_native_method_object(&attr.name));
                 }
             }
             // Then add explicit methods
@@ -68,9 +68,12 @@ impl Interpreter {
         let Some(class_def) = registry.classes.get(class_name) else {
             return table;
         };
-        for (attr_name, is_public, ..) in &class_def.attributes {
-            if *is_public && !class_def.methods.contains_key(attr_name) {
-                table.insert(attr_name.clone(), self.make_native_method_object(attr_name));
+        for attr in &class_def.attributes {
+            if attr.is_public && !class_def.methods.contains_key(&attr.name) {
+                table.insert(
+                    attr.name.clone(),
+                    self.make_native_method_object(&attr.name),
+                );
             }
         }
         for (method_name, overloads) in &class_def.methods {
@@ -110,9 +113,9 @@ impl Interpreter {
     ) {
         if let Some(role_def) = self.registry().roles.get(role_name) {
             // Add accessor methods for public attributes
-            for (attr_name, is_public, ..) in &role_def.attributes {
-                if *is_public && !role_def.methods.contains_key(attr_name) {
-                    result.push(self.make_native_method_object(attr_name));
+            for attr in &role_def.attributes {
+                if attr.is_public && !role_def.methods.contains_key(&attr.name) {
+                    result.push(self.make_native_method_object(&attr.name));
                 }
             }
             // Add explicit methods
@@ -360,8 +363,8 @@ impl Interpreter {
         // Check for auto-generated attribute accessors (has $.x creates an accessor method).
         if results.is_empty() {
             let class_attrs = self.collect_class_attributes(&class_name);
-            for (attr_name, is_public, _, is_rw, ..) in &class_attrs {
-                if *is_public && attr_name == method_name {
+            for attr in &class_attrs {
+                if attr.is_public && attr.name == method_name {
                     results.push(Value::routine_parts(
                         Symbol::intern(&class_name),
                         Symbol::intern(method_name),
@@ -369,7 +372,7 @@ impl Interpreter {
                     ));
                     // Tag the routine with rw status if needed — currently Routine
                     // doesn't carry rw info, but we at least return a truthy result.
-                    let _ = is_rw; // suppress unused warning
+                    let _ = attr.is_rw; // suppress unused warning
                     break;
                 }
             }

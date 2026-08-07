@@ -47,7 +47,7 @@ impl Interpreter {
             for cls in self.mro_readonly(cn_resolved) {
                 if let Some(cd) = self.registry().classes.get(&cls) {
                     for attr in &cd.attributes {
-                        if !seen.insert(attr.0.clone()) {
+                        if !seen.insert(attr.name.clone()) {
                             return false;
                         }
                     }
@@ -111,7 +111,18 @@ impl Interpreter {
                     p == "Any" || p == "Mu" || p == "Cool" || registry.classes.contains_key(p)
                 })
                 && class_def.attributes.iter().all(
-                    |(name, _, _, _is_required, type_constraint, sigil, _where_constraint)| {
+                    |attr| {
+                        let name = &attr.name;
+                        let sigil = &attr.sigil;
+                        // NOTE: this binds the tuple's former 5th positional
+                        // field (`is_required`), NOT an actual type
+                        // constraint (those live in `attribute_types`
+                        // separately) — a pre-existing mismatch between this
+                        // variable's name and what it holds, carried over
+                        // unchanged from the old positional tuple pattern
+                        // (ADR-0019 D2 struct conversion is a pure rename;
+                        // fixing this is out of scope here).
+                        let type_constraint = &attr.is_required;
                         // A constructible sigil/type shape:
                         // - `$`: a type constraint is allowed only when it is a
                         //   plain `type_matches_value`-checkable class/role/subset
@@ -380,7 +391,7 @@ impl Interpreter {
         let attr_syms = std::sync::Arc::new(
             class_attrs
                 .iter()
-                .map(|(n, ..)| crate::symbol::Symbol::intern(n))
+                .map(|a| crate::symbol::Symbol::intern(&a.name))
                 .collect::<Vec<_>>(),
         );
         // MRO-resolved `is Type` container traits for every declared attribute
@@ -388,9 +399,9 @@ impl Interpreter {
         let attr_is_types = std::sync::Arc::new(
             class_attrs
                 .iter()
-                .filter_map(|(n, ..)| {
-                    self.attribute_is_type_in_mro(cn_resolved, n)
-                        .map(|t| (n.clone(), t))
+                .filter_map(|a| {
+                    self.attribute_is_type_in_mro(cn_resolved, &a.name)
+                        .map(|t| (a.name.clone(), t))
                 })
                 .collect::<HashMap<String, String>>(),
         );
@@ -471,7 +482,7 @@ impl Interpreter {
             let registry = self.registry();
             if let Some(cd) = registry.classes.get(cls) {
                 for a in cd.attributes.iter() {
-                    owned.insert(a.0.clone());
+                    owned.insert(a.name.clone());
                 }
             }
         }

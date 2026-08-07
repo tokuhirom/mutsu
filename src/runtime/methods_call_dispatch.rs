@@ -2714,7 +2714,7 @@ impl Interpreter {
                         .is_some_and(|role| {
                             role.attributes
                                 .iter()
-                                .any(|(name, public, ..)| *public && name == method)
+                                .any(|a| a.is_public && a.name == method)
                         });
                 // Punning registers a class under the same name, so the retry
                 // falls through to ordinary class dispatch rather than
@@ -2739,7 +2739,7 @@ impl Interpreter {
                     && role
                         .attributes
                         .iter()
-                        .any(|(name, public, ..)| *public && name == method);
+                        .any(|a| a.is_public && a.name == method);
                 if (role.methods.contains_key(method) || has_public_accessor)
                     && role.methods.contains_key("new")
                     && let Some(punned) = self.ensure_parametric_role_pun_class(&base, type_args)?

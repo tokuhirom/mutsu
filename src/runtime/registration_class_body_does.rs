@@ -68,7 +68,7 @@ impl Interpreter {
             .unwrap_or_else(|| "c".to_string());
         let compose_submethods_does = cx.class_lang_rev == "c" && role_lang_rev_does == "c";
         for attr in &role.attributes {
-            if !cx.class_def.attributes.iter().any(|(n, ..)| n == &attr.0) {
+            if !cx.class_def.attributes.iter().any(|a| a.name == attr.name) {
                 cx.class_def.attributes.push(attr.clone());
             }
         }

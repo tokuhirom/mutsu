@@ -97,7 +97,7 @@ impl Interpreter {
             .role_def
             .attributes
             .iter()
-            .find(|(n, ..)| n == &attr_name_str)
+            .find(|a| a.name == attr_name_str)
         {
             // The attribute already exists from a parent role composition.
             // Record the conflict; the existing one came from a composed role.
@@ -110,7 +110,7 @@ impl Interpreter {
                         parents.iter().find(|p| {
                             let base = p.split_once('[').map(|(b, _)| b).unwrap_or(p.as_str());
                             self.registry().roles.get(base).is_some_and(|r| {
-                                r.attributes.iter().any(|(n, ..)| n == &attr_name_str)
+                                r.attributes.iter().any(|a| a.name == attr_name_str)
                             })
                         })
                     })
@@ -126,15 +126,15 @@ impl Interpreter {
         // Apply role-level `is rw`: same logic as class_is_rw
         // `is readonly` on individual attributes overrides `is rw` on the role
         let effective_is_rw = !*is_readonly && (*is_rw || (cx.role_is_rw && *is_public));
-        cx.role_def.attributes.push((
-            attr_name_str.clone(),
-            *is_public,
-            default.clone(),
-            effective_is_rw,
-            is_required.clone(),
-            *sigil,
-            where_constraint.as_ref().map(|wc| wc.as_ref().clone()),
-        ));
+        cx.role_def.attributes.push(ClassAttributeDef {
+            name: attr_name_str.clone(),
+            is_public: *is_public,
+            default: default.clone(),
+            is_rw: effective_is_rw,
+            is_required: is_required.clone(),
+            sigil: *sigil,
+            where_constraint: where_constraint.as_ref().map(|wc| wc.as_ref().clone()),
+        });
         let attr_var_name = if *is_public {
             format!(".{}", attr_name_str)
         } else {
@@ -317,15 +317,15 @@ impl Interpreter {
             Vec::new()
         };
         for attr in &role.attributes {
-            if cx.role_def.attributes.iter().any(|(n, ..)| n == &attr.0) {
+            if cx.role_def.attributes.iter().any(|a| a.name == attr.name) {
                 // Already present. Only a real conflict if both
                 // sides declared it directly (vs. inherited from
                 // a shared ancestor in a diamond). Skip otherwise.
-                let parent_owns = role.own_attribute_names.contains(&attr.0);
-                let current_owns = cx.role_def.own_attribute_names.contains(&attr.0);
+                let parent_owns = role.own_attribute_names.contains(&attr.name);
+                let current_owns = cx.role_def.own_attribute_names.contains(&attr.name);
                 if parent_owns && current_owns {
                     cx.role_def.attribute_conflicts.push((
-                        attr.0.clone(),
+                        attr.name.clone(),
                         name.to_string(),
                         base_role_name.to_string(),
                     ));

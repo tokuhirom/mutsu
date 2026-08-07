@@ -109,7 +109,7 @@ impl Interpreter {
         let mut class_own_attrs: HashSet<String> = class_def
             .attributes
             .iter()
-            .map(|(n, ..)| n.clone())
+            .map(|a| a.name.clone())
             .collect();
         class_own_attrs.extend(own_attribute_names.iter().map(|s| s.resolve()));
         let mut cx = ClassBodyCx {

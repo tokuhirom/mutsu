@@ -260,7 +260,7 @@ impl Interpreter {
         let has_expr_default = role_def
             .attributes
             .iter()
-            .any(|(_, _, default, ..)| default.is_some());
+            .any(|attr| attr.default.is_some());
         if has_expr_default {
             role_def.captured_env = Some(self.env.flatten());
         }

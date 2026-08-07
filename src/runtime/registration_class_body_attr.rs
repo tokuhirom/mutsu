@@ -24,7 +24,7 @@ impl Interpreter {
             return Ok(());
         };
         // Already declared (e.g. a duplicate EVAL): no-op rather than abort.
-        if class_def.attributes.iter().any(|(n, ..)| n == attr_name) {
+        if class_def.attributes.iter().any(|a| &a.name == attr_name) {
             return Ok(());
         }
         self.validate_static_attribute_default(
@@ -35,15 +35,15 @@ impl Interpreter {
             spec.type_smiley.as_deref(),
         )?;
         let effective_is_rw = !spec.is_readonly && spec.is_rw;
-        class_def.attributes.push((
-            attr_name.clone(),
-            spec.is_public,
-            spec.default.clone(),
-            effective_is_rw,
-            spec.is_required.clone(),
-            spec.sigil,
-            None,
-        ));
+        class_def.attributes.push(ClassAttributeDef {
+            name: attr_name.clone(),
+            is_public: spec.is_public,
+            default: spec.default.clone(),
+            is_rw: effective_is_rw,
+            is_required: spec.is_required.clone(),
+            sigil: spec.sigil,
+            where_constraint: None,
+        });
         if let Some(tc) = &spec.type_constraint {
             let resolved_tc = tc.replace("::?CLASS", class_name);
             class_def
@@ -211,7 +211,7 @@ impl Interpreter {
             .class_def
             .attributes
             .iter()
-            .any(|(n, ..)| n == &attr_name_str)
+            .any(|a| a.name == attr_name_str)
         {
             self.set_current_package(cx.saved_package.clone());
             self.env = cx.saved_env.clone();
@@ -221,15 +221,15 @@ impl Interpreter {
             )));
         }
         let effective_is_rw = !*is_readonly && (*is_rw || (cx.class_is_rw && *is_public));
-        cx.class_def.attributes.push((
-            attr_name_str.clone(),
-            *is_public,
-            default.clone(),
-            effective_is_rw,
-            is_required.clone(),
-            *sigil,
-            where_constraint.as_ref().map(|wc| wc.as_ref().clone()),
-        ));
+        cx.class_def.attributes.push(ClassAttributeDef {
+            name: attr_name_str.clone(),
+            is_public: *is_public,
+            default: default.clone(),
+            is_rw: effective_is_rw,
+            is_required: is_required.clone(),
+            sigil: *sigil,
+            where_constraint: where_constraint.as_ref().map(|wc| wc.as_ref().clone()),
+        });
         // Store `is default(...)` trait value for this attribute.
         // When is_default is set, the evaluated value is stored for
         // .VAR.default and Nil-restore behavior.

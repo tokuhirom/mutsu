@@ -1316,8 +1316,8 @@ impl Interpreter {
                         return Ok(val.clone());
                     }
                 } else {
-                    for (attr_name, is_public, _, _, _, sigil, _) in &class_attrs {
-                        if *is_public && attr_name == method {
+                    for attr in &class_attrs {
+                        if attr.is_public && attr.name == method {
                             // Check for deprecated attribute accessor
                             if let Some(msg) = self.class_attribute_deprecated(&cn, method) {
                                 self.check_deprecation_for_method(method, &cn, &msg);
@@ -1329,7 +1329,7 @@ impl Interpreter {
                                 .unwrap_or(Value::NIL);
                             // For typed @/% attributes, register type metadata on the
                             // returned value so push/insert type enforcement works.
-                            if (*sigil == '@' || *sigil == '%')
+                            if (attr.sigil == '@' || attr.sigil == '%')
                                 && !val.is_nil()
                                 && self.container_type_metadata(&val).is_none()
                                 && let Some(tc) =
@@ -2519,7 +2519,8 @@ impl Interpreter {
     ) -> Vec<String> {
         let class_attrs = self.collect_class_attributes(class_name);
         let mut parts = Vec::new();
-        for (attr_name, is_public, _default, _is_rw, _is_required, sigil, _where) in &class_attrs {
+        for attr in &class_attrs {
+            let (attr_name, is_public, sigil) = (&attr.name, attr.is_public, attr.sigil);
             if !is_public {
                 continue;
             }
@@ -2534,7 +2535,7 @@ impl Interpreter {
                 // A `$`-sigil attribute is a Scalar container, so an aggregate
                 // it holds renders itemized: `Foo.new(x => $[1, 2])`. `@`/`%`
                 // attributes are the aggregate itself and stay bare.
-                let rendered = if *sigil == '$' {
+                let rendered = if sigil == '$' {
                     crate::builtins::methods_0arg::raku_repr::itemize_scalar_repr(val, rendered)
                 } else {
                     rendered
@@ -2578,7 +2579,7 @@ impl Interpreter {
         let class_attrs_info = self.collect_class_attributes(&class_name.resolve());
         let sigil_map: HashMap<String, char> = class_attrs_info
             .iter()
-            .map(|(name, _, _, _, _, sigil, _)| (name.clone(), *sigil))
+            .map(|attr| (attr.name.clone(), attr.sigil))
             .collect();
         let cn = class_name.resolve();
         for arg in args {

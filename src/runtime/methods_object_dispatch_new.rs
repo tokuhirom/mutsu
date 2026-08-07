@@ -1654,15 +1654,13 @@ impl Interpreter {
                         _ => None,
                     })
                     .collect();
-                for (attr_name, _is_public, _default, _is_rw, is_required, _sigil, _) in
-                    &class_attrs_info
-                {
-                    if let Some(reason) = is_required {
+                for attr in &class_attrs_info {
+                    if let Some(reason) = &attr.is_required {
                         let has_build = self.class_has_method(class_key, "BUILD");
                         // If class has BUILD, BUILD handles attribute setting,
                         // so we skip required check here (BUILD may set defaults)
-                        if !has_build && !provided_attr_names.contains(attr_name.as_str()) {
-                            let attr_full_name = format!("$!{}", attr_name);
+                        if !has_build && !provided_attr_names.contains(attr.name.as_str()) {
+                            let attr_full_name = format!("$!{}", attr.name);
                             return Err(RuntimeError::attribute_required(
                                 &attr_full_name,
                                 reason.as_deref(),
@@ -1673,7 +1671,7 @@ impl Interpreter {
                 // Build a sigil map for later coercion
                 let sigil_map: HashMap<String, char> = class_attrs_info
                     .iter()
-                    .map(|(name, _, _, _, _, sigil, _)| (name.clone(), *sigil))
+                    .map(|attr| (attr.name.clone(), attr.sigil))
                     .collect();
                 // Attribute type constraints (MRO-wide), used to coerce a provided
                 // value for a coercion-typed attribute (`has Int() $.x`).
@@ -1805,10 +1803,9 @@ impl Interpreter {
                 // `Array`, not a `Slip`), so materialize it into a plain mutable
                 // `Array` here. Without this the attribute keeps a `Slip` whose
                 // `.^name` is `Slip` and whose re-iteration differs from raku's `Array`.
-                for (attr_name, _is_public, _default, _is_rw, _is_required, sigil, _) in
-                    &class_attrs_info
-                {
-                    if *sigil == '@'
+                for attr in &class_attrs_info {
+                    let attr_name = &attr.name;
+                    if attr.sigil == '@'
                         && let Some(ValueView::Slip(items) | ValueView::Seq(items)) =
                             attrs.get(attr_name).map(Value::view)
                     {
@@ -1821,10 +1818,9 @@ impl Interpreter {
                 }
                 // For @-sigiled attributes with shaped array declarations,
                 // convert user-provided values to shaped arrays preserving shape.
-                for (attr_name, _is_public, default, _is_rw, _is_required, sigil, _) in
-                    &class_attrs_info
-                {
-                    if *sigil == '@'
+                for attr in &class_attrs_info {
+                    let (attr_name, default) = (&attr.name, &attr.default);
+                    if attr.sigil == '@'
                         && let Some(dims) = Self::extract_shape_from_default(default.as_ref())
                         && let Some(val) = attrs.get(attr_name)
                         && !matches!(val.view(), ValueView::Array(_, ArrayKind::Shaped))
@@ -1890,9 +1886,13 @@ impl Interpreter {
                             .insert(format!("{}::{}", class_key, name), value.clone());
                     }
                 }
-                for (attr_name, _is_public, default, _is_rw, _is_required, sigil, _) in
-                    class_attrs_info.clone()
-                {
+                for attr in class_attrs_info.clone() {
+                    let ClassAttributeDef {
+                        name: attr_name,
+                        default,
+                        sigil,
+                        ..
+                    } = attr;
                     if attrs.contains_key(&attr_name) {
                         continue;
                     }
@@ -1982,7 +1982,7 @@ impl Interpreter {
                     } else {
                         pruned_info = class_attrs_info
                             .iter()
-                            .filter(|a| !deferred_names.contains(a.0.as_str()))
+                            .filter(|a| !deferred_names.contains(a.name.as_str()))
                             .cloned()
                             .collect();
                         let mut pruned = attrs.clone();
@@ -2042,10 +2042,9 @@ impl Interpreter {
                 // Check required attributes after all BUILDs have run
                 if has_build_phase {
                     let attrs = inv_cell.to_map();
-                    for (attr_name, _is_public, _default, _is_rw, is_required, _sigil, _) in
-                        &class_attrs_info
-                    {
-                        if let Some(reason) = is_required {
+                    for attr in &class_attrs_info {
+                        let attr_name = &attr.name;
+                        if let Some(reason) = &attr.is_required {
                             let attr_val = attrs.get(attr_name.as_str());
                             // The pre-BUILD seed for an unset untyped
                             // attribute is the Any type object, not Nil.
@@ -2115,11 +2114,13 @@ impl Interpreter {
                             _ => None,
                         })
                         .collect();
-                    for (
-                        declaring_class,
-                        (attr_name, _is_public, default, _is_rw, _is_required, sigil, _),
-                    ) in per_class_attrs
-                    {
+                    for (declaring_class, attr) in per_class_attrs {
+                        let ClassAttributeDef {
+                            name: attr_name,
+                            default,
+                            sigil,
+                            ..
+                        } = attr;
                         let qualified_key = format!("{}\0{}", declaring_class, attr_name);
                         if attrs.contains_key(&qualified_key) {
                             continue;
@@ -2222,7 +2223,8 @@ impl Interpreter {
                 // own metadata and are skipped. Done here against the final
                 // `attrs` so the Arc-pointer-keyed metadata survives into the
                 // instance (a clone shares the same backing Arc).
-                for (attr_name, _, _, _, _, sigil, _) in &class_attrs_info {
+                for attr in &class_attrs_info {
+                    let (attr_name, sigil) = (&attr.name, attr.sigil);
                     if !matches!(sigil, '@' | '%') {
                         continue;
                     }
@@ -2245,7 +2247,7 @@ impl Interpreter {
                     }
                     if let Some(val) = attrs.get(attr_name).cloned() {
                         let tagged =
-                            self.finalize_typed_container_attr(attr_name, *sigil, &elem_type, val)?;
+                            self.finalize_typed_container_attr(attr_name, sigil, &elem_type, val)?;
                         attrs.insert(attr_name.clone(), tagged);
                     }
                 }
