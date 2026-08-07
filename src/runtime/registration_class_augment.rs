@@ -285,11 +285,17 @@ impl Interpreter {
                         class_def.attributes.push(ClassAttributeDef {
                             name: attr_name_str.clone(),
                             is_public: decl.is_public,
-                            default: decl.default.clone(),
+                            default: decl
+                                .default
+                                .clone()
+                                .map(|e| crate::opcode::DeclTraitArg::Ast(Box::new(e))),
                             is_rw: decl.is_rw,
                             is_required: decl.is_required.clone(),
                             sigil: decl.sigil,
-                            where_constraint: decl.where_constraint.clone(),
+                            where_constraint: decl
+                                .where_constraint
+                                .clone()
+                                .map(|e| crate::opcode::DeclTraitArg::Ast(Box::new(e))),
                         });
                         if decl.is_alias {
                             class_def.alias_attributes.insert(attr_name_str.clone());
@@ -594,8 +600,8 @@ impl Interpreter {
                     _ => {
                         if let Some(v) = named_args.get(attr_name) {
                             v.clone()
-                        } else if let Some(expr) = default {
-                            self.eval_block_value(&[Stmt::Expr(expr.clone())])?
+                        } else if let Some(arg) = default {
+                            self.eval_decl_trait_arg(arg)?
                         } else {
                             Value::int(0)
                         }
@@ -604,11 +610,8 @@ impl Interpreter {
                 attrs.insert(attr_name.clone(), val);
             } else if let Some(v) = named_args.get(attr_name) {
                 attrs.insert(attr_name.clone(), v.clone());
-            } else if let Some(expr) = default {
-                attrs.insert(
-                    attr_name.clone(),
-                    self.eval_block_value(&[Stmt::Expr(expr.clone())])?,
-                );
+            } else if let Some(arg) = default {
+                attrs.insert(attr_name.clone(), self.eval_decl_trait_arg(arg)?);
             } else {
                 attrs.insert(attr_name.clone(), Value::int(0));
             }

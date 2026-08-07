@@ -444,15 +444,23 @@ use self::unicode::{check_unicode_property, check_unicode_property_with_args};
 ///
 /// Field order matches the historical tuple layout:
 /// `(attr_name, is_public, default, is_rw, is_required, sigil, where_constraint)`.
+///
+/// `default`/`where_constraint` are `DeclTraitArg` rather than a raw `Expr`
+/// (ADR-0019 D2c-2): every reader now runs them through
+/// `Interpreter::eval_decl_trait_arg`/`.literal()` instead of its own
+/// `Expr::Literal` pattern match, unifying the eval mechanism across the
+/// ~15 sites that fill/check attribute defaults and `where` constraints.
+/// Still always `Literal`/`Ast` for now — no call site precompiles a
+/// `Compiled` chunk yet, so `.as_expr()` on either field remains panic-free.
 #[derive(Debug, Clone)]
 pub(crate) struct ClassAttributeDef {
     pub(crate) name: String,
     pub(crate) is_public: bool,
-    pub(crate) default: Option<Expr>,
+    pub(crate) default: Option<crate::opcode::DeclTraitArg>,
     pub(crate) is_rw: bool,
     pub(crate) is_required: Option<Option<String>>,
     pub(crate) sigil: char,
-    pub(crate) where_constraint: Option<Expr>,
+    pub(crate) where_constraint: Option<crate::opcode::DeclTraitArg>,
 }
 
 /// The set of read-only variable names (`readonly_vars`), and the type of a

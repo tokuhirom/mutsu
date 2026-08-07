@@ -3,8 +3,12 @@ use crate::symbol::Symbol;
 use crate::value::AttrMap;
 
 impl Interpreter {
-    fn check_attribute_where_constraint(&mut self, pred: &Expr, value: &Value) -> bool {
-        let pred_val = match self.eval_block_value(&[Stmt::Expr(pred.clone())]) {
+    fn check_attribute_where_constraint(
+        &mut self,
+        pred: &crate::opcode::DeclTraitArg,
+        value: &Value,
+    ) -> bool {
+        let pred_val = match self.eval_decl_trait_arg(pred) {
             Ok(v) => v,
             Err(_) => return false,
         };
@@ -348,8 +352,8 @@ impl Interpreter {
             let default_expr = &attr.default;
             let sigil = &attr.sigil;
             if !extra_attrs.contains_key(attr_name) {
-                let default_val = if let Some(expr) = default_expr {
-                    let result = self.eval_block_value(&[crate::ast::Stmt::Expr(expr.clone())])?;
+                let default_val = if let Some(arg) = default_expr {
+                    let result = self.eval_decl_trait_arg(arg)?;
                     Self::coerce_attr_value_by_sigil(result, *sigil)
                 } else {
                     match sigil {

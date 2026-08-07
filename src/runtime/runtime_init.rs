@@ -401,7 +401,7 @@ impl Interpreter {
                 ClassAttributeDef {
                     name: name.to_string(),
                     is_public: true,
-                    default,
+                    default: default.map(|e| crate::opcode::DeclTraitArg::Ast(Box::new(e))),
                     is_rw: false,
                     is_required: None,
                     sigil,

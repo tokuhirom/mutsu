@@ -28,7 +28,7 @@
 use std::collections::HashSet;
 
 use super::{Interpreter, RuntimeError};
-use crate::ast::{Expr, Stmt};
+use crate::opcode::DeclTraitArg;
 use crate::symbol::Symbol;
 use crate::value::{AttrMap, Value, ValueView};
 
@@ -37,7 +37,7 @@ pub(crate) struct DeferredAttrDefault {
     pub(crate) name: String,
     pub(crate) sigil: char,
     /// The `has $.x = <expr>` initializer, when the attribute has one.
-    pub(crate) default: Option<Expr>,
+    pub(crate) default: Option<DeclTraitArg>,
     /// An `is built(&code)` override, which takes precedence over `default`.
     pub(crate) build_override: Option<Value>,
     /// The value the slot was seeded with; the slot still holding it is half of
@@ -116,16 +116,15 @@ impl Interpreter {
             let val = if let Some(build_override) = &d.build_override {
                 let val = self.call_sub_value(build_override.clone(), Vec::new(), false)?;
                 Self::coerce_attr_value_by_sigil(val, d.sigil)
-            } else if let Some(expr) = &d.default {
+            } else if let Some(arg) = &d.default {
                 // A literal needs no evaluation context at all — the same fast
                 // path the pre-BUILD pass takes for parser-generated zeroes.
-                if let Expr::Literal(lit_val) = expr {
+                if let Some(lit_val) = arg.literal() {
                     Self::coerce_attr_value_by_sigil(lit_val.clone(), d.sigil)
                 } else {
                     let attrs = cell.to_map();
-                    let expr = expr.clone();
                     let val =
-                        self.eval_attr_default_expr(class_key, class_name, &expr, inv, &attrs)?;
+                        self.eval_attr_default_expr(class_key, class_name, arg, inv, &attrs)?;
                     Self::coerce_attr_value_by_sigil(val, d.sigil)
                 }
             } else {
@@ -289,7 +288,7 @@ impl Interpreter {
         &mut self,
         class_key: &str,
         class_name: Symbol,
-        expr: &Expr,
+        arg: &DeclTraitArg,
         self_val: &Value,
         attrs: &AttrMap,
     ) -> Result<Value, RuntimeError> {
@@ -313,7 +312,7 @@ impl Interpreter {
         // (e.g. `sub inner`) are found when evaluating the initializer.
         let saved_package = self.current_package();
         self.set_current_package(class_key.to_string());
-        let result = self.eval_block_value(&[Stmt::Expr(expr.clone())]);
+        let result = self.eval_decl_trait_arg(arg);
         self.set_current_package(saved_package);
         for (key, old_val) in saved_attr_env {
             if let Some(v) = old_val {

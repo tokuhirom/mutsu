@@ -39,7 +39,10 @@ impl Interpreter {
         class_def.attributes.push(ClassAttributeDef {
             name: attr_name.clone(),
             is_public: decl.is_public,
-            default: decl.default.clone(),
+            default: decl
+                .default
+                .clone()
+                .map(|e| crate::opcode::DeclTraitArg::Ast(Box::new(e))),
             is_rw: effective_is_rw,
             is_required: decl.is_required.clone(),
             sigil: decl.sigil,
@@ -216,11 +219,17 @@ impl Interpreter {
         cx.class_def.attributes.push(ClassAttributeDef {
             name: attr_name_str.clone(),
             is_public: decl.is_public,
-            default: decl.default.clone(),
+            default: decl
+                .default
+                .clone()
+                .map(|e| crate::opcode::DeclTraitArg::Ast(Box::new(e))),
             is_rw: effective_is_rw,
             is_required: decl.is_required.clone(),
             sigil: decl.sigil,
-            where_constraint: decl.where_constraint.clone(),
+            where_constraint: decl
+                .where_constraint
+                .clone()
+                .map(|e| crate::opcode::DeclTraitArg::Ast(Box::new(e))),
         });
         // Store `is default(...)` trait value for this attribute.
         // When is_default is set, the evaluated value is stored for
