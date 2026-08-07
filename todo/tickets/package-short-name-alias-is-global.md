@@ -58,13 +58,75 @@ methods legitimately write `my Path $path`. Their `current_package` at method-ru
 time is not `URI` either (method dispatch only re-points `current_package` when
 the owner class has class-scoped subs, package lexicals, or a `::` in its name).
 
-The real fix is to make the alias *package-scoped* — install it in the declaring
-parent package's stash / `package_type_aliases` and let
-`resolve_type_in_current_package` find it by walking the package chain — and to
-make method dispatch anchor `current_package` to the owner class so that walk
-starts in the right place. That second half is the same
-`current_package`-during-method question several other tickets touch, so it wants
-its own design pass.
+## Attempt #1 (2026-08-07, reverted — closed PR #6010): package-chain walking is not enough
+
+Moved the short-name alias out of the global `env` into `package_type_aliases`
+(the existing table that already carries a module's own `use`-import aliases),
+keyed by the *declaring parent package*, and left bareword resolution's existing
+`package_type_alias`/`lookup_in_running_package` machinery — which walks
+`method_class_stack` → the running frame's `package` → `current_package()`, each
+further walked up its own `::` ancestor chain — to find it. This does fix the
+two examples above (verified): `Cro::Hdr`'s `Hdr` no longer leaks globally, and
+`URI::Path`'s `Path` still resolves inside `URI`'s own methods (case 3 of the
+method-dispatch anchoring gate, `owner_class.contains("::")`, already anchors
+`current_package`/`method_class_stack` to the *class's own* qualified name,
+whose ancestor chain includes its own declaring package).
+
+**But it breaks a real, working ecosystem module (DBIish's Postgres driver) —
+CI's bundled-library gate failed 4/4 times on `DBIish/38-pg-errors.rakutest`.**
+Root cause, minimal repro:
+
+```raku
+# lib/Foo/Native.rakumod
+unit module Foo::Native;
+class PGconn is export is repr('CPointer') { }
+
+# lib/Foo/Driver.rakumod
+unit class Foo::Driver;
+use Foo::Native;
+method make() { PGconn.new }   # "Undeclared name: PGconn" — fails on the
+                                # package-chain-walking fix, works on main
+```
+
+`DBDish::Pg::Native` declares `class PGconn` (non-`my`, package-scoped).
+`DBDish::Pg` (`unit class DBDish::Pg ... does DBDish::Driver`) `use`s that
+module and references bare `PGconn` from inside `method connect(...)`. Method
+dispatch anchors `current_package`/`method_class_stack` to the *receiver
+class* — here `DBDish::Pg` — and the ancestor-chain walk from there is
+`DBDish::Pg` → `DBDish` → stop. **`DBDish::Pg::Native` is a sibling of
+`DBDish::Pg`, not an ancestor**, so no ancestor-chain walk can ever reach it,
+no matter how the write side is keyed. This is not a narrow edge case: "declare
+a native-handle class in a `::Native` submodule, `use` it from a sibling driver
+class, reference its bare name" is an ordinary, common pattern (also present in
+DBIish's `mysql` and `SQLite` drivers, and structurally identical to how many
+NativeCall-based bindings are organized).
+
+The old global-env write, despite being architecturally wrong (the original bug
+this ticket is about), *accidentally* made this idiom work, because it doesn't
+care about ancestry at all — every package-scoped short name was visible
+everywhere. Attempt #1's fix trades "occasionally wrong resolution in a naming
+collision" for "a legitimately `use`-imported class's bare name is now
+`Undeclared` — code that worked stops working." That is a worse regression than
+the bug being fixed, so it was reverted (PR #6010 closed, unmerged; no commits
+landed on `main`).
+
+## What a real fix needs
+
+Not ancestor-chain walking. Real Raku's actual rule is closer to "a name a file
+brought into scope via `use`/`need` is visible in *that file's own lexical
+scope*, regardless of what package/class the file's declarations end up
+qualified under." That is fundamentally a **per-importing-scope symbol table**
+problem (what did *this specific file or class body* `use`?), not a
+package-hierarchy problem. `package_type_aliases` already has half of this
+(diffing env before/after a `use` to capture a module's own transitively
+imported names, keyed by what that module itself declares) but that mechanism
+answers "what can code *inside* the imported-from module see", not "what can
+code *that did the importing* see" — the direction this bug needs.
+
+Building that properly is the "own design pass" this ticket has needed from the
+start (still XL effort). Do not re-attempt the narrow ancestor-chain-walking
+fix — it is now proven insufficient by the DBIish counter-example above; any
+new attempt needs a mechanism that also covers sibling-package imports.
 
 ## Related
 
