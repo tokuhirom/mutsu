@@ -234,7 +234,9 @@ pub(crate) fn native_function_2arg(
             let s = arg1.to_string_value();
             let needle = arg2.to_string_value();
             Some(Ok(match s.find(&needle) {
-                Some(pos) => Value::int(s[..pos].chars().count() as i64),
+                Some(pos) => {
+                    Value::int(crate::builtins::string_pos::grapheme_offset(&s, pos) as i64)
+                }
                 None => Value::NIL,
             }))
         }
@@ -250,7 +252,9 @@ pub(crate) fn native_function_2arg(
             let s = arg1.to_string_value();
             let needle = arg2.to_string_value();
             Some(Ok(match s.rfind(&needle) {
-                Some(pos) => Value::int(s[..pos].chars().count() as i64),
+                Some(pos) => {
+                    Value::int(crate::builtins::string_pos::grapheme_offset(&s, pos) as i64)
+                }
                 None => Value::NIL,
             }))
         }

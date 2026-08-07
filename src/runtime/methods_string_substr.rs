@@ -1,4 +1,5 @@
 use super::*;
+use crate::builtins::string_pos::grapheme_units;
 use crate::symbol::Symbol;
 
 impl Interpreter {
@@ -74,7 +75,7 @@ impl Interpreter {
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         let s = target.to_string_value();
-        let chars: Vec<char> = s.chars().collect();
+        let chars = grapheme_units(&s);
         let total_len = chars.len();
 
         // Check if first arg is a Range — handle substr($str, 6..8) form
@@ -84,7 +85,7 @@ impl Interpreter {
         {
             let rs = range_start.min(total_len);
             let re = range_end.min(total_len);
-            return Ok(Value::str(chars[rs..re].iter().collect()));
+            return Ok(Value::str(chars[rs..re].concat()));
         }
 
         // First arg: start position
@@ -147,7 +148,7 @@ impl Interpreter {
             total_len // no length: take rest
         };
 
-        Ok(Value::str(chars[start..end].iter().collect()))
+        Ok(Value::str(chars[start..end].concat()))
     }
 
     /// substr-rw in non-lvalue context: just return the substring (same as substr).
@@ -173,8 +174,7 @@ impl Interpreter {
             .cloned()
             .unwrap_or(Value::str(String::new()));
         let s = target.to_string_value();
-        let chars: Vec<char> = s.chars().collect();
-        let str_len = chars.len();
+        let str_len = grapheme_units(&s).len();
 
         // Resolve range
         let (start, end) = self.resolve_substr_rw_range(args, str_len)?;
