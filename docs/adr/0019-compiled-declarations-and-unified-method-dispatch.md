@@ -653,6 +653,23 @@ walkers wholesale is not possible before then.
   all three walkers sharing one typed constructor, D3-5 can compare and reconcile the still-open
   fields directly instead of re-deriving each walker's field set from its own AST match arm the way
   the original 2026-08-07 scoping pass had to.
+  **D3-5 landed 2026-08-08**: fixed the two `augment_class` drift points confirmed as real,
+  user-visible gaps against `raku` (`t/augment-method-lexical-scoping.t`). `MethodDef.is_my` now
+  stores `decl.is_submethod` like the class/role walkers, and `is_lexical_only`/`is_our_only`
+  gating excludes `my method`/`our method` from the method table — before this fix,
+  `augment class Foo { my method secret {...} }` put `secret` in `Foo`'s method table
+  (`Foo.can('secret')` wrongly returned it), and `our method` was both directly callable as a
+  method and absent as a package sub, the reverse of `raku`'s behavior. Fixing the gating exposed
+  that `augment_class` never registered the `our`/`my` function forms the class walker registers
+  (`Package::name(invocant)` / lexical `name(invocant)`), so this slice ports that registration
+  too — confirmed against `raku` that both forms are expected to resolve. Duplicate-method
+  detection is now privacy-aware (`is_private` compared, matching the class/role walkers): a
+  public `method foo` and a private `method !foo` of the same name coexist instead of
+  `augment_class` wrongly rejecting the second declaration as already-declared. Still open:
+  `handles` forwarder synthesis, custom-trait/`is native`-style trait dispatch, `is
+  export`/`export_tags`, and BUILD/TWEAK `:$!attr` validation remain absent from `augment_class`
+  (present at the class walker, `handles` also at the role walker) — each is a separate,
+  independently-scoped gap, not reconciled by this slice.
 - [ ] **D4 — Compile class declaration-time expressions.** Cover computed names, traits, parent
   expressions, aliases, and deferred class bodies through re-entrant bytecode chunks. (Computed
   names and custom-trait arguments already landed with C5; parents, aliases, and deferred bodies

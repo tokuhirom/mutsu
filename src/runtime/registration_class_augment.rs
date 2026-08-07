@@ -1,4 +1,5 @@
 use super::registration_class::apply_resolved_handles;
+use super::registration_class_body_method_forms::method_sub_form_params;
 use super::*;
 use crate::symbol::Symbol;
 
@@ -222,18 +223,19 @@ impl Interpreter {
                         .collect();
                     let def = MethodDef {
                         lexical_package: self.current_package(),
-                        params: effective_params,
-                        param_defs: effective_param_defs,
+                        params: effective_params.clone(),
+                        param_defs: effective_param_defs.clone(),
                         body: std::sync::Arc::new(decl.body.clone()),
                         is_rw: decl.is_rw,
                         is_private: decl.is_private,
                         is_multi: decl.multi,
-                        // Unlike the class/role walkers (which store
-                        // `is_submethod` here for inheritance filtering),
-                        // this stores the raw `is_my` flag — a pre-existing
-                        // drift documented in the ADR-0019 D3 scoping pass,
-                        // not fixed by this slice.
-                        is_my: decl.is_my,
+                        // ADR-0019 D3-5: mirror the class/role walkers, which
+                        // store `is_submethod` here (inheritance filtering),
+                        // not the raw parser `is_my` flag — `my method` is
+                        // gated out of the method table entirely below, so by
+                        // construction the stored `MethodDef` only needs
+                        // `is_my` to mean "is this a submethod".
+                        is_my: decl.is_submethod,
                         role_origin: None,
                         original_role: None,
                         return_type: decl.return_type.clone(),
@@ -245,29 +247,131 @@ impl Interpreter {
                         is_submethod: decl.is_submethod,
                         captured_env: None,
                     };
-                    if let Some(class_def) = self.registry_mut().classes.get_mut(name) {
+                    // ADR-0019 D3-5: `my method`/`our method` are not part of
+                    // the class method table — only callable as functions,
+                    // registered below — matching the class walker's
+                    // `is_lexical_only`/`is_our_only` gating (confirmed
+                    // against `raku`: `augment class Foo { my method secret
+                    // {...} }` leaves `Foo.can('secret')` empty). Submethods
+                    // still go in the table even though they also carry
+                    // `is_my=true` from the parser.
+                    let is_lexical_only = decl.is_my && !decl.is_submethod;
+                    let is_our_only = decl.is_our && !decl.our_variable_form;
+                    if !is_lexical_only
+                        && !is_our_only
+                        && let Some(class_def) = self.registry_mut().classes.get_mut(name)
+                    {
                         if decl.multi {
                             class_def
                                 .methods
-                                .entry(resolved_method_name)
+                                .entry(resolved_method_name.clone())
                                 .or_default()
                                 .push(def);
                         } else {
-                            // Check for duplicate non-multi method definition.
-                            // Only error if the existing method was defined in
-                            // this class (not composed from a role).
+                            // Check for duplicate non-multi method
+                            // definition. Only error if the existing
+                            // method was defined in this class (not
+                            // composed from a role) AND shares the same
+                            // privacy — a private `method !foo` and a
+                            // public `method foo` live in separate
+                            // namespaces and do not collide (confirmed
+                            // against `raku`), matching the class
+                            // walker's privacy-aware check (ADR-0019
+                            // D3-5).
+                            let new_is_private = def.is_private;
                             if let Some(existing) = class_def.methods.get(&resolved_method_name) {
-                                let all_from_role =
-                                    existing.iter().all(|m| m.role_origin.is_some());
-                                if !all_from_role {
+                                let conflicts = existing.iter().any(|m| {
+                                    m.role_origin.is_none() && m.is_private == new_is_private
+                                });
+                                if conflicts {
                                     return Err(RuntimeError::new(format!(
                                         "Package '{}' already has a method '{}' (did you mean to declare a multi method?)",
                                         name, resolved_method_name
                                     )));
                                 }
                             }
-                            class_def.methods.insert(resolved_method_name, vec![def]);
+                            let entry = class_def
+                                .methods
+                                .entry(resolved_method_name.clone())
+                                .or_default();
+                            entry.retain(|m| m.is_private != new_is_private);
+                            entry.push(def);
                         }
+                    }
+                    // ADR-0019 D3-5: `our method` also registers as a
+                    // package-scoped sub, and `my method` as a
+                    // lexically-scoped function — matching the class
+                    // walker (confirmed against `raku`: both
+                    // `Foo::pkg(invocant)` and an in-body call to a `my
+                    // method` resolve).
+                    if decl.is_our {
+                        let qualified_name = format!("{}::{}", name, resolved_method_name);
+                        let (our_params, our_param_defs) =
+                            method_sub_form_params(&effective_params, &effective_param_defs);
+                        let func_def = crate::ast::FunctionDef {
+                            package: Symbol::intern(name),
+                            name: Symbol::intern(&resolved_method_name),
+                            params: our_params,
+                            param_defs: our_param_defs,
+                            body: decl.body.clone(),
+                            is_test_assertion: false,
+                            is_rw: decl.is_rw,
+                            is_raw: false,
+                            is_method: true,
+                            empty_sig: false,
+                            is_stub: Self::is_stub_routine_body(&decl.body),
+                            return_type: None,
+                            is_default: decl.is_default_candidate,
+                            deprecated_message: None,
+                            source_file: self.current_source_file(),
+                            decl_order: crate::runtime::resolution::next_decl_order(),
+                            compiled: None,
+                            body_fp_cache: std::sync::OnceLock::new(),
+                            body_facts_cache: std::sync::OnceLock::new(),
+                            rw_tail_expr: None,
+                        };
+                        self.registry_mut().functions.insert(
+                            Symbol::intern(&qualified_name),
+                            std::sync::Arc::new(func_def),
+                        );
+                        self.fn_resolve_gen += 1;
+                    }
+                    if decl.is_my {
+                        let (my_params, my_param_defs) =
+                            method_sub_form_params(&effective_params, &effective_param_defs);
+                        let func_def = crate::ast::FunctionDef {
+                            package: Symbol::intern(name),
+                            name: Symbol::intern(&resolved_method_name),
+                            params: my_params,
+                            param_defs: my_param_defs,
+                            body: decl.body.clone(),
+                            is_test_assertion: false,
+                            is_rw: decl.is_rw,
+                            is_raw: false,
+                            is_method: true,
+                            empty_sig: false,
+                            is_stub: Self::is_stub_routine_body(&decl.body),
+                            return_type: None,
+                            is_default: decl.is_default_candidate,
+                            deprecated_message: None,
+                            source_file: self.current_source_file(),
+                            decl_order: crate::runtime::resolution::next_decl_order(),
+                            compiled: None,
+                            body_fp_cache: std::sync::OnceLock::new(),
+                            body_facts_cache: std::sync::OnceLock::new(),
+                            rw_tail_expr: None,
+                        };
+                        self.registry_mut().functions.insert(
+                            Symbol::intern(&resolved_method_name),
+                            std::sync::Arc::new(func_def.clone()),
+                        );
+                        let qualified_name = format!("{}::{}", name, resolved_method_name);
+                        self.registry_mut().functions.insert(
+                            Symbol::intern(&qualified_name),
+                            std::sync::Arc::new(func_def),
+                        );
+                        self.fn_resolve_gen += 1;
+                        self.mark_my_scoped_package_item(qualified_name);
                     }
                 }
                 Stmt::HasDecl { .. } => {
