@@ -340,6 +340,7 @@ impl Compiler {
                 autothread_junctions: false,
                 explicit_zero_params: false,
                 multi_param_names: Vec::new(),
+                multi_param_locals: Vec::new(),
                 param_type_constraint: param_def.as_ref().and_then(|d| d.type_constraint.clone()),
                 multi_param_type_constraints: Vec::new(),
                 loop_var_wraps_element: Self::for_iterable_wraps_pair(iterable),

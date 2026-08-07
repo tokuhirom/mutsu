@@ -2077,6 +2077,21 @@ impl Compiler {
                 let source_var_locals = self.for_source_var_locals(&source_var_names);
                 let source_container_local = Self::for_iterable_source_name(iterable)
                     .and_then(|name| self.local_map.get(&name).copied());
+                // The local slot each multi-param bind will land in, captured
+                // BEFORE `bind_prefix` is compiled (see the field doc on
+                // `ForLoopSpec::multi_param_locals`): `build_for_bind_stmts`
+                // binds via `Stmt::Assign`, which never allocates a new slot —
+                // it resolves to whatever `local_map` already maps the name to
+                // right now, or falls through to a global write if there is
+                // none. Reading `local_map` at this exact point mirrors that
+                // resolution exactly.
+                let multi_param_locals: Vec<Option<u32>> = params
+                    .iter()
+                    .map(|p| {
+                        let bare = p.strip_prefix('\\').unwrap_or(p);
+                        self.local_map.get(bare).copied()
+                    })
+                    .collect();
                 // When the block parameter has a type constraint other than Mu
                 // or Junction, junction items should be autothreaded (expanded
                 // into their eigenstates).
@@ -2117,6 +2132,7 @@ impl Compiler {
                                 .iter()
                                 .map(|p| p.strip_prefix('\\').unwrap_or(p).to_string())
                                 .collect(),
+                            multi_param_locals,
                             param_type_constraint: param_def
                                 .as_ref()
                                 .as_ref()

@@ -220,6 +220,17 @@ pub(crate) struct ForLoopSpec {
     /// Names of multi-param bindings (for `-> $a, \b, $c` loops).
     /// Used to temporarily clear sigilless readonly flags before binding.
     pub(crate) multi_param_names: Vec<String>,
+    /// Compiler-baked local slot for each `multi_param_names` entry, when the
+    /// name already has one in the enclosing scope. A multi-param loop binds
+    /// its parameters via a plain `Stmt::Assign` (`build_for_bind_stmts`), not
+    /// a `my`-style declaration, so it does NOT get a fresh shadow slot: the
+    /// bind resolves to whatever slot `name` already occupies (an enclosing
+    /// `my $v`) and overwrites it in place for the loop's duration. `None`
+    /// when `name` has no local slot at all (the bind target is a global).
+    /// Parallel to `multi_param_names`. Lets the VM restore the pre-loop value
+    /// straight into that slot after the loop, mirroring `param_local` for the
+    /// single-param form — see `todo/tickets/for-multi-param-shadow-clobbers-outer-lexical.md`.
+    pub(crate) multi_param_locals: Vec<Option<u32>>,
     /// Declared type constraint of the single named loop parameter
     /// (`for @a -> Int $x { ... }`), if any. `None` for an untyped param, a
     /// multi-param loop, or no named param at all. Checked once per
