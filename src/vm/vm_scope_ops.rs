@@ -117,6 +117,47 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Promote the `supply` block's own `my` lexicals to shared container cells
+    /// so every callback the block registers reads and writes ONE binding.
+    ///
+    /// A `whenever`/`LAST`/`QUIT` callback captures the live env by value, and
+    /// each callback then persists its own writes against its own `Sub` id. That
+    /// makes the block's lexical a per-callback snapshot: a sibling `whenever`
+    /// never saw the first one's writes, and a `LAST` phaser read the value the
+    /// variable had when the block started — `supply { my $acc = ''; whenever $s
+    /// { $acc ~= $_; LAST emit $acc } }` emitted the empty string, which is how
+    /// Cro's `application/x-www-form-urlencoded` body parser decoded every
+    /// request body as empty. A cell is captured by reference and overwrites a
+    /// same-named caller lexical on entry (see the `ContainerRef` arm of the
+    /// closure-env merge in `resolution_call_sub.rs`), so it fixes the sharing
+    /// without giving up the lexical-scoping vouch `owned_lexicals` provides.
+    ///
+    /// Only names the block itself declared with `my` are promoted. The emitter
+    /// parameter is not (it is dispatched on as an object), and neither are
+    /// captured outer lexicals — those belong to the declaring frame.
+    fn share_supply_block_lexicals(&mut self, code: &CompiledCode) {
+        for sym in &code.my_declared_sym {
+            if code.free_var_syms.contains(sym)
+                || code.supply_emitter_sym == Some(*sym)
+                // A `my enum`'s type and variant names are `my`-declared too,
+                // but they are not variables: they must keep resolving to the
+                // enum binding, and a cell in their slot hides it
+                // (t/supply-block-enum-lexical.t).
+                || code.my_declared_enum_sym.contains(sym)
+            {
+                continue;
+            }
+            let Some(current) = self.env().get_sym(*sym).cloned() else {
+                continue;
+            };
+            if matches!(current.view(), ValueView::ContainerRef(_)) {
+                continue;
+            }
+            self.env_mut()
+                .insert_sym(*sym, current.into_container_ref());
+        }
+    }
+
     pub(super) fn exec_whenever_scope_op(
         &mut self,
         code: &CompiledCode,
@@ -201,6 +242,7 @@ impl Interpreter {
                         owned_lexicals.push(sym);
                     }
                 }
+                self.share_supply_block_lexicals(code);
             }
             loan_env!(
                 self,
