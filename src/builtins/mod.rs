@@ -144,6 +144,32 @@ pub(crate) fn num_to_rat_with_epsilon(f: f64, epsilon: f64) -> Value {
     crate::value::make_rat(numer, q1)
 }
 
+/// Decode `bytes` with the named encoding, resolving the label through the same
+/// alias table `.decode` uses (`latin-1`/`latin1`/`iso-8859-1` are one encoding).
+/// `None` when the label is not a known encoding, so the caller can fall back.
+///
+/// The streaming `Encoding::Decoder` needs this: it used to decode every buffer
+/// as UTF-8 regardless of the encoding it was built with, so
+/// `Encoding::Registry.find('iso-8859-1').decoder()` — which is exactly how
+/// Cro's HTTP header decoder is built — turned every high byte into U+FFFD.
+pub(crate) fn decode_bytes_with_encoding_label(
+    bytes: &[u8],
+    label: &str,
+) -> Option<Result<String, RuntimeError>> {
+    let normalized = normalize_builtin_encoding_label(label)?;
+    Some(decode_bytes_with_builtin_encoding(bytes, &normalized))
+}
+
+/// True when the label names a single-byte encoding, i.e. one where every byte
+/// is a complete character. A streaming decoder can hand back its whole buffer
+/// for these instead of holding an incomplete-sequence tail as it must for UTF-8.
+pub(crate) fn is_single_byte_encoding_label(label: &str) -> bool {
+    matches!(
+        normalize_builtin_encoding_label(label).as_deref(),
+        Some("ascii" | "iso-8859-1" | "windows-1251" | "windows-1252")
+    )
+}
+
 fn normalize_builtin_encoding_label(name: &str) -> Option<String> {
     let lowered = name.to_lowercase();
     let normalized = match lowered.as_str() {
