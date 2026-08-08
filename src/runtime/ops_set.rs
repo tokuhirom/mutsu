@@ -580,6 +580,19 @@ impl Interpreter {
                 }
                 Ok(result)
             }
+            // ADR-0021 P3a: positional-flavour twin, matching the list-item
+            // arm above (`quanthash_elem_entry` already handles a Str key
+            // identically to `str_elem_key`).
+            ValueView::ValuePair(k, v) => {
+                let mut result = std::collections::HashMap::new();
+                let weight = v.to_f64() as i64;
+                if weight != 0 {
+                    let (key, elem) = quanthash_elem_entry(k);
+                    record_quanthash_original(originals, &key, &elem);
+                    result.insert(key, weight);
+                }
+                Ok(result)
+            }
             _ => {
                 let set = Self::union_set_keys(value, originals)?;
                 Ok(set.into_iter().map(|k| (k, 1)).collect())
@@ -658,6 +671,17 @@ impl Interpreter {
                 let weight = v.to_f64();
                 if weight != 0.0 {
                     result.insert(str_elem_key(k), weight);
+                }
+                Ok(result)
+            }
+            // ADR-0021 P3a: see the matching arm in addition_bag_counts above.
+            ValueView::ValuePair(k, v) => {
+                let mut result = std::collections::HashMap::new();
+                let weight = v.to_f64();
+                if weight != 0.0 {
+                    let (key, elem) = quanthash_elem_entry(k);
+                    record_quanthash_original(originals, &key, &elem);
+                    result.insert(key, weight);
                 }
                 Ok(result)
             }
