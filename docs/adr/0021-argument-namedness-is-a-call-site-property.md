@@ -367,7 +367,7 @@ Each phase is independently shippable and lands with its own tests; CI's
 
 - [x] P1 method-call boundary parity
 - [x] P2 slip/capture/forwarding rules
-- [ ] P3a QuantHash consumer prep
+- [x] P3a QuantHash consumer prep
 - [ ] P3 minting-default inversion
 - [ ] P4 representation cleanup
 - [ ] P5 measured perf follow-up

@@ -228,6 +228,20 @@ impl Interpreter {
                 }
                 result
             }
+            // ADR-0021 P3a: the positional-flavour twin of the arm above —
+            // `bag_insert_item` already handles this inside a list; a
+            // single scalar Pair reaches this branch directly instead.
+            ValueView::ValuePair(k, v) => {
+                use crate::runtime::utils::{quanthash_elem_entry, record_quanthash_original};
+                let mut result = HashMap::new();
+                let weight = v.to_f64() as i64;
+                if weight != 0 {
+                    let (key, elem) = quanthash_elem_entry(k);
+                    record_quanthash_original(originals, &key, &elem);
+                    result.insert(key, weight);
+                }
+                result
+            }
             _ => {
                 let set = runtime::coerce_to_set(val, originals);
                 set.into_iter().map(|k| (k, 1)).collect()
@@ -284,6 +298,18 @@ impl Interpreter {
                 let weight = v.to_f64();
                 if weight != 0.0 {
                     result.insert(str_elem_key(k), weight);
+                }
+                result
+            }
+            // ADR-0021 P3a: see the matching arm in coerce_to_bag above.
+            ValueView::ValuePair(k, v) => {
+                use crate::runtime::utils::{quanthash_elem_entry, record_quanthash_original};
+                let mut result = HashMap::new();
+                let weight = v.to_f64();
+                if weight != 0.0 {
+                    let (key, elem) = quanthash_elem_entry(k);
+                    record_quanthash_original(originals, &key, &elem);
+                    result.insert(key, weight);
                 }
                 result
             }

@@ -177,6 +177,26 @@ pub(crate) fn coerce_value_to_quanthash(val: &Value) -> Value {
                             set.insert(str_elem_key(k));
                         }
                     }
+                    // ADR-0021 P3a: a positional-flavour Pair (e.g. a
+                    // hash-derived `.pairs` element, which mints
+                    // ValuePair) reaches here just as often as the named
+                    // flavour — mirror the arm above rather than falling
+                    // through to the scalar catch-all, which would insert
+                    // the whole Pair as one element instead of its key.
+                    ValueView::ValuePair(k, v) => {
+                        if v.truthy() {
+                            match k.view() {
+                                ValueView::Str(s) => {
+                                    set.insert(str_elem_key(&s));
+                                }
+                                _ => {
+                                    let (key, elem) = quanthash_elem_entry(k);
+                                    record_quanthash_original(&mut originals, &key, &elem);
+                                    set.insert(key);
+                                }
+                            }
+                        }
+                    }
                     ValueView::Hash(h) => {
                         for (k, v) in h.iter() {
                             if v.truthy() {
@@ -198,6 +218,25 @@ pub(crate) fn coerce_value_to_quanthash(val: &Value) -> Value {
                 set.insert(str_elem_key(k));
             }
             Value::set(set)
+        }
+        // ADR-0021 P3a: same widening as the list-branch arm above, for a
+        // single positional-flavour Pair coerced directly to a QuantHash.
+        ValueView::ValuePair(k, v) => {
+            let mut set = HashSet::new();
+            let mut originals = HashMap::new();
+            if v.truthy() {
+                match k.view() {
+                    ValueView::Str(s) => {
+                        set.insert(str_elem_key(&s));
+                    }
+                    _ => {
+                        let (key, elem) = quanthash_elem_entry(k);
+                        record_quanthash_original(&mut originals, &key, &elem);
+                        set.insert(key);
+                    }
+                }
+            }
+            Value::set_typed(set, originals)
         }
         // A Range enumerates its elements (`@n (<=) (1..49)`), mirroring
         // `coerce_to_set` above — without this arm it fell to the scalar

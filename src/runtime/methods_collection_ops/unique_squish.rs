@@ -1,5 +1,21 @@
 use super::*;
 
+/// Read a `:as(...)` / `:with(...)` adverb argument regardless of Pair
+/// flavour (ADR-0021 P3a prep): these are always written as literal named
+/// colonpairs today, arriving as the named flavour, but the check should
+/// not assume that stays true forever — a positional-flavour Pair with a
+/// matching `Str` key is treated identically.
+fn adverb_pair(arg: &Value) -> Option<(String, &Value)> {
+    match arg.view() {
+        ValueView::Pair(key, value) => Some((key.clone(), value)),
+        ValueView::ValuePair(key, value) => match key.view() {
+            ValueView::Str(s) => Some((s.to_string(), value)),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 impl Interpreter {
     pub(in crate::runtime) fn dispatch_unique(
         &mut self,
@@ -9,7 +25,7 @@ impl Interpreter {
         let mut as_func: Option<Value> = None;
         let mut with_func: Option<Value> = None;
         for arg in args {
-            if let ValueView::Pair(key, value) = arg.view() {
+            if let Some((key, value)) = adverb_pair(arg) {
                 if key == "as" && value.truthy() {
                     as_func = Some(value.clone());
                     continue;
@@ -102,7 +118,7 @@ impl Interpreter {
         let mut as_func: Option<Value> = None;
         let mut with_func: Option<Value> = None;
         for arg in args {
-            if let ValueView::Pair(key, value) = arg.view() {
+            if let Some((key, value)) = adverb_pair(arg) {
                 if key == "as" && value.truthy() {
                     as_func = Some(value.clone());
                     continue;
@@ -194,7 +210,7 @@ impl Interpreter {
         let mut as_func: Option<Value> = None;
         let mut with_func: Option<Value> = None;
         for arg in args {
-            if let ValueView::Pair(key, value) = arg.view() {
+            if let Some((key, value)) = adverb_pair(arg) {
                 if key == "as" && value.truthy() {
                     as_func = Some(value.clone());
                     continue;
