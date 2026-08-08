@@ -39,14 +39,12 @@ impl Interpreter {
         class_def.attributes.push(ClassAttributeDef {
             name: attr_name.clone(),
             is_public: decl.is_public,
-            default: decl
-                .default
-                .clone()
-                .map(|e| crate::opcode::DeclTraitArg::Ast(Box::new(e))),
+            default: decl.default.clone(),
             is_rw: effective_is_rw,
             is_required: decl.is_required.clone(),
             sigil: decl.sigil,
             where_constraint: None,
+            declared_shape: decl.declared_shape.clone(),
         });
         if let Some(tc) = &decl.type_constraint {
             let resolved_tc = tc.replace("::?CLASS", class_name);
@@ -80,7 +78,7 @@ impl Interpreter {
         &mut self,
         attr_name: &str,
         sigil: char,
-        default: Option<&Expr>,
+        default: Option<&crate::opcode::DeclTraitArg>,
         type_constraint: Option<&str>,
         type_smiley: Option<&str>,
     ) -> Result<(), RuntimeError> {
@@ -88,7 +86,7 @@ impl Interpreter {
         if sigil != '$' {
             return Ok(());
         }
-        let Some(Expr::Literal(val)) = default else {
+        let Some(val) = default.and_then(|d| d.literal()) else {
             return Ok(());
         };
         if !crate::runtime::types::value_is_defined(val) {
@@ -133,7 +131,12 @@ impl Interpreter {
                 .map(|(_, decl)| decl.clone()),
             _ => None,
         }
-        .unwrap_or_else(|| crate::opcode::CompiledAttrDecl::from_stmt(stmt, None));
+        .unwrap_or_else(|| {
+            crate::opcode::CompiledAttrDecl::from_stmt(
+                stmt,
+                crate::opcode::AttrDeclChunks::default(),
+            )
+        });
         let attr_name_str = decl.name.clone();
 
         // An initializer that can never satisfy the constraint is a
@@ -192,8 +195,8 @@ impl Interpreter {
         // Handle class-level attributes (our $.x / my $.x)
         if decl.is_our || decl.is_my {
             // Evaluate the default value if present
-            let initial_value = if let Some(expr) = &decl.default {
-                self.eval_block_value(&[Stmt::Expr(expr.clone())])?
+            let initial_value = if let Some(arg) = &decl.default {
+                self.eval_decl_trait_arg(arg)?
             } else {
                 Value::NIL
             };
@@ -223,17 +226,12 @@ impl Interpreter {
         cx.class_def.attributes.push(ClassAttributeDef {
             name: attr_name_str.clone(),
             is_public: decl.is_public,
-            default: decl
-                .default
-                .clone()
-                .map(|e| crate::opcode::DeclTraitArg::Ast(Box::new(e))),
+            default: decl.default.clone(),
             is_rw: effective_is_rw,
             is_required: decl.is_required.clone(),
             sigil: decl.sigil,
-            where_constraint: decl
-                .where_constraint
-                .clone()
-                .map(|e| crate::opcode::DeclTraitArg::Ast(Box::new(e))),
+            where_constraint: decl.where_constraint.clone(),
+            declared_shape: decl.declared_shape.clone(),
         });
         // Store `is default(...)` trait value for this attribute.
         // When is_default is set, the evaluated value is stored for

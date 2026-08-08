@@ -179,7 +179,13 @@ impl Interpreter {
             .unwrap_or_default();
         for stmt in &flattened_body {
             if let Stmt::HasDecl { .. } = stmt {
-                own_attrs.insert(crate::opcode::CompiledAttrDecl::from_stmt(stmt, None).name);
+                own_attrs.insert(
+                    crate::opcode::CompiledAttrDecl::from_stmt(
+                        stmt,
+                        crate::opcode::AttrDeclChunks::default(),
+                    )
+                    .name,
+                );
             }
         }
         for stmt in flattened_body {
@@ -553,7 +559,10 @@ impl Interpreter {
                     }
                 }
                 Stmt::HasDecl { .. } => {
-                    let decl = crate::opcode::CompiledAttrDecl::from_stmt(stmt, None);
+                    let decl = crate::opcode::CompiledAttrDecl::from_stmt(
+                        stmt,
+                        crate::opcode::AttrDeclChunks::default(),
+                    );
                     let attr_name_str = decl.name.clone();
                     let attr_var_name = if decl.is_public {
                         format!(".{}", attr_name_str)
@@ -567,17 +576,12 @@ impl Interpreter {
                         class_def.attributes.push(ClassAttributeDef {
                             name: attr_name_str.clone(),
                             is_public: decl.is_public,
-                            default: decl
-                                .default
-                                .clone()
-                                .map(|e| crate::opcode::DeclTraitArg::Ast(Box::new(e))),
+                            default: decl.default.clone(),
                             is_rw: decl.is_rw,
                             is_required: decl.is_required.clone(),
                             sigil: decl.sigil,
-                            where_constraint: decl
-                                .where_constraint
-                                .clone()
-                                .map(|e| crate::opcode::DeclTraitArg::Ast(Box::new(e))),
+                            where_constraint: decl.where_constraint.clone(),
+                            declared_shape: decl.declared_shape.clone(),
                         });
                         if decl.is_alias {
                             class_def.alias_attributes.insert(attr_name_str.clone());

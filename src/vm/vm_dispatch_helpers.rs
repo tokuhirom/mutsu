@@ -502,6 +502,31 @@ impl Interpreter {
             return self.call_sub_value(target, args, false);
         }
 
+        // A declaration-time-expression thunk (ADR-0019 D2c-4's `.^attributes.build`
+        // closure, marked by `is_decl_expr_thunk` — see its doc comment for
+        // why `body.is_empty()` alone is NOT a safe signal here — an ordinary
+        // `sub (Int $x) {}` also has an empty body). Such a chunk was
+        // compiled standalone by `Compiler::compile_decl_expr` (no signature,
+        // no `Return`-based call ABI), so it must run through the same
+        // re-entrant `run_nested` entry `run_decl_expr` uses, not
+        // `call_compiled_closure` (which expects a routine-shaped
+        // `CompiledCode` and returned `Nil` for this shape). Args are
+        // ignored, matching what the on-demand-compiled AST-body Sub this
+        // replaces did (its body never referenced any parameter either).
+        if let ValueView::Sub(data) = target.view()
+            && data.is_decl_expr_thunk
+            && let Some(ref cc) = data.compiled_code
+        {
+            let cc = cc.clone();
+            let empty_fns = CompiledFns::default();
+            let fns = data
+                .compiled_fns
+                .as_deref()
+                .or(compiled_fns)
+                .unwrap_or(&empty_fns);
+            return self.run_decl_code(&cc, fns);
+        }
+
         // Fast path: Sub with compiled_code
         if let ValueView::Sub(data) = target.view()
             && let Some(ref cc) = data.compiled_code

@@ -1819,10 +1819,9 @@ impl Interpreter {
                 // For @-sigiled attributes with shaped array declarations,
                 // convert user-provided values to shaped arrays preserving shape.
                 for attr in &class_attrs_info {
-                    let (attr_name, default) = (&attr.name, &attr.default);
-                    let default_ast = default.as_ref().map(|arg| arg.as_expr());
+                    let attr_name = &attr.name;
                     if attr.sigil == '@'
-                        && let Some(dims) = Self::extract_shape_from_default(default_ast.as_ref())
+                        && let Some(dims) = &attr.declared_shape
                         && let Some(val) = attrs.get(attr_name)
                         && !matches!(val.view(), ValueView::Array(_, ArrayKind::Shaped))
                     {
@@ -1832,7 +1831,7 @@ impl Interpreter {
                         };
                         let shaped =
                             Value::array_with_kind(crate::gc::Gc::new(items), ArrayKind::Shaped);
-                        crate::runtime::utils::mark_shaped_array(&shaped, Some(&dims));
+                        crate::runtime::utils::mark_shaped_array(&shaped, Some(dims));
                         attrs.insert(attr_name.clone(), shaped);
                     }
                 }

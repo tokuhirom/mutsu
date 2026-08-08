@@ -958,6 +958,7 @@ impl Interpreter {
                             is_required: None,
                             sigil,
                             where_constraint: None,
+                            declared_shape: None,
                         });
                         if let Some(tc) = type_constraint {
                             class_def.attribute_types.insert(bare_name, tc);
