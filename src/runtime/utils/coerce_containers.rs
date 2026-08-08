@@ -551,22 +551,27 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
         // yields three `* => True` pairs, so `@a.elems == 3`). This mirrors
         // `value_to_list`. (Note: an array *literal* `[set(...)]` does NOT
         // flatten — that path is handled separately in `exec_make_array_op`.)
+        // ADR-0021 I2: data-minted pairs default positional.
         ValueView::Set(items, _) => Value::real_array(
             items
                 .iter()
-                .map(|s| Value::pair(s.clone(), Value::TRUE))
+                .map(|s| Value::value_pair(Value::str(s.clone()), Value::TRUE))
                 .collect(),
         ),
         ValueView::Bag(items, _) => Value::real_array(
             items
                 .iter()
-                .map(|(k, v)| Value::pair(k.clone(), Value::from_bigint(v.clone())))
+                .map(|(k, v)| {
+                    Value::value_pair(Value::str(k.clone()), Value::from_bigint(v.clone()))
+                })
                 .collect(),
         ),
         ValueView::Mix(items, _) => Value::real_array(
             items
                 .iter()
-                .map(|(k, v)| Value::pair(k.clone(), crate::value::mix_weight_to_value(*v)))
+                .map(|(k, v)| {
+                    Value::value_pair(Value::str(k.clone()), crate::value::mix_weight_to_value(*v))
+                })
                 .collect(),
         ),
         // A WalkList assigned to an `@` variable flattens to its candidate

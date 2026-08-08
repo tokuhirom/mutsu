@@ -86,8 +86,12 @@ impl Interpreter {
         }
         for item in &items {
             let check_val = if unwrap_pair {
+                // ADR-0021: a Pair sitting in the list literal being passed
+                // to `.new` mints the positional flavour by default — unwrap
+                // it identically to the named flavour.
                 match item.view() {
                     ValueView::Pair(_, v) => v.clone(),
+                    ValueView::ValuePair(_, v) => v.clone(),
                     _ => item.clone(),
                 }
             } else {

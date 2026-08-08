@@ -76,13 +76,11 @@ impl Interpreter {
         if itemized {
             return vec![Value::hash_with_data_itemized(gc.clone(), true)];
         }
+        // ADR-0021 I2: data-minted pairs default positional.
         gc.keys()
             .map(|k| {
                 let vref = Value::hash_entry_ref_eager(gc.clone(), vec![k.clone()]);
-                match gc.typed_key(k).view() {
-                    ValueView::Str(s) => Value::pair((**s).clone(), vref),
-                    _ => Value::value_pair(gc.typed_key(k), vref),
-                }
+                Value::value_pair(gc.typed_key(k), vref)
             })
             .collect()
     }

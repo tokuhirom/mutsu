@@ -158,7 +158,8 @@ impl Interpreter {
                 // Hashes are decomposed into their pairs
                 ValueView::Hash(map) => {
                     for (k, v) in map.iter() {
-                        let pair = Value::pair(k.clone(), v.clone());
+                        // ADR-0021 I2: data-minted pairs default positional.
+                        let pair = Value::value_pair(Value::str(k.clone()), v.clone());
                         insert_value(&pair, &mut elems, &mut original_keys);
                     }
                 }
@@ -215,7 +216,8 @@ impl Interpreter {
                 // Hashes are flattened into their pairs (each pair is a single element)
                 ValueView::Hash(map) => {
                     for (k, v) in map.iter() {
-                        let pair = Value::pair(k.clone(), v.clone());
+                        // ADR-0021 I2: data-minted pairs default positional.
+                        let pair = Value::value_pair(Value::str(k.clone()), v.clone());
                         add_item(&mut counts, &mut original_keys, &pair);
                     }
                 }
@@ -271,7 +273,8 @@ impl Interpreter {
                 // Hashes are flattened into their pairs; each pair becomes a key
                 ValueView::Hash(map) => {
                     for (k, v) in map.iter() {
-                        let pair = Value::pair(k.clone(), v.clone());
+                        // ADR-0021 I2: data-minted pairs default positional.
+                        let pair = Value::value_pair(Value::str(k.clone()), v.clone());
                         insert_value(&pair, &mut weights, &mut original_keys);
                     }
                 }
@@ -351,7 +354,9 @@ impl Interpreter {
             .map(|v| v.to_string_value())
             .unwrap_or_default();
         let val = args.get(1).cloned().unwrap_or(Value::NIL);
-        Ok(Value::pair(key, val))
+        // ADR-0021 I2: `pair(...)` is a data constructor, not argument-list
+        // syntax — the result is a plain (positional-flavour) Pair.
+        Ok(Value::value_pair(Value::str(key), val))
     }
 
     pub(super) fn builtin_keys(&self, args: &[Value]) -> Result<Value, RuntimeError> {

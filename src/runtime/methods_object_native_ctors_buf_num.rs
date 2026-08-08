@@ -294,11 +294,9 @@ impl Interpreter {
                 "new",
             ));
         };
-        if matches!(key.view(), ValueView::Str(_)) {
-            Ok(Value::pair(key.to_string_value(), value))
-        } else {
-            Ok(Value::value_pair(key, value))
-        }
+        // ADR-0021 I2: `Pair.new(...)` is a data constructor, not
+        // argument-list syntax — the result is always positional-flavour.
+        Ok(Value::value_pair(key, value))
     }
 
     /// Build an `IterationBuffer` from `.new(...)` as pure data: flatten each

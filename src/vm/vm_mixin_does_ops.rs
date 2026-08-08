@@ -480,14 +480,48 @@ impl Interpreter {
         Ok(())
     }
 
+    /// `OpCode::MakePair`: build a data-minted Pair (ADR-0021 I2), always the
+    /// positional flavour — this is every fat-arrow compile except
+    /// argument-position named-arg synthesis (`OpCode::MakeNamedArg`, below).
     pub(super) fn exec_make_pair_op(&mut self, code: &crate::opcode::CompiledCode) {
+        let (left, right) = self.pop_pair_operands_capturing(code);
+        self.stack.push(Value::value_pair(left, right));
+    }
+
+    /// `OpCode::MakeNamedArg`: build a named-argument-flavour Pair (ADR-0021
+    /// I2/I3). Emitted only where the call-site syntax genuinely intends a
+    /// named argument (a literal `key => value` / `:key(value)` written
+    /// directly in an argument list, or a Capture literal's named-lane
+    /// element `\(:$a)`) — preserving the in-band named marker those sites
+    /// need to reach the callee's binder / `ExecCallPairs`.
+    pub(super) fn exec_make_named_arg_op(&mut self, code: &crate::opcode::CompiledCode) {
+        let (left, right) = self.pop_pair_operands_capturing(code);
+        // Preserve the original key type for `.key` to return the correct type.
+        // Use ValuePair for non-string keys, Pair (the named flavour) for
+        // string keys — the shape every named-arg key actually has.
+        match left.view() {
+            ValueView::Str(_) => {
+                let key = left.to_string_value();
+                self.stack.push(Value::pair(key, right));
+            }
+            _ => {
+                self.stack.push(Value::value_pair(left, right));
+            }
+        }
+    }
+
+    /// Shared operand pop for `MakePair`/`MakeNamedArg`: `key => $var` tags
+    /// the RHS scalar variable with `WrapVarRef`, so capture its container.
+    /// The Pair's value becomes a `ContainerRef` shared with `$var`, giving
+    /// Raku's write-through semantics: `$pair.value = X` updates `$var`, and
+    /// `$pair.value<k> = v` writes through to `$var`'s backing Array/Hash.
+    /// (See S02:1704 / roast S02-types/pair.t.)
+    fn pop_pair_operands_capturing(
+        &mut self,
+        code: &crate::opcode::CompiledCode,
+    ) -> (Value, Value) {
         let mut right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        // `key => $var`: the RHS scalar variable was tagged with `WrapVarRef`, so
-        // capture its container. The Pair's value becomes a `ContainerRef` shared
-        // with `$var`, giving Raku's write-through semantics: `$pair.value = X`
-        // updates `$var`, and `$pair.value<k> = v` writes through to `$var`'s
-        // backing Array/Hash. (See S02:1704 / roast S02-types/pair.t.)
         if let ValueView::VarRef {
             name: source_name,
             value: inner,
@@ -498,16 +532,6 @@ impl Interpreter {
             let inner = inner.clone();
             right = self.capture_var_cell(code, &source_name, inner);
         }
-        // Preserve the original key type for `.key` to return the correct type.
-        // Use ValuePair for non-string keys, Pair for string keys.
-        match left.view() {
-            ValueView::Str(_) => {
-                let key = left.to_string_value();
-                self.stack.push(Value::pair(key, right));
-            }
-            _ => {
-                self.stack.push(Value::value_pair(left, right));
-            }
-        }
+        (left, right)
     }
 }

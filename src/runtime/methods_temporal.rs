@@ -1,6 +1,22 @@
 use crate::builtins::methods_0arg::temporal;
 use crate::value::{RuntimeError, Value, ValueView};
 
+/// Read a `:2hours`/`:30minutes`-style adverb argument regardless of Pair
+/// flavour (ADR-0021): these adverbs are commonly collected into a list
+/// literal (`.later((:2hours, :30minutes))`), which is a positional
+/// (`ValuePair`) context, not a call site — the named flavour is not
+/// guaranteed. A `Str`-keyed positional Pair is treated identically.
+fn temporal_adverb_pair(v: &Value) -> Option<(String, Value)> {
+    match v.view() {
+        ValueView::Pair(key, value) => Some((key.clone(), value.clone())),
+        ValueView::ValuePair(key, value) => match key.view() {
+            ValueView::Str(s) => Some((s.to_string(), value.clone())),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 fn has_date_attrs(attributes: &crate::gc::Gc<crate::value::InstanceAttrs>) -> bool {
     attributes.contains_key("year")
         && attributes.contains_key("month")
@@ -290,14 +306,14 @@ fn date_later_earlier(
     };
 
     for arg in args {
-        if let ValueView::Pair(key, value) = arg.view() {
-            apply_pair(key, value)?;
+        if let Some((key, value)) = temporal_adverb_pair(arg) {
+            apply_pair(&key, &value)?;
             continue;
         }
         if let Some(items) = arg.as_list_items() {
             for item in items.iter() {
-                if let ValueView::Pair(key, value) = item.view() {
-                    apply_pair(key, value)?;
+                if let Some((key, value)) = temporal_adverb_pair(item) {
+                    apply_pair(&key, &value)?;
                 }
             }
         }
@@ -426,14 +442,14 @@ fn datetime_later_earlier(
     };
 
     for arg in args {
-        if let ValueView::Pair(key, value) = arg.view() {
-            apply_pair(key, value)?;
+        if let Some((key, value)) = temporal_adverb_pair(arg) {
+            apply_pair(&key, &value)?;
             continue;
         }
         if let Some(items) = arg.as_list_items() {
             for item in items.iter() {
-                if let ValueView::Pair(key, value) = item.view() {
-                    apply_pair(key, value)?;
+                if let Some((key, value)) = temporal_adverb_pair(item) {
+                    apply_pair(&key, &value)?;
                 }
             }
         }

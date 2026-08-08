@@ -226,16 +226,35 @@ impl Interpreter {
                 } else if key == "c" || key == "continue" {
                     continue_pos = value.as_int().and_then(|n| usize::try_from(n).ok());
                 } else if key == "args" {
-                    // :args(\(42)) passes a Capture; :args(42,) passes an Array
+                    // :args(\(42)) passes a Capture; :args(42,) / :args(:arg(42),)
+                    // passes an Array. `rule_args` is a flat mixed vec that
+                    // `bind_function_args_values` (below) classifies by Pair
+                    // flavour, same as an ordinary call's argument vec — so
+                    // flatten the Capture's two lanes back into that shape,
+                    // and (ADR-0021) promote any Pair-shaped Array element to
+                    // the named flavour: a `:args(...)` element is a rule
+                    // argument regardless of the flavour a list literal
+                    // mints by default (verified against raku: `:args(
+                    // :arg(42),)` binds `rule(:$arg)`'s named param).
                     match value.view() {
-                        ValueView::Capture {
-                            positional,
-                            named: _,
-                        } => {
+                        ValueView::Capture { positional, named } => {
                             rule_args = positional.clone();
+                            rule_args.extend(
+                                named.iter().map(|(k, v)| Value::pair(k.clone(), v.clone())),
+                            );
                         }
                         ValueView::Array(arr, _) => {
-                            rule_args = arr.as_ref().clone().into_items();
+                            rule_args = arr
+                                .iter()
+                                .cloned()
+                                .map(|item| match item.view() {
+                                    ValueView::ValuePair(k, v) => match k.view() {
+                                        ValueView::Str(s) => Value::pair(s.to_string(), v.clone()),
+                                        _ => item,
+                                    },
+                                    _ => item,
+                                })
+                                .collect();
                         }
                         _ => {
                             rule_args = vec![value.clone()];

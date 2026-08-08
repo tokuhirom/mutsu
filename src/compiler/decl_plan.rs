@@ -17,6 +17,14 @@ impl Compiler {
     /// declaration's own lexical position rather than from whatever routine
     /// frame happens to be live when registration runs.
     pub(crate) fn compile_decl_expr(&self, expr: &Expr) -> crate::opcode::CompiledDeclExpr {
+        self.compile_decl_expr_inner(expr, false)
+    }
+
+    fn compile_decl_expr_inner(
+        &self,
+        expr: &Expr,
+        mint_named_pair: bool,
+    ) -> crate::opcode::CompiledDeclExpr {
         let mut chunk_compiler = Compiler::new();
         chunk_compiler.is_routine = self.is_routine;
         chunk_compiler.lexically_in_routine = self.lexically_in_routine;
@@ -28,6 +36,16 @@ impl Compiler {
         chunk_compiler.set_current_package(self.current_package.clone());
         chunk_compiler.current_distribution = self.current_distribution.clone();
         chunk_compiler.last_source_line = self.last_source_line;
+        // ADR-0021 I2/I3: a bareword-keyed fat-arrow (or colonpair, same AST
+        // shape) written directly as a declaration-time trait/role argument
+        // (`is foo(:bar(1))`, `role B does A[:a(1)]`) mints the named
+        // flavour — this chunk is conceptually an argument list, even
+        // though it's compiled as a standalone top-level statement.
+        if mint_named_pair
+            && matches!(expr, Expr::Binary { op, .. } if *op == crate::token_kind::TokenKind::FatArrow)
+        {
+            chunk_compiler.mint_named_pair = true;
+        }
         let body = [Stmt::Expr(expr.clone())];
         let (code, fns) = chunk_compiler.compile(&body);
         crate::opcode::CompiledDeclExpr {
@@ -41,7 +59,7 @@ impl Compiler {
     fn compile_decl_trait_arg(&self, expr: &Expr) -> crate::opcode::DeclTraitArg {
         match expr {
             Expr::Literal(value) => crate::opcode::DeclTraitArg::Literal(value.clone()),
-            _ => crate::opcode::DeclTraitArg::Compiled(self.compile_decl_expr(expr)),
+            _ => crate::opcode::DeclTraitArg::Compiled(self.compile_decl_expr_inner(expr, true)),
         }
     }
 

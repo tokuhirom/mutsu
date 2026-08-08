@@ -170,6 +170,13 @@ impl Compiler {
                 // that check could never actually distinguish the two shapes
                 // and instead misfired on every real `$x = ...`/`$x += ...`
                 // argument. See todo/tickets/compound-assign-as-call-argument-yields-pair.md.
+                // ADR-0021 I2/I3: a bareword-keyed fat-arrow (or colonpair,
+                // same AST shape) written directly as this argument mints
+                // the named-argument flavour, not the data default.
+                if matches!(arg, Expr::Binary { op, .. } if *op == crate::token_kind::TokenKind::FatArrow)
+                {
+                    s.mint_named_pair = true;
+                }
                 s.compile_expr(arg);
                 if Self::needs_decont(arg) {
                     s.code.emit(OpCode::Decont);
@@ -259,6 +266,12 @@ impl Compiler {
         // NON-escaping (the #2746 guard: `map {...}` / `lives-ok {...}` must not
         // box even when the whole call sits in an escaping position like
         // `my @r = map {...}`). `start` overrides this with `escaping = true`.
+        // ADR-0021 I2/I3: a bareword-keyed fat-arrow (or colonpair, same AST
+        // shape) written directly as this argument mints the named-argument
+        // flavour, not the data default.
+        if matches!(arg, Expr::Binary { op, .. } if *op == crate::token_kind::TokenKind::FatArrow) {
+            self.mint_named_pair = true;
+        }
         self.with_escape(escaping, |c| {
             c.with_suppress_pair_capture(true, |c| c.compile_expr(arg))
         });

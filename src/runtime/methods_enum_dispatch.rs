@@ -50,7 +50,8 @@ impl Interpreter {
             }
             "pair" => {
                 let val = value.to_value();
-                Some(Ok(Value::pair(key.resolve(), val)))
+                // ADR-0021 I2: data-minted pairs default positional.
+                Some(Ok(Value::value_pair(Value::str(key.resolve()), val)))
             }
             "ACCEPTS" => {
                 if args.is_empty() {
@@ -113,9 +114,10 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         match method {
             "pairs" => {
+                // ADR-0021 I2: data-minted pairs default positional.
                 let pairs: Vec<Value> = variants
                     .iter()
-                    .map(|(k, v)| Value::pair(k.clone(), v.to_value()))
+                    .map(|(k, v)| Value::value_pair(Value::str(k.clone()), v.to_value()))
                     .collect();
                 Ok(Value::array(pairs))
             }

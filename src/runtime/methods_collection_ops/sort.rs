@@ -674,11 +674,7 @@ pub(crate) fn sort_value_generic(
 }
 
 /// Build a `key => weight` pair for a Set/Bag/Mix element, preserving the
-/// original key type (`ValuePair`) when it is not a plain string key.
-fn setty_typed_pair(typed_key: Value, str_key: &str, weight: Value) -> Value {
-    if matches!(typed_key.view(), ValueView::Str(sv) if sv.as_ref() == str_key) {
-        Value::pair(str_key.to_string(), weight)
-    } else {
-        Value::value_pair(typed_key, weight)
-    }
+/// original key type. ADR-0021 I2: data-minted pairs default positional.
+fn setty_typed_pair(typed_key: Value, _str_key: &str, weight: Value) -> Value {
+    Value::value_pair(typed_key, weight)
 }

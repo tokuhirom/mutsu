@@ -307,9 +307,12 @@ impl Interpreter {
         value: Value,
     ) -> Result<Value, RuntimeError> {
         match value.view() {
-            // Associative types are preserved as-is
+            // Associative types are preserved as-is. A Pair is Associative
+            // regardless of flavour (ADR-0021: named-ness is a call-site
+            // marker, not a semantic difference here).
             ValueView::Hash(_)
             | ValueView::Pair(..)
+            | ValueView::ValuePair(..)
             | ValueView::Set(..)
             | ValueView::Bag(..)
             | ValueView::Mix(..) => Ok(value),

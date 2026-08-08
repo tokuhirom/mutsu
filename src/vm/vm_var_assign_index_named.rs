@@ -711,6 +711,54 @@ impl Interpreter {
                 }
             }
         }
+        // A Pair value (either flavour) answers `<key>` element access
+        // (`(a => 1)<a>` reads its own `.value`, any other key reads Nil).
+        // Unlike the `.value` *accessor*, which writes through a `key =>
+        // $var` capture's shared container, Raku's Associative subscript
+        // protocol on a Pair has no writable element slot at all — even a
+        // captured value's `<key> = ...` dies (verified against raku: only
+        // `.value = ...` writes through). Assigning through any key
+        // (existing or absent) dies, and binding into one is rejected
+        // outright, regardless of whether the binding itself is `constant`.
+        // `my $p = a => 1; $p<a> = 9` dies with "Cannot modify an immutable
+        // Int (1)" in raku for a completely ordinary (non-constant) `my $p`.
+        if let Some(target_val) = self.env().get(&var_name)
+            && let Some((pair_key, pair_value)) = match target_val.view() {
+                ValueView::Pair(k, v) => Some((k.clone(), v.clone())),
+                ValueView::ValuePair(k, v) => Some((k.to_string_value(), v.clone())),
+                _ => None,
+            }
+        {
+            if bind_mode {
+                return Err(RuntimeError::typed(
+                    "X::Bind",
+                    [(
+                        "message".to_string(),
+                        Value::str("Cannot bind to Pair".to_string()),
+                    )]
+                    .into_iter()
+                    .collect(),
+                ));
+            }
+            let elem_value = if pair_key == idx.to_string_value() {
+                pair_value.deref_container()
+            } else {
+                Value::NIL
+            };
+            let message = if matches!(elem_value.view(), ValueView::Nil) {
+                "Cannot modify an immutable Nil value".to_string()
+            } else {
+                format!(
+                    "Cannot modify an immutable {} ({})",
+                    crate::runtime::utils::value_type_name(&elem_value),
+                    elem_value.to_string_value()
+                )
+            };
+            let mut attrs = HashMap::new();
+            attrs.insert("message".to_string(), Value::str(message));
+            attrs.insert("value".to_string(), elem_value);
+            return Err(RuntimeError::typed("X::Assignment::RO", attrs));
+        }
         // Mix/Set/Bag: prevent auto-vivification of undefined typed variables.
         // When `my Mix $m; $m<key> = val`, the variable is undefined (Nil or
         // type object) but has an immutable type constraint.

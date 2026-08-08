@@ -550,10 +550,24 @@ impl Interpreter {
             }
             "__mutsu_set_newline" => {
                 let pair = args.first().cloned().unwrap_or(Value::NIL);
-                let ValueView::Pair(name, value) = pair.view() else {
-                    return Err(RuntimeError::new(
-                        "use newline expects a colonpair argument",
-                    ));
+                // ADR-0021: `:lf` here is data compiled via the positional
+                // default (`ValuePair`), not a call-site named argument —
+                // accept either flavour, matching the value's own String key.
+                let (name, value) = match pair.view() {
+                    ValueView::Pair(name, value) => (name.clone(), value.clone()),
+                    ValueView::ValuePair(key, value) => match key.view() {
+                        ValueView::Str(s) => (s.to_string(), value.clone()),
+                        _ => {
+                            return Err(RuntimeError::new(
+                                "use newline expects a colonpair argument",
+                            ));
+                        }
+                    },
+                    _ => {
+                        return Err(RuntimeError::new(
+                            "use newline expects a colonpair argument",
+                        ));
+                    }
                 };
                 if !value.truthy() {
                     return Err(RuntimeError::new("use newline expects a true mode adverb"));

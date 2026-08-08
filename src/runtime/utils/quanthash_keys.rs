@@ -43,12 +43,10 @@ pub(crate) fn record_quanthash_original(
 }
 
 /// Build the `elem => weight` Pair for a QuantHash entry from the decoded
-/// element object (Str elements keep the string-keyed Pair form).
+/// element object. ADR-0021 I2: data-minted pairs default positional,
+/// regardless of the element's own type.
 pub(crate) fn quanthash_typed_pair(elem: Value, v: Value) -> Value {
-    match elem.view() {
-        ValueView::Str(s) => Value::pair(s.to_string(), v),
-        _ => Value::value_pair(elem, v),
-    }
+    Value::value_pair(elem, v)
 }
 
 /// Merge a source QuantHash's recorded original keys into an accumulator

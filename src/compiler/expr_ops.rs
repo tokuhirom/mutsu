@@ -764,6 +764,18 @@ impl Compiler {
         }
         self.compile_expr(left);
         for r in right {
+            // ADR-0021 I2/I3: a trailing colonpair adverb (`1 / 3 :round`,
+            // appended into `right` by `attach_trailing_adverbs`) is a
+            // genuine named argument to the user-defined `infix:<op>` sub —
+            // mint the named flavour, not the data default. Same
+            // bareword-fat-arrow/colonpair shape `is_named_arg_expr`
+            // recognizes elsewhere; a real operand that happens to be this
+            // exact shape (rare) was equally adverb-classified before this
+            // ADR, since this dispatch has always read only value flavour.
+            if matches!(r, Expr::Binary { op, .. } if *op == crate::token_kind::TokenKind::FatArrow)
+            {
+                self.mint_named_pair = true;
+            }
             self.compile_expr(r);
         }
         let name_idx = self.code.add_constant(Value::str(name.to_string()));
