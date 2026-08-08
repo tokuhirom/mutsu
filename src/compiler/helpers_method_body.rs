@@ -1,0 +1,436 @@
+//! Main-pass method-body compilation (ADR-0019 D3-8a).
+//!
+//! Every class/role method body is compiled once here, at main-pass compile
+//! time, mirroring the registration-time throwaway compile
+//! (`Interpreter::compile_method_def_in_place_with_dist`,
+//! `src/runtime/accessors_resolve.rs`) bit-for-bit — see the design doc
+//! (`todo/deep/adr0019-d3-8-method-body-main-pass-compilation.md`) decision 2.
+//! D3-8a is purely additive: the resulting [`crate::symbol::Symbol`] key is
+//! stashed on [`crate::opcode::CompiledMethodDecl::compiled_routine_key`] but
+//! nothing reads it yet — that is the D3-8b/c registration cutover.
+
+use super::*;
+
+impl Compiler {
+    /// Compile one class/role method/submethod body to bytecode at main-pass
+    /// compile time, keyed into `self.compiled_functions` exactly like a
+    /// `sub`'s body (`compile_sub_body`). Returns `None` only if... it never
+    /// does today (every static-name declaration compiles); callers guard
+    /// the computed-name case themselves by not calling this at all.
+    ///
+    /// `is_hidden` / `apply_auto_positional_slurpy` reproduce the *exact*
+    /// input divergence between the class-body method walker
+    /// (`class_body_method_decl`: auto `@_` detection, `is_hidden`-gated
+    /// implicit `%_`) and the role-body method walker (`role_body_method_decl`:
+    /// no auto `@_` insertion, `is_hidden` always `false`) — callers must
+    /// pass the same values their registration counterpart would use, or the
+    /// parity guarantee (design decision 2) breaks.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn compile_method_body(
+        &mut self,
+        package_name: &str,
+        method_name: &str,
+        param_defs: &[crate::ast::ParamDef],
+        body: &[Stmt],
+        is_hidden: bool,
+        apply_auto_positional_slurpy: bool,
+        is_rw: bool,
+        return_type: Option<&String>,
+    ) -> Option<Symbol> {
+        let mut effective_param_defs =
+            crate::method_signature_shared::effective_method_param_defs(param_defs, is_hidden);
+        crate::method_signature_shared::apply_auto_positional_slurpy(
+            apply_auto_positional_slurpy && param_defs.is_empty(),
+            body,
+            &mut effective_param_defs,
+        );
+        let effective_params: Vec<String> = effective_param_defs
+            .iter()
+            .map(|p| p.name.clone())
+            .collect();
+
+        // Seeded exactly like `compile_method_def_in_place_with_dist`: a bare
+        // `Compiler::new()` (deliberately NOT inheriting this (the main-pass)
+        // compiler's enclosing scopes/fold_ctx/outer_code_var_names — design
+        // decision 2), the declaring package, the enclosing distribution, and
+        // `lexically_in_method` for the implicit `%_`/`@_` lexicals.
+        let mut method_compiler = Compiler::new();
+        method_compiler.set_current_package(package_name.to_string());
+        method_compiler.current_distribution = self.current_distribution.clone();
+        method_compiler.lexically_in_method = true;
+        let mut method_params: Vec<String> = vec![
+            "self".to_string(),
+            "__ANON_STATE__".to_string(),
+            "?CLASS".to_string(),
+            "?ROLE".to_string(),
+        ];
+        method_params.extend(effective_params.iter().cloned());
+        let mut cc = method_compiler.compile_routine_closure_body(
+            &method_params,
+            &effective_param_defs,
+            body,
+        );
+        cc.compute_may_capture_outer_vars();
+        cc.compute_needs_env_sync();
+
+        // Key shape follows C2 (design decision 5): a `!m` marker keeps
+        // method keys disjoint from sub keys, and the fingerprint —
+        // computed over the EFFECTIVE params/param_defs/body, matching what
+        // registration actually installs — disambiguates same-named multi
+        // candidates without needing the sub side's separate
+        // signature-vs-fingerprint key scheme (each `CompiledMethodDecl`
+        // already owns one key slot; there is no shared dispatch-table
+        // lookup key to collide on).
+        let arity = effective_param_defs
+            .iter()
+            .filter(|p| !p.named && (!p.slurpy || p.name == "_capture"))
+            .count();
+        let fingerprint =
+            crate::ast::function_body_fingerprint(&effective_params, &effective_param_defs, body);
+        let key_str = format!("{package_name}::{method_name}!m/{arity}#{fingerprint:x}");
+
+        // Merge any nested subs the method body declares into THIS (the
+        // real, program-wide) compiler's table, applying the same
+        // collision-rename + plan-key remap `compile_sub_body` uses for its
+        // own nested declarations.
+        let own_compiled_fns =
+            self.import_compiled_functions(&mut cc, method_compiler.take_compiled_functions());
+
+        let mut cf = CompiledFunction {
+            code: cc,
+            source_file: None,
+            params: method_params,
+            param_defs: effective_param_defs,
+            return_type: return_type.cloned(),
+            fingerprint,
+            // A method always carries the synthetic prefix params, so this
+            // is never a genuine empty signature.
+            empty_sig: false,
+            is_rw,
+            is_raw: false,
+            param_local_slots: None,
+            has_inner_subs: false,
+            declares_inner_routines: false,
+            named_call_plan: None,
+            deprecated_info: None,
+            declared_locals: None,
+            param_name_syms: Vec::new(),
+            package: package_name.to_string(),
+            compiled_fns: (!own_compiled_fns.is_empty())
+                .then(|| std::sync::Arc::new(own_compiled_fns)),
+        };
+        cf.precompute_param_local_slots();
+        cf.precompute_named_call_plan();
+        cf.precompute_param_name_syms();
+        cf.detect_inner_subs();
+        cf.compute_declared_locals();
+
+        let key = Symbol::intern(&key_str);
+        self.compiled_functions.insert(key, cf);
+        Some(key)
+    }
+
+    /// The qualified package name a class body's `RegisterClass` op will
+    /// resolve at registration time (`exec_register_class_op`,
+    /// `src/vm/vm_typedecl_ops.rs`), replicated at compile time for a
+    /// statically-named class. `self.current_package` tracks the runtime's
+    /// `current_package()` at the point the corresponding `RegisterDecl` op
+    /// would execute (both are updated in lockstep by the same
+    /// `PackageScope`/`SetCurrentPackage`/unit-package bracketing), so this
+    /// produces the same qualified name `class_body_method_decl` sees as
+    /// `cx.name`.
+    pub(super) fn qualified_class_decl_name(&self, resolved_name: &str) -> String {
+        if let Some(stripped) = resolved_name.strip_prefix("GLOBAL::") {
+            stripped.to_string()
+        } else if self.current_package == "GLOBAL"
+            || resolved_name == self.current_package
+            || resolved_name.starts_with(&format!("{}::", self.current_package))
+        {
+            resolved_name.to_string()
+        } else {
+            format!("{}::{}", self.current_package, resolved_name)
+        }
+    }
+
+    /// The role-declaration equivalent of [`Self::qualified_class_decl_name`],
+    /// mirroring `exec_register_role_op`'s slightly different (but
+    /// equivalent for the unqualified-name case) qualification rule: a role
+    /// name that already contains `::` anywhere is left as-is, not just one
+    /// that starts with the current package prefix.
+    pub(super) fn qualified_role_decl_name(&self, resolved_name: &str) -> String {
+        if let Some(stripped) = resolved_name.strip_prefix("GLOBAL::") {
+            stripped.to_string()
+        } else if resolved_name.contains("::")
+            || self.current_package == "GLOBAL"
+            || resolved_name == self.current_package
+        {
+            resolved_name.to_string()
+        } else {
+            format!("{}::{}", self.current_package, resolved_name)
+        }
+    }
+}
+
+/// ADR-0019 D3-8a verification item V4: byte-parity between the new
+/// main-pass `compile_method_body` compile and the registration-time
+/// throwaway compile (`compile_method_def_in_place_with_dist`) it is meant
+/// to replace bytecode from later (D3-8b/c). For each sample declaration,
+/// the SOURCE-ORDER class/role decl plan's `compiled_routine_key` (looked
+/// up post-compile, skipping the `__hoisted` forward-reference shell which
+/// this box's own optimization leaves keyless — see `add_class_decl_plan`'s
+/// doc comment) must resolve to a `CompiledFunction` whose `code` is
+/// `Debug`-identical to the `CompiledCode` the SAME source installs on the
+/// registered `MethodDef` at runtime.
+#[cfg(test)]
+mod d3_8a_byte_parity_tests {
+    /// A nested closure/named-sub package is suffixed with a process-global
+    /// `STATE_COUNTER` ordinal (`Pkg::&<closure>/N`, `compiler/mod.rs`) so
+    /// sibling closures never collide. The two compiles this test pair
+    /// performs (a standalone `Compiler::compile` and a full `Interpreter::run`,
+    /// which itself compiles far more code — prelude/setting included —
+    /// before it reaches the fixture) draw from the SAME global counter at
+    /// different starting points, so the ordinal legitimately differs
+    /// between the two even when the compiled bytecode is otherwise
+    /// identical. Normalize it away before comparing, the same way the
+    /// fixtures below only exercise ONE nested-sub case rather than trying
+    /// to pin an exact counter value.
+    fn normalize_closure_ordinals(s: &str) -> String {
+        let marker = "<closure>/";
+        let mut out = String::with_capacity(s.len());
+        let mut rest = s;
+        while let Some(pos) = rest.find(marker) {
+            out.push_str(&rest[..pos + marker.len()]);
+            rest = &rest[pos + marker.len()..];
+            let digits_end = rest
+                .find(|c: char| !c.is_ascii_digit())
+                .unwrap_or(rest.len());
+            out.push('N');
+            rest = &rest[digits_end..];
+        }
+        out.push_str(rest);
+        out
+    }
+
+    /// `Symbol`'s `Debug` impl prints its raw intern-table index
+    /// (`Symbol(91: "foo")`), which is likewise a process-global allocation
+    /// order that differs between the two compiles this test pair performs
+    /// (see [`normalize_closure_ordinals`]) even when every interned STRING
+    /// is identical. Strip the numeric index, keeping only the quoted
+    /// content that actually carries meaning.
+    fn normalize_symbol_ids(s: &str) -> String {
+        let marker = "Symbol(";
+        let mut out = String::with_capacity(s.len());
+        let mut rest = s;
+        while let Some(pos) = rest.find(marker) {
+            out.push_str(&rest[..pos + marker.len()]);
+            rest = &rest[pos + marker.len()..];
+            let digits_end = rest
+                .find(|c: char| !c.is_ascii_digit())
+                .unwrap_or(rest.len());
+            if rest[digits_end..].starts_with(": ") {
+                rest = &rest[digits_end + 2..];
+            } else {
+                // Not the `Symbol(NNN: "...")` Debug shape after all — leave
+                // the digits (if any) untouched.
+                out.push_str(&rest[..digits_end]);
+                rest = &rest[digits_end..];
+            }
+        }
+        out.push_str(rest);
+        out
+    }
+
+    /// Compile `source` two ways and return `(Debug of the main-pass
+    /// compiled method body's CompiledCode, Debug of the runtime-registered
+    /// MethodDef's CompiledCode)` for `method_name` on `type_name` (a class
+    /// or role name). Panics with a descriptive message if either side
+    /// cannot find the declaration — a test-fixture bug, not a parity
+    /// failure, so it must not silently report "equal".
+    fn compiled_code_pair(source: &str, type_name: &str, method_name: &str) -> (String, String) {
+        // Main-pass side: parse + compile, then find the SOURCE-ORDER class
+        // or role decl plan (the `__hoisted` shell's method_decls are all
+        // `None` by this box's own optimization, so the first plan with a
+        // `Some` key for this method is unambiguously the real one).
+        let (stmts, _) =
+            crate::parse_dispatch::parse_source(source).expect("fixture source parses");
+        let (code, compiled_fns) = super::Compiler::new().compile(&stmts);
+        let key = code
+            .class_decl_plans
+            .iter()
+            .filter(|p| p.name.as_str() == type_name)
+            .find_map(|p| {
+                p.method_decls
+                    .iter()
+                    .find(|m| m.name.as_str() == method_name && m.compiled_routine_key.is_some())
+                    .and_then(|m| m.compiled_routine_key)
+            })
+            .or_else(|| {
+                code.role_decl_plans
+                    .iter()
+                    .filter(|p| p.name.as_str() == type_name)
+                    .find_map(|p| {
+                        p.method_decls
+                            .iter()
+                            .find(|m| {
+                                m.name.as_str() == method_name && m.compiled_routine_key.is_some()
+                            })
+                            .and_then(|m| m.compiled_routine_key)
+                    })
+            })
+            .unwrap_or_else(|| {
+                panic!(
+                    "no compiled_routine_key found for {type_name}::{method_name} \
+                     (declaration plan missing or method name mismatched)"
+                )
+            });
+        let compiled_fn = compiled_fns
+            .get(&key)
+            .unwrap_or_else(|| panic!("compiled_routine_key for {type_name}::{method_name} did not resolve in compiled_fns"));
+        let main_pass_debug = format!("{:?}", compiled_fn.code);
+
+        // Runtime side: actually run the same source (declares the type,
+        // which eagerly compiles every method body — `compile_class_methods`
+        // / `compile_role_methods` run right after `RegisterClass/Role`) and
+        // read the installed `MethodDef::compiled_code` back out.
+        let mut interp = crate::runtime::Interpreter::new();
+        interp
+            .run(source)
+            .unwrap_or_else(|e| panic!("fixture source runs: {e:?}"));
+        let registry = interp.registry();
+        let runtime_code = registry
+            .classes
+            .get(type_name)
+            .and_then(|c| c.methods.get(method_name))
+            .or_else(|| {
+                registry
+                    .roles
+                    .get(type_name)
+                    .and_then(|r| r.methods.get(method_name))
+            })
+            .and_then(|defs| defs.first())
+            .and_then(|def| def.compiled_code.as_ref())
+            .unwrap_or_else(|| {
+                panic!("no registered compiled_code for {type_name}::{method_name}")
+            });
+        let runtime_debug = format!("{runtime_code:?}");
+        let normalize = |s: &str| normalize_symbol_ids(&normalize_closure_ordinals(s));
+        (normalize(&main_pass_debug), normalize(&runtime_debug))
+    }
+
+    #[test]
+    fn plain_method_byte_parity() {
+        let source = "class Animal { method speak { 'generic sound' } }";
+        let (main_pass, runtime) = compiled_code_pair(source, "Animal", "speak");
+        assert_eq!(main_pass, runtime);
+    }
+
+    #[test]
+    fn submethod_with_attribute_bind_byte_parity() {
+        let source = "class Point { has $.x; has $.y; submethod BUILD(:$!x, :$!y) { } }";
+        let (main_pass, runtime) = compiled_code_pair(source, "Point", "BUILD");
+        assert_eq!(main_pass, runtime);
+    }
+
+    #[test]
+    fn typed_param_method_byte_parity() {
+        let source = "class Greeter { method greet(Str $name) { \"hi $name\" } }";
+        let (main_pass, runtime) = compiled_code_pair(source, "Greeter", "greet");
+        assert_eq!(main_pass, runtime);
+    }
+
+    /// Verification item V1: registration substitutes `::?CLASS` in a
+    /// param's `type_constraint` string with the resolved class name before
+    /// building the installed `MethodDef` (`class_body_method_decl`), so the
+    /// runtime side's `compile_method_def_in_place_with_dist` compiles from
+    /// `param_defs` with the constraint already rewritten to `"Box"`. This
+    /// box's `compile_method_body` deliberately does NOT perform that
+    /// substitution (design decision 3) — it compiles straight from the raw
+    /// `"::?CLASS"` constraint. Byte-parity holding here is the empirical
+    /// confirmation that a type-constraint STRING is bind-time-only data
+    /// `compile_routine_closure_body` never bakes into opcodes.
+    #[test]
+    fn class_pseudo_type_constraint_substitution_does_not_affect_bytecode() {
+        let source = "class Box { method store(::?CLASS $other) { 1 } }";
+        let (main_pass, runtime) = compiled_code_pair(source, "Box", "store");
+        assert_eq!(main_pass, runtime);
+    }
+
+    /// Verification item V3: `$?DISTRIBUTION` bakes `Compiler::current_distribution`
+    /// directly into the compiled body as a `LoadConst` (`expr_helpers.rs`),
+    /// so it is the most direct probe available for whether
+    /// `Interpreter::resolve_package_distribution` (the runtime side's
+    /// derivation, `compile_class_methods`/`compile_role_methods`) and the
+    /// main-pass compiler's `current_distribution` field ever disagree for a
+    /// class/role declared in its own compilation unit — the only case
+    /// D3-8a computes a key for. A plain in-memory fixture carries no
+    /// META6.json, so both sides resolve to `Nil` here either way; this
+    /// pins the baseline (no divergence when there is nothing to diverge
+    /// over) while the fuller claim — that the two derivations track the
+    /// same value even when a real distribution IS loaded — rests on
+    /// reading `resolve_package_distribution`'s package-prefix walk and
+    /// confirming it always terminates at the same "this compilation unit's
+    /// own distribution" value the compiler was seeded with (see the D3-8a
+    /// PR description's V3 writeup) rather than on a filesystem-backed test.
+    #[test]
+    fn distribution_pseudo_var_byte_parity() {
+        let source = "class Meta { method dist { $?DISTRIBUTION } }";
+        let (main_pass, runtime) = compiled_code_pair(source, "Meta", "dist");
+        assert_eq!(main_pass, runtime);
+    }
+
+    #[test]
+    fn multi_method_byte_parity() {
+        let source = "class Eater {
+            multi method eat(Int $n) { \"eating $n\" }
+            multi method eat(Str $s) { \"eating $s\" }
+        }";
+        let (main_pass, runtime) = compiled_code_pair(source, "Eater", "eat");
+        assert_eq!(main_pass, runtime);
+    }
+
+    #[test]
+    fn is_hidden_class_method_byte_parity() {
+        // `is hidden` suppresses the implicit `*%_` (effective_method_param_defs's
+        // `class_is_hidden` gate) — cover that branch explicitly.
+        let source = "class Hush is hidden { method quiet { 1 } }";
+        let (main_pass, runtime) = compiled_code_pair(source, "Hush", "quiet");
+        assert_eq!(main_pass, runtime);
+    }
+
+    #[test]
+    fn auto_positional_slurpy_method_byte_parity() {
+        // No explicit signature but reads bare `@_` -> the class-body walker
+        // auto-inserts a `*@_` slurpy (`apply_auto_positional_slurpy`).
+        let source = "class Sink { method drain { @_.elems } }";
+        let (main_pass, runtime) = compiled_code_pair(source, "Sink", "drain");
+        assert_eq!(main_pass, runtime);
+    }
+
+    #[test]
+    fn method_with_nested_sub_byte_parity() {
+        let source = "class Nested { method outer { my sub helper { 1 }; helper() } }";
+        let (main_pass, runtime) = compiled_code_pair(source, "Nested", "outer");
+        assert_eq!(main_pass, runtime);
+    }
+
+    #[test]
+    fn role_method_byte_parity() {
+        // Role methods never get the class walker's auto-`@_` insertion and
+        // always pass `is_hidden: false` — cover the role-side branch.
+        let source = "role Greeter2 { method hello { 'hello' } }
+                       class UsesGreeter does Greeter2 { }";
+        let (main_pass, runtime) = compiled_code_pair(source, "Greeter2", "hello");
+        assert_eq!(main_pass, runtime);
+    }
+
+    #[test]
+    fn role_method_auto_positional_slurpy_not_applied() {
+        // A role method body reading bare `@_` must NOT get an auto-inserted
+        // `*@_` (unlike the class-body walker) — mirrors
+        // `role_body_method_decl` never calling `auto_signature_uses`.
+        let source = "role Passthru { method relay { @_.elems } }
+                       class UsesPassthru does Passthru { }";
+        let (main_pass, runtime) = compiled_code_pair(source, "Passthru", "relay");
+        assert_eq!(main_pass, runtime);
+    }
+}

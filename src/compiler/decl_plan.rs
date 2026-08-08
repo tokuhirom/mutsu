@@ -106,10 +106,12 @@ impl Compiler {
     /// [`Self::add_sub_decl_plan`] for a class declaration.
     pub(crate) fn add_class_decl_plan(&mut self, stmt: &Stmt) -> u32 {
         let Stmt::ClassDecl {
+            name,
             name_expr,
             custom_traits,
             body,
             parent_args,
+            is_hidden,
             ..
         } = stmt
         else {
@@ -120,6 +122,28 @@ impl Compiler {
         let attr_decls = self.compile_class_attr_decls(body);
         let method_name_chunks = self.compile_method_name_chunks(body);
         let parent_arg_chunks = self.compile_parent_arg_chunks(parent_args);
+        // ADR-0019 D3-8a: only a statically-named class (`name_expr` absent —
+        // a `class ::($n) {...}` has no compile-time-known package to key
+        // method bodies under) gets its methods' bodies compiled here; the
+        // computed-name case leaves every entry `None` and keeps using the
+        // registration-time throwaway compile. A `__hoisted` forward-reference
+        // shell (`hoist_type_decl_shells`) carries a full copy of every method
+        // body too, but only the SOURCE-ORDER declaration's plan is ever the
+        // one D3-8b/c would install from (the shell's own `RegisterDecl` is
+        // superseded at runtime by the real one) — mirrors the sub side,
+        // where only the source-order site compiles the body. Skip the
+        // (otherwise-redundant) compile there.
+        let is_hoisted_shell = custom_traits.iter().any(|(t, _)| t == "__hoisted");
+        let package_name = if name_expr.is_none() && !is_hoisted_shell {
+            Some(self.qualified_class_decl_name(&name.resolve()))
+        } else {
+            None
+        };
+        // Class-body methods auto-detect a bare `@_` read the way
+        // `class_body_method_decl` does (`apply_auto_positional_slurpy:
+        // true`); `is_hidden` gates the implicit `*%_` the same way too.
+        let method_compiled_keys =
+            self.compile_method_body_keys(body, package_name.as_deref(), *is_hidden, true);
         self.code.add_class_decl_plan(
             stmt,
             name_chunk,
@@ -127,7 +151,72 @@ impl Compiler {
             attr_decls,
             method_name_chunks,
             parent_arg_chunks,
+            method_compiled_keys,
         )
+    }
+
+    /// Compile each top-level `method`/`submethod` declaration's body to
+    /// main-pass bytecode (ADR-0019 D3-8a), in the same `SyntheticBlock`-
+    /// flattened order [`Self::compile_method_name_chunks`] and
+    /// `compile_method_decls` (`opcode.rs`) already walk, so the returned
+    /// vec shares their position cursor. `package_name` is `None` when the
+    /// declaring class/role's own name is computed — no static package to
+    /// key bodies under, so every entry stays `None`. A method whose OWN
+    /// name is computed (`method ::($n) {...}`) also stays `None` regardless
+    /// of the package, mirroring D3-1's `method_name_chunks` fallback for
+    /// the same case.
+    fn compile_method_body_keys(
+        &mut self,
+        body: &[Stmt],
+        package_name: Option<&str>,
+        is_hidden: bool,
+        apply_auto_positional_slurpy: bool,
+    ) -> Vec<Option<Symbol>> {
+        let flattened: Vec<&Stmt> = body
+            .iter()
+            .flat_map(|s| match s {
+                Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
+                other => vec![other],
+            })
+            .collect();
+        let Some(package_name) = package_name else {
+            return flattened
+                .iter()
+                .filter(|stmt| matches!(stmt, Stmt::MethodDecl { .. }))
+                .map(|_| None)
+                .collect();
+        };
+        let package_name = package_name.to_string();
+        let mut keys = Vec::new();
+        for stmt in flattened {
+            let Stmt::MethodDecl {
+                name,
+                name_expr,
+                param_defs,
+                body,
+                is_rw,
+                return_type,
+                ..
+            } = stmt
+            else {
+                continue;
+            };
+            if name_expr.is_some() {
+                keys.push(None);
+                continue;
+            }
+            keys.push(self.compile_method_body(
+                &package_name,
+                &name.resolve(),
+                param_defs,
+                body,
+                is_hidden,
+                apply_auto_positional_slurpy,
+                *is_rw,
+                return_type.as_ref(),
+            ));
+        }
+        keys
     }
 
     /// Lower each parent/role bracket argument list to declaration-trait-arg
@@ -254,6 +343,7 @@ impl Compiler {
     /// always compile-time known, so only its trait arguments are lowered.
     pub(crate) fn add_role_decl_plan(&mut self, stmt: &Stmt) -> u32 {
         let Stmt::RoleDecl {
+            name,
             custom_traits,
             body,
             ..
@@ -265,8 +355,27 @@ impl Compiler {
         let attr_decls = self.compile_role_attr_decls(body);
         let method_name_chunks = self.compile_method_name_chunks(body);
         let parent_ops = self.compile_role_parent_ops(body);
-        self.code
-            .add_role_decl_plan(stmt, trait_args, attr_decls, method_name_chunks, parent_ops)
+        // ADR-0019 D3-8a: `role_body_method_decl` always passes `is_hidden:
+        // false` and never auto-detects a bare `@_` read (unlike the class
+        // walker) — see its doc comment — so mirror both here exactly. Skip
+        // the (otherwise fully redundant — the role hoist shell keeps the
+        // whole original body, unlike the class shell) compile for a
+        // `__hoisted` forward-reference shell, mirroring `add_class_decl_plan`.
+        let is_hoisted_shell = custom_traits.iter().any(|(t, _)| t == "__hoisted");
+        let method_compiled_keys = if is_hoisted_shell {
+            self.compile_method_body_keys(body, None, false, false)
+        } else {
+            let package_name = self.qualified_role_decl_name(&name.resolve());
+            self.compile_method_body_keys(body, Some(&package_name), false, false)
+        };
+        self.code.add_role_decl_plan(
+            stmt,
+            trait_args,
+            attr_decls,
+            method_name_chunks,
+            parent_ops,
+            method_compiled_keys,
+        )
     }
 
     /// Precompile each `does`/`hides`/`is hidden` clause of a role's own body

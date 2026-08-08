@@ -20,54 +20,6 @@ impl Interpreter {
         Ok(())
     }
 
-    fn has_explicit_named_slurpy(param_defs: &[ParamDef]) -> bool {
-        // A *named* slurpy is always `%`-sigiled (`*%foo` or `**%foo`). A
-        // double-star slurpy on an `@`-sigiled param (`**@values`) is a
-        // slip-preserving slurpy POSITIONAL, not a named one, so it must NOT
-        // suppress the implicit `*%_` every method otherwise gets — else `%_`
-        // stays `Any` and `self.bless(|%_)` splats a stray `Any` positional
-        // into `TWEAK`/`BUILD` (raku: `%_` is always an empty Hash here).
-        param_defs
-            .iter()
-            .any(|pd| pd.slurpy && pd.name.starts_with('%'))
-    }
-
-    fn implicit_method_named_slurpy_param() -> ParamDef {
-        ParamDef {
-            name: "%_".to_string(),
-            default: None,
-            multi_invocant: true,
-            required: false,
-            named: false,
-            slurpy: true,
-            double_slurpy: false,
-            onearg: false,
-            sigilless: false,
-            type_constraint: None,
-            literal_value: None,
-            sub_signature: None,
-            where_constraint: None,
-            traits: Vec::new(),
-            optional_marker: false,
-            outer_sub_signature: None,
-            code_signature: None,
-            is_invocant: false,
-            shape_constraints: None,
-            block_param: false,
-        }
-    }
-
-    pub(super) fn effective_method_param_defs(
-        param_defs: &[ParamDef],
-        class_is_hidden: bool,
-    ) -> Vec<ParamDef> {
-        let mut defs = param_defs.to_vec();
-        if !class_is_hidden && !Self::has_explicit_named_slurpy(&defs) {
-            defs.push(Self::implicit_method_named_slurpy_param());
-        }
-        defs
-    }
-
     pub(super) fn is_stub_routine_body(body: &[Stmt]) -> bool {
         let filtered: Vec<_> = body
             .iter()

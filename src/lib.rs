@@ -7,6 +7,7 @@ pub(crate) mod env;
 pub mod error_render;
 pub(crate) mod gc;
 mod interpreter;
+pub(crate) mod method_signature_shared;
 mod opcode;
 mod parse_dispatch;
 mod parser;

@@ -351,7 +351,8 @@ impl Interpreter {
                 let left_variadic = left_param_defs.iter().any(|pd| pd.slurpy && !pd.named);
                 let left_expects_single = match left.view() {
                     ValueView::Sub(left_data) if left_params.is_empty() => {
-                        let (uses_positional, _) = Self::auto_signature_uses(&left_data.body);
+                        let (uses_positional, _) =
+                            crate::method_signature_shared::auto_signature_uses(&left_data.body);
                         !uses_positional
                     }
                     _ => !left_variadic && left_params.len() == 1,
@@ -521,7 +522,8 @@ impl Interpreter {
                 }
             }
             // Bind implicit $_ for bare blocks called with arguments
-            let (uses_positional, _) = Self::auto_signature_uses(&data.body);
+            let (uses_positional, _) =
+                crate::method_signature_shared::auto_signature_uses(&data.body);
             if data.params.is_empty()
                 && !uses_positional
                 && !sanitized_args.is_empty()

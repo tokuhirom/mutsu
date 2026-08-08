@@ -281,7 +281,8 @@ impl Interpreter {
             unreachable!("class_body_proto_method_decl called on a non-proto-method statement");
         };
         let method_name = proto_name.resolve();
-        let effective_param_defs = Self::effective_method_param_defs(param_defs, false);
+        let effective_param_defs =
+            crate::method_signature_shared::effective_method_param_defs(param_defs, false);
         let effective_params: Vec<String> = effective_param_defs
             .iter()
             .map(|p| p.name.clone())
