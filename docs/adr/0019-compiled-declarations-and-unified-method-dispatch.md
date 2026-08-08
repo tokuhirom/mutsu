@@ -123,7 +123,10 @@ D2c are the only pieces still open. D3 (class methods/submethods as compiled can
 D3-1 through D3-7 landed (walker-drift unification plus the compile-time `CompiledMethodDecl`
 precompute), and a 2026-08-08 scoping pass found D3's literal goal — compiling method *bodies*
 through the single main-pass `Compiler` the way `SubDecl` does, instead of a throwaway
-per-registration `Compiler::new()` — still fully open and scoped as a future D3-8. D4 (class
+per-registration `Compiler::new()` — still fully open and scoped as a future D3-8, whose detailed
+design (parity-first bare compile, per-decl `compiled_routine_key` on `CompiledMethodDecl`,
+guarded registration install, D3-8a-d slice plan) landed 2026-08-08 as
+`todo/deep/adr0019-d3-8-method-body-main-pass-compilation.md`. D4 (class
 declaration-time expressions) was also scoped 2026-08-08, no code landed: its "aliases" piece is
 closed as already-bytecode-native (a lateral move, not a gain), its "deferred class bodies" piece
 folds into D8 rather than needing its own slice, and its "parent expressions" piece is a real
@@ -746,6 +749,24 @@ walkers wholesale is not possible before then.
   all, since nothing in the walk reads it anymore. `augment_class` (no compiled plan) and the
   role-pun/mixin synthesis paths keep passing an empty `method_decls` slice, matching
   `method_name_chunks`'s existing D3-1 precedent.
+  **D3-8 design pass done 2026-08-08 (no code landed):** the full design is
+  `todo/deep/adr0019-d3-8-method-body-main-pass-compilation.md`. Key findings that shaped it: the
+  method-body compile is composition- and class-name-independent (`T` is an env variable injected
+  at method entry, `::?CLASS`/`::?ROLE` bind dynamically, the `::?CLASS` param substitution only
+  rewrites bind-time `param_defs` strings), so one main-pass compile per declaration is sound; the
+  scoping pass's "multi methods have no signature-keyed pool slot" complication dissolves by
+  carrying a per-declaration `compiled_routine_key: Option<Symbol>` on `CompiledMethodDecl`
+  (positionally delivered by the existing D3-1/D3-7 cursor) instead of a keyed pool; role methods
+  are today recompiled once per composing class only because the `role_candidates` snapshot is
+  cloned before `compile_role_methods` runs, and installing at `role_body_method_decl` time
+  collapses that to one compile with no composition changes; and the parity-first rule (replicate
+  the throwaway `Compiler::new()` seeding exactly, no lexical-scope inheritance yet) keeps the
+  cutover byte-verifiable. Slices: D3-8a (additive compiler side + `MUTSU_VM_STATS`
+  `method_body_runtime_compiles` counter), D3-8b/c (class/role walker cutover with a
+  params-equality guard that degrades to the runtime fallback), D3-8d (instrument-and-sweep
+  proving the fallback only fires for `augment`/`.^add_method`/computed-name shapes).
+  `compile_method_def_in_place_with_dist` remains as the narrowed fallback, mirroring
+  `otf_compile_function_def`'s role for subs.
 - [ ] **D4 — Compile class declaration-time expressions.** Cover computed names, traits, parent
   expressions, aliases, and deferred class bodies through re-entrant bytecode chunks. (Computed
   names and custom-trait arguments already landed with C5; parents, aliases, and deferred bodies
