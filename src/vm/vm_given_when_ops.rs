@@ -229,6 +229,14 @@ impl Interpreter {
         let topic_local_slot = self.find_local_slot(code, "_");
         let saved_local_topic = topic_local_slot.map(|s| self.locals[s].clone());
         let saved_when = self.when_matched();
+        // An element-source topic (`do given @a[i]` — what `.=Int with @a[i]`
+        // desugars to, see modifier.rs) aliases an lvalue element: `$_`'s final
+        // value is written back to that element below, matching the
+        // statement-position `Given`'s handling (`exec_given_op`). This is a
+        // one-shot signal set by `TagElementSource` immediately before this op,
+        // so it is cleared (not restored) once consumed.
+        let element_source = self.element_source.take();
+        let element_orig = element_source.is_some().then(|| topic.clone());
         // Consume the topic's `TagContainerRef` signal (emitted right before this
         // op by `do given @c`). It must NOT survive into the body: a nested
         // `for @c[$slice] { }` — whose slice iterable emits no source tag of its
@@ -243,7 +251,7 @@ impl Interpreter {
         let saved_topic_source = self.topic_source_var.take();
         let saved_container_source = self.topic_container_source.take();
         if let Some((src, _)) = &saved_container_ref
-            && self.element_source.is_none()
+            && element_source.is_none()
         {
             self.topic_source_var = Some(src.clone());
             if src.starts_with('@') || src.starts_with('%') {
@@ -288,10 +296,14 @@ impl Interpreter {
                 }
                 self.topic_source_var = saved_topic_source;
                 self.topic_container_source = saved_container_source;
+                self.element_source = None;
                 return Err(e);
             }
         }
 
+        if let Some(src) = &element_source {
+            self.write_back_element_source(code, src, &None, element_orig.as_ref());
+        }
         loan_env!(self, set_when_matched(saved_when));
         if let Some(v) = saved_topic {
             self.env_mut().insert("_".to_string(), v);
@@ -303,6 +315,7 @@ impl Interpreter {
         }
         self.topic_source_var = saved_topic_source;
         self.topic_container_source = saved_container_source;
+        self.element_source = None;
         self.stack.push(last);
         *ip = end;
         Ok(())

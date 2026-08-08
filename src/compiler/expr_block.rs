@@ -61,17 +61,44 @@ impl Compiler {
                 );
             }
             Stmt::Given { topic, body, .. } => {
-                self.compile_expr(topic);
-                if let Some(source_name) = match topic {
-                    Expr::Var(name) => Some(name.clone()),
-                    Expr::ArrayVar(name) => Some(format!("@{}", name)),
-                    Expr::HashVar(name) => Some(format!("%{}", name)),
+                // An lvalue container *element* topic (`do given @a[i]`, which
+                // `.=Int with @a[i]` desugars to — see modifier.rs) aliases
+                // that element rw, same as the statement-position Given arm
+                // (stmt.rs). Without this, the topic was pushed as a plain
+                // value and `.=Int`'s mutation of `$_` never reached `@a[i]`.
+                let element_source = match topic {
+                    Expr::Index {
+                        target,
+                        index,
+                        is_positional,
+                    } => Self::container_var_name(target)
+                        .filter(|c| {
+                            let after_sigil = c.strip_prefix(['$', '@', '%']).unwrap_or(c);
+                            !after_sigil.starts_with(['!', '.'])
+                        })
+                        .map(|c| (c, index, *is_positional)),
                     _ => None,
-                } {
-                    let source_slot = self.local_map.get(source_name.as_str()).copied();
-                    let name_idx = self.code.add_constant(Value::str(source_name));
-                    self.code
-                        .emit(OpCode::TagContainerRef(name_idx, source_slot));
+                };
+                if let Some((container, index, is_positional)) = element_source {
+                    self.compile_expr(index);
+                    let container_idx = self.code.add_constant(Value::str(container));
+                    self.code.emit(OpCode::TagElementSource {
+                        container_idx,
+                        positional: is_positional,
+                    });
+                } else {
+                    self.compile_expr(topic);
+                    if let Some(source_name) = match topic {
+                        Expr::Var(name) => Some(name.clone()),
+                        Expr::ArrayVar(name) => Some(format!("@{}", name)),
+                        Expr::HashVar(name) => Some(format!("%{}", name)),
+                        _ => None,
+                    } {
+                        let source_slot = self.local_map.get(source_name.as_str()).copied();
+                        let name_idx = self.code.add_constant(Value::str(source_name));
+                        self.code
+                            .emit(OpCode::TagContainerRef(name_idx, source_slot));
+                    }
                 }
                 // A scalar placeholder in the body binds the topic, same as
                 // the statement-position Given arm (`do given 5 { $^a + 1 }`).
