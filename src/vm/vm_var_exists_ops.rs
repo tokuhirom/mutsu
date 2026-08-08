@@ -136,9 +136,20 @@ impl Interpreter {
                 ValueView::Hash(map) => Some(map.clone()),
                 // A Pair answers `<key>:exists` for its own key: treat it as a
                 // single-entry map (`(a => 5)<a>:exists` is True, `<b>` False).
+                // ADR-0021: a Pair held in a variable or built outside a call
+                // argument list mints the positional flavour by default, so
+                // accept `ValuePair` identically.
                 ValueView::Pair(key, value) => {
                     let mut m = std::collections::HashMap::new();
                     m.insert((*key).clone(), (*value).clone());
+                    match Value::hash(m).view() {
+                        ValueView::Hash(map) => Some(map.clone()),
+                        _ => None,
+                    }
+                }
+                ValueView::ValuePair(key, value) => {
+                    let mut m = std::collections::HashMap::new();
+                    m.insert(key.to_string_value(), (*value).clone());
                     match Value::hash(m).view() {
                         ValueView::Hash(map) => Some(map.clone()),
                         _ => None,

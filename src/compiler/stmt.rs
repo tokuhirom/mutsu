@@ -2570,12 +2570,12 @@ impl Compiler {
                         } => {
                             self.compile_expr(&Expr::Literal(Value::str(name.clone())));
                             self.compile_expr(expr);
-                            self.code.emit(OpCode::MakePair);
+                            self.code.emit(OpCode::MakeNamedArg);
                         }
                         CallArg::Named { name, value: None } => {
                             self.compile_expr(&Expr::Literal(Value::str(name.clone())));
                             self.compile_expr(&Expr::Literal(Value::TRUE));
-                            self.code.emit(OpCode::MakePair);
+                            self.code.emit(OpCode::MakeNamedArg);
                         }
                         // `|EXPR` interpolates into the argument list: MakeSlip
                         // builds the Slip, which spreads when bound.

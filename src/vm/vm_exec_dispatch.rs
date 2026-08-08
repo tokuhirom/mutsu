@@ -2204,6 +2204,10 @@ impl Interpreter {
                 self.exec_make_pair_op(code);
                 *ip += 1;
             }
+            OpCode::MakeNamedArg => {
+                self.exec_make_named_arg_op(code);
+                *ip += 1;
+            }
             OpCode::ContainerizePair => {
                 let val = self.stack.pop().unwrap();
                 let containerized = match val.view() {

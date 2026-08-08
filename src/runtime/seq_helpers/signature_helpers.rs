@@ -121,14 +121,24 @@ impl Interpreter {
                 named.insert("denominator".to_string(), Value::int(d));
                 Some((Vec::new(), named))
             }
+            // ADR-0021: a Pair element contributes a named arg regardless of
+            // flavour here — this is signature *smart-matching* against a
+            // List of values (`(1, 2, :42c) ~~ :($a, $b, :$c)`), not a
+            // compiled call site, so the positional (`ValuePair`) default a
+            // list literal now mints must be recognized identically to the
+            // named flavour.
             _ if value.as_list_items().is_some() => {
                 let mut positional = Vec::new();
                 let mut named = HashMap::new();
                 for item in value.as_list_items().unwrap().iter() {
-                    if let ValueView::Pair(k, v) = item.view() {
-                        named.insert(k.clone(), v.clone());
-                    } else {
-                        positional.push(item.clone());
+                    match item.view() {
+                        ValueView::Pair(k, v) => {
+                            named.insert(k.clone(), v.clone());
+                        }
+                        ValueView::ValuePair(k, v) => {
+                            named.insert(k.to_string_value(), v.clone());
+                        }
+                        _ => positional.push(item.clone()),
                     }
                 }
                 Some((positional, named))
@@ -136,6 +146,11 @@ impl Interpreter {
             ValueView::Pair(k, v) => {
                 let mut named = HashMap::new();
                 named.insert(k.clone(), v.clone());
+                Some((Vec::new(), named))
+            }
+            ValueView::ValuePair(k, v) => {
+                let mut named = HashMap::new();
+                named.insert(k.to_string_value(), v.clone());
                 Some((Vec::new(), named))
             }
             ValueView::Instance { attributes, .. } => {

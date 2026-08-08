@@ -796,11 +796,16 @@ impl Compiler {
         if let Expr::CodeVar(name) = target {
             let arg_sources_idx = self.add_arg_sources_constant(args);
             for arg in args {
-                self.compile_expr(arg);
                 // ADR-0021: `&code(args)` is a sub call, same call-site
-                // named-ness rule as a regular function call. Erase any
-                // named flavour the argument value happens to carry unless
-                // it was written as a named arg at this call site.
+                // named-ness rule as a regular function call. A
+                // bareword-keyed fat-arrow/colonpair mints the named
+                // flavour; everything else erases any named flavour the
+                // argument value happens to carry.
+                if matches!(arg, Expr::Binary { op, .. } if *op == crate::token_kind::TokenKind::FatArrow)
+                {
+                    self.mint_named_pair = true;
+                }
+                self.compile_expr(arg);
                 if !Self::is_named_arg_expr(arg) {
                     self.code.emit(OpCode::ContainerizePair);
                 }
@@ -815,6 +820,10 @@ impl Compiler {
             self.compile_expr(target);
             let arg_sources_idx = self.add_arg_sources_constant(args);
             for arg in args {
+                if matches!(arg, Expr::Binary { op, .. } if *op == crate::token_kind::TokenKind::FatArrow)
+                {
+                    self.mint_named_pair = true;
+                }
                 self.compile_expr(arg);
                 if !Self::is_named_arg_expr(arg) {
                     self.code.emit(OpCode::ContainerizePair);

@@ -670,10 +670,8 @@ impl Interpreter {
             "!=:=" => Ok(Value::truth(!super::values_identical(left, right))),
             "===" => Ok(Value::truth(super::values_identical(left, right))),
             "!===" => Ok(Value::truth(!super::values_identical(left, right))),
-            "=>" => match left.view() {
-                ValueView::Str(_) => Ok(Value::pair(left.to_string_value(), right.clone())),
-                _ => Ok(Value::value_pair(left.clone(), right.clone())),
-            },
+            // ADR-0021 I2: data-minted pairs default positional.
+            "=>" => Ok(Value::value_pair(left.clone(), right.clone())),
             "&" => {
                 let mut vals = match left.view() {
                     ValueView::Junction {

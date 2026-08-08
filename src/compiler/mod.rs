@@ -575,6 +575,18 @@ pub(crate) struct Compiler {
     /// semantics corrupt the *previous* iteration's bound cell instead of
     /// storing a fresh one (see the `lock.t` array-corruption investigation).
     bind_target_direct: bool,
+    /// ADR-0021 I2/I3: when true, the *immediate* upcoming `Expr::Binary{
+    /// FatArrow}` compile (`compile_expr_binary`) mints the named-argument
+    /// flavour (`OpCode::MakeNamedArg`) instead of the data-default
+    /// (`OpCode::MakePair`). Set only around compiling a call/method
+    /// argument that IS, at its top level, a bareword-keyed fat-arrow or
+    /// colonpair (`is_named_arg_expr`'s `Binary` arm — the same shape
+    /// `ContainerizePair` boundary erasure is skipped for, since the
+    /// call-site syntax already marks it named). `compile_expr_binary` reads
+    /// and clears this once at entry, before recursing into the key/value
+    /// sub-expressions, so a Pair nested in the value (`f(a => (b => 1))`)
+    /// does not inherit it — only the outermost, genuinely-named pair does.
+    mint_named_pair: bool,
     /// Variables declared as `constant` (no Scalar container).
     constant_vars: std::collections::HashSet<String>,
     /// Scalar variables `:=`-bound to a non-itemized value (no Scalar
@@ -761,6 +773,7 @@ impl Compiler {
             scalar_bind_autovivify: false,
             bind_terminal: false,
             bind_target_direct: false,
+            mint_named_pair: false,
             constant_vars: std::collections::HashSet::new(),
             noncontainer_bound_vars: std::collections::HashSet::new(),
             constant_vars_in_scope: std::collections::HashSet::new(),

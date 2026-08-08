@@ -224,11 +224,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             ValueView::Bool(b) => Some(Ok(Value::int(if b { 1 } else { 0 }))),
             _ => None,
         },
+        // ADR-0021 I2: data-minted pairs default positional.
         "antipair" => match target.view() {
-            ValueView::Pair(k, v) => Some(Ok(match v.view() {
-                ValueView::Str(s) => Value::pair(s.to_string(), Value::str(k.clone())),
-                _ => Value::value_pair(v.clone(), Value::str(k.clone())),
-            })),
+            ValueView::Pair(k, v) => Some(Ok(Value::value_pair(v.clone(), Value::str(k.clone())))),
             ValueView::ValuePair(k, v) => Some(Ok(Value::value_pair(v.clone(), k.clone()))),
             _ => None,
         },

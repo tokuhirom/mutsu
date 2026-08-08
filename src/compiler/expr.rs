@@ -308,8 +308,18 @@ impl Compiler {
                             c.compile_expr(right);
                             let name_idx = c.code.add_constant(Value::str(name.clone()));
                             c.code.emit(OpCode::WrapVarRef(name_idx));
-                            c.code.emit(OpCode::MakePair);
+                            c.code.emit(OpCode::MakeNamedArg);
                             continue;
+                        }
+                        // A named element whose value isn't a bare variable
+                        // (`\(apples => (red => 2))`) still needs the named
+                        // (`MakeNamedArg`) flavour so `exec_make_capture_op`
+                        // routes it into the Capture's named lane rather than
+                        // the positional one (ADR-0021 I5: it classifies by
+                        // the marker, same as every other consumer).
+                        if matches!(item, Expr::Binary { op, .. } if *op == crate::token_kind::TokenKind::FatArrow)
+                        {
+                            c.mint_named_pair = true;
                         }
                         c.compile_expr(item);
                         // A plain scalar variable positional (`\($a)`) captures the

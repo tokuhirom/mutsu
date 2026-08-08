@@ -117,6 +117,11 @@ impl Compiler {
         op: &TokenKind,
         right: &Expr,
     ) {
+        // ADR-0021 I2/I3: read-and-clear immediately, before any nested
+        // compile (including of `left`/`right` below) can see it — see the
+        // field doc on `mint_named_pair`.
+        let mint_named_pair = self.mint_named_pair;
+        self.mint_named_pair = false;
         // Constant folding (ADR-0006 §2.1): a literal-only pure expression
         // (`60 * 60 * 24`) is evaluated here and collapses to one LoadConst.
         if let Some(folded) = self.try_const_fold_binary(left, op, right) {
@@ -631,7 +636,11 @@ impl Compiler {
             self.compile_expr(right);
             let name_idx = self.code.add_constant(Value::str(name.clone()));
             self.code.emit(OpCode::WrapVarRef(name_idx));
-            self.code.emit(OpCode::MakePair);
+            self.code.emit(if mint_named_pair {
+                OpCode::MakeNamedArg
+            } else {
+                OpCode::MakePair
+            });
             return;
         }
         if let Some(opcode) = Self::binary_opcode(op) {
@@ -679,6 +688,11 @@ impl Compiler {
                 } else {
                     self.code.emit(opcode);
                 }
+            } else if matches!(opcode, OpCode::MakePair) && mint_named_pair {
+                // ADR-0021 I2/I3: this fat-arrow is a bareword-keyed argument
+                // written directly in an argument list (or a colonpair,
+                // which parses to the same shape) — keep the named marker.
+                self.code.emit(OpCode::MakeNamedArg);
             } else {
                 self.code.emit(opcode);
             }

@@ -230,6 +230,16 @@ impl Interpreter {
             || matches!(v.view(), ValueView::Scalar(_))
     }
 
+    /// A Pair's (key, value) regardless of flavour, as a `(Value, Value)`
+    /// key/value pair ready to feed back into `Value::value_pair`.
+    fn as_pair_key_value(v: &Value) -> Option<(Value, Value)> {
+        match v.view() {
+            ValueView::Pair(k, val) => Some((Value::str(k.clone()), val.clone())),
+            ValueView::ValuePair(k, val) => Some((k.clone(), val.clone())),
+            _ => None,
+        }
+    }
+
     /// Apply a hyper binary op to a pair of values, recursing into nested
     /// Iterables so that e.g. `(1, {a=>2}, 4) <<~>> <a b c>` distributes the
     /// op into the hash element, yielding `("1a", {a=>"2b"}, "4c")`.
@@ -310,19 +320,23 @@ impl Interpreter {
         // applies when the *other* side is a plain scalar (not itself a Pair
         // or an Iterable) — those cases fall through to the generic
         // element-wise/base-case handling below.
-        if let ValueView::Pair(k, v) = left.view()
+        // ADR-0021 I2: data-minted pairs default positional. A Pair leaf is
+        // just as likely to be the positional flavour here (e.g. `(a => 1)
+        // »+» 1`, an expression-level pair, not a call argument), so match
+        // both.
+        if let Some((k, v)) = Self::as_pair_key_value(left)
             && !right.is_string_pair_value()
             && !Self::is_listy(right)
         {
-            let new_v = self.hyper_op_pair(op, v, right, dwim_left, dwim_right)?;
-            return Ok(Value::pair(k.clone(), new_v));
+            let new_v = self.hyper_op_pair(op, &v, right, dwim_left, dwim_right)?;
+            return Ok(Value::value_pair(k, new_v));
         }
-        if let ValueView::Pair(k, v) = right.view()
+        if let Some((k, v)) = Self::as_pair_key_value(right)
             && !left.is_string_pair_value()
             && !Self::is_listy(left)
         {
-            let new_v = self.hyper_op_pair(op, left, v, dwim_left, dwim_right)?;
-            return Ok(Value::pair(k.clone(), new_v));
+            let new_v = self.hyper_op_pair(op, left, &v, dwim_left, dwim_right)?;
+            return Ok(Value::value_pair(k, new_v));
         }
         // At least one side is a (non-hash) Iterable: distribute element-wise,
         // recursing so nested Iterables/Hashes are handled at every depth.

@@ -61,9 +61,10 @@ impl Interpreter {
                     ValueView::Array(items, ..) => list_items.extend(items.iter().cloned()),
                     ValueView::Seq(items) => list_items.extend(items.iter().cloned()),
                     ValueView::Hash(map) => {
-                        // Hashes in list context flatten to key-value Pairs
+                        // Hashes in list context flatten to key-value Pairs.
+                        // ADR-0021 I2: data-minted pairs default positional.
                         for (k, v) in map.iter() {
-                            list_items.push(Value::pair(k.clone(), v.clone()));
+                            list_items.push(Value::value_pair(Value::str(k.clone()), v.clone()));
                         }
                     }
                     _ if arg.is_range() => {

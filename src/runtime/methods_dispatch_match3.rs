@@ -496,10 +496,8 @@ impl Interpreter {
             let key = ks[idx].clone();
             let weight = remaining.remove(&key).unwrap_or(0.0);
             let weight_val = crate::value::mix_weight_to_value(weight);
-            grabbed.push(match mix.typed_key(&key).view() {
-                ValueView::Str(sk) => Value::pair(sk.to_string(), weight_val),
-                _ => Value::value_pair(mix.typed_key(&key), weight_val),
-            });
+            // ADR-0021 I2: data-minted pairs default positional.
+            grabbed.push(Value::value_pair(mix.typed_key(&key), weight_val));
         }
         // TODO: compile to bytecode - should mutate the original variable
         Some(Ok(Value::seq(grabbed)))
@@ -596,10 +594,11 @@ impl Interpreter {
             let idx = (builtin_rand() * ks.len() as f64) as usize % ks.len();
             let key = ks[idx].clone();
             let val = remaining.remove(&key).unwrap_or_default();
-            grabbed.push(match bag_data.typed_key(&key).view() {
-                ValueView::Str(sk) => Value::pair(sk.to_string(), Value::from_bigint(val)),
-                _ => Value::value_pair(bag_data.typed_key(&key), Value::from_bigint(val)),
-            });
+            // ADR-0021 I2: data-minted pairs default positional.
+            grabbed.push(Value::value_pair(
+                bag_data.typed_key(&key),
+                Value::from_bigint(val),
+            ));
         }
         Ok(Value::seq(grabbed))
     }

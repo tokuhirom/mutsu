@@ -63,7 +63,7 @@ impl Interpreter {
             match crate::parse_dispatch::parse_source(eval_expr)
                 .and_then(|(stmts, _)| self.eval_block_value(&stmts))
             {
-                Ok(value) => values.push(value),
+                Ok(value) => values.push(Self::namify_reparsed_colonpair_role_arg(expr, value)),
                 Err(_) if looks_like_type_arg_expr(expr) => {
                     values.push(Value::package(Symbol::intern(expr.trim())));
                 }
@@ -71,6 +71,31 @@ impl Interpreter {
             }
         }
         Ok(values)
+    }
+
+    /// A role type/parameter argument (`R[:a(1)]`) is re-parsed and evaluated
+    /// as a standalone source string, outside any argument-list AST node —
+    /// so the compiler's call-site named-ness detection (ADR-0021 I3, keyed
+    /// off `is_named_arg_expr`) never sees it, and a genuine colonpair
+    /// argument compiles through the data-minting default (positional)
+    /// instead of the named flavour `role_candidate_arity_ok` expects for a
+    /// `:$name`-shaped role parameter. `R[:a(1)]` IS argument-list syntax
+    /// conceptually (this is exactly the "internal runtime argument
+    /// synthesis" case the ADR carves out as correct to mint named on
+    /// purpose) — restore the named flavour when the source was a genuine
+    /// bareword colonpair (`:name(...)`/`:name`/`:!name`, not `::Type`).
+    fn namify_reparsed_colonpair_role_arg(source: &str, value: Value) -> Value {
+        let trimmed = source.trim_start();
+        if !trimmed.starts_with(':') || trimmed.starts_with("::") {
+            return value;
+        }
+        match value.view() {
+            ValueView::ValuePair(key, val) => match key.view() {
+                ValueView::Str(s) => Value::pair(s.to_string(), val.clone()),
+                _ => value,
+            },
+            _ => value,
+        }
     }
 
     fn role_constraint_specificity(&self, constraint: Option<&str>) -> i32 {

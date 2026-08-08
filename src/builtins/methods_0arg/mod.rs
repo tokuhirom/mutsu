@@ -802,7 +802,14 @@ fn dispatch_capture(
                 .enumerate()
                 .map(|(idx, v)| Value::value_pair(Value::int(idx as i64), v.clone()))
                 .collect();
-            pairs.extend(named.iter().map(|(k, v)| Value::pair(k.clone(), v.clone())));
+            // ADR-0021 I2/P3: `.pairs`' output is data, not a call site — the
+            // named lane's entries default positional like the positional
+            // lane above, even though they came from a named argument.
+            pairs.extend(
+                named
+                    .iter()
+                    .map(|(k, v)| Value::value_pair(Value::str(k.clone()), v.clone())),
+            );
             Some(Ok(Value::seq(pairs)))
         }
         "antipairs" => {
@@ -1762,8 +1769,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             )
         };
         let pairs = || -> Vec<Value> {
+            // ADR-0021 I2: data-minted pairs default positional.
             keys.iter()
-                .map(|k| Value::pair((*k).to_string(), part(k)))
+                .map(|k| Value::value_pair(Value::str((*k).to_string()), part(k)))
                 .collect()
         };
         match method {
@@ -1895,17 +1903,18 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 return Some(Ok(Value::array(vals)));
             }
             "pairs" => {
+                // ADR-0021 I2: data-minted pairs default positional.
                 let mut pairs = Vec::new();
                 if let Some(ValueView::Array(list, _)) = list_v.as_ref().map(Value::view) {
                     for (i, v) in list.iter().enumerate() {
-                        pairs.push(Value::pair(i.to_string(), v.clone()));
+                        pairs.push(Value::value_pair(Value::str(i.to_string()), v.clone()));
                     }
                 }
                 if let Some(ValueView::Hash(named)) = named_v.as_ref().map(Value::view) {
                     let mut sorted: Vec<(&String, &Value)> = named.iter().collect();
                     sorted.sort_by_key(|(k, _)| (*k).clone());
                     for (k, v) in sorted {
-                        pairs.push(Value::pair(k.clone(), v.clone()));
+                        pairs.push(Value::value_pair(Value::str(k.clone()), v.clone()));
                     }
                 }
                 return Some(Ok(Value::array(pairs)));

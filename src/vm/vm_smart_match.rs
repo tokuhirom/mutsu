@@ -82,6 +82,101 @@ fn is_numericish_matcher(v: &Value) -> bool {
     }
 }
 
+/// `IO::Path ~~ :e/:d/:f/:l/:r/:w/:x/:rw/:rwx/:s/:z` file-test result (and
+/// negated forms `:!e`, ...), shared by the `Pair`- and `ValuePair`-flavour
+/// match arms in `pure_smart_match` below.
+fn io_path_file_test_result(key: &str, negated: bool, path_str: Option<String>) -> bool {
+    let Some(p) = path_str else {
+        return negated;
+    };
+    let path = std::path::Path::new(&p);
+    let result = match key {
+        "e" => path.exists(),
+        "d" => path.is_dir(),
+        "f" => path.is_file(),
+        "r" => {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::metadata(&p)
+                    .map(|m| m.permissions().mode() & 0o444 != 0)
+                    .unwrap_or(false)
+            }
+            #[cfg(not(unix))]
+            {
+                path.exists()
+            }
+        }
+        "w" => {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::metadata(&p)
+                    .map(|m| m.permissions().mode() & 0o222 != 0)
+                    .unwrap_or(false)
+            }
+            #[cfg(not(unix))]
+            {
+                path.exists()
+            }
+        }
+        "x" => {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::metadata(&p)
+                    .map(|m| m.permissions().mode() & 0o111 != 0)
+                    .unwrap_or(false)
+            }
+            #[cfg(not(unix))]
+            {
+                false
+            }
+        }
+        "rw" => {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::metadata(&p)
+                    .map(|m| {
+                        let mode = m.permissions().mode();
+                        mode & 0o444 != 0 && mode & 0o222 != 0
+                    })
+                    .unwrap_or(false)
+            }
+            #[cfg(not(unix))]
+            {
+                std::fs::metadata(&p)
+                    .map(|m| !m.permissions().readonly())
+                    .unwrap_or(false)
+            }
+        }
+        "rwx" => {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::metadata(&p)
+                    .map(|m| {
+                        let mode = m.permissions().mode();
+                        mode & 0o444 != 0 && mode & 0o222 != 0 && mode & 0o111 != 0
+                    })
+                    .unwrap_or(false)
+            }
+            #[cfg(not(unix))]
+            {
+                false
+            }
+        }
+        "l" => std::fs::symlink_metadata(&p)
+            .map(|m| m.file_type().is_symlink())
+            .unwrap_or(false),
+        "s" => std::fs::metadata(&p).map(|m| m.len() > 0).unwrap_or(false),
+        "z" => std::fs::metadata(&p).map(|m| m.len() == 0).unwrap_or(false),
+        _ => false,
+    };
+    if negated { !result } else { result }
+}
+
 pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
     // An allomorph / numeric mixin (`<5.0>` RatStr) on the LHS compares by its
     // numeric base when the matcher is numeric: `<5.0> ~~ 5` and `<5.0> ~~ <5>`
@@ -399,7 +494,9 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
         })),
 
         // Scalar ~~ Hash: check key existence
-        // (but not for types that have more specific matches above)
+        // (but not for types that have more specific matches above — a Pair
+        // LHS, either flavour, defers to the interpreter's dedicated
+        // Hash ~~ Pair key/value-match semantics, ADR-0021)
         (_, ValueView::Hash(map))
             if !matches!(
                 left.view(),
@@ -408,6 +505,7 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
                     | ValueView::Hash(_)
                     | ValueView::Array(..)
                     | ValueView::Pair(..)
+                    | ValueView::ValuePair(..)
             ) && !needs_interpreter_lhs(left) =>
         {
             let key = left.to_string_value();
@@ -482,6 +580,9 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
         // IO::Path ~~ Pair(:e), :d, :f, :r, :w, :x, :rw, :rwx, :s, :z file tests
         // Also handles negated forms: :!e, :!d, :!f, :!r, :!w, :!x, :!rw, :!rwx, :!s, :!z
         // Note: Str ~~ :d is NOT supported (per Raku spec, only IO::Path has these methods)
+        // ADR-0021: a bare colonpair on the RHS of `~~` (`$file ~~ :e`) is not
+        // an argument list, so it mints the positional flavour by default —
+        // accept `ValuePair` identically to `Pair`.
         (
             ValueView::Instance {
                 class_name,
@@ -498,96 +599,26 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
         {
             let negated = matches!(val.view(), ValueView::Bool(false));
             let path_str = attributes.as_map().get("path").map(|v| v.to_string_value());
-            if let Some(p) = path_str {
-                let path = std::path::Path::new(&p);
-                let result = match key.as_str() {
-                    "e" => path.exists(),
-                    "d" => path.is_dir(),
-                    "f" => path.is_file(),
-                    "r" => {
-                        #[cfg(unix)]
-                        {
-                            use std::os::unix::fs::PermissionsExt;
-                            std::fs::metadata(&p)
-                                .map(|m| m.permissions().mode() & 0o444 != 0)
-                                .unwrap_or(false)
-                        }
-                        #[cfg(not(unix))]
-                        {
-                            path.exists()
-                        }
-                    }
-                    "w" => {
-                        #[cfg(unix)]
-                        {
-                            use std::os::unix::fs::PermissionsExt;
-                            std::fs::metadata(&p)
-                                .map(|m| m.permissions().mode() & 0o222 != 0)
-                                .unwrap_or(false)
-                        }
-                        #[cfg(not(unix))]
-                        {
-                            path.exists()
-                        }
-                    }
-                    "x" => {
-                        #[cfg(unix)]
-                        {
-                            use std::os::unix::fs::PermissionsExt;
-                            std::fs::metadata(&p)
-                                .map(|m| m.permissions().mode() & 0o111 != 0)
-                                .unwrap_or(false)
-                        }
-                        #[cfg(not(unix))]
-                        {
-                            false
-                        }
-                    }
-                    "rw" => {
-                        #[cfg(unix)]
-                        {
-                            use std::os::unix::fs::PermissionsExt;
-                            std::fs::metadata(&p)
-                                .map(|m| {
-                                    let mode = m.permissions().mode();
-                                    mode & 0o444 != 0 && mode & 0o222 != 0
-                                })
-                                .unwrap_or(false)
-                        }
-                        #[cfg(not(unix))]
-                        {
-                            std::fs::metadata(&p)
-                                .map(|m| !m.permissions().readonly())
-                                .unwrap_or(false)
-                        }
-                    }
-                    "rwx" => {
-                        #[cfg(unix)]
-                        {
-                            use std::os::unix::fs::PermissionsExt;
-                            std::fs::metadata(&p)
-                                .map(|m| {
-                                    let mode = m.permissions().mode();
-                                    mode & 0o444 != 0 && mode & 0o222 != 0 && mode & 0o111 != 0
-                                })
-                                .unwrap_or(false)
-                        }
-                        #[cfg(not(unix))]
-                        {
-                            false
-                        }
-                    }
-                    "l" => std::fs::symlink_metadata(&p)
-                        .map(|m| m.file_type().is_symlink())
-                        .unwrap_or(false),
-                    "s" => std::fs::metadata(&p).map(|m| m.len() > 0).unwrap_or(false),
-                    "z" => std::fs::metadata(&p).map(|m| m.len() == 0).unwrap_or(false),
-                    _ => false,
-                };
-                Some(if negated { !result } else { result })
-            } else {
-                Some(negated)
-            }
+            Some(io_path_file_test_result(key.as_str(), negated, path_str))
+        }
+        (
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            },
+            ValueView::ValuePair(key, val),
+        ) if is_io_path_family(&class_name)
+            && matches!(val.view(), ValueView::Bool(_))
+            && matches!(key.view(), ValueView::Str(s) if matches!(
+                s.as_str(),
+                "e" | "d" | "f" | "l" | "r" | "w" | "x" | "rw" | "rwx" | "s" | "z"
+            )) =>
+        {
+            let negated = matches!(val.view(), ValueView::Bool(false));
+            let key = key.to_string_value();
+            let path_str = attributes.as_map().get("path").map(|v| v.to_string_value());
+            Some(io_path_file_test_result(&key, negated, path_str))
         }
 
         // Str/Int/Cool ~~ IO::Path: convert LHS to IO::Path and compare cleanup.absolute

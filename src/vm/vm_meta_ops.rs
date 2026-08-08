@@ -123,9 +123,10 @@ impl Interpreter {
                         results.push(Value::array(vec![left_iter.nth(i), right_iter.nth(i)]));
                     }
                 } else if op == "=>" {
+                    // ADR-0021 I2: data-minted pairs default positional.
                     for i in 0..len {
                         let key = left_iter.nth(i).to_string_value();
-                        results.push(Value::pair(key, right_iter.nth(i)));
+                        results.push(Value::value_pair(Value::str(key), right_iter.nth(i)));
                     }
                 } else {
                     // Check for 3-way zip reduction case ([Z+] a, b, c)
