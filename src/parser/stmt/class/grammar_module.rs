@@ -154,8 +154,7 @@ pub(crate) fn grammar_decl(input: &str) -> PResult<'_, Stmt> {
             let (r2, bracket_suffix) =
                 crate::parser::stmt::class::parse_optional_bracket_suffix(r2)?;
             let full_name = format!("{}{}", parent_name, bracket_suffix);
-            if let Some(exprs) =
-                crate::parser::stmt::class::parse_bracket_arg_exprs(&bracket_suffix)
+            if let Some(exprs) = crate::parser::stmt::class::parse_bracket_arg_exprs(bracket_suffix)
             {
                 parent_args.push((full_name.clone(), exprs));
             }
@@ -185,7 +184,7 @@ pub(crate) fn grammar_decl(input: &str) -> PResult<'_, Stmt> {
         let (r2, _) = ws(r2)?;
         let (r2, bracket_suffix) = crate::parser::stmt::class::parse_optional_bracket_suffix(r2)?;
         let full_name = format!("{}{}", role_name, bracket_suffix);
-        if let Some(exprs) = crate::parser::stmt::class::parse_bracket_arg_exprs(&bracket_suffix) {
+        if let Some(exprs) = crate::parser::stmt::class::parse_bracket_arg_exprs(bracket_suffix) {
             parent_args.push((full_name.clone(), exprs));
         }
         // The role-composition loop in `register_class_decl` walks `parents`

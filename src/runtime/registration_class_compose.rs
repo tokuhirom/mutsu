@@ -4,7 +4,8 @@
 //! `registration_class_decl.rs` — no behavior change.
 
 use super::registration_class::{
-    ResolvedRoleCandidate, substitute_type_params_in_method, type_value_name,
+    ResolvedRoleCandidate, parse_role_type_args, should_treat_role_arg_as_type_expr,
+    substitute_type_params_in_method, type_value_name,
 };
 use super::registration_class_decl::BUILTIN_PARENT_TYPES;
 use super::*;
@@ -77,15 +78,55 @@ impl Interpreter {
         cx: &mut RoleCompositionCx<'_>,
         parents: &[String],
         does_parents: &[String],
+        parent_pre_args: &[Option<&[crate::opcode::DeclTraitArg]>],
     ) -> Result<(), RuntimeError> {
         const BUILTIN_TYPES: &[&str] = BUILTIN_PARENT_TYPES;
-        for parent in parents {
+        for (i, parent) in parents.iter().enumerate() {
             let resolved_parent_name = self.resolve_declared_type_name(parent);
             let base_role_name = resolved_parent_name
                 .split_once('[')
                 .map(|(b, _)| b)
                 .unwrap_or(resolved_parent_name.as_str());
-            if let Some(resolved) = self.resolve_role_candidate(&resolved_parent_name)? {
+            // Evaluate this parent's precompiled bracket-argument chunks
+            // (ADR-0019 D4-3), if any, instead of leaving candidate
+            // resolution to re-parse the concatenated parent string.
+            //
+            // A coercion-type argument (`R[Str:D(Numeric)]`) parses cleanly
+            // as an `Expr` (D4-1) — `Str:D(Numeric)` is syntactically a call
+            // — but it must NOT be evaluated as one: `eval_role_arg_values`'s
+            // `should_treat_role_arg_as_type_expr` heuristic exists
+            // precisely to turn this shape into a `Package` marker instead
+            // of calling it, and the value path has no equivalent. Reuse
+            // that same classification here as a bail-out: if any raw
+            // argument in this parent's bracket would trigger it, skip the
+            // chunk path for the WHOLE application and fall back to the
+            // string path, which already handles it correctly.
+            let has_type_expr_arg = resolved_parent_name
+                .find('[')
+                .map(|start| {
+                    let args_str = &resolved_parent_name[start + 1..resolved_parent_name.len() - 1];
+                    parse_role_type_args(args_str)
+                        .iter()
+                        .any(|a| should_treat_role_arg_as_type_expr(a))
+                })
+                .unwrap_or(false);
+            let pre_args = if has_type_expr_arg {
+                None
+            } else {
+                match parent_pre_args.get(i).copied().flatten() {
+                    Some(chunks) => {
+                        let mut values = Vec::with_capacity(chunks.len());
+                        for chunk in chunks {
+                            values.push(self.eval_decl_trait_arg(chunk)?);
+                        }
+                        Some(values)
+                    }
+                    None => None,
+                }
+            };
+            if let Some(resolved) =
+                self.resolve_role_candidate_with_args(&resolved_parent_name, pre_args.as_deref())?
+            {
                 // Check if this role was specified via `is` (punning) vs `does` (composition)
                 let is_punned = !does_parents.contains(parent);
                 self.compose_role_into_class(

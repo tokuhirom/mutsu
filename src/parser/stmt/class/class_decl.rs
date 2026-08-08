@@ -57,9 +57,20 @@ pub(crate) fn parse_declarator_traits(input: &str) -> PResult<'_, Vec<(String, E
     Ok((rest, traits))
 }
 
-pub(crate) fn parse_optional_bracket_suffix(input: &str) -> PResult<'_, String> {
+/// Returns a slice of the ORIGINAL persistent source buffer, not a copy —
+/// deliberately, so that [`parse_bracket_arg_exprs`] can parse it through the
+/// pointer-keyed expression memo (`parser::memo::ParseMemo`, keyed by
+/// `(input.as_ptr(), input.len())` with no content check) without risking a
+/// stale cache hit. A freshly allocated, short-lived `String` copy is freed
+/// once its caller's scope ends; a *later* temporary allocation of the same
+/// size can land at the exact same address (observed with two sibling `does
+/// R[Int] does R[Str]` clauses on one class header, where the second bracket
+/// content's memo lookup returned the first's cached `Expr` — a real,
+/// reproducible bug, not a hypothetical one). A slice of the persistent
+/// source has no such lifetime, so its address is never reused mid-parse.
+pub(crate) fn parse_optional_bracket_suffix(input: &str) -> PResult<'_, &str> {
     if !input.starts_with('[') {
-        return Ok((input, String::new()));
+        return Ok((input, ""));
     }
     let mut depth = 0u32;
     let mut end = None;
@@ -75,7 +86,7 @@ pub(crate) fn parse_optional_bracket_suffix(input: &str) -> PResult<'_, String> 
         }
     }
     let end = end.ok_or_else(|| PError::expected("closing ']'"))?;
-    Ok((&input[end..], input[..end].to_string()))
+    Ok((&input[end..], &input[..end]))
 }
 
 /// Attempt to parse the inside of an `is`/`does`/`hides` bracket suffix
@@ -449,7 +460,7 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
             {
                 let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
                 let full_name = format!("{}{}", parent, bracket_suffix);
-                if let Some(exprs) = parse_bracket_arg_exprs(&bracket_suffix) {
+                if let Some(exprs) = parse_bracket_arg_exprs(bracket_suffix) {
                     parent_args.push((full_name.clone(), exprs));
                 }
                 parents.push(full_name);
@@ -496,7 +507,7 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
                 }
                 let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
                 let full_name = format!("{}{}", parent, bracket_suffix);
-                if let Some(exprs) = parse_bracket_arg_exprs(&bracket_suffix) {
+                if let Some(exprs) = parse_bracket_arg_exprs(bracket_suffix) {
                     parent_args.push((full_name.clone(), exprs));
                 }
                 parents.push(full_name);
@@ -515,7 +526,7 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
             let (r2, _) = ws(r2)?;
             let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
             let full_name = format!("{}{}", role_name, bracket_suffix);
-            if let Some(exprs) = parse_bracket_arg_exprs(&bracket_suffix) {
+            if let Some(exprs) = parse_bracket_arg_exprs(bracket_suffix) {
                 parent_args.push((full_name.clone(), exprs));
             }
             parents.push(full_name.clone());
@@ -530,7 +541,7 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
             let (r2, _) = ws(r2)?;
             let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
             let hidden_parent = format!("{}{}", parent, bracket_suffix);
-            if let Some(exprs) = parse_bracket_arg_exprs(&bracket_suffix) {
+            if let Some(exprs) = parse_bracket_arg_exprs(bracket_suffix) {
                 parent_args.push((hidden_parent.clone(), exprs));
             }
             parents.push(hidden_parent.clone());

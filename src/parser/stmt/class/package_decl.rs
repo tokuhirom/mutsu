@@ -215,7 +215,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     // parametric, e.g. `is Foo[Int]`).
                     let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
                     let full_name = format!("{}{}", parent, bracket_suffix);
-                    if let Some(exprs) = super::class_decl::parse_bracket_arg_exprs(&bracket_suffix)
+                    if let Some(exprs) = super::class_decl::parse_bracket_arg_exprs(bracket_suffix)
                     {
                         parent_args.push((full_name.clone(), exprs));
                     }
@@ -313,7 +313,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                 let (r2, _) = ws(r2)?;
                 let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
                 let (r2, _) = ws(r2)?;
-                let args = super::class_decl::parse_bracket_arg_exprs(&bracket_suffix);
+                let args = super::class_decl::parse_bracket_arg_exprs(bracket_suffix);
                 parent_roles.push((format!("{}{}", role_name, bracket_suffix), args));
                 r = r2;
                 continue;

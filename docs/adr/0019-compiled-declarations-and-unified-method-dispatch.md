@@ -116,7 +116,7 @@ unchecked even if its original PR merged. PRs are sequential branches from the t
 `main`; this is not a stacked-PR plan.
 
 **Current progress: 31/53 slices merged (C6, C7, C8, D1, and D2d complete; D2a and D2c-1/2/3 also
-landed, 2026-08-07; D2b-2, D2c-4, D6-1, D7-1/D9-1, D4-1, and D4-2 landed 2026-08-08). Phase C is fully checked; the open box is
+landed, 2026-08-07; D2b-2, D2c-4, D6-1, D7-1/D9-1, D4-1, D4-2, and D4-3 landed 2026-08-08). Phase C is fully checked; the open box is
 D2 (attributes and generated accessors), subdivided D2a-D2d — D2a, D2b-2, D2c-1/2/3/4, and D2d are
 done; only the optional D2c-5 (A/B env-setup unification, gated on raku-behavior verification of
 shape B's `has_class_scoped_subs` gate) remains open in D2. D3 (class methods/submethods as compiled candidates) is open;
@@ -949,6 +949,33 @@ walkers wholesale is not possible before then.
   after `qualify_decl_name` re-keys `parent_args` first. Covers only the class-header site per
   the design doc; the role-body `DoesDecl` site's carriage still joins D7. No consumer reads it
   outside a new compiler unit test yet (D4-3).
+  **D4-3 landed 2026-08-08**: `resolve_role_candidate` gained a `resolve_role_candidate_with_args`
+  sibling taking `pre_args: Option<&[Value]>`; when set, it replaces the `eval_role_arg_values`
+  re-parse with the already-evaluated values, everything downstream (arity filter, trial bind,
+  specificity sort) unchanged. `compose_class_parent_roles` evaluates each parent's
+  `parent_arg_chunks` (looked up by the plan's *original*, pre-remap parent string — position-
+  aligned with `parents` through the `lexical_env_remap_name`/`qualify_sibling_parent_name`/
+  Grammar-self-parent-drop chain via a zipped `Vec<Option<&[DeclTraitArg]>>`, since none of those
+  remaps filter except the Grammar case, which the zip drops in lockstep) and passes the result;
+  the four string-only callers (`registration_role_body.rs` ×2, `registration_class_augment.rs`,
+  `methods_qualified.rs`) are unaffected. Verified against an 8-case `raku` table (literal, type
+  name, nested parameterization, enum value, comma-containing string, block literal) — all match
+  byte-for-byte, and the `Expr` path incidentally fixes a real `R["a,b"]`-comma-in-string parse
+  failure the old string path had (per the D4 design doc's prediction). A `make roast`
+  regression surfaced during verification (`S14-roles/parameterized-type.t`) traced to an
+  unrelated, real parser bug the D4-3 cutover exposed rather than caused: `parse_optional_bracket_suffix`
+  returned an owned `String` copy of the bracket content, and two sibling `does R[X] does R[Y]`
+  clauses on one class header each allocate their own short-lived copy — when the first is freed
+  at loop-iteration end, the second can land at the same heap address, aliasing the pointer-keyed
+  expression parse memo (`(ptr, len)`, no content check) and returning the first clause's cached
+  `Expr` for the second's distinct bracket content. Fixed at the root: `parse_optional_bracket_suffix`
+  now returns a slice of the persistent source buffer (never freed mid-parse) instead of an owned
+  copy — the memo can no longer alias it, by construction. Pinned by a Rust unit test
+  (`parse_class_decl_two_does_clauses_capture_distinct_bracket_exprs`) and a `t/` integration test
+  (`role-double-parametric-args-distinct.t`). A second, independent, pre-existing bug surfaced
+  during root-causing (present on `main` before D4-3 too: composing the same parametric role
+  twice, multi dispatch always picks one candidate regardless of the call's argument type) is
+  out of scope and filed as `todo/tickets/same-role-composed-twice-multi-dispatch-picks-one-candidate.md`.
 - [ ] **D5 — Drive user HOW operations from plan ops.** Execute `new_type`, `add_method`, trait
   interception, and `compose` without entering `register_class_decl`'s AST walker.
   **Design pass done 2026-08-08 (no code landed) — the box shrinks:**
