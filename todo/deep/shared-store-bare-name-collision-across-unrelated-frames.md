@@ -68,6 +68,17 @@ axis, not the store** — no `SharedStore` write or pull for `i` happens any mor
 So the remaining leak on this file is a plain env-key collision, and this
 ticket's store-keying redesign is no longer what blocks it.
 
+**Update (same day, resolved for this file).** That env-key collision was
+chased to the end and fixed in two more steps, neither of which touched the
+store: a loop body's `my` outliving its block
+(`t/loop-body-my-does-not-outlive-the-block.t`), and `check_method_wrap_chain`
+writing back every lexical a wrapper merely *captured*
+(`t/method-wrap-writeback-only-mutations.t`). `t/http-session-inmemory.rakutest`
+is now 10/13; the three remaining failures are the concurrent-client pair and
+session expiration, which are unrelated to this ticket. The store-keying
+redesign proposed below therefore has **no known blocked test driving it** —
+re-measure before starting it.
+
 Related, still open and single-threaded (no store involved):
 `todo/tickets/for-multi-param-array-hash-shadow-clobbers-outer-container.md` —
 a multi-param loop variable with no local slot in its frame writes a *global*

@@ -306,6 +306,23 @@ impl Interpreter {
         } else {
             None
         };
+        // What the wrapper's closure held for each captured name BEFORE this
+        // call. The write-back below must propagate only names the wrapper
+        // actually MUTATED; a name whose post-call value still equals what it
+        // captured was never assigned by the wrapper, and writing it back would
+        // overwrite an unrelated caller lexical that merely shares the name.
+        // This matters because `capture_closure_env` snapshots the WHOLE env
+        // once `reflective_name_access_possible()` latches (any `EVAL`/`::()`
+        // anywhere in the program does it), so a wrapper captures every lexical
+        // that happened to be live where it was created — including block-local
+        // leftovers from unrelated compunits.
+        let wrapper_base_env: Option<crate::env::Env> = wrapper_id.and_then(|wid| {
+            self.get_closure_env_override(wid)
+                .or_else(|| match outermost.view() {
+                    ValueView::Sub(wd) => Some(wd.env.clone()),
+                    _ => None,
+                })
+        });
         self.push_wrap_dispatch_frame(frame);
         self.shift_arg_sources_for_wrap_invocant();
         let result = self.vm_call_sub_value(outermost, call_args, false);
@@ -335,6 +352,26 @@ impl Interpreter {
                 // frame then threw "P6opaque: no such attribute".
                 if k.with_str(|s| {
                     matches!(Self::normalize_var_meta_name(s), "_" | "/" | "!") || s == "self"
+                }) {
+                    continue;
+                }
+                // Only a name the wrapper CHANGED reaches the caller. See
+                // `wrapper_base_env`: the capture is the whole env, so without
+                // this the wrapper republishes every lexical that was live
+                // where it was created over the caller's same-named ones. The
+                // `$_`/`$/`/`$!`/`self` skips above stay as a belt-and-braces
+                // guard for names that are per-frame even when they *do*
+                // differ.
+                // `cheaply_unchanged` is O(1) and conservative — it proves
+                // "unchanged" only by Arc identity / scalar compare, so a value
+                // it cannot classify is treated as changed and still written
+                // back. That is the right bias here, and it also keeps a
+                // container whose CONTENTS the wrapper mutated correct: those
+                // are already visible to the caller through the shared cell, so
+                // skipping the handle write-back loses nothing.
+                if wrapper_base_env.as_ref().is_some_and(|base| {
+                    base.get_sym(*k)
+                        .is_some_and(|old| crate::vm::vm_method_dispatch::cheaply_unchanged(old, v))
                 }) {
                     continue;
                 }
