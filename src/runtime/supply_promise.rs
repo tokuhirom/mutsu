@@ -23,6 +23,29 @@ impl Interpreter {
         args: Vec<Value>,
         propagate_return: bool,
     ) -> Result<Value, RuntimeError> {
+        // A `__SupplyDoWrappedTap` marker (see `make_supply_do_wrapped_tap`)
+        // bundles a `.do($cb)` source's `do_callbacks` with the real outer
+        // subscriber. Run the do callbacks first — same as the synchronous
+        // `plain_values` path already does — then unwrap to the real tap for
+        // everything below (emitter-stamp detection needs the real Sub, not
+        // this Instance marker).
+        let tap = if let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = tap.view()
+            && class_name == "__SupplyDoWrappedTap"
+        {
+            let attrs = attributes.as_map();
+            if let Some(ValueView::Array(cbs, ..)) = attrs.get("do_callbacks").map(Value::view) {
+                for cb in cbs.iter().cloned().collect::<Vec<_>>() {
+                    self.call_sub_value(cb, args.clone(), true)?;
+                }
+            }
+            attrs.get("real_tap").cloned().unwrap_or(Value::NIL)
+        } else {
+            tap
+        };
         // `(emitter, is_stamped)`: only a stamped emitter is authoritative.
         let (emitter, stamped) = tap
             .as_sub()

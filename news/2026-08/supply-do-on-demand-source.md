@@ -48,10 +48,7 @@ Pin: `t/supply-do-on-demand-source.t`.
 ## Effect on the Cro::HTTP suite
 
 `http-auth-basic.rakutest` and `http-auth-basic-with-session.rakutest` no
-longer hang: `http-auth-basic` now completes all five subtests structurally
-(3/5 passing). The remaining two failures are a distinct, deeper bug — `.do`
-callbacks are still skipped for values an on-demand source delivers
-*asynchronously* through a nested `whenever` (as opposed to a synchronous
-`emit` in the body), which is what actually adds the `WWW-Authenticate`
-header to Cro's auto-generated 401 response. Filed as
-`todo/deep/supply-do-callbacks-not-applied-to-async-emitted-values.md`.
+longer hang, and — together with the companion fix in
+`news/2026-08/supply-do-callbacks-for-async-emitted-values.md`, which covers
+the async-delivery half of `.do` on an on-demand source — both now pass all
+five subtests (5/5).

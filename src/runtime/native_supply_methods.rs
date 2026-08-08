@@ -172,6 +172,37 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("__SupplyDoneChain"), attrs)
     }
 
+    /// Wrap the real outer tap callback with a Supply's `do_callbacks` chain,
+    /// so a `.do($cb)` derived from an on-demand source still runs `$cb` for
+    /// values delivered *asynchronously* through a nested `whenever` — not
+    /// just ones the body `emit`s synchronously (those already go through the
+    /// `do_cbs` loop directly). `call_supply_tap` unwraps this marker before
+    /// invoking the callback.
+    pub(super) fn make_supply_do_wrapped_tap(do_callbacks: Vec<Value>, real_tap: Value) -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert("do_callbacks".to_string(), Value::array(do_callbacks));
+        attrs.insert("real_tap".to_string(), real_tap);
+        Value::make_instance(Symbol::intern("__SupplyDoWrappedTap"), attrs)
+    }
+
+    /// Register `tap_cb` as `emitter_supplier_id`'s outer subscriber, wrapping
+    /// it with `attrs`'s `do_callbacks` first when present (see
+    /// `make_supply_do_wrapped_tap`).
+    pub(super) fn register_outer_tap_with_do_callbacks(
+        attrs: &AttrMap,
+        emitter_supplier_id: u64,
+        tap_cb: &Value,
+        delay_seconds: f64,
+    ) {
+        let registered = match attrs.get("do_callbacks").map(Value::view) {
+            Some(ValueView::Array(cbs, ..)) if !cbs.is_empty() => {
+                Self::make_supply_do_wrapped_tap(cbs.to_vec(), tap_cb.clone())
+            }
+            _ => tap_cb.clone(),
+        };
+        register_supplier_tap(emitter_supplier_id, registered, delay_seconds);
+    }
+
     /// Marker registered as a done callback so the emitter's CLOSE-phaser
     /// callbacks fire when the supply terminates normally.
     pub(super) fn make_supply_close_marker(close_supplier_id: u64) -> Value {
