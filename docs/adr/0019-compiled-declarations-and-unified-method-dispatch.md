@@ -119,8 +119,12 @@ unchecked even if its original PR merged. PRs are sequential branches from the t
 landed, 2026-08-07). Phase C is fully checked; the open box is D2 (attributes and generated
 accessors), subdivided D2a-D2d — D2a, D2c-1/2/3, and D2d are done; D2b (typed attribute
 descriptors) and the "compile `default`/`where_constraint` as actual bytecode chunks" remainder of
-D2c are the only pieces still open, followed by D3 (class methods/submethods as compiled
-candidates). D1 found most class structural data already typed-plan-driven
+D2c are the only pieces still open. D3 (class methods/submethods as compiled candidates) is open;
+D3-1 through D3-7 landed (walker-drift unification plus the compile-time `CompiledMethodDecl`
+precompute), and a 2026-08-08 scoping pass found D3's literal goal — compiling method *bodies*
+through the single main-pass `Compiler` the way `SubDecl` does, instead of a throwaway
+per-registration `Compiler::new()` — still fully open and scoped as a future D3-8. D1 found most
+class structural data already typed-plan-driven
 from Phase A3/A4; the two remaining body-scanning reads (stub detection, `Stmt::TrustsDecl`) are
 now precomputed at plan lowering as `CompiledClassDeclPlan::is_stub`/`trusts`; see
 `news/2026-08/d1-class-structural-plan-fields.md`. D2, unlike D1, found attribute data with no
@@ -696,6 +700,47 @@ walkers wholesale is not possible before then.
   matches (`todo/tickets/method-typed-trait-mod-is-dispatch-never-matches.md`). D3-6 makes
   `augment_class` reach exact parity with the class walker, including that walker's own
   pre-existing limits — it does not fix either underlying bug.
+  **D3-7 scoping pass (2026-08-08):** with drift closed, the next natural step is the D2b-style
+  precompute — moving `CompiledMethodDecl::from_stmt`'s 19-field destructure from "once per
+  registration" (called at runtime by `class_body_method_decl`/`role_body_method_decl`, which
+  re-runs for a class/role declared inside a loop or a repeatedly-called sub) to "once, at compile
+  time", the way `own_attribute_names`/`is_default_chunks`/`method_name_chunks` already do for
+  their own fields. Unlike D2b's own attribute case, this has **no position-correlation blocker**:
+  D3-1 already solved exactly that problem for method statements (the `method_name_chunks` cursor,
+  built by flattening `SyntheticBlock` the same way the registration walk does), so the identical
+  cursor mechanism carries a full `CompiledMethodDecl` instead of just a name chunk.
+  A wider scoping investigation (an `Explore` agent survey of `compile_class_methods`/
+  `compile_role_methods`, `accessors_resolve.rs`) found a **separate, larger** gap behind the D3
+  box's literal text ("install ... compiled candidates ... without walking `Stmt::MethodDecl`"):
+  method *bodies* are not compiled by the single main-pass `Compiler` at all (unlike `SubDecl`,
+  which gets a pool-keyed `CompiledFunction` via `compiled_routine_keys` — ADR-0019 C1/C3). Instead
+  a method body is compiled by a throwaway `Compiler::new()` spun up by
+  `compile_method_def_in_place_with_dist` (`accessors_resolve.rs`), triggered once per class/role
+  from at least 9 distinct sites (`RegisterClass`/`RegisterRole` VM ops, role mixin composition,
+  three `augment class` sites, the method-dispatch-cache miss path, `nextsame` dispatch, BUILD/TWEAK
+  constructor-phase planning, `class_dispatch.rs`) and memoized via `compiled_code.is_some()`.
+  `Stmt::ClassDecl`/`RoleDecl` bodies are never walked by `compile_stmt` (unlike `module`/`package`,
+  which recurse and set `current_package`) — the only main-pass compile that already touches every
+  method body is `record_type_body_captures`'s escape analysis, whose result is discarded and whose
+  package context is the *enclosing* package, not the class's own name. Migrating this fully would
+  mirror C1-C4 for methods and needs its own multi-slice plan: `effective_param_defs`'s
+  `::?CLASS`-substitution and auto-`@_`-detection currently run at registration time reading the
+  real class name (not always known at the main-pass point a class body is reached — a computed
+  class name `class ::($name) {...}` is D3-1's own reason `method_name_chunks` exists); multi-method
+  candidates have no signature-keyed pool slot the way multi subs do (`class_body_method_decl`
+  pushes a plain `Vec<MethodDef>`); and role method bodies may need per-composition
+  re-instantiation depending on how a parametric role's type captures reach compiled bytecode. This
+  is left as a scoped-but-unstarted future slice (tentatively D3-8) rather than attempted in one PR.
+  **D3-7 landed 2026-08-08**: `CompiledClassDeclPlan`/`CompiledRoleDeclPlan` gained
+  `method_decls: Vec<CompiledMethodDecl>`, built once by a new `compile_method_decls` free function
+  (mirroring `compile_method_name_chunks`'s exact flatten-and-filter walk, needing no compiler state
+  since `CompiledMethodDecl::from_stmt` is pure AST-to-struct). `class_body_method_decl`/
+  `role_body_method_decl` now read a clone by position (reusing the existing
+  `method_name_chunk_idx` cursor for both vecs) instead of calling `CompiledMethodDecl::from_stmt`
+  on the raw statement at every registration; both functions no longer take a `stmt` parameter at
+  all, since nothing in the walk reads it anymore. `augment_class` (no compiled plan) and the
+  role-pun/mixin synthesis paths keep passing an empty `method_decls` slice, matching
+  `method_name_chunks`'s existing D3-1 precedent.
 - [ ] **D4 — Compile class declaration-time expressions.** Cover computed names, traits, parent
   expressions, aliases, and deferred class bodies through re-entrant bytecode chunks. (Computed
   names and custom-trait arguments already landed with C5; parents, aliases, and deferred bodies

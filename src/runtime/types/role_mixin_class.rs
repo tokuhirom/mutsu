@@ -67,6 +67,7 @@ impl Interpreter {
             own_attribute_names: &[],
             attr_is_default_chunks: &[],
             method_name_chunks: &[],
+            method_decls: &[],
         };
         self.register_class_decl(&name, &parents, modifiers, &[])?;
         self.compose_mixin_role_submethods(&name, &fresh);

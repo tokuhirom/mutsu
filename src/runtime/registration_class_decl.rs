@@ -128,6 +128,7 @@ impl Interpreter {
             own_attribute_names,
             attr_is_default_chunks,
             method_name_chunks,
+            method_decls,
         } = modifiers;
         let class_lang_rev = language_revision_letter(class_language_version);
         // Normalize parent names: strip leading `::` (indirect name lookup syntax).
@@ -227,6 +228,7 @@ impl Interpreter {
             own_attribute_names,
             attr_is_default_chunks,
             method_name_chunks,
+            method_decls,
         )?;
         self.finalize_class_registration(name, parents, class_def, &snapshot)?;
         self.install_class_exporthow(name, parents)?;

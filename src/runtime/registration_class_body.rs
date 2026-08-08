@@ -31,8 +31,12 @@ pub(super) struct ClassBodyCx<'a> {
     /// `submethod` declaration in the body (ADR-0019 D3-1), read by position
     /// via `method_name_chunk_idx`; see `class_body_method_decl`.
     pub(super) method_name_chunks: &'a [Option<crate::opcode::CompiledDeclExpr>],
-    /// Cursor into `method_name_chunks`, advanced by one on every method
-    /// statement `class_body_method_decl` processes.
+    /// Precompiled typed mirror of each top-level `method`/`submethod`
+    /// declaration in the body (ADR-0019 D3-7), read by position via
+    /// `method_name_chunk_idx`; see `class_body_method_decl`.
+    pub(super) method_decls: &'a [crate::opcode::CompiledMethodDecl],
+    /// Cursor into `method_name_chunks`/`method_decls`, advanced by one on
+    /// every method statement `class_body_method_decl` processes.
     pub(super) method_name_chunk_idx: usize,
 }
 
@@ -93,6 +97,7 @@ impl Interpreter {
         own_attribute_names: &[Symbol],
         is_default_chunks: &[(Symbol, crate::opcode::DeclTraitArg)],
         method_name_chunks: &[Option<crate::opcode::CompiledDeclExpr>],
+        method_decls: &[crate::opcode::CompiledMethodDecl],
     ) -> Result<ClassDef, RuntimeError> {
         let saved_package = self.current_package();
         let saved_env = self.env.clone();
@@ -136,6 +141,7 @@ impl Interpreter {
             class_own_attrs,
             is_default_chunks,
             method_name_chunks,
+            method_decls,
             method_name_chunk_idx: 0,
         };
         let saved_functions_keys: HashSet<String> = self
@@ -166,7 +172,7 @@ impl Interpreter {
                     }
                 }
                 Stmt::MethodDecl { .. } => {
-                    self.class_body_method_decl(&mut cx, stmt)?;
+                    self.class_body_method_decl(&mut cx)?;
                 }
                 Stmt::DoesDecl { .. } => {
                     if matches!(

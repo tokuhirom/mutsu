@@ -26,8 +26,12 @@ pub(super) struct RoleDeclCx<'a> {
     /// `submethod` declaration in the body (ADR-0019 D3-1), read by position
     /// via `method_name_chunk_idx`; see `role_body_method_decl`.
     pub(super) method_name_chunks: &'a [Option<crate::opcode::CompiledDeclExpr>],
-    /// Cursor into `method_name_chunks`, advanced by one on every method
-    /// statement `role_body_method_decl` processes.
+    /// Precompiled typed mirror of each top-level `method`/`submethod`
+    /// declaration in the body (ADR-0019 D3-7), read by position via
+    /// `method_name_chunk_idx`; see `role_body_method_decl`.
+    pub(super) method_decls: &'a [crate::opcode::CompiledMethodDecl],
+    /// Cursor into `method_name_chunks`/`method_decls`, advanced by one on
+    /// every method statement `role_body_method_decl` processes.
     pub(super) method_name_chunk_idx: usize,
 }
 
@@ -223,7 +227,7 @@ impl Interpreter {
                     self.role_body_does_decl(cx, stmt)?;
                 }
                 Stmt::MethodDecl { .. } => {
-                    self.role_body_method_decl(cx, stmt)?;
+                    self.role_body_method_decl(cx)?;
                 }
                 Stmt::Expr(Expr::Call { name, .. })
                     if name == "__mutsu_stub_die" || name == "__mutsu_stub_warn" =>
