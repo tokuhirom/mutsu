@@ -739,7 +739,7 @@ impl Interpreter {
             // against the live cell + local/env writes before the env is torn
             // down. The cell-direct reads + per-op mirrors make the cell the
             // single source; the legacy attribute writeback is gone.
-            reconciled_attrs = self.reconcile_attrs(&base, cc);
+            reconciled_attrs = self.reconcile_attrs(&base, cc, &method_def.params);
 
             let method_var_bindings = self.take_var_bindings();
             let mut restored_bindings = saved_var_bindings;
@@ -763,7 +763,7 @@ impl Interpreter {
 
             // Phase 3 Stage 2: reconcile all attributes against the live cell +
             // local/env writes before the env is merged away.
-            reconciled_attrs = self.reconcile_attrs(&base, cc);
+            reconciled_attrs = self.reconcile_attrs(&base, cc, &method_def.params);
             // Callee-frame key predicate for the merge (formerly a per-call
             // materialized HashSet<String>): the method's params and locals,
             // the frame fixtures, the attribute twigil forms and sigilless
@@ -957,7 +957,12 @@ impl Interpreter {
     /// consumer that needs the post-method map (proxy_fetch) re-snapshots the
     /// live cell on demand instead — so the common exit pays no `to_map()`
     /// (full attr-map clone) at all.
-    fn reconcile_attrs(&self, base: &Value, code: &CompiledCode) -> Option<AttrMap> {
+    fn reconcile_attrs(
+        &self,
+        base: &Value,
+        code: &CompiledCode,
+        params: &[String],
+    ) -> Option<AttrMap> {
         let ValueView::Instance {
             attributes: cell, ..
         } = base.view()
@@ -997,18 +1002,42 @@ impl Interpreter {
                     continue;
                 }
                 let bare = ks.rsplit('\0').next().unwrap_or(ks);
-                // Sigilless (`has $x` → bare `x`) and twigil (`$!x`/`@.x`/…) keys
-                // may hold the `:=` ContainerRef alias.
+                // The BARE candidate is the dangerous one: unlike `!x`/`@.x`, it
+                // is a name an ordinary lexical or parameter can also have, and
+                // an `is rw`/`is raw` scalar parameter binds through a shared
+                // `ContainerRef` cell — exactly the shape this scan reads as a
+                // `:=` attribute binding. Two ways it went wrong, both of which
+                // *replaced the attribute* for the rest of the object's life:
+                //
+                //   * the frame's own parameter (`method !f(P $pol is rw)` in a
+                //     class with `has P $.pol`);
+                //   * a CALLER's variable of that name, reachable because the
+                //     callee env is the flattened caller env — the very hazard
+                //     the `frame_has_container_ref` gate above documents but
+                //     cannot catch, since the flattened copy is in the overlay.
+                //
+                // Cro::HTTP::Client hits both: `!assemble-request(…
+                // Cro::Policy::Timeout $timeout-policy is rw)` against its own
+                // `has $.timeout-policy`. The first request left the attribute
+                // holding the parameter's cell and the second died with "Type
+                // check failed in assignment to $timeout-policy".
+                //
+                // So the bare form is honoured only for a name this frame itself
+                // owns as a slot (how a sigilless `has $x` is seeded) and that is
+                // not a parameter. The twigil forms keep the env fallback: no
+                // lexical can be called `!x`.
+                let bare_owned =
+                    code.locals.iter().any(|n| n == bare) && !params.iter().any(|p| p == bare);
                 let candidates = [
-                    bare.to_string(),
-                    format!("!{}", bare),
-                    format!(".{}", bare),
-                    format!("@!{}", bare),
-                    format!("@.{}", bare),
-                    format!("%!{}", bare),
-                    format!("%.{}", bare),
+                    bare_owned.then(|| bare.to_string()),
+                    Some(format!("!{}", bare)),
+                    Some(format!(".{}", bare)),
+                    Some(format!("@!{}", bare)),
+                    Some(format!("@.{}", bare)),
+                    Some(format!("%!{}", bare)),
+                    Some(format!("%.{}", bare)),
                 ];
-                for key in candidates {
+                for key in candidates.into_iter().flatten() {
                     if let Some(v) = self.attr_env_or_local(code, &key)
                         && v.is_container_ref()
                     {
@@ -1608,7 +1637,7 @@ impl Interpreter {
         });
         // Phase 3 Stage 2: reconcile all attributes against the live cell +
         // local/env writes before the env is torn down.
-        let reconciled = self.reconcile_attrs(&base, cc);
+        let reconciled = self.reconcile_attrs(&base, cc, &method_def.params);
 
         let method_var_bindings = self.take_var_bindings();
         let mut restored_bindings = saved_var_bindings;
