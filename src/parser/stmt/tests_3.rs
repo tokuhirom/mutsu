@@ -214,6 +214,22 @@ fn parse_role_decl_with_generics_and_does_clause() {
     assert!(matches!(&stmts[0], Stmt::RoleDecl { name, .. } if name == "R2"));
 }
 
+/// ADR-0019 D4-1: a role body's synthetic `does Role[Args]` `DoesDecl`
+/// captures the bracket content as parsed `Expr`s in its `args` field.
+#[test]
+fn parse_role_decl_does_clause_captures_bracket_exprs() {
+    let (rest, stmts) = program("role R2 does R1[Int] { }").unwrap();
+    assert_eq!(rest, "");
+    let Stmt::RoleDecl { body, .. } = &stmts[0] else {
+        panic!("expected RoleDecl");
+    };
+    let Stmt::DoesDecl { name, args } = &body[0] else {
+        panic!("expected DoesDecl as the first body statement");
+    };
+    assert_eq!(name.as_str(), "R1[Int]");
+    assert_eq!(args.as_ref().map(Vec::len), Some(1));
+}
+
 #[test]
 fn parse_grammar_decl_with_does_clause() {
     let (rest, stmts) = program("grammar G does R { rule TOP { ^ <x> } }").unwrap();

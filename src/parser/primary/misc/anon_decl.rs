@@ -112,6 +112,7 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
             0,
             Stmt::DoesDecl {
                 name: Symbol::intern(role_name),
+                args: None,
             },
         );
     }
@@ -132,6 +133,7 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
             custom_traits: Vec::new(),
             is_unit: false,
             decl_id: crate::ast::next_class_decl_id(),
+            parent_args: Vec::new(),
         })),
     ))
 }

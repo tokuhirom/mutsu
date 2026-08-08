@@ -146,7 +146,10 @@ impl Interpreter {
         cx: &mut RoleDeclCx<'_>,
         stmt: &Stmt,
     ) -> Result<(), RuntimeError> {
-        let Stmt::DoesDecl { name: role_name } = stmt else {
+        let Stmt::DoesDecl {
+            name: role_name, ..
+        } = stmt
+        else {
             unreachable!("role_body_does_decl called on a non-DoesDecl statement");
         };
         let name = cx.name;

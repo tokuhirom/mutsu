@@ -115,8 +115,8 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 30/53 slices merged (C6, C7, C8, D1, and D2d complete; D2a and D2c-1/2/3 also
-landed, 2026-08-07; D2b-2, D2c-4, D6-1, and D7-1/D9-1 landed 2026-08-08). Phase C is fully checked; the open box is
+**Current progress: 31/53 slices merged (C6, C7, C8, D1, and D2d complete; D2a and D2c-1/2/3 also
+landed, 2026-08-07; D2b-2, D2c-4, D6-1, D7-1/D9-1, and D4-1 landed 2026-08-08). Phase C is fully checked; the open box is
 D2 (attributes and generated accessors), subdivided D2a-D2d — D2a, D2b-2, D2c-1/2/3/4, and D2d are
 done; only the optional D2c-5 (A/B env-setup unification, gated on raku-behavior verification of
 shape B's `has_class_scoped_subs` gate) remains open in D2. D3 (class methods/submethods as compiled candidates) is open;
@@ -932,6 +932,17 @@ walkers wholesale is not possible before then.
   cutover is gated on a raku case table because the string path's heuristics sometimes produce
   type objects where naive evaluation would not). The `Expr` path also fixes
   `split_balanced_comma_list`'s quote-blindness (`R["a,b"]` mis-splits today) for free.
+  **D4-1 landed 2026-08-08**: `Stmt::ClassDecl` gained `parent_args: Vec<(String, Vec<Expr>)>`
+  and `Stmt::DoesDecl` gained `args: Option<Vec<Expr>>`, populated by a new
+  `parse_bracket_arg_exprs` helper at every bracket-suffix call site that builds a genuine
+  `is`/`does`/`hides` parent string (class body, `unit class`, `unit role`, grammar `is`/`does`)
+  — nine sites in total once `grammar_module.rs`'s two and `package_decl.rs`'s unit-role `does`
+  were included alongside the seven the design doc enumerated. `augment`'s bracket sites and
+  `also does`/body-level `does R;` stay string-only (no bracket parsing happens there today).
+  `compiler/stmt.rs`'s `qualify_decl_name` (the `unit class`/`unit module` package-qualification
+  pass) re-keys `parent_args` through the same `qualify_parent` closure it already applies to
+  `parents`/`does_parents`/`hidden_parents`, so a lookup by the (now qualified) parent string
+  still hits. No consumer reads either field yet (D4-2/D4-3/D7-3).
 - [ ] **D5 — Drive user HOW operations from plan ops.** Execute `new_type`, `add_method`, trait
   interception, and `compose` without entering `register_class_decl`'s AST walker.
   **Design pass done 2026-08-08 (no code landed) — the box shrinks:**
@@ -997,7 +1008,9 @@ walkers wholesale is not possible before then.
   single-statement `is_stub_routine_body` — an existing divergence, not changed here).
   `register_role_decl` now takes both precomputed facts as parameters instead of re-walking
   the raw body on every registration; the two now-dead `Interpreter` methods are deleted (no
-  other callers). D7-2..4 remain open.
+  other callers). D7-2 (= D2b-2's role half, name-keyed `attr_decls`) was already delivered by
+  D2b-2 landing on both `CompiledClassDeclPlan` and `CompiledRoleDeclPlan` at once. D7-3..4
+  remain open.
 - [ ] **D8 — Compile role declaration-time bodies and traits.** Run parameterized-role and composed
   ancestor bodies as bytecode child chunks with correct once-per-composition behavior. (Custom-trait
   arguments already landed with C5; the bodies remain.)

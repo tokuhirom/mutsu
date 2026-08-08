@@ -289,7 +289,7 @@ pub(crate) fn role_decl(input: &str) -> PResult<'_, Stmt> {
         type_param_defs = tpd;
         rest = rest2;
     }
-    let mut parent_roles: Vec<String> = Vec::new();
+    let mut parent_roles: Vec<(String, Option<Vec<Expr>>)> = Vec::new();
     let mut is_hidden_role = false;
     let mut role_is_rw = false;
     let mut is_export = false;
@@ -310,7 +310,8 @@ pub(crate) fn role_decl(input: &str) -> PResult<'_, Stmt> {
             let (r, _) = ws(r)?;
             let (r, bracket_suffix) = parse_optional_bracket_suffix(r)?;
             let (r, _) = ws(r)?;
-            parent_roles.push(format!("{}{}", role_name, bracket_suffix));
+            let args = super::class_decl::parse_bracket_arg_exprs(&bracket_suffix);
+            parent_roles.push((format!("{}{}", role_name, bracket_suffix), args));
             rest = r;
             continue;
         }
@@ -373,7 +374,7 @@ pub(crate) fn role_decl(input: &str) -> PResult<'_, Stmt> {
                     // No parens — treat as parent role. If it's actually
                     // a custom trait, the runtime will handle it via
                     // trait_mod:<is> when the role name is not found.
-                    parent_roles.push(trait_name);
+                    parent_roles.push((trait_name, None));
                     let (r, _) = ws(r)?;
                     rest = r;
                 }
@@ -385,9 +386,9 @@ pub(crate) fn role_decl(input: &str) -> PResult<'_, Stmt> {
             let (r, hidden_name) = qualified_ident(r)?;
             let (r, _) = ws(r)?;
             // Track as a parent relationship
-            parent_roles.push(hidden_name.clone());
+            parent_roles.push((hidden_name.clone(), None));
             // Also mark the hidden relationship with a special marker
-            parent_roles.push(format!("__mutsu_role_hides__{}", hidden_name));
+            parent_roles.push((format!("__mutsu_role_hides__{}", hidden_name), None));
             rest = r;
             continue;
         }
@@ -416,14 +417,16 @@ pub(crate) fn role_decl(input: &str) -> PResult<'_, Stmt> {
             0,
             Stmt::DoesDecl {
                 name: Symbol::intern("__mutsu_role_hidden__"),
+                args: None,
             },
         );
     }
-    for role_name in parent_roles.into_iter().rev() {
+    for (role_name, args) in parent_roles.into_iter().rev() {
         body.insert(
             0,
             Stmt::DoesDecl {
                 name: Symbol::intern(&role_name),
+                args,
             },
         );
     }

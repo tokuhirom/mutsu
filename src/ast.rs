@@ -1031,6 +1031,17 @@ pub(crate) enum Stmt {
         /// 0 means "no stable site" (runtime-synthesized or deserialized node).
         #[serde(skip)]
         decl_id: u64,
+        /// Parsed argument expressions for a bracketed `is`/`does`/`hides`
+        /// parent (`is Parent[Args]`), keyed by the full concatenated parent
+        /// string that also appears in `parents`/`does_parents`/
+        /// `hidden_parents` (ADR-0019 D4-1). An entry is present only when
+        /// the bracket content parsed cleanly as a comma-separated
+        /// expression list; the concatenated string in the other fields
+        /// remains the sole authoritative source for the parent name/
+        /// registry key either way — this is a purely additive capture with
+        /// no consumer yet (D4-2/D4-3).
+        #[serde(default)]
+        parent_args: Vec<(String, Vec<Expr>)>,
     },
     HasDecl {
         name: Symbol,
@@ -1126,6 +1137,14 @@ pub(crate) enum Stmt {
     },
     DoesDecl {
         name: Symbol,
+        /// Parsed argument expressions for a bracketed role application
+        /// (`does Role[Args]`), if the bracket content parsed cleanly as a
+        /// comma-separated expression list (ADR-0019 D4-1). `name` (which
+        /// carries the full `Role[Args]` string) remains the sole
+        /// authoritative source for the role name/registry key either way —
+        /// purely additive, no consumer yet (D4-2/D4-3/D7-3).
+        #[serde(default)]
+        args: Option<Vec<Expr>>,
     },
     TrustsDecl {
         name: Symbol,
