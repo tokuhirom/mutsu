@@ -1022,12 +1022,21 @@ impl Interpreter {
                 // holding the parameter's cell and the second died with "Type
                 // check failed in assignment to $timeout-policy".
                 //
+                // A third: the frame's own `my` lexical of that name, boxed into
+                // a cell by passing it to an rw parameter — `method go() { my T
+                // $pol; self!f($pol) }` in a class with `has T $.pol`, which is
+                // how `Cro::HTTP::Client.request`'s `my Cro::Policy::Timeout
+                // $timeout-policy` reached the attribute.
+                //
                 // So the bare form is honoured only for a name this frame itself
-                // owns as a slot (how a sigilless `has $x` is seeded) and that is
-                // not a parameter. The twigil forms keep the env fallback: no
-                // lexical can be called `!x`.
-                let bare_owned =
-                    code.locals.iter().any(|n| n == bare) && !params.iter().any(|p| p == bare);
+                // owns as a slot (how a sigilless `has $x` is seeded) that the
+                // frame did NOT declare as a parameter or a `my`. The twigil
+                // forms keep the env fallback: no lexical can be called `!x`.
+                let bare_owned = code.locals.iter().any(|n| n == bare)
+                    && !params.iter().any(|p| p == bare)
+                    && !code
+                        .my_declared_sym
+                        .contains(&crate::symbol::Symbol::intern(bare));
                 let candidates = [
                     bare_owned.then(|| bare.to_string()),
                     Some(format!("!{}", bare)),

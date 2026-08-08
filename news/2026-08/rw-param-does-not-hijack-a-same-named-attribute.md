@@ -26,18 +26,22 @@ There were two ways in:
   flattened caller env — the very hazard the `frame_has_container_ref` gate
   above the scan documents ("a caller-frame ContainerRef … is NOT a binding made
   by this method") but could not catch, since the flattened copy lands in the
-  overlay it inspects.
+  overlay it inspects;
+* the frame's own **`my` lexical** of that name, boxed into a cell by being
+  passed to an rw parameter (`method go() { my P $pol; self!fill($pol) }`).
 
 ## Fix
 
 The bare candidate is the only dangerous one — no lexical can be called `!x` or
 `@.x` — so it is now honoured only for a name **this frame itself owns as a
-slot** (which is how a sigilless `has $x` is seeded) and that is not one of the
-method's parameters. The twigil candidates keep their env fallback unchanged.
+slot** (which is how a sigilless `has $x` is seeded) that the frame declared
+neither as a parameter nor as a `my`. The twigil candidates keep their env
+fallback unchanged.
 
-Pinned by `t/rw-param-does-not-hijack-same-named-attribute.t`, which also covers
-the two behaviours that must survive: a genuine `:=` attribute binding still
-tracks its target, and an rw parameter still writes back to its caller.
+Pinned by `t/rw-param-does-not-hijack-same-named-attribute.t`, which covers all
+three entry points plus the two behaviours that must survive: a genuine `:=`
+attribute binding still tracks its target, and an rw parameter still writes back
+to its caller.
 
 ## Where it was found
 
@@ -47,5 +51,8 @@ Its first request left the attribute holding the parameter's cell, so the second
 died with `Type check failed in assignment to $timeout-policy; expected
 Cro::Policy::Timeout but got Any`.
 
-That client-side failure is **not fully resolved** by this fix — see
-`todo/tickets/cro-client-timeout-policy-attribute-still-corrupted.md`.
+The type-check failure is gone. The client still does not complete a request —
+`t/http-session-inmemory.rakutest` now runs both its tests instead of dying on
+the first, but each comes back with an empty body and a new error, `P6opaque: no
+such attribute '$!timeout-policy' on type Cro::HTTP::Client`. That next layer is
+tracked in `todo/tickets/cro-client-timeout-policy-attribute-still-corrupted.md`.
