@@ -434,9 +434,10 @@ impl Interpreter {
                                 if !outer_tap_registered
                                     && Self::supply_has_active_callback(&tap_cb)
                                 {
-                                    register_supplier_tap(
+                                    Self::register_outer_tap_with_do_callbacks(
+                                        &attrs,
                                         emitter_supplier_id,
-                                        tap_cb.clone(),
+                                        &tap_cb,
                                         delay_seconds,
                                     );
                                     outer_tap_registered = true;
@@ -542,9 +543,10 @@ impl Interpreter {
                                 if !outer_tap_registered
                                     && Self::supply_has_active_callback(&tap_cb)
                                 {
-                                    register_supplier_tap(
+                                    Self::register_outer_tap_with_do_callbacks(
+                                        &attrs,
                                         emitter_supplier_id,
-                                        tap_cb.clone(),
+                                        &tap_cb,
                                         delay_seconds,
                                     );
                                     outer_tap_registered = true;
@@ -620,9 +622,10 @@ impl Interpreter {
                                 if !outer_tap_registered
                                     && Self::supply_has_active_callback(&tap_cb)
                                 {
-                                    register_supplier_tap(
+                                    Self::register_outer_tap_with_do_callbacks(
+                                        &attrs,
                                         emitter_supplier_id,
-                                        tap_cb.clone(),
+                                        &tap_cb,
                                         delay_seconds,
                                     );
                                     outer_tap_registered = true;
@@ -799,9 +802,10 @@ impl Interpreter {
                                 if !outer_tap_registered
                                     && Self::supply_has_active_callback(&tap_cb)
                                 {
-                                    register_supplier_tap(
+                                    Self::register_outer_tap_with_do_callbacks(
+                                        &attrs,
                                         emitter_supplier_id,
-                                        tap_cb.clone(),
+                                        &tap_cb,
                                         delay_seconds,
                                     );
                                 }
@@ -819,9 +823,10 @@ impl Interpreter {
                                 Self::make_supply_close_marker(emitter_supplier_id),
                             );
                             if !outer_tap_registered && Self::supply_has_active_callback(&tap_cb) {
-                                register_supplier_tap(
+                                Self::register_outer_tap_with_do_callbacks(
+                                    &attrs,
                                     emitter_supplier_id,
-                                    tap_cb.clone(),
+                                    &tap_cb,
                                     delay_seconds,
                                 );
                             }
