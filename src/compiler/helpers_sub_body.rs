@@ -26,7 +26,7 @@ impl Compiler {
     /// caller building the `CompiledFunction` that owns this child unit can
     /// attach them as that routine's own [`CompiledFunction::compiled_fns`]
     /// (ADR-0019 C6e-3c) without re-deriving which keys were renamed.
-    fn import_compiled_functions(
+    pub(super) fn import_compiled_functions(
         &mut self,
         code: &mut CompiledCode,
         compiled_functions: CompiledFns,

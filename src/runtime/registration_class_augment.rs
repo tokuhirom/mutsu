@@ -230,43 +230,16 @@ impl Interpreter {
                         decl.name.resolve()
                     };
                     let mut effective_param_defs =
-                        Self::effective_method_param_defs(&decl.param_defs, false);
+                        crate::method_signature_shared::effective_method_param_defs(
+                            &decl.param_defs,
+                            false,
+                        );
                     // Auto-detect @_ usage in methods without explicit signatures
-                    if decl.param_defs.is_empty() {
-                        let (use_positional, _) = Self::auto_signature_uses(&decl.body);
-                        if use_positional && !effective_param_defs.iter().any(|pd| pd.name == "@_")
-                        {
-                            let insert_pos = effective_param_defs
-                                .iter()
-                                .position(|pd| pd.name.starts_with('%') && pd.slurpy)
-                                .unwrap_or(effective_param_defs.len());
-                            effective_param_defs.insert(
-                                insert_pos,
-                                ParamDef {
-                                    name: "@_".to_string(),
-                                    default: None,
-                                    multi_invocant: true,
-                                    required: false,
-                                    named: false,
-                                    slurpy: true,
-                                    double_slurpy: false,
-                                    onearg: false,
-                                    sigilless: false,
-                                    type_constraint: None,
-                                    literal_value: None,
-                                    sub_signature: None,
-                                    where_constraint: None,
-                                    traits: Vec::new(),
-                                    optional_marker: false,
-                                    outer_sub_signature: None,
-                                    code_signature: None,
-                                    is_invocant: false,
-                                    shape_constraints: None,
-                                    block_param: false,
-                                },
-                            );
-                        }
-                    }
+                    crate::method_signature_shared::apply_auto_positional_slurpy(
+                        decl.param_defs.is_empty(),
+                        &decl.body,
+                        &mut effective_param_defs,
+                    );
                     let effective_params: Vec<String> = effective_param_defs
                         .iter()
                         .map(|p| p.name.clone())

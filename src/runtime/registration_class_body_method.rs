@@ -6,7 +6,7 @@ use super::registration_class::make_delegation_method;
 use super::registration_class_body::ClassBodyCx;
 use super::registration_class_body_method_forms::method_sub_form_params;
 use super::*;
-use crate::ast::{HandleSpec, ParamDef};
+use crate::ast::HandleSpec;
 use crate::symbol::Symbol;
 
 impl Interpreter {
@@ -65,8 +65,10 @@ impl Interpreter {
         } else {
             decl.name.resolve()
         };
-        let mut effective_param_defs =
-            Self::effective_method_param_defs(&decl.param_defs, cx.is_hidden);
+        let mut effective_param_defs = crate::method_signature_shared::effective_method_param_defs(
+            &decl.param_defs,
+            cx.is_hidden,
+        );
         // Resolve the ::?CLASS pseudo-type in parameter type
         // constraints to the enclosing class (raku fixes ::?CLASS
         // at compile time to the declaring class), mirroring the
@@ -81,41 +83,11 @@ impl Interpreter {
             }
         }
         // Auto-detect @_ usage in methods without explicit signatures
-        if decl.param_defs.is_empty() {
-            let (use_positional, _) = Self::auto_signature_uses(&decl.body);
-            if use_positional && !effective_param_defs.iter().any(|pd| pd.name == "@_") {
-                // Insert @_ slurpy before the named %_ slurpy (if any)
-                let insert_pos = effective_param_defs
-                    .iter()
-                    .position(|pd| pd.name.starts_with('%') && pd.slurpy)
-                    .unwrap_or(effective_param_defs.len());
-                effective_param_defs.insert(
-                    insert_pos,
-                    ParamDef {
-                        name: "@_".to_string(),
-                        default: None,
-                        multi_invocant: true,
-                        required: false,
-                        named: false,
-                        slurpy: true,
-                        double_slurpy: false,
-                        onearg: false,
-                        sigilless: false,
-                        type_constraint: None,
-                        literal_value: None,
-                        sub_signature: None,
-                        where_constraint: None,
-                        traits: Vec::new(),
-                        optional_marker: false,
-                        outer_sub_signature: None,
-                        code_signature: None,
-                        is_invocant: false,
-                        shape_constraints: None,
-                        block_param: false,
-                    },
-                );
-            }
-        }
+        crate::method_signature_shared::apply_auto_positional_slurpy(
+            decl.param_defs.is_empty(),
+            &decl.body,
+            &mut effective_param_defs,
+        );
         let effective_params: Vec<String> = effective_param_defs
             .iter()
             .map(|p| p.name.clone())

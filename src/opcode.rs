@@ -438,6 +438,15 @@ pub(crate) struct CompiledMethodDecl {
     pub(crate) custom_traits: Vec<(String, Option<Expr>)>,
     pub(crate) is_export: bool,
     pub(crate) export_tags: Vec<String>,
+    /// Main-pass-compiled bytecode key for this method's body (ADR-0019
+    /// D3-8a), keyed into the program's [`CompiledFns`] table exactly like a
+    /// `sub`'s [`CompiledSubDeclPlan::compiled_routine_keys`]. `None` when
+    /// the declaration has no statically-known name/package (a computed
+    /// `method ::($name) {...}` or a class with a computed `::($n)` name) —
+    /// those keep using the registration-time throwaway-compiler fallback
+    /// (`compile_method_def_in_place_with_dist`). D3-8a only *populates*
+    /// this field; nothing reads it yet (that is D3-8b/c's cutover).
+    pub(crate) compiled_routine_key: Option<Symbol>,
 }
 
 impl CompiledMethodDecl {
@@ -488,6 +497,7 @@ impl CompiledMethodDecl {
             custom_traits: custom_traits.clone(),
             is_export: *is_export,
             export_tags: export_tags.clone(),
+            compiled_routine_key: None,
         }
     }
 }
@@ -3520,6 +3530,31 @@ impl CompiledCode {
                 *key = *remapped;
             }
         }
+        // ADR-0019 D3-8a: a class/role method body's main-pass-compiled key
+        // (`CompiledMethodDecl::compiled_routine_key`) lives one level deeper
+        // than a sub's, inside each declaration plan's `method_decls`. Nested
+        // compilation-unit import must keep these in step with the sub/proto
+        // keys above, or a class/role declared inside an `EVAL`'d or
+        // otherwise-imported unit would carry a stale key pointing at nothing
+        // in the merged `CompiledFns` table.
+        for plan in &mut self.class_decl_plans {
+            for method in &mut plan.method_decls {
+                if let Some(key) = &mut method.compiled_routine_key
+                    && let Some(remapped) = remap.get(key)
+                {
+                    *key = *remapped;
+                }
+            }
+        }
+        for plan in &mut self.role_decl_plans {
+            for method in &mut plan.method_decls {
+                if let Some(key) = &mut method.compiled_routine_key
+                    && let Some(remapped) = remap.get(key)
+                {
+                    *key = *remapped;
+                }
+            }
+        }
         for nested in &mut self.closure_compiled_codes {
             Arc::make_mut(nested).remap_sub_decl_compiled_routine_keys(remap);
         }
@@ -6003,6 +6038,7 @@ impl CompiledCode {
         self.sub_decl_plans[*plan_idx as usize].compiled_routine_keys = keys;
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn add_class_decl_plan(
         &mut self,
         stmt: &Stmt,
@@ -6011,6 +6047,7 @@ impl CompiledCode {
         attr_decls: Vec<(Symbol, CompiledAttrDecl)>,
         method_name_chunks: Vec<Option<CompiledDeclExpr>>,
         parent_arg_chunks: Vec<(String, Vec<DeclTraitArg>)>,
+        method_compiled_keys: Vec<Option<Symbol>>,
     ) -> u32 {
         let Stmt::ClassDecl {
             name,
@@ -6043,7 +6080,14 @@ impl CompiledCode {
             .collect();
         let own_attribute_names = class_own_attribute_names(body);
         let declared_static_names = class_declared_static_names(body);
-        let method_decls = compile_method_decls(body);
+        let mut method_decls = compile_method_decls(body);
+        // ADR-0019 D3-8a: attach each method's precomputed main-pass
+        // bytecode key, position-aligned by the same flattened walk
+        // `compile_method_decls` used to build `method_decls`.
+        debug_assert_eq!(method_decls.len(), method_compiled_keys.len());
+        for (decl, key) in method_decls.iter_mut().zip(method_compiled_keys) {
+            decl.compiled_routine_key = key;
+        }
         let plan_idx = self.class_decl_plans.len() as u32;
         self.class_decl_plans.push(CompiledClassDeclPlan {
             name: *name,
@@ -6080,6 +6124,7 @@ impl CompiledCode {
         attr_decls: Vec<(Symbol, CompiledAttrDecl)>,
         method_name_chunks: Vec<Option<CompiledDeclExpr>>,
         parent_ops: Vec<RoleParentOp>,
+        method_compiled_keys: Vec<Option<Symbol>>,
     ) -> u32 {
         let Stmt::RoleDecl {
             name,
@@ -6096,7 +6141,12 @@ impl CompiledCode {
             panic!("add_role_decl_plan expects RoleDecl");
         };
         let (own_attribute_names, body_used_modules, body_declared_types) = role_body_prescan(body);
-        let method_decls = compile_method_decls(body);
+        let mut method_decls = compile_method_decls(body);
+        // ADR-0019 D3-8a: see `add_class_decl_plan`'s identical comment.
+        debug_assert_eq!(method_decls.len(), method_compiled_keys.len());
+        for (decl, key) in method_decls.iter_mut().zip(method_compiled_keys) {
+            decl.compiled_routine_key = key;
+        }
         let is_stub = role_body_is_stub(body);
         let our_scope_violation = role_body_our_scope_violation(body);
         let plan_idx = self.role_decl_plans.len() as u32;

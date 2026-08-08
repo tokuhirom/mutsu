@@ -813,7 +813,8 @@ impl Interpreter {
         let (effective_param_defs, empty_sig) = if let Some(metadata) = metadata {
             (metadata.effective_param_defs.clone(), metadata.empty_sig)
         } else if param_defs.is_empty() && params.is_empty() {
-            let (use_positional, use_named) = Self::auto_signature_uses(body);
+            let (use_positional, use_named) =
+                crate::method_signature_shared::auto_signature_uses(body);
             let mut defs = Vec::new();
             if use_positional {
                 defs.push(ParamDef {
@@ -1583,7 +1584,7 @@ impl Interpreter {
         // the proto ()"), like rakudo. A body that reads @_/%_ implies a
         // slurpy auto-signature and is NOT empty.
         let proto_empty_sig = params.is_empty() && param_defs.is_empty() && {
-            let (use_pos, use_named) = Self::auto_signature_uses(body);
+            let (use_pos, use_named) = crate::method_signature_shared::auto_signature_uses(body);
             !use_pos && !use_named
         };
         if proto_empty_sig {
@@ -1646,7 +1647,7 @@ impl Interpreter {
         }
         self.registry_mut().proto_subs.insert(key.clone());
         let proto_empty_sig = params.is_empty() && param_defs.is_empty() && {
-            let (use_pos, use_named) = Self::auto_signature_uses(body);
+            let (use_pos, use_named) = crate::method_signature_shared::auto_signature_uses(body);
             !use_pos && !use_named
         };
         if proto_empty_sig {

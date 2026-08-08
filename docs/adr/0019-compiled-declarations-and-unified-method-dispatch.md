@@ -116,12 +116,14 @@ unchecked even if its original PR merged. PRs are sequential branches from the t
 `main`; this is not a stacked-PR plan.
 
 **Current progress: 31/53 slices merged (C6, C7, C8, D1, and D2d complete; D2a and D2c-1/2/3 also
-landed, 2026-08-07; D2b-2, D2c-4, D6-1, D7-1/D9-1, D4-1, D4-2, D4-3, and D7-3 landed 2026-08-08). Phase C is fully checked; the open box is
+landed, 2026-08-07; D2b-2, D2c-4, D6-1, D7-1/D9-1, D4-1, D4-2, D4-3, D7-3, and D3-8a landed
+2026-08-08). Phase C is fully checked; the open box is
 D2 (attributes and generated accessors), subdivided D2a-D2d — D2a, D2b-2, D2c-1/2/3/4, and D2d are
 done; only the optional D2c-5 (A/B env-setup unification, gated on raku-behavior verification of
 shape B's `has_class_scoped_subs` gate) remains open in D2. D3 (class methods/submethods as compiled candidates) is open;
 D3-1 through D3-7 landed (walker-drift unification plus the compile-time `CompiledMethodDecl`
-precompute), and a 2026-08-08 scoping pass found D3's literal goal — compiling method *bodies*
+precompute), D3-8a also landed (the additive compiler-side half of the method-body main-pass
+compile — see below), and a 2026-08-08 scoping pass found D3's literal goal — compiling method *bodies*
 through the single main-pass `Compiler` the way `SubDecl` does, instead of a throwaway
 per-registration `Compiler::new()` — still fully open and scoped as a future D3-8, whose detailed
 design (parity-first bare compile, per-decl `compiled_routine_key` on `CompiledMethodDecl`,
@@ -850,6 +852,44 @@ walkers wholesale is not possible before then.
   proving the fallback only fires for `augment`/`.^add_method`/computed-name shapes).
   `compile_method_def_in_place_with_dist` remains as the narrowed fallback, mirroring
   `otf_compile_function_def`'s role for subs.
+  **D3-8a landed 2026-08-08**: the additive compiler-side half — nothing reads its output yet,
+  matching how D4-1/D4-2 stayed inert before D4-3's cutover. `Compiler::compile_method_body`
+  (new `compiler/helpers_method_body.rs`) replicates `compile_method_def_in_place_with_dist`'s
+  bare-parity compile (a fresh `Compiler::new()`, the declaring package, the enclosing
+  distribution, `lexically_in_method`) at main-pass time, called from
+  `Compiler::add_class_decl_plan`/`add_role_decl_plan` for every statically-named method/submethod
+  and stashed on the new `CompiledMethodDecl::compiled_routine_key: Option<Symbol>` (`None` for a
+  computed method or class/role name, or for the `__hoisted` forward-reference shell — only the
+  source-order declaration plan compiles, mirroring the sub side's hoist/source-order split and
+  avoiding a redundant second compile of every class/role method body). `effective_method_param_defs`/
+  `auto_signature_uses`/the implicit-slurpy `ParamDef` builders moved out of
+  `runtime::registration`/`runtime::methods_signature` into a new shared `method_signature_shared`
+  module so the compiler and the three registration call sites (`class_body_method_decl`,
+  `role_body_method_decl`, `augment class`) call one implementation instead of drifting copies —
+  the same pattern D2b established for `CompiledAttrDecl`. Key shape follows C2:
+  `"{package}::{name}!m/{arity}#{fingerprint:x}"`, fingerprinted over the effective
+  params/param_defs/body (which also disambiguates same-named multi candidates, so — unlike the
+  sub side — no separate signature-keyed lookup is needed). `remap_sub_decl_compiled_routine_keys`
+  now also rewrites `class_decl_plans[*].method_decls[*].compiled_routine_key` and the role-plan
+  equivalent, so nested-compunit import keeps key identity. `MUTSU_VM_STATS` gained
+  `method_body_runtime_compiles`, incremented in `compile_method_def_in_place_with_dist` — the
+  D3-8b/c/d exit-criterion baseline. Verification: **V1** (a `param_defs` type-constraint string,
+  including the registration-only `::?CLASS` substitution, does not affect emitted bytecode) and
+  **V2** (`is_hidden` is a literal `is hidden` class trait, no computed path) confirmed by reading
+  the parser plus a targeted byte-parity test; **V3** (`resolve_package_distribution` vs. the
+  compiler's `current_distribution`) reasoned sound for the D3-8a-scoped case (a class/role
+  declared in its own compilation unit, the only case this box keys) — both derivations trace back
+  to the same per-compunit distribution value, `$?DISTRIBUTION`'s `LoadConst` bake-in gives a
+  direct byte-level probe, and no divergence was found; a cross-module scenario was not
+  filesystem-tested and is noted as residual risk for D3-8b/c to re-check. **V4** (byte-parity): a
+  `#[cfg(test)]` suite in `compiler/helpers_method_body.rs`
+  (`d3_8a_byte_parity_tests`) compiles a corpus of method shapes (plain method, submethod with
+  attribute binds, typed param, multi method, `is hidden` class, auto-`@_`-detected signature-less
+  method, method with a nested `sub`, role method, role method's auto-`@_` NON-insertion, the
+  `::?CLASS` substitution case, `$?DISTRIBUTION`) both ways — main-pass `compile_method_body` and
+  an actual `Interpreter::run` — and asserts the two `CompiledCode`s are `Debug`-identical (after
+  normalizing the process-global closure-ordinal/Symbol-intern-id noise both compiles pick up from
+  unrelated background compilation). All pass.
 - [ ] **D4 — Compile class declaration-time expressions.** Cover computed names, traits, parent
   expressions, aliases, and deferred class bodies through re-entrant bytecode chunks. (Computed
   names and custom-trait arguments already landed with C5; parents, aliases, and deferred bodies

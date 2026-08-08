@@ -26,6 +26,7 @@ impl Interpreter {
         if def.compiled_code.is_some() || def.delegation.is_some() {
             return;
         }
+        crate::vm::vm_stats::record_method_body_runtime_compile();
         let mut compiler = crate::compiler::Compiler::new();
         let method_package = def
             .original_role

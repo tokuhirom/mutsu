@@ -193,7 +193,8 @@ impl Interpreter {
                             })
                             .collect()
                     } else {
-                        let (use_positional, use_named) = Self::auto_signature_uses(&data.body);
+                        let (use_positional, use_named) =
+                            crate::method_signature_shared::auto_signature_uses(&data.body);
                         let mut defs = Vec::new();
                         // A *bare* block `{ ... }` has an implicit `$_` parameter
                         // (default from the outer topic). A pointy block `-> { ... }`

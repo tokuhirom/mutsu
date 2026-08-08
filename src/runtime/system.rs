@@ -319,7 +319,8 @@ impl Interpreter {
             } = &stmt
             {
                 let resolved_method_name = method_name.resolve();
-                let effective_param_defs = Self::effective_method_param_defs(param_defs, false);
+                let effective_param_defs =
+                    crate::method_signature_shared::effective_method_param_defs(param_defs, false);
                 let effective_params: Vec<String> = effective_param_defs
                     .iter()
                     .map(|p| p.name.clone())

@@ -305,6 +305,26 @@ pub(crate) fn record_jit_bailout(op: &crate::opcode::OpCode) {
     }
 }
 
+// ADR-0019 D3-8a: how often `compile_method_def_in_place_with_dist` still
+// compiles a method/submethod body at registration time — the throwaway
+// per-registration compile that this box's main-pass `Compiler::compile_method_body`
+// is meant to make obsolete for statically-named class/role methods (see
+// `docs/adr/0019-compiled-declarations-and-unified-method-dispatch.md`, D3 box).
+// D3-8a itself only measures the baseline (nothing installs main-pass bytecode
+// yet, so this stays nonzero); D3-8b/c's exit criterion is this counter
+// reaching zero across a `t/` + roast S12/S14 sweep except for the
+// enumerated dynamic shapes (`augment class`, `.^add_method`, computed names).
+static METHOD_BODY_RUNTIME_COMPILES: AtomicU64 = AtomicU64::new(0);
+
+/// Record one runtime (registration-time) compile of a method/submethod body
+/// by `compile_method_def_in_place_with_dist`.
+#[inline]
+pub(crate) fn record_method_body_runtime_compile() {
+    if enabled() {
+        METHOD_BODY_RUNTIME_COMPILES.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
 /// Whether instrumentation is active. Resolved once from the environment so the
 /// hot path is a single cached boolean load when the feature is off.
 #[inline]
@@ -577,6 +597,10 @@ pub(crate) fn dump() {
     );
     let registry_cow_clones = REGISTRY_COW_CLONES.load(Ordering::Relaxed);
     eprintln!("[mutsu vm-stats] registry-cow: clones={registry_cow_clones}");
+    let method_body_runtime_compiles = METHOD_BODY_RUNTIME_COMPILES.load(Ordering::Relaxed);
+    eprintln!(
+        "[mutsu vm-stats] adr0019-d3-8: method_body_runtime_compiles={method_body_runtime_compiles} (registration-time compiles the main-pass compiler should make unnecessary)"
+    );
     let spawn_seed_keys = SPAWN_SEED_KEYS.load(Ordering::Relaxed);
     let spawn_seed_inserts = SPAWN_SEED_INSERTS.load(Ordering::Relaxed);
     eprintln!(
