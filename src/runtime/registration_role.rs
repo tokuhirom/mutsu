@@ -297,6 +297,7 @@ impl Interpreter {
         method_decls: &[crate::opcode::CompiledMethodDecl],
         is_stub_body: bool,
         our_scope_violation: Option<&str>,
+        parent_ops: &[crate::opcode::RoleParentOp],
     ) -> Result<(), RuntimeError> {
         self.clear_private_zeroarg_method_cache();
 
@@ -361,6 +362,8 @@ impl Interpreter {
             method_name_chunks,
             method_decls,
             method_name_chunk_idx: 0,
+            parent_ops,
+            parent_op_idx: 0,
         };
         self.walk_role_body(body, &mut cx)?;
         self.finish_role_registration(

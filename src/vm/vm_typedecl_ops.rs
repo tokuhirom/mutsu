@@ -631,6 +631,7 @@ impl Interpreter {
             method_decls,
             is_stub,
             our_scope_violation,
+            parent_ops,
         }) = code.role_decl_plans.get(idx as usize)
         {
             let name_str = name.resolve();
@@ -665,6 +666,7 @@ impl Interpreter {
                     method_decls,
                     *is_stub,
                     *our_scope_violation,
+                    parent_ops,
                 )
             )?;
             // Link `is Parent` references on this role to the lexical class visible

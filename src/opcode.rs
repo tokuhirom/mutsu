@@ -2756,6 +2756,33 @@ pub(crate) struct CompiledClassDeclPlan {
     pub(crate) parent_arg_chunks: Vec<(String, Vec<DeclTraitArg>)>,
 }
 
+/// One `does`/`hides`/`is hidden` clause from a role's own body, as a typed
+/// plan op (ADR-0019 D7-3) read by position during the role-body walk
+/// instead of the runtime string-matching the `__mutsu_role_hides__`/
+/// `__mutsu_role_hidden__` marker names the parser encodes as synthetic
+/// `Stmt::DoesDecl` statements. One op per `DoesDecl` statement the
+/// (`SyntheticBlock`-flattened) body contains, in source order — mirroring
+/// `walk_role_body`'s own flatten exactly so the two sides' cursors agree.
+#[derive(Debug, Clone)]
+pub(crate) struct RoleParentOp {
+    /// The parent/hidden-class name (unused when `hidden` is set — the
+    /// `is hidden` marker names nothing).
+    pub(crate) name: Symbol,
+    /// This op is the `__mutsu_role_hides__` marker: `name` is the class
+    /// this role hides (already stripped of the marker prefix).
+    pub(crate) hides: bool,
+    /// This op is the `__mutsu_role_hidden__` marker (`is hidden` on the
+    /// role itself).
+    pub(crate) hidden: bool,
+    /// Precompiled bracket-argument chunks for a real `does Role[Args]`
+    /// parent (ADR-0019 D4-1's `Stmt::DoesDecl::args`, compiled the same way
+    /// as `parent_arg_chunks`). `None` when the bracket content did not
+    /// parse as a clean expression list, or there is no bracket — the
+    /// consumer falls back to the string path exactly as the class-header
+    /// site (D4-3) does.
+    pub(crate) args: Option<Vec<DeclTraitArg>>,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct CompiledRoleDeclPlan {
     pub(crate) name: Symbol,
@@ -2806,6 +2833,10 @@ pub(crate) struct CompiledRoleDeclPlan {
     /// registration; `register_role_decl` raises
     /// `X::Declaration::OurScopeInRole` from this fact.
     pub(crate) our_scope_violation: Option<&'static str>,
+    /// Typed `does`/`hides`/`is hidden` ops for this role's own body
+    /// (ADR-0019 D7-3), one per `DoesDecl` statement in source order; see
+    /// [`RoleParentOp`].
+    pub(crate) parent_ops: Vec<RoleParentOp>,
 }
 
 /// A package-level `proto sub`/`proto rule`/`proto token` declaration lowered
@@ -6048,6 +6079,7 @@ impl CompiledCode {
         trait_args: Vec<Option<DeclTraitArg>>,
         attr_decls: Vec<(Symbol, CompiledAttrDecl)>,
         method_name_chunks: Vec<Option<CompiledDeclExpr>>,
+        parent_ops: Vec<RoleParentOp>,
     ) -> u32 {
         let Stmt::RoleDecl {
             name,
@@ -6086,6 +6118,7 @@ impl CompiledCode {
             method_decls,
             is_stub,
             our_scope_violation,
+            parent_ops,
         });
         let idx = self.decl_plans.len() as u32;
         self.decl_plans.push(CompiledDeclPlanRef::Role(plan_idx));

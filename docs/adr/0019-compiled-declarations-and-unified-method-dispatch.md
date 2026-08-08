@@ -116,7 +116,7 @@ unchecked even if its original PR merged. PRs are sequential branches from the t
 `main`; this is not a stacked-PR plan.
 
 **Current progress: 31/53 slices merged (C6, C7, C8, D1, and D2d complete; D2a and D2c-1/2/3 also
-landed, 2026-08-07; D2b-2, D2c-4, D6-1, D7-1/D9-1, D4-1, D4-2, and D4-3 landed 2026-08-08). Phase C is fully checked; the open box is
+landed, 2026-08-07; D2b-2, D2c-4, D6-1, D7-1/D9-1, D4-1, D4-2, D4-3, and D7-3 landed 2026-08-08). Phase C is fully checked; the open box is
 D2 (attributes and generated accessors), subdivided D2a-D2d — D2a, D2b-2, D2c-1/2/3/4, and D2d are
 done; only the optional D2c-5 (A/B env-setup unification, gated on raku-behavior verification of
 shape B's `has_class_scoped_subs` gate) remains open in D2. D3 (class methods/submethods as compiled candidates) is open;
@@ -1042,8 +1042,26 @@ walkers wholesale is not possible before then.
   `register_role_decl` now takes both precomputed facts as parameters instead of re-walking
   the raw body on every registration; the two now-dead `Interpreter` methods are deleted (no
   other callers). D7-2 (= D2b-2's role half, name-keyed `attr_decls`) was already delivered by
-  D2b-2 landing on both `CompiledClassDeclPlan` and `CompiledRoleDeclPlan` at once. D7-3..4
-  remain open.
+  D2b-2 landing on both `CompiledClassDeclPlan` and `CompiledRoleDeclPlan` at once.
+  **D7-3 landed 2026-08-08**: `CompiledRoleDeclPlan` gained `parent_ops: Vec<RoleParentOp>`
+  (`{ name, hides, hidden, args: Option<Vec<DeclTraitArg>> }`), one op per `DoesDecl` statement
+  in the (`SyntheticBlock`-flattened) role body, computed by a new
+  `Compiler::compile_role_parent_ops` mirroring `compile_role_attr_decls`'s flatten so the two
+  sides' traversal order agrees. `role_body_does_decl` now reads its op by position via a
+  cursor (the same style D3-1's `method_name_chunk_idx` uses) instead of string-matching the
+  `__mutsu_role_hidden__`/`__mutsu_role_hides__<name>` marker names the parser still encodes on
+  the raw `Stmt::DoesDecl` — the marker classification moved from the runtime hot path to the
+  one-time compiler precompute. The `args` chunk (D4-1's parsed bracket expressions, compiled
+  the same way D4-2 compiled the class-header site) also feeds `resolve_role_candidate_with_args`
+  for the role-body `does` site's own parametric-candidate resolution (the piece D4-2 deliberately
+  left for D7), reusing the exact `should_treat_role_arg_as_type_expr` coercion-type bail-out
+  D4-3's own regression fix established. Deliberately left as the old string path: the earlier
+  `concretized_parent` lookup in the same function (a second, independent `resolve_role_candidate`
+  call already re-evaluating the same bracket text) — wiring `pre_args` there too would collapse
+  today's double-evaluation of a side-effecting bracket argument into a single evaluation, a
+  real behavior change out of this slice's scope. Verified via the full `t/` suite (27,992
+  tests) and every whitelisted `S14-roles`/`S12-coercion` roast file, plus `t/mro-role-hides.t`
+  (hides/hidden-specific coverage), all green. D7-4 (`body_plan` op walk) remains open.
 - [ ] **D8 — Compile role declaration-time bodies and traits.** Run parameterized-role and composed
   ancestor bodies as bytecode child chunks with correct once-per-composition behavior. (Custom-trait
   arguments already landed with C5; the bodies remain.)

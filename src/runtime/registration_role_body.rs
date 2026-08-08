@@ -3,7 +3,8 @@
 //! extraction from `registration_role.rs` — no behavior change.
 
 use super::registration_class::{
-    parse_role_type_args, substitute_type_params_in_method, type_value_name,
+    parse_role_type_args, should_treat_role_arg_as_type_expr, substitute_type_params_in_method,
+    type_value_name,
 };
 use super::registration_role_decl::RoleDeclCx;
 use super::*;
@@ -141,32 +142,38 @@ impl Interpreter {
 
     /// The `does` arm of the role-body walk: record parent roles/classes and
     /// compose a parent role's attributes and methods into this role.
+    ///
+    /// ADR-0019 D7-3: `op` is precompiled by the compiler at plan lowering
+    /// (`CompiledRoleDeclPlan::parent_ops`) and read here by position via the
+    /// same cursor style `role_body_method_decl` uses, instead of the
+    /// runtime string-matching the `__mutsu_role_hides__`/
+    /// `__mutsu_role_hidden__` marker names on the raw statement.
     pub(super) fn role_body_does_decl(
         &mut self,
         cx: &mut RoleDeclCx<'_>,
-        stmt: &Stmt,
     ) -> Result<(), RuntimeError> {
-        let Stmt::DoesDecl {
-            name: role_name, ..
-        } = stmt
-        else {
-            unreachable!("role_body_does_decl called on a non-DoesDecl statement");
-        };
+        let op_idx = cx.parent_op_idx;
+        cx.parent_op_idx += 1;
+        let op = cx
+            .parent_ops
+            .get(op_idx)
+            .cloned()
+            .expect("parent_ops misaligned with role body walk");
         let name = cx.name;
-        if *role_name == "__mutsu_role_hidden__" {
+        if op.hidden {
             cx.role_def.is_hidden = true;
             return Ok(());
         }
-        let role_name_str = role_name.resolve();
-        if let Some(hidden_name) = role_name_str.strip_prefix("__mutsu_role_hides__") {
+        if op.hides {
             // Track hidden class relationship for this role
             self.registry_mut()
                 .role_hides
                 .entry(name.to_string())
                 .or_default()
-                .push(hidden_name.to_string());
+                .push(op.name.resolve());
             return Ok(());
         }
+        let role_name_str = op.name.resolve();
         // A sibling role referenced by its short name (`role Derived
         // does Base` inside `unit module M`, where Base is registered
         // as `M::Base`) must resolve to its qualified name — the same
@@ -275,9 +282,40 @@ impl Interpreter {
         // role_type_params branch below and defer real composition to
         // class-application time.
         let forwards_type_param = role_name_str.contains("::");
+        // Evaluate this parent's precompiled bracket-argument chunks
+        // (ADR-0019 D7-3), if any, instead of leaving candidate resolution
+        // to re-parse the concatenated parent string — same bail-out as the
+        // class-header site (D4-3): a coercion-type argument
+        // (`does R[Str:D(Numeric)]`) parses cleanly as an `Expr` but must
+        // NOT be evaluated as one (`should_treat_role_arg_as_type_expr`
+        // turns it into a `Package` marker instead), so skip the chunk path
+        // for the whole application when any raw argument would trigger it.
+        let has_type_expr_arg = role_name_str
+            .find('[')
+            .map(|start| {
+                let args_str = &role_name_str[start + 1..role_name_str.len() - 1];
+                parse_role_type_args(args_str)
+                    .iter()
+                    .any(|a| should_treat_role_arg_as_type_expr(a))
+            })
+            .unwrap_or(false);
+        let pre_args = if has_type_expr_arg {
+            None
+        } else {
+            match &op.args {
+                Some(chunks) => {
+                    let mut values = Vec::with_capacity(chunks.len());
+                    for chunk in chunks {
+                        values.push(self.eval_decl_trait_arg(chunk)?);
+                    }
+                    Some(values)
+                }
+                None => None,
+            }
+        };
         let type_subs: Vec<(String, String)> = if !forwards_type_param
             && let Some((_, resolved_param_names, resolved_values)) =
-                self.resolve_role_candidate(&role_name_str)?
+                self.resolve_role_candidate_with_args(&role_name_str, pre_args.as_deref())?
         {
             // Store the resolved param bindings so they are
             // available when the child role is punned to a class
