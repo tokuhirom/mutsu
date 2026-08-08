@@ -167,7 +167,18 @@ impl Interpreter {
         self.loop_local_vars.pop();
         if let Some(saved) = self.loop_local_saved_env.pop() {
             for (name, val) in saved {
-                // `saved` only holds names that shadowed an existing outer binding
+                // A `None` entry is a body-local `my` that shadowed NOTHING: the
+                // name did not exist before the loop, so the block's exit must
+                // take it away again rather than leave the last iteration's value
+                // behind as an enclosing-scope env key. There is no outer slot to
+                // restore in that case (the compiler gave the declaration its own
+                // slot, which the next entry to the block re-initialises), so the
+                // slot pass below is skipped too.
+                let Some(val) = val else {
+                    self.env_mut().remove(&name);
+                    continue;
+                };
+                // `Some` means the name shadowed an existing outer binding
                 // (recorded in exec_set_local_op), so restoring the captured value
                 // re-exposes the outer `$x` clobbered by the loop body's `my $x`.
                 self.env_mut().insert(name.clone(), val.clone());

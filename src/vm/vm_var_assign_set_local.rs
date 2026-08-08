@@ -1983,9 +1983,41 @@ impl Interpreter {
             .loop_local_vars
             .last()
             .is_some_and(|s| s.contains(&name_sym));
+        let prev_env_value = if self.loop_cond_active || already_loop_local {
+            None
+        } else {
+            self.env().get_sym(name_sym).cloned()
+        };
+        if !self.loop_cond_active && !already_loop_local && prev_env_value.is_none() {
+            // The name did not exist before this body-local declaration, so there
+            // is nothing to *restore* — but the entry this `my` is about to create
+            // must not outlive the block either. Record a removal marker.
+            //
+            // Gated on the declaration having a local slot, the same discriminator
+            // the shadow branch below relies on: a `my` in a *statement modifier*
+            // loop (`(my @a).push: $_ for ^3`) introduces no block and is scoped to
+            // the ENCLOSING unit with no slot, so it must survive the loop.
+            //
+            // A `state` declaration is excluded outright: it is re-executed every
+            // iteration but denotes ONE binding that must persist across them (and
+            // past the loop, for the next call). Removing it at loop exit emptied
+            // zef's `for @*ARGS -> $arg { state @named; ... LAST { ... } }` arg
+            // reordering, which broke every `zef` invocation.
+            let is_state = code
+                .state_locals
+                .iter()
+                .any(|(_, key)| key.contains(&format!("::{}@", name)));
+            let is_body_local = !is_state && code.locals.iter().any(|n| n.as_str() == name);
+            if is_body_local
+                && let Some(saved) = self.loop_local_saved_env.last_mut()
+                && !saved.contains_key(name)
+            {
+                saved.insert(name.to_string(), None);
+            }
+        }
         if !self.loop_cond_active
             && !already_loop_local
-            && let Some(prev) = self.env().get_sym(name_sym).cloned()
+            && let Some(prev) = prev_env_value
         {
             // Only record a *genuine, live* enclosing binding for restoration.
             // The restore writes back both env and the local slot, so the value
@@ -2014,7 +2046,7 @@ impl Interpreter {
                 && let Some(saved) = self.loop_local_saved_env.last_mut()
                 && !saved.contains_key(name)
             {
-                saved.insert(name.to_string(), prev);
+                saved.insert(name.to_string(), Some(prev));
             }
         }
         // Pre-initialize the variable in the env with a default value so that

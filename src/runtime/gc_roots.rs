@@ -117,7 +117,11 @@ impl Interpreter {
             env.visit_values(visitor);
         }
         for map in &self.loop_local_saved_env {
-            visit_map_values(visitor, map);
+            // A `None` entry is a removal marker (the name did not exist before
+            // the loop), so it roots nothing.
+            for v in map.values().flatten() {
+                visitor.visit_value(v);
+            }
         }
         for vec in &self.outer_scope_locals {
             visit_slice(visitor, vec);
