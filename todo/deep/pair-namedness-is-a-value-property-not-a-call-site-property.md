@@ -1,5 +1,17 @@
 # A `Pair` held in a variable is passed as a *named* argument
 
+> **Design decided (2026-08-08):** the full investigation and the phased design
+> (P1 method-boundary parity → P2 slip/capture rules → P3 minting inversion →
+> P4/P5 cleanup) are recorded in
+> [ADR-0021](../../docs/adr/0021-argument-namedness-is-a-call-site-property.md).
+> Key findings that supersede parts of the text below: the *function* path is
+> already correct (every non-syntactically-named arg gets `ContainerizePair`,
+> `src/compiler/helpers_call_args.rs:256-258`) — the method path just lacks the
+> same one normalization; `|@l` slips and Capture forwarding misclassify too;
+> and runtime-invoked calls (`$bag.pairs.map(&show)` dies today) prove the
+> minting default must flip as well. The Set/Bag/Mix abort has a root cause
+> (four `ValueView::Pair`-only consumer arms) listed in the ADR.
+
 In Raku, whether an argument is named is a property of the **call site**, not of
 the value. Only a literal `key => value` / `:key(...)` / `:$x` written directly
 in the argument list is a named argument; a `Pair` that arrives through a

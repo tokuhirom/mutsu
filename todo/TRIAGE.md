@@ -57,7 +57,7 @@ them, so progress compounds.
 |---|---|---|---|
 | [async-listener-not-freed-when-relistening-in-a-loop](tickets/async-listener-not-freed-when-relistening-in-a-loop.md) | batteries §1 | L | Third+ round of re-binding a port to a Cro server gets empty bodies; blocks the whole multi-server auth/session/log-file suite family. |
 | [cro-middleware-await-body-text-dies-coercing-any-into-promise](tickets/cro-middleware-await-body-text-dies-coercing-any-into-promise.md) | batteries §1 | M | Last remaining, deterministic, isolated failure in `http-middleware.rakutest`. |
-| [pair-namedness-is-a-value-property-not-a-call-site-property](deep/pair-namedness-is-a-value-property-not-a-call-site-property.md) | correctness §6 | XL | Breaks real Cro client usage (`headers => [...]` dies where raku returns 200). 32 consumer sites; first deliverable is the ADR choosing call-site-mask vs value-default. |
+| [pair-namedness-is-a-value-property-not-a-call-site-property](deep/pair-namedness-is-a-value-property-not-a-call-site-property.md) | correctness §6 | XL | Breaks real Cro client usage (`headers => [...]` dies where raku returns 200). Design decided in [ADR-0021](../docs/adr/0021-argument-namedness-is-a-call-site-property.md) (Proposed): P1 method-boundary parity → P2 slip/capture → P3 minting inversion. P1 alone fixes the Cro headers case. |
 | [for-multi-param-array-hash-shadow-clobbers-outer-container](tickets/for-multi-param-array-hash-shadow-clobbers-outer-container.md) | correctness §6 | M | The `@`/`%`-sigil sibling of the fixed scalar shadow-clobber bug (same Cro `for @c.kv -> $i, $comp` family) — silent in-place corruption of an outer container. |
 
 ### Campaign: vendor the real `Test` module (PLAN §1, batteries policy)
