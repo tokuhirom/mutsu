@@ -474,6 +474,15 @@ impl Interpreter {
                                     "__mutsu_lookup_candidate_idx".to_string(),
                                     Value::int(0),
                                 );
+                                // The code object passed to a user
+                                // `trait_mod:<is>` candidate must report as a
+                                // `Method`, not a `Sub` — see the class
+                                // walker's identical marker
+                                // (`registration_class_body_method.rs`).
+                                trait_env.insert(
+                                    "__mutsu_callable_type".to_string(),
+                                    Value::str_from("Method"),
+                                );
                                 let sub_val = Value::make_sub(
                                     Symbol::intern(name),
                                     Symbol::intern(&resolved_method_name),

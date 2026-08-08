@@ -259,6 +259,17 @@ impl Interpreter {
                         Value::str(resolved_method_name.clone()),
                     );
                     trait_env.insert("__mutsu_lookup_candidate_idx".to_string(), Value::int(0));
+                    // The code object passed to a user `trait_mod:<is>` candidate
+                    // must report as a `Method`, not a `Sub`, the same way
+                    // `sub_value_from_function_def` tags a real method's code
+                    // object — otherwise a candidate typed `(Method $m, ...)`
+                    // (the only form `raku` accepts for a method-level trait)
+                    // never type-checks and the trait application silently does
+                    // nothing.
+                    trait_env.insert(
+                        "__mutsu_callable_type".to_string(),
+                        Value::str_from("Method"),
+                    );
                     let sub_val = Value::make_sub(
                         Symbol::intern(cx.name),
                         Symbol::intern(&resolved_method_name),
