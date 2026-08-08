@@ -35,6 +35,47 @@ not ok 3 - Session cookie being sent makes state work (request 4)
 Every iteration reports `request 4`, and only the iteration where the body
 really is `Visit 4` passes.
 
+## Update 2026-08-08: the concrete Cro instance was a multi-param `for` loop
+
+The instrumentation below was re-run on current `main` and identified the
+writer exactly: **`Cro.rakumod`'s `for @components-in.kv -> $i, $comp`** (the
+pipeline compose), not the HPACK `while` loop originally guessed. A
+multi-parameter `for` binds its parameters with a plain `Stmt::Assign`
+(`build_for_bind_stmts`), which reaches `set_shared_var_sym` and publishes each
+per-iteration value under the bare name — while a *single*-param loop binds
+natively and is exempt. Minimal repro (no Cro, no modules):
+
+```raku
+sub compose(@components) {
+    my $last;
+    for @components.kv -> $i, $comp { $last = $i + $comp }
+}
+await start { 1 };
+for 1..5 -> $i {
+    compose([10, 20, 30, 40, 50]);
+    await start { 1 };
+    say "loop i=$i";     # raku: 1..5;  mutsu (before the fix): 1,4,4,4,4
+}
+```
+
+Fixed by masking a multi-param loop's names out of the bare-name lane for the
+loop's duration (the rule `exec_set_var_dynamic_op` already applies to a `my`
+re-declaration) — `src/vm/vm_for_loop_body.rs`, pinned by
+`t/for-multi-param-shared-lane.t`. `t/http-session-inmemory.rakutest`'s
+tests 3-7 still fail after it, but with a *different* wrong value (`-1`, the
+HPACK Huffman `while --$i >= 0` residue) reaching the frame through the **`env`
+axis, not the store** — no `SharedStore` write or pull for `i` happens any more.
+So the remaining leak on this file is a plain env-key collision, and this
+ticket's store-keying redesign is no longer what blocks it.
+
+Related, still open and single-threaded (no store involved):
+`todo/tickets/for-multi-param-array-hash-shadow-clobbers-outer-container.md` —
+a multi-param loop variable with no local slot in its frame writes a *global*
+of the same name (`sub f() { for <a b>.kv -> $j, $u {} }` clobbers an outer
+`my $j`). Same root cause (the bind is an assignment, not a declaration); the
+real fix is making it a per-iteration declaration, which is entangled with the
+§1.4 shadow-slot campaign.
+
 ## Mechanism, measured
 
 `Env::insert`/`insert_sym` were instrumented behind an env var to print a

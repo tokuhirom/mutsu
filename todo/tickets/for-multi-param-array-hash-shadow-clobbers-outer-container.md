@@ -1,5 +1,21 @@
 # A multi-parameter `for` loop with an `@`/`%`-sigil parameter mutates the enclosing container it shadows
 
+**Update 2026-08-08:** the scalar case is *not* fully fixed either — the earlier
+fix only covered a shadowed name that already had a local slot in the same
+frame. When the frame has no slot for the name, the bind falls through to a
+**global by-name write** and clobbers an outer lexical of that name:
+
+```raku
+sub f() { for <a b c>.kv -> $j, $u { } }
+my $j = 42;
+f();
+say $j;    # raku: 42;  mutsu: 2
+```
+
+Same root cause as the `@`/`%` case below, and the same real fix (make the bind
+a per-iteration declaration). The cross-thread-lane symptom of this family was
+split off and fixed separately in `t/for-multi-param-shared-lane.t`.
+
 ```raku
 my @arr = (100, 200);
 for 1, [10,20], 2, [30,40] -> $a, @arr { }
