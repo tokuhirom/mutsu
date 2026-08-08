@@ -72,19 +72,6 @@ pub(super) fn method_sub_form_params(
 }
 
 impl Interpreter {
-    /// True for a categorical operator name such as `prefix:<~>`, `infix:<as>`,
-    /// `postfix:<!>`, `circumfix:<[ ]>`, etc.
-    pub(super) fn is_operator_categorical_name(name: &str) -> bool {
-        const CATEGORIES: &[&str] = &[
-            "prefix:",
-            "postfix:",
-            "infix:",
-            "circumfix:",
-            "postcircumfix:",
-        ];
-        CATEGORIES.iter().any(|c| name.starts_with(c)) && name.ends_with('>')
-    }
-
     /// Register an importable *sub form* for an `is export` operator method.
     ///
     /// Raku exposes `method prefix:<~> is export` (etc.) as a sub whose invocant

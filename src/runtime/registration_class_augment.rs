@@ -420,27 +420,21 @@ impl Interpreter {
                     // ADR-0019 D3-6: `is export` on an augmented method,
                     // matching the class walker (confirmed against `raku`:
                     // `augment class Foo { method greet() is export {...} }`
-                    // then `import Foo` exposes a `greet` sub).
+                    // then `import Foo` exposes a `greet` sub — for any
+                    // method name, not just an operator-categorical one; see
+                    // the class walker's identical fix).
                     if decl.is_export && !self.suppress_exports {
                         let tags = if decl.export_tags.is_empty() {
                             vec!["DEFAULT".to_string()]
                         } else {
                             decl.export_tags.clone()
                         };
-                        if Self::is_operator_categorical_name(&resolved_method_name) {
-                            self.register_exported_operator_method_sub(
-                                name,
-                                &resolved_method_name,
-                                &effective_param_defs,
-                                tags,
-                            );
-                        } else {
-                            self.register_exported_var(
-                                name.to_string(),
-                                format!("&{}", resolved_method_name),
-                                tags,
-                            );
-                        }
+                        self.register_exported_operator_method_sub(
+                            name,
+                            &resolved_method_name,
+                            &effective_param_defs,
+                            tags,
+                        );
                     }
                     // ADR-0019 D3-6: an `is native(...)` augmented method
                     // routes through NativeCall, matching the class walker.
