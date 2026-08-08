@@ -274,6 +274,7 @@ impl Interpreter {
         body_used_modules: &[String],
         body_declared_types: &[String],
         method_name_chunks: &[Option<crate::opcode::CompiledDeclExpr>],
+        method_decls: &[crate::opcode::CompiledMethodDecl],
     ) -> Result<(), RuntimeError> {
         self.clear_private_zeroarg_method_cache();
 
@@ -325,6 +326,7 @@ impl Interpreter {
             body_used_modules: body_used_modules.iter().cloned().collect(),
             body_declared_types: body_declared_types.iter().cloned().collect(),
             method_name_chunks,
+            method_decls,
             method_name_chunk_idx: 0,
         };
         self.walk_role_body(body, &mut cx)?;

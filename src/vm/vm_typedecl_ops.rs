@@ -140,6 +140,7 @@ impl Interpreter {
             own_attribute_names,
             is_default_chunks,
             method_name_chunks,
+            method_decls,
         }) = code.class_decl_plans.get(idx as usize)
         {
             let resolved_name = if let Some(chunk) = name_chunk {
@@ -254,6 +255,7 @@ impl Interpreter {
                         own_attribute_names,
                         attr_is_default_chunks: is_default_chunks,
                         method_name_chunks,
+                        method_decls,
                     },
                     body,
                 )
@@ -605,6 +607,7 @@ impl Interpreter {
             body_used_modules,
             body_declared_types,
             method_name_chunks,
+            method_decls,
         }) = code.role_decl_plans.get(idx as usize)
         {
             let name_str = name.resolve();
@@ -635,6 +638,7 @@ impl Interpreter {
                     body_used_modules,
                     body_declared_types,
                     method_name_chunks,
+                    method_decls,
                 )
             )?;
             // Link `is Parent` references on this role to the lexical class visible

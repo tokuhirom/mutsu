@@ -212,6 +212,13 @@ pub(crate) struct ClassDeclModifiers<'a> {
     /// paths with no compiled plan available (`augment class`, and the
     /// role-pun/mixin synthesis paths that call this with an empty body).
     pub(crate) method_name_chunks: &'a [Option<crate::opcode::CompiledDeclExpr>],
+    /// Precompiled typed mirror of each top-level `method`/`submethod`
+    /// declaration in the body (ADR-0019 D3-7), position-aligned with
+    /// `method_name_chunks`, threaded down to `class_body_method_decl` via
+    /// `ClassBodyCx`. Empty for registration paths with no compiled plan
+    /// available (the role-pun/mixin synthesis paths that call this with an
+    /// empty body).
+    pub(crate) method_decls: &'a [crate::opcode::CompiledMethodDecl],
 }
 
 pub(super) fn parse_role_type_args(input: &str) -> Vec<String> {

@@ -6,7 +6,6 @@ use super::registration_class::make_delegation_method;
 use super::registration_role_decl::RoleDeclCx;
 use super::*;
 use crate::ast::HandleSpec;
-use crate::opcode::CompiledMethodDecl;
 
 impl Interpreter {
     /// The `method` arm of the role-body walk: validate the declaration and
@@ -14,15 +13,23 @@ impl Interpreter {
     pub(super) fn role_body_method_decl(
         &mut self,
         cx: &mut RoleDeclCx<'_>,
-        stmt: &Stmt,
     ) -> Result<(), RuntimeError> {
-        // ADR-0019 D3-3: shared typed mirror of `Stmt::MethodDecl` (see
-        // `CompiledMethodDecl`, D3-2). This walk does not read
+        // ADR-0019 D3-7: `decl` is precompiled by the compiler at plan
+        // lowering (`CompiledRoleDeclPlan::method_decls`) and read here by
+        // position via the same cursor `method_name_chunks` already uses
+        // (D3-1/D3-3) instead of calling `CompiledMethodDecl::from_stmt` on
+        // the raw statement. This walk does not read
         // `is_our`/`our_variable_form`/`custom_traits`/`is_export`/
         // `export_tags` — a role method is never `our`-registered as a
         // package sub and custom traits/exports on a role method are not
         // handled here, matching the walk's original ignored bindings.
-        let decl = CompiledMethodDecl::from_stmt(stmt);
+        let chunk_idx = cx.method_name_chunk_idx;
+        cx.method_name_chunk_idx += 1;
+        let decl = cx
+            .method_decls
+            .get(chunk_idx)
+            .cloned()
+            .expect("method_decls misaligned with role body walk");
         let name = cx.name;
         // Validate that $!attr references in the method body are declared
         // in this role (same check as for class methods).
@@ -174,8 +181,6 @@ impl Interpreter {
         // ADR-0019 D3-1: see `class_body_method_decl`'s identical comment —
         // the compiler and this walk flatten `SyntheticBlock` identically, so
         // the chunk at this cursor position matches this statement.
-        let chunk_idx = cx.method_name_chunk_idx;
-        cx.method_name_chunk_idx += 1;
         let resolved_method_name = if decl.name_expr.is_some() {
             let chunk = cx
                 .method_name_chunks

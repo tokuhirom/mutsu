@@ -2454,6 +2454,27 @@ fn role_body_prescan(body: &[Stmt]) -> (Vec<Symbol>, Vec<String>, Vec<String>) {
     (own_attribute_names, used_modules, declared_types)
 }
 
+/// Precompute a typed `CompiledMethodDecl` for each top-level `method`/
+/// `submethod` declaration in a class/role body (ADR-0019 D3-7), in the same
+/// `SyntheticBlock`-flattened order `compile_method_name_chunks` already
+/// walks — so the two vecs share one position cursor at registration time.
+/// This moves `CompiledMethodDecl::from_stmt`'s destructure from "once per
+/// registration" (`class_body_method_decl`/`role_body_method_decl`, which can
+/// re-run for a class declared inside a loop or a repeatedly-called sub) to
+/// "once, at compile time".
+fn compile_method_decls(body: &[Stmt]) -> Vec<CompiledMethodDecl> {
+    body.iter()
+        .flat_map(|s| match s {
+            Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
+            other => vec![other],
+        })
+        .filter_map(|stmt| match stmt {
+            Stmt::MethodDecl { .. } => Some(CompiledMethodDecl::from_stmt(stmt)),
+            _ => None,
+        })
+        .collect()
+}
+
 fn body_contains_non_nil_return(stmts: &[Stmt]) -> bool {
     stmts.iter().any(|stmt| match stmt {
         Stmt::Return(expr) => !matches!(expr, Expr::Literal(value) if value.is_nil()),
@@ -2522,6 +2543,12 @@ pub(crate) struct CompiledClassDeclPlan {
     /// position, not by name: an indirect `method ::($name) {...}` name has
     /// no guaranteed-unique fallback name to key on the way attributes do.
     pub(crate) method_name_chunks: Vec<Option<CompiledDeclExpr>>,
+    /// Precompiled typed mirror of each top-level `method`/`submethod`
+    /// declaration in the body (ADR-0019 D3-7), position-aligned with
+    /// `method_name_chunks` (built by the same flattened walk). Registration
+    /// reads a clone by position instead of calling `CompiledMethodDecl::from_stmt`
+    /// on the raw statement every time the class declaration executes.
+    pub(crate) method_decls: Vec<CompiledMethodDecl>,
 }
 
 #[derive(Debug, Clone)]
@@ -2550,6 +2577,10 @@ pub(crate) struct CompiledRoleDeclPlan {
     /// `submethod` declaration in the body (ADR-0019 D3-1). See
     /// `CompiledClassDeclPlan::method_name_chunks`.
     pub(crate) method_name_chunks: Vec<Option<CompiledDeclExpr>>,
+    /// Precompiled typed mirror of each top-level `method`/`submethod`
+    /// declaration in the body (ADR-0019 D3-7). See
+    /// `CompiledClassDeclPlan::method_decls`.
+    pub(crate) method_decls: Vec<CompiledMethodDecl>,
 }
 
 /// A package-level `proto sub`/`proto rule`/`proto token` declaration lowered
@@ -5754,6 +5785,7 @@ impl CompiledCode {
             })
             .collect();
         let own_attribute_names = class_own_attribute_names(body);
+        let method_decls = compile_method_decls(body);
         let plan_idx = self.class_decl_plans.len() as u32;
         self.class_decl_plans.push(CompiledClassDeclPlan {
             name: *name,
@@ -5774,6 +5806,7 @@ impl CompiledCode {
             own_attribute_names,
             is_default_chunks,
             method_name_chunks,
+            method_decls,
         });
         let idx = self.decl_plans.len() as u32;
         self.decl_plans.push(CompiledDeclPlanRef::Class(plan_idx));
@@ -5801,6 +5834,7 @@ impl CompiledCode {
             panic!("add_role_decl_plan expects RoleDecl");
         };
         let (own_attribute_names, body_used_modules, body_declared_types) = role_body_prescan(body);
+        let method_decls = compile_method_decls(body);
         let plan_idx = self.role_decl_plans.len() as u32;
         self.role_decl_plans.push(CompiledRoleDeclPlan {
             name: *name,
@@ -5816,6 +5850,7 @@ impl CompiledCode {
             body_used_modules,
             body_declared_types,
             method_name_chunks,
+            method_decls,
         });
         let idx = self.decl_plans.len() as u32;
         self.decl_plans.push(CompiledDeclPlanRef::Role(plan_idx));

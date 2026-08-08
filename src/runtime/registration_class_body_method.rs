@@ -7,7 +7,6 @@ use super::registration_class_body::ClassBodyCx;
 use super::registration_class_body_method_forms::method_sub_form_params;
 use super::*;
 use crate::ast::{HandleSpec, ParamDef};
-use crate::opcode::CompiledMethodDecl;
 use crate::symbol::Symbol;
 
 impl Interpreter {
@@ -17,13 +16,19 @@ impl Interpreter {
     pub(super) fn class_body_method_decl(
         &mut self,
         cx: &mut ClassBodyCx<'_>,
-        stmt: &Stmt,
     ) -> Result<(), RuntimeError> {
-        // ADR-0019 D3-2: a typed mirror of the `Stmt::MethodDecl` fields
-        // (see `CompiledMethodDecl`), shared with the eventual role-body and
-        // augment `method` arms instead of each independently re-destructuring
-        // the 19-field AST variant.
-        let decl = CompiledMethodDecl::from_stmt(stmt);
+        // ADR-0019 D3-7: `decl` is precompiled by the compiler at plan
+        // lowering (`CompiledClassDeclPlan::method_decls`) and read here by
+        // position via the same cursor `method_name_chunks` already uses
+        // (D3-1) — `class_body_method_decl` no longer calls
+        // `CompiledMethodDecl::from_stmt` on the raw statement itself.
+        let chunk_idx = cx.method_name_chunk_idx;
+        cx.method_name_chunk_idx += 1;
+        let decl = cx
+            .method_decls
+            .get(chunk_idx)
+            .cloned()
+            .expect("method_decls misaligned with class body walk");
         self.validate_private_access_in_stmts(cx.name, &decl.body)?;
         Self::validate_attr_declared_in_class(&cx.attr_ctx(), &decl.body)?;
         // In BUILD/TWEAK submethods, :$!attr parameters must refer
@@ -50,8 +55,6 @@ impl Interpreter {
         // compiler and this walk both flatten `SyntheticBlock` the same way,
         // so position, not name, is the shared key (see
         // `Compiler::compile_method_name_chunks`).
-        let chunk_idx = cx.method_name_chunk_idx;
-        cx.method_name_chunk_idx += 1;
         let resolved_method_name = if decl.name_expr.is_some() {
             let chunk = cx
                 .method_name_chunks
