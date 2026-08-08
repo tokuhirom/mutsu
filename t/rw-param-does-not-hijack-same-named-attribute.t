@@ -1,6 +1,6 @@
 use Test;
 
-plan 5;
+plan 7;
 
 # An `is rw`/`is raw` scalar parameter binds through a shared `ContainerRef`
 # cell. The method-exit attribute reconcile scans each attribute's bare name for
@@ -39,7 +39,26 @@ class P { has $.total }
     nok B.new.run, "a caller's same-named variable does not replace the attribute";
 }
 
-# 4: a genuine `:=` attribute binding still wins (what the scan is for).
+# 4-5: the frame's own `my` lexical shares the attribute's name and is boxed
+# into a cell by being passed to an rw parameter. This is the shape
+# `Cro::HTTP::Client.request`'s `my Cro::Policy::Timeout $timeout-policy` has
+# against its own `has $.timeout-policy`; reading the attribute in the callee is
+# what made the adopted cell observable.
+{
+    class F {
+        has P $.pol;
+        method go() { my P $pol; self!fill($pol); 'ok' }
+        method !fill(P $pol is rw) {
+            my $d = P.new(total => 1);
+            ($pol = $!pol // $d) without $pol;
+        }
+    }
+    my $f = F.new;
+    is (try $f.go) // $!.message, 'ok', "a frame's own my-lexical does not replace the attribute";
+    is (try $f.go) // $!.message, 'ok', 'and the second call on the same instance still works';
+}
+
+# 6: a genuine `:=` attribute binding still wins (what the scan is for).
 {
     class D {
         has $.bound;
@@ -53,7 +72,7 @@ class P { has $.total }
     is $d.peek, 42, 'a real := attribute binding still tracks its target';
 }
 
-# 5: an rw parameter still writes back to its caller.
+# 7: an rw parameter still writes back to its caller.
 {
     class E {
         has $.pol;

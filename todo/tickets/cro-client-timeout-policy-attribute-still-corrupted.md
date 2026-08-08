@@ -1,11 +1,11 @@
-# `Cro::HTTP::Client`'s `$!timeout-policy` still turns into `Any` after one request
+# `Cro::HTTP::Client` cannot complete a request: `$!timeout-policy` is unreadable
 
-Every `Cro::HTTP::Client` test that makes two requests from the same client dies
-on the second one:
+Every `Cro::HTTP::Client` request comes back with an empty body and this error:
 
 ```
-Type check failed in assignment to $timeout-policy; expected Cro::Policy::Timeout but got Any
-  in sub !assemble-request at .../Cro/HTTP/Client.rakumod line 1064
+P6opaque: no such attribute '$!timeout-policy' on type Cro::HTTP::Client in a
+MetamodelX::MonitorHOW when trying to get a value
+  in sub !assemble-request at .../Cro/HTTP/Client/CookieJar.rakumod line 1064
   in sub request at .../Cro/HTTP/Client.rakumod line 616
   in sub get at .../Cro/HTTP/Client.rakumod line 450
 ```
@@ -14,9 +14,9 @@ This blocks `t/http-session-inmemory.rakutest`, `t/http-session-persistent.rakut
 and is the likely cause of the `rc=124` timeouts in `t/http-auth-basic*.rakutest`
 and the tail of `t/http-router.rakutest`.
 
-## What is known
+## Where it is
 
-The relevant declarations (`lib/Cro/HTTP/Client.rakumod`):
+`lib/Cro/HTTP/Client.rakumod`:
 
 ```raku
 has Cro::Policy::Timeout $.timeout-policy;                       # line 379
@@ -27,51 +27,46 @@ method !assemble-request(…, Cro::Policy::Timeout $timeout-policy is rw, …) {
         without $timeout-policy;                                 # line 1064
 ```
 
-Instrumenting line 1064 (copy the file into a shadow tree that `-I` puts first)
-shows, on one client instance:
+## Leads
 
-* **first request** — `$!timeout-policy.^name` = `Cro::Policy::Timeout`,
-  `.defined` = `False`; the right-hand side evaluates to
-  `Cro::HTTP::Client::Policy::Timeout`. Correct.
-* **second request** — `$!timeout-policy.^name` = **`Any`**, `.defined` =
-  **`True`**. The attribute has been replaced between the two calls.
+* **The reported file is wrong.** The frame says
+  `!assemble-request at …/Cro/HTTP/Client/CookieJar.rakumod line 1064`, but
+  `!assemble-request` is in `Client.rakumod`, and `CookieJar.rakumod` is far
+  shorter than 1064 lines. So the backtrace's file and line come from different
+  frames — compare `todo/tickets/callframe-line-and-file-come-from-different-frames.md`.
+  Fixing that first would make this much easier to chase.
+* **`MetamodelX::MonitorHOW`** in the message means the invocant's HOW is
+  OO::Monitors' (`Cro::HTTP::Client::CookieJar` is a `monitor`). Either `self`
+  is the wrong object at that point, or an attribute read on a monitor-HOW
+  instance does not find the class's own attributes.
+* `self ?? $!timeout-policy // $default-timeout !! $default-timeout` must not
+  evaluate `$!timeout-policy` at all when `self` is a type object (`??`/`!!` is
+  looser than `//`, so the true branch is `$!timeout-policy // $default`). Worth
+  checking that mutsu short-circuits it — `Cro::HTTP::Client.get($url)` is a
+  legitimate class-level call.
 
-Because it is now *defined*, `without $timeout-policy` … actually still holds
-(the local is undefined), the assignment runs, and the failure surfaces as a type
-check on the rw parameter's writeback into the caller's
-`my Cro::Policy::Timeout $timeout-policy`.
+## History
 
-## Not the same bug as #6061
-
-`news/2026-08/rw-param-does-not-hijack-a-same-named-attribute.md` fixed the
-`reconcile_attrs` bare-name scan adopting a same-named `is rw` parameter (or a
-caller variable) as a `:=` attribute binding. That is the same *shape* — the
-parameter and the attribute are both called `timeout-policy` — and it fixed the
-reduced repro:
+The earlier symptom — `Type check failed in assignment to $timeout-policy;
+expected Cro::Policy::Timeout but got Any` on the *second* request from one
+client — was the `reconcile_attrs` bare-name scan adopting the same-named `is
+rw` parameter, the caller's variable, or the caller's `my` lexical as a `:=`
+attribute binding and thereby replacing the attribute. Fixed in
+`news/2026-08/rw-param-does-not-hijack-a-same-named-attribute.md`; the reduced
+repro now matches raku:
 
 ```raku
 class P { has $.total }
-class A {
-    has P $.pol = P.new(total => 7);
-    method run() { my P $q; self!fill($q) }
-    method !fill(P $pol is rw) { }
+class C {
+    has P $.pol;
+    method go() { my P $pol; self!f($pol); 'ok' }
+    method !f(P $pol is rw) { my $d = P.new; ($pol = $!pol // $d) without $pol }
 }
-A.new.run;   # attribute used to be replaced by the parameter's cell
+my $o = C.new; say $o.go; say $o.go;
 ```
 
-but the Cro symptom survives it unchanged, so a second path corrupts the
-attribute. Candidates not yet checked:
-
-* `method request` / `method get` are `multi method`s, so dispatch may go
-  through the interpreter slow path (`runtime/resolution_call_sub.rs`, which has
-  its own `changed_caller_locals` handling) rather than
-  `vm/vm_method_dispatch.rs`'s `call_compiled_method{,_fast}` where the fixed
-  scan lives. The backtrace frames read `in sub !assemble-request` / `in sub
-  request`, which is consistent with that.
-* `Cro::Policy::Timeout` is a **parameterized role** (`role
-  Cro::Policy::Timeout[%phase-defaults]`) used bare as a type constraint. The
-  attribute's declared-type machinery may not resolve it the same way on the
-  second pass.
+After that fix the test file gets *further* — it now runs both of its tests
+instead of dying on the first — but neither passes.
 
 ## How to reproduce
 
@@ -81,5 +76,6 @@ bash tmp/cro-t.sh t/http-session-inmemory.rakutest
 
 (helper scripts and the vendored Cro checkout live under `tmp/`, which is
 gitignored; re-fetch with the Cro campaign's `inc-paths.txt` recipe if the
-checkout is gone). The `%*ENV<CRODBG>`-gated notes already in the vendored
-`Client.rakumod` do not cover line 1064 — add one there in a shadow copy.
+checkout is gone). Copy `Client.rakumod` into a shadow tree that `-I` puts first
+to instrument line 1064 — the `%*ENV<CRODBG>`-gated notes already in the
+vendored file do not cover it.
