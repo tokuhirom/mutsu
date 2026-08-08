@@ -450,8 +450,10 @@ use self::unicode::{check_unicode_property, check_unicode_property_with_args};
 /// `Interpreter::eval_decl_trait_arg`/`.literal()` instead of its own
 /// `Expr::Literal` pattern match, unifying the eval mechanism across the
 /// ~15 sites that fill/check attribute defaults and `where` constraints.
-/// Still always `Literal`/`Ast` for now — no call site precompiles a
-/// `Compiled` chunk yet, so `.as_expr()` on either field remains panic-free.
+/// Both fields may now be a `Compiled` chunk (ADR-0019 D2c-4), so
+/// `.as_expr()` is no longer panic-free on them — `declared_shape` exists
+/// precisely so the one caller that used to read `default` as an `Expr`
+/// (the shaped-`@`-attribute pattern match) does not need to call it.
 #[derive(Debug, Clone)]
 pub(crate) struct ClassAttributeDef {
     pub(crate) name: String,
@@ -461,6 +463,12 @@ pub(crate) struct ClassAttributeDef {
     pub(crate) is_required: Option<Option<String>>,
     pub(crate) sigil: char,
     pub(crate) where_constraint: Option<crate::opcode::DeclTraitArg>,
+    /// Declared shape dimensions for an `@`-sigil attribute (`has @.a[2]`),
+    /// copied from `CompiledAttrDecl::declared_shape` at registration time
+    /// (ADR-0019 D2c-4). `None` for a non-plan-backed construction site
+    /// (`.^add_attribute`, builtin `Proc` attributes) — none of those are
+    /// ever compiler-generated shaped-array defaults.
+    pub(crate) declared_shape: Option<Vec<usize>>,
 }
 
 /// The set of read-only variable names (`readonly_vars`), and the type of a
@@ -2796,6 +2804,7 @@ mod tests {
             compiled_code: Some(Arc::new(compiled)),
             compiled_fns: None,
             compiled_routine: None,
+            is_decl_expr_thunk: false,
             deprecated_message: None,
             source_line: None,
             source_file: None,

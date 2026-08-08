@@ -406,6 +406,7 @@ impl Interpreter {
                     is_required: None,
                     sigil,
                     where_constraint: None,
+                    declared_shape: None,
                 }
             };
             let nil_default = || Some(Expr::Literal(Value::NIL));

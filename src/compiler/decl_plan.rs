@@ -193,14 +193,32 @@ impl Compiler {
     }
 
     /// Build one attribute's typed descriptor, precompiling its `is
-    /// default(...)` trait argument (ADR-0019 D2c) inline the same way
-    /// `class_body_has_decl` used to look one up separately.
+    /// default(...)`, `default`, and `where_constraint` trait/expr arguments
+    /// (ADR-0019 D2c-1/D2c-4) inline instead of leaving them as raw `Expr`s
+    /// for a registration-time `eval_block_value`/`.as_expr()` call.
     fn compile_class_attr_decl(&self, stmt: &Stmt) -> crate::opcode::CompiledAttrDecl {
-        let Stmt::HasDecl { is_default, .. } = stmt else {
-            unreachable!("compile_class_attr_decl called on a non-HasDecl statement");
+        crate::opcode::CompiledAttrDecl::from_stmt(stmt, self.compile_attr_decl_chunks(stmt))
+    }
+
+    /// Build the `AttrDeclChunks` override for one `Stmt::HasDecl`, shared by
+    /// the class and role attribute-descriptor collectors.
+    fn compile_attr_decl_chunks(&self, stmt: &Stmt) -> crate::opcode::AttrDeclChunks {
+        let Stmt::HasDecl {
+            default,
+            where_constraint,
+            is_default,
+            ..
+        } = stmt
+        else {
+            unreachable!("compile_attr_decl_chunks called on a non-HasDecl statement");
         };
-        let chunk = is_default.as_ref().map(|e| self.compile_decl_trait_arg(e));
-        crate::opcode::CompiledAttrDecl::from_stmt(stmt, chunk.as_ref())
+        crate::opcode::AttrDeclChunks {
+            is_default: is_default.as_ref().map(|e| self.compile_decl_trait_arg(e)),
+            default: default.as_ref().map(|e| self.compile_decl_trait_arg(e)),
+            where_constraint: where_constraint
+                .as_deref()
+                .map(|e| self.compile_decl_trait_arg(e)),
+        }
     }
 
     /// [`Self::add_sub_decl_plan`] for a role declaration. A role's name is
@@ -215,7 +233,7 @@ impl Compiler {
             panic!("add_role_decl_plan expects RoleDecl");
         };
         let trait_args = self.compile_decl_trait_args(custom_traits);
-        let attr_decls = Self::compile_role_attr_decls(body);
+        let attr_decls = self.compile_role_attr_decls(body);
         let method_name_chunks = self.compile_method_name_chunks(body);
         self.code
             .add_role_decl_plan(stmt, trait_args, attr_decls, method_name_chunks)
@@ -227,12 +245,17 @@ impl Compiler {
     /// `SyntheticBlock` flatten with no nested-sub surfacing (roles have none
     /// — `walk_role_body`'s own comment confirms it) and includes class-level
     /// (`our`/`my`) attributes, unlike the class side: `role_body_has_decl`
-    /// handles both kinds through the same arm. No `is default(...)` chunk is
-    /// precompiled here (stays `DeclTraitArg::Ast`, calling
-    /// `CompiledAttrDecl::from_stmt(stmt, None)` exactly as
-    /// `role_body_has_decl` already did) — a pure construction-side move,
-    /// not a new compile step.
-    fn compile_role_attr_decls(body: &[Stmt]) -> Vec<(Symbol, crate::opcode::CompiledAttrDecl)> {
+    /// handles both kinds through the same arm. Precompiles `is default(...)`/
+    /// `default`/`where_constraint` the same way the class side does
+    /// (ADR-0019 D2c-4) — role attribute defaults reference the role's type
+    /// parameters as ordinary env variables bound before evaluation, not as
+    /// AST substitution, so a single compile-time chunk is sound regardless
+    /// of which concrete class later composes this role (confirmed by the
+    /// D2c research pass).
+    fn compile_role_attr_decls(
+        &self,
+        body: &[Stmt],
+    ) -> Vec<(Symbol, crate::opcode::CompiledAttrDecl)> {
         body.iter()
             .flat_map(|s| match s {
                 Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
@@ -241,7 +264,10 @@ impl Compiler {
             .filter_map(|stmt| match stmt {
                 Stmt::HasDecl { name, .. } => Some((
                     *name,
-                    crate::opcode::CompiledAttrDecl::from_stmt(stmt, None),
+                    crate::opcode::CompiledAttrDecl::from_stmt(
+                        stmt,
+                        self.compile_attr_decl_chunks(stmt),
+                    ),
                 )),
                 _ => None,
             })

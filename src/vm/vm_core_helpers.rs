@@ -127,16 +127,9 @@ impl Interpreter {
         // `Bool`, because seeding the unset typed attribute evaluates its type
         // constraint through here. Cro hit it in a loop body — `for $resp.cookies
         // { $state = CookieState.new(...); self!get-cookie-lifetime($_, $state) }`
-        // passed a `Bool` where a `Cro::HTTP::Cookie` was expected.
-        let saved_topic = self.env().get("_").cloned();
-        let restore_topic = |zelf: &mut Self| match &saved_topic {
-            Some(v) => {
-                zelf.env_mut().insert("_".to_string(), v.clone());
-            }
-            None => {
-                zelf.env_mut().remove("_");
-            }
-        };
+        // passed a `Bool` where a `Cro::HTTP::Cookie` was expected. `run_decl_expr`
+        // below shares this fix — see its own doc comment.
+        let saved_topic = self.save_decl_expr_topic();
         if body.iter().all(|s| matches!(s, Stmt::Expr(_))) {
             let (code, compiled_fns) = self.compile_block_value(body);
             let let_mark = self.let_saves_len();
@@ -144,13 +137,31 @@ impl Interpreter {
             let result = self.run_nested(&code, &compiled_fns);
             self.pop_block_scope_depth();
             self.restore_let_saves(let_mark);
-            restore_topic(self);
+            self.restore_decl_expr_topic(saved_topic);
             self.loan_env_for(|i| i.run_pending_instance_destroys())?;
             return result.map(|v| v.unwrap_or(Value::NIL));
         }
         let result = self.loan_env_for(|i| i.eval_block_value(body));
-        restore_topic(self);
+        self.restore_decl_expr_topic(saved_topic);
         result
+    }
+
+    /// Save `$_` before a declaration-time value block/chunk runs — see
+    /// `vm_eval_block_value`'s doc comment for why this is needed. Paired
+    /// with [`Self::restore_decl_expr_topic`].
+    fn save_decl_expr_topic(&mut self) -> Option<Value> {
+        self.env().get("_").cloned()
+    }
+
+    fn restore_decl_expr_topic(&mut self, saved_topic: Option<Value>) {
+        match saved_topic {
+            Some(v) => {
+                self.env_mut().insert("_".to_string(), v);
+            }
+            None => {
+                self.env_mut().remove("_");
+            }
+        }
     }
 
     /// Run a declaration-time expression chunk (ADR-0019 C5).
@@ -158,16 +169,38 @@ impl Interpreter {
     /// The chunk was lowered by the compiler, so this is the `vm_eval_block_value`
     /// fast path with the on-demand compile removed: the same re-entrant bytecode
     /// entry and the same scope bookkeeping, minus rebuilding the bytecode at
-    /// every registration.
+    /// every registration. It needs the identical topic save/restore
+    /// `vm_eval_block_value` carries (see the comment there): the chunk is
+    /// compiled for its VALUE, so its last expression is a `SetTopic` that
+    /// would otherwise escape to whatever frame is constructing — exactly the
+    /// `class S { has Bool $.b }; $_ = 'x'; S.new` shape #6071 fixed for the
+    /// `Ast`/on-demand-compile path, now reachable here too once a
+    /// declaration-time expression (e.g. an attribute default, ADR-0019
+    /// D2c-4) is precompiled to `DeclTraitArg::Compiled`.
     pub(crate) fn run_decl_expr(
         &mut self,
         chunk: &crate::opcode::CompiledDeclExpr,
     ) -> Result<Value, RuntimeError> {
+        self.run_decl_code(&chunk.code, &chunk.fns)
+    }
+
+    /// The body of [`Self::run_decl_expr`], taking the code/fns pair directly
+    /// instead of a `CompiledDeclExpr` — shared with
+    /// [`Self::vm_call_on_value`]'s declaration-expression-thunk arm, which
+    /// reads the same pair off a `SubData`'s `compiled_code`/`compiled_fns`
+    /// fields rather than a `CompiledDeclExpr`.
+    pub(crate) fn run_decl_code(
+        &mut self,
+        code: &CompiledCode,
+        fns: &CompiledFns,
+    ) -> Result<Value, RuntimeError> {
+        let saved_topic = self.save_decl_expr_topic();
         let let_mark = self.let_saves_len();
         self.push_block_scope_depth();
-        let result = self.run_nested(&chunk.code, &chunk.fns);
+        let result = self.run_nested(code, fns);
         self.pop_block_scope_depth();
         self.restore_let_saves(let_mark);
+        self.restore_decl_expr_topic(saved_topic);
         self.run_pending_instance_destroys()?;
         result.map(|v| v.unwrap_or(Value::NIL))
     }

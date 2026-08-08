@@ -116,10 +116,10 @@ unchecked even if its original PR merged. PRs are sequential branches from the t
 `main`; this is not a stacked-PR plan.
 
 **Current progress: 28/53 slices merged (C6, C7, C8, D1, and D2d complete; D2a and D2c-1/2/3 also
-landed, 2026-08-07; D2b-2 landed 2026-08-08). Phase C is fully checked; the open box is D2
-(attributes and generated accessors), subdivided D2a-D2d — D2a, D2b-2, D2c-1/2/3, and D2d are
-done; the "compile `default`/`where_constraint` as actual bytecode chunks" remainder of D2c
-(D2c-4/D2c-5) is the only piece still open. D3 (class methods/submethods as compiled candidates) is open;
+landed, 2026-08-07; D2b-2 and D2c-4 landed 2026-08-08). Phase C is fully checked; the open box is
+D2 (attributes and generated accessors), subdivided D2a-D2d — D2a, D2b-2, D2c-1/2/3/4, and D2d are
+done; only the optional D2c-5 (A/B env-setup unification, gated on raku-behavior verification of
+shape B's `has_class_scoped_subs` gate) remains open in D2. D3 (class methods/submethods as compiled candidates) is open;
 D3-1 through D3-7 landed (walker-drift unification plus the compile-time `CompiledMethodDecl`
 precompute), and a 2026-08-08 scoping pass found D3's literal goal — compiling method *bodies*
 through the single main-pass `Compiler` the way `SubDecl` does, instead of a throwaway
@@ -593,6 +593,47 @@ walkers wholesale is not possible before then.
   every whitelisted `S12-attributes`/`S14-roles` roast file (36 files), plus a manual raku-vs-mutsu
   comparison covering a nested-sub `is default`, a role instance-attribute default, and a role
   `my`-scoped class-level attribute — all four values matched exactly.
+  **D2c-4 landed 2026-08-08**: `CompiledAttrDecl::default`/`where_constraint` are now
+  `Option<DeclTraitArg>` (matching `is_default` and `ClassAttributeDef`'s own D2c-2 field type)
+  instead of raw `Option<Expr>`, precompiled to `Literal`/`Compiled` chunks at plan lowering for
+  both class and role `attr_decls` (roles gain this for the first time — D2b-2 deliberately left
+  it `Ast`-only). `from_stmt` gained an `AttrDeclChunks` override struct (`is_default`/`default`/
+  `where_constraint`) replacing the single `is_default_chunk: Option<&DeclTraitArg>` parameter.
+  Retired the two `DeclTraitArg::as_expr()` consumers the D2-remainder design doc flagged as
+  needing to land in the same slice: the shaped-`@`-attribute pattern match
+  (`extract_shape_from_default`) moved to a compile-time-precomputed `CompiledAttrDecl`/
+  `ClassAttributeDef::declared_shape: Option<Vec<usize>>` field (the D2a precompute pattern,
+  ported to `opcode.rs` as free functions since it had exactly one caller); the `.^attributes.build`
+  introspection closure now branches on `DeclTraitArg::Compiled` to build its `SubData` directly
+  from the chunk's `compiled_code`/`compiled_fns` instead of calling `.as_expr()` (which panics on
+  `Compiled`).
+  **Two real regressions surfaced during verification, both architectural gaps the slice exposed
+  rather than introduced, both fixed rather than routed around:**
+  (1) `run_decl_expr` (the `Compiled`-chunk execution entry) lacked the topic (`$_`) save/restore
+  `vm_eval_block_value` already carries for the `Ast` path (#6071) — `has Bool $.b` (no explicit
+  default) synthesizes an implicit "unset typed attribute" default `Expr` that, once compiled to
+  `Compiled` by this slice, escaped through `run_decl_expr` and clobbered the caller's `$_`
+  (`t/decl-time-value-block-keeps-the-topic.t`, caught by `make test`, not the targeted roast
+  sweep). Fixed by giving `run_decl_expr` the identical save/restore, factored into a shared
+  `run_decl_code` helper both `run_decl_expr` and `vm_eval_block_value` now call.
+  (2) The `.^attributes.build` closure's `Compiled`-chunk `SubData` returned `Nil` when actually
+  invoked (`roast/S12-introspection/attributes.t`'s `.build().(C, $_)`): `compile_decl_expr`
+  produces a standalone "value block" `CompiledCode` (no signature, no `Return`-based call ABI)
+  meant only for direct execution via `run_nested` — feeding it to `SubData.compiled_code` made
+  the general call path (`vm_call_on_value`) try to invoke it through `call_compiled_closure`,
+  which expects the closure/routine calling convention and silently returned `Nil` for this shape.
+  A same-shape signal (`body.is_empty()`) looked sufficient but was NOT reliable — an ordinary
+  `sub (Int $x) {}` also has an empty body and must still go through `call_compiled_closure` to
+  type-check its arguments, so trusting it regressed `t/exception-types.t`'s binding-error tests.
+  Fixed properly with a new `SubData::is_decl_expr_thunk: bool` marker (touching ~13
+  construction sites, `false` everywhere except this one), and a `vm_call_on_value` arm that
+  routes a marked thunk through the new shared `run_decl_code` instead of
+  `call_compiled_closure`, ignoring call args exactly as the on-demand-compiled AST-body Sub it
+  replaces already did. Re-verified via the full `t/` suite (27,949 tests, two more than D2b-2 —
+  an unrelated same-day `main` merge), every whitelisted `S12-attributes`/`S14-roles`/
+  `S09-typed-arrays`/`S12-construction`/`S12-meta`/`S06-signature` roast file (102 files) with the
+  release binary, and a manual raku-vs-mutsu comparison of a construction-in-a-loop (confirming no
+  per-construction recompile) covering class/role `default`/`where`/`is default`.
 - [ ] **D3 — Encode class methods and submethods as compiled candidates.** Install ordinary, multi,
   proto, private, rw, wrap, BUILD, and TWEAK metadata without walking `Stmt::MethodDecl`. That
   walk exists in three places, not one — the class walker (~508 lines), the role walker

@@ -27,7 +27,12 @@ impl Interpreter {
                 .map(|(_, decl)| decl.clone()),
             _ => None,
         }
-        .unwrap_or_else(|| crate::opcode::CompiledAttrDecl::from_stmt(stmt, None));
+        .unwrap_or_else(|| {
+            crate::opcode::CompiledAttrDecl::from_stmt(
+                stmt,
+                crate::opcode::AttrDeclChunks::default(),
+            )
+        });
         let attr_name_str = decl.name.clone();
         // A class-level (`my $.x` / `our $.x`) role attribute is NOT a
         // per-instance attribute: it becomes a class-level attribute on the
@@ -38,9 +43,7 @@ impl Interpreter {
         if decl.is_my || decl.is_our {
             self.registry_mut().role_class_level_attrs.insert(
                 (cx.name.to_string(), attr_name_str.clone()),
-                decl.default
-                    .clone()
-                    .map(|e| crate::opcode::DeclTraitArg::Ast(Box::new(e))),
+                decl.default.clone(),
             );
             return Ok(());
         }
@@ -120,17 +123,12 @@ impl Interpreter {
         cx.role_def.attributes.push(ClassAttributeDef {
             name: attr_name_str.clone(),
             is_public: decl.is_public,
-            default: decl
-                .default
-                .clone()
-                .map(|e| crate::opcode::DeclTraitArg::Ast(Box::new(e))),
+            default: decl.default.clone(),
             is_rw: effective_is_rw,
             is_required: decl.is_required.clone(),
             sigil: decl.sigil,
-            where_constraint: decl
-                .where_constraint
-                .clone()
-                .map(|e| crate::opcode::DeclTraitArg::Ast(Box::new(e))),
+            where_constraint: decl.where_constraint.clone(),
+            declared_shape: decl.declared_shape.clone(),
         });
         let attr_var_name = if decl.is_public {
             format!(".{}", attr_name_str)

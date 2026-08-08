@@ -879,6 +879,22 @@ pub struct SubData {
     /// `CompiledFunction::param_local_slots` / `named_call_plan`. Dispatch reads
     /// this one only where it would otherwise have compiled `body`.
     pub(crate) compiled_routine: Option<Arc<crate::opcode::CompiledFunction>>,
+    /// When true, `compiled_code`/`compiled_fns` were NOT compiled by the
+    /// closure/routine machinery above — they hold a standalone declaration-
+    /// time-expression chunk (`Compiler::compile_decl_expr`, no signature, no
+    /// `Return`-based call ABI), the way `.^attributes.build` wraps a
+    /// non-literal attribute default so it can still be returned as a lazy
+    /// `Code` object (ADR-0019 D2c-4). Dispatch must run such a chunk through
+    /// `Interpreter::run_decl_code` (the same re-entrant entry
+    /// `run_decl_expr` uses) instead of `call_compiled_closure`, which
+    /// expects the closure calling convention and silently returns `Nil` for
+    /// this shape. `body.is_empty()` looked like a cheap equivalent signal
+    /// but is NOT reliable: an ordinary user sub with a literally empty body
+    /// (`sub (Int $x) {}`) also satisfies it, and must still go through the
+    /// closure calling convention (`call_compiled_closure`) to type-check and
+    /// bind its (possibly typed) parameters — an early `t/exception-types.t`
+    /// regression from trusting that signal caught this.
+    pub(crate) is_decl_expr_thunk: bool,
     /// `is DEPRECATED` message: None = not deprecated, Some(msg) = deprecated.
     pub(crate) deprecated_message: Option<String>,
     /// Source line number (1-based) where this block/sub was defined.

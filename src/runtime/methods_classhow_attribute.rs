@@ -245,14 +245,33 @@ impl Interpreter {
                 meta.insert("build".to_string(), v.clone());
             } else {
                 // Wrap the default expression in a Sub closure so .build returns Code.
-                // `.as_expr()` never panics here: no caller precompiles a `Compiled`
-                // chunk into `ClassAttributeDef.default` yet (ADR-0019 D2c-2).
+                // A `Compiled` chunk (ADR-0019 D2c-4) carries its own bytecode
+                // directly — no AST reconstruction (`.as_expr()`, which panics
+                // on `Compiled`) is needed for that case. `is_decl_expr_thunk`
+                // tells dispatch this `compiled_code` is a standalone
+                // declaration-expression chunk, not closure bytecode — see its
+                // doc comment. An `Ast` chunk still wraps the raw expression
+                // as a body statement, unchanged.
+                let (body, compiled_code, compiled_fns, is_decl_expr_thunk) = match default_arg {
+                    crate::opcode::DeclTraitArg::Compiled(chunk) => (
+                        Vec::new(),
+                        Some(chunk.code.clone()),
+                        Some(chunk.fns.clone()),
+                        true,
+                    ),
+                    _ => (
+                        vec![crate::ast::Stmt::Expr(default_arg.as_expr())],
+                        None,
+                        None,
+                        false,
+                    ),
+                };
                 let sub_data = crate::value::SubData {
                     package: Symbol::intern("GLOBAL"),
                     name: Symbol::intern("<attribute-build>"),
                     params: Vec::new(),
                     param_defs: Vec::new(),
-                    body: vec![crate::ast::Stmt::Expr(default_arg.as_expr())],
+                    body,
                     is_rw: false,
                     is_raw: false,
                     env: self.env().clone(),
@@ -261,8 +280,9 @@ impl Interpreter {
                     id: crate::value::next_instance_id(),
                     empty_sig: false,
                     is_bare_block: false,
-                    compiled_code: None,
-                    compiled_fns: None,
+                    compiled_code,
+                    compiled_fns,
+                    is_decl_expr_thunk,
                     compiled_routine: None,
                     deprecated_message: None,
                     source_line: None,
