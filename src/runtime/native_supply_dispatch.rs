@@ -396,13 +396,24 @@ impl Interpreter {
                 ) {
                     return Ok(live);
                 }
-                let values = attributes
-                    .get("values")
-                    .cloned()
-                    .unwrap_or(Value::array(Vec::new()));
                 let live = attributes.get("live").cloned().unwrap_or(Value::FALSE);
                 let mut new_attrs = HashMap::new();
-                new_attrs.insert("values".to_string(), values);
+                if let Some(on_demand_cb) = attributes.get("on_demand_callback").cloned() {
+                    // An on-demand (`supply { ... }`) source has no materialized
+                    // `values` to copy — copying only `values` (empty) here and
+                    // dropping the callback made the derived Supply a permanent
+                    // dead end: nothing ever tapped it. Keep it on-demand instead;
+                    // the tap dispatch's on-demand branch re-runs the body and
+                    // fires the accumulated `do_callbacks` (below) per emitted
+                    // value generically, so this needs no other special-casing.
+                    new_attrs.insert("on_demand_callback".to_string(), on_demand_cb);
+                } else {
+                    let values = attributes
+                        .get("values")
+                        .cloned()
+                        .unwrap_or(Value::array(Vec::new()));
+                    new_attrs.insert("values".to_string(), values);
+                }
                 new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
                 new_attrs.insert("live".to_string(), live);
                 // Accumulate do_callbacks chain
