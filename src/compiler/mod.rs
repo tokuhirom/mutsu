@@ -287,6 +287,64 @@ mod declaration_plan_tests {
         assert_eq!(plan_r.body_used_modules, vec!["JSON::Fast".to_string()]);
         assert_eq!(plan_r.body_declared_types, vec!["Inner".to_string()]);
     }
+
+    /// ADR-0019 D7-1/D9-1: a role declaration's stub-ness and its first
+    /// our-scope violation (if any) are precomputed at plan lowering, so
+    /// `register_role_decl` never re-walks the raw body to derive them.
+    #[test]
+    fn role_declarations_precompute_stub_and_our_scope_violation() {
+        let (stmts, _) =
+            crate::parse_dispatch::parse_source("role Stub { ... }; role Plain { has $.x }")
+                .expect("source parses");
+        let (code, _) = Compiler::new().compile(&stmts);
+
+        let plan_stub = code
+            .role_decl_plans
+            .iter()
+            .find(|plan| plan.name.as_str() == "Stub")
+            .expect("role Stub declaration plan");
+        assert!(plan_stub.is_stub);
+        assert_eq!(plan_stub.our_scope_violation, None);
+
+        let plan_plain = code
+            .role_decl_plans
+            .iter()
+            .find(|plan| plan.name.as_str() == "Plain")
+            .expect("role Plain declaration plan");
+        assert!(!plan_plain.is_stub);
+        assert_eq!(plan_plain.our_scope_violation, None);
+
+        let (stmts, _) =
+            crate::parse_dispatch::parse_source("role R { our $x = 1 }").expect("source parses");
+        let (code, _) = Compiler::new().compile(&stmts);
+        let plan_r = code
+            .role_decl_plans
+            .iter()
+            .find(|plan| plan.name.as_str() == "R")
+            .expect("role R declaration plan");
+        assert_eq!(plan_r.our_scope_violation, Some("variable"));
+
+        let (stmts, _) =
+            crate::parse_dispatch::parse_source("role R { class C {} }").expect("source parses");
+        let (code, _) = Compiler::new().compile(&stmts);
+        let plan_r = code
+            .role_decl_plans
+            .iter()
+            .find(|plan| plan.name.as_str() == "R")
+            .expect("role R declaration plan");
+        assert_eq!(plan_r.our_scope_violation, Some("class"));
+
+        // A `my class` inside a role is lexically scoped and allowed.
+        let (stmts, _) =
+            crate::parse_dispatch::parse_source("role R { my class C {} }").expect("source parses");
+        let (code, _) = Compiler::new().compile(&stmts);
+        let plan_r = code
+            .role_decl_plans
+            .iter()
+            .find(|plan| plan.name.as_str() == "R")
+            .expect("role R declaration plan");
+        assert_eq!(plan_r.our_scope_violation, None);
+    }
 }
 mod const_fold;
 mod decl_plan;

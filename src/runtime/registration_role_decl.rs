@@ -50,79 +50,6 @@ impl RoleDeclCx<'_> {
 }
 
 impl Interpreter {
-    /// Check for our-scoped declarations inside the role body.
-    /// In Raku, class/subset/enum/constant/role are implicitly our-scoped,
-    /// and explicit `our sub/method/variable` are also forbidden inside roles.
-    pub(super) fn check_role_body_our_scoped_decls(body: &[Stmt]) -> Result<(), RuntimeError> {
-        let check_body: Vec<&Stmt> = body
-            .iter()
-            .flat_map(|s| match s {
-                Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
-                other => vec![other],
-            })
-            .collect();
-        for stmt in &check_body {
-            let declaration = match stmt {
-                // A `my class` inside a role is a lexically-scoped class private to the
-                // role and is allowed; only an implicitly our-scoped `class` is forbidden.
-                Stmt::ClassDecl {
-                    is_lexical: false, ..
-                } => Some("class"),
-                Stmt::ClassDecl { .. } => None,
-                // A `my subset` inside a role is lexically scoped and private to the
-                // role body, which is allowed (like `my class`/`my role`); only an
-                // implicitly our-scoped `subset` is forbidden.
-                Stmt::SubsetDecl { is_my: true, .. } => None,
-                Stmt::SubsetDecl { .. } => Some("subset"),
-                // A `my enum` is lexically scoped and private to the role body,
-                // which is allowed (like `my class`/`my subset`/`my role`); only
-                // an implicitly our-scoped `enum` is forbidden.
-                Stmt::EnumDecl { is_my: true, .. } => None,
-                Stmt::EnumDecl { .. } => Some("enum"),
-                // A `my role` is lexically scoped and private to the role body, which
-                // is allowed (like `my class`); only an implicitly our-scoped `role` is
-                // forbidden.
-                Stmt::RoleDecl { custom_traits, .. }
-                    if custom_traits.iter().any(|(t, _)| t == "__my_scoped") =>
-                {
-                    None
-                }
-                Stmt::RoleDecl { .. } => Some("role"),
-                Stmt::VarDecl {
-                    is_our: true,
-                    custom_traits,
-                    ..
-                } => {
-                    if custom_traits.iter().any(|(t, _)| t == "__constant") {
-                        Some("constant")
-                    } else {
-                        Some("variable")
-                    }
-                }
-                Stmt::SubDecl { custom_traits, .. }
-                    if custom_traits.iter().any(|(t, _)| t == "__our_scoped") =>
-                {
-                    Some("sub")
-                }
-                Stmt::MethodDecl { is_our: true, .. } => Some("method"),
-                _ => None,
-            };
-            if let Some(decl) = declaration {
-                let mut attrs = std::collections::HashMap::new();
-                attrs.insert("declaration".to_string(), Value::str(decl.to_string()));
-                attrs.insert(
-                    "message".to_string(),
-                    Value::str(format!(
-                        "Cannot declare our-scoped {} inside of a role",
-                        decl
-                    )),
-                );
-                return Err(RuntimeError::typed("X::Declaration::OurScopeInRole", attrs));
-            }
-        }
-        Ok(())
-    }
-
     /// Validate the role's own type-parameter list: a bare-type parameter
     /// (`role R[SomeType]`) must name a resolvable type.
     pub(super) fn check_role_type_param_validity(
@@ -148,15 +75,6 @@ impl Interpreter {
             }
         }
         Ok(())
-    }
-
-    /// Whether the role body is a stub declaration (body is `...`, `!!!`, or
-    /// `???`).
-    pub(super) fn role_body_is_stub(body: &[Stmt]) -> bool {
-        body.iter().any(|s| {
-            matches!(s, Stmt::Expr(Expr::Call { name, .. })
-                if name == "__mutsu_stub_die" || name == "__mutsu_stub_warn")
-        })
     }
 
     /// Clean up stale registry entries for this role name before

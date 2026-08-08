@@ -2569,6 +2569,78 @@ fn role_body_prescan(body: &[Stmt]) -> (Vec<Symbol>, Vec<String>, Vec<String>) {
     (own_attribute_names, used_modules, declared_types)
 }
 
+/// Whether the role body is a stub declaration (ADR-0019 D7-1/D9-1),
+/// mirroring `Interpreter::role_body_is_stub`: any top-level statement is a
+/// yada-stub call (`...`/`!!!`/`???`). Unlike the class side's
+/// `is_stub_routine_body`, this does not require the stub to be the body's
+/// only statement — precomputed at plan lowering instead of re-walked on
+/// every registration.
+fn role_body_is_stub(body: &[Stmt]) -> bool {
+    body.iter().any(|s| {
+        matches!(s, Stmt::Expr(Expr::Call { name, .. })
+            if name == "__mutsu_stub_die" || name == "__mutsu_stub_warn")
+    })
+}
+
+/// The first our-scoped declaration kind found in a role body (ADR-0019
+/// D7-1/D9-1), mirroring `Interpreter::check_role_body_our_scoped_decls`'s
+/// scan: an implicitly our-scoped `class`/`subset`/`enum`/`role`, or an
+/// explicit `our sub`/`our variable`/`our method`/`constant`, is forbidden
+/// inside a role body. `None` when the body has no violation. Precomputed
+/// at plan lowering instead of re-walked on every registration;
+/// `register_role_decl` raises `X::Declaration::OurScopeInRole` from this
+/// fact instead of constructing it inline.
+fn role_body_our_scope_violation(body: &[Stmt]) -> Option<&'static str> {
+    let flattened = body.iter().flat_map(|s| match s {
+        Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
+        other => vec![other],
+    });
+    for stmt in flattened {
+        let declaration = match stmt {
+            // A `my class`/`my subset`/`my enum`/`my role` inside a role is
+            // lexically scoped and private to the role body, which is
+            // allowed; only an implicitly our-scoped declaration is
+            // forbidden.
+            Stmt::ClassDecl {
+                is_lexical: false, ..
+            } => Some("class"),
+            Stmt::ClassDecl { .. } => None,
+            Stmt::SubsetDecl { is_my: true, .. } => None,
+            Stmt::SubsetDecl { .. } => Some("subset"),
+            Stmt::EnumDecl { is_my: true, .. } => None,
+            Stmt::EnumDecl { .. } => Some("enum"),
+            Stmt::RoleDecl { custom_traits, .. }
+                if custom_traits.iter().any(|(t, _)| t == "__my_scoped") =>
+            {
+                None
+            }
+            Stmt::RoleDecl { .. } => Some("role"),
+            Stmt::VarDecl {
+                is_our: true,
+                custom_traits,
+                ..
+            } => {
+                if custom_traits.iter().any(|(t, _)| t == "__constant") {
+                    Some("constant")
+                } else {
+                    Some("variable")
+                }
+            }
+            Stmt::SubDecl { custom_traits, .. }
+                if custom_traits.iter().any(|(t, _)| t == "__our_scoped") =>
+            {
+                Some("sub")
+            }
+            Stmt::MethodDecl { is_our: true, .. } => Some("method"),
+            _ => None,
+        };
+        if declaration.is_some() {
+            return declaration;
+        }
+    }
+    None
+}
+
 /// Precompute a typed `CompiledMethodDecl` for each top-level `method`/
 /// `submethod` declaration in a class/role body (ADR-0019 D3-7), in the same
 /// `SyntheticBlock`-flattened order `compile_method_name_chunks` already
@@ -2715,6 +2787,17 @@ pub(crate) struct CompiledRoleDeclPlan {
     /// declaration in the body (ADR-0019 D3-7). See
     /// `CompiledClassDeclPlan::method_decls`.
     pub(crate) method_decls: Vec<CompiledMethodDecl>,
+    /// Whether the role body is a stub declaration (ADR-0019 D7-1/D9-1),
+    /// precomputed at plan lowering instead of `register_role_decl`
+    /// re-walking the body every registration.
+    pub(crate) is_stub: bool,
+    /// The first our-scoped declaration kind (`"class"`, `"variable"`, ...)
+    /// found in the role body, if any (ADR-0019 D7-1/D9-1); `None` when the
+    /// body has no violation. Precomputed at plan lowering instead of
+    /// `check_role_body_our_scoped_decls` re-walking the body every
+    /// registration; `register_role_decl` raises
+    /// `X::Declaration::OurScopeInRole` from this fact.
+    pub(crate) our_scope_violation: Option<&'static str>,
 }
 
 /// A package-level `proto sub`/`proto rule`/`proto token` declaration lowered
@@ -5972,6 +6055,8 @@ impl CompiledCode {
         };
         let (own_attribute_names, body_used_modules, body_declared_types) = role_body_prescan(body);
         let method_decls = compile_method_decls(body);
+        let is_stub = role_body_is_stub(body);
+        let our_scope_violation = role_body_our_scope_violation(body);
         let plan_idx = self.role_decl_plans.len() as u32;
         self.role_decl_plans.push(CompiledRoleDeclPlan {
             name: *name,
@@ -5989,6 +6074,8 @@ impl CompiledCode {
             attr_decls,
             method_name_chunks,
             method_decls,
+            is_stub,
+            our_scope_violation,
         });
         let idx = self.decl_plans.len() as u32;
         self.decl_plans.push(CompiledDeclPlanRef::Role(plan_idx));

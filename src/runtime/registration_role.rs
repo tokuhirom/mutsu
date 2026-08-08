@@ -276,17 +276,29 @@ impl Interpreter {
         attr_decls: &[(Symbol, crate::opcode::CompiledAttrDecl)],
         method_name_chunks: &[Option<crate::opcode::CompiledDeclExpr>],
         method_decls: &[crate::opcode::CompiledMethodDecl],
+        is_stub_body: bool,
+        our_scope_violation: Option<&str>,
     ) -> Result<(), RuntimeError> {
         self.clear_private_zeroarg_method_cache();
 
-        Self::check_role_body_our_scoped_decls(body)?;
+        if let Some(decl) = our_scope_violation {
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("declaration".to_string(), Value::str(decl.to_string()));
+            attrs.insert(
+                "message".to_string(),
+                Value::str(format!(
+                    "Cannot declare our-scoped {} inside of a role",
+                    decl
+                )),
+            );
+            return Err(RuntimeError::typed("X::Declaration::OurScopeInRole", attrs));
+        }
         self.check_role_type_param_validity(type_param_defs)?;
 
         // If this is a stub declaration (body is `...`, `!!!`, or `???`)
         // and a real (non-stub) role already exists under this name, treat
         // the stub as a forward declaration / no-op — don't register a new
         // stub candidate that would shadow the real one.
-        let is_stub_body = Self::role_body_is_stub(body);
         if is_stub_body
             && type_params.is_empty()
             && self
